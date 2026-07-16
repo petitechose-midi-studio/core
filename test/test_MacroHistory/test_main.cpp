@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <utility>
 
@@ -218,6 +219,149 @@ void test_new_mutation_after_undo_clears_redo_stack() {
     std::cout << "[PASS] new mutation after Undo clears Redo\n";
 }
 
+core::state::modulation::ModulatorLfoDraft defaultLfoDraft() {
+    using namespace core::state::modulation;
+    ModulatorLfoDraft draft{};
+    draft.name = "LFO 1";
+    draft.reach = {
+        .kind = ModulatorReachKind::MACRO,
+        .track = kAddress.track,
+        .page = kAddress.page,
+        .macro = kAddress.macro,
+    };
+    draft.parameters.periodTicks = 384;
+    draft.parameters.shape = ModulatorLfoShape::SINE;
+    draft.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
+    draft.parameters.timing = ModulatorTimingMode::SYNC;
+    return draft;
+}
+
+core::state::modulation::ModulationBindingDraft defaultBindingDraft() {
+    using namespace core::state::modulation;
+    ModulationBindingDraft draft{};
+    draft.destination = projectControlDestination(kAddress);
+    draft.amountQ15 = 8192;
+    draft.inputRange = ModulationInputRange::BIPOLAR;
+    return draft;
+}
+
+void test_lfo_audition_cancel_is_byte_stable_and_history_free() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto before = pages.control.authored.modulation;
+    const uint32_t beforeRevision = pages.control.authoredRevision;
+
+    const auto begun = history.beginLfoModulatorAudition(
+        pages,
+        kAddress,
+        defaultLfoDraft(),
+        defaultBindingDraft()
+    );
+    assert(begun.changed());
+    assert(history.modulatorAuditionPending(kAddress));
+    assert(pages.control.audition.active);
+    assert(history.undoCount() == 0);
+
+    auto* source = findProjectModulator(
+        pages.control.authored.modulation,
+        begun.sourceId
+    );
+    assert(source != nullptr);
+    source->parameters.lfo.shape = ModulatorLfoShape::TRIANGLE;
+    auto& binding = pages.control.authored.modulation.outputBindings[0];
+    binding.amountQ15 = -12288;
+    pages.control.markAuthoredMutation();
+
+    assert(history.cancelModulatorAudition(pages, kAddress));
+    assert(!pages.control.audition.active);
+    assert(!history.modulatorAuditionPending(kAddress));
+    assert(history.undoCount() == 0);
+    assert(pages.control.authoredRevision == beforeRevision);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &before,
+        sizeof(before)
+    ) == 0);
+    std::cout << "[PASS] LFO audition Cancel is byte-stable and history-free\n";
+}
+
+void test_lfo_audition_apply_is_one_compact_undo_redo_action() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto begun = history.beginLfoModulatorAudition(
+        pages,
+        kAddress,
+        defaultLfoDraft(),
+        defaultBindingDraft()
+    );
+    assert(begun.changed());
+    auto* source = findProjectModulator(
+        pages.control.authored.modulation,
+        begun.sourceId
+    );
+    assert(source != nullptr);
+    source->parameters.lfo.shape = ModulatorLfoShape::SAW_DOWN;
+    pages.control.authored.modulation.outputBindings[0].amountQ15 = -16384;
+    pages.control.markAuthoredMutation();
+
+    assert(history.commitModulatorAudition(pages, kAddress));
+    assert(history.undoCount() == 1);
+    assert(!history.modulatorAuditionPending(kAddress));
+    assert(!pages.control.audition.active);
+    const auto committedSource = pages.control.authored.modulation.sources[0];
+    const auto committedBinding =
+        pages.control.authored.modulation.outputBindings[0];
+
+    assert(history.undo(pages));
+    assert(pages.control.authored.modulation.sourceCount == 0);
+    assert(pages.control.authored.modulation.outputBindingCount == 0);
+    assert(pages.control.authored.modulation.nextSourceId == 1);
+    assert(pages.control.authored.modulation.nextBindingId == 1);
+
+    assert(history.redo(pages));
+    assert(pages.control.authored.modulation.sourceCount == 1);
+    assert(pages.control.authored.modulation.outputBindingCount == 1);
+    assert(std::memcmp(
+        &pages.control.authored.modulation.sources[0],
+        &committedSource,
+        sizeof(committedSource)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.modulation.outputBindings[0],
+        &committedBinding,
+        sizeof(committedBinding)
+    ) == 0);
+    assert(sizeof(macro::MacroHistoryChange) < 512U);
+    std::cout << "[PASS] LFO Apply is one compact stable-ID Undo/Redo action\n";
+}
+
+void test_lfo_audition_capacity_failure_has_no_partial_state() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    pages.control.authored.modulation.sourceCount = PROJECT_MODULATOR_CAPACITY;
+    const auto before = pages.control.authored.modulation;
+
+    const auto result = history.beginLfoModulatorAudition(
+        pages,
+        kAddress,
+        defaultLfoDraft(),
+        defaultBindingDraft()
+    );
+    assert(result.status == ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED);
+    assert(!pages.control.audition.active);
+    assert(!history.modulatorAuditionPending(kAddress));
+    assert(history.undoCount() == 0);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &before,
+        sizeof(before)
+    ) == 0);
+    std::cout << "[PASS] LFO capacity failure is an exact no-op\n";
+}
+
 }  // namespace
 
 int main() {
@@ -228,6 +372,9 @@ int main() {
     test_history_admission_rejects_oversized_slot();
     test_history_evicts_oldest_entry_at_fixed_limit();
     test_new_mutation_after_undo_clears_redo_stack();
+    test_lfo_audition_cancel_is_byte_stable_and_history_free();
+    test_lfo_audition_apply_is_one_compact_undo_redo_action();
+    test_lfo_audition_capacity_failure_has_no_partial_state();
     std::cout << "All MacroHistory tests passed\n";
     return 0;
 }

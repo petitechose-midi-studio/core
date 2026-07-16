@@ -10,7 +10,9 @@
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/macro/MacroAutomationEditorModel.hpp"
 #include "handler/macro/MacroGuardedActionWorkflow.hpp"
+#include "state/contextual/OperationFeedbackState.hpp"
 #include "ui/macro/MacroSourceDetailLayout.hpp"
+#include "ui/macro/MacroLfoAuditionModel.hpp"
 
 namespace core::handler {
 
@@ -27,14 +29,35 @@ detail_ui::MacroSourceDetailContext detailContext(
     return {
         .automationStored =
             core::state::macro::macroCurveStored(slot->automation),
-        .modulationStored =
-            core::state::macro::macroCurveStored(slot->modulation),
+        .modulationStored = services.modulationStoredFor(macroIndex),
         .automationPlayback =
             core::state::macro::macroCurvePlaybackActive(slot->automation),
-        .modulationPlayback =
-            core::state::macro::macroCurvePlaybackActive(slot->modulation),
+        .modulationPlayback = services.modulationPlaybackActiveFor(macroIndex),
         .manualOverride = services.manualOverrideActiveFor(macroIndex),
     };
+}
+
+FLASHMEM const core::state::modulation::ModulatorSourceState* auditionSource(
+    const core::state::macro::MacroPagesState& pages
+) {
+    if (!pages.control.audition.active) return nullptr;
+    return core::state::modulation::findProjectModulator(
+        pages.control.authored.modulation,
+        pages.control.audition.sourceId
+    );
+}
+
+FLASHMEM const core::state::modulation::ModulationBindingState* auditionBinding(
+    const core::state::macro::MacroPagesState& pages
+) {
+    if (!pages.control.audition.active) return nullptr;
+    const auto& graph = pages.control.authored.modulation;
+    for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+        if (graph.outputBindings[index].id == pages.control.audition.bindingId) {
+            return &graph.outputBindings[index];
+        }
+    }
+    return nullptr;
 }
 
 bool contextActionInProgress(const core::state::MacroEditState& state) {
@@ -165,7 +188,7 @@ FLASHMEM void MacroAutomationHandler::setupBindings() {
 bool MacroAutomationHandler::active() const {
     return macro_edit_.visible.get() &&
            (automationDetailActive() || modulationDetailActive() ||
-            conversionPreviewActive());
+             conversionPreviewActive() || lfoAuditionActive());
 }
 
 bool MacroAutomationHandler::automationDetailActive() const {
@@ -183,6 +206,11 @@ bool MacroAutomationHandler::conversionPreviewActive() const {
            core::state::MacroEditFlowPhase::CONVERT_PREVIEW;
 }
 
+bool MacroAutomationHandler::lfoAuditionActive() const {
+    return macro_edit_.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::LFO_AUDITION;
+}
+
 uint8_t MacroAutomationHandler::macroIndex() const {
     return macro_edit_.editingIndex.get();
 }
@@ -193,14 +221,25 @@ FLASHMEM void MacroAutomationHandler::moveFocus(float delta) {
         macro_edit_, now_provider_ ? now_provider_() : 0U, true
     );
     services_.endDepthGesture();
-    auto& focus = modulationDetailActive()
+    auto& focus = (modulationDetailActive() || lfoAuditionActive())
         ? macro_edit_.modulationFocusedRow
         : macro_edit_.automationFocusedRow;
     const int current = static_cast<int>(focus.get());
     const auto context = detailContext(services_, macroIndex());
-    const int count = modulationDetailActive()
-        ? static_cast<int>(detail_ui::buildModulationDetailLayout(context).count)
-        : static_cast<int>(detail_ui::buildAutomationDetailLayout(context).count);
+    int count = 0;
+    if (lfoAuditionActive()) {
+        count = 3;
+    } else if (modulationDetailActive() && !context.modulationStored) {
+        count = 2;
+    } else if (modulationDetailActive()) {
+        count = static_cast<int>(
+            detail_ui::buildModulationDetailLayout(context).count
+        );
+    } else {
+        count = static_cast<int>(
+            detail_ui::buildAutomationDetailLayout(context).count
+        );
+    }
     const int next = nav::nextWrappedIndex(delta, current, count);
     focus.set(static_cast<uint8_t>(next));
     configureOptForFocusedRow();
@@ -213,8 +252,48 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
     );
     const uint8_t index = macroIndex();
     const float clamped = std::clamp(normalized, 0.0f, 1.0f);
+    if (lfoAuditionActive()) {
+        const auto* source = auditionSource(pages_);
+        const auto* binding = auditionBinding(pages_);
+        if (source == nullptr || binding == nullptr) return;
+        const uint8_t row = std::min<uint8_t>(
+            macro_edit_.modulationFocusedRow.get(),
+            2U
+        );
+        if (row == 0U) {
+            const auto shape = static_cast<
+                core::state::modulation::ModulatorLfoShape>(
+                    static_cast<uint8_t>(
+                        clamped * static_cast<float>(
+                            detail_ui::lfo_audition::SHAPE_COUNT - 1U
+                        ) + 0.5f
+                    )
+                );
+            (void)services_.setLfoAuditionShape(index, shape);
+        } else if (row == 1U) {
+            const uint8_t rate = static_cast<uint8_t>(
+                clamped * static_cast<float>(
+                    detail_ui::lfo_audition::RATE_COUNT - 1U
+                ) + 0.5f
+            );
+            (void)services_.setLfoAuditionPeriodTicks(
+                index,
+                detail_ui::lfo_audition::RATE_PERIOD_TICKS[rate]
+            );
+        } else {
+            const int16_t percent = static_cast<int16_t>(
+                clamped * 200.0f + 0.5f
+            ) - 100;
+            (void)services_.setLfoAuditionDepthQ15(
+                index,
+                detail_ui::lfo_audition::depthPercentToQ15(percent)
+            );
+        }
+        return;
+    }
     const auto context = detailContext(services_, index);
     if (modulationDetailActive()) {
+        if (!context.modulationStored) return;
         const auto layout = detail_ui::buildModulationDetailLayout(context);
         const auto item = layout.at(macro_edit_.modulationFocusedRow.get());
         if (item == detail_ui::ModulationDetailItem::PLAYBACK) {
@@ -252,8 +331,47 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
 FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
     uint8_t steps = 1;
     float position = 0.0f;
+    if (lfoAuditionActive()) {
+        const auto* source = auditionSource(pages_);
+        const auto* binding = auditionBinding(pages_);
+        if (source != nullptr && binding != nullptr) {
+            const uint8_t row = std::min<uint8_t>(
+                macro_edit_.modulationFocusedRow.get(),
+                2U
+            );
+            if (row == 0U) {
+                steps = detail_ui::lfo_audition::SHAPE_COUNT;
+                position = static_cast<float>(source->parameters.lfo.shape) /
+                    static_cast<float>(steps - 1U);
+            } else if (row == 1U) {
+                steps = detail_ui::lfo_audition::RATE_COUNT;
+                position = static_cast<float>(
+                    detail_ui::lfo_audition::rateIndex(
+                        source->parameters.lfo.periodTicks
+                    )
+                ) / static_cast<float>(steps - 1U);
+            } else {
+                steps = static_cast<uint8_t>(
+                    detail_ui::lfo_audition::DEPTH_STEP_COUNT
+                );
+                const int16_t percent =
+                    detail_ui::lfo_audition::depthQ15ToPercent(
+                        binding->amountQ15
+                    );
+                position = static_cast<float>(percent + 100) / 200.0f;
+            }
+        }
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT, steps);
+        encoders_.setPosition(Config::EncoderID::OPT, position);
+        return;
+    }
     const auto context = detailContext(services_, macroIndex());
     if (modulationDetailActive()) {
+        if (!context.modulationStored) {
+            encoders_.setDiscreteSteps(Config::EncoderID::OPT, 1);
+            encoders_.setPosition(Config::EncoderID::OPT, 0.0f);
+            return;
+        }
         const auto layout = detail_ui::buildModulationDetailLayout(context);
         const auto item = layout.at(macro_edit_.modulationFocusedRow.get());
         if (item == detail_ui::ModulationDetailItem::PLAYBACK) {
@@ -309,6 +427,10 @@ FLASHMEM void MacroAutomationHandler::backToMacroEdit() {
         macro_edit_, now_provider_ ? now_provider_() : 0U, false
     );
     services_.endDepthGesture();
+    if (lfoAuditionActive()) {
+        (void)cancelLfoAudition();
+        return;
+    }
     if (conversionPreviewActive()) {
         macro_edit_.closeConvertPreview();
         configureOptForFocusedRow();
@@ -321,7 +443,7 @@ FLASHMEM void MacroAutomationHandler::backToMacroEdit() {
 
 FLASHMEM void MacroAutomationHandler::toggleFocusedPlayback() {
     if (!active()) return;
-    if (conversionPreviewActive()) return;
+    if (conversionPreviewActive() || lfoAuditionActive()) return;
     const uint8_t index = macroIndex();
     if (modulationDetailActive()) {
         if (services_.modulationStoredFor(index)) {
@@ -341,7 +463,7 @@ FLASHMEM void MacroAutomationHandler::toggleFocusedPlayback() {
 
 FLASHMEM void MacroAutomationHandler::copyFocusedSource() {
     if (!active()) return;
-    if (conversionPreviewActive()) return;
+    if (conversionPreviewActive() || lfoAuditionActive()) return;
     if (modulationDetailActive()) {
         (void)services_.copyModulation(macroIndex());
     } else {
@@ -351,7 +473,7 @@ FLASHMEM void MacroAutomationHandler::copyFocusedSource() {
 
 FLASHMEM void MacroAutomationHandler::beginBottomLeftAction() {
     if (!active()) return;
-    if (conversionPreviewActive()) return;
+    if (conversionPreviewActive() || lfoAuditionActive()) return;
     services_.endDepthGesture();
     const uint8_t index = macroIndex();
     const bool modulation = modulationDetailActive();
@@ -392,7 +514,9 @@ FLASHMEM void MacroAutomationHandler::beginBottomRightAction() {
     if (!active()) return;
     core::state::contextual::ContextActionId action =
         core::state::contextual::ContextActionId::NONE;
-    if (conversionPreviewActive()) {
+    if (lfoAuditionActive()) {
+        action = core::state::contextual::ContextActionId::APPLY;
+    } else if (conversionPreviewActive()) {
         if (macro_edit_.conversionPreview.plan.actionable()) {
             action = macro_edit_.conversionPreview.plan.overwritesModulation
                 ? core::state::contextual::ContextActionId::OVERWRITE
@@ -408,7 +532,7 @@ FLASHMEM void MacroAutomationHandler::beginBottomRightAction() {
                 : core::state::contextual::ContextActionId::PASTE;
         }
     }
-    const auto target = conversionPreviewActive()
+    const auto target = (conversionPreviewActive() || lfoAuditionActive())
         ? sourceRef(pages_, macroIndex(), true)
         : sourceRef(pages_, macroIndex(), modulationDetailActive());
     (void)macro::MacroGuardedActionWorkflow::begin(
@@ -431,7 +555,12 @@ FLASHMEM void MacroAutomationHandler::releaseBottomRightAction() {
         nowMs
     );
     if (release == core::state::contextual::GuardedActionRelease::TAP) {
-        if (conversionPreviewActive()) {
+        if (lfoAuditionActive()) {
+            const bool applied = applyLfoAudition();
+            macro::MacroGuardedActionWorkflow::complete(
+                macro_edit_, applied, nowMs
+            );
+        } else if (conversionPreviewActive()) {
             const bool applied = applyConversion(false);
             macro::MacroGuardedActionWorkflow::complete(
                 macro_edit_, applied, nowMs
@@ -448,7 +577,7 @@ FLASHMEM void MacroAutomationHandler::releaseBottomRightAction() {
 FLASHMEM void MacroAutomationHandler::commitGuardedAction(uint32_t nowMs) {
     const auto feedback = macro_edit_.contextFeedback.get();
     const uint8_t index = macroIndex();
-    const auto expectedTarget = conversionPreviewActive()
+    const auto expectedTarget = (conversionPreviewActive() || lfoAuditionActive())
         ? sourceRef(pages_, index, true)
         : sourceRef(pages_, index, modulationDetailActive());
     if (feedback.target != expectedTarget) {
@@ -457,6 +586,12 @@ FLASHMEM void MacroAutomationHandler::commitGuardedAction(uint32_t nowMs) {
     }
 
     bool applied = false;
+    if (feedback.action == core::state::contextual::ContextActionId::APPLY &&
+        lfoAuditionActive()) {
+        applied = applyLfoAudition();
+        macro::MacroGuardedActionWorkflow::complete(macro_edit_, applied, nowMs);
+        return;
+    }
     if (feedback.action == core::state::contextual::ContextActionId::CLEAR &&
         !conversionPreviewActive()) {
         services_.endDepthGesture();
@@ -498,7 +633,8 @@ FLASHMEM void MacroAutomationHandler::update(uint32_t nowMs) {
     if (flowPhase != observed_flow_phase_) {
         observed_flow_phase_ = flowPhase;
         coarse_edit_active_ = false;
-        if (automationDetailActive() || modulationDetailActive()) {
+        if (automationDetailActive() || modulationDetailActive() ||
+            lfoAuditionActive()) {
             // This handler does not own the parent Macro Edit transition that
             // opens the detail overlay. Synchronize the physical encoder once
             // when that transition becomes observable so the first user turn
@@ -520,7 +656,13 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
     const auto context = detailContext(services_, macroIndex());
     bool resumeAutomation = false;
     bool convert = false;
-    if (modulationDetailActive()) {
+    if (lfoAuditionActive()) {
+        return;
+    } else if (modulationDetailActive()) {
+        if (!context.modulationStored &&
+            macro_edit_.modulationFocusedRow.get() == 0U) {
+            (void)startLfoAudition();
+        }
         return;
     } else {
         const auto layout = detail_ui::buildAutomationDetailLayout(context);
@@ -583,6 +725,74 @@ FLASHMEM bool MacroAutomationHandler::applyConversion(bool overwriteGesture) {
     }
     macro_edit_.closeConvertPreview();
     configureOptForFocusedRow();
+    return true;
+}
+
+FLASHMEM bool MacroAutomationHandler::startLfoAudition() {
+    const auto result = services_.beginDefaultLfoAudition(macroIndex());
+    if (!result.changed()) return false;
+    macro_edit_.openLfoAudition();
+    configureOptForFocusedRow();
+    return true;
+}
+
+FLASHMEM bool MacroAutomationHandler::cancelLfoAudition() {
+    if (!lfoAuditionActive() ||
+        !services_.cancelLfoAudition(macroIndex())) {
+        return false;
+    }
+    macro_edit_.cancelLfoAudition();
+    auto feedback = macro_edit_.contextFeedback.get();
+    const core::state::contextual::ContextEntityRef modulation{
+        .kind = core::state::contextual::ContextEntityKind::MODULATION_LANE,
+        .track = pages_.currentActiveTrack(),
+        .page = pages_.currentActivePage(),
+        .item = macroIndex(),
+    };
+    const uint32_t nowMs = now_provider_ ? now_provider_() : 0U;
+    core::state::contextual::setOperationFeedback(
+        feedback,
+        core::state::contextual::ContextActionId::CANCEL,
+        modulation,
+        modulation,
+        core::state::contextual::OperationFeedbackStatus::CANCELLED,
+        core::state::contextual::ContextActionReason::NONE,
+        core::state::contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+        nowMs,
+        Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
+    );
+    macro_edit_.contextFeedback.set(feedback);
+    configureOptForFocusedRow();
+    return true;
+}
+
+FLASHMEM bool MacroAutomationHandler::applyLfoAudition() {
+    if (!lfoAuditionActive() ||
+        !services_.applyLfoAudition(macroIndex())) {
+        return false;
+    }
+    modal::hideIfCurrent(overlays_, core::ui::OverlayType::MACRO_AUTOMATION);
+    macro_edit_.applyLfoAudition();
+    auto feedback = macro_edit_.contextFeedback.get();
+    const core::state::contextual::ContextEntityRef modulation{
+        .kind = core::state::contextual::ContextEntityKind::MODULATION_LANE,
+        .track = pages_.currentActiveTrack(),
+        .page = pages_.currentActivePage(),
+        .item = macroIndex(),
+    };
+    const uint32_t nowMs = now_provider_ ? now_provider_() : 0U;
+    core::state::contextual::setOperationFeedback(
+        feedback,
+        core::state::contextual::ContextActionId::APPLY,
+        modulation,
+        modulation,
+        core::state::contextual::OperationFeedbackStatus::APPLIED,
+        core::state::contextual::ContextActionReason::NONE,
+        core::state::contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+        nowMs,
+        Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
+    );
+    macro_edit_.contextFeedback.set(feedback);
     return true;
 }
 

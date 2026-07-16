@@ -43,6 +43,7 @@ private:
     bool automationDetailActive() const;
     bool modulationDetailActive() const;
     bool conversionPreviewActive() const;
+    bool lfoAuditionActive() const;
     uint8_t macroIndex() const;
     void moveFocus(float delta);
     void editFocusedValue(float normalized);
@@ -60,6 +61,9 @@ private:
     void openConversionPreview();
     void selectConversionPolicy(float delta);
     bool applyConversion(bool overwriteGesture);
+    bool startLfoAudition();
+    bool cancelLfoAudition();
+    bool applyLfoAudition();
 
     core::state::MacroEditState& macro_edit_;
     core::state::macro::MacroPagesState& pages_;

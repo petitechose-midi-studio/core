@@ -602,6 +602,112 @@ void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
     std::cout << "[PASS] test_left_center_enables_coarse_length_and_offset_steps_temporarily\n";
 }
 
+void test_empty_modulation_requires_explicit_new_lfo_selection_and_cancel_is_exact() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    h.state.pages.setMacroSlotActive(0, true);
+    const auto before = h.state.pages.control.authored.modulation;
+    h.openModulationEditor();
+    h.handler.update(0);
+
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATION);
+    assert(h.state.pages.control.authored.modulation.sourceCount == 0);
+    assert(h.encoderHw.getDiscreteSteps(
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
+    ) == 1);
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::LFO_AUDITION);
+    assert(h.state.pages.control.audition.active);
+    assert(h.state.pages.control.authored.modulation.sourceCount == 1);
+    assert(h.state.pages.control.authored.modulation.outputBindingCount == 1);
+    assert(h.state.macroHistory.undoCount() == 0);
+    const auto& source = h.state.pages.control.authored.modulation.sources[0];
+    const auto& binding =
+        h.state.pages.control.authored.modulation.outputBindings[0];
+    assert(std::strcmp(source.name.data(), "LFO 1") == 0);
+    assert(source.parameters.lfo.shape == ModulatorLfoShape::SINE);
+    assert(source.parameters.lfo.periodTicks == PROJECT_CONTROL_TICKS_PER_BEAT);
+    assert(source.parameters.lfo.retrigger == ModulatorRetriggerPolicy::TRANSPORT);
+    assert(binding.amountQ15 == 8192);
+    assert(binding.inputRange == ModulationInputRange::BIPOLAR);
+    assert(h.encoderHw.getDiscreteSteps(
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
+    ) == 5);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.pages.control.authored.modulation.sources[0]
+               .parameters.lfo.shape == ModulatorLfoShape::SQUARE);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.encoderHw.getDiscreteSteps(
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
+    ) == 6);
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.pages.control.authored.modulation.sources[0]
+               .parameters.lfo.periodTicks ==
+           PROJECT_CONTROL_TICKS_PER_BEAT / 4U);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.encoderHw.getDiscreteSteps(
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
+    ) == 201);
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.pages.control.authored.modulation.outputBindings[0]
+               .amountQ15 == -32767);
+
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATION);
+    assert(!h.state.pages.control.audition.active);
+    assert(h.state.macroHistory.undoCount() == 0);
+    assert(std::memcmp(
+        &h.state.pages.control.authored.modulation,
+        &before,
+        sizeof(before)
+    ) == 0);
+    std::cout << "[PASS] explicit LFO audition edits audibly and Cancel is exact\n";
+}
+
+void test_lfo_audition_apply_returns_to_macro_edit_and_is_one_undo() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    h.state.pages.setMacroSlotActive(0, true);
+    h.openModulationEditor();
+    h.handler.update(0);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::LFO_AUDITION);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 0.75f);
+    assert(h.state.pages.control.authored.modulation.outputBindings[0]
+               .amountQ15 == 16384);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.setNow(100);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::EDIT);
+    assert(!h.state.pages.control.audition.active);
+    assert(h.state.macroHistory.undoCount() == 1);
+    assert(h.services.modulationStoredFor(0));
+    assert(h.services.modulationPlaybackActiveFor(0));
+
+    assert(h.state.macroHistory.undo(h.state.pages));
+    assert(h.state.pages.control.authored.modulation.sourceCount == 0);
+    assert(h.state.pages.control.authored.modulation.outputBindingCount == 0);
+    assert(h.state.macroHistory.redo(h.state.pages));
+    assert(h.state.pages.control.authored.modulation.sourceCount == 1);
+    assert(h.state.pages.control.authored.modulation.outputBindings[0]
+               .amountQ15 == 16384);
+    std::cout << "[PASS] LFO Apply returns to Macro and creates one Undo action\n";
+}
+
 }  // namespace
 
 int main() {
@@ -618,6 +724,8 @@ int main() {
     test_navigation_cancels_completed_guard_before_release_without_mutation();
     test_length_row_resizes_automation_duration_without_scaling_points();
     test_left_center_enables_coarse_length_and_offset_steps_temporarily();
+    test_empty_modulation_requires_explicit_new_lfo_selection_and_cancel_is_exact();
+    test_lfo_audition_apply_returns_to_macro_edit_and_is_one_undo();
     std::cout << "\nAll MacroAutomationHandler tests passed.\n";
     return 0;
 }

@@ -115,6 +115,101 @@ FLASHMEM bool sameAddress(
     return macroAutomationAddressEquals(lhs, rhs);
 }
 
+template <typename T>
+FLASHMEM bool sameObjectBits(const T& lhs, const T& rhs) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    return std::memcmp(&lhs, &rhs, sizeof(T)) == 0;
+}
+
+FLASHMEM bool creationIdentityMatches(
+    const core::state::modulation::ProjectControlState& control,
+    const MacroModulatorCreationHistoryPayload& payload,
+    bool exactAfter
+) {
+    const auto& graph = control.authored.modulation;
+    if (graph.sourceCount != payload.beforeSourceCount + 1U ||
+        graph.outputBindingCount != payload.beforeBindingCount + 1U ||
+        graph.nextSourceId != payload.afterNextSourceId ||
+        graph.nextBindingId != payload.afterNextBindingId) {
+        return false;
+    }
+    const auto& source = graph.sources[payload.beforeSourceCount];
+    const auto& binding = graph.outputBindings[payload.beforeBindingCount];
+    if (source.id != payload.source.id || binding.id != payload.binding.id ||
+        binding.sourceId != source.id ||
+        binding.destination != payload.binding.destination) {
+        return false;
+    }
+    return !exactAfter ||
+           (sameObjectBits(source, payload.source) &&
+            sameObjectBits(binding, payload.binding));
+}
+
+FLASHMEM bool creationBeforeMatches(
+    const core::state::modulation::ProjectControlState& control,
+    const MacroModulatorCreationHistoryPayload& payload
+) {
+    const auto& graph = control.authored.modulation;
+    return graph.sourceCount == payload.beforeSourceCount &&
+           graph.outputBindingCount == payload.beforeBindingCount &&
+           graph.nextSourceId == payload.beforeNextSourceId &&
+           graph.nextBindingId == payload.beforeNextBindingId &&
+           sameObjectBits(
+               graph.sources[payload.beforeSourceCount],
+               payload.beforeSourceTail
+           ) &&
+           sameObjectBits(
+               graph.outputBindings[payload.beforeBindingCount],
+               payload.beforeBindingTail
+           );
+}
+
+FLASHMEM void restoreCreationBefore(
+    core::state::modulation::ProjectControlState& control,
+    const MacroModulatorCreationHistoryPayload& payload,
+    bool exactCancel
+) {
+    auto& graph = control.authored.modulation;
+    graph.sources[payload.beforeSourceCount] = payload.beforeSourceTail;
+    graph.outputBindings[payload.beforeBindingCount] =
+        payload.beforeBindingTail;
+    graph.sourceCount = payload.beforeSourceCount;
+    graph.outputBindingCount = payload.beforeBindingCount;
+    graph.nextSourceId = payload.beforeNextSourceId;
+    graph.nextBindingId = payload.beforeNextBindingId;
+    if (exactCancel) {
+        control.authoredRevision = payload.beforeAuthoredRevision;
+    } else {
+        control.markAuthoredMutation();
+    }
+}
+
+FLASHMEM void restoreCreationAfter(
+    core::state::modulation::ProjectControlState& control,
+    const MacroModulatorCreationHistoryPayload& payload
+) {
+    auto& graph = control.authored.modulation;
+    graph.sources[payload.beforeSourceCount] = payload.source;
+    graph.outputBindings[payload.beforeBindingCount] = payload.binding;
+    graph.sourceCount = static_cast<uint16_t>(payload.beforeSourceCount + 1U);
+    graph.outputBindingCount = static_cast<uint16_t>(
+        payload.beforeBindingCount + 1U
+    );
+    graph.nextSourceId = payload.afterNextSourceId;
+    graph.nextBindingId = payload.afterNextBindingId;
+    control.markAuthoredMutation();
+}
+
+FLASHMEM uint32_t auditionGeneration(
+    uint32_t revision,
+    core::state::modulation::ModulatorId sourceId,
+    core::state::modulation::ModulationBindingId bindingId
+) {
+    uint32_t generation = revision ^ (sourceId.value * 0x9E3779B9UL) ^
+                          (bindingId.value * 0x85EBCA6BUL);
+    return generation == 0U ? 1U : generation;
+}
+
 }  // namespace
 
 FLASHMEM bool captureMacroSlotHistorySnapshot(
@@ -256,14 +351,159 @@ FLASHMEM MacroHistoryChangePtr MacroHistoryService::prepare(
     const MacroAutomationSlotAddress& address,
     MacroHistoryActionKind kind
 ) const {
+    if (pendingModulatorSlot_() != nullptr) return {};
     auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
     if (!change) return {};
+    change->slot = core::app::makeExtmemUnique<MacroSlotHistoryChangePayload>();
+    if (!change->slot) return {};
     change->kind = kind;
     change->address = address;
-    if (!captureMacroSlotHistorySnapshot(pages, address, change->before)) {
+    if (!captureMacroSlotHistorySnapshot(
+            pages,
+            address,
+            change->slot->before
+        )) {
         return {};
     }
     return change;
+}
+
+FLASHMEM core::state::modulation::ProjectModulationResult
+MacroHistoryService::beginLfoModulatorAudition(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    const core::state::modulation::ModulatorLfoDraft& sourceDraft,
+    const core::state::modulation::ModulationBindingDraft& bindingDraft
+) {
+    using namespace core::state::modulation;
+    ProjectModulationResult failure{};
+    failure.status = ProjectModulationStatus::INVALID_ARGUMENT;
+    if (!macroAutomationAddressValid(address) ||
+        bindingDraft.destination != projectControlDestination(address) ||
+        pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
+        return failure;
+    }
+
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return failure;
+    change->kind = MacroHistoryActionKind::CREATE_MODULATOR_ASSIGNMENT;
+    change->address = address;
+    auto& payload = change->modulator;
+    auto& graph = pages.control.authored.modulation;
+    if (graph.sourceCount >= PROJECT_MODULATOR_CAPACITY ||
+        graph.outputBindingCount >= PROJECT_MODULATION_BINDING_CAPACITY) {
+        failure.status = graph.sourceCount >= PROJECT_MODULATOR_CAPACITY
+            ? ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED
+            : ProjectModulationStatus::BINDING_CAPACITY_EXCEEDED;
+        return failure;
+    }
+    payload.beforeSourceCount = graph.sourceCount;
+    payload.beforeBindingCount = graph.outputBindingCount;
+    payload.beforeNextSourceId = graph.nextSourceId;
+    payload.beforeNextBindingId = graph.nextBindingId;
+    payload.beforeAuthoredRevision = pages.control.authoredRevision;
+    payload.beforeSourceTail = graph.sources[graph.sourceCount];
+    payload.beforeBindingTail = graph.outputBindings[graph.outputBindingCount];
+    payload.pending = true;
+    MacroHistoryChange* reserved = change.get();
+    if (!parkPending_(std::move(change))) return failure;
+
+    const auto created = createLfoModulator(graph, sourceDraft);
+    if (!created.changed()) {
+        (void)takePending_();
+        return created;
+    }
+    auto binding = bindingDraft;
+    binding.sourceId = created.sourceId;
+    const auto bound = addProjectModulationBinding(graph, binding);
+    if (!bound.changed()) {
+        restoreCreationBefore(pages.control, payload, true);
+        (void)takePending_();
+        return bound;
+    }
+
+    payload.source = graph.sources[payload.beforeSourceCount];
+    payload.binding = graph.outputBindings[payload.beforeBindingCount];
+    payload.afterNextSourceId = graph.nextSourceId;
+    payload.afterNextBindingId = graph.nextBindingId;
+    pages.control.markAuthoredMutation();
+    payload.generation = auditionGeneration(
+        pages.control.authoredRevision,
+        created.sourceId,
+        bound.bindingId
+    );
+    pages.control.audition = {
+        .sourceId = created.sourceId,
+        .bindingId = bound.bindingId,
+        .destination = binding.destination,
+        .generation = payload.generation,
+        .active = true,
+    };
+    (void)reserved;
+    return {
+        .status = ProjectModulationStatus::OK,
+        .sourceId = created.sourceId,
+        .bindingId = bound.bindingId,
+    };
+}
+
+FLASHMEM bool MacroHistoryService::cancelModulatorAudition(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address
+) {
+    auto* slot = pendingModulatorSlot_();
+    if (slot == nullptr || !*slot) return false;
+    auto& change = **slot;
+    auto& payload = change.modulator;
+    const auto& audition = pages.control.audition;
+    if (!payload.pending || !sameAddress(change.address, address) ||
+        !audition.active || audition.generation != payload.generation ||
+        audition.sourceId != payload.source.id ||
+        audition.bindingId != payload.binding.id ||
+        !creationIdentityMatches(pages.control, payload, false)) {
+        return false;
+    }
+    restoreCreationBefore(pages.control, payload, true);
+    pages.control.audition = {};
+    (void)takePending_();
+    return true;
+}
+
+FLASHMEM bool MacroHistoryService::commitModulatorAudition(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address
+) {
+    auto* slot = pendingModulatorSlot_();
+    if (slot == nullptr || !*slot) return false;
+    auto& change = **slot;
+    auto& payload = change.modulator;
+    const auto& audition = pages.control.audition;
+    if (!payload.pending || !sameAddress(change.address, address) ||
+        !audition.active || audition.generation != payload.generation ||
+        !creationIdentityMatches(pages.control, payload, false)) {
+        return false;
+    }
+    const auto& graph = pages.control.authored.modulation;
+    payload.source = graph.sources[payload.beforeSourceCount];
+    payload.binding = graph.outputBindings[payload.beforeBindingCount];
+    payload.afterNextSourceId = graph.nextSourceId;
+    payload.afterNextBindingId = graph.nextBindingId;
+    auto committed = takePending_();
+    if (!committed) return false;
+    committed->modulator.pending = false;
+    pages.control.audition = {};
+    endCoalescing();
+    push_(undo_, undo_count_, std::move(committed));
+    clearRedo_();
+    return true;
+}
+
+FLASHMEM bool MacroHistoryService::modulatorAuditionPending(
+    const MacroAutomationSlotAddress& address
+) const {
+    const auto* slot = pendingModulatorSlot_();
+    return slot != nullptr && *slot && (*slot)->modulator.pending &&
+           sameAddress((*slot)->address, address);
 }
 
 FLASHMEM bool MacroHistoryService::commitPrepared(
@@ -271,14 +511,22 @@ FLASHMEM bool MacroHistoryService::commitPrepared(
     MacroHistoryChangePtr change,
     bool coalesce
 ) {
-    if (!change || !sameAddress(change->address, change->before.address)) {
+    if (!change || !change->slot ||
+        !sameAddress(change->address, change->slot->before.address)) {
         return false;
     }
-    if (!captureMacroSlotHistorySnapshot(pages, change->address, change->after)) {
-        (void)applyMacroSlotHistorySnapshot(pages, change->before);
+    if (!captureMacroSlotHistorySnapshot(
+            pages,
+            change->address,
+            change->slot->after
+        )) {
+        (void)applyMacroSlotHistorySnapshot(pages, change->slot->before);
         return false;
     }
-    if (sameMacroSlotHistorySnapshot(change->before, change->after)) {
+    if (sameMacroSlotHistorySnapshot(
+            change->slot->before,
+            change->slot->after
+        )) {
         return false;
     }
 
@@ -286,9 +534,12 @@ FLASHMEM bool MacroHistoryService::commitPrepared(
         coalesced_kind_ == change->kind &&
         sameAddress(coalesced_address_, change->address)) {
         auto& previous = undo_[undo_count_ - 1U];
-        if (previous &&
-            sameMacroSlotHistorySnapshot(previous->after, change->before)) {
-            previous->after = change->after;
+        if (previous && previous->slot &&
+            sameMacroSlotHistorySnapshot(
+                previous->slot->after,
+                change->slot->before
+            )) {
+            previous->slot->after = change->slot->after;
             clearRedo_();
             return true;
         }
@@ -325,7 +576,11 @@ FLASHMEM bool MacroHistoryService::setModulationDepthCoalesced(
         coalesced_kind_ == MacroHistoryActionKind::DEPTH_EDIT &&
         sameAddress(coalesced_address_, address)) {
         auto& previous = undo_[undo_count_ - 1U];
-        if (previous && liveMacroSlotMatchesHistorySnapshot(pages, previous->after)) {
+        if (previous && previous->slot &&
+            liveMacroSlotMatchesHistorySnapshot(
+                pages,
+                previous->slot->after
+            )) {
             if (!core::state::modulation::setProjectControlModulationAmount(
                     pages.control,
                     address,
@@ -341,7 +596,7 @@ FLASHMEM bool MacroHistoryService::setModulationDepthCoalesced(
                 )) {
                 return false;
             }
-            previous->after.slot.modulationDepth =
+            previous->slot->after.slot.modulationDepth =
                 updated.legacy.modulationDepth;
             clearRedo_();
             return true;
@@ -369,11 +624,28 @@ FLASHMEM bool MacroHistoryService::undo(
     MacroAutomationSlotAddress* appliedAddress
 ) {
     endCoalescing();
+    if (pendingModulatorSlot_() != nullptr) return false;
     if (undo_count_ == 0) return false;
     auto& change = undo_[undo_count_ - 1U];
-    if (!change || !liveMacroSlotMatchesHistorySnapshot(pages, change->after) ||
-        !applyMacroSlotHistorySnapshot(pages, change->before)) {
-        return false;
+    if (!change) return false;
+    if (change->kind == MacroHistoryActionKind::CREATE_MODULATOR_ASSIGNMENT) {
+        if (!creationIdentityMatches(
+                pages.control,
+                change->modulator,
+                true
+            )) {
+            return false;
+        }
+        restoreCreationBefore(pages.control, change->modulator, false);
+    } else {
+        if (!change->slot ||
+            !liveMacroSlotMatchesHistorySnapshot(
+                pages,
+                change->slot->after
+            ) ||
+            !applyMacroSlotHistorySnapshot(pages, change->slot->before)) {
+            return false;
+        }
     }
     auto applied = std::move(change);
     if (appliedAddress != nullptr) *appliedAddress = applied->address;
@@ -387,11 +659,24 @@ FLASHMEM bool MacroHistoryService::redo(
     MacroAutomationSlotAddress* appliedAddress
 ) {
     endCoalescing();
+    if (pendingModulatorSlot_() != nullptr) return false;
     if (redo_count_ == 0) return false;
     auto& change = redo_[redo_count_ - 1U];
-    if (!change || !liveMacroSlotMatchesHistorySnapshot(pages, change->before) ||
-        !applyMacroSlotHistorySnapshot(pages, change->after)) {
-        return false;
+    if (!change) return false;
+    if (change->kind == MacroHistoryActionKind::CREATE_MODULATOR_ASSIGNMENT) {
+        if (!creationBeforeMatches(pages.control, change->modulator)) {
+            return false;
+        }
+        restoreCreationAfter(pages.control, change->modulator);
+    } else {
+        if (!change->slot ||
+            !liveMacroSlotMatchesHistorySnapshot(
+                pages,
+                change->slot->before
+            ) ||
+            !applyMacroSlotHistorySnapshot(pages, change->slot->after)) {
+            return false;
+        }
     }
     auto applied = std::move(change);
     if (appliedAddress != nullptr) *appliedAddress = applied->address;
@@ -406,6 +691,47 @@ FLASHMEM void MacroHistoryService::clear() {
     undo_count_ = 0;
     redo_count_ = 0;
     endCoalescing();
+}
+
+FLASHMEM MacroHistoryChangePtr* MacroHistoryService::pendingModulatorSlot_() {
+    for (uint8_t i = undo_count_; i < ENTRY_LIMIT; ++i) {
+        if (undo_[i] && undo_[i]->modulator.pending) return &undo_[i];
+    }
+    for (uint8_t i = redo_count_; i < ENTRY_LIMIT; ++i) {
+        if (redo_[i] && redo_[i]->modulator.pending) return &redo_[i];
+    }
+    return nullptr;
+}
+
+FLASHMEM const MacroHistoryChangePtr*
+MacroHistoryService::pendingModulatorSlot_() const {
+    for (uint8_t i = undo_count_; i < ENTRY_LIMIT; ++i) {
+        if (undo_[i] && undo_[i]->modulator.pending) return &undo_[i];
+    }
+    for (uint8_t i = redo_count_; i < ENTRY_LIMIT; ++i) {
+        if (redo_[i] && redo_[i]->modulator.pending) return &redo_[i];
+    }
+    return nullptr;
+}
+
+FLASHMEM bool MacroHistoryService::parkPending_(
+    MacroHistoryChangePtr change
+) {
+    if (!change || pendingModulatorSlot_() != nullptr) return false;
+    if (undo_count_ < ENTRY_LIMIT && !undo_[ENTRY_LIMIT - 1U]) {
+        undo_[ENTRY_LIMIT - 1U] = std::move(change);
+        return true;
+    }
+    if (redo_count_ < ENTRY_LIMIT && !redo_[ENTRY_LIMIT - 1U]) {
+        redo_[ENTRY_LIMIT - 1U] = std::move(change);
+        return true;
+    }
+    return false;
+}
+
+FLASHMEM MacroHistoryChangePtr MacroHistoryService::takePending_() {
+    auto* slot = pendingModulatorSlot_();
+    return slot != nullptr ? std::move(*slot) : MacroHistoryChangePtr{};
 }
 
 FLASHMEM void MacroHistoryService::push_(

@@ -137,6 +137,26 @@ FLASHMEM void MacroEditState::closeModulation() {
                                 : MacroEditFlowPhase::CLOSED);
 }
 
+FLASHMEM void MacroEditState::openLfoAudition() {
+    visible.set(true);
+    automationVisible.set(true);
+    modulationFocusedRow.set(0);
+    flowPhase.set(MacroEditFlowPhase::LFO_AUDITION);
+}
+
+FLASHMEM void MacroEditState::cancelLfoAudition() {
+    modulationFocusedRow.set(0);
+    flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATION
+                                : MacroEditFlowPhase::CLOSED);
+}
+
+FLASHMEM void MacroEditState::applyLfoAudition() {
+    automationVisible.set(false);
+    modulationFocusedRow.set(0);
+    flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
+                                : MacroEditFlowPhase::CLOSED);
+}
+
 FLASHMEM void MacroEditState::openConvertPreview(
     const core::state::macro::MacroAutomationConversionPlan& plan
 ) {

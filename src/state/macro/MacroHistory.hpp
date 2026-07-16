@@ -6,6 +6,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
 
 namespace core::state::macro {
 
@@ -31,6 +32,7 @@ enum class MacroHistoryActionKind : uint8_t {
     REMOVE_SLOT,
     DEPTH_EDIT,
     SOURCE_STATE,
+    CREATE_MODULATOR_ASSIGNMENT,
 };
 
 struct MacroSlotHistorySnapshot {
@@ -45,11 +47,40 @@ struct MacroSlotHistorySnapshot {
     std::array<MacroPackedCurvePoint, MACRO_HISTORY_POINT_CAPACITY> points{};
 };
 
+struct MacroSlotHistoryChangePayload {
+    MacroSlotHistorySnapshot before{};
+    MacroSlotHistorySnapshot after{};
+};
+
+/**
+ * Small graph delta for destination-first source creation.
+ *
+ * The before-tail values make Cancel byte-stable even when a dense directory
+ * slot was previously used. The committed after objects are sufficient for
+ * stable-ID Undo/Redo and avoid retaining the complete Project graph.
+ */
+struct MacroModulatorCreationHistoryPayload {
+    core::state::modulation::ModulatorSourceState beforeSourceTail{};
+    core::state::modulation::ModulationBindingState beforeBindingTail{};
+    core::state::modulation::ModulatorSourceState source{};
+    core::state::modulation::ModulationBindingState binding{};
+    uint32_t beforeNextSourceId = 1;
+    uint32_t beforeNextBindingId = 1;
+    uint32_t afterNextSourceId = 1;
+    uint32_t afterNextBindingId = 1;
+    uint32_t beforeAuthoredRevision = 1;
+    uint32_t generation = 0;
+    uint16_t beforeSourceCount = 0;
+    uint16_t beforeBindingCount = 0;
+    bool pending = false;
+    std::array<uint8_t, 3> reserved{};
+};
+
 struct MacroHistoryChange {
     MacroHistoryActionKind kind = MacroHistoryActionKind::SOURCE_STATE;
     MacroAutomationSlotAddress address{};
-    MacroSlotHistorySnapshot before{};
-    MacroSlotHistorySnapshot after{};
+    core::app::ExtmemUniquePtr<MacroSlotHistoryChangePayload> slot{};
+    MacroModulatorCreationHistoryPayload modulator{};
 };
 
 using MacroHistoryChangePtr = core::app::ExtmemUniquePtr<MacroHistoryChange>;
@@ -101,6 +132,34 @@ public:
         bool coalesce = false
     );
 
+    /**
+     * Reserves history before publishing one provisional LFO + assignment.
+     * The returned IDs are also projected through ProjectControlState::audition.
+     */
+    [[nodiscard]] core::state::modulation::ProjectModulationResult
+        beginLfoModulatorAudition(
+            MacroPagesState& pages,
+            const MacroAutomationSlotAddress& address,
+            const core::state::modulation::ModulatorLfoDraft& sourceDraft,
+            const core::state::modulation::ModulationBindingDraft& bindingDraft
+        );
+
+    /** Exact rollback with no Undo entry and no authored ID/capacity residue. */
+    [[nodiscard]] bool cancelModulatorAudition(
+        MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address
+    );
+
+    /** Publishes the reserved delta as one stable-ID Undo action. */
+    [[nodiscard]] bool commitModulatorAudition(
+        MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address
+    );
+
+    [[nodiscard]] bool modulatorAuditionPending(
+        const MacroAutomationSlotAddress& address
+    ) const;
+
     /** Depth edit fast path: one allocation on first turn, none while coalescing. */
     [[nodiscard]] bool setModulationDepthCoalesced(
         MacroPagesState& pages,
@@ -125,6 +184,10 @@ public:
     [[nodiscard]] uint8_t redoCount() const { return redo_count_; }
 
 private:
+    [[nodiscard]] MacroHistoryChangePtr* pendingModulatorSlot_();
+    [[nodiscard]] const MacroHistoryChangePtr* pendingModulatorSlot_() const;
+    [[nodiscard]] bool parkPending_(MacroHistoryChangePtr change);
+    [[nodiscard]] MacroHistoryChangePtr takePending_();
     static void push_(
         std::array<MacroHistoryChangePtr, ENTRY_LIMIT>& stack,
         uint8_t& count,

@@ -106,6 +106,17 @@ public:
     macro::automation_clipboard_ops::MacroTypedPastePreflight
         preflightModulationPaste(uint8_t index) const;
     bool pasteModulation(uint8_t index, bool overwriteConfirmed) const;
+    core::state::modulation::ProjectModulationResult beginDefaultLfoAudition(
+        uint8_t index
+    ) const;
+    bool setLfoAuditionShape(
+        uint8_t index,
+        core::state::modulation::ModulatorLfoShape shape
+    ) const;
+    bool setLfoAuditionPeriodTicks(uint8_t index, uint32_t periodTicks) const;
+    bool setLfoAuditionDepthQ15(uint8_t index, int16_t depthQ15) const;
+    bool cancelLfoAudition(uint8_t index) const;
+    bool applyLfoAudition(uint8_t index) const;
     bool setModulationDepth(uint8_t index, float depth) const;
     void endDepthGesture() const;
     bool undo() const;

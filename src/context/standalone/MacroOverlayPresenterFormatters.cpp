@@ -11,6 +11,7 @@
 #include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/macro/MacroLfoAuditionModel.hpp"
 #include "ui/macro/MacroSourceDetailLayout.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -176,6 +177,58 @@ FLASHMEM ms::ui::KeyValueSparkline buildCurveSparkline(
         );
         const float clamped = core::state::macro::macroAutomationClamp01(value);
         sparkline.samples[i] = static_cast<uint8_t>(clamped * 255.0f + 0.5f);
+    }
+    return sparkline;
+}
+
+FLASHMEM float liveSourceValue(
+    const core::state::modulation::ProjectControlState& control,
+    core::state::modulation::ModulatorId sourceId
+) {
+    for (uint16_t index = 0; index < control.plan.sourceCount; ++index) {
+        if (control.plan.sources[index].id == sourceId) {
+            return std::clamp(control.sourceScratch[index], -1.0f, 1.0f);
+        }
+    }
+    return 0.0f;
+}
+
+FLASHMEM ms::ui::KeyValueSparkline buildLfoSparkline(
+    core::state::modulation::ModulatorLfoShape shape,
+    float liveValue
+) {
+    using Shape = core::state::modulation::ModulatorLfoShape;
+    ms::ui::KeyValueSparkline sparkline{};
+    sparkline.enabled = true;
+    sparkline.liveMarker = true;
+    sparkline.sampleCount = static_cast<uint8_t>(
+        ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT
+    );
+    sparkline.liveValue = static_cast<uint8_t>(std::lround(
+        std::clamp(liveValue * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f
+    ));
+    switch (shape) {
+        case Shape::TRIANGLE:
+            sparkline.samples = {{128, 179, 230, 255, 204, 153,
+                                  102, 51, 0, 26, 77, 128}};
+            break;
+        case Shape::SAW_UP:
+            sparkline.samples = {{0, 23, 46, 70, 93, 116,
+                                  139, 162, 185, 209, 232, 255}};
+            break;
+        case Shape::SAW_DOWN:
+            sparkline.samples = {{255, 232, 209, 185, 162, 139,
+                                  116, 93, 70, 46, 23, 0}};
+            break;
+        case Shape::SQUARE:
+            sparkline.samples = {{255, 255, 255, 255, 255, 255,
+                                  0, 0, 0, 0, 0, 0}};
+            break;
+        case Shape::SINE:
+        default:
+            sparkline.samples = {{128, 197, 244, 255, 221, 164,
+                                  91, 34, 1, 11, 58, 128}};
+            break;
     }
     return sparkline;
 }
@@ -582,6 +635,24 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         data.valueBuffers[2].size(),
         slot
     );
+    if (slot != nullptr && slot->modulationCount == 1U) {
+        const auto* modulator = core::state::modulation::findProjectModulator(
+            source.pages.control.authored.modulation,
+            slot->modulationSourceId
+        );
+        if (modulator != nullptr) {
+            const int depth = static_cast<int>(std::lround(
+                std::clamp(slot->legacy.modulationDepth, -1.0f, 1.0f) * 100.0f
+            ));
+            std::snprintf(
+                data.valueBuffers[2].data(),
+                data.valueBuffers[2].size(),
+                "%s · %+d%%",
+                modulator->name.data(),
+                depth
+            );
+        }
+    }
 
     data.rows = {{
         {
@@ -680,7 +751,9 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             ? "Automation"
             : (phase == core::state::MacroEditFlowPhase::MODULATION
                    ? "Modulation"
-                   : "Silent preview")
+                   : (phase == core::state::MacroEditFlowPhase::LFO_AUDITION
+                          ? "Audition · Live"
+                          : "Silent preview"))
     );
 
     const auto address = core::state::macro::MacroAutomationSlotAddress{
@@ -699,6 +772,94 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
     const bool manualOverride =
         (source.macroUi.automationManualOverrideMask.get() &
          static_cast<uint16_t>(1U << macroIndex)) != 0;
+
+    if (phase == core::state::MacroEditFlowPhase::LFO_AUDITION) {
+        const auto& audition = source.pages.control.audition;
+        const auto* modulator = audition.active
+            ? core::state::modulation::findProjectModulator(
+                  source.pages.control.authored.modulation,
+                  audition.sourceId
+              )
+            : nullptr;
+        const core::state::modulation::ModulationBindingState* binding = nullptr;
+        if (audition.active) {
+            const auto& graph = source.pages.control.authored.modulation;
+            for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+                if (graph.outputBindings[index].id == audition.bindingId) {
+                    binding = &graph.outputBindings[index];
+                    break;
+                }
+            }
+        }
+        if (modulator == nullptr || binding == nullptr ||
+            modulator->kind != core::state::modulation::ModulatorKind::LFO) {
+            return data;
+        }
+        std::snprintf(
+            data.title.data(),
+            data.title.size(),
+            "%s",
+            modulator->name.data()
+        );
+        std::snprintf(
+            data.valueBuffers[0].data(),
+            data.valueBuffers[0].size(),
+            "%s",
+            core::ui::macro::lfo_audition::shapeLabel(
+                modulator->parameters.lfo.shape
+            )
+        );
+        const uint8_t rateIndex = core::ui::macro::lfo_audition::rateIndex(
+            modulator->parameters.lfo.periodTicks
+        );
+        std::snprintf(
+            data.valueBuffers[1].data(),
+            data.valueBuffers[1].size(),
+            "%s",
+            core::ui::macro::lfo_audition::rateLabel(rateIndex)
+        );
+        const int16_t depth =
+            core::ui::macro::lfo_audition::depthQ15ToPercent(
+                binding->amountQ15
+            );
+        std::snprintf(
+            data.valueBuffers[2].data(),
+            data.valueBuffers[2].size(),
+            "%+d%%",
+            static_cast<int>(depth)
+        );
+        const float live = liveSourceValue(
+            source.pages.control,
+            modulator->id
+        );
+        data.rows = {{
+            {.key = "Shape", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = buildLfoSparkline(modulator->parameters.lfo.shape, live)},
+            {.key = "Rate", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::DIVISION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+            {.key = "Depth", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+            {},
+            {},
+            {},
+            {},
+        }};
+        data.rowCount = 3;
+        data.selectedIndex = std::min<int>(
+            source.macroEdit.modulationFocusedRow.get(),
+            2
+        );
+        const uint8_t liveQuantized = static_cast<uint8_t>(std::lround(
+            std::clamp(live * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f
+        ));
+        data.dataRevision = mixRevision(
+            mixRevision(
+                source.pages.control.authoredRevision,
+                audition.generation
+            ),
+            static_cast<uint32_t>(liveQuantized) |
+                (static_cast<uint32_t>(data.selectedIndex) << 8U)
+        );
+        data.visible = true;
+        return data;
+    }
 
     if (phase == core::state::MacroEditFlowPhase::CONVERT_PREVIEW) {
         const auto& plan = source.macroEdit.conversionPreview.plan;
@@ -726,6 +887,45 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         data.selectedIndex = 0;
         data.rowCount = 5;
         data.dataRevision = source.macroEdit.conversionPreview.revision.get();
+        data.visible = true;
+        return data;
+    }
+
+    if (phase == core::state::MacroEditFlowPhase::MODULATION &&
+        !modulationStored) {
+        const bool reusable =
+            source.pages.control.authored.modulation.sourceCount > 0U;
+        std::snprintf(
+            data.valueBuffers[0].data(),
+            data.valueBuffers[0].size(),
+            "%s",
+            "Create"
+        );
+        std::snprintf(
+            data.valueBuffers[1].data(),
+            data.valueBuffers[1].size(),
+            "%s",
+            reusable ? "Choose" : "None yet"
+        );
+        data.rows = {{
+            {.key = "New LFO", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+            {.key = "Use Existing", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::ACTION_PLACE_TARGET, .iconFont = standalone_fonts.icons_14, .iconColor = reusable ? ::standalone::theme::color::MACRO_MODULATION : ::standalone::theme::color::TEXT_SECONDARY},
+            {},
+            {},
+            {},
+            {},
+            {},
+        }};
+        data.rowCount = 2;
+        data.selectedIndex = std::min<int>(
+            source.macroEdit.modulationFocusedRow.get(),
+            1
+        );
+        data.dataRevision = mixRevision(
+            source.pages.control.authoredRevision,
+            static_cast<uint32_t>(data.selectedIndex) |
+                (reusable ? (1UL << 8U) : 0U)
+        );
         data.visible = true;
         return data;
     }
@@ -1036,6 +1236,23 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
 
     props.visible = true;
     const auto phase = source.macroEdit.flowPhase.get();
+    if (phase == core::state::MacroEditFlowPhase::LFO_AUDITION) {
+        props.slots[0].visualState = Visual::HIDDEN;
+        props.slots[1] = scopeLabel("Audition");
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            ::standalone::icons::ACTION_VALIDATE,
+            source.pages.control.audition.active
+                ? Visual::ACTIVE
+                : Visual::DISABLED,
+            Tone::CONSTRUCTIVE
+        );
+        projectGuardedAction(
+            props.slots[2],
+            source,
+            core::state::MacroContextButton::BOTTOM_RIGHT
+        );
+        return props;
+    }
     if (phase == core::state::MacroEditFlowPhase::CONVERT_PREVIEW) {
         props.slots[0].visualState = Visual::HIDDEN;
         props.slots[1] = scopeLabel("Preview");

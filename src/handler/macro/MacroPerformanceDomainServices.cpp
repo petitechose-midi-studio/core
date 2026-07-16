@@ -387,7 +387,7 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationRecording(
         if (historyChange) {
             (void)core::state::macro::applyMacroSlotHistorySnapshot(
                 *pages_,
-                historyChange->before
+                historyChange->slot->before
             );
         }
         restoreManualAfterFailedRecording_(recording);

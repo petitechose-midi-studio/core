@@ -909,16 +909,23 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                                                    : "press_copy_modulation"));
         } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
             const auto feedback = macro_edit_.contextFeedback.get();
+            const bool appliedLfo = modulationRow && feedback.active &&
+                feedback.action ==
+                    core::state::contextual::ContextActionId::APPLY &&
+                feedback.status ==
+                    core::state::contextual::OperationFeedbackStatus::APPLIED;
             const bool pasted = feedback.active &&
                 (feedback.action == core::state::contextual::ContextActionId::PASTE ||
                  feedback.action == core::state::contextual::ContextActionId::OVERWRITE);
-            out.effect = pasted
+            out.effect = appliedLfo
+                ? "apply_lfo_audition"
+                : (pasted
                 ? (destinationRow ? "paste_macro_destination"
                                   : (automationRow ? "paste_automation"
                                                    : "paste_modulation"))
                 : (destinationRow ? "copy_macro_destination"
                                   : (automationRow ? "copy_automation"
-                                                   : "copy_modulation"));
+                                                   : "copy_modulation")));
         }
         if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS) ||
             isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE) ||
@@ -1113,6 +1120,60 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             (macro_ui_.automationManualOverrideMask.get() &
              static_cast<uint16_t>(1U << address.macro)) != 0;
         const auto context = macroSourceDetailContext(slot, manual);
+        if (!slot.modulationStored) {
+            out.source = "none";
+            out.projection = "silent_selection";
+            if (isEncoder(event, Config::EncoderID::NAV)) {
+                out.effect = "focus_modulation_creation";
+            } else if (isButton(
+                           event,
+                           Config::ButtonID::NAV,
+                           oc::core::input::ButtonBindingType::RELEASE
+                       )) {
+                out.effect = row == 0
+                    ? "start_lfo_audition"
+                    : "open_existing_modulator_picker";
+            } else if (isButton(
+                           event,
+                           Config::ButtonID::LEFT_TOP,
+                           oc::core::input::ButtonBindingType::RELEASE
+                       )) {
+                const auto feedback = macro_edit_.contextFeedback.get();
+                const bool cancelledLfo = feedback.active &&
+                    feedback.action ==
+                        core::state::contextual::ContextActionId::CANCEL &&
+                    feedback.status == core::state::contextual::
+                        OperationFeedbackStatus::CANCELLED;
+                out.effect = cancelledLfo
+                    ? "cancel_lfo_audition"
+                    : "back_macro_modulation";
+                if (cancelledLfo) {
+                    fillGuardedMacroFeedback(out, macro_edit_);
+                }
+            } else if (isButton(
+                           event,
+                           Config::ButtonID::BOTTOM_LEFT,
+                           oc::core::input::ButtonBindingType::RELEASE
+                       )) {
+                const auto feedback = macro_edit_.contextFeedback.get();
+                out.effect = feedback.active &&
+                        feedback.status ==
+                            core::state::contextual::OperationFeedbackStatus::APPLIED
+                    ? "clear_modulation"
+                    : "noop_empty_modulation";
+                fillGuardedMacroFeedback(out, macro_edit_);
+            } else {
+                out.effect = "noop_empty_modulation";
+            }
+            fillMacroResolutionFacts(
+                out,
+                midi_cc_coordinator_,
+                pages_,
+                address.macro,
+                macroCandidateClass(context)
+            );
+            return true;
+        }
         const auto layout = detail_ui::buildModulationDetailLayout(context);
         const auto item = layout.at(static_cast<uint8_t>(row));
         out.source = macroSourceLabel(context);
@@ -1168,6 +1229,84 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             address.macro,
             macroCandidateClass(context)
         );
+        return true;
+    }
+
+    if (phase == core::state::MacroEditFlowPhase::LFO_AUDITION) {
+        const auto data =
+            core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(
+                source
+            );
+        if (!data.visible || !pages_.control.audition.active) return false;
+        const int row = data.selectedIndex;
+        out.mode = "macro.modulator_audition";
+        out.target = "modulator";
+        out.targetIndex = static_cast<int16_t>(macro_edit_.editingIndex.get());
+        out.source = "lfo";
+        out.projection = "audible_audition";
+        out.hasOperationGeneration = true;
+        out.operationGeneration = pages_.control.audition.generation;
+        out.operationStatus = "audition";
+        out.mappingIndex = static_cast<int16_t>(
+            pages_.control.audition.sourceId.value
+        );
+        out.mappingCount = 1;
+        if (row >= 0 && row < data.rowCount) {
+            out.property = data.rows[row].key;
+            copyValueLabel(out.valueLabel, data.rows[row].value);
+        }
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "focus_lfo_property";
+        } else if (isEncoder(event, Config::EncoderID::OPT)) {
+            out.effect = row == 0
+                ? "edit_lfo_shape"
+                : (row == 1 ? "edit_lfo_rate" : "edit_lfo_depth");
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::NAV,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "start_lfo_audition";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::LEFT_TOP,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "cancel_lfo_audition";
+            out.outcome = "cancelled";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::BOTTOM_RIGHT,
+                       oc::core::input::ButtonBindingType::PRESS
+                   )) {
+            out.effect = "press_apply_lfo";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::BOTTOM_RIGHT,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "apply_lfo_audition";
+            out.outcome = "applied";
+        }
+        if (isButton(
+                event,
+                Config::ButtonID::BOTTOM_RIGHT,
+                oc::core::input::ButtonBindingType::PRESS
+            ) || isButton(
+                event,
+                Config::ButtonID::BOTTOM_RIGHT,
+                oc::core::input::ButtonBindingType::RELEASE
+            )) {
+            fillGuardedMacroFeedback(out, macro_edit_);
+        }
+        fillMacroResolutionFacts(
+            out,
+            midi_cc_coordinator_,
+            pages_,
+            macro_edit_.editingIndex.get(),
+            core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED
+        );
+        out.projection = "audible_audition";
         return true;
     }
 

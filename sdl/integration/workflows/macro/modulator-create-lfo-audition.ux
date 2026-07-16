@@ -1,0 +1,34 @@
+# UX workflow: create and apply a destination-first LFO from an empty Macro.
+# Purpose: proves explicit selection before sound, useful musical defaults,
+# direct Shape/Rate/Depth editing, a live curve marker, and one-tap Apply.
+# Expect: capture_changed:modulation_empty=lfo_audition_default, capture_changed:lfo_audition_default=lfo_audition_edited, capture_changed:lfo_audition_edited=lfo_applied
+# Expect: semantic:lfo_audition_default:effect=start_lfo_audition, semantic:lfo_audition_default:projection=audible_audition, semantic:lfo_audition_default:source=lfo
+# Expect: semantic:lfo_audition_edited:effect=edit_lfo_depth, semantic:lfo_applied:effect=apply_lfo_audition
+
+0 scenario macro
+80 capture screen macro_ready
+
+# Existing learned path: hold Macro, focus Modulation, NAV opens it.
+180 button MACRO_1 down
+1240 tick
+1300 button MACRO_1 up
+1450 encoder NAV 1
+1570 encoder NAV 1
+1690 tap NAV 60
+1900 capture screen modulation_empty
+
+# Merely opening/focusing is silent. Selecting New LFO starts the audition.
+2020 tap NAV 60
+2240 capture screen lfo_audition_default
+
+# Shape, then Rate, then signed Depth remain one NAV focus + OPT edit away.
+2360 encoder OPT 1.00
+2480 encoder NAV 1
+2600 encoder OPT -0.50
+2720 encoder NAV 1
+2840 encoder OPT 0.75
+3060 capture screen lfo_audition_edited
+
+# Validate uses the established bottom-right Apply location.
+3180 tap BOTTOM_RIGHT 60
+3400 capture screen lfo_applied

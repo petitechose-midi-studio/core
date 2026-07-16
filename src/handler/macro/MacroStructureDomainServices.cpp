@@ -752,7 +752,7 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroAutomation(
         if (change) {
             (void)core::state::macro::applyMacroSlotHistorySnapshot(
                 *pages_,
-                change->before
+                change->slot->before
             );
         }
         return false;

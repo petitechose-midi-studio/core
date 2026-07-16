@@ -1,5 +1,9 @@
 #include "handler/macro/MacroEditDomainServices.hpp"
 
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+#include <limits>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -37,6 +41,62 @@ bool computedSourcePlaybackActive(
     return slot != nullptr &&
            (core::state::macro::macroCurvePlaybackActive(slot->automation) ||
             core::state::macro::macroCurvePlaybackActive(slot->modulation));
+}
+
+FLASHMEM void nextLfoName(
+    const core::state::modulation::ProjectModulationState& graph,
+    char* out,
+    size_t outSize
+) {
+    if (out == nullptr || outSize == 0U) return;
+    for (uint16_t ordinal = 1;
+         ordinal <= core::state::modulation::PROJECT_MODULATOR_CAPACITY;
+         ++ordinal) {
+        std::snprintf(out, outSize, "LFO %u", static_cast<unsigned>(ordinal));
+        bool used = false;
+        for (uint16_t index = 0; index < graph.sourceCount; ++index) {
+            if (std::strncmp(
+                    graph.sources[index].name.data(),
+                    out,
+                    core::state::modulation::PROJECT_MODULATOR_NAME_CAPACITY
+                ) == 0) {
+                used = true;
+                break;
+            }
+        }
+        if (!used) return;
+    }
+    std::snprintf(out, outSize, "%s", "LFO");
+}
+
+FLASHMEM bool auditionObjects(
+    core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    core::state::modulation::ModulatorSourceState*& source,
+    core::state::modulation::ModulationBindingState*& binding
+) {
+    source = nullptr;
+    binding = nullptr;
+    const auto& audition = pages.control.audition;
+    if (!audition.active ||
+        audition.destination !=
+            core::state::modulation::projectControlDestination(address)) {
+        return false;
+    }
+    source = core::state::modulation::findProjectModulator(
+        pages.control.authored.modulation,
+        audition.sourceId
+    );
+    auto& graph = pages.control.authored.modulation;
+    for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+        if (graph.outputBindings[index].id == audition.bindingId) {
+            binding = &graph.outputBindings[index];
+            break;
+        }
+    }
+    return source != nullptr && binding != nullptr &&
+           binding->sourceId == source->id &&
+           binding->destination == audition.destination;
 }
 
 }  // namespace
@@ -130,15 +190,23 @@ bool MacroEditDomainServices::automationPlaybackActiveFor(uint8_t index) const {
 }
 
 bool MacroEditDomainServices::modulationStoredFor(uint8_t index) const {
-    const auto* slot = automationSlot(index);
-    return slot != nullptr &&
-           core::state::macro::macroCurveStored(slot->modulation);
+    core::state::modulation::ProjectControlMacroSlotView slot{};
+    return pages_ != nullptr &&
+           core::state::modulation::readProjectControlMacroSlot(
+               pages_->control,
+               automationAddress(index),
+               slot
+           ) && slot.modulationStored;
 }
 
 bool MacroEditDomainServices::modulationPlaybackActiveFor(uint8_t index) const {
-    const auto* slot = automationSlot(index);
-    return slot != nullptr &&
-           core::state::macro::macroCurvePlaybackActive(slot->modulation);
+    core::state::modulation::ProjectControlMacroSlotView slot{};
+    return pages_ != nullptr &&
+           core::state::modulation::readProjectControlMacroSlot(
+               pages_->control,
+               automationAddress(index),
+               slot
+           ) && slot.activeModulationCount > 0U;
 }
 
 float MacroEditDomainServices::modulationDepth(uint8_t index) const {
@@ -482,7 +550,7 @@ FLASHMEM bool MacroEditDomainServices::pasteAutomation(
     const bool projectChanged = change == nullptr ||
         !core::state::macro::liveMacroSlotMatchesHistorySnapshot(
             *pages_,
-            change->before
+            change->slot->before
         );
     if (history_ != nullptr && projectChanged &&
         !history_->commitPrepared(*pages_, std::move(change))) {
@@ -805,6 +873,145 @@ FLASHMEM bool MacroEditDomainServices::pasteModulation(
             pages_->currentActiveTrack(),
             pages_->currentActivePage()
         );
+        macro_ui_->automationRecordingRevision.set(
+            macro_ui_->automationRecordingRevision.get() + 1U
+        );
+    }
+    if (operations_.markProjectMutated != nullptr) {
+        operations_.markProjectMutated(operations_.context);
+    }
+    return true;
+}
+
+FLASHMEM core::state::modulation::ProjectModulationResult
+MacroEditDomainServices::beginDefaultLfoAudition(uint8_t index) const {
+    using namespace core::state::modulation;
+    ProjectModulationResult failure{};
+    failure.status = ProjectModulationStatus::INVALID_ARGUMENT;
+    if (pages_ == nullptr || history_ == nullptr ||
+        index >= core::state::macro::MACRO_COUNT || modulationStoredFor(index)) {
+        return failure;
+    }
+    const auto address = automationAddress(index);
+    char name[PROJECT_MODULATOR_NAME_CAPACITY]{};
+    nextLfoName(pages_->control.authored.modulation, name, sizeof(name));
+    ModulatorLfoDraft source{};
+    source.name = name;
+    source.reach = {
+        .kind = ModulatorReachKind::MACRO,
+        .track = address.track,
+        .page = address.page,
+        .macro = address.macro,
+    };
+    source.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
+    source.parameters.shape = ModulatorLfoShape::SINE;
+    source.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
+    source.parameters.timing = ModulatorTimingMode::SYNC;
+
+    ModulationBindingDraft binding{};
+    binding.destination = projectControlDestination(address);
+    binding.amountQ15 = 8192;
+    binding.inputRange = ModulationInputRange::BIPOLAR;
+    return history_->beginLfoModulatorAudition(
+        *pages_,
+        address,
+        source,
+        binding
+    );
+}
+
+FLASHMEM bool MacroEditDomainServices::setLfoAuditionShape(
+    uint8_t index,
+    core::state::modulation::ModulatorLfoShape shape
+) const {
+    using namespace core::state::modulation;
+    if (static_cast<uint8_t>(shape) >
+        static_cast<uint8_t>(ModulatorLfoShape::SQUARE)) {
+        return false;
+    }
+    ModulatorSourceState* source = nullptr;
+    ModulationBindingState* binding = nullptr;
+    if (pages_ == nullptr || !auditionObjects(
+            *pages_, automationAddress(index), source, binding
+        ) || source->kind != ModulatorKind::LFO ||
+        source->parameters.lfo.shape == shape) {
+        return false;
+    }
+    source->parameters.lfo.shape = shape;
+    pages_->control.markAuthoredMutation();
+    if (macro_ui_ != nullptr) {
+        macro_ui_->automationRecordingRevision.set(
+            macro_ui_->automationRecordingRevision.get() + 1U
+        );
+    }
+    return true;
+}
+
+FLASHMEM bool MacroEditDomainServices::setLfoAuditionPeriodTicks(
+    uint8_t index,
+    uint32_t periodTicks
+) const {
+    using namespace core::state::modulation;
+    ModulatorSourceState* source = nullptr;
+    ModulationBindingState* binding = nullptr;
+    if (periodTicks == 0U || pages_ == nullptr || !auditionObjects(
+            *pages_, automationAddress(index), source, binding
+        ) || source->kind != ModulatorKind::LFO ||
+        source->parameters.lfo.periodTicks == periodTicks) {
+        return false;
+    }
+    source->parameters.lfo.periodTicks = periodTicks;
+    pages_->control.markAuthoredMutation();
+    if (macro_ui_ != nullptr) {
+        macro_ui_->automationRecordingRevision.set(
+            macro_ui_->automationRecordingRevision.get() + 1U
+        );
+    }
+    return true;
+}
+
+FLASHMEM bool MacroEditDomainServices::setLfoAuditionDepthQ15(
+    uint8_t index,
+    int16_t depthQ15
+) const {
+    using namespace core::state::modulation;
+    if (depthQ15 == std::numeric_limits<int16_t>::min()) return false;
+    ModulatorSourceState* source = nullptr;
+    ModulationBindingState* binding = nullptr;
+    if (pages_ == nullptr || !auditionObjects(
+            *pages_, automationAddress(index), source, binding
+        ) || binding->amountQ15 == depthQ15) {
+        return false;
+    }
+    binding->amountQ15 = depthQ15;
+    pages_->control.markAuthoredMutation();
+    if (macro_ui_ != nullptr) {
+        macro_ui_->automationRecordingRevision.set(
+            macro_ui_->automationRecordingRevision.get() + 1U
+        );
+    }
+    return true;
+}
+
+FLASHMEM bool MacroEditDomainServices::cancelLfoAudition(uint8_t index) const {
+    if (pages_ == nullptr || history_ == nullptr ||
+        !history_->cancelModulatorAudition(*pages_, automationAddress(index))) {
+        return false;
+    }
+    if (macro_ui_ != nullptr) {
+        macro_ui_->automationRecordingRevision.set(
+            macro_ui_->automationRecordingRevision.get() + 1U
+        );
+    }
+    return true;
+}
+
+FLASHMEM bool MacroEditDomainServices::applyLfoAudition(uint8_t index) const {
+    if (pages_ == nullptr || history_ == nullptr ||
+        !history_->commitModulatorAudition(*pages_, automationAddress(index))) {
+        return false;
+    }
+    if (macro_ui_ != nullptr) {
         macro_ui_->automationRecordingRevision.set(
             macro_ui_->automationRecordingRevision.get() + 1U
         );

@@ -49,8 +49,10 @@ FLASHMEM bool MacroOverlayPresenter::bind() {
 
 void MacroOverlayPresenter::refreshRuntimeTelemetry() {
     if (state_refs_.macroEdit.automationVisible.get() &&
-        state_refs_.macroEdit.flowPhase.get() ==
-            core::state::MacroEditFlowPhase::MODULATION) {
+        (state_refs_.macroEdit.flowPhase.get() ==
+             core::state::MacroEditFlowPhase::MODULATION ||
+         state_refs_.macroEdit.flowPhase.get() ==
+             core::state::MacroEditFlowPhase::LFO_AUDITION)) {
         render_scheduler_.request(macro_overlay_invalidation::RENDER_AUTOMATION);
     }
 }
