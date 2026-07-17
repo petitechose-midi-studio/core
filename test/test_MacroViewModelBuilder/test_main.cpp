@@ -271,6 +271,8 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     assert(props.automationStored && props.automationActive);
     assert(props.modulationStored && props.modulationActive);
     assert(!props.modulationPaused);
+    assert(props.modulationSourceCount == 1U);
+    assert(!props.clippedLow && !props.clippedHigh);
 
     assert(core::state::modulation::setProjectControlAutomationEnabled(
         state.pages.control,
@@ -297,6 +299,14 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     assert(std::fabs(props.modulationDelta - 0.2f) < 0.0001f);
     assert(std::fabs(props.value - 0.6f) < 0.0001f);
     assert(std::fabs(props.modulationDepth - 0.75f) < 0.0001f);
+    assert(!props.clippedLow && !props.clippedHigh);
+
+    projection.base = 0.9f;
+    projection.modulation = 0.2f;
+    projection.resolved = 1.0f;
+    state.macroUi.setRuntimeProjection(0, 0, 0, projection, 0.75f);
+    props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
+    assert(!props.clippedLow && props.clippedHigh);
 
     state.macroUi.automationManualOverrideMask.set(0);
     assert(core::state::modulation::setProjectControlModulationEnabled(

@@ -299,6 +299,51 @@ void prepareMacroMultiModulationScenario(core::state::CoreState& state) {
     }
 }
 
+void prepareMacroPerformanceRailScenario(core::state::CoreState& state) {
+    prepareMacroAutomationCleanScenario(state);
+    state.setSharedTrackState(0x0001, 0);
+
+    auto& track = state.pages.tracks[0];
+    track.channel = 5;
+    track.activePage = 0;
+    track.enabledPageMask = 0x0001;
+    auto& page = track.pages[0];
+    page.cc[0] = 74;
+    page.values[0] = 0.35f;
+    page.setMacroActive(0, true);
+    std::snprintf(page.name, sizeof(page.name), "%s", "Mod Rail");
+
+    state.pages.syncSharedTrackState(0x0001, 0);
+    state.pages.setActivePage(0);
+    state.macroUi.syncPreviewPage(0);
+    state.trackNavigation.syncPreviewTrack(0);
+    state.structureNavigationFocus.set(
+        core::state::StructureNavigationFocus::TRACK
+    );
+
+    const auto source = addReusableLfo(
+        state,
+        "Bound Probe",
+        core::state::modulation::ModulatorLfoShape::SQUARE,
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT * 32U,
+        0
+    );
+    if (core::state::modulation::valid(source)) {
+        // Leave enough headroom for the hardware-equivalent encoder mapper to
+        // recover inside both bounds for either square-wave polarity.
+        (void)bindReusableModulator(state, source, 12000);
+        state.pages.control.markAuthoredMutation();
+    }
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(
+        state.configRevision.get()
+    ));
+}
+
 void prepareMacroInitialProjectionScenario(core::state::CoreState& state) {
     prepareMacroMultiModulationScenario(state);
     auto& graph = state.pages.control.authored.modulation;
@@ -1567,6 +1612,11 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "macro-multi-modulation") == 0) {
         prepareMacroMultiModulationScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-performance-rail") == 0) {
+        prepareMacroPerformanceRailScenario(state);
         return true;
     }
 

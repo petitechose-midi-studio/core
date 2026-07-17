@@ -1,0 +1,17 @@
+# UX workflow: Macro performance rail and true clamp feedback.
+# Purpose: proves the adjacent signed rail remains sufficient without an Out
+# cap, and conflict color appears only while Base + Modulation is clamped.
+# Expect: capture_changed:rail_unclipped=rail_clipped, capture_changed:rail_clipped=rail_recovered
+
+0 scenario macro-performance-rail
+100 capture screen rail_unclipped
+
+# The long square source stays positive across this short workflow. Raising
+# Base crosses the real upper bound; no Depth-only heuristic is involved.
+240 encoder MACRO_1 0.90
+520 capture screen rail_clipped
+
+# Moving Base back into range restores the ordinary modulation color while the
+# source continues to run and the rail remains visible.
+660 encoder MACRO_1 -1.00
+940 capture screen rail_recovered

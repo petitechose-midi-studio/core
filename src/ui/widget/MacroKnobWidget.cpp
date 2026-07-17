@@ -11,17 +11,20 @@
 
 #include <oc/ui/lvgl/StaticSurfaceInvalidation.hpp>
 #include "ui/theme/StandaloneTheme.hpp"
+#include "ui/widget/MacroKnobVisualPolicy.hpp"
 
 namespace core::ui {
 
 namespace theme = oc::ui::lvgl::base_theme;
 namespace style = oc::ui::lvgl::style;
 namespace stheme = standalone::theme;
+namespace visual = macro_knob_visual;
 
 namespace {
 
-constexpr float KNOB_ARC_SWEEP_DEGREES = 270.0f;
-constexpr int16_t KNOB_START_ANGLE = 135;
+constexpr float KNOB_ARC_SWEEP_DEGREES =
+    static_cast<float>(visual::SWEEP_DEGREES);
+constexpr int16_t KNOB_START_ANGLE = visual::START_ANGLE;
 constexpr int16_t KNOB_END_ANGLE = 45;
 constexpr float KNOB_ARC_WIDTH_RATIO = 0.11f;
 constexpr lv_coord_t KNOB_MIN_ARC_WIDTH = 3;
@@ -29,8 +32,6 @@ constexpr lv_coord_t KNOB_EDGE_PAD = 2;
 constexpr lv_coord_t KNOB_RAIL_RESERVE = 2;
 constexpr lv_opa_t KNOB_BACKGROUND_OPA = LV_OPA_60;
 constexpr uint16_t INVALID_VALUE_ANGLE = 0xFFFF;
-constexpr lv_coord_t MODULATION_RAIL_WIDTH = 2;
-constexpr uint16_t MODULATION_IDLE_MARK_DEGREES = 6;
 
 uint32_t automationTrackColor(bool slotActive,
                               bool automationActive,
@@ -51,53 +52,6 @@ uint16_t valueAngle(float value) {
     return static_cast<uint16_t>(
         std::round(KNOB_START_ANGLE + clampNormalized(value) * KNOB_ARC_SWEEP_DEGREES)
     );
-}
-
-FLASHMEM void drawRadialTick(
-    lv_layer_t* layer,
-    lv_point_t center,
-    uint16_t radius,
-    lv_coord_t arcWidth,
-    uint16_t angle,
-    uint32_t color,
-    lv_opa_t opacity
-) {
-    const int16_t normalizedAngle = static_cast<int16_t>(angle % 360U);
-    const int32_t cosAngle = lv_trigo_cos(normalizedAngle);
-    const int32_t sinAngle = lv_trigo_sin(normalizedAngle);
-    const int32_t halfWidth = arcWidth / 2;
-    const int32_t innerRadius = std::max<int32_t>(
-        0,
-        static_cast<int32_t>(radius) - halfWidth - 1
-    );
-    const int32_t outerRadius = static_cast<int32_t>(radius) + halfWidth + 1;
-    lv_point_precise_t points[2] = {
-        {
-            static_cast<lv_value_precise_t>(
-                center.x + ((cosAngle * innerRadius) >> LV_TRIGO_SHIFT)
-            ),
-            static_cast<lv_value_precise_t>(
-                center.y + ((sinAngle * innerRadius) >> LV_TRIGO_SHIFT)
-            ),
-        },
-        {
-            static_cast<lv_value_precise_t>(
-                center.x + ((cosAngle * outerRadius) >> LV_TRIGO_SHIFT)
-            ),
-            static_cast<lv_value_precise_t>(
-                center.y + ((sinAngle * outerRadius) >> LV_TRIGO_SHIFT)
-            ),
-        },
-    };
-    lv_draw_line_dsc_t lineDsc;
-    lv_draw_line_dsc_init(&lineDsc);
-    lineDsc.base.layer = layer;
-    lineDsc.points = points;
-    lineDsc.point_cnt = 2;
-    lineDsc.width = 1;
-    lineDsc.color = lv_color_hex(color);
-    lineDsc.opa = opacity;
-    lv_draw_line(layer, &lineDsc);
 }
 
 }  // namespace
@@ -242,6 +196,15 @@ void MacroKnobWidget::setResolvedComponents(
     const uint16_t nextBaseAngle = valueAngle(nextBase);
     const uint16_t nextOutputAngle = valueAngle(nextOutput);
     const bool nextClipped = clippedLow || clippedHigh;
+    const auto invalidation = visual::resolvedInvalidationPlan(
+        modulation_active_,
+        previousBaseAngle,
+        previousOutputAngle,
+        previousClipped,
+        nextBaseAngle,
+        nextOutputAngle,
+        nextClipped
+    );
 
     base_value_ = nextBase;
     modulation_delta_ = nextDelta;
@@ -253,24 +216,21 @@ void MacroKnobWidget::setResolvedComponents(
 
     if (!knob_ || lv_obj_has_flag(knob_, LV_OBJ_FLAG_HIDDEN)) return;
 
-    if (modulation_active_) {
-        if (previousBaseAngle != nextBaseAngle) {
-            invalidateArcDelta(previousBaseAngle, nextBaseAngle);
-        }
-        if (previousBaseAngle != nextBaseAngle ||
-            previousOutputAngle != nextOutputAngle ||
-            previousClipped != nextClipped) {
-            invalidateRailRange(
-                std::min(previousBaseAngle, previousOutputAngle),
-                std::max(previousBaseAngle, previousOutputAngle)
-            );
-            invalidateRailRange(
-                std::min(nextBaseAngle, nextOutputAngle),
-                std::max(nextBaseAngle, nextOutputAngle)
-            );
-        }
-    } else if (previousOutputAngle != nextOutputAngle) {
-        invalidateArcDelta(previousOutputAngle, nextOutputAngle);
+    if (invalidation.mainArcChanged) {
+        invalidateArcDelta(
+            invalidation.previousMainAngle,
+            invalidation.nextMainAngle
+        );
+    }
+    if (invalidation.railChanged) {
+        invalidateRailRange(
+            invalidation.previousRail.start,
+            invalidation.previousRail.end
+        );
+        invalidateRailRange(
+            invalidation.nextRail.start,
+            invalidation.nextRail.end
+        );
     }
 }
 
@@ -523,13 +483,6 @@ FLASHMEM void MacroKnobWidget::invalidateArcRangeAt(
     }
 
     if (startAngle > endAngle) std::swap(startAngle, endAngle);
-    if (startAngle == endAngle) {
-        if (endAngle < KNOB_START_ANGLE + KNOB_ARC_SWEEP_DEGREES) {
-            endAngle += MODULATION_IDLE_MARK_DEGREES;
-        } else {
-            startAngle -= MODULATION_IDLE_MARK_DEGREES;
-        }
-    }
 
     lv_area_t area{};
     lv_draw_arc_get_area(
@@ -554,14 +507,19 @@ FLASHMEM void MacroKnobWidget::invalidateRailRange(
         if (knob_) lv_obj_invalidate(knob_);
         return;
     }
-    const uint16_t railRadius = static_cast<uint16_t>(
-        geometry.radius + geometry.width / 2 + MODULATION_RAIL_WIDTH
+    const auto span = visual::modulationSpan(
+        static_cast<uint16_t>(startAngle),
+        static_cast<uint16_t>(endAngle)
+    );
+    const uint16_t railRadius = visual::modulationRailRadius(
+        geometry.radius,
+        geometry.width
     );
     invalidateArcRangeAt(
-        startAngle,
-        endAngle,
+        span.start,
+        span.end,
         railRadius,
-        static_cast<lv_coord_t>(MODULATION_RAIL_WIDTH + 2)
+        static_cast<lv_coord_t>(visual::modulationRailInvalidationWidth())
     );
 }
 
@@ -606,9 +564,10 @@ FLASHMEM void MacroKnobWidget::drawArc(lv_layer_t* layer, lv_obj_t* target) cons
 
     if (modulation_active_) {
         // Signed instantaneous contribution from Base to audible Out. The
-        // thin outer rail remains distinct from the absolute source arc.
-        arcDsc.radius = static_cast<uint16_t>(
-            geometry.radius + geometry.width / 2 + MODULATION_RAIL_WIDTH
+        // adjacent rail remains distinct from the absolute source arc.
+        arcDsc.radius = visual::modulationRailRadius(
+            geometry.radius,
+            geometry.width
         );
         arcDsc.color = lv_color_hex(
             (clipped_low_ || clipped_high_)
@@ -616,30 +575,12 @@ FLASHMEM void MacroKnobWidget::drawArc(lv_layer_t* layer, lv_obj_t* target) cons
                 : stheme::color::MACRO_MODULATION
         );
         arcDsc.opa = LV_OPA_COVER;
-        arcDsc.width = MODULATION_RAIL_WIDTH;
+        arcDsc.width = visual::MODULATION_RAIL_WIDTH;
         arcDsc.rounded = 0;
-        arcDsc.start_angle = std::min(baseAngle, outputAngle);
-        arcDsc.end_angle = std::max(baseAngle, outputAngle);
-        if (arcDsc.start_angle == arcDsc.end_angle) {
-            if (arcDsc.end_angle < KNOB_START_ANGLE + KNOB_ARC_SWEEP_DEGREES) {
-                arcDsc.end_angle += MODULATION_IDLE_MARK_DEGREES;
-            } else {
-                arcDsc.start_angle -= MODULATION_IDLE_MARK_DEGREES;
-            }
-        }
+        const auto span = visual::modulationSpan(baseAngle, outputAngle);
+        arcDsc.start_angle = span.start;
+        arcDsc.end_angle = span.end;
         lv_draw_arc(layer, &arcDsc);
-
-        // A single neutral cap identifies the audible Out value without
-        // introducing a second competing trajectory.
-        drawRadialTick(
-            layer,
-            geometry.center,
-            arcDsc.radius,
-            static_cast<lv_coord_t>(MODULATION_RAIL_WIDTH + 2),
-            outputAngle,
-            stheme::color::TEXT_PRIMARY,
-            LV_OPA_COVER
-        );
     }
 }
 
