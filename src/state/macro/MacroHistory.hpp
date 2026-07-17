@@ -102,9 +102,16 @@ struct MacroModulatorCreationHistoryPayload {
     uint16_t beforeSourceCount = 0;
     uint16_t beforeBindingCount = 0;
     uint16_t beforeSharedCurveReferenceCount = 0;
+    float beforeMacroValue = 0.5f;
+    float afterMacroValue = 0.5f;
+    uint8_t beforeMacroActiveMask = 0;
+    uint8_t afterMacroActiveMask = 0;
+    uint8_t beforeMacroCc = 0;
+    uint8_t afterMacroCc = 0;
     bool sourceCreated = false;
     bool bindingCreated = false;
     bool sharedCurveReferenceCreated = false;
+    bool macroCreated = false;
     bool pending = false;
 };
 
@@ -343,7 +350,8 @@ public:
             MacroPagesState& pages,
             const MacroAutomationSlotAddress& address,
             const core::state::modulation::ModulatorLfoDraft& sourceDraft,
-            const core::state::modulation::ModulationBindingDraft& bindingDraft
+            const core::state::modulation::ModulationBindingDraft& bindingDraft,
+            bool createMacroSlot = false
         );
 
     /** Creates one explicit detached LFO as one compact Undo action. */
@@ -366,7 +374,8 @@ public:
             const MacroAutomationSlotAddress& address,
             core::state::modulation::ModulatorId sourceId,
             const core::state::modulation::ModulationBindingDraft& bindingDraft,
-            const core::state::modulation::ModulatorReach* widenedReach = nullptr
+            const core::state::modulation::ModulatorReach* widenedReach = nullptr,
+            bool createMacroSlot = false
         );
 
     /** Exact rollback with no Undo entry and no authored ID/capacity residue. */

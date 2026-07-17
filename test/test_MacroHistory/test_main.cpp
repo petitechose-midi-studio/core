@@ -588,6 +588,180 @@ void test_lfo_audition_capacity_failure_has_no_partial_state() {
     std::cout << "[PASS] LFO capacity failure is an exact no-op\n";
 }
 
+void test_macro_create_audition_cancel_restores_page_graph_and_ids() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto pageBefore = pages.pageData(0, 0);
+    const auto graphBefore = pages.control.authored.modulation;
+    const uint32_t revisionBefore = pages.control.authoredRevision;
+
+    const auto begun = history.beginLfoModulatorAudition(
+        pages,
+        kAddress,
+        defaultLfoDraft(),
+        defaultBindingDraft(),
+        true
+    );
+    assert(begun.changed());
+    assert(pages.pageData(0, 0).isMacroActive(kAddress.macro));
+    assert(pages.pageData(0, 0).cc[kAddress.macro] == 1U);
+    assert(pages.pageData(0, 0).values[kAddress.macro] == 0.5f);
+    assert(history.undoCount() == 0U);
+
+    assert(history.cancelModulatorAudition(pages, kAddress));
+    assert(std::memcmp(
+        &pages.pageData(0, 0),
+        &pageBefore,
+        sizeof(pageBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(pages.control.authoredRevision == revisionBefore);
+    assert(history.undoCount() == 0U);
+    std::cout << "[PASS] Macro-create audition Cancel restores page, graph, and IDs\n";
+}
+
+void test_macro_create_and_assignment_are_one_undo_redo_action() {
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto pageBefore = pages.pageData(0, 0);
+    const auto begun = history.beginLfoModulatorAudition(
+        pages,
+        kAddress,
+        defaultLfoDraft(),
+        defaultBindingDraft(),
+        true
+    );
+    assert(begun.changed());
+    assert(history.commitModulatorAudition(pages, kAddress));
+    assert(history.undoCount() == 1U);
+    const auto pageAfter = pages.pageData(0, 0);
+    const auto graphAfter = pages.control.authored.modulation;
+
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.pageData(0, 0),
+        &pageBefore,
+        sizeof(pageBefore)
+    ) == 0);
+    assert(pages.control.authored.modulation.sourceCount == 0U);
+    assert(pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(pages.control.authored.modulation.nextSourceId == 1U);
+    assert(pages.control.authored.modulation.nextBindingId == 1U);
+
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.pageData(0, 0),
+        &pageAfter,
+        sizeof(pageAfter)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphAfter,
+        sizeof(graphAfter)
+    ) == 0);
+    std::cout << "[PASS] Macro creation plus assignment is one Undo/Redo action\n";
+}
+
+void test_macro_create_duplicate_and_capacity_failures_are_exact_noops() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto source = createLfoModulator(
+        pages.control.authored.modulation,
+        defaultLfoDraft()
+    );
+    assert(source.changed());
+    auto binding = defaultBindingDraft();
+    binding.sourceId = source.sourceId;
+    assert(addProjectModulationBinding(
+        pages.control.authored.modulation,
+        binding
+    ).changed());
+    const auto duplicatePageBefore = pages.pageData(0, 0);
+    const auto duplicateGraphBefore = pages.control.authored.modulation;
+
+    const auto duplicate = history.beginExistingModulatorAudition(
+        pages,
+        kAddress,
+        source.sourceId,
+        binding,
+        nullptr,
+        true
+    );
+    assert(duplicate.status == ProjectModulationStatus::DUPLICATE_BINDING);
+    assert(std::memcmp(
+        &pages.pageData(0, 0),
+        &duplicatePageBefore,
+        sizeof(duplicatePageBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &duplicateGraphBefore,
+        sizeof(duplicateGraphBefore)
+    ) == 0);
+
+    macro::MacroPagesState fullPages;
+    macro::MacroHistoryService fullHistory;
+    fullPages.control.authored.modulation.outputBindingCount =
+        PROJECT_MODULATION_BINDING_CAPACITY;
+    const auto fullPageBefore = fullPages.pageData(0, 0);
+    const auto fullGraphBefore = fullPages.control.authored.modulation;
+    const auto full = fullHistory.beginLfoModulatorAudition(
+        fullPages,
+        kAddress,
+        defaultLfoDraft(),
+        defaultBindingDraft(),
+        true
+    );
+    assert(full.status == ProjectModulationStatus::BINDING_CAPACITY_EXCEEDED);
+    assert(std::memcmp(
+        &fullPages.pageData(0, 0),
+        &fullPageBefore,
+        sizeof(fullPageBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &fullPages.control.authored.modulation,
+        &fullGraphBefore,
+        sizeof(fullGraphBefore)
+    ) == 0);
+    std::cout << "[PASS] Macro-create duplicate/capacity failures are exact no-ops\n";
+}
+
+void test_macro_create_stale_add_slot_is_rejected_without_history() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    pages.pageData(0, 0).setMacroActive(kAddress.macro, true);
+    const auto pageBefore = pages.pageData(0, 0);
+    const auto graphBefore = pages.control.authored.modulation;
+    const auto result = history.beginLfoModulatorAudition(
+        pages,
+        kAddress,
+        defaultLfoDraft(),
+        defaultBindingDraft(),
+        true
+    );
+    assert(result.status == ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(history.undoCount() == 0U);
+    assert(!pages.control.audition.active);
+    assert(std::memcmp(
+        &pages.pageData(0, 0),
+        &pageBefore,
+        sizeof(pageBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    std::cout << "[PASS] stale Macro add-slot selection is an exact rejection\n";
+}
+
 void test_existing_modulator_cancel_preserves_root_and_is_byte_stable() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
@@ -1140,6 +1314,10 @@ int main() {
     test_lfo_audition_cancel_is_byte_stable_and_history_free();
     test_lfo_audition_apply_is_one_compact_undo_redo_action();
     test_lfo_audition_capacity_failure_has_no_partial_state();
+    test_macro_create_audition_cancel_restores_page_graph_and_ids();
+    test_macro_create_and_assignment_are_one_undo_redo_action();
+    test_macro_create_duplicate_and_capacity_failures_are_exact_noops();
+    test_macro_create_stale_add_slot_is_rejected_without_history();
     test_existing_modulator_cancel_preserves_root_and_is_byte_stable();
     test_existing_modulator_apply_undo_redo_moves_only_binding();
     test_project_source_edits_coalesce_and_restore_exact_source();
