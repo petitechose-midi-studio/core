@@ -129,6 +129,16 @@ struct ModulatorSplitRequest {
     ProjectModulationState& state,
     ModulationBindingId id
 );
+[[nodiscard]] const ModulationTriggerBindingState*
+findProjectModulationTriggerForSource(
+    const ProjectModulationState& state,
+    ModulatorId sourceId
+);
+[[nodiscard]] ModulationTriggerBindingState*
+findProjectModulationTriggerForSource(
+    ProjectModulationState& state,
+    ModulatorId sourceId
+);
 [[nodiscard]] const ModulationDestinationScaleState*
 findProjectModulationDestinationScale(
     const ProjectModulationState& state,
@@ -275,6 +285,12 @@ ProjectModulationResult setProjectModulationDestinationScale(
 ProjectModulationResult addProjectModulationTrigger(
     ProjectModulationState& state,
     const ModulationTriggerDraft& draft
+);
+ProjectModulationResult setProjectModulationTrigger(
+    ProjectModulationState& state,
+    ModulatorId sourceId,
+    const ModulationTriggerRef& trigger,
+    bool enabled
 );
 ProjectModulationResult removeProjectModulationTrigger(
     ProjectModulationState& state,

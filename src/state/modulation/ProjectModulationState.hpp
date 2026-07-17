@@ -206,6 +206,21 @@ struct ModulationTriggerRef {
     uint8_t data = 0;
 };
 
+constexpr bool operator==(
+    const ModulationTriggerRef& lhs,
+    const ModulationTriggerRef& rhs
+) {
+    return lhs.kind == rhs.kind && lhs.track == rhs.track &&
+           lhs.channel == rhs.channel && lhs.data == rhs.data;
+}
+
+constexpr bool operator!=(
+    const ModulationTriggerRef& lhs,
+    const ModulationTriggerRef& rhs
+) {
+    return !(lhs == rhs);
+}
+
 inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_FLAG_ENABLED = 0x01U;
 
 /** V1 reserves one trigger assignment per source. */

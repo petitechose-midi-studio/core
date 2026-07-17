@@ -260,6 +260,38 @@ void testAdsrDomainIsPositiveCompactAndStrict() {
     };
     assert(mod::addProjectModulationTrigger(*fixture.state, trigger).changed());
     assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+    const auto* originalTrigger = mod::findProjectModulationTriggerForSource(
+        *fixture.state,
+        sourceId
+    );
+    assert(originalTrigger != nullptr);
+    auto editedTrigger = originalTrigger->trigger;
+    editedTrigger.track = 4U;
+    assert(mod::setProjectModulationTrigger(
+        *fixture.state,
+        sourceId,
+        editedTrigger,
+        false
+    ).changed());
+    assert(mod::setProjectModulationTrigger(
+        *fixture.state,
+        sourceId,
+        editedTrigger,
+        false
+    ).status == mod::ProjectModulationStatus::NO_CHANGE);
+    const auto triggerStable = *fixture.state;
+    editedTrigger.track = mod::PROJECT_MODULATION_TRACK_COUNT;
+    assert(mod::setProjectModulationTrigger(
+        *fixture.state,
+        sourceId,
+        editedTrigger,
+        true
+    ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(std::memcmp(
+        fixture.state.get(),
+        &triggerStable,
+        sizeof(triggerStable)
+    ) == 0);
 
     const auto duplicate = mod::duplicateProjectModulator(
         *fixture.state,
@@ -268,6 +300,7 @@ void testAdsrDomainIsPositiveCompactAndStrict() {
         "ADSR 2"
     );
     assert(duplicate.changed());
+    assert(fixture.state->triggerBindingCount == 2U);
     const auto* clone = mod::findProjectModulator(
         *fixture.state,
         duplicate.sourceId
@@ -278,6 +311,16 @@ void testAdsrDomainIsPositiveCompactAndStrict() {
         &stable.sources[0].parameters.adsr,
         sizeof(mod::ModulatorAdsrParameters)
     ) == 0);
+    const auto* clonedTrigger = mod::findProjectModulationTriggerForSource(
+        *fixture.state,
+        duplicate.sourceId
+    );
+    assert(clonedTrigger != nullptr);
+    assert(clonedTrigger->id !=
+           fixture.state->triggerBindings[0].id);
+    assert(clonedTrigger->trigger ==
+           fixture.state->triggerBindings[0].trigger);
+    assert(clonedTrigger->flags == fixture.state->triggerBindings[0].flags);
 
     auto* bytes = reinterpret_cast<uint8_t*>(
         &fixture.state->sources[0].parameters
@@ -491,9 +534,12 @@ void testStableIdsDuplicateAndDelete() {
         "Clone"
     );
     assert(clone.changed() && clone.sourceId.value == 4U);
-    // Central Source duplicate copies the portable definition, not project
-    // addresses. Scope Split separately clones a trigger to preserve sound.
-    assert(fixture.state->triggerBindingCount == 1U);
+    // A typed trigger is part of the portable source definition; output
+    // destinations remain intentionally absent from a root duplicate.
+    assert(fixture.state->triggerBindingCount == 2U);
+    assert(fixture.state->triggerBindings[1].sourceId == clone.sourceId);
+    assert(fixture.state->triggerBindings[1].trigger ==
+           fixture.state->triggerBindings[0].trigger);
     assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
 }
 

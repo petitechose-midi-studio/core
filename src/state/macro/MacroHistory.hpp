@@ -36,6 +36,7 @@ enum class MacroHistoryActionKind : uint8_t {
     CREATE_MODULATOR_ASSIGNMENT,
     REMOVE_MODULATOR_ASSIGNMENT,
     PROJECT_MODULATOR_SOURCE_EDIT,
+    PROJECT_MODULATOR_TRIGGER_EDIT,
     CREATE_PROJECT_MODULATOR,
     SPLIT_PROJECT_MODULATOR,
     DELETE_PROJECT_MODULATOR,
@@ -90,8 +91,10 @@ struct MacroModulatorCreationHistoryPayload {
     core::state::modulation::ModulatorSourceState beforeSourceTail{};
     core::state::modulation::ModulatorSourceState beforeSource{};
     core::state::modulation::ModulationBindingState beforeBindingTail{};
+    core::state::modulation::ModulationTriggerBindingState beforeTriggerTail{};
     core::state::modulation::ModulatorSourceState source{};
     core::state::modulation::ModulationBindingState binding{};
+    core::state::modulation::ModulationTriggerBindingState trigger{};
     core::state::modulation::ProjectCurveId sharedCurveId{};
     uint32_t beforeNextSourceId = 1;
     uint32_t beforeNextBindingId = 1;
@@ -101,6 +104,7 @@ struct MacroModulatorCreationHistoryPayload {
     uint32_t generation = 0;
     uint16_t beforeSourceCount = 0;
     uint16_t beforeBindingCount = 0;
+    uint16_t beforeTriggerCount = 0;
     uint16_t beforeSharedCurveReferenceCount = 0;
     float beforeMacroValue = 0.5f;
     float afterMacroValue = 0.5f;
@@ -110,6 +114,7 @@ struct MacroModulatorCreationHistoryPayload {
     uint8_t afterMacroCc = 0;
     bool sourceCreated = false;
     bool bindingCreated = false;
+    bool triggerCreated = false;
     bool sharedCurveReferenceCreated = false;
     bool macroCreated = false;
     bool pending = false;
@@ -164,6 +169,13 @@ struct MacroDestinationScaleHistoryPayload {
 struct ProjectModulatorSourceHistoryPayload {
     core::state::modulation::ModulatorSourceState before{};
     core::state::modulation::ModulatorSourceState after{};
+    bool valid = false;
+};
+
+/** One stable-ID typed trigger edit; source and graph order remain untouched. */
+struct ProjectModulatorTriggerHistoryPayload {
+    core::state::modulation::ModulationTriggerBindingState before{};
+    core::state::modulation::ModulationTriggerBindingState after{};
     bool valid = false;
 };
 
@@ -258,6 +270,7 @@ struct MacroHistoryChange {
     MacroDestinationScaleHistoryPayload destinationScale{};
     MacroModulatorCreationHistoryPayload modulator{};
     ProjectModulatorSourceHistoryPayload sourceEdit{};
+    ProjectModulatorTriggerHistoryPayload triggerEdit{};
     core::app::ExtmemUniquePtr<ProjectModulatorDeleteHistoryPayload>
         modulatorDelete{};
     core::app::ExtmemUniquePtr<ProjectModulatorSplitHistoryPayload>
@@ -353,12 +366,27 @@ public:
             const core::state::modulation::ModulationBindingDraft& bindingDraft,
             bool createMacroSlot = false
         );
+    [[nodiscard]] core::state::modulation::ProjectModulationResult
+        beginAdsrModulatorAudition(
+            MacroPagesState& pages,
+            const MacroAutomationSlotAddress& address,
+            const core::state::modulation::ModulatorAdsrDraft& sourceDraft,
+            const core::state::modulation::ModulationTriggerDraft& triggerDraft,
+            const core::state::modulation::ModulationBindingDraft& bindingDraft,
+            bool createMacroSlot = false
+        );
 
     /** Creates one explicit detached LFO as one compact Undo action. */
     [[nodiscard]] core::state::modulation::ProjectModulationResult
         createUnassignedLfo(
             MacroPagesState& pages,
             const core::state::modulation::ModulatorLfoDraft& sourceDraft
+        );
+    [[nodiscard]] core::state::modulation::ProjectModulationResult
+        createUnassignedAdsr(
+            MacroPagesState& pages,
+            const core::state::modulation::ModulatorAdsrDraft& sourceDraft,
+            const core::state::modulation::ModulationTriggerDraft& triggerDraft
         );
     [[nodiscard]] core::state::modulation::ProjectModulationResult
         duplicateProjectModulator(
@@ -464,6 +492,17 @@ public:
         core::state::modulation::ModulatorId sourceId,
         const core::state::modulation::ModulatorLfoParameters& parameters
     );
+    [[nodiscard]] bool setProjectAdsrParametersCoalesced(
+        MacroPagesState& pages,
+        core::state::modulation::ModulatorId sourceId,
+        const core::state::modulation::ModulatorAdsrParameters& parameters
+    );
+    [[nodiscard]] bool setProjectModulationTriggerCoalesced(
+        MacroPagesState& pages,
+        core::state::modulation::ModulatorId sourceId,
+        const core::state::modulation::ModulationTriggerRef& trigger,
+        bool enabled
+    );
     [[nodiscard]] bool setProjectModulatorReach(
         MacroPagesState& pages,
         core::state::modulation::ModulatorId sourceId,
@@ -506,6 +545,23 @@ public:
     [[nodiscard]] uint8_t redoCount() const { return redo_count_; }
 
 private:
+    [[nodiscard]] core::state::modulation::ProjectModulationResult
+        beginNewModulatorAudition_(
+            MacroPagesState& pages,
+            const MacroAutomationSlotAddress& address,
+            const core::state::modulation::ModulatorLfoDraft* lfoDraft,
+            const core::state::modulation::ModulatorAdsrDraft* adsrDraft,
+            const core::state::modulation::ModulationTriggerDraft* triggerDraft,
+            const core::state::modulation::ModulationBindingDraft& bindingDraft,
+            bool createMacroSlot
+        );
+    [[nodiscard]] core::state::modulation::ProjectModulationResult
+        createUnassignedModulator_(
+            MacroPagesState& pages,
+            const core::state::modulation::ModulatorLfoDraft* lfoDraft,
+            const core::state::modulation::ModulatorAdsrDraft* adsrDraft,
+            const core::state::modulation::ModulationTriggerDraft* triggerDraft
+        );
     [[nodiscard]] MacroHistoryChangePtr prepareModulationAssignments_(
         const MacroPagesState& pages,
         const MacroAutomationSlotAddress& address,

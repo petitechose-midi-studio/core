@@ -99,6 +99,100 @@ void test_track_duplication_preserves_automation_from_every_page() {
         << "[PASS] Project track duplication preserves every page automation\n";
 }
 
+void test_track_duplication_clones_local_adsr_and_remaps_its_note_route() {
+    modulation::ProjectControlState control;
+    const macro::MacroAutomationSlotAddress sourceAddress{
+        .track = 0,
+        .page = 1,
+        .macro = 2,
+    };
+    modulation::ModulatorAdsrDraft source{};
+    source.name = "Local ADSR";
+    source.reach = {
+        .kind = modulation::ModulatorReachKind::MACRO,
+        .track = sourceAddress.track,
+        .page = sourceAddress.page,
+        .macro = sourceAddress.macro,
+    };
+    const auto created = modulation::createAdsrModulator(
+        control.authored.modulation,
+        source
+    );
+    assert(created.changed());
+    modulation::ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination = modulation::projectControlDestination(sourceAddress);
+    binding.amountQ15 = 8192;
+    assert(modulation::addProjectModulationBinding(
+        control.authored.modulation,
+        binding
+    ).changed());
+    modulation::ModulationTriggerDraft trigger{};
+    trigger.sourceId = created.sourceId;
+    trigger.trigger = {
+        modulation::ModulationTriggerKind::TRACK_NOTE,
+        sourceAddress.track,
+        modulation::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
+        modulation::PROJECT_MODULATION_TRIGGER_ANY_NOTE,
+    };
+    assert(modulation::addProjectModulationTrigger(
+        control.authored.modulation,
+        trigger
+    ).changed());
+
+    const ops::ProjectControlTrackCopy copy{
+        .sourceTrack = sourceAddress.track,
+        .destTrack = 3U,
+    };
+    assert(ops::duplicateTracks(control, &copy, 1U));
+    const auto& graph = control.authored.modulation;
+    assert(graph.sourceCount == 2U);
+    assert(graph.outputBindingCount == 2U);
+    assert(graph.triggerBindingCount == 2U);
+    assert(graph.sources[1].reach.track == 3U);
+    assert(graph.outputBindings[1].destination.track == 3U);
+    assert(graph.triggerBindings[1].sourceId == graph.sources[1].id);
+    assert(graph.triggerBindings[1].trigger.track == 3U);
+    assert(graph.triggerBindings[1].trigger.channel ==
+           modulation::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL);
+    assert(modulation::validProjectModulationDomain(
+        graph,
+        control.authored.curves,
+        &control.authored.automation
+    ));
+    std::cout << "[PASS] Track copy remaps a cloned local ADSR note route\n";
+}
+
+void test_track_clear_removes_note_route_without_deleting_root_source() {
+    modulation::ProjectControlState control;
+    modulation::ModulatorAdsrDraft source{};
+    source.name = "Shared ADSR";
+    source.reach.kind = modulation::ModulatorReachKind::PROJECT;
+    const auto created = modulation::createAdsrModulator(
+        control.authored.modulation,
+        source
+    );
+    assert(created.changed());
+    modulation::ModulationTriggerDraft trigger{};
+    trigger.sourceId = created.sourceId;
+    trigger.trigger = {
+        modulation::ModulationTriggerKind::TRACK_NOTE,
+        2U,
+        modulation::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
+        modulation::PROJECT_MODULATION_TRIGGER_ANY_NOTE,
+    };
+    assert(modulation::addProjectModulationTrigger(
+        control.authored.modulation,
+        trigger
+    ).changed());
+
+    assert(ops::clearTracks(control, static_cast<uint16_t>(1U << 2U)));
+    assert(control.authored.modulation.sourceCount == 1U);
+    assert(control.authored.modulation.sources[0].id == created.sourceId);
+    assert(control.authored.modulation.triggerBindingCount == 0U);
+    std::cout << "[PASS] Track clear removes its route and keeps root ADSR\n";
+}
+
 void test_batch_duplication_rejects_invalid_copy_atomically() {
     modulation::ProjectControlState control;
     assignLane(control, {.track = 0, .page = 0, .macro = 0}, 2);
@@ -274,6 +368,8 @@ void test_malformed_clipboard_is_rejected_before_destination_mutation() {
 
 int main() {
     test_track_duplication_preserves_automation_from_every_page();
+    test_track_duplication_clones_local_adsr_and_remaps_its_note_route();
+    test_track_clear_removes_note_route_without_deleting_root_source();
     test_batch_duplication_rejects_invalid_copy_atomically();
     test_empty_page_clipboard_replaces_existing_control_with_empty_scope();
     test_empty_structure_copy_does_not_allocate_control_clipboard();

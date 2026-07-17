@@ -257,18 +257,6 @@ FLASHMEM bool mutateProjectControl(
     return true;
 }
 
-FLASHMEM const modulation::ModulationTriggerBindingState* triggerForSource(
-    const modulation::ProjectModulationState& state,
-    modulation::ModulatorId sourceId
-) {
-    for (uint16_t index = 0; index < state.triggerBindingCount; ++index) {
-        if (state.triggerBindings[index].sourceId == sourceId) {
-            return &state.triggerBindings[index];
-        }
-    }
-    return nullptr;
-}
-
 FLASHMEM bool duplicateBinding(
     modulation::ProjectControlDomainState& domain,
     const modulation::ModulationBindingState& sourceBinding,
@@ -283,11 +271,6 @@ FLASHMEM bool duplicateBinding(
     modulation::ModulatorId targetSourceId = source.id;
 
     if (source.reach.kind == modulation::ModulatorReachKind::MACRO) {
-        const auto* sourceTrigger = triggerForSource(domain.modulation, source.id);
-        const bool hasTrigger = sourceTrigger != nullptr;
-        const auto trigger = hasTrigger
-            ? *sourceTrigger
-            : modulation::ModulationTriggerBindingState{};
         const auto duplicated = modulation::duplicateProjectModulator(
             domain.modulation,
             domain.curves,
@@ -309,15 +292,25 @@ FLASHMEM bool duplicateBinding(
             ).changed()) {
             return false;
         }
-        if (hasTrigger) {
-            modulation::ModulationTriggerDraft draft{};
-            draft.sourceId = targetSourceId;
-            draft.trigger = trigger.trigger;
-            draft.enabled = (trigger.flags &
-                modulation::PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U;
-            if (!modulation::addProjectModulationTrigger(
+        auto* clonedTrigger =
+            modulation::findProjectModulationTriggerForSource(
+                domain.modulation,
+                targetSourceId
+            );
+        if (clonedTrigger != nullptr &&
+            clonedTrigger->trigger.kind ==
+                modulation::ModulationTriggerKind::TRACK_NOTE &&
+            clonedTrigger->trigger.track ==
+                sourceBinding.destination.track &&
+            clonedTrigger->trigger.track != destination.track) {
+            auto remapped = clonedTrigger->trigger;
+            remapped.track = destination.track;
+            if (!modulation::setProjectModulationTrigger(
                     domain.modulation,
-                    draft
+                    targetSourceId,
+                    remapped,
+                    (clonedTrigger->flags &
+                        modulation::PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U
                 ).changed()) {
                 return false;
             }

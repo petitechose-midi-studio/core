@@ -691,6 +691,27 @@ FLASHMEM ModulationBindingState* findProjectModulationBinding(
         : nullptr;
 }
 
+FLASHMEM const ModulationTriggerBindingState*
+findProjectModulationTriggerForSource(
+    const ProjectModulationState& state,
+    ModulatorId sourceId
+) {
+    const int16_t index = triggerIndexForSource(state, sourceId);
+    return index < 0
+        ? nullptr
+        : &state.triggerBindings[static_cast<uint16_t>(index)];
+}
+
+FLASHMEM ModulationTriggerBindingState* findProjectModulationTriggerForSource(
+    ProjectModulationState& state,
+    ModulatorId sourceId
+) {
+    const int16_t index = triggerIndexForSource(state, sourceId);
+    return index < 0
+        ? nullptr
+        : &state.triggerBindings[static_cast<uint16_t>(index)];
+}
+
 FLASHMEM const ModulationDestinationScaleState*
 findProjectModulationDestinationScale(
     const ProjectModulationState& state,
@@ -1045,7 +1066,16 @@ FLASHMEM ProjectModulationResult duplicateProjectModulator(
         return result(ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED, sourceId);
     }
     const auto& existing = state.sources[static_cast<uint16_t>(existingIndex)];
-    if (!canAllocateId(state.nextSourceId)) {
+    const int16_t existingTrigger = triggerIndexForSource(state, sourceId);
+    if (existingTrigger >= 0 &&
+        state.triggerBindingCount >= PROJECT_MODULATION_TRIGGER_CAPACITY) {
+        return result(
+            ProjectModulationStatus::TRIGGER_CAPACITY_EXCEEDED,
+            sourceId
+        );
+    }
+    if (!canAllocateId(state.nextSourceId) ||
+        !canAllocateId(state.nextBindingId, existingTrigger >= 0 ? 1U : 0U)) {
         return result(ProjectModulationStatus::ID_EXHAUSTED, sourceId);
     }
     ProjectCurveRecord* curve = nullptr;
@@ -1071,6 +1101,14 @@ FLASHMEM ProjectModulationResult duplicateProjectModulator(
     copyName(clone.name, cloneName, existing.name.data());
     state.sources[state.sourceCount++] = clone;
     if (curve != nullptr) ++curve->referenceCount;
+    if (existingTrigger >= 0) {
+        auto trigger = state.triggerBindings[
+            static_cast<uint16_t>(existingTrigger)
+        ];
+        trigger.id = {takeId(state.nextBindingId)};
+        trigger.sourceId = clone.id;
+        state.triggerBindings[state.triggerBindingCount++] = trigger;
+    }
     return result(ProjectModulationStatus::OK, clone.id);
 }
 
@@ -1583,6 +1621,34 @@ FLASHMEM ProjectModulationResult addProjectModulationTrigger(
         draft.sourceId,
         binding.id
     );
+}
+
+FLASHMEM ProjectModulationResult setProjectModulationTrigger(
+    ProjectModulationState& state,
+    ModulatorId sourceId,
+    const ModulationTriggerRef& trigger,
+    bool enabled
+) {
+    if (!validTriggerRef(trigger)) {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
+    }
+    auto* binding = findProjectModulationTriggerForSource(state, sourceId);
+    if (binding == nullptr) {
+        return result(ProjectModulationStatus::INVALID_ID, sourceId);
+    }
+    const uint8_t flags = enabled
+        ? PROJECT_MODULATION_TRIGGER_FLAG_ENABLED
+        : 0U;
+    if (binding->trigger == trigger && binding->flags == flags) {
+        return result(
+            ProjectModulationStatus::NO_CHANGE,
+            sourceId,
+            binding->id
+        );
+    }
+    binding->trigger = trigger;
+    binding->flags = flags;
+    return result(ProjectModulationStatus::OK, sourceId, binding->id);
 }
 
 FLASHMEM ProjectModulationResult removeProjectModulationTrigger(

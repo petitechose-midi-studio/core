@@ -524,8 +524,12 @@ FLASHMEM bool creationIdentityMatches(
     const uint16_t expectedBindingCount = static_cast<uint16_t>(
         payload.beforeBindingCount + (payload.bindingCreated ? 1U : 0U)
     );
+    const uint16_t expectedTriggerCount = static_cast<uint16_t>(
+        payload.beforeTriggerCount + (payload.triggerCreated ? 1U : 0U)
+    );
     if (graph.sourceCount != expectedSourceCount ||
         graph.outputBindingCount != expectedBindingCount ||
+        graph.triggerBindingCount != expectedTriggerCount ||
         graph.nextSourceId != payload.afterNextSourceId ||
         graph.nextBindingId != payload.afterNextBindingId) {
         return false;
@@ -544,6 +548,14 @@ FLASHMEM bool creationIdentityMatches(
             binding.sourceId != source->id ||
             binding.destination != payload.binding.destination ||
             (exactAfter && !sameObjectBits(binding, payload.binding))) {
+            return false;
+        }
+    }
+    if (payload.triggerCreated) {
+        const auto& trigger = graph.triggerBindings[payload.beforeTriggerCount];
+        if (trigger.id != payload.trigger.id ||
+            trigger.sourceId != source->id ||
+            (exactAfter && !sameObjectBits(trigger, payload.trigger))) {
             return false;
         }
     }
@@ -570,12 +582,18 @@ FLASHMEM bool creationBeforeMatches(
     const auto& graph = control.authored.modulation;
     if (graph.sourceCount != payload.beforeSourceCount ||
         graph.outputBindingCount != payload.beforeBindingCount ||
+        graph.triggerBindingCount != payload.beforeTriggerCount ||
         graph.nextSourceId != payload.beforeNextSourceId ||
         graph.nextBindingId != payload.beforeNextBindingId ||
         (payload.bindingCreated &&
          !sameObjectBits(
              graph.outputBindings[payload.beforeBindingCount],
              payload.beforeBindingTail
+         )) ||
+        (payload.triggerCreated &&
+         !sameObjectBits(
+             graph.triggerBindings[payload.beforeTriggerCount],
+             payload.beforeTriggerTail
          ))) {
         return false;
     }
@@ -641,6 +659,11 @@ FLASHMEM void restoreCreationBefore(
             payload.beforeBindingTail;
         graph.outputBindingCount = payload.beforeBindingCount;
     }
+    if (payload.triggerCreated) {
+        graph.triggerBindings[payload.beforeTriggerCount] =
+            payload.beforeTriggerTail;
+        graph.triggerBindingCount = payload.beforeTriggerCount;
+    }
     graph.nextBindingId = payload.beforeNextBindingId;
     restoreMacroCreationState(pages, address, payload, false);
     if (exactCancel) {
@@ -683,6 +706,12 @@ FLASHMEM void restoreCreationAfter(
         graph.outputBindings[payload.beforeBindingCount] = payload.binding;
         graph.outputBindingCount = static_cast<uint16_t>(
             payload.beforeBindingCount + 1U
+        );
+    }
+    if (payload.triggerCreated) {
+        graph.triggerBindings[payload.beforeTriggerCount] = payload.trigger;
+        graph.triggerBindingCount = static_cast<uint16_t>(
+            payload.beforeTriggerCount + 1U
         );
     }
     graph.nextBindingId = payload.afterNextBindingId;
@@ -1553,17 +1582,20 @@ FLASHMEM bool MacroHistoryService::commitProjectSourceEdit_(
 }
 
 FLASHMEM core::state::modulation::ProjectModulationResult
-MacroHistoryService::beginLfoModulatorAudition(
+MacroHistoryService::beginNewModulatorAudition_(
     MacroPagesState& pages,
     const MacroAutomationSlotAddress& address,
-    const core::state::modulation::ModulatorLfoDraft& sourceDraft,
+    const core::state::modulation::ModulatorLfoDraft* lfoDraft,
+    const core::state::modulation::ModulatorAdsrDraft* adsrDraft,
+    const core::state::modulation::ModulationTriggerDraft* triggerDraft,
     const core::state::modulation::ModulationBindingDraft& bindingDraft,
     bool createMacroSlot
 ) {
     using namespace core::state::modulation;
     ProjectModulationResult failure{};
     failure.status = ProjectModulationStatus::INVALID_ARGUMENT;
-    if (!macroAutomationAddressValid(address) ||
+    if ((lfoDraft == nullptr) == (adsrDraft == nullptr) ||
+        !macroAutomationAddressValid(address) ||
         bindingDraft.destination != projectControlDestination(address) ||
         pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
         return failure;
@@ -1579,21 +1611,31 @@ MacroHistoryService::beginLfoModulatorAudition(
     auto& payload = change->modulator;
     auto& graph = pages.control.authored.modulation;
     if (graph.sourceCount >= PROJECT_MODULATOR_CAPACITY ||
-        graph.outputBindingCount >= PROJECT_MODULATION_BINDING_CAPACITY) {
+        graph.outputBindingCount >= PROJECT_MODULATION_BINDING_CAPACITY ||
+        (triggerDraft != nullptr &&
+         graph.triggerBindingCount >= PROJECT_MODULATION_TRIGGER_CAPACITY)) {
         failure.status = graph.sourceCount >= PROJECT_MODULATOR_CAPACITY
             ? ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED
-            : ProjectModulationStatus::BINDING_CAPACITY_EXCEEDED;
+            : graph.outputBindingCount >= PROJECT_MODULATION_BINDING_CAPACITY
+                ? ProjectModulationStatus::BINDING_CAPACITY_EXCEEDED
+                : ProjectModulationStatus::TRIGGER_CAPACITY_EXCEEDED;
         return failure;
     }
     payload.beforeSourceCount = graph.sourceCount;
     payload.beforeBindingCount = graph.outputBindingCount;
+    payload.beforeTriggerCount = graph.triggerBindingCount;
     payload.beforeNextSourceId = graph.nextSourceId;
     payload.beforeNextBindingId = graph.nextBindingId;
     payload.beforeAuthoredRevision = pages.control.authoredRevision;
     payload.beforeSourceTail = graph.sources[graph.sourceCount];
     payload.beforeBindingTail = graph.outputBindings[graph.outputBindingCount];
+    if (triggerDraft != nullptr) {
+        payload.beforeTriggerTail =
+            graph.triggerBindings[graph.triggerBindingCount];
+    }
     payload.sourceCreated = true;
     payload.bindingCreated = true;
+    payload.triggerCreated = triggerDraft != nullptr;
     payload.macroCreated = createMacroSlot;
     payload.pending = true;
     MacroHistoryChange* reserved = change.get();
@@ -1607,11 +1649,23 @@ MacroHistoryService::beginLfoModulatorAudition(
         return failure;
     }
 
-    const auto created = createLfoModulator(graph, sourceDraft);
+    const auto created = lfoDraft != nullptr
+        ? createLfoModulator(graph, *lfoDraft)
+        : createAdsrModulator(graph, *adsrDraft);
     if (!created.changed()) {
         restoreMacroCreationState(pages, address, payload, false);
         (void)takePending_();
         return created;
+    }
+    if (triggerDraft != nullptr) {
+        auto trigger = *triggerDraft;
+        trigger.sourceId = created.sourceId;
+        const auto triggered = addProjectModulationTrigger(graph, trigger);
+        if (!triggered.changed()) {
+            restoreCreationBefore(pages, address, payload, true);
+            (void)takePending_();
+            return triggered;
+        }
     }
     auto binding = bindingDraft;
     binding.sourceId = created.sourceId;
@@ -1624,6 +1678,9 @@ MacroHistoryService::beginLfoModulatorAudition(
 
     payload.source = graph.sources[payload.beforeSourceCount];
     payload.binding = graph.outputBindings[payload.beforeBindingCount];
+    if (payload.triggerCreated) {
+        payload.trigger = graph.triggerBindings[payload.beforeTriggerCount];
+    }
     payload.afterNextSourceId = graph.nextSourceId;
     payload.afterNextBindingId = graph.nextBindingId;
     pages.control.markAuthoredMutation();
@@ -1649,21 +1706,70 @@ MacroHistoryService::beginLfoModulatorAudition(
 }
 
 FLASHMEM core::state::modulation::ProjectModulationResult
-MacroHistoryService::createUnassignedLfo(
+MacroHistoryService::beginLfoModulatorAudition(
     MacroPagesState& pages,
-    const core::state::modulation::ModulatorLfoDraft& sourceDraft
+    const MacroAutomationSlotAddress& address,
+    const core::state::modulation::ModulatorLfoDraft& sourceDraft,
+    const core::state::modulation::ModulationBindingDraft& bindingDraft,
+    bool createMacroSlot
+) {
+    return beginNewModulatorAudition_(
+        pages,
+        address,
+        &sourceDraft,
+        nullptr,
+        nullptr,
+        bindingDraft,
+        createMacroSlot
+    );
+}
+
+FLASHMEM core::state::modulation::ProjectModulationResult
+MacroHistoryService::beginAdsrModulatorAudition(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    const core::state::modulation::ModulatorAdsrDraft& sourceDraft,
+    const core::state::modulation::ModulationTriggerDraft& triggerDraft,
+    const core::state::modulation::ModulationBindingDraft& bindingDraft,
+    bool createMacroSlot
+) {
+    return beginNewModulatorAudition_(
+        pages,
+        address,
+        nullptr,
+        &sourceDraft,
+        &triggerDraft,
+        bindingDraft,
+        createMacroSlot
+    );
+}
+
+FLASHMEM core::state::modulation::ProjectModulationResult
+MacroHistoryService::createUnassignedModulator_(
+    MacroPagesState& pages,
+    const core::state::modulation::ModulatorLfoDraft* lfoDraft,
+    const core::state::modulation::ModulatorAdsrDraft* adsrDraft,
+    const core::state::modulation::ModulationTriggerDraft* triggerDraft
 ) {
     using namespace core::state::modulation;
     ProjectModulationResult failure{};
     failure.status = ProjectModulationStatus::INVALID_ARGUMENT;
-    if (sourceDraft.reach.kind != ModulatorReachKind::DETACHED ||
-        !validModulatorReach(sourceDraft.reach) ||
+    if ((lfoDraft == nullptr) == (adsrDraft == nullptr)) return failure;
+    const auto& reach = lfoDraft != nullptr
+        ? lfoDraft->reach
+        : adsrDraft->reach;
+    if (reach.kind != ModulatorReachKind::DETACHED ||
+        !validModulatorReach(reach) ||
         pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
         return failure;
     }
     auto& graph = pages.control.authored.modulation;
-    if (graph.sourceCount >= PROJECT_MODULATOR_CAPACITY) {
-        failure.status = ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED;
+    if (graph.sourceCount >= PROJECT_MODULATOR_CAPACITY ||
+        (triggerDraft != nullptr &&
+         graph.triggerBindingCount >= PROJECT_MODULATION_TRIGGER_CAPACITY)) {
+        failure.status = graph.sourceCount >= PROJECT_MODULATOR_CAPACITY
+            ? ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED
+            : ProjectModulationStatus::TRIGGER_CAPACITY_EXCEEDED;
         return failure;
     }
     auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
@@ -1675,15 +1781,33 @@ MacroHistoryService::createUnassignedLfo(
     auto& payload = change->modulator;
     payload.beforeSourceCount = graph.sourceCount;
     payload.beforeBindingCount = graph.outputBindingCount;
+    payload.beforeTriggerCount = graph.triggerBindingCount;
     payload.beforeNextSourceId = graph.nextSourceId;
     payload.beforeNextBindingId = graph.nextBindingId;
     payload.beforeAuthoredRevision = pages.control.authoredRevision;
     payload.beforeSourceTail = graph.sources[graph.sourceCount];
+    if (triggerDraft != nullptr) {
+        payload.beforeTriggerTail =
+            graph.triggerBindings[graph.triggerBindingCount];
+    }
     payload.sourceCreated = true;
     payload.bindingCreated = false;
+    payload.triggerCreated = triggerDraft != nullptr;
 
-    const auto created = createLfoModulator(graph, sourceDraft);
+    const auto created = lfoDraft != nullptr
+        ? createLfoModulator(graph, *lfoDraft)
+        : createAdsrModulator(graph, *adsrDraft);
     if (!created.changed()) return created;
+    if (triggerDraft != nullptr) {
+        auto trigger = *triggerDraft;
+        trigger.sourceId = created.sourceId;
+        const auto triggered = addProjectModulationTrigger(graph, trigger);
+        if (!triggered.changed()) {
+            restoreCreationBefore(pages, {}, payload, true);
+            return triggered;
+        }
+        payload.trigger = graph.triggerBindings[payload.beforeTriggerCount];
+    }
     payload.source = graph.sources[payload.beforeSourceCount];
     payload.afterNextSourceId = graph.nextSourceId;
     payload.afterNextBindingId = graph.nextBindingId;
@@ -1692,6 +1816,33 @@ MacroHistoryService::createUnassignedLfo(
     push_(undo_, undo_count_, std::move(change));
     clearRedo_();
     return created;
+}
+
+FLASHMEM core::state::modulation::ProjectModulationResult
+MacroHistoryService::createUnassignedLfo(
+    MacroPagesState& pages,
+    const core::state::modulation::ModulatorLfoDraft& sourceDraft
+) {
+    return createUnassignedModulator_(
+        pages,
+        &sourceDraft,
+        nullptr,
+        nullptr
+    );
+}
+
+FLASHMEM core::state::modulation::ProjectModulationResult
+MacroHistoryService::createUnassignedAdsr(
+    MacroPagesState& pages,
+    const core::state::modulation::ModulatorAdsrDraft& sourceDraft,
+    const core::state::modulation::ModulationTriggerDraft& triggerDraft
+) {
+    return createUnassignedModulator_(
+        pages,
+        nullptr,
+        &sourceDraft,
+        &triggerDraft
+    );
 }
 
 FLASHMEM core::state::modulation::ProjectModulationResult
@@ -1714,8 +1865,16 @@ MacroHistoryService::duplicateProjectModulator(
         failure.status = ProjectModulationStatus::INVALID_ID;
         return failure;
     }
-    if (graph.sourceCount >= PROJECT_MODULATOR_CAPACITY) {
-        failure.status = ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED;
+    const auto* sourceTrigger = findProjectModulationTriggerForSource(
+        graph,
+        sourceId
+    );
+    if (graph.sourceCount >= PROJECT_MODULATOR_CAPACITY ||
+        (sourceTrigger != nullptr &&
+         graph.triggerBindingCount >= PROJECT_MODULATION_TRIGGER_CAPACITY)) {
+        failure.status = graph.sourceCount >= PROJECT_MODULATOR_CAPACITY
+            ? ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED
+            : ProjectModulationStatus::TRIGGER_CAPACITY_EXCEEDED;
         return failure;
     }
     auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
@@ -1727,12 +1886,18 @@ MacroHistoryService::duplicateProjectModulator(
     auto& payload = change->modulator;
     payload.beforeSourceCount = graph.sourceCount;
     payload.beforeBindingCount = graph.outputBindingCount;
+    payload.beforeTriggerCount = graph.triggerBindingCount;
     payload.beforeNextSourceId = graph.nextSourceId;
     payload.beforeNextBindingId = graph.nextBindingId;
     payload.beforeAuthoredRevision = pages.control.authoredRevision;
     payload.beforeSourceTail = graph.sources[graph.sourceCount];
+    if (sourceTrigger != nullptr) {
+        payload.beforeTriggerTail =
+            graph.triggerBindings[graph.triggerBindingCount];
+    }
     payload.sourceCreated = true;
     payload.bindingCreated = false;
+    payload.triggerCreated = sourceTrigger != nullptr;
     if (source->kind == ModulatorKind::RECORDED_SHAPE) {
         const auto* record = findProjectCurve(
             arena,
@@ -1755,6 +1920,9 @@ MacroHistoryService::duplicateProjectModulator(
     );
     if (!duplicated.changed()) return duplicated;
     payload.source = graph.sources[payload.beforeSourceCount];
+    if (payload.triggerCreated) {
+        payload.trigger = graph.triggerBindings[payload.beforeTriggerCount];
+    }
     payload.afterNextSourceId = graph.nextSourceId;
     payload.afterNextBindingId = graph.nextBindingId;
     pages.control.markAuthoredMutation();
@@ -1810,6 +1978,7 @@ MacroHistoryService::beginExistingModulatorAudition(
     auto& payload = change->modulator;
     payload.beforeSourceCount = graph.sourceCount;
     payload.beforeBindingCount = graph.outputBindingCount;
+    payload.beforeTriggerCount = graph.triggerBindingCount;
     payload.beforeNextSourceId = graph.nextSourceId;
     payload.beforeNextBindingId = graph.nextBindingId;
     payload.beforeAuthoredRevision = pages.control.authoredRevision;
@@ -1924,6 +2093,9 @@ FLASHMEM bool MacroHistoryService::commitModulatorAudition(
     if (source == nullptr) return false;
     payload.source = *source;
     payload.binding = graph.outputBindings[payload.beforeBindingCount];
+    if (payload.triggerCreated) {
+        payload.trigger = graph.triggerBindings[payload.beforeTriggerCount];
+    }
     payload.afterNextSourceId = graph.nextSourceId;
     payload.afterNextBindingId = graph.nextBindingId;
     auto committed = takePending_();
@@ -2495,6 +2667,91 @@ FLASHMEM bool MacroHistoryService::setProjectLfoParametersCoalesced(
     return commitProjectSourceEdit_(pages, std::move(change), true);
 }
 
+FLASHMEM bool MacroHistoryService::setProjectAdsrParametersCoalesced(
+    MacroPagesState& pages,
+    core::state::modulation::ModulatorId sourceId,
+    const core::state::modulation::ModulatorAdsrParameters& parameters
+) {
+    using namespace core::state::modulation;
+    if (pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
+        return false;
+    }
+    auto* source = findProjectModulator(
+        pages.control.authored.modulation,
+        sourceId
+    );
+    if (!source || source->kind != ModulatorKind::ADSR) return false;
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return false;
+    change->kind = MacroHistoryActionKind::PROJECT_MODULATOR_SOURCE_EDIT;
+    change->sourceEdit.before = *source;
+    const auto result = core::state::modulation::setProjectAdsrParameters(
+        pages.control.authored.modulation,
+        sourceId,
+        parameters
+    );
+    if (!result.changed()) return false;
+    pages.control.markAuthoredMutation();
+    change->sourceEdit.after = *findProjectModulator(
+        pages.control.authored.modulation,
+        sourceId
+    );
+    change->sourceEdit.valid = true;
+    return commitProjectSourceEdit_(pages, std::move(change), true);
+}
+
+FLASHMEM bool MacroHistoryService::setProjectModulationTriggerCoalesced(
+    MacroPagesState& pages,
+    core::state::modulation::ModulatorId sourceId,
+    const core::state::modulation::ModulationTriggerRef& trigger,
+    bool enabled
+) {
+    using namespace core::state::modulation;
+    if (pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
+        return false;
+    }
+    const auto* existing = findProjectModulationTriggerForSource(
+        pages.control.authored.modulation,
+        sourceId
+    );
+    if (existing == nullptr) return false;
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return false;
+    change->kind = MacroHistoryActionKind::PROJECT_MODULATOR_TRIGGER_EDIT;
+    change->triggerEdit.before = *existing;
+    const auto result = core::state::modulation::setProjectModulationTrigger(
+        pages.control.authored.modulation,
+        sourceId,
+        trigger,
+        enabled
+    );
+    if (!result.changed()) return false;
+    pages.control.markAuthoredMutation();
+    change->triggerEdit.after = *existing;
+    change->triggerEdit.valid = true;
+
+    if (coalescing_ && undo_count_ > 0U &&
+        coalesced_kind_ == MacroHistoryActionKind::PROJECT_MODULATOR_TRIGGER_EDIT) {
+        auto& previous = undo_[undo_count_ - 1U];
+        if (previous && previous->triggerEdit.valid &&
+            previous->triggerEdit.after.id == change->triggerEdit.before.id &&
+            sameObjectBits(
+                previous->triggerEdit.after,
+                change->triggerEdit.before
+            )) {
+            previous->triggerEdit.after = change->triggerEdit.after;
+            clearRedo_();
+            return true;
+        }
+    }
+
+    push_(undo_, undo_count_, std::move(change));
+    clearRedo_();
+    coalescing_ = true;
+    coalesced_kind_ = MacroHistoryActionKind::PROJECT_MODULATOR_TRIGGER_EDIT;
+    return true;
+}
+
 FLASHMEM bool MacroHistoryService::setProjectModulatorReach(
     MacroPagesState& pages,
     core::state::modulation::ModulatorId sourceId,
@@ -2939,6 +3196,18 @@ FLASHMEM bool MacroHistoryService::undo(
         if (!restoreDeletedModulator(pages, *change->modulatorDelete)) {
             return false;
         }
+    } else if (change->triggerEdit.valid) {
+        auto* trigger =
+            core::state::modulation::findProjectModulationTriggerForSource(
+                pages.control.authored.modulation,
+                change->triggerEdit.after.sourceId
+            );
+        if (trigger == nullptr ||
+            !sameObjectBits(*trigger, change->triggerEdit.after)) {
+            return false;
+        }
+        *trigger = change->triggerEdit.before;
+        pages.control.markAuthoredMutation();
     } else if (change->sourceEdit.valid) {
         auto* source = core::state::modulation::findProjectModulator(
             pages.control.authored.modulation,
@@ -3036,6 +3305,18 @@ FLASHMEM bool MacroHistoryService::redo(
              ).changed()) {
             return false;
         }
+        pages.control.markAuthoredMutation();
+    } else if (change->triggerEdit.valid) {
+        auto* trigger =
+            core::state::modulation::findProjectModulationTriggerForSource(
+                pages.control.authored.modulation,
+                change->triggerEdit.before.sourceId
+            );
+        if (trigger == nullptr ||
+            !sameObjectBits(*trigger, change->triggerEdit.before)) {
+            return false;
+        }
+        *trigger = change->triggerEdit.after;
         pages.control.markAuthoredMutation();
     } else if (change->sourceEdit.valid) {
         auto* source = core::state::modulation::findProjectModulator(

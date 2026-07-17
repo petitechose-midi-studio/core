@@ -282,6 +282,31 @@ core::state::modulation::ModulatorLfoDraft defaultLfoDraft() {
     return draft;
 }
 
+core::state::modulation::ModulatorAdsrDraft defaultAdsrDraft() {
+    using namespace core::state::modulation;
+    ModulatorAdsrDraft draft{};
+    draft.name = "ADSR 1";
+    draft.reach = {
+        .kind = ModulatorReachKind::MACRO,
+        .track = kAddress.track,
+        .page = kAddress.page,
+        .macro = kAddress.macro,
+    };
+    return draft;
+}
+
+core::state::modulation::ModulationTriggerDraft defaultAdsrTrigger() {
+    using namespace core::state::modulation;
+    ModulationTriggerDraft trigger{};
+    trigger.trigger = {
+        ModulationTriggerKind::TRACK_NOTE,
+        kAddress.track,
+        PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
+        PROJECT_MODULATION_TRIGGER_ANY_NOTE,
+    };
+    return trigger;
+}
+
 core::state::modulation::ModulationBindingDraft defaultBindingDraft() {
     using namespace core::state::modulation;
     ModulationBindingDraft draft{};
@@ -1022,6 +1047,238 @@ void test_unassigned_lfo_creation_is_one_undo_action() {
     std::cout << "[PASS] explicit Unassigned LFO creation is one Undo action\n";
 }
 
+void test_unassigned_adsr_creation_includes_trigger_in_one_undo_action() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    auto source = defaultAdsrDraft();
+    source.reach = {};
+    const auto graphBefore = pages.control.authored.modulation;
+    const auto created = history.createUnassignedAdsr(
+        pages,
+        source,
+        defaultAdsrTrigger()
+    );
+    assert(created.changed());
+    assert(history.undoCount() == 1U);
+    const auto graphAfter = pages.control.authored.modulation;
+    assert(graphAfter.sourceCount == 1U);
+    assert(graphAfter.outputBindingCount == 0U);
+    assert(graphAfter.triggerBindingCount == 1U);
+    assert(graphAfter.triggerBindings[0].sourceId == created.sourceId);
+    assert(graphAfter.triggerBindings[0].trigger.kind ==
+           ModulationTriggerKind::TRACK_NOTE);
+
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphAfter,
+        sizeof(graphAfter)
+    ) == 0);
+    std::cout << "[PASS] Unassigned ADSR and trigger share one Undo action\n";
+}
+
+void test_adsr_audition_cancel_and_apply_are_atomic() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    auto binding = defaultBindingDraft();
+    binding.application = ModulationApplication::NATURAL;
+    const auto graphBefore = pages.control.authored.modulation;
+
+    auto invalidTrigger = defaultAdsrTrigger();
+    invalidTrigger.trigger.track = PROJECT_MODULATION_TRACK_COUNT;
+    const auto rejected = history.beginAdsrModulatorAudition(
+        pages,
+        kAddress,
+        defaultAdsrDraft(),
+        invalidTrigger,
+        binding
+    );
+    assert(rejected.status == ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(!pages.control.audition.active && history.undoCount() == 0U);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+
+    auto begun = history.beginAdsrModulatorAudition(
+        pages,
+        kAddress,
+        defaultAdsrDraft(),
+        defaultAdsrTrigger(),
+        binding
+    );
+    assert(begun.changed());
+    assert(pages.control.authored.modulation.sourceCount == 1U);
+    assert(pages.control.authored.modulation.triggerBindingCount == 1U);
+    assert(pages.control.authored.modulation.outputBindingCount == 1U);
+    assert(history.cancelModulatorAudition(pages, kAddress));
+    assert(history.undoCount() == 0U);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+
+    begun = history.beginAdsrModulatorAudition(
+        pages,
+        kAddress,
+        defaultAdsrDraft(),
+        defaultAdsrTrigger(),
+        binding
+    );
+    assert(begun.changed());
+    assert(history.commitModulatorAudition(pages, kAddress));
+    assert(history.undoCount() == 1U);
+    const auto graphAfter = pages.control.authored.modulation;
+    assert(graphAfter.triggerBindings[0].sourceId == begun.sourceId);
+    assert(graphAfter.outputBindings[0].sourceId == begun.sourceId);
+
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphAfter,
+        sizeof(graphAfter)
+    ) == 0);
+    std::cout << "[PASS] ADSR audition owns source, trigger, and destination\n";
+}
+
+void test_adsr_parameters_and_trigger_route_coalesce_by_stable_identity() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto created = createAdsrModulator(
+        pages.control.authored.modulation,
+        defaultAdsrDraft()
+    );
+    assert(created.changed());
+    auto triggerDraft = defaultAdsrTrigger();
+    triggerDraft.sourceId = created.sourceId;
+    assert(addProjectModulationTrigger(
+        pages.control.authored.modulation,
+        triggerDraft
+    ).changed());
+    const auto graphBefore = pages.control.authored.modulation;
+    const auto triggerId = graphBefore.triggerBindings[0].id;
+
+    auto parameters = graphBefore.sources[0].parameters.adsr;
+    parameters.attack = 32U;
+    assert(history.setProjectAdsrParametersCoalesced(
+        pages,
+        created.sourceId,
+        parameters
+    ));
+    parameters.attack = 64U;
+    assert(history.setProjectAdsrParametersCoalesced(
+        pages,
+        created.sourceId,
+        parameters
+    ));
+    assert(history.undoCount() == 1U);
+    history.endCoalescing();
+    const auto graphAfterParameters = pages.control.authored.modulation;
+
+    auto route = graphAfterParameters.triggerBindings[0].trigger;
+    route.track = 1U;
+    assert(history.setProjectModulationTriggerCoalesced(
+        pages,
+        created.sourceId,
+        route,
+        true
+    ));
+    route.track = 2U;
+    assert(history.setProjectModulationTriggerCoalesced(
+        pages,
+        created.sourceId,
+        route,
+        false
+    ));
+    assert(history.undoCount() == 2U);
+    assert(pages.control.authored.modulation.triggerBindings[0].id == triggerId);
+    const auto graphAfter = pages.control.authored.modulation;
+
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphAfterParameters,
+        sizeof(graphAfterParameters)
+    ) == 0);
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphAfter,
+        sizeof(graphAfter)
+    ) == 0);
+    std::cout << "[PASS] ADSR and trigger gestures coalesce by stable ID\n";
+}
+
+void test_adsr_duplicate_copies_trigger_and_undo_is_exact() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto created = createAdsrModulator(
+        pages.control.authored.modulation,
+        defaultAdsrDraft()
+    );
+    assert(created.changed());
+    auto trigger = defaultAdsrTrigger();
+    trigger.sourceId = created.sourceId;
+    assert(addProjectModulationTrigger(
+        pages.control.authored.modulation,
+        trigger
+    ).changed());
+    const auto graphBefore = pages.control.authored.modulation;
+
+    const auto duplicated = history.duplicateProjectModulator(
+        pages,
+        created.sourceId,
+        "ADSR 2"
+    );
+    assert(duplicated.changed());
+    const auto graphAfter = pages.control.authored.modulation;
+    assert(graphAfter.sourceCount == 2U);
+    assert(graphAfter.triggerBindingCount == 2U);
+    assert(graphAfter.triggerBindings[0].id != graphAfter.triggerBindings[1].id);
+    assert(graphAfter.triggerBindings[1].sourceId == duplicated.sourceId);
+    assert(graphAfter.triggerBindings[0].trigger ==
+           graphAfter.triggerBindings[1].trigger);
+
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphAfter,
+        sizeof(graphAfter)
+    ) == 0);
+    std::cout << "[PASS] ADSR duplicate carries its trigger route exactly\n";
+}
+
 void test_existing_assignment_reach_widening_cancel_and_undo_are_exact() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
@@ -1381,6 +1638,10 @@ int main() {
     test_project_source_edits_coalesce_and_restore_exact_source();
     test_project_source_rename_is_one_exact_undo_action();
     test_unassigned_lfo_creation_is_one_undo_action();
+    test_unassigned_adsr_creation_includes_trigger_in_one_undo_action();
+    test_adsr_audition_cancel_and_apply_are_atomic();
+    test_adsr_parameters_and_trigger_route_coalesce_by_stable_identity();
+    test_adsr_duplicate_copies_trigger_and_undo_is_exact();
     test_existing_assignment_reach_widening_cancel_and_undo_are_exact();
     test_project_modulator_split_is_one_exact_undo_action();
     test_root_delete_undo_restores_graph_and_recorded_curve_exactly();
