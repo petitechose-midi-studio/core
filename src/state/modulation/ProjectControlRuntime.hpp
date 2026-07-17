@@ -67,13 +67,36 @@ struct ProjectControlRuntimeFrame {
     > destinations{};
 };
 
-struct ProjectModulationRuntimeSourceState {
-    ModulatorId id{};
+struct ProjectModulationRuntimeLfoState {
+    ModulatorKind kind = ModulatorKind::LFO;
+    bool explicitlyTriggered = false;
+    uint16_t explicitMusicalAnchorFractionQ16 = 0;
     uint32_t explicitMusicalAnchorTick = 0;
     uint32_t explicitMonotonicAnchorMs = 0;
-    uint16_t explicitMusicalAnchorFractionQ16 = 0;
-    bool explicitlyTriggered = false;
-    uint8_t reserved = 0;
+};
+
+/**
+ * Hot recorded-shape segment. The packed endpoints avoid repeated random
+ * ProjectCurveArena reads while keeping the per-source state footprint fixed.
+ */
+struct ProjectModulationRuntimeRecordedCurveState {
+    ModulatorKind kind = ModulatorKind::RECORDED_SHAPE;
+    bool segmentValid = false;
+    uint16_t segmentHint = 1;
+    uint16_t leftTick = 0;
+    uint16_t rightTick = 0;
+    int16_t leftValue = 0;
+    int16_t rightValue = 0;
+};
+
+union ProjectModulationRuntimeSourcePayload {
+    ProjectModulationRuntimeLfoState lfo{};
+    ProjectModulationRuntimeRecordedCurveState recordedCurve;
+};
+
+struct ProjectModulationRuntimeSourceState {
+    ModulatorId id{};
+    ProjectModulationRuntimeSourcePayload payload{};
 };
 
 /**
@@ -208,6 +231,9 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeFrame(
 static_assert(sizeof(ProjectControlTimeSnapshot) == 24U);
 static_assert(sizeof(ProjectLogicalMacroBaseInput) == 12U);
 static_assert(sizeof(ProjectLogicalMacroRuntimeValue) == 20U);
+static_assert(sizeof(ProjectModulationRuntimeLfoState) == 12U);
+static_assert(sizeof(ProjectModulationRuntimeRecordedCurveState) == 12U);
+static_assert(sizeof(ProjectModulationRuntimeSourcePayload) == 12U);
 static_assert(sizeof(ProjectModulationRuntimeSourceState) == 16U);
 static_assert(sizeof(ProjectControlRuntimeState) == 5144U);
 static_assert(std::is_trivially_copyable_v<ProjectControlRuntimeState>);

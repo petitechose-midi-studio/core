@@ -240,13 +240,23 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
         runtime.kind = source.kind;
         runtime.flags = source.flags;
         if (source.kind == ModulatorKind::RECORDED_SHAPE) {
-            runtime.curveRecordIndex = static_cast<uint16_t>(
+            const uint16_t recordIndex = static_cast<uint16_t>(
                 curveIndex(arena, source.parameters.recordedCurveId)
             );
+            const auto& record = arena.records[recordIndex];
+            runtime.parameters.curve = {
+                .pointOffset = record.pointOffset,
+                .pointCount = record.pointCount,
+                .sourceDurationTicks = record.sourceDurationTicks,
+                .durationTicks = record.durationTicks,
+                .windowOffsetTicks = record.windowOffsetTicks,
+                .valueDomain = record.valueDomain,
+                .reserved = 0U,
+            };
         } else {
-            runtime.periodTicks = source.parameters.lfo.periodTicks;
-            runtime.freePeriodMs = source.parameters.lfo.freePeriodMs;
-            runtime.phaseQ15 = source.parameters.lfo.phaseQ15;
+            runtime.parameters.lfo.periodTicks = source.parameters.lfo.periodTicks;
+            runtime.parameters.lfo.freePeriodMs = source.parameters.lfo.freePeriodMs;
+            runtime.parameters.lfo.phaseQ15 = source.parameters.lfo.phaseQ15;
             runtime.shape = source.parameters.lfo.shape;
             runtime.retrigger = source.parameters.lfo.retrigger;
             runtime.timing = source.parameters.lfo.timing;

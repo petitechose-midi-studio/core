@@ -57,16 +57,49 @@ FLASHMEM bool bindingIdNeededAfter(const ProjectModulationRuntimePlan& plan,
 
 FLASHMEM ProjectModulationRuntimeSourceState makeSourceState(
     ModulatorId id,
+    ModulatorKind kind,
     const ProjectControlTimeSnapshot& time
 ) {
-    return {
-        .id = id,
-        .explicitMusicalAnchorTick = time.musicalTick,
-        .explicitMonotonicAnchorMs = time.monotonicMs,
-        .explicitMusicalAnchorFractionQ16 =
-            time.musicalTickFractionQ16,
-        .explicitlyTriggered = false,
-    };
+    ProjectModulationRuntimeSourceState state{};
+    state.id = id;
+    if (kind == ModulatorKind::RECORDED_SHAPE) {
+        state.payload.recordedCurve = {};
+        state.payload.recordedCurve.kind = kind;
+        state.payload.recordedCurve.segmentHint = 1U;
+    } else {
+        state.payload.lfo = {};
+        state.payload.lfo.kind = kind;
+        state.payload.lfo.explicitMusicalAnchorTick = time.musicalTick;
+        state.payload.lfo.explicitMonotonicAnchorMs = time.monotonicMs;
+        state.payload.lfo.explicitMusicalAnchorFractionQ16 =
+            time.musicalTickFractionQ16;
+    }
+    return state;
+}
+
+FLASHMEM ModulatorKind sourceStateKind(
+    const ProjectModulationRuntimeSourceState& state
+) {
+    // Both standard-layout union members share ModulatorKind as their common
+    // initial sequence, so the discriminator is readable through either arm.
+    return state.payload.lfo.kind;
+}
+
+FLASHMEM void preparePublishedSourceState(
+    ProjectModulationRuntimeSourceState& state,
+    const ProjectModulationRuntimeSource& source,
+    const ProjectControlTimeSnapshot& time
+) {
+    if (sourceStateKind(state) != source.kind) {
+        state = makeSourceState(source.id, source.kind, time);
+        return;
+    }
+    if (source.kind == ModulatorKind::RECORDED_SHAPE) {
+        // The source ID can survive a curve edit. Never retain endpoints from
+        // the previously published immutable plan/arena pair.
+        state.payload.recordedCurve.segmentValid = false;
+        state.payload.recordedCurve.segmentHint = 1U;
+    }
 }
 
 FLASHMEM void synchronizeSources(ProjectControlRuntimeState& state,
@@ -84,7 +117,14 @@ FLASHMEM void synchronizeSources(ProjectControlRuntimeState& state,
          targetIndex < plan.sourceCount;
          ++targetIndex) {
         const ModulatorId targetId = plan.sources[targetIndex].id;
-        if (state.sources[targetIndex].id == targetId) continue;
+        if (state.sources[targetIndex].id == targetId) {
+            preparePublishedSourceState(
+                state.sources[targetIndex],
+                plan.sources[targetIndex],
+                time
+            );
+            continue;
+        }
 
         uint16_t found = searchCount;
         for (uint16_t candidate = static_cast<uint16_t>(targetIndex + 1U);
@@ -97,6 +137,11 @@ FLASHMEM void synchronizeSources(ProjectControlRuntimeState& state,
         }
         if (found < searchCount) {
             std::swap(state.sources[targetIndex], state.sources[found]);
+            preparePublishedSourceState(
+                state.sources[targetIndex],
+                plan.sources[targetIndex],
+                time
+            );
             continue;
         }
 
@@ -119,7 +164,11 @@ FLASHMEM void synchronizeSources(ProjectControlRuntimeState& state,
                 }
             }
         }
-        state.sources[targetIndex] = makeSourceState(targetId, time);
+        state.sources[targetIndex] = makeSourceState(
+            targetId,
+            plan.sources[targetIndex].kind,
+            time
+        );
     }
     for (uint16_t index = plan.sourceCount; index < previousCount; ++index) {
         state.sources[index] = {};
@@ -259,6 +308,185 @@ float unpackProjectCurveValue(int16_t value,
         : std::clamp(unpacked, -1.0f, 1.0f);
 }
 
+float interpolatePackedCurveSegment(
+    float sourceTick,
+    uint16_t leftTick,
+    uint16_t rightTick,
+    int16_t leftPackedValue,
+    int16_t rightPackedValue,
+    ProjectCurveValueDomain domain
+) {
+    const float rightValue = unpackProjectCurveValue(
+        rightPackedValue,
+        domain
+    );
+    const uint16_t span = static_cast<uint16_t>(rightTick - leftTick);
+    if (span == 0U) return rightValue;
+    const float leftValue = unpackProjectCurveValue(leftPackedValue, domain);
+    const float alpha = std::clamp(
+        (sourceTick - static_cast<float>(leftTick)) /
+            static_cast<float>(span),
+        0.0f,
+        1.0f
+    );
+    const float value = leftValue + (rightValue - leftValue) * alpha;
+    return domain == ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
+        ? std::clamp(value, 0.0f, 1.0f)
+        : std::clamp(value, -1.0f, 1.0f);
+}
+
+uint16_t curveRightPoint(
+    const ProjectCurveArena& arena,
+    const ProjectModulationRuntimeCurve& curve,
+    float sourceTick,
+    uint16_t* segmentHint
+) {
+    constexpr uint8_t MAX_LOCAL_HINT_STEPS = 4U;
+    if (segmentHint != nullptr && *segmentHint > 0U &&
+        *segmentHint < curve.pointCount) {
+        uint16_t right = *segmentHint;
+        uint8_t steps = 0U;
+        if (arena.points[static_cast<uint16_t>(curve.pointOffset + right)].tick <
+            sourceTick) {
+            while (right + 1U < curve.pointCount &&
+                   steps < MAX_LOCAL_HINT_STEPS) {
+                ++right;
+                ++steps;
+                if (arena.points[static_cast<uint16_t>(
+                        curve.pointOffset + right
+                    )].tick >= sourceTick) {
+                    *segmentHint = right;
+                    return right;
+                }
+            }
+        } else {
+            while (right > 1U && steps < MAX_LOCAL_HINT_STEPS &&
+                   arena.points[static_cast<uint16_t>(
+                       curve.pointOffset + right - 1U
+                   )].tick >= sourceTick) {
+                --right;
+                ++steps;
+            }
+            if (arena.points[static_cast<uint16_t>(
+                    curve.pointOffset + right - 1U
+                )].tick < sourceTick) {
+                *segmentHint = right;
+                return right;
+            }
+        }
+    }
+
+    uint16_t low = 1U;
+    uint16_t high = curve.pointCount;
+    while (low < high) {
+        const uint16_t mid = static_cast<uint16_t>(
+            low + (high - low) / 2U
+        );
+        if (arena.points[static_cast<uint16_t>(curve.pointOffset + mid)].tick <
+            sourceTick) {
+            low = static_cast<uint16_t>(mid + 1U);
+        } else {
+            high = mid;
+        }
+    }
+    if (segmentHint != nullptr) *segmentHint = low;
+    return low;
+}
+
+float evaluateProjectCurve(
+    const ProjectCurveArena& arena,
+    const ProjectModulationRuntimeCurve& curve,
+    uint32_t elapsedTick,
+    uint16_t elapsedFractionQ16,
+    float fallback,
+    ProjectModulationRuntimeRecordedCurveState* cache
+) {
+    if (curve.pointCount == 0U ||
+        curve.pointOffset >= arena.pointCount ||
+        static_cast<uint32_t>(curve.pointOffset) + curve.pointCount >
+            arena.pointCount) {
+        return fallback;
+    }
+
+    const uint16_t duration = std::max<uint16_t>(curve.durationTicks, 1U);
+    const uint16_t sourceDuration = std::max<uint16_t>(
+        curve.sourceDurationTicks,
+        1U
+    );
+    const uint32_t localWhole = elapsedTick % duration;
+    float sourceTick = static_cast<float>(
+        (static_cast<uint32_t>(curve.windowOffsetTicks) + localWhole) %
+        sourceDuration
+    );
+    sourceTick += static_cast<float>(elapsedFractionQ16) / Q16_SCALE;
+    if (sourceTick >= static_cast<float>(sourceDuration)) {
+        sourceTick -= static_cast<float>(sourceDuration);
+    }
+
+    if (cache != nullptr && cache->segmentValid &&
+        cache->leftTick < sourceTick && sourceTick <= cache->rightTick) {
+        return interpolatePackedCurveSegment(
+            sourceTick,
+            cache->leftTick,
+            cache->rightTick,
+            cache->leftValue,
+            cache->rightValue,
+            curve.valueDomain
+        );
+    }
+
+    const uint16_t firstIndex = curve.pointOffset;
+    const uint16_t lastIndex = static_cast<uint16_t>(
+        curve.pointOffset + curve.pointCount - 1U
+    );
+    const auto& first = arena.points[firstIndex];
+    if (curve.pointCount == 1U || sourceTick <= first.tick) {
+        if (cache != nullptr) {
+            cache->segmentValid = false;
+            cache->segmentHint = 1U;
+        }
+        return unpackProjectCurveValue(first.value, curve.valueDomain);
+    }
+    const auto& last = arena.points[lastIndex];
+    if (sourceTick >= last.tick) {
+        if (cache != nullptr) {
+            cache->segmentValid = false;
+            cache->segmentHint = static_cast<uint16_t>(
+                curve.pointCount - 1U
+            );
+        }
+        return unpackProjectCurveValue(last.value, curve.valueDomain);
+    }
+
+    const uint16_t low = curveRightPoint(
+        arena,
+        curve,
+        sourceTick,
+        cache != nullptr ? &cache->segmentHint : nullptr
+    );
+    const uint16_t rightIndex = static_cast<uint16_t>(
+        curve.pointOffset + low
+    );
+    const uint16_t leftIndex = static_cast<uint16_t>(rightIndex - 1U);
+    const auto& left = arena.points[leftIndex];
+    const auto& right = arena.points[rightIndex];
+    if (cache != nullptr) {
+        cache->segmentValid = true;
+        cache->leftTick = left.tick;
+        cache->rightTick = right.tick;
+        cache->leftValue = left.value;
+        cache->rightValue = right.value;
+    }
+    return interpolatePackedCurveSegment(
+        sourceTick,
+        left.tick,
+        right.tick,
+        left.value,
+        right.value,
+        curve.valueDomain
+    );
+}
+
 float evaluateProjectCurve(const ProjectCurveArena& arena,
                            uint16_t recordIndex,
                            uint32_t elapsedTick,
@@ -269,80 +497,23 @@ float evaluateProjectCurve(const ProjectCurveArena& arena,
         return fallback;
     }
     const auto& record = arena.records[recordIndex];
-    if (record.pointCount == 0U ||
-        record.pointOffset >= arena.pointCount ||
-        static_cast<uint32_t>(record.pointOffset) + record.pointCount >
-            arena.pointCount) {
-        return fallback;
-    }
-
-    const uint16_t duration = std::max<uint16_t>(record.durationTicks, 1U);
-    const uint16_t sourceDuration = std::max<uint16_t>(
-        record.sourceDurationTicks,
-        1U
+    const ProjectModulationRuntimeCurve curve{
+        .pointOffset = record.pointOffset,
+        .pointCount = record.pointCount,
+        .sourceDurationTicks = record.sourceDurationTicks,
+        .durationTicks = record.durationTicks,
+        .windowOffsetTicks = record.windowOffsetTicks,
+        .valueDomain = record.valueDomain,
+        .reserved = 0U,
+    };
+    return evaluateProjectCurve(
+        arena,
+        curve,
+        elapsedTick,
+        elapsedFractionQ16,
+        fallback,
+        nullptr
     );
-    const uint32_t localWhole = elapsedTick % duration;
-    float sourceTick = static_cast<float>(
-        (static_cast<uint32_t>(record.windowOffsetTicks) + localWhole) %
-        sourceDuration
-    );
-    sourceTick += static_cast<float>(elapsedFractionQ16) / Q16_SCALE;
-    if (sourceTick >= static_cast<float>(sourceDuration)) {
-        sourceTick -= static_cast<float>(sourceDuration);
-    }
-
-    const uint16_t firstIndex = record.pointOffset;
-    const uint16_t lastIndex = static_cast<uint16_t>(
-        record.pointOffset + record.pointCount - 1U
-    );
-    const auto& first = arena.points[firstIndex];
-    if (record.pointCount == 1U || sourceTick <= first.tick) {
-        return unpackProjectCurveValue(first.value, record.valueDomain);
-    }
-    const auto& last = arena.points[lastIndex];
-    if (sourceTick >= last.tick) {
-        return unpackProjectCurveValue(last.value, record.valueDomain);
-    }
-
-    uint16_t low = 1U;
-    uint16_t high = record.pointCount;
-    while (low < high) {
-        const uint16_t mid = static_cast<uint16_t>(
-            low + (high - low) / 2U
-        );
-        if (arena.points[static_cast<uint16_t>(record.pointOffset + mid)].tick <
-            sourceTick) {
-            low = static_cast<uint16_t>(mid + 1U);
-        } else {
-            high = mid;
-        }
-    }
-    const uint16_t rightIndex = static_cast<uint16_t>(
-        record.pointOffset + low
-    );
-    const uint16_t leftIndex = static_cast<uint16_t>(rightIndex - 1U);
-    const auto& left = arena.points[leftIndex];
-    const auto& right = arena.points[rightIndex];
-    const float leftValue = unpackProjectCurveValue(
-        left.value,
-        record.valueDomain
-    );
-    const float rightValue = unpackProjectCurveValue(
-        right.value,
-        record.valueDomain
-    );
-    const uint16_t span = static_cast<uint16_t>(right.tick - left.tick);
-    if (span == 0U) return rightValue;
-    const float alpha = std::clamp(
-        (sourceTick - static_cast<float>(left.tick)) /
-            static_cast<float>(span),
-        0.0f,
-        1.0f
-    );
-    const float value = leftValue + (rightValue - leftValue) * alpha;
-    return record.valueDomain == ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
-        ? std::clamp(value, 0.0f, 1.0f)
-        : std::clamp(value, -1.0f, 1.0f);
 }
 
 int16_t packQ15(float value) {
@@ -487,7 +658,8 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
     for (uint16_t index = 0; index < plan.sourceCount; ++index) {
         const auto& source = plan.sources[index];
         auto& sourceState = state.sources[index];
-        if (source.retrigger == ModulatorRetriggerPolicy::EXPLICIT_TRIGGER &&
+        if (source.kind != ModulatorKind::RECORDED_SHAPE &&
+            source.retrigger == ModulatorRetriggerPolicy::EXPLICIT_TRIGGER &&
             (source.triggerFlags & PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U) {
             for (uint16_t eventIndex = 0;
                  triggers != nullptr && eventIndex < triggers->count;
@@ -498,11 +670,13 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
                     )) {
                     continue;
                 }
-                sourceState.explicitMusicalAnchorTick = time.musicalTick;
-                sourceState.explicitMonotonicAnchorMs = time.monotonicMs;
-                sourceState.explicitMusicalAnchorFractionQ16 =
+                sourceState.payload.lfo.explicitMusicalAnchorTick =
+                    time.musicalTick;
+                sourceState.payload.lfo.explicitMonotonicAnchorMs =
+                    time.monotonicMs;
+                sourceState.payload.lfo.explicitMusicalAnchorFractionQ16 =
                     time.musicalTickFractionQ16;
-                sourceState.explicitlyTriggered = true;
+                sourceState.payload.lfo.explicitlyTriggered = true;
                 break;
             }
         }
@@ -511,10 +685,11 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
         if (source.kind == ModulatorKind::RECORDED_SHAPE) {
             value = evaluateProjectCurve(
                 arena,
-                source.curveRecordIndex,
+                source.parameters.curve,
                 projectElapsedTick,
                 projectElapsedFraction,
-                0.0f
+                0.0f,
+                &sourceState.payload.recordedCurve
             );
         } else {
             uint32_t musicalAnchor = state.activationMusicalTick;
@@ -527,26 +702,28 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
                 monotonicAnchor = time.transportStartMonotonicMs;
             } else if (
                 source.retrigger == ModulatorRetriggerPolicy::EXPLICIT_TRIGGER &&
-                sourceState.explicitlyTriggered
+                sourceState.payload.lfo.explicitlyTriggered
             ) {
-                musicalAnchor = sourceState.explicitMusicalAnchorTick;
+                musicalAnchor =
+                    sourceState.payload.lfo.explicitMusicalAnchorTick;
                 musicalAnchorFraction =
-                    sourceState.explicitMusicalAnchorFractionQ16;
-                monotonicAnchor = sourceState.explicitMonotonicAnchorMs;
+                    sourceState.payload.lfo.explicitMusicalAnchorFractionQ16;
+                monotonicAnchor =
+                    sourceState.payload.lfo.explicitMonotonicAnchorMs;
             }
             const float phase = source.timing == ModulatorTimingMode::FREE
                 ? phaseFromFreeTime(
                     time.monotonicMs,
                     monotonicAnchor,
-                    source.freePeriodMs,
-                    source.phaseQ15
+                    source.parameters.lfo.freePeriodMs,
+                    source.parameters.lfo.phaseQ15
                 )
                 : phaseFromMusicalTime(
                     time,
                     musicalAnchor,
                     musicalAnchorFraction,
-                    source.periodTicks,
-                    source.phaseQ15
+                    source.parameters.lfo.periodTicks,
+                    source.parameters.lfo.phaseQ15
                 );
             value = evaluateProjectLfoShape(source.shape, phase);
         }

@@ -16,12 +16,32 @@ struct ProjectModulationCompileContext {
     std::array<uint8_t, PROJECT_MODULATION_TRACK_COUNT> activeMacroMask{};
 };
 
-struct ProjectModulationRuntimeSource {
-    ModulatorId id{};
+struct ProjectModulationRuntimeLfo {
     uint32_t periodTicks = 0;
     uint32_t freePeriodMs = 0;
     int16_t phaseQ15 = 0;
-    uint16_t curveRecordIndex = std::numeric_limits<uint16_t>::max();
+    uint16_t reserved = 0;
+};
+
+/** Curve facts resolved once at plan publication, outside the hot evaluator. */
+struct ProjectModulationRuntimeCurve {
+    uint16_t pointOffset = 0;
+    uint16_t pointCount = 0;
+    uint16_t sourceDurationTicks = 1;
+    uint16_t durationTicks = 1;
+    uint16_t windowOffsetTicks = 0;
+    ProjectCurveValueDomain valueDomain = ProjectCurveValueDomain::BIPOLAR;
+    uint8_t reserved = 0;
+};
+
+union ProjectModulationRuntimeSourceParameters {
+    ProjectModulationRuntimeLfo lfo{};
+    ProjectModulationRuntimeCurve curve;
+};
+
+struct ProjectModulationRuntimeSource {
+    ModulatorId id{};
+    ProjectModulationRuntimeSourceParameters parameters{};
     ModulationTriggerRef trigger{};
     ModulatorKind kind = ModulatorKind::LFO;
     uint8_t flags = 0;
@@ -149,6 +169,9 @@ ProjectModulationResolveResult resolveProjectModulationDestination(
 );
 
 static_assert(sizeof(ProjectModulationRuntimeSource) == 28U);
+static_assert(sizeof(ProjectModulationRuntimeLfo) == 12U);
+static_assert(sizeof(ProjectModulationRuntimeCurve) == 12U);
+static_assert(sizeof(ProjectModulationRuntimeSourceParameters) == 12U);
 static_assert(sizeof(ProjectModulationRuntimeBinding) == 16U);
 static_assert(sizeof(ProjectModulationRuntimeDestination) == 24U);
 static_assert(sizeof(ProjectModulationRuntimePlan) == 15888U);

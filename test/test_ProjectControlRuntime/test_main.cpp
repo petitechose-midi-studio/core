@@ -496,6 +496,78 @@ void testPositiveRecordedCurveUsesNaturalAndExplicitAroundBase() {
     assert(near(runtime.frame->destinations[2].modulation, -0.5f));
 }
 
+void testRecordedCurveHintPreservesJumpsWrapAndDuplicateTicks() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    const std::array<mod::ProjectPackedCurvePoint, 7> points{{
+        {0U, -32767},
+        {2U, -24576},
+        {4U, -16384},
+        {4U, -8192},
+        {8U, 0},
+        {12U, 16384},
+        {15U, 32767},
+    }};
+    mod::RecordedShapeDraft shape{};
+    shape.name = "Hint";
+    shape.reach = projectReach();
+    shape.curve.sourceDurationTicks = 16U;
+    shape.curve.durationTicks = 16U;
+    shape.curve.valueDomain = mod::ProjectCurveValueDomain::BIPOLAR;
+    shape.points = points.data();
+    shape.pointCount = static_cast<uint16_t>(points.size());
+    const auto source = mod::createRecordedShapeModulator(
+        domain->modulation,
+        domain->curves,
+        shape
+    );
+    assert(source.changed());
+    addBinding(*domain, source.sourceId, destination(0U, 0U, 0U));
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectControlRuntimePlan(
+        *domain,
+        activeContext(),
+        *plan
+    ).compiled());
+    RuntimeFixture runtime;
+    runtime.activate(*plan);
+    mod::ProjectControlTimeSnapshot time{};
+
+    time.musicalTick = 10U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.25f));
+    assert(runtime.state->sources[0].payload.recordedCurve.segmentHint == 5U);
+    assert(runtime.state->sources[0].payload.recordedCurve.segmentValid);
+    assert(runtime.state->sources[0].payload.recordedCurve.leftTick == 8U);
+    assert(runtime.state->sources[0].payload.recordedCurve.rightTick == 12U);
+
+    time.musicalTick = 4U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], -0.5f));
+    assert(runtime.state->sources[0].payload.recordedCurve.segmentHint == 2U);
+
+    time.musicalTick = 14U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.8333f));
+    assert(runtime.state->sources[0].payload.recordedCurve.segmentHint == 6U);
+
+    time.musicalTick = 20U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], -0.5f));
+    assert(runtime.state->sources[0].payload.recordedCurve.segmentHint == 2U);
+
+    assert(mod::synchronizeProjectControlRuntimeState(
+        *runtime.state,
+        *plan,
+        time
+    ) == mod::ProjectControlRuntimeStatus::OK);
+    assert(!runtime.state->sources[0].payload.recordedCurve.segmentValid);
+    assert(runtime.state->sources[0].payload.recordedCurve.segmentHint == 1U);
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], -0.5f));
+    std::cout << "[PASS] recorded curve hint preserves exact discontinuities\n";
+}
+
 void testExplicitPerBindingSlewAndFailureAtomicity() {
     auto domain = std::make_unique<mod::ProjectControlDomainState>();
     const auto source = addLfo(
@@ -602,7 +674,7 @@ void testRuntimeStateSurvivesStableIdReordering() {
     assert(runtime.evaluate(*firstPlan, domain->curves, time).evaluated());
     runtime.triggers.count = 0U;
     const uint32_t retainedAnchor = runtime.state->sources[1]
-        .explicitMusicalAnchorTick;
+        .payload.lfo.explicitMusicalAnchorTick;
 
     assert(mod::deleteProjectModulator(
         domain->modulation,
@@ -621,7 +693,8 @@ void testRuntimeStateSurvivesStableIdReordering() {
         time
     ) == mod::ProjectControlRuntimeStatus::OK);
     assert(runtime.state->sources[0].id == retained);
-    assert(runtime.state->sources[0].explicitMusicalAnchorTick == retainedAnchor);
+    assert(runtime.state->sources[0].payload.lfo.explicitMusicalAnchorTick ==
+           retainedAnchor);
 }
 
 void testExactMaximumGraphEvaluatesEverySourceAndBinding() {
@@ -695,6 +768,7 @@ int main() {
     testSyncFreeTransportAndExplicitRetrigger();
     testFractionalRecordedCurveAndFromBaseBinding();
     testPositiveRecordedCurveUsesNaturalAndExplicitAroundBase();
+    testRecordedCurveHintPreservesJumpsWrapAndDuplicateTicks();
     testExplicitPerBindingSlewAndFailureAtomicity();
     testRuntimeStateSurvivesStableIdReordering();
     testExactMaximumGraphEvaluatesEverySourceAndBinding();
