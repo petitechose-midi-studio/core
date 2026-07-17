@@ -69,14 +69,43 @@ FLASHMEM bool validLfoParameters(const ModulatorLfoParameters& parameters) {
            parameters.reserved[2] == 0U;
 }
 
+FLASHMEM bool validAdsrParameters(const ModulatorAdsrParameters& parameters) {
+    return parameters.sustainQ15 <=
+               PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15 &&
+           static_cast<uint8_t>(parameters.timing) <=
+               static_cast<uint8_t>(ModulatorTimingMode::FREE) &&
+           static_cast<uint8_t>(parameters.retrigger) <=
+               static_cast<uint8_t>(ModulatorAdsrRetriggerMode::LEGATO) &&
+           static_cast<uint8_t>(parameters.curve) <=
+               static_cast<uint8_t>(ModulatorAdsrCurve::EXPONENTIAL) &&
+           parameters.reserved == 0U;
+}
+
+FLASHMEM bool parameterTailZero(
+    const ModulatorParameters& parameters,
+    size_t first
+) {
+    const auto* bytes = reinterpret_cast<const uint8_t*>(&parameters);
+    for (size_t index = first; index < sizeof(parameters); ++index) {
+        if (bytes[index] != 0U) return false;
+    }
+    return true;
+}
+
 FLASHMEM bool validTriggerRef(const ModulationTriggerRef& trigger) {
     if (static_cast<uint8_t>(trigger.kind) >
         static_cast<uint8_t>(ModulationTriggerKind::TRACK_NOTE)) {
         return false;
     }
-    return trigger.track < PROJECT_MODULATION_TRACK_COUNT &&
-           trigger.channel < 16U &&
-           trigger.data <= 127U;
+    if (trigger.track >= PROJECT_MODULATION_TRACK_COUNT) return false;
+    if (trigger.kind == ModulationTriggerKind::TRACK_NOTE) {
+        const bool channelValid = trigger.channel < 16U ||
+            trigger.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL;
+        const bool noteValid = trigger.data <= 127U ||
+            trigger.data == PROJECT_MODULATION_TRIGGER_ANY_NOTE;
+        return channelValid && noteValid;
+    }
+    return trigger.channel < 16U && trigger.data <= 127U;
 }
 
 template <typename Entry, size_t Capacity>
@@ -576,6 +605,10 @@ FLASHMEM bool projectModulatorNaturalDomain(
         out = ModulatorNaturalDomain::CENTERED;
         return true;
     }
+    if (source.kind == ModulatorKind::ADSR) {
+        out = ModulatorNaturalDomain::POSITIVE;
+        return true;
+    }
     if (source.kind != ModulatorKind::RECORDED_SHAPE) return false;
     const auto* curve = findProjectCurve(
         arena,
@@ -698,7 +731,12 @@ FLASHMEM void formatNextProjectModulatorName(
     size_t outSize
 ) {
     if (out == nullptr || outSize == 0U) return;
-    const char* prefix = kind == ModulatorKind::LFO ? "LFO" : "Motion";
+    const char* prefix = "Motion";
+    if (kind == ModulatorKind::LFO) {
+        prefix = "LFO";
+    } else if (kind == ModulatorKind::ADSR) {
+        prefix = "ADSR";
+    }
     for (uint16_t ordinal = 1; ordinal <= PROJECT_MODULATOR_CAPACITY; ++ordinal) {
         std::snprintf(
             out,
@@ -912,6 +950,33 @@ FLASHMEM ProjectModulationResult createLfoModulator(
     source.flags = draft.enabled ? PROJECT_MODULATOR_FLAG_ENABLED : 0U;
     source.accent = draft.accent;
     source.parameters.lfo = draft.parameters;
+    state.sources[state.sourceCount++] = source;
+    return result(ProjectModulationStatus::OK, source.id);
+}
+
+FLASHMEM ProjectModulationResult createAdsrModulator(
+    ProjectModulationState& state,
+    const ModulatorAdsrDraft& draft
+) {
+    if (!validModulatorReach(draft.reach) ||
+        !validAdsrParameters(draft.parameters)) {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT);
+    }
+    if (state.sourceCount >= PROJECT_MODULATOR_CAPACITY) {
+        return result(ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED);
+    }
+    if (!canAllocateId(state.nextSourceId)) {
+        return result(ProjectModulationStatus::ID_EXHAUSTED);
+    }
+
+    ModulatorSourceState source{};
+    source.id = {takeId(state.nextSourceId)};
+    copyName(source.name, draft.name, "ADSR");
+    source.reach = draft.reach;
+    source.kind = ModulatorKind::ADSR;
+    source.flags = draft.enabled ? PROJECT_MODULATOR_FLAG_ENABLED : 0U;
+    source.accent = draft.accent;
+    source.parameters.adsr = draft.parameters;
     state.sources[state.sourceCount++] = source;
     return result(ProjectModulationStatus::OK, source.id);
 }
@@ -1282,6 +1347,30 @@ FLASHMEM ProjectModulationResult setProjectLfoParameters(
     return result(ProjectModulationStatus::OK, sourceId);
 }
 
+FLASHMEM ProjectModulationResult setProjectAdsrParameters(
+    ProjectModulationState& state,
+    ModulatorId sourceId,
+    const ModulatorAdsrParameters& parameters
+) {
+    auto* source = findProjectModulator(state, sourceId);
+    if (source == nullptr) {
+        return result(ProjectModulationStatus::INVALID_ID, sourceId);
+    }
+    if (source->kind != ModulatorKind::ADSR ||
+        !validAdsrParameters(parameters)) {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
+    }
+    if (std::memcmp(
+            &source->parameters.adsr,
+            &parameters,
+            sizeof(parameters)
+        ) == 0) {
+        return result(ProjectModulationStatus::NO_CHANGE, sourceId);
+    }
+    source->parameters.adsr = parameters;
+    return result(ProjectModulationStatus::OK, sourceId);
+}
+
 FLASHMEM ProjectModulationResult addProjectModulationBinding(
     ProjectModulationState& state,
     const ModulationBindingDraft& draft
@@ -1599,9 +1688,8 @@ FLASHMEM bool validProjectModulationDomain(
             !validModulatorReach(source.reach) || source.schemaVersion != 1U ||
             (source.flags & ~SOURCE_FLAGS) != 0U ||
             !allZero(source.reserved) ||
-            !allZero(source.parameters.reserved) ||
             static_cast<uint8_t>(source.kind) >
-                static_cast<uint8_t>(ModulatorKind::LFO)) {
+                static_cast<uint8_t>(ModulatorKind::ADSR)) {
             return false;
         }
         for (uint16_t prior = 0; prior < index; ++prior) {
@@ -1612,22 +1700,28 @@ FLASHMEM bool validProjectModulationDomain(
             return false;
         }
         if (source.kind == ModulatorKind::LFO) {
-            if (valid(source.parameters.recordedCurveId) ||
-                !validLfoParameters(source.parameters.lfo) ||
-                !allZero(source.parameters.lfo.reserved)) {
+            if (!validLfoParameters(source.parameters.lfo)) {
+                return false;
+            }
+        } else if (source.kind == ModulatorKind::ADSR) {
+            if (!validAdsrParameters(source.parameters.adsr) ||
+                !parameterTailZero(
+                    source.parameters,
+                    sizeof(ModulatorAdsrParameters)
+                )) {
+                return false;
+            }
+        } else if (source.kind == ModulatorKind::RECORDED_SHAPE) {
+            if (!valid(source.parameters.recordedCurveId) ||
+                curveIndex(arena, source.parameters.recordedCurveId) < 0 ||
+                !parameterTailZero(
+                    source.parameters,
+                    sizeof(ProjectCurveId)
+                )) {
                 return false;
             }
         } else {
-            const ModulatorLfoParameters defaultLfo{};
-            if (!valid(source.parameters.recordedCurveId) ||
-                curveIndex(arena, source.parameters.recordedCurveId) < 0 ||
-                std::memcmp(
-                    &source.parameters.lfo,
-                    &defaultLfo,
-                    sizeof(ModulatorLfoParameters)
-                ) != 0) {
-                return false;
-            }
+            return false;
         }
     }
 

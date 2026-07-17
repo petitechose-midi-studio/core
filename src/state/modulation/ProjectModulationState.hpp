@@ -23,6 +23,7 @@ inline constexpr uint32_t PROJECT_MODULATOR_FREE_PERIOD_MAX_MS = 3600000;
 enum class ModulatorKind : uint8_t {
     RECORDED_SHAPE = 0,
     LFO,
+    ADSR,
 };
 
 enum class ModulatorReachKind : uint8_t {
@@ -72,11 +73,42 @@ struct ModulatorLfoParameters {
     std::array<uint8_t, 3> reserved{};
 };
 
-/** Fixed-width union substitute: simple to persist, validate and migrate. */
-struct ModulatorParameters {
-    ProjectCurveId recordedCurveId{};
-    ModulatorLfoParameters lfo{};
-    std::array<uint8_t, 12> reserved{};
+enum class ModulatorAdsrRetriggerMode : uint8_t {
+    RETRIGGER = 0,
+    LEGATO,
+};
+
+enum class ModulatorAdsrCurve : uint8_t {
+    LINEAR = 0,
+    SMOOTH,
+    EXPONENTIAL,
+};
+
+inline constexpr uint16_t PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15 = 32768U;
+inline constexpr uint16_t PROJECT_MODULATOR_ADSR_DEFAULT_SUSTAIN_Q15 = 22938U;
+
+/**
+ * Compact positive-domain ADSR payload. Stage durations use milliseconds in
+ * FREE mode and Project control ticks in SYNC mode.
+ */
+struct ModulatorAdsrParameters {
+    uint16_t attack = 16U;
+    uint16_t decay = 250U;
+    uint16_t release = 500U;
+    uint16_t sustainQ15 = PROJECT_MODULATOR_ADSR_DEFAULT_SUSTAIN_Q15;
+    ModulatorTimingMode timing = ModulatorTimingMode::FREE;
+    ModulatorAdsrRetriggerMode retrigger =
+        ModulatorAdsrRetriggerMode::RETRIGGER;
+    ModulatorAdsrCurve curve = ModulatorAdsrCurve::EXPONENTIAL;
+    uint8_t reserved = 0U;
+};
+
+/** Fixed-width active payload; persistence remains one 16-byte record. */
+union ModulatorParameters {
+    ProjectCurveId recordedCurveId;
+    ModulatorLfoParameters lfo;
+    ModulatorAdsrParameters adsr;
+    std::array<uint8_t, 16> raw{};
 };
 
 inline constexpr uint8_t PROJECT_MODULATOR_FLAG_ENABLED = 0x01U;
@@ -164,6 +196,9 @@ enum class ModulationTriggerKind : uint8_t {
     TRACK_NOTE,
 };
 
+inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_ANY_CHANNEL = 0xFFU;
+inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_ANY_NOTE = 0xFFU;
+
 struct ModulationTriggerRef {
     ModulationTriggerKind kind = ModulationTriggerKind::TRANSPORT_START;
     uint8_t track = 0;
@@ -210,18 +245,19 @@ struct ProjectModulationState {
 
 static_assert(sizeof(ModulatorReach) == 6U);
 static_assert(sizeof(ModulatorLfoParameters) == 16U);
-static_assert(sizeof(ModulatorParameters) == 32U);
-static_assert(sizeof(ModulatorSourceState) == 64U);
+static_assert(sizeof(ModulatorAdsrParameters) == 12U);
+static_assert(sizeof(ModulatorParameters) == 16U);
+static_assert(sizeof(ModulatorSourceState) == 48U);
 static_assert(sizeof(ModulationBindingState) == 20U);
 static_assert(sizeof(ModulationDestinationScaleState) == 6U);
 static_assert(sizeof(ModulationTriggerRef) == 4U);
 static_assert(sizeof(ModulationTriggerBindingState) == 16U);
-static_assert(sizeof(ProjectModulationState) == 23568U);
+static_assert(sizeof(ProjectModulationState) == 21520U);
 static_assert(
     sizeof(ProjectModulationState) +
         sizeof(ProjectAutomationCurveDirectory) +
         sizeof(ProjectCurveArena) ==
-    162588U
+    160540U
 );
 static_assert(std::is_trivially_copyable_v<ModulatorSourceState>);
 static_assert(std::is_trivially_copyable_v<ModulationBindingState>);

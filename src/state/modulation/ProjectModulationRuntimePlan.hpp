@@ -37,6 +37,27 @@ struct ProjectModulationRuntimeCurve {
 union ProjectModulationRuntimeSourceParameters {
     ProjectModulationRuntimeLfo lfo{};
     ProjectModulationRuntimeCurve curve;
+    ModulatorAdsrParameters adsr;
+};
+
+struct ProjectModulationRuntimeLfoTraits {
+    ModulatorLfoShape shape = ModulatorLfoShape::SINE;
+    ModulatorRetriggerPolicy retrigger =
+        ModulatorRetriggerPolicy::FREE_RUNNING;
+    ModulatorTimingMode timing = ModulatorTimingMode::SYNC;
+};
+
+struct ProjectModulationRuntimeAdsrTraits {
+    ModulatorAdsrCurve curve = ModulatorAdsrCurve::EXPONENTIAL;
+    ModulatorAdsrRetriggerMode retrigger =
+        ModulatorAdsrRetriggerMode::RETRIGGER;
+    ModulatorTimingMode timing = ModulatorTimingMode::FREE;
+};
+
+union ProjectModulationRuntimeSourceTraits {
+    ProjectModulationRuntimeLfoTraits lfo{};
+    ProjectModulationRuntimeAdsrTraits adsr;
+    std::array<uint8_t, 3> raw;
 };
 
 struct ProjectModulationRuntimeSource {
@@ -45,9 +66,7 @@ struct ProjectModulationRuntimeSource {
     ModulationTriggerRef trigger{};
     ModulatorKind kind = ModulatorKind::LFO;
     uint8_t flags = 0;
-    ModulatorLfoShape shape = ModulatorLfoShape::SINE;
-    ModulatorRetriggerPolicy retrigger = ModulatorRetriggerPolicy::FREE_RUNNING;
-    ModulatorTimingMode timing = ModulatorTimingMode::SYNC;
+    ProjectModulationRuntimeSourceTraits traits{};
     uint8_t triggerFlags = 0;
     uint16_t reserved = 0;
 };
@@ -172,6 +191,9 @@ static_assert(sizeof(ProjectModulationRuntimeSource) == 28U);
 static_assert(sizeof(ProjectModulationRuntimeLfo) == 12U);
 static_assert(sizeof(ProjectModulationRuntimeCurve) == 12U);
 static_assert(sizeof(ProjectModulationRuntimeSourceParameters) == 12U);
+static_assert(sizeof(ProjectModulationRuntimeLfoTraits) == 3U);
+static_assert(sizeof(ProjectModulationRuntimeAdsrTraits) == 3U);
+static_assert(sizeof(ProjectModulationRuntimeSourceTraits) == 3U);
 static_assert(sizeof(ProjectModulationRuntimeBinding) == 16U);
 static_assert(sizeof(ProjectModulationRuntimeDestination) == 24U);
 static_assert(sizeof(ProjectModulationRuntimePlan) == 15888U);

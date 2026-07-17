@@ -80,7 +80,7 @@ struct ProjectControlState {
 static_assert(sizeof(ProjectModulatorAuditionState) == 20U);
 static_assert(sizeof(ProjectModulationFocusEntry) == 12U);
 static_assert(sizeof(ProjectModulationFocusState) == 100U);
-static_assert(sizeof(ProjectControlState) == 184268U);
+static_assert(sizeof(ProjectControlState) == 182220U);
 static_assert(std::is_trivially_copyable_v<ProjectControlState>);
 
 }  // namespace core::state::modulation

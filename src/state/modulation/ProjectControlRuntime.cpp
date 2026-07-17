@@ -66,6 +66,9 @@ FLASHMEM ProjectModulationRuntimeSourceState makeSourceState(
         state.payload.recordedCurve = {};
         state.payload.recordedCurve.kind = kind;
         state.payload.recordedCurve.segmentHint = 1U;
+    } else if (kind == ModulatorKind::ADSR) {
+        state.payload.adsr = {};
+        state.payload.adsr.kind = kind;
     } else {
         state.payload.lfo = {};
         state.payload.lfo.kind = kind;
@@ -600,6 +603,22 @@ float evaluateProjectLfoShape(ModulatorLfoShape shape, float phase) {
     }
 }
 
+float evaluateProjectAdsrProgress(
+    ModulatorAdsrCurve curve,
+    float progress
+) {
+    const float normalized = std::clamp(progress, 0.0f, 1.0f);
+    switch (curve) {
+        case ModulatorAdsrCurve::SMOOTH:
+            return normalized * normalized * (3.0f - 2.0f * normalized);
+        case ModulatorAdsrCurve::EXPONENTIAL:
+            return normalized * normalized;
+        case ModulatorAdsrCurve::LINEAR:
+        default:
+            return normalized;
+    }
+}
+
 ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
     const ProjectModulationRuntimePlan& plan,
     const ProjectCurveArena& arena,
@@ -658,8 +677,9 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
     for (uint16_t index = 0; index < plan.sourceCount; ++index) {
         const auto& source = plan.sources[index];
         auto& sourceState = state.sources[index];
-        if (source.kind != ModulatorKind::RECORDED_SHAPE &&
-            source.retrigger == ModulatorRetriggerPolicy::EXPLICIT_TRIGGER &&
+        if (source.kind == ModulatorKind::LFO &&
+            source.traits.lfo.retrigger ==
+                ModulatorRetriggerPolicy::EXPLICIT_TRIGGER &&
             (source.triggerFlags & PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U) {
             for (uint16_t eventIndex = 0;
                  triggers != nullptr && eventIndex < triggers->count;
@@ -691,17 +711,21 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
                 0.0f,
                 &sourceState.payload.recordedCurve
             );
+        } else if (source.kind == ModulatorKind::ADSR) {
+            value = 0.0f;
         } else {
             uint32_t musicalAnchor = state.activationMusicalTick;
             uint16_t musicalAnchorFraction =
                 state.activationMusicalTickFractionQ16;
             uint32_t monotonicAnchor = state.activationMonotonicMs;
-            if (source.retrigger == ModulatorRetriggerPolicy::TRANSPORT) {
+            if (source.traits.lfo.retrigger ==
+                ModulatorRetriggerPolicy::TRANSPORT) {
                 musicalAnchor = time.transportStartMusicalTick;
                 musicalAnchorFraction = 0U;
                 monotonicAnchor = time.transportStartMonotonicMs;
             } else if (
-                source.retrigger == ModulatorRetriggerPolicy::EXPLICIT_TRIGGER &&
+                source.traits.lfo.retrigger ==
+                    ModulatorRetriggerPolicy::EXPLICIT_TRIGGER &&
                 sourceState.payload.lfo.explicitlyTriggered
             ) {
                 musicalAnchor =
@@ -711,7 +735,8 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
                 monotonicAnchor =
                     sourceState.payload.lfo.explicitMonotonicAnchorMs;
             }
-            const float phase = source.timing == ModulatorTimingMode::FREE
+            const float phase = source.traits.lfo.timing ==
+                    ModulatorTimingMode::FREE
                 ? phaseFromFreeTime(
                     time.monotonicMs,
                     monotonicAnchor,
@@ -725,7 +750,7 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
                     source.parameters.lfo.periodTicks,
                     source.parameters.lfo.phaseQ15
                 );
-            value = evaluateProjectLfoShape(source.shape, phase);
+            value = evaluateProjectLfoShape(source.traits.lfo.shape, phase);
         }
         sourceValues[index] = std::clamp(value, -1.0f, 1.0f);
     }

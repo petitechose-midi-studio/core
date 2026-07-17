@@ -203,6 +203,29 @@ void testFiveCanonicalLfoShapes() {
     ), -1.0f));
 }
 
+void testCanonicalAdsrProgressCurves() {
+    assert(near(mod::evaluateProjectAdsrProgress(
+        mod::ModulatorAdsrCurve::LINEAR,
+        0.5f
+    ), 0.5f));
+    assert(near(mod::evaluateProjectAdsrProgress(
+        mod::ModulatorAdsrCurve::SMOOTH,
+        0.25f
+    ), 0.15625f));
+    assert(near(mod::evaluateProjectAdsrProgress(
+        mod::ModulatorAdsrCurve::EXPONENTIAL,
+        0.5f
+    ), 0.25f));
+    assert(near(mod::evaluateProjectAdsrProgress(
+        mod::ModulatorAdsrCurve::EXPONENTIAL,
+        -1.0f
+    ), 0.0f));
+    assert(near(mod::evaluateProjectAdsrProgress(
+        mod::ModulatorAdsrCurve::SMOOTH,
+        2.0f
+    ), 1.0f));
+}
+
 void testLogicalBaseAutomationManualAndSharedSource() {
     auto domain = std::make_unique<mod::ProjectControlDomainState>();
     const auto first = destination(0U, 0U, 0U);
@@ -763,6 +786,7 @@ void testExactMaximumGraphEvaluatesEverySourceAndBinding() {
 
 int main() {
     testFiveCanonicalLfoShapes();
+    testCanonicalAdsrProgressCurves();
     testLogicalBaseAutomationManualAndSharedSource();
     testDestinationScaleAppliesOnceAfterSummingContributions();
     testSyncFreeTransportAndExplicitRetrigger();

@@ -90,10 +90,11 @@ void populateSource(
     source.reach.kind = mod::ModulatorReachKind::PROJECT;
     source.flags = mod::PROJECT_MODULATOR_FLAG_ENABLED;
     source.schemaVersion = 1U;
-    source.parameters.lfo = mod::ModulatorLfoParameters{};
+    source.parameters.raw.fill(0U);
 
     if (benchmarkCase == ProjectModulationBenchmarkCase::LFO) {
         source.kind = mod::ModulatorKind::LFO;
+        source.parameters.lfo = mod::ModulatorLfoParameters{};
         source.parameters.lfo.periodTicks = static_cast<uint32_t>(
             mod::PROJECT_CONTROL_TICKS_PER_BEAT + sourceIndex
         );
@@ -225,7 +226,7 @@ bool prepareProjectModulationBenchmark(
     ProjectModulationBenchmarkWorkspace& workspace,
     ProjectModulationBenchmarkCase benchmarkCase
 ) {
-    // Avoid a 185 KiB aggregate temporary on the embedded stack. Every member
+    // Avoid a 183 KiB aggregate temporary on the embedded stack. Every member
     // is trivially copyable and uses an all-zero empty representation; required
     // non-zero domain defaults are restored explicitly below.
     std::fill_n(

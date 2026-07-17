@@ -89,9 +89,28 @@ struct ProjectModulationRuntimeRecordedCurveState {
     int16_t rightValue = 0;
 };
 
+enum class ProjectModulationAdsrStage : uint8_t {
+    IDLE = 0,
+    ATTACK,
+    DECAY,
+    SUSTAIN,
+    RELEASE,
+};
+
+struct ProjectModulationRuntimeAdsrState {
+    ModulatorKind kind = ModulatorKind::ADSR;
+    ProjectModulationAdsrStage stage = ProjectModulationAdsrStage::IDLE;
+    uint8_t heldNoteCount = 0U;
+    uint8_t flags = 0U;
+    uint32_t stageAnchor = 0U;
+    uint16_t stageAnchorFractionQ16 = 0U;
+    int16_t stageStartLevelQ15 = 0;
+};
+
 union ProjectModulationRuntimeSourcePayload {
     ProjectModulationRuntimeLfoState lfo{};
     ProjectModulationRuntimeRecordedCurveState recordedCurve;
+    ProjectModulationRuntimeAdsrState adsr;
 };
 
 struct ProjectModulationRuntimeSourceState {
@@ -166,6 +185,9 @@ ProjectControlRuntimeStatus synchronizeProjectControlRuntimeState(
 /** Canonical bipolar source shape at normalized phase [0, 1). */
 float evaluateProjectLfoShape(ModulatorLfoShape shape, float phase);
 
+/** Canonical ADSR stage progress at normalized position [0, 1]. */
+float evaluateProjectAdsrProgress(ModulatorAdsrCurve curve, float progress);
+
 using ProjectLogicalMacroRuntimeSink = void (*)(
     void* context,
     uint16_t destinationIndex,
@@ -233,6 +255,7 @@ static_assert(sizeof(ProjectLogicalMacroBaseInput) == 12U);
 static_assert(sizeof(ProjectLogicalMacroRuntimeValue) == 20U);
 static_assert(sizeof(ProjectModulationRuntimeLfoState) == 12U);
 static_assert(sizeof(ProjectModulationRuntimeRecordedCurveState) == 12U);
+static_assert(sizeof(ProjectModulationRuntimeAdsrState) == 12U);
 static_assert(sizeof(ProjectModulationRuntimeSourcePayload) == 12U);
 static_assert(sizeof(ProjectModulationRuntimeSourceState) == 16U);
 static_assert(sizeof(ProjectControlRuntimeState) == 5144U);

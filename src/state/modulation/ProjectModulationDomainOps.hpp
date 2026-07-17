@@ -47,6 +47,14 @@ struct ModulatorLfoDraft {
     bool enabled = true;
 };
 
+struct ModulatorAdsrDraft {
+    const char* name = nullptr;
+    ModulatorReach reach{};
+    ModulatorAdsrParameters parameters{};
+    uint8_t accent = 0;
+    bool enabled = true;
+};
+
 struct RecordedShapeDraft {
     const char* name = nullptr;
     ModulatorReach reach{};
@@ -190,6 +198,10 @@ ProjectModulationResult createLfoModulator(
     ProjectModulationState& state,
     const ModulatorLfoDraft& draft
 );
+ProjectModulationResult createAdsrModulator(
+    ProjectModulationState& state,
+    const ModulatorAdsrDraft& draft
+);
 ProjectModulationResult createRecordedShapeModulator(
     ProjectModulationState& state,
     ProjectCurveArena& arena,
@@ -230,6 +242,11 @@ ProjectModulationResult setProjectLfoParameters(
     ProjectModulationState& state,
     ModulatorId sourceId,
     const ModulatorLfoParameters& parameters
+);
+ProjectModulationResult setProjectAdsrParameters(
+    ProjectModulationState& state,
+    ModulatorId sourceId,
+    const ModulatorAdsrParameters& parameters
 );
 
 ProjectModulationResult addProjectModulationBinding(

@@ -253,13 +253,18 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
                 .valueDomain = record.valueDomain,
                 .reserved = 0U,
             };
-        } else {
+        } else if (source.kind == ModulatorKind::LFO) {
             runtime.parameters.lfo.periodTicks = source.parameters.lfo.periodTicks;
             runtime.parameters.lfo.freePeriodMs = source.parameters.lfo.freePeriodMs;
             runtime.parameters.lfo.phaseQ15 = source.parameters.lfo.phaseQ15;
-            runtime.shape = source.parameters.lfo.shape;
-            runtime.retrigger = source.parameters.lfo.retrigger;
-            runtime.timing = source.parameters.lfo.timing;
+            runtime.traits.lfo.shape = source.parameters.lfo.shape;
+            runtime.traits.lfo.retrigger = source.parameters.lfo.retrigger;
+            runtime.traits.lfo.timing = source.parameters.lfo.timing;
+        } else if (source.kind == ModulatorKind::ADSR) {
+            runtime.parameters.adsr = source.parameters.adsr;
+            runtime.traits.adsr.curve = source.parameters.adsr.curve;
+            runtime.traits.adsr.retrigger = source.parameters.adsr.retrigger;
+            runtime.traits.adsr.timing = source.parameters.adsr.timing;
         }
         for (uint16_t triggerIndex = 0;
              triggerIndex < state.triggerBindingCount;

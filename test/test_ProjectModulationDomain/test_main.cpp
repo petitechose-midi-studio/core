@@ -73,6 +73,19 @@ mod::ModulatorId addLfo(
     return created.sourceId;
 }
 
+mod::ModulatorId addAdsr(
+    Fixture& fixture,
+    const mod::ModulatorReach& reach = projectReach(),
+    const char* name = "ADSR"
+) {
+    mod::ModulatorAdsrDraft draft{};
+    draft.name = name;
+    draft.reach = reach;
+    const auto created = mod::createAdsrModulator(*fixture.state, draft);
+    assert(created.changed());
+    return created.sourceId;
+}
+
 mod::ModulationBindingId addBinding(
     Fixture& fixture,
     mod::ModulatorId source,
@@ -155,14 +168,122 @@ bool near(float lhs, float rhs, float epsilon = 0.0001f) {
 
 void testExactMemoryContract() {
     assert(sizeof(mod::ModulationDestinationScaleState) == 6U);
-    assert(sizeof(mod::ProjectModulationState) == 23568U);
+    assert(sizeof(mod::ModulatorAdsrParameters) == 12U);
+    assert(sizeof(mod::ModulatorParameters) == 16U);
+    assert(sizeof(mod::ModulatorSourceState) == 48U);
+    assert(sizeof(mod::ProjectModulationState) == 21520U);
     assert(sizeof(mod::ProjectAutomationCurveDirectory) == 1540U);
     assert(sizeof(mod::ProjectCurveArena) == 137480U);
     assert(sizeof(mod::ProjectModulationRuntimePlan) == 15888U);
     assert(sizeof(mod::ProjectModulationState) +
                sizeof(mod::ProjectAutomationCurveDirectory) +
                sizeof(mod::ProjectCurveArena) ==
-           162588U);
+           160540U);
+}
+
+void testAdsrDomainIsPositiveCompactAndStrict() {
+    Fixture fixture;
+    const auto sourceId = addAdsr(fixture);
+    const auto* source = mod::findProjectModulator(*fixture.state, sourceId);
+    assert(source != nullptr);
+    assert(source->kind == mod::ModulatorKind::ADSR);
+    assert(source->parameters.adsr.attack == 16U);
+    assert(source->parameters.adsr.decay == 250U);
+    assert(source->parameters.adsr.release == 500U);
+    assert(source->parameters.adsr.sustainQ15 ==
+           mod::PROJECT_MODULATOR_ADSR_DEFAULT_SUSTAIN_Q15);
+    assert(source->parameters.adsr.timing == mod::ModulatorTimingMode::FREE);
+    assert(source->parameters.adsr.retrigger ==
+           mod::ModulatorAdsrRetriggerMode::RETRIGGER);
+    assert(source->parameters.adsr.curve ==
+           mod::ModulatorAdsrCurve::EXPONENTIAL);
+
+    mod::ModulatorNaturalDomain domain{};
+    assert(mod::projectModulatorNaturalDomain(
+        *source,
+        *fixture.arena,
+        domain
+    ));
+    assert(domain == mod::ModulatorNaturalDomain::POSITIVE);
+    mod::ResolvedModulationMapping mapping{};
+    assert(mod::resolveModulationApplication(
+        mod::ModulationApplication::NATURAL,
+        domain,
+        mapping
+    ));
+    assert(mapping == mod::ResolvedModulationMapping::IDENTITY);
+    assert(mod::resolveModulationApplication(
+        mod::ModulationApplication::AROUND_BASE,
+        domain,
+        mapping
+    ));
+    assert(mapping == mod::ResolvedModulationMapping::POSITIVE_TO_CENTERED);
+
+    auto parameters = source->parameters.adsr;
+    parameters.attack = 0U;
+    parameters.decay = 384U;
+    parameters.release = 768U;
+    parameters.sustainQ15 = mod::PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15;
+    parameters.timing = mod::ModulatorTimingMode::SYNC;
+    parameters.retrigger = mod::ModulatorAdsrRetriggerMode::LEGATO;
+    parameters.curve = mod::ModulatorAdsrCurve::SMOOTH;
+    assert(mod::setProjectAdsrParameters(
+        *fixture.state,
+        sourceId,
+        parameters
+    ).changed());
+    assert(mod::setProjectAdsrParameters(
+        *fixture.state,
+        sourceId,
+        parameters
+    ).status == mod::ProjectModulationStatus::NO_CHANGE);
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+
+    const auto stable = *fixture.state;
+    parameters.sustainQ15 = static_cast<uint16_t>(
+        mod::PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15 + 1U
+    );
+    assert(mod::setProjectAdsrParameters(
+        *fixture.state,
+        sourceId,
+        parameters
+    ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(std::memcmp(fixture.state.get(), &stable, sizeof(stable)) == 0);
+
+    mod::ModulationTriggerDraft trigger{};
+    trigger.sourceId = sourceId;
+    trigger.trigger = {
+        mod::ModulationTriggerKind::TRACK_NOTE,
+        3U,
+        mod::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
+        mod::PROJECT_MODULATION_TRIGGER_ANY_NOTE,
+    };
+    assert(mod::addProjectModulationTrigger(*fixture.state, trigger).changed());
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+
+    const auto duplicate = mod::duplicateProjectModulator(
+        *fixture.state,
+        *fixture.arena,
+        sourceId,
+        "ADSR 2"
+    );
+    assert(duplicate.changed());
+    const auto* clone = mod::findProjectModulator(
+        *fixture.state,
+        duplicate.sourceId
+    );
+    assert(clone != nullptr && clone->kind == mod::ModulatorKind::ADSR);
+    assert(std::memcmp(
+        &clone->parameters.adsr,
+        &stable.sources[0].parameters.adsr,
+        sizeof(mod::ModulatorAdsrParameters)
+    ) == 0);
+
+    auto* bytes = reinterpret_cast<uint8_t*>(
+        &fixture.state->sources[0].parameters
+    );
+    bytes[sizeof(mod::ModulatorAdsrParameters)] = 1U;
+    assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
 }
 
 void testDestinationScaleIsSparseOrderedAndPrunedWithLastBinding() {
@@ -1152,6 +1273,7 @@ void testValidatorRejectsDanglingDuplicateAndBadReferenceCount() {
 
 int main() {
     testExactMemoryContract();
+    testAdsrDomainIsPositiveCompactAndStrict();
     testDestinationScaleIsSparseOrderedAndPrunedWithLastBinding();
     testDestinationScaleValidatorRejectsOrphanUnityAndUnsortedEntries();
     testDestinationScaleCompilesAndAppliesOnceBeforeFinalClamp();

@@ -435,7 +435,7 @@ uint32_t firstDestinationScaleOffset(
 }
 
 void testExactLayoutEmptyRoundTripAndPreflightAtomicity() {
-    assert(sizeof(mod::ProjectControlDomainState) == 162588U);
+    assert(sizeof(mod::ProjectControlDomainState) == 160540U);
     assert(control::PROJECT_AUTOMATION_MAX_PAYLOAD_SIZE == 134688U);
     assert(control::PROJECT_MODULATION_GRAPH_MAX_PAYLOAD_SIZE == 155680U);
     assert(control::PROJECT_CONTROL_COMBINED_MAX_PAYLOAD_SIZE == 159296U);
