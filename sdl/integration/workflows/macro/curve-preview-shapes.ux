@@ -1,0 +1,53 @@
+# UX workflow: compare every Gate 4 curve family at the full Macro editor size.
+# Purpose: proves smooth Sine/Triangle, intentional Saw/Square discontinuities,
+# and the shared Recorded Shape path without opening the Gate 5 source editor.
+# Expect: capture_changed:sine=triangle, capture_changed:triangle=saw
+# Expect: capture_changed:saw=square, capture_changed:square=recorded_shape
+
+0 scenario macro-curve-preview-shapes
+80 capture screen source_grid
+
+# Sine
+180 button MACRO_1 down
+1240 tick
+1300 button MACRO_1 up
+1430 encoder NAV 1
+1560 encoder NAV 1
+1710 capture screen sine
+1840 tap LEFT_TOP 60
+
+# Triangle
+2020 button MACRO_2 down
+3080 tick
+3140 button MACRO_2 up
+3270 encoder NAV 1
+3400 encoder NAV 1
+3550 capture screen triangle
+3680 tap LEFT_TOP 60
+
+# Saw
+3860 button MACRO_3 down
+4920 tick
+4980 button MACRO_3 up
+5110 encoder NAV 1
+5240 encoder NAV 1
+5390 capture screen saw
+5520 tap LEFT_TOP 60
+
+# Square
+5700 button MACRO_4 down
+6760 tick
+6820 button MACRO_4 up
+6950 encoder NAV 1
+7080 encoder NAV 1
+7230 capture screen square
+7360 tap LEFT_TOP 60
+
+# Recorded Shape
+7540 button MACRO_5 down
+8600 tick
+8660 button MACRO_5 up
+8790 encoder NAV 1
+8920 encoder NAV 1
+9070 capture screen recorded_shape
+9200 tap LEFT_TOP 60

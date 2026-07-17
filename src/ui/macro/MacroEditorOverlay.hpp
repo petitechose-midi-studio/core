@@ -5,7 +5,9 @@
 
 #include <lvgl.h>
 #include <oc/ui/lvgl/IWidget.hpp>
+#include <ms/ui/widget/CurvePreviewWidget.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "ui/macro/MacroEditorPreviewModel.hpp"
 
 namespace core::ui {
@@ -56,22 +58,26 @@ private:
                    bool stored,
                    bool playback,
                    uint32_t color);
-    void renderGraph(const MacroEditorOverlayProps& props, bool previewChanged);
+    void renderGraph(const MacroEditorOverlayProps& props);
+    static bool sampleCurve(
+        void* context,
+        uint16_t positionQ16,
+        ms::ui::CurvePreviewSample& out
+    );
+
+    struct CurveSampleContext {
+        const MacroEditorPreviewModel* preview = nullptr;
+        int selectedDomain = 0;
+        uint16_t previousValue = 0U;
+        bool hasPrevious = false;
+    };
 
     lv_obj_t* root_ = nullptr;
     lv_obj_t* title_ = nullptr;
     lv_obj_t* meta_ = nullptr;
     std::array<TabWidgets, 3> tabs_{};
-    lv_obj_t* graph_ = nullptr;
-    lv_obj_t* automation_line_ = nullptr;
-    lv_obj_t* base_line_ = nullptr;
-    lv_obj_t* modulated_line_ = nullptr;
-    std::array<lv_point_precise_t, MACRO_EDITOR_PREVIEW_SAMPLE_COUNT>
-        automation_points_{};
-    std::array<lv_point_precise_t, MACRO_EDITOR_PREVIEW_SAMPLE_COUNT>
-        base_points_{};
-    std::array<lv_point_precise_t, MACRO_EDITOR_PREVIEW_SAMPLE_COUNT>
-        out_points_{};
+    core::app::ExtmemUniquePtr<ms::ui::CurvePreviewWidget> curve_preview_;
+    CurveSampleContext curve_sample_context_{};
     lv_obj_t* clipping_ = nullptr;
     lv_obj_t* hint_ = nullptr;
     std::array<char, 24> titleText_{};

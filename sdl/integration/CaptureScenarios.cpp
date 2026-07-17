@@ -543,6 +543,77 @@ void prepareMacroAutoModScenario(core::state::CoreState& state) {
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
 }
 
+void prepareMacroCurvePreviewShapesScenario(core::state::CoreState& state) {
+    using namespace core::state::modulation;
+    prepareMacroAutomationCleanScenario(state);
+    state.setSharedTrackState(0x0001, 0);
+
+    auto& track = state.pages.tracks[0];
+    track.channel = 5;
+    track.activePage = 0;
+    track.enabledPageMask = 0x0001;
+    auto& page = track.pages[0];
+    std::snprintf(page.name, sizeof(page.name), "%s", "Curve Preview");
+
+    constexpr std::array<ModulatorLfoShape, 4> SHAPES = {
+        ModulatorLfoShape::SINE,
+        ModulatorLfoShape::TRIANGLE,
+        ModulatorLfoShape::SAW_UP,
+        ModulatorLfoShape::SQUARE,
+    };
+    constexpr std::array<const char*, 4> NAMES = {
+        "Sine",
+        "Triangle",
+        "Saw",
+        "Square",
+    };
+    for (uint8_t index = 0U; index < SHAPES.size(); ++index) {
+        page.cc[index] = static_cast<uint8_t>(70U + index);
+        page.values[index] = 0.5f;
+        page.setMacroActive(index, true);
+        const auto sourceId = addReusableLfo(
+            state,
+            NAMES[index],
+            SHAPES[index],
+            PROJECT_CONTROL_TICKS_PER_BEAT * 2U,
+            static_cast<uint8_t>(index % 3U)
+        );
+        if (valid(sourceId)) {
+            (void)bindReusableModulator(
+                state,
+                sourceId,
+                24576,
+                0,
+                0,
+                index
+            );
+        }
+    }
+    page.cc[4] = 74U;
+    page.values[4] = 0.5f;
+    page.setMacroActive(4, true);
+    configureMacroModulation(state, 0, 0, 4, 0.75f);
+
+    state.pages.control.markAuthoredMutation();
+    state.pages.syncSharedTrackState(0x0001, 0);
+    state.pages.setActivePage(0);
+    state.macroUi.syncPreviewPage(0);
+    state.trackNavigation.syncPreviewTrack(0);
+    state.structureNavigationFocus.set(
+        core::state::StructureNavigationFocus::TRACK
+    );
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    state.configRevision.set(
+        core::state::macro::nextMacroConfigRevision(
+            state.configRevision.get()
+        )
+    );
+}
+
 void configureMacroAutomationShape(core::state::CoreState& state,
                                    uint8_t track,
                                    uint8_t page,
@@ -1410,6 +1481,11 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "macro-auto-mod") == 0) {
         prepareMacroAutoModScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-curve-preview-shapes") == 0) {
+        prepareMacroCurvePreviewShapesScenario(state);
         return true;
     }
 
