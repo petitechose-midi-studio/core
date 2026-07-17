@@ -67,6 +67,22 @@ FLASHMEM bool snapshotConsistent(const MacroSlotHistorySnapshot& snapshot) {
            snapshot.slot.modulation.pointOffset == snapshot.automationPointCount;
 }
 
+FLASHMEM bool automationSnapshotConsistent(
+    const MacroAutomationHistorySnapshot& snapshot
+) {
+    if (!macroAutomationAddressValid(snapshot.address) ||
+        !macroAutomationCurveLifecycleValid(snapshot.automation) ||
+        snapshot.pointCount > MACRO_AUTOMATION_RECORDING_MAX_POINTS ||
+        snapshot.automation.active != (snapshot.pointCount > 0U) ||
+        snapshot.automation.pointCount != snapshot.pointCount ||
+        (snapshot.pointCount > 0U && !snapshot.points) ||
+        (snapshot.pointCount > 0U &&
+         snapshot.automation.pointOffset != 0U)) {
+        return false;
+    }
+    return true;
+}
+
 FLASHMEM void normalizeCurveOffsets(MacroSlotHistorySnapshot& snapshot) {
     snapshot.slot.automation.pointOffset = 0;
     snapshot.slot.modulation.pointOffset = snapshot.automationPointCount;
@@ -1049,6 +1065,126 @@ FLASHMEM bool applyMacroSlotHistorySnapshot(
     return true;
 }
 
+FLASHMEM bool captureMacroAutomationHistorySnapshot(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    MacroAutomationHistorySnapshot& out
+) {
+    if (!macroAutomationAddressValid(address)) return false;
+    out = MacroAutomationHistorySnapshot{};
+    out.address = address;
+
+    core::state::modulation::ProjectControlMacroSlotView view{};
+    if (!core::state::modulation::readProjectControlMacroSlot(
+            pages.control,
+            address,
+            view
+        )) {
+        return false;
+    }
+    out.automation = view.legacy.automation;
+    out.automation.pointOffset = 0U;
+    if (!view.automationStored) {
+        return automationSnapshotConsistent(out);
+    }
+
+    const auto* record = core::state::modulation::findProjectCurve(
+        pages.control.authored.curves,
+        view.automationCurveId
+    );
+    if (record == nullptr ||
+        record->pointCount != view.legacy.automation.pointCount ||
+        record->pointCount > MACRO_AUTOMATION_RECORDING_MAX_POINTS ||
+        static_cast<uint32_t>(record->pointOffset) + record->pointCount >
+            pages.control.authored.curves.pointCount) {
+        return false;
+    }
+
+    out.pointCount = record->pointCount;
+    out.points = core::app::makeExtmemUniqueArrayForOverwrite<
+        MacroPackedCurvePoint
+    >(out.pointCount);
+    if (!out.points) return false;
+    for (uint16_t index = 0; index < out.pointCount; ++index) {
+        const auto& point = pages.control.authored.curves.points[
+            static_cast<uint16_t>(record->pointOffset + index)
+        ];
+        out.points[index] = {.tick = point.tick, .value = point.value};
+    }
+    return automationSnapshotConsistent(out);
+}
+
+FLASHMEM bool sameMacroAutomationHistorySnapshot(
+    const MacroAutomationHistorySnapshot& lhs,
+    const MacroAutomationHistorySnapshot& rhs
+) {
+    if (!automationSnapshotConsistent(lhs) ||
+        !automationSnapshotConsistent(rhs) ||
+        !sameAddress(lhs.address, rhs.address) ||
+        lhs.pointCount != rhs.pointCount ||
+        !sameCurveMetadata(lhs.automation, rhs.automation)) {
+        return false;
+    }
+    for (uint16_t index = 0; index < lhs.pointCount; ++index) {
+        if (!samePoint(lhs.points[index], rhs.points[index])) return false;
+    }
+    return true;
+}
+
+FLASHMEM bool liveMacroAutomationMatchesHistorySnapshot(
+    const MacroPagesState& pages,
+    const MacroAutomationHistorySnapshot& snapshot
+) {
+    if (!automationSnapshotConsistent(snapshot)) return false;
+    core::state::modulation::ProjectControlMacroSlotView live{};
+    if (!core::state::modulation::readProjectControlMacroSlot(
+            pages.control,
+            snapshot.address,
+            live
+        ) ||
+        live.automationStored != (snapshot.pointCount > 0U) ||
+        !sameCurveMetadata(live.legacy.automation, snapshot.automation)) {
+        return false;
+    }
+    if (!live.automationStored) return true;
+
+    const auto* record = core::state::modulation::findProjectCurve(
+        pages.control.authored.curves,
+        live.automationCurveId
+    );
+    if (record == nullptr || record->pointCount != snapshot.pointCount ||
+        static_cast<uint32_t>(record->pointOffset) + record->pointCount >
+            pages.control.authored.curves.pointCount) {
+        return false;
+    }
+    for (uint16_t index = 0; index < snapshot.pointCount; ++index) {
+        const auto& point = pages.control.authored.curves.points[
+            static_cast<uint16_t>(record->pointOffset + index)
+        ];
+        if (!samePoint(
+                MacroPackedCurvePoint{point.tick, point.value},
+                snapshot.points[index]
+            )) {
+            return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool applyMacroAutomationHistorySnapshot(
+    MacroPagesState& pages,
+    const MacroAutomationHistorySnapshot& snapshot
+) {
+    if (!automationSnapshotConsistent(snapshot)) return false;
+    return core::state::modulation::replaceProjectControlAutomation(
+        pages.control,
+        snapshot.address,
+        snapshot.automation,
+        snapshot.pointCount > 0U ? snapshot.points.get() : nullptr,
+        snapshot.pointCount
+    );
+}
+
 FLASHMEM MacroHistoryService::MacroHistoryService() = default;
 FLASHMEM MacroHistoryService::~MacroHistoryService() = default;
 
@@ -1068,6 +1204,30 @@ FLASHMEM MacroHistoryChangePtr MacroHistoryService::prepare(
             pages,
             address,
             change->slot->before
+        )) {
+        return {};
+    }
+    return change;
+}
+
+FLASHMEM MacroHistoryChangePtr
+MacroHistoryService::prepareAutomationRecording(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address
+) const {
+    if (pendingModulatorSlot_() != nullptr) return {};
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return {};
+    change->automation = core::app::makeExtmemUnique<
+        MacroAutomationHistoryPayload
+    >();
+    if (!change->automation) return {};
+    change->kind = MacroHistoryActionKind::RECORD_AUTOMATION;
+    change->address = address;
+    if (!captureMacroAutomationHistorySnapshot(
+            pages,
+            address,
+            change->automation->before
         )) {
         return {};
     }
@@ -1555,6 +1715,35 @@ FLASHMEM bool MacroHistoryService::commitPrepared(
     MacroHistoryChangePtr change,
     bool coalesce
 ) {
+    if (change && change->automation) {
+        if (coalesce ||
+            change->kind != MacroHistoryActionKind::RECORD_AUTOMATION ||
+            !sameAddress(
+                change->address,
+                change->automation->before.address
+            )) {
+            return false;
+        }
+        auto& payload = *change->automation;
+        if (!captureMacroAutomationHistorySnapshot(
+                pages,
+                change->address,
+                payload.after
+            )) {
+            (void)applyMacroAutomationHistorySnapshot(pages, payload.before);
+            return false;
+        }
+        if (sameMacroAutomationHistorySnapshot(
+                payload.before,
+                payload.after
+            )) {
+            return false;
+        }
+        push_(undo_, undo_count_, std::move(change));
+        clearRedo_();
+        endCoalescing();
+        return true;
+    }
     if (!change || !change->slot ||
         !sameAddress(change->address, change->slot->before.address)) {
         return false;
@@ -2406,6 +2595,17 @@ FLASHMEM bool MacroHistoryService::undo(
             )) {
             return false;
         }
+    } else if (change->automation) {
+        if (!liveMacroAutomationMatchesHistorySnapshot(
+                pages,
+                change->automation->after
+            ) ||
+            !applyMacroAutomationHistorySnapshot(
+                pages,
+                change->automation->before
+            )) {
+            return false;
+        }
     } else {
         if (!change->slot ||
             !liveMacroSlotMatchesHistorySnapshot(
@@ -2471,6 +2671,17 @@ FLASHMEM bool MacroHistoryService::redo(
             !applyModulationAssignments(
                 pages,
                 change->modulationAssignments->after
+            )) {
+            return false;
+        }
+    } else if (change->automation) {
+        if (!liveMacroAutomationMatchesHistorySnapshot(
+                pages,
+                change->automation->before
+            ) ||
+            !applyMacroAutomationHistorySnapshot(
+                pages,
+                change->automation->after
             )) {
             return false;
         }

@@ -655,6 +655,177 @@ void test_recording_preserves_active_modulation_without_resume() {
         << "[PASS] test_recording_preserves_active_modulation_without_resume\n";
 }
 
+void test_recording_shared_lfos_preserves_graph_through_undo_redo() {
+    using namespace core::state::modulation;
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto services =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
+    const auto otherAddress = core::state::macro::MacroAutomationSlotAddress{
+        .track = address.track,
+        .page = address.page,
+        .macro = 1,
+    };
+    state.pages.setMacroSlotActive(1, true);
+
+    auto& graph = state.pages.control.authored.modulation;
+    ModulatorLfoDraft sharedDraft{};
+    sharedDraft.name = "Shared LFO";
+    sharedDraft.reach = {.kind = ModulatorReachKind::PROJECT};
+    sharedDraft.parameters.shape = ModulatorLfoShape::TRIANGLE;
+    sharedDraft.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
+    const auto shared = createLfoModulator(graph, sharedDraft);
+    assert(shared.changed());
+
+    ModulatorLfoDraft localDraft = sharedDraft;
+    localDraft.name = "Second LFO";
+    localDraft.parameters.shape = ModulatorLfoShape::SAW_UP;
+    const auto local = createLfoModulator(graph, localDraft);
+    assert(local.changed());
+
+    ModulationBindingDraft binding{};
+    binding.sourceId = shared.sourceId;
+    binding.destination = projectControlDestination(address);
+    binding.amountQ15 = 8192;
+    assert(addProjectModulationBinding(graph, binding).changed());
+    binding.destination = projectControlDestination(otherAddress);
+    binding.amountQ15 = -4096;
+    assert(addProjectModulationBinding(graph, binding).changed());
+    binding.sourceId = local.sourceId;
+    binding.destination = projectControlDestination(address);
+    binding.amountQ15 = 12288;
+    assert(addProjectModulationBinding(graph, binding).changed());
+    state.pages.control.markAuthoredMutation();
+
+    services.setManualValue(0, 0.3f);
+    const auto graphBefore = graph;
+    const auto runtimeBefore = state.pages.control.runtime;
+    assert(state.macroHistory.undoCount() == 0U);
+    assert(services.beginAutomationRecording(0, 1000));
+    assert(services.recordAutomationPoint(0, 1500, 0.8f));
+    assert(services.commitAutomationRecording(2000));
+    assert(state.macroUi.automationRecordingStatus.get() ==
+           core::state::macro::MacroAutomationRecordingStatus::IDLE);
+    assert(state.macroHistory.undoCount() == 1U);
+    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    assert(std::memcmp(
+        &state.pages.control.runtime,
+        &runtimeBefore,
+        sizeof(runtimeBefore)
+    ) == 0);
+    auto slot = test_support::project_control::readSlot(
+        state.pages.control,
+        address
+    );
+    assert(slot.automationEnabled);
+    assert(graph.sourceCount == 2U);
+    assert(graph.outputBindingCount == 3U);
+
+    assert(state.macroHistory.undo(state.pages));
+    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    assert(std::memcmp(
+        &state.pages.control.runtime,
+        &runtimeBefore,
+        sizeof(runtimeBefore)
+    ) == 0);
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    assert(!slot.automationStored);
+    assert(slot.modulationStored);
+
+    assert(state.macroHistory.redo(state.pages));
+    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    assert(std::memcmp(
+        &state.pages.control.runtime,
+        &runtimeBefore,
+        sizeof(runtimeBefore)
+    ) == 0);
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    assert(slot.automationEnabled);
+    assert(slot.legacy.automation.pointCount == 2U);
+    const auto first = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.automationCurveId,
+        0,
+        false
+    );
+    const auto second = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.automationCurveId,
+        1,
+        false
+    );
+    assert(std::fabs(first.value - 0.3f) < 0.0001f);
+    assert(std::fabs(second.value - 0.8f) < 0.0001f);
+
+    services.setManualValue(0, 0.6f);
+    assert(services.beginAutomationRecording(0, 3000));
+    assert(services.recordAutomationPoint(0, 3500, 0.1f));
+    assert(services.commitAutomationRecording(4000));
+    assert(state.macroHistory.undoCount() == 2U);
+    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    auto replacementFirst = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.automationCurveId,
+        0,
+        false
+    );
+    auto replacementSecond = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.automationCurveId,
+        1,
+        false
+    );
+    assert(std::fabs(replacementFirst.value - 0.6f) < 0.0001f);
+    assert(std::fabs(replacementSecond.value - 0.1f) < 0.0001f);
+
+    assert(state.macroHistory.undo(state.pages));
+    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    replacementFirst = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.automationCurveId,
+        0,
+        false
+    );
+    replacementSecond = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.automationCurveId,
+        1,
+        false
+    );
+    assert(std::fabs(replacementFirst.value - first.value) < 0.0001f);
+    assert(std::fabs(replacementSecond.value - second.value) < 0.0001f);
+
+    assert(state.macroHistory.redo(state.pages));
+    assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    replacementFirst = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.automationCurveId,
+        0,
+        false
+    );
+    replacementSecond = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        slot.automationCurveId,
+        1,
+        false
+    );
+    assert(std::fabs(replacementFirst.value - 0.6f) < 0.0001f);
+    assert(std::fabs(replacementSecond.value - 0.1f) < 0.0001f);
+    std::cout
+        << "[PASS] shared-LFO recording preserves graph through Undo/Redo\n";
+}
+
 void test_failed_first_recording_does_not_leave_an_empty_slot() {
     CoreStorages storage;
 
@@ -1178,6 +1349,7 @@ int main() {
     test_automation_recording_without_motion_does_not_create_slot();
     test_failed_or_cancelled_recording_restores_previous_manual_state();
     test_recording_preserves_active_modulation_without_resume();
+    test_recording_shared_lfos_preserves_graph_through_undo_redo();
     test_failed_first_recording_does_not_leave_an_empty_slot();
     test_macro_edit_automation_lifecycle_actions();
     test_modulation_copy_paste_preserves_target_and_exact_payload();

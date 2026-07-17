@@ -363,10 +363,9 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationRecording(
     }
 
     auto historyChange = history_ != nullptr
-        ? history_->prepare(
+        ? history_->prepareAutomationRecording(
               *pages_,
-              recording.address,
-              core::state::macro::MacroHistoryActionKind::SOURCE_STATE
+              recording.address
           )
         : core::state::macro::MacroHistoryChangePtr{};
     if (history_ != nullptr && !historyChange) {
@@ -384,10 +383,10 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationRecording(
             recording.address,
             recording.lane
         )) {
-        if (historyChange) {
-            (void)core::state::macro::applyMacroSlotHistorySnapshot(
+        if (historyChange && historyChange->automation) {
+            (void)core::state::macro::applyMacroAutomationHistorySnapshot(
                 *pages_,
-                historyChange->slot->before
+                historyChange->automation->before
             );
         }
         restoreManualAfterFailedRecording_(recording);

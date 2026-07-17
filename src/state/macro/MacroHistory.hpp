@@ -38,6 +38,7 @@ enum class MacroHistoryActionKind : uint8_t {
     CREATE_PROJECT_MODULATOR,
     SPLIT_PROJECT_MODULATOR,
     DELETE_PROJECT_MODULATOR,
+    RECORD_AUTOMATION,
 };
 
 struct MacroSlotHistorySnapshot {
@@ -55,6 +56,24 @@ struct MacroSlotHistorySnapshot {
 struct MacroSlotHistoryChangePayload {
     MacroSlotHistorySnapshot before{};
     MacroSlotHistorySnapshot after{};
+};
+
+/**
+ * Absolute-Automation-only snapshot.
+ *
+ * Point storage is exact-length PSRAM so recording history never retains a
+ * Modulation source, binding, graph, curve arena, or fixed maximum point array.
+ */
+struct MacroAutomationHistorySnapshot {
+    MacroAutomationSlotAddress address{};
+    MacroAutomationCurveRef automation{};
+    uint16_t pointCount = 0;
+    core::app::ExtmemUniqueArray<MacroPackedCurvePoint> points{};
+};
+
+struct MacroAutomationHistoryPayload {
+    MacroAutomationHistorySnapshot before{};
+    MacroAutomationHistorySnapshot after{};
 };
 
 /**
@@ -204,6 +223,7 @@ struct MacroHistoryChange {
     MacroHistoryActionKind kind = MacroHistoryActionKind::SOURCE_STATE;
     MacroAutomationSlotAddress address{};
     core::app::ExtmemUniquePtr<MacroSlotHistoryChangePayload> slot{};
+    core::app::ExtmemUniquePtr<MacroAutomationHistoryPayload> automation{};
     core::app::ExtmemUniquePtr<MacroModulationAssignmentsHistoryPayload>
         modulationAssignments{};
     MacroModulatorCreationHistoryPayload modulator{};
@@ -238,6 +258,28 @@ using MacroHistoryChangePtr = core::app::ExtmemUniquePtr<MacroHistoryChange>;
     const MacroSlotHistorySnapshot& snapshot
 );
 
+[[nodiscard]] bool captureMacroAutomationHistorySnapshot(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    MacroAutomationHistorySnapshot& out
+);
+
+[[nodiscard]] bool sameMacroAutomationHistorySnapshot(
+    const MacroAutomationHistorySnapshot& lhs,
+    const MacroAutomationHistorySnapshot& rhs
+);
+
+[[nodiscard]] bool liveMacroAutomationMatchesHistorySnapshot(
+    const MacroPagesState& pages,
+    const MacroAutomationHistorySnapshot& snapshot
+);
+
+/** Applies only absolute Automation and preserves every Modulation object. */
+[[nodiscard]] bool applyMacroAutomationHistorySnapshot(
+    MacroPagesState& pages,
+    const MacroAutomationHistorySnapshot& snapshot
+);
+
 class MacroHistoryService {
 public:
     static constexpr uint8_t ENTRY_LIMIT = 8;
@@ -251,6 +293,12 @@ public:
         const MacroPagesState& pages,
         const MacroAutomationSlotAddress& address,
         MacroHistoryActionKind kind
+    ) const;
+
+    /** Captures only absolute Automation for a performance recording commit. */
+    [[nodiscard]] MacroHistoryChangePtr prepareAutomationRecording(
+        const MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address
     ) const;
 
     /**
