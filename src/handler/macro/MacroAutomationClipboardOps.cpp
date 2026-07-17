@@ -10,7 +10,7 @@ namespace core::handler::macro::automation_clipboard_ops {
 
 namespace {
 
-bool curvePayloadValid(
+FLASHMEM bool curvePayloadValid(
     const core::state::macro::MacroAutomationCurveRef& curve,
     const core::state::macro::MacroAutomationPointPool& pool
 ) {
@@ -19,20 +19,47 @@ bool curvePayloadValid(
     return static_cast<uint32_t>(curve.pointOffset) + curve.pointCount <= pool.used;
 }
 
-bool slotPayloadValid(const core::state::MacroAutomationClipboard& payload) {
+FLASHMEM bool slotPayloadValid(
+    const core::state::MacroAutomationClipboard& payload
+) {
     if (!payload.valid || payload.count != 1 || !payload.entries[0].valid) {
         return false;
     }
-    const auto& state = payload.entries[0].state;
+    const auto& entry = payload.entries[0];
+    const auto& state = entry.state;
     return curvePayloadValid(state.automation, payload.pointPool) &&
            curvePayloadValid(state.modulation, payload.pointPool) &&
+           (entry.destinationScaleQ15 ==
+                core::state::modulation::
+                    PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15 ||
+            core::state::macro::macroCurveStored(state.modulation)) &&
            core::state::macro::macroAutomationSlotStateValidForMutation(
                state,
                payload.pointPool
            );
 }
 
-MacroTypedPastePreflight preflightCapacity(
+FLASHMEM bool applyDestinationScale(
+    core::state::modulation::ProjectControlState& control,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    uint16_t scaleQ15
+) {
+    using namespace core::state::modulation;
+    if (scaleQ15 == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15) return true;
+    const auto destination = projectControlDestination(address);
+    const auto applied = setProjectModulationDestinationScale(
+        control.authored.modulation,
+        destination,
+        scaleQ15
+    );
+    return applied.changed() ||
+           projectModulationDestinationScaleQ15(
+               control.authored.modulation,
+               destination
+           ) == scaleQ15;
+}
+
+FLASHMEM MacroTypedPastePreflight preflightCapacity(
     const core::state::macro::MacroPagesState& pages,
     uint16_t required,
     uint16_t reclaimable,
@@ -358,6 +385,13 @@ FLASHMEM bool pasteSlotFromClipboard(
         )) {
         return false;
     }
+    if (!applyDestinationScale(
+            pages.control,
+            address,
+            payload.entries[0].destinationScaleQ15
+        )) {
+        return false;
+    }
 
     auto& page = pages.pageData(address.track, address.page);
     page.setMacroActive(address.macro, payload.sourceMacroActive);
@@ -566,13 +600,20 @@ FLASHMEM bool pasteModulationFromClipboard(
     const auto& payload = *clipboard.macroAutomationSet;
     const auto& state = payload.entries[0].state;
     const auto& curve = state.modulation;
-    return core::state::modulation::replaceProjectControlModulation(
+    if (!core::state::modulation::replaceProjectControlModulation(
         pages.control,
         address,
         curve,
         state.modulationDepth,
         payload.pointPool.points.data() + curve.pointOffset,
         curve.pointCount
+    )) {
+        return false;
+    }
+    return applyDestinationScale(
+        pages.control,
+        address,
+        payload.entries[0].destinationScaleQ15
     );
 }
 

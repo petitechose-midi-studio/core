@@ -52,7 +52,10 @@ FLASHMEM bool snapshotConsistent(const MacroSlotHistorySnapshot& snapshot) {
     if (total > MACRO_HISTORY_POINT_CAPACITY) return false;
     if (!snapshot.slotPresent) {
         return snapshot.automationPointCount == 0 &&
-               snapshot.modulationPointCount == 0;
+               snapshot.modulationPointCount == 0 &&
+               snapshot.destinationScaleQ15 ==
+                   core::state::modulation::
+                       PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
     }
     if (snapshot.slot.automation.active != (snapshot.automationPointCount > 0) ||
         snapshot.slot.modulation.active != (snapshot.modulationPointCount > 0) ||
@@ -61,6 +64,12 @@ FLASHMEM bool snapshotConsistent(const MacroSlotHistorySnapshot& snapshot) {
         return false;
     }
     if (snapshot.slot.automation.active && snapshot.slot.automation.pointOffset != 0) {
+        return false;
+    }
+    if (snapshot.destinationScaleQ15 !=
+            core::state::modulation::
+                PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15 &&
+        snapshot.modulationPointCount == 0U) {
         return false;
     }
     return !snapshot.slot.modulation.active ||
@@ -146,6 +155,21 @@ FLASHMEM uint32_t hashBytes(uint32_t hash, const void* data, size_t size) {
     return hash;
 }
 
+FLASHMEM bool destinationScaleRemovedWithSource(
+    const core::state::modulation::ProjectModulationState& graph,
+    const core::state::modulation::ModulationDestination& destination,
+    core::state::modulation::ModulatorId sourceId
+) {
+    bool found = false;
+    for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+        const auto& binding = graph.outputBindings[index];
+        if (binding.destination != destination) continue;
+        if (binding.sourceId != sourceId) return false;
+        found = true;
+    }
+    return found;
+}
+
 FLASHMEM uint32_t unrelatedModulatorHash(
     const core::state::modulation::ProjectModulationState& graph,
     core::state::modulation::ModulatorId sourceId
@@ -173,6 +197,20 @@ FLASHMEM uint32_t unrelatedModulatorHash(
             sizeof(graph.triggerBindings[index])
         );
     }
+    uint16_t scaleCount = 0;
+    for (uint16_t index = 0; index < graph.destinationScaleCount; ++index) {
+        const auto& scale = graph.destinationScales[index];
+        if (destinationScaleRemovedWithSource(
+                graph,
+                scale.destination,
+                sourceId
+            )) {
+            continue;
+        }
+        hash = hashBytes(hash, &scale, sizeof(scale));
+        ++scaleCount;
+    }
+    hash = hashBytes(hash, &scaleCount, sizeof(scaleCount));
     return hash;
 }
 
@@ -199,6 +237,7 @@ FLASHMEM bool deleteAfterMatches(
     using namespace core::state::modulation;
     if ((payload.bindingCount > 0U && !payload.bindings) ||
         (payload.triggerCount > 0U && !payload.triggers) ||
+        (payload.scaleCount > 0U && !payload.scales) ||
         (payload.curvePointCount > 0U && !payload.curvePoints)) {
         return false;
     }
@@ -209,11 +248,21 @@ FLASHMEM bool deleteAfterMatches(
             payload.beforeBindingCount ||
         graph.triggerBindingCount + payload.triggerCount !=
             payload.beforeTriggerCount ||
+        graph.destinationScaleCount + payload.scaleCount !=
+            payload.beforeScaleCount ||
         graph.nextSourceId != payload.nextSourceId ||
         graph.nextBindingId != payload.nextBindingId ||
         unrelatedModulatorHash(graph, payload.source.id) !=
             payload.unrelatedHash) {
         return false;
+    }
+    for (uint16_t index = 0; index < payload.scaleCount; ++index) {
+        if (findProjectModulationDestinationScale(
+                graph,
+                payload.scales[index].scale.destination
+            ) != nullptr) {
+            return false;
+        }
     }
     if (!payload.curvePresent) return true;
     const auto& arena = pages.control.authored.curves;
@@ -238,6 +287,7 @@ FLASHMEM bool deleteBeforeMatches(
     using namespace core::state::modulation;
     if ((payload.bindingCount > 0U && !payload.bindings) ||
         (payload.triggerCount > 0U && !payload.triggers) ||
+        (payload.scaleCount > 0U && !payload.scales) ||
         (payload.curvePointCount > 0U && !payload.curvePoints)) {
         return false;
     }
@@ -245,6 +295,7 @@ FLASHMEM bool deleteBeforeMatches(
     if (graph.sourceCount != payload.beforeSourceCount ||
         graph.outputBindingCount != payload.beforeBindingCount ||
         graph.triggerBindingCount != payload.beforeTriggerCount ||
+        graph.destinationScaleCount != payload.beforeScaleCount ||
         graph.nextSourceId != payload.nextSourceId ||
         graph.nextBindingId != payload.nextBindingId ||
         payload.sourceIndex >= graph.sourceCount ||
@@ -260,6 +311,16 @@ FLASHMEM bool deleteBeforeMatches(
                 graph.outputBindings[entry.globalIndex],
                 entry.binding
             )) {
+            return false;
+        }
+    }
+    for (uint16_t index = 0; index < payload.scaleCount; ++index) {
+        const auto* live = findProjectModulationDestinationScale(
+            graph,
+            payload.scales[index].scale.destination
+        );
+        if (live == nullptr ||
+            !sameObjectBits(*live, payload.scales[index].scale)) {
             return false;
         }
     }
@@ -371,6 +432,16 @@ FLASHMEM bool restoreDeletedModulator(
                 entry.globalIndex,
                 entry.trigger
             )) {
+            return false;
+        }
+    }
+    for (uint16_t index = 0; index < payload.scaleCount; ++index) {
+        const auto& scale = payload.scales[index].scale;
+        if (!setProjectModulationDestinationScale(
+                graph,
+                scale.destination,
+                scale.scaleQ15
+            ).changed()) {
             return false;
         }
     }
@@ -767,6 +838,14 @@ FLASHMEM uint32_t unrelatedBindingHash(
     }
     hash ^= count;
     hash *= 16777619UL;
+    uint16_t scaleCount = 0;
+    for (uint16_t index = 0; index < graph.destinationScaleCount; ++index) {
+        const auto& scale = graph.destinationScales[index];
+        if (scale.destination == destination) continue;
+        hash = hashBytes(hash, &scale, sizeof(scale));
+        ++scaleCount;
+    }
+    hash = hashBytes(hash, &scaleCount, sizeof(scaleCount));
     return hash;
 }
 
@@ -784,6 +863,11 @@ FLASHMEM bool captureModulationAssignments(
     out.nextBindingId = graph.nextBindingId;
     out.globalBindingCount = graph.outputBindingCount;
     out.unrelatedHash = unrelatedBindingHash(graph, destination);
+    out.destinationScaleQ15 =
+        core::state::modulation::projectModulationDestinationScaleQ15(
+            graph,
+            destination
+        );
     for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
         const auto& binding = graph.outputBindings[index];
         if (binding.destination != destination) continue;
@@ -804,7 +888,8 @@ FLASHMEM bool sameModulationAssignments(
         lhs.nextBindingId != rhs.nextBindingId ||
         lhs.unrelatedHash != rhs.unrelatedHash ||
         lhs.globalBindingCount != rhs.globalBindingCount ||
-        lhs.assignmentCount != rhs.assignmentCount) {
+        lhs.assignmentCount != rhs.assignmentCount ||
+        lhs.destinationScaleQ15 != rhs.destinationScaleQ15) {
         return false;
     }
     for (uint16_t index = 0; index < lhs.assignmentCount; ++index) {
@@ -828,7 +913,11 @@ FLASHMEM bool liveModulationAssignmentsMatch(
     if (graph.outputBindingCount != expected.globalBindingCount ||
         graph.nextBindingId != expected.nextBindingId ||
         unrelatedBindingHash(graph, expected.destination) !=
-            expected.unrelatedHash) {
+            expected.unrelatedHash ||
+        projectModulationDestinationScaleQ15(
+            graph,
+            expected.destination
+        ) != expected.destinationScaleQ15) {
         return false;
     }
     uint16_t assignment = 0;
@@ -856,6 +945,9 @@ FLASHMEM bool applyModulationAssignments(
     auto& graph = pages.control.authored.modulation;
     if (target.assignmentCount > target.assignments.size() ||
         target.globalBindingCount > graph.outputBindings.size() ||
+        (target.assignmentCount == 0U &&
+         target.destinationScaleQ15 !=
+             PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15) ||
         unrelatedBindingHash(graph, target.destination) !=
             target.unrelatedHash) {
         return false;
@@ -917,6 +1009,17 @@ FLASHMEM bool applyModulationAssignments(
         return false;
     }
 
+    if (currentAssignmentCount > 0U &&
+        projectModulationDestinationScaleQ15(graph, target.destination) !=
+            PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15 &&
+        !setProjectModulationDestinationScale(
+            graph,
+            target.destination,
+            PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15
+        ).changed()) {
+        return false;
+    }
+
     const uint16_t previousCount = graph.outputBindingCount;
     for (uint16_t index = 0; index < target.globalBindingCount; ++index) {
         graph.outputBindings[index] = work->bindings[index];
@@ -928,6 +1031,16 @@ FLASHMEM bool applyModulationAssignments(
     }
     graph.outputBindingCount = target.globalBindingCount;
     graph.nextBindingId = target.nextBindingId;
+    if (target.assignmentCount > 0U &&
+        target.destinationScaleQ15 !=
+            PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15 &&
+        !setProjectModulationDestinationScale(
+            graph,
+            target.destination,
+            target.destinationScaleQ15
+        ).changed()) {
+        return false;
+    }
     pages.control.markAuthoredMutation();
     return true;
 }
@@ -946,6 +1059,11 @@ FLASHMEM bool captureMacroSlotHistorySnapshot(
     out.macroActive = page.isMacroActive(address.macro);
     out.cc = page.cc[address.macro];
     out.staticValue = page.values[address.macro];
+    out.destinationScaleQ15 =
+        core::state::modulation::projectModulationDestinationScaleQ15(
+            pages.control.authored.modulation,
+            core::state::modulation::projectControlDestination(address)
+        );
 
     if (!core::state::modulation::captureProjectControlMacroSlot(
             pages.control,
@@ -974,7 +1092,8 @@ FLASHMEM bool sameMacroSlotHistorySnapshot(
         !sameFloatBits(lhs.staticValue, rhs.staticValue) ||
         lhs.slotPresent != rhs.slotPresent ||
         lhs.automationPointCount != rhs.automationPointCount ||
-        lhs.modulationPointCount != rhs.modulationPointCount) {
+        lhs.modulationPointCount != rhs.modulationPointCount ||
+        lhs.destinationScaleQ15 != rhs.destinationScaleQ15) {
         return false;
     }
     if (!lhs.slotPresent) return true;
@@ -1008,7 +1127,11 @@ FLASHMEM bool liveMacroSlotMatchesHistorySnapshot(
             pages.control,
             address,
             live
-        ) || live.present != snapshot.slotPresent) {
+        ) || live.present != snapshot.slotPresent ||
+        core::state::modulation::projectModulationDestinationScaleQ15(
+            pages.control.authored.modulation,
+            core::state::modulation::projectControlDestination(address)
+        ) != snapshot.destinationScaleQ15) {
         return false;
     }
     if (!live.present) return true;
@@ -1051,6 +1174,16 @@ FLASHMEM bool applyMacroSlotHistorySnapshot(
             points,
             required
         )) {
+        return false;
+    }
+    if (snapshot.destinationScaleQ15 !=
+            core::state::modulation::
+                PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15 &&
+        !core::state::modulation::setProjectModulationDestinationScale(
+            pages.control.authored.modulation,
+            core::state::modulation::projectControlDestination(address),
+            snapshot.destinationScaleQ15
+        ).changed()) {
         return false;
     }
 
@@ -1897,6 +2030,67 @@ FLASHMEM bool MacroHistoryService::setModulationBindingDepthCoalesced(
     return commitModulationAssignments_(pages, std::move(change), true);
 }
 
+FLASHMEM bool MacroHistoryService::setModulationDestinationScaleCoalesced(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    uint16_t scaleQ15
+) {
+    using namespace core::state::modulation;
+    if (!macroAutomationAddressValid(address)) return false;
+    auto& graph = pages.control.authored.modulation;
+    const auto destination = projectControlDestination(address);
+    const uint16_t current = projectModulationDestinationScaleQ15(
+        graph,
+        destination
+    );
+    if (current == scaleQ15) return false;
+
+    if (coalescing_ && undo_count_ > 0U &&
+        coalesced_kind_ == MacroHistoryActionKind::GLOBAL_DEPTH_EDIT &&
+        sameAddress(coalesced_address_, address)) {
+        auto& previous = undo_[undo_count_ - 1U];
+        if (previous && previous->destinationScale.valid &&
+            previous->destinationScale.destination == destination &&
+            previous->destinationScale.afterScaleQ15 == current &&
+            setProjectModulationDestinationScale(
+                graph,
+                destination,
+                scaleQ15
+            ).changed()) {
+            pages.control.markAuthoredMutation();
+            previous->destinationScale.afterScaleQ15 = scaleQ15;
+            clearRedo_();
+            return true;
+        }
+    }
+
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return false;
+    change->kind = MacroHistoryActionKind::GLOBAL_DEPTH_EDIT;
+    change->address = address;
+    change->destinationScale = {
+        .destination = destination,
+        .beforeScaleQ15 = current,
+        .afterScaleQ15 = scaleQ15,
+        .valid = true,
+    };
+    if (!setProjectModulationDestinationScale(
+            graph,
+            destination,
+            scaleQ15
+        ).changed()) {
+        return false;
+    }
+    pages.control.markAuthoredMutation();
+    endCoalescing();
+    push_(undo_, undo_count_, std::move(change));
+    clearRedo_();
+    coalescing_ = true;
+    coalesced_kind_ = MacroHistoryActionKind::GLOBAL_DEPTH_EDIT;
+    coalesced_address_ = address;
+    return true;
+}
+
 FLASHMEM bool MacroHistoryService::setModulationBindingEnabled(
     MacroPagesState& pages,
     const MacroAutomationSlotAddress& address,
@@ -2434,6 +2628,7 @@ MacroHistoryService::deleteProjectModulator(
     payload.beforeSourceCount = graph.sourceCount;
     payload.beforeBindingCount = graph.outputBindingCount;
     payload.beforeTriggerCount = graph.triggerBindingCount;
+    payload.beforeScaleCount = graph.destinationScaleCount;
     payload.beforeCurveRecordCount = arena.recordCount;
     payload.beforeCurveArenaPointCount = arena.pointCount;
     payload.unrelatedHash = unrelatedModulatorHash(graph, sourceId);
@@ -2449,6 +2644,15 @@ MacroHistoryService::deleteProjectModulator(
     for (uint16_t index = 0; index < graph.triggerBindingCount; ++index) {
         if (graph.triggerBindings[index].sourceId == sourceId) {
             ++payload.triggerCount;
+        }
+    }
+    for (uint16_t index = 0; index < graph.destinationScaleCount; ++index) {
+        if (destinationScaleRemovedWithSource(
+                graph,
+                graph.destinationScales[index].destination,
+                sourceId
+            )) {
+            ++payload.scaleCount;
         }
     }
     if (payload.bindingCount > 0U) {
@@ -2469,6 +2673,15 @@ MacroHistoryService::deleteProjectModulator(
             return failure;
         }
     }
+    if (payload.scaleCount > 0U) {
+        payload.scales = core::app::makeExtmemUniqueArrayForOverwrite<
+            ProjectModulatorDeleteScaleEntry
+        >(payload.scaleCount);
+        if (!payload.scales) {
+            failure.status = ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED;
+            return failure;
+        }
+    }
     uint16_t bindingCursor = 0;
     for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
         if (graph.outputBindings[index].sourceId != sourceId) continue;
@@ -2484,6 +2697,18 @@ MacroHistoryService::deleteProjectModulator(
             .trigger = graph.triggerBindings[index],
             .globalIndex = index,
         };
+    }
+    uint16_t scaleCursor = 0;
+    for (uint16_t index = 0; index < graph.destinationScaleCount; ++index) {
+        const auto& scale = graph.destinationScales[index];
+        if (!destinationScaleRemovedWithSource(
+                graph,
+                scale.destination,
+                sourceId
+            )) {
+            continue;
+        }
+        payload.scales[scaleCursor++] = {.scale = scale};
     }
 
     if (source->kind == ModulatorKind::RECORDED_SHAPE) {
@@ -2584,6 +2809,21 @@ FLASHMEM bool MacroHistoryService::undo(
         }
         *source = change->sourceEdit.before;
         pages.control.markAuthoredMutation();
+    } else if (change->destinationScale.valid) {
+        auto& graph = pages.control.authored.modulation;
+        const auto& scale = change->destinationScale;
+        if (core::state::modulation::projectModulationDestinationScaleQ15(
+                graph,
+                scale.destination
+            ) != scale.afterScaleQ15 ||
+            !core::state::modulation::setProjectModulationDestinationScale(
+                graph,
+                scale.destination,
+                scale.beforeScaleQ15
+            ).changed()) {
+            return false;
+        }
+        pages.control.markAuthoredMutation();
     } else if (change->modulationAssignments) {
         if (!liveModulationAssignmentsMatch(
                 pages,
@@ -2662,6 +2902,21 @@ FLASHMEM bool MacroHistoryService::redo(
             return false;
         }
         *source = change->sourceEdit.after;
+        pages.control.markAuthoredMutation();
+    } else if (change->destinationScale.valid) {
+        auto& graph = pages.control.authored.modulation;
+        const auto& scale = change->destinationScale;
+        if (core::state::modulation::projectModulationDestinationScaleQ15(
+                graph,
+                scale.destination
+            ) != scale.beforeScaleQ15 ||
+            !core::state::modulation::setProjectModulationDestinationScale(
+                graph,
+                scale.destination,
+                scale.afterScaleQ15
+            ).changed()) {
+            return false;
+        }
         pages.control.markAuthoredMutation();
     } else if (change->modulationAssignments) {
         if (!liveModulationAssignmentsMatch(

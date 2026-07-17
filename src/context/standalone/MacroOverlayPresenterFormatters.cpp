@@ -455,14 +455,25 @@ FLASHMEM void provideModulationAssignmentRow(
         }
     }
     if (count == 0U) return;
-    const int firstAssignmentRow = count > 1U ? 1 : 0;
+    const int firstAssignmentRow = 1;
     const int addSourceRow = firstAssignmentRow + static_cast<int>(count);
-    if (count > 1U && rowIndex == 0) {
-        std::snprintf(out.key.data(), out.key.size(), "%s", "All Modulation");
+    if (rowIndex == 0) {
+        const uint16_t scaleQ15 =
+            core::state::modulation::projectModulationDestinationScaleQ15(
+                graph,
+                destination
+            );
+        const unsigned depthPercent = static_cast<unsigned>(std::lround(
+            static_cast<float>(scaleQ15) * 100.0f /
+            static_cast<float>(core::state::modulation::
+                PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15)
+        ));
+        std::snprintf(out.key.data(), out.key.size(), "%s", "All");
         std::snprintf(
             out.value.data(),
             out.value.size(),
-            "%s",
+            "%u%%  %s",
+            depthPercent,
             enabledCount == 0U ? "Off"
                 : (enabledCount == count ? "On" : "Mixed")
         );
@@ -1388,7 +1399,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                 data.meta.data(), data.meta.size(), "%s", "Context updated"
             );
         }
-        data.rowCount = static_cast<int>(count) + (count > 1U ? 2 : 1);
+        data.rowCount = static_cast<int>(count) + 2;
         data.selectedIndex = std::clamp(
             static_cast<int>(source.macroEdit.modulationFocusedRow.get()),
             0,
@@ -1864,7 +1875,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
     const bool modulationStored = slotReadable && slot.modulationStored;
     if (modulation && modulationStored) {
         const uint16_t count = slot.modulationCount;
-        const int firstAssignmentRow = count > 1U ? 1 : 0;
+        const int firstAssignmentRow = 1;
         const int addSourceRow = firstAssignmentRow + static_cast<int>(count);
         const int row = std::clamp(
             static_cast<int>(source.macroEdit.modulationFocusedRow.get()),
@@ -1877,7 +1888,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
             props.slots[2].visualState = Visual::HIDDEN;
             return props;
         }
-        if (count > 1U && row == 0) {
+        if (row == 0) {
             const bool anyEnabled = slot.activeModulationCount > 0U;
             props.slots[0] = core::ui::makeStandaloneIconStripSlot(
                 anyEnabled ? ::standalone::icons::MACRO_MODULATION
@@ -1885,7 +1896,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
                 Visual::ACTIVE,
                 Tone::NEUTRAL
             );
-            props.slots[1] = scopeLabel("All Modulation");
+            props.slots[1] = scopeLabel("All");
             props.slots[2].visualState = Visual::DISABLED;
             projectGuardedAction(
                 props.slots[0],

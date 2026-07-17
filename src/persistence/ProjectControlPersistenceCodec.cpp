@@ -204,6 +204,8 @@ FLASHMEM bool modulationLayout(
             PROJECT_MODULATION_BINDING_SIZE +
         static_cast<uint32_t>(source.modulation.triggerBindingCount) *
             PROJECT_MODULATION_TRIGGER_SIZE +
+        static_cast<uint32_t>(source.modulation.destinationScaleCount) *
+            PROJECT_MODULATION_DESTINATION_SCALE_SIZE +
         static_cast<uint32_t>(out.curveCount) *
             PROJECT_CONTROL_CURVE_RECORD_SIZE +
         points * PROJECT_CONTROL_CURVE_POINT_SIZE;
@@ -354,7 +356,7 @@ FLASHMEM bool writeModulationPayload(
         !writer.writeU16(graph.triggerBindingCount) ||
         !writer.writeU16(layout.curveCount) ||
         !writer.writeU16(layout.pointCount) ||
-        !writer.writeU16(0U) ||
+        !writer.writeU16(graph.destinationScaleCount) ||
         !writer.writeU32(graph.nextSourceId) ||
         !writer.writeU32(graph.nextBindingId) ||
         !writer.writeZeroes(12U)) {
@@ -437,6 +439,13 @@ FLASHMEM bool writeModulationPayload(
                 binding->reserved.data(),
                 binding->reserved.size()
             )) {
+            return false;
+        }
+    }
+    for (uint16_t index = 0; index < graph.destinationScaleCount; ++index) {
+        const auto& entry = graph.destinationScales[index];
+        if (!writeDestination(writer, entry.destination) ||
+            !writer.writeU16(entry.scaleQ15)) {
             return false;
         }
     }
@@ -678,7 +687,7 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
     uint16_t triggerCount = 0;
     uint16_t curveCount = 0;
     uint16_t pointCount = 0;
-    uint16_t flags = 0;
+    uint16_t destinationScaleCount = 0;
     uint32_t nextSourceId = 0;
     uint32_t nextBindingId = 0;
     if (!reader.readU16(sourceCount) ||
@@ -686,15 +695,21 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
         !reader.readU16(triggerCount) ||
         !reader.readU16(curveCount) ||
         !reader.readU16(pointCount) ||
-        !reader.readU16(flags) ||
+        !reader.readU16(destinationScaleCount) ||
         !reader.readU32(nextSourceId) ||
         !reader.readU32(nextBindingId) ||
-        flags != 0U || !readZeroes(reader, 12U)) {
+        !readZeroes(reader, 12U)) {
+        return ChunkStatus::INVALID_PAYLOAD;
+    }
+    if (view.versionMinor < PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR &&
+        destinationScaleCount != 0U) {
         return ChunkStatus::INVALID_PAYLOAD;
     }
     if (sourceCount > modulation::PROJECT_MODULATOR_CAPACITY ||
         bindingCount > modulation::PROJECT_MODULATION_BINDING_CAPACITY ||
         triggerCount > modulation::PROJECT_MODULATION_TRIGGER_CAPACITY ||
+        destinationScaleCount >
+            modulation::PROJECT_MODULATION_DESTINATION_SCALE_CAPACITY ||
         curveCount > modulation::PROJECT_MODULATOR_CAPACITY ||
         pointCount > modulation::PROJECT_CURVE_POINT_CAPACITY ||
         static_cast<uint32_t>(target.curves.recordCount) + curveCount >
@@ -710,6 +725,8 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
             PROJECT_MODULATOR_SOURCE_PAYLOAD_SIZE +
         static_cast<uint32_t>(bindingCount) * PROJECT_MODULATION_BINDING_SIZE +
         static_cast<uint32_t>(triggerCount) * PROJECT_MODULATION_TRIGGER_SIZE +
+        static_cast<uint32_t>(destinationScaleCount) *
+            PROJECT_MODULATION_DESTINATION_SCALE_SIZE +
         static_cast<uint32_t>(curveCount) * PROJECT_CONTROL_CURVE_RECORD_SIZE +
         static_cast<uint32_t>(pointCount) * PROJECT_CONTROL_CURVE_POINT_SIZE;
     if (required != view.size ||
@@ -732,6 +749,7 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
     graph.sourceCount = sourceCount;
     graph.outputBindingCount = bindingCount;
     graph.triggerBindingCount = triggerCount;
+    graph.destinationScaleCount = destinationScaleCount;
 
     uint32_t previousId = 0;
     for (uint16_t index = 0; index < sourceCount; ++index) {
@@ -859,6 +877,14 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
             static_cast<modulation::ModulationTriggerKind>(kind);
     }
 
+    for (uint16_t index = 0; index < destinationScaleCount; ++index) {
+        auto& entry = graph.destinationScales[index];
+        if (!readDestination(reader, entry.destination) ||
+            !reader.readU16(entry.scaleQ15)) {
+            return fail(ChunkStatus::INVALID_PAYLOAD);
+        }
+    }
+
     uint16_t localPointOffset = 0;
     for (uint16_t index = 0; index < curveCount; ++index) {
         auto& curve = target.curves.records[
@@ -871,8 +897,8 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
                 pointBase,
                 localPointOffset,
                 modulation::ProjectCurveValueDomain::BIPOLAR,
-                view.versionMinor ==
-                    PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR,
+                view.versionMinor >=
+                    PROJECT_MODULATION_GRAPH_NATURAL_APPLICATION_VERSION_MINOR,
                 false
             )) {
             return fail(ChunkStatus::INVALID_PAYLOAD);
@@ -913,10 +939,9 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
         )) {
         return fail(ChunkStatus::INVALID_PAYLOAD);
     }
-    return view.versionMinor ==
-        PROJECT_MODULATION_GRAPH_LEGACY_VERSION_MINOR
-        ? ChunkStatus::MIGRATED_LEGACY
-        : ChunkStatus::CURRENT;
+    return view.versionMinor == PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR
+        ? ChunkStatus::CURRENT
+        : ChunkStatus::MIGRATED_LEGACY;
 }
 
 FLASHMEM bool isLegacyAutomationVersion(const ChunkPayloadView& view) {
@@ -1084,9 +1109,11 @@ FLASHMEM DecodeResult decodeProjectControlPayloads(
         result.modulationStatus = ChunkStatus::MISSING;
     } else if (modulationView.versionMajor !=
                    PROJECT_CONTROL_CHUNK_VERSION_MAJOR ||
-               (modulationView.versionMinor !=
-                    PROJECT_MODULATION_GRAPH_LEGACY_VERSION_MINOR &&
-                modulationView.versionMinor !=
+                (modulationView.versionMinor !=
+                     PROJECT_MODULATION_GRAPH_LEGACY_VERSION_MINOR &&
+                 modulationView.versionMinor !=
+                     PROJECT_MODULATION_GRAPH_NATURAL_APPLICATION_VERSION_MINOR &&
+                 modulationView.versionMinor !=
                     PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR)) {
         result.modulationStatus = ChunkStatus::UNSUPPORTED_VERSION;
     } else {

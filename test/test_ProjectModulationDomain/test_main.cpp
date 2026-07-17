@@ -154,14 +154,168 @@ bool near(float lhs, float rhs, float epsilon = 0.0001f) {
 }
 
 void testExactMemoryContract() {
-    assert(sizeof(mod::ProjectModulationState) == 20496U);
+    assert(sizeof(mod::ModulationDestinationScaleState) == 6U);
+    assert(sizeof(mod::ProjectModulationState) == 23568U);
     assert(sizeof(mod::ProjectAutomationCurveDirectory) == 1540U);
     assert(sizeof(mod::ProjectCurveArena) == 137480U);
     assert(sizeof(mod::ProjectModulationRuntimePlan) == 15888U);
     assert(sizeof(mod::ProjectModulationState) +
                sizeof(mod::ProjectAutomationCurveDirectory) +
                sizeof(mod::ProjectCurveArena) ==
-           159516U);
+           162588U);
+}
+
+void testDestinationScaleIsSparseOrderedAndPrunedWithLastBinding() {
+    Fixture fixture;
+    const auto source = addLfo(fixture);
+    const auto firstDestination = destination(0, 0, 0);
+    const auto secondDestination = destination(0, 0, 1);
+
+    const auto empty = std::make_unique<mod::ProjectModulationState>(
+        *fixture.state
+    );
+    assert(mod::setProjectModulationDestinationScale(
+        *fixture.state,
+        firstDestination,
+        0U
+    ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(std::memcmp(
+        fixture.state.get(),
+        empty.get(),
+        sizeof(*fixture.state)
+    ) == 0);
+
+    const auto firstBinding = addBinding(fixture, source, firstDestination);
+    const auto secondBinding = addBinding(fixture, source, secondDestination);
+    assert(mod::projectModulationDestinationScaleQ15(
+        *fixture.state,
+        firstDestination
+    ) == mod::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
+    assert(mod::setProjectModulationDestinationScale(
+        *fixture.state,
+        secondDestination,
+        65535U
+    ).changed());
+    assert(mod::setProjectModulationDestinationScale(
+        *fixture.state,
+        firstDestination,
+        0U
+    ).changed());
+    assert(fixture.state->destinationScaleCount == 2U);
+    assert(fixture.state->destinationScales[0].destination == firstDestination);
+    assert(fixture.state->destinationScales[0].scaleQ15 == 0U);
+    assert(fixture.state->destinationScales[1].destination == secondDestination);
+    assert(fixture.state->destinationScales[1].scaleQ15 == 65535U);
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+
+    assert(mod::setProjectModulationDestinationScale(
+        *fixture.state,
+        firstDestination,
+        mod::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15
+    ).changed());
+    assert(fixture.state->destinationScaleCount == 1U);
+    assert(mod::removeProjectModulationBinding(
+        *fixture.state,
+        secondBinding
+    ).changed());
+    assert(fixture.state->destinationScaleCount == 0U);
+    assert(mod::removeProjectModulationBinding(
+        *fixture.state,
+        firstBinding
+    ).changed());
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+}
+
+void testDestinationScaleValidatorRejectsOrphanUnityAndUnsortedEntries() {
+    Fixture fixture;
+    const auto source = addLfo(fixture);
+    const auto firstDestination = destination(0, 0, 0);
+    const auto secondDestination = destination(0, 0, 1);
+    addBinding(fixture, source, firstDestination);
+    addBinding(fixture, source, secondDestination);
+    assert(mod::setProjectModulationDestinationScale(
+        *fixture.state,
+        firstDestination,
+        1000U
+    ).changed());
+    assert(mod::setProjectModulationDestinationScale(
+        *fixture.state,
+        secondDestination,
+        2000U
+    ).changed());
+
+    fixture.state->destinationScales[0].scaleQ15 =
+        mod::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
+    assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+    fixture.state->destinationScales[0].scaleQ15 = 1000U;
+    std::swap(
+        fixture.state->destinationScales[0],
+        fixture.state->destinationScales[1]
+    );
+    assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+    std::swap(
+        fixture.state->destinationScales[0],
+        fixture.state->destinationScales[1]
+    );
+    fixture.state->destinationScales[0].destination = destination(0, 1, 0);
+    assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+}
+
+void testDestinationScaleCompilesAndAppliesOnceBeforeFinalClamp() {
+    Fixture fixture;
+    const auto target = destination(0, 0, 0);
+    const auto first = addLfo(fixture);
+    const auto second = addLfo(fixture);
+    addBinding(fixture, first, target, 8192);
+    addBinding(fixture, second, target, 8192);
+    assert(mod::setProjectModulationDestinationScale(
+        *fixture.state,
+        target,
+        16384U
+    ).changed());
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectModulationRuntimePlan(
+        *fixture.state,
+        *fixture.arena,
+        allMacrosOnPage(0),
+        *plan
+    ).compiled());
+    assert(plan->destinationCount == 1U);
+    assert(plan->destinations[0].destinationScaleQ15 == 16384U);
+    const std::array<float, 2> values{{1.0f, 1.0f}};
+    auto resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        0U,
+        values.data(),
+        0.25f
+    );
+    assert(resolved.valid && !resolved.clipped);
+    assert(resolved.contributionCount == 2U);
+    assert(near(resolved.modulation, 0.25f, 0.0001f));
+    assert(near(resolved.value, 0.5f, 0.0001f));
+
+    assert(mod::setProjectModulationDestinationScale(
+        *fixture.state,
+        target,
+        0U
+    ).changed());
+    assert(mod::compileProjectModulationRuntimePlan(
+        *fixture.state,
+        *fixture.arena,
+        allMacrosOnPage(0),
+        *plan
+    ).compiled());
+    resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        0U,
+        values.data(),
+        0.25f
+    );
+    assert(resolved.valid && near(resolved.modulation, 0.0f));
+    assert(near(resolved.value, 0.25f));
+    assert(fixture.state->outputBindings[0].amountQ15 == 8192);
+    assert(fixture.state->outputBindings[1].amountQ15 == 8192);
 }
 
 void testCurveContractPreservesLegacyLoopWindowsAndSameTickPoints() {
@@ -949,6 +1103,9 @@ void testValidatorRejectsDanglingDuplicateAndBadReferenceCount() {
 
 int main() {
     testExactMemoryContract();
+    testDestinationScaleIsSparseOrderedAndPrunedWithLastBinding();
+    testDestinationScaleValidatorRejectsOrphanUnityAndUnsortedEntries();
+    testDestinationScaleCompilesAndAppliesOnceBeforeFinalClamp();
     testCurveContractPreservesLegacyLoopWindowsAndSameTickPoints();
     testStableIdsDuplicateAndDelete();
     testReachAndDuplicateBindingAreStrictAndAtomic();

@@ -20,6 +20,7 @@ enum class ProjectModulationStatus : uint8_t {
     CURVE_RECORD_CAPACITY_EXCEEDED,
     CURVE_POINT_CAPACITY_EXCEEDED,
     CURVE_REFERENCE_CAPACITY_EXCEEDED,
+    DESTINATION_SCALE_CAPACITY_EXCEEDED,
     DUPLICATE_BINDING,
     DUPLICATE_TRIGGER,
     REACH_VIOLATION,
@@ -119,6 +120,15 @@ struct ModulatorSplitRequest {
 [[nodiscard]] ModulationBindingState* findProjectModulationBinding(
     ProjectModulationState& state,
     ModulationBindingId id
+);
+[[nodiscard]] const ModulationDestinationScaleState*
+findProjectModulationDestinationScale(
+    const ProjectModulationState& state,
+    const ModulationDestination& destination
+);
+[[nodiscard]] uint16_t projectModulationDestinationScaleQ15(
+    const ProjectModulationState& state,
+    const ModulationDestination& destination
 );
 void formatNextProjectLfoName(
     const ProjectModulationState& state,
@@ -233,6 +243,12 @@ ProjectModulationResult updateProjectModulationBinding(
     ModulationTransfer transfer,
     bool enabled,
     uint16_t slewMs = 0
+);
+/** Stores only non-unity values and requires a live assignment target. */
+ProjectModulationResult setProjectModulationDestinationScale(
+    ProjectModulationState& state,
+    const ModulationDestination& destination,
+    uint16_t scaleQ15
 );
 ProjectModulationResult addProjectModulationTrigger(
     ProjectModulationState& state,

@@ -1,8 +1,10 @@
+#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <iostream>
 
 #include "state/macro/MacroAutomationState.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "ui/macro/MacroEditorPreviewModel.hpp"
 
 // The firmware UI is not part of the native core library. Keep this pure,
@@ -132,6 +134,58 @@ void test_sources_share_one_timeline_and_keep_independent_loop_rates() {
         << "[PASS] preview shares timeline and preserves independent loop rates\n";
 }
 
+void test_project_preview_applies_destination_global_depth() {
+    namespace mod = core::state::modulation;
+    mod::ProjectControlState control{};
+    const MacroAutomationSlotAddress address{.track = 0, .page = 0, .macro = 0};
+    const auto target = mod::projectControlDestination(address);
+    mod::ModulatorLfoDraft source{};
+    source.name = "Square";
+    source.reach.kind = mod::ModulatorReachKind::PROJECT;
+    source.parameters.shape = mod::ModulatorLfoShape::SQUARE;
+    const auto created = mod::createLfoModulator(control.authored.modulation, source);
+    assert(created.changed());
+    mod::ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination = target;
+    binding.amountQ15 = 16384;
+    assert(mod::addProjectModulationBinding(
+        control.authored.modulation,
+        binding
+    ).changed());
+
+    core::ui::MacroEditorPreviewModel unity{};
+    core::ui::buildMacroEditorPreviewModel(
+        0.5f,
+        control,
+        address,
+        false,
+        unity
+    );
+    assert(mod::setProjectModulationDestinationScale(
+        control.authored.modulation,
+        target,
+        16384U
+    ).changed());
+    core::ui::MacroEditorPreviewModel half{};
+    core::ui::buildMacroEditorPreviewModel(
+        0.5f,
+        control,
+        address,
+        false,
+        half
+    );
+    int unityPeak = 0;
+    int halfPeak = 0;
+    for (size_t index = 0; index < unity.modulation.size(); ++index) {
+        unityPeak = std::max(unityPeak, std::abs(unity.modulation[index]));
+        halfPeak = std::max(halfPeak, std::abs(half.modulation[index]));
+    }
+    assert(unityPeak > 0 && halfPeak > 0);
+    assert(std::abs(unityPeak - halfPeak * 2) <= 2);
+    std::cout << "[PASS] Project preview reflects destination Global Depth\n";
+}
+
 }  // namespace
 
 int main() {
@@ -139,6 +193,7 @@ int main() {
     test_out_clamps_and_reports_both_clip_directions();
     test_modulation_off_preserves_stored_preview_but_not_output_motion();
     test_sources_share_one_timeline_and_keep_independent_loop_rates();
+    test_project_preview_applies_destination_global_depth();
     std::cout << "All MacroEditorPreviewModel tests passed.\n";
     return 0;
 }

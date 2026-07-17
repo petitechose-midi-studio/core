@@ -55,8 +55,10 @@ struct ProjectModulationRuntimeDestination {
     uint16_t automationCurveRecordIndex = std::numeric_limits<uint16_t>::max();
     float minimum = 0.0f;
     float maximum = 1.0f;
+    uint16_t destinationScaleQ15 =
+        PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
     uint8_t flags = 0;
-    std::array<uint8_t, 3> tailReserved{};
+    uint8_t reserved = 0;
 };
 
 /**

@@ -1,6 +1,8 @@
 #include "handler/macro/MacroAutomationHandler.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
@@ -112,12 +114,11 @@ struct ModulationAssignmentRows {
 
     [[nodiscard]] int rowCount() const {
         if (assignmentCount == 0U) return 2;
-        return static_cast<int>(assignmentCount) +
-               (assignmentCount > 1U ? 2 : 1);
+        return static_cast<int>(assignmentCount) + 2;
     }
 
     [[nodiscard]] int firstAssignmentRow() const {
-        return assignmentCount > 1U ? 1 : 0;
+        return assignmentCount > 0U ? 1 : 0;
     }
 
     [[nodiscard]] int addSourceRow() const {
@@ -127,7 +128,7 @@ struct ModulationAssignmentRows {
     }
 
     [[nodiscard]] bool allRow(int row) const {
-        return assignmentCount > 1U && row == 0;
+        return assignmentCount > 0U && row == 0;
     }
 
     [[nodiscard]] bool addRow(int row) const {
@@ -455,6 +456,15 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
     if (modulationDetailActive()) {
         if (!context.modulationStored) return;
         const auto rows = modulationRows(pages_, index);
+        if (rows.allRow(macro_edit_.modulationFocusedRow.get())) {
+            const auto scaled = static_cast<uint16_t>(std::lround(
+                clamped * static_cast<float>(
+                    std::numeric_limits<uint16_t>::max()
+                )
+            ));
+            (void)services_.setModulationGlobalDepthQ15(index, scaled);
+            return;
+        }
         const auto* binding = bindingForAssignmentOrdinal(
             pages_,
             rows,
@@ -558,6 +568,15 @@ FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
             return;
         }
         const auto rows = modulationRows(pages_, macroIndex());
+        if (rows.allRow(macro_edit_.modulationFocusedRow.get())) {
+            steps = 201U;
+            position = static_cast<float>(
+                services_.modulationGlobalDepthQ15(macroIndex())
+            ) / static_cast<float>(std::numeric_limits<uint16_t>::max());
+            encoders_.setDiscreteSteps(Config::EncoderID::OPT, steps);
+            encoders_.setPosition(Config::EncoderID::OPT, position);
+            return;
+        }
         const auto* binding = bindingForAssignmentOrdinal(
             pages_,
             rows,

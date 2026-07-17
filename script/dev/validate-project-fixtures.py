@@ -144,7 +144,7 @@ def main() -> int:
     )
 
     with tempfile.TemporaryDirectory() as tmp:
-        migrated_modg = Path(tmp) / "modg-application-1.1.mspj"
+        migrated_modg = Path(tmp) / "modg-application-1.2.mspj"
         exit_code, report = run_tool(
             tool,
             "migrate",
@@ -153,7 +153,7 @@ def main() -> int:
             str(migrated_modg),
         )
         assert_report(
-            "migrate MODG 1.0 to 1.1",
+            "migrate MODG 1.0 to 1.2",
             exit_code,
             report,
             status="migrated",
@@ -163,7 +163,7 @@ def main() -> int:
         )
         exit_code, report = run_tool(tool, "inspect", str(migrated_modg))
         assert_report(
-            "inspect migrated MODG 1.1",
+            "inspect migrated MODG 1.2",
             exit_code,
             report,
             status="current",

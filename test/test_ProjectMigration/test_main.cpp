@@ -406,7 +406,7 @@ void test_rewritten_fixture_migrates_legacy_macro_lifecycle_payload() {
     std::cout << "[PASS] test_rewritten_fixture_migrates_legacy_macro_lifecycle_payload\n";
 }
 
-void test_modg10_application_fixture_migrates_losslessly_to_11() {
+void test_modg10_application_fixture_migrates_losslessly_to_12() {
     const auto expected = buildModg10ApplicationFixture();
     const auto bytes = readFixture(
         "test/fixtures/projects/v1_0/modg-application-1.0.mspj"
@@ -465,7 +465,7 @@ void test_modg10_application_fixture_migrates_losslessly_to_11() {
     assert(currentInspection.loadStatus == project_file::LoadStatus::OK);
     assert(currentInspection.overwriteSafe && currentReport.ok());
 
-    std::cout << "[PASS] test_modg10_application_fixture_migrates_losslessly_to_11\n";
+    std::cout << "[PASS] test_modg10_application_fixture_migrates_losslessly_to_12\n";
 }
 
 }  // namespace
@@ -491,7 +491,7 @@ int main(int argc, char** argv) {
     test_stale_sequencer_project_is_partial_and_not_rewritten_by_default();
     test_stale_sequencer_fixture_is_partial();
     test_rewritten_fixture_migrates_legacy_macro_lifecycle_payload();
-    test_modg10_application_fixture_migrates_losslessly_to_11();
+    test_modg10_application_fixture_migrates_losslessly_to_12();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

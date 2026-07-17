@@ -25,7 +25,7 @@ struct ProjectControlDomainState {
     }
 };
 
-static_assert(sizeof(ProjectControlDomainState) == 159516U);
+static_assert(sizeof(ProjectControlDomainState) == 162588U);
 static_assert(std::is_trivially_copyable_v<ProjectControlDomainState>);
 
 }  // namespace core::state::modulation

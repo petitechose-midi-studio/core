@@ -45,10 +45,33 @@ void assignLane(
     ));
 }
 
+void assignShape(
+    modulation::ProjectControlState& control,
+    macro::MacroAutomationSlotAddress address,
+    uint16_t scaleQ15
+) {
+    macro::MacroModulationShape shape{};
+    shape.durationBeats = 2.0f;
+    assert(macro::macroModulationAppendPoint(shape, 0.0f, -0.5f));
+    assert(macro::macroModulationAppendPoint(shape, 1.0f, 0.5f));
+    assert(test_support::project_control::assignModulation(
+        control,
+        address,
+        shape,
+        0.5f
+    ));
+    assert(modulation::setProjectModulationDestinationScale(
+        control.authored.modulation,
+        modulation::projectControlDestination(address),
+        scaleQ15
+    ).changed());
+}
+
 void test_track_duplication_preserves_automation_from_every_page() {
     modulation::ProjectControlState control;
     assignLane(control, {.track = 0, .page = 0, .macro = 1}, 2);
     assignLane(control, {.track = 0, .page = 7, .macro = 5}, 3);
+    assignShape(control, {.track = 0, .page = 7, .macro = 5}, 49152U);
 
     const ops::ProjectControlTrackCopy copy{
         .sourceTrack = 0,
@@ -66,6 +89,11 @@ void test_track_duplication_preserves_automation_from_every_page() {
     );
     assert(first.automationStored && first.legacy.automation.pointCount == 2);
     assert(second.automationStored && second.legacy.automation.pointCount == 3);
+    assert(second.modulationStored);
+    assert(modulation::projectModulationDestinationScaleQ15(
+        control.authored.modulation,
+        modulation::projectControlDestination({.track = 3, .page = 7, .macro = 5})
+    ) == 49152U);
 
     std::cout
         << "[PASS] Project track duplication preserves every page automation\n";
@@ -162,6 +190,7 @@ void test_track_structure_copy_captures_all_page_automation() {
     modulation::ProjectControlState sourceControl;
     assignLane(sourceControl, {.track = 2, .page = 1, .macro = 3}, 2);
     assignLane(sourceControl, {.track = 2, .page = 9, .macro = 6}, 3);
+    assignShape(sourceControl, {.track = 2, .page = 9, .macro = 6}, 16384U);
     core::state::StructureClipboardState clipboard;
     macro::MacroTrackData track;
 
@@ -170,8 +199,21 @@ void test_track_structure_copy_captures_all_page_automation() {
     assert(clipboard.macroAutomationSet != nullptr);
     assert(clipboard.macroAutomationSet->trackScope);
     assert(clipboard.macroAutomationSet->count == 2);
+    assert(clipboard.macroAutomationSet->entries[1].destinationScaleQ15 ==
+           16384U);
 
-    std::cout << "[PASS] Track copy captures every Project automation\n";
+    modulation::ProjectControlState destinationControl;
+    assert(ops::replaceTrackFromClipboard(
+        destinationControl,
+        5U,
+        clipboard.macroAutomationSet.get()
+    ));
+    assert(modulation::projectModulationDestinationScaleQ15(
+        destinationControl.authored.modulation,
+        modulation::projectControlDestination({.track = 5, .page = 9, .macro = 6})
+    ) == 16384U);
+
+    std::cout << "[PASS] Track copy carries Project control and Global Depth\n";
 }
 
 void test_malformed_clipboard_is_rejected_before_destination_mutation() {

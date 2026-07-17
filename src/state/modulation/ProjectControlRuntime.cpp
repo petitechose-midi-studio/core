@@ -639,6 +639,9 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
             modulation += contribution;
         }
 
+        modulation *= static_cast<float>(destination.destinationScaleQ15) /
+            static_cast<float>(PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
+
         const float raw = base + modulation;
         const float value = std::clamp(raw, destination.minimum, destination.maximum);
         if (contributionCount > 0U) {

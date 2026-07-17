@@ -4,10 +4,10 @@
 # and the semantic 0% Paused state without deleting either stored curve.
 # Expect: capture_changed:auto_mod_active=manual_override_grid, capture_changed:manual_override_grid=manual_macro_editor, capture_changed:manual_macro_editor=manual_automation_detail, capture_changed:manual_automation_detail=automation_resumed
 # Expect: capture_changed:automation_resumed=modulation_playback_off, capture_changed:modulation_playback_off=auto_mod_restored, capture_changed:auto_mod_restored=depth_paused, capture_changed:depth_paused=depth_restored
-# Expect: semantic:auto_mod_active:source=auto_mod, semantic:manual_override_grid:source=manual_modulation, semantic:manual_automation_detail:source=manual_modulation
-# Expect: semantic:automation_resumed:source=auto_mod, semantic:modulation_playback_off:effect=edit_modulation_playback, semantic:modulation_playback_off:source=automation
-# Expect: semantic:auto_mod_restored:effect=edit_modulation_playback, semantic:auto_mod_restored:source=auto_mod
-# Expect: semantic:depth_paused:effect=edit_modulation_depth, semantic:depth_paused:source=auto_mod, semantic:depth_restored:source=auto_mod
+# Expect: semantic:auto_mod_active:source=recorded_shape, semantic:manual_override_grid:source=manual_modulation, semantic:manual_automation_detail:source=manual_modulation
+# Expect: semantic:automation_resumed:source=auto_mod, semantic:modulation_playback_off:effect=toggle_modulation_assignment, semantic:modulation_playback_off:source=recorded_shape
+# Expect: semantic:auto_mod_restored:effect=toggle_modulation_assignment, semantic:auto_mod_restored:source=recorded_shape
+# Expect: semantic:depth_paused:effect=edit_modulation_depth, semantic:depth_paused:source=recorded_shape, semantic:depth_restored:source=recorded_shape
 # Expect: semantic:auto_mod_active:route_policy=live_manual>cc_lane>macro_computed>macro_static
 
 0 scenario macro-auto-mod
@@ -47,15 +47,15 @@
 5260 tap LEFT_TOP 60
 5400 encoder NAV 1
 5530 tap NAV 60
-5670 encoder OPT -4.00
+5670 tap BOTTOM_LEFT 60
 5890 capture screen modulation_playback_off
-6030 encoder OPT 4.00
+6030 tap BOTTOM_LEFT 60
 6250 capture screen auto_mod_restored
 
-# Depth 0% is Paused, not deleted; restore the original 65% directly.
-6390 encoder NAV 1
-6530 encoder OPT -4.00
+# Signed Depth 0% is silent, not deleted; restore the original +65% directly.
+# One virtual encoder range is 3.33 turns: -1.08 maps +65% to approximately 0%.
+6530 encoder OPT -1.08
 6750 capture screen depth_paused
-# The SDL encoder has 333 virtual ticks here; +2.17 restores 65% from zero.
-6890 encoder OPT 2.17
+# The inverse gesture restores the original signed Depth.
+6890 encoder OPT 1.08
 7110 capture screen depth_restored

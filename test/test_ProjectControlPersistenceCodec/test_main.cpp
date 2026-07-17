@@ -39,10 +39,16 @@ using DomainPtr = std::unique_ptr<mod::ProjectControlDomainState>;
 using LegacyPtr = std::unique_ptr<macro::MacroAutomationBankState>;
 
 mod::ModulationDestination destinationFromAddress(uint16_t address) {
+    constexpr uint16_t destinationsPerTrack =
+        mod::PROJECT_MODULATION_PAGE_COUNT *
+        mod::PROJECT_MODULATION_MACRO_COUNT;
     return {
         mod::ModulationDestinationKind::MACRO_SLOT,
-        static_cast<uint8_t>(address / mod::PROJECT_MODULATION_MACRO_COUNT),
-        0U,
+        static_cast<uint8_t>(address / destinationsPerTrack),
+        static_cast<uint8_t>(
+            (address % destinationsPerTrack) /
+            mod::PROJECT_MODULATION_MACRO_COUNT
+        ),
         static_cast<uint8_t>(address % mod::PROJECT_MODULATION_MACRO_COUNT),
     };
 }
@@ -192,6 +198,11 @@ DomainPtr makeTypicalDomain() {
         domain->modulation,
         lfoBinding
     ).changed());
+    assert(mod::setProjectModulationDestinationScale(
+        domain->modulation,
+        lfoBinding.destination,
+        49152U
+    ).changed());
     mod::ModulationTriggerDraft trigger{};
     trigger.sourceId = lfoResult.sourceId;
     trigger.trigger.kind = mod::ModulationTriggerKind::TRANSPORT_START;
@@ -294,6 +305,8 @@ DomainPtr makeDenseDomain() {
     graph.sourceCount = mod::PROJECT_MODULATOR_CAPACITY;
     graph.outputBindingCount = mod::PROJECT_MODULATION_BINDING_CAPACITY;
     graph.triggerBindingCount = mod::PROJECT_MODULATION_TRIGGER_CAPACITY;
+    graph.destinationScaleCount =
+        mod::PROJECT_MODULATION_DESTINATION_SCALE_CAPACITY;
     graph.nextSourceId = mod::PROJECT_MODULATOR_CAPACITY + 1U;
     graph.nextBindingId =
         mod::PROJECT_MODULATION_BINDING_CAPACITY +
@@ -324,10 +337,14 @@ DomainPtr makeDenseDomain() {
             binding.id = {static_cast<uint32_t>(bindingIndex + 1U)};
             binding.sourceId = source.id;
             binding.destination = destinationFromAddress(
-                static_cast<uint16_t>((index + edge) % 128U)
+                bindingIndex
             );
             binding.amountQ15 = static_cast<int16_t>(1000 + edge);
             binding.flags = mod::PROJECT_MODULATION_BINDING_FLAG_ENABLED;
+            graph.destinationScales[bindingIndex] = {
+                binding.destination,
+                static_cast<uint16_t>(bindingIndex + 1U),
+            };
         }
 
         auto& trigger = graph.triggerBindings[index];
@@ -406,11 +423,22 @@ uint32_t firstBindingOffset(
             control::PROJECT_MODULATOR_SOURCE_PAYLOAD_SIZE;
 }
 
+uint32_t firstDestinationScaleOffset(
+    const mod::ProjectControlDomainState& domain,
+    const control::EncodeResult& encoded
+) {
+    return firstBindingOffset(domain, encoded) +
+        static_cast<uint32_t>(domain.modulation.outputBindingCount) *
+            control::PROJECT_MODULATION_BINDING_SIZE +
+        static_cast<uint32_t>(domain.modulation.triggerBindingCount) *
+            control::PROJECT_MODULATION_TRIGGER_SIZE;
+}
+
 void testExactLayoutEmptyRoundTripAndPreflightAtomicity() {
-    assert(sizeof(mod::ProjectControlDomainState) == 159516U);
+    assert(sizeof(mod::ProjectControlDomainState) == 162588U);
     assert(control::PROJECT_AUTOMATION_MAX_PAYLOAD_SIZE == 134688U);
-    assert(control::PROJECT_MODULATION_GRAPH_MAX_PAYLOAD_SIZE == 152608U);
-    assert(control::PROJECT_CONTROL_COMBINED_MAX_PAYLOAD_SIZE == 156224U);
+    assert(control::PROJECT_MODULATION_GRAPH_MAX_PAYLOAD_SIZE == 155680U);
+    assert(control::PROJECT_CONTROL_COMBINED_MAX_PAYLOAD_SIZE == 159296U);
 
     auto empty = std::make_unique<mod::ProjectControlDomainState>();
     std::vector<uint8_t> bytes;
@@ -680,6 +708,30 @@ void testCurrentRoundTripSharingAndIndependentRecovery() {
     assert(result.modulationStatus == control::ChunkStatus::INVALID_PAYLOAD);
     assert(decoded->modulation.sourceCount == 0U);
 
+    const uint32_t scaleOffset = firstDestinationScaleOffset(*source, encoded);
+    auto explicitUnityScale = bytes;
+    explicitUnityScale[scaleOffset + 4U] = 0x00U;
+    explicitUnityScale[scaleOffset + 5U] = 0x80U;
+    result = control::decodeProjectControlPayloads(
+        automationView(explicitUnityScale, encoded),
+        modulationView(explicitUnityScale, encoded),
+        *decoded
+    );
+    assert(result.modulationStatus == control::ChunkStatus::INVALID_PAYLOAD);
+    assert(decoded->modulation.sourceCount == 0U);
+
+    auto orphanScale = bytes;
+    orphanScale[scaleOffset + 1U] = 15U;
+    orphanScale[scaleOffset + 2U] = 15U;
+    orphanScale[scaleOffset + 3U] = 7U;
+    result = control::decodeProjectControlPayloads(
+        automationView(orphanScale, encoded),
+        modulationView(orphanScale, encoded),
+        *decoded
+    );
+    assert(result.modulationStatus == control::ChunkStatus::INVALID_PAYLOAD);
+    assert(decoded->modulation.sourceCount == 0U);
+
     auto unsupportedAutomation = automationView(bytes, encoded);
     ++unsupportedAutomation.versionMinor;
     result = control::decodeProjectControlPayloads(
@@ -734,8 +786,14 @@ void testCurrentRoundTripSharingAndIndependentRecovery() {
            decoded->modulation.sourceCount == 0U);
 }
 
-void testModg10ApplicationLiftPreservesSoundAndReencodesCanonical11() {
+void testModg10ApplicationLiftPreservesSoundAndReencodesCanonical12() {
     auto source = makeTypicalDomain();
+    assert(source->modulation.destinationScaleCount == 1U);
+    assert(mod::setProjectModulationDestinationScale(
+        source->modulation,
+        source->modulation.destinationScales[0].destination,
+        mod::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15
+    ).changed());
     for (uint16_t index = 0;
          index < source->modulation.outputBindingCount;
          ++index) {
@@ -750,9 +808,9 @@ void testModg10ApplicationLiftPreservesSoundAndReencodesCanonical11() {
         &source->automation
     ));
 
-    std::vector<uint8_t> canonical11;
-    const auto encoded = encodeDomain(*source, canonical11);
-    auto legacy10 = canonical11;
+    std::vector<uint8_t> canonical12;
+    const auto encoded = encodeDomain(*source, canonical12);
+    auto legacy10 = canonical12;
     const uint32_t bindings = firstBindingOffset(*source, encoded);
     for (uint16_t index = 0;
          index < source->modulation.outputBindingCount;
@@ -811,9 +869,36 @@ void testModg10ApplicationLiftPreservesSoundAndReencodesCanonical11() {
         sizeof(*beforePlan)
     ) == 0);
 
-    std::vector<uint8_t> migrated11;
-    encodeDomain(*decoded, migrated11);
-    assert(migrated11 == canonical11);
+    std::vector<uint8_t> migrated12;
+    encodeDomain(*decoded, migrated12);
+    assert(migrated12 == canonical12);
+}
+
+void testModg11ImplicitUnityMigratesAndReencodesCanonical12() {
+    auto source = makePositiveRecordedShapeDomain();
+    std::vector<uint8_t> canonical12;
+    const auto encoded = encodeDomain(*source, canonical12);
+    auto legacy11 = modulationView(canonical12, encoded);
+    legacy11.versionMinor =
+        control::PROJECT_MODULATION_GRAPH_NATURAL_APPLICATION_VERSION_MINOR;
+    auto decoded = std::make_unique<mod::ProjectControlDomainState>();
+    const auto result = control::decodeProjectControlPayloads(
+        automationView(canonical12, encoded),
+        legacy11,
+        *decoded
+    );
+    assert(result.decoded() && result.migratedLegacy);
+    assert(result.modulationStatus == control::ChunkStatus::MIGRATED_LEGACY);
+    assert(result.overwriteSafe && !result.partial);
+    assert(decoded->modulation.destinationScaleCount == 0U);
+    assert(mod::projectModulationDestinationScaleQ15(
+        decoded->modulation,
+        destinationFromAddress(0U)
+    ) == mod::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
+
+    std::vector<uint8_t> migrated12;
+    encodeDomain(*decoded, migrated12);
+    assert(migrated12 == canonical12);
 }
 
 void testModg11PersistsNaturalPositiveRecordedShape() {
@@ -886,9 +971,9 @@ void testDenseMaximumAndCompleteProjectCeiling() {
         chunks,
         static_cast<uint16_t>(std::size(chunks))
     );
-    assert(completeSize == 410113U);
+    assert(completeSize == 413185U);
     assert(completeSize <= core::persistence::PROJECT_FILE_MAX_SIZE);
-    assert(core::persistence::PROJECT_FILE_MAX_SIZE - completeSize == 114175U);
+    assert(core::persistence::PROJECT_FILE_MAX_SIZE - completeSize == 111103U);
 
     auto decoded = std::make_unique<mod::ProjectControlDomainState>();
     const auto result = control::decodeProjectControlPayloads(
@@ -920,7 +1005,8 @@ int main() {
     testLegacyLiftIsDeterministicCanonicalAndAtomic();
     testLegacyV14V15DecodeAndAmbiguityPolicy();
     testCurrentRoundTripSharingAndIndependentRecovery();
-    testModg10ApplicationLiftPreservesSoundAndReencodesCanonical11();
+    testModg10ApplicationLiftPreservesSoundAndReencodesCanonical12();
+    testModg11ImplicitUnityMigratesAndReencodesCanonical12();
     testModg11PersistsNaturalPositiveRecordedShape();
     testCombinedCapacityConflictPreservesAutomation();
     testDenseMaximumAndCompleteProjectCeiling();

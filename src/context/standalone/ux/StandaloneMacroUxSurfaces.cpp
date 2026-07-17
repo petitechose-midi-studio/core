@@ -1205,9 +1205,9 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         const auto destination =
             core::state::modulation::projectControlDestination(address);
         const uint16_t assignmentCount = slot.modulationCount;
-        const int firstAssignmentRow = assignmentCount > 1U ? 1 : 0;
+        const int firstAssignmentRow = 1;
         const int addSourceRow = firstAssignmentRow + assignmentCount;
-        const bool allRow = assignmentCount > 1U && row == 0;
+        const bool allRow = row == 0;
         const bool addRow = row == addSourceRow;
         const int targetOrdinal = row - firstAssignmentRow;
         const auto& graph = pages_.control.authored.modulation;
@@ -1232,8 +1232,21 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         if (allRow) {
             out.property = "all_modulation";
             out.source = "aggregate";
-            copyValueLabel(
+            const uint16_t scaleQ15 =
+                core::state::modulation::projectModulationDestinationScaleQ15(
+                    graph,
+                    destination
+                );
+            const unsigned percent = static_cast<unsigned>(std::lround(
+                static_cast<float>(scaleQ15) * 100.0f /
+                static_cast<float>(core::state::modulation::
+                    PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15)
+            ));
+            std::snprintf(
                 out.valueLabel,
+                sizeof(out.valueLabel),
+                "%u%% %s",
+                percent,
                 slot.activeModulationCount > 0U ? "On" : "Off"
             );
         } else if (addRow) {
@@ -1268,9 +1281,9 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                           : "focus_modulation_assignment");
             out.projection = "silent_selection";
         } else if (isEncoder(event, Config::EncoderID::OPT)) {
-            out.effect = binding != nullptr
-                ? "edit_modulation_depth"
-                : "noop_read_only";
+            out.effect = allRow ? "edit_global_modulation_depth"
+                : (binding != nullptr ? "edit_modulation_depth"
+                                      : "noop_read_only");
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = addRow ? "open_modulator_creation"
                 : (binding != nullptr ? "open_modulator_source"

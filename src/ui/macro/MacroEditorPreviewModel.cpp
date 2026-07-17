@@ -201,6 +201,14 @@ FLASHMEM void buildMacroEditorPreviewModel(
     constexpr uint16_t PREVIEW_SOURCE_MASK = 0x00FFU;
     const auto destination = modulation::projectControlDestination(address);
     const auto& graph = control.authored.modulation;
+    const float destinationScale = static_cast<float>(
+        modulation::projectModulationDestinationScaleQ15(
+            graph,
+            destination
+        )
+    ) / static_cast<float>(
+        modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15
+    );
     for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
         const auto& binding = graph.outputBindings[index];
         if (binding.destination != destination) continue;
@@ -304,6 +312,8 @@ FLASHMEM void buildMacroEditorPreviewModel(
                 activeModulation += contribution;
             }
         }
+        storedModulation *= destinationScale;
+        activeModulation *= destinationScale;
         const float rawOut = base + activeModulation;
         model.clippedLow = model.clippedLow || rawOut < 0.0f;
         model.clippedHigh = model.clippedHigh || rawOut > 1.0f;

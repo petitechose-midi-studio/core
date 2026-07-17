@@ -139,6 +139,8 @@ struct MacroAutomationClipboardEntry {
     uint8_t sourcePage = 0;
     uint8_t sourceMacro = 0;
     core::state::macro::MacroAutomationSlotState state{};
+    uint16_t destinationScaleQ15 =
+        core::state::modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
 };
 
 struct MacroAutomationClipboard {

@@ -288,6 +288,8 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
         destination.stableAddress = address;
         destination.minimum = 0.0f;
         destination.maximum = 1.0f;
+        destination.destinationScaleQ15 =
+            projectModulationDestinationScaleQ15(state, binding.destination);
         ++out.destinationCount;
     }
 
@@ -321,6 +323,8 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
                 destination.stableAddress = address;
                 destination.minimum = 0.0f;
                 destination.maximum = 1.0f;
+                destination.destinationScaleQ15 =
+                    PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
                 ++out.destinationCount;
                 destinationIndex = static_cast<int16_t>(insertion);
             }
@@ -469,6 +473,8 @@ FLASHMEM ProjectModulationResolveResult resolveProjectModulationDestination(
         ++resolved.contributionCount;
     }
 
+    modulation *= static_cast<float>(destination.destinationScaleQ15) /
+        static_cast<float>(PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
     const float raw = baseValue + modulation;
     resolved.value = std::clamp(raw, destination.minimum, destination.maximum);
     resolved.modulation = modulation;

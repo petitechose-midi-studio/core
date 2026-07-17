@@ -79,6 +79,13 @@ FLASHMEM bool validTriggerRef(const ModulationTriggerRef& trigger) {
            trigger.data <= 127U;
 }
 
+template <typename Entry, size_t Capacity>
+FLASHMEM void eraseDense(
+    std::array<Entry, Capacity>& entries,
+    uint16_t& count,
+    uint16_t index
+);
+
 FLASHMEM int16_t sourceIndex(
     const ProjectModulationState& state,
     ModulatorId id
@@ -101,6 +108,66 @@ FLASHMEM int16_t outputBindingIndex(
         }
     }
     return -1;
+}
+
+FLASHMEM int16_t destinationScaleIndex(
+    const ProjectModulationState& state,
+    const ModulationDestination& destination
+) {
+    const uint16_t address = modulationDestinationStableAddress(destination);
+    for (uint16_t index = 0; index < state.destinationScaleCount; ++index) {
+        const uint16_t candidate = modulationDestinationStableAddress(
+            state.destinationScales[index].destination
+        );
+        if (candidate == address &&
+            state.destinationScales[index].destination == destination) {
+            return static_cast<int16_t>(index);
+        }
+        if (candidate > address) break;
+    }
+    return -1;
+}
+
+FLASHMEM bool destinationHasBinding(
+    const ProjectModulationState& state,
+    const ModulationDestination& destination
+) {
+    for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
+        if (state.outputBindings[index].destination == destination) return true;
+    }
+    return false;
+}
+
+FLASHMEM void pruneDestinationScaleIfUnbound(
+    ProjectModulationState& state,
+    const ModulationDestination& destination
+) {
+    if (destinationHasBinding(state, destination)) return;
+    const int16_t index = destinationScaleIndex(state, destination);
+    if (index >= 0) {
+        eraseDense(
+            state.destinationScales,
+            state.destinationScaleCount,
+            static_cast<uint16_t>(index)
+        );
+    }
+}
+
+FLASHMEM void pruneUnboundDestinationScales(ProjectModulationState& state) {
+    for (uint16_t index = 0; index < state.destinationScaleCount;) {
+        if (destinationHasBinding(
+                state,
+                state.destinationScales[index].destination
+            )) {
+            ++index;
+        } else {
+            eraseDense(
+                state.destinationScales,
+                state.destinationScaleCount,
+                index
+            );
+        }
+    }
 }
 
 FLASHMEM int16_t curveIndex(
@@ -591,6 +658,31 @@ FLASHMEM ModulationBindingState* findProjectModulationBinding(
         : nullptr;
 }
 
+FLASHMEM const ModulationDestinationScaleState*
+findProjectModulationDestinationScale(
+    const ProjectModulationState& state,
+    const ModulationDestination& destination
+) {
+    if (!modulationDestinationValid(destination)) return nullptr;
+    const int16_t index = destinationScaleIndex(state, destination);
+    return index < 0
+        ? nullptr
+        : &state.destinationScales[static_cast<uint16_t>(index)];
+}
+
+FLASHMEM uint16_t projectModulationDestinationScaleQ15(
+    const ProjectModulationState& state,
+    const ModulationDestination& destination
+) {
+    const auto* entry = findProjectModulationDestinationScale(
+        state,
+        destination
+    );
+    return entry != nullptr
+        ? entry->scaleQ15
+        : PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
+}
+
 FLASHMEM void formatNextProjectLfoName(
     const ProjectModulationState& state,
     char* out,
@@ -1079,6 +1171,7 @@ FLASHMEM ProjectModulationResult deleteProjectModulator(
             ++cursor;
         }
     }
+    pruneUnboundDestinationScales(state);
     for (uint16_t cursor = 0; cursor < state.triggerBindingCount;) {
         if (state.triggerBindings[cursor].sourceId == sourceId) {
             eraseDense(state.triggerBindings, state.triggerBindingCount, cursor);
@@ -1234,15 +1327,14 @@ FLASHMEM ProjectModulationResult removeProjectModulationBinding(
     if (index < 0) {
         return result(ProjectModulationStatus::INVALID_ID, {}, bindingId);
     }
-    const auto sourceId = state.outputBindings[
-        static_cast<uint16_t>(index)
-    ].sourceId;
+    const auto removed = state.outputBindings[static_cast<uint16_t>(index)];
     eraseDense(
         state.outputBindings,
         state.outputBindingCount,
         static_cast<uint16_t>(index)
     );
-    return result(ProjectModulationStatus::OK, sourceId, bindingId);
+    pruneDestinationScaleIfUnbound(state, removed.destination);
+    return result(ProjectModulationStatus::OK, removed.sourceId, bindingId);
 }
 
 FLASHMEM ProjectModulationResult updateProjectModulationBinding(
@@ -1289,6 +1381,57 @@ FLASHMEM ProjectModulationResult updateProjectModulationBinding(
         binding.sourceId,
         bindingId
     );
+}
+
+FLASHMEM ProjectModulationResult setProjectModulationDestinationScale(
+    ProjectModulationState& state,
+    const ModulationDestination& destination,
+    uint16_t scaleQ15
+) {
+    if (!modulationDestinationValid(destination) ||
+        !destinationHasBinding(state, destination)) {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT);
+    }
+    const int16_t existing = destinationScaleIndex(state, destination);
+    if (scaleQ15 == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15) {
+        if (existing < 0) return result(ProjectModulationStatus::NO_CHANGE);
+        eraseDense(
+            state.destinationScales,
+            state.destinationScaleCount,
+            static_cast<uint16_t>(existing)
+        );
+        return result(ProjectModulationStatus::OK);
+    }
+    if (existing >= 0) {
+        auto& entry = state.destinationScales[static_cast<uint16_t>(existing)];
+        if (entry.scaleQ15 == scaleQ15) {
+            return result(ProjectModulationStatus::NO_CHANGE);
+        }
+        entry.scaleQ15 = scaleQ15;
+        return result(ProjectModulationStatus::OK);
+    }
+    if (state.destinationScaleCount >=
+        PROJECT_MODULATION_DESTINATION_SCALE_CAPACITY) {
+        return result(
+            ProjectModulationStatus::DESTINATION_SCALE_CAPACITY_EXCEEDED
+        );
+    }
+    const uint16_t address = modulationDestinationStableAddress(destination);
+    uint16_t insertion = 0;
+    while (insertion < state.destinationScaleCount &&
+           modulationDestinationStableAddress(
+               state.destinationScales[insertion].destination
+           ) < address) {
+        ++insertion;
+    }
+    for (uint16_t cursor = state.destinationScaleCount;
+         cursor > insertion;
+         --cursor) {
+        state.destinationScales[cursor] = state.destinationScales[cursor - 1U];
+    }
+    state.destinationScales[insertion] = {destination, scaleQ15};
+    ++state.destinationScaleCount;
+    return result(ProjectModulationStatus::OK);
 }
 
 FLASHMEM ProjectModulationResult addProjectModulationTrigger(
@@ -1385,7 +1528,8 @@ FLASHMEM bool validProjectModulationDomain(
     if (state.sourceCount > PROJECT_MODULATOR_CAPACITY ||
         state.outputBindingCount > PROJECT_MODULATION_BINDING_CAPACITY ||
         state.triggerBindingCount > PROJECT_MODULATION_TRIGGER_CAPACITY ||
-        state.reserved != 0U ||
+        state.destinationScaleCount >
+            PROJECT_MODULATION_DESTINATION_SCALE_CAPACITY ||
         arena.recordCount > PROJECT_CURVE_LIVE_CAPACITY ||
         arena.recordCount > PROJECT_CURVE_RECORD_CAPACITY ||
         arena.pointCount > PROJECT_CURVE_POINT_CAPACITY ||
@@ -1393,6 +1537,21 @@ FLASHMEM bool validProjectModulationDomain(
          (automation->entryCount > PROJECT_AUTOMATION_ENTRY_CAPACITY ||
           automation->reserved != 0U))) {
         return false;
+    }
+
+    uint16_t previousScaleAddress = 0U;
+    for (uint16_t index = 0; index < state.destinationScaleCount; ++index) {
+        const auto& entry = state.destinationScales[index];
+        const uint16_t address = modulationDestinationStableAddress(
+            entry.destination
+        );
+        if (!modulationDestinationValid(entry.destination) ||
+            entry.scaleQ15 == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15 ||
+            !destinationHasBinding(state, entry.destination) ||
+            (index > 0U && address <= previousScaleAddress)) {
+            return false;
+        }
+        previousScaleAddress = address;
     }
 
     if (automation != nullptr) {

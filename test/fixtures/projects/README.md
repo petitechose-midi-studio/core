@@ -7,7 +7,7 @@ These `.mspj` files are compatibility fixtures for the project migration engine.
 | Path | Source | Expected migration status |
 | --- | --- | --- |
 | `v1_0/stale-sequencer.mspj` | Copied from the UX capture `project/navigation/new-project-reset`; it contains a stale `SEQR` chunk written before project snapshot chunk version `1.1`. | `partial`, `overwriteSafe=false` |
-| `v1_0/modg-application-1.0.mspj` | Deterministic native fixture with one centered LFO assigned once as legacy `BIPOLAR` and once as legacy `UNIPOLAR`. Regenerate with `test_ProjectMigration --write-modg10-fixture <path>`. | `migrated`, `overwriteSafe=true`; assignments lift to `Around Base` and `From Base` and the next write is canonical `MODG 1.1` |
+| `v1_0/modg-application-1.0.mspj` | Deterministic native fixture with one centered LFO assigned once as legacy `BIPOLAR` and once as legacy `UNIPOLAR`. Regenerate with `test_ProjectMigration --write-modg10-fixture <path>`. | `migrated`, `overwriteSafe=true`; assignments lift to `Around Base` and `From Base`, implicit Global Depth remains 100%, and the next write is canonical `MODG 1.2` |
 | `v1_1/current-from-stale-sequencer.mspj` | Produced from `v1_0/stale-sequencer.mspj` with `ms-core-file-tool migrate --allow-partial`; its Macro Automation v1.4 chunk is losslessly upgraded to the lifecycle-aware v1.5 payload. | `migrated`, `overwriteSafe=true` |
 
 The `v1_1/current-from-stale-sequencer.mspj` fixture intentionally does not

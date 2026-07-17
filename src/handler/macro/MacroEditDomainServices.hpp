@@ -69,6 +69,7 @@ public:
     bool modulationStoredFor(uint8_t index) const;
     bool modulationPlaybackActiveFor(uint8_t index) const;
     float modulationDepth(uint8_t index) const;
+    uint16_t modulationGlobalDepthQ15(uint8_t index) const;
     core::state::macro::MacroModulationOrigin modulationOrigin(uint8_t index) const;
     MacroSourceMode sourceModeFor(uint8_t index) const;
     bool manualOverrideActiveFor(uint8_t index) const;
@@ -136,6 +137,7 @@ public:
         core::state::modulation::ModulationBindingId bindingId
     ) const;
     bool setModulationDepth(uint8_t index, float depth) const;
+    bool setModulationGlobalDepthQ15(uint8_t index, uint16_t scaleQ15) const;
     void endDepthGesture() const;
     bool undo() const;
     bool redo() const;

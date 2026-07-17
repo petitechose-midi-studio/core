@@ -31,6 +31,7 @@ enum class MacroHistoryActionKind : uint8_t {
     CLEAR_MODULATION,
     REMOVE_SLOT,
     DEPTH_EDIT,
+    GLOBAL_DEPTH_EDIT,
     SOURCE_STATE,
     CREATE_MODULATOR_ASSIGNMENT,
     REMOVE_MODULATOR_ASSIGNMENT,
@@ -50,6 +51,8 @@ struct MacroSlotHistorySnapshot {
     MacroAutomationSlotState slot{};
     uint16_t automationPointCount = 0;
     uint16_t modulationPointCount = 0;
+    uint16_t destinationScaleQ15 =
+        core::state::modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
     std::array<MacroPackedCurvePoint, MACRO_HISTORY_POINT_CAPACITY> points{};
 };
 
@@ -127,6 +130,8 @@ struct MacroModulationAssignmentSnapshot {
     uint32_t unrelatedHash = 0;
     uint16_t globalBindingCount = 0;
     uint16_t assignmentCount = 0;
+    uint16_t destinationScaleQ15 =
+        core::state::modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
     std::array<
         MacroModulationAssignmentSnapshotEntry,
         MACRO_MODULATION_ASSIGNMENT_CAPACITY
@@ -136,6 +141,16 @@ struct MacroModulationAssignmentSnapshot {
 struct MacroModulationAssignmentsHistoryPayload {
     MacroModulationAssignmentSnapshot before{};
     MacroModulationAssignmentSnapshot after{};
+};
+
+/** Compact destination-wide Depth delta; no binding array is retained. */
+struct MacroDestinationScaleHistoryPayload {
+    core::state::modulation::ModulationDestination destination{};
+    uint16_t beforeScaleQ15 =
+        core::state::modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
+    uint16_t afterScaleQ15 =
+        core::state::modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
+    bool valid = false;
 };
 
 /** One root-source edit; no graph or curve-arena snapshot is retained. */
@@ -153,6 +168,10 @@ struct ProjectModulatorDeleteBindingEntry {
 struct ProjectModulatorDeleteTriggerEntry {
     core::state::modulation::ModulationTriggerBindingState trigger{};
     uint16_t globalIndex = 0;
+};
+
+struct ProjectModulatorDeleteScaleEntry {
+    core::state::modulation::ModulationDestinationScaleState scale{};
 };
 
 struct ProjectModulatorSplitBindingEntry {
@@ -204,16 +223,19 @@ struct ProjectModulatorDeleteHistoryPayload {
     uint16_t beforeSourceCount = 0;
     uint16_t beforeBindingCount = 0;
     uint16_t beforeTriggerCount = 0;
+    uint16_t beforeScaleCount = 0;
     uint16_t beforeCurveRecordCount = 0;
     uint16_t beforeCurveArenaPointCount = 0;
     uint16_t curveRecordIndex = 0;
     uint16_t bindingCount = 0;
     uint16_t triggerCount = 0;
+    uint16_t scaleCount = 0;
     uint16_t curvePointCount = 0;
     bool curvePresent = false;
     bool curveShared = false;
     core::app::ExtmemUniqueArray<ProjectModulatorDeleteBindingEntry> bindings{};
     core::app::ExtmemUniqueArray<ProjectModulatorDeleteTriggerEntry> triggers{};
+    core::app::ExtmemUniqueArray<ProjectModulatorDeleteScaleEntry> scales{};
     core::app::ExtmemUniqueArray<
         core::state::modulation::ProjectPackedCurvePoint
     > curvePoints{};
@@ -226,6 +248,7 @@ struct MacroHistoryChange {
     core::app::ExtmemUniquePtr<MacroAutomationHistoryPayload> automation{};
     core::app::ExtmemUniquePtr<MacroModulationAssignmentsHistoryPayload>
         modulationAssignments{};
+    MacroDestinationScaleHistoryPayload destinationScale{};
     MacroModulatorCreationHistoryPayload modulator{};
     ProjectModulatorSourceHistoryPayload sourceEdit{};
     core::app::ExtmemUniquePtr<ProjectModulatorDeleteHistoryPayload>
@@ -375,6 +398,13 @@ public:
         const MacroAutomationSlotAddress& address,
         core::state::modulation::ModulationBindingId bindingId,
         float depth
+    );
+
+    /** Destination-wide 0..200% multiplier; coalesced without edge snapshots. */
+    [[nodiscard]] bool setModulationDestinationScaleCoalesced(
+        MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address,
+        uint16_t scaleQ15
     );
 
     [[nodiscard]] bool setModulationBindingEnabled(

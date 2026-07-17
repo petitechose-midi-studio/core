@@ -258,6 +258,56 @@ void testLogicalBaseAutomationManualAndSharedSource() {
             mod::PROJECT_LOGICAL_MACRO_FLAG_AUTOMATION_ACTIVE) == 0U);
 }
 
+void testDestinationScaleAppliesOnceAfterSummingContributions() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    const auto target = destination(0U, 0U, 0U);
+    const auto first = addLfo(*domain, mod::ModulatorLfoShape::SQUARE, 192U);
+    const auto second = addLfo(*domain, mod::ModulatorLfoShape::SQUARE, 192U);
+    addBinding(*domain, first, target, 8192);
+    addBinding(*domain, second, target, 8192);
+    assert(mod::setProjectModulationDestinationScale(
+        domain->modulation,
+        target,
+        16384U
+    ).changed());
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectControlRuntimePlan(
+        *domain,
+        activeContext(),
+        *plan
+    ).compiled());
+    assert(plan->destinationCount == 1U);
+    assert(plan->destinations[0].destinationScaleQ15 == 16384U);
+
+    RuntimeFixture runtime;
+    runtime.bases[0].staticValue = 0.5f;
+    runtime.activate(*plan);
+    mod::ProjectControlTimeSnapshot time{};
+    time.musicalTick = 48U;
+    auto result = runtime.evaluate(*plan, domain->curves, time);
+    assert(result.evaluated() && result.contributionCount == 2U);
+    assert(near(runtime.frame->destinations[0].modulation, 0.25f));
+    assert(near(runtime.frame->destinations[0].value, 0.75f));
+
+    assert(mod::setProjectModulationDestinationScale(
+        domain->modulation,
+        target,
+        0U
+    ).changed());
+    assert(mod::compileProjectControlRuntimePlan(
+        *domain,
+        activeContext(),
+        *plan
+    ).compiled());
+    runtime.activate(*plan);
+    result = runtime.evaluate(*plan, domain->curves, time);
+    assert(result.evaluated() && result.contributionCount == 2U);
+    assert(near(runtime.frame->destinations[0].modulation, 0.0f));
+    assert(near(runtime.frame->destinations[0].value, 0.5f));
+    std::cout << "[PASS] destination scale applies once after the source sum\n";
+}
+
 void testSyncFreeTransportAndExplicitRetrigger() {
     auto domain = std::make_unique<mod::ProjectControlDomainState>();
     const auto syncSource = addLfo(
@@ -641,6 +691,7 @@ void testExactMaximumGraphEvaluatesEverySourceAndBinding() {
 int main() {
     testFiveCanonicalLfoShapes();
     testLogicalBaseAutomationManualAndSharedSource();
+    testDestinationScaleAppliesOnceAfterSummingContributions();
     testSyncFreeTransportAndExplicitRetrigger();
     testFractionalRecordedCurveAndFromBaseBinding();
     testPositiveRecordedCurveUsesNaturalAndExplicitAroundBase();

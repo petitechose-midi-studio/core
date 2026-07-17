@@ -137,6 +137,13 @@ FLASHMEM bool MacroAutomationClipboard::append(
         .sourcePage = entrySourcePage,
         .sourceMacro = entrySourceMacro,
         .state = copied,
+        .destinationScaleQ15 = includeModulation
+            ? core::state::modulation::projectModulationDestinationScaleQ15(
+                  control.authored.modulation,
+                  core::state::modulation::projectControlDestination(address)
+              )
+            : core::state::modulation::
+                  PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15,
     };
     count = static_cast<uint8_t>(count + 1U);
     valid = true;

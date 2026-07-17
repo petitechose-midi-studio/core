@@ -40,6 +40,11 @@ void seedCurves(macro::MacroPagesState& pages) {
         modulation,
         0.65f
     ));
+    assert(core::state::modulation::setProjectModulationDestinationScale(
+        pages.control.authored.modulation,
+        core::state::modulation::projectControlDestination(kAddress),
+        49152U
+    ).changed());
 
     auto& page = pages.pageData(kAddress.track, kAddress.page);
     page.setMacroActive(kAddress.macro, true);
@@ -118,6 +123,47 @@ void test_depth_turns_coalesce_without_extra_entries() {
     slot = test_support::project_control::readSlot(pages.control, kAddress);
     assert(slot.legacy.modulationDepth == 0.0f);
     std::cout << "[PASS] Depth turns coalesce to one action\n";
+}
+
+void test_global_depth_is_compact_coalesced_and_independent_from_bypass() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    seedCurves(pages);
+    macro::MacroHistoryService history;
+    const auto destination = projectControlDestination(kAddress);
+    const auto bindingId = pages.control.authored.modulation.outputBindings[0].id;
+
+    assert(history.setModulationDestinationScaleCoalesced(
+        pages,
+        kAddress,
+        32768U
+    ));
+    assert(history.setModulationDestinationScaleCoalesced(
+        pages,
+        kAddress,
+        16384U
+    ));
+    assert(history.undoCount() == 1U);
+    assert(projectModulationDestinationScaleQ15(
+        pages.control.authored.modulation,
+        destination
+    ) == 16384U);
+    assert((findProjectModulationBinding(
+        pages.control.authored.modulation,
+        bindingId
+    )->flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U);
+
+    assert(history.undo(pages));
+    assert(projectModulationDestinationScaleQ15(
+        pages.control.authored.modulation,
+        destination
+    ) == 49152U);
+    assert(history.redo(pages));
+    assert(projectModulationDestinationScaleQ15(
+        pages.control.authored.modulation,
+        destination
+    ) == 16384U);
+    std::cout << "[PASS] Global Depth coalesces independently from bypass\n";
 }
 
 void test_assignment_undo_preserves_unrelated_macro_fields() {
@@ -304,6 +350,11 @@ void test_assignment_history_is_destination_scoped_and_order_stable() {
         12288
     );
     const auto second = addBinding(pages, secondSource, kAddress, -8192);
+    assert(setProjectModulationDestinationScale(
+        pages.control.authored.modulation,
+        projectControlDestination(kAddress),
+        49152U
+    ).changed());
     const auto before = pages.control.authored.modulation;
 
     assert(history.setModulationBindingDepthCoalesced(
@@ -373,6 +424,11 @@ void test_assignment_remove_and_clear_keep_roots_and_unrelated_edges() {
         12288
     );
     const auto second = addBinding(pages, secondSource, kAddress, -8192);
+    assert(setProjectModulationDestinationScale(
+        pages.control.authored.modulation,
+        projectControlDestination(kAddress),
+        49152U
+    ).changed());
     const auto before = pages.control.authored.modulation;
 
     assert(history.removeModulationBinding(pages, kAddress, first));
@@ -886,6 +942,11 @@ void test_root_delete_undo_restores_graph_and_recorded_curve_exactly() {
         pages.control.authored.modulation,
         binding
     ).changed());
+    assert(setProjectModulationDestinationScale(
+        pages.control.authored.modulation,
+        binding.destination,
+        49152U
+    ).changed());
     const auto graphBefore = pages.control.authored.modulation;
     const auto arenaBefore = pages.control.authored.curves;
 
@@ -1029,6 +1090,7 @@ int main() {
     test_snapshot_roundtrip_restores_exact_slot();
     test_clear_is_one_undo_redo_action();
     test_depth_turns_coalesce_without_extra_entries();
+    test_global_depth_is_compact_coalesced_and_independent_from_bypass();
     test_assignment_undo_preserves_unrelated_macro_fields();
     test_history_admission_rejects_oversized_slot();
     test_history_evicts_oldest_entry_at_fixed_limit();

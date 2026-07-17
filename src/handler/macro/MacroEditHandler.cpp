@@ -370,7 +370,7 @@ FLASHMEM void MacroEditHandler::openValueSelector() {
             const auto focused = services_.focusedModulationBinding(macroIndex);
             const auto destination =
                 core::state::modulation::projectControlDestination(address);
-            const uint8_t firstRow = slot.modulationCount > 1U ? 1U : 0U;
+            const uint8_t firstRow = 1U;
             uint16_t ordinal = 0;
             const auto& graph = pages_.control.authored.modulation;
             for (uint16_t bindingIndex = 0;

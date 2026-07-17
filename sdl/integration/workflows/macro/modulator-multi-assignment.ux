@@ -3,7 +3,7 @@
 # removal, aggregate bypass, contextual + Source, and unchanged Macro grammar.
 # Expect: capture_changed:assignments_focused=assignment_depth_edited, capture_changed:assignment_depth_edited=assignment_edge_off, capture_changed:all_modulation_mixed=all_modulation_off, capture_changed:all_modulation_off=all_modulation_on, capture_changed:remove_assignment_armed=assignment_removed, capture_changed:add_source_focused=add_source_choices
 # Expect: semantic:assignment_depth_edited:effect=edit_modulation_depth, semantic:assignment_edge_off:effect=toggle_modulation_assignment
-# Expect: semantic:all_modulation_off:effect=toggle_all_modulation, semantic:all_modulation_on:effect=toggle_all_modulation
+# Expect: semantic:all_modulation_mixed:effect=edit_global_modulation_depth, semantic:all_modulation_off:effect=toggle_all_modulation, semantic:all_modulation_on:effect=toggle_all_modulation
 # Expect: semantic:assignment_removed:effect=remove_modulation_assignment, semantic:add_source_choices:effect=open_modulator_creation, semantic:add_source_choices:projection=silent_selection
 
 0 scenario macro-multi-modulation
@@ -23,9 +23,11 @@
 2370 tap BOTTOM_LEFT 60
 2590 capture screen assignment_edge_off
 
-# All Modulation appears only for the multi-source case.
+# All is the permanent destination summary: OPT scales every source while tap
+# keeps the independent aggregate bypass learned elsewhere.
 2710 encoder NAV -1
 2830 encoder NAV -1
+2950 encoder OPT 0.75
 3050 capture screen all_modulation_mixed
 3170 tap BOTTOM_LEFT 60
 3390 capture screen all_modulation_off

@@ -211,6 +211,21 @@ float MacroEditDomainServices::modulationDepth(uint8_t index) const {
         : 0.0f;
 }
 
+FLASHMEM uint16_t MacroEditDomainServices::modulationGlobalDepthQ15(
+    uint8_t index
+) const {
+    if (pages_ == nullptr || index >= core::state::macro::MACRO_COUNT) {
+        return core::state::modulation::
+            PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
+    }
+    return core::state::modulation::projectModulationDestinationScaleQ15(
+        pages_->control.authored.modulation,
+        core::state::modulation::projectControlDestination(
+            automationAddress(index)
+        )
+    );
+}
+
 core::state::macro::MacroModulationOrigin
 MacroEditDomainServices::modulationOrigin(uint8_t index) const {
     const auto* slot = automationSlot(index);
@@ -1112,6 +1127,24 @@ bool MacroEditDomainServices::setModulationDepth(uint8_t index, float depth) con
             *pages_,
             automationAddress(index),
             depth
+        )) {
+        return false;
+    }
+    publishModulationMutation_();
+    return true;
+}
+
+FLASHMEM bool MacroEditDomainServices::setModulationGlobalDepthQ15(
+    uint8_t index,
+    uint16_t scaleQ15
+) const {
+    if (history_ == nullptr || index >= core::state::macro::MACRO_COUNT) {
+        return false;
+    }
+    if (!history_->setModulationDestinationScaleCoalesced(
+            *pages_,
+            automationAddress(index),
+            scaleQ15
         )) {
         return false;
     }

@@ -425,6 +425,27 @@ FLASHMEM bool duplicateProjectScopesInDomain(
                 destination.page = copy.dest.page;
             }
             if (!duplicateBinding(domain, binding, destination)) return false;
+            const uint16_t scale =
+                modulation::projectModulationDestinationScaleQ15(
+                    domain.modulation,
+                    binding.destination
+                );
+            if (scale !=
+                    modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15) {
+                const auto scaled =
+                    modulation::setProjectModulationDestinationScale(
+                        domain.modulation,
+                        destination,
+                        scale
+                    );
+                if (!scaled.changed() &&
+                    modulation::projectModulationDestinationScaleQ15(
+                        domain.modulation,
+                        destination
+                    ) != scale) {
+                    return false;
+                }
+            }
         }
     }
     return true;
@@ -498,6 +519,21 @@ FLASHMEM bool replaceProjectScopeFromClipboardInDomain(
                 pointCount
             )) {
             return false;
+        }
+        if (entry.destinationScaleQ15 !=
+                modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15) {
+            const auto scaled = modulation::setProjectModulationDestinationScale(
+                domain.modulation,
+                modulation::projectControlDestination(address),
+                entry.destinationScaleQ15
+            );
+            if (!scaled.changed() &&
+                modulation::projectModulationDestinationScaleQ15(
+                    domain.modulation,
+                    modulation::projectControlDestination(address)
+                ) != entry.destinationScaleQ15) {
+                return false;
+            }
         }
     }
     return true;

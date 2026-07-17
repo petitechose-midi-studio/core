@@ -86,7 +86,9 @@ struct MacroAutomationHarness {
 
     void openModulationEditor(uint8_t macroIndex = 0) {
         state.macroEdit.openEditor(macroIndex, 0, 0, 0);
-        state.macroEdit.openModulation();
+        state.macroEdit.openModulation(
+            services.modulationStoredFor(macroIndex) ? 1U : 0U
+        );
         overlays.show(core::ui::OverlayType::MACRO_AUTOMATION, true);
     }
 
@@ -183,7 +185,7 @@ void test_assignment_tap_opens_exact_source_workspace() {
     assert(h.state.projectNavigation.modulatorReturn.active());
     assert(h.state.projectNavigation.modulatorReturn.sourceId == sourceId);
     assert(h.state.projectNavigation.modulatorReturn.bindingId == bindingId);
-    assert(h.state.projectNavigation.modulatorReturn.focusedRow == 0U);
+    assert(h.state.projectNavigation.modulatorReturn.focusedRow == 1U);
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::MODULATION);
 
@@ -273,6 +275,56 @@ void test_modulation_entry_synchronizes_opt_to_focused_depth() {
     std::cout
         << "[PASS] "
         << "test_modulation_entry_synchronizes_opt_to_focused_depth\n";
+}
+
+void test_all_row_edits_global_depth_without_rewriting_assignment() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    h.configureModulation();
+    h.openModulationEditor();
+    h.handler.update(0U);
+    const auto destination = projectControlDestination({0U, 0U, 0U});
+    const auto bindingBefore =
+        h.state.pages.control.authored.modulation.outputBindings[0];
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 0U);
+    const auto opt = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
+    assert(h.encoderHw.getDiscreteSteps(opt) == 201U);
+    assert(std::fabs(h.encoderHw.getPosition(opt) - 0.5f) < 0.0001f);
+
+    h.turn(Config::EncoderID::OPT, 0.75f);
+    h.turn(Config::EncoderID::OPT, 0.25f);
+    assert(h.state.macroHistory.undoCount() == 1U);
+    assert(projectModulationDestinationScaleQ15(
+        h.state.pages.control.authored.modulation,
+        destination
+    ) == 16384U);
+    const auto* binding = findProjectModulationBinding(
+        h.state.pages.control.authored.modulation,
+        bindingBefore.id
+    );
+    assert(binding != nullptr && binding->amountQ15 == bindingBefore.amountQ15);
+    assert(binding->flags == bindingBefore.flags);
+
+    assert(h.services.undo());
+    assert(projectModulationDestinationScaleQ15(
+        h.state.pages.control.authored.modulation,
+        destination
+    ) == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    binding = findProjectModulationBinding(
+        h.state.pages.control.authored.modulation,
+        bindingBefore.id
+    );
+    assert(binding != nullptr &&
+           (binding->flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) == 0U);
+    assert(projectModulationDestinationScaleQ15(
+        h.state.pages.control.authored.modulation,
+        destination
+    ) == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
+    std::cout << "[PASS] All row separates Global Depth from aggregate bypass\n";
 }
 
 void test_contextual_resume_row_restores_sources_and_disappears() {
@@ -834,7 +886,7 @@ void test_add_source_create_focus_reaches_use_existing_without_picker_mutation()
     h.openModulationEditor();
     h.handler.update(0);
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroEdit.modulationFocusedRow.get() == 1U);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 2U);
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
     assert(h.state.macroEdit.flowPhase.get() ==
@@ -1088,6 +1140,7 @@ int main() {
     test_unstacked_modulation_back_materializes_macro_editor_parent();
     test_playback_row_toggles_automation_without_clearing_curve();
     test_modulation_entry_synchronizes_opt_to_focused_depth();
+    test_all_row_edits_global_depth_without_rewriting_assignment();
     test_contextual_resume_row_restores_sources_and_disappears();
     test_conversion_is_one_turn_away_and_switches_playback_truth();
     test_modulation_tap_toggles_and_hold_clears_only_modulation();
