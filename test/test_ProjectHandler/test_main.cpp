@@ -1291,6 +1291,9 @@ void test_project_modulator_creation_and_destination_workflow() {
 
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER);
+    h.tap(Config::ButtonID::NAV);  // LFO
+    assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_DESTINATION_PICKER);
     assert(h.state.projectNavigation.creatingModulatorSource);
     h.tap(Config::ButtonID::NAV);
@@ -1341,7 +1344,8 @@ void test_project_macro_destination_audition_cancel_is_exact_and_clean() {
     const auto graphBefore = h.state.pages.control.authored.modulation;
     const bool dirtyBefore = h.state.project.metadata.dirty;
 
-    h.tap(Config::ButtonID::NAV);         // New LFO destination picker
+    h.tap(Config::ButtonID::NAV);         // Source kind
+    h.tap(Config::ButtonID::NAV);         // LFO destination picker
     h.turn(Config::EncoderID::NAV, 1.0f); // legal + Macro 2
     h.tap(Config::ButtonID::NAV);         // audible create-and-bind preview
     assert(h.state.pages.control.audition.active);
@@ -1379,6 +1383,7 @@ void test_project_created_source_undo_returns_to_registry_and_redo_restores() {
     ProjectHandlerHarness h;
     enterModulatorsRoot(h);
     h.tap(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::NAV);
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.tap(Config::ButtonID::NAV);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
@@ -1409,6 +1414,7 @@ void test_project_modulator_explicit_unassigned_creation() {
     ProjectHandlerHarness h;
     enterModulatorsRoot(h);
     h.tap(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::NAV);
     h.turn(Config::EncoderID::NAV, 8.0f);
     h.tap(Config::ButtonID::NAV);
 
@@ -1422,6 +1428,89 @@ void test_project_modulator_explicit_unassigned_creation() {
     projectModulatorUndo(h);
     assert(graph.sourceCount == 0U);
     std::cout << "[PASS] Unassigned source creation stays explicit and undoable\n";
+}
+
+void test_project_adsr_creation_editing_and_trigger_route() {
+    using namespace core::state::modulation;
+    using core::state::project::ProjectNodeId;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+
+    h.tap(Config::ButtonID::NAV);          // Source kind
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER);
+    h.turn(Config::EncoderID::NAV, 1.0f);  // ADSR
+    h.tap(Config::ButtonID::NAV);          // Destination picker
+    assert(h.state.projectNavigation.creatingModulatorKind ==
+           ModulatorKind::ADSR);
+    h.tap(Config::ButtonID::NAV);          // Macro 1 preview
+
+    auto& graph = h.state.pages.control.authored.modulation;
+    assert(h.state.pages.control.audition.active);
+    assert(graph.sourceCount == 1U);
+    assert(graph.sources[0].kind == ModulatorKind::ADSR);
+    assert(graph.triggerBindingCount == 1U);
+    assert(graph.triggerBindings[0].trigger.kind ==
+           ModulationTriggerKind::TRACK_NOTE);
+    assert(graph.triggerBindings[0].trigger.track == 0U);
+    assert(graph.triggerBindings[0].trigger.channel ==
+           PROJECT_MODULATION_TRIGGER_ANY_CHANNEL);
+    assert(graph.triggerBindings[0].trigger.data ==
+           PROJECT_MODULATION_TRIGGER_ANY_NOTE);
+    assert(graph.sources[0].parameters.adsr.attack == 16U);
+    assert(graph.sources[0].parameters.adsr.decay == 250U);
+    assert(graph.sources[0].parameters.adsr.release == 500U);
+
+    h.tap(Config::ButtonID::BOTTOM_RIGHT); // Apply one transaction
+    assert(graph.outputBindingCount == 1U);
+    assert(h.state.macroHistory.undoCount() == 1U);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_DESTINATIONS);
+
+    h.tap(Config::ButtonID::LEFT_TOP);     // ADSR workspace
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    assert(h.state.projectNavigation.focusedRow.get() == 0U);
+    h.turn(Config::EncoderID::OPT, 4.0f / 15.0f);
+    assert(graph.sources[0].parameters.adsr.attack == 32U);
+
+    h.turn(Config::EncoderID::NAV, 4.0f);  // Trigger
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_TRIGGER);
+    h.turn(Config::EncoderID::OPT, 1.0f);  // Track 16
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Channel
+    h.turn(Config::EncoderID::OPT, 3.0f / 16.0f); // Channel 3
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Note
+    h.turn(Config::EncoderID::OPT, 61.0f / 128.0f); // C4 / MIDI 60
+
+    assert(graph.triggerBindings[0].trigger.track == 15U);
+    assert(graph.triggerBindings[0].trigger.channel == 2U);
+    assert(graph.triggerBindings[0].trigger.data == 60U);
+
+    h.tap(Config::ButtonID::LEFT_TOP);     // Trigger -> workspace, focus retained
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    assert(h.state.projectNavigation.focusedRow.get() == 4U);
+    h.turn(Config::EncoderID::NAV, 1.0f);  // More
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+
+    h.turn(Config::EncoderID::OPT, 0.0f);  // Sync, preserving duration ordinals
+    assert(graph.sources[0].parameters.adsr.timing == ModulatorTimingMode::SYNC);
+    assert(graph.sources[0].parameters.adsr.attack == 24U);
+    assert(graph.sources[0].parameters.adsr.decay == 192U);
+    assert(graph.sources[0].parameters.adsr.release == 384U);
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Curve
+    h.turn(Config::EncoderID::OPT, 0.5f);  // Smooth
+    assert(graph.sources[0].parameters.adsr.curve ==
+           ModulatorAdsrCurve::SMOOTH);
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Retrigger
+    h.turn(Config::EncoderID::OPT, 1.0f);  // Legato
+    assert(graph.sources[0].parameters.adsr.retrigger ==
+           ModulatorAdsrRetriggerMode::LEGATO);
+    std::cout << "[PASS] ADSR source creation, direct edit and typed route are coherent\n";
 }
 
 void test_project_modulator_source_copy_and_guarded_paste() {
@@ -1687,6 +1776,7 @@ int main() {
     test_project_macro_destination_audition_cancel_is_exact_and_clean();
     test_project_created_source_undo_returns_to_registry_and_redo_restores();
     test_project_modulator_explicit_unassigned_creation();
+    test_project_adsr_creation_editing_and_trigger_route();
     test_project_modulator_source_copy_and_guarded_paste();
     test_project_modulator_reach_page_splits_one_track_with_one_undo();
     test_macro_deep_link_back_restores_exact_assignment();

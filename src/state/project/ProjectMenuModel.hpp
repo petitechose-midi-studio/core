@@ -95,6 +95,7 @@ bool openProjectModulatorDetail(
     ProjectNavigationState& navigation,
     core::state::modulation::ModulatorId sourceId
 );
+bool openProjectModulatorKindPicker(ProjectNavigationState& navigation);
 bool openProjectModulatorWorkspace(
     ProjectNavigationState& navigation,
     core::state::modulation::ModulatorId sourceId
@@ -102,6 +103,7 @@ bool openProjectModulatorWorkspace(
 bool openProjectModulatorOptions(ProjectNavigationState& navigation);
 bool openProjectModulatorDestinations(ProjectNavigationState& navigation);
 bool openProjectModulatorReach(ProjectNavigationState& navigation);
+bool openProjectModulatorTrigger(ProjectNavigationState& navigation);
 bool openProjectModulatorDestinationPicker(
     ProjectNavigationState& navigation,
     uint8_t track,

@@ -259,6 +259,49 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         }
         return true;
     }
+    if (navigation_.currentNode.get() ==
+        core::state::project::ProjectNodeId::MODULATOR_TRIGGER) {
+        using core::state::project::modulators::TriggerDetailItem;
+        auto* source = focusedModulator();
+        if (!source || source->kind != ModulatorKind::ADSR) return false;
+        const auto* binding = findProjectModulationTriggerForSource(
+            pages_.control.authored.modulation,
+            source->id
+        );
+        if (!binding || binding->trigger.kind !=
+                ModulationTriggerKind::TRACK_NOTE) {
+            return false;
+        }
+        auto trigger = binding->trigger;
+        const auto item = static_cast<TriggerDetailItem>(
+            navigation_.focusedRow.get()
+        );
+        const int choice = item == TriggerDetailItem::TRACK
+            ? normalizedToIndex(clampNormalized(normalized), 16)
+            : (item == TriggerDetailItem::CHANNEL
+                ? normalizedToIndex(clampNormalized(normalized), 17)
+                : normalizedToIndex(clampNormalized(normalized), 129));
+        if (item == TriggerDetailItem::TRACK) {
+            trigger.track = static_cast<uint8_t>(choice);
+        } else if (item == TriggerDetailItem::CHANNEL) {
+            trigger.channel = choice == 0
+                ? PROJECT_MODULATION_TRIGGER_ANY_CHANNEL
+                : static_cast<uint8_t>(choice - 1);
+        } else {
+            trigger.data = choice == 0
+                ? PROJECT_MODULATION_TRIGGER_ANY_NOTE
+                : static_cast<uint8_t>(choice - 1);
+        }
+        if (macro_history_.setProjectModulationTriggerCoalesced(
+                pages_,
+                source->id,
+                trigger,
+                (binding->flags & PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U
+            )) {
+            publishModulatorMutation(false);
+        }
+        return true;
+    }
     auto* source = focusedModulator();
     if (!source) return false;
 
@@ -296,6 +339,90 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
               );
         if (macro_history_.setProjectModulatorReach(
                 pages_, source->id, reach
+            )) {
+            publishModulatorMutation(false);
+        }
+        return true;
+    }
+    if (source->kind == ModulatorKind::ADSR) {
+        auto parameters = source->parameters.adsr;
+        switch (item) {
+            case Item::ATTACK:
+                parameters.attack = projectModulatorAdsrDurationAt(
+                    static_cast<uint8_t>(normalizedToIndex(
+                        value,
+                        static_cast<int>(
+                            PROJECT_MODULATOR_ADSR_FREE_DURATIONS.size()
+                        )
+                    )),
+                    parameters.timing
+                );
+                break;
+            case Item::DECAY:
+                parameters.decay = projectModulatorAdsrDurationAt(
+                    static_cast<uint8_t>(normalizedToIndex(
+                        value,
+                        static_cast<int>(
+                            PROJECT_MODULATOR_ADSR_FREE_DURATIONS.size()
+                        )
+                    )),
+                    parameters.timing
+                );
+                break;
+            case Item::RELEASE:
+                parameters.release = projectModulatorAdsrDurationAt(
+                    static_cast<uint8_t>(normalizedToIndex(
+                        value,
+                        static_cast<int>(
+                            PROJECT_MODULATOR_ADSR_FREE_DURATIONS.size()
+                        )
+                    )),
+                    parameters.timing
+                );
+                break;
+            case Item::SUSTAIN:
+                parameters.sustainQ15 = static_cast<uint16_t>(std::lround(
+                    value * static_cast<float>(
+                        PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15
+                    )
+                ));
+                break;
+            case Item::TIMING: {
+                const auto next = value >= 0.5f
+                    ? ModulatorTimingMode::FREE
+                    : ModulatorTimingMode::SYNC;
+                if (next == parameters.timing) return true;
+                const auto previous = parameters.timing;
+                parameters.attack = projectModulatorAdsrDurationAt(
+                    projectModulatorAdsrDurationIndex(parameters.attack, previous),
+                    next
+                );
+                parameters.decay = projectModulatorAdsrDurationAt(
+                    projectModulatorAdsrDurationIndex(parameters.decay, previous),
+                    next
+                );
+                parameters.release = projectModulatorAdsrDurationAt(
+                    projectModulatorAdsrDurationIndex(parameters.release, previous),
+                    next
+                );
+                parameters.timing = next;
+                break;
+            }
+            case Item::CURVE:
+                parameters.curve = static_cast<ModulatorAdsrCurve>(
+                    normalizedToIndex(value, 3)
+                );
+                break;
+            case Item::RETRIGGER:
+                parameters.retrigger = static_cast<ModulatorAdsrRetriggerMode>(
+                    normalizedToIndex(value, 2)
+                );
+                break;
+            default:
+                return false;
+        }
+        if (macro_history_.setProjectAdsrParametersCoalesced(
+                pages_, source->id, parameters
             )) {
             publishModulatorMutation(false);
         }

@@ -20,7 +20,22 @@ enum class SourceDetailItem : uint8_t {
     DESTINATIONS,
     OPTIONS,
     RENAME,
+    ATTACK,
+    DECAY,
+    SUSTAIN,
+    RELEASE,
+    TRIGGER,
+    CURVE,
 };
+
+enum class TriggerDetailItem : uint8_t {
+    TRACK = 0,
+    CHANNEL,
+    NOTE,
+};
+
+inline constexpr uint8_t MODULATOR_SOURCE_KIND_COUNT = 2U;
+inline constexpr uint8_t MODULATOR_TRIGGER_DETAIL_COUNT = 3U;
 
 enum class ReachChoiceKind : uint8_t {
     TIGHTEST = 0,

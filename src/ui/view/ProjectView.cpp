@@ -414,6 +414,8 @@ void ProjectView::render() {
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
         node == core::state::project::ProjectNodeId::MODULATOR_REACH ||
         node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
+        node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER ||
+        node == core::state::project::ProjectNodeId::MODULATOR_TRIGGER ||
         node ==
             core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER;
     if (modulatorPage) {
@@ -502,6 +504,20 @@ void ProjectView::populateModulatorRow(
         return;
     }
     if (node ==
+        core::state::project::ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
+        core::ui::project::modulators::populateSourceKindRow(index, out);
+        return;
+    }
+    if (node == core::state::project::ProjectNodeId::MODULATOR_TRIGGER) {
+        core::ui::project::modulators::populateTriggerRow(
+            self->state_refs_.pages.control,
+            self->state_refs_.navigation.selectedModulator,
+            index,
+            out
+        );
+        return;
+    }
+    if (node ==
         core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         core::ui::project::modulators::populateDestinationPickerRow(
             self->state_refs_.pages,
@@ -555,7 +571,11 @@ void ProjectView::renderModulators() {
     const bool pickerCreating =
         node == ProjectNodeId::MODULATOR_DESTINATION_PICKER &&
         state_refs_.navigation.creatingModulatorSource;
-    const auto* source = node != ProjectNodeId::MODULATORS_ROOT && !pickerCreating
+    const bool sourceSelection =
+        node == ProjectNodeId::MODULATORS_ROOT ||
+        node == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER ||
+        pickerCreating;
+    const auto* source = !sourceSelection
         ? core::state::modulation::findProjectModulator(
               graph,
               state_refs_.navigation.selectedModulator
@@ -630,8 +650,17 @@ void ProjectView::renderModulators() {
             static_cast<unsigned>(
                 state_refs_.navigation.destinationPickerPage + 1U
             ),
-            state_refs_.navigation.creatingModulatorSource ? " · New LFO" : ""
+            state_refs_.navigation.creatingModulatorSource
+                ? (state_refs_.navigation.creatingModulatorKind ==
+                           core::state::modulation::ModulatorKind::ADSR
+                       ? " · New ADSR"
+                       : " · New LFO")
+                : ""
         );
+    } else if (node == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
+        std::snprintf(meta, sizeof(meta), "Choose a modulation source");
+    } else if (node == ProjectNodeId::MODULATOR_TRIGGER && source) {
+        std::snprintf(meta, sizeof(meta), "%s · Track Note", source->name.data());
     } else if (node != ProjectNodeId::MODULATORS_ROOT && source) {
         const auto count = core::ui::project::modulators::sourceDestinationCount(
             graph,
@@ -642,7 +671,11 @@ void ProjectView::renderModulators() {
             sizeof(meta),
             "%s · x%u",
             source->kind == core::state::modulation::ModulatorKind::LFO
-                ? "LFO" : "Motion",
+                ? "LFO"
+                : (source->kind ==
+                           core::state::modulation::ModulatorKind::ADSR
+                       ? "ADSR"
+                       : "Motion"),
             static_cast<unsigned>(count)
         );
     } else {
@@ -663,42 +696,51 @@ void ProjectView::renderModulators() {
         );
     }
 
-    const int rowCount = node == ProjectNodeId::MODULATORS_ROOT
-        ? static_cast<int>(graph.sourceCount) + 1
-        : (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER
-              ? static_cast<int>(core::state::macro::MACRO_COUNT) +
-                    (state_refs_.navigation.creatingModulatorSource ? 1 : 0)
-        : (node == ProjectNodeId::MODULATOR_REACH && source
-              ? static_cast<int>(
-                    core::state::project::modulators::sourceReachChoiceLayout(
-                        graph,
-                        source->id
-                    ).count
-                )
-        : (node == ProjectNodeId::MODULATOR_DESTINATIONS && source
-              ? static_cast<int>(
-                    core::ui::project::modulators::sourceDestinationCount(
-                        graph,
-                        source->id
-                    )
-                ) + 1
-              : (source
-              ? static_cast<int>(
-                    core::ui::project::modulators::sourceDetailLayout(
-                        source->kind
-                    ).count
-                )
-              : 0))));
+    int rowCount = 0;
+    if (node == ProjectNodeId::MODULATORS_ROOT) {
+        rowCount = static_cast<int>(graph.sourceCount) + 1;
+    } else if (node == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
+        rowCount = core::state::project::modulators::MODULATOR_SOURCE_KIND_COUNT;
+    } else if (node == ProjectNodeId::MODULATOR_TRIGGER) {
+        rowCount = core::state::project::modulators::MODULATOR_TRIGGER_DETAIL_COUNT;
+    } else if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        rowCount = static_cast<int>(core::state::macro::MACRO_COUNT) +
+            (state_refs_.navigation.creatingModulatorSource ? 1 : 0);
+    } else if (node == ProjectNodeId::MODULATOR_REACH && source) {
+        rowCount = static_cast<int>(
+            core::state::project::modulators::sourceReachChoiceLayout(
+                graph,
+                source->id
+            ).count
+        );
+    } else if (node == ProjectNodeId::MODULATOR_DESTINATIONS && source) {
+        rowCount = static_cast<int>(
+            core::ui::project::modulators::sourceDestinationCount(
+                graph,
+                source->id
+            )
+        ) + 1;
+    } else if (source) {
+        rowCount = static_cast<int>(
+            core::ui::project::modulators::sourceDetailLayout(source->kind).count
+        );
+    }
+    const char* title = source ? source->name.data() : "SOURCE";
+    if (node == ProjectNodeId::MODULATORS_ROOT) {
+        title = "MODULATORS";
+    } else if (node == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
+        title = "ADD SOURCE";
+    } else if (node == ProjectNodeId::MODULATOR_TRIGGER) {
+        title = "TRIGGER";
+    } else if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        title = MODULATOR_ADD_ROUTE_TITLE;
+    } else if (node == ProjectNodeId::MODULATOR_REACH) {
+        title = "REACH";
+    } else if (node == ProjectNodeId::MODULATOR_DESTINATIONS) {
+        title = "DESTINATIONS";
+    }
     modulator_registry_->render({
-        .title = node == ProjectNodeId::MODULATORS_ROOT
-            ? "MODULATORS"
-            : (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER
-                  ? MODULATOR_ADD_ROUTE_TITLE
-                  : (node == ProjectNodeId::MODULATOR_REACH
-                  ? "REACH"
-                  : (node == ProjectNodeId::MODULATOR_DESTINATIONS
-                  ? "DESTINATIONS"
-                  : (source ? source->name.data() : "SOURCE")))),
+        .title = title,
         .meta = meta,
         .rowProvider = &ProjectView::populateModulatorRow,
         .rowProviderContext = this,
@@ -732,6 +774,10 @@ void ProjectView::renderModulatorActionStrips(
             core::state::project::ProjectNodeId::MODULATOR_REACH ||
         state_refs_.navigation.currentNode.get() ==
             core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
+        state_refs_.navigation.currentNode.get() ==
+            core::state::project::ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER ||
+        state_refs_.navigation.currentNode.get() ==
+            core::state::project::ProjectNodeId::MODULATOR_TRIGGER ||
         state_refs_.navigation.currentNode.get() ==
             core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER;
     if (detail) {

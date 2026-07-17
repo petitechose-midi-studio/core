@@ -1,0 +1,67 @@
+# UX workflow: create and edit one Project-owned ADSR from the source side.
+# Purpose: proves explicit source kind, atomic source/trigger/destination Apply,
+# direct A/D/S/R cards, typed Trigger editing, and visual More controls.
+# Expect: capture_changed:empty_registry=source_kind_picker, capture_changed:source_kind_picker=adsr_kind_selected, capture_changed:adsr_kind_selected=adsr_destination_picker
+# Expect: capture_changed:adsr_destination_picker=adsr_preview, capture_changed:adsr_preview=adsr_applied, capture_changed:adsr_applied=adsr_workspace
+# Expect: capture_changed:adsr_workspace=attack_feedback, capture_changed:attack_feedback=trigger_editor, capture_changed:trigger_editor=trigger_route_edited
+# Expect: capture_changed:trigger_route_edited=adsr_more, capture_changed:adsr_more=smooth_curve_feedback
+# Expect: semantic:adsr_preview:effect=start_adsr_destination_audition, semantic:adsr_preview:projection=audible_audition
+# Expect: semantic:trigger_route_edited:mode=project.modulator_trigger, semantic:trigger_route_edited:effect=edit_trigger_route, semantic:trigger_route_edited:property=note
+# Expect: semantic:adsr_more:mode=project.modulator_options, semantic:smooth_curve_feedback:property=curve
+
+0 scenario project-modulator-destination
+
+# Reach the empty Project Modulator registry through the common tab gesture.
+100 button LEFT_CENTER down
+700 encoder NAV 1
+780 encoder NAV 2
+860 encoder NAV 3
+940 encoder NAV 4
+1020 encoder NAV 5
+1100 button LEFT_CENTER up
+1320 capture screen empty_registry
+
+# Type is explicit before any destination or provisional musical data exists.
+1440 tap NAV 60
+1660 capture screen source_kind_picker
+1780 encoder NAV 1
+2000 capture screen adsr_kind_selected
+2120 tap NAV 60
+2340 capture screen adsr_destination_picker
+
+# M1 produces one provisional ADSR + Track Note route + destination. Apply
+# publishes the complete set as one Undo action.
+2460 tap NAV 60
+2700 capture screen adsr_preview
+2820 tap BOTTOM_RIGHT 60
+3060 capture screen adsr_applied
+3180 tap LEFT_TOP 60
+3400 capture screen adsr_workspace
+
+# A/D/S/R are direct cards; exact units appear temporarily over the curve.
+3520 encoder OPT 0.40
+3740 capture screen attack_feedback
+
+# Trigger remains one visible card and opens the three-field route editor.
+3800 encoder NAV 1
+3860 encoder NAV 1
+3920 encoder NAV 1
+3980 encoder NAV 1
+4040 tap NAV 60
+4200 capture screen trigger_editor
+4320 encoder OPT 0.13
+4440 encoder NAV 1
+4560 encoder OPT 0.25
+4680 encoder NAV 1
+4800 encoder OPT 0.4765625
+5020 capture screen trigger_route_edited
+
+# Back restores Trigger focus. More keeps the curve visible while Timing,
+# Curve and Retrigger stay one click away.
+5140 tap LEFT_TOP 60
+5260 encoder NAV 1
+5380 tap NAV 60
+5600 capture screen adsr_more
+5720 encoder NAV 1
+5840 encoder OPT 0.50
+6060 capture screen smooth_curve_feedback

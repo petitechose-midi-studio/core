@@ -44,8 +44,13 @@ FLASHMEM bool isEncoder(
 }
 
 FLASHMEM const char* sourceKind(const ModulatorSourceState& source) {
-    return source.kind == core::state::modulation::ModulatorKind::LFO
-        ? "lfo" : "recorded_shape";
+    if (source.kind == core::state::modulation::ModulatorKind::LFO) {
+        return "lfo";
+    }
+    if (source.kind == core::state::modulation::ModulatorKind::ADSR) {
+        return "adsr";
+    }
+    return "recorded_shape";
 }
 
 FLASHMEM const char* reachName(
@@ -76,6 +81,12 @@ FLASHMEM const char* detailProperty(SourceDetailItem item) {
         case SourceDetailItem::DESTINATIONS: return "destinations";
         case SourceDetailItem::OPTIONS: return "details";
         case SourceDetailItem::RENAME: return "rename";
+        case SourceDetailItem::ATTACK: return "attack";
+        case SourceDetailItem::DECAY: return "decay";
+        case SourceDetailItem::SUSTAIN: return "sustain";
+        case SourceDetailItem::RELEASE: return "release";
+        case SourceDetailItem::TRIGGER: return "trigger";
+        case SourceDetailItem::CURVE: return "curve";
     }
     return "source";
 }
@@ -105,6 +116,15 @@ FLASHMEM void formatSourcePrimary(
                 )
             );
         }
+        return;
+    }
+    if (source.kind == ModulatorKind::ADSR) {
+        std::snprintf(
+            out,
+            sizeof(out),
+            "A%u",
+            static_cast<unsigned>(source.parameters.adsr.attack)
+        );
         return;
     }
     const auto* curve = findProjectCurve(
@@ -214,6 +234,8 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         node != ProjectNodeId::MODULATOR_SOURCE_RENAME &&
         node != ProjectNodeId::MODULATOR_REACH &&
         node != ProjectNodeId::MODULATOR_DESTINATIONS &&
+        node != ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER &&
+        node != ProjectNodeId::MODULATOR_TRIGGER &&
         node != ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         return false;
     }
@@ -230,6 +252,33 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     out.operationGeneration = history_.undoCount();
     out.outcome = feedbackOutcome(feedback);
 
+    if (node == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
+        const bool adsr = navigation_.focusedRow.get() != 0U;
+        out.mode = "project.modulator_kind_picker";
+        out.target = "source_kind";
+        out.targetIndex = navigation_.focusedRow.get();
+        out.property = adsr ? "adsr" : "lfo";
+        out.valueLabel[0] = adsr ? 'A' : 'L';
+        out.valueLabel[1] = '\0';
+        out.operationStatus = "explicit_selection";
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "focus_source_kind";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::NAV,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "choose_source_kind";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::LEFT_TOP,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "cancel_source_creation";
+        }
+        return true;
+    }
+
     if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         const bool auditioning = control.audition.active;
         out.mode = "project.modulator_destination_picker";
@@ -239,7 +288,11 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         out.sourceTrack = navigation_.destinationPickerTrack;
         out.targetTrack = navigation_.destinationPickerTrack;
         out.property = navigation_.creatingModulatorSource
-            ? "new_lfo_destination" : "destination";
+            ? (navigation_.creatingModulatorKind ==
+                       core::state::modulation::ModulatorKind::ADSR
+                   ? "new_adsr_destination"
+                   : "new_lfo_destination")
+            : "destination";
         out.operationStatus = auditioning
             ? "audition"
             : (navigation_.creatingModulatorSource
@@ -256,7 +309,10 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                        oc::core::input::ButtonBindingType::RELEASE
                    )) {
             out.effect = navigation_.creatingModulatorSource
-                ? "start_lfo_destination_audition"
+                ? (navigation_.creatingModulatorKind ==
+                           core::state::modulation::ModulatorKind::ADSR
+                       ? "start_adsr_destination_audition"
+                       : "start_lfo_destination_audition")
                 : "start_destination_audition";
         } else if (isEncoder(event, Config::EncoderID::OPT) && auditioning) {
             out.effect = "edit_destination_audition_depth";
@@ -282,14 +338,14 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         out.mode = "project.modulators";
         out.target = "add_source";
         out.targetIndex = navigation_.focusedRow.get();
-        out.property = "new_lfo";
+        out.property = "new_source";
         out.operationStatus = "explicit_selection";
         if (isButton(
                 event,
                 Config::ButtonID::NAV,
                 oc::core::input::ButtonBindingType::RELEASE
             )) {
-            out.effect = "open_source_destination_picker";
+            out.effect = "open_source_kind_picker";
         } else if (isEncoder(event, Config::EncoderID::NAV)) {
             out.effect = navigation_.physicalHoldActive.get()
                 ? "open_modulators_tab" : "focus_source";
@@ -318,6 +374,50 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         out.targetIndex = navigation_.focusedRow.get();
         out.property = source->name.data();
         formatSourcePrimary(out.valueLabel, control, *source);
+    } else if (node == ProjectNodeId::MODULATOR_TRIGGER) {
+        const auto* route =
+            core::state::modulation::findProjectModulationTriggerForSource(
+                graph,
+                source->id
+            );
+        const uint8_t row = navigation_.focusedRow.get();
+        out.mode = "project.modulator_trigger";
+        out.target = "trigger_route";
+        out.targetIndex = row;
+        out.property = row == 0U ? "track" : (row == 1U ? "channel" : "note");
+        if (route) {
+            const auto& trigger = route->trigger;
+            if (row == 0U) {
+                std::snprintf(
+                    out.valueLabel,
+                    sizeof(out.valueLabel),
+                    "%u",
+                    static_cast<unsigned>(trigger.track + 1U)
+                );
+            } else if (row == 1U) {
+                if (trigger.channel == core::state::modulation::
+                        PROJECT_MODULATION_TRIGGER_ANY_CHANNEL) {
+                    std::snprintf(out.valueLabel, sizeof(out.valueLabel), "any");
+                } else {
+                    std::snprintf(
+                        out.valueLabel,
+                        sizeof(out.valueLabel),
+                        "%u",
+                        static_cast<unsigned>(trigger.channel + 1U)
+                    );
+                }
+            } else if (trigger.data == core::state::modulation::
+                    PROJECT_MODULATION_TRIGGER_ANY_NOTE) {
+                std::snprintf(out.valueLabel, sizeof(out.valueLabel), "any");
+            } else {
+                std::snprintf(
+                    out.valueLabel,
+                    sizeof(out.valueLabel),
+                    "%u",
+                    static_cast<unsigned>(trigger.data)
+                );
+            }
+        }
     } else if (node == ProjectNodeId::MODULATOR_REACH) {
         const auto layout =
             core::state::project::modulators::sourceReachChoiceLayout(
@@ -396,12 +496,19 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     }
 
     if (isEncoder(event, Config::EncoderID::NAV)) {
-        out.effect = navigation_.physicalHoldActive.get()
-            ? "open_modulators_tab"
-            : (node == ProjectNodeId::MODULATOR_REACH
-                   ? "focus_reach_choice" : "focus_modulator_item");
+        if (navigation_.physicalHoldActive.get()) {
+            out.effect = "open_modulators_tab";
+        } else if (node == ProjectNodeId::MODULATOR_REACH) {
+            out.effect = "focus_reach_choice";
+        } else if (node == ProjectNodeId::MODULATOR_TRIGGER) {
+            out.effect = "focus_trigger_field";
+        } else {
+            out.effect = "focus_modulator_item";
+        }
     } else if (isEncoder(event, Config::EncoderID::OPT)) {
-        if (node != ProjectNodeId::MODULATOR_REACH) {
+        if (node == ProjectNodeId::MODULATOR_TRIGGER) {
+            out.effect = "edit_trigger_route";
+        } else if (node != ProjectNodeId::MODULATOR_REACH) {
             out.effect = binding ? "edit_modulator_depth"
                                  : "edit_modulator_property";
         }
@@ -419,18 +526,27 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                 ? "split_modulator_by_track" : "apply_modulator_reach";
         } else if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
                    node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
-            out.effect = node == ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
-                    navigation_.focusedRow.get() == 0U
-                ? "open_modulator_detail"
-                : (out.property && std::strcmp(out.property, "details") == 0
-                ? "open_modulator_options"
-                : (out.property && std::strcmp(out.property, "destinations") == 0
-                       ? "open_modulator_destinations"
-                       : (out.property && std::strcmp(out.property, "reach") == 0
-                              ? "open_modulator_reach"
-                              : (out.property && std::strcmp(out.property, "rename") == 0
-                                    ? "open_modulator_rename"
-                                    : "inspect_modulator_property"))));
+            if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
+                navigation_.focusedRow.get() == 0U) {
+                out.effect = "open_modulator_detail";
+            } else if (out.property &&
+                       std::strcmp(out.property, "details") == 0) {
+                out.effect = "open_modulator_options";
+            } else if (out.property &&
+                       std::strcmp(out.property, "destinations") == 0) {
+                out.effect = "open_modulator_destinations";
+            } else if (out.property &&
+                       std::strcmp(out.property, "trigger") == 0) {
+                out.effect = "open_modulator_trigger";
+            } else if (out.property &&
+                       std::strcmp(out.property, "reach") == 0) {
+                out.effect = "open_modulator_reach";
+            } else if (out.property &&
+                       std::strcmp(out.property, "rename") == 0) {
+                out.effect = "open_modulator_rename";
+            } else {
+                out.effect = "inspect_modulator_property";
+            }
         } else {
             out.effect = binding ? "focus_modulator_assignment"
                                  : "open_destination_picker";

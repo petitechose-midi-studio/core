@@ -427,6 +427,12 @@ FLASHMEM void applyPageMeta(ProjectMenuPage& page,
         case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
             page.meta = "MODULATORS > ADD DESTINATION";
             return;
+        case ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER:
+            page.meta = "MODULATORS > ADD SOURCE";
+            return;
+        case ProjectNodeId::MODULATOR_TRIGGER:
+            page.meta = "MODULATORS > TRIGGER";
+            return;
         case ProjectNodeId::MODULATORS_ROOT:
             page.meta = "MODULATORS";
             return;
@@ -568,6 +574,8 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
         case ProjectNodeId::MODULATOR_REACH:
         case ProjectNodeId::MODULATOR_DESTINATIONS:
         case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
+        case ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER:
+        case ProjectNodeId::MODULATOR_TRIGGER:
         case ProjectNodeId::MODULATORS_ROOT:
             // These pages are rendered by the bounded virtual source registry.
             break;
@@ -612,6 +620,8 @@ FLASHMEM uint16_t projectCurrentRowCount(const ProjectNavigationState& navigatio
         navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
         navigation.currentNode.get() == ProjectNodeId::MODULATOR_REACH ||
         navigation.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS ||
+        navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER ||
+        navigation.currentNode.get() == ProjectNodeId::MODULATOR_TRIGGER ||
         navigation.currentNode.get() ==
             ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         return modulatorDetailRowCount;

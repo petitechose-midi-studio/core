@@ -47,6 +47,15 @@ void populateRegistryRow(
     ms::ui::KeyValueRowBuffer& out
 );
 
+void populateSourceKindRow(int index, ms::ui::KeyValueRowBuffer& out);
+
+void populateTriggerRow(
+    const core::state::modulation::ProjectControlState& control,
+    core::state::modulation::ModulatorId sourceId,
+    int index,
+    ms::ui::KeyValueRowBuffer& out
+);
+
 void populateSourceDetailRow(
     const core::state::modulation::ProjectControlState& control,
     const core::state::modulation::ModulatorSourceState& source,

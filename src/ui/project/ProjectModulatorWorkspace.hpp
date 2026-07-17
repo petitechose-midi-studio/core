@@ -45,7 +45,7 @@ public:
     void render(const ProjectModulatorWorkspaceProps& props);
 
 private:
-    static constexpr uint8_t CARD_CAPACITY = 5U;
+    static constexpr uint8_t CARD_CAPACITY = 7U;
     static constexpr uint32_t EDIT_FEEDBACK_MS = 900U;
     static constexpr uint32_t EDIT_FEEDBACK_POLL_MS = 50U;
 
@@ -62,6 +62,9 @@ private:
     struct CurveSampleContext {
         const core::state::modulation::ProjectControlState* control = nullptr;
         const core::state::modulation::ModulatorSourceState* source = nullptr;
+        uint16_t attackEndQ16 = 0U;
+        uint16_t decayEndQ16 = 0U;
+        uint16_t sustainEndQ16 = 0U;
         uint16_t previousValue = 0U;
         bool hasPrevious = false;
     };

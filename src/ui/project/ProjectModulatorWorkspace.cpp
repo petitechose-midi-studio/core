@@ -33,6 +33,7 @@ constexpr lv_coord_t HORIZONTAL_PAD = 4;
 
 const char SOURCE_KIND_LFO[] PROGMEM = "LFO";
 const char SOURCE_KIND_MOTION[] PROGMEM = "MOTION";
+const char SOURCE_KIND_ADSR[] PROGMEM = "ADSR";
 const char SOURCE_STATE_ON[] PROGMEM = "ON";
 const char SOURCE_STATE_OFF[] PROGMEM = "OFF";
 const char SOURCE_STATE_FORMAT[] PROGMEM = "%s · %s";
@@ -96,6 +97,7 @@ FLASHMEM bool sourceUsesPositiveDomain(
     const ModulatorSourceState& source
 ) {
     if (source.kind == ModulatorKind::LFO) return false;
+    if (source.kind == ModulatorKind::ADSR) return true;
     const auto* curve = findProjectCurve(
         control.authored.curves,
         source.parameters.recordedCurveId
@@ -105,15 +107,213 @@ FLASHMEM bool sourceUsesPositiveDomain(
 }
 
 FLASHMEM bool editableItem(Item item, ModulatorKind kind) {
-    if (kind != ModulatorKind::LFO) return false;
-    return item == Item::SHAPE || item == Item::TIMING ||
-           item == Item::RATE || item == Item::PHASE ||
-           item == Item::RETRIGGER;
+    if (kind == ModulatorKind::LFO) {
+        return item == Item::SHAPE || item == Item::TIMING ||
+               item == Item::RATE || item == Item::PHASE ||
+               item == Item::RETRIGGER;
+    }
+    if (kind == ModulatorKind::ADSR) {
+        return item == Item::ATTACK || item == Item::DECAY ||
+               item == Item::SUSTAIN || item == Item::RELEASE ||
+               item == Item::TIMING || item == Item::CURVE ||
+               item == Item::RETRIGGER;
+    }
+    return false;
 }
 
 FLASHMEM bool actionableItem(Item item) {
     return item == Item::OPTIONS || item == Item::REACH ||
-           item == Item::RENAME || item == Item::DESTINATIONS;
+           item == Item::RENAME || item == Item::DESTINATIONS ||
+           item == Item::TRIGGER;
+}
+
+struct AdsrPreviewBoundaries {
+    uint16_t attackEndQ16 = 0U;
+    uint16_t decayEndQ16 = 0U;
+    uint16_t sustainEndQ16 = 0U;
+};
+
+struct AdsrMarkerState {
+    uint16_t positionQ16 = 0U;
+    bool visible = false;
+};
+
+FLASHMEM AdsrPreviewBoundaries adsrPreviewBoundaries(
+    const ModulatorAdsrParameters& parameters
+) {
+    uint32_t attack = parameters.attack;
+    uint32_t decay = parameters.decay;
+    uint32_t release = parameters.release;
+    const uint32_t moving = attack + decay + release;
+    uint32_t sustain = std::max<uint32_t>(1U, moving / 4U);
+    if (moving == 0U) {
+        attack = 1U;
+        decay = 1U;
+        release = 1U;
+        sustain = 1U;
+    }
+    const uint32_t total = attack + decay + sustain + release;
+    return {
+        .attackEndQ16 = static_cast<uint16_t>((attack * 65535U) / total),
+        .decayEndQ16 = static_cast<uint16_t>(
+            ((attack + decay) * 65535U) / total
+        ),
+        .sustainEndQ16 = static_cast<uint16_t>(
+            ((attack + decay + sustain) * 65535U) / total
+        ),
+    };
+}
+
+FLASHMEM float adsrSegmentProgress(
+    uint16_t position,
+    uint16_t begin,
+    uint16_t end
+) {
+    if (end <= begin) return 1.0f;
+    return std::clamp(
+        static_cast<float>(position - begin) /
+            static_cast<float>(end - begin),
+        0.0f,
+        1.0f
+    );
+}
+
+FLASHMEM float adsrPreviewValue(
+    const ModulatorAdsrParameters& parameters,
+    const AdsrPreviewBoundaries& boundaries,
+    uint16_t position
+) {
+    const float sustain = std::clamp(
+        static_cast<float>(parameters.sustainQ15) /
+            static_cast<float>(PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15),
+        0.0f,
+        1.0f
+    );
+    if (position < boundaries.attackEndQ16) {
+        return evaluateProjectAdsrProgress(
+            parameters.curve,
+            adsrSegmentProgress(position, 0U, boundaries.attackEndQ16)
+        );
+    }
+    if (position < boundaries.decayEndQ16) {
+        const float shaped = evaluateProjectAdsrProgress(
+            parameters.curve,
+            adsrSegmentProgress(
+                position,
+                boundaries.attackEndQ16,
+                boundaries.decayEndQ16
+            )
+        );
+        return 1.0f + (sustain - 1.0f) * shaped;
+    }
+    if (position < boundaries.sustainEndQ16) return sustain;
+    const float shaped = evaluateProjectAdsrProgress(
+        parameters.curve,
+        adsrSegmentProgress(
+            position,
+            boundaries.sustainEndQ16,
+            65535U
+        )
+    );
+    return sustain * (1.0f - shaped);
+}
+
+FLASHMEM const ProjectModulationRuntimeAdsrState* runtimeAdsrState(
+    const ProjectControlState& control,
+    ModulatorId sourceId
+) {
+    for (uint16_t index = 0U; index < control.runtime.sourceCount; ++index) {
+        const auto& state = control.runtime.sources[index];
+        if (state.id == sourceId &&
+            state.payload.adsr.kind == ModulatorKind::ADSR) {
+            return &state.payload.adsr;
+        }
+    }
+    return nullptr;
+}
+
+FLASHMEM float inverseAdsrProgress(
+    ModulatorAdsrCurve curve,
+    float shaped
+) {
+    const float target = std::clamp(shaped, 0.0f, 1.0f);
+    float low = 0.0f;
+    float high = 1.0f;
+    for (uint8_t iteration = 0U; iteration < 8U; ++iteration) {
+        const float middle = (low + high) * 0.5f;
+        if (evaluateProjectAdsrProgress(curve, middle) < target) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    return (low + high) * 0.5f;
+}
+
+FLASHMEM AdsrMarkerState adsrMarkerState(
+    const ProjectControlState& control,
+    const ModulatorSourceState& source,
+    const AdsrPreviewBoundaries& boundaries,
+    float live
+) {
+    const auto* runtime = runtimeAdsrState(control, source.id);
+    if (!runtime || runtime->stage == ProjectModulationAdsrStage::IDLE) return {};
+    const float sustain = std::clamp(
+        static_cast<float>(source.parameters.adsr.sustainQ15) /
+            static_cast<float>(PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15),
+        0.0f,
+        1.0f
+    );
+    const float start = std::clamp(
+        static_cast<float>(runtime->stageStartLevelQ15) / 32767.0f,
+        0.0f,
+        1.0f
+    );
+    uint16_t begin = 0U;
+    uint16_t end = 0U;
+    float target = live;
+    switch (runtime->stage) {
+        case ProjectModulationAdsrStage::ATTACK:
+            end = boundaries.attackEndQ16;
+            target = 1.0f;
+            break;
+        case ProjectModulationAdsrStage::DECAY:
+            begin = boundaries.attackEndQ16;
+            end = boundaries.decayEndQ16;
+            target = sustain;
+            break;
+        case ProjectModulationAdsrStage::SUSTAIN:
+            return {
+                .positionQ16 = static_cast<uint16_t>(
+                    boundaries.decayEndQ16 +
+                    (boundaries.sustainEndQ16 - boundaries.decayEndQ16) / 2U
+                ),
+                .visible = true,
+            };
+        case ProjectModulationAdsrStage::RELEASE:
+            begin = boundaries.sustainEndQ16;
+            end = 65535U;
+            target = 0.0f;
+            break;
+        case ProjectModulationAdsrStage::IDLE:
+        default:
+            return {};
+    }
+    const float denominator = target - start;
+    const float shaped = std::fabs(denominator) > 0.0001f
+        ? (live - start) / denominator
+        : 1.0f;
+    const float progress = inverseAdsrProgress(
+        source.parameters.adsr.curve,
+        shaped
+    );
+    return {
+        .positionQ16 = static_cast<uint16_t>(std::lround(
+            static_cast<float>(begin) +
+            static_cast<float>(end - begin) * progress
+        )),
+        .visible = true,
+    };
 }
 
 FLASHMEM core::state::project::modulators::SourceDetailLayout layoutFor(
@@ -328,7 +528,9 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
         source_icon_,
         source.kind == ModulatorKind::LFO
             ? standalone::icons::MACRO_MODULATION
-            : standalone::icons::MACRO_AUTOMATION,
+            : (source.kind == ModulatorKind::ADSR
+                ? standalone::icons::NOTE_PROP_GATE
+                : standalone::icons::MACRO_AUTOMATION),
         standalone::icons::Size::L
     );
     lv_obj_set_style_text_color(
@@ -357,7 +559,9 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
         SOURCE_STATE_FORMAT,
         source.kind == ModulatorKind::LFO
             ? SOURCE_KIND_LFO
-            : SOURCE_KIND_MOTION,
+            : (source.kind == ModulatorKind::ADSR
+                ? SOURCE_KIND_ADSR
+                : SOURCE_KIND_MOTION),
         enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF
     );
     lv_label_set_text_static(state_text_, stateText_.data());
@@ -374,10 +578,11 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
     const ProjectModulatorWorkspaceProps& props
 ) {
     const auto layout = layoutFor(props.source->kind, props.options);
-    const uint8_t topCount = layout.count > 2U
-        ? static_cast<uint8_t>(layout.count - 2U)
-        : layout.count;
-    const uint8_t bottomCount = static_cast<uint8_t>(layout.count - topCount);
+    const bool adsr = props.source->kind == ModulatorKind::ADSR;
+    const uint8_t bottomCount = adsr && layout.count >= 6U
+        ? 3U
+        : static_cast<uint8_t>(std::min<uint8_t>(2U, layout.count));
+    const uint8_t topCount = static_cast<uint8_t>(layout.count - bottomCount);
     const lv_coord_t availableWidth = static_cast<lv_coord_t>(
         lv_obj_get_width(root_) - 2 * HORIZONTAL_PAD
     );
@@ -491,6 +696,18 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleCurve(
             source.parameters.lfo.shape,
             static_cast<float>(positionQ16) / 65535.0f
         );
+    } else if (source.kind == ModulatorKind::ADSR) {
+        positive = true;
+        const AdsrPreviewBoundaries boundaries{
+            context->attackEndQ16,
+            context->decayEndQ16,
+            context->sustainEndQ16,
+        };
+        value = adsrPreviewValue(
+            source.parameters.adsr,
+            boundaries,
+            positionQ16
+        );
     } else {
         const auto* curve = findProjectCurve(
             context->control->authored.curves,
@@ -538,12 +755,26 @@ FLASHMEM void ProjectModulatorWorkspace::renderCurve(
         (props.source->flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
     const bool positive = sourceUsesPositiveDomain(*props.control, *props.source);
     const float live = liveSourceValue(*props.control, props.source->id);
+    const auto adsrBoundaries = props.source->kind == ModulatorKind::ADSR
+        ? adsrPreviewBoundaries(props.source->parameters.adsr)
+        : AdsrPreviewBoundaries{};
     curve_sample_context_ = {
         .control = props.control,
         .source = props.source,
+        .attackEndQ16 = adsrBoundaries.attackEndQ16,
+        .decayEndQ16 = adsrBoundaries.decayEndQ16,
+        .sustainEndQ16 = adsrBoundaries.sustainEndQ16,
         .previousValue = 0U,
         .hasPrevious = false,
     };
+    const AdsrMarkerState adsrMarker = props.source->kind == ModulatorKind::ADSR
+        ? adsrMarkerState(
+              *props.control,
+              *props.source,
+              adsrBoundaries,
+              live
+          )
+        : AdsrMarkerState{.positionQ16 = 65535U, .visible = true};
     curve_preview_->render({
         .visible = true,
         .sampleProvider = &ProjectModulatorWorkspace::sampleCurve,
@@ -575,8 +806,8 @@ FLASHMEM void ProjectModulatorWorkspace::renderCurve(
         .impactWidth = 1,
         .markerRadius = 2,
         .marker = {
-            .visible = enabled,
-            .positionQ16 = 65535U,
+            .visible = enabled && adsrMarker.visible,
+            .positionQ16 = adsrMarker.positionQ16,
             .valueQ16 = normalizedToQ16(
                 positive ? live : live * 0.5f + 0.5f
             ),
@@ -623,7 +854,28 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
         );
     }
     copyText(editFeedbackKeyText_, row.key.data());
+    if (item == Item::ATTACK) copyText(editFeedbackKeyText_, "Attack");
+    if (item == Item::DECAY) copyText(editFeedbackKeyText_, "Decay");
+    if (item == Item::SUSTAIN) copyText(editFeedbackKeyText_, "Sustain");
+    if (item == Item::RELEASE) copyText(editFeedbackKeyText_, "Release");
     copyText(editFeedbackValueText_, row.value.data());
+    if (item == Item::TIMING && props.source->kind == ModulatorKind::ADSR) {
+        copyText(
+            editFeedbackValueText_,
+            props.source->parameters.adsr.timing == ModulatorTimingMode::FREE
+                ? "Free" : "Tempo Sync"
+        );
+    }
+    if (item == Item::CURVE && props.source->kind == ModulatorKind::ADSR) {
+        const char* curve = "Exponential";
+        if (props.source->parameters.adsr.curve == ModulatorAdsrCurve::LINEAR) {
+            curve = "Linear";
+        } else if (props.source->parameters.adsr.curve ==
+                   ModulatorAdsrCurve::SMOOTH) {
+            curve = "Smooth";
+        }
+        copyText(editFeedbackValueText_, curve);
+    }
     lv_label_set_text_static(edit_feedback_key_, editFeedbackKeyText_.data());
     lv_label_set_text_static(edit_feedback_value_, editFeedbackValueText_.data());
     lv_obj_clear_flag(edit_feedback_, LV_OBJ_FLAG_HIDDEN);

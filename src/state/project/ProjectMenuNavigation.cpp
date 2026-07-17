@@ -167,6 +167,21 @@ FLASHMEM bool openProjectModulatorDetail(
     return true;
 }
 
+FLASHMEM bool openProjectModulatorKindPicker(
+    ProjectNavigationState& navigation
+) {
+    if (navigation.currentNode.get() != ProjectNodeId::MODULATORS_ROOT) {
+        return false;
+    }
+    const uint8_t depth = navigation.depth.get();
+    pushNode(navigation, ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER);
+    if (navigation.depth.get() == depth) return false;
+    navigation.creatingModulatorKind =
+        core::state::modulation::ModulatorKind::LFO;
+    navigation.notifyContentChanged();
+    return true;
+}
+
 FLASHMEM bool openProjectModulatorWorkspace(
     ProjectNavigationState& navigation,
     core::state::modulation::ModulatorId sourceId
@@ -239,6 +254,21 @@ FLASHMEM bool openProjectModulatorReach(ProjectNavigationState& navigation) {
     return true;
 }
 
+FLASHMEM bool openProjectModulatorTrigger(
+    ProjectNavigationState& navigation
+) {
+    if (!core::state::modulation::valid(navigation.selectedModulator) ||
+        navigation.currentNode.get() !=
+            ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
+        return false;
+    }
+    const uint8_t depth = navigation.depth.get();
+    pushNode(navigation, ProjectNodeId::MODULATOR_TRIGGER);
+    if (navigation.depth.get() == depth) return false;
+    navigation.notifyContentChanged();
+    return true;
+}
+
 FLASHMEM bool openProjectModulatorDestinationPicker(
     ProjectNavigationState& navigation,
     uint8_t track,
@@ -250,7 +280,8 @@ FLASHMEM bool openProjectModulatorDestinationPicker(
         return false;
     }
     const auto node = navigation.currentNode.get();
-    if ((creatingSource && node != ProjectNodeId::MODULATORS_ROOT) ||
+    if ((creatingSource &&
+         node != ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) ||
         (!creatingSource &&
          (node != ProjectNodeId::MODULATOR_DESTINATIONS ||
           !core::state::modulation::valid(navigation.selectedModulator)))) {

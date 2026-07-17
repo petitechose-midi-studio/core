@@ -7,7 +7,9 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "midi/MidiUtils.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ProjectControlRuntime.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "ui/font/StandaloneIcons.hpp"
@@ -30,6 +32,13 @@ const char LABEL_DETAILS[] PROGMEM = "Details";
 const char LABEL_MORE[] PROGMEM = "More >";
 const char LABEL_RENAME[] PROGMEM = "Rename";
 const char LABEL_DESTINATIONS[] PROGMEM = "Destinations";
+const char LABEL_LINEAR[] PROGMEM = "Linear";
+const char LABEL_SMOOTH[] PROGMEM = "Smooth";
+const char LABEL_EXPONENTIAL[] PROGMEM = "Exponential";
+const char LABEL_SYNC[] PROGMEM = "Sync";
+const char LABEL_EXPO[] PROGMEM = "Expo";
+const char LABEL_RETRIGGER[] PROGMEM = "Retrigger";
+const char LABEL_LEGATO[] PROGMEM = "Legato";
 const char DESTINATION_KEY_FORMAT[] PROGMEM = "T%u/P%u/M%u";
 const char DESTINATION_VALUE_FORMAT[] PROGMEM = "CC%u · %+d%%";
 const char DESTINATION_OFF_VALUE_FORMAT[] PROGMEM = "CC%u · Off %+d%%";
@@ -74,6 +83,33 @@ FLASHMEM const char* retriggerLabel(ModulatorRetriggerPolicy retrigger) {
         case ModulatorRetriggerPolicy::FREE_RUNNING:
         default: return LABEL_FREE_RUN;
     }
+}
+
+FLASHMEM const char* adsrCurveLabel(ModulatorAdsrCurve curve) {
+    switch (curve) {
+        case ModulatorAdsrCurve::LINEAR: return LABEL_LINEAR;
+        case ModulatorAdsrCurve::SMOOTH: return LABEL_SMOOTH;
+        case ModulatorAdsrCurve::EXPONENTIAL:
+        default: return LABEL_EXPONENTIAL;
+    }
+}
+
+FLASHMEM const char* adsrCurveCardLabel(ModulatorAdsrCurve curve) {
+    return curve == ModulatorAdsrCurve::EXPONENTIAL
+        ? LABEL_EXPO
+        : adsrCurveLabel(curve);
+}
+
+FLASHMEM const char* adsrRetriggerLabel(ModulatorAdsrRetriggerMode mode) {
+    return mode == ModulatorAdsrRetriggerMode::LEGATO
+        ? LABEL_LEGATO
+        : LABEL_RETRIGGER;
+}
+
+FLASHMEM const char* sourceIcon(ModulatorKind kind) {
+    if (kind == ModulatorKind::LFO) return standalone::icons::MACRO_MODULATION;
+    if (kind == ModulatorKind::ADSR) return standalone::icons::NOTE_PROP_GATE;
+    return standalone::icons::MACRO_AUTOMATION;
 }
 
 FLASHMEM void formatFreePeriod(char* out, size_t size, uint32_t milliseconds) {
@@ -126,6 +162,75 @@ FLASHMEM void formatDuration(char* out, size_t size, uint16_t ticks) {
             "%u.%ub",
             static_cast<unsigned>(tenths / 10U),
             static_cast<unsigned>(tenths % 10U)
+        );
+    }
+}
+
+FLASHMEM void formatAdsrDuration(
+    char* out,
+    size_t size,
+    uint16_t duration,
+    ModulatorTimingMode timing
+) {
+    if (timing == ModulatorTimingMode::SYNC) {
+        if (duration == 0U) {
+            std::snprintf(out, size, "0");
+        } else {
+            formatDuration(out, size, duration);
+        }
+        return;
+    }
+    formatFreePeriod(out, size, duration);
+}
+
+FLASHMEM void formatTriggerSummary(
+    char* out,
+    size_t size,
+    const ProjectModulationState& graph,
+    ModulatorId sourceId
+) {
+    const auto* binding = findProjectModulationTriggerForSource(graph, sourceId);
+    if (!binding || binding->trigger.kind != ModulationTriggerKind::TRACK_NOTE) {
+        std::snprintf(out, size, "Unassigned");
+        return;
+    }
+    const auto& trigger = binding->trigger;
+    char note[8]{};
+    if (trigger.data != PROJECT_MODULATION_TRIGGER_ANY_NOTE) {
+        core::midi::formatNoteName(note, sizeof(note), trigger.data);
+    }
+    if (trigger.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL &&
+        trigger.data == PROJECT_MODULATION_TRIGGER_ANY_NOTE) {
+        std::snprintf(
+            out,
+            size,
+            "T%u · Any",
+            static_cast<unsigned>(trigger.track + 1U)
+        );
+    } else if (trigger.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL) {
+        std::snprintf(
+            out,
+            size,
+            "T%u · %s",
+            static_cast<unsigned>(trigger.track + 1U),
+            note
+        );
+    } else if (trigger.data == PROJECT_MODULATION_TRIGGER_ANY_NOTE) {
+        std::snprintf(
+            out,
+            size,
+            "T%u · Ch%u",
+            static_cast<unsigned>(trigger.track + 1U),
+            static_cast<unsigned>(trigger.channel + 1U)
+        );
+    } else {
+        std::snprintf(
+            out,
+            size,
+            "T%u C%u · %s",
+            static_cast<unsigned>(trigger.track + 1U),
+            static_cast<unsigned>(trigger.channel + 1U),
+            note
         );
     }
 }
@@ -271,19 +376,77 @@ FLASHMEM ms::ui::KeyValueSparkline recordedSparkline(
     return out;
 }
 
+FLASHMEM ms::ui::KeyValueSparkline adsrSparkline(
+    const ModulatorSourceState& source,
+    float live,
+    bool enabled
+) {
+    ms::ui::KeyValueSparkline out{};
+    out.enabled = true;
+    out.centerLine = false;
+    out.liveMarker = enabled;
+    out.liveValue = static_cast<uint8_t>(std::lround(
+        std::clamp(live, 0.0f, 1.0f) * 255.0f
+    ));
+    out.sampleCount = static_cast<uint8_t>(
+        ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT
+    );
+    const float sustain = std::clamp(
+        static_cast<float>(source.parameters.adsr.sustainQ15) /
+            static_cast<float>(PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15),
+        0.0f,
+        1.0f
+    );
+    for (uint8_t index = 0U; index < out.sampleCount; ++index) {
+        const float position = static_cast<float>(index) /
+            static_cast<float>(out.sampleCount - 1U);
+        float value = sustain;
+        if (position < 0.25f) {
+            value = evaluateProjectAdsrProgress(
+                source.parameters.adsr.curve,
+                position * 4.0f
+            );
+        } else if (position < 0.5f) {
+            const float shaped = evaluateProjectAdsrProgress(
+                source.parameters.adsr.curve,
+                (position - 0.25f) * 4.0f
+            );
+            value = 1.0f + (sustain - 1.0f) * shaped;
+        } else if (position >= 0.75f) {
+            const float shaped = evaluateProjectAdsrProgress(
+                source.parameters.adsr.curve,
+                (position - 0.75f) * 4.0f
+            );
+            value = sustain * (1.0f - shaped);
+        }
+        out.samples[index] = static_cast<uint8_t>(std::lround(
+            std::clamp(value, 0.0f, 1.0f) * 255.0f
+        ));
+    }
+    return out;
+}
+
 FLASHMEM ms::ui::KeyValueSparkline sourceSparkline(
     const ProjectControlState& control,
     const ModulatorSourceState& source
 ) {
     const bool enabled =
         (source.flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
-    return source.kind == ModulatorKind::LFO
-        ? lfoSparkline(
-              source.parameters.lfo.shape,
-              liveSourceValue(control, source.id),
-              enabled
-          )
-        : recordedSparkline(control, source, enabled);
+    if (source.kind == ModulatorKind::LFO) {
+        return lfoSparkline(
+            source.parameters.lfo.shape,
+            liveSourceValue(control, source.id),
+            enabled
+        );
+    }
+    if (source.kind == ModulatorKind::ADSR) {
+        return adsrSparkline(
+            source,
+            liveSourceValue(control, source.id),
+            enabled
+        );
+    }
+    return recordedSparkline(control, source, enabled);
 }
 
 FLASHMEM void setText(std::array<char, ms::ui::KEY_VALUE_ROW_TEXT_CAPACITY>& out,
@@ -330,6 +493,22 @@ FLASHMEM void populateRegistryRow(const ProjectControlState& control,
     char primary[16]{};
     if (source.kind == ModulatorKind::LFO) {
         formatRate(primary, sizeof(primary), source.parameters.lfo, true);
+    } else if (source.kind == ModulatorKind::ADSR) {
+        char attack[8]{};
+        char release[8]{};
+        formatAdsrDuration(
+            attack,
+            sizeof(attack),
+            source.parameters.adsr.attack,
+            source.parameters.adsr.timing
+        );
+        formatAdsrDuration(
+            release,
+            sizeof(release),
+            source.parameters.adsr.release,
+            source.parameters.adsr.timing
+        );
+        std::snprintf(primary, sizeof(primary), "A%s R%s", attack, release);
     } else {
         const auto* curve = findProjectCurve(
             control.authored.curves,
@@ -357,16 +536,28 @@ FLASHMEM void populateRegistryRow(const ProjectControlState& control,
         );
     }
     out.iconFont = standalone_fonts.icons_14;
-    setText(
-        out.icon,
-        source.kind == ModulatorKind::LFO
-            ? standalone::icons::MACRO_MODULATION
-            : standalone::icons::MACRO_AUTOMATION
-    );
+    setText(out.icon, sourceIcon(source.kind));
     out.iconColor = enabled
         ? standalone::theme::color::MACRO_MODULATION
         : standalone::theme::color::INACTIVE;
     out.sparkline = sourceSparkline(control, source);
+}
+
+FLASHMEM void populateSourceKindRow(
+    int index,
+    ms::ui::KeyValueRowBuffer& out
+) {
+    out.iconFont = standalone_fonts.icons_14;
+    out.iconColor = standalone::theme::color::MACRO_MODULATION;
+    if (index == 0) {
+        setText(out.key, "LFO");
+        setText(out.value, "Cyclic");
+        setText(out.icon, standalone::icons::MACRO_MODULATION);
+    } else if (index == 1) {
+        setText(out.key, "ADSR");
+        setText(out.value, "Note envelope");
+        setText(out.icon, standalone::icons::NOTE_PROP_GATE);
+    }
 }
 
 FLASHMEM void populateSourceDetailRow(
@@ -386,9 +577,7 @@ FLASHMEM void populateSourceDetailRow(
             setText(out.key, "Source");
             setText(
                 out.icon,
-                source.kind == ModulatorKind::LFO
-                    ? standalone::icons::MACRO_MODULATION
-                    : standalone::icons::MACRO_AUTOMATION
+                sourceIcon(source.kind)
             );
             out.sparkline = sourceSparkline(control, source);
             break;
@@ -460,6 +649,55 @@ FLASHMEM void populateSourceDetailRow(
             setText(out.icon, standalone::icons::KNOB);
             break;
         }
+        case SourceDetailItem::ATTACK:
+        case SourceDetailItem::DECAY:
+        case SourceDetailItem::RELEASE: {
+            const uint16_t duration = item == SourceDetailItem::ATTACK
+                ? source.parameters.adsr.attack
+                : (item == SourceDetailItem::DECAY
+                    ? source.parameters.adsr.decay
+                    : source.parameters.adsr.release);
+            setText(
+                out.key,
+                item == SourceDetailItem::ATTACK
+                    ? "A" : (item == SourceDetailItem::DECAY ? "D" : "R")
+            );
+            formatAdsrDuration(
+                value,
+                sizeof(value),
+                duration,
+                source.parameters.adsr.timing
+            );
+            setText(out.value, value);
+            setText(out.icon, standalone::icons::LENGTH);
+            break;
+        }
+        case SourceDetailItem::SUSTAIN:
+            setText(out.key, "S");
+            std::snprintf(
+                value,
+                sizeof(value),
+                "%u%%",
+                static_cast<unsigned>(
+                    (static_cast<uint32_t>(source.parameters.adsr.sustainQ15) *
+                     100U + 16384U) /
+                    PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15
+                )
+            );
+            setText(out.value, value);
+            setText(out.icon, standalone::icons::KNOB);
+            break;
+        case SourceDetailItem::TRIGGER:
+            setText(out.key, "Trigger");
+            formatTriggerSummary(
+                value,
+                sizeof(value),
+                control.authored.modulation,
+                source.id
+            );
+            setText(out.value, value);
+            setText(out.icon, standalone::icons::NOTE_PROP_GATE);
+            break;
         case SourceDetailItem::REACH:
             setText(out.key, LABEL_AVAILABLE_IN);
             formatReach(value, sizeof(value), source.reach);
@@ -508,6 +746,24 @@ FLASHMEM void populateSourceOptionsRow(
     out.iconColor = standalone::theme::color::MACRO_MODULATION;
     char value[32]{};
     switch (item) {
+        case SourceDetailItem::TIMING:
+            setText(out.key, "Timing");
+            setText(
+                out.value,
+                source.parameters.adsr.timing == ModulatorTimingMode::FREE
+                    ? LABEL_FREE
+                    : LABEL_SYNC
+            );
+            setText(out.icon, standalone::icons::TEMPO);
+            break;
+        case SourceDetailItem::CURVE:
+            setText(out.key, "Curve");
+            setText(
+                out.value,
+                adsrCurveCardLabel(source.parameters.adsr.curve)
+            );
+            setText(out.icon, standalone::icons::MACRO_MODULATION);
+            break;
         case SourceDetailItem::PHASE: {
             setText(out.key, "Phase");
             const int32_t percent =
@@ -520,7 +776,12 @@ FLASHMEM void populateSourceOptionsRow(
         }
         case SourceDetailItem::RETRIGGER:
             setText(out.key, LABEL_RUN);
-            setText(out.value, retriggerLabel(source.parameters.lfo.retrigger));
+            setText(
+                out.value,
+                source.kind == ModulatorKind::ADSR
+                    ? adsrRetriggerLabel(source.parameters.adsr.retrigger)
+                    : retriggerLabel(source.parameters.lfo.retrigger)
+            );
             setText(out.icon, standalone::icons::CYCLE_STATE);
             break;
         case SourceDetailItem::REACH:
@@ -551,6 +812,67 @@ FLASHMEM void populateSourceOptionsRow(
         default:
             break;
     }
+}
+
+FLASHMEM void populateTriggerRow(
+    const ProjectControlState& control,
+    ModulatorId sourceId,
+    int index,
+    ms::ui::KeyValueRowBuffer& out
+) {
+    if (index < 0 || index >=
+            core::state::project::modulators::MODULATOR_TRIGGER_DETAIL_COUNT) {
+        return;
+    }
+    const auto* binding = findProjectModulationTriggerForSource(
+        control.authored.modulation,
+        sourceId
+    );
+    if (!binding) return;
+    const auto& trigger = binding->trigger;
+    using core::state::project::modulators::TriggerDetailItem;
+    const auto item = static_cast<TriggerDetailItem>(index);
+    out.iconFont = standalone_fonts.icons_14;
+    out.iconColor = standalone::theme::color::MACRO_MODULATION;
+    setText(out.icon, standalone::icons::NOTE_PROP_GATE);
+    char value[32]{};
+    if (item == TriggerDetailItem::TRACK) {
+        setText(out.key, "Track");
+        std::snprintf(
+            value,
+            sizeof(value),
+            "%u",
+            static_cast<unsigned>(trigger.track + 1U)
+        );
+    } else if (item == TriggerDetailItem::CHANNEL) {
+        setText(out.key, "Channel");
+        if (trigger.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL) {
+            std::snprintf(value, sizeof(value), "Any");
+        } else {
+            std::snprintf(
+                value,
+                sizeof(value),
+                "%u",
+                static_cast<unsigned>(trigger.channel + 1U)
+            );
+        }
+    } else {
+        setText(out.key, "Note");
+        if (trigger.data == PROJECT_MODULATION_TRIGGER_ANY_NOTE) {
+            std::snprintf(value, sizeof(value), "Any");
+        } else {
+            char note[8]{};
+            core::midi::formatNoteName(note, sizeof(note), trigger.data);
+            std::snprintf(
+                value,
+                sizeof(value),
+                "%s · %u",
+                note,
+                static_cast<unsigned>(trigger.data)
+            );
+        }
+    }
+    setText(out.value, value);
 }
 
 FLASHMEM void populateDestinationRow(

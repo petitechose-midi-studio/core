@@ -90,6 +90,7 @@ ProjectHandler::focusedModulator() {
     if (node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME ||
+        node == core::state::project::ProjectNodeId::MODULATOR_TRIGGER ||
         node == core::state::project::ProjectNodeId::MODULATOR_REACH ||
         node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
         (node ==
@@ -132,6 +133,14 @@ ProjectHandler::focusedModulationBinding() const {
 }
 
 FLASHMEM uint16_t ProjectHandler::focusedModulatorDetailRowCount() const {
+    if (navigation_.currentNode.get() ==
+        core::state::project::ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
+        return core::state::project::modulators::MODULATOR_SOURCE_KIND_COUNT;
+    }
+    if (navigation_.currentNode.get() ==
+        core::state::project::ProjectNodeId::MODULATOR_TRIGGER) {
+        return core::state::project::modulators::MODULATOR_TRIGGER_DETAIL_COUNT;
+    }
     if (navigation_.currentNode.get() ==
         core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         return navigation_.creatingModulatorSource ? 9U : 8U;

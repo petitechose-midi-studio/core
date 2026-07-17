@@ -193,6 +193,8 @@ FLASHMEM void ProjectHandler::enterFocused() {
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
         node == core::state::project::ProjectNodeId::MODULATOR_REACH ||
         node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
+        node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER ||
+        node == core::state::project::ProjectNodeId::MODULATOR_TRIGGER ||
         node ==
             core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         navigation_.clearLifecycleFeedback();
@@ -222,13 +224,24 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
                 source->id
             );
         } else {
-            (void)core::state::project::openProjectModulatorDestinationPicker(
-                navigation_,
-                pages_.currentActiveTrack(),
-                pages_.currentActivePage(),
-                true
+            (void)core::state::project::openProjectModulatorKindPicker(
+                navigation_
             );
         }
+        return;
+    }
+
+    if (navigation_.currentNode.get() ==
+        ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
+        navigation_.creatingModulatorKind = navigation_.focusedRow.get() == 0U
+            ? core::state::modulation::ModulatorKind::LFO
+            : core::state::modulation::ModulatorKind::ADSR;
+        (void)core::state::project::openProjectModulatorDestinationPicker(
+            navigation_,
+            pages_.currentActiveTrack(),
+            pages_.currentActivePage(),
+            true
+        );
         return;
     }
 
@@ -335,6 +348,10 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
         return;
     }
 
+    if (navigation_.currentNode.get() == ProjectNodeId::MODULATOR_TRIGGER) {
+        return;
+    }
+
     if (navigation_.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS) {
         if (focusedModulationBinding() == nullptr) {
             (void)core::state::project::openProjectModulatorDestinationPicker(
@@ -373,6 +390,8 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
             ProjectNodeId::MODULATOR_SOURCE_RENAME,
             source->name.data()
         );
+    } else if (item == Item::TRIGGER) {
+        (void)core::state::project::openProjectModulatorTrigger(navigation_);
     }
 }
 
@@ -393,27 +412,45 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     const uint8_t page = navigation_.destinationPickerPage;
     auto& graph = pages_.control.authored.modulation;
 
+    const ModulatorKind creatingKind = navigation_.creatingModulatorKind;
     char name[PROJECT_MODULATOR_NAME_CAPACITY]{};
-    formatNextProjectLfoName(graph, name, sizeof(name));
+    formatNextProjectModulatorName(graph, creatingKind, name, sizeof(name));
     ModulatorLfoDraft sourceDraft{};
     sourceDraft.name = name;
     sourceDraft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     sourceDraft.parameters.shape = ModulatorLfoShape::SINE;
     sourceDraft.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
     sourceDraft.parameters.timing = ModulatorTimingMode::SYNC;
+    ModulatorAdsrDraft adsrDraft{};
+    adsrDraft.name = name;
+    ModulationTriggerDraft triggerDraft{};
+    triggerDraft.trigger = {
+        .kind = ModulationTriggerKind::TRACK_NOTE,
+        .track = track,
+        .channel = PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
+        .data = PROJECT_MODULATION_TRIGGER_ANY_NOTE,
+    };
 
     if (creating && row == core::state::macro::MACRO_COUNT) {
-        sourceDraft.reach = {};
-        const auto created = macro_history_.createUnassignedLfo(
-            pages_, sourceDraft
-        );
+        ProjectModulationResult created{};
+        if (creatingKind == ModulatorKind::ADSR) {
+            adsrDraft.reach = {};
+            created = macro_history_.createUnassignedAdsr(
+                pages_, adsrDraft, triggerDraft
+            );
+        } else {
+            sourceDraft.reach = {};
+            created = macro_history_.createUnassignedLfo(pages_, sourceDraft);
+        }
         if (!created.changed()) {
             navigation_.setLifecycleFeedback(
                 destinationAuditionFailureLabel(created.status)
             );
             return;
         }
-        (void)core::state::project::backProjectNavigation(navigation_);
+        while (navigation_.depth.get() > 0U) {
+            (void)core::state::project::backProjectNavigation(navigation_);
+        }
         for (uint16_t index = 0; index < graph.sourceCount; ++index) {
             if (graph.sources[index].id == created.sourceId) {
                 navigation_.focusedRow.set(static_cast<uint8_t>(index));
@@ -422,7 +459,11 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
         }
         navigation_.selectedModulator = created.sourceId;
         publishModulatorMutation(false);
-        navigation_.setLifecycleFeedback("LFO created · Unassigned");
+        navigation_.setLifecycleFeedback(
+            creatingKind == ModulatorKind::ADSR
+                ? "ADSR created · Unassigned"
+                : "LFO created · Unassigned"
+        );
         return;
     }
     if (row >= core::state::macro::MACRO_COUNT) return;
@@ -464,15 +505,28 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     ProjectModulationResult begun{};
     bool reachWidened = false;
     if (creating) {
-        sourceDraft.reach = {
+        const ModulatorReach reach{
             .kind = ModulatorReachKind::MACRO,
             .track = track,
             .page = page,
             .macro = row,
         };
-        begun = macro_history_.beginLfoModulatorAudition(
-            pages_, address, sourceDraft, binding, createMacro
-        );
+        if (creatingKind == ModulatorKind::ADSR) {
+            adsrDraft.reach = reach;
+            begun = macro_history_.beginAdsrModulatorAudition(
+                pages_,
+                address,
+                adsrDraft,
+                triggerDraft,
+                binding,
+                createMacro
+            );
+        } else {
+            sourceDraft.reach = reach;
+            begun = macro_history_.beginLfoModulatorAudition(
+                pages_, address, sourceDraft, binding, createMacro
+            );
+        }
     } else {
         const ModulatorId targetSource = navigation_.selectedModulator;
         const auto* source = findProjectModulator(graph, targetSource);
@@ -541,6 +595,9 @@ FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
     auto& graph = pages_.control.authored.modulation;
     (void)core::state::project::backProjectNavigation(navigation_);
     if (sourceCreated) {
+        while (navigation_.depth.get() > 0U) {
+            (void)core::state::project::backProjectNavigation(navigation_);
+        }
         uint16_t sourceIndex = 0;
         while (sourceIndex < graph.sourceCount &&
                graph.sources[sourceIndex].id != audition.sourceId) {
@@ -649,6 +706,48 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         return;
     }
 
+    if (node == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
+        configureOptDiscrete(encoders_, 1, 0.0f);
+        return;
+    }
+
+    if (node == ProjectNodeId::MODULATOR_TRIGGER) {
+        using core::state::project::modulators::TriggerDetailItem;
+        const auto* source = focusedModulator();
+        const auto* trigger = source
+            ? core::state::modulation::findProjectModulationTriggerForSource(
+                  pages_.control.authored.modulation,
+                  source->id
+              )
+            : nullptr;
+        if (!trigger) {
+            configureOptDiscrete(encoders_, 1, 0.0f);
+            return;
+        }
+        const auto& route = trigger->trigger;
+        const auto item = static_cast<TriggerDetailItem>(row);
+        if (item == TriggerDetailItem::TRACK) {
+            configureOptDiscrete(
+                encoders_,
+                16,
+                indexToNormalized(route.track, 16)
+            );
+        } else if (item == TriggerDetailItem::CHANNEL) {
+            const int index = route.channel ==
+                    core::state::modulation::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL
+                ? 0
+                : static_cast<int>(route.channel) + 1;
+            configureOptDiscrete(encoders_, 17, indexToNormalized(index, 17));
+        } else {
+            const int index = route.data ==
+                    core::state::modulation::PROJECT_MODULATION_TRIGGER_ANY_NOTE
+                ? 0
+                : static_cast<int>(route.data) + 1;
+            configureOptDiscrete(encoders_, 129, indexToNormalized(index, 129));
+        }
+        return;
+    }
+
     if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
         node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
         const auto* source = focusedModulator();
@@ -713,7 +812,10 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 configureOptDiscrete(
                     encoders_,
                     2,
-                    source->parameters.lfo.timing == ModulatorTimingMode::FREE
+                    (source->kind == ModulatorKind::ADSR
+                         ? source->parameters.adsr.timing
+                         : source->parameters.lfo.timing) ==
+                            ModulatorTimingMode::FREE
                         ? 1.0f : 0.0f
                 );
                 return;
@@ -731,6 +833,19 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 );
                 return;
             case Item::RETRIGGER:
+                if (source->kind == ModulatorKind::ADSR) {
+                    configureOptDiscrete(
+                        encoders_,
+                        2,
+                        indexToNormalized(
+                            static_cast<int>(
+                                source->parameters.adsr.retrigger
+                            ),
+                            2
+                        )
+                    );
+                    return;
+                }
                 if (source->parameters.lfo.retrigger ==
                     ModulatorRetriggerPolicy::EXPLICIT_TRIGGER) {
                     configureOptDiscrete(encoders_, 1, 0.0f);
@@ -742,6 +857,54 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                     indexToNormalized(
                         static_cast<int>(source->parameters.lfo.retrigger),
                         2
+                    )
+                );
+                return;
+            case Item::ATTACK:
+            case Item::DECAY:
+            case Item::RELEASE: {
+                const uint16_t duration = item == Item::ATTACK
+                    ? source->parameters.adsr.attack
+                    : (item == Item::DECAY
+                        ? source->parameters.adsr.decay
+                        : source->parameters.adsr.release);
+                const int count = static_cast<int>(
+                    PROJECT_MODULATOR_ADSR_FREE_DURATIONS.size()
+                );
+                configureOptDiscrete(
+                    encoders_,
+                    count,
+                    indexToNormalized(
+                        projectModulatorAdsrDurationIndex(
+                            duration,
+                            source->parameters.adsr.timing
+                        ),
+                        count
+                    )
+                );
+                return;
+            }
+            case Item::SUSTAIN:
+                configureOptDiscrete(
+                    encoders_,
+                    101,
+                    std::clamp(
+                        static_cast<float>(source->parameters.adsr.sustainQ15) /
+                            static_cast<float>(
+                                PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15
+                            ),
+                        0.0f,
+                        1.0f
+                    )
+                );
+                return;
+            case Item::CURVE:
+                configureOptDiscrete(
+                    encoders_,
+                    3,
+                    indexToNormalized(
+                        static_cast<int>(source->parameters.adsr.curve),
+                        3
                     )
                 );
                 return;

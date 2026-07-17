@@ -12,6 +12,12 @@ FLASHMEM SourceDetailLayout sourceDetailLayout(ModulatorKind kind) {
         out.append(SourceDetailItem::SHAPE);
         out.append(SourceDetailItem::TIMING);
         out.append(SourceDetailItem::RATE);
+    } else if (kind == ModulatorKind::ADSR) {
+        out.append(SourceDetailItem::ATTACK);
+        out.append(SourceDetailItem::DECAY);
+        out.append(SourceDetailItem::SUSTAIN);
+        out.append(SourceDetailItem::RELEASE);
+        out.append(SourceDetailItem::TRIGGER);
     } else {
         out.append(SourceDetailItem::LENGTH);
         out.append(SourceDetailItem::SOURCE_DOMAIN);
@@ -25,6 +31,10 @@ FLASHMEM SourceDetailLayout sourceOptionsLayout(ModulatorKind kind) {
     SourceDetailLayout out{};
     if (kind == ModulatorKind::LFO) {
         out.append(SourceDetailItem::PHASE);
+        out.append(SourceDetailItem::RETRIGGER);
+    } else if (kind == ModulatorKind::ADSR) {
+        out.append(SourceDetailItem::TIMING);
+        out.append(SourceDetailItem::CURVE);
         out.append(SourceDetailItem::RETRIGGER);
     }
     out.append(SourceDetailItem::REACH);

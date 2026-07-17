@@ -470,6 +470,16 @@ void test_modulator_workspace_layouts_are_semantic_and_bounded() {
     assert(recorded.at(2) == Item::OPTIONS);
     assert(recorded.at(3) == Item::DESTINATIONS);
 
+    const auto adsr = modulators::sourceDetailLayout(ModulatorKind::ADSR);
+    assert(adsr.count == 7U);
+    assert(adsr.at(0) == Item::ATTACK);
+    assert(adsr.at(1) == Item::DECAY);
+    assert(adsr.at(2) == Item::SUSTAIN);
+    assert(adsr.at(3) == Item::RELEASE);
+    assert(adsr.at(4) == Item::TRIGGER);
+    assert(adsr.at(5) == Item::OPTIONS);
+    assert(adsr.at(6) == Item::DESTINATIONS);
+
     const auto lfoOptions = modulators::sourceOptionsLayout(ModulatorKind::LFO);
     assert(lfoOptions.count == 5U);
     assert(lfoOptions.at(0) == Item::PHASE);
@@ -485,6 +495,17 @@ void test_modulator_workspace_layouts_are_semantic_and_bounded() {
     assert(recordedOptions.at(0) == Item::REACH);
     assert(recordedOptions.at(1) == Item::RENAME);
     assert(recordedOptions.at(2) == Item::DESTINATIONS);
+
+    const auto adsrOptions = modulators::sourceOptionsLayout(
+        ModulatorKind::ADSR
+    );
+    assert(adsrOptions.count == 6U);
+    assert(adsrOptions.at(0) == Item::TIMING);
+    assert(adsrOptions.at(1) == Item::CURVE);
+    assert(adsrOptions.at(2) == Item::RETRIGGER);
+    assert(adsrOptions.at(3) == Item::REACH);
+    assert(adsrOptions.at(4) == Item::RENAME);
+    assert(adsrOptions.at(5) == Item::DESTINATIONS);
     std::cout << "[PASS] test_modulator_workspace_layouts_are_semantic_and_bounded\n";
 }
 
@@ -530,6 +551,48 @@ void test_modulator_workspace_navigation_restores_local_focus() {
     std::cout << "[PASS] test_modulator_workspace_navigation_restores_local_focus\n";
 }
 
+void test_modulator_kind_and_trigger_navigation_are_reversible() {
+    core::state::project::ProjectNavigationState navigation;
+    core::state::project::switchProjectTab(navigation, -1);
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATORS_ROOT);
+    assert(core::state::project::openProjectModulatorKindPicker(navigation));
+    assert(navigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER);
+    assert(navigation.depth.get() == 1U);
+    navigation.focusedRow.set(1U);
+    navigation.creatingModulatorKind =
+        core::state::modulation::ModulatorKind::ADSR;
+    assert(core::state::project::openProjectModulatorDestinationPicker(
+        navigation,
+        2U,
+        1U,
+        true
+    ));
+    assert(navigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_DESTINATION_PICKER);
+    assert(navigation.depth.get() == 2U);
+    assert(core::state::project::backProjectNavigation(navigation));
+    assert(navigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER);
+    assert(navigation.focusedRow.get() == 1U);
+    assert(core::state::project::backProjectNavigation(navigation));
+
+    const core::state::modulation::ModulatorId sourceId{7U};
+    assert(core::state::project::openProjectModulatorDetail(
+        navigation,
+        sourceId
+    ));
+    navigation.focusedRow.set(4U);
+    assert(core::state::project::openProjectModulatorTrigger(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_TRIGGER);
+    assert(navigation.depth.get() == 2U);
+    assert(core::state::project::backProjectNavigation(navigation));
+    assert(navigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    assert(navigation.focusedRow.get() == 4U);
+    std::cout << "[PASS] kind and Trigger journeys preserve local context\n";
+}
+
 }  // namespace
 
 int main() {
@@ -554,6 +617,7 @@ int main() {
     test_focus_changes_selection_without_content_revision_change();
     test_modulator_workspace_layouts_are_semantic_and_bounded();
     test_modulator_workspace_navigation_restores_local_focus();
+    test_modulator_kind_and_trigger_navigation_are_reversible();
 
     std::cout << "\nAll ProjectMenuModel tests passed.\n";
     return 0;

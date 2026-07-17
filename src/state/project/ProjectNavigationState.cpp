@@ -48,6 +48,7 @@ FLASHMEM void ProjectNavigationState::reset() {
     modulatorClipboardGuard.set({});
     modulatorClipboardPasteAvailable = false;
     creatingModulatorSource = false;
+    creatingModulatorKind = core::state::modulation::ModulatorKind::LFO;
     destinationPickerTrack = 0;
     destinationPickerPage = 0;
     modulatorGuard.set({});
@@ -133,6 +134,8 @@ FLASHMEM ProjectTab tabForRootNode(ProjectNodeId node) {
         case ProjectNodeId::MODULATOR_REACH:
         case ProjectNodeId::MODULATOR_DESTINATIONS:
         case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
+        case ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER:
+        case ProjectNodeId::MODULATOR_TRIGGER:
         case ProjectNodeId::MODULATORS_ROOT:
             return ProjectTab::MODULATORS;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:

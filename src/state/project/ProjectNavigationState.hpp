@@ -11,6 +11,7 @@
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/macro/MacroAutomationState.hpp"
 #include "state/modulation/ModulationIds.hpp"
+#include "state/modulation/ProjectModulationState.hpp"
 
 namespace core::state::project {
 
@@ -43,6 +44,8 @@ enum class ProjectNodeId : uint8_t {
     RENAME_PROJECT_NAME,
     MODULATOR_SOURCE_OPTIONS,
     MODULATOR_SOURCE_RENAME,
+    MODULATOR_SOURCE_KIND_PICKER,
+    MODULATOR_TRIGGER,
 };
 
 struct ProjectBrowserEntry {
@@ -111,6 +114,8 @@ struct ProjectNavigationState {
         modulatorClipboardGuard{};
     bool modulatorClipboardPasteAvailable = false;
     bool creatingModulatorSource = false;
+    core::state::modulation::ModulatorKind creatingModulatorKind =
+        core::state::modulation::ModulatorKind::LFO;
     uint8_t destinationPickerTrack = 0;
     uint8_t destinationPickerPage = 0;
 
