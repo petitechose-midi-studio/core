@@ -569,12 +569,14 @@ void test_lfo_audition_capacity_failure_has_no_partial_state() {
     macro::MacroHistoryService history;
     pages.control.authored.modulation.sourceCount = PROJECT_MODULATOR_CAPACITY;
     const auto before = pages.control.authored.modulation;
+    const auto pageBefore = pages.pageData(0, 0);
 
     const auto result = history.beginLfoModulatorAudition(
         pages,
         kAddress,
         defaultLfoDraft(),
-        defaultBindingDraft()
+        defaultBindingDraft(),
+        true
     );
     assert(result.status == ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED);
     assert(!pages.control.audition.active);
@@ -584,6 +586,11 @@ void test_lfo_audition_capacity_failure_has_no_partial_state() {
         &pages.control.authored.modulation,
         &before,
         sizeof(before)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.pageData(0, 0),
+        &pageBefore,
+        sizeof(pageBefore)
     ) == 0);
     std::cout << "[PASS] LFO capacity failure is an exact no-op\n";
 }
@@ -760,6 +767,56 @@ void test_macro_create_stale_add_slot_is_rejected_without_history() {
         sizeof(graphBefore)
     ) == 0);
     std::cout << "[PASS] stale Macro add-slot selection is an exact rejection\n";
+}
+
+void test_macro_create_widening_cancel_and_failed_commit_are_exact() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    auto draft = defaultLfoDraft();
+    draft.reach = {};
+    const auto source = createLfoModulator(
+        pages.control.authored.modulation,
+        draft
+    );
+    assert(source.changed());
+    const auto pageBefore = pages.pageData(0, 0);
+    const auto graphBefore = pages.control.authored.modulation;
+    const ModulatorReach widened{
+        .kind = ModulatorReachKind::MACRO,
+        .track = kAddress.track,
+        .page = kAddress.page,
+        .macro = kAddress.macro,
+    };
+    const auto begun = history.beginExistingModulatorAudition(
+        pages,
+        kAddress,
+        source.sourceId,
+        defaultBindingDraft(),
+        &widened,
+        true
+    );
+    assert(begun.changed());
+    assert(pages.pageData(0, 0).isMacroActive(kAddress.macro));
+    assert(pages.control.authored.modulation.sources[0].reach.kind ==
+           ModulatorReachKind::MACRO);
+
+    constexpr macro::MacroAutomationSlotAddress wrongAddress{0, 0, 2};
+    assert(!history.commitModulatorAudition(pages, wrongAddress));
+    assert(history.modulatorAuditionPending(kAddress));
+    assert(history.cancelModulatorAudition(pages, kAddress));
+    assert(std::memcmp(
+        &pages.pageData(0, 0),
+        &pageBefore,
+        sizeof(pageBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(history.undoCount() == 0U);
+    std::cout << "[PASS] widening Cancel after rejected commit is exact\n";
 }
 
 void test_existing_modulator_cancel_preserves_root_and_is_byte_stable() {
@@ -1318,6 +1375,7 @@ int main() {
     test_macro_create_and_assignment_are_one_undo_redo_action();
     test_macro_create_duplicate_and_capacity_failures_are_exact_noops();
     test_macro_create_stale_add_slot_is_rejected_without_history();
+    test_macro_create_widening_cancel_and_failed_commit_are_exact();
     test_existing_modulator_cancel_preserves_root_and_is_byte_stable();
     test_existing_modulator_apply_undo_redo_moves_only_binding();
     test_project_source_edits_coalesce_and_restore_exact_source();

@@ -1570,7 +1570,10 @@ MacroHistoryService::beginLfoModulatorAudition(
     }
 
     auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
-    if (!change) return failure;
+    if (!change) {
+        failure.status = ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED;
+        return failure;
+    }
     change->kind = MacroHistoryActionKind::CREATE_MODULATOR_ASSIGNMENT;
     change->address = address;
     auto& payload = change->modulator;
@@ -1594,7 +1597,10 @@ MacroHistoryService::beginLfoModulatorAudition(
     payload.macroCreated = createMacroSlot;
     payload.pending = true;
     MacroHistoryChange* reserved = change.get();
-    if (!parkPending_(std::move(change))) return failure;
+    if (!parkPending_(std::move(change))) {
+        failure.status = ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED;
+        return failure;
+    }
 
     if (!applyMacroCreation(pages, address, payload)) {
         (void)takePending_();
@@ -1661,7 +1667,10 @@ MacroHistoryService::createUnassignedLfo(
         return failure;
     }
     auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
-    if (!change) return failure;
+    if (!change) {
+        failure.status = ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED;
+        return failure;
+    }
     change->kind = MacroHistoryActionKind::CREATE_PROJECT_MODULATOR;
     auto& payload = change->modulator;
     payload.beforeSourceCount = graph.sourceCount;
@@ -1792,7 +1801,10 @@ MacroHistoryService::beginExistingModulatorAudition(
     }
 
     auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
-    if (!change) return failure;
+    if (!change) {
+        failure.status = ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED;
+        return failure;
+    }
     change->kind = MacroHistoryActionKind::CREATE_MODULATOR_ASSIGNMENT;
     change->address = address;
     auto& payload = change->modulator;
@@ -1809,7 +1821,10 @@ MacroHistoryService::beginExistingModulatorAudition(
     payload.macroCreated = createMacroSlot;
     payload.pending = true;
     MacroHistoryChange* reserved = change.get();
-    if (!parkPending_(std::move(change))) return failure;
+    if (!parkPending_(std::move(change))) {
+        failure.status = ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED;
+        return failure;
+    }
 
     if (!applyMacroCreation(pages, address, payload)) {
         (void)takePending_();
