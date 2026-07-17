@@ -87,6 +87,11 @@ def main() -> int:
             "*(.text.*9subscribe*)",
             "*lv_binfont_loader.c.o(.text* .rodata*)",
             "*lv_draw_sw_box_shadow.c.o(.text* .rodata*)",
+            "*lz4.c.o(.text* .rodata*)",
+            "*(.text._ZN9ExFatFile4open*)",
+            "*(.text._ZN9ExFatFile11openPrivate*)",
+            "*(.text._ZN7FatFile4open*)",
+            "*(.text._ZN7FatFile15openCachedEntry*)",
         ):
             if selector not in cold_placement:
                 errors.append(

@@ -86,6 +86,27 @@ struct ProjectModulationRuntimeBinding {
 inline constexpr uint8_t PROJECT_CONTROL_RUNTIME_DESTINATION_FLAG_AUTOMATION_ENABLED =
     0x01U;
 
+inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_KIND_COUNT =
+    static_cast<uint8_t>(ModulationTriggerKind::TRACK_NOTE) + 1U;
+inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_CHANNEL_BUCKET_COUNT = 17U;
+inline constexpr uint16_t PROJECT_MODULATION_TRIGGER_BUCKET_COUNT =
+    static_cast<uint16_t>(PROJECT_MODULATION_TRACK_COUNT) *
+    PROJECT_MODULATION_TRIGGER_CHANNEL_BUCKET_COUNT;
+
+[[nodiscard]] constexpr uint16_t projectModulationTriggerBucketIndex(
+    const ModulationTriggerRef& trigger
+) {
+    const uint8_t channel =
+        trigger.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL
+        ? 16U
+        : trigger.channel;
+    return static_cast<uint16_t>(
+        static_cast<uint16_t>(trigger.track) *
+            PROJECT_MODULATION_TRIGGER_CHANNEL_BUCKET_COUNT +
+        channel
+    );
+}
+
 struct ProjectModulationRuntimeDestination {
     ModulationDestination destination{};
     uint16_t firstBinding = 0;
@@ -111,11 +132,23 @@ struct ProjectModulationRuntimePlan {
     uint16_t inactiveBindingCount = 0;
     uint16_t automationCount = 0;
     uint16_t inactiveAutomationCount = 0;
+    uint16_t triggerRouteCount = 0;
+    uint16_t triggerWildcardTrackMask = 0;
     uint32_t contextHash = 0;
     std::array<
         ProjectModulationRuntimeSource,
         PROJECT_MODULATOR_CAPACITY
     > sources{};
+    /**
+     * Sparse trigger routing compiled by Track/channel. The evaluator visits
+     * only sources that can consume one incoming edge instead of rescanning
+     * the complete 256-event frame for every source.
+     */
+    std::array<uint8_t, PROJECT_MODULATION_TRIGGER_BUCKET_COUNT>
+        triggerBucketStart{};
+    std::array<uint8_t, PROJECT_MODULATION_TRIGGER_BUCKET_COUNT>
+        triggerBucketCount{};
+    std::array<uint8_t, PROJECT_MODULATOR_CAPACITY> triggerSourceOrder{};
     std::array<
         ProjectModulationRuntimeBinding,
         PROJECT_MODULATION_BINDING_CAPACITY
@@ -196,7 +229,8 @@ static_assert(sizeof(ProjectModulationRuntimeAdsrTraits) == 3U);
 static_assert(sizeof(ProjectModulationRuntimeSourceTraits) == 3U);
 static_assert(sizeof(ProjectModulationRuntimeBinding) == 16U);
 static_assert(sizeof(ProjectModulationRuntimeDestination) == 24U);
-static_assert(sizeof(ProjectModulationRuntimePlan) == 15888U);
+static_assert(PROJECT_MODULATION_TRIGGER_BUCKET_COUNT == 272U);
+static_assert(sizeof(ProjectModulationRuntimePlan) == 16564U);
 static_assert(std::is_trivially_copyable_v<ProjectModulationRuntimePlan>);
 
 }  // namespace core::state::modulation

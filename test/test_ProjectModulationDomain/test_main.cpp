@@ -174,7 +174,7 @@ void testExactMemoryContract() {
     assert(sizeof(mod::ProjectModulationState) == 21520U);
     assert(sizeof(mod::ProjectAutomationCurveDirectory) == 1540U);
     assert(sizeof(mod::ProjectCurveArena) == 137480U);
-    assert(sizeof(mod::ProjectModulationRuntimePlan) == 15888U);
+    assert(sizeof(mod::ProjectModulationRuntimePlan) == 16564U);
     assert(sizeof(mod::ProjectModulationState) +
                sizeof(mod::ProjectAutomationCurveDirectory) +
                sizeof(mod::ProjectCurveArena) ==

@@ -30,6 +30,22 @@
 *FatFormatter.cpp.o(.text* .rodata*)
 *ExFatFormatter.cpp.o(.text* .rodata*)
 
+/* Compressed font assets are decoded only while UI resources are loaded. */
+*lz4.c.o(.text* .rodata*)
+
+/* FAT/exFAT path resolution and handle opening happen only at storage session
+ * boundaries. Keep streaming read/write primitives in ITCM, but move every
+ * open traversal helper out of the realtime code budget. */
+*(.text._ZN9ExFatFile4open*)
+*(.text._ZN9ExFatFile8openRoot*)
+*(.text._ZN9ExFatFile8openNext*)
+*(.text._ZN9ExFatFile11openPrivate*)
+*(.text._ZN7FatFile4open*)
+*(.text._ZN7FatFile8openRoot*)
+*(.text._ZN7FatFile8openNext*)
+*(.text._ZN7FatFile11openCluster*)
+*(.text._ZN7FatFile15openCachedEntry*)
+
 /* Macro overlay projection is rebuilt only after authored/UI state changes.
  * Its top-level formatters already use FLASHMEM, but out-of-line text helpers
  * emitted by the compiler otherwise leak into ITCM. Keep the complete cold

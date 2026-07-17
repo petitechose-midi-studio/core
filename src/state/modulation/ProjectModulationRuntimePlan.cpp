@@ -98,6 +98,15 @@ FLASHMEM bool bindingComesBefore(
            (lhsAddress == rhsAddress && lhs.id.value < rhs.id.value);
 }
 
+FLASHMEM bool sourceConsumesTrigger(
+    const ProjectModulationRuntimeSource& source
+) {
+    return source.kind == ModulatorKind::ADSR ||
+           (source.kind == ModulatorKind::LFO &&
+            source.traits.lfo.retrigger ==
+                ModulatorRetriggerPolicy::EXPLICIT_TRIGGER);
+}
+
 }  // namespace
 
 FLASHMEM bool validProjectModulationCompileContext(
@@ -276,6 +285,53 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
             break;
         }
     }
+
+    // Compile a compact sparse routing index once at publication. A physical
+    // edge can still fan out to every matching source, including wildcard Note
+    // routes, but the hot evaluator only scans its Track/channel bucket plus
+    // the Track wildcard-channel bucket.
+    uint16_t triggerRouteWrite = 0U;
+    for (uint16_t bucket = 0U;
+         bucket < PROJECT_MODULATION_TRIGGER_BUCKET_COUNT;
+         ++bucket) {
+        const uint16_t bucketStart = triggerRouteWrite;
+        for (uint16_t sourceIndex = 0U;
+             sourceIndex < out.sourceCount;
+             ++sourceIndex) {
+            const auto& source = out.sources[sourceIndex];
+            if (!sourceConsumesTrigger(source) ||
+                (source.triggerFlags &
+                 PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) == 0U ||
+                source.trigger.track >= PROJECT_MODULATION_TRACK_COUNT ||
+                (source.trigger.channel >= 16U &&
+                 source.trigger.channel !=
+                    PROJECT_MODULATION_TRIGGER_ANY_CHANNEL) ||
+                static_cast<uint8_t>(source.trigger.kind) >=
+                    PROJECT_MODULATION_TRIGGER_KIND_COUNT ||
+                projectModulationTriggerBucketIndex(source.trigger) != bucket) {
+                continue;
+            }
+            out.triggerSourceOrder[triggerRouteWrite++] =
+                static_cast<uint8_t>(sourceIndex);
+            if (source.trigger.kind == ModulationTriggerKind::TRACK_NOTE &&
+                source.trigger.channel ==
+                    PROJECT_MODULATION_TRIGGER_ANY_CHANNEL) {
+                out.triggerWildcardTrackMask = static_cast<uint16_t>(
+                    out.triggerWildcardTrackMask |
+                    (1U << source.trigger.track)
+                );
+            }
+        }
+        const uint16_t bucketCount = triggerRouteWrite - bucketStart;
+        // A non-empty bucket always starts below the 128-source capacity. An
+        // empty trailing bucket may start at 128, where the stored start is
+        // deliberately irrelevant because its count is zero.
+        out.triggerBucketStart[bucket] = bucketCount == 0U
+            ? 0U
+            : static_cast<uint8_t>(bucketStart);
+        out.triggerBucketCount[bucket] = static_cast<uint8_t>(bucketCount);
+    }
+    out.triggerRouteCount = triggerRouteWrite;
 
     // Insert logical destinations in stable-address order.
     for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
