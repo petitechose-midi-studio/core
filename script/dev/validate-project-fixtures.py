@@ -107,6 +107,7 @@ def main() -> int:
 
     fixtures = repo_root / "test" / "fixtures" / "projects"
     stale = fixtures / "v1_0" / "stale-sequencer.mspj"
+    modg10 = fixtures / "v1_0" / "modg-application-1.0.mspj"
     current = fixtures / "v1_1" / "current-from-stale-sequencer.mspj"
 
     exit_code, report = run_tool(tool, "inspect", str(stale))
@@ -131,7 +132,46 @@ def main() -> int:
         expected_exit=0,
     )
 
+    exit_code, report = run_tool(tool, "inspect", str(modg10))
+    assert_report(
+        "v1_0/modg-application-1.0.mspj",
+        exit_code,
+        report,
+        status="migrated",
+        load_status="migrated",
+        overwrite_safe=True,
+        expected_exit=0,
+    )
+
     with tempfile.TemporaryDirectory() as tmp:
+        migrated_modg = Path(tmp) / "modg-application-1.1.mspj"
+        exit_code, report = run_tool(
+            tool,
+            "migrate",
+            str(modg10),
+            "--out",
+            str(migrated_modg),
+        )
+        assert_report(
+            "migrate MODG 1.0 to 1.1",
+            exit_code,
+            report,
+            status="migrated",
+            load_status="migrated",
+            overwrite_safe=True,
+            expected_exit=0,
+        )
+        exit_code, report = run_tool(tool, "inspect", str(migrated_modg))
+        assert_report(
+            "inspect migrated MODG 1.1",
+            exit_code,
+            report,
+            status="current",
+            load_status="ok",
+            overwrite_safe=True,
+            expected_exit=0,
+        )
+
         source = Path(tmp) / "migration-source.mspj"
         source.write_bytes(current.read_bytes())
         assert_output_alias_refused(

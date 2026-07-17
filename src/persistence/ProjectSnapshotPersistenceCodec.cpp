@@ -209,18 +209,16 @@ FLASHMEM void reportControlChunkStatus(
             reportDefaulted(report, id);
             return;
         case ChunkStatus::MIGRATED_LEGACY:
-            if (id == project_file::ChunkId::MACRO_AUTOMATION) {
-                addReport(
-                    report,
-                    project_file::LoadSeverity::INFO,
-                    project_file::LoadCode::MIGRATED_CHUNK,
-                    chunkId,
-                    sourceMajor,
-                    sourceMinor,
-                    project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
-                    targetMinor
-                );
-            }
+            addReport(
+                report,
+                project_file::LoadSeverity::INFO,
+                project_file::LoadCode::MIGRATED_CHUNK,
+                chunkId,
+                sourceMajor,
+                sourceMinor,
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                targetMinor
+            );
             return;
         case ChunkStatus::UNSUPPORTED_VERSION:
             addReport(

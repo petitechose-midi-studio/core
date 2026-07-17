@@ -12,10 +12,12 @@
 
 #include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/persistence/ProjectMigration.hpp"
+#include "../../src/persistence/ProjectControlPersistencePayloads.hpp"
 #include "../../src/persistence/ProjectSnapshotPersistenceCodec.hpp"
 #include "../../src/persistence/SequencerPersistenceEnvelope.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
+#include "../../src/state/modulation/ProjectModulationDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/ProjectSequencerEnvelopeTestSupport.hpp"
 
@@ -25,6 +27,8 @@ namespace migration = core::persistence::project_file_migration;
 namespace project = core::state::project;
 namespace project_file = core::persistence::project_file;
 namespace snapshot_codec = core::persistence::project_snapshot_codec;
+namespace control_codec = core::persistence::project_control_codec;
+namespace modulation = core::state::modulation;
 
 constexpr size_t kProjectMigrationScratchSize = 512U * 1024U;
 
@@ -61,6 +65,24 @@ bool reportHas(const project_file::LoadReport& report, project_file::LoadCode co
     return false;
 }
 
+bool reportHasModgMigration(const project_file::LoadReport& report) {
+    for (uint8_t i = 0; i < report.itemCount; ++i) {
+        const auto& item = report.items[i];
+        if (item.code == project_file::LoadCode::MIGRATED_CHUNK &&
+            item.chunkId == project_file::chunkIdValue(
+                project_file::ChunkId::MODULATION_GRAPH
+            ) &&
+            item.sourceMajor == control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR &&
+            item.sourceMinor ==
+                control_codec::PROJECT_MODULATION_GRAPH_LEGACY_VERSION_MINOR &&
+            item.targetMinor ==
+                control_codec::PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void configureProject(core::state::CoreState& state) {
     std::strncpy(state.project.metadata.id.data(), "p321", state.project.metadata.id.size() - 1);
     std::strncpy(state.project.metadata.name.data(), "p321", state.project.metadata.name.size() - 1);
@@ -70,6 +92,140 @@ void configureProject(core::state::CoreState& state) {
     state.sequencer.pattern.toggle(0);
     state.sequencer.pattern.note[0] = 64;
     state.sequencer.pattern.velocity[0] = 100;
+}
+
+std::vector<uint8_t> buildModg10ApplicationFixture() {
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state);
+
+    project::ProjectSnapshot snapshot;
+    assert(project::captureProjectSnapshot(state, snapshot));
+    assert(snapshot.projectControl);
+    auto& control = *snapshot.projectControl;
+    modulation::ModulatorLfoDraft source{};
+    source.name = "Compat LFO";
+    source.reach.kind = modulation::ModulatorReachKind::PROJECT;
+    const auto created = modulation::createLfoModulator(
+        control.modulation,
+        source
+    );
+    assert(created.changed());
+    modulation::ModulationBindingDraft around{};
+    around.sourceId = created.sourceId;
+    around.destination = {
+        modulation::ModulationDestinationKind::MACRO_SLOT,
+        0U,
+        0U,
+        0U,
+    };
+    around.amountQ15 = 16384;
+    around.application = modulation::ModulationApplication::AROUND_BASE;
+    assert(modulation::addProjectModulationBinding(
+        control.modulation,
+        around
+    ).changed());
+    auto from = around;
+    from.destination.macro = 1U;
+    from.amountQ15 = -8192;
+    from.application = modulation::ModulationApplication::FROM_BASE;
+    assert(modulation::addProjectModulationBinding(
+        control.modulation,
+        from
+    ).changed());
+
+    auto current = core::app::makeExtmemUnique<
+        std::array<uint8_t, kProjectMigrationScratchSize>
+    >();
+    assert(current);
+    const auto encoded = snapshot_codec::encodeProjectSnapshot(
+        snapshot,
+        current->data(),
+        static_cast<uint32_t>(current->size())
+    );
+    assert(encoded.status == project_file::Status::OK);
+
+    std::array<
+        project_file::DecodedChunkView,
+        project_file::MAX_CHUNKS
+    > decoded{};
+    const auto container = project_file::decode(
+        current->data(),
+        encoded.bytesWritten,
+        decoded.data(),
+        static_cast<uint16_t>(decoded.size())
+    );
+    assert(container.status == project_file::Status::OK);
+
+    std::vector<uint8_t> legacyGraph;
+    for (uint16_t index = 0; index < container.chunkCount; ++index) {
+        if (decoded[index].id == project_file::chunkIdValue(
+                project_file::ChunkId::MODULATION_GRAPH
+            )) {
+            legacyGraph.assign(
+                decoded[index].data,
+                decoded[index].data + decoded[index].size
+            );
+            break;
+        }
+    }
+    assert(!legacyGraph.empty());
+    const uint16_t sourceCount = static_cast<uint16_t>(
+        legacyGraph[0] | (static_cast<uint16_t>(legacyGraph[1]) << 8U)
+    );
+    const uint16_t bindingCount = static_cast<uint16_t>(
+        legacyGraph[2] | (static_cast<uint16_t>(legacyGraph[3]) << 8U)
+    );
+    assert(sourceCount == 1U && bindingCount == 2U);
+    const uint32_t bindingBase =
+        control_codec::PROJECT_CONTROL_CHUNK_HEADER_SIZE +
+        static_cast<uint32_t>(sourceCount) *
+            control_codec::PROJECT_MODULATOR_SOURCE_DIRECTORY_SIZE +
+        static_cast<uint32_t>(sourceCount) *
+            control_codec::PROJECT_MODULATOR_SOURCE_PAYLOAD_SIZE;
+    auto& aroundByte = legacyGraph[bindingBase + 14U];
+    auto& fromByte = legacyGraph[
+        bindingBase + control_codec::PROJECT_MODULATION_BINDING_SIZE + 14U
+    ];
+    assert(aroundByte == static_cast<uint8_t>(
+        modulation::ModulationApplication::AROUND_BASE
+    ));
+    assert(fromByte == static_cast<uint8_t>(
+        modulation::ModulationApplication::FROM_BASE
+    ));
+    aroundByte = 0U;
+    fromByte = 1U;
+
+    std::array<project_file::ChunkView, project_file::MAX_CHUNKS> chunks{};
+    for (uint16_t index = 0; index < container.chunkCount; ++index) {
+        const bool graph = decoded[index].id == project_file::chunkIdValue(
+            project_file::ChunkId::MODULATION_GRAPH
+        );
+        chunks[index] = {
+            .id = decoded[index].id,
+            .versionMajor = decoded[index].versionMajor,
+            .versionMinor = graph
+                ? control_codec::PROJECT_MODULATION_GRAPH_LEGACY_VERSION_MINOR
+                : decoded[index].versionMinor,
+            .flags = decoded[index].flags,
+            .data = graph ? legacyGraph.data() : decoded[index].data,
+            .size = graph
+                ? static_cast<uint32_t>(legacyGraph.size())
+                : decoded[index].size,
+        };
+    }
+
+    std::vector<uint8_t> output(kProjectMigrationScratchSize);
+    const auto legacyEncoded = project_file::encode(
+        chunks.data(),
+        container.chunkCount,
+        state.project.metadata.modifiedCounter,
+        output.data(),
+        static_cast<uint32_t>(output.size())
+    );
+    assert(legacyEncoded.status == project_file::Status::OK);
+    output.resize(legacyEncoded.bytesWritten);
+    return output;
 }
 
 void test_inspects_current_project() {
@@ -250,9 +406,83 @@ void test_rewritten_fixture_migrates_legacy_macro_lifecycle_payload() {
     std::cout << "[PASS] test_rewritten_fixture_migrates_legacy_macro_lifecycle_payload\n";
 }
 
+void test_modg10_application_fixture_migrates_losslessly_to_11() {
+    const auto expected = buildModg10ApplicationFixture();
+    const auto bytes = readFixture(
+        "test/fixtures/projects/v1_0/modg-application-1.0.mspj"
+    );
+    assert(bytes == expected);
+
+    project_file::LoadReport report{};
+    const auto inspected = migration::inspectProjectBytes(
+        bytes.data(),
+        static_cast<uint32_t>(bytes.size()),
+        &report
+    );
+    assert(inspected.status == migration::Status::MIGRATED);
+    assert(inspected.loadStatus == project_file::LoadStatus::MIGRATED);
+    assert(inspected.overwriteSafe);
+    assert(reportHasModgMigration(report));
+
+    project::ProjectSnapshot lifted;
+    project_file::LoadReport liftedReport{};
+    const auto decoded = migration::decodeProjectBytesToSnapshot(
+        bytes.data(),
+        static_cast<uint32_t>(bytes.size()),
+        lifted,
+        &liftedReport
+    );
+    assert(decoded.status == migration::Status::MIGRATED);
+    assert(lifted.projectControl);
+    assert(lifted.projectControl->modulation.outputBindingCount == 2U);
+    assert(lifted.projectControl->modulation.outputBindings[0].application ==
+           modulation::ModulationApplication::AROUND_BASE);
+    assert(lifted.projectControl->modulation.outputBindings[1].application ==
+           modulation::ModulationApplication::FROM_BASE);
+
+    auto current = core::app::makeExtmemUnique<
+        std::array<uint8_t, kProjectMigrationScratchSize>
+    >();
+    assert(current);
+    project_file::LoadReport migrateReport{};
+    const auto migrated = migration::migrateProjectBytesToCurrent(
+        bytes.data(),
+        static_cast<uint32_t>(bytes.size()),
+        current->data(),
+        static_cast<uint32_t>(current->size()),
+        &migrateReport
+    );
+    assert(migrated.status == migration::Status::MIGRATED);
+    assert(migrated.bytesWritten > 0U && migrated.overwriteSafe);
+
+    project_file::LoadReport currentReport{};
+    const auto currentInspection = migration::inspectProjectBytes(
+        current->data(),
+        migrated.bytesWritten,
+        &currentReport
+    );
+    assert(currentInspection.status == migration::Status::CURRENT);
+    assert(currentInspection.loadStatus == project_file::LoadStatus::OK);
+    assert(currentInspection.overwriteSafe && currentReport.ok());
+
+    std::cout << "[PASS] test_modg10_application_fixture_migrates_losslessly_to_11\n";
+}
+
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 3 &&
+        std::strcmp(argv[1], "--write-modg10-fixture") == 0) {
+        const auto bytes = buildModg10ApplicationFixture();
+        const std::filesystem::path path(argv[2]);
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        assert(file.write(
+            reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size())
+        ));
+        return 0;
+    }
     std::cout << "==============================================\n";
     std::cout << "ProjectMigration tests\n";
     std::cout << "==============================================\n\n";
@@ -261,6 +491,7 @@ int main() {
     test_stale_sequencer_project_is_partial_and_not_rewritten_by_default();
     test_stale_sequencer_fixture_is_partial();
     test_rewritten_fixture_migrates_legacy_macro_lifecycle_payload();
+    test_modg10_application_fixture_migrates_losslessly_to_11();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";
