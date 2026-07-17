@@ -430,6 +430,43 @@ void test_macro_slot_activation_is_sequential_and_marks_project_dirty() {
     std::cout << "[PASS] test_macro_slot_activation_is_sequential_and_marks_project_dirty\n";
 }
 
+void test_addressed_macro_slot_activation_preserves_cold_page_cache() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+
+    const auto activeConfigBefore = state.pages.activeConfigs[1];
+    const core::state::macro::MacroAutomationSlotAddress coldAddress{0, 1, 1};
+    const auto plan =
+        core::state::macro::MacroWorkflow::planMacroSlotActivation(
+            state.pages,
+            coldAddress
+        );
+    assert(plan.valid);
+    assert(plan.cc == 9U);
+    assert(plan.baseValue == 0.5f);
+    assert(core::state::macro::MacroWorkflow::applyMacroSlotActivation(
+        state.pages,
+        plan
+    ));
+    assert(state.pages.pageData(0, 1).isMacroActive(1));
+    assert(state.pages.pageData(0, 1).cc[1] == 9U);
+    assert(state.pages.activeConfigs[1].cc == activeConfigBefore.cc);
+    assert(state.pages.activeConfigs[1].channel == activeConfigBefore.channel);
+
+    const auto stale = plan;
+    assert(!core::state::macro::MacroWorkflow::applyMacroSlotActivation(
+        state.pages,
+        stale
+    ));
+    state.pages.setActivePage(1);
+    assert(state.pages.activeConfigs[1].cc == 9U);
+
+    std::cout << "[PASS] addressed Macro activation preserves cold-page caches\n";
+}
+
 void test_automation_recording_commits_to_current_macro_slot() {
     CoreStorages storage;
 
@@ -1344,6 +1381,7 @@ int main() {
     test_track_config_batch_requires_shared_channel_and_marks_project_dirty_when_valid();
     test_status_bar_pulses_are_forwarded();
     test_macro_slot_activation_is_sequential_and_marks_project_dirty();
+    test_addressed_macro_slot_activation_preserves_cold_page_cache();
     test_automation_recording_commits_to_current_macro_slot();
     test_automation_recording_cancel_discards_session();
     test_automation_recording_without_motion_does_not_create_slot();

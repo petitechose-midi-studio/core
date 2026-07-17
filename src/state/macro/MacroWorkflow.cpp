@@ -99,27 +99,64 @@ FLASHMEM bool MacroWorkflow::setTrackChannel(CoreState& state, uint8_t channel) 
     return true;
 }
 
+FLASHMEM MacroSlotActivationPlan MacroWorkflow::planMacroSlotActivation(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address
+) {
+    MacroSlotActivationPlan plan{};
+    plan.address = address;
+    if (!macroAutomationAddressValid(address)) return plan;
+
+    const auto& page = pages.pageData(address.track, address.page);
+    if (page.isMacroActive(address.macro) ||
+        page.nextAddMacroIndex() != address.macro) {
+        return plan;
+    }
+
+    uint8_t sourceIndex = 0;
+    for (uint8_t i = 0; i < address.macro; ++i) {
+        if (page.isMacroActive(i)) sourceIndex = i;
+    }
+    const uint16_t nextCc = static_cast<uint16_t>(page.cc[sourceIndex]) + 1U;
+    plan.cc = static_cast<uint8_t>(nextCc > 127U ? 127U : nextCc);
+    plan.baseValue = 0.5f;
+    plan.valid = true;
+    return plan;
+}
+
+FLASHMEM bool MacroWorkflow::applyMacroSlotActivation(
+    MacroPagesState& pages,
+    const MacroSlotActivationPlan& plan
+) {
+    if (!plan.valid || !macroAutomationAddressValid(plan.address)) return false;
+    const auto current = planMacroSlotActivation(pages, plan.address);
+    if (!current.valid || current.cc != plan.cc ||
+        current.baseValue != plan.baseValue) {
+        return false;
+    }
+
+    auto& page = pages.pageData(plan.address.track, plan.address.page);
+    page.cc[plan.address.macro] = plan.cc;
+    page.values[plan.address.macro] = plan.baseValue;
+    page.setMacroActive(plan.address.macro, true);
+    if (pages.currentActiveTrack() == plan.address.track &&
+        pages.currentActivePage() == plan.address.page) {
+        pages.updateActiveConfigs();
+    }
+    return true;
+}
+
 FLASHMEM bool MacroWorkflow::activateMacroSlot(core::state::MacroState& macros,
                                                MacroPagesState& pages,
                                                uint8_t index) {
-    if (index >= MACRO_COUNT) return false;
-    auto& page = pages.activePageData();
-    if (page.isMacroActive(index)) return false;
-    if (page.nextAddMacroIndex() != index) return false;
-
-    uint8_t sourceIndex = 0;
-    for (uint8_t i = 0; i < index; ++i) {
-        if (page.isMacroActive(i)) {
-            sourceIndex = i;
-        }
-    }
-
-    const uint16_t nextCc = static_cast<uint16_t>(page.cc[sourceIndex]) + 1U;
-    page.cc[index] = static_cast<uint8_t>(nextCc > 127U ? 127U : nextCc);
-    page.values[index] = 0.5f;
-    page.setMacroActive(index, true);
-    pages.updateActiveConfigs();
-    setRuntimeValue(macros, index, page.values[index]);
+    const MacroAutomationSlotAddress address{
+        pages.currentActiveTrack(),
+        pages.currentActivePage(),
+        index,
+    };
+    const auto plan = planMacroSlotActivation(pages, address);
+    if (!applyMacroSlotActivation(pages, plan)) return false;
+    setRuntimeValue(macros, index, plan.baseValue);
     return true;
 }
 

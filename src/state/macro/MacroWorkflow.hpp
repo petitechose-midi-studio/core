@@ -4,6 +4,7 @@
 
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
+#include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 
 namespace core::state {
@@ -22,6 +23,14 @@ namespace core::state::macro {
  * revision, or shared-track side effects.
  */
 constexpr uint8_t kMacroConfigDirtyAll = 0xFF;
+
+/** Cold plan for the one legal next Macro slot. */
+struct MacroSlotActivationPlan {
+    MacroAutomationSlotAddress address{};
+    float baseValue = 0.5f;
+    uint8_t cc = 0;
+    bool valid = false;
+};
 
 inline uint32_t nextMacroConfigRevision(uint32_t current, uint8_t dirtyIndex = kMacroConfigDirtyAll) {
     uint32_t generation = ((current >> 8) + 1U) & 0x00FFFFFFU;
@@ -47,6 +56,14 @@ struct MacroWorkflow {
     static void switchToTrack(CoreState& state, uint8_t trackIndex);
     static bool setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc);
     static bool setTrackChannel(CoreState& state, uint8_t channel);
+    static MacroSlotActivationPlan planMacroSlotActivation(
+        const MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address
+    );
+    static bool applyMacroSlotActivation(
+        MacroPagesState& pages,
+        const MacroSlotActivationPlan& plan
+    );
     static bool activateMacroSlot(core::state::MacroState& macros,
                                   MacroPagesState& pages,
                                   uint8_t index);
