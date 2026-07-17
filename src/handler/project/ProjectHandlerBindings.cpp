@@ -92,6 +92,7 @@ FLASHMEM void ProjectHandler::setupBindings() {
             return regularProjectInputActive() &&
                    (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+                    node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
                     node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS);
         })
         .then([this]() { beginModulatorBottomLeft(); });
@@ -105,6 +106,7 @@ FLASHMEM void ProjectHandler::setupBindings() {
             return isProjectNameEditorNode(node) ||
                    node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
                    node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+                   node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
                    node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS;
         })
         .then([this]() {
@@ -144,7 +146,8 @@ FLASHMEM void ProjectHandler::setupBindings() {
             const auto node = navigation_.currentNode.get();
             return regularProjectInputActive() &&
                    (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
-                    node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+                    node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+                    node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
         })
         .then([this]() { beginModulatorBottomRight(); });
 
@@ -156,7 +159,8 @@ FLASHMEM void ProjectHandler::setupBindings() {
             const auto node = navigation_.currentNode.get();
             return isProjectNameEditorNode(node) ||
                    node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
-                   node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL;
+                   node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+                   node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS;
         })
         .then([this]() {
             if (isProjectNameEditorNode(navigation_.currentNode.get())) {

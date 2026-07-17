@@ -409,6 +409,12 @@ FLASHMEM void applyPageMeta(ProjectMenuPage& page,
         case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
             page.meta = "MODULATORS > SOURCE";
             return;
+        case ProjectNodeId::MODULATOR_SOURCE_OPTIONS:
+            page.meta = "MODULATORS > DETAILS";
+            return;
+        case ProjectNodeId::MODULATOR_SOURCE_RENAME:
+            page.meta = "MODULATORS > RENAME";
+            return;
         case ProjectNodeId::MODULATOR_REACH:
             page.meta = "MODULATORS > REACH";
             return;
@@ -554,6 +560,8 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
             buildRoutingRows(page, context);
             break;
         case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
+        case ProjectNodeId::MODULATOR_SOURCE_OPTIONS:
+        case ProjectNodeId::MODULATOR_SOURCE_RENAME:
         case ProjectNodeId::MODULATOR_REACH:
         case ProjectNodeId::MODULATOR_DESTINATIONS:
         case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
@@ -598,6 +606,7 @@ FLASHMEM uint16_t projectCurrentRowCount(const ProjectNavigationState& navigatio
         return static_cast<uint16_t>(modulatorSourceCount + 1U);
     }
     if (navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
         navigation.currentNode.get() == ProjectNodeId::MODULATOR_REACH ||
         navigation.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS ||
         navigation.currentNode.get() ==

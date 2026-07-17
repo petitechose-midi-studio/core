@@ -2327,6 +2327,40 @@ FLASHMEM bool MacroHistoryService::setProjectModulatorEnabled(
     return commitProjectSourceEdit_(pages, std::move(change), false);
 }
 
+FLASHMEM bool MacroHistoryService::setProjectModulatorName(
+    MacroPagesState& pages,
+    core::state::modulation::ModulatorId sourceId,
+    const char* name
+) {
+    using namespace core::state::modulation;
+    if (pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
+        return false;
+    }
+    auto* source = findProjectModulator(
+        pages.control.authored.modulation,
+        sourceId
+    );
+    if (!source) return false;
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return false;
+    change->kind = MacroHistoryActionKind::PROJECT_MODULATOR_SOURCE_EDIT;
+    change->sourceEdit.before = *source;
+    const auto result = core::state::modulation::setProjectModulatorName(
+        pages.control.authored.modulation,
+        sourceId,
+        name
+    );
+    if (!result.changed()) return false;
+    pages.control.markAuthoredMutation();
+    change->sourceEdit.after = *findProjectModulator(
+        pages.control.authored.modulation,
+        sourceId
+    );
+    change->sourceEdit.valid = true;
+    endCoalescing();
+    return commitProjectSourceEdit_(pages, std::move(change), false);
+}
+
 FLASHMEM bool MacroHistoryService::setProjectLfoParametersCoalesced(
     MacroPagesState& pages,
     core::state::modulation::ModulatorId sourceId,

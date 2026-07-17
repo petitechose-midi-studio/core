@@ -71,7 +71,8 @@ FLASHMEM float indexToNormalized(int index, int count) {
 
 FLASHMEM bool isProjectNameEditorNode(core::state::project::ProjectNodeId node) {
     return node == core::state::project::ProjectNodeId::SAVE_AS_PROJECT_NAME ||
-           node == core::state::project::ProjectNodeId::RENAME_PROJECT_NAME;
+           node == core::state::project::ProjectNodeId::RENAME_PROJECT_NAME ||
+           node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME;
 }
 
 FLASHMEM char selectedProjectNameKey(

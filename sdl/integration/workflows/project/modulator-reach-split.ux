@@ -17,30 +17,29 @@
 1020 encoder NAV 5
 1100 button LEFT_CENTER up
 
-# Enter Slow Tide and focus the existing Reach row.
+# Enter Slow Tide, then Details > Available in.
 1320 tap NAV 60
 1500 encoder NAV 1
 1580 encoder NAV 1
 1660 encoder NAV 1
-1740 encoder NAV 1
-1820 encoder NAV 1
-1900 encoder NAV 1
-1980 encoder NAV 1
-2180 capture screen source_detail
-2300 tap NAV 60
-2520 capture screen reach_choices
+1860 capture screen source_detail
+1980 tap NAV 60
+2100 encoder NAV 1
+2180 encoder NAV 1
+2380 tap NAV 60
+2600 capture screen reach_choices
 
 # Tightest and Project stay first; Split rows appear only because this source
 # currently serves T1 and T2. Select the T2 partition explicitly.
-2640 encoder NAV 1
 2720 encoder NAV 1
 2800 encoder NAV 1
-3020 capture screen split_t2_focused
-3140 tap NAV 60
-3400 capture screen source_split
+2880 encoder NAV 1
+3100 capture screen split_t2_focused
+3220 tap NAV 60
+3480 capture screen source_split
 
 # Undo uses the same Project hold layer and restores the single shared source.
-3560 button LEFT_CENTER down
-4160 tap LEFT_TOP 60
-4380 button LEFT_CENTER up
-4600 capture screen split_undone
+3640 button LEFT_CENTER down
+4240 tap LEFT_TOP 60
+4460 button LEFT_CENTER up
+4680 capture screen split_undone

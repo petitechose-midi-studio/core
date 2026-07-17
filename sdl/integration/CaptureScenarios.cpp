@@ -421,6 +421,55 @@ void prepareProjectModulatorsScenario(core::state::CoreState& state) {
     ));
 }
 
+void prepareProjectModulatorWorkspaceScenario(core::state::CoreState& state) {
+    using namespace core::state::modulation;
+    prepareProjectModulatorsScenario(state);
+    constexpr std::array<ProjectPackedCurvePoint, 5> points{{
+        {0U, -24576},
+        {96U, 8192},
+        {192U, 28672},
+        {288U, -4096},
+        {384U, -24576},
+    }};
+    RecordedShapeDraft draft{};
+    draft.name = "Breath Arc";
+    draft.reach = {
+        .kind = ModulatorReachKind::MACRO,
+        .track = 0,
+        .page = 0,
+        .macro = 1,
+    };
+    draft.curve = {
+        .sourceDurationTicks = 384U,
+        .durationTicks = 384U,
+        .valueDomain = ProjectCurveValueDomain::BIPOLAR,
+    };
+    draft.points = points.data();
+    draft.pointCount = static_cast<uint16_t>(points.size());
+    auto& control = state.pages.control;
+    const auto created = createRecordedShapeModulator(
+        control.authored.modulation,
+        control.authored.curves,
+        draft
+    );
+    if (created.changed()) {
+        ModulationBindingDraft binding{};
+        binding.sourceId = created.sourceId;
+        binding.destination = projectControlDestination({0U, 0U, 1U});
+        binding.amountQ15 = 6553;
+        binding.application = ModulationApplication::NATURAL;
+        (void)addProjectModulationBinding(
+            control.authored.modulation,
+            binding
+        );
+        control.markAuthoredMutation();
+    }
+    state.projectNavigation.notifyContentChanged();
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(
+        state.configRevision.get()
+    ));
+}
+
 void prepareMacroModulationAssignmentCopyScenario(
     core::state::CoreState& state
 ) {
@@ -1511,6 +1560,11 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "project-modulators") == 0) {
         prepareProjectModulatorsScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "project-modulator-workspace") == 0) {
+        prepareProjectModulatorWorkspaceScenario(state);
         return true;
     }
 

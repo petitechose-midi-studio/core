@@ -104,6 +104,7 @@ FLASHMEM void ProjectHandler::enterFocused() {
     const auto node = navigation_.currentNode.get();
     if (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
         node == core::state::project::ProjectNodeId::MODULATOR_REACH ||
         node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
         node ==
@@ -208,7 +209,7 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
         std::snprintf(
             cloneName,
             sizeof(cloneName),
-            "T%u %s",
+            "T%u %.10s",
             static_cast<unsigned>(choice.track + 1U),
             source->name.data()
         );
@@ -262,20 +263,30 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
 
     const auto* source = focusedModulator();
     if (!source) return;
-    const auto layout = core::state::project::modulators::sourceDetailLayout(
-        source->kind
-    );
+    const bool options = navigation_.currentNode.get() ==
+        ProjectNodeId::MODULATOR_SOURCE_OPTIONS;
+    const auto layout = options
+        ? core::state::project::modulators::sourceOptionsLayout(source->kind)
+        : core::state::project::modulators::sourceDetailLayout(source->kind);
     const auto item = layout.at(navigation_.focusedRow.get());
-    if (item == core::state::project::modulators::SourceDetailItem::DESTINATIONS) {
+    using Item = core::state::project::modulators::SourceDetailItem;
+    if (item == Item::OPTIONS) {
+        (void)core::state::project::openProjectModulatorOptions(navigation_);
+    } else if (item == Item::DESTINATIONS) {
         if (core::state::project::openProjectModulatorDestinations(navigation_)) {
             const auto* first = focusedModulationBinding();
             navigation_.selectedModulationBinding = first
                 ? first->id
                 : core::state::modulation::ModulationBindingId{};
         }
-    } else if (item ==
-               core::state::project::modulators::SourceDetailItem::REACH) {
+    } else if (item == Item::REACH) {
         (void)core::state::project::openProjectModulatorReach(navigation_);
+    } else if (item == Item::RENAME) {
+        (void)core::state::project::openProjectNameEditor(
+            navigation_,
+            ProjectNodeId::MODULATOR_SOURCE_RENAME,
+            source->name.data()
+        );
     }
 }
 
@@ -460,15 +471,17 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         return;
     }
 
-    if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
+    if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
         const auto* source = focusedModulator();
         if (!source) {
             configureOptDiscrete(encoders_, 1, 0.0f);
             return;
         }
-        const auto item = core::state::project::modulators::sourceDetailLayout(
-            source->kind
-        ).at(row);
+        const auto layout = node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS
+            ? core::state::project::modulators::sourceOptionsLayout(source->kind)
+            : core::state::project::modulators::sourceDetailLayout(source->kind);
+        const auto item = layout.at(row);
         using Item = core::state::project::modulators::SourceDetailItem;
         using namespace core::state::modulation;
         switch (item) {
@@ -540,12 +553,17 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 );
                 return;
             case Item::RETRIGGER:
+                if (source->parameters.lfo.retrigger ==
+                    ModulatorRetriggerPolicy::EXPLICIT_TRIGGER) {
+                    configureOptDiscrete(encoders_, 1, 0.0f);
+                    return;
+                }
                 configureOptDiscrete(
                     encoders_,
-                    3,
+                    2,
                     indexToNormalized(
                         static_cast<int>(source->parameters.lfo.retrigger),
-                        3
+                        2
                     )
                 );
                 return;

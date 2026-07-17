@@ -97,6 +97,33 @@ FLASHMEM bool ProjectHandler::commitProjectNameEditor() {
     if (!isProjectNameEditorNode(node)) return false;
 
     const char* slug = navigation_.editingProjectSlug.data();
+    if (node ==
+        core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME) {
+        if (slug[0] == '\0') {
+            navigation_.setLifecycleFeedback("Invalid name");
+            return true;
+        }
+        const auto sourceId = navigation_.selectedModulator;
+        if (!macro_history_.setProjectModulatorName(pages_, sourceId, slug)) {
+            navigation_.setLifecycleFeedback("Name unchanged");
+            return true;
+        }
+        publishModulatorMutation(false);
+        const auto* source = core::state::modulation::findProjectModulator(
+            pages_.control.authored.modulation,
+            sourceId
+        );
+        char feedback[32]{};
+        std::snprintf(
+            feedback,
+            sizeof(feedback),
+            "Renamed · %s",
+            source ? source->name.data() : "Source"
+        );
+        back();
+        navigation_.setLifecycleFeedback(feedback);
+        return true;
+    }
     if (!core::state::project::validProjectSlug(slug)) {
         navigation_.setLifecycleFeedback("Invalid name");
         return true;

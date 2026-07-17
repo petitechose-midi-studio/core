@@ -58,7 +58,8 @@ FLASHMEM core::state::project::ProjectTab tabAt(uint8_t index) {
 
 FLASHMEM bool isProjectNameEditorNode(core::state::project::ProjectNodeId node) {
     return node == core::state::project::ProjectNodeId::SAVE_AS_PROJECT_NAME ||
-           node == core::state::project::ProjectNodeId::RENAME_PROJECT_NAME;
+           node == core::state::project::ProjectNodeId::RENAME_PROJECT_NAME ||
+           node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME;
 }
 
 FLASHMEM void setLabelTextIfChanged(lv_obj_t* label, const char* text) {
@@ -216,7 +217,8 @@ FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
         !left_action_strip_ || !left_action_strip_->getElement() ||
         !bottom_action_strip_ || !bottom_action_strip_->getElement() ||
         !menu_ || !menu_->getElement() || !modulator_registry_ ||
-        !modulator_registry_->getElement() || !keyboard_container_ ||
+        !modulator_registry_->getElement() || !modulator_workspace_ ||
+        !modulator_workspace_->valid() || !keyboard_container_ ||
         !keyboard_title_ || !keyboard_meta_ || !keyboard_name_box_ ||
         !keyboard_name_label_) {
         return;
@@ -243,6 +245,7 @@ FLASHMEM ProjectView::ProjectView(lv_obj_t* parent, StateRefs stateRefs)
 
 FLASHMEM ProjectView::~ProjectView() {
     render_scheduler_.reset();
+    modulator_workspace_.reset();
     modulator_registry_.reset();
     menu_.reset();
     bottom_action_strip_.reset();
@@ -362,6 +365,10 @@ FLASHMEM void ProjectView::createLayout(lv_obj_t* parent) {
         ms::ui::VirtualListKeyValueOverlay>(center_column_);
     if (!modulator_registry_ || !modulator_registry_->getElement()) return;
 
+    modulator_workspace_ = core::app::makeExtmemUnique<
+        core::ui::project::ProjectModulatorWorkspace>(center_column_);
+    if (!modulator_workspace_ || !modulator_workspace_->valid()) return;
+
     bottom_action_strip_ = core::app::makeExtmemUnique<ContextActionStrip>(
         body_container_,
         ContextActionStripOrientation::HORIZONTAL
@@ -402,6 +409,7 @@ void ProjectView::render() {
     const bool modulatorPage =
         node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
         node == core::state::project::ProjectNodeId::MODULATOR_REACH ||
         node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
         node ==
@@ -414,6 +422,9 @@ void ProjectView::render() {
     }
     if (modulator_registry_) {
         modulator_registry_->render({.visible = false});
+    }
+    if (modulator_workspace_) {
+        modulator_workspace_->render({.visible = false});
     }
 
     const bool keyboardActive = isProjectNameEditorNode(state_refs_.navigation.currentNode.get());
@@ -534,7 +545,7 @@ void ProjectView::populateModulatorRow(
 }
 
 void ProjectView::renderModulators() {
-    if (!modulator_registry_) return;
+    if (!modulator_registry_ || !modulator_workspace_) return;
     using core::state::project::ProjectNodeId;
     const auto node = state_refs_.navigation.currentNode.get();
     const auto& control = state_refs_.pages.control;
@@ -551,6 +562,24 @@ void ProjectView::renderModulators() {
               control,
               state_refs_.navigation.focusedRow.get()
           );
+
+    const bool sourceWorkspace =
+        node == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS;
+    if (sourceWorkspace && source != nullptr) {
+        modulator_registry_->render({.visible = false});
+        modulator_workspace_->render({
+            .visible = true,
+            .control = &control,
+            .source = source,
+            .options = node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS,
+            .selectedIndex = state_refs_.navigation.focusedRow.get(),
+            .telemetryRevision = state_refs_.navigation.telemetryRevision.get(),
+        });
+        renderModulatorActionStrips(source);
+        return;
+    }
+    modulator_workspace_->render({.visible = false});
 
     char meta[48]{};
     const auto guard = state_refs_.navigation.modulatorGuard.get();
@@ -695,6 +724,8 @@ void ProjectView::renderModulatorActionStrips(
     ContextActionStripProps bottom;
     const bool detail = state_refs_.navigation.currentNode.get() ==
             core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        state_refs_.navigation.currentNode.get() ==
+            core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
         state_refs_.navigation.currentNode.get() ==
             core::state::project::ProjectNodeId::MODULATOR_REACH ||
         state_refs_.navigation.currentNode.get() ==
@@ -915,7 +946,8 @@ void ProjectView::renderKeyboard() {
     setLabelTextIfChanged(
         keyboard_meta_,
         state_refs_.navigation.lifecycleFeedback.empty()
-            ? ""
+            ? (node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME
+                ? "SOURCE" : "")
             : state_refs_.navigation.lifecycleFeedback.get()
     );
     setLabelTextIfChanged(

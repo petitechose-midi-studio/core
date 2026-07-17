@@ -1406,8 +1406,12 @@ void test_project_modulator_reach_page_splits_one_track_with_one_undo() {
     assert(moved.changed());
     h.state.projectNavigation.notifyContentChanged();
 
-    h.tap(Config::ButtonID::NAV);       // Source detail
-    h.turn(Config::EncoderID::NAV, 7.0f);  // Reach
+    h.tap(Config::ButtonID::NAV);          // Source workspace
+    h.turn(Config::EncoderID::NAV, 3.0f);  // Details
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    h.turn(Config::EncoderID::NAV, 2.0f);  // Available in
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_REACH);

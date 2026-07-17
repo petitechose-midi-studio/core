@@ -21,10 +21,8 @@
 2030 tap NAV 60
 2250 capture screen source_workspace
 
-# The source remains directly editable with the learned NAV + OPT grammar.
-2370 encoder NAV 1
-2490 encoder NAV 1
-2610 encoder OPT 0.75
+# The source opens directly on Shape and remains editable with OPT.
+2370 encoder OPT 0.75
 2830 capture screen source_shape_edited
 
 # Back returns to the same Macro, assignment and focus by stable IDs.

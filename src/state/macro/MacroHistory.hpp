@@ -445,6 +445,11 @@ public:
         core::state::modulation::ModulatorId sourceId,
         bool enabled
     );
+    [[nodiscard]] bool setProjectModulatorName(
+        MacroPagesState& pages,
+        core::state::modulation::ModulatorId sourceId,
+        const char* name
+    );
     [[nodiscard]] bool setProjectLfoParametersCoalesced(
         MacroPagesState& pages,
         core::state::modulation::ModulatorId sourceId,

@@ -4,6 +4,7 @@
 #include <string>
 
 #include "../../src/state/project/ProjectMenuModel.hpp"
+#include "../../src/state/project/ProjectModulatorMenuModel.hpp"
 #include "../../src/state/sequencer/SequencerScaleCatalog.hpp"
 
 namespace {
@@ -447,6 +448,88 @@ void test_focus_changes_selection_without_content_revision_change() {
     std::cout << "[PASS] test_focus_changes_selection_without_content_revision_change\n";
 }
 
+void test_modulator_workspace_layouts_are_semantic_and_bounded() {
+    namespace modulators = core::state::project::modulators;
+    using core::state::modulation::ModulatorKind;
+    using Item = modulators::SourceDetailItem;
+
+    const auto lfo = modulators::sourceDetailLayout(ModulatorKind::LFO);
+    assert(lfo.count == 5U);
+    assert(lfo.at(0) == Item::SHAPE);
+    assert(lfo.at(1) == Item::TIMING);
+    assert(lfo.at(2) == Item::RATE);
+    assert(lfo.at(3) == Item::OPTIONS);
+    assert(lfo.at(4) == Item::DESTINATIONS);
+
+    const auto recorded = modulators::sourceDetailLayout(
+        ModulatorKind::RECORDED_SHAPE
+    );
+    assert(recorded.count == 4U);
+    assert(recorded.at(0) == Item::LENGTH);
+    assert(recorded.at(1) == Item::SOURCE_DOMAIN);
+    assert(recorded.at(2) == Item::OPTIONS);
+    assert(recorded.at(3) == Item::DESTINATIONS);
+
+    const auto lfoOptions = modulators::sourceOptionsLayout(ModulatorKind::LFO);
+    assert(lfoOptions.count == 5U);
+    assert(lfoOptions.at(0) == Item::PHASE);
+    assert(lfoOptions.at(1) == Item::RETRIGGER);
+    assert(lfoOptions.at(2) == Item::REACH);
+    assert(lfoOptions.at(3) == Item::RENAME);
+    assert(lfoOptions.at(4) == Item::DESTINATIONS);
+
+    const auto recordedOptions = modulators::sourceOptionsLayout(
+        ModulatorKind::RECORDED_SHAPE
+    );
+    assert(recordedOptions.count == 3U);
+    assert(recordedOptions.at(0) == Item::REACH);
+    assert(recordedOptions.at(1) == Item::RENAME);
+    assert(recordedOptions.at(2) == Item::DESTINATIONS);
+    std::cout << "[PASS] test_modulator_workspace_layouts_are_semantic_and_bounded\n";
+}
+
+void test_modulator_workspace_navigation_restores_local_focus() {
+    core::state::project::ProjectNavigationState navigation;
+    core::state::project::switchProjectTab(navigation, -1);
+    const core::state::modulation::ModulatorId sourceId{42U};
+    assert(core::state::project::openProjectModulatorDetail(
+        navigation,
+        sourceId
+    ));
+    navigation.focusedRow.set(3U);
+    assert(core::state::project::openProjectModulatorOptions(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    assert(navigation.activeTab.get() == ProjectTab::MODULATORS);
+
+    navigation.focusedRow.set(4U);
+    assert(core::state::project::openProjectModulatorDestinations(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS);
+    assert(core::state::project::backProjectNavigation(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    assert(navigation.focusedRow.get() == 4U);
+
+    navigation.focusedRow.set(2U);
+    assert(core::state::project::openProjectModulatorReach(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_REACH);
+    assert(core::state::project::backProjectNavigation(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    assert(navigation.focusedRow.get() == 2U);
+
+    navigation.focusedRow.set(3U);
+    assert(core::state::project::openProjectNameEditor(
+        navigation,
+        ProjectNodeId::MODULATOR_SOURCE_RENAME,
+        "Shared LFO"
+    ));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_RENAME);
+    assert(navigation.activeTab.get() == ProjectTab::MODULATORS);
+    assert(std::string(navigation.editingProjectSlug.data()) == "Shared LFO");
+    assert(core::state::project::backProjectNavigation(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    assert(navigation.focusedRow.get() == 3U);
+    std::cout << "[PASS] test_modulator_workspace_navigation_restores_local_focus\n";
+}
+
 }  // namespace
 
 int main() {
@@ -469,6 +552,8 @@ int main() {
     test_load_project_picker_empty_state_is_disabled();
     test_navigation_wraps_rows();
     test_focus_changes_selection_without_content_revision_change();
+    test_modulator_workspace_layouts_are_semantic_and_bounded();
+    test_modulator_workspace_navigation_restores_local_focus();
 
     std::cout << "\nAll ProjectMenuModel tests passed.\n";
     return 0;

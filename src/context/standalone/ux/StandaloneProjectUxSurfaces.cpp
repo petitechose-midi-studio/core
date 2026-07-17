@@ -74,6 +74,8 @@ FLASHMEM const char* detailProperty(SourceDetailItem item) {
         case SourceDetailItem::SOURCE_DOMAIN: return "domain";
         case SourceDetailItem::REACH: return "reach";
         case SourceDetailItem::DESTINATIONS: return "destinations";
+        case SourceDetailItem::OPTIONS: return "details";
+        case SourceDetailItem::RENAME: return "rename";
     }
     return "source";
 }
@@ -206,6 +208,8 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     const auto node = navigation_.currentNode.get();
     if (node != ProjectNodeId::MODULATORS_ROOT &&
         node != ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
+        node != ProjectNodeId::MODULATOR_SOURCE_OPTIONS &&
+        node != ProjectNodeId::MODULATOR_SOURCE_RENAME &&
         node != ProjectNodeId::MODULATOR_REACH &&
         node != ProjectNodeId::MODULATOR_DESTINATIONS &&
         node != ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
@@ -343,13 +347,19 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                 ? "enabled" : "disabled";
         }
     } else {
-        out.mode = "project.modulator_detail";
+        const bool options = node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS;
+        const bool rename = node == ProjectNodeId::MODULATOR_SOURCE_RENAME;
+        out.mode = rename
+            ? "project.modulator_rename"
+            : (options ? "project.modulator_options"
+                       : "project.modulator_detail");
         out.target = "modulator";
         out.targetIndex = navigation_.focusedRow.get();
-        const auto layout =
-            core::state::project::modulators::sourceDetailLayout(source->kind);
+        const auto layout = options
+            ? core::state::project::modulators::sourceOptionsLayout(source->kind)
+            : core::state::project::modulators::sourceDetailLayout(source->kind);
         const auto item = layout.at(navigation_.focusedRow.get());
-        out.property = detailProperty(item);
+        out.property = rename ? "name" : detailProperty(item);
         if (item == SourceDetailItem::REACH) {
             std::snprintf(out.valueLabel, sizeof(out.valueLabel), "%s", out.routePolicy);
         } else if (item == SourceDetailItem::DESTINATIONS) {
@@ -386,14 +396,20 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
             out.effect = out.property &&
                     std::strcmp(out.property, "split_track") == 0
                 ? "split_modulator_by_track" : "apply_modulator_reach";
-        } else if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
-            out.effect = navigation_.focusedRow.get() == 0U
+        } else if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+                   node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
+            out.effect = node == ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
+                    navigation_.focusedRow.get() == 0U
                 ? "open_modulator_detail"
+                : (out.property && std::strcmp(out.property, "details") == 0
+                ? "open_modulator_options"
                 : (out.property && std::strcmp(out.property, "destinations") == 0
                        ? "open_modulator_destinations"
                        : (out.property && std::strcmp(out.property, "reach") == 0
                               ? "open_modulator_reach"
-                              : "inspect_modulator_property"));
+                              : (out.property && std::strcmp(out.property, "rename") == 0
+                                    ? "open_modulator_rename"
+                                    : "inspect_modulator_property"))));
         } else {
             out.effect = binding ? "focus_modulator_assignment"
                                  : "open_destination_picker";

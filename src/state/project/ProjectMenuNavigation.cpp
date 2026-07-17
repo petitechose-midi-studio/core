@@ -179,11 +179,28 @@ FLASHMEM bool openProjectModulatorWorkspace(
     return openProjectModulatorDetail(navigation, sourceId);
 }
 
-FLASHMEM bool openProjectModulatorDestinations(
+FLASHMEM bool openProjectModulatorOptions(
     ProjectNavigationState& navigation
 ) {
     if (!core::state::modulation::valid(navigation.selectedModulator) ||
-        navigation.currentNode.get() != ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
+        navigation.currentNode.get() !=
+            ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
+        return false;
+    }
+    const uint8_t depth = navigation.depth.get();
+    pushNode(navigation, ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    if (navigation.depth.get() == depth) return false;
+    navigation.notifyContentChanged();
+    return true;
+}
+
+FLASHMEM bool openProjectModulatorDestinations(
+    ProjectNavigationState& navigation
+) {
+    const auto node = navigation.currentNode.get();
+    if (!core::state::modulation::valid(navigation.selectedModulator) ||
+        (node != ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
+         node != ProjectNodeId::MODULATOR_SOURCE_OPTIONS)) {
         return false;
     }
     const uint8_t currentDepth = navigation.depth.get();
@@ -202,8 +219,10 @@ FLASHMEM bool openProjectModulatorDestinations(
 }
 
 FLASHMEM bool openProjectModulatorReach(ProjectNavigationState& navigation) {
+    const auto node = navigation.currentNode.get();
     if (!core::state::modulation::valid(navigation.selectedModulator) ||
-        navigation.currentNode.get() != ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
+        (node != ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
+         node != ProjectNodeId::MODULATOR_SOURCE_OPTIONS)) {
         return false;
     }
     const uint8_t currentDepth = navigation.depth.get();
@@ -363,7 +382,8 @@ FLASHMEM bool openProjectNameEditor(ProjectNavigationState& navigation,
                                     ProjectNodeId editorNode,
                                     const char* initialSlug) {
     if (editorNode != ProjectNodeId::SAVE_AS_PROJECT_NAME &&
-        editorNode != ProjectNodeId::RENAME_PROJECT_NAME) {
+        editorNode != ProjectNodeId::RENAME_PROJECT_NAME &&
+        editorNode != ProjectNodeId::MODULATOR_SOURCE_RENAME) {
         return false;
     }
 
@@ -392,7 +412,7 @@ FLASHMEM bool openProjectNameEditor(ProjectNavigationState& navigation,
     navigation.focusedRowByDepth[nextDepth] = 1;
     navigation.depth.set(nextDepth);
     navigation.currentNode.set(editorNode);
-    navigation.activeTab.set(ProjectTab::STORAGE);
+    navigation.activeTab.set(tabForRootNode(editorNode));
     navigation.focusedRow.set(1);
     navigation.notifyContentChanged();
     return true;

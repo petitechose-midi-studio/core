@@ -1021,6 +1021,55 @@ void testUnknownApplicationIsRejectedAtomically() {
     ) == 0);
 }
 
+void testSourceRenameIsBoundedAndPreservesStableGraphReferences() {
+    Fixture fixture;
+    const auto source = addLfo(fixture, projectReach(), "Original");
+    const auto binding = addBinding(fixture, source, destination(1, 2, 3));
+    const auto stableBinding = fixture.state->outputBindings[0];
+    const auto stableReach = fixture.state->sources[0].reach;
+
+    assert(mod::setProjectModulatorName(
+        *fixture.state,
+        source,
+        "12345678901234567890"
+    ).changed());
+    assert(std::strcmp(
+        fixture.state->sources[0].name.data(),
+        "123456789012345"
+    ) == 0);
+    assert(fixture.state->sources[0].id == source);
+    assert(std::memcmp(
+        &fixture.state->sources[0].reach,
+        &stableReach,
+        sizeof(stableReach)
+    ) == 0);
+    assert(fixture.state->outputBindingCount == 1U);
+    assert(fixture.state->outputBindings[0].id == binding);
+    assert(std::memcmp(
+        &fixture.state->outputBindings[0],
+        &stableBinding,
+        sizeof(stableBinding)
+    ) == 0);
+
+    const auto stable = std::make_unique<mod::ProjectModulationState>(
+        *fixture.state
+    );
+    assert(mod::setProjectModulatorName(*fixture.state, source, nullptr).status ==
+           mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(mod::setProjectModulatorName(*fixture.state, source, "").status ==
+           mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(mod::setProjectModulatorName(
+        *fixture.state,
+        source,
+        "123456789012345"
+    ).status == mod::ProjectModulationStatus::NO_CHANGE);
+    assert(std::memcmp(
+        fixture.state.get(),
+        stable.get(),
+        sizeof(*fixture.state)
+    ) == 0);
+}
+
 void testValidatorRejectsDanglingDuplicateAndBadReferenceCount() {
     Fixture fixture;
     const auto first = addLfo(fixture);
@@ -1121,6 +1170,7 @@ int main() {
     testRuntimeSumClampOrderingAndEnableFlags();
     testNaturalApplicationResolvesSourceDomainBeforeTheHotLoop();
     testUnknownApplicationIsRejectedAtomically();
+    testSourceRenameIsBoundedAndPreservesStableGraphReferences();
     testValidatorRejectsDanglingDuplicateAndBadReferenceCount();
     std::cout << "All Project modulation domain tests passed.\n";
     return 0;

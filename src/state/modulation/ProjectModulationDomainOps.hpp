@@ -221,6 +221,11 @@ ProjectModulationResult setProjectModulatorEnabled(
     ModulatorId sourceId,
     bool enabled
 );
+ProjectModulationResult setProjectModulatorName(
+    ProjectModulationState& state,
+    ModulatorId sourceId,
+    const char* name
+);
 ProjectModulationResult setProjectLfoParameters(
     ProjectModulationState& state,
     ModulatorId sourceId,

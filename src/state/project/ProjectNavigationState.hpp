@@ -41,6 +41,8 @@ enum class ProjectNodeId : uint8_t {
     LOAD_PROJECT_CONFIRM,
     SAVE_AS_PROJECT_NAME,
     RENAME_PROJECT_NAME,
+    MODULATOR_SOURCE_OPTIONS,
+    MODULATOR_SOURCE_RENAME,
 };
 
 struct ProjectBrowserEntry {

@@ -728,6 +728,48 @@ void test_project_source_edits_coalesce_and_restore_exact_source() {
     std::cout << "[PASS] Project source edits coalesce and Undo exactly\n";
 }
 
+void test_project_source_rename_is_one_exact_undo_action() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    const auto sourceId = addProjectLfo(pages, "Original");
+    auto binding = defaultBindingDraft();
+    binding.sourceId = sourceId;
+    assert(addProjectModulationBinding(
+        pages.control.authored.modulation,
+        binding
+    ).changed());
+    const auto graphBefore = pages.control.authored.modulation;
+
+    assert(history.setProjectModulatorName(
+        pages,
+        sourceId,
+        "Shared Motion"
+    ));
+    assert(history.undoCount() == 1U);
+    assert(std::strcmp(
+        pages.control.authored.modulation.sources[0].name.data(),
+        "Shared Motion"
+    ) == 0);
+    assert(pages.control.authored.modulation.outputBindings[0].sourceId ==
+           sourceId);
+    const auto graphAfter = pages.control.authored.modulation;
+
+    assert(history.undo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphAfter,
+        sizeof(graphAfter)
+    ) == 0);
+    std::cout << "[PASS] Project source rename is one exact Undo action\n";
+}
+
 void test_unassigned_lfo_creation_is_one_undo_action() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
@@ -1101,6 +1143,7 @@ int main() {
     test_existing_modulator_cancel_preserves_root_and_is_byte_stable();
     test_existing_modulator_apply_undo_redo_moves_only_binding();
     test_project_source_edits_coalesce_and_restore_exact_source();
+    test_project_source_rename_is_one_exact_undo_action();
     test_unassigned_lfo_creation_is_one_undo_action();
     test_existing_assignment_reach_widening_cancel_and_undo_are_exact();
     test_project_modulator_split_is_one_exact_undo_action();

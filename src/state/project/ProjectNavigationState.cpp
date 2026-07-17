@@ -128,6 +128,8 @@ FLASHMEM ProjectTab tabForRootNode(ProjectNodeId node) {
         case ProjectNodeId::ROUTING_ROOT:
             return ProjectTab::ROUTING;
         case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
+        case ProjectNodeId::MODULATOR_SOURCE_OPTIONS:
+        case ProjectNodeId::MODULATOR_SOURCE_RENAME:
         case ProjectNodeId::MODULATOR_REACH:
         case ProjectNodeId::MODULATOR_DESTINATIONS:
         case ProjectNodeId::MODULATOR_DESTINATION_PICKER:

@@ -1,0 +1,67 @@
+# UX workflow: source-first visual Modulator workspace.
+# Purpose: proves the stable LFO and Recorded Shape grammar, retained curve,
+# temporary exact feedback, local Details/Back, rename, disabled treatment,
+# and an always-visible Destinations action at 320x240.
+# Expect: capture_changed:registry=lfo_workspace, capture_changed:lfo_workspace=shape_feedback, capture_changed:shape_feedback=shape_stable, capture_changed:shape_stable=free_timing_feedback
+# Expect: capture_changed:free_timing_feedback=details_workspace, capture_changed:rename_keyboard=renamed_details, capture_changed:recorded_workspace=recorded_disabled, capture_changed:recorded_disabled=recorded_destinations_focused
+# Expect: semantic:lfo_workspace:effect=open_modulator_detail, semantic:shape_feedback:effect=edit_modulator_property, semantic:details_workspace:mode=project.modulator_options
+
+0 scenario project-modulator-workspace
+
+# Learned Project shortcut opens the compact Project-owned registry.
+100 button LEFT_CENTER down
+700 encoder NAV 1
+780 encoder NAV 2
+860 encoder NAV 3
+940 encoder NAV 4
+1020 encoder NAV 5
+1100 button LEFT_CENTER up
+1320 capture screen registry
+
+# Source level: Shape / Timing / Rate / Details / Destinations.
+1440 tap NAV 60
+1660 capture screen lfo_workspace
+1780 encoder OPT 0.75
+1980 capture screen shape_feedback
+2940 tick
+3100 capture screen shape_stable
+
+# Timing immediately switches the Rate card from musical division to time.
+3220 encoder NAV 1
+3340 encoder OPT 1.0
+3540 capture screen free_timing_feedback
+
+# Details is local and keeps the same curve plus visible Destinations.
+3660 encoder NAV 1
+3740 encoder NAV 1
+3860 tap NAV 60
+4080 capture screen details_workspace
+
+# Rename reuses the controller keyboard and returns locally to Details.
+4200 encoder NAV 1
+4280 encoder NAV 1
+4360 encoder NAV 1
+4480 tap NAV 60
+4700 capture screen rename_keyboard
+4820 tap LEFT_BOTTOM 60
+4940 tap NAV 60
+5060 tap BOTTOM_RIGHT 60
+5280 capture screen renamed_details
+
+# Back remains local first, then restores registry focus. Open Recorded Shape.
+5400 tap LEFT_TOP 60
+5520 tap LEFT_TOP 60
+5640 encoder NAV 1
+5720 encoder NAV 1
+5840 tap NAV 60
+6060 capture screen recorded_workspace
+
+# Disabled remains explicit in header/icon/text; Destinations never clips.
+6180 tap BOTTOM_LEFT 60
+6400 capture screen recorded_disabled
+6520 encoder NAV 1
+6600 encoder NAV 1
+6680 encoder NAV 1
+6900 capture screen recorded_destinations_focused
+7020 tap NAV 60
+7240 capture screen recorded_destinations

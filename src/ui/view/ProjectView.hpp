@@ -19,6 +19,7 @@
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
+#include "ui/project/ProjectModulatorWorkspace.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/view/MainViewFrame.hpp"
 
@@ -96,6 +97,8 @@ private:
     core::app::ExtmemUniquePtr<ms::ui::MenuListView> menu_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
         modulator_registry_;
+    core::app::ExtmemUniquePtr<core::ui::project::ProjectModulatorWorkspace>
+        modulator_workspace_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> left_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
     std::array<ms::ui::MenuRow, core::state::project::ProjectMenuPage::MAX_ROWS> rows_{};

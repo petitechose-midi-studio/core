@@ -1238,6 +1238,27 @@ FLASHMEM ProjectModulationResult setProjectModulatorEnabled(
     return result(ProjectModulationStatus::OK, sourceId);
 }
 
+FLASHMEM ProjectModulationResult setProjectModulatorName(
+    ProjectModulationState& state,
+    ModulatorId sourceId,
+    const char* name
+) {
+    auto* source = findProjectModulator(state, sourceId);
+    if (source == nullptr) {
+        return result(ProjectModulationStatus::INVALID_ID, sourceId);
+    }
+    if (name == nullptr || name[0] == '\0') {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
+    }
+    std::array<char, PROJECT_MODULATOR_NAME_CAPACITY> next{};
+    copyName(next, name, nullptr);
+    if (source->name == next) {
+        return result(ProjectModulationStatus::NO_CHANGE, sourceId);
+    }
+    source->name = next;
+    return result(ProjectModulationStatus::OK, sourceId);
+}
+
 FLASHMEM ProjectModulationResult setProjectLfoParameters(
     ProjectModulationState& state,
     ModulatorId sourceId,

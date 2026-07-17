@@ -23,15 +23,15 @@ FLASHMEM const char* shapeLabel(ModulatorLfoShape shape) {
 }
 
 FLASHMEM const char* timingLabel(ModulatorTimingMode timing) {
-    return timing == ModulatorTimingMode::FREE ? "Free" : "Sync";
+    return timing == ModulatorTimingMode::FREE ? "Free" : "Tempo Sync";
 }
 
 FLASHMEM const char* retriggerLabel(ModulatorRetriggerPolicy retrigger) {
     switch (retrigger) {
-        case ModulatorRetriggerPolicy::TRANSPORT: return "Transport";
-        case ModulatorRetriggerPolicy::EXPLICIT_TRIGGER: return "Explicit";
+        case ModulatorRetriggerPolicy::TRANSPORT: return "On Play";
+        case ModulatorRetriggerPolicy::EXPLICIT_TRIGGER: return "Triggered";
         case ModulatorRetriggerPolicy::FREE_RUNNING:
-        default: return "Free Running";
+        default: return "Free Run";
     }
 }
 
@@ -390,7 +390,7 @@ FLASHMEM void populateSourceDetailRow(
             break;
         }
         case SourceDetailItem::RETRIGGER:
-            setText(out.key, "Retrigger");
+            setText(out.key, "Run");
             setText(out.value, retriggerLabel(source.parameters.lfo.retrigger));
             setText(out.icon, standalone::icons::CYCLE_STATE);
             break;
@@ -423,10 +423,78 @@ FLASHMEM void populateSourceDetailRow(
             break;
         }
         case SourceDetailItem::REACH:
-            setText(out.key, "Reach");
+            setText(out.key, "Available in");
             formatReach(value, sizeof(value), source.reach);
             setText(out.value, value);
             setText(out.icon, standalone::icons::ROUTE_PIN);
+            break;
+        case SourceDetailItem::OPTIONS:
+            setText(out.key, "Details");
+            setText(out.value, "More >");
+            setText(out.icon, standalone::icons::SETTINGS_GEAR);
+            break;
+        case SourceDetailItem::RENAME:
+            setText(out.key, "Rename");
+            setText(out.value, source.name.data());
+            setText(out.icon, standalone::icons::ACTION_PLACE_TARGET);
+            break;
+        case SourceDetailItem::DESTINATIONS:
+            setText(out.key, "Destinations");
+            std::snprintf(
+                value,
+                sizeof(value),
+                "%u >",
+                static_cast<unsigned>(sourceDestinationCount(
+                    control.authored.modulation,
+                    source.id
+                ))
+            );
+            setText(out.value, value);
+            setText(out.icon, standalone::icons::ROUTING);
+            break;
+        default:
+            break;
+    }
+}
+
+FLASHMEM void populateSourceOptionsRow(
+    const ProjectControlState& control,
+    const ModulatorSourceState& source,
+    int index,
+    ms::ui::KeyValueRowBuffer& out
+) {
+    const auto layout = sourceOptionsLayout(source.kind);
+    if (index < 0 || index >= layout.count) return;
+    const auto item = layout.at(static_cast<uint8_t>(index));
+    out.iconFont = standalone_fonts.icons_14;
+    out.iconColor = standalone::theme::color::MACRO_MODULATION;
+    char value[32]{};
+    switch (item) {
+        case SourceDetailItem::PHASE: {
+            setText(out.key, "Phase");
+            const int32_t percent =
+                (static_cast<int32_t>(source.parameters.lfo.phaseQ15) + 32767) *
+                100 / 65534;
+            std::snprintf(value, sizeof(value), "%ld%%", static_cast<long>(percent));
+            setText(out.value, value);
+            setText(out.icon, standalone::icons::OFFSET);
+            break;
+        }
+        case SourceDetailItem::RETRIGGER:
+            setText(out.key, "Run");
+            setText(out.value, retriggerLabel(source.parameters.lfo.retrigger));
+            setText(out.icon, standalone::icons::CYCLE_STATE);
+            break;
+        case SourceDetailItem::REACH:
+            setText(out.key, "Available in");
+            formatReach(value, sizeof(value), source.reach);
+            setText(out.value, value);
+            setText(out.icon, standalone::icons::ROUTE_PIN);
+            break;
+        case SourceDetailItem::RENAME:
+            setText(out.key, "Rename");
+            setText(out.value, source.name.data());
+            setText(out.icon, standalone::icons::ACTION_PLACE_TARGET);
             break;
         case SourceDetailItem::DESTINATIONS:
             setText(out.key, "Destinations");

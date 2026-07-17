@@ -18,6 +18,8 @@ enum class SourceDetailItem : uint8_t {
     SOURCE_DOMAIN,
     REACH,
     DESTINATIONS,
+    OPTIONS,
+    RENAME,
 };
 
 enum class ReachChoiceKind : uint8_t {
@@ -64,6 +66,10 @@ struct SourceDetailLayout {
 };
 
 SourceDetailLayout sourceDetailLayout(
+    core::state::modulation::ModulatorKind kind
+);
+
+SourceDetailLayout sourceOptionsLayout(
     core::state::modulation::ModulatorKind kind
 );
 

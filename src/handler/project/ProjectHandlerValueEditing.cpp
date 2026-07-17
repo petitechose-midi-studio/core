@@ -231,6 +231,11 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         item = core::state::project::modulators::sourceDetailLayout(source->kind).at(
             navigation_.focusedRow.get()
         );
+    } else if (node ==
+               core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
+        item = core::state::project::modulators::sourceOptionsLayout(source->kind).at(
+            navigation_.focusedRow.get()
+        );
     } else if (node != core::state::project::ProjectNodeId::MODULATORS_ROOT) {
         return false;
     }
@@ -303,8 +308,12 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             break;
         }
         case Item::RETRIGGER:
+            if (parameters.retrigger ==
+                ModulatorRetriggerPolicy::EXPLICIT_TRIGGER) {
+                return false;
+            }
             parameters.retrigger = static_cast<ModulatorRetriggerPolicy>(
-                normalizedToIndex(value, 3)
+                normalizedToIndex(value, 2)
             );
             break;
         default:

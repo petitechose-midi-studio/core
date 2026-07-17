@@ -74,6 +74,8 @@ ProjectHandler::focusedModulator() {
     auto& graph = pages_.control.authored.modulation;
     const auto node = navigation_.currentNode.get();
     if (node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
+        node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME ||
         node == core::state::project::ProjectNodeId::MODULATOR_REACH ||
         node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
         (node ==
@@ -136,6 +138,12 @@ FLASHMEM uint16_t ProjectHandler::focusedModulatorDetailRowCount() const {
         return core::state::project::modulators::sourceReachChoiceLayout(
             pages_.control.authored.modulation,
             source->id
+        ).count;
+    }
+    if (navigation_.currentNode.get() ==
+        core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
+        return core::state::project::modulators::sourceOptionsLayout(
+            source->kind
         ).count;
     }
     return core::state::project::modulators::sourceDetailLayout(source->kind).count;
@@ -246,7 +254,8 @@ FLASHMEM void ProjectHandler::releaseModulatorBottomLeft() {
 FLASHMEM void ProjectHandler::beginModulatorBottomRight() {
     const auto node = navigation_.currentNode.get();
     if (node != core::state::project::ProjectNodeId::MODULATORS_ROOT &&
-        node != core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
+        node != core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
+        node != core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
         return;
     }
     const auto* source = focusedModulator();
@@ -432,15 +441,10 @@ FLASHMEM void ProjectHandler::deleteGuardedModulator() {
         navigation_.setLifecycleFeedback("Delete failed");
         return;
     }
-    if (navigation_.currentNode.get() ==
-            core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
-        navigation_.currentNode.get() ==
-            core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS) {
+    while (navigation_.depth.get() > 0U &&
+           navigation_.currentNode.get() !=
+               core::state::project::ProjectNodeId::MODULATORS_ROOT) {
         (void)core::state::project::backProjectNavigation(navigation_);
-        if (navigation_.currentNode.get() ==
-            core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
-            (void)core::state::project::backProjectNavigation(navigation_);
-        }
     }
     const uint16_t remaining = graph.sourceCount;
     const uint16_t next = sourceIndex < remaining
@@ -470,6 +474,8 @@ void ProjectHandler::update(uint32_t nowMs) {
          navigation_.currentNode.get() ==
              core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
          navigation_.currentNode.get() ==
+             core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
+         navigation_.currentNode.get() ==
              core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS);
     const bool bottomLeftPressed = buttons_.isPressed(Config::ButtonID::BOTTOM_LEFT);
     if (modulatorContext && bottomLeftPressed &&
@@ -490,7 +496,9 @@ void ProjectHandler::update(uint32_t nowMs) {
         (navigation_.currentNode.get() ==
              core::state::project::ProjectNodeId::MODULATORS_ROOT ||
          navigation_.currentNode.get() ==
-             core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+             core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+         navigation_.currentNode.get() ==
+             core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
     const bool bottomRightPressed =
         buttons_.isPressed(Config::ButtonID::BOTTOM_RIGHT);
     if (clipboardContext && bottomRightPressed &&

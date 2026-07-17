@@ -8,19 +8,27 @@ using namespace core::state::modulation;
 
 FLASHMEM SourceDetailLayout sourceDetailLayout(ModulatorKind kind) {
     SourceDetailLayout out{};
-    out.append(SourceDetailItem::PREVIEW);
-    out.append(SourceDetailItem::ENABLED);
     if (kind == ModulatorKind::LFO) {
         out.append(SourceDetailItem::SHAPE);
-        out.append(SourceDetailItem::RATE);
         out.append(SourceDetailItem::TIMING);
-        out.append(SourceDetailItem::PHASE);
-        out.append(SourceDetailItem::RETRIGGER);
+        out.append(SourceDetailItem::RATE);
     } else {
         out.append(SourceDetailItem::LENGTH);
         out.append(SourceDetailItem::SOURCE_DOMAIN);
     }
+    out.append(SourceDetailItem::OPTIONS);
+    out.append(SourceDetailItem::DESTINATIONS);
+    return out;
+}
+
+FLASHMEM SourceDetailLayout sourceOptionsLayout(ModulatorKind kind) {
+    SourceDetailLayout out{};
+    if (kind == ModulatorKind::LFO) {
+        out.append(SourceDetailItem::PHASE);
+        out.append(SourceDetailItem::RETRIGGER);
+    }
     out.append(SourceDetailItem::REACH);
+    out.append(SourceDetailItem::RENAME);
     out.append(SourceDetailItem::DESTINATIONS);
     return out;
 }
