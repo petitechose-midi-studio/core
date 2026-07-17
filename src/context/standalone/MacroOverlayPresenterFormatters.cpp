@@ -1370,6 +1370,24 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             count == 1U ? "1 assignment" : "%u assignments",
             static_cast<unsigned>(count)
         );
+        const auto navigationFeedback =
+            source.macroEdit.modulatorNavigationFeedback.get();
+        if (navigationFeedback == core::state::
+                MacroModulatorNavigationFeedback::SOURCE_UNAVAILABLE) {
+            std::snprintf(
+                data.meta.data(), data.meta.size(), "%s", "Source removed"
+            );
+        } else if (navigationFeedback == core::state::
+                       MacroModulatorNavigationFeedback::ASSIGNMENT_UNAVAILABLE) {
+            std::snprintf(
+                data.meta.data(), data.meta.size(), "%s", "Assignment removed"
+            );
+        } else if (navigationFeedback == core::state::
+                       MacroModulatorNavigationFeedback::CONTEXT_CHANGED) {
+            std::snprintf(
+                data.meta.data(), data.meta.size(), "%s", "Context updated"
+            );
+        }
         data.rowCount = static_cast<int>(count) + (count > 1U ? 2 : 1);
         data.selectedIndex = std::clamp(
             static_cast<int>(source.macroEdit.modulationFocusedRow.get()),
@@ -1379,8 +1397,11 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         data.rowProvider = &provideModulationAssignmentRow;
         data.rowProviderContext = const_cast<Source*>(&source);
         data.dataRevision = mixRevision(
-            source.pages.control.authoredRevision,
-            static_cast<uint32_t>(data.selectedIndex)
+            mixRevision(
+                source.pages.control.authoredRevision,
+                static_cast<uint32_t>(data.selectedIndex)
+            ),
+            static_cast<uint32_t>(navigationFeedback)
         );
         data.visible = true;
         return data;
@@ -1389,12 +1410,35 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
     if (phase == core::state::MacroEditFlowPhase::MODULATOR_CREATE ||
         (phase == core::state::MacroEditFlowPhase::MODULATION &&
          !modulationStored)) {
+        const auto navigationFeedback =
+            source.macroEdit.modulatorNavigationFeedback.get();
         const bool reusable =
             source.pages.control.authored.modulation.sourceCount > 0U;
         if (phase == core::state::MacroEditFlowPhase::MODULATOR_CREATE) {
             std::snprintf(
                 data.meta.data(), data.meta.size(), "%s", "Add source"
             );
+        }
+        if (phase == core::state::MacroEditFlowPhase::MODULATION) {
+            if (navigationFeedback == core::state::
+                    MacroModulatorNavigationFeedback::SOURCE_UNAVAILABLE) {
+                std::snprintf(
+                    data.meta.data(), data.meta.size(), "%s", "Source removed"
+                );
+            } else if (navigationFeedback == core::state::
+                           MacroModulatorNavigationFeedback::ASSIGNMENT_UNAVAILABLE) {
+                std::snprintf(
+                    data.meta.data(),
+                    data.meta.size(),
+                    "%s",
+                    "Assignment removed"
+                );
+            } else if (navigationFeedback == core::state::
+                           MacroModulatorNavigationFeedback::CONTEXT_CHANGED) {
+                std::snprintf(
+                    data.meta.data(), data.meta.size(), "%s", "Context updated"
+                );
+            }
         }
         std::snprintf(
             data.valueBuffers[0].data(),
@@ -1423,9 +1467,12 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             1
         );
         data.dataRevision = mixRevision(
-            source.pages.control.authoredRevision,
-            static_cast<uint32_t>(data.selectedIndex) |
-                (reusable ? (1UL << 8U) : 0U)
+            mixRevision(
+                source.pages.control.authoredRevision,
+                static_cast<uint32_t>(data.selectedIndex) |
+                    (reusable ? (1UL << 8U) : 0U)
+            ),
+            static_cast<uint32_t>(navigationFeedback)
         );
         data.visible = true;
         return data;

@@ -75,7 +75,7 @@ private:
     oc::state::StaticWatchGroup<1> phase_watcher_;
     oc::state::StaticWatchGroup<1> clipboard_watcher_;
     oc::state::StaticWatchGroup<11> edit_watcher_;
-    oc::state::StaticWatchGroup<11> automation_watcher_;
+    oc::state::StaticWatchGroup<12> automation_watcher_;
     oc::state::StaticWatchGroup<2> edit_selector_watcher_;
     oc::state::StaticWatchGroup<1> page_selector_watcher_;
     oc::state::StaticWatchGroup<1> target_selector_watcher_;

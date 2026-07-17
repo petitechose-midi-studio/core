@@ -54,14 +54,16 @@ int main() {
     assert(bindings.bind(stateRefs, &probe, &Probe::invalidate));
     assert(bindings.phaseSubscriptionCount() == 1);
     assert(macroEdit.flowPhase.subscriberCount() == 1);
-    assert(bindings.subscriptionCount() == 28);
+    assert(bindings.subscriptionCount() == 29);
+    assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 1);
     assert(clipboard.revision.subscriberCount() == 1);
 
     // Rebinding replaces every RAII subscription instead of accumulating them.
     assert(bindings.bind(stateRefs, &probe, &Probe::invalidate));
     assert(bindings.phaseSubscriptionCount() == 1);
     assert(macroEdit.flowPhase.subscriberCount() == 1);
-    assert(bindings.subscriptionCount() == 28);
+    assert(bindings.subscriptionCount() == 29);
+    assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 1);
     assert(clipboard.revision.subscriberCount() == 1);
 
     macroEdit.flowPhase.set(core::state::MacroEditFlowPhase::EDIT);
@@ -85,6 +87,7 @@ int main() {
     bindings.clear();
     assert(bindings.subscriptionCount() == 0);
     assert(macroEdit.flowPhase.subscriberCount() == 0);
+    assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 0);
     assert(clipboard.revision.subscriberCount() == 0);
 
     std::cout << "Macro overlay invalidation binding tests passed\n";

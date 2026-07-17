@@ -7,6 +7,7 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
+#include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
@@ -23,6 +24,7 @@
 #include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 
@@ -67,7 +69,9 @@ namespace core::context::standalone {
 class MacroFeatureModule {
 public:
     struct StateRefs {
+        oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
+        core::state::project::ProjectNavigationState& projectNavigation;
         core::state::MacroState& macros;
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;

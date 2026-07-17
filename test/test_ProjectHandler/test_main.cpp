@@ -24,6 +24,8 @@
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
+#include "../../src/state/modulation/ProjectControlMacroOps.hpp"
+#include "../../src/state/project/ProjectMenuModel.hpp"
 #include "../../src/state/project/ProjectNameKeyboard.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../support/CoreStorages.hpp"
@@ -99,6 +101,7 @@ struct ProjectHandlerHarness {
                       state.statusBar,
                       state.midiSync,
                        state.pages,
+                       state.macroEdit,
                        state.configRevision,
                        state.macroHistory,
                        state.structureClipboard,
@@ -1432,6 +1435,130 @@ void test_project_modulator_reach_page_splits_one_track_with_one_undo() {
     std::cout << "[PASS] Reach page Split is explicit and one exact Undo\n";
 }
 
+void test_macro_deep_link_back_restores_exact_assignment() {
+    using namespace core::state::modulation;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+    auto& graph = h.state.pages.control.authored.modulation;
+
+    ModulatorLfoDraft firstDraft{};
+    firstDraft.name = "LFO 1";
+    firstDraft.reach = {.kind = ModulatorReachKind::PROJECT};
+    const auto firstSource = createLfoModulator(graph, firstDraft);
+    assert(firstSource.changed());
+    ModulatorLfoDraft secondDraft = firstDraft;
+    secondDraft.name = "LFO 2";
+    const auto secondSource = createLfoModulator(graph, secondDraft);
+    assert(secondSource.changed());
+
+    const auto destination = projectControlDestination({0, 0, 0});
+    ModulationBindingDraft binding{};
+    binding.sourceId = firstSource.sourceId;
+    binding.destination = destination;
+    binding.amountQ15 = 4096;
+    assert(addProjectModulationBinding(graph, binding).changed());
+    binding.sourceId = secondSource.sourceId;
+    binding.amountQ15 = 12288;
+    const auto selected = addProjectModulationBinding(graph, binding);
+    assert(selected.changed());
+
+    h.state.macroEdit.openEditor(0, 0, 0, 0);
+    h.state.macroEdit.openModulation(2);
+    assert(core::state::project::openProjectModulatorWorkspace(
+        h.state.projectNavigation,
+        secondSource.sourceId
+    ));
+    h.state.projectNavigation.modulatorReturn = {
+        .sourceId = secondSource.sourceId,
+        .bindingId = selected.bindingId,
+        .macroAddress = {0, 0, 0},
+        .caller = core::state::project::
+            ModulatorNavigationCaller::MACRO_ASSIGNMENT,
+        .focusedRow = 2,
+    };
+    h.state.activeView.set(core::ui::ViewType::PROJECT);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+
+    assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
+    assert(h.state.overlays.current() ==
+           core::ui::OverlayType::MACRO_AUTOMATION);
+    assert(h.state.macroEdit.visible.get());
+    assert(h.state.macroEdit.automationVisible.get());
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATION);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 2U);
+    assert(projectControlFocusedModulationBinding(
+               h.state.pages.control,
+               {0, 0, 0}
+           ) == selected.bindingId);
+    assert(!h.state.projectNavigation.modulatorReturn.active());
+    assert(h.state.macroEdit.modulatorNavigationFeedback.get() ==
+           core::state::MacroModulatorNavigationFeedback::NONE);
+
+    std::cout << "[PASS] Back restores the exact Macro assignment by stable ID\n";
+}
+
+void test_macro_deep_link_deleted_source_returns_with_explicit_fallback() {
+    using namespace core::state::modulation;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+    auto& authored = h.state.pages.control.authored;
+
+    ModulatorLfoDraft draft{};
+    draft.name = "Transient LFO";
+    draft.reach = {.kind = ModulatorReachKind::PROJECT};
+    const auto source = createLfoModulator(authored.modulation, draft);
+    assert(source.changed());
+    ModulationBindingDraft binding{};
+    binding.sourceId = source.sourceId;
+    binding.destination = projectControlDestination({0, 0, 0});
+    const auto assigned = addProjectModulationBinding(
+        authored.modulation,
+        binding
+    );
+    assert(assigned.changed());
+
+    h.state.macroEdit.openEditor(0, 0, 0, 0);
+    h.state.macroEdit.openModulation(0);
+    assert(core::state::project::openProjectModulatorWorkspace(
+        h.state.projectNavigation,
+        source.sourceId
+    ));
+    h.state.projectNavigation.modulatorReturn = {
+        .sourceId = source.sourceId,
+        .bindingId = assigned.bindingId,
+        .macroAddress = {0, 0, 0},
+        .caller = core::state::project::
+            ModulatorNavigationCaller::MACRO_ASSIGNMENT,
+        .focusedRow = 0,
+    };
+    assert(deleteProjectModulator(
+        authored.modulation,
+        authored.curves,
+        source.sourceId
+    ).changed());
+    assert(core::state::project::backProjectNavigation(
+        h.state.projectNavigation
+    ));
+    assert(h.state.projectNavigation.depth.get() == 0U);
+    h.state.activeView.set(core::ui::ViewType::PROJECT);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+
+    assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
+    assert(h.state.overlays.current() ==
+           core::ui::OverlayType::MACRO_AUTOMATION);
+    assert(h.state.macroEdit.visible.get());
+    assert(h.state.macroEdit.automationVisible.get());
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 0U);
+    assert(h.state.macroEdit.modulatorNavigationFeedback.get() ==
+           core::state::MacroModulatorNavigationFeedback::SOURCE_UNAVAILABLE);
+    assert(!h.state.projectNavigation.modulatorReturn.active());
+
+    std::cout << "[PASS] Deleted source returns to a visible deterministic fallback\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1468,6 +1595,8 @@ int main() {
     test_project_modulator_explicit_unassigned_creation();
     test_project_modulator_source_copy_and_guarded_paste();
     test_project_modulator_reach_page_splits_one_track_with_one_undo();
+    test_macro_deep_link_back_restores_exact_assignment();
+    test_macro_deep_link_deleted_source_returns_with_explicit_fallback();
 
     std::cout << "\nAll ProjectHandler tests passed.\n";
     return 0;

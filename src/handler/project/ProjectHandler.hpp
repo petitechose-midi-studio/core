@@ -11,6 +11,7 @@
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/MidiSyncState.hpp"
+#include "state/MacroEditState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroPagesState.hpp"
@@ -32,6 +33,7 @@ public:
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
         core::state::macro::MacroPagesState& pages;
+        core::state::MacroEditState& macroEdit;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::macro::MacroHistoryService& macroHistory;
         core::state::StructureClipboardState& clipboard;
@@ -120,6 +122,7 @@ private:
     core::state::StatusBarState& status_bar_;
     core::state::MidiSyncState& midi_sync_;
     core::state::macro::MacroPagesState& pages_;
+    core::state::MacroEditState& macro_edit_;
     oc::state::Signal<uint32_t>& config_revision_;
     core::state::macro::MacroHistoryService& macro_history_;
     core::state::StructureClipboardState& clipboard_;

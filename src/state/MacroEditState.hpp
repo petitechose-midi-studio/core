@@ -44,6 +44,13 @@ enum class MacroContextButton : uint8_t {
     BOTTOM_RIGHT,
 };
 
+enum class MacroModulatorNavigationFeedback : uint8_t {
+    NONE = 0,
+    SOURCE_UNAVAILABLE,
+    ASSIGNMENT_UNAVAILABLE,
+    CONTEXT_CHANGED,
+};
+
 /**
  * @brief State for macro edit overlay
  *
@@ -96,6 +103,8 @@ struct MacroEditState {
     oc::state::Signal<uint8_t, 4> automationFocusedRow{0};
     /// Focused row in the modulation lifecycle overlay.
     oc::state::Signal<uint8_t, 4> modulationFocusedRow{0};
+    oc::state::Signal<MacroModulatorNavigationFeedback, 4>
+        modulatorNavigationFeedback{MacroModulatorNavigationFeedback::NONE};
 
     struct ConversionPreviewState {
         core::state::macro::MacroAutomationConversionPolicy policy =
@@ -122,6 +131,7 @@ struct MacroEditState {
     uint8_t openedByMacroIndex = 0;
     uint32_t openedAtMs = 0;
     bool pendingOpenReleaseDecision = false;
+    uint32_t modulatorNavigationFeedbackUntilMs = 0;
 
     ~MacroEditState();
 
@@ -186,6 +196,14 @@ struct MacroEditState {
     );
 
     void closeConvertPreview();
+
+    void setModulatorNavigationFeedback(
+        MacroModulatorNavigationFeedback feedback,
+        uint32_t nowMs,
+        uint32_t durationMs = 1500U
+    );
+
+    void updateModulatorNavigationFeedback(uint32_t nowMs);
 
     void loadActiveConfig(uint8_t index, uint8_t channel, uint8_t cc);
 

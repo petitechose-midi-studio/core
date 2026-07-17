@@ -95,6 +95,10 @@ bool openProjectModulatorDetail(
     ProjectNavigationState& navigation,
     core::state::modulation::ModulatorId sourceId
 );
+bool openProjectModulatorWorkspace(
+    ProjectNavigationState& navigation,
+    core::state::modulation::ModulatorId sourceId
+);
 bool openProjectModulatorDestinations(ProjectNavigationState& navigation);
 bool openProjectModulatorReach(ProjectNavigationState& navigation);
 bool openProjectModulatorDestinationPicker(

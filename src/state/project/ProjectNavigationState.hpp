@@ -9,6 +9,7 @@
 #include "state/project/ProjectNameKeyboard.hpp"
 #include "state/project/ProjectState.hpp"
 #include "state/contextual/GuardedActionState.hpp"
+#include "state/macro/MacroAutomationState.hpp"
 #include "state/modulation/ModulationIds.hpp"
 
 namespace core::state::project {
@@ -59,6 +60,31 @@ struct ProjectBrowserState {
     bool add(const char* id, uint32_t sizeBytes);
 };
 
+enum class ModulatorNavigationCaller : uint8_t {
+    NONE = 0,
+    MACRO_ASSIGNMENT,
+};
+
+/**
+ * Session-only return address for a Macro -> Project Modulator deep-link.
+ *
+ * Stable graph IDs are retained instead of row ordinals so a source edit can
+ * reorder the registry without making Back land on another assignment.
+ */
+struct ModulatorReturnContext {
+    core::state::modulation::ModulatorId sourceId{};
+    core::state::modulation::ModulationBindingId bindingId{};
+    core::state::macro::MacroAutomationSlotAddress macroAddress{};
+    ModulatorNavigationCaller caller = ModulatorNavigationCaller::NONE;
+    uint8_t focusedRow = 0;
+
+    [[nodiscard]] constexpr bool active() const {
+        return caller != ModulatorNavigationCaller::NONE;
+    }
+};
+
+static_assert(sizeof(ModulatorReturnContext) <= 16U);
+
 struct ProjectNavigationState {
     static constexpr uint8_t MAX_DEPTH = 4;
 
@@ -73,6 +99,7 @@ struct ProjectNavigationState {
 
     core::state::modulation::ModulatorId selectedModulator{};
     core::state::modulation::ModulationBindingId selectedModulationBinding{};
+    ModulatorReturnContext modulatorReturn{};
     core::state::modulation::ModulatorId guardedModulator{};
     oc::state::Signal<core::state::contextual::GuardedActionState, 6>
         modulatorGuard{};

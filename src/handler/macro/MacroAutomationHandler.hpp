@@ -5,10 +5,14 @@
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
+#include <oc/state/ExclusiveVisibilityStack.hpp>
+#include <oc/state/Signal.hpp>
 
 #include "app/OverlayTypes.hpp"
+#include "app/ViewTypes.hpp"
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "state/MacroEditState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 
 namespace core::handler {
 
@@ -17,6 +21,9 @@ public:
     using NowProvider = uint32_t (*)();
 
     struct StateRefs {
+        oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
+        oc::state::Signal<core::ui::ViewType, 8>& activeView;
+        core::state::project::ProjectNavigationState& projectNavigation;
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
     };
@@ -71,6 +78,9 @@ private:
     bool cancelModulatorAudition();
     bool applyModulatorAudition();
 
+    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_state_;
+    oc::state::Signal<core::ui::ViewType, 8>& active_view_;
+    core::state::project::ProjectNavigationState& project_navigation_;
     core::state::MacroEditState& macro_edit_;
     core::state::macro::MacroPagesState& pages_;
     MacroEditDomainServices services_;
@@ -82,6 +92,7 @@ private:
     core::state::MacroEditFlowPhase observed_flow_phase_ =
         core::state::MacroEditFlowPhase::CLOSED;
     bool coarse_edit_active_ = false;
+    bool macro_view_was_active_ = true;
 };
 
 }  // namespace core::handler

@@ -275,6 +275,9 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
     );
     automation_handler_ = core::app::makeExtmemUnique<core::handler::MacroAutomationHandler>(
         core::handler::MacroAutomationHandler::StateRefs{
+            stateRefs.overlays,
+            stateRefs.activeView,
+            stateRefs.projectNavigation,
             stateRefs.macroEdit,
             stateRefs.pages,
         },

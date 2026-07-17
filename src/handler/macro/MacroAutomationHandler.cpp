@@ -7,6 +7,7 @@
 #include <config/Timing.hpp>
 
 #include "handler/common/ModalSelectionUtils.hpp"
+#include "handler/common/ModulatorNavigationWorkflow.hpp"
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/macro/MacroAutomationEditorModel.hpp"
 #include "handler/macro/MacroGuardedActionWorkflow.hpp"
@@ -207,14 +208,20 @@ FLASHMEM MacroAutomationHandler::MacroAutomationHandler(
     oc::type::ScopeID automationScope,
     NowProvider nowProvider
 )
-    : macro_edit_(state.macroEdit)
+    : overlays_state_(state.overlays)
+    , active_view_(state.activeView)
+    , project_navigation_(state.projectNavigation)
+    , macro_edit_(state.macroEdit)
     , pages_(state.pages)
     , services_(services)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
     , automation_scope_(automationScope)
-    , now_provider_(nowProvider) {
+    , now_provider_(nowProvider)
+    , macro_view_was_active_(
+          state.activeView.get() == core::ui::ViewType::MACRO
+      ) {
     setupBindings();
 }
 
@@ -637,6 +644,12 @@ FLASHMEM void MacroAutomationHandler::backToMacroEdit() {
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::MACRO_AUTOMATION);
     if (modulationDetailActive()) macro_edit_.closeModulation();
     else macro_edit_.closeAutomation();
+    // A cross-view deep-link restores the detail child without retaining a
+    // hidden parent in the overlay stack. Materialize that parent only when
+    // Back actually returns to Macro Edit.
+    if (!overlays_.hasVisible() && macro_edit_.visible.get()) {
+        overlays_.show(core::ui::OverlayType::MACRO_EDIT, false);
+    }
 }
 
 FLASHMEM void MacroAutomationHandler::toggleFocusedPlayback() {
@@ -951,6 +964,11 @@ FLASHMEM void MacroAutomationHandler::commitGuardedAction(uint32_t nowMs) {
 }
 
 FLASHMEM void MacroAutomationHandler::update(uint32_t nowMs) {
+    macro_edit_.updateModulatorNavigationFeedback(nowMs);
+    const bool macroViewActive =
+        active_view_.get() == core::ui::ViewType::MACRO;
+    const bool macroViewReentered = macroViewActive && !macro_view_was_active_;
+    macro_view_was_active_ = macroViewActive;
     const auto flowPhase = macro_edit_.flowPhase.get();
     if (flowPhase != observed_flow_phase_) {
         observed_flow_phase_ = flowPhase;
@@ -964,6 +982,10 @@ FLASHMEM void MacroAutomationHandler::update(uint32_t nowMs) {
             // starts from the value shown on screen.
             configureOptForFocusedRow();
         }
+    } else if (macroViewReentered && active()) {
+        // The global view lifecycle restores generic OPT mechanics. Reapply
+        // the focused source value before the first post-return user turn.
+        configureOptForFocusedRow();
     }
     if (!active()) return;
     // Progress may reach COMMITTED while held, but the domain mutation waits
@@ -1012,6 +1034,19 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
                 (void)services_.focusModulationBinding(
                     macroIndex(),
                     binding->id
+                );
+                services_.endDepthGesture();
+                (void)modulator_navigation::openSourceFromMacro(
+                    {
+                        overlays_state_,
+                        active_view_,
+                        project_navigation_,
+                        macro_edit_,
+                        pages_,
+                    },
+                    macroIndex(),
+                    binding->id,
+                    static_cast<uint8_t>(row)
                 );
             } else if (rows.addRow(row)) {
                 macro_edit_.openModulatorCreate();

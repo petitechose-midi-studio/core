@@ -61,6 +61,9 @@ struct MacroAutomationHarness {
         , encoders(inputBinding, encoderHw)
         , overlays(state.overlays, buttons)
         , handler(core::handler::MacroAutomationHandler::StateRefs{
+                      state.overlays,
+                      state.activeView,
+                      state.projectNavigation,
                       state.macroEdit,
                       state.pages,
                   },
@@ -156,6 +159,72 @@ struct MacroAutomationHarness {
         state.flush();
     }
 };
+
+void test_assignment_tap_opens_exact_source_workspace() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    h.configureModulation();
+    h.openModulationEditor();
+
+    const auto& graph = h.state.pages.control.authored.modulation;
+    assert(graph.sourceCount == 1U);
+    assert(graph.outputBindingCount == 1U);
+    const auto sourceId = graph.sources[0].id;
+    const auto bindingId = graph.outputBindings[0].id;
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+
+    assert(h.state.activeView.get() == core::ui::ViewType::PROJECT);
+    assert(!h.state.overlays.hasVisible());
+    assert(h.state.projectNavigation.currentNode.get() ==
+           core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    assert(h.state.projectNavigation.selectedModulator == sourceId);
+    assert(h.state.projectNavigation.modulatorReturn.active());
+    assert(h.state.projectNavigation.modulatorReturn.sourceId == sourceId);
+    assert(h.state.projectNavigation.modulatorReturn.bindingId == bindingId);
+    assert(h.state.projectNavigation.modulatorReturn.focusedRow == 0U);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATION);
+
+    std::cout << "[PASS] Assignment tap opens its exact source workspace\n";
+}
+
+void test_macro_view_return_resynchronizes_focused_depth_encoder() {
+    MacroAutomationHarness h;
+    h.configureModulation();
+    h.openModulationEditor();
+    h.handler.update(0U);
+
+    const auto opt = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
+    assert(std::fabs(h.encoderHw.getPosition(opt) - 0.75f) < 0.0001f);
+    h.state.activeView.set(core::ui::ViewType::PROJECT);
+    h.handler.update(10U);
+    h.encoderHw.setPosition(opt, 0.0f);
+
+    h.state.activeView.set(core::ui::ViewType::MACRO);
+    h.handler.update(20U);
+
+    assert(h.encoderHw.getDiscreteSteps(opt) == 201U);
+    assert(std::fabs(h.encoderHw.getPosition(opt) - 0.75f) < 0.0001f);
+    std::cout << "[PASS] Macro return resynchronizes focused Depth before input\n";
+}
+
+void test_unstacked_modulation_back_materializes_macro_editor_parent() {
+    MacroAutomationHarness h;
+    h.configureModulation();
+    h.openModulationEditor();
+    assert(h.state.overlays.current() ==
+           core::ui::OverlayType::MACRO_AUTOMATION);
+
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::EDIT);
+    assert(h.state.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
+    std::cout << "[PASS] Unstacked detail Back materializes Macro Edit parent\n";
+}
 
 void test_playback_row_toggles_automation_without_clearing_curve() {
     MacroAutomationHarness h;
@@ -1014,6 +1083,9 @@ void test_assignment_paste_overwrites_only_matching_edge_with_stable_id() {
 }  // namespace
 
 int main() {
+    test_assignment_tap_opens_exact_source_workspace();
+    test_macro_view_return_resynchronizes_focused_depth_encoder();
+    test_unstacked_modulation_back_materializes_macro_editor_parent();
     test_playback_row_toggles_automation_without_clearing_curve();
     test_modulation_entry_synchronizes_opt_to_focused_depth();
     test_contextual_resume_row_restores_sources_and_disappears();

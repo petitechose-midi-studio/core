@@ -167,6 +167,18 @@ FLASHMEM bool openProjectModulatorDetail(
     return true;
 }
 
+FLASHMEM bool openProjectModulatorWorkspace(
+    ProjectNavigationState& navigation,
+    core::state::modulation::ModulatorId sourceId
+) {
+    if (!core::state::modulation::valid(sourceId)) return false;
+    setNodeRoot(navigation, ProjectTab::MODULATORS);
+    navigation.physicalHoldActive.set(false);
+    navigation.projectNameShiftActive = false;
+    navigation.clearLifecycleFeedback();
+    return openProjectModulatorDetail(navigation, sourceId);
+}
+
 FLASHMEM bool openProjectModulatorDestinations(
     ProjectNavigationState& navigation
 ) {

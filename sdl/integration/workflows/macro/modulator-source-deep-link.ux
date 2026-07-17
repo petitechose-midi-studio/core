@@ -1,0 +1,36 @@
+# UX workflow: move reversibly between one Macro assignment and its source.
+# Purpose: proves direct source access, full Project-source editing, and Back
+# restoring the exact assignment without introducing another navigation model.
+# Expect: capture_changed:assignment_focused=source_workspace, capture_changed:source_workspace=source_shape_edited, capture_changed:source_shape_edited=assignment_restored, capture_changed:assignment_restored=macro_editor_parent
+# Expect: semantic:source_workspace:effect=open_modulator_detail, semantic:source_shape_edited:effect=edit_modulator_property
+
+0 scenario macro-multi-modulation
+80 capture screen macro_ready
+
+# Open Macro 1 > Modulation; the scenario restores Pulse Lift (assignment 2/3)
+# as the stable focused edge.
+180 button MACRO_1 down
+1240 tick
+1300 button MACRO_1 up
+1450 encoder NAV 1
+1570 encoder NAV 1
+1690 tap NAV 60
+1910 capture screen assignment_focused
+
+# NAV on an assignment enters the source's first-class Project child.
+2030 tap NAV 60
+2250 capture screen source_workspace
+
+# The source remains directly editable with the learned NAV + OPT grammar.
+2370 encoder NAV 1
+2490 encoder NAV 1
+2610 encoder OPT 0.75
+2830 capture screen source_shape_edited
+
+# Back returns to the same Macro, assignment and focus by stable IDs.
+2950 tap LEFT_TOP 60
+3170 capture screen assignment_restored
+
+# The next Back remains local and reconstructs the familiar Macro editor.
+3290 tap LEFT_TOP 60
+3510 capture screen macro_editor_parent

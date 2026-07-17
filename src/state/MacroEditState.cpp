@@ -1,6 +1,7 @@
 #include "state/MacroEditState.hpp"
 
 #include <config/PlatformCompat.hpp>
+#include <oc/time/Time.hpp>
 
 namespace core::state {
 
@@ -41,6 +42,7 @@ FLASHMEM void MacroEditState::reset() {
     macroSelector.reset();
     automationFocusedRow.set(0);
     modulationFocusedRow.set(0);
+    modulatorNavigationFeedback.set(MacroModulatorNavigationFeedback::NONE);
     conversionPreview.reset();
     contextGuard.set({});
     contextFeedback.set({});
@@ -48,6 +50,7 @@ FLASHMEM void MacroEditState::reset() {
     openedByMacroIndex = 0;
     openedAtMs = 0;
     pendingOpenReleaseDecision = false;
+    modulatorNavigationFeedbackUntilMs = 0;
 }
 
 FLASHMEM void MacroEditState::openEditor(
@@ -208,6 +211,31 @@ FLASHMEM void MacroEditState::openConvertPreview(
 FLASHMEM void MacroEditState::closeConvertPreview() {
     flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATION
                                 : MacroEditFlowPhase::CLOSED);
+}
+
+FLASHMEM void MacroEditState::setModulatorNavigationFeedback(
+    MacroModulatorNavigationFeedback feedback,
+    uint32_t nowMs,
+    uint32_t durationMs
+) {
+    modulatorNavigationFeedbackUntilMs = feedback ==
+            MacroModulatorNavigationFeedback::NONE
+        ? 0U
+        : nowMs + durationMs;
+    modulatorNavigationFeedback.set(feedback);
+}
+
+FLASHMEM void MacroEditState::updateModulatorNavigationFeedback(uint32_t nowMs) {
+    if (modulatorNavigationFeedback.get() ==
+            MacroModulatorNavigationFeedback::NONE ||
+        !oc::time::deadlineReachedMs(
+            nowMs,
+            modulatorNavigationFeedbackUntilMs
+        )) {
+        return;
+    }
+    modulatorNavigationFeedbackUntilMs = 0U;
+    modulatorNavigationFeedback.set(MacroModulatorNavigationFeedback::NONE);
 }
 
 FLASHMEM void MacroEditState::loadActiveConfig(uint8_t index, uint8_t channel, uint8_t cc) {

@@ -1,5 +1,7 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
 
+#include "handler/common/ModulatorNavigationWorkflow.hpp"
+
 namespace core::handler {
 
 using namespace project_handler_internal;
@@ -22,7 +24,8 @@ FLASHMEM void ProjectHandler::setupBindings() {
         .scope(project_view_scope_)
         .when([this]() {
             return regularProjectInputActive() &&
-                   !core::state::project::projectNavigationAtRoot(navigation_);
+                   (!core::state::project::projectNavigationAtRoot(navigation_) ||
+                    modulator_navigation::macroReturnPending(navigation_));
         })
         .then([this]() { back(); });
 

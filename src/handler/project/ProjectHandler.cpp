@@ -6,6 +6,7 @@
 #include <config/Timing.hpp>
 #include <oc/time/Time.hpp>
 
+#include "handler/common/ModulatorNavigationWorkflow.hpp"
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
@@ -28,6 +29,7 @@ FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
     , status_bar_(state.statusBar)
     , midi_sync_(state.midiSync)
     , pages_(state.pages)
+    , macro_edit_(state.macroEdit)
     , config_revision_(state.configRevision)
     , macro_history_(state.macroHistory)
     , clipboard_(state.clipboard)
@@ -531,6 +533,19 @@ FLASHMEM void ProjectHandler::resetProject() {
 
 FLASHMEM void ProjectHandler::back() {
     macro_history_.endCoalescing();
+    if (modulator_navigation::shouldReturnToMacroOnBack(navigation_) &&
+        modulator_navigation::returnToMacro(
+            {
+                overlays_,
+                active_view_,
+                navigation_,
+                macro_edit_,
+                pages_,
+            },
+            time_provider_()
+        )) {
+        return;
+    }
     core::state::project::backProjectNavigation(navigation_);
     syncFocusedEncoder();
 }

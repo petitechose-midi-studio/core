@@ -41,6 +41,7 @@ FLASHMEM void ProjectNavigationState::reset() {
     lifecycleFeedback.set("");
     selectedModulator = {};
     selectedModulationBinding = {};
+    modulatorReturn = {};
     guardedModulator = {};
     guardedModulationBinding = {};
     guardedClipboardModulator = {};

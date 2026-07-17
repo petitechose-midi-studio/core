@@ -53,7 +53,9 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
 ) {
     macro_feature_ = core::app::makeExtmemUnique<core::context::standalone::MacroFeatureModule>(
         core::context::standalone::MacroFeatureModule::StateRefs{
+            state.overlays,
             state.activeView,
+            state.projectNavigation,
             state.macros,
             state.macroEdit,
             state.pages,
@@ -130,6 +132,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                 state.statusBar,
                 state.midiSync,
                 state.pages,
+                state.macroEdit,
                 state.configRevision,
                 state.macroHistory,
                 state.structureClipboard,
