@@ -29,3 +29,14 @@
  * project and preset reads/writes retain their existing placement. */
 *FatFormatter.cpp.o(.text* .rodata*)
 *ExFatFormatter.cpp.o(.text* .rodata*)
+
+/* Macro overlay projection is rebuilt only after authored/UI state changes.
+ * Its top-level formatters already use FLASHMEM, but out-of-line text helpers
+ * emitted by the compiler otherwise leak into ITCM. Keep the complete cold
+ * projection object and its labels together in memory-mapped Flash. */
+*MacroOverlayPresenterFormatters.cpp.o(.text* .rodata*)
+
+/* Project handlers serve modal navigation and authored edits. They are never
+ * entered by the control evaluator, MIDI publication, sequencer tick, or LVGL
+ * draw loop; compiler-generated dispatch thunks therefore belong in Flash. */
+*ProjectHandler*.cpp.o(.text* .rodata*)
