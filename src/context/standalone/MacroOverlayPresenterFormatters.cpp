@@ -1597,11 +1597,29 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                 ))
             );
         }
+        const char* modulationDomainLabel = "-";
+        if (modulationStored) {
+            if (slot->modulationCount > 1U) {
+                modulationDomainLabel = "Mixed sources";
+            } else if (!slot->primaryRecordedShape) {
+                modulationDomainLabel = "Centered LFO";
+            } else {
+                const auto* curve = core::state::modulation::findProjectCurve(
+                    source.pages.control.authored.curves,
+                    slot->modulationCurveId
+                );
+                modulationDomainLabel = curve != nullptr &&
+                    curve->valueDomain == core::state::modulation::
+                        ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
+                    ? "Positive shape"
+                    : "Centered shape";
+            }
+        }
         std::snprintf(
             data.valueBuffers[2].data(),
             data.valueBuffers[2].size(),
             "%s",
-            "Bipolar shape"
+            modulationDomainLabel
         );
         std::snprintf(
             data.valueBuffers[3].data(),

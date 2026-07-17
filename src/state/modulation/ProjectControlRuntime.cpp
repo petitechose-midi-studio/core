@@ -620,9 +620,10 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
                 (plan.sources[binding.sourceIndex].flags &
                  PROJECT_MODULATOR_FLAG_ENABLED) != 0U) {
                 float sourceValue = sourceValues[binding.sourceIndex];
-                if (binding.inputRange == ModulationInputRange::UNIPOLAR) {
-                    sourceValue = (sourceValue + 1.0f) * 0.5f;
-                }
+                sourceValue = applyResolvedModulationMapping(
+                    sourceValue,
+                    binding.mapping
+                );
                 const float amount = static_cast<float>(binding.amountQ15) /
                     Q15_SCALE;
                 const float target = sourceValue * amount;

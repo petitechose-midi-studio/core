@@ -18,7 +18,7 @@ FLASHMEM SourceDetailLayout sourceDetailLayout(ModulatorKind kind) {
         out.append(SourceDetailItem::RETRIGGER);
     } else {
         out.append(SourceDetailItem::LENGTH);
-        out.append(SourceDetailItem::RANGE);
+        out.append(SourceDetailItem::SOURCE_DOMAIN);
     }
     out.append(SourceDetailItem::REACH);
     out.append(SourceDetailItem::DESTINATIONS);

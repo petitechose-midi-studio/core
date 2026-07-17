@@ -405,11 +405,23 @@ FLASHMEM void populateSourceDetailRow(
             setText(out.icon, standalone::icons::LENGTH);
             break;
         }
-        case SourceDetailItem::RANGE:
-            setText(out.key, "Range");
-            setText(out.value, "Bipolar");
+        case SourceDetailItem::SOURCE_DOMAIN: {
+            setText(out.key, "Domain");
+            const auto* curve = findProjectCurve(
+                control.authored.curves,
+                source.parameters.recordedCurveId
+            );
+            setText(
+                out.value,
+                curve != nullptr &&
+                    curve->valueDomain ==
+                        ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
+                    ? "Positive"
+                    : "Centered"
+            );
             setText(out.icon, standalone::icons::KNOB);
             break;
+        }
         case SourceDetailItem::REACH:
             setText(out.key, "Reach");
             formatReach(value, sizeof(value), source.reach);

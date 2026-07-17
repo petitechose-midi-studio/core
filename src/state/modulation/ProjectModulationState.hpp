@@ -90,10 +90,42 @@ struct ModulatorSourceState {
     ModulatorParameters parameters{};
 };
 
-enum class ModulationInputRange : uint8_t {
-    BIPOLAR = 0,
-    UNIPOLAR,
+/** Authored application of a source to one destination. */
+enum class ModulationApplication : uint8_t {
+    NATURAL = 0,
+    AROUND_BASE,
+    FROM_BASE,
 };
+
+/** Natural output declaration carried by the source payload. */
+enum class ModulatorNaturalDomain : uint8_t {
+    CENTERED = 0,
+    POSITIVE,
+};
+
+/** Compact scalar transform stored in the hot runtime plan. */
+enum class ResolvedModulationMapping : uint8_t {
+    IDENTITY = 0,
+    CENTERED_TO_POSITIVE,
+    POSITIVE_TO_CENTERED,
+};
+
+[[nodiscard]] inline float applyResolvedModulationMapping(
+    float value,
+    ResolvedModulationMapping mapping
+) {
+    if (mapping == ResolvedModulationMapping::IDENTITY) return value;
+    if (mapping == ResolvedModulationMapping::CENTERED_TO_POSITIVE) {
+        return (value + 1.0f) * 0.5f;
+    }
+    if (mapping == ResolvedModulationMapping::POSITIVE_TO_CENTERED) {
+        const float positive = value < 0.0f
+            ? 0.0f
+            : (value > 1.0f ? 1.0f : value);
+        return positive * 2.0f - 1.0f;
+    }
+    return value;
+}
 
 enum class ModulationTransfer : uint8_t {
     LINEAR = 0,
@@ -107,7 +139,7 @@ struct ModulationBindingState {
     ModulatorId sourceId{};
     ModulationDestination destination{};
     int16_t amountQ15 = 0;
-    ModulationInputRange inputRange = ModulationInputRange::BIPOLAR;
+    ModulationApplication application = ModulationApplication::NATURAL;
     ModulationTransfer transfer = ModulationTransfer::LINEAR;
     uint16_t slewMs = 0;
     uint8_t flags = PROJECT_MODULATION_BINDING_FLAG_ENABLED;

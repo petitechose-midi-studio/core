@@ -38,7 +38,7 @@ struct ProjectModulationRuntimeBinding {
     uint16_t destinationIndex = 0;
     int16_t amountQ15 = 0;
     uint16_t slewMs = 0;
-    ModulationInputRange inputRange = ModulationInputRange::BIPOLAR;
+    ResolvedModulationMapping mapping = ResolvedModulationMapping::IDENTITY;
     ModulationTransfer transfer = ModulationTransfer::LINEAR;
     uint8_t flags = 0;
     uint8_t reserved = 0;
@@ -142,7 +142,7 @@ ProjectModulationCompileResult compileProjectControlRuntimePlan(
 ProjectModulationResolveResult resolveProjectModulationDestination(
     const ProjectModulationRuntimePlan& plan,
     uint16_t destinationIndex,
-    const float* bipolarSourceValues,
+    const float* naturalSourceValues,
     float baseValue
 );
 

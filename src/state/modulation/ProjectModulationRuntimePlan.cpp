@@ -198,6 +198,31 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
         };
     }
 
+    // Resolve authored semantics before touching `out`: publication remains
+    // atomic and the hot evaluator never branches on source kind or curve data.
+    for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
+        const auto& binding = state.outputBindings[index];
+        if (!bindingActiveInContext(binding, context)) continue;
+        const int16_t sourcePosition = sourceIndex(state, binding.sourceId);
+        if (sourcePosition < 0) {
+            return {ProjectModulationCompileStatus::INVALID_DOMAIN};
+        }
+        ModulatorNaturalDomain naturalDomain{};
+        ResolvedModulationMapping resolvedMapping{};
+        if (!projectModulatorNaturalDomain(
+                state.sources[static_cast<uint16_t>(sourcePosition)],
+                arena,
+                naturalDomain
+            ) ||
+            !resolveModulationApplication(
+                binding.application,
+                naturalDomain,
+                resolvedMapping
+            )) {
+            return {ProjectModulationCompileStatus::INVALID_DOMAIN};
+        }
+    }
+
     // Every possible failure has been resolved. Publishing can now be direct.
     out = {};
     out.sourceCount = state.sourceCount;
@@ -328,7 +353,20 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
         );
         runtime.amountQ15 = binding.amountQ15;
         runtime.slewMs = binding.slewMs;
-        runtime.inputRange = binding.inputRange;
+        ModulatorNaturalDomain naturalDomain{};
+        ResolvedModulationMapping resolvedMapping{};
+        const auto& source = state.sources[runtime.sourceIndex];
+        const bool resolved = projectModulatorNaturalDomain(
+            source,
+            arena,
+            naturalDomain
+        ) && resolveModulationApplication(
+            binding.application,
+            naturalDomain,
+            resolvedMapping
+        );
+        (void)resolved;
+        runtime.mapping = resolvedMapping;
         runtime.transfer = binding.transfer;
         runtime.flags = binding.flags;
         out.bindingOrder[runtimeBindingCount] = runtimeBindingCount;
@@ -393,12 +431,12 @@ FLASHMEM ProjectModulationCompileResult compileProjectControlRuntimePlan(
 FLASHMEM ProjectModulationResolveResult resolveProjectModulationDestination(
     const ProjectModulationRuntimePlan& plan,
     uint16_t destinationIndex,
-    const float* bipolarSourceValues,
+    const float* naturalSourceValues,
     float baseValue
 ) {
     ProjectModulationResolveResult resolved{};
     if (destinationIndex >= plan.destinationCount ||
-        bipolarSourceValues == nullptr) {
+        naturalSourceValues == nullptr) {
         return resolved;
     }
     if (!std::isfinite(baseValue)) baseValue = 0.0f;
@@ -419,12 +457,13 @@ FLASHMEM ProjectModulationResolveResult resolveProjectModulationDestination(
              PROJECT_MODULATOR_FLAG_ENABLED) == 0U) {
             continue;
         }
-        float sourceValue = bipolarSourceValues[binding.sourceIndex];
+        float sourceValue = naturalSourceValues[binding.sourceIndex];
         if (!std::isfinite(sourceValue)) sourceValue = 0.0f;
         sourceValue = std::clamp(sourceValue, -1.0f, 1.0f);
-        if (binding.inputRange == ModulationInputRange::UNIPOLAR) {
-            sourceValue = (sourceValue + 1.0f) * 0.5f;
-        }
+        sourceValue = applyResolvedModulationMapping(
+            sourceValue,
+            binding.mapping
+        );
         const float amount = static_cast<float>(binding.amountQ15) / 32767.0f;
         modulation += sourceValue * amount;
         ++resolved.contributionCount;

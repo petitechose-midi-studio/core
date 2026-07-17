@@ -15,7 +15,7 @@ enum class SourceDetailItem : uint8_t {
     PHASE,
     RETRIGGER,
     LENGTH,
-    RANGE,
+    SOURCE_DOMAIN,
     REACH,
     DESTINATIONS,
 };

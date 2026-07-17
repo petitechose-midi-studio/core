@@ -256,7 +256,7 @@ core::state::modulation::ModulationBindingId bindReusableModulator(
         .macro = macro,
     });
     draft.amountQ15 = amountQ15;
-    draft.inputRange = ModulationInputRange::BIPOLAR;
+    draft.application = ModulationApplication::NATURAL;
     draft.enabled = true;
     return addProjectModulationBinding(
         state.pages.control.authored.modulation,
@@ -401,7 +401,7 @@ void prepareProjectModulatorsScenario(core::state::CoreState& state) {
                 .macro = macro,
             });
             draft.amountQ15 = depthQ15;
-            draft.inputRange = ModulationInputRange::BIPOLAR;
+            draft.application = ModulationApplication::NATURAL;
             draft.enabled = true;
             return addProjectModulationBinding(graph, draft).changed();
         };

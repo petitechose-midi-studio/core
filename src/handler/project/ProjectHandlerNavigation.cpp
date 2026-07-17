@@ -336,7 +336,7 @@ FLASHMEM void ProjectHandler::commitDestinationPickerSelection() {
     ModulationBindingDraft binding{};
     binding.destination = destination;
     binding.amountQ15 = 8192;
-    binding.inputRange = ModulationInputRange::BIPOLAR;
+    binding.application = ModulationApplication::NATURAL;
 
     ProjectModulationResult begun{};
     ModulatorId targetSource{};

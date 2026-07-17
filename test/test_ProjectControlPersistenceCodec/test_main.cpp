@@ -20,6 +20,7 @@
 #include "persistence/ProjectStatePersistencePayloads.hpp"
 #include "persistence/SequencerPersistenceEnvelope.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/modulation/ProjectModulationRuntimePlan.hpp"
 
 namespace {
 
@@ -185,7 +186,7 @@ DomainPtr makeTypicalDomain() {
     lfoBinding.sourceId = lfoResult.sourceId;
     lfoBinding.destination = destinationFromAddress(11U);
     lfoBinding.amountQ15 = 8192;
-    lfoBinding.inputRange = mod::ModulationInputRange::UNIPOLAR;
+    lfoBinding.application = mod::ModulationApplication::FROM_BASE;
     lfoBinding.slewMs = 321U;
     assert(mod::addProjectModulationBinding(
         domain->modulation,
@@ -219,6 +220,44 @@ DomainPtr makeAutomationOnlyDomain(uint16_t pointCount) {
     domain->automation.entries[0].curveId = curve;
     domain->automation.entries[0].flags =
         mod::PROJECT_AUTOMATION_CURVE_FLAG_ENABLED;
+    assert(mod::validProjectModulationDomain(
+        domain->modulation,
+        domain->curves,
+        &domain->automation
+    ));
+    return domain;
+}
+
+DomainPtr makePositiveRecordedShapeDomain() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    const std::array<mod::ProjectPackedCurvePoint, 2> points{{
+        {0U, 0},
+        {1U, 32767},
+    }};
+    mod::RecordedShapeDraft source{};
+    source.name = "Envelope";
+    source.reach.kind = mod::ModulatorReachKind::PROJECT;
+    source.curve.sourceDurationTicks = 1U;
+    source.curve.durationTicks = 1U;
+    source.curve.valueDomain =
+        mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR;
+    source.points = points.data();
+    source.pointCount = static_cast<uint16_t>(points.size());
+    const auto created = mod::createRecordedShapeModulator(
+        domain->modulation,
+        domain->curves,
+        source
+    );
+    assert(created.changed());
+    mod::ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination = destinationFromAddress(0U);
+    binding.amountQ15 = 16384;
+    binding.application = mod::ModulationApplication::NATURAL;
+    assert(mod::addProjectModulationBinding(
+        domain->modulation,
+        binding
+    ).changed());
     assert(mod::validProjectModulationDomain(
         domain->modulation,
         domain->curves,
@@ -353,6 +392,18 @@ control::EncodeResult encodeDomain(
     assert(result.encoded());
     bytes.resize(result.bytesWritten);
     return result;
+}
+
+uint32_t firstBindingOffset(
+    const mod::ProjectControlDomainState& domain,
+    const control::EncodeResult& encoded
+) {
+    return encoded.modulationOffset +
+        control::PROJECT_CONTROL_CHUNK_HEADER_SIZE +
+        static_cast<uint32_t>(domain.modulation.sourceCount) *
+            control::PROJECT_MODULATOR_SOURCE_DIRECTORY_SIZE +
+        static_cast<uint32_t>(domain.modulation.sourceCount) *
+            control::PROJECT_MODULATOR_SOURCE_PAYLOAD_SIZE;
 }
 
 void testExactLayoutEmptyRoundTripAndPreflightAtomicity() {
@@ -608,6 +659,27 @@ void testCurrentRoundTripSharingAndIndependentRecovery() {
     assert(result.modulationStatus == control::ChunkStatus::INVALID_PAYLOAD);
     assert(decoded->modulation.sourceCount == 0U);
 
+    const uint32_t bindingOffset = firstBindingOffset(*source, encoded);
+    auto unknownApplication = bytes;
+    unknownApplication[bindingOffset + 14U] = 3U;
+    result = control::decodeProjectControlPayloads(
+        automationView(unknownApplication, encoded),
+        modulationView(unknownApplication, encoded),
+        *decoded
+    );
+    assert(result.modulationStatus == control::ChunkStatus::INVALID_PAYLOAD);
+    assert(decoded->modulation.sourceCount == 0U);
+
+    auto nonZeroBindingReserved = bytes;
+    nonZeroBindingReserved[bindingOffset + 19U] = 1U;
+    result = control::decodeProjectControlPayloads(
+        automationView(nonZeroBindingReserved, encoded),
+        modulationView(nonZeroBindingReserved, encoded),
+        *decoded
+    );
+    assert(result.modulationStatus == control::ChunkStatus::INVALID_PAYLOAD);
+    assert(decoded->modulation.sourceCount == 0U);
+
     auto unsupportedAutomation = automationView(bytes, encoded);
     ++unsupportedAutomation.versionMinor;
     result = control::decodeProjectControlPayloads(
@@ -660,6 +732,111 @@ void testCurrentRoundTripSharingAndIndependentRecovery() {
     assert(result.modulationStatus == control::ChunkStatus::MISSING);
     assert(decoded->automation.entryCount == 0U &&
            decoded->modulation.sourceCount == 0U);
+}
+
+void testModg10ApplicationLiftPreservesSoundAndReencodesCanonical11() {
+    auto source = makeTypicalDomain();
+    for (uint16_t index = 0;
+         index < source->modulation.outputBindingCount;
+         ++index) {
+        auto& binding = source->modulation.outputBindings[index];
+        if (binding.application == mod::ModulationApplication::NATURAL) {
+            binding.application = mod::ModulationApplication::AROUND_BASE;
+        }
+    }
+    assert(mod::validProjectModulationDomain(
+        source->modulation,
+        source->curves,
+        &source->automation
+    ));
+
+    std::vector<uint8_t> canonical11;
+    const auto encoded = encodeDomain(*source, canonical11);
+    auto legacy10 = canonical11;
+    const uint32_t bindings = firstBindingOffset(*source, encoded);
+    for (uint16_t index = 0;
+         index < source->modulation.outputBindingCount;
+         ++index) {
+        auto& application = legacy10[
+            bindings +
+            static_cast<uint32_t>(index) *
+                control::PROJECT_MODULATION_BINDING_SIZE +
+            14U
+        ];
+        assert(application ==
+                   static_cast<uint8_t>(
+                       mod::ModulationApplication::AROUND_BASE
+                   ) ||
+               application ==
+                   static_cast<uint8_t>(
+                       mod::ModulationApplication::FROM_BASE
+                   ));
+        application = application == static_cast<uint8_t>(
+            mod::ModulationApplication::AROUND_BASE
+        ) ? 0U : 1U;
+    }
+
+    auto legacyView = modulationView(legacy10, encoded);
+    legacyView.versionMinor =
+        control::PROJECT_MODULATION_GRAPH_LEGACY_VERSION_MINOR;
+    auto decoded = std::make_unique<mod::ProjectControlDomainState>();
+    const auto result = control::decodeProjectControlPayloads(
+        automationView(legacy10, encoded),
+        legacyView,
+        *decoded
+    );
+    assert(result.decoded() && result.migratedLegacy);
+    assert(result.automationStatus == control::ChunkStatus::CURRENT);
+    assert(result.modulationStatus == control::ChunkStatus::MIGRATED_LEGACY);
+    assert(!result.partial && result.overwriteSafe);
+    assert(std::memcmp(source.get(), decoded.get(), sizeof(*source)) == 0);
+
+    auto beforePlan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    auto afterPlan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    mod::ProjectModulationCompileContext context{};
+    context.activeMacroMask.fill(0xFFU);
+    assert(mod::compileProjectControlRuntimePlan(
+        *source,
+        context,
+        *beforePlan
+    ).compiled());
+    assert(mod::compileProjectControlRuntimePlan(
+        *decoded,
+        context,
+        *afterPlan
+    ).compiled());
+    assert(std::memcmp(
+        beforePlan.get(),
+        afterPlan.get(),
+        sizeof(*beforePlan)
+    ) == 0);
+
+    std::vector<uint8_t> migrated11;
+    encodeDomain(*decoded, migrated11);
+    assert(migrated11 == canonical11);
+}
+
+void testModg11PersistsNaturalPositiveRecordedShape() {
+    auto source = makePositiveRecordedShapeDomain();
+    std::vector<uint8_t> bytes;
+    const auto encoded = encodeDomain(*source, bytes);
+    auto decoded = std::make_unique<mod::ProjectControlDomainState>();
+    const auto result = control::decodeProjectControlPayloads(
+        automationView(bytes, encoded),
+        modulationView(bytes, encoded),
+        *decoded
+    );
+    assert(result.decoded() && !result.migratedLegacy && !result.partial);
+    assert(decoded->modulation.outputBindings[0].application ==
+           mod::ModulationApplication::NATURAL);
+    const auto* curve = mod::findProjectCurve(
+        decoded->curves,
+        decoded->modulation.sources[0].parameters.recordedCurveId
+    );
+    assert(curve != nullptr);
+    assert(curve->valueDomain ==
+           mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR);
+    assert(std::memcmp(source.get(), decoded.get(), sizeof(*source)) == 0);
 }
 
 void testCombinedCapacityConflictPreservesAutomation() {
@@ -743,6 +920,8 @@ int main() {
     testLegacyLiftIsDeterministicCanonicalAndAtomic();
     testLegacyV14V15DecodeAndAmbiguityPolicy();
     testCurrentRoundTripSharingAndIndependentRecovery();
+    testModg10ApplicationLiftPreservesSoundAndReencodesCanonical11();
+    testModg11PersistsNaturalPositiveRecordedShape();
     testCombinedCapacityConflictPreservesAutomation();
     testDenseMaximumAndCompleteProjectCeiling();
     std::cout << "All Project control persistence tests passed.\n";

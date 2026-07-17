@@ -241,7 +241,7 @@ core::state::modulation::ModulationBindingDraft defaultBindingDraft() {
     ModulationBindingDraft draft{};
     draft.destination = projectControlDestination(kAddress);
     draft.amountQ15 = 8192;
-    draft.inputRange = ModulationInputRange::BIPOLAR;
+    draft.application = ModulationApplication::AROUND_BASE;
     return draft;
 }
 

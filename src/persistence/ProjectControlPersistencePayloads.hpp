@@ -9,7 +9,8 @@ namespace core::persistence::project_control_codec {
 inline constexpr uint32_t PROJECT_MODULATION_GRAPH_CHUNK_ID = 0x4D4F4447U;
 inline constexpr uint8_t PROJECT_CONTROL_CHUNK_VERSION_MAJOR = 1U;
 inline constexpr uint8_t PROJECT_AUTOMATION_CHUNK_VERSION_MINOR = 6U;
-inline constexpr uint8_t PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR = 0U;
+inline constexpr uint8_t PROJECT_MODULATION_GRAPH_LEGACY_VERSION_MINOR = 0U;
+inline constexpr uint8_t PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR = 1U;
 
 inline constexpr uint32_t PROJECT_CONTROL_CHUNK_HEADER_SIZE = 32U;
 inline constexpr uint32_t PROJECT_AUTOMATION_ENTRY_SIZE = 8U;

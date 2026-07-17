@@ -73,14 +73,14 @@ mod::ModulationBindingId addBinding(
     mod::ModulatorId source,
     const mod::ModulationDestination& target,
     int16_t amountQ15 = 32767,
-    mod::ModulationInputRange range = mod::ModulationInputRange::BIPOLAR,
+    mod::ModulationApplication application = mod::ModulationApplication::NATURAL,
     uint16_t slewMs = 0U
 ) {
     mod::ModulationBindingDraft draft{};
     draft.sourceId = source;
     draft.destination = target;
     draft.amountQ15 = amountQ15;
-    draft.inputRange = range;
+    draft.application = application;
     draft.slewMs = slewMs;
     const auto result = mod::addProjectModulationBinding(
         domain.modulation,
@@ -343,7 +343,7 @@ void testSyncFreeTransportAndExplicitRetrigger() {
     assert(near(runtime.frame->sourceValues[3], -0.5f));
 }
 
-void testFractionalRecordedCurveAndUnipolarBinding() {
+void testFractionalRecordedCurveAndFromBaseBinding() {
     auto domain = std::make_unique<mod::ProjectControlDomainState>();
     const std::array<mod::ProjectPackedCurvePoint, 2> points{{
         {0U, -32767},
@@ -368,7 +368,7 @@ void testFractionalRecordedCurveAndUnipolarBinding() {
         source.sourceId,
         destination(0U, 0U, 0U),
         32767,
-        mod::ModulationInputRange::UNIPOLAR
+        mod::ModulationApplication::FROM_BASE
     );
 
     auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
@@ -386,6 +386,66 @@ void testFractionalRecordedCurveAndUnipolarBinding() {
     assert(near(runtime.frame->destinations[0].modulation, 0.5f));
 }
 
+void testPositiveRecordedCurveUsesNaturalAndExplicitAroundBase() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    const std::array<mod::ProjectPackedCurvePoint, 2> points{{
+        {0U, 0},
+        {1U, 32767},
+    }};
+    mod::RecordedShapeDraft shape{};
+    shape.name = "Envelope";
+    shape.reach = projectReach();
+    shape.curve.sourceDurationTicks = 2U;
+    shape.curve.durationTicks = 2U;
+    shape.curve.valueDomain =
+        mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR;
+    shape.points = points.data();
+    shape.pointCount = static_cast<uint16_t>(points.size());
+    const auto source = mod::createRecordedShapeModulator(
+        domain->modulation,
+        domain->curves,
+        shape
+    );
+    assert(source.changed());
+    addBinding(
+        *domain,
+        source.sourceId,
+        destination(0U, 0U, 0U),
+        32767,
+        mod::ModulationApplication::NATURAL
+    );
+    addBinding(
+        *domain,
+        source.sourceId,
+        destination(0U, 0U, 1U),
+        32767,
+        mod::ModulationApplication::AROUND_BASE
+    );
+    addBinding(
+        *domain,
+        source.sourceId,
+        destination(0U, 0U, 2U),
+        -32767,
+        mod::ModulationApplication::NATURAL
+    );
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectControlRuntimePlan(
+        *domain,
+        activeContext(),
+        *plan
+    ).compiled());
+    RuntimeFixture runtime;
+    runtime.activate(*plan);
+    mod::ProjectControlTimeSnapshot time{};
+    time.musicalTickFractionQ16 = 32768U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.5f));
+    assert(near(runtime.frame->destinations[0].modulation, 0.5f));
+    assert(near(runtime.frame->destinations[1].modulation, 0.0f));
+    assert(near(runtime.frame->destinations[2].modulation, -0.5f));
+}
+
 void testExplicitPerBindingSlewAndFailureAtomicity() {
     auto domain = std::make_unique<mod::ProjectControlDomainState>();
     const auto source = addLfo(
@@ -398,7 +458,7 @@ void testExplicitPerBindingSlewAndFailureAtomicity() {
         source,
         destination(0U, 0U, 0U),
         32767,
-        mod::ModulationInputRange::BIPOLAR,
+        mod::ModulationApplication::AROUND_BASE,
         100U
     );
     auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
@@ -462,7 +522,7 @@ void testRuntimeStateSurvivesStableIdReordering() {
     );
     addBinding(*domain, removed, destination(0U, 0U, 0U));
     addBinding(*domain, retained, destination(0U, 0U, 1U), 32767,
-               mod::ModulationInputRange::BIPOLAR, 100U);
+               mod::ModulationApplication::AROUND_BASE, 100U);
     mod::ModulationTriggerDraft trigger{};
     trigger.sourceId = retained;
     trigger.trigger = {
@@ -582,7 +642,8 @@ int main() {
     testFiveCanonicalLfoShapes();
     testLogicalBaseAutomationManualAndSharedSource();
     testSyncFreeTransportAndExplicitRetrigger();
-    testFractionalRecordedCurveAndUnipolarBinding();
+    testFractionalRecordedCurveAndFromBaseBinding();
+    testPositiveRecordedCurveUsesNaturalAndExplicitAroundBase();
     testExplicitPerBindingSlewAndFailureAtomicity();
     testRuntimeStateSurvivesStableIdReordering();
     testExactMaximumGraphEvaluatesEverySourceAndBinding();

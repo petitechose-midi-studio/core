@@ -218,7 +218,7 @@ FLASHMEM Result liftLegacyMacroAutomationBankIntoPending(
             binding.sourceId = source.id;
             binding.destination = destination;
             binding.amountQ15 = depthToQ15(entry->state.modulationDepth);
-            binding.inputRange = modulation::ModulationInputRange::BIPOLAR;
+            binding.application = modulation::ModulationApplication::AROUND_BASE;
             binding.transfer = modulation::ModulationTransfer::LINEAR;
             binding.flags = modulation::PROJECT_MODULATION_BINDING_FLAG_ENABLED;
         }

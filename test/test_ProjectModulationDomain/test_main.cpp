@@ -78,14 +78,14 @@ mod::ModulationBindingId addBinding(
     mod::ModulatorId source,
     const mod::ModulationDestination& target,
     int16_t amount = 16384,
-    mod::ModulationInputRange range = mod::ModulationInputRange::BIPOLAR,
+    mod::ModulationApplication application = mod::ModulationApplication::NATURAL,
     bool enabled = true
 ) {
     mod::ModulationBindingDraft draft{};
     draft.sourceId = source;
     draft.destination = target;
     draft.amountQ15 = amount;
-    draft.inputRange = range;
+    draft.application = application;
     draft.enabled = enabled;
     const auto created = mod::addProjectModulationBinding(*fixture.state, draft);
     assert(created.changed());
@@ -103,11 +103,15 @@ std::vector<mod::ProjectPackedCurvePoint> linearPoints(uint16_t count) {
     return points;
 }
 
-mod::ProjectCurveSpec curveSpec(uint16_t duration) {
+mod::ProjectCurveSpec curveSpec(
+    uint16_t duration,
+    mod::ProjectCurveValueDomain valueDomain =
+        mod::ProjectCurveValueDomain::BIPOLAR
+) {
     mod::ProjectCurveSpec spec{};
     spec.sourceDurationTicks = duration;
     spec.durationTicks = duration;
-    spec.valueDomain = mod::ProjectCurveValueDomain::BIPOLAR;
+    spec.valueDomain = valueDomain;
     return spec;
 }
 
@@ -115,13 +119,16 @@ mod::ModulatorId addRecorded(
     Fixture& fixture,
     const std::vector<mod::ProjectPackedCurvePoint>& points,
     const mod::ModulatorReach& reach = projectReach(),
-    const char* name = "Shape"
+    const char* name = "Shape",
+    mod::ProjectCurveValueDomain valueDomain =
+        mod::ProjectCurveValueDomain::BIPOLAR
 ) {
     mod::RecordedShapeDraft draft{};
     draft.name = name;
     draft.reach = reach;
     draft.curve = curveSpec(
-        static_cast<uint16_t>(points.empty() ? 1U : points.size())
+        static_cast<uint16_t>(points.empty() ? 1U : points.size()),
+        valueDomain
     );
     draft.points = points.data();
     draft.pointCount = static_cast<uint16_t>(points.size());
@@ -642,18 +649,18 @@ void testFailedSplitLeavesDomainUntouched() {
 void testRuntimeSumClampOrderingAndEnableFlags() {
     Fixture fixture;
     const auto destination0 = destination(0, 0, 0);
-    const auto bipolar = addLfo(fixture);
-    const auto unipolar = addLfo(fixture);
+    const auto centered = addLfo(fixture);
+    const auto fromBase = addLfo(fixture);
     const auto dormant = addLfo(fixture);
-    addBinding(fixture, bipolar, destination0, 16384);
+    addBinding(fixture, centered, destination0, 16384);
     addBinding(
         fixture,
-        unipolar,
+        fromBase,
         destination0,
         16384,
-        mod::ModulationInputRange::UNIPOLAR
+        mod::ModulationApplication::FROM_BASE
     );
-    addBinding(fixture, dormant, destination0, -16384, mod::ModulationInputRange::BIPOLAR, false);
+    addBinding(fixture, dormant, destination0, -16384, mod::ModulationApplication::AROUND_BASE, false);
 
     auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
     assert(mod::compileProjectModulationRuntimePlan(
@@ -668,7 +675,7 @@ void testRuntimeSumClampOrderingAndEnableFlags() {
 
     std::array<float, mod::PROJECT_MODULATOR_CAPACITY> values{};
     values[0] = 1.0f;
-    values[1] = 0.0f;  // unipolar projection is 0.5
+    values[1] = 0.0f;  // centered-to-positive projection is 0.5
     values[2] = 1.0f;
     auto resolved = mod::resolveProjectModulationDestination(
         *plan,
@@ -704,20 +711,160 @@ void testRuntimeSumClampOrderingAndEnableFlags() {
 
     assert(mod::setProjectModulatorEnabled(
         *fixture.state,
-        bipolar,
+        centered,
         false
     ).changed());
     assert(mod::updateProjectModulationBinding(
         *fixture.state,
         fixture.state->outputBindings[1].id,
         16384,
-        mod::ModulationInputRange::UNIPOLAR,
+        mod::ModulationApplication::FROM_BASE,
         mod::ModulationTransfer::LINEAR,
         false,
         321U
     ).changed());
     assert(fixture.state->outputBindings[1].slewMs == 321U);
     assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+}
+
+void testNaturalApplicationResolvesSourceDomainBeforeTheHotLoop() {
+    Fixture fixture;
+    const auto lfo = addLfo(fixture);
+    const std::vector<mod::ProjectPackedCurvePoint> positivePoints{
+        {0U, 8192},
+        {1U, 24576},
+    };
+    const auto positive = addRecorded(
+        fixture,
+        positivePoints,
+        projectReach(),
+        "Envelope",
+        mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
+    );
+
+    addBinding(
+        fixture,
+        lfo,
+        destination(0, 0, 0),
+        16384,
+        mod::ModulationApplication::NATURAL
+    );
+    addBinding(
+        fixture,
+        lfo,
+        destination(0, 0, 1),
+        16384,
+        mod::ModulationApplication::FROM_BASE
+    );
+    addBinding(
+        fixture,
+        positive,
+        destination(0, 0, 2),
+        16384,
+        mod::ModulationApplication::NATURAL
+    );
+    addBinding(
+        fixture,
+        positive,
+        destination(0, 0, 3),
+        16384,
+        mod::ModulationApplication::AROUND_BASE
+    );
+    addBinding(
+        fixture,
+        lfo,
+        destination(0, 0, 4),
+        26214,
+        mod::ModulationApplication::NATURAL
+    );
+    addBinding(
+        fixture,
+        positive,
+        destination(0, 0, 4),
+        -22937,
+        mod::ModulationApplication::AROUND_BASE
+    );
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectModulationRuntimePlan(
+        *fixture.state,
+        *fixture.arena,
+        allMacrosOnPage(0),
+        *plan
+    ).compiled());
+    assert(plan->bindings[0].mapping ==
+           mod::ResolvedModulationMapping::IDENTITY);
+    assert(plan->bindings[1].mapping ==
+           mod::ResolvedModulationMapping::CENTERED_TO_POSITIVE);
+    assert(plan->bindings[2].mapping ==
+           mod::ResolvedModulationMapping::IDENTITY);
+    assert(plan->bindings[3].mapping ==
+           mod::ResolvedModulationMapping::POSITIVE_TO_CENTERED);
+
+    std::array<float, mod::PROJECT_MODULATOR_CAPACITY> values{};
+    values[0] = -1.0f;
+    values[1] = 0.25f;
+    auto resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        0U,
+        values.data(),
+        0.5f
+    );
+    assert(resolved.valid && resolved.clipped && near(resolved.value, 0.0f));
+
+    resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        1U,
+        values.data(),
+        0.5f
+    );
+    assert(resolved.valid && near(resolved.value, 0.5f));
+    resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        2U,
+        values.data(),
+        0.5f
+    );
+    assert(resolved.valid && near(resolved.value, 0.625f, 0.0002f));
+    resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        3U,
+        values.data(),
+        0.5f
+    );
+    assert(resolved.valid && near(resolved.value, 0.25f, 0.0002f));
+
+    values[0] = 1.0f;
+    values[1] = 1.0f;
+    resolved = mod::resolveProjectModulationDestination(
+        *plan,
+        4U,
+        values.data(),
+        0.8f
+    );
+    assert(resolved.valid && !resolved.clipped);
+    assert(near(resolved.modulation, 0.1f, 0.0002f));
+    assert(near(resolved.value, 0.9f, 0.0002f));
+}
+
+void testUnknownApplicationIsRejectedAtomically() {
+    Fixture fixture;
+    const auto source = addLfo(fixture);
+    const auto stable = std::make_unique<mod::ProjectModulationState>(
+        *fixture.state
+    );
+    mod::ModulationBindingDraft draft{};
+    draft.sourceId = source;
+    draft.destination = destination(0, 0, 0);
+    draft.amountQ15 = 16384;
+    draft.application = static_cast<mod::ModulationApplication>(3U);
+    assert(mod::addProjectModulationBinding(*fixture.state, draft).status ==
+           mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(std::memcmp(
+        fixture.state.get(),
+        stable.get(),
+        sizeof(*fixture.state)
+    ) == 0);
 }
 
 void testValidatorRejectsDanglingDuplicateAndBadReferenceCount() {
@@ -769,6 +916,32 @@ void testValidatorRejectsDanglingDuplicateAndBadReferenceCount() {
         stableArena.get(),
         sizeof(*curveFixture.arena)
     ) == 0);
+
+    Fixture crossChunkFixture;
+    const std::vector<mod::ProjectPackedCurvePoint> positivePoints{
+        {0U, 0},
+        {1U, 32767},
+    };
+    addRecorded(
+        crossChunkFixture,
+        positivePoints,
+        projectReach(),
+        "Positive",
+        mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
+    );
+    mod::ProjectAutomationCurveDirectory automation{};
+    automation.entryCount = 1U;
+    automation.entries[0].destination = destination(0, 0, 0);
+    automation.entries[0].curveId =
+        crossChunkFixture.arena->records[0].id;
+    automation.entries[0].flags =
+        mod::PROJECT_AUTOMATION_CURVE_FLAG_ENABLED;
+    ++crossChunkFixture.arena->records[0].referenceCount;
+    assert(!mod::validProjectModulationDomain(
+        *crossChunkFixture.state,
+        *crossChunkFixture.arena,
+        &automation
+    ));
     (void)second;
 }
 
@@ -789,6 +962,8 @@ int main() {
     testUniqueCurveCanReclaimItsFullPoolRange();
     testFailedSplitLeavesDomainUntouched();
     testRuntimeSumClampOrderingAndEnableFlags();
+    testNaturalApplicationResolvesSourceDomainBeforeTheHotLoop();
+    testUnknownApplicationIsRejectedAtomically();
     testValidatorRejectsDanglingDuplicateAndBadReferenceCount();
     std::cout << "All Project modulation domain tests passed.\n";
     return 0;

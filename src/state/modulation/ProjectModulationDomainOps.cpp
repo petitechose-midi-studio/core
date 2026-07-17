@@ -500,6 +500,61 @@ FLASHMEM bool validProjectCurveSpec(
     return true;
 }
 
+FLASHMEM bool projectModulatorNaturalDomain(
+    const ModulatorSourceState& source,
+    const ProjectCurveArena& arena,
+    ModulatorNaturalDomain& out
+) {
+    if (source.kind == ModulatorKind::LFO) {
+        out = ModulatorNaturalDomain::CENTERED;
+        return true;
+    }
+    if (source.kind != ModulatorKind::RECORDED_SHAPE) return false;
+    const auto* curve = findProjectCurve(
+        arena,
+        source.parameters.recordedCurveId
+    );
+    if (curve == nullptr) return false;
+    switch (curve->valueDomain) {
+        case ProjectCurveValueDomain::BIPOLAR:
+            out = ModulatorNaturalDomain::CENTERED;
+            return true;
+        case ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR:
+            out = ModulatorNaturalDomain::POSITIVE;
+            return true;
+        default:
+            return false;
+    }
+}
+
+FLASHMEM bool resolveModulationApplication(
+    ModulationApplication application,
+    ModulatorNaturalDomain naturalDomain,
+    ResolvedModulationMapping& out
+) {
+    if (static_cast<uint8_t>(naturalDomain) >
+        static_cast<uint8_t>(ModulatorNaturalDomain::POSITIVE)) {
+        return false;
+    }
+    switch (application) {
+        case ModulationApplication::NATURAL:
+            out = ResolvedModulationMapping::IDENTITY;
+            return true;
+        case ModulationApplication::AROUND_BASE:
+            out = naturalDomain == ModulatorNaturalDomain::CENTERED
+                ? ResolvedModulationMapping::IDENTITY
+                : ResolvedModulationMapping::POSITIVE_TO_CENTERED;
+            return true;
+        case ModulationApplication::FROM_BASE:
+            out = naturalDomain == ModulatorNaturalDomain::POSITIVE
+                ? ResolvedModulationMapping::IDENTITY
+                : ResolvedModulationMapping::CENTERED_TO_POSITIVE;
+            return true;
+        default:
+            return false;
+    }
+}
+
 FLASHMEM const ModulatorSourceState* findProjectModulator(
     const ProjectModulationState& state,
     ModulatorId id
@@ -775,7 +830,6 @@ FLASHMEM ProjectModulationResult createRecordedShapeModulator(
     const RecordedShapeDraft& draft
 ) {
     if (!validModulatorReach(draft.reach) ||
-        draft.curve.valueDomain != ProjectCurveValueDomain::BIPOLAR ||
         !validProjectCurveSpec(draft.curve, draft.points, draft.pointCount) ||
         curveInputAliasesArena(arena, draft.points, draft.pointCount)) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT);
@@ -1124,8 +1178,8 @@ FLASHMEM ProjectModulationResult addProjectModulationBinding(
     }
     if (!modulationDestinationValid(draft.destination) ||
         draft.amountQ15 == std::numeric_limits<int16_t>::min() ||
-        static_cast<uint8_t>(draft.inputRange) >
-            static_cast<uint8_t>(ModulationInputRange::UNIPOLAR) ||
+        static_cast<uint8_t>(draft.application) >
+            static_cast<uint8_t>(ModulationApplication::FROM_BASE) ||
         draft.transfer != ModulationTransfer::LINEAR) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT, draft.sourceId);
     }
@@ -1158,7 +1212,7 @@ FLASHMEM ProjectModulationResult addProjectModulationBinding(
     binding.sourceId = draft.sourceId;
     binding.destination = draft.destination;
     binding.amountQ15 = draft.amountQ15;
-    binding.inputRange = draft.inputRange;
+    binding.application = draft.application;
     binding.transfer = draft.transfer;
     binding.slewMs = draft.slewMs;
     binding.flags = draft.enabled
@@ -1195,7 +1249,7 @@ FLASHMEM ProjectModulationResult updateProjectModulationBinding(
     ProjectModulationState& state,
     ModulationBindingId bindingId,
     int16_t amountQ15,
-    ModulationInputRange inputRange,
+    ModulationApplication application,
     ModulationTransfer transfer,
     bool enabled,
     uint16_t slewMs
@@ -1205,8 +1259,8 @@ FLASHMEM ProjectModulationResult updateProjectModulationBinding(
         return result(ProjectModulationStatus::INVALID_ID, {}, bindingId);
     }
     if (amountQ15 == std::numeric_limits<int16_t>::min() ||
-        static_cast<uint8_t>(inputRange) >
-            static_cast<uint8_t>(ModulationInputRange::UNIPOLAR) ||
+        static_cast<uint8_t>(application) >
+            static_cast<uint8_t>(ModulationApplication::FROM_BASE) ||
         transfer != ModulationTransfer::LINEAR) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT, {}, bindingId);
     }
@@ -1215,7 +1269,7 @@ FLASHMEM ProjectModulationResult updateProjectModulationBinding(
         ? PROJECT_MODULATION_BINDING_FLAG_ENABLED
         : 0U;
     if (binding.amountQ15 == amountQ15 &&
-        binding.inputRange == inputRange &&
+        binding.application == application &&
         binding.transfer == transfer &&
         binding.slewMs == slewMs &&
         binding.flags == flags) {
@@ -1226,7 +1280,7 @@ FLASHMEM ProjectModulationResult updateProjectModulationBinding(
         );
     }
     binding.amountQ15 = amountQ15;
-    binding.inputRange = inputRange;
+    binding.application = application;
     binding.transfer = transfer;
     binding.slewMs = slewMs;
     binding.flags = flags;
@@ -1310,8 +1364,7 @@ FLASHMEM ProjectModulationResult replaceRecordedShapeCurve(
         return result(ProjectModulationStatus::INVALID_ID, sourceId);
     }
     auto& source = state.sources[static_cast<uint16_t>(sourcePosition)];
-    if (source.kind != ModulatorKind::RECORDED_SHAPE ||
-        spec.valueDomain != ProjectCurveValueDomain::BIPOLAR) {
+    if (source.kind != ModulatorKind::RECORDED_SHAPE) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
     }
     return replaceOwnedCurve(
@@ -1388,10 +1441,6 @@ FLASHMEM bool validProjectModulationDomain(
             const ModulatorLfoParameters defaultLfo{};
             if (!valid(source.parameters.recordedCurveId) ||
                 curveIndex(arena, source.parameters.recordedCurveId) < 0 ||
-                findProjectCurve(
-                    arena,
-                    source.parameters.recordedCurveId
-                )->valueDomain != ProjectCurveValueDomain::BIPOLAR ||
                 std::memcmp(
                     &source.parameters.lfo,
                     &defaultLfo,
@@ -1409,8 +1458,8 @@ FLASHMEM bool validProjectModulationDomain(
             !modulationDestinationValid(binding.destination) ||
             !modulatorReachContains(source->reach, binding.destination) ||
             binding.amountQ15 == std::numeric_limits<int16_t>::min() ||
-            static_cast<uint8_t>(binding.inputRange) >
-                static_cast<uint8_t>(ModulationInputRange::UNIPOLAR) ||
+            static_cast<uint8_t>(binding.application) >
+                static_cast<uint8_t>(ModulationApplication::FROM_BASE) ||
             binding.transfer != ModulationTransfer::LINEAR ||
             (binding.flags & ~BINDING_FLAGS) != 0U ||
             binding.reserved != 0U ||
@@ -1484,10 +1533,13 @@ FLASHMEM bool validProjectModulationDomain(
             return false;
         }
         uint16_t references = 0;
+        bool referencedByRecordedShape = false;
+        bool referencedByAutomation = false;
         for (uint16_t source = 0; source < state.sourceCount; ++source) {
             if (state.sources[source].kind == ModulatorKind::RECORDED_SHAPE &&
                 state.sources[source].parameters.recordedCurveId == curve.id) {
                 ++references;
+                referencedByRecordedShape = true;
             }
         }
         if (automation != nullptr) {
@@ -1498,9 +1550,13 @@ FLASHMEM bool validProjectModulationDomain(
                         return false;
                     }
                     ++references;
+                    referencedByAutomation = true;
                 }
             }
         }
+        // The two chunks own disjoint curve directories. Sharing across them
+        // would duplicate identity during decode even if values remained equal.
+        if (referencedByRecordedShape && referencedByAutomation) return false;
         if (references != curve.referenceCount) return false;
         coveredPointCount += curve.pointCount;
     }

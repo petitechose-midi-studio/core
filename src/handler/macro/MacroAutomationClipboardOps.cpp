@@ -408,8 +408,8 @@ FLASHMEM bool modulationAssignmentDraftFromClipboard(
     const auto& binding = payload.binding;
     if (!payload.valid || binding.sourceId != payload.sourceId ||
         binding.amountQ15 == std::numeric_limits<int16_t>::min() ||
-        static_cast<uint8_t>(binding.inputRange) >
-            static_cast<uint8_t>(ModulationInputRange::UNIPOLAR) ||
+        static_cast<uint8_t>(binding.application) >
+            static_cast<uint8_t>(ModulationApplication::FROM_BASE) ||
         binding.transfer != ModulationTransfer::LINEAR) {
         return false;
     }
@@ -417,7 +417,7 @@ FLASHMEM bool modulationAssignmentDraftFromClipboard(
         .sourceId = payload.sourceId,
         .destination = destination,
         .amountQ15 = binding.amountQ15,
-        .inputRange = binding.inputRange,
+        .application = binding.application,
         .transfer = binding.transfer,
         .slewMs = binding.slewMs,
         .enabled = (binding.flags &
@@ -547,7 +547,7 @@ FLASHMEM bool pasteModulationFromClipboard(
                     graph,
                     existing.id,
                     draft.amountQ15,
-                    draft.inputRange,
+                    draft.application,
                     draft.transfer,
                     draft.enabled,
                     draft.slewMs

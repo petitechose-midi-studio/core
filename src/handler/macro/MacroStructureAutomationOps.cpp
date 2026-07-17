@@ -345,7 +345,7 @@ FLASHMEM bool duplicateBinding(
     draft.sourceId = targetSourceId;
     draft.destination = destination;
     draft.amountQ15 = sourceBinding.amountQ15;
-    draft.inputRange = sourceBinding.inputRange;
+    draft.application = sourceBinding.application;
     draft.transfer = sourceBinding.transfer;
     draft.slewMs = sourceBinding.slewMs;
     draft.enabled = (sourceBinding.flags &

@@ -60,7 +60,7 @@ struct ModulationBindingDraft {
     ModulatorId sourceId{};
     ModulationDestination destination{};
     int16_t amountQ15 = 0;
-    ModulationInputRange inputRange = ModulationInputRange::BIPOLAR;
+    ModulationApplication application = ModulationApplication::NATURAL;
     ModulationTransfer transfer = ModulationTransfer::LINEAR;
     uint16_t slewMs = 0;
     bool enabled = true;
@@ -90,6 +90,18 @@ struct ModulatorSplitRequest {
     const ProjectCurveSpec& spec,
     const ProjectPackedCurvePoint* points,
     uint16_t pointCount
+);
+
+/** Resolves source semantics once, before publication to the hot plan. */
+[[nodiscard]] bool projectModulatorNaturalDomain(
+    const ModulatorSourceState& source,
+    const ProjectCurveArena& arena,
+    ModulatorNaturalDomain& out
+);
+[[nodiscard]] bool resolveModulationApplication(
+    ModulationApplication application,
+    ModulatorNaturalDomain naturalDomain,
+    ResolvedModulationMapping& out
 );
 
 [[nodiscard]] const ModulatorSourceState* findProjectModulator(
@@ -217,7 +229,7 @@ ProjectModulationResult updateProjectModulationBinding(
     ProjectModulationState& state,
     ModulationBindingId bindingId,
     int16_t amountQ15,
-    ModulationInputRange inputRange,
+    ModulationApplication application,
     ModulationTransfer transfer,
     bool enabled,
     uint16_t slewMs = 0

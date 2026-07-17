@@ -163,7 +163,7 @@ void test_modulation_assignment_clipboard_references_shared_source_only() {
     bindingDraft.sourceId = source.sourceId;
     bindingDraft.destination = projectControlDestination(address);
     bindingDraft.amountQ15 = -12288;
-    bindingDraft.inputRange = ModulationInputRange::BIPOLAR;
+    bindingDraft.application = ModulationApplication::AROUND_BASE;
     const auto binding = addProjectModulationBinding(
         pages.control.authored.modulation,
         bindingDraft

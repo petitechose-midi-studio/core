@@ -415,7 +415,7 @@ FLASHMEM bool writeModulationPayload(
             !writer.writeU32(binding->sourceId.value) ||
             !writeDestination(writer, binding->destination) ||
             !writer.writeI16(binding->amountQ15) ||
-            !writer.writeU8(static_cast<uint8_t>(binding->inputRange)) ||
+            !writer.writeU8(static_cast<uint8_t>(binding->application)) ||
             !writer.writeU8(static_cast<uint8_t>(binding->transfer)) ||
             !writer.writeU16(binding->slewMs) ||
             !writer.writeU8(binding->flags) ||
@@ -478,6 +478,7 @@ FLASHMEM bool readCurveRecord(
     uint16_t pointBase,
     uint16_t expectedLocalOffset,
     modulation::ProjectCurveValueDomain requiredDomain,
+    bool acceptEitherDomain,
     bool requireNativeOrigin
 ) {
     uint16_t localOffset = 0;
@@ -502,7 +503,11 @@ FLASHMEM bool readCurveRecord(
         localOffset != expectedLocalOffset || record.pointCount == 0U ||
         interpolation !=
             static_cast<uint8_t>(modulation::ProjectCurveInterpolation::LINEAR) ||
-        valueDomain != static_cast<uint8_t>(requiredDomain) ||
+        valueDomain > static_cast<uint8_t>(
+            modulation::ProjectCurveValueDomain::BIPOLAR
+        ) ||
+        (!acceptEitherDomain &&
+         valueDomain != static_cast<uint8_t>(requiredDomain)) ||
         origin > static_cast<uint8_t>(modulation::ProjectCurveOrigin::CONVERTED_MIN) ||
         (requireNativeOrigin &&
          origin != static_cast<uint8_t>(modulation::ProjectCurveOrigin::NATIVE)) ||
@@ -512,7 +517,9 @@ FLASHMEM bool readCurveRecord(
     record.id = id;
     record.pointOffset = static_cast<uint16_t>(pointBase + localOffset);
     record.interpolation = modulation::ProjectCurveInterpolation::LINEAR;
-    record.valueDomain = requiredDomain;
+    record.valueDomain = static_cast<modulation::ProjectCurveValueDomain>(
+        valueDomain
+    );
     record.origin = static_cast<modulation::ProjectCurveOrigin>(origin);
     return true;
 }
@@ -590,6 +597,7 @@ FLASHMEM ChunkStatus decodeAutomationCurrent(
                 0U,
                 localPointOffset,
                 modulation::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR,
+                false,
                 true
             )) {
             target.clear();
@@ -792,14 +800,14 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
     previousId = 0;
     for (uint16_t index = 0; index < bindingCount; ++index) {
         auto& binding = graph.outputBindings[index];
-        uint8_t inputRange = 0;
+        uint8_t application = 0;
         uint8_t transfer = 0;
         binding = {};
         if (!reader.readU32(binding.id.value) ||
             !reader.readU32(binding.sourceId.value) ||
             !readDestination(reader, binding.destination) ||
             !reader.readI16(binding.amountQ15) ||
-            !reader.readU8(inputRange) ||
+            !reader.readU8(application) ||
             !reader.readU8(transfer) ||
             !reader.readU16(binding.slewMs) ||
             !reader.readU8(binding.flags) ||
@@ -808,8 +816,23 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
             return fail(ChunkStatus::INVALID_PAYLOAD);
         }
         previousId = binding.id.value;
-        binding.inputRange =
-            static_cast<modulation::ModulationInputRange>(inputRange);
+        if (view.versionMinor ==
+            PROJECT_MODULATION_GRAPH_LEGACY_VERSION_MINOR) {
+            if (application > 1U) {
+                return fail(ChunkStatus::INVALID_PAYLOAD);
+            }
+            binding.application = application == 0U
+                ? modulation::ModulationApplication::AROUND_BASE
+                : modulation::ModulationApplication::FROM_BASE;
+        } else {
+            if (application > static_cast<uint8_t>(
+                    modulation::ModulationApplication::FROM_BASE
+                )) {
+                return fail(ChunkStatus::INVALID_PAYLOAD);
+            }
+            binding.application =
+                static_cast<modulation::ModulationApplication>(application);
+        }
         binding.transfer = static_cast<modulation::ModulationTransfer>(transfer);
     }
 
@@ -848,6 +871,8 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
                 pointBase,
                 localPointOffset,
                 modulation::ProjectCurveValueDomain::BIPOLAR,
+                view.versionMinor ==
+                    PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR,
                 false
             )) {
             return fail(ChunkStatus::INVALID_PAYLOAD);
@@ -888,7 +913,10 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
         )) {
         return fail(ChunkStatus::INVALID_PAYLOAD);
     }
-    return ChunkStatus::CURRENT;
+    return view.versionMinor ==
+        PROJECT_MODULATION_GRAPH_LEGACY_VERSION_MINOR
+        ? ChunkStatus::MIGRATED_LEGACY
+        : ChunkStatus::CURRENT;
 }
 
 FLASHMEM bool isLegacyAutomationVersion(const ChunkPayloadView& view) {
@@ -1056,20 +1084,26 @@ FLASHMEM DecodeResult decodeProjectControlPayloads(
         result.modulationStatus = ChunkStatus::MISSING;
     } else if (modulationView.versionMajor !=
                    PROJECT_CONTROL_CHUNK_VERSION_MAJOR ||
-               modulationView.versionMinor !=
-                   PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR) {
+               (modulationView.versionMinor !=
+                    PROJECT_MODULATION_GRAPH_LEGACY_VERSION_MINOR &&
+                modulationView.versionMinor !=
+                    PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR)) {
         result.modulationStatus = ChunkStatus::UNSUPPORTED_VERSION;
     } else {
         result.modulationStatus = decodeModulationCurrent(
             modulationView,
             *pending
         );
+        if (result.modulationStatus == ChunkStatus::MIGRATED_LEGACY) {
+            result.migratedLegacy = true;
+        }
     }
 
     const bool bothMissing = !automation.present && !modulationView.present;
     const bool bothCurrent =
         result.automationStatus == ChunkStatus::CURRENT &&
-        result.modulationStatus == ChunkStatus::CURRENT;
+        (result.modulationStatus == ChunkStatus::CURRENT ||
+         result.modulationStatus == ChunkStatus::MIGRATED_LEGACY);
     result.partial = !bothMissing && !bothCurrent;
     result.overwriteSafe = !result.partial;
     out = *pending;

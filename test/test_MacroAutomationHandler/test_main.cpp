@@ -702,7 +702,7 @@ void test_empty_modulation_requires_explicit_new_lfo_selection_and_cancel_is_exa
     assert(source.parameters.lfo.periodTicks == PROJECT_CONTROL_TICKS_PER_BEAT);
     assert(source.parameters.lfo.retrigger == ModulatorRetriggerPolicy::TRANSPORT);
     assert(binding.amountQ15 == 8192);
-    assert(binding.inputRange == ModulationInputRange::BIPOLAR);
+    assert(binding.application == ModulationApplication::NATURAL);
     assert(h.encoderHw.getDiscreteSteps(
         static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
     ) == 5);
@@ -814,7 +814,7 @@ core::state::modulation::ModulationBindingId bindReusableLfo(
     draft.sourceId = sourceId;
     draft.destination = projectControlDestination(address);
     draft.amountQ15 = amountQ15;
-    draft.inputRange = ModulationInputRange::BIPOLAR;
+    draft.application = ModulationApplication::AROUND_BASE;
     const auto result = addProjectModulationBinding(
         h.state.pages.control.authored.modulation,
         draft

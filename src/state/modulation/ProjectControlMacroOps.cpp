@@ -240,7 +240,7 @@ FLASHMEM bool appendRecordedShape(
     binding.amountQ15 = static_cast<int16_t>(
         std::clamp<long>(packedAmount, -32767L, 32767L)
     );
-    binding.inputRange = ModulationInputRange::BIPOLAR;
+    binding.application = ModulationApplication::NATURAL;
     binding.enabled = true;
     const auto bound = addProjectModulationBinding(domain.modulation, binding);
     if (bound.changed()) return true;

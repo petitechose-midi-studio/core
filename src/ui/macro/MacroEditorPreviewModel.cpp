@@ -197,6 +197,8 @@ FLASHMEM void buildMacroEditorPreviewModel(
         modulation::PROJECT_MODULATION_BINDING_CAPACITY
     > bindingSourceIndices{};
     bindingSourceIndices.fill(-1);
+    constexpr uint16_t PREVIEW_MAPPING_SHIFT = 8U;
+    constexpr uint16_t PREVIEW_SOURCE_MASK = 0x00FFU;
     const auto destination = modulation::projectControlDestination(address);
     const auto& graph = control.authored.modulation;
     for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
@@ -204,9 +206,26 @@ FLASHMEM void buildMacroEditorPreviewModel(
         if (binding.destination != destination) continue;
         const int16_t sourcePosition = sourceIndex(graph, binding.sourceId);
         if (sourcePosition < 0) continue;
-        bindingSourceIndices[index] = sourcePosition;
         model.modulationStored = true;
         const auto& source = graph.sources[static_cast<uint16_t>(sourcePosition)];
+        modulation::ModulatorNaturalDomain naturalDomain{};
+        modulation::ResolvedModulationMapping mapping{};
+        if (!modulation::projectModulatorNaturalDomain(
+                source,
+                control.authored.curves,
+                naturalDomain
+            ) ||
+            !modulation::resolveModulationApplication(
+                binding.application,
+                naturalDomain,
+                mapping
+            )) {
+            continue;
+        }
+        bindingSourceIndices[index] = static_cast<int16_t>(
+            sourcePosition |
+            (static_cast<uint16_t>(mapping) << PREVIEW_MAPPING_SHIFT)
+        );
         const bool active =
             (binding.flags & modulation::PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U &&
             (source.flags & modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
@@ -251,11 +270,14 @@ FLASHMEM void buildMacroEditorPreviewModel(
         float storedModulation = 0.0f;
         float activeModulation = 0.0f;
         for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
-            const int16_t sourcePosition = bindingSourceIndices[index];
-            if (sourcePosition < 0) continue;
+            const int16_t sourceAndApplication = bindingSourceIndices[index];
+            if (sourceAndApplication < 0) continue;
+            const uint16_t sourcePosition = static_cast<uint16_t>(
+                sourceAndApplication & PREVIEW_SOURCE_MASK
+            );
             const auto& binding = graph.outputBindings[index];
             const auto& source = graph.sources[
-                static_cast<uint16_t>(sourcePosition)
+                sourcePosition
             ];
             float sourceValue = projectSourcePreviewValue(
                 control,
@@ -263,9 +285,16 @@ FLASHMEM void buildMacroEditorPreviewModel(
                 beat,
                 sample
             );
-            if (binding.inputRange == modulation::ModulationInputRange::UNIPOLAR) {
-                sourceValue = (sourceValue + 1.0f) * 0.5f;
-            }
+            const auto mapping = static_cast<
+                modulation::ResolvedModulationMapping
+            >(
+                static_cast<uint16_t>(sourceAndApplication) >>
+                PREVIEW_MAPPING_SHIFT
+            );
+            sourceValue = modulation::applyResolvedModulationMapping(
+                sourceValue,
+                mapping
+            );
             const float contribution = sourceValue *
                 (static_cast<float>(binding.amountQ15) / 32767.0f);
             storedModulation += contribution;

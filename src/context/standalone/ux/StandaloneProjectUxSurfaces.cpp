@@ -71,7 +71,7 @@ FLASHMEM const char* detailProperty(SourceDetailItem item) {
         case SourceDetailItem::PHASE: return "phase";
         case SourceDetailItem::RETRIGGER: return "retrigger";
         case SourceDetailItem::LENGTH: return "length";
-        case SourceDetailItem::RANGE: return "range";
+        case SourceDetailItem::SOURCE_DOMAIN: return "domain";
         case SourceDetailItem::REACH: return "reach";
         case SourceDetailItem::DESTINATIONS: return "destinations";
     }

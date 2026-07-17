@@ -57,7 +57,7 @@ struct DecodeResult {
 };
 
 /**
- * Writes canonical MAUT 1.6 then MODG 1.0 into one caller-owned buffer.
+ * Writes canonical MAUT 1.6 then MODG 1.1 into one caller-owned buffer.
  * Capacity is preflighted before the first byte is changed.
  */
 [[nodiscard]] EncodeResult encodeProjectControlPayloads(
@@ -68,8 +68,8 @@ struct DecodeResult {
 
 /**
  * Decodes current or legacy control payloads into one temporary EXTMEM domain,
- * then publishes once. Current chunks recover independently; a legacy MAUT is
- * lifted atomically across both domains.
+ * then publishes once. Current chunks recover independently; legacy MAUT and
+ * MODG 1.0 application semantics are lifted deterministically.
  */
 [[nodiscard]] DecodeResult decodeProjectControlPayloads(
     const ChunkPayloadView& automation,

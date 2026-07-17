@@ -1847,7 +1847,7 @@ FLASHMEM bool MacroHistoryService::setModulationBindingDepthCoalesced(
                     pages.control.authored.modulation,
                     bindingId,
                     amountQ15,
-                    binding->inputRange,
+                    binding->application,
                     binding->transfer,
                     enabled,
                     binding->slewMs
@@ -1886,7 +1886,7 @@ FLASHMEM bool MacroHistoryService::setModulationBindingDepthCoalesced(
             pages.control.authored.modulation,
             bindingId,
             amountQ15,
-            binding->inputRange,
+            binding->application,
             binding->transfer,
             enabled,
             binding->slewMs
@@ -1925,7 +1925,7 @@ FLASHMEM bool MacroHistoryService::setModulationBindingEnabled(
             pages.control.authored.modulation,
             bindingId,
             binding->amountQ15,
-            binding->inputRange,
+            binding->application,
             binding->transfer,
             enabled,
             binding->slewMs
@@ -2084,7 +2084,7 @@ FLASHMEM bool MacroHistoryService::pasteModulationBinding(
             graph,
             existing->id,
             draft.amountQ15,
-            draft.inputRange,
+            draft.application,
             draft.transfer,
             draft.enabled,
             draft.slewMs

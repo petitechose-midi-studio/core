@@ -940,7 +940,7 @@ MacroEditDomainServices::beginDefaultLfoAudition(uint8_t index) const {
     ModulationBindingDraft binding{};
     binding.destination = projectControlDestination(address);
     binding.amountQ15 = 8192;
-    binding.inputRange = ModulationInputRange::BIPOLAR;
+    binding.application = ModulationApplication::NATURAL;
     return history_->beginLfoModulatorAudition(
         *pages_,
         address,
@@ -966,7 +966,7 @@ MacroEditDomainServices::beginExistingModulatorAudition(
     binding.sourceId = sourceId;
     binding.destination = projectControlDestination(address);
     binding.amountQ15 = 8192;
-    binding.inputRange = ModulationInputRange::BIPOLAR;
+    binding.application = ModulationApplication::NATURAL;
     return history_->beginExistingModulatorAudition(
         *pages_,
         address,
