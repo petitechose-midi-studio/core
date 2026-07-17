@@ -9,11 +9,13 @@
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
+#include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
 
 namespace core::handler {
 
 using namespace project_handler_internal;
+namespace adsr_ui = core::ui::modulation::adsr;
 
 namespace {
 
@@ -868,14 +870,12 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                     : (item == Item::DECAY
                         ? source->parameters.adsr.decay
                         : source->parameters.adsr.release);
-                const int count = static_cast<int>(
-                    PROJECT_MODULATOR_ADSR_FREE_DURATIONS.size()
-                );
+                const int count = adsr_ui::DURATION_COUNT;
                 configureOptDiscrete(
                     encoders_,
                     count,
                     indexToNormalized(
-                        projectModulatorAdsrDurationIndex(
+                        adsr_ui::durationIndex(
                             duration,
                             source->parameters.adsr.timing
                         ),

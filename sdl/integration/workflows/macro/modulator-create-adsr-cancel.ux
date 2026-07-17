@@ -1,0 +1,26 @@
+# UX workflow: cancel a destination-first ADSR audition.
+# Purpose: proves Back removes the provisional source, typed trigger, and
+# destination together and restores the same empty Macro modulation surface.
+# Expect: capture_changed:adsr_audition_default=adsr_audition_changed, capture_changed:adsr_audition_changed=modulation_restored
+# Expect: semantic:adsr_audition_default:effect=start_adsr_audition, semantic:adsr_audition_default:source=adsr, semantic:adsr_audition_default:projection=audible_audition
+# Expect: semantic:adsr_audition_changed:effect=edit_adsr_attack, semantic:modulation_restored:effect=cancel_adsr_audition
+
+0 scenario macro
+80 capture screen macro_ready
+
+180 button MACRO_1 down
+1240 tick
+1300 button MACRO_1 up
+1450 encoder NAV 1
+1570 encoder NAV 1
+1690 tap NAV 60
+1810 encoder NAV 1
+1930 tap NAV 60
+2150 capture screen adsr_audition_default
+
+2270 encoder OPT 0.80
+2490 capture screen adsr_audition_changed
+
+# LEFT_TOP is local Cancel; no source, trigger, edge, or Undo residue remains.
+2610 tap LEFT_TOP 60
+2830 capture screen modulation_restored

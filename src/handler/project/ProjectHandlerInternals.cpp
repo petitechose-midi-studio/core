@@ -28,40 +28,6 @@ FLASHMEM uint8_t projectModulatorFreePeriodIndex(uint32_t periodMs) {
     return best;
 }
 
-FLASHMEM uint8_t projectModulatorAdsrDurationIndex(
-    uint16_t duration,
-    core::state::modulation::ModulatorTimingMode timing
-) {
-    const auto& values = timing ==
-            core::state::modulation::ModulatorTimingMode::FREE
-        ? PROJECT_MODULATOR_ADSR_FREE_DURATIONS
-        : PROJECT_MODULATOR_ADSR_SYNC_DURATIONS;
-    uint8_t best = 0U;
-    uint32_t bestDistance = UINT32_MAX;
-    for (uint8_t index = 0U; index < values.size(); ++index) {
-        const uint32_t candidate = values[index];
-        const uint32_t distance = candidate > duration
-            ? candidate - duration
-            : duration - candidate;
-        if (distance < bestDistance) {
-            best = index;
-            bestDistance = distance;
-        }
-    }
-    return best;
-}
-
-FLASHMEM uint16_t projectModulatorAdsrDurationAt(
-    uint8_t index,
-    core::state::modulation::ModulatorTimingMode timing
-) {
-    const auto& values = timing ==
-            core::state::modulation::ModulatorTimingMode::FREE
-        ? PROJECT_MODULATOR_ADSR_FREE_DURATIONS
-        : PROJECT_MODULATOR_ADSR_SYNC_DURATIONS;
-    return values[index < values.size() ? index : values.size() - 1U];
-}
-
 FLASHMEM int signedStepCount(float delta) {
     if (delta == 0.0f) return 0;
     const float absolute = delta > 0.0f ? delta : -delta;

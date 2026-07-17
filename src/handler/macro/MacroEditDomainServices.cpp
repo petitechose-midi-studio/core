@@ -965,6 +965,49 @@ MacroEditDomainServices::beginDefaultLfoAudition(uint8_t index) const {
 }
 
 FLASHMEM core::state::modulation::ProjectModulationResult
+MacroEditDomainServices::beginDefaultAdsrAudition(uint8_t index) const {
+    using namespace core::state::modulation;
+    ProjectModulationResult failure{};
+    failure.status = ProjectModulationStatus::INVALID_ARGUMENT;
+    if (pages_ == nullptr || history_ == nullptr ||
+        index >= core::state::macro::MACRO_COUNT) {
+        return failure;
+    }
+    const auto address = automationAddress(index);
+    char name[PROJECT_MODULATOR_NAME_CAPACITY]{};
+    formatNextProjectModulatorName(
+        pages_->control.authored.modulation,
+        ModulatorKind::ADSR,
+        name,
+        sizeof(name)
+    );
+    ModulatorAdsrDraft source{};
+    source.name = name;
+    source.reach = {
+        .kind = ModulatorReachKind::MACRO,
+        .track = address.track,
+        .page = address.page,
+        .macro = address.macro,
+    };
+
+    ModulationTriggerDraft trigger{};
+    trigger.trigger = {
+        .kind = ModulationTriggerKind::TRACK_NOTE,
+        .track = address.track,
+        .channel = PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
+        .data = PROJECT_MODULATION_TRIGGER_ANY_NOTE,
+    };
+
+    ModulationBindingDraft binding{};
+    binding.destination = projectControlDestination(address);
+    binding.amountQ15 = 8192;
+    binding.application = ModulationApplication::NATURAL;
+    return history_->beginAdsrModulatorAudition(
+        *pages_, address, source, trigger, binding
+    );
+}
+
+FLASHMEM core::state::modulation::ProjectModulationResult
 MacroEditDomainServices::beginExistingModulatorAudition(
     uint8_t index,
     core::state::modulation::ModulatorId sourceId
@@ -1031,6 +1074,34 @@ FLASHMEM bool MacroEditDomainServices::setLfoAuditionPeriodTicks(
         return false;
     }
     source->parameters.lfo.periodTicks = periodTicks;
+    pages_->control.markAuthoredMutation();
+    if (macro_ui_ != nullptr) {
+        macro_ui_->automationRecordingRevision.set(
+            macro_ui_->automationRecordingRevision.get() + 1U
+        );
+    }
+    return true;
+}
+
+FLASHMEM bool MacroEditDomainServices::setAdsrAuditionParameters(
+    uint8_t index,
+    const core::state::modulation::ModulatorAdsrParameters& parameters
+) const {
+    using namespace core::state::modulation;
+    if (!validProjectModulatorAdsrParameters(parameters)) return false;
+    ModulatorSourceState* source = nullptr;
+    ModulationBindingState* binding = nullptr;
+    if (pages_ == nullptr || !auditionObjects(
+            *pages_, automationAddress(index), source, binding
+        ) || source->kind != ModulatorKind::ADSR ||
+        std::memcmp(
+            &source->parameters.adsr,
+            &parameters,
+            sizeof(parameters)
+        ) == 0) {
+        return false;
+    }
+    source->parameters.adsr = parameters;
     pages_->control.markAuthoredMutation();
     if (macro_ui_ != nullptr) {
         macro_ui_->automationRecordingRevision.set(

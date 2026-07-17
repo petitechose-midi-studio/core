@@ -55,6 +55,10 @@ struct ModulatorAdsrDraft {
     bool enabled = true;
 };
 
+[[nodiscard]] bool validProjectModulatorAdsrParameters(
+    const ModulatorAdsrParameters& parameters
+);
+
 struct RecordedShapeDraft {
     const char* name = nullptr;
     ModulatorReach reach{};

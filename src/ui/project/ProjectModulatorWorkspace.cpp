@@ -11,6 +11,7 @@
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "ui/project/ProjectModulatorUiModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -20,6 +21,7 @@ namespace {
 namespace theme = standalone::theme;
 using namespace core::state::modulation;
 using Item = core::state::project::modulators::SourceDetailItem;
+namespace adsr_ui = core::ui::modulation::adsr;
 
 constexpr lv_coord_t HEADER_HEIGHT = 21;
 constexpr lv_coord_t CURVE_Y = 22;
@@ -127,110 +129,10 @@ FLASHMEM bool actionableItem(Item item) {
            item == Item::TRIGGER;
 }
 
-struct AdsrPreviewBoundaries {
-    uint16_t attackEndQ16 = 0U;
-    uint16_t decayEndQ16 = 0U;
-    uint16_t sustainEndQ16 = 0U;
-};
-
 struct AdsrMarkerState {
     uint16_t positionQ16 = 0U;
     bool visible = false;
 };
-
-FLASHMEM AdsrPreviewBoundaries adsrPreviewBoundaries(
-    const ModulatorAdsrParameters& parameters
-) {
-    uint32_t attack = parameters.attack;
-    uint32_t decay = parameters.decay;
-    uint32_t release = parameters.release;
-    const uint32_t moving = attack + decay + release;
-    uint32_t sustain = std::max<uint32_t>(1U, moving / 4U);
-    if (moving == 0U) {
-        attack = 1U;
-        decay = 1U;
-        release = 1U;
-        sustain = 1U;
-    }
-    const uint32_t total = attack + decay + sustain + release;
-    return {
-        .attackEndQ16 = static_cast<uint16_t>((attack * 65535U) / total),
-        .decayEndQ16 = static_cast<uint16_t>(
-            ((attack + decay) * 65535U) / total
-        ),
-        .sustainEndQ16 = static_cast<uint16_t>(
-            ((attack + decay + sustain) * 65535U) / total
-        ),
-    };
-}
-
-FLASHMEM float adsrSegmentProgress(
-    uint16_t position,
-    uint16_t begin,
-    uint16_t end
-) {
-    if (end <= begin) return 1.0f;
-    return std::clamp(
-        static_cast<float>(position - begin) /
-            static_cast<float>(end - begin),
-        0.0f,
-        1.0f
-    );
-}
-
-FLASHMEM float adsrPreviewValue(
-    const ModulatorAdsrParameters& parameters,
-    const AdsrPreviewBoundaries& boundaries,
-    uint16_t position
-) {
-    const float sustain = std::clamp(
-        static_cast<float>(parameters.sustainQ15) /
-            static_cast<float>(PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15),
-        0.0f,
-        1.0f
-    );
-    if (position < boundaries.attackEndQ16) {
-        return evaluateProjectAdsrProgress(
-            parameters.curve,
-            adsrSegmentProgress(position, 0U, boundaries.attackEndQ16)
-        );
-    }
-    if (position < boundaries.decayEndQ16) {
-        const float shaped = evaluateProjectAdsrProgress(
-            parameters.curve,
-            adsrSegmentProgress(
-                position,
-                boundaries.attackEndQ16,
-                boundaries.decayEndQ16
-            )
-        );
-        return 1.0f + (sustain - 1.0f) * shaped;
-    }
-    if (position < boundaries.sustainEndQ16) return sustain;
-    const float shaped = evaluateProjectAdsrProgress(
-        parameters.curve,
-        adsrSegmentProgress(
-            position,
-            boundaries.sustainEndQ16,
-            65535U
-        )
-    );
-    return sustain * (1.0f - shaped);
-}
-
-FLASHMEM const ProjectModulationRuntimeAdsrState* runtimeAdsrState(
-    const ProjectControlState& control,
-    ModulatorId sourceId
-) {
-    for (uint16_t index = 0U; index < control.runtime.sourceCount; ++index) {
-        const auto& state = control.runtime.sources[index];
-        if (state.id == sourceId &&
-            state.payload.adsr.kind == ModulatorKind::ADSR) {
-            return &state.payload.adsr;
-        }
-    }
-    return nullptr;
-}
 
 FLASHMEM float inverseAdsrProgress(
     ModulatorAdsrCurve curve,
@@ -253,10 +155,10 @@ FLASHMEM float inverseAdsrProgress(
 FLASHMEM AdsrMarkerState adsrMarkerState(
     const ProjectControlState& control,
     const ModulatorSourceState& source,
-    const AdsrPreviewBoundaries& boundaries,
+    const adsr_ui::PreviewBoundaries& boundaries,
     float live
 ) {
-    const auto* runtime = runtimeAdsrState(control, source.id);
+    const auto* runtime = adsr_ui::runtimeState(control, source.id);
     if (!runtime || runtime->stage == ProjectModulationAdsrStage::IDLE) return {};
     const float sustain = std::clamp(
         static_cast<float>(source.parameters.adsr.sustainQ15) /
@@ -698,12 +600,12 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleCurve(
         );
     } else if (source.kind == ModulatorKind::ADSR) {
         positive = true;
-        const AdsrPreviewBoundaries boundaries{
+        const adsr_ui::PreviewBoundaries boundaries{
             context->attackEndQ16,
             context->decayEndQ16,
             context->sustainEndQ16,
         };
-        value = adsrPreviewValue(
+        value = adsr_ui::previewValue(
             source.parameters.adsr,
             boundaries,
             positionQ16
@@ -756,8 +658,8 @@ FLASHMEM void ProjectModulatorWorkspace::renderCurve(
     const bool positive = sourceUsesPositiveDomain(*props.control, *props.source);
     const float live = liveSourceValue(*props.control, props.source->id);
     const auto adsrBoundaries = props.source->kind == ModulatorKind::ADSR
-        ? adsrPreviewBoundaries(props.source->parameters.adsr)
-        : AdsrPreviewBoundaries{};
+        ? adsr_ui::previewBoundaries(props.source->parameters.adsr)
+        : adsr_ui::PreviewBoundaries{};
     curve_sample_context_ = {
         .control = props.control,
         .source = props.source,

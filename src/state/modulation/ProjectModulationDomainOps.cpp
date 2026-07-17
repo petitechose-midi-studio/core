@@ -525,6 +525,12 @@ FLASHMEM bool allZero(const std::array<uint8_t, Capacity>& values) {
 
 }  // namespace
 
+FLASHMEM bool validProjectModulatorAdsrParameters(
+    const ModulatorAdsrParameters& parameters
+) {
+    return validAdsrParameters(parameters);
+}
+
 FLASHMEM bool validModulatorReach(const ModulatorReach& reach) {
     switch (reach.kind) {
         case ModulatorReachKind::DETACHED:

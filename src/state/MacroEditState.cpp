@@ -153,14 +153,14 @@ FLASHMEM void MacroEditState::closeModulatorCreate(uint8_t focusedRow) {
                                 : MacroEditFlowPhase::CLOSED);
 }
 
-FLASHMEM void MacroEditState::openLfoAudition() {
+FLASHMEM void MacroEditState::openNewModulatorAudition() {
     visible.set(true);
     automationVisible.set(true);
     modulationFocusedRow.set(0);
-    flowPhase.set(MacroEditFlowPhase::LFO_AUDITION);
+    flowPhase.set(MacroEditFlowPhase::NEW_MODULATOR_AUDITION);
 }
 
-FLASHMEM void MacroEditState::cancelLfoAudition(uint8_t focusedRow) {
+FLASHMEM void MacroEditState::cancelNewModulatorAudition(uint8_t focusedRow) {
     modulationFocusedRow.set(focusedRow);
     flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATION
                                 : MacroEditFlowPhase::CLOSED);

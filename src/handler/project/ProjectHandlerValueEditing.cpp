@@ -7,6 +7,7 @@
 
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
+#include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
 
 #include <cmath>
@@ -17,6 +18,7 @@
 namespace core::handler {
 
 using namespace project_handler_internal;
+namespace adsr_ui = core::ui::modulation::adsr;
 
 namespace {
 
@@ -348,33 +350,33 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         auto parameters = source->parameters.adsr;
         switch (item) {
             case Item::ATTACK:
-                parameters.attack = projectModulatorAdsrDurationAt(
+                parameters.attack = adsr_ui::durationAt(
                     static_cast<uint8_t>(normalizedToIndex(
                         value,
                         static_cast<int>(
-                            PROJECT_MODULATOR_ADSR_FREE_DURATIONS.size()
+                            adsr_ui::DURATION_COUNT
                         )
                     )),
                     parameters.timing
                 );
                 break;
             case Item::DECAY:
-                parameters.decay = projectModulatorAdsrDurationAt(
+                parameters.decay = adsr_ui::durationAt(
                     static_cast<uint8_t>(normalizedToIndex(
                         value,
                         static_cast<int>(
-                            PROJECT_MODULATOR_ADSR_FREE_DURATIONS.size()
+                            adsr_ui::DURATION_COUNT
                         )
                     )),
                     parameters.timing
                 );
                 break;
             case Item::RELEASE:
-                parameters.release = projectModulatorAdsrDurationAt(
+                parameters.release = adsr_ui::durationAt(
                     static_cast<uint8_t>(normalizedToIndex(
                         value,
                         static_cast<int>(
-                            PROJECT_MODULATOR_ADSR_FREE_DURATIONS.size()
+                            adsr_ui::DURATION_COUNT
                         )
                     )),
                     parameters.timing
@@ -393,16 +395,16 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
                     : ModulatorTimingMode::SYNC;
                 if (next == parameters.timing) return true;
                 const auto previous = parameters.timing;
-                parameters.attack = projectModulatorAdsrDurationAt(
-                    projectModulatorAdsrDurationIndex(parameters.attack, previous),
+                parameters.attack = adsr_ui::durationAt(
+                    adsr_ui::durationIndex(parameters.attack, previous),
                     next
                 );
-                parameters.decay = projectModulatorAdsrDurationAt(
-                    projectModulatorAdsrDurationIndex(parameters.decay, previous),
+                parameters.decay = adsr_ui::durationAt(
+                    adsr_ui::durationIndex(parameters.decay, previous),
                     next
                 );
-                parameters.release = projectModulatorAdsrDurationAt(
-                    projectModulatorAdsrDurationIndex(parameters.release, previous),
+                parameters.release = adsr_ui::durationAt(
+                    adsr_ui::durationIndex(parameters.release, previous),
                     next
                 );
                 parameters.timing = next;

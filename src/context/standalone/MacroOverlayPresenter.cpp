@@ -52,7 +52,7 @@ void MacroOverlayPresenter::refreshRuntimeTelemetry() {
         (state_refs_.macroEdit.flowPhase.get() ==
              core::state::MacroEditFlowPhase::MODULATION ||
          state_refs_.macroEdit.flowPhase.get() ==
-             core::state::MacroEditFlowPhase::LFO_AUDITION ||
+             core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION ||
          state_refs_.macroEdit.flowPhase.get() ==
              core::state::MacroEditFlowPhase::MODULATOR_PICKER ||
          state_refs_.macroEdit.flowPhase.get() ==

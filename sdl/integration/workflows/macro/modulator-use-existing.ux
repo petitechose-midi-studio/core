@@ -18,8 +18,9 @@
 1570 encoder NAV 1
 1690 tap NAV 60
 
-# Creation choice: Use Existing is immediately next to New LFO.
+# Creation choice: Use Existing follows the two explicit new-source kinds.
 1810 encoder NAV 1
+1870 encoder NAV 1
 1930 tap NAV 60
 2150 capture screen modulator_picker_default
 

@@ -25,7 +25,7 @@ enum class MacroEditFlowPhase : uint8_t {
     AUTOMATION = 5,
     MODULATION = 6,
     CONVERT_PREVIEW = 7,
-    LFO_AUDITION = 8,
+    NEW_MODULATOR_AUDITION = 8,
     MODULATOR_PICKER = 9,
     EXISTING_MODULATOR_AUDITION = 10,
     MODULATOR_CREATE = 11,
@@ -177,9 +177,9 @@ struct MacroEditState {
 
     void closeModulatorCreate(uint8_t focusedRow);
 
-    void openLfoAudition();
+    void openNewModulatorAudition();
 
-    void cancelLfoAudition(uint8_t focusedRow = 0);
+    void cancelNewModulatorAudition(uint8_t focusedRow = 0);
 
     void openModulatorPicker(int selectedIndex = 0);
 

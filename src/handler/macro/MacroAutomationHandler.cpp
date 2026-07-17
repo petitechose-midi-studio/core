@@ -16,12 +16,14 @@
 #include "state/contextual/OperationFeedbackState.hpp"
 #include "ui/macro/MacroSourceDetailLayout.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
+#include "ui/modulation/ModulatorAdsrUiModel.hpp"
 
 namespace core::handler {
 
 namespace {
 
 namespace detail_ui = core::ui::macro;
+namespace adsr_ui = core::ui::modulation::adsr;
 
 detail_ui::MacroSourceDetailContext detailContext(
     const MacroEditDomainServices& services,
@@ -307,9 +309,9 @@ bool MacroAutomationHandler::conversionPreviewActive() const {
            core::state::MacroEditFlowPhase::CONVERT_PREVIEW;
 }
 
-bool MacroAutomationHandler::lfoAuditionActive() const {
+bool MacroAutomationHandler::newModulatorAuditionActive() const {
     return macro_edit_.flowPhase.get() ==
-           core::state::MacroEditFlowPhase::LFO_AUDITION;
+           core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION;
 }
 
 bool MacroAutomationHandler::modulatorCreateActive() const {
@@ -328,7 +330,7 @@ bool MacroAutomationHandler::existingModulatorAuditionActive() const {
 }
 
 bool MacroAutomationHandler::modulatorAuditionActive() const {
-    return lfoAuditionActive() || existingModulatorAuditionActive();
+    return newModulatorAuditionActive() || existingModulatorAuditionActive();
 }
 
 uint8_t MacroAutomationHandler::macroIndex() const {
@@ -361,13 +363,17 @@ FLASHMEM void MacroAutomationHandler::moveFocus(float delta) {
     const auto context = detailContext(services_, macroIndex());
     int count = 0;
     if (modulatorCreateActive()) {
-        count = 2;
-    } else if (lfoAuditionActive()) {
         count = 3;
+    } else if (newModulatorAuditionActive()) {
+        const auto* source = auditionSource(pages_);
+        count = source != nullptr && source->kind ==
+                core::state::modulation::ModulatorKind::ADSR
+            ? adsr_ui::AUDITION_ITEM_COUNT
+            : 3;
     } else if (existingModulatorAuditionActive()) {
         count = 2;
     } else if (modulationDetailActive() && !context.modulationStored) {
-        count = 2;
+        count = 3;
     } else if (modulationDetailActive()) {
         count = modulationRows(pages_, macroIndex()).rowCount();
     } else {
@@ -415,6 +421,53 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
                 index,
                 detail_ui::lfo_audition::depthPercentToQ15(percent)
             );
+            return;
+        }
+        if (source->kind == core::state::modulation::ModulatorKind::ADSR) {
+            const auto row = static_cast<adsr_ui::AuditionItem>(
+                std::min<uint8_t>(
+                    macro_edit_.modulationFocusedRow.get(),
+                    adsr_ui::AUDITION_ITEM_COUNT - 1U
+                )
+            );
+            auto parameters = source->parameters.adsr;
+            const uint8_t durationIndex = static_cast<uint8_t>(
+                clamped * static_cast<float>(adsr_ui::DURATION_COUNT - 1U) +
+                0.5f
+            );
+            switch (row) {
+                case adsr_ui::AuditionItem::ATTACK:
+                    parameters.attack = adsr_ui::durationAt(
+                        durationIndex, parameters.timing
+                    );
+                    break;
+                case adsr_ui::AuditionItem::DECAY:
+                    parameters.decay = adsr_ui::durationAt(
+                        durationIndex, parameters.timing
+                    );
+                    break;
+                case adsr_ui::AuditionItem::SUSTAIN:
+                    parameters.sustainQ15 = adsr_ui::sustainPercentToQ15(
+                        static_cast<uint8_t>(clamped * 100.0f + 0.5f)
+                    );
+                    break;
+                case adsr_ui::AuditionItem::RELEASE:
+                    parameters.release = adsr_ui::durationAt(
+                        durationIndex, parameters.timing
+                    );
+                    break;
+                case adsr_ui::AuditionItem::DEPTH: {
+                    const int16_t percent = static_cast<int16_t>(
+                        clamped * 200.0f + 0.5f
+                    ) - 100;
+                    (void)services_.setModulatorAuditionDepthQ15(
+                        index,
+                        detail_ui::lfo_audition::depthPercentToQ15(percent)
+                    );
+                    return;
+                }
+            }
+            (void)services_.setAdsrAuditionParameters(index, parameters);
             return;
         }
         const uint8_t row = std::min<uint8_t>(
@@ -526,6 +579,55 @@ FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
                         binding->amountQ15
                     );
                 position = static_cast<float>(percent + 100) / 200.0f;
+                encoders_.setDiscreteSteps(Config::EncoderID::OPT, steps);
+                encoders_.setPosition(Config::EncoderID::OPT, position);
+                return;
+            }
+            if (source->kind == core::state::modulation::ModulatorKind::ADSR) {
+                const auto row = static_cast<adsr_ui::AuditionItem>(
+                    std::min<uint8_t>(
+                        macro_edit_.modulationFocusedRow.get(),
+                        adsr_ui::AUDITION_ITEM_COUNT - 1U
+                    )
+                );
+                const auto& parameters = source->parameters.adsr;
+                switch (row) {
+                    case adsr_ui::AuditionItem::ATTACK:
+                        steps = adsr_ui::DURATION_COUNT;
+                        position = static_cast<float>(adsr_ui::durationIndex(
+                            parameters.attack, parameters.timing
+                        )) / static_cast<float>(steps - 1U);
+                        break;
+                    case adsr_ui::AuditionItem::DECAY:
+                        steps = adsr_ui::DURATION_COUNT;
+                        position = static_cast<float>(adsr_ui::durationIndex(
+                            parameters.decay, parameters.timing
+                        )) / static_cast<float>(steps - 1U);
+                        break;
+                    case adsr_ui::AuditionItem::SUSTAIN:
+                        steps = adsr_ui::SUSTAIN_STEP_COUNT;
+                        position = static_cast<float>(
+                            adsr_ui::sustainQ15ToPercent(parameters.sustainQ15)
+                        ) / 100.0f;
+                        break;
+                    case adsr_ui::AuditionItem::RELEASE:
+                        steps = adsr_ui::DURATION_COUNT;
+                        position = static_cast<float>(adsr_ui::durationIndex(
+                            parameters.release, parameters.timing
+                        )) / static_cast<float>(steps - 1U);
+                        break;
+                    case adsr_ui::AuditionItem::DEPTH: {
+                        steps = static_cast<uint8_t>(
+                            detail_ui::lfo_audition::DEPTH_STEP_COUNT
+                        );
+                        const int16_t percent =
+                            detail_ui::lfo_audition::depthQ15ToPercent(
+                                binding->amountQ15
+                            );
+                        position = static_cast<float>(percent + 100) / 200.0f;
+                        break;
+                    }
+                }
                 encoders_.setDiscreteSteps(Config::EncoderID::OPT, steps);
                 encoders_.setPosition(Config::EncoderID::OPT, position);
                 return;
@@ -1027,6 +1129,8 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
         if (row == 0U) {
             (void)startLfoAudition();
         } else if (row == 1U) {
+            (void)startAdsrAudition();
+        } else if (row == 2U) {
             (void)openModulatorPicker();
         }
         return;
@@ -1039,6 +1143,8 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
             if (row == 0U) {
                 (void)startLfoAudition();
             } else if (row == 1U) {
+                (void)startAdsrAudition();
+            } else if (row == 2U) {
                 (void)openModulatorPicker();
             }
         } else {
@@ -1158,7 +1264,15 @@ FLASHMEM bool MacroAutomationHandler::applyConversion(bool overwriteGesture) {
 FLASHMEM bool MacroAutomationHandler::startLfoAudition() {
     const auto result = services_.beginDefaultLfoAudition(macroIndex());
     if (!result.changed()) return false;
-    macro_edit_.openLfoAudition();
+    macro_edit_.openNewModulatorAudition();
+    configureOptForFocusedRow();
+    return true;
+}
+
+FLASHMEM bool MacroAutomationHandler::startAdsrAudition() {
+    const auto result = services_.beginDefaultAdsrAudition(macroIndex());
+    if (!result.changed()) return false;
+    macro_edit_.openNewModulatorAudition();
     configureOptForFocusedRow();
     return true;
 }
@@ -1197,6 +1311,9 @@ FLASHMEM bool MacroAutomationHandler::startExistingModulatorAudition() {
 
 FLASHMEM bool MacroAutomationHandler::cancelModulatorAudition() {
     const bool existing = existingModulatorAuditionActive();
+    const auto* source = auditionSource(pages_);
+    const bool adsr = !existing && source != nullptr &&
+        source->kind == core::state::modulation::ModulatorKind::ADSR;
     if (!modulatorAuditionActive() ||
         !services_.cancelModulatorAudition(macroIndex())) {
         return false;
@@ -1205,7 +1322,7 @@ FLASHMEM bool MacroAutomationHandler::cancelModulatorAudition() {
         macro_edit_.cancelExistingModulatorAudition();
     } else {
         const auto rows = modulationRows(pages_, macroIndex());
-        macro_edit_.cancelLfoAudition(
+        macro_edit_.cancelNewModulatorAudition(
             rows.assignmentCount == 0U ? 0U
                                        : static_cast<uint8_t>(rows.addSourceRow())
         );
@@ -1216,7 +1333,7 @@ FLASHMEM bool MacroAutomationHandler::cancelModulatorAudition() {
         .track = pages_.currentActiveTrack(),
         .page = pages_.currentActivePage(),
         .item = macroIndex(),
-        .node = static_cast<uint16_t>(existing ? 1U : 0U),
+        .node = static_cast<uint16_t>(existing ? 1U : (adsr ? 2U : 0U)),
     };
     const uint32_t nowMs = now_provider_ ? now_provider_() : 0U;
     core::state::contextual::setOperationFeedback(
@@ -1237,6 +1354,9 @@ FLASHMEM bool MacroAutomationHandler::cancelModulatorAudition() {
 
 FLASHMEM bool MacroAutomationHandler::applyModulatorAudition() {
     const bool existing = existingModulatorAuditionActive();
+    const auto* source = auditionSource(pages_);
+    const bool adsr = !existing && source != nullptr &&
+        source->kind == core::state::modulation::ModulatorKind::ADSR;
     if (!modulatorAuditionActive() ||
         !services_.applyModulatorAudition(macroIndex())) {
         return false;
@@ -1249,7 +1369,7 @@ FLASHMEM bool MacroAutomationHandler::applyModulatorAudition() {
         .track = pages_.currentActiveTrack(),
         .page = pages_.currentActivePage(),
         .item = macroIndex(),
-        .node = static_cast<uint16_t>(existing ? 1U : 0U),
+        .node = static_cast<uint16_t>(existing ? 1U : (adsr ? 2U : 0U)),
     };
     const uint32_t nowMs = now_provider_ ? now_provider_() : 0U;
     core::state::contextual::setOperationFeedback(

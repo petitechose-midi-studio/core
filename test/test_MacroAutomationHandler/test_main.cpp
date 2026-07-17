@@ -16,12 +16,15 @@
 #include "../../src/handler/macro/MacroAutomationHandler.hpp"
 #include "../../src/handler/macro/MacroEditDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/NotificationTestUtils.hpp"
 #include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
+
+namespace adsr_ui = core::ui::modulation::adsr;
 
 uint32_t g_now_ms = 0;
 
@@ -741,7 +744,7 @@ void test_empty_modulation_requires_explicit_new_lfo_selection_and_cancel_is_exa
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
     assert(h.state.macroEdit.flowPhase.get() ==
-           core::state::MacroEditFlowPhase::LFO_AUDITION);
+           core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION);
     assert(h.state.pages.control.audition.active);
     assert(h.state.pages.control.authored.modulation.sourceCount == 1);
     assert(h.state.pages.control.authored.modulation.outputBindingCount == 1);
@@ -801,7 +804,7 @@ void test_lfo_audition_apply_returns_to_macro_edit_and_is_one_undo() {
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
     assert(h.state.macroEdit.flowPhase.get() ==
-           core::state::MacroEditFlowPhase::LFO_AUDITION);
+           core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.turn(Config::EncoderID::NAV, 1.0f);
@@ -827,6 +830,144 @@ void test_lfo_audition_apply_returns_to_macro_edit_and_is_one_undo() {
     assert(h.state.pages.control.authored.modulation.outputBindings[0]
                .amountQ15 == 16384);
     std::cout << "[PASS] LFO Apply returns to Macro and creates one Undo action\n";
+}
+
+void test_adsr_audition_edits_direct_properties_and_cancel_is_exact() {
+    using namespace core::state::modulation;
+    ModulatorAdsrParameters maximumPreview{};
+    maximumPreview.attack = UINT16_MAX;
+    maximumPreview.decay = UINT16_MAX;
+    maximumPreview.release = UINT16_MAX;
+    const auto maximumBoundaries = adsr_ui::previewBoundaries(maximumPreview);
+    assert(maximumBoundaries.attackEndQ16 > 0U);
+    assert(maximumBoundaries.attackEndQ16 < maximumBoundaries.decayEndQ16);
+    assert(maximumBoundaries.decayEndQ16 < maximumBoundaries.sustainEndQ16);
+    assert(maximumBoundaries.sustainEndQ16 < UINT16_MAX);
+
+    MacroAutomationHarness h;
+    h.state.pages.setMacroSlotActive(0, true);
+    const auto before = h.state.pages.control.authored.modulation;
+    h.openModulationEditor();
+    h.handler.update(0);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION);
+    assert(h.state.pages.control.audition.active);
+    const auto& graph = h.state.pages.control.authored.modulation;
+    assert(graph.sourceCount == 1U);
+    assert(graph.triggerBindingCount == 1U);
+    assert(graph.outputBindingCount == 1U);
+    const auto& source = graph.sources[0];
+    const auto& trigger = graph.triggerBindings[0];
+    assert(source.kind == ModulatorKind::ADSR);
+    assert(std::strcmp(source.name.data(), "ADSR 1") == 0);
+    assert(source.reach.kind == ModulatorReachKind::MACRO);
+    assert(source.reach.track == h.state.pages.currentActiveTrack());
+    assert(source.reach.page == h.state.pages.currentActivePage());
+    assert(source.reach.macro == 0U);
+    assert(trigger.sourceId == source.id);
+    assert(trigger.trigger.kind == ModulationTriggerKind::TRACK_NOTE);
+    assert(trigger.trigger.track == h.state.pages.currentActiveTrack());
+    assert(trigger.trigger.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL);
+    assert(trigger.trigger.data == PROJECT_MODULATION_TRIGGER_ANY_NOTE);
+    assert(graph.outputBindings[0].amountQ15 == 8192);
+    assert(graph.outputBindings[0].application == ModulationApplication::NATURAL);
+    assert(h.state.macroHistory.undoCount() == 0U);
+
+    assert(h.encoderHw.getDiscreteSteps(
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
+    ) == adsr_ui::DURATION_COUNT);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(graph.sources[0].parameters.adsr.attack == 65535U);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(graph.sources[0].parameters.adsr.decay == 0U);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.encoderHw.getDiscreteSteps(
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
+    ) == adsr_ui::SUSTAIN_STEP_COUNT);
+    h.turn(Config::EncoderID::OPT, 0.4f);
+    assert(graph.sources[0].parameters.adsr.sustainQ15 ==
+           adsr_ui::sustainPercentToQ15(40U));
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(graph.sources[0].parameters.adsr.release == 500U);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.encoderHw.getDiscreteSteps(
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
+    ) == 201U);
+    h.turn(Config::EncoderID::OPT, 0.75f);
+    assert(graph.outputBindings[0].amountQ15 == 16384);
+
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATION);
+    assert(!h.state.pages.control.audition.active);
+    assert(h.state.macroHistory.undoCount() == 0U);
+    assert(std::memcmp(
+        &h.state.pages.control.authored.modulation,
+        &before,
+        sizeof(before)
+    ) == 0);
+    std::cout << "[PASS] ADSR audition edits A/D/S/R/Depth and Cancel is exact\n";
+}
+
+void test_adsr_audition_apply_is_one_source_trigger_assignment_action() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    h.state.pages.setMacroSlotActive(0, true);
+    const auto before = h.state.pages.control.authored.modulation;
+    h.openModulationEditor();
+    h.handler.update(0);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    const auto sourceId = h.state.pages.control.audition.sourceId;
+    const auto bindingId = h.state.pages.control.audition.bindingId;
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.setNow(100);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::EDIT);
+    assert(!h.state.pages.control.audition.active);
+    assert(h.state.macroHistory.undoCount() == 1U);
+    assert(h.services.focusedModulationBinding(0) == bindingId);
+    const auto after = h.state.pages.control.authored.modulation;
+    assert(after.sourceCount == 1U);
+    assert(after.sources[0].id == sourceId);
+    assert(after.triggerBindingCount == 1U);
+    assert(after.triggerBindings[0].sourceId == sourceId);
+    assert(after.outputBindingCount == 1U);
+    assert(after.outputBindings[0].id == bindingId);
+    assert(after.sources[0].parameters.adsr.sustainQ15 ==
+           adsr_ui::sustainPercentToQ15(50U));
+
+    assert(h.state.macroHistory.undo(h.state.pages));
+    assert(std::memcmp(
+        &h.state.pages.control.authored.modulation,
+        &before,
+        sizeof(before)
+    ) == 0);
+    assert(h.state.macroHistory.redo(h.state.pages));
+    assert(std::memcmp(
+        &h.state.pages.control.authored.modulation,
+        &after,
+        sizeof(after)
+    ) == 0);
+    std::cout << "[PASS] ADSR Apply is one source/trigger/assignment action\n";
 }
 
 core::state::modulation::ModulatorId createReusableLfo(
@@ -905,9 +1046,10 @@ void test_add_source_create_focus_reaches_use_existing_without_picker_mutation()
         h.state.pages.control.authored.modulation.outputBindingCount;
 
     h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::MODULATOR_CREATE);
-    assert(h.state.macroEdit.modulationFocusedRow.get() == 1U);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 2U);
     assert(h.encoderHw.getDiscreteSteps(
         static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
     ) == 1U);
@@ -945,6 +1087,7 @@ void test_use_existing_browse_is_silent_and_cancel_preserves_source() {
     h.openModulationEditor();
     h.handler.update(0);
 
+    h.turn(Config::EncoderID::NAV, 1.0f);
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
@@ -996,6 +1139,7 @@ void test_use_existing_apply_is_one_edge_history_and_focus() {
     const auto root = h.state.pages.control.authored.modulation.sources[0];
     h.openModulationEditor();
     h.handler.update(0);
+    h.turn(Config::EncoderID::NAV, 1.0f);
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
@@ -1154,6 +1298,8 @@ int main() {
     test_left_center_enables_coarse_length_and_offset_steps_temporarily();
     test_empty_modulation_requires_explicit_new_lfo_selection_and_cancel_is_exact();
     test_lfo_audition_apply_returns_to_macro_edit_and_is_one_undo();
+    test_adsr_audition_edits_direct_properties_and_cancel_is_exact();
+    test_adsr_audition_apply_is_one_source_trigger_assignment_action();
     test_add_source_create_focus_reaches_use_existing_without_picker_mutation();
     test_use_existing_browse_is_silent_and_cancel_preserves_source();
     test_use_existing_apply_is_one_edge_history_and_focus();

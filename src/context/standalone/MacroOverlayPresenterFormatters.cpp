@@ -14,11 +14,14 @@
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
 #include "ui/macro/MacroSourceDetailLayout.hpp"
+#include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone::macro_overlay_presenter {
 
 namespace {
+
+namespace adsr_ui = core::ui::modulation::adsr;
 
 FLASHMEM void formatBeatDuration(char* out,
                                  size_t outSize,
@@ -255,6 +258,86 @@ FLASHMEM ms::ui::KeyValueSparkline buildLfoSparkline(
     return sparkline;
 }
 
+FLASHMEM void formatAdsrDuration(
+    char* out,
+    size_t outSize,
+    uint16_t duration,
+    core::state::modulation::ModulatorTimingMode timing
+) {
+    using namespace core::state::modulation;
+    if (timing == ModulatorTimingMode::FREE) {
+        if (duration >= 1000U) {
+            const uint32_t tenths = (static_cast<uint32_t>(duration) + 50U) /
+                100U;
+            std::snprintf(
+                out,
+                outSize,
+                "%u.%us",
+                static_cast<unsigned>(tenths / 10U),
+                static_cast<unsigned>(tenths % 10U)
+            );
+        } else {
+            std::snprintf(
+                out, outSize, "%ums", static_cast<unsigned>(duration)
+            );
+        }
+        return;
+    }
+    const uint32_t tenths =
+        (static_cast<uint32_t>(duration) * 10U +
+         PROJECT_CONTROL_TICKS_PER_BEAT / 2U) /
+        PROJECT_CONTROL_TICKS_PER_BEAT;
+    if ((tenths % 10U) == 0U) {
+        std::snprintf(
+            out, outSize, "%ub", static_cast<unsigned>(tenths / 10U)
+        );
+    } else {
+        std::snprintf(
+            out,
+            outSize,
+            "%u.%ub",
+            static_cast<unsigned>(tenths / 10U),
+            static_cast<unsigned>(tenths % 10U)
+        );
+    }
+}
+
+FLASHMEM ms::ui::KeyValueSparkline buildAdsrSparkline(
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::modulation::ModulatorSourceState& source
+) {
+    using namespace core::state::modulation;
+    ms::ui::KeyValueSparkline sparkline{};
+    sparkline.enabled = true;
+    sparkline.centerLine = false;
+    sparkline.sampleCount = static_cast<uint8_t>(
+        ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT
+    );
+    const auto boundaries = adsr_ui::previewBoundaries(source.parameters.adsr);
+    for (uint8_t index = 0U; index < sparkline.sampleCount; ++index) {
+        const uint16_t position = static_cast<uint16_t>(
+            (static_cast<uint32_t>(index) * 65535U) /
+            static_cast<uint32_t>(sparkline.sampleCount - 1U)
+        );
+        const float value = adsr_ui::previewValue(
+            source.parameters.adsr,
+            boundaries,
+            position
+        );
+        sparkline.samples[index] = static_cast<uint8_t>(std::lround(
+            std::clamp(value, 0.0f, 1.0f) * 255.0f
+        ));
+    }
+    const auto* runtime = adsr_ui::runtimeState(control, source.id);
+    sparkline.liveMarker =
+        (source.flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U &&
+        runtime != nullptr && runtime->stage != ProjectModulationAdsrStage::IDLE;
+    sparkline.liveValue = static_cast<uint8_t>(std::lround(
+        std::clamp(liveSourceValue(control, source.id), 0.0f, 1.0f) * 255.0f
+    ));
+    return sparkline;
+}
+
 FLASHMEM uint16_t sourceUsageCount(
     const core::state::modulation::ProjectModulationState& graph,
     core::state::modulation::ModulatorId sourceId
@@ -346,6 +429,9 @@ FLASHMEM ms::ui::KeyValueSparkline buildSourceSparkline(
             liveSourceValue(control, source.id)
         );
     }
+    if (source.kind == core::state::modulation::ModulatorKind::ADSR) {
+        return buildAdsrSparkline(control, source);
+    }
     const auto curveId = source.parameters.recordedCurveId;
     const auto* record = core::state::modulation::findProjectCurve(
         control.authored.curves,
@@ -404,6 +490,9 @@ FLASHMEM void provideModulatorPickerRow(
                 modulator.parameters.lfo.periodTicks
             )
         );
+    } else if (modulator.kind ==
+               core::state::modulation::ModulatorKind::ADSR) {
+        primary = "ADSR";
     }
     out.sparkline = buildSourceSparkline(source->pages.control, modulator);
     std::snprintf(out.key.data(), out.key.size(), "%s", modulator.name.data());
@@ -438,7 +527,9 @@ FLASHMEM void provideModulatorPickerRow(
         "%s",
         modulator.kind == core::state::modulation::ModulatorKind::LFO
             ? ::standalone::icons::MACRO_MODULATION
-            : ::standalone::icons::MACRO_AUTOMATION
+            : (modulator.kind == core::state::modulation::ModulatorKind::ADSR
+                ? ::standalone::icons::NOTE_PROP_GATE
+                : ::standalone::icons::MACRO_AUTOMATION)
     );
     out.iconFont = standalone_fonts.icons_14;
     const bool enabled =
@@ -1134,7 +1225,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             ? "Automation"
             : (phase == core::state::MacroEditFlowPhase::MODULATION
                    ? "Modulation"
-                   : (phase == core::state::MacroEditFlowPhase::LFO_AUDITION
+                   : (phase == core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION
                           ? "Audition · Live"
                           : "Silent preview"))
     );
@@ -1264,9 +1355,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         return data;
     }
 
-    if (phase == core::state::MacroEditFlowPhase::LFO_AUDITION ||
-        phase ==
-            core::state::MacroEditFlowPhase::EXISTING_MODULATOR_AUDITION) {
+    if (phase == core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION) {
         const auto& audition = source.pages.control.audition;
         const auto* modulator = audition.active
             ? core::state::modulation::findProjectModulator(
@@ -1284,8 +1373,97 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                 }
             }
         }
-        if (modulator == nullptr || binding == nullptr ||
-            modulator->kind != core::state::modulation::ModulatorKind::LFO) {
+        if (modulator == nullptr || binding == nullptr) {
+            return data;
+        }
+        if (modulator->kind == core::state::modulation::ModulatorKind::ADSR) {
+            std::snprintf(
+                data.title.data(),
+                data.title.size(),
+                "%s",
+                modulator->name.data()
+            );
+            formatAdsrDuration(
+                data.valueBuffers[0].data(),
+                data.valueBuffers[0].size(),
+                modulator->parameters.adsr.attack,
+                modulator->parameters.adsr.timing
+            );
+            std::snprintf(
+                data.meta.data(),
+                data.meta.size(),
+                "A %.5s · Note",
+                data.valueBuffers[0].data()
+            );
+            formatAdsrDuration(
+                data.valueBuffers[1].data(),
+                data.valueBuffers[1].size(),
+                modulator->parameters.adsr.decay,
+                modulator->parameters.adsr.timing
+            );
+            std::snprintf(
+                data.valueBuffers[2].data(),
+                data.valueBuffers[2].size(),
+                "%u%%",
+                static_cast<unsigned>(adsr_ui::sustainQ15ToPercent(
+                    modulator->parameters.adsr.sustainQ15
+                ))
+            );
+            formatAdsrDuration(
+                data.valueBuffers[3].data(),
+                data.valueBuffers[3].size(),
+                modulator->parameters.adsr.release,
+                modulator->parameters.adsr.timing
+            );
+            std::snprintf(
+                data.valueBuffers[4].data(),
+                data.valueBuffers[4].size(),
+                "%+d%%",
+                static_cast<int>(
+                    core::ui::macro::lfo_audition::depthQ15ToPercent(
+                        binding->amountQ15
+                    )
+                )
+            );
+            data.rows = {{
+                {.key = "Attack", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::NOTE_PROP_GATE, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = buildAdsrSparkline(source.pages.control, *modulator)},
+                {.key = "Decay", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::LENGTH, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+                {.key = "Sustain", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+                {.key = "Release", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::LENGTH, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+                {.key = "Depth", .value = data.valueBuffers[4].data(), .icon = ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+                {},
+                {},
+            }};
+            data.rowCount = adsr_ui::AUDITION_ITEM_COUNT;
+            data.selectedIndex = std::min<int>(
+                source.macroEdit.modulationFocusedRow.get(),
+                adsr_ui::AUDITION_ITEM_COUNT - 1U
+            );
+            const float live = liveSourceValue(
+                source.pages.control, modulator->id
+            );
+            const auto* runtime = adsr_ui::runtimeState(
+                source.pages.control, modulator->id
+            );
+            const uint32_t stage = runtime != nullptr
+                ? static_cast<uint32_t>(runtime->stage)
+                : 0U;
+            const uint8_t liveQuantized = static_cast<uint8_t>(std::lround(
+                std::clamp(live, 0.0f, 1.0f) * 255.0f
+            ));
+            data.dataRevision = mixRevision(
+                mixRevision(
+                    source.pages.control.authoredRevision,
+                    audition.generation
+                ),
+                static_cast<uint32_t>(liveQuantized) |
+                    (static_cast<uint32_t>(data.selectedIndex) << 8U) |
+                    (stage << 16U)
+            );
+            data.visible = true;
+            return data;
+        }
+        if (modulator->kind != core::state::modulation::ModulatorKind::LFO) {
             return data;
         }
         std::snprintf(
@@ -1473,21 +1651,27 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             data.valueBuffers[1].data(),
             data.valueBuffers[1].size(),
             "%s",
+            "Create"
+        );
+        std::snprintf(
+            data.valueBuffers[2].data(),
+            data.valueBuffers[2].size(),
+            "%s",
             reusable ? "Choose" : "None yet"
         );
         data.rows = {{
             {.key = "New LFO", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
-            {.key = "Use Existing", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::ACTION_PLACE_TARGET, .iconFont = standalone_fonts.icons_14, .iconColor = reusable ? ::standalone::theme::color::MACRO_MODULATION : ::standalone::theme::color::TEXT_SECONDARY},
-            {},
+            {.key = "New ADSR", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::NOTE_PROP_GATE, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
+            {.key = "Use Existing", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::ACTION_PLACE_TARGET, .iconFont = standalone_fonts.icons_14, .iconColor = reusable ? ::standalone::theme::color::MACRO_MODULATION : ::standalone::theme::color::TEXT_SECONDARY},
             {},
             {},
             {},
             {},
         }};
-        data.rowCount = 2;
+        data.rowCount = 3;
         data.selectedIndex = std::min<int>(
             source.macroEdit.modulationFocusedRow.get(),
-            1
+            2
         );
         data.dataRevision = mixRevision(
             mixRevision(
@@ -1836,7 +2020,7 @@ FLASHMEM core::ui::ContextActionStripProps buildDetailActionStripProps(
         props.slots[2].visualState = Visual::HIDDEN;
         return props;
     }
-    if (phase == core::state::MacroEditFlowPhase::LFO_AUDITION ||
+    if (phase == core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION ||
         phase ==
             core::state::MacroEditFlowPhase::EXISTING_MODULATOR_AUDITION) {
         props.slots[0].visualState = Visual::HIDDEN;

@@ -14,12 +14,14 @@
 #include "state/macro/MacroWorkflow.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
+#include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::project::modulators {
 namespace {
 
 using namespace core::state::modulation;
+namespace adsr_ui = core::ui::modulation::adsr;
 
 const char LABEL_FREE[] PROGMEM = "Free";
 const char LABEL_TEMPO_SYNC[] PROGMEM = "Tempo Sync";
@@ -377,6 +379,7 @@ FLASHMEM ms::ui::KeyValueSparkline recordedSparkline(
 }
 
 FLASHMEM ms::ui::KeyValueSparkline adsrSparkline(
+    const ProjectControlState& control,
     const ModulatorSourceState& source,
     float live,
     bool enabled
@@ -384,41 +387,26 @@ FLASHMEM ms::ui::KeyValueSparkline adsrSparkline(
     ms::ui::KeyValueSparkline out{};
     out.enabled = true;
     out.centerLine = false;
-    out.liveMarker = enabled;
+    const auto* runtime = adsr_ui::runtimeState(control, source.id);
+    out.liveMarker = enabled && runtime != nullptr &&
+        runtime->stage != ProjectModulationAdsrStage::IDLE;
     out.liveValue = static_cast<uint8_t>(std::lround(
         std::clamp(live, 0.0f, 1.0f) * 255.0f
     ));
     out.sampleCount = static_cast<uint8_t>(
         ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT
     );
-    const float sustain = std::clamp(
-        static_cast<float>(source.parameters.adsr.sustainQ15) /
-            static_cast<float>(PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15),
-        0.0f,
-        1.0f
-    );
+    const auto boundaries = adsr_ui::previewBoundaries(source.parameters.adsr);
     for (uint8_t index = 0U; index < out.sampleCount; ++index) {
-        const float position = static_cast<float>(index) /
-            static_cast<float>(out.sampleCount - 1U);
-        float value = sustain;
-        if (position < 0.25f) {
-            value = evaluateProjectAdsrProgress(
-                source.parameters.adsr.curve,
-                position * 4.0f
-            );
-        } else if (position < 0.5f) {
-            const float shaped = evaluateProjectAdsrProgress(
-                source.parameters.adsr.curve,
-                (position - 0.25f) * 4.0f
-            );
-            value = 1.0f + (sustain - 1.0f) * shaped;
-        } else if (position >= 0.75f) {
-            const float shaped = evaluateProjectAdsrProgress(
-                source.parameters.adsr.curve,
-                (position - 0.75f) * 4.0f
-            );
-            value = sustain * (1.0f - shaped);
-        }
+        const uint16_t position = static_cast<uint16_t>(
+            (static_cast<uint32_t>(index) * 65535U) /
+            static_cast<uint32_t>(out.sampleCount - 1U)
+        );
+        const float value = adsr_ui::previewValue(
+            source.parameters.adsr,
+            boundaries,
+            position
+        );
         out.samples[index] = static_cast<uint8_t>(std::lround(
             std::clamp(value, 0.0f, 1.0f) * 255.0f
         ));
@@ -441,6 +429,7 @@ FLASHMEM ms::ui::KeyValueSparkline sourceSparkline(
     }
     if (source.kind == ModulatorKind::ADSR) {
         return adsrSparkline(
+            control,
             source,
             liveSourceValue(control, source.id),
             enabled
@@ -508,7 +497,13 @@ FLASHMEM void populateRegistryRow(const ProjectControlState& control,
             source.parameters.adsr.release,
             source.parameters.adsr.timing
         );
-        std::snprintf(primary, sizeof(primary), "A%s R%s", attack, release);
+        std::snprintf(
+            primary,
+            sizeof(primary),
+            "A%.5s R%.5s",
+            attack,
+            release
+        );
     } else {
         const auto* curve = findProjectCurve(
             control.authored.curves,

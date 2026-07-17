@@ -116,6 +116,9 @@ public:
     core::state::modulation::ProjectModulationResult beginDefaultLfoAudition(
         uint8_t index
     ) const;
+    core::state::modulation::ProjectModulationResult beginDefaultAdsrAudition(
+        uint8_t index
+    ) const;
     core::state::modulation::ProjectModulationResult
         beginExistingModulatorAudition(
             uint8_t index,
@@ -126,6 +129,10 @@ public:
         core::state::modulation::ModulatorLfoShape shape
     ) const;
     bool setLfoAuditionPeriodTicks(uint8_t index, uint32_t periodTicks) const;
+    bool setAdsrAuditionParameters(
+        uint8_t index,
+        const core::state::modulation::ModulatorAdsrParameters& parameters
+    ) const;
     bool setModulatorAuditionDepthQ15(uint8_t index, int16_t depthQ15) const;
     bool cancelModulatorAudition(uint8_t index) const;
     bool applyModulatorAudition(uint8_t index) const;

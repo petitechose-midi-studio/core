@@ -2,6 +2,7 @@
 
 #if defined(MS_UX_RECORDER)
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -26,6 +27,18 @@ namespace core::context::standalone::ux {
 namespace {
 
 namespace detail_ui = core::ui::macro;
+
+FLASHMEM const char* modulatorSourceLabel(
+    core::state::modulation::ModulatorKind kind
+) {
+    using Kind = core::state::modulation::ModulatorKind;
+    switch (kind) {
+        case Kind::LFO: return "lfo";
+        case Kind::ADSR: return "adsr";
+        case Kind::RECORDED_SHAPE:
+        default: return "recorded_shape";
+    }
+}
 
 FLASHMEM detail_ui::MacroSourceDetailContext macroSourceDetailContext(
     const core::state::modulation::ProjectControlMacroSlotView& slot,
@@ -349,7 +362,12 @@ FLASHMEM void fillMacroResolutionFacts(
                 candidate.author.stableAddress == address;
         }
         if (!local) continue;
-        out.projection = "resolved_classic_cc";
+        // Keep an explicit interaction projection (silent selection, audition,
+        // preview) authoritative. Runtime resolution facts complement that UX
+        // state; they must not relabel it as a classic-CC projection.
+        if (out.projection == nullptr) {
+            out.projection = "resolved_classic_cc";
+        }
         out.winner = candidateClassName(destination.winner.author.candidateClass);
         out.hasConflict = true;
         out.conflict = destination.conflict;
@@ -921,7 +939,9 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             out.effect = appliedModulator
                 ? (feedback.source.node == 1U
                        ? "apply_existing_modulator"
-                       : "apply_lfo_audition")
+                       : (feedback.source.node == 2U
+                              ? "apply_adsr_audition"
+                              : "apply_lfo_audition"))
                 : (pasted
                 ? (destinationRow ? "paste_macro_destination"
                                   : (automationRow ? "paste_automation"
@@ -1135,22 +1155,25 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                        )) {
                 out.effect = row == 0
                     ? "start_lfo_audition"
-                    : "open_existing_modulator_picker";
+                    : (row == 1 ? "start_adsr_audition"
+                                : "open_existing_modulator_picker");
             } else if (isButton(
                            event,
                            Config::ButtonID::LEFT_TOP,
                            oc::core::input::ButtonBindingType::RELEASE
                        )) {
                 const auto feedback = macro_edit_.contextFeedback.get();
-                const bool cancelledLfo = feedback.active &&
+                const bool cancelledNew = feedback.active &&
                     feedback.action ==
                         core::state::contextual::ContextActionId::CANCEL &&
                     feedback.status == core::state::contextual::
                         OperationFeedbackStatus::CANCELLED;
-                out.effect = cancelledLfo
-                    ? "cancel_lfo_audition"
+                out.effect = cancelledNew
+                    ? (feedback.source.node == 2U
+                           ? "cancel_adsr_audition"
+                           : "cancel_lfo_audition")
                     : "back_macro_modulation";
-                if (cancelledLfo) {
+                if (cancelledNew) {
                     fillGuardedMacroFeedback(out, macro_edit_);
                 }
             } else if (isButton(
@@ -1255,10 +1278,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             copyValueLabel(out.valueLabel, "Add");
         } else if (binding != nullptr && modulator != nullptr) {
             out.property = modulator->name.data();
-            out.source = modulator->kind ==
-                    core::state::modulation::ModulatorKind::LFO
-                ? "lfo"
-                : "recorded_shape";
+            out.source = modulatorSourceLabel(modulator->kind);
             out.mappingIndex = static_cast<int16_t>(binding->id.value);
             out.mappingCount = static_cast<int16_t>(assignmentCount);
             const int depth = static_cast<int>(std::lround(
@@ -1345,14 +1365,16 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
     if (phase == core::state::MacroEditFlowPhase::MODULATOR_CREATE) {
         const int row = std::min<int>(
             macro_edit_.modulationFocusedRow.get(),
-            1
+            2
         );
         out.mode = "macro.modulator_creation";
         out.target = "modulation";
         out.targetIndex = static_cast<int16_t>(
             macro_edit_.editingIndex.get()
         );
-        out.property = row == 0 ? "new_lfo" : "use_existing";
+        out.property = row == 0
+            ? "new_lfo"
+            : (row == 1 ? "new_adsr" : "use_existing");
         out.source = "none";
         out.projection = "silent_selection";
         if (isEncoder(event, Config::EncoderID::NAV)) {
@@ -1392,10 +1414,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         out.mode = "macro.modulator_picker";
         out.target = "modulator";
         out.targetIndex = static_cast<int16_t>(selected);
-        out.source = modulator.kind ==
-                core::state::modulation::ModulatorKind::LFO
-            ? "lfo"
-            : "recorded_shape";
+        out.source = modulatorSourceLabel(modulator.kind);
         out.projection = "silent_selection";
         out.mappingIndex = static_cast<int16_t>(modulator.id.value);
         out.mappingCount = static_cast<int16_t>(graph.sourceCount);
@@ -1456,10 +1475,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         out.mode = "macro.modulator_audition";
         out.target = "modulator_assignment";
         out.targetIndex = static_cast<int16_t>(macro_edit_.editingIndex.get());
-        out.source = modulator->kind ==
-                core::state::modulation::ModulatorKind::LFO
-            ? "lfo"
-            : "recorded_shape";
+        out.source = modulatorSourceLabel(modulator->kind);
         out.projection = "audible_audition";
         out.hasOperationGeneration = true;
         out.operationGeneration = audition.generation;
@@ -1523,17 +1539,24 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         return true;
     }
 
-    if (phase == core::state::MacroEditFlowPhase::LFO_AUDITION) {
+    if (phase == core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION) {
         const auto data =
             core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(
                 source
             );
         if (!data.visible || !pages_.control.audition.active) return false;
+        const auto* modulator = core::state::modulation::findProjectModulator(
+            pages_.control.authored.modulation,
+            pages_.control.audition.sourceId
+        );
+        if (modulator == nullptr) return false;
+        const bool adsr = modulator->kind ==
+            core::state::modulation::ModulatorKind::ADSR;
         const int row = data.selectedIndex;
         out.mode = "macro.modulator_audition";
         out.target = "modulator";
         out.targetIndex = static_cast<int16_t>(macro_edit_.editingIndex.get());
-        out.source = "lfo";
+        out.source = modulatorSourceLabel(modulator->kind);
         out.projection = "audible_audition";
         out.hasOperationGeneration = true;
         out.operationGeneration = pages_.control.audition.generation;
@@ -1547,36 +1570,47 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             copyValueLabel(out.valueLabel, data.rows[row].value);
         }
         if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "focus_lfo_property";
+            out.effect = adsr ? "focus_adsr_property" : "focus_lfo_property";
         } else if (isEncoder(event, Config::EncoderID::OPT)) {
-            out.effect = row == 0
-                ? "edit_lfo_shape"
-                : (row == 1 ? "edit_lfo_rate" : "edit_lfo_depth");
+            if (adsr) {
+                static constexpr const char* effects[] = {
+                    "edit_adsr_attack",
+                    "edit_adsr_decay",
+                    "edit_adsr_sustain",
+                    "edit_adsr_release",
+                    "edit_adsr_depth",
+                };
+                out.effect = effects[std::clamp(row, 0, 4)];
+            } else {
+                out.effect = row == 0
+                    ? "edit_lfo_shape"
+                    : (row == 1 ? "edit_lfo_rate" : "edit_lfo_depth");
+            }
         } else if (isButton(
                        event,
                        Config::ButtonID::NAV,
                        oc::core::input::ButtonBindingType::RELEASE
                    )) {
-            out.effect = "start_lfo_audition";
+            out.effect = adsr ? "start_adsr_audition" : "start_lfo_audition";
         } else if (isButton(
                        event,
                        Config::ButtonID::LEFT_TOP,
                        oc::core::input::ButtonBindingType::RELEASE
                    )) {
-            out.effect = "cancel_lfo_audition";
+            out.effect = adsr ? "cancel_adsr_audition" : "cancel_lfo_audition";
             out.outcome = "cancelled";
         } else if (isButton(
                        event,
                        Config::ButtonID::BOTTOM_RIGHT,
                        oc::core::input::ButtonBindingType::PRESS
                    )) {
-            out.effect = "press_apply_lfo";
+            out.effect = adsr ? "press_apply_adsr" : "press_apply_lfo";
         } else if (isButton(
                        event,
                        Config::ButtonID::BOTTOM_RIGHT,
                        oc::core::input::ButtonBindingType::RELEASE
                    )) {
-            out.effect = "apply_lfo_audition";
+            out.effect = adsr ? "apply_adsr_audition" : "apply_lfo_audition";
             out.outcome = "applied";
         }
         if (isButton(

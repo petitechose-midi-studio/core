@@ -34,26 +34,8 @@ constexpr float PROJECT_NAME_KEYBOARD_OPT_TICKS_PER_ROW =
 inline constexpr std::array<uint32_t, 8> PROJECT_MODULATOR_FREE_PERIODS_MS{{
     125U, 250U, 500U, 1000U, 2000U, 4000U, 8000U, 16000U,
 }};
-inline constexpr std::array<uint16_t, 16>
-    PROJECT_MODULATOR_ADSR_FREE_DURATIONS{{
-        0U, 4U, 8U, 16U, 32U, 64U, 125U, 250U,
-        500U, 1000U, 2000U, 4000U, 8000U, 16000U, 32000U, 65535U,
-    }};
-inline constexpr std::array<uint16_t, 16>
-    PROJECT_MODULATOR_ADSR_SYNC_DURATIONS{{
-        0U, 3U, 6U, 12U, 24U, 48U, 96U, 192U,
-        384U, 768U, 1536U, 3072U, 6144U, 12288U, 24576U, 65535U,
-    }};
 
 FLASHMEM uint8_t projectModulatorFreePeriodIndex(uint32_t periodMs);
-FLASHMEM uint8_t projectModulatorAdsrDurationIndex(
-    uint16_t duration,
-    core::state::modulation::ModulatorTimingMode timing
-);
-FLASHMEM uint16_t projectModulatorAdsrDurationAt(
-    uint8_t index,
-    core::state::modulation::ModulatorTimingMode timing
-);
 
 FLASHMEM int signedStepCount(float delta);
 FLASHMEM int clampInt(int value, int low, int high);

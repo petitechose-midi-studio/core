@@ -50,7 +50,7 @@ private:
     bool automationDetailActive() const;
     bool modulationDetailActive() const;
     bool conversionPreviewActive() const;
-    bool lfoAuditionActive() const;
+    bool newModulatorAuditionActive() const;
     bool modulatorCreateActive() const;
     bool modulatorPickerActive() const;
     bool existingModulatorAuditionActive() const;
@@ -73,6 +73,7 @@ private:
     void selectConversionPolicy(float delta);
     bool applyConversion(bool overwriteGesture);
     bool startLfoAudition();
+    bool startAdsrAudition();
     bool openModulatorPicker();
     bool startExistingModulatorAudition();
     bool cancelModulatorAudition();
