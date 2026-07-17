@@ -18,20 +18,49 @@ namespace {
 
 using namespace core::state::modulation;
 
+const char LABEL_FREE[] PROGMEM = "Free";
+const char LABEL_TEMPO_SYNC[] PROGMEM = "Tempo Sync";
+const char LABEL_ON_PLAY[] PROGMEM = "On Play";
+const char LABEL_TRIGGERED[] PROGMEM = "Triggered";
+const char LABEL_FREE_RUN[] PROGMEM = "Free Run";
+const char LABEL_RUN[] PROGMEM = "Run";
+const char LABEL_AVAILABLE_IN[] PROGMEM = "Available in";
+const char LABEL_DETAILS[] PROGMEM = "Details";
+const char LABEL_MORE[] PROGMEM = "More >";
+const char LABEL_RENAME[] PROGMEM = "Rename";
+const char LABEL_DESTINATIONS[] PROGMEM = "Destinations";
+
+const char RATE_1_16[] PROGMEM = "1/16";
+const char RATE_1_8[] PROGMEM = "1/8";
+const char RATE_1_4[] PROGMEM = "1/4";
+const char RATE_1_2[] PROGMEM = "1/2";
+const char RATE_1_BAR[] PROGMEM = "1B";
+const char RATE_2_BARS[] PROGMEM = "2B";
+const char* const COMPACT_RATE_LABELS[] PROGMEM = {
+    RATE_1_16,
+    RATE_1_8,
+    RATE_1_4,
+    RATE_1_2,
+    RATE_1_BAR,
+    RATE_2_BARS,
+};
+
 FLASHMEM const char* shapeLabel(ModulatorLfoShape shape) {
     return core::ui::macro::lfo_audition::shapeLabel(shape);
 }
 
 FLASHMEM const char* timingLabel(ModulatorTimingMode timing) {
-    return timing == ModulatorTimingMode::FREE ? "Free" : "Tempo Sync";
+    return timing == ModulatorTimingMode::FREE
+        ? LABEL_FREE
+        : LABEL_TEMPO_SYNC;
 }
 
 FLASHMEM const char* retriggerLabel(ModulatorRetriggerPolicy retrigger) {
     switch (retrigger) {
-        case ModulatorRetriggerPolicy::TRANSPORT: return "On Play";
-        case ModulatorRetriggerPolicy::EXPLICIT_TRIGGER: return "Triggered";
+        case ModulatorRetriggerPolicy::TRANSPORT: return LABEL_ON_PLAY;
+        case ModulatorRetriggerPolicy::EXPLICIT_TRIGGER: return LABEL_TRIGGERED;
         case ModulatorRetriggerPolicy::FREE_RUNNING:
-        default: return "Free Run";
+        default: return LABEL_FREE_RUN;
     }
 }
 
@@ -65,9 +94,6 @@ FLASHMEM void formatRate(char* out,
         std::snprintf(out, size, "%s", label);
         return;
     }
-    static constexpr const char* COMPACT_RATE_LABELS[] = {
-        "1/16", "1/8", "1/4", "1/2", "1B", "2B",
-    };
     const uint8_t index = core::ui::macro::lfo_audition::rateIndex(
         lfo.periodTicks
     );
@@ -390,7 +416,7 @@ FLASHMEM void populateSourceDetailRow(
             break;
         }
         case SourceDetailItem::RETRIGGER:
-            setText(out.key, "Run");
+            setText(out.key, LABEL_RUN);
             setText(out.value, retriggerLabel(source.parameters.lfo.retrigger));
             setText(out.icon, standalone::icons::CYCLE_STATE);
             break;
@@ -423,23 +449,23 @@ FLASHMEM void populateSourceDetailRow(
             break;
         }
         case SourceDetailItem::REACH:
-            setText(out.key, "Available in");
+            setText(out.key, LABEL_AVAILABLE_IN);
             formatReach(value, sizeof(value), source.reach);
             setText(out.value, value);
             setText(out.icon, standalone::icons::ROUTE_PIN);
             break;
         case SourceDetailItem::OPTIONS:
-            setText(out.key, "Details");
-            setText(out.value, "More >");
+            setText(out.key, LABEL_DETAILS);
+            setText(out.value, LABEL_MORE);
             setText(out.icon, standalone::icons::SETTINGS_GEAR);
             break;
         case SourceDetailItem::RENAME:
-            setText(out.key, "Rename");
+            setText(out.key, LABEL_RENAME);
             setText(out.value, source.name.data());
             setText(out.icon, standalone::icons::ACTION_PLACE_TARGET);
             break;
         case SourceDetailItem::DESTINATIONS:
-            setText(out.key, "Destinations");
+            setText(out.key, LABEL_DESTINATIONS);
             std::snprintf(
                 value,
                 sizeof(value),
@@ -481,23 +507,23 @@ FLASHMEM void populateSourceOptionsRow(
             break;
         }
         case SourceDetailItem::RETRIGGER:
-            setText(out.key, "Run");
+            setText(out.key, LABEL_RUN);
             setText(out.value, retriggerLabel(source.parameters.lfo.retrigger));
             setText(out.icon, standalone::icons::CYCLE_STATE);
             break;
         case SourceDetailItem::REACH:
-            setText(out.key, "Available in");
+            setText(out.key, LABEL_AVAILABLE_IN);
             formatReach(value, sizeof(value), source.reach);
             setText(out.value, value);
             setText(out.icon, standalone::icons::ROUTE_PIN);
             break;
         case SourceDetailItem::RENAME:
-            setText(out.key, "Rename");
+            setText(out.key, LABEL_RENAME);
             setText(out.value, source.name.data());
             setText(out.icon, standalone::icons::ACTION_PLACE_TARGET);
             break;
         case SourceDetailItem::DESTINATIONS:
-            setText(out.key, "Destinations");
+            setText(out.key, LABEL_DESTINATIONS);
             std::snprintf(
                 value,
                 sizeof(value),

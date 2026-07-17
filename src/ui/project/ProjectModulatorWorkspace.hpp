@@ -6,7 +6,6 @@
 
 #include <lvgl.h>
 #include <ms/ui/widget/CurvePreviewWidget.hpp>
-#include <oc/ui/lvgl/IWidget.hpp>
 #include <oc/ui/lvgl/PausableTimer.hpp>
 
 #include "app/ExtmemAllocator.hpp"
@@ -31,10 +30,10 @@ struct ProjectModulatorWorkspaceProps {
  * curve geometry live with the PSRAM-allocated owner; render() creates no
  * LVGL object and performs no heap allocation.
  */
-class ProjectModulatorWorkspace final : public oc::ui::lvgl::IWidget {
+class ProjectModulatorWorkspace final {
 public:
     explicit ProjectModulatorWorkspace(lv_obj_t* parent);
-    ~ProjectModulatorWorkspace() override;
+    ~ProjectModulatorWorkspace();
 
     ProjectModulatorWorkspace(const ProjectModulatorWorkspace&) = delete;
     ProjectModulatorWorkspace& operator=(
@@ -42,7 +41,7 @@ public:
     ) = delete;
 
     [[nodiscard]] bool valid() const;
-    [[nodiscard]] lv_obj_t* getElement() const override { return root_; }
+    [[nodiscard]] lv_obj_t* getElement() const { return root_; }
     void render(const ProjectModulatorWorkspaceProps& props);
 
 private:

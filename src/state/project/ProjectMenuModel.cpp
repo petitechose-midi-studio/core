@@ -15,6 +15,9 @@ namespace {
 
 namespace scale_catalog = core::state::sequencer::scale_catalog;
 
+const char MODULATOR_DETAILS_META[] PROGMEM = "MODULATORS > DETAILS";
+const char MODULATOR_RENAME_META[] PROGMEM = "MODULATORS > RENAME";
+
 constexpr ProjectMenuRow row(const char* label,
                              const char* value,
                              ProjectMenuRowKind kind,
@@ -410,10 +413,10 @@ FLASHMEM void applyPageMeta(ProjectMenuPage& page,
             page.meta = "MODULATORS > SOURCE";
             return;
         case ProjectNodeId::MODULATOR_SOURCE_OPTIONS:
-            page.meta = "MODULATORS > DETAILS";
+            page.meta = MODULATOR_DETAILS_META;
             return;
         case ProjectNodeId::MODULATOR_SOURCE_RENAME:
-            page.meta = "MODULATORS > RENAME";
+            page.meta = MODULATOR_RENAME_META;
             return;
         case ProjectNodeId::MODULATOR_REACH:
             page.meta = "MODULATORS > REACH";

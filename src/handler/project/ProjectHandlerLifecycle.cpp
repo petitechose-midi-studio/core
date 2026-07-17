@@ -1,9 +1,18 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
+#include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
 namespace core::handler {
 
 using namespace project_handler_internal;
+
+namespace {
+
+const char SOURCE_NAME_UNCHANGED[] PROGMEM = "Name unchanged";
+const char SOURCE_RENAMED_FORMAT[] PROGMEM = "Renamed · %s";
+const char SOURCE_FALLBACK_NAME[] PROGMEM = "Source";
+
+}  // namespace
 
 FLASHMEM bool ProjectHandler::loadProjectWithFeedback(const char* projectId) {
     const auto result = lifecycle_.loadProject(projectId);
@@ -105,7 +114,7 @@ FLASHMEM bool ProjectHandler::commitProjectNameEditor() {
         }
         const auto sourceId = navigation_.selectedModulator;
         if (!macro_history_.setProjectModulatorName(pages_, sourceId, slug)) {
-            navigation_.setLifecycleFeedback("Name unchanged");
+            navigation_.setLifecycleFeedback(SOURCE_NAME_UNCHANGED);
             return true;
         }
         publishModulatorMutation(false);
@@ -117,8 +126,8 @@ FLASHMEM bool ProjectHandler::commitProjectNameEditor() {
         std::snprintf(
             feedback,
             sizeof(feedback),
-            "Renamed · %s",
-            source ? source->name.data() : "Source"
+            SOURCE_RENAMED_FORMAT,
+            source ? source->name.data() : SOURCE_FALLBACK_NAME
         );
         back();
         navigation_.setLifecycleFeedback(feedback);

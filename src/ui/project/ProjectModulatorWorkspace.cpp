@@ -31,6 +31,12 @@ constexpr lv_coord_t CARD_BOTTOM_HEIGHT = 37;
 constexpr lv_coord_t CARD_GAP = 3;
 constexpr lv_coord_t HORIZONTAL_PAD = 4;
 
+const char SOURCE_KIND_LFO[] PROGMEM = "LFO";
+const char SOURCE_KIND_MOTION[] PROGMEM = "MOTION";
+const char SOURCE_STATE_ON[] PROGMEM = "ON";
+const char SOURCE_STATE_OFF[] PROGMEM = "OFF";
+const char SOURCE_STATE_FORMAT[] PROGMEM = "%s · %s";
+
 FLASHMEM lv_obj_t* createLabel(
     lv_obj_t* parent,
     const lv_font_t* font,
@@ -348,9 +354,11 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     std::snprintf(
         stateText_.data(),
         stateText_.size(),
-        "%s · %s",
-        source.kind == ModulatorKind::LFO ? "LFO" : "MOTION",
-        enabled ? "ON" : "OFF"
+        SOURCE_STATE_FORMAT,
+        source.kind == ModulatorKind::LFO
+            ? SOURCE_KIND_LFO
+            : SOURCE_KIND_MOTION,
+        enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF
     );
     lv_label_set_text_static(state_text_, stateText_.data());
     lv_obj_set_style_text_color(
