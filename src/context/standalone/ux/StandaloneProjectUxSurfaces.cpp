@@ -169,6 +169,8 @@ FLASHMEM const char* feedbackOutcome(const char* feedback) {
         std::strncmp(feedback, "Split ", 6U) == 0 ||
         std::strncmp(feedback, "Reach · ", 8U) == 0 ||
         std::strcmp(feedback, "Destination removed") == 0 ||
+        std::strcmp(feedback, "Destination applied") == 0 ||
+        std::strcmp(feedback, "Applied - one Undo") == 0 ||
         std::strncmp(feedback, "Pasted ", 7U) == 0 ||
         std::strncmp(feedback, "Copied ", 7U) == 0) {
         return "applied";
@@ -229,15 +231,23 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     out.outcome = feedbackOutcome(feedback);
 
     if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        const bool auditioning = control.audition.active;
         out.mode = "project.modulator_destination_picker";
+        out.projection = auditioning ? "audible_audition" : "committed";
         out.target = "macro_destination";
         out.targetIndex = navigation_.focusedRow.get();
         out.sourceTrack = navigation_.destinationPickerTrack;
         out.targetTrack = navigation_.destinationPickerTrack;
         out.property = navigation_.creatingModulatorSource
             ? "new_lfo_destination" : "destination";
-        out.operationStatus = navigation_.creatingModulatorSource
-            ? "creating_source" : "adding_destination";
+        out.operationStatus = auditioning
+            ? "audition"
+            : (navigation_.creatingModulatorSource
+                   ? "creating_source" : "adding_destination");
+        if (auditioning) {
+            out.hasOperationGeneration = true;
+            out.operationGeneration = control.audition.generation;
+        }
         if (isEncoder(event, Config::EncoderID::NAV)) {
             out.effect = "focus_destination";
         } else if (isButton(
@@ -246,13 +256,24 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                        oc::core::input::ButtonBindingType::RELEASE
                    )) {
             out.effect = navigation_.creatingModulatorSource
-                ? "create_lfo_assignment" : "add_modulator_destination";
+                ? "start_lfo_destination_audition"
+                : "start_destination_audition";
+        } else if (isEncoder(event, Config::EncoderID::OPT) && auditioning) {
+            out.effect = "edit_destination_audition_depth";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::BOTTOM_RIGHT,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "apply_destination_audition";
         } else if (isButton(
                        event,
                        Config::ButtonID::LEFT_TOP,
                        oc::core::input::ButtonBindingType::RELEASE
                    )) {
-            out.effect = "cancel_destination_picker";
+            out.effect = feedback && std::strstr(feedback, "cancelled")
+                ? "cancel_destination_audition"
+                : "cancel_destination_picker";
         }
         return true;
     }
@@ -458,10 +479,16 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                    Config::ButtonID::BOTTOM_RIGHT,
                    oc::core::input::ButtonBindingType::RELEASE
                )) {
-        const auto guard = navigation_.modulatorClipboardGuard.get();
-        out.effect = guard.phase ==
-                core::state::contextual::GuardedActionPhase::PRESSED
-            ? "copy_modulator_source" : "paste_modulator_source";
+        if (node == ProjectNodeId::MODULATOR_DESTINATIONS && feedback &&
+            (std::strcmp(feedback, "Destination applied") == 0 ||
+             std::strcmp(feedback, "Applied - one Undo") == 0)) {
+            out.effect = "apply_destination_audition";
+        } else {
+            const auto guard = navigation_.modulatorClipboardGuard.get();
+            out.effect = guard.phase ==
+                    core::state::contextual::GuardedActionPhase::PRESSED
+                ? "copy_modulator_source" : "paste_modulator_source";
+        }
     } else if (isButton(
                    event,
                    Config::ButtonID::LEFT_CENTER,

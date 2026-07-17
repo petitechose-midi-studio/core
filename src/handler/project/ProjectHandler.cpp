@@ -9,6 +9,7 @@
 #include "handler/common/ModulatorNavigationWorkflow.hpp"
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/macro/MacroWorkflow.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
 
 namespace core::handler {
@@ -29,6 +30,7 @@ FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
     , status_bar_(state.statusBar)
     , midi_sync_(state.midiSync)
     , pages_(state.pages)
+    , macros_(state.macros)
     , macro_edit_(state.macroEdit)
     , config_revision_(state.configRevision)
     , macro_history_(state.macroHistory)
@@ -61,6 +63,11 @@ FLASHMEM bool ProjectHandler::regularProjectInputActive() const {
 }
 
 FLASHMEM void ProjectHandler::enterPhysicalHoldLayer() {
+    core::state::macro::MacroAutomationSlotAddress address{};
+    if (destinationPickerAuditionAddress(address)) {
+        navigation_.setLifecycleFeedback("Preview - Apply or Back");
+        return;
+    }
     navigation_.physicalHoldActive.set(true);
 }
 
@@ -151,9 +158,69 @@ FLASHMEM uint16_t ProjectHandler::focusedModulatorDetailRowCount() const {
 
 FLASHMEM void ProjectHandler::publishModulatorMutation(bool markAuthored) {
     if (markAuthored) pages_.control.markAuthoredMutation();
-    config_revision_.set(config_revision_.get() + 1U);
+    config_revision_.set(core::state::macro::nextMacroConfigRevision(
+        config_revision_.get()
+    ));
     navigation_.notifyContentChanged();
     lifecycle_.markProjectMutated();
+}
+
+FLASHMEM void ProjectHandler::refreshModulatorPreview(
+    bool syncMacroRuntime,
+    uint8_t dirtyMacro
+) {
+    if (syncMacroRuntime) {
+        core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+            macros_,
+            pages_
+        );
+        config_revision_.set(core::state::macro::nextMacroConfigRevision(
+            config_revision_.get(),
+            dirtyMacro
+        ));
+    }
+    navigation_.notifyContentChanged();
+}
+
+FLASHMEM void ProjectHandler::reconcileModulatorNavigationAfterHistory() {
+    using core::state::project::ProjectNodeId;
+    auto& graph = pages_.control.authored.modulation;
+    const auto* selected = core::state::modulation::findProjectModulator(
+        graph,
+        navigation_.selectedModulator
+    );
+    if (selected == nullptr) {
+        while (navigation_.depth.get() > 0U) {
+            (void)core::state::project::backProjectNavigation(navigation_);
+        }
+        navigation_.focusedRow.set(static_cast<uint8_t>(graph.sourceCount));
+        navigation_.selectedModulationBinding = {};
+        return;
+    }
+
+    if (navigation_.currentNode.get() == ProjectNodeId::MODULATORS_ROOT) {
+        for (uint16_t index = 0; index < graph.sourceCount; ++index) {
+            if (graph.sources[index].id == selected->id) {
+                navigation_.focusedRow.set(static_cast<uint8_t>(index));
+                return;
+            }
+        }
+    }
+    if (navigation_.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS) {
+        const uint16_t count =
+            core::state::project::modulators::sourceDestinationCount(
+                graph,
+                selected->id
+            );
+        navigation_.focusedRow.set(static_cast<uint8_t>(std::min<uint16_t>(
+            navigation_.focusedRow.get(),
+            count
+        )));
+        const auto* binding = focusedModulationBinding();
+        navigation_.selectedModulationBinding = binding
+            ? binding->id
+            : core::state::modulation::ModulationBindingId{};
+    }
 }
 
 FLASHMEM void ProjectHandler::toggleFocusedModulator() {
@@ -541,6 +608,10 @@ FLASHMEM void ProjectHandler::resetProject() {
 
 FLASHMEM void ProjectHandler::back() {
     macro_history_.endCoalescing();
+    if (cancelDestinationPickerAudition()) {
+        syncFocusedEncoder();
+        return;
+    }
     if (modulator_navigation::shouldReturnToMacroOnBack(navigation_) &&
         modulator_navigation::returnToMacro(
             {
@@ -562,6 +633,11 @@ FLASHMEM void ProjectHandler::consumeUndo() {
     if (navigation_.activeTab.get() ==
             core::state::project::ProjectTab::MODULATORS &&
         macro_history_.undo(pages_)) {
+        core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+            macros_,
+            pages_
+        );
+        reconcileModulatorNavigationAfterHistory();
         publishModulatorMutation(false);
         navigation_.setLifecycleFeedback("Modulation undone");
         syncFocusedEncoder();
@@ -574,6 +650,11 @@ FLASHMEM void ProjectHandler::consumeRedo() {
     if (navigation_.activeTab.get() ==
             core::state::project::ProjectTab::MODULATORS &&
         macro_history_.redo(pages_)) {
+        core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+            macros_,
+            pages_
+        );
+        reconcileModulatorNavigationAfterHistory();
         publishModulatorMutation(false);
         navigation_.setLifecycleFeedback("Modulation redone");
         syncFocusedEncoder();

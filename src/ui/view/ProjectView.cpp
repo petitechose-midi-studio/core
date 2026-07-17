@@ -691,7 +691,7 @@ void ProjectView::renderModulators() {
         .title = node == ProjectNodeId::MODULATORS_ROOT
             ? "MODULATORS"
             : (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER
-                  ? "ADD DESTINATION"
+                  ? "ADD ROUTE"
                   : (node == ProjectNodeId::MODULATOR_REACH
                   ? "REACH"
                   : (node == ProjectNodeId::MODULATOR_DESTINATIONS
@@ -746,6 +746,8 @@ void ProjectView::renderModulatorActionStrips(
         core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER;
     const bool reachPicker = state_refs_.navigation.currentNode.get() ==
         core::state::project::ProjectNodeId::MODULATOR_REACH;
+    const bool destinationAudition = destinationPicker &&
+        state_refs_.pages.control.audition.active;
     const auto* binding = destinations && source
         ? core::state::project::modulators::sourceBindingAtOrdinal(
               state_refs_.pages.control.authored.modulation,
@@ -753,7 +755,14 @@ void ProjectView::renderModulatorActionStrips(
               state_refs_.navigation.focusedRow.get()
           )
         : nullptr;
-    if (!destinationPicker && !reachPicker && source != nullptr &&
+    if (destinationAudition) {
+        bottom.visible = true;
+        bottom.slots[2] = makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_APPLY,
+            ContextActionStripVisualState::ACTIVE,
+            ContextActionStripTone::POSITIVE
+        );
+    } else if (!destinationPicker && !reachPicker && source != nullptr &&
         (!destinations || binding != nullptr)) {
         bottom.visible = true;
         const bool enabled = destinations

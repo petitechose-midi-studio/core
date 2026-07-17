@@ -12,9 +12,11 @@
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/MacroEditState.hpp"
+#include "state/MacroState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroWorkflow.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
@@ -33,6 +35,7 @@ public:
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
         core::state::macro::MacroPagesState& pages;
+        core::state::MacroState& macros;
         core::state::MacroEditState& macroEdit;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::macro::MacroHistoryService& macroHistory;
@@ -84,7 +87,17 @@ private:
     bool setFocusedNameEditorValue(float normalized);
     bool setFocusedModulatorValue(float normalized);
     void enterFocusedModulator();
-    void commitDestinationPickerSelection();
+    void startDestinationPickerAudition();
+    void applyDestinationPickerAudition();
+    bool cancelDestinationPickerAudition();
+    [[nodiscard]] bool destinationPickerAuditionAddress(
+        core::state::macro::MacroAutomationSlotAddress& out
+    ) const;
+    void refreshModulatorPreview(
+        bool syncMacroRuntime,
+        uint8_t dirtyMacro = core::state::macro::kMacroConfigDirtyAll
+    );
+    void reconcileModulatorNavigationAfterHistory();
     void beginModulatorBottomLeft();
     void releaseModulatorBottomLeft();
     void beginModulatorBottomRight();
@@ -122,6 +135,7 @@ private:
     core::state::StatusBarState& status_bar_;
     core::state::MidiSyncState& midi_sync_;
     core::state::macro::MacroPagesState& pages_;
+    core::state::MacroState& macros_;
     core::state::MacroEditState& macro_edit_;
     oc::state::Signal<uint32_t>& config_revision_;
     core::state::macro::MacroHistoryService& macro_history_;

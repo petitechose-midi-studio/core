@@ -99,8 +99,9 @@ struct ProjectHandlerHarness {
                       state.sequencer,
                       state.sequencerTracks,
                       state.statusBar,
-                      state.midiSync,
+                       state.midiSync,
                        state.pages,
+                       state.macros,
                        state.macroEdit,
                        state.configRevision,
                        state.macroHistory,
@@ -1276,6 +1277,12 @@ void projectModulatorUndo(ProjectHandlerHarness& h) {
     h.release(Config::ButtonID::LEFT_CENTER);
 }
 
+void projectModulatorRedo(ProjectHandlerHarness& h) {
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    h.release(Config::ButtonID::LEFT_CENTER);
+}
+
 void test_project_modulator_creation_and_destination_workflow() {
     using namespace core::state::modulation;
     using core::state::project::ProjectNodeId;
@@ -1287,6 +1294,9 @@ void test_project_modulator_creation_and_destination_workflow() {
            ProjectNodeId::MODULATOR_DESTINATION_PICKER);
     assert(h.state.projectNavigation.creatingModulatorSource);
     h.tap(Config::ButtonID::NAV);
+    assert(h.state.pages.control.audition.active);
+    assert(h.state.macroHistory.undoCount() == 0U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
 
     auto& graph = h.state.pages.control.authored.modulation;
     assert(graph.sourceCount == 1U);
@@ -1297,13 +1307,16 @@ void test_project_modulator_creation_and_destination_workflow() {
            ProjectNodeId::MODULATOR_DESTINATIONS);
     assert(h.state.macroHistory.undoCount() == 1U);
 
-    h.state.pages.pageData(0, 0).setMacroActive(1, true);
     h.turn(Config::EncoderID::NAV, 1.0f);  // + Destination
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_DESTINATION_PICKER);
     h.turn(Config::EncoderID::NAV, 1.0f);  // Macro 2
     h.tap(Config::ButtonID::NAV);
+    assert(h.state.pages.control.audition.active);
+    assert(h.state.pages.pageData(0, 0).isMacroActive(1));
+    assert(h.state.macroHistory.undoCount() == 1U);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(graph.outputBindingCount == 2U);
     assert(graph.sources[0].reach.kind == ModulatorReachKind::TRACK_SET);
     assert(graph.sources[0].reach.trackMask == 1U);
@@ -1312,7 +1325,82 @@ void test_project_modulator_creation_and_destination_workflow() {
     projectModulatorUndo(h);
     assert(graph.outputBindingCount == 1U);
     assert(graph.sources[0].reach.kind == ModulatorReachKind::MACRO);
+    assert(!h.state.pages.pageData(0, 0).isMacroActive(1));
+    projectModulatorRedo(h);
+    assert(graph.outputBindingCount == 2U);
+    assert(h.state.pages.pageData(0, 0).isMacroActive(1));
     std::cout << "[PASS] Project creates and assigns LFOs destination-first\n";
+}
+
+void test_project_macro_destination_audition_cancel_is_exact_and_clean() {
+    using namespace core::state::modulation;
+    using core::state::project::ProjectNodeId;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+    const auto pageBefore = h.state.pages.pageData(0, 0);
+    const auto graphBefore = h.state.pages.control.authored.modulation;
+    const bool dirtyBefore = h.state.project.metadata.dirty;
+
+    h.tap(Config::ButtonID::NAV);         // New LFO destination picker
+    h.turn(Config::EncoderID::NAV, 1.0f); // legal + Macro 2
+    h.tap(Config::ButtonID::NAV);         // audible create-and-bind preview
+    assert(h.state.pages.control.audition.active);
+    assert(h.state.pages.pageData(0, 0).isMacroActive(1));
+    assert(h.state.pages.control.authored.modulation.sourceCount == 1U);
+    assert(h.state.pages.control.authored.modulation.outputBindingCount == 1U);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+
+    h.turn(Config::EncoderID::OPT, 0.75f);
+    assert(h.state.pages.control.authored.modulation
+               .outputBindings[0].amountQ15 > 0);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    h.tap(Config::ButtonID::LEFT_TOP);     // Cancel preview, keep picker
+
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_DESTINATION_PICKER);
+    assert(!h.state.pages.control.audition.active);
+    assert(h.state.macroHistory.undoCount() == 0U);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    assert(std::memcmp(
+        &h.state.pages.pageData(0, 0),
+        &pageBefore,
+        sizeof(pageBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &h.state.pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    std::cout << "[PASS] Project Macro destination Cancel is exact and not dirty\n";
+}
+
+void test_project_created_source_undo_returns_to_registry_and_redo_restores() {
+    using core::state::project::ProjectNodeId;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    const auto sourceId = h.state.projectNavigation.selectedModulator;
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_DESTINATIONS);
+
+    projectModulatorUndo(h);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATORS_ROOT);
+    assert(h.state.projectNavigation.focusedRow.get() == 0U);
+    assert(h.state.pages.control.authored.modulation.sourceCount == 0U);
+    assert(!h.state.pages.pageData(0, 0).isMacroActive(1));
+
+    projectModulatorRedo(h);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATORS_ROOT);
+    assert(h.state.projectNavigation.focusedRow.get() == 0U);
+    assert(h.state.pages.control.authored.modulation.sourceCount == 1U);
+    assert(h.state.pages.control.authored.modulation.sources[0].id == sourceId);
+    assert(h.state.pages.pageData(0, 0).isMacroActive(1));
+    std::cout << "[PASS] created Source Undo/Redo keeps Project navigation usable\n";
 }
 
 void test_project_modulator_explicit_unassigned_creation() {
@@ -1596,6 +1684,8 @@ int main() {
     test_rename_current_project_moves_catalogue_file();
     test_rename_current_project_rejects_existing_target_without_mutating_state();
     test_project_modulator_creation_and_destination_workflow();
+    test_project_macro_destination_audition_cancel_is_exact_and_clean();
+    test_project_created_source_undo_returns_to_registry_and_redo_restores();
     test_project_modulator_explicit_unassigned_creation();
     test_project_modulator_source_copy_and_guarded_paste();
     test_project_modulator_reach_page_splits_one_track_with_one_undo();

@@ -14,6 +14,7 @@
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/MacroEditState.hpp"
+#include "state/MacroState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -37,6 +38,7 @@ public:
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
         core::state::macro::MacroPagesState& pages;
+        core::state::MacroState& macros;
         core::state::MacroEditState& macroEdit;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::macro::MacroHistoryService& macroHistory;

@@ -132,6 +132,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                 state.statusBar,
                 state.midiSync,
                 state.pages,
+                state.macros,
                 state.macroEdit,
                 state.configRevision,
                 state.macroHistory,

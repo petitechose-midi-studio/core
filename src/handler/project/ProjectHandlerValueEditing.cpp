@@ -1,6 +1,7 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
 
 #include <algorithm>
+#include <cstdio>
 
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
@@ -205,6 +206,33 @@ FLASHMEM bool ProjectHandler::setFocusedProjectValue(float normalized) {
 FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
     using namespace core::state::modulation;
     using Item = core::state::project::modulators::SourceDetailItem;
+    core::state::macro::MacroAutomationSlotAddress auditionAddress{};
+    if (destinationPickerAuditionAddress(auditionAddress)) {
+        auto* binding = findProjectModulationBinding(
+            pages_.control.authored.modulation,
+            pages_.control.audition.bindingId
+        );
+        if (!binding) return true;
+        const int16_t percent = static_cast<int16_t>(
+            clampNormalized(normalized) * 200.0f + 0.5f
+        ) - 100;
+        const int16_t amount =
+            core::ui::macro::lfo_audition::depthPercentToQ15(percent);
+        if (binding->amountQ15 != amount) {
+            binding->amountQ15 = amount;
+            pages_.control.markAuthoredMutation();
+            refreshModulatorPreview(false);
+        }
+        char feedback[48]{};
+        std::snprintf(
+            feedback,
+            sizeof(feedback),
+            "Depth %+d%% - Preview",
+            static_cast<int>(percent)
+        );
+        navigation_.setLifecycleFeedback(feedback);
+        return true;
+    }
     if (navigation_.currentNode.get() ==
         core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS) {
         auto* binding = focusedModulationBinding();

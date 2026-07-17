@@ -9,6 +9,7 @@
 
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/macro/MacroWorkflow.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -570,11 +571,10 @@ FLASHMEM void populateDestinationRow(
     std::snprintf(
         out.key.data(),
         out.key.size(),
-        "T%u · P%u · M%u · CC%u",
+        "T%u/P%u/M%u",
         static_cast<unsigned>(destination.track + 1U),
         static_cast<unsigned>(destination.page + 1U),
-        static_cast<unsigned>(destination.macro + 1U),
-        static_cast<unsigned>(cc)
+        static_cast<unsigned>(destination.macro + 1U)
     );
     const int16_t percent =
         core::ui::macro::lfo_audition::depthQ15ToPercent(binding->amountQ15);
@@ -583,7 +583,8 @@ FLASHMEM void populateDestinationRow(
     std::snprintf(
         out.value.data(),
         out.value.size(),
-        enabled ? "%+d%%" : "Off · %+d%%",
+        enabled ? "CC%u · %+d%%" : "CC%u · Off %+d%%",
+        static_cast<unsigned>(cc),
         static_cast<int>(percent)
     );
     setText(out.icon, standalone::icons::ROUTING);
@@ -679,41 +680,85 @@ FLASHMEM void populateDestinationPickerRow(
     const uint8_t macro = static_cast<uint8_t>(index);
     const auto& pageData = pages.pageData(track, page);
     const bool active = pageData.isMacroActive(macro);
+    const uint8_t nextAdd = pageData.nextAddMacroIndex();
+    const bool addSlot = !active && nextAdd == macro;
     const ModulationDestination destination{
         ModulationDestinationKind::MACRO_SLOT,
         track,
         page,
         macro,
     };
+    const bool auditioned = pages.control.audition.active &&
+        pages.control.audition.destination == destination;
+    const ModulatorId effectiveSource = valid(sourceId)
+        ? sourceId
+        : (auditioned ? pages.control.audition.sourceId : ModulatorId{});
     bool alreadyAssigned = false;
-    if (valid(sourceId)) {
+    if (valid(effectiveSource)) {
         const auto& graph = pages.control.authored.modulation;
         for (uint16_t bindingIndex = 0;
              bindingIndex < graph.outputBindingCount;
              ++bindingIndex) {
             const auto& binding = graph.outputBindings[bindingIndex];
-            if (binding.sourceId == sourceId &&
+            if (binding.sourceId == effectiveSource &&
                 binding.destination == destination) {
                 alreadyAssigned = true;
                 break;
             }
         }
     }
+    uint8_t displayCc = pageData.cc[macro];
+    if (addSlot) {
+        const auto plan =
+            core::state::macro::MacroWorkflow::planMacroSlotActivation(
+                pages,
+                {track, page, macro}
+            );
+        if (plan.valid) displayCc = plan.cc;
+    }
     std::snprintf(
         out.key.data(),
         out.key.size(),
-        "Macro %u · CC%u",
+        addSlot ? "+ M%u · CC%u" : "M%u · CC%u",
         static_cast<unsigned>(macro + 1U),
-        static_cast<unsigned>(pageData.cc[macro])
+        static_cast<unsigned>(displayCc)
     );
+    if (auditioned) {
+        const auto* binding = findProjectModulationBinding(
+            pages.control.authored.modulation,
+            pages.control.audition.bindingId
+        );
+        const int16_t percent = binding
+            ? core::ui::macro::lfo_audition::depthQ15ToPercent(
+                  binding->amountQ15
+              )
+            : 0;
+        std::snprintf(
+            out.value.data(),
+            out.value.size(),
+            "Preview %+d%%",
+            static_cast<int>(percent)
+        );
+    } else if (active) {
+        setText(out.value, alreadyAssigned ? "Assigned" : "+25% · Preview");
+    } else if (addSlot) {
+        setText(out.value, "Create + assign");
+    } else if (nextAdd < core::state::macro::MACRO_COUNT) {
+        std::snprintf(
+            out.value.data(),
+            out.value.size(),
+            "Add M%u first",
+            static_cast<unsigned>(nextAdd + 1U)
+        );
+    } else {
+        setText(out.value, "Unavailable");
+    }
     setText(
-        out.value,
-        !active ? "Empty · create first"
-                : (alreadyAssigned ? "Assigned" : "+25%")
+        out.icon,
+        auditioned ? standalone::icons::ACTION_APPLY : standalone::icons::KNOB
     );
-    setText(out.icon, standalone::icons::KNOB);
     out.iconFont = standalone_fonts.icons_14;
-    out.iconColor = active && !alreadyAssigned
+    out.iconColor = auditioned || ((active || addSlot) && !alreadyAssigned)
         ? standalone::theme::color::MACRO_MODULATION
         : standalone::theme::color::INACTIVE;
 }

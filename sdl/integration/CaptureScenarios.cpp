@@ -421,6 +421,28 @@ void prepareProjectModulatorsScenario(core::state::CoreState& state) {
     ));
 }
 
+void prepareProjectModulatorDestinationScenario(core::state::CoreState& state) {
+    state.pages.initDefaults();
+    state.pages.control.clear();
+    auto& page = state.pages.pageData(0, 0);
+    page.cc[0] = 74;
+    page.values[0] = 0.42f;
+    page.setMacroActive(0, true);
+    state.pages.updateActiveConfigs();
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.macroHistory.clear();
+    state.structureClipboard.clear();
+    state.projectNavigation.reset();
+    state.activeView.set(core::ui::ViewType::PROJECT);
+    state.overlays.hideAll();
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(
+        state.configRevision.get()
+    ));
+}
+
 void prepareProjectModulatorWorkspaceScenario(core::state::CoreState& state) {
     using namespace core::state::modulation;
     prepareProjectModulatorsScenario(state);
@@ -1560,6 +1582,11 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "project-modulators") == 0) {
         prepareProjectModulatorsScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "project-modulator-destination") == 0) {
+        prepareProjectModulatorDestinationScenario(state);
         return true;
     }
 

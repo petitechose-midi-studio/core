@@ -1,0 +1,54 @@
+# UX workflow: atomic Project Modulator destination and Macro creation.
+# Purpose: proves one legal + Macro row, audible reversible preview, direct
+# Depth edit, learned Apply/Back grammar, and one Undo/Redo for Macro + edge.
+# Expect: capture_changed:empty_registry=destination_picker, capture_changed:destination_picker=add_macro_focused, capture_changed:add_macro_focused=macro_destination_preview
+# Expect: capture_changed:macro_destination_preview=preview_depth_edited, capture_changed:preview_depth_edited=preview_cancelled, capture_changed:preview_cancelled=destination_applied
+# Expect: capture_changed:destination_applied=creation_undone, capture_changed:creation_undone=creation_redone
+# Expect: semantic:macro_destination_preview:effect=start_lfo_destination_audition, semantic:macro_destination_preview:projection=audible_audition
+# Expect: semantic:preview_depth_edited:effect=edit_destination_audition_depth, semantic:preview_cancelled:effect=cancel_destination_audition
+# Expect: semantic:destination_applied:effect=apply_destination_audition, semantic:destination_applied:outcome=applied
+
+0 scenario project-modulator-destination
+80 capture screen project_overview
+
+# Learned Project tab shortcut reaches the empty Project-owned registry.
+180 button LEFT_CENTER down
+780 encoder NAV 1
+860 encoder NAV 2
+940 encoder NAV 3
+1020 encoder NAV 4
+1100 encoder NAV 5
+1180 button LEFT_CENTER up
+1400 capture screen empty_registry
+
+# New LFO opens a destination picker: M1 is active, only M2 is creatable,
+# and later rows explicitly say which Macro must be added first.
+1520 tap NAV 60
+1740 capture screen destination_picker
+1860 encoder NAV 1
+2080 capture screen add_macro_focused
+
+# NAV publishes an audible provisional Macro + source + assignment. OPT edits
+# only the pending edge; Back restores the exact empty state and stays local.
+2200 tap NAV 60
+2440 capture screen macro_destination_preview
+2560 encoder OPT 0.80
+2780 capture screen preview_depth_edited
+2900 tap LEFT_TOP 60
+3140 capture screen preview_cancelled
+
+# Repeat and Apply with the same learned bottom-right grammar.
+3260 tap NAV 60
+3500 tap BOTTOM_RIGHT 60
+3740 capture screen destination_applied
+
+# The complete creation is one history action. Undo returns to a usable empty
+# registry; Redo restores the source and Macro while retaining registry focus.
+3860 button LEFT_CENTER down
+4460 tap LEFT_TOP 60
+4680 button LEFT_CENTER up
+4920 capture screen creation_undone
+5040 button LEFT_CENTER down
+5640 tap LEFT_BOTTOM 60
+5860 button LEFT_CENTER up
+6100 capture screen creation_redone

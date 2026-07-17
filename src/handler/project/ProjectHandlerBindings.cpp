@@ -140,6 +140,16 @@ FLASHMEM void ProjectHandler::setupBindings() {
         });
 
     buttons_.button(ButtonID::BOTTOM_RIGHT)
+        .release()
+        .scope(project_view_scope_)
+        .when([this]() {
+            core::state::macro::MacroAutomationSlotAddress address{};
+            return regularProjectInputActive() &&
+                   destinationPickerAuditionAddress(address);
+        })
+        .then([this]() { applyDestinationPickerAudition(); });
+
+    buttons_.button(ButtonID::BOTTOM_RIGHT)
         .press()
         .scope(project_view_scope_)
         .when([this]() {

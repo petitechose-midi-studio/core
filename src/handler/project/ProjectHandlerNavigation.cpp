@@ -5,6 +5,7 @@
 
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/macro/MacroWorkflow.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
 
@@ -62,9 +63,59 @@ FLASHMEM bool sourceAlreadyTargets(
     return false;
 }
 
+FLASHMEM const char* destinationAuditionFailureLabel(
+    core::state::modulation::ProjectModulationStatus status
+) {
+    using core::state::modulation::ProjectModulationStatus;
+    switch (status) {
+        case ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED:
+            return "Source full - remove one";
+        case ProjectModulationStatus::BINDING_CAPACITY_EXCEEDED:
+            return "Assignments full - remove one";
+        case ProjectModulationStatus::DUPLICATE_BINDING:
+            return "Already assigned";
+        case ProjectModulationStatus::REACH_VIOLATION:
+            return "Widen Reach first";
+        case ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED:
+            return "Undo memory full";
+        case ProjectModulationStatus::INVALID_ID:
+            return "Source missing - retry";
+        case ProjectModulationStatus::ID_EXHAUSTED:
+            return "Source IDs full";
+        case ProjectModulationStatus::INVALID_ARGUMENT:
+        case ProjectModulationStatus::INVARIANT_VIOLATION:
+            return "State changed - retry";
+        case ProjectModulationStatus::NO_CHANGE:
+            return "No change";
+        default:
+            return "Cannot assign - retry";
+    }
+}
+
 }  // namespace
 
+FLASHMEM bool ProjectHandler::destinationPickerAuditionAddress(
+    core::state::macro::MacroAutomationSlotAddress& out
+) const {
+    using core::state::modulation::ModulationDestinationKind;
+    if (navigation_.currentNode.get() !=
+            core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER ||
+        !pages_.control.audition.active ||
+        pages_.control.audition.destination.kind !=
+            ModulationDestinationKind::MACRO_SLOT) {
+        return false;
+    }
+    const auto& destination = pages_.control.audition.destination;
+    out = {destination.track, destination.page, destination.macro};
+    return macro_history_.modulatorAuditionPending(out);
+}
+
 FLASHMEM void ProjectHandler::navigate(float delta) {
+    core::state::macro::MacroAutomationSlotAddress auditionAddress{};
+    if (delta != 0.0f && destinationPickerAuditionAddress(auditionAddress)) {
+        navigation_.setLifecycleFeedback("Preview - Apply or Back");
+        return;
+    }
     if (delta != 0.0f) {
         navigation_.clearLifecycleFeedback();
     }
@@ -148,7 +199,7 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
 
     if (navigation_.currentNode.get() ==
         ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
-        commitDestinationPickerSelection();
+        startDestinationPickerAudition();
         return;
     }
 
@@ -290,10 +341,15 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
     }
 }
 
-FLASHMEM void ProjectHandler::commitDestinationPickerSelection() {
+FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     using namespace core::state::modulation;
     if (navigation_.currentNode.get() !=
         core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        return;
+    }
+    core::state::macro::MacroAutomationSlotAddress pendingAddress{};
+    if (destinationPickerAuditionAddress(pendingAddress)) {
+        navigation_.setLifecycleFeedback("Preview - Apply or Back");
         return;
     }
     const bool creating = navigation_.creatingModulatorSource;
@@ -317,7 +373,9 @@ FLASHMEM void ProjectHandler::commitDestinationPickerSelection() {
             pages_, sourceDraft
         );
         if (!created.changed()) {
-            navigation_.setLifecycleFeedback("Source capacity unavailable");
+            navigation_.setLifecycleFeedback(
+                destinationAuditionFailureLabel(created.status)
+            );
             return;
         }
         (void)core::state::project::backProjectNavigation(navigation_);
@@ -332,9 +390,24 @@ FLASHMEM void ProjectHandler::commitDestinationPickerSelection() {
         navigation_.setLifecycleFeedback("LFO created · Unassigned");
         return;
     }
-    if (row >= core::state::macro::MACRO_COUNT ||
-        !pages_.pageData(track, page).isMacroActive(row)) {
-        navigation_.setLifecycleFeedback("Create this Macro first");
+    if (row >= core::state::macro::MACRO_COUNT) return;
+    const auto& pageData = pages_.pageData(track, page);
+    const bool active = pageData.isMacroActive(row);
+    const bool createMacro = !active && pageData.nextAddMacroIndex() == row;
+    if (!active && !createMacro) {
+        char feedback[48]{};
+        const uint8_t next = pageData.nextAddMacroIndex();
+        if (next < core::state::macro::MACRO_COUNT) {
+            std::snprintf(
+                feedback,
+                sizeof(feedback),
+                "Add Macro %u first",
+                static_cast<unsigned>(next + 1U)
+            );
+        } else {
+            std::snprintf(feedback, sizeof(feedback), "State changed - retry");
+        }
+        navigation_.setLifecycleFeedback(feedback);
         return;
     }
 
@@ -350,7 +423,7 @@ FLASHMEM void ProjectHandler::commitDestinationPickerSelection() {
     binding.application = ModulationApplication::NATURAL;
 
     ProjectModulationResult begun{};
-    ModulatorId targetSource{};
+    bool reachWidened = false;
     if (creating) {
         sourceDraft.reach = {
             .kind = ModulatorReachKind::MACRO,
@@ -359,11 +432,10 @@ FLASHMEM void ProjectHandler::commitDestinationPickerSelection() {
             .macro = row,
         };
         begun = macro_history_.beginLfoModulatorAudition(
-            pages_, address, sourceDraft, binding
+            pages_, address, sourceDraft, binding, createMacro
         );
-        targetSource = begun.sourceId;
     } else {
-        targetSource = navigation_.selectedModulator;
+        const ModulatorId targetSource = navigation_.selectedModulator;
         const auto* source = findProjectModulator(graph, targetSource);
         if (!source) {
             navigation_.setLifecycleFeedback("Source unavailable");
@@ -377,58 +449,106 @@ FLASHMEM void ProjectHandler::commitDestinationPickerSelection() {
             source->reach,
             destination
         );
-        const bool needsWidening =
-            !modulatorReachContains(source->reach, destination);
+        reachWidened = !modulatorReachContains(source->reach, destination);
         begun = macro_history_.beginExistingModulatorAudition(
             pages_,
             address,
             targetSource,
             binding,
-            needsWidening ? &widened : nullptr
+            reachWidened ? &widened : nullptr,
+            createMacro
         );
     }
     if (!begun.changed()) {
-        navigation_.setLifecycleFeedback("Destination unavailable");
+        navigation_.setLifecycleFeedback(
+            destinationAuditionFailureLabel(begun.status)
+        );
         return;
     }
+    navigation_.selectedModulationBinding = begun.bindingId;
+    refreshModulatorPreview(createMacro, row);
+    if (createMacro) {
+        char feedback[48]{};
+        std::snprintf(
+            feedback,
+            sizeof(feedback),
+            reachWidened ? "M%u +25%% + Reach" :
+                           "M%u +25%% - Preview",
+            static_cast<unsigned>(row + 1U)
+        );
+        navigation_.setLifecycleFeedback(feedback);
+    } else {
+        navigation_.setLifecycleFeedback(
+            reachWidened ? "+25% + Reach" : "+25% - Preview"
+        );
+    }
+}
+
+FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
+    using namespace core::state::modulation;
+    core::state::macro::MacroAutomationSlotAddress address{};
+    if (!destinationPickerAuditionAddress(address)) return;
+    const auto audition = pages_.control.audition;
+    const bool sourceCreated = audition.sourceCreated;
     if (!macro_history_.commitModulatorAudition(pages_, address)) {
-        (void)macro_history_.cancelModulatorAudition(pages_, address);
-        navigation_.setLifecycleFeedback("Apply failed");
+        navigation_.setLifecycleFeedback("State changed - Back to cancel");
         return;
     }
 
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        macros_,
+        pages_
+    );
+    auto& graph = pages_.control.authored.modulation;
     (void)core::state::project::backProjectNavigation(navigation_);
-    if (creating) {
+    if (sourceCreated) {
         uint16_t sourceIndex = 0;
         while (sourceIndex < graph.sourceCount &&
-               graph.sources[sourceIndex].id != targetSource) {
+               graph.sources[sourceIndex].id != audition.sourceId) {
             ++sourceIndex;
         }
         navigation_.focusedRow.set(static_cast<uint8_t>(sourceIndex));
-        navigation_.selectedModulator = targetSource;
+        navigation_.selectedModulator = audition.sourceId;
         (void)core::state::project::openProjectModulatorDetail(
-            navigation_, targetSource
+            navigation_, audition.sourceId
         );
         (void)core::state::project::openProjectModulatorDestinations(navigation_);
     }
     const uint16_t destinationCount =
         core::state::project::modulators::sourceDestinationCount(
             graph,
-            targetSource
+            audition.sourceId
         );
     navigation_.focusedRow.set(
         static_cast<uint8_t>(destinationCount > 0U ? destinationCount - 1U : 0U)
     );
-    navigation_.selectedModulationBinding = begun.bindingId;
+    navigation_.selectedModulationBinding = audition.bindingId;
     publishModulatorMutation(false);
     navigation_.setLifecycleFeedback(
-        creating ? "LFO created · +25%" : "Destination added · +25%"
+        sourceCreated ? "Applied - one Undo" :
+                        "Destination applied"
     );
+    syncFocusedEncoder();
+}
+
+FLASHMEM bool ProjectHandler::cancelDestinationPickerAudition() {
+    core::state::macro::MacroAutomationSlotAddress address{};
+    if (!destinationPickerAuditionAddress(address)) return false;
+    if (!macro_history_.cancelModulatorAudition(pages_, address)) {
+        navigation_.setLifecycleFeedback("State changed - retry");
+        return true;
+    }
+    navigation_.selectedModulationBinding = {};
+    refreshModulatorPreview(true, address.macro);
+    navigation_.setLifecycleFeedback("Preview cancelled");
+    return true;
 }
 
 FLASHMEM void ProjectHandler::setFocusedValue(float normalized) {
+    core::state::macro::MacroAutomationSlotAddress auditionAddress{};
+    const bool auditioning = destinationPickerAuditionAddress(auditionAddress);
     if (setFocusedProjectValue(normalized)) {
-        navigation_.clearLifecycleFeedback();
+        if (!auditioning) navigation_.clearLifecycleFeedback();
     }
 }
 
@@ -437,6 +557,26 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
 
     const auto node = navigation_.currentNode.get();
     const uint8_t row = navigation_.focusedRow.get();
+
+    core::state::macro::MacroAutomationSlotAddress auditionAddress{};
+    if (destinationPickerAuditionAddress(auditionAddress)) {
+        const auto* binding =
+            core::state::modulation::findProjectModulationBinding(
+                pages_.control.authored.modulation,
+                pages_.control.audition.bindingId
+            );
+        const int16_t percent = binding
+            ? core::ui::macro::lfo_audition::depthQ15ToPercent(
+                  binding->amountQ15
+              )
+            : 0;
+        configureOptDiscrete(
+            encoders_,
+            core::ui::macro::lfo_audition::DEPTH_STEP_COUNT,
+            static_cast<float>(percent + 100) / 200.0f
+        );
+        return;
+    }
 
     if (node == ProjectNodeId::MODULATORS_ROOT) {
         const auto* source = focusedModulator();
