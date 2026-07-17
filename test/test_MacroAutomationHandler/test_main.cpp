@@ -755,6 +755,65 @@ core::state::modulation::ModulationBindingId bindReusableLfo(
     return result.bindingId;
 }
 
+void test_add_source_create_focus_reaches_use_existing_without_picker_mutation() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    const auto firstSource = createReusableLfo(h);
+    const auto secondSource = createReusableLfo(h);
+    const auto existingBinding = bindReusableLfo(h, firstSource, 0, 8192);
+
+    h.openModulationEditor();
+    h.handler.update(0);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 1U);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATOR_CREATE);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 0U);
+    assert(h.encoderHw.getDiscreteSteps(
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
+    ) == 1U);
+
+    const int pickerSelection =
+        h.state.macroEdit.macroSelector.selectedIndex.get();
+    const uint32_t authoredRevision = h.state.pages.control.authoredRevision;
+    const uint16_t sourceCount =
+        h.state.pages.control.authored.modulation.sourceCount;
+    const uint16_t bindingCount =
+        h.state.pages.control.authored.modulation.outputBindingCount;
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATOR_CREATE);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 1U);
+    assert(h.encoderHw.getDiscreteSteps(
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
+    ) == 1U);
+    assert(h.state.macroEdit.macroSelector.selectedIndex.get() ==
+           pickerSelection);
+    assert(h.state.pages.control.authoredRevision == authoredRevision);
+    assert(h.state.pages.control.authored.modulation.sourceCount == sourceCount);
+    assert(h.state.pages.control.authored.modulation.outputBindingCount ==
+           bindingCount);
+    assert(h.state.pages.control.authored.modulation.sources[0].id == firstSource);
+    assert(h.state.pages.control.authored.modulation.sources[1].id == secondSource);
+    assert(h.state.pages.control.authored.modulation.outputBindings[0].id ==
+           existingBinding);
+    assert(h.state.macroHistory.undoCount() == 0U);
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATOR_PICKER);
+    assert(h.state.macroEdit.macroSelector.selectedIndex.get() ==
+           pickerSelection);
+    assert(h.state.pages.control.authoredRevision == authoredRevision);
+    assert(h.state.macroHistory.undoCount() == 0U);
+    std::cout
+        << "[PASS] Add Source focus reaches Use Existing without mutation\n";
+}
+
 void test_use_existing_browse_is_silent_and_cancel_preserves_source() {
     using namespace core::state::modulation;
     MacroAutomationHarness h;
@@ -970,6 +1029,7 @@ int main() {
     test_left_center_enables_coarse_length_and_offset_steps_temporarily();
     test_empty_modulation_requires_explicit_new_lfo_selection_and_cancel_is_exact();
     test_lfo_audition_apply_returns_to_macro_edit_and_is_one_undo();
+    test_add_source_create_focus_reaches_use_existing_without_picker_mutation();
     test_use_existing_browse_is_silent_and_cancel_preserves_source();
     test_use_existing_apply_is_one_edge_history_and_focus();
     test_assignment_copy_pastes_shared_source_to_empty_macro_with_one_undo();

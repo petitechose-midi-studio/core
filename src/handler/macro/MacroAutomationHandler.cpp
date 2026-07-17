@@ -333,7 +333,7 @@ FLASHMEM void MacroAutomationHandler::moveFocus(float delta) {
         macro_edit_, now_provider_ ? now_provider_() : 0U, true
     );
     services_.endDepthGesture();
-    if (modulatorPickerActive() || modulatorCreateActive()) {
+    if (modulatorPickerActive()) {
         const int count = static_cast<int>(
             pages_.control.authored.modulation.sourceCount
         );
@@ -486,7 +486,7 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
 FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
     uint8_t steps = 1;
     float position = 0.0f;
-    if (modulatorPickerActive()) {
+    if (modulatorPickerActive() || modulatorCreateActive()) {
         encoders_.setDiscreteSteps(Config::EncoderID::OPT, 1);
         encoders_.setPosition(Config::EncoderID::OPT, 0.0f);
         return;
