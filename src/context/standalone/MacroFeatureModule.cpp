@@ -287,6 +287,11 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
     );
     valid_ = value_handler_ && midi_handler_ && automation_playback_ &&
              performance_handler_ && edit_handler_ && automation_handler_;
+    if (valid_) {
+        // Project restore precedes Standalone assembly. Publish the complete
+        // loaded Base/Modulation tuple before the Macro view is first shown.
+        automation_playback_->update(oc::time::millis());
+    }
 }
 
 FLASHMEM MacroFeatureModule::~MacroFeatureModule() = default;

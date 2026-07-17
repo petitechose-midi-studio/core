@@ -62,6 +62,8 @@ enum class MacroAutomationRecordingStatus : uint8_t {
 };
 
 struct MacroUiState {
+    static constexpr uint8_t INVALID_RUNTIME_PROJECTION_CONTEXT = 0xFFU;
+
     struct RuntimeValueProjection {
         float base = 0.0f;
         float modulation = 0.0f;
@@ -71,6 +73,18 @@ struct MacroUiState {
         bool modulationActive = false;
         bool clippedLow = false;
         bool clippedHigh = false;
+    };
+
+    /**
+     * Small stack token for one atomic runtime projection publication.
+     * Values are staged in-place; no second Macro frame is retained.
+     */
+    struct RuntimeProjectionFrameTransaction {
+        uint16_t previousValidMask = 0;
+        uint16_t stagedValidMask = 0;
+        uint16_t changedMask = 0;
+        uint8_t previousContext = INVALID_RUNTIME_PROJECTION_CONTEXT;
+        bool active = false;
     };
 
     struct AutomationRecordingState {
@@ -107,6 +121,7 @@ struct MacroUiState {
     oc::state::Signal<uint32_t, 3> runtimeProjectionRevision{0};
     MacroManualOverrideState manualOverrides;
     std::array<RuntimeValueProjection, MACRO_COUNT> runtimeProjections{};
+    uint8_t runtimeProjectionContext = INVALID_RUNTIME_PROJECTION_CONTEXT;
     oc::state::Signal<uint8_t, 4> focusedMacroSlot{0};
     oc::state::Signal<bool, 2> previewAddPageSlot{false};
     oc::state::Signal<uint8_t, 2> previewPageIndex{0};
@@ -132,9 +147,32 @@ struct MacroUiState {
     /** Backward-compatible full reset; project lifecycle integration owns use. */
     void reset();
     void refreshManualOverrideMask(uint8_t track, uint8_t page);
-    void setRuntimeProjection(uint8_t macro,
+    void setRuntimeProjection(uint8_t track,
+                              uint8_t page,
+                              uint8_t macro,
                               const MacroResolvedValue& value,
                               float modulationDepth);
+    [[nodiscard]] RuntimeProjectionFrameTransaction
+        beginRuntimeProjectionFrame();
+    void stageRuntimeProjection(
+        RuntimeProjectionFrameTransaction& transaction,
+        uint8_t macro,
+        const MacroResolvedValue& value,
+        float modulationDepth
+    );
+    void commitRuntimeProjectionFrame(
+        RuntimeProjectionFrameTransaction& transaction,
+        uint8_t track,
+        uint8_t page
+    );
+    void cancelRuntimeProjectionFrame(
+        RuntimeProjectionFrameTransaction& transaction
+    );
+    [[nodiscard]] bool runtimeProjectionValidFor(
+        uint8_t track,
+        uint8_t page,
+        uint8_t macro
+    ) const;
     void clearRuntimeProjections();
 };
 

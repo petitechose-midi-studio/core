@@ -369,11 +369,17 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             modulationPlayback && controlSlot.modulationCount == 1U &&
             controlSlot.legacy.modulationDepth == 0.0f;
         const auto& projection = source.macroUi.runtimeProjections[i];
+        const bool projectionValid =
+            source.macroUi.runtimeProjectionValidFor(
+                address.track,
+                address.page,
+                i
+            );
         const float fallbackValue = source.macros.slots[i].value.get();
         frame.macros[i] = {
-            .value = projection.valid ? projection.resolved : fallbackValue,
-            .baseValue = projection.valid ? projection.base : fallbackValue,
-            .modulationDelta = projection.valid ? projection.modulation : 0.0f,
+            .value = projectionValid ? projection.resolved : fallbackValue,
+            .baseValue = projectionValid ? projection.base : fallbackValue,
+            .modulationDelta = projectionValid ? projection.modulation : 0.0f,
             .modulationDepth = controlSlotValid
                 ? controlSlot.legacy.modulationDepth
                 : 0.0f,
@@ -391,8 +397,8 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             .modulationPaused = active && modulationPaused,
             .automationRecording = active && recording,
             .automationManualOverride = active && manualOverride,
-            .clippedLow = projection.valid && projection.clippedLow,
-            .clippedHigh = projection.valid && projection.clippedHigh,
+            .clippedLow = projectionValid && projection.clippedLow,
+            .clippedHigh = projectionValid && projection.clippedHigh,
             .active = active,
             .addSlot = addSlot,
             .focused = focused,

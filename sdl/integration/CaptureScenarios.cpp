@@ -242,15 +242,18 @@ void prepareMacroReusableModulatorsScenario(core::state::CoreState& state) {
 core::state::modulation::ModulationBindingId bindReusableModulator(
     core::state::CoreState& state,
     core::state::modulation::ModulatorId sourceId,
-    int16_t amountQ15
+    int16_t amountQ15,
+    uint8_t track = 0,
+    uint8_t page = 0,
+    uint8_t macro = 0
 ) {
     using namespace core::state::modulation;
     ModulationBindingDraft draft{};
     draft.sourceId = sourceId;
     draft.destination = projectControlDestination({
-        .track = 0,
-        .page = 0,
-        .macro = 0,
+        .track = track,
+        .page = page,
+        .macro = macro,
     });
     draft.amountQ15 = amountQ15;
     draft.inputRange = ModulationInputRange::BIPOLAR;
@@ -294,6 +297,69 @@ void prepareMacroMultiModulationScenario(core::state::CoreState& state) {
             pulseBinding
         );
     }
+}
+
+void prepareMacroInitialProjectionScenario(core::state::CoreState& state) {
+    prepareMacroMultiModulationScenario(state);
+    auto& graph = state.pages.control.authored.modulation;
+    if (graph.sourceCount < 2U) return;
+
+    auto& track0 = state.pages.tracks[0];
+    track0.setPageEnabled(1, true);
+    track0.pages[1].values[0] = 0.68f;
+    track0.pages[1].cc[0] = 71;
+    track0.pages[1].setMacroActive(0, true);
+    std::snprintf(
+        track0.pages[1].name,
+        sizeof(track0.pages[1].name),
+        "%s",
+        "Projection P2"
+    );
+
+    auto& track1 = state.pages.tracks[1];
+    track1.channel = 6;
+    track1.activePage = 0;
+    track1.setPageEnabled(0, true);
+    track1.pages[0].values[0] = 0.24f;
+    track1.pages[0].cc[0] = 10;
+    track1.pages[0].setMacroActive(0, true);
+    std::snprintf(
+        track1.pages[0].name,
+        sizeof(track1.pages[0].name),
+        "%s",
+        "Projection T2"
+    );
+
+    (void)bindReusableModulator(
+        state,
+        graph.sources[0].id,
+        9830,
+        0,
+        1,
+        0
+    );
+    (void)bindReusableModulator(
+        state,
+        graph.sources[1].id,
+        -6553,
+        1,
+        0,
+        0
+    );
+    state.pages.control.markAuthoredMutation();
+    state.setSharedTrackState(0x0003U, 0);
+    state.pages.setActivePage(0);
+    state.macroUi.syncPreviewPage(0);
+    state.trackNavigation.syncPreviewTrack(0);
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.configRevision.set(
+        core::state::macro::nextMacroConfigRevision(
+            state.configRevision.get()
+        )
+    );
 }
 
 void prepareProjectModulatorsScenario(core::state::CoreState& state) {
@@ -1354,6 +1420,11 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "macro-multi-modulation") == 0) {
         prepareMacroMultiModulationScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-initial-projection") == 0) {
+        prepareMacroInitialProjectionScenario(state);
         return true;
     }
 

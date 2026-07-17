@@ -291,7 +291,7 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     projection.modulation = 0.2f;
     projection.resolved = 0.6f;
     projection.modulationActive = true;
-    state.macroUi.setRuntimeProjection(0, projection, 0.75f);
+    state.macroUi.setRuntimeProjection(0, 0, 0, projection, 0.75f);
     props = core::ui::buildMacroViewFrameState(sourceFor(state)).macros[0];
     assert(std::fabs(props.baseValue - 0.4f) < 0.0001f);
     assert(std::fabs(props.modulationDelta - 0.2f) < 0.0001f);
@@ -325,8 +325,17 @@ void test_runtime_projection_revision_targets_one_macro_or_all() {
     core::state::macro::MacroResolvedValue projection{};
     projection.base = 0.25f;
     projection.resolved = 0.25f;
-    state.macroUi.setRuntimeProjection(3, projection, 0.0f);
+    state.macroUi.setRuntimeProjection(0, 0, 3, projection, 0.0f);
 
+    const uint32_t contextRevision =
+        state.macroUi.runtimeProjectionRevision.get();
+    assert(core::state::macro::macroRuntimeProjectionRevisionTargetsAll(
+        contextRevision
+    ));
+
+    projection.base = 0.5f;
+    projection.resolved = 0.5f;
+    state.macroUi.setRuntimeProjection(0, 0, 3, projection, 0.0f);
     const uint32_t slotRevision =
         state.macroUi.runtimeProjectionRevision.get();
     assert(!core::state::macro::macroRuntimeProjectionRevisionTargetsAll(
@@ -336,7 +345,7 @@ void test_runtime_projection_revision_targets_one_macro_or_all() {
         slotRevision
     ) == 3);
 
-    state.macroUi.setRuntimeProjection(3, projection, 0.0f);
+    state.macroUi.setRuntimeProjection(0, 0, 3, projection, 0.0f);
     assert(state.macroUi.runtimeProjectionRevision.get() == slotRevision);
 
     state.macroUi.clearRuntimeProjections();

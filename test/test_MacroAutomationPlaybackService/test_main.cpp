@@ -67,11 +67,15 @@ void configureAutomation(core::state::CoreState& state) {
     ));
 }
 
-void configureModulation(core::state::CoreState& state, float depth) {
+void configureModulationAt(core::state::CoreState& state,
+                           uint8_t track,
+                           uint8_t page,
+                           uint8_t macro,
+                           float depth) {
     const auto address = core::state::macro::MacroAutomationSlotAddress{
-        .track = state.pages.currentActiveTrack(),
-        .page = state.pages.currentActivePage(),
-        .macro = 0,
+        .track = track,
+        .page = page,
+        .macro = macro,
     };
     core::state::macro::MacroModulationShape shape;
     shape.durationBeats = 2.0f;
@@ -83,6 +87,93 @@ void configureModulation(core::state::CoreState& state, float depth) {
         shape,
         depth
     ));
+}
+
+void configureModulation(core::state::CoreState& state, float depth) {
+    configureModulationAt(
+        state,
+        state.pages.currentActiveTrack(),
+        state.pages.currentActivePage(),
+        0,
+        depth
+    );
+}
+
+void test_runtime_projection_publication_is_atomic() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    auto configurePage = [&](uint8_t track,
+                             uint8_t page,
+                             float first,
+                             float second) {
+        auto& target = state.pages.tracks[track].pages[page];
+        target.values[0] = first;
+        target.values[1] = second;
+        target.setMacroActive(0, true);
+        target.setMacroActive(1, true);
+        state.pages.tracks[track].setPageEnabled(page, true);
+        configureModulationAt(state, track, page, 0, 0.4f);
+        configureModulationAt(state, track, page, 1, 0.3f);
+    };
+    configurePage(0, 0, 0.35f, 0.65f);
+    configurePage(0, 1, 0.2f, 0.8f);
+    configurePage(1, 0, 0.45f, 0.55f);
+    state.pages.syncSharedTrackState(0x0003U, 0);
+    state.pages.updateActiveConfigs();
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    core::handler::MacroAutomationPlaybackService playback(
+        core::handler::MacroAutomationPlaybackService::StateRefs{
+            state.pages,
+            state.macroUi,
+            state.statusBar,
+            &state.macroRuntimeOwnerRevision,
+        },
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        midi
+    );
+
+    const uint32_t revisionBefore =
+        state.macroUi.runtimeProjectionRevision.get();
+    playback.update(1000);
+    const uint32_t revisionAfter =
+        state.macroUi.runtimeProjectionRevision.get();
+    assert((revisionAfter >> 8U) == (revisionBefore >> 8U) + 1U);
+    assert(core::state::macro::macroRuntimeProjectionRevisionTargetsAll(
+        revisionAfter
+    ));
+    assert(state.macroUi.runtimeProjections[0].valid);
+    assert(state.macroUi.runtimeProjections[1].valid);
+    assert(state.macroUi.runtimeProjectionValidFor(0, 0, 0));
+    assert(state.macroUi.runtimeProjectionValidFor(0, 0, 1));
+
+    // A Project activation is a hard runtime boundary and must bypass the
+    // 16 ms cadence guard rather than leaving a cleared/intermediate frame.
+    state.requestMacroRuntimeOwnerActivation();
+    playback.update(1001);
+    assert(state.pages.control.runtime.lastEvaluationMs == 1001U);
+    assert(state.macroUi.runtimeProjectionValidFor(0, 0, 0));
+    assert(state.macroUi.runtimeProjectionValidFor(0, 0, 1));
+
+    // Page and Track navigation inside the same cadence window also publish
+    // their target tuple immediately; navigation is never a refresh gesture.
+    state.pages.setActivePage(1);
+    playback.update(1002);
+    assert(state.macroUi.runtimeProjectionValidFor(0, 1, 0));
+    assert(state.macroUi.runtimeProjectionValidFor(0, 1, 1));
+    assert(!state.macroUi.runtimeProjectionValidFor(0, 0, 0));
+
+    state.pages.syncSharedTrackState(0x0003U, 1);
+    playback.update(1003);
+    assert(state.macroUi.runtimeProjectionValidFor(1, 0, 0));
+    assert(state.macroUi.runtimeProjectionValidFor(1, 0, 1));
+    assert(!state.macroUi.runtimeProjectionValidFor(0, 1, 0));
+
+    std::cout << "[PASS] runtime projection publishes complete frames only\n";
 }
 
 void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
@@ -556,6 +647,7 @@ void test_runtime_owner_activation_preserves_manual_ownership() {
 }  // namespace
 
 int main() {
+    test_runtime_projection_publication_is_atomic();
     test_playback_updates_runtime_and_sends_cc_when_value_changes();
     test_stopped_transport_publishes_static_owner_without_playing_curve();
     test_update_period_remains_bounded_across_millisecond_rollover();

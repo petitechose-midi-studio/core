@@ -70,11 +70,11 @@ private:
         uint16_t& written
     );
     bool appendStaticAuthors_(FramePublicationContext& context) const;
-    void updateVisibleProjection_(
-        uint16_t destinationIndex,
+    void stageVisibleProjection_(
+        FramePublicationContext& context,
         const core::state::modulation::ProjectLogicalMacroRuntimeValue& value
     );
-    void syncActivePageRuntimeProjection_(uint8_t track, uint8_t page);
+    void syncActivePageRuntimeUi_(uint8_t track, uint8_t page);
     void invalidateComputedRuntime_();
     void invalidateSentCache_();
 

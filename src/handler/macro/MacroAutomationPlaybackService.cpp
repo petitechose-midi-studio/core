@@ -22,6 +22,8 @@ constexpr uint8_t INVALID_CC_VALUE = 0xFF;
 struct MacroAutomationPlaybackService::FramePublicationContext {
     MacroAutomationPlaybackService* owner = nullptr;
     core::state::modulation::ProjectControlTimeSnapshot time{};
+    core::state::macro::MacroUiState::RuntimeProjectionFrameTransaction
+        projection{};
     core::state::shared::MidiCcCandidate* candidates = nullptr;
     uint16_t capacity = 0;
     uint16_t count = 0;
@@ -83,10 +85,9 @@ void MacroAutomationPlaybackService::invalidateComputedRuntime_() {
     }
 }
 
-void MacroAutomationPlaybackService::syncActivePageRuntimeProjection_(uint8_t track,
-                                                                       uint8_t page) {
+void MacroAutomationPlaybackService::syncActivePageRuntimeUi_(uint8_t track,
+                                                               uint8_t page) {
     macro_ui_.refreshManualOverrideMask(track, page);
-    macro_ui_.clearRuntimeProjections();
 }
 
 void MacroAutomationPlaybackService::consumeRuntimeOwnerActivation_(uint32_t nowMs) {
@@ -104,7 +105,7 @@ void MacroAutomationPlaybackService::consumeRuntimeOwnerActivation_(uint32_t now
     pages_.control.compiledRevision = 0;
     pages_.control.runtimeContextHash = 0;
     pages_.control.runtime = {};
-    syncActivePageRuntimeProjection_(cached_track_, cached_page_);
+    syncActivePageRuntimeUi_(cached_track_, cached_page_);
     invalidateComputedRuntime_();
 }
 
@@ -185,7 +186,7 @@ bool MacroAutomationPlaybackService::ensureProjectRuntime_(
     if (needsCompile) {
         control.compiledRevision = control.authoredRevision;
         control.runtimeContextHash = contextHash;
-        syncActivePageRuntimeProjection_(
+        syncActivePageRuntimeUi_(
             pages_.currentActiveTrack(),
             pages_.currentActivePage()
         );
@@ -238,8 +239,8 @@ bool MacroAutomationPlaybackService::provideBase_(
     return true;
 }
 
-void MacroAutomationPlaybackService::updateVisibleProjection_(
-    uint16_t,
+void MacroAutomationPlaybackService::stageVisibleProjection_(
+    FramePublicationContext& context,
     const core::state::modulation::ProjectLogicalMacroRuntimeValue& value
 ) {
     const auto& destination = value.destination;
@@ -264,7 +265,9 @@ void MacroAutomationPlaybackService::updateVisibleProjection_(
     const bool modulationActive =
         (value.flags & core::state::modulation::
             PROJECT_LOGICAL_MACRO_FLAG_MODULATION_ACTIVE) != 0U;
-    services_.setResolvedValue(
+    services_.setResolvedValue(destination.macro, value.value);
+    macro_ui_.stageRuntimeProjection(
+        context.projection,
         destination.macro,
         core::state::macro::MacroResolvedValue{
             .base = value.base,
@@ -277,13 +280,18 @@ void MacroAutomationPlaybackService::updateVisibleProjection_(
             .modulationPausedDepthZero = authored.modulationEnabled &&
                 std::abs(authored.legacy.modulationDepth) <= 0.000001f,
             .modulationSuspended = false,
-        }
+        },
+        authored.modulationStored
+            ? core::state::macro::macroAutomationClamp01(
+                  authored.legacy.modulationDepth
+              )
+            : 0.0f
     );
 }
 
 void MacroAutomationPlaybackService::captureRuntimeDestination_(
     void* context,
-    uint16_t destinationIndex,
+    uint16_t,
     const core::state::modulation::ProjectLogicalMacroRuntimeValue& value
 ) {
     auto* frame = static_cast<FramePublicationContext*>(context);
@@ -329,7 +337,7 @@ void MacroAutomationPlaybackService::captureRuntimeDestination_(
         frame->computedMasks[logical.track] |
         static_cast<uint16_t>(1U << logical.macro)
     );
-    owner.updateVisibleProjection_(destinationIndex, value);
+    owner.stageVisibleProjection_(*frame, value);
 }
 
 bool MacroAutomationPlaybackService::appendStaticAuthors_(
@@ -418,6 +426,7 @@ bool MacroAutomationPlaybackService::produceProjectFrame_(
     frame->count = 0;
     frame->computedMasks.fill(0);
     auto& owner = *frame->owner;
+    frame->projection = owner.macro_ui_.beginRuntimeProjectionFrame();
     auto& control = owner.pages_.control;
     if (control.plan.destinationCount > 0U) {
         const auto evaluated =
@@ -436,16 +445,34 @@ bool MacroAutomationPlaybackService::produceProjectFrame_(
             );
         if (!evaluated.evaluated() ||
             frame->count != evaluated.destinationEvaluationCount) {
+            owner.macro_ui_.cancelRuntimeProjectionFrame(frame->projection);
             return false;
         }
     }
-    if (!owner.appendStaticAuthors_(*frame)) return false;
+    if (!owner.appendStaticAuthors_(*frame)) {
+        owner.macro_ui_.cancelRuntimeProjectionFrame(frame->projection);
+        return false;
+    }
+    owner.macro_ui_.commitRuntimeProjectionFrame(
+        frame->projection,
+        owner.pages_.currentActiveTrack(),
+        owner.pages_.currentActivePage()
+    );
     written = frame->count;
     return true;
 }
 
 void MacroAutomationPlaybackService::update(uint32_t nowMs) {
-    if (update_scheduled_ && !oc::time::deadlineReachedMs(nowMs, next_due_ms_)) return;
+    const bool ownerActivationPending = runtime_owner_revision_ != nullptr &&
+        runtime_owner_revision_->get() != consumed_runtime_owner_revision_;
+    const bool addressContextChanged =
+        pages_.currentActiveTrack() != cached_track_ ||
+        pages_.currentActivePage() != cached_page_;
+    if (update_scheduled_ &&
+        !oc::time::deadlineReachedMs(nowMs, next_due_ms_) &&
+        !ownerActivationPending && !addressContextChanged) {
+        return;
+    }
     update_scheduled_ = true;
     next_due_ms_ = nowMs + macro::MACRO_AUTOMATION_UPDATE_PERIOD_MS;
     OC_PERF_SCOPE(perfUpdate, "macro.automation-playback");
@@ -456,7 +483,7 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
     if (track != cached_track_ || page != cached_page_) {
         cached_track_ = track;
         cached_page_ = page;
-        syncActivePageRuntimeProjection_(track, page);
+        syncActivePageRuntimeUi_(track, page);
     }
 
     core::state::modulation::ProjectControlTimeSnapshot time{};

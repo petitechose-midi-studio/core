@@ -211,7 +211,14 @@ void MacroPerformanceDomainServices::setResolvedValue(
             slot.legacy.modulationDepth
         );
     }
-    macro_ui_->setRuntimeProjection(index, value, depth);
+    const auto address = activeAddress_(index);
+    macro_ui_->setRuntimeProjection(
+        address.track,
+        address.page,
+        index,
+        value,
+        depth
+    );
 }
 
 core::state::macro::MacroResolvedValue
