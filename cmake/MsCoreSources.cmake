@@ -7,6 +7,7 @@ set(MS_CORE_NATIVE_SOURCE_PATTERNS
     "${MS_CORE_SOURCE_ROOT}/persistence/*.cpp"
     "${MS_CORE_SOURCE_ROOT}/sequencer/*.cpp"
     "${MS_CORE_SOURCE_ROOT}/validation/ux/*.cpp"
+    "${MS_CORE_SOURCE_ROOT}/validation/project/ProjectModulationBenchmark.cpp"
     "${MS_CORE_SOURCE_ROOT}/handler/common/*.cpp"
     "${MS_CORE_SOURCE_ROOT}/handler/macro/*.cpp"
     "${MS_CORE_SOURCE_ROOT}/handler/project/*.cpp"

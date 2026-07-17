@@ -1,0 +1,338 @@
+#include "validation/project/ProjectModulationBenchmark.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+
+#include "config/TimeCompat.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
+
+namespace core::validation::project {
+
+namespace mod = core::state::modulation;
+
+namespace {
+
+constexpr uint16_t POINTS_PER_RECORDED_SOURCE =
+    mod::PROJECT_CURVE_POINT_CAPACITY / mod::PROJECT_MODULATOR_CAPACITY;
+
+static_assert(POINTS_PER_RECORDED_SOURCE == 256U);
+static_assert(
+    POINTS_PER_RECORDED_SOURCE * mod::PROJECT_MODULATOR_CAPACITY ==
+    mod::PROJECT_CURVE_POINT_CAPACITY
+);
+
+mod::ModulationDestination benchmarkDestination(uint16_t stableAddress) {
+    return {
+        mod::ModulationDestinationKind::MACRO_SLOT,
+        static_cast<uint8_t>(
+            stableAddress / mod::PROJECT_MODULATION_MACRO_COUNT
+        ),
+        0U,
+        static_cast<uint8_t>(
+            stableAddress % mod::PROJECT_MODULATION_MACRO_COUNT
+        ),
+    };
+}
+
+mod::ProjectModulationCompileContext benchmarkCompileContext() {
+    mod::ProjectModulationCompileContext context{};
+    context.enabledTrackMask = 0xFFFFU;
+    context.activePage.fill(0U);
+    context.activeMacroMask.fill(0xFFU);
+    return context;
+}
+
+void populateRecordedCurve(
+    mod::ProjectCurveArena& arena,
+    uint16_t sourceIndex
+) {
+    const uint16_t pointOffset = static_cast<uint16_t>(
+        sourceIndex * POINTS_PER_RECORDED_SOURCE
+    );
+    arena.records[sourceIndex] = {
+        .id = {static_cast<uint32_t>(sourceIndex + 1U)},
+        .pointOffset = pointOffset,
+        .pointCount = POINTS_PER_RECORDED_SOURCE,
+        .sourceDurationTicks = std::numeric_limits<uint16_t>::max(),
+        .durationTicks = std::numeric_limits<uint16_t>::max(),
+        .windowOffsetTicks = 0U,
+        .referenceCount = 1U,
+        .interpolation = mod::ProjectCurveInterpolation::LINEAR,
+        .valueDomain = mod::ProjectCurveValueDomain::BIPOLAR,
+        .flags = 0U,
+        .origin = mod::ProjectCurveOrigin::NATIVE,
+    };
+    for (uint16_t point = 0; point < POINTS_PER_RECORDED_SOURCE; ++point) {
+        const uint16_t target = static_cast<uint16_t>(pointOffset + point);
+        arena.points[target] = {
+            static_cast<uint16_t>(point * 257U),
+            static_cast<int16_t>(
+                -32767 + (65534L * static_cast<int32_t>(point)) /
+                    static_cast<int32_t>(POINTS_PER_RECORDED_SOURCE - 1U)
+            ),
+        };
+    }
+}
+
+void populateSource(
+    mod::ProjectControlDomainState& domain,
+    uint16_t sourceIndex,
+    ProjectModulationBenchmarkCase benchmarkCase
+) {
+    auto& source = domain.modulation.sources[sourceIndex];
+    source.id = {static_cast<uint32_t>(sourceIndex + 1U)};
+    source.name[0] = 'B';
+    source.name[1] = 'e';
+    source.name[2] = 'n';
+    source.name[3] = 'c';
+    source.name[4] = 'h';
+    source.reach.kind = mod::ModulatorReachKind::PROJECT;
+    source.flags = mod::PROJECT_MODULATOR_FLAG_ENABLED;
+    source.schemaVersion = 1U;
+    source.parameters.lfo = mod::ModulatorLfoParameters{};
+
+    if (benchmarkCase == ProjectModulationBenchmarkCase::LFO) {
+        source.kind = mod::ModulatorKind::LFO;
+        source.parameters.lfo.periodTicks = static_cast<uint32_t>(
+            mod::PROJECT_CONTROL_TICKS_PER_BEAT + sourceIndex
+        );
+        source.parameters.lfo.freePeriodMs = static_cast<uint32_t>(
+            750U + sourceIndex
+        );
+        source.parameters.lfo.phaseQ15 = static_cast<int16_t>(sourceIndex * 127U);
+        source.parameters.lfo.shape = static_cast<mod::ModulatorLfoShape>(
+            sourceIndex % 5U
+        );
+        source.parameters.lfo.retrigger =
+            sourceIndex % 2U == 0U
+                ? mod::ModulatorRetriggerPolicy::FREE_RUNNING
+                : mod::ModulatorRetriggerPolicy::TRANSPORT;
+        source.parameters.lfo.timing =
+            sourceIndex % 3U == 0U
+                ? mod::ModulatorTimingMode::FREE
+                : mod::ModulatorTimingMode::SYNC;
+        return;
+    }
+
+    source.kind = mod::ModulatorKind::RECORDED_SHAPE;
+    source.parameters.recordedCurveId = {
+        static_cast<uint32_t>(sourceIndex + 1U)
+    };
+    populateRecordedCurve(domain.curves, sourceIndex);
+}
+
+void populateBinding(
+    mod::ProjectControlDomainState& domain,
+    uint16_t sourceIndex,
+    uint8_t edge
+) {
+    const uint16_t bindingIndex = static_cast<uint16_t>(sourceIndex * 4U + edge);
+    const uint16_t stableAddress = static_cast<uint16_t>(
+        (sourceIndex + edge) % mod::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY
+    );
+    auto& binding = domain.modulation.outputBindings[bindingIndex];
+    binding.id = {static_cast<uint32_t>(bindingIndex + 1U)};
+    binding.sourceId = {static_cast<uint32_t>(sourceIndex + 1U)};
+    binding.destination = benchmarkDestination(stableAddress);
+    binding.amountQ15 = static_cast<int16_t>(8192 + edge * 2048);
+    binding.application = static_cast<mod::ModulationApplication>(edge % 3U);
+    binding.transfer = mod::ModulationTransfer::LINEAR;
+    binding.slewMs = static_cast<uint16_t>(8U + edge);
+    binding.flags = mod::PROJECT_MODULATION_BINDING_FLAG_ENABLED;
+}
+
+struct EvaluationContext {
+    const ProjectModulationBenchmarkWorkspace* workspace = nullptr;
+    uint16_t sinkCount = 0;
+    uint32_t checksum = 2166136261U;
+};
+
+bool provideBenchmarkBase(
+    void* rawContext,
+    uint16_t destinationIndex,
+    const mod::ModulationDestination&,
+    mod::ProjectLogicalMacroBaseInput& out
+) {
+    auto& context = *static_cast<EvaluationContext*>(rawContext);
+    if (context.workspace == nullptr ||
+        destinationIndex >= context.workspace->bases.size()) {
+        return false;
+    }
+    out = context.workspace->bases[destinationIndex];
+    return true;
+}
+
+void captureBenchmarkDestination(
+    void* rawContext,
+    uint16_t,
+    const mod::ProjectLogicalMacroRuntimeValue& value
+) {
+    auto& context = *static_cast<EvaluationContext*>(rawContext);
+    ++context.sinkCount;
+    const auto quantized = static_cast<uint32_t>(
+        std::clamp(value.value, 0.0f, 1.0f) * 65535.0f
+    );
+    context.checksum = (context.checksum ^ quantized) * 16777619U;
+}
+
+bool evaluateFrame(
+    ProjectModulationBenchmarkWorkspace& workspace,
+    uint32_t ordinal,
+    EvaluationContext& context
+) {
+    context.sinkCount = 0U;
+    mod::ProjectControlTimeSnapshot time{};
+    time.musicalTick = 97U + ordinal * 17U;
+    time.musicalTickFractionQ16 = static_cast<uint16_t>(ordinal * 811U);
+    time.monotonicMs = 1000U + ordinal * 4U;
+    time.transportGeneration = 1U;
+    time.transportStartMusicalTick = 11U;
+    time.transportStartMonotonicMs = 100U;
+    time.playing = true;
+    const auto result = mod::evaluateProjectControlRuntimeWithBaseProvider(
+        workspace.plan,
+        workspace.domain.curves,
+        time,
+        nullptr,
+        provideBenchmarkBase,
+        &context,
+        workspace.runtime,
+        workspace.sourceValues.data(),
+        static_cast<uint16_t>(workspace.sourceValues.size()),
+        captureBenchmarkDestination,
+        &context
+    );
+    return result.evaluated() &&
+        result.sourceEvaluationCount == mod::PROJECT_MODULATOR_CAPACITY &&
+        result.contributionCount == mod::PROJECT_MODULATION_BINDING_CAPACITY &&
+        result.destinationEvaluationCount ==
+            mod::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY &&
+        context.sinkCount == mod::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY;
+}
+
+}  // namespace
+
+const char* projectModulationBenchmarkCaseLabel(
+    ProjectModulationBenchmarkCase benchmarkCase
+) {
+    return benchmarkCase == ProjectModulationBenchmarkCase::RECORDED_SHAPE
+        ? "recorded-shape-128x512"
+        : "lfo-128x512";
+}
+
+bool prepareProjectModulationBenchmark(
+    ProjectModulationBenchmarkWorkspace& workspace,
+    ProjectModulationBenchmarkCase benchmarkCase
+) {
+    // Avoid a 185 KiB aggregate temporary on the embedded stack. Every member
+    // is trivially copyable and uses an all-zero empty representation; required
+    // non-zero domain defaults are restored explicitly below.
+    std::fill_n(
+        reinterpret_cast<unsigned char*>(&workspace),
+        sizeof(workspace),
+        static_cast<unsigned char>(0U)
+    );
+    auto& domain = workspace.domain;
+    domain.modulation.nextSourceId = mod::PROJECT_MODULATOR_CAPACITY + 1U;
+    domain.modulation.nextBindingId = mod::PROJECT_MODULATION_BINDING_CAPACITY + 1U;
+    domain.modulation.sourceCount = mod::PROJECT_MODULATOR_CAPACITY;
+    domain.modulation.outputBindingCount = mod::PROJECT_MODULATION_BINDING_CAPACITY;
+    domain.modulation.destinationScaleCount =
+        mod::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY;
+    domain.curves.nextCurveId = 1U;
+
+    if (benchmarkCase == ProjectModulationBenchmarkCase::RECORDED_SHAPE) {
+        domain.curves.nextCurveId = mod::PROJECT_MODULATOR_CAPACITY + 1U;
+        domain.curves.recordCount = mod::PROJECT_MODULATOR_CAPACITY;
+        domain.curves.pointCount = mod::PROJECT_CURVE_POINT_CAPACITY;
+    }
+
+    for (uint16_t source = 0; source < mod::PROJECT_MODULATOR_CAPACITY; ++source) {
+        populateSource(domain, source, benchmarkCase);
+        for (uint8_t edge = 0; edge < 4U; ++edge) {
+            populateBinding(domain, source, edge);
+        }
+    }
+    for (uint16_t destination = 0;
+         destination < mod::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY;
+         ++destination) {
+        domain.modulation.destinationScales[destination] = {
+            .destination = benchmarkDestination(destination),
+            .scaleQ15 = 24576U,
+        };
+        workspace.bases[destination].staticValue = 0.5f;
+    }
+
+    if (!mod::validProjectModulationDomain(
+            domain.modulation,
+            domain.curves,
+            &domain.automation
+        )) {
+        return false;
+    }
+    const auto compiled = mod::compileProjectControlRuntimePlan(
+        domain,
+        benchmarkCompileContext(),
+        workspace.plan
+    );
+    if (!compiled.compiled() ||
+        workspace.plan.sourceCount != mod::PROJECT_MODULATOR_CAPACITY ||
+        workspace.plan.bindingCount != mod::PROJECT_MODULATION_BINDING_CAPACITY ||
+        workspace.plan.destinationCount !=
+            mod::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY) {
+        return false;
+    }
+
+    mod::ProjectControlTimeSnapshot activation{};
+    mod::resetProjectControlRuntimeState(workspace.runtime, activation);
+    return mod::synchronizeProjectControlRuntimeState(
+        workspace.runtime,
+        workspace.plan,
+        activation
+    ) == mod::ProjectControlRuntimeStatus::OK;
+}
+
+ProjectModulationBenchmarkResult runProjectModulationBenchmark(
+    ProjectModulationBenchmarkWorkspace& workspace,
+    ProjectModulationBenchmarkCase benchmarkCase,
+    uint32_t warmupFrames,
+    uint32_t measuredFrames
+) {
+    ProjectModulationBenchmarkResult result{};
+    result.benchmarkCase = benchmarkCase;
+    result.iterations = measuredFrames;
+    result.sourceCount = workspace.plan.sourceCount;
+    result.bindingCount = workspace.plan.bindingCount;
+    result.destinationCount = workspace.plan.destinationCount;
+    result.prepared =
+        measuredFrames > 0U &&
+        result.sourceCount == mod::PROJECT_MODULATOR_CAPACITY &&
+        result.bindingCount == mod::PROJECT_MODULATION_BINDING_CAPACITY &&
+        result.destinationCount ==
+            mod::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY;
+    if (!result.prepared) return result;
+
+    EvaluationContext context{.workspace = &workspace};
+    for (uint32_t frame = 0; frame < warmupFrames; ++frame) {
+        if (!evaluateFrame(workspace, frame, context)) return result;
+    }
+
+    uint64_t totalUs = 0U;
+    for (uint32_t frame = 0; frame < measuredFrames; ++frame) {
+        const uint32_t startUs = core::time_compat::platformMicros();
+        if (!evaluateFrame(workspace, warmupFrames + frame, context)) {
+            return result;
+        }
+        const uint32_t elapsedUs =
+            core::time_compat::platformMicros() - startUs;
+        totalUs += elapsedUs;
+        result.maximumUs = std::max(result.maximumUs, elapsedUs);
+    }
+    result.averageUs = static_cast<uint32_t>(totalUs / measuredFrames);
+    result.checksum = context.checksum;
+    result.evaluated = true;
+    return result;
+}
+
+}  // namespace core::validation::project
