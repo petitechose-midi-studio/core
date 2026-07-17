@@ -397,7 +397,7 @@ FLASHMEM bool writeModulationPayload(
                 !writer.writeZeroes(14U)) {
                 return false;
             }
-        } else {
+        } else if (state->kind == modulation::ModulatorKind::LFO) {
             const auto& lfo = state->parameters.lfo;
             if (!writer.writeU32(lfo.periodTicks) ||
                 !writer.writeU32(lfo.freePeriodMs) ||
@@ -408,6 +408,21 @@ FLASHMEM bool writeModulationPayload(
                 !writer.writeBytes(lfo.reserved.data(), lfo.reserved.size())) {
                 return false;
             }
+        } else if (state->kind == modulation::ModulatorKind::ADSR) {
+            const auto& adsr = state->parameters.adsr;
+            if (!writer.writeU16(adsr.attack) ||
+                !writer.writeU16(adsr.decay) ||
+                !writer.writeU16(adsr.release) ||
+                !writer.writeU16(adsr.sustainQ15) ||
+                !writer.writeU8(static_cast<uint8_t>(adsr.timing)) ||
+                !writer.writeU8(static_cast<uint8_t>(adsr.retrigger)) ||
+                !writer.writeU8(static_cast<uint8_t>(adsr.curve)) ||
+                !writer.writeU8(adsr.reserved) ||
+                !writer.writeZeroes(4U)) {
+                return false;
+            }
+        } else {
+            return false;
         }
     }
     for (uint16_t order = 0; order < graph.outputBindingCount; ++order) {
@@ -701,7 +716,8 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
         !readZeroes(reader, 12U)) {
         return ChunkStatus::INVALID_PAYLOAD;
     }
-    if (view.versionMinor < PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR &&
+    if (view.versionMinor <
+            PROJECT_MODULATION_GRAPH_GLOBAL_DEPTH_VERSION_MINOR &&
         destinationScaleCount != 0U) {
         return ChunkStatus::INVALID_PAYLOAD;
     }
@@ -810,6 +826,30 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
             lfo.retrigger =
                 static_cast<modulation::ModulatorRetriggerPolicy>(retrigger);
             lfo.timing = static_cast<modulation::ModulatorTimingMode>(timing);
+        } else if (source.kind == modulation::ModulatorKind::ADSR) {
+            if (view.versionMinor <
+                PROJECT_MODULATION_GRAPH_ADSR_VERSION_MINOR) {
+                return fail(ChunkStatus::INVALID_PAYLOAD);
+            }
+            uint8_t timing = 0;
+            uint8_t retrigger = 0;
+            uint8_t curve = 0;
+            auto& adsr = source.parameters.adsr;
+            if (!reader.readU16(adsr.attack) ||
+                !reader.readU16(adsr.decay) ||
+                !reader.readU16(adsr.release) ||
+                !reader.readU16(adsr.sustainQ15) ||
+                !reader.readU8(timing) ||
+                !reader.readU8(retrigger) ||
+                !reader.readU8(curve) ||
+                !reader.readU8(adsr.reserved) ||
+                !readZeroes(reader, 4U)) {
+                return fail(ChunkStatus::INVALID_PAYLOAD);
+            }
+            adsr.timing = static_cast<modulation::ModulatorTimingMode>(timing);
+            adsr.retrigger =
+                static_cast<modulation::ModulatorAdsrRetriggerMode>(retrigger);
+            adsr.curve = static_cast<modulation::ModulatorAdsrCurve>(curve);
         } else {
             return fail(ChunkStatus::INVALID_PAYLOAD);
         }
@@ -1114,7 +1154,9 @@ FLASHMEM DecodeResult decodeProjectControlPayloads(
                  modulationView.versionMinor !=
                      PROJECT_MODULATION_GRAPH_NATURAL_APPLICATION_VERSION_MINOR &&
                  modulationView.versionMinor !=
-                    PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR)) {
+                     PROJECT_MODULATION_GRAPH_GLOBAL_DEPTH_VERSION_MINOR &&
+                 modulationView.versionMinor !=
+                    PROJECT_MODULATION_GRAPH_ADSR_VERSION_MINOR)) {
         result.modulationStatus = ChunkStatus::UNSUPPORTED_VERSION;
     } else {
         result.modulationStatus = decodeModulationCurrent(

@@ -57,7 +57,7 @@ struct DecodeResult {
 };
 
 /**
- * Writes canonical MAUT 1.6 then MODG 1.2 into one caller-owned buffer.
+ * Writes canonical MAUT 1.6 then MODG 1.3 into one caller-owned buffer.
  * Capacity is preflighted before the first byte is changed.
  */
 [[nodiscard]] EncodeResult encodeProjectControlPayloads(

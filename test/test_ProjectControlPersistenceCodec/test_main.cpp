@@ -277,6 +277,56 @@ DomainPtr makePositiveRecordedShapeDomain() {
     return domain;
 }
 
+DomainPtr makeAdsrDomain() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    mod::ModulatorAdsrDraft source{};
+    source.name = "Note Envelope";
+    source.reach.kind = mod::ModulatorReachKind::PROJECT;
+    source.parameters.attack = 7U;
+    source.parameters.decay = 384U;
+    source.parameters.release = 1536U;
+    source.parameters.sustainQ15 = 24576U;
+    source.parameters.timing = mod::ModulatorTimingMode::SYNC;
+    source.parameters.retrigger = mod::ModulatorAdsrRetriggerMode::LEGATO;
+    source.parameters.curve = mod::ModulatorAdsrCurve::SMOOTH;
+    const auto created = mod::createAdsrModulator(
+        domain->modulation,
+        source
+    );
+    assert(created.changed());
+
+    mod::ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination = destinationFromAddress(17U);
+    binding.amountQ15 = 24576;
+    assert(mod::addProjectModulationBinding(
+        domain->modulation,
+        binding
+    ).changed());
+    assert(mod::setProjectModulationDestinationScale(
+        domain->modulation,
+        binding.destination,
+        49152U
+    ).changed());
+
+    mod::ModulationTriggerDraft trigger{};
+    trigger.sourceId = created.sourceId;
+    trigger.trigger.kind = mod::ModulationTriggerKind::TRACK_NOTE;
+    trigger.trigger.track = 3U;
+    trigger.trigger.channel = mod::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL;
+    trigger.trigger.data = mod::PROJECT_MODULATION_TRIGGER_ANY_NOTE;
+    assert(mod::addProjectModulationTrigger(
+        domain->modulation,
+        trigger
+    ).changed());
+    assert(mod::validProjectModulationDomain(
+        domain->modulation,
+        domain->curves,
+        &domain->automation
+    ));
+    return domain;
+}
+
 DomainPtr makeDenseDomain() {
     auto domain = std::make_unique<mod::ProjectControlDomainState>();
     constexpr uint16_t AUTOMATION_POINTS =
@@ -421,6 +471,25 @@ uint32_t firstBindingOffset(
             control::PROJECT_MODULATOR_SOURCE_DIRECTORY_SIZE +
         static_cast<uint32_t>(domain.modulation.sourceCount) *
             control::PROJECT_MODULATOR_SOURCE_PAYLOAD_SIZE;
+}
+
+uint32_t firstSourcePayloadOffset(
+    const mod::ProjectControlDomainState& domain,
+    const control::EncodeResult& encoded
+) {
+    return encoded.modulationOffset +
+        control::PROJECT_CONTROL_CHUNK_HEADER_SIZE +
+        static_cast<uint32_t>(domain.modulation.sourceCount) *
+            control::PROJECT_MODULATOR_SOURCE_DIRECTORY_SIZE;
+}
+
+uint32_t firstTriggerOffset(
+    const mod::ProjectControlDomainState& domain,
+    const control::EncodeResult& encoded
+) {
+    return firstBindingOffset(domain, encoded) +
+        static_cast<uint32_t>(domain.modulation.outputBindingCount) *
+            control::PROJECT_MODULATION_BINDING_SIZE;
 }
 
 uint32_t firstDestinationScaleOffset(
@@ -786,7 +855,117 @@ void testCurrentRoundTripSharingAndIndependentRecovery() {
            decoded->modulation.sourceCount == 0U);
 }
 
-void testModg10ApplicationLiftPreservesSoundAndReencodesCanonical12() {
+void testModg13AdsrRoundTripVersionGateAndCorruptionAtomicity() {
+    assert(control::PROJECT_MODULATION_GRAPH_GLOBAL_DEPTH_VERSION_MINOR == 2U);
+    assert(control::PROJECT_MODULATION_GRAPH_ADSR_VERSION_MINOR == 3U);
+    assert(control::PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR == 3U);
+
+    auto source = makeAdsrDomain();
+    std::vector<uint8_t> bytes;
+    const auto encoded = encodeDomain(*source, bytes);
+    assert(encoded.modulationSize == 126U);
+    const uint32_t payload = firstSourcePayloadOffset(*source, encoded);
+    assert(bytes[payload] == 7U && bytes[payload + 1U] == 0U);
+    assert(bytes[payload + 6U] == 0x00U &&
+           bytes[payload + 7U] == 0x60U);
+    for (uint32_t index = 12U; index < 16U; ++index) {
+        assert(bytes[payload + index] == 0U);
+    }
+
+    auto decoded = std::make_unique<mod::ProjectControlDomainState>();
+    auto result = control::decodeProjectControlPayloads(
+        automationView(bytes, encoded),
+        modulationView(bytes, encoded),
+        *decoded
+    );
+    assert(result.decoded() && !result.migratedLegacy && !result.partial);
+    assert(result.modulationStatus == control::ChunkStatus::CURRENT);
+    assert(std::memcmp(source.get(), decoded.get(), sizeof(*source)) == 0);
+    std::vector<uint8_t> roundTrip;
+    encodeDomain(*decoded, roundTrip);
+    assert(roundTrip == bytes);
+
+    auto legacy12 = modulationView(bytes, encoded);
+    legacy12.versionMinor =
+        control::PROJECT_MODULATION_GRAPH_GLOBAL_DEPTH_VERSION_MINOR;
+    result = control::decodeProjectControlPayloads(
+        automationView(bytes, encoded),
+        legacy12,
+        *decoded
+    );
+    assert(result.modulationStatus == control::ChunkStatus::INVALID_PAYLOAD);
+    assert(decoded->modulation.sourceCount == 0U);
+
+    auto invalidSustain = bytes;
+    invalidSustain[payload + 6U] = 0xFFU;
+    invalidSustain[payload + 7U] = 0xFFU;
+    result = control::decodeProjectControlPayloads(
+        automationView(invalidSustain, encoded),
+        modulationView(invalidSustain, encoded),
+        *decoded
+    );
+    assert(result.modulationStatus == control::ChunkStatus::INVALID_PAYLOAD);
+    assert(decoded->modulation.sourceCount == 0U);
+
+    auto nonCanonicalTail = bytes;
+    nonCanonicalTail[payload + 12U] = 1U;
+    result = control::decodeProjectControlPayloads(
+        automationView(nonCanonicalTail, encoded),
+        modulationView(nonCanonicalTail, encoded),
+        *decoded
+    );
+    assert(result.modulationStatus == control::ChunkStatus::INVALID_PAYLOAD);
+    assert(decoded->modulation.sourceCount == 0U);
+
+    auto invalidWildcardUse = bytes;
+    const uint32_t trigger = firstTriggerOffset(*source, encoded);
+    invalidWildcardUse[trigger + 8U] = static_cast<uint8_t>(
+        mod::ModulationTriggerKind::TRANSPORT_START
+    );
+    result = control::decodeProjectControlPayloads(
+        automationView(invalidWildcardUse, encoded),
+        modulationView(invalidWildcardUse, encoded),
+        *decoded
+    );
+    assert(result.modulationStatus == control::ChunkStatus::INVALID_PAYLOAD);
+    assert(decoded->modulation.sourceCount == 0U);
+
+    auto unsupported = modulationView(bytes, encoded);
+    ++unsupported.versionMinor;
+    result = control::decodeProjectControlPayloads(
+        automationView(bytes, encoded),
+        unsupported,
+        *decoded
+    );
+    assert(result.modulationStatus == control::ChunkStatus::UNSUPPORTED_VERSION);
+    assert(decoded->modulation.sourceCount == 0U);
+}
+
+void testModg12GlobalDepthMigratesAndReencodesCanonical13() {
+    auto source = makeTypicalDomain();
+    std::vector<uint8_t> canonical13;
+    const auto encoded = encodeDomain(*source, canonical13);
+    auto legacy12 = modulationView(canonical13, encoded);
+    legacy12.versionMinor =
+        control::PROJECT_MODULATION_GRAPH_GLOBAL_DEPTH_VERSION_MINOR;
+
+    auto decoded = std::make_unique<mod::ProjectControlDomainState>();
+    const auto result = control::decodeProjectControlPayloads(
+        automationView(canonical13, encoded),
+        legacy12,
+        *decoded
+    );
+    assert(result.decoded() && result.migratedLegacy);
+    assert(result.modulationStatus == control::ChunkStatus::MIGRATED_LEGACY);
+    assert(result.overwriteSafe && !result.partial);
+    assert(std::memcmp(source.get(), decoded.get(), sizeof(*source)) == 0);
+
+    std::vector<uint8_t> migrated13;
+    encodeDomain(*decoded, migrated13);
+    assert(migrated13 == canonical13);
+}
+
+void testModg10ApplicationLiftPreservesSoundAndReencodesCanonical13() {
     auto source = makeTypicalDomain();
     assert(source->modulation.destinationScaleCount == 1U);
     assert(mod::setProjectModulationDestinationScale(
@@ -808,9 +987,9 @@ void testModg10ApplicationLiftPreservesSoundAndReencodesCanonical12() {
         &source->automation
     ));
 
-    std::vector<uint8_t> canonical12;
-    const auto encoded = encodeDomain(*source, canonical12);
-    auto legacy10 = canonical12;
+    std::vector<uint8_t> canonical13;
+    const auto encoded = encodeDomain(*source, canonical13);
+    auto legacy10 = canonical13;
     const uint32_t bindings = firstBindingOffset(*source, encoded);
     for (uint16_t index = 0;
          index < source->modulation.outputBindingCount;
@@ -869,21 +1048,21 @@ void testModg10ApplicationLiftPreservesSoundAndReencodesCanonical12() {
         sizeof(*beforePlan)
     ) == 0);
 
-    std::vector<uint8_t> migrated12;
-    encodeDomain(*decoded, migrated12);
-    assert(migrated12 == canonical12);
+    std::vector<uint8_t> migrated13;
+    encodeDomain(*decoded, migrated13);
+    assert(migrated13 == canonical13);
 }
 
-void testModg11ImplicitUnityMigratesAndReencodesCanonical12() {
+void testModg11ImplicitUnityMigratesAndReencodesCanonical13() {
     auto source = makePositiveRecordedShapeDomain();
-    std::vector<uint8_t> canonical12;
-    const auto encoded = encodeDomain(*source, canonical12);
-    auto legacy11 = modulationView(canonical12, encoded);
+    std::vector<uint8_t> canonical13;
+    const auto encoded = encodeDomain(*source, canonical13);
+    auto legacy11 = modulationView(canonical13, encoded);
     legacy11.versionMinor =
         control::PROJECT_MODULATION_GRAPH_NATURAL_APPLICATION_VERSION_MINOR;
     auto decoded = std::make_unique<mod::ProjectControlDomainState>();
     const auto result = control::decodeProjectControlPayloads(
-        automationView(canonical12, encoded),
+        automationView(canonical13, encoded),
         legacy11,
         *decoded
     );
@@ -896,9 +1075,9 @@ void testModg11ImplicitUnityMigratesAndReencodesCanonical12() {
         destinationFromAddress(0U)
     ) == mod::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
 
-    std::vector<uint8_t> migrated12;
-    encodeDomain(*decoded, migrated12);
-    assert(migrated12 == canonical12);
+    std::vector<uint8_t> migrated13;
+    encodeDomain(*decoded, migrated13);
+    assert(migrated13 == canonical13);
 }
 
 void testModg11PersistsNaturalPositiveRecordedShape() {
@@ -1005,8 +1184,10 @@ int main() {
     testLegacyLiftIsDeterministicCanonicalAndAtomic();
     testLegacyV14V15DecodeAndAmbiguityPolicy();
     testCurrentRoundTripSharingAndIndependentRecovery();
-    testModg10ApplicationLiftPreservesSoundAndReencodesCanonical12();
-    testModg11ImplicitUnityMigratesAndReencodesCanonical12();
+    testModg13AdsrRoundTripVersionGateAndCorruptionAtomicity();
+    testModg12GlobalDepthMigratesAndReencodesCanonical13();
+    testModg10ApplicationLiftPreservesSoundAndReencodesCanonical13();
+    testModg11ImplicitUnityMigratesAndReencodesCanonical13();
     testModg11PersistsNaturalPositiveRecordedShape();
     testCombinedCapacityConflictPreservesAutomation();
     testDenseMaximumAndCompleteProjectCeiling();

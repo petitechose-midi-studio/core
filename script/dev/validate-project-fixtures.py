@@ -109,6 +109,7 @@ def main() -> int:
     stale = fixtures / "v1_0" / "stale-sequencer.mspj"
     modg10 = fixtures / "v1_0" / "modg-application-1.0.mspj"
     current = fixtures / "v1_1" / "current-from-stale-sequencer.mspj"
+    adsr13 = fixtures / "v1_3" / "adsr-source-1.3.mspj"
 
     exit_code, report = run_tool(tool, "inspect", str(stale))
     assert_report(
@@ -143,8 +144,19 @@ def main() -> int:
         expected_exit=0,
     )
 
+    exit_code, report = run_tool(tool, "inspect", str(adsr13))
+    assert_report(
+        "v1_3/adsr-source-1.3.mspj",
+        exit_code,
+        report,
+        status="current",
+        load_status="ok",
+        overwrite_safe=True,
+        expected_exit=0,
+    )
+
     with tempfile.TemporaryDirectory() as tmp:
-        migrated_modg = Path(tmp) / "modg-application-1.2.mspj"
+        migrated_modg = Path(tmp) / "modg-application-1.3.mspj"
         exit_code, report = run_tool(
             tool,
             "migrate",
@@ -153,7 +165,7 @@ def main() -> int:
             str(migrated_modg),
         )
         assert_report(
-            "migrate MODG 1.0 to 1.2",
+            "migrate MODG 1.0 to 1.3",
             exit_code,
             report,
             status="migrated",
@@ -163,7 +175,7 @@ def main() -> int:
         )
         exit_code, report = run_tool(tool, "inspect", str(migrated_modg))
         assert_report(
-            "inspect migrated MODG 1.2",
+            "inspect migrated MODG 1.3",
             exit_code,
             report,
             status="current",

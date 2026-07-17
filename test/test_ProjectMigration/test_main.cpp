@@ -94,6 +94,22 @@ void configureProject(core::state::CoreState& state) {
     state.sequencer.pattern.velocity[0] = 100;
 }
 
+std::vector<uint8_t> encodeFixtureSnapshot(
+    const project::ProjectSnapshot& snapshot
+) {
+    auto storage = core::app::makeExtmemUnique<
+        std::array<uint8_t, kProjectMigrationScratchSize>
+    >();
+    assert(storage);
+    const auto encoded = snapshot_codec::encodeProjectSnapshot(
+        snapshot,
+        storage->data(),
+        static_cast<uint32_t>(storage->size())
+    );
+    assert(encoded.status == project_file::Status::OK);
+    return {storage->data(), storage->data() + encoded.bytesWritten};
+}
+
 std::vector<uint8_t> buildModg10ApplicationFixture() {
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -134,24 +150,15 @@ std::vector<uint8_t> buildModg10ApplicationFixture() {
         from
     ).changed());
 
-    auto current = core::app::makeExtmemUnique<
-        std::array<uint8_t, kProjectMigrationScratchSize>
-    >();
-    assert(current);
-    const auto encoded = snapshot_codec::encodeProjectSnapshot(
-        snapshot,
-        current->data(),
-        static_cast<uint32_t>(current->size())
-    );
-    assert(encoded.status == project_file::Status::OK);
+    const auto current = encodeFixtureSnapshot(snapshot);
 
     std::array<
         project_file::DecodedChunkView,
         project_file::MAX_CHUNKS
     > decoded{};
     const auto container = project_file::decode(
-        current->data(),
-        encoded.bytesWritten,
+        current.data(),
+        static_cast<uint32_t>(current.size()),
         decoded.data(),
         static_cast<uint16_t>(decoded.size())
     );
@@ -226,6 +233,66 @@ std::vector<uint8_t> buildModg10ApplicationFixture() {
     assert(legacyEncoded.status == project_file::Status::OK);
     output.resize(legacyEncoded.bytesWritten);
     return output;
+}
+
+std::vector<uint8_t> buildAdsr13Fixture() {
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state);
+
+    project::ProjectSnapshot snapshot;
+    assert(project::captureProjectSnapshot(state, snapshot));
+    assert(snapshot.projectControl);
+    auto& control = *snapshot.projectControl;
+
+    modulation::ModulatorAdsrDraft source{};
+    source.name = "Fixture ADSR";
+    source.reach.kind = modulation::ModulatorReachKind::PROJECT;
+    source.parameters.attack = 12U;
+    source.parameters.decay = 384U;
+    source.parameters.release = 1536U;
+    source.parameters.sustainQ15 = 24576U;
+    source.parameters.timing = modulation::ModulatorTimingMode::SYNC;
+    source.parameters.retrigger =
+        modulation::ModulatorAdsrRetriggerMode::LEGATO;
+    source.parameters.curve = modulation::ModulatorAdsrCurve::SMOOTH;
+    const auto created = modulation::createAdsrModulator(
+        control.modulation,
+        source
+    );
+    assert(created.changed());
+
+    modulation::ModulationTriggerDraft trigger{};
+    trigger.sourceId = created.sourceId;
+    trigger.trigger.kind = modulation::ModulationTriggerKind::TRACK_NOTE;
+    trigger.trigger.track = 2U;
+    trigger.trigger.channel =
+        modulation::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL;
+    trigger.trigger.data = modulation::PROJECT_MODULATION_TRIGGER_ANY_NOTE;
+    assert(modulation::addProjectModulationTrigger(
+        control.modulation,
+        trigger
+    ).changed());
+
+    modulation::ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination = {
+        modulation::ModulationDestinationKind::MACRO_SLOT,
+        2U,
+        0U,
+        3U,
+    };
+    binding.amountQ15 = 8192;
+    assert(modulation::addProjectModulationBinding(
+        control.modulation,
+        binding
+    ).changed());
+    assert(modulation::validProjectModulationDomain(
+        control.modulation,
+        control.curves,
+        &control.automation
+    ));
+    return encodeFixtureSnapshot(snapshot);
 }
 
 void test_inspects_current_project() {
@@ -406,7 +473,7 @@ void test_rewritten_fixture_migrates_legacy_macro_lifecycle_payload() {
     std::cout << "[PASS] test_rewritten_fixture_migrates_legacy_macro_lifecycle_payload\n";
 }
 
-void test_modg10_application_fixture_migrates_losslessly_to_12() {
+void test_modg10_application_fixture_migrates_losslessly_to_13() {
     const auto expected = buildModg10ApplicationFixture();
     const auto bytes = readFixture(
         "test/fixtures/projects/v1_0/modg-application-1.0.mspj"
@@ -465,7 +532,51 @@ void test_modg10_application_fixture_migrates_losslessly_to_12() {
     assert(currentInspection.loadStatus == project_file::LoadStatus::OK);
     assert(currentInspection.overwriteSafe && currentReport.ok());
 
-    std::cout << "[PASS] test_modg10_application_fixture_migrates_losslessly_to_12\n";
+    std::cout << "[PASS] test_modg10_application_fixture_migrates_losslessly_to_13\n";
+}
+
+void test_adsr13_fixture_is_current_and_roundtrips() {
+    const auto expected = buildAdsr13Fixture();
+    const auto bytes = readFixture(
+        "test/fixtures/projects/v1_3/adsr-source-1.3.mspj"
+    );
+    assert(bytes == expected);
+
+    project_file::LoadReport report{};
+    const auto inspected = migration::inspectProjectBytes(
+        bytes.data(),
+        static_cast<uint32_t>(bytes.size()),
+        &report
+    );
+    assert(inspected.status == migration::Status::CURRENT);
+    assert(inspected.loadStatus == project_file::LoadStatus::OK);
+    assert(inspected.overwriteSafe && report.ok());
+
+    project::ProjectSnapshot decoded;
+    project_file::LoadReport decodedReport{};
+    const auto result = migration::decodeProjectBytesToSnapshot(
+        bytes.data(),
+        static_cast<uint32_t>(bytes.size()),
+        decoded,
+        &decodedReport
+    );
+    assert(result.status == migration::Status::CURRENT);
+    assert(decoded.projectControl);
+    const auto& control = *decoded.projectControl;
+    assert(control.modulation.sourceCount == 1U);
+    assert(control.modulation.triggerBindingCount == 1U);
+    assert(control.modulation.outputBindingCount == 1U);
+    assert(control.modulation.sources[0].kind ==
+           modulation::ModulatorKind::ADSR);
+    assert(control.modulation.sources[0].parameters.adsr.attack == 12U);
+    assert(control.modulation.sources[0].parameters.adsr.retrigger ==
+           modulation::ModulatorAdsrRetriggerMode::LEGATO);
+    assert(control.modulation.triggerBindings[0].trigger.channel ==
+           modulation::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL);
+    assert(control.modulation.triggerBindings[0].trigger.data ==
+           modulation::PROJECT_MODULATION_TRIGGER_ANY_NOTE);
+
+    std::cout << "[PASS] test_adsr13_fixture_is_current_and_roundtrips\n";
 }
 
 }  // namespace
@@ -483,6 +594,18 @@ int main(int argc, char** argv) {
         ));
         return 0;
     }
+    if (argc == 3 &&
+        std::strcmp(argv[1], "--write-adsr13-fixture") == 0) {
+        const auto bytes = buildAdsr13Fixture();
+        const std::filesystem::path path(argv[2]);
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        assert(file.write(
+            reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size())
+        ));
+        return 0;
+    }
     std::cout << "==============================================\n";
     std::cout << "ProjectMigration tests\n";
     std::cout << "==============================================\n\n";
@@ -491,7 +614,8 @@ int main(int argc, char** argv) {
     test_stale_sequencer_project_is_partial_and_not_rewritten_by_default();
     test_stale_sequencer_fixture_is_partial();
     test_rewritten_fixture_migrates_legacy_macro_lifecycle_payload();
-    test_modg10_application_fixture_migrates_losslessly_to_12();
+    test_modg10_application_fixture_migrates_losslessly_to_13();
+    test_adsr13_fixture_is_current_and_roundtrips();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";
