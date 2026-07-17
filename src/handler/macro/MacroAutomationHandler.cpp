@@ -1133,6 +1133,24 @@ FLASHMEM bool MacroAutomationHandler::applyConversion(bool overwriteGesture) {
         return false;
     }
     macro_edit_.closeConvertPreview();
+    const auto rows = modulationRows(pages_, macroIndex());
+    const auto* createdBinding = bindingForAssignmentOrdinal(
+        pages_,
+        rows,
+        0
+    );
+    if (createdBinding != nullptr) {
+        // Conversion lands on the concrete source it just created/replaced.
+        // This keeps source editing and contextual delete one gesture away,
+        // instead of silently selecting the aggregate "All" row.
+        (void)services_.focusModulationBinding(
+            macroIndex(),
+            createdBinding->id
+        );
+        macro_edit_.modulationFocusedRow.set(static_cast<uint8_t>(
+            rows.firstAssignmentRow()
+        ));
+    }
     configureOptForFocusedRow();
     return true;
 }
