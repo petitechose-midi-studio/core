@@ -105,6 +105,27 @@ FLASHMEM size_t appendText(char* out, size_t outSize, size_t pos, const char* te
     return std::min(outSize - 1U, pos + static_cast<size_t>(written));
 }
 
+FLASHMEM void formatModulationAssignmentSummary(
+    char* out,
+    size_t outSize,
+    const char* name,
+    int depth,
+    uint16_t position,
+    uint16_t count
+) {
+    size_t pos = oc::type::text::appendString(out, outSize, 0U, name);
+    pos = oc::type::text::appendString(out, outSize, pos, "  ");
+    pos = oc::type::text::appendSigned(out, outSize, pos, depth, true);
+    pos = oc::type::text::appendChar(out, outSize, pos, '%');
+    if (count > 1U) {
+        pos = oc::type::text::appendString(out, outSize, pos, "  ");
+        pos = oc::type::text::appendUnsigned(out, outSize, pos, position);
+        pos = oc::type::text::appendChar(out, outSize, pos, '/');
+        pos = oc::type::text::appendUnsigned(out, outSize, pos, count);
+    }
+    oc::type::text::terminate(out, outSize, pos);
+}
+
 FLASHMEM uint32_t mixRevision(uint32_t seed, uint32_t value) {
     seed ^= value + 0x9E3779B9UL + (seed << 6U) + (seed >> 2U);
     return seed;
@@ -985,16 +1006,8 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                     1.0f
                 ) * 100.0f
             ));
-            if (slot->modulationCount == 1U) {
-                std::snprintf(
-                    data.valueBuffers[2].data(),
-                    data.valueBuffers[2].size(),
-                    "%s  %+d%%",
-                    modulator->name.data(),
-                    depth
-                );
-            } else {
-                uint16_t position = 1;
+            uint16_t position = 1U;
+            if (slot->modulationCount > 1U) {
                 const auto& graph = source.pages.control.authored.modulation;
                 for (uint16_t index = 0;
                      index < graph.outputBindingCount;
@@ -1005,16 +1018,15 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                         ++position;
                     }
                 }
-                std::snprintf(
-                    data.valueBuffers[2].data(),
-                    data.valueBuffers[2].size(),
-                    "%s  %+d%%  %u/%u",
-                    modulator->name.data(),
-                    depth,
-                    static_cast<unsigned>(position),
-                    static_cast<unsigned>(slot->modulationCount)
-                );
             }
+            formatModulationAssignmentSummary(
+                data.valueBuffers[2].data(),
+                data.valueBuffers[2].size(),
+                modulator->name.data(),
+                depth,
+                position,
+                slot->modulationCount
+            );
         }
     }
 
