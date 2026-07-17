@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 
+#include <config/PlatformCompat.hpp>
 #include <config/Timing.hpp>
 #include <oc/time/Time.hpp>
 
@@ -15,6 +16,12 @@
 namespace core::handler {
 
 using namespace project_handler_internal;
+
+namespace {
+
+const char FEEDBACK_PREVIEW_PENDING[] PROGMEM = "Preview - Apply or Back";
+
+}  // namespace
 
 FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
                                         SequencerSettingsDomainServices sequencerSettings,
@@ -65,7 +72,7 @@ FLASHMEM bool ProjectHandler::regularProjectInputActive() const {
 FLASHMEM void ProjectHandler::enterPhysicalHoldLayer() {
     core::state::macro::MacroAutomationSlotAddress address{};
     if (destinationPickerAuditionAddress(address)) {
-        navigation_.setLifecycleFeedback("Preview - Apply or Back");
+        navigation_.setLifecycleFeedback(FEEDBACK_PREVIEW_PENDING);
         return;
     }
     navigation_.physicalHoldActive.set(true);

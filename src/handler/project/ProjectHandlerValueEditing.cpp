@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdio>
 
+#include <config/PlatformCompat.hpp>
+
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
@@ -15,6 +17,13 @@
 namespace core::handler {
 
 using namespace project_handler_internal;
+
+namespace {
+
+const char FEEDBACK_DEPTH_PREVIEW_FORMAT[] PROGMEM =
+    "Depth %+d%% - Preview";
+
+}  // namespace
 
 FLASHMEM bool ProjectHandler::applyFocusedProjectStep(int steps) {
     if (steps == 0) return false;
@@ -227,7 +236,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         std::snprintf(
             feedback,
             sizeof(feedback),
-            "Depth %+d%% - Preview",
+            FEEDBACK_DEPTH_PREVIEW_FORMAT,
             static_cast<int>(percent)
         );
         navigation_.setLifecycleFeedback(feedback);

@@ -21,6 +21,8 @@ namespace {
 namespace style = oc::ui::lvgl::style;
 namespace theme = standalone::theme;
 
+const char MODULATOR_ADD_ROUTE_TITLE[] PROGMEM = "ADD ROUTE";
+
 constexpr lv_coord_t TAB_STRIP_HEIGHT = 24;
 constexpr lv_coord_t TAB_ACTIVE_WIDTH = 92;
 constexpr lv_coord_t TAB_INACTIVE_WIDTH = 30;
@@ -691,7 +693,7 @@ void ProjectView::renderModulators() {
         .title = node == ProjectNodeId::MODULATORS_ROOT
             ? "MODULATORS"
             : (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER
-                  ? "ADD ROUTE"
+                  ? MODULATOR_ADD_ROUTE_TITLE
                   : (node == ProjectNodeId::MODULATOR_REACH
                   ? "REACH"
                   : (node == ProjectNodeId::MODULATOR_DESTINATIONS

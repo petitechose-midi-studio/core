@@ -30,6 +30,17 @@ const char LABEL_DETAILS[] PROGMEM = "Details";
 const char LABEL_MORE[] PROGMEM = "More >";
 const char LABEL_RENAME[] PROGMEM = "Rename";
 const char LABEL_DESTINATIONS[] PROGMEM = "Destinations";
+const char DESTINATION_KEY_FORMAT[] PROGMEM = "T%u/P%u/M%u";
+const char DESTINATION_VALUE_FORMAT[] PROGMEM = "CC%u · %+d%%";
+const char DESTINATION_OFF_VALUE_FORMAT[] PROGMEM = "CC%u · Off %+d%%";
+const char PICKER_ADD_KEY_FORMAT[] PROGMEM = "+ M%u · CC%u";
+const char PICKER_KEY_FORMAT[] PROGMEM = "M%u · CC%u";
+const char PICKER_PREVIEW_FORMAT[] PROGMEM = "Preview %+d%%";
+const char PICKER_ASSIGNED[] PROGMEM = "Assigned";
+const char PICKER_DEPTH_PREVIEW[] PROGMEM = "+25% · Preview";
+const char PICKER_CREATE_ASSIGN[] PROGMEM = "Create + assign";
+const char PICKER_PREREQUISITE_FORMAT[] PROGMEM = "Add M%u first";
+const char PICKER_UNAVAILABLE[] PROGMEM = "Unavailable";
 
 const char RATE_1_16[] PROGMEM = "1/16";
 const char RATE_1_8[] PROGMEM = "1/8";
@@ -571,7 +582,7 @@ FLASHMEM void populateDestinationRow(
     std::snprintf(
         out.key.data(),
         out.key.size(),
-        "T%u/P%u/M%u",
+        DESTINATION_KEY_FORMAT,
         static_cast<unsigned>(destination.track + 1U),
         static_cast<unsigned>(destination.page + 1U),
         static_cast<unsigned>(destination.macro + 1U)
@@ -583,7 +594,7 @@ FLASHMEM void populateDestinationRow(
     std::snprintf(
         out.value.data(),
         out.value.size(),
-        enabled ? "CC%u · %+d%%" : "CC%u · Off %+d%%",
+        enabled ? DESTINATION_VALUE_FORMAT : DESTINATION_OFF_VALUE_FORMAT,
         static_cast<unsigned>(cc),
         static_cast<int>(percent)
     );
@@ -719,7 +730,7 @@ FLASHMEM void populateDestinationPickerRow(
     std::snprintf(
         out.key.data(),
         out.key.size(),
-        addSlot ? "+ M%u · CC%u" : "M%u · CC%u",
+        addSlot ? PICKER_ADD_KEY_FORMAT : PICKER_KEY_FORMAT,
         static_cast<unsigned>(macro + 1U),
         static_cast<unsigned>(displayCc)
     );
@@ -736,22 +747,25 @@ FLASHMEM void populateDestinationPickerRow(
         std::snprintf(
             out.value.data(),
             out.value.size(),
-            "Preview %+d%%",
+            PICKER_PREVIEW_FORMAT,
             static_cast<int>(percent)
         );
     } else if (active) {
-        setText(out.value, alreadyAssigned ? "Assigned" : "+25% · Preview");
+        setText(
+            out.value,
+            alreadyAssigned ? PICKER_ASSIGNED : PICKER_DEPTH_PREVIEW
+        );
     } else if (addSlot) {
-        setText(out.value, "Create + assign");
+        setText(out.value, PICKER_CREATE_ASSIGN);
     } else if (nextAdd < core::state::macro::MACRO_COUNT) {
         std::snprintf(
             out.value.data(),
             out.value.size(),
-            "Add M%u first",
+            PICKER_PREREQUISITE_FORMAT,
             static_cast<unsigned>(nextAdd + 1U)
         );
     } else {
-        setText(out.value, "Unavailable");
+        setText(out.value, PICKER_UNAVAILABLE);
     }
     setText(
         out.icon,

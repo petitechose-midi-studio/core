@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdio>
 
+#include <config/PlatformCompat.hpp>
+
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/macro/MacroWorkflow.hpp"
@@ -14,6 +16,29 @@ namespace core::handler {
 using namespace project_handler_internal;
 
 namespace {
+
+const char FEEDBACK_PREVIEW_PENDING[] PROGMEM = "Preview - Apply or Back";
+const char FEEDBACK_SOURCE_FULL[] PROGMEM = "Source full - remove one";
+const char FEEDBACK_BINDINGS_FULL[] PROGMEM =
+    "Assignments full - remove one";
+const char FEEDBACK_ALREADY_ASSIGNED[] PROGMEM = "Already assigned";
+const char FEEDBACK_WIDEN_REACH[] PROGMEM = "Widen Reach first";
+const char FEEDBACK_UNDO_FULL[] PROGMEM = "Undo memory full";
+const char FEEDBACK_SOURCE_MISSING[] PROGMEM = "Source missing - retry";
+const char FEEDBACK_SOURCE_IDS_FULL[] PROGMEM = "Source IDs full";
+const char FEEDBACK_STATE_CHANGED[] PROGMEM = "State changed - retry";
+const char FEEDBACK_NO_CHANGE[] PROGMEM = "No change";
+const char FEEDBACK_ASSIGN_FAILED[] PROGMEM = "Cannot assign - retry";
+const char FEEDBACK_ADD_MACRO_FIRST_FORMAT[] PROGMEM = "Add Macro %u first";
+const char FEEDBACK_MACRO_REACH_FORMAT[] PROGMEM = "M%u +25%% + Reach";
+const char FEEDBACK_MACRO_PREVIEW_FORMAT[] PROGMEM = "M%u +25%% - Preview";
+const char FEEDBACK_REACH_PREVIEW[] PROGMEM = "+25% + Reach";
+const char FEEDBACK_PREVIEW[] PROGMEM = "+25% - Preview";
+const char FEEDBACK_APPLY_FAILED[] PROGMEM =
+    "State changed - Back to cancel";
+const char FEEDBACK_APPLIED_UNDO[] PROGMEM = "Applied - one Undo";
+const char FEEDBACK_DESTINATION_APPLIED[] PROGMEM = "Destination applied";
+const char FEEDBACK_PREVIEW_CANCELLED[] PROGMEM = "Preview cancelled";
 
 FLASHMEM core::state::modulation::ModulatorReach minimumReachForDestination(
     const core::state::modulation::ModulatorReach& current,
@@ -67,29 +92,39 @@ FLASHMEM const char* destinationAuditionFailureLabel(
     core::state::modulation::ProjectModulationStatus status
 ) {
     using core::state::modulation::ProjectModulationStatus;
-    switch (status) {
-        case ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED:
-            return "Source full - remove one";
-        case ProjectModulationStatus::BINDING_CAPACITY_EXCEEDED:
-            return "Assignments full - remove one";
-        case ProjectModulationStatus::DUPLICATE_BINDING:
-            return "Already assigned";
-        case ProjectModulationStatus::REACH_VIOLATION:
-            return "Widen Reach first";
-        case ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED:
-            return "Undo memory full";
-        case ProjectModulationStatus::INVALID_ID:
-            return "Source missing - retry";
-        case ProjectModulationStatus::ID_EXHAUSTED:
-            return "Source IDs full";
-        case ProjectModulationStatus::INVALID_ARGUMENT:
-        case ProjectModulationStatus::INVARIANT_VIOLATION:
-            return "State changed - retry";
-        case ProjectModulationStatus::NO_CHANGE:
-            return "No change";
-        default:
-            return "Cannot assign - retry";
+    // Keep this cold formatter branch-based. A dense switch makes GCC emit a
+    // pointer table in initialized DTCM; crossing the following alignment
+    // boundary then costs a full 1 KiB of scarce RAM1 for a failure-only path.
+    const volatile ProjectModulationStatus branchStatus = status;
+    if (branchStatus == ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED) {
+        return FEEDBACK_SOURCE_FULL;
     }
+    if (branchStatus == ProjectModulationStatus::BINDING_CAPACITY_EXCEEDED) {
+        return FEEDBACK_BINDINGS_FULL;
+    }
+    if (branchStatus == ProjectModulationStatus::DUPLICATE_BINDING) {
+        return FEEDBACK_ALREADY_ASSIGNED;
+    }
+    if (branchStatus == ProjectModulationStatus::REACH_VIOLATION) {
+        return FEEDBACK_WIDEN_REACH;
+    }
+    if (branchStatus == ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED) {
+        return FEEDBACK_UNDO_FULL;
+    }
+    if (branchStatus == ProjectModulationStatus::INVALID_ID) {
+        return FEEDBACK_SOURCE_MISSING;
+    }
+    if (branchStatus == ProjectModulationStatus::ID_EXHAUSTED) {
+        return FEEDBACK_SOURCE_IDS_FULL;
+    }
+    if (branchStatus == ProjectModulationStatus::INVALID_ARGUMENT ||
+        branchStatus == ProjectModulationStatus::INVARIANT_VIOLATION) {
+        return FEEDBACK_STATE_CHANGED;
+    }
+    if (branchStatus == ProjectModulationStatus::NO_CHANGE) {
+        return FEEDBACK_NO_CHANGE;
+    }
+    return FEEDBACK_ASSIGN_FAILED;
 }
 
 }  // namespace
@@ -113,7 +148,7 @@ FLASHMEM bool ProjectHandler::destinationPickerAuditionAddress(
 FLASHMEM void ProjectHandler::navigate(float delta) {
     core::state::macro::MacroAutomationSlotAddress auditionAddress{};
     if (delta != 0.0f && destinationPickerAuditionAddress(auditionAddress)) {
-        navigation_.setLifecycleFeedback("Preview - Apply or Back");
+        navigation_.setLifecycleFeedback(FEEDBACK_PREVIEW_PENDING);
         return;
     }
     if (delta != 0.0f) {
@@ -349,7 +384,7 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     }
     core::state::macro::MacroAutomationSlotAddress pendingAddress{};
     if (destinationPickerAuditionAddress(pendingAddress)) {
-        navigation_.setLifecycleFeedback("Preview - Apply or Back");
+        navigation_.setLifecycleFeedback(FEEDBACK_PREVIEW_PENDING);
         return;
     }
     const bool creating = navigation_.creatingModulatorSource;
@@ -401,11 +436,15 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
             std::snprintf(
                 feedback,
                 sizeof(feedback),
-                "Add Macro %u first",
+                FEEDBACK_ADD_MACRO_FIRST_FORMAT,
                 static_cast<unsigned>(next + 1U)
             );
         } else {
-            std::snprintf(feedback, sizeof(feedback), "State changed - retry");
+            std::snprintf(
+                feedback,
+                sizeof(feedback),
+                FEEDBACK_STATE_CHANGED
+            );
         }
         navigation_.setLifecycleFeedback(feedback);
         return;
@@ -442,7 +481,7 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
             return;
         }
         if (sourceAlreadyTargets(graph, targetSource, destination)) {
-            navigation_.setLifecycleFeedback("Already assigned");
+            navigation_.setLifecycleFeedback(FEEDBACK_ALREADY_ASSIGNED);
             return;
         }
         const ModulatorReach widened = minimumReachForDestination(
@@ -472,14 +511,14 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
         std::snprintf(
             feedback,
             sizeof(feedback),
-            reachWidened ? "M%u +25%% + Reach" :
-                           "M%u +25%% - Preview",
+            reachWidened ? FEEDBACK_MACRO_REACH_FORMAT :
+                           FEEDBACK_MACRO_PREVIEW_FORMAT,
             static_cast<unsigned>(row + 1U)
         );
         navigation_.setLifecycleFeedback(feedback);
     } else {
         navigation_.setLifecycleFeedback(
-            reachWidened ? "+25% + Reach" : "+25% - Preview"
+            reachWidened ? FEEDBACK_REACH_PREVIEW : FEEDBACK_PREVIEW
         );
     }
 }
@@ -491,7 +530,7 @@ FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
     const auto audition = pages_.control.audition;
     const bool sourceCreated = audition.sourceCreated;
     if (!macro_history_.commitModulatorAudition(pages_, address)) {
-        navigation_.setLifecycleFeedback("State changed - Back to cancel");
+        navigation_.setLifecycleFeedback(FEEDBACK_APPLY_FAILED);
         return;
     }
 
@@ -525,8 +564,7 @@ FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
     navigation_.selectedModulationBinding = audition.bindingId;
     publishModulatorMutation(false);
     navigation_.setLifecycleFeedback(
-        sourceCreated ? "Applied - one Undo" :
-                        "Destination applied"
+        sourceCreated ? FEEDBACK_APPLIED_UNDO : FEEDBACK_DESTINATION_APPLIED
     );
     syncFocusedEncoder();
 }
@@ -535,12 +573,12 @@ FLASHMEM bool ProjectHandler::cancelDestinationPickerAudition() {
     core::state::macro::MacroAutomationSlotAddress address{};
     if (!destinationPickerAuditionAddress(address)) return false;
     if (!macro_history_.cancelModulatorAudition(pages_, address)) {
-        navigation_.setLifecycleFeedback("State changed - retry");
+        navigation_.setLifecycleFeedback(FEEDBACK_STATE_CHANGED);
         return true;
     }
     navigation_.selectedModulationBinding = {};
     refreshModulatorPreview(true, address.macro);
-    navigation_.setLifecycleFeedback("Preview cancelled");
+    navigation_.setLifecycleFeedback(FEEDBACK_PREVIEW_CANCELLED);
     return true;
 }
 
