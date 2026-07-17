@@ -149,7 +149,6 @@ struct Harness {
               core::handler::MacroAutomationPlaybackService::StateRefs{
                   pages,
                   macroUi,
-                  statusBar,
               },
               services,
               adapter

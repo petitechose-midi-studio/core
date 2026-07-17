@@ -82,6 +82,18 @@ FLASHMEM bool writeSlotState(
            writer.writeFloat32(state.modulationDepth);
 }
 
+FLASHMEM void normalizeLegacyPlayback(
+    macro::MacroAutomationSlotState& state
+) {
+    // SUSPENDED_AFTER_RECORD belonged to the former coupled-source lifecycle.
+    // A stored Modulation loop is now interrupted only by an explicit user
+    // action, so every migration boundary upgrades this value to ACTIVE.
+    if (state.modulation.playbackState ==
+        macro::MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD) {
+        state.modulation.playbackState = macro::MacroCurvePlaybackState::ACTIVE;
+    }
+}
+
 FLASHMEM bool readSlotState(
     binary::Reader& reader,
     macro::MacroAutomationSlotState& state,
@@ -92,7 +104,7 @@ FLASHMEM bool readSlotState(
         !reader.readFloat32(state.modulationDepth)) {
         return false;
     }
-    macro::macroAutomationNormalizeLegacyPlayback(state);
+    normalizeLegacyPlayback(state);
     return true;
 }
 

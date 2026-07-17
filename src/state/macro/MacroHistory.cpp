@@ -1238,13 +1238,13 @@ FLASHMEM bool liveMacroSlotMatchesHistorySnapshot(
     }
     if (!live.present) return true;
     return sameFloatBits(
-               live.legacy.modulationDepth,
+               live.compatibility.modulationDepth,
                snapshot.slot.modulationDepth
            ) &&
            liveProjectCurveMatches(
                pages.control,
                live.automationCurveId,
-               live.legacy.automation,
+               live.compatibility.automation,
                snapshot.slot.automation,
                snapshot,
                0
@@ -1252,7 +1252,7 @@ FLASHMEM bool liveMacroSlotMatchesHistorySnapshot(
            liveProjectCurveMatches(
                pages.control,
                live.modulationCurveId,
-               live.legacy.modulation,
+               live.compatibility.modulation,
                snapshot.slot.modulation,
                snapshot,
                snapshot.automationPointCount
@@ -1317,7 +1317,7 @@ FLASHMEM bool captureMacroAutomationHistorySnapshot(
         )) {
         return false;
     }
-    out.automation = view.legacy.automation;
+    out.automation = view.compatibility.automation;
     out.automation.pointOffset = 0U;
     if (!view.automationStored) {
         return automationSnapshotConsistent(out);
@@ -1328,7 +1328,7 @@ FLASHMEM bool captureMacroAutomationHistorySnapshot(
         view.automationCurveId
     );
     if (record == nullptr ||
-        record->pointCount != view.legacy.automation.pointCount ||
+        record->pointCount != view.compatibility.automation.pointCount ||
         record->pointCount > MACRO_AUTOMATION_RECORDING_MAX_POINTS ||
         static_cast<uint32_t>(record->pointOffset) + record->pointCount >
             pages.control.authored.curves.pointCount) {
@@ -1378,7 +1378,7 @@ FLASHMEM bool liveMacroAutomationMatchesHistorySnapshot(
             live
         ) ||
         live.automationStored != (snapshot.pointCount > 0U) ||
-        !sameCurveMetadata(live.legacy.automation, snapshot.automation)) {
+        !sameCurveMetadata(live.compatibility.automation, snapshot.automation)) {
         return false;
     }
     if (!live.automationStored) return true;

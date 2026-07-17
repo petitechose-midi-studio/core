@@ -156,7 +156,7 @@ MacroEditDomainServices::automationSlot(uint8_t index) const {
         ) || !slot_view_cache_.present) {
         return nullptr;
     }
-    return &slot_view_cache_.legacy;
+    return &slot_view_cache_.compatibility;
 }
 
 bool MacroEditDomainServices::automationClipboardAvailable() const {

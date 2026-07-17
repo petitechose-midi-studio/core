@@ -77,12 +77,12 @@ FLASHMEM bool MacroAutomationClipboard::append(
             control,
             address,
             view
-        ) || view.legacyMutationAmbiguous ||
+        ) || view.compatibilityMutationAmbiguous ||
         (view.modulationStored && !view.primaryRecordedShape)) {
         return false;
     }
 
-    auto copied = view.legacy;
+    auto copied = view.compatibility;
     const uint16_t automationCount = includeAutomation && view.automationStored
         ? copied.automation.pointCount
         : 0U;
@@ -390,7 +390,7 @@ FLASHMEM bool StructureClipboardState::storeMacroModulation(
             control,
             address,
             view
-        ) || !view.modulationStored || view.legacyMutationAmbiguous ||
+        ) || !view.modulationStored || view.compatibilityMutationAmbiguous ||
         !view.primaryRecordedShape) {
         return rejectClipboardStore(*this);
     }

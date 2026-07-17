@@ -302,7 +302,7 @@ void test_macro_edit_automation_row_exposes_direct_playback_and_detail() {
         address
     );
     assert(!disabled.automationEnabled);
-    assert(disabled.legacy.automation.pointCount == 2);
+    assert(disabled.compatibility.automation.pointCount == 2);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(h.services.automationPlaybackActiveFor(0));
@@ -317,7 +317,7 @@ void test_macro_edit_automation_row_exposes_direct_playback_and_detail() {
         address
     );
     assert(preserved.automationEnabled);
-    assert(preserved.legacy.automation.pointCount == 2);
+    assert(preserved.compatibility.automation.pointCount == 2);
 
     h.flushState();
 

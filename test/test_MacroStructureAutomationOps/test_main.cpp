@@ -87,8 +87,8 @@ void test_track_duplication_preserves_automation_from_every_page() {
         control,
         {.track = 3, .page = 7, .macro = 5}
     );
-    assert(first.automationStored && first.legacy.automation.pointCount == 2);
-    assert(second.automationStored && second.legacy.automation.pointCount == 3);
+    assert(first.automationStored && first.compatibility.automation.pointCount == 2);
+    assert(second.automationStored && second.compatibility.automation.pointCount == 3);
     assert(second.modulationStored);
     assert(modulation::projectModulationDestinationScaleQ15(
         control.authored.modulation,

@@ -254,7 +254,7 @@ void test_playback_row_toggles_automation_without_clearing_curve() {
         preserved.address
     );
     assert(preserved.automationEnabled);
-    assert(preserved.legacy.automation.pointCount == 3);
+    assert(preserved.compatibility.automation.pointCount == 3);
 
     h.flushState();
 
@@ -402,7 +402,7 @@ void test_modulation_tap_toggles_and_hold_clears_only_modulation() {
     assert(slot.automationEnabled);
     assert(slot.modulationStored);
     assert(!slot.modulationEnabled);
-    assert(std::fabs(slot.legacy.modulationDepth - 0.5f) < 0.0001f);
+    assert(std::fabs(slot.compatibility.modulationDepth - 0.5f) < 0.0001f);
     assert(h.state.pages.isMacroSlotActive(0));
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
@@ -421,7 +421,7 @@ void test_modulation_tap_toggles_and_hold_clears_only_modulation() {
     );
     assert(slot.automationEnabled);
     assert(!slot.modulationStored);
-    assert(slot.legacy.modulationDepth == 0.0f);
+    assert(slot.compatibility.modulationDepth == 0.0f);
     assert(h.state.pages.isMacroSlotActive(0));
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::MODULATION);
@@ -507,7 +507,7 @@ void test_typed_paste_quick_release_keeps_copy_semantics() {
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target.legacy.automation.durationTicks
+        target.compatibility.automation.durationTicks
     ) == 4.0f);
     std::cout << "[PASS] test_typed_paste_quick_release_keeps_copy_semantics\n";
 }
@@ -529,7 +529,7 @@ void test_typed_paste_early_armed_release_cancels_without_copy_or_mutation() {
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target.legacy.automation.durationTicks
+        target.compatibility.automation.durationTicks
     ) == 4.0f);
     assert(h.state.macroEdit.contextFeedback.get().status ==
            core::state::contextual::OperationFeedbackStatus::CANCELLED);
@@ -548,7 +548,7 @@ void test_typed_paste_commits_once_after_full_guard() {
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target.legacy.automation.durationTicks
+        target.compatibility.automation.durationTicks
     ) == 4.0f);
     assert(h.state.macroEdit.contextGuard.get().phase ==
            core::state::contextual::GuardedActionPhase::COMMITTED);
@@ -560,10 +560,10 @@ void test_typed_paste_commits_once_after_full_guard() {
         target.address
     );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target.legacy.automation.durationTicks
+        target.compatibility.automation.durationTicks
     ) == 2.0f);
     assert(target.modulationStored);
-    assert(std::fabs(target.legacy.modulationDepth - 0.75f) < 0.0001f);
+    assert(std::fabs(target.compatibility.modulationDepth - 0.75f) < 0.0001f);
     assert(h.state.macroEdit.contextFeedback.get().status ==
            core::state::contextual::OperationFeedbackStatus::APPLIED);
     std::cout << "[PASS] test_typed_paste_commits_once_after_full_guard\n";
@@ -629,7 +629,7 @@ void test_navigation_cancels_completed_guard_before_release_without_mutation() {
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target.legacy.automation.durationTicks
+        target.compatibility.automation.durationTicks
     ) == 4.0f);
     std::cout
         << "[PASS] test_navigation_cancels_completed_guard_before_release_without_mutation\n";
@@ -654,14 +654,14 @@ void test_length_row_resizes_automation_duration_without_scaling_points() {
         }
     );
     assert(slot.automationEnabled);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.durationTicks) == 3.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.durationTicks) == 3.0f);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
 
     slot = test_support::project_control::readSlot(h.state.pages.control, slot.address);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.durationTicks) == 64.0f);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.sourceDurationTicks) == 2.0f);
-    assert(slot.legacy.automation.pointCount == 3);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.durationTicks) == 64.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.sourceDurationTicks) == 2.0f);
+    assert(slot.compatibility.automation.pointCount == 3);
 
     const auto point = test_support::project_control::readCurvePoint(
         h.state.pages.control,
@@ -675,7 +675,7 @@ void test_length_row_resizes_automation_duration_without_scaling_points() {
     assert(h.state.macroEdit.automationFocusedRow.get() == 3);
     h.turn(Config::EncoderID::OPT, 1.0f);
     slot = test_support::project_control::readSlot(h.state.pages.control, slot.address);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.windowOffsetTicks) == 1.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.windowOffsetTicks) == 1.0f);
 
     h.flushState();
 
@@ -704,7 +704,7 @@ void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
             .macro = 0,
         }
     );
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.durationTicks) == 8.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.durationTicks) == 8.0f);
 
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 64);
@@ -717,7 +717,7 @@ void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 2);
     h.turn(Config::EncoderID::OPT, 1.0f);
     slot = test_support::project_control::readSlot(h.state.pages.control, slot.address);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.legacy.automation.windowOffsetTicks) == 4.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.windowOffsetTicks) == 4.0f);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 8);
 
@@ -834,6 +834,28 @@ void test_lfo_audition_apply_returns_to_macro_edit_and_is_one_undo() {
 
 void test_adsr_audition_edits_direct_properties_and_cancel_is_exact() {
     using namespace core::state::modulation;
+    std::array<char, 16> durationLabel{};
+    adsr_ui::formatDuration(
+        durationLabel.data(),
+        durationLabel.size(),
+        0U,
+        ModulatorTimingMode::SYNC
+    );
+    assert(std::strcmp(durationLabel.data(), "0") == 0);
+    adsr_ui::formatDuration(
+        durationLabel.data(),
+        durationLabel.size(),
+        PROJECT_CONTROL_TICKS_PER_BEAT,
+        ModulatorTimingMode::SYNC
+    );
+    assert(std::strcmp(durationLabel.data(), "1b") == 0);
+    adsr_ui::formatDuration(
+        durationLabel.data(),
+        durationLabel.size(),
+        1500U,
+        ModulatorTimingMode::FREE
+    );
+    assert(std::strcmp(durationLabel.data(), "1.5s") == 0);
     ModulatorAdsrParameters maximumPreview{};
     maximumPreview.attack = UINT16_MAX;
     maximumPreview.decay = UINT16_MAX;

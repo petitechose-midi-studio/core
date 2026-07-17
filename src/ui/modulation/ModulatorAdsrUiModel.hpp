@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
 
 #include "state/modulation/ProjectControlRuntime.hpp"
 
@@ -62,6 +64,62 @@ inline uint16_t durationAt(
         ? FREE_DURATIONS
         : SYNC_DURATIONS;
     return values[std::min<uint8_t>(index, DURATION_COUNT - 1U)];
+}
+
+/** Shared compact duration grammar for Project and Macro ADSR surfaces. */
+inline void formatDuration(
+    char* out,
+    std::size_t size,
+    uint16_t duration,
+    core::state::modulation::ModulatorTimingMode timing
+) {
+    if (out == nullptr || size == 0U) return;
+    if (timing == core::state::modulation::ModulatorTimingMode::FREE) {
+        if (duration >= 1000U) {
+            const uint32_t tenths =
+                (static_cast<uint32_t>(duration) + 50U) / 100U;
+            std::snprintf(
+                out,
+                size,
+                "%u.%us",
+                static_cast<unsigned>(tenths / 10U),
+                static_cast<unsigned>(tenths % 10U)
+            );
+        } else {
+            std::snprintf(
+                out,
+                size,
+                "%ums",
+                static_cast<unsigned>(duration)
+            );
+        }
+        return;
+    }
+    if (duration == 0U) {
+        std::snprintf(out, size, "0");
+        return;
+    }
+    constexpr uint32_t TICKS_PER_BEAT =
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT;
+    const uint32_t tenths =
+        (static_cast<uint32_t>(duration) * 10U + TICKS_PER_BEAT / 2U) /
+        TICKS_PER_BEAT;
+    if ((tenths % 10U) == 0U) {
+        std::snprintf(
+            out,
+            size,
+            "%ub",
+            static_cast<unsigned>(tenths / 10U)
+        );
+    } else {
+        std::snprintf(
+            out,
+            size,
+            "%u.%ub",
+            static_cast<unsigned>(tenths / 10U),
+            static_cast<unsigned>(tenths % 10U)
+        );
+    }
 }
 
 inline uint8_t sustainQ15ToPercent(uint16_t sustainQ15) {

@@ -450,6 +450,63 @@ void testAdsrLegatoAndZeroDurationTransitions() {
     assert(near(zeroRuntime.frame->sourceValues[0], 0.0f));
 }
 
+void testExactMaximumTriggerBucketFansOutWithoutTruncation() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    mod::ModulatorAdsrParameters parameters{};
+    parameters.attack = 0U;
+    parameters.decay = 0U;
+    parameters.sustainQ15 =
+        mod::PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15;
+    parameters.release = 0U;
+    parameters.curve = mod::ModulatorAdsrCurve::LINEAR;
+    for (uint16_t index = 0U;
+         index < mod::PROJECT_MODULATOR_CAPACITY;
+         ++index) {
+        (void)addAdsr(*domain, parameters, 4U, 7U);
+    }
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectControlRuntimePlan(
+        *domain,
+        activeContext(),
+        *plan
+    ).compiled());
+    assert(plan->sourceCount == mod::PROJECT_MODULATOR_CAPACITY);
+    assert(plan->triggerRouteCount == mod::PROJECT_MODULATOR_CAPACITY);
+    const mod::ModulationTriggerRef incoming{
+        mod::ModulationTriggerKind::TRACK_NOTE,
+        4U,
+        7U,
+        60U,
+    };
+    const uint16_t bucket = mod::projectModulationTriggerBucketIndex(incoming);
+    const uint16_t start = plan->triggerBucketOffset[bucket];
+    const uint16_t end = plan->triggerBucketOffset[bucket + 1U];
+    assert(start == 0U);
+    assert(end - start == mod::PROJECT_MODULATOR_CAPACITY);
+    for (uint16_t route = start; route < end; ++route) {
+        assert(plan->triggerSourceOrder[route] == route);
+    }
+
+    RuntimeFixture runtime;
+    runtime.activate(*plan);
+    runtime.triggers.count = 1U;
+    runtime.triggers.events[0] = {
+        .trigger = incoming,
+        .edge = mod::ProjectModulationTriggerEdge::GATE_ON,
+        .velocity = 100U,
+    };
+    mod::ProjectControlTimeSnapshot time{};
+    time.monotonicMs = 1U;
+    const auto evaluated = runtime.evaluate(*plan, domain->curves, time);
+    assert(evaluated.evaluated());
+    assert(evaluated.sourceEvaluationCount == mod::PROJECT_MODULATOR_CAPACITY);
+    for (uint16_t index = 0U; index < plan->sourceCount; ++index) {
+        assert(near(runtime.frame->sourceValues[index], 1.0f));
+    }
+    std::cout << "[PASS] exact 128-source trigger bucket fans out once\n";
+}
+
 void testSyncAdsrUsesFractionalMusicalTime() {
     auto domain = std::make_unique<mod::ProjectControlDomainState>();
     mod::ModulatorAdsrParameters parameters{};
@@ -1072,6 +1129,7 @@ int main() {
     testCanonicalAdsrProgressCurves();
     testFreeAdsrWildcardRetriggerAndReleaseFromCurrentLevel();
     testAdsrLegatoAndZeroDurationTransitions();
+    testExactMaximumTriggerBucketFansOutWithoutTruncation();
     testSyncAdsrUsesFractionalMusicalTime();
     testLogicalBaseAutomationManualAndSharedSource();
     testDestinationScaleAppliesOnceAfterSummingContributions();

@@ -122,7 +122,6 @@ float macroAutomationClamp01(float value);
 float macroAutomationClampSigned(float value);
 bool macroCurvePlaybackStateValid(MacroCurvePlaybackState state);
 bool macroModulationOriginValid(MacroModulationOrigin origin);
-void macroAutomationNormalizeLegacyPlayback(MacroAutomationSlotState& state);
 bool macroAutomationCurveLifecycleValid(const MacroAutomationCurveRef& curve);
 bool macroModulationCurveLifecycleValid(const MacroAutomationCurveRef& curve);
 bool macroCurveStored(const MacroAutomationCurveRef& curve);

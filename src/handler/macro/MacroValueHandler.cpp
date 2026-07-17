@@ -43,26 +43,7 @@ FLASHMEM MacroValueHandler::MacroValueHandler(StateRefs state,
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
-    , midi_runtime_(&midiRuntime)
-    , scope_id_(scopeId) {
-    setupBindings();
-}
-
-FLASHMEM MacroValueHandler::MacroValueHandler(StateRefs state,
-                                     MacroPerformanceDomainServices services,
-                                     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-                                     oc::api::EncoderAPI& encoders,
-                                     oc::api::ButtonAPI& buttons,
-                                     oc::api::MidiAPI& midi,
-                                     oc::type::ScopeID scopeId)
-    : macro_ui_(state.macroUi)
-    , active_view_(state.activeView)
-    , macro_edit_(state.macroEdit)
-    , services_(services)
-    , overlays_(overlays)
-    , encoders_(encoders)
-    , buttons_(buttons)
-    , direct_midi_fallback_(&midi)
+    , midi_runtime_(midiRuntime)
     , scope_id_(scopeId) {
     setupBindings();
 }
@@ -198,25 +179,10 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
 
     if (!services_.isActivePageEnabled()) return;
 
-    if (midi_runtime_ != nullptr) {
-        (void)midi_runtime_->publishLiveManual(
-            index,
-            core::midi::toCC(resolved.resolved)
-        );
-        return;
-    }
-
-    // Compatibility-only direct path. Production always injects the shared
-    // adapter so duplicate Macro destinations resolve as one complete frame.
-    if (direct_midi_fallback_ != nullptr) {
-        const auto& config = services_.activeConfig(index);
-        direct_midi_fallback_->sendCC(
-            config.channel,
-            config.cc,
-            core::midi::toCC(resolved.resolved)
-        );
-        services_.pulseCcOut();
-    }
+    (void)midi_runtime_.publishLiveManual(
+        index,
+        core::midi::toCC(resolved.resolved)
+    );
 }
 
 void MacroValueHandler::handleConfigChange(uint8_t index, float value) {

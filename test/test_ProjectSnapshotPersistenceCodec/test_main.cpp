@@ -232,13 +232,13 @@ void assertDenseMacroAutomationsRestored(const core::state::CoreState& state) {
         assert(slot.automationStored);
         assert(slot.automationEnabled ==
                (denseAutomationPlaybackState(i) == MacroCurvePlaybackState::ACTIVE));
-        assert(slot.legacy.automation.pointCount == kPointCount);
+        assert(slot.compatibility.automation.pointCount == kPointCount);
         assert(std::fabs(
-                   macroAutomationBeatsFromTicks(slot.legacy.automation.durationTicks) -
+                   macroAutomationBeatsFromTicks(slot.compatibility.automation.durationTicks) -
                    denseMacroAutomationDuration(i)
                ) < 0.0001f);
         assert(std::fabs(
-                   macroAutomationBeatsFromTicks(slot.legacy.automation.windowOffsetTicks) -
+                   macroAutomationBeatsFromTicks(slot.compatibility.automation.windowOffsetTicks) -
                    denseMacroAutomationWindowOffset(i)
                ) < 0.0001f);
 
@@ -254,12 +254,12 @@ void assertDenseMacroAutomationsRestored(const core::state::CoreState& state) {
 
         if (denseMacroAutomationHasModulation(i)) {
             assert(slot.modulationStored);
-            assert(slot.legacy.modulation.playbackState ==
+            assert(slot.compatibility.modulation.playbackState ==
                    expectedDenseModulationPlaybackState(i));
-            assert(slot.legacy.modulation.modulationOrigin == denseModulationOrigin(i));
-            assert(slot.legacy.modulation.pointCount == 3);
+            assert(slot.compatibility.modulation.modulationOrigin == denseModulationOrigin(i));
+            assert(slot.compatibility.modulation.pointCount == 3);
             assert(std::fabs(
-                       slot.legacy.modulationDepth -
+                       slot.compatibility.modulationDepth -
                        (0.1f * static_cast<float>((i % 5U) + 1U))
                    ) < 0.0001f);
             for (uint8_t point = 0; point < 3; ++point) {
@@ -664,9 +664,9 @@ void assertRuntimeMatchesConfigured(core::state::CoreState& state) {
         }
     );
     assert(macroSlot.automationEnabled);
-    assert(macroSlot.legacy.automation.pointCount == 2);
+    assert(macroSlot.compatibility.automation.pointCount == 2);
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-               macroSlot.legacy.automation.durationTicks
+               macroSlot.compatibility.automation.durationTicks
            ) == 2.0f);
     const auto firstAutomationPoint = test_support::project_control::readCurvePoint(
         state.pages.control,
@@ -683,8 +683,8 @@ void assertRuntimeMatchesConfigured(core::state::CoreState& state) {
     assert(std::fabs(firstAutomationPoint.value - 0.2f) < 0.0001f);
     assert(std::fabs(secondAutomationPoint.value - 0.8f) < 0.0001f);
     assert(macroSlot.modulationEnabled);
-    assert(macroSlot.legacy.modulation.pointCount == 2);
-    assert(std::fabs(macroSlot.legacy.modulationDepth - 0.5f) < 0.0001f);
+    assert(macroSlot.compatibility.modulation.pointCount == 2);
+    assert(std::fabs(macroSlot.compatibility.modulationDepth - 0.5f) < 0.0001f);
 
     assert(state.sequencer.pattern.length.get() == 12);
     assert(state.sequencer.pattern.stepsPerBeat.get() == 5);
@@ -1117,10 +1117,10 @@ void test_project_snapshot_migrates_macro_automation_v14_lifecycle_defaults() {
         address
     );
     assert(migratedSlot.automationEnabled);
-    assert(migratedSlot.legacy.automation.modulationOrigin ==
+    assert(migratedSlot.compatibility.automation.modulationOrigin ==
            MacroModulationOrigin::NATIVE);
     assert(migratedSlot.modulationEnabled);
-    assert(migratedSlot.legacy.modulation.modulationOrigin ==
+    assert(migratedSlot.compatibility.modulation.modulationOrigin ==
            MacroModulationOrigin::NATIVE);
 
     constexpr uint32_t kFirstAutomationPlaybackByte =

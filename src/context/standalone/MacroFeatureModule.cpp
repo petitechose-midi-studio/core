@@ -250,7 +250,6 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         core::handler::MacroAutomationPlaybackService::StateRefs{
             stateRefs.pages,
             stateRefs.macroUi,
-            stateRefs.statusBar,
             stateRefs.runtimeOwnerRevision,
         },
         performanceServices,

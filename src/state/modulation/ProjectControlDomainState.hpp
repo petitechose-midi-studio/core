@@ -10,8 +10,8 @@ namespace core::state::modulation {
  * Cold, Project-owned authored control state.
  *
  * Automation and Modulation keep independent directories while sharing the
- * immutable curve arena. CoreState and ProjectSnapshot will own this object in
- * EXTMEM once the Gate 3 runtime boundary replaces the legacy writable bank.
+ * immutable curve arena. MacroPagesState owns the complete control aggregate in
+ * EXTMEM; this domain is the sole writable musical authority.
  */
 struct ProjectControlDomainState {
     ProjectAutomationCurveDirectory automation{};

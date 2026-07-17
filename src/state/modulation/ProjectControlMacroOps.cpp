@@ -60,7 +60,7 @@ ProjectCurveOrigin projectOrigin(macro::MacroModulationOrigin origin) {
     }
 }
 
-void projectLegacyCurve(
+void projectCompatibilityCurve(
     const ProjectCurveRecord& record,
     bool enabled,
     macro::MacroAutomationCurveRef& out
@@ -164,7 +164,7 @@ FLASHMEM bool removePrimaryModulation(
     ProjectControlDomainState& domain,
     const ProjectControlMacroSlotView& view
 ) {
-    if (!view.modulationStored || view.legacyMutationAmbiguous) return false;
+    if (!view.modulationStored || view.compatibilityMutationAmbiguous) return false;
     const bool deleteSource = !sourceHasOtherEdges(
         domain.modulation,
         view.modulationSourceId,
@@ -268,7 +268,11 @@ bool readDomainMacroSlot(
         out.automationStored = true;
         out.automationEnabled =
             (automation->flags & PROJECT_AUTOMATION_CURVE_FLAG_ENABLED) != 0U;
-        projectLegacyCurve(*curve, out.automationEnabled, out.legacy.automation);
+        projectCompatibilityCurve(
+            *curve,
+            out.automationEnabled,
+            out.compatibility.automation
+        );
     }
 
     uint16_t bindingCount = 0;
@@ -279,7 +283,7 @@ bool readDomainMacroSlot(
     );
     out.modulationCount = bindingCount;
     out.modulationStored = bindingCount > 0U;
-    out.legacyMutationAmbiguous = bindingCount > 1U;
+    out.compatibilityMutationAmbiguous = bindingCount > 1U;
     for (uint16_t index = 0;
          index < domain.modulation.outputBindingCount;
          ++index) {
@@ -308,7 +312,7 @@ bool readDomainMacroSlot(
         out.modulationEnabled =
             (binding->flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U &&
             (source->flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
-        out.legacy.modulationDepth = std::clamp(
+        out.compatibility.modulationDepth = std::clamp(
             static_cast<float>(binding->amountQ15) / 32767.0f,
             -1.0f,
             1.0f
@@ -321,7 +325,11 @@ bool readDomainMacroSlot(
             if (curve == nullptr) return false;
             out.primaryRecordedShape = true;
             out.modulationCurveId = curve->id;
-            projectLegacyCurve(*curve, out.modulationEnabled, out.legacy.modulation);
+            projectCompatibilityCurve(
+                *curve,
+                out.modulationEnabled,
+                out.compatibility.modulation
+            );
         }
     }
     out.present = out.automationStored || out.modulationStored;
@@ -337,7 +345,7 @@ FLASHMEM bool replaceSlotInDomain(
 ) {
     ProjectControlMacroSlotView current{};
     if (!readDomainMacroSlot(domain, address, current) ||
-        current.legacyMutationAmbiguous) {
+        current.compatibilityMutationAmbiguous) {
         return false;
     }
     if (current.automationStored &&
@@ -391,7 +399,7 @@ FLASHMEM bool replaceSlotInDomain(
     return true;
 }
 
-FLASHMEM bool buildLegacyConversionBank(
+FLASHMEM bool buildCompatibilityConversionBank(
     const ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,
     macro::MacroAutomationBankState& out
@@ -527,7 +535,7 @@ FLASHMEM bool setProjectControlModulationEnabled(
 ) {
     ProjectControlMacroSlotView view{};
     if (!readProjectControlMacroSlot(control, address, view) ||
-        !view.modulationStored || view.legacyMutationAmbiguous) {
+        !view.modulationStored || view.compatibilityMutationAmbiguous) {
         return false;
     }
     auto* binding = bindingById(
@@ -574,7 +582,7 @@ FLASHMEM bool setProjectControlModulationAmount(
     ProjectControlMacroSlotView view{};
     if (!std::isfinite(amount) ||
         !readProjectControlMacroSlot(control, address, view) ||
-        !view.modulationStored || view.legacyMutationAmbiguous) {
+        !view.modulationStored || view.compatibilityMutationAmbiguous) {
         return false;
     }
     auto* binding = bindingById(control.authored.modulation, view.modulationBindingId);
@@ -690,23 +698,23 @@ FLASHMEM bool captureProjectControlMacroSlot(
     modulationPointCount = 0;
     ProjectControlMacroSlotView view{};
     if (!readProjectControlMacroSlot(control, address, view) ||
-        view.legacyMutationAmbiguous ||
+        view.compatibilityMutationAmbiguous ||
         (view.modulationStored && !view.primaryRecordedShape)) {
         return false;
     }
     const uint32_t required = static_cast<uint32_t>(
-        view.legacy.automation.pointCount
-    ) + view.legacy.modulation.pointCount;
+        view.compatibility.automation.pointCount
+    ) + view.compatibility.modulation.pointCount;
     if (required > pointCapacity || (required > 0U && outPoints == nullptr)) {
         return false;
     }
-    outState = view.legacy;
-    automationPointCount = view.legacy.automation.pointCount;
-    modulationPointCount = view.legacy.modulation.pointCount;
+    outState = view.compatibility;
+    automationPointCount = view.compatibility.automation.pointCount;
+    modulationPointCount = view.compatibility.modulation.pointCount;
     if (automationPointCount > 0U) {
         for (uint16_t index = 0; index < automationPointCount; ++index) {
             const auto& point = control.authored.curves.points[
-                view.legacy.automation.pointOffset + index
+                view.compatibility.automation.pointOffset + index
             ];
             outPoints[index] = {
                 .tick = point.tick,
@@ -718,7 +726,7 @@ FLASHMEM bool captureProjectControlMacroSlot(
     if (modulationPointCount > 0U) {
         for (uint16_t index = 0; index < modulationPointCount; ++index) {
             const auto& point = control.authored.curves.points[
-                view.legacy.modulation.pointOffset + index
+                view.compatibility.modulation.pointOffset + index
             ];
             outPoints[automationPointCount + index] = {
                 .tick = point.tick,
@@ -809,7 +817,7 @@ FLASHMEM bool replaceProjectControlModulation(
     }
     ProjectControlMacroSlotView current{};
     if (!readProjectControlMacroSlot(control, address, current) ||
-        current.legacyMutationAmbiguous) {
+        current.compatibilityMutationAmbiguous) {
         return false;
     }
     if (!macro::macroCurveStored(source)) {
@@ -828,7 +836,7 @@ FLASHMEM bool replaceProjectControlModulation(
     *pending = control.authored;
     ProjectControlMacroSlotView pendingView{};
     if (!readDomainMacroSlot(*pending, address, pendingView) ||
-        pendingView.legacyMutationAmbiguous) {
+        pendingView.compatibilityMutationAmbiguous) {
         return false;
     }
     if (pendingView.modulationStored &&
@@ -863,7 +871,7 @@ preflightProjectControlConversion(
     auto bank = core::app::makeExtmemUnique<
         macro::MacroAutomationBankState
     >();
-    if (!bank || !buildLegacyConversionBank(control, address, *bank)) {
+    if (!bank || !buildCompatibilityConversionBank(control, address, *bank)) {
         macro::MacroAutomationConversionPlan rejected{};
         rejected.address = address;
         rejected.policy = policy;
@@ -887,7 +895,7 @@ FLASHMEM bool applyProjectControlConversion(
     auto bank = core::app::makeExtmemUnique<
         macro::MacroAutomationBankState
     >();
-    if (!bank || !buildLegacyConversionBank(control, plan.address, *bank)) {
+    if (!bank || !buildCompatibilityConversionBank(control, plan.address, *bank)) {
         return false;
     }
     float pendingBase = staticBase;

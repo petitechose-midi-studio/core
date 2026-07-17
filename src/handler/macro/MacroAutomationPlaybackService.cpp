@@ -14,11 +14,6 @@
 
 namespace core::handler {
 
-namespace {
-
-constexpr uint8_t INVALID_CC_VALUE = 0xFF;
-}  // namespace
-
 struct MacroAutomationPlaybackService::FramePublicationContext {
     MacroAutomationPlaybackService* owner = nullptr;
     core::state::modulation::ProjectControlTimeSnapshot time{};
@@ -37,35 +32,17 @@ FLASHMEM MacroAutomationPlaybackService::MacroAutomationPlaybackService(
 )
     : pages_(state.pages)
     , macro_ui_(state.macroUi)
-    , status_bar_(state.statusBar)
     , runtime_owner_revision_(state.runtimeOwnerRevision)
     , services_(services)
-    , midi_runtime_(&midiRuntime) {
-    reset();
-}
-
-FLASHMEM MacroAutomationPlaybackService::MacroAutomationPlaybackService(
-    StateRefs state,
-    MacroPerformanceDomainServices services,
-    oc::api::MidiAPI& midi
-)
-    : pages_(state.pages)
-    , macro_ui_(state.macroUi)
-    , status_bar_(state.statusBar)
-    , runtime_owner_revision_(state.runtimeOwnerRevision)
-    , services_(services)
-    , direct_midi_fallback_(&midi) {
+    , midi_runtime_(midiRuntime) {
     reset();
 }
 
 void MacroAutomationPlaybackService::reset() {
-    was_playing_ = false;
     update_scheduled_ = false;
-    last_update_ms_ = 0;
     next_due_ms_ = 0;
     consumed_runtime_owner_revision_ =
         runtime_owner_revision_ != nullptr ? runtime_owner_revision_->get() : 0U;
-    playback_beat_ = 0.0f;
     cached_track_ = 0xFF;
     cached_page_ = 0xFF;
     pages_.control.compiledRevision = 0;
@@ -75,15 +52,8 @@ void MacroAutomationPlaybackService::reset() {
     invalidateComputedRuntime_();
 }
 
-void MacroAutomationPlaybackService::invalidateSentCache_() {
-    sent_cc_values_.fill(INVALID_CC_VALUE);
-}
-
 void MacroAutomationPlaybackService::invalidateComputedRuntime_() {
-    invalidateSentCache_();
-    if (midi_runtime_ != nullptr) {
-        midi_runtime_->clearComputedValues();
-    }
+    midi_runtime_.clearComputedValues();
 }
 
 void MacroAutomationPlaybackService::syncActivePageRuntimeUi_(uint8_t track,
@@ -91,16 +61,13 @@ void MacroAutomationPlaybackService::syncActivePageRuntimeUi_(uint8_t track,
     macro_ui_.refreshManualOverrideMask(track, page);
 }
 
-void MacroAutomationPlaybackService::consumeRuntimeOwnerActivation_(uint32_t nowMs) {
+void MacroAutomationPlaybackService::consumeRuntimeOwnerActivation_() {
     if (runtime_owner_revision_ == nullptr) return;
 
     const uint32_t revision = runtime_owner_revision_->get();
     if (revision == consumed_runtime_owner_revision_) return;
 
     consumed_runtime_owner_revision_ = revision;
-    playback_beat_ = 0.0f;
-    last_update_ms_ = nowMs;
-    was_playing_ = status_bar_.playing.get();
     cached_track_ = pages_.currentActiveTrack();
     cached_page_ = pages_.currentActivePage();
     pages_.control.compiledRevision = 0;
@@ -108,29 +75,6 @@ void MacroAutomationPlaybackService::consumeRuntimeOwnerActivation_(uint32_t now
     pages_.control.runtime = {};
     syncActivePageRuntimeUi_(cached_track_, cached_page_);
     invalidateComputedRuntime_();
-}
-
-void MacroAutomationPlaybackService::updatePlaybackBeat_(uint32_t nowMs) {
-    const bool playing = status_bar_.playing.get();
-    if (!playing) {
-        was_playing_ = false;
-        last_update_ms_ = nowMs;
-        return;
-    }
-
-    if (!was_playing_) {
-        was_playing_ = true;
-        last_update_ms_ = nowMs;
-        invalidateComputedRuntime_();
-        return;
-    }
-
-    playback_beat_ += core::state::macro::macroAutomationElapsedBeats(
-        last_update_ms_,
-        nowMs,
-        status_bar_.tempo.get()
-    );
-    last_update_ms_ = nowMs;
 }
 
 core::state::modulation::ProjectModulationCompileContext
@@ -191,7 +135,7 @@ bool MacroAutomationPlaybackService::ensureProjectRuntime_(
             pages_.currentActiveTrack(),
             pages_.currentActivePage()
         );
-        invalidateSentCache_();
+        invalidateComputedRuntime_();
     }
     return true;
 }
@@ -279,12 +223,12 @@ void MacroAutomationPlaybackService::stageVisibleProjection_(
             .automationActive = automationActive,
             .modulationActive = modulationActive,
             .modulationPausedDepthZero = authored.modulationEnabled &&
-                std::abs(authored.legacy.modulationDepth) <= 0.000001f,
+                std::abs(authored.compatibility.modulationDepth) <= 0.000001f,
             .modulationSuspended = false,
         },
         authored.modulationStored
             ? core::state::macro::macroAutomationClamp01(
-                  authored.legacy.modulationDepth
+                  authored.compatibility.modulationDepth
               )
             : 0.0f
     );
@@ -469,8 +413,8 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
     const bool addressContextChanged =
         pages_.currentActiveTrack() != cached_track_ ||
         pages_.currentActivePage() != cached_page_;
-    const bool triggerEventsPending = midi_runtime_ != nullptr &&
-        midi_runtime_->projectModulationTriggersPending();
+    const bool triggerEventsPending =
+        midi_runtime_.projectModulationTriggersPending();
     if (update_scheduled_ &&
         !oc::time::deadlineReachedMs(nowMs, next_due_ms_) &&
         !ownerActivationPending && !addressContextChanged &&
@@ -481,7 +425,7 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
     next_due_ms_ = nowMs + macro::MACRO_AUTOMATION_UPDATE_PERIOD_MS;
     OC_PERF_SCOPE(perfUpdate, "macro.automation-playback");
 
-    consumeRuntimeOwnerActivation_(nowMs);
+    consumeRuntimeOwnerActivation_();
     const uint8_t track = pages_.currentActiveTrack();
     const uint8_t page = pages_.currentActivePage();
     if (track != cached_track_ || page != cached_page_) {
@@ -490,78 +434,24 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
         syncActivePageRuntimeUi_(track, page);
     }
 
-    core::state::modulation::ProjectControlTimeSnapshot time{};
-    if (midi_runtime_ != nullptr) {
-        time = midi_runtime_->projectControlTimeSnapshot();
-    } else {
-        updatePlaybackBeat_(nowMs);
-        const float rawTicks = playback_beat_ *
-            static_cast<float>(
-                core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT
-            );
-        const float wholeTicks = std::floor(std::max(rawTicks, 0.0f));
-        time.musicalTick = static_cast<uint32_t>(wholeTicks);
-        time.musicalTickFractionQ16 = static_cast<uint16_t>(std::clamp<long>(
-            std::lround((rawTicks - wholeTicks) * 65536.0f),
-            0L,
-            65535L
-        ));
-        time.monotonicMs = nowMs;
-        time.transportGeneration = status_bar_.playing.get() ? 1U : 0U;
-        time.playing = status_bar_.playing.get();
-    }
+    const auto time = midi_runtime_.projectControlTimeSnapshot();
     if (!ensureProjectRuntime_(time)) return;
 
     auto& control = pages_.control;
     control.triggerScratch.count = 0U;
     control.triggerScratch.reserved = 0U;
-    if (midi_runtime_ != nullptr) {
-        (void)midi_runtime_->drainProjectModulationTriggers(
-            control.triggerScratch
-        );
-    }
+    (void)midi_runtime_.drainProjectModulationTriggers(
+        control.triggerScratch
+    );
 
     FramePublicationContext publication{
         .owner = this,
         .time = time,
     };
-    if (midi_runtime_ != nullptr) {
-        (void)midi_runtime_->publishProjectFrame(
-            produceProjectFrame_,
-            &publication
-        );
-        control.triggerScratch.count = 0U;
-        return;
-    }
-
-    // Deprecated isolated-test fallback. Production publishes directly into
-    // the coordinator's PSRAM frame and never retains this bounded stack copy.
-    std::array<core::state::shared::MidiCcCandidate, 16> candidates{};
-    uint16_t candidateCount = 0;
-    if (!produceProjectFrame_(
-            &publication,
-            candidates.data(),
-            static_cast<uint16_t>(candidates.size()),
-            candidateCount
-        ) || direct_midi_fallback_ == nullptr) {
-        control.triggerScratch.count = 0U;
-        return;
-    }
-    for (uint16_t i = 0; i < candidateCount; ++i) {
-        const auto& candidate = candidates[i];
-        const uint16_t address = candidate.author.stableAddress;
-        const uint8_t macroIndex = static_cast<uint8_t>(
-            address % core::state::macro::MACRO_COUNT
-        );
-        if (sent_cc_values_[macroIndex] == candidate.localValue) continue;
-        direct_midi_fallback_->sendCC(
-            candidate.destination.identity.channel,
-            candidate.destination.identity.controller,
-            candidate.localValue
-        );
-        services_.pulseCcOut();
-        sent_cc_values_[macroIndex] = candidate.localValue;
-    }
+    (void)midi_runtime_.publishProjectFrame(
+        produceProjectFrame_,
+        &publication
+    );
     control.triggerScratch.count = 0U;
 }
 

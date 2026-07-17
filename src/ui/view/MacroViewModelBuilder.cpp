@@ -367,7 +367,7 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             modulationStored && controlSlot.activeModulationCount > 0U;
         const bool modulationPaused =
             modulationPlayback && controlSlot.modulationCount == 1U &&
-            controlSlot.legacy.modulationDepth == 0.0f;
+            controlSlot.compatibility.modulationDepth == 0.0f;
         const auto& projection = source.macroUi.runtimeProjections[i];
         const bool projectionValid =
             source.macroUi.runtimeProjectionValidFor(
@@ -381,7 +381,7 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             .baseValue = projectionValid ? projection.base : fallbackValue,
             .modulationDelta = projectionValid ? projection.modulation : 0.0f,
             .modulationDepth = controlSlotValid
-                ? controlSlot.legacy.modulationDepth
+                ? controlSlot.compatibility.modulationDepth
                 : 0.0f,
             .modulationSourceCount = static_cast<uint8_t>(
                 controlSlotValid

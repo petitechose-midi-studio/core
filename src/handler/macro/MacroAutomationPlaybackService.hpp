@@ -1,13 +1,10 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 
-#include <oc/api/MidiAPI.hpp>
 #include <oc/state/Signal.hpp>
 
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
-#include "state/StatusBarState.hpp"
 #include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
@@ -23,7 +20,6 @@ public:
     struct StateRefs {
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
-        core::state::StatusBarState& statusBar;
         const oc::state::Signal<uint32_t>* runtimeOwnerRevision = nullptr;
     };
 
@@ -31,23 +27,13 @@ public:
                                    MacroPerformanceDomainServices services,
                                    MacroMidiCcRuntimeAdapter& midiRuntime);
 
-    /**
-     * Compatibility-only direct-output path for isolated legacy tests.
-     * Standalone production assembly must inject MacroMidiCcRuntimeAdapter.
-     */
-    [[deprecated("Inject MacroMidiCcRuntimeAdapter in production")]]
-    MacroAutomationPlaybackService(StateRefs state,
-                                   MacroPerformanceDomainServices services,
-                                   oc::api::MidiAPI& midi);
-
     void update(uint32_t nowMs);
     void reset();
 
 private:
     struct FramePublicationContext;
 
-    void consumeRuntimeOwnerActivation_(uint32_t nowMs);
-    void updatePlaybackBeat_(uint32_t nowMs);
+    void consumeRuntimeOwnerActivation_();
     core::state::modulation::ProjectModulationCompileContext compileContext_() const;
     bool ensureProjectRuntime_(
         const core::state::modulation::ProjectControlTimeSnapshot& time
@@ -76,25 +62,23 @@ private:
     );
     void syncActivePageRuntimeUi_(uint8_t track, uint8_t page);
     void invalidateComputedRuntime_();
-    void invalidateSentCache_();
 
     core::state::macro::MacroPagesState& pages_;
     core::state::macro::MacroUiState& macro_ui_;
-    core::state::StatusBarState& status_bar_;
     const oc::state::Signal<uint32_t>* runtime_owner_revision_ = nullptr;
     MacroPerformanceDomainServices services_;
-    MacroMidiCcRuntimeAdapter* midi_runtime_ = nullptr;
-    oc::api::MidiAPI* direct_midi_fallback_ = nullptr;
+    MacroMidiCcRuntimeAdapter& midi_runtime_;
 
-    bool was_playing_ = false;
     bool update_scheduled_ = false;
-    uint32_t last_update_ms_ = 0;
     uint32_t next_due_ms_ = 0;
     uint32_t consumed_runtime_owner_revision_ = 0;
-    float playback_beat_ = 0.0f;
     uint8_t cached_track_ = 0xFF;
     uint8_t cached_page_ = 0xFF;
-    std::array<uint8_t, core::state::macro::MACRO_COUNT> sent_cc_values_{};
 };
+
+// Hot service: keep the target-side default-heap allocation intentionally small.
+static_assert(
+    sizeof(void*) != 4U || sizeof(MacroAutomationPlaybackService) == 80U
+);
 
 }  // namespace core::handler

@@ -12,7 +12,6 @@
 #include <array>
 
 #include <oc/api/EncoderAPI.hpp>
-#include <oc/api/MidiAPI.hpp>
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
@@ -51,19 +50,6 @@ public:
                       MacroMidiCcRuntimeAdapter& midiRuntime,
                       oc::type::ScopeID scopeId);
 
-    /**
-     * Compatibility-only direct-output path for isolated legacy tests.
-     * Standalone production assembly must inject MacroMidiCcRuntimeAdapter.
-     */
-    [[deprecated("Inject MacroMidiCcRuntimeAdapter in production")]]
-    MacroValueHandler(StateRefs state,
-                      MacroPerformanceDomainServices services,
-                      oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-                      oc::api::EncoderAPI& encoders,
-                      oc::api::ButtonAPI& buttons,
-                      oc::api::MidiAPI& midi,
-                      oc::type::ScopeID scopeId);
-
     ~MacroValueHandler() = default;
 
     MacroValueHandler(const MacroValueHandler&) = delete;
@@ -91,8 +77,7 @@ private:
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    MacroMidiCcRuntimeAdapter* midi_runtime_ = nullptr;
-    oc::api::MidiAPI* direct_midi_fallback_ = nullptr;
+    MacroMidiCcRuntimeAdapter& midi_runtime_;
     oc::type::ScopeID scope_id_ = 0;
     std::array<bool, core::state::macro::MACRO_COUNT> macro_button_held_{};
     std::array<bool, core::state::macro::MACRO_COUNT> post_record_guard_active_{};
@@ -100,5 +85,8 @@ private:
     uint32_t last_record_sample_ms_ = 0;
     bool record_sample_clock_active_ = false;
 };
+
+// Hot input handler: retain RAM2 locality while preventing silent footprint growth.
+static_assert(sizeof(void*) != 4U || sizeof(MacroValueHandler) == 136U);
 
 }  // namespace core::handler

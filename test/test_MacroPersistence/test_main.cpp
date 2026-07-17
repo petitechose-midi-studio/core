@@ -122,7 +122,7 @@ void test_library_load_preserves_project_macro_automation_bank() {
         address
     );
     assert(preserved.modulationStored);
-    assert(std::fabs(preserved.legacy.modulationDepth - 0.75f) < 0.0001f);
+    assert(std::fabs(preserved.compatibility.modulationDepth - 0.75f) < 0.0001f);
 
     std::cout << "[PASS] library load preserves Project Control authority\n";
 }

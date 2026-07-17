@@ -168,23 +168,6 @@ FLASHMEM void formatDuration(char* out, size_t size, uint16_t ticks) {
     }
 }
 
-FLASHMEM void formatAdsrDuration(
-    char* out,
-    size_t size,
-    uint16_t duration,
-    ModulatorTimingMode timing
-) {
-    if (timing == ModulatorTimingMode::SYNC) {
-        if (duration == 0U) {
-            std::snprintf(out, size, "0");
-        } else {
-            formatDuration(out, size, duration);
-        }
-        return;
-    }
-    formatFreePeriod(out, size, duration);
-}
-
 FLASHMEM void formatTriggerSummary(
     char* out,
     size_t size,
@@ -485,13 +468,13 @@ FLASHMEM void populateRegistryRow(const ProjectControlState& control,
     } else if (source.kind == ModulatorKind::ADSR) {
         char attack[8]{};
         char release[8]{};
-        formatAdsrDuration(
+        adsr_ui::formatDuration(
             attack,
             sizeof(attack),
             source.parameters.adsr.attack,
             source.parameters.adsr.timing
         );
-        formatAdsrDuration(
+        adsr_ui::formatDuration(
             release,
             sizeof(release),
             source.parameters.adsr.release,
@@ -657,7 +640,7 @@ FLASHMEM void populateSourceDetailRow(
                 item == SourceDetailItem::ATTACK
                     ? "A" : (item == SourceDetailItem::DECAY ? "D" : "R")
             );
-            formatAdsrDuration(
+            adsr_ui::formatDuration(
                 value,
                 sizeof(value),
                 duration,

@@ -194,7 +194,7 @@ FLASHMEM MacroTypedPastePreflight preflightAutomationPaste(
     }
     const uint16_t required = payload.entries[0].state.automation.pointCount;
     const uint16_t reclaimable = target.automationStored
-        ? target.legacy.automation.pointCount
+        ? target.compatibility.automation.pointCount
         : 0U;
     const bool populated = target.automationStored;
     return preflightCapacity(
@@ -318,7 +318,7 @@ FLASHMEM MacroTypedPastePreflight preflightSlotPaste(
             pages.control,
             address,
             target
-        ) || target.legacyMutationAmbiguous ||
+        ) || target.compatibilityMutationAmbiguous ||
         (target.modulationStored && !target.primaryRecordedShape)) {
         rejected.status = MacroTypedPasteStatus::INVALID_TARGET;
         return rejected;
@@ -330,8 +330,8 @@ FLASHMEM MacroTypedPastePreflight preflightSlotPaste(
           )
         : 0;
     const uint16_t reclaimable = static_cast<uint16_t>(
-        target.legacy.automation.pointCount +
-        target.legacy.modulation.pointCount
+        target.compatibility.automation.pointCount +
+        target.compatibility.modulation.pointCount
     );
     const auto& targetPage = pages.pageData(address.track, address.page);
     const bool populated = targetPage.isMacroActive(address.macro) || target.present;
@@ -527,14 +527,14 @@ FLASHMEM MacroTypedPastePreflight preflightModulationPaste(
             pages.control,
             address,
             target
-        ) || target.legacyMutationAmbiguous ||
+        ) || target.compatibilityMutationAmbiguous ||
         (target.modulationStored && !target.primaryRecordedShape)) {
         rejected.status = MacroTypedPasteStatus::INVALID_TARGET;
         return rejected;
     }
     const uint16_t required = payload.entries[0].state.modulation.pointCount;
     const uint16_t reclaimable = target.modulationStored
-        ? target.legacy.modulation.pointCount
+        ? target.compatibility.modulation.pointCount
         : 0U;
     const bool populated = target.modulationStored;
     return preflightCapacity(

@@ -258,50 +258,6 @@ FLASHMEM ms::ui::KeyValueSparkline buildLfoSparkline(
     return sparkline;
 }
 
-FLASHMEM void formatAdsrDuration(
-    char* out,
-    size_t outSize,
-    uint16_t duration,
-    core::state::modulation::ModulatorTimingMode timing
-) {
-    using namespace core::state::modulation;
-    if (timing == ModulatorTimingMode::FREE) {
-        if (duration >= 1000U) {
-            const uint32_t tenths = (static_cast<uint32_t>(duration) + 50U) /
-                100U;
-            std::snprintf(
-                out,
-                outSize,
-                "%u.%us",
-                static_cast<unsigned>(tenths / 10U),
-                static_cast<unsigned>(tenths % 10U)
-            );
-        } else {
-            std::snprintf(
-                out, outSize, "%ums", static_cast<unsigned>(duration)
-            );
-        }
-        return;
-    }
-    const uint32_t tenths =
-        (static_cast<uint32_t>(duration) * 10U +
-         PROJECT_CONTROL_TICKS_PER_BEAT / 2U) /
-        PROJECT_CONTROL_TICKS_PER_BEAT;
-    if ((tenths % 10U) == 0U) {
-        std::snprintf(
-            out, outSize, "%ub", static_cast<unsigned>(tenths / 10U)
-        );
-    } else {
-        std::snprintf(
-            out,
-            outSize,
-            "%u.%ub",
-            static_cast<unsigned>(tenths / 10U),
-            static_cast<unsigned>(tenths % 10U)
-        );
-    }
-}
-
 FLASHMEM ms::ui::KeyValueSparkline buildAdsrSparkline(
     const core::state::modulation::ProjectControlState& control,
     const core::state::modulation::ModulatorSourceState& source
@@ -742,7 +698,7 @@ FLASHMEM void formatModulationState(
         return;
     }
     const int amount = static_cast<int>(std::lround(
-        std::clamp(slot->legacy.modulationDepth, -1.0f, 1.0f) * 100.0f
+        std::clamp(slot->compatibility.modulationDepth, -1.0f, 1.0f) * 100.0f
     ));
     if (amount == 0) {
         std::snprintf(out, outSize, "%s", "Paused · 0%%");
@@ -1155,8 +1111,14 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         (static_cast<uint32_t>(source.pages.currentActivePage() & 0x0FU) << 16) |
         (static_cast<uint32_t>(source.macroEdit.focusedRow.get() & 0x03U) << 14);
     if (slot != nullptr) {
-        revision = mixRevision(revision, slot->legacy.automation.pointCount);
-        revision = mixRevision(revision, slot->legacy.modulation.pointCount);
+        revision = mixRevision(
+            revision,
+            slot->compatibility.automation.pointCount
+        );
+        revision = mixRevision(
+            revision,
+            slot->compatibility.modulation.pointCount
+        );
         revision = mixRevision(
             revision,
             static_cast<uint32_t>(slot->automationEnabled)
@@ -1168,7 +1130,7 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         uint32_t depthBits = 0;
         std::memcpy(
             &depthBits,
-            &slot->legacy.modulationDepth,
+            &slot->compatibility.modulationDepth,
             sizeof(depthBits)
         );
         revision = mixRevision(revision, depthBits);
@@ -1383,7 +1345,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                 "%s",
                 modulator->name.data()
             );
-            formatAdsrDuration(
+            adsr_ui::formatDuration(
                 data.valueBuffers[0].data(),
                 data.valueBuffers[0].size(),
                 modulator->parameters.adsr.attack,
@@ -1395,7 +1357,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                 "A %.5s · Note",
                 data.valueBuffers[0].data()
             );
-            formatAdsrDuration(
+            adsr_ui::formatDuration(
                 data.valueBuffers[1].data(),
                 data.valueBuffers[1].size(),
                 modulator->parameters.adsr.decay,
@@ -1409,7 +1371,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                     modulator->parameters.adsr.sustainQ15
                 ))
             );
-            formatAdsrDuration(
+            adsr_ui::formatDuration(
                 data.valueBuffers[3].data(),
                 data.valueBuffers[3].size(),
                 modulator->parameters.adsr.release,
@@ -1703,18 +1665,18 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             curveSparkline = buildCurveSparkline(
                 source.pages.control,
                 slot->automationCurveId,
-                slot->legacy.automation
+                slot->compatibility.automation
             );
             formatBeatDuration(
                 data.valueBuffers[2].data(),
                 data.valueBuffers[2].size(),
-                slot->legacy.automation.durationTicks,
+                slot->compatibility.automation.durationTicks,
                 " beats"
             );
             formatBeatDuration(
                 data.valueBuffers[3].data(),
                 data.valueBuffers[3].size(),
-                slot->legacy.automation.windowOffsetTicks,
+                slot->compatibility.automation.windowOffsetTicks,
                 " beats"
             );
             formatCurveSummary(
@@ -1775,7 +1737,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         );
         const bool paused = detailContext.modulationPlayback &&
             slot != nullptr && slot->modulationCount == 1U &&
-            std::abs(slot->legacy.modulationDepth) < 0.0001f;
+            std::abs(slot->compatibility.modulationDepth) < 0.0001f;
         if (!modulationStored) {
             std::snprintf(
                 data.valueBuffers[1].data(),
@@ -1797,7 +1759,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                 "%d%%",
                 static_cast<int>(std::lround(
                     std::clamp(
-                        slot->legacy.modulationDepth,
+                        slot->compatibility.modulationDepth,
                         -1.0f,
                         1.0f
                     ) * 100.0f
@@ -1838,7 +1800,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                     ? "Mixed"
                     : (slot->primaryRecordedShape
                         ? modulationOriginLabel(
-                            slot->legacy.modulation.modulationOrigin
+                            slot->compatibility.modulation.modulationOrigin
                         )
                         : "Generated"))
         );
@@ -1905,15 +1867,21 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         (static_cast<uint32_t>(data.selectedIndex & 0x07U) << 16) |
         (static_cast<uint32_t>(phase) << 8);
     if (automationStored) {
-        revision = mixRevision(revision, slot->legacy.automation.pointCount);
-        revision = mixRevision(revision, slot->legacy.automation.durationTicks);
         revision = mixRevision(
             revision,
-            slot->legacy.automation.sourceDurationTicks
+            slot->compatibility.automation.pointCount
         );
         revision = mixRevision(
             revision,
-            slot->legacy.automation.windowOffsetTicks
+            slot->compatibility.automation.durationTicks
+        );
+        revision = mixRevision(
+            revision,
+            slot->compatibility.automation.sourceDurationTicks
+        );
+        revision = mixRevision(
+            revision,
+            slot->compatibility.automation.windowOffsetTicks
         );
     }
     if (modulationStored) {
@@ -1922,7 +1890,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         uint32_t depthBits = 0;
         std::memcpy(
             &depthBits,
-            &slot->legacy.modulationDepth,
+            &slot->compatibility.modulationDepth,
             sizeof(depthBits)
         );
         revision = mixRevision(revision, depthBits);

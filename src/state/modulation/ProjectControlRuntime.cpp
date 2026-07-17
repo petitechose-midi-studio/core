@@ -27,7 +27,8 @@ bool validPlanBounds(const ProjectModulationRuntimePlan& plan) {
            plan.bindingCount <= PROJECT_MODULATION_BINDING_CAPACITY &&
            plan.destinationCount <=
                PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY &&
-           plan.triggerRouteCount <= plan.sourceCount;
+           plan.triggerRouteCount <= plan.sourceCount &&
+           plan.triggerBucketOffset.back() == plan.triggerRouteCount;
 }
 
 bool triggerMatches(const ModulationTriggerRef& configured,
@@ -798,11 +799,9 @@ bool routeProjectTriggerFrame(
              bucketIndex < bucketCount;
              ++bucketIndex) {
             const uint16_t bucket = buckets[bucketIndex];
-            const uint16_t start = plan.triggerBucketStart[bucket];
-            const uint16_t end = static_cast<uint16_t>(
-                start + plan.triggerBucketCount[bucket]
-            );
-            if (end > plan.triggerRouteCount) return false;
+            const uint16_t start = plan.triggerBucketOffset[bucket];
+            const uint16_t end = plan.triggerBucketOffset[bucket + 1U];
+            if (start > end || end > plan.triggerRouteCount) return false;
             for (uint16_t route = start; route < end; ++route) {
                 const uint16_t sourceIndex = plan.triggerSourceOrder[route];
                 if (sourceIndex >= plan.sourceCount) return false;

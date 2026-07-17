@@ -100,7 +100,7 @@ void test_clear_is_one_undo_redo_action() {
     auto slot = test_support::project_control::readSlot(pages.control, kAddress);
     assert(slot.modulationEnabled);
     assert(slot.automationEnabled);
-    assert(std::fabs(slot.legacy.modulationDepth - 0.65f) < 0.0001f);
+    assert(std::fabs(slot.compatibility.modulationDepth - 0.65f) < 0.0001f);
     assert(history.redo(pages));
     slot = test_support::project_control::readSlot(pages.control, kAddress);
     assert(!slot.modulationStored);
@@ -118,10 +118,10 @@ void test_depth_turns_coalesce_without_extra_entries() {
     assert(history.undoCount() == 1);
     assert(history.undo(pages));
     auto slot = test_support::project_control::readSlot(pages.control, kAddress);
-    assert(std::fabs(slot.legacy.modulationDepth - 0.65f) < 0.0001f);
+    assert(std::fabs(slot.compatibility.modulationDepth - 0.65f) < 0.0001f);
     assert(history.redo(pages));
     slot = test_support::project_control::readSlot(pages.control, kAddress);
-    assert(slot.legacy.modulationDepth == 0.0f);
+    assert(slot.compatibility.modulationDepth == 0.0f);
     std::cout << "[PASS] Depth turns coalesce to one action\n";
 }
 
@@ -176,7 +176,7 @@ void test_assignment_undo_preserves_unrelated_macro_fields() {
     assert(history.undo(pages));
     assert(pages.pageData(0, 0).cc[1] == 99);
     const auto slot = test_support::project_control::readSlot(pages.control, kAddress);
-    assert(std::fabs(slot.legacy.modulationDepth - 0.65f) < 0.0001f);
+    assert(std::fabs(slot.compatibility.modulationDepth - 0.65f) < 0.0001f);
     std::cout << "[PASS] assignment Undo preserves unrelated Macro fields\n";
 }
 
@@ -241,7 +241,7 @@ void test_history_evicts_oldest_entry_at_fixed_limit() {
     }
     assert(!history.undo(pages));
     const auto slot = test_support::project_control::readSlot(pages.control, kAddress);
-    assert(std::fabs(slot.legacy.modulationDepth - 0.1f) < 0.0001f);
+    assert(std::fabs(slot.compatibility.modulationDepth - 0.1f) < 0.0001f);
     assert(history.redoCount() == macro::MacroHistoryService::ENTRY_LIMIT);
     std::cout << "[PASS] history evicts oldest entry at fixed limit\n";
 }
@@ -261,7 +261,7 @@ void test_new_mutation_after_undo_clears_redo_stack() {
     assert(history.redoCount() == 0);
     assert(!history.redo(pages));
     const auto slot = test_support::project_control::readSlot(pages.control, kAddress);
-    assert(std::fabs(slot.legacy.modulationDepth - 0.3f) < 0.0001f);
+    assert(std::fabs(slot.compatibility.modulationDepth - 0.3f) < 0.0001f);
     std::cout << "[PASS] new mutation after Undo clears Redo\n";
 }
 

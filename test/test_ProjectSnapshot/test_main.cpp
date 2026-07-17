@@ -230,10 +230,10 @@ void test_snapshot_capture_apply_restores_project_session() {
     assert(!restoredAutomation.automationEnabled);
     assert(restoredAutomation.modulationStored);
     assert(!restoredAutomation.modulationEnabled);
-    assert(restoredAutomation.legacy.modulation.modulationOrigin ==
+    assert(restoredAutomation.compatibility.modulation.modulationOrigin ==
            core::state::macro::MacroModulationOrigin::CONVERTED_MEAN);
-    assert(restoredAutomation.legacy.modulationDepth > 0.3699f &&
-           restoredAutomation.legacy.modulationDepth < 0.3701f);
+    assert(restoredAutomation.compatibility.modulationDepth > 0.3699f &&
+           restoredAutomation.compatibility.modulationDepth < 0.3701f);
 
     assert(state.sequencer.pattern.length.get() == 15);
     assert(state.sequencer.pattern.stepsPerBeat.get() == 6);

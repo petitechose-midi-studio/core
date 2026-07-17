@@ -30,7 +30,7 @@ inline constexpr uint32_t MAX_PAYLOAD_SIZE =
     const core::state::macro::MacroAutomationBankState& bank
 );
 
-/** Encodes the legacy writable v1.5 payload used until Gate 3 cuts authority. */
+/** Test/fixture encoder for the last pre-Project writable payload. */
 [[nodiscard]] bool encodeV15(
     const core::state::macro::MacroAutomationBankState& bank,
     uint8_t* out,

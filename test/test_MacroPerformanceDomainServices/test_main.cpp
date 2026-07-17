@@ -506,9 +506,9 @@ void test_automation_recording_commits_to_current_macro_slot() {
     );
     assert(slot.automationEnabled);
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        slot.legacy.automation.durationTicks
+        slot.compatibility.automation.durationTicks
     ) == 2.0f);
-    assert(slot.legacy.automation.pointCount == 2);
+    assert(slot.compatibility.automation.pointCount == 2);
     const auto firstPoint = test_support::project_control::readCurvePoint(
         state.pages.control,
         slot.automationCurveId,
@@ -636,7 +636,7 @@ void test_recording_preserves_active_modulation_without_resume() {
         .macro = 0,
     };
     auto slot = configureModulation(state.pages.control, address, 0.37f);
-    const auto modulationBefore = slot.legacy.modulation;
+    const auto modulationBefore = slot.compatibility.modulation;
     const auto firstBefore = test_support::project_control::readCurvePoint(
         state.pages.control,
         slot.modulationCurveId,
@@ -658,10 +658,10 @@ void test_recording_preserves_active_modulation_without_resume() {
     slot = test_support::project_control::readSlot(state.pages.control, address);
     assert(slot.automationEnabled);
     assert(slot.modulationEnabled);
-    assert(std::fabs(slot.legacy.modulationDepth - 0.37f) < 0.0001f);
-    assert(slot.legacy.modulation.pointCount == modulationBefore.pointCount);
-    assert(slot.legacy.modulation.durationTicks == modulationBefore.durationTicks);
-    assert(slot.legacy.modulation.modulationOrigin ==
+    assert(std::fabs(slot.compatibility.modulationDepth - 0.37f) < 0.0001f);
+    assert(slot.compatibility.modulation.pointCount == modulationBefore.pointCount);
+    assert(slot.compatibility.modulation.durationTicks == modulationBefore.durationTicks);
+    assert(slot.compatibility.modulation.modulationOrigin ==
            modulationBefore.modulationOrigin);
     const auto firstAfter = test_support::project_control::readCurvePoint(
         state.pages.control,
@@ -786,7 +786,7 @@ void test_recording_shared_lfos_preserves_graph_through_undo_redo() {
     ) == 0);
     slot = test_support::project_control::readSlot(state.pages.control, address);
     assert(slot.automationEnabled);
-    assert(slot.legacy.automation.pointCount == 2U);
+    assert(slot.compatibility.automation.pointCount == 2U);
     const auto first = test_support::project_control::readCurvePoint(
         state.pages.control,
         slot.automationCurveId,
@@ -1053,7 +1053,7 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
            core::state::modulation::projectControlDestination(targetAddress));
     assert(pastedBinding.amountQ15 == sourceBindingBefore.amountQ15);
     assert(target.automationCurveId == targetAutomationBefore);
-    assert(target.legacy.automation.pointCount == targetAutomationPoints.size());
+    assert(target.compatibility.automation.pointCount == targetAutomationPoints.size());
     for (uint16_t i = 0; i < targetAutomationPoints.size(); ++i) {
         const auto actual = test_support::project_control::readCurvePoint(
             state.pages.control,
@@ -1066,7 +1066,7 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
     }
     assert(target.modulationCount == 2U);
     assert(target.modulationCurveId == targetModulationBefore);
-    assert(std::fabs(target.legacy.modulationDepth - 0.82f) < 0.0001f);
+    assert(std::fabs(target.compatibility.modulationDepth - 0.82f) < 0.0001f);
 
     std::cout
         << "[PASS] modulation assignment Paste preserves target and shares source\n";
@@ -1146,7 +1146,7 @@ void test_typed_slot_copy_paste_preserves_automation_and_modulation() {
         target.modulationCurveId,
         true
     );
-    assert(std::fabs(target.legacy.modulationDepth - 0.43f) < 0.0001f);
+    assert(std::fabs(target.compatibility.modulationDepth - 0.43f) < 0.0001f);
 
     std::cout
         << "[PASS] test_typed_slot_copy_paste_preserves_automation_and_modulation\n";
@@ -1227,7 +1227,7 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
         targetSlot.modulationCurveId,
         true
     );
-    assert(std::fabs(targetSlot.legacy.modulationDepth - 0.33f) < 0.0001f);
+    assert(std::fabs(targetSlot.compatibility.modulationDepth - 0.33f) < 0.0001f);
     assert(state.pages.pageData(0, 1).cc[0] == 74);
     assert(std::fabs(state.pages.pageData(0, 1).values[0] - 0.36f) < 0.0001f);
 
@@ -1261,7 +1261,7 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
         targetSlot.modulationCurveId,
         true
     );
-    assert(std::fabs(targetSlot.legacy.modulationDepth - 0.33f) < 0.0001f);
+    assert(std::fabs(targetSlot.compatibility.modulationDepth - 0.33f) < 0.0001f);
     assert(state.pages.pageData(1, 0).cc[0] == 74);
     assert(std::fabs(state.pages.pageData(1, 0).values[0] - 0.36f) < 0.0001f);
 

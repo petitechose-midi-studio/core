@@ -9,7 +9,8 @@ namespace core::state::modulation {
 
 struct ProjectControlMacroSlotView {
     macro::MacroAutomationSlotAddress address{};
-    macro::MacroAutomationSlotState legacy{};
+    /** Synthesized adapter view for still-supported slot-oriented workflows. */
+    macro::MacroAutomationSlotState compatibility{};
     ProjectCurveId automationCurveId{};
     ModulatorId modulationSourceId{};
     ModulationBindingId modulationBindingId{};
@@ -22,7 +23,7 @@ struct ProjectControlMacroSlotView {
     bool modulationStored = false;
     bool modulationEnabled = false;
     bool primaryRecordedShape = false;
-    bool legacyMutationAmbiguous = false;
+    bool compatibilityMutationAmbiguous = false;
 };
 
 [[nodiscard]] ModulationDestination projectControlDestination(
@@ -78,7 +79,7 @@ struct ProjectControlMacroSlotView {
 );
 
 /**
- * Captures one legacy-compatible destination into caller-owned cold storage.
+ * Captures one slot-compatible destination into caller-owned cold storage.
  * Points are packed Automation first, then the primary Recorded Shape.
  */
 [[nodiscard]] bool captureProjectControlMacroSlot(
@@ -92,7 +93,7 @@ struct ProjectControlMacroSlotView {
 );
 
 /**
- * Atomically replaces one legacy-compatible destination while preserving all
+ * Atomically replaces one slot-compatible destination while preserving all
  * unrelated project-root sources and assignments. Ambiguous multi-source
  * destinations are rejected for the later graph-aware structural workflow.
  */
@@ -126,7 +127,7 @@ struct ProjectControlMacroSlotView {
     uint16_t sourcePointCount
 );
 
-/** Replaces only the legacy-compatible primary Recorded Shape assignment. */
+/** Replaces only the slot-compatible primary Recorded Shape assignment. */
 [[nodiscard]] bool replaceProjectControlModulation(
     ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,

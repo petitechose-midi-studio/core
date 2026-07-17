@@ -294,7 +294,9 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
     for (uint16_t bucket = 0U;
          bucket < PROJECT_MODULATION_TRIGGER_BUCKET_COUNT;
          ++bucket) {
-        const uint16_t bucketStart = triggerRouteWrite;
+        out.triggerBucketOffset[bucket] = static_cast<uint8_t>(
+            triggerRouteWrite
+        );
         for (uint16_t sourceIndex = 0U;
              sourceIndex < out.sourceCount;
              ++sourceIndex) {
@@ -322,15 +324,9 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
                 );
             }
         }
-        const uint16_t bucketCount = triggerRouteWrite - bucketStart;
-        // A non-empty bucket always starts below the 128-source capacity. An
-        // empty trailing bucket may start at 128, where the stored start is
-        // deliberately irrelevant because its count is zero.
-        out.triggerBucketStart[bucket] = bucketCount == 0U
-            ? 0U
-            : static_cast<uint8_t>(bucketStart);
-        out.triggerBucketCount[bucket] = static_cast<uint8_t>(bucketCount);
     }
+    out.triggerBucketOffset[PROJECT_MODULATION_TRIGGER_BUCKET_COUNT] =
+        static_cast<uint8_t>(triggerRouteWrite);
     out.triggerRouteCount = triggerRouteWrite;
 
     // Insert logical destinations in stable-address order.

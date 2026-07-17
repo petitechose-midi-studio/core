@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -6,9 +7,13 @@
 
 #include <oc/api/MidiAPI.hpp>
 #include <oc/interface/IMidi.hpp>
+#include <oc/time/Time.hpp>
 #include <oc/type/Result.hpp>
 
+#include "../../src/handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "../../src/handler/macro/MacroAutomationPlaybackService.hpp"
+#include "../../src/handler/macro/MacroMidiCcRuntimeAdapter.hpp"
+#include "../../src/sequencer/RealtimeMidiQueue.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/ProjectControlTestUtils.hpp"
@@ -48,6 +53,98 @@ public:
     uint8_t lastChannel = 0;
     uint8_t lastCc = 0;
     uint8_t lastValue = 0;
+};
+
+uint32_t g_now_ms = 0U;
+
+uint32_t mockTimeMs() {
+    return g_now_ms;
+}
+
+/** Drives the playback service through the same clock/frame/queue path as Core. */
+class PlaybackHarness {
+public:
+    PlaybackHarness(
+        core::state::CoreState& state,
+        core::handler::MacroPerformanceDomainServices services,
+        oc::api::MidiAPI& midi,
+        const oc::state::Signal<uint32_t>* runtimeOwnerRevision = nullptr
+    )
+        : state_(state)
+        , midi_(midi)
+        , coordinator_(queue_)
+        , adapter_(
+              core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
+                  state.pages,
+                  state.macroUi,
+              },
+              services,
+              coordinator_
+          )
+        , playback_(
+              core::handler::MacroAutomationPlaybackService::StateRefs{
+                  state.pages,
+                  state.macroUi,
+                  runtimeOwnerRevision,
+              },
+              services,
+              adapter_
+          ) {}
+
+    void update(uint32_t nowMs) {
+        const bool playing = state_.statusBar.playing.get();
+        if (clock_initialized_) {
+            if (playing && was_playing_) {
+                elapsed_playing_ms_ += nowMs - last_now_ms_;
+            }
+        } else {
+            clock_initialized_ = true;
+        }
+        last_now_ms_ = nowMs;
+        was_playing_ = playing;
+        g_now_ms = nowMs;
+
+        const float tempo = std::max(1.0f, state_.statusBar.tempo.get());
+        const uint32_t sequencerTick = static_cast<uint32_t>(
+            static_cast<double>(elapsed_playing_ms_) * tempo * 24.0 /
+            60000.0
+        );
+        const uint32_t tickPeriodUs = static_cast<uint32_t>(
+            60000000.0 / (static_cast<double>(tempo) * 24.0) + 0.5
+        );
+        coordinator_.publishProjectControlClock(
+            sequencerTick,
+            playing,
+            elapsed_playing_ms_ * 1000U,
+            tickPeriodUs
+        );
+        playback_.update(nowMs);
+
+        deadline_us_ += 1000U;
+        assert(coordinator_.resolveLive(deadline_us_).ok());
+        queue_.drainDue(midi_, deadline_us_, UINT32_MAX);
+    }
+
+    void reset() {
+        playback_.reset();
+        clock_initialized_ = false;
+        was_playing_ = false;
+        last_now_ms_ = 0U;
+        elapsed_playing_ms_ = 0U;
+    }
+
+private:
+    core::state::CoreState& state_;
+    oc::api::MidiAPI& midi_;
+    core::sequencer::RealtimeMidiQueue queue_{};
+    core::handler::MidiCcGlobalFrameCoordinator coordinator_;
+    core::handler::MacroMidiCcRuntimeAdapter adapter_;
+    core::handler::MacroAutomationPlaybackService playback_;
+    bool clock_initialized_ = false;
+    bool was_playing_ = false;
+    uint32_t last_now_ms_ = 0U;
+    uint32_t elapsed_playing_ms_ = 0U;
+    uint32_t deadline_us_ = 0U;
 };
 
 void configureAutomation(core::state::CoreState& state) {
@@ -126,15 +223,11 @@ void test_runtime_projection_publication_is_atomic() {
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-            &state.macroRuntimeOwnerRevision,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
-        midi
+        midi,
+        &state.macroRuntimeOwnerRevision
     );
 
     const uint32_t revisionBefore =
@@ -190,12 +283,8 @@ void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
         midi
     );
@@ -229,12 +318,8 @@ void test_stopped_transport_publishes_static_owner_without_playing_curve() {
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
         midi
     );
@@ -261,12 +346,8 @@ void test_update_period_remains_bounded_across_millisecond_rollover() {
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
         midi
     );
@@ -296,12 +377,8 @@ void test_manual_override_replaces_automation_base_until_resume() {
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         services,
         midi
     );
@@ -342,12 +419,8 @@ void test_modulation_only_playback_and_depth_zero_remain_computed() {
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         services,
         midi
     );
@@ -367,7 +440,7 @@ void test_modulation_only_playback_and_depth_zero_remain_computed() {
         state.pages.control,
         address
     );
-    const uint16_t pointCount = slot.legacy.modulation.pointCount;
+    const uint16_t pointCount = slot.compatibility.modulation.pointCount;
     assert(core::state::modulation::setProjectControlModulationAmount(
         state.pages.control,
         address,
@@ -378,7 +451,7 @@ void test_modulation_only_playback_and_depth_zero_remain_computed() {
     assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
     assert(services.computedSourcePlaybackActiveFor(0));
     slot = test_support::project_control::readSlot(state.pages.control, address);
-    assert(slot.legacy.modulation.pointCount == pointCount);
+    assert(slot.compatibility.modulation.pointCount == pointCount);
 
     assert(core::state::modulation::setProjectControlModulationAmount(
         state.pages.control,
@@ -389,7 +462,7 @@ void test_modulation_only_playback_and_depth_zero_remain_computed() {
     assert(midiTransport.ccCount == 3);
     assert(midiTransport.lastValue >= 50 && midiTransport.lastValue <= 52);
     slot = test_support::project_control::readSlot(state.pages.control, address);
-    assert(slot.legacy.modulation.pointCount == pointCount);
+    assert(slot.compatibility.modulation.pointCount == pointCount);
 
     std::cout << "[PASS] test_modulation_only_playback_and_depth_zero_remain_computed\n";
 }
@@ -408,12 +481,8 @@ void test_recording_keeps_modulation_audible_and_active_after_commit() {
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         services,
         midi
     );
@@ -438,8 +507,8 @@ void test_recording_keeps_modulation_audible_and_active_after_commit() {
         state.pages.control,
         {state.pages.currentActiveTrack(), state.pages.currentActivePage(), 0}
     );
-    assert(core::state::macro::macroCurvePlaybackActive(slot.legacy.modulation));
-    assert(slot.legacy.modulation.playbackState ==
+    assert(core::state::macro::macroCurvePlaybackActive(slot.compatibility.modulation));
+    assert(slot.compatibility.modulation.playbackState ==
            core::state::macro::MacroCurvePlaybackState::ACTIVE);
 
     std::cout << "[PASS] recording captures raw Base while Modulation stays audible\n";
@@ -457,12 +526,8 @@ void test_reactivating_slot_or_lane_resends_value_superseded_while_inactive() {
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
         midi
     );
@@ -536,15 +601,11 @@ void test_runtime_owner_epoch_is_independent_from_navigation_and_transport() {
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-            &state.macroRuntimeOwnerRevision,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
-        midi
+        midi,
+        &state.macroRuntimeOwnerRevision
     );
 
     playback.update(1000);
@@ -584,7 +645,9 @@ void test_runtime_owner_epoch_is_independent_from_navigation_and_transport() {
 
     state.statusBar.playing.set(true);
     playback.update(4000);
-    assert(midiTransport.ccCount == beforeStop + 1);
+    // The production coordinator retains physical output ownership across a
+    // transport pause, so restarting on the same value must not resend MIDI.
+    assert(midiTransport.ccCount == beforeStop);
     assert(midiTransport.lastValue >= 31 && midiTransport.lastValue <= 32);
     playback.update(4750);
     assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
@@ -620,15 +683,11 @@ void test_runtime_owner_activation_preserves_manual_ownership() {
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-            &state.macroRuntimeOwnerRevision,
-        },
+    PlaybackHarness playback(
+        state,
         services,
-        midi
+        midi,
+        &state.macroRuntimeOwnerRevision
     );
 
     assert(services.takeManualControl(0, 0.42f));
@@ -647,6 +706,7 @@ void test_runtime_owner_activation_preserves_manual_ownership() {
 }  // namespace
 
 int main() {
+    oc::time::setProvider(mockTimeMs);
     test_runtime_projection_publication_is_atomic();
     test_playback_updates_runtime_and_sends_cc_when_value_changes();
     test_stopped_transport_publishes_static_owner_without_playing_curve();

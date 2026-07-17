@@ -444,18 +444,6 @@ FLASHMEM bool macroModulationOriginValid(MacroModulationOrigin origin) {
     }
 }
 
-FLASHMEM void macroAutomationNormalizeLegacyPlayback(
-    MacroAutomationSlotState& state
-) {
-    // SUSPENDED_AFTER_RECORD belonged to the former coupled-source lifecycle.
-    // A stored Modulation loop is now interrupted only by an explicit user
-    // action, so every restoration boundary upgrades this value to ACTIVE.
-    if (state.modulation.playbackState ==
-        MacroCurvePlaybackState::SUSPENDED_AFTER_RECORD) {
-        state.modulation.playbackState = MacroCurvePlaybackState::ACTIVE;
-    }
-}
-
 FLASHMEM bool macroAutomationCurveLifecycleValid(
     const MacroAutomationCurveRef& curve
 ) {

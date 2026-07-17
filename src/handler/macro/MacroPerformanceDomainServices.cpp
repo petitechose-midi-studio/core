@@ -208,7 +208,7 @@ void MacroPerformanceDomainServices::setResolvedValue(
             slot
         ) && slot.modulationStored) {
         depth = core::state::macro::macroAutomationClamp01(
-            slot.legacy.modulationDepth
+            slot.compatibility.modulationDepth
         );
     }
     const auto address = activeAddress_(index);
@@ -238,9 +238,9 @@ MacroPerformanceDomainServices::resolveManualValue(uint8_t index, float value) c
         out.automationStored = slot.automationStored;
         out.modulationStored = slot.modulationStored;
         out.modulationPausedDepthZero =
-            slot.modulationEnabled && slot.legacy.modulationDepth <= 0.0f;
+            slot.modulationEnabled && slot.compatibility.modulationDepth <= 0.0f;
         out.modulationActive =
-            slot.modulationEnabled && slot.legacy.modulationDepth > 0.0f;
+            slot.modulationEnabled && slot.compatibility.modulationDepth > 0.0f;
     }
     const auto& projection = macro_ui_->runtimeProjections[index];
     if (out.modulationActive && projection.valid && projection.modulationActive) {
@@ -274,7 +274,7 @@ FLASHMEM bool MacroPerformanceDomainServices::beginAutomationRecording(
             existing
         ) && existing.automationStored) {
         recording.preserveDuration = true;
-        recording.targetDurationTicks = existing.legacy.automation.durationTicks;
+        recording.targetDurationTicks = existing.compatibility.automation.durationTicks;
     }
     // Recording owns the absolute source for the duration of the gesture.
     // Modulation remains audible and is never suspended by recording.

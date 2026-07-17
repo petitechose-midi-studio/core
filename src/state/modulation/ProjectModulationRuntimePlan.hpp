@@ -92,6 +92,8 @@ inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_CHANNEL_BUCKET_COUNT = 17U;
 inline constexpr uint16_t PROJECT_MODULATION_TRIGGER_BUCKET_COUNT =
     static_cast<uint16_t>(PROJECT_MODULATION_TRACK_COUNT) *
     PROJECT_MODULATION_TRIGGER_CHANNEL_BUCKET_COUNT;
+inline constexpr uint16_t PROJECT_MODULATION_TRIGGER_BUCKET_OFFSET_COUNT =
+    PROJECT_MODULATION_TRIGGER_BUCKET_COUNT + 1U;
 
 [[nodiscard]] constexpr uint16_t projectModulationTriggerBucketIndex(
     const ModulationTriggerRef& trigger
@@ -144,10 +146,9 @@ struct ProjectModulationRuntimePlan {
      * only sources that can consume one incoming edge instead of rescanning
      * the complete 256-event frame for every source.
      */
-    std::array<uint8_t, PROJECT_MODULATION_TRIGGER_BUCKET_COUNT>
-        triggerBucketStart{};
-    std::array<uint8_t, PROJECT_MODULATION_TRIGGER_BUCKET_COUNT>
-        triggerBucketCount{};
+    /** Prefix offsets into triggerSourceOrder; range N is [N, N + 1). */
+    std::array<uint8_t, PROJECT_MODULATION_TRIGGER_BUCKET_OFFSET_COUNT>
+        triggerBucketOffset{};
     std::array<uint8_t, PROJECT_MODULATOR_CAPACITY> triggerSourceOrder{};
     std::array<
         ProjectModulationRuntimeBinding,
@@ -230,7 +231,8 @@ static_assert(sizeof(ProjectModulationRuntimeSourceTraits) == 3U);
 static_assert(sizeof(ProjectModulationRuntimeBinding) == 16U);
 static_assert(sizeof(ProjectModulationRuntimeDestination) == 24U);
 static_assert(PROJECT_MODULATION_TRIGGER_BUCKET_COUNT == 272U);
-static_assert(sizeof(ProjectModulationRuntimePlan) == 16564U);
+static_assert(PROJECT_MODULATION_TRIGGER_BUCKET_OFFSET_COUNT == 273U);
+static_assert(sizeof(ProjectModulationRuntimePlan) == 16296U);
 static_assert(std::is_trivially_copyable_v<ProjectModulationRuntimePlan>);
 
 }  // namespace core::state::modulation
