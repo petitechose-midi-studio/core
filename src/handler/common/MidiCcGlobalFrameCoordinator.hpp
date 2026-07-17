@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -57,6 +58,8 @@ struct MidiCcGlobalFrameDiagnostics {
     uint32_t resolvedLiveFrameCount = 0;
     uint32_t queueRejectedFrameCount = 0;
     uint32_t pendingRemovalRetryCount = 0;
+    uint32_t capturedProjectTriggerEventCount = 0;
+    uint32_t projectTriggerEventOverflowCount = 0;
 };
 
 /**
@@ -170,6 +173,17 @@ public:
     [[nodiscard]] bool needsLiveResolution() const;
     MidiCcGlobalFrameResult resolveLive(uint32_t deadlineUs);
 
+    /** True when physically dispatched Note edges await Project evaluation. */
+    [[nodiscard]] bool hasPendingProjectModulationTriggers() const;
+
+    /**
+     * Single-consumer drain into caller-owned EXTMEM scratch. Events retain
+     * physical dispatch order and are consumed exactly once.
+     */
+    uint16_t drainProjectModulationTriggers(
+        core::state::modulation::ProjectModulationTriggerFrame& out
+    );
+
     /**
      * A transport stop deliberately drops pending realtime events without
      * changing the authored frame or the last physically dispatched values.
@@ -212,6 +226,9 @@ private:
     );
     static uint8_t trackForAuthor_(
         const core::state::shared::MidiCcAuthor& author
+    );
+    void enqueueProjectModulationTrigger_(
+        const core::state::modulation::ProjectModulationTriggerEvent& event
     );
 
     void onRealtimeMidiEventEnqueued(
@@ -278,6 +295,16 @@ private:
     uint32_t control_tick_started_us_ = 0;
     uint32_t last_control_sequencer_tick_ = 0;
     bool control_clock_initialized_ = false;
+    static constexpr uint16_t PROJECT_TRIGGER_RING_CAPACITY =
+        core::state::modulation::PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY;
+    static constexpr uint16_t PROJECT_TRIGGER_RING_MASK =
+        PROJECT_TRIGGER_RING_CAPACITY - 1U;
+    std::array<
+        core::state::modulation::ProjectModulationTriggerEvent,
+        PROJECT_TRIGGER_RING_CAPACITY
+    > project_trigger_events_{};
+    std::atomic<uint16_t> project_trigger_write_sequence_{0U};
+    std::atomic<uint16_t> project_trigger_read_sequence_{0U};
     MidiCcGlobalFrameDiagnostics diagnostics_{};
 };
 
@@ -286,6 +313,12 @@ static_assert(!std::is_copy_constructible_v<
               MidiCcGlobalFrameCoordinator::TelemetryReadView>);
 static_assert(std::is_nothrow_move_constructible_v<
               MidiCcGlobalFrameCoordinator::TelemetryReadView>);
+static_assert(
+    (core::state::modulation::PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY &
+     (core::state::modulation::PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY - 1U)) ==
+    0U
+);
+static_assert(std::atomic<uint16_t>::is_always_lock_free);
 static_assert(sizeof(MidiCcGlobalFrameCoordinator) <= 48U * 1024U);
 
 }  // namespace core::handler

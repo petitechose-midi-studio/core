@@ -11,6 +11,7 @@ namespace core::validation::project {
 enum class ProjectModulationBenchmarkCase : uint8_t {
     LFO = 0,
     RECORDED_SHAPE,
+    ADSR,
 };
 
 inline constexpr uint32_t PROJECT_MODULATION_BENCHMARK_WARMUP_FRAMES = 64U;
@@ -34,6 +35,7 @@ struct ProjectModulationBenchmarkWorkspace {
         core::state::modulation::ProjectLogicalMacroBaseInput,
         core::state::modulation::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY
     > bases{};
+    core::state::modulation::ProjectModulationTriggerFrame triggers{};
 };
 
 struct ProjectModulationBenchmarkResult {
@@ -74,7 +76,7 @@ struct ProjectModulationBenchmarkResult {
     uint32_t measuredFrames = PROJECT_MODULATION_BENCHMARK_MEASURED_FRAMES
 );
 
-static_assert(sizeof(ProjectModulationBenchmarkWorkspace) == 183620U);
+static_assert(sizeof(ProjectModulationBenchmarkWorkspace) == 185160U);
 static_assert(std::is_trivially_copyable_v<ProjectModulationBenchmarkWorkspace>);
 
 }  // namespace core::validation::project

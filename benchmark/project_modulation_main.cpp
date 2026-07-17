@@ -10,7 +10,13 @@ namespace {
 EXTMEM validation::ProjectModulationBenchmarkWorkspace benchmarkWorkspace;
 validation::ProjectModulationBenchmarkResult lfoResult{};
 validation::ProjectModulationBenchmarkResult recordedShapeResult{};
+validation::ProjectModulationBenchmarkResult adsrResult{};
 bool benchmarkComplete = false;
+
+bool allCasesWithinBudget() {
+    return lfoResult.withinBudget() && recordedShapeResult.withinBudget() &&
+        adsrResult.withinBudget();
+}
 
 void printResult(const validation::ProjectModulationBenchmarkResult& result) {
     Serial.printf(
@@ -58,12 +64,12 @@ void setup() {
         validation::ProjectModulationBenchmarkCase::RECORDED_SHAPE
     );
     printResult(recordedShapeResult);
+    adsrResult = runCase(validation::ProjectModulationBenchmarkCase::ADSR);
+    printResult(adsrResult);
     benchmarkComplete = true;
     Serial.printf(
         "[modulation-benchmark] done result=%s\n",
-        lfoResult.withinBudget() && recordedShapeResult.withinBudget()
-            ? "PASS"
-            : "FAIL"
+        allCasesWithinBudget() ? "PASS" : "FAIL"
     );
 }
 
@@ -78,11 +84,10 @@ void loop() {
     lastHeartbeatMs = nowMs;
     printResult(lfoResult);
     printResult(recordedShapeResult);
+    printResult(adsrResult);
     Serial.printf(
         "[modulation-benchmark] heartbeat result=%s\n",
-        lfoResult.withinBudget() && recordedShapeResult.withinBudget()
-            ? "PASS"
-            : "FAIL"
+        allCasesWithinBudget() ? "PASS" : "FAIL"
     );
     delay(25);
 }

@@ -734,6 +734,23 @@ void MidiCcGlobalFrameCoordinator::onRealtimeMidiEventRemoved(
 void MidiCcGlobalFrameCoordinator::onRealtimeMidiEventDispatched(
     const RealtimeMidiEvent& event
 ) {
+    if (event.type == RealtimeMidiEventType::NoteOn ||
+        event.type == RealtimeMidiEventType::NoteOff) {
+        const bool gateOn = event.type == RealtimeMidiEventType::NoteOn &&
+            event.velocity > 0U;
+        enqueueProjectModulationTrigger_({
+            .trigger = {
+                core::state::modulation::ModulationTriggerKind::TRACK_NOTE,
+                event.trackIndex,
+                event.channel,
+                event.note,
+            },
+            .edge = gateOn
+                ? core::state::modulation::ProjectModulationTriggerEdge::GATE_ON
+                : core::state::modulation::ProjectModulationTriggerEdge::GATE_OFF,
+            .velocity = event.velocity,
+        });
+    }
     if (event.type != RealtimeMidiEventType::ControlChange) return;
     const DesiredValue dispatched{
         .identity = MidiCcDestinationIdentity{
@@ -766,6 +783,74 @@ void MidiCcGlobalFrameCoordinator::onRealtimeMidiEventDispatched(
     }
 }
 
+void MidiCcGlobalFrameCoordinator::enqueueProjectModulationTrigger_(
+    const core::state::modulation::ProjectModulationTriggerEvent& event
+) {
+    const uint16_t write = project_trigger_write_sequence_.load(
+        std::memory_order_relaxed
+    );
+    const uint16_t read = project_trigger_read_sequence_.load(
+        std::memory_order_acquire
+    );
+    if (static_cast<uint16_t>(write - read) >= PROJECT_TRIGGER_RING_CAPACITY) {
+        diagnostics_.projectTriggerEventOverflowCount =
+            core::sequencer::realtimeMidiSaturatingAdd(
+                diagnostics_.projectTriggerEventOverflowCount,
+                1U
+            );
+        return;
+    }
+    project_trigger_events_[write & PROJECT_TRIGGER_RING_MASK] = event;
+    project_trigger_write_sequence_.store(
+        static_cast<uint16_t>(write + 1U),
+        std::memory_order_release
+    );
+    diagnostics_.capturedProjectTriggerEventCount =
+        core::sequencer::realtimeMidiSaturatingAdd(
+            diagnostics_.capturedProjectTriggerEventCount,
+            1U
+        );
+}
+
+bool MidiCcGlobalFrameCoordinator::hasPendingProjectModulationTriggers() const {
+    const uint16_t write = project_trigger_write_sequence_.load(
+        std::memory_order_acquire
+    );
+    const uint16_t read = project_trigger_read_sequence_.load(
+        std::memory_order_relaxed
+    );
+    return write != read;
+}
+
+uint16_t MidiCcGlobalFrameCoordinator::drainProjectModulationTriggers(
+    core::state::modulation::ProjectModulationTriggerFrame& out
+) {
+    out.count = 0U;
+    out.reserved = 0U;
+    const uint16_t read = project_trigger_read_sequence_.load(
+        std::memory_order_relaxed
+    );
+    const uint16_t write = project_trigger_write_sequence_.load(
+        std::memory_order_acquire
+    );
+    const uint16_t available = static_cast<uint16_t>(write - read);
+    const uint16_t count = std::min<uint16_t>(
+        available,
+        static_cast<uint16_t>(out.events.size())
+    );
+    for (uint16_t index = 0U; index < count; ++index) {
+        out.events[index] = project_trigger_events_[
+            static_cast<uint16_t>(read + index) & PROJECT_TRIGGER_RING_MASK
+        ];
+    }
+    out.count = count;
+    project_trigger_read_sequence_.store(
+        static_cast<uint16_t>(read + count),
+        std::memory_order_release
+    );
+    return count;
+}
+
 FLASHMEM void MidiCcGlobalFrameCoordinator::resetProject() {
     if (lifecycle_attached_) {
         replacing_pending_controls_ = true;
@@ -796,6 +881,9 @@ FLASHMEM void MidiCcGlobalFrameCoordinator::resetProject() {
     control_tick_started_us_ = 0;
     last_control_sequencer_tick_ = 0;
     control_clock_initialized_ = false;
+    project_trigger_events_ = {};
+    project_trigger_write_sequence_.store(0U, std::memory_order_relaxed);
+    project_trigger_read_sequence_.store(0U, std::memory_order_relaxed);
     diagnostics_ = {};
 }
 

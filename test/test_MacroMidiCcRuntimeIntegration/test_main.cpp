@@ -30,6 +30,7 @@
 #include "state/StatusBarState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "support/InputTestHardware.hpp"
 #include "support/ProjectControlTestUtils.hpp"
@@ -282,11 +283,120 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
     std::cout << "[PASS] test_manual_and_playback_share_one_resolved_destination_cache\n";
 }
 
+void test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr() {
+    namespace mod = core::state::modulation;
+    Harness h;
+    h.pages.control.clear();
+    h.pages.setMacroSlotActive(1U, false);
+    h.pages.activePageData().values[0] = 0.5f;
+
+    mod::ModulatorAdsrDraft source{};
+    source.name = "Gate";
+    source.reach.kind = mod::ModulatorReachKind::PROJECT;
+    source.parameters.attack = 0U;
+    source.parameters.decay = 0U;
+    source.parameters.sustainQ15 = 8192U;
+    source.parameters.release = 0U;
+    source.parameters.curve = mod::ModulatorAdsrCurve::LINEAR;
+    const auto created = mod::createAdsrModulator(
+        h.pages.control.authored.modulation,
+        source
+    );
+    assert(created.changed());
+
+    mod::ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination = {
+        mod::ModulationDestinationKind::MACRO_SLOT,
+        0U,
+        0U,
+        0U,
+    };
+    binding.amountQ15 = 32767;
+    binding.application = mod::ModulationApplication::NATURAL;
+    assert(mod::addProjectModulationBinding(
+        h.pages.control.authored.modulation,
+        binding
+    ).changed());
+
+    mod::ModulationTriggerDraft trigger{};
+    trigger.sourceId = created.sourceId;
+    trigger.trigger = {
+        mod::ModulationTriggerKind::TRACK_NOTE,
+        0U,
+        mod::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
+        mod::PROJECT_MODULATION_TRIGGER_ANY_NOTE,
+    };
+    assert(mod::addProjectModulationTrigger(
+        h.pages.control.authored.modulation,
+        trigger
+    ).changed());
+    h.pages.control.markAuthoredMutation();
+
+    g_now_ms = 1000U;
+    h.coordinator.publishProjectControlClock(0U, true, 1000000U, 41667U);
+    h.playback.update(g_now_ms);
+    assert(h.resolveAndDrain(1000000U).ok());
+    assert(h.transport.count == 1U);
+    assert(h.transport.messages[0].value == 64U);
+
+    const core::sequencer::RealtimeMidiEvent noteOn{
+        .deadlineUs = 1001000U,
+        .type = core::sequencer::RealtimeMidiEventType::NoteOn,
+        .channel = 9U,
+        .note = 67U,
+        .velocity = 111U,
+        .trackIndex = 0U,
+    };
+    assert(h.queue.push(noteOn));
+    g_now_ms = 1001U;
+    h.queue.drainDue(h.midi, noteOn.deadlineUs, UINT32_MAX);
+    assert(h.coordinator.hasPendingProjectModulationTriggers());
+    h.coordinator.publishProjectControlClock(
+        0U,
+        true,
+        noteOn.deadlineUs,
+        41667U
+    );
+    h.playback.update(g_now_ms);
+    assert(!h.coordinator.hasPendingProjectModulationTriggers());
+    assert(h.resolveAndDrain(noteOn.deadlineUs).ok());
+    assert(h.transport.count == 2U);
+    assert(h.transport.messages[1].value == 95U);
+    assert(h.pages.control.runtime.sources[0].payload.adsr.heldNoteCount == 1U);
+
+    const core::sequencer::RealtimeMidiEvent noteOff{
+        .deadlineUs = 1002000U,
+        .type = core::sequencer::RealtimeMidiEventType::NoteOff,
+        .channel = 9U,
+        .note = 67U,
+        .velocity = 0U,
+        .trackIndex = 0U,
+    };
+    assert(h.queue.push(noteOff));
+    g_now_ms = 1002U;
+    h.queue.drainDue(h.midi, noteOff.deadlineUs, UINT32_MAX);
+    h.coordinator.publishProjectControlClock(
+        0U,
+        true,
+        noteOff.deadlineUs,
+        41667U
+    );
+    h.playback.update(g_now_ms);
+    assert(h.resolveAndDrain(noteOff.deadlineUs).ok());
+    assert(h.transport.count == 3U);
+    assert(h.transport.messages[2].value == 64U);
+    assert(h.pages.control.runtime.sources[0].payload.adsr.heldNoteCount == 0U);
+
+    std::cout << "[PASS] dispatched Note edges drive ADSR without 16 ms latency\n";
+}
+
 }  // namespace
 
 int main() {
     oc::time::setProvider(mockTimeMs);
     test_manual_and_playback_share_one_resolved_destination_cache();
+    test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr();
     std::cout << "\nAll MacroMidiCcRuntimeIntegration tests passed.\n";
     return 0;
 }

@@ -68,6 +68,54 @@ mod::ModulatorId addLfo(
     return result.sourceId;
 }
 
+mod::ModulatorId addAdsr(
+    mod::ProjectControlDomainState& domain,
+    const mod::ModulatorAdsrParameters& parameters,
+    uint8_t track = 2U,
+    uint8_t channel = mod::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
+    uint8_t note = mod::PROJECT_MODULATION_TRIGGER_ANY_NOTE
+) {
+    mod::ModulatorAdsrDraft draft{};
+    draft.name = "ADSR";
+    draft.reach = projectReach();
+    draft.parameters = parameters;
+    const auto created = mod::createAdsrModulator(domain.modulation, draft);
+    assert(created.changed());
+
+    mod::ModulationTriggerDraft trigger{};
+    trigger.sourceId = created.sourceId;
+    trigger.trigger = {
+        mod::ModulationTriggerKind::TRACK_NOTE,
+        track,
+        channel,
+        note,
+    };
+    assert(mod::addProjectModulationTrigger(
+        domain.modulation,
+        trigger
+    ).changed());
+    return created.sourceId;
+}
+
+mod::ProjectModulationTriggerEvent noteEdge(
+    uint8_t track,
+    uint8_t channel,
+    uint8_t note,
+    mod::ProjectModulationTriggerEdge edge,
+    uint8_t velocity = 100U
+) {
+    return {
+        .trigger = {
+            mod::ModulationTriggerKind::TRACK_NOTE,
+            track,
+            channel,
+            note,
+        },
+        .edge = edge,
+        .velocity = velocity,
+    };
+}
+
 mod::ModulationBindingId addBinding(
     mod::ProjectControlDomainState& domain,
     mod::ModulatorId source,
@@ -224,6 +272,233 @@ void testCanonicalAdsrProgressCurves() {
         mod::ModulatorAdsrCurve::SMOOTH,
         2.0f
     ), 1.0f));
+}
+
+void testFreeAdsrWildcardRetriggerAndReleaseFromCurrentLevel() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    mod::ModulatorAdsrParameters parameters{};
+    parameters.attack = 100U;
+    parameters.decay = 100U;
+    parameters.sustainQ15 = 16384U;
+    parameters.release = 100U;
+    parameters.timing = mod::ModulatorTimingMode::FREE;
+    parameters.retrigger = mod::ModulatorAdsrRetriggerMode::RETRIGGER;
+    parameters.curve = mod::ModulatorAdsrCurve::LINEAR;
+    const auto source = addAdsr(*domain, parameters);
+    addBinding(*domain, source, destination(0U, 0U, 0U));
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectControlRuntimePlan(
+        *domain,
+        activeContext(),
+        *plan
+    ).compiled());
+    RuntimeFixture runtime;
+    runtime.activate(*plan);
+
+    mod::ProjectControlTimeSnapshot time{};
+    runtime.triggers.count = 2U;
+    runtime.triggers.events[0] = noteEdge(
+        3U,
+        7U,
+        60U,
+        mod::ProjectModulationTriggerEdge::GATE_ON
+    );
+    runtime.triggers.events[1] = noteEdge(
+        2U,
+        7U,
+        60U,
+        mod::ProjectModulationTriggerEdge::GATE_ON
+    );
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.0f));
+    assert(runtime.state->sources[0].payload.adsr.heldNoteCount == 1U);
+
+    time.monotonicMs = 50U;
+    runtime.triggers.count = 1U;
+    runtime.triggers.events[0] = noteEdge(
+        2U,
+        12U,
+        61U,
+        mod::ProjectModulationTriggerEdge::GATE_ON
+    );
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.5f));
+    assert(runtime.state->sources[0].payload.adsr.heldNoteCount == 2U);
+
+    time.monotonicMs = 75U;
+    runtime.triggers.count = 0U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.625f));
+
+    runtime.triggers.count = 1U;
+    runtime.triggers.events[0] = noteEdge(
+        2U,
+        7U,
+        60U,
+        mod::ProjectModulationTriggerEdge::GATE_OFF,
+        0U
+    );
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(runtime.state->sources[0].payload.adsr.heldNoteCount == 1U);
+    assert(runtime.state->sources[0].payload.adsr.stage ==
+           mod::ProjectModulationAdsrStage::ATTACK);
+
+    runtime.triggers.events[0] = noteEdge(
+        2U,
+        12U,
+        61U,
+        mod::ProjectModulationTriggerEdge::GATE_OFF,
+        0U
+    );
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(runtime.state->sources[0].payload.adsr.heldNoteCount == 0U);
+    assert(runtime.state->sources[0].payload.adsr.stage ==
+           mod::ProjectModulationAdsrStage::RELEASE);
+    assert(near(runtime.frame->sourceValues[0], 0.625f));
+
+    runtime.triggers.count = 0U;
+    time.monotonicMs = 125U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.3125f));
+    time.monotonicMs = 175U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.0f));
+    assert(runtime.state->sources[0].payload.adsr.stage ==
+           mod::ProjectModulationAdsrStage::IDLE);
+}
+
+void testAdsrLegatoAndZeroDurationTransitions() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    mod::ModulatorAdsrParameters parameters{};
+    parameters.attack = 100U;
+    parameters.decay = 0U;
+    parameters.sustainQ15 = 16384U;
+    parameters.release = 0U;
+    parameters.timing = mod::ModulatorTimingMode::FREE;
+    parameters.retrigger = mod::ModulatorAdsrRetriggerMode::LEGATO;
+    parameters.curve = mod::ModulatorAdsrCurve::LINEAR;
+    const auto source = addAdsr(*domain, parameters, 1U, 4U, 64U);
+    addBinding(*domain, source, destination(0U, 0U, 0U));
+
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectControlRuntimePlan(
+        *domain,
+        activeContext(),
+        *plan
+    ).compiled());
+    RuntimeFixture runtime;
+    runtime.activate(*plan);
+    mod::ProjectControlTimeSnapshot time{};
+
+    runtime.triggers.count = 1U;
+    runtime.triggers.events[0] = noteEdge(
+        1U,
+        4U,
+        64U,
+        mod::ProjectModulationTriggerEdge::GATE_ON
+    );
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    time.monotonicMs = 50U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.5f));
+    time.monotonicMs = 75U;
+    runtime.triggers.count = 0U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.75f));
+
+    runtime.triggers.count = 2U;
+    runtime.triggers.events[0] = noteEdge(
+        1U,
+        4U,
+        64U,
+        mod::ProjectModulationTriggerEdge::GATE_OFF,
+        0U
+    );
+    runtime.triggers.events[1] = runtime.triggers.events[0];
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.0f));
+
+    auto zeroDomain = std::make_unique<mod::ProjectControlDomainState>();
+    parameters.attack = 0U;
+    parameters.decay = 0U;
+    parameters.release = 0U;
+    parameters.sustainQ15 = 8192U;
+    const auto zeroSource = addAdsr(*zeroDomain, parameters, 0U, 0U, 60U);
+    addBinding(*zeroDomain, zeroSource, destination(0U, 0U, 0U));
+    auto zeroPlan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectControlRuntimePlan(
+        *zeroDomain,
+        activeContext(),
+        *zeroPlan
+    ).compiled());
+    RuntimeFixture zeroRuntime;
+    zeroRuntime.activate(*zeroPlan);
+    zeroRuntime.triggers.count = 1U;
+    zeroRuntime.triggers.events[0] = noteEdge(
+        0U,
+        0U,
+        60U,
+        mod::ProjectModulationTriggerEdge::GATE_ON
+    );
+    time = {};
+    assert(zeroRuntime.evaluate(*zeroPlan, zeroDomain->curves, time).evaluated());
+    assert(near(zeroRuntime.frame->sourceValues[0], 0.25f));
+    zeroRuntime.triggers.events[0].edge =
+        mod::ProjectModulationTriggerEdge::GATE_OFF;
+    assert(zeroRuntime.evaluate(*zeroPlan, zeroDomain->curves, time).evaluated());
+    assert(near(zeroRuntime.frame->sourceValues[0], 0.0f));
+}
+
+void testSyncAdsrUsesFractionalMusicalTime() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    mod::ModulatorAdsrParameters parameters{};
+    parameters.attack = 96U;
+    parameters.decay = 0U;
+    parameters.sustainQ15 = 16384U;
+    parameters.release = 96U;
+    parameters.timing = mod::ModulatorTimingMode::SYNC;
+    parameters.retrigger = mod::ModulatorAdsrRetriggerMode::RETRIGGER;
+    parameters.curve = mod::ModulatorAdsrCurve::LINEAR;
+    const auto source = addAdsr(*domain, parameters, 0U, 0U, 60U);
+    addBinding(*domain, source, destination(0U, 0U, 0U));
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectControlRuntimePlan(
+        *domain,
+        activeContext(),
+        *plan
+    ).compiled());
+
+    mod::ProjectControlTimeSnapshot time{};
+    time.musicalTick = 10U;
+    time.musicalTickFractionQ16 = 32768U;
+    RuntimeFixture runtime;
+    runtime.activate(*plan, time);
+    runtime.triggers.count = 1U;
+    runtime.triggers.events[0] = noteEdge(
+        0U,
+        0U,
+        60U,
+        mod::ProjectModulationTriggerEdge::GATE_ON
+    );
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+
+    runtime.triggers.count = 0U;
+    time.musicalTick = 58U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.5f));
+
+    runtime.triggers.count = 1U;
+    runtime.triggers.events[0].edge =
+        mod::ProjectModulationTriggerEdge::GATE_OFF;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    runtime.triggers.count = 0U;
+    time.musicalTick = 106U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.25f));
+    time.musicalTick = 154U;
+    assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
+    assert(near(runtime.frame->sourceValues[0], 0.0f));
 }
 
 void testLogicalBaseAutomationManualAndSharedSource() {
@@ -401,15 +676,20 @@ void testSyncFreeTransportAndExplicitRetrigger() {
 
     runtime.triggers.count = 1U;
     runtime.triggers.events[0] = {
-        mod::ModulationTriggerKind::MANUAL,
-        0U,
-        0U,
-        7U,
+        .trigger = {
+            mod::ModulationTriggerKind::MANUAL,
+            0U,
+            0U,
+            7U,
+        },
+        .edge = mod::ProjectModulationTriggerEdge::PULSE,
     };
     time.monotonicMs = 260U;
     assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
     assert(near(runtime.frame->sourceValues[3], -1.0f));
-    runtime.triggers.count = 0U;
+    runtime.triggers.count = 1U;
+    runtime.triggers.events[0].edge =
+        mod::ProjectModulationTriggerEdge::GATE_OFF;
     time.musicalTick = 75U;
     time.monotonicMs = 280U;
     assert(runtime.evaluate(*plan, domain->curves, time).evaluated());
@@ -690,7 +970,10 @@ void testRuntimeStateSurvivesStableIdReordering() {
     RuntimeFixture runtime;
     runtime.activate(*firstPlan);
     runtime.triggers.count = 1U;
-    runtime.triggers.events[0] = trigger.trigger;
+    runtime.triggers.events[0] = {
+        .trigger = trigger.trigger,
+        .edge = mod::ProjectModulationTriggerEdge::PULSE,
+    };
     mod::ProjectControlTimeSnapshot time{};
     time.musicalTick = 40U;
     time.monotonicMs = 40U;
@@ -787,6 +1070,9 @@ void testExactMaximumGraphEvaluatesEverySourceAndBinding() {
 int main() {
     testFiveCanonicalLfoShapes();
     testCanonicalAdsrProgressCurves();
+    testFreeAdsrWildcardRetriggerAndReleaseFromCurrentLevel();
+    testAdsrLegatoAndZeroDurationTransitions();
+    testSyncAdsrUsesFractionalMusicalTime();
     testLogicalBaseAutomationManualAndSharedSource();
     testDestinationScaleAppliesOnceAfterSummingContributions();
     testSyncFreeTransportAndExplicitRetrigger();

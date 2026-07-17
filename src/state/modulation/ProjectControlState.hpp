@@ -53,13 +53,15 @@ struct ProjectModulationFocusState {
  * MacroPagesState embeds this object in its existing EXTMEM allocation. The
  * authored domain replaces the legacy MacroAutomationBankState; the compiled
  * plan and runtime state are derived facts, never a second writable musical
- * authority. The sole per-frame scratch is the 128-source value array.
+ * authority. Per-frame scratch is bounded to the 128-source value array and
+ * one drained trigger frame; both stay in the enclosing EXTMEM owner.
  */
 struct ProjectControlState {
     ProjectControlDomainState authored{};
     ProjectModulationRuntimePlan plan{};
     ProjectControlRuntimeState runtime{};
     std::array<float, PROJECT_MODULATOR_CAPACITY> sourceScratch{};
+    ProjectModulationTriggerFrame triggerScratch{};
     ProjectModulatorAuditionState audition{};
     ProjectModulationFocusState focus{};
     uint32_t authoredRevision = 1;
@@ -80,7 +82,7 @@ struct ProjectControlState {
 static_assert(sizeof(ProjectModulatorAuditionState) == 20U);
 static_assert(sizeof(ProjectModulationFocusEntry) == 12U);
 static_assert(sizeof(ProjectModulationFocusState) == 100U);
-static_assert(sizeof(ProjectControlState) == 182220U);
+static_assert(sizeof(ProjectControlState) == 183760U);
 static_assert(std::is_trivially_copyable_v<ProjectControlState>);
 
 }  // namespace core::state::modulation

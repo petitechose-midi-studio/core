@@ -25,12 +25,31 @@ struct ProjectControlTimeSnapshot {
     uint8_t reserved = 0;
 };
 
+/** Edge observed at the authoritative dispatch boundary. */
+enum class ProjectModulationTriggerEdge : uint8_t {
+    PULSE = 0,
+    GATE_ON,
+    GATE_OFF,
+};
+
+/**
+ * Compact runtime event. Velocity is observed for future generators but V1
+ * ADSR amplitude deliberately remains independent from it.
+ */
+struct ProjectModulationTriggerEvent {
+    ModulationTriggerRef trigger{};
+    ProjectModulationTriggerEdge edge = ProjectModulationTriggerEdge::PULSE;
+    uint8_t velocity = 0U;
+};
+
+inline constexpr uint16_t PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY = 256U;
+
 struct ProjectModulationTriggerFrame {
     uint16_t count = 0;
     uint16_t reserved = 0;
     std::array<
-        ModulationTriggerRef,
-        PROJECT_MODULATION_TRIGGER_CAPACITY
+        ProjectModulationTriggerEvent,
+        PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY
     > events{};
 };
 
@@ -251,6 +270,8 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeFrame(
 );
 
 static_assert(sizeof(ProjectControlTimeSnapshot) == 24U);
+static_assert(sizeof(ProjectModulationTriggerEvent) == 6U);
+static_assert(sizeof(ProjectModulationTriggerFrame) == 1540U);
 static_assert(sizeof(ProjectLogicalMacroBaseInput) == 12U);
 static_assert(sizeof(ProjectLogicalMacroRuntimeValue) == 20U);
 static_assert(sizeof(ProjectModulationRuntimeLfoState) == 12U);
@@ -261,5 +282,6 @@ static_assert(sizeof(ProjectModulationRuntimeSourceState) == 16U);
 static_assert(sizeof(ProjectControlRuntimeState) == 5144U);
 static_assert(std::is_trivially_copyable_v<ProjectControlRuntimeState>);
 static_assert(std::is_trivially_copyable_v<ProjectControlRuntimeFrame>);
+static_assert(std::is_trivially_copyable_v<ProjectModulationTriggerFrame>);
 
 }  // namespace core::state::modulation

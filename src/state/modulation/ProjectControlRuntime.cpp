@@ -13,6 +13,8 @@ namespace {
 
 constexpr float Q15_SCALE = 32767.0f;
 constexpr float Q16_SCALE = 65536.0f;
+constexpr float ADSR_SUSTAIN_SCALE = 32768.0f;
+constexpr uint8_t ADSR_RUNTIME_FLAG_SYNC = 0x01U;
 constexpr uint16_t INVALID_CURVE_RECORD =
     std::numeric_limits<uint16_t>::max();
 
@@ -28,11 +30,22 @@ bool validPlanBounds(const ProjectModulationRuntimePlan& plan) {
 }
 
 bool triggerMatches(const ModulationTriggerRef& configured,
-                    const ModulationTriggerRef& incoming) {
-    return configured.kind == incoming.kind &&
-           configured.track == incoming.track &&
-           configured.channel == incoming.channel &&
-           configured.data == incoming.data;
+                     const ModulationTriggerRef& incoming) {
+    if (configured.kind != incoming.kind ||
+        configured.track != incoming.track) {
+        return false;
+    }
+    if (configured.kind != ModulationTriggerKind::TRACK_NOTE) {
+        return configured.channel == incoming.channel &&
+               configured.data == incoming.data;
+    }
+    const bool channelMatches =
+        configured.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL ||
+        configured.channel == incoming.channel;
+    const bool noteMatches =
+        configured.data == PROJECT_MODULATION_TRIGGER_ANY_NOTE ||
+        configured.data == incoming.data;
+    return channelMatches && noteMatches;
 }
 
 FLASHMEM bool idNeededAfter(const ProjectModulationRuntimePlan& plan,
@@ -57,11 +70,12 @@ FLASHMEM bool bindingIdNeededAfter(const ProjectModulationRuntimePlan& plan,
 
 FLASHMEM ProjectModulationRuntimeSourceState makeSourceState(
     ModulatorId id,
-    ModulatorKind kind,
+    const ProjectModulationRuntimeSource& source,
     const ProjectControlTimeSnapshot& time
 ) {
     ProjectModulationRuntimeSourceState state{};
     state.id = id;
+    const ModulatorKind kind = source.kind;
     if (kind == ModulatorKind::RECORDED_SHAPE) {
         state.payload.recordedCurve = {};
         state.payload.recordedCurve.kind = kind;
@@ -69,6 +83,10 @@ FLASHMEM ProjectModulationRuntimeSourceState makeSourceState(
     } else if (kind == ModulatorKind::ADSR) {
         state.payload.adsr = {};
         state.payload.adsr.kind = kind;
+        state.payload.adsr.flags = source.traits.adsr.timing ==
+                ModulatorTimingMode::SYNC
+            ? ADSR_RUNTIME_FLAG_SYNC
+            : 0U;
     } else {
         state.payload.lfo = {};
         state.payload.lfo.kind = kind;
@@ -94,7 +112,7 @@ FLASHMEM void preparePublishedSourceState(
     const ProjectControlTimeSnapshot& time
 ) {
     if (sourceStateKind(state) != source.kind) {
-        state = makeSourceState(source.id, source.kind, time);
+        state = makeSourceState(source.id, source, time);
         return;
     }
     if (source.kind == ModulatorKind::RECORDED_SHAPE) {
@@ -102,6 +120,14 @@ FLASHMEM void preparePublishedSourceState(
         // the previously published immutable plan/arena pair.
         state.payload.recordedCurve.segmentValid = false;
         state.payload.recordedCurve.segmentHint = 1U;
+    } else if (source.kind == ModulatorKind::ADSR) {
+        const uint8_t timingFlag = source.traits.adsr.timing ==
+                ModulatorTimingMode::SYNC
+            ? ADSR_RUNTIME_FLAG_SYNC
+            : 0U;
+        if ((state.payload.adsr.flags & ADSR_RUNTIME_FLAG_SYNC) != timingFlag) {
+            state = makeSourceState(source.id, source, time);
+        }
     }
 }
 
@@ -169,7 +195,7 @@ FLASHMEM void synchronizeSources(ProjectControlRuntimeState& state,
         }
         state.sources[targetIndex] = makeSourceState(
             targetId,
-            plan.sources[targetIndex].kind,
+            plan.sources[targetIndex],
             time
         );
     }
@@ -529,6 +555,198 @@ float unpackQ15(int16_t value) {
     return std::clamp(static_cast<float>(value) / Q15_SCALE, -1.0f, 1.0f);
 }
 
+float adsrSustainLevel(const ProjectModulationRuntimeSource& source) {
+    return std::clamp(
+        static_cast<float>(source.parameters.adsr.sustainQ15) /
+            ADSR_SUSTAIN_SCALE,
+        0.0f,
+        1.0f
+    );
+}
+
+void anchorAdsrStage(
+    ProjectModulationRuntimeAdsrState& state,
+    ProjectModulationAdsrStage stage,
+    float startLevel,
+    const ProjectControlTimeSnapshot& time,
+    ModulatorTimingMode timing
+) {
+    state.stage = stage;
+    state.stageStartLevelQ15 = packQ15(std::clamp(startLevel, 0.0f, 1.0f));
+    if (timing == ModulatorTimingMode::SYNC) {
+        state.stageAnchor = time.musicalTick;
+        state.stageAnchorFractionQ16 = time.musicalTickFractionQ16;
+    } else {
+        state.stageAnchor = time.monotonicMs;
+        state.stageAnchorFractionQ16 = 0U;
+    }
+}
+
+uint64_t adsrStageElapsedQ16(
+    const ProjectModulationRuntimeAdsrState& state,
+    const ProjectControlTimeSnapshot& time,
+    ModulatorTimingMode timing
+) {
+    if (timing == ModulatorTimingMode::FREE) {
+        return static_cast<uint64_t>(time.monotonicMs - state.stageAnchor) << 16U;
+    }
+    uint32_t ticks = 0U;
+    uint16_t fraction = 0U;
+    elapsedMusicalTime(
+        time,
+        state.stageAnchor,
+        state.stageAnchorFractionQ16,
+        ticks,
+        fraction
+    );
+    return (static_cast<uint64_t>(ticks) << 16U) | fraction;
+}
+
+void advanceAdsrAnchor(
+    ProjectModulationRuntimeAdsrState& state,
+    uint16_t duration
+) {
+    state.stageAnchor += duration;
+}
+
+uint16_t adsrStageDuration(
+    const ProjectModulationRuntimeSource& source,
+    ProjectModulationAdsrStage stage
+) {
+    switch (stage) {
+        case ProjectModulationAdsrStage::ATTACK:
+            return source.parameters.adsr.attack;
+        case ProjectModulationAdsrStage::DECAY:
+            return source.parameters.adsr.decay;
+        case ProjectModulationAdsrStage::RELEASE:
+            return source.parameters.adsr.release;
+        case ProjectModulationAdsrStage::IDLE:
+        case ProjectModulationAdsrStage::SUSTAIN:
+        default:
+            return 0U;
+    }
+}
+
+float adsrStageTarget(
+    const ProjectModulationRuntimeSource& source,
+    ProjectModulationAdsrStage stage
+) {
+    switch (stage) {
+        case ProjectModulationAdsrStage::ATTACK:
+            return 1.0f;
+        case ProjectModulationAdsrStage::DECAY:
+            return adsrSustainLevel(source);
+        case ProjectModulationAdsrStage::RELEASE:
+        case ProjectModulationAdsrStage::IDLE:
+            return 0.0f;
+        case ProjectModulationAdsrStage::SUSTAIN:
+        default:
+            return adsrSustainLevel(source);
+    }
+}
+
+float advanceAdsrToTime(
+    const ProjectModulationRuntimeSource& source,
+    ProjectModulationRuntimeAdsrState& state,
+    const ProjectControlTimeSnapshot& time
+) {
+    constexpr uint8_t MAX_IMMEDIATE_TRANSITIONS = 4U;
+    const auto timing = source.traits.adsr.timing;
+    for (uint8_t transition = 0U;
+         transition < MAX_IMMEDIATE_TRANSITIONS;
+         ++transition) {
+        if (state.stage == ProjectModulationAdsrStage::IDLE) return 0.0f;
+        if (state.stage == ProjectModulationAdsrStage::SUSTAIN) {
+            return adsrSustainLevel(source);
+        }
+
+        const auto stage = state.stage;
+        const uint16_t duration = adsrStageDuration(source, stage);
+        const uint64_t durationQ16 = static_cast<uint64_t>(duration) << 16U;
+        const uint64_t elapsedQ16 = adsrStageElapsedQ16(state, time, timing);
+        const float target = adsrStageTarget(source, stage);
+        if (duration == 0U || elapsedQ16 >= durationQ16) {
+            state.stageStartLevelQ15 = packQ15(target);
+            advanceAdsrAnchor(state, duration);
+            if (stage == ProjectModulationAdsrStage::ATTACK) {
+                state.stage = ProjectModulationAdsrStage::DECAY;
+            } else if (stage == ProjectModulationAdsrStage::DECAY) {
+                state.stage = ProjectModulationAdsrStage::SUSTAIN;
+            } else {
+                state.stage = ProjectModulationAdsrStage::IDLE;
+            }
+            continue;
+        }
+
+        const float start = std::clamp(
+            unpackQ15(state.stageStartLevelQ15),
+            0.0f,
+            1.0f
+        );
+        const float progress = static_cast<float>(elapsedQ16) /
+            static_cast<float>(durationQ16);
+        const float shaped = evaluateProjectAdsrProgress(
+            source.traits.adsr.curve,
+            progress
+        );
+        return std::clamp(start + (target - start) * shaped, 0.0f, 1.0f);
+    }
+    return adsrStageTarget(source, state.stage);
+}
+
+float evaluateProjectAdsrSource(
+    const ProjectModulationRuntimeSource& source,
+    ProjectModulationRuntimeAdsrState& state,
+    const ProjectControlTimeSnapshot& time,
+    const ProjectModulationTriggerFrame* triggers
+) {
+    float value = advanceAdsrToTime(source, state, time);
+    if (triggers == nullptr ||
+        (source.triggerFlags & PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) == 0U) {
+        return value;
+    }
+
+    for (uint16_t index = 0U; index < triggers->count; ++index) {
+        const auto& event = triggers->events[index];
+        if (!triggerMatches(source.trigger, event.trigger)) continue;
+
+        if (event.edge == ProjectModulationTriggerEdge::GATE_ON) {
+            const bool gateWasClosed = state.heldNoteCount == 0U;
+            if (state.heldNoteCount < UINT8_MAX) ++state.heldNoteCount;
+            if (source.traits.adsr.retrigger ==
+                    ModulatorAdsrRetriggerMode::RETRIGGER ||
+                gateWasClosed) {
+                anchorAdsrStage(
+                    state,
+                    ProjectModulationAdsrStage::ATTACK,
+                    value,
+                    time,
+                    source.traits.adsr.timing
+                );
+                value = advanceAdsrToTime(source, state, time);
+            }
+            continue;
+        }
+
+        if (event.edge != ProjectModulationTriggerEdge::GATE_OFF ||
+            state.heldNoteCount == 0U) {
+            continue;
+        }
+        --state.heldNoteCount;
+        if (state.heldNoteCount == 0U) {
+            anchorAdsrStage(
+                state,
+                ProjectModulationAdsrStage::RELEASE,
+                value,
+                time,
+                source.traits.adsr.timing
+            );
+            value = advanceAdsrToTime(source, state, time);
+        }
+    }
+    return value;
+}
+
 float applySlew(float previous,
                 float target,
                 uint16_t slewMs,
@@ -686,8 +904,9 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
                  ++eventIndex) {
                 if (!triggerMatches(
                         source.trigger,
-                        triggers->events[eventIndex]
-                    )) {
+                        triggers->events[eventIndex].trigger
+                    ) || triggers->events[eventIndex].edge ==
+                        ProjectModulationTriggerEdge::GATE_OFF) {
                     continue;
                 }
                 sourceState.payload.lfo.explicitMusicalAnchorTick =
@@ -712,7 +931,12 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeWithBaseProvider(
                 &sourceState.payload.recordedCurve
             );
         } else if (source.kind == ModulatorKind::ADSR) {
-            value = 0.0f;
+            value = evaluateProjectAdsrSource(
+                source,
+                sourceState.payload.adsr,
+                time,
+                triggers
+            );
         } else {
             uint32_t musicalAnchor = state.activationMusicalTick;
             uint16_t musicalAnchorFraction =

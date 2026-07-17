@@ -101,6 +101,16 @@ MacroMidiCcRuntimeAdapter::projectControlTimeSnapshot() const {
     return coordinator_.projectControlTimeSnapshot();
 }
 
+bool MacroMidiCcRuntimeAdapter::projectModulationTriggersPending() const {
+    return coordinator_.hasPendingProjectModulationTriggers();
+}
+
+uint16_t MacroMidiCcRuntimeAdapter::drainProjectModulationTriggers(
+    core::state::modulation::ProjectModulationTriggerFrame& out
+) {
+    return coordinator_.drainProjectModulationTriggers(out);
+}
+
 MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishFrame_(
     uint8_t transientLiveMacro,
     uint8_t transientLiveValue

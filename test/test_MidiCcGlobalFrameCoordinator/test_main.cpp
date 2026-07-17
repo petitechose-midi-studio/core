@@ -36,6 +36,7 @@ using core::state::shared::MidiCcResolutionMode;
 using core::state::shared::MidiCcResolutionTelemetry;
 using core::state::shared::MidiCcResolveStatus;
 using core::state::shared::MidiCcRouteValidity;
+namespace mod = core::state::modulation;
 
 uint32_t fakeMicros = 0;
 
@@ -340,6 +341,93 @@ void test_physical_dispatch_cache_and_removed_pending_retry() {
     std::cout << "[PASS] pending removal retries and dispatch cache\n";
 }
 
+void test_project_trigger_bus_observes_only_physical_note_edges() {
+    RealtimeMidiQueue queue;
+    MidiCcGlobalFrameCoordinator coordinator{queue};
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    mod::ProjectModulationTriggerFrame frame{};
+
+    const RealtimeMidiEvent firstOn{
+        .deadlineUs = 1000U,
+        .type = RealtimeMidiEventType::NoteOn,
+        .channel = 4U,
+        .note = 60U,
+        .velocity = 99U,
+        .trackIndex = 3U,
+    };
+    assert(queue.push(firstOn));
+    assert(!coordinator.hasPendingProjectModulationTriggers());
+    assert(coordinator.diagnostics().capturedProjectTriggerEventCount == 0U);
+    drain(queue, midi, 1000U);
+    assert(coordinator.hasPendingProjectModulationTriggers());
+    assert(coordinator.drainProjectModulationTriggers(frame) == 1U);
+    assert(frame.count == 1U);
+    assert(frame.events[0].trigger.kind == mod::ModulationTriggerKind::TRACK_NOTE);
+    assert(frame.events[0].trigger.track == 3U);
+    assert(frame.events[0].trigger.channel == 4U);
+    assert(frame.events[0].trigger.data == 60U);
+    assert(frame.events[0].edge == mod::ProjectModulationTriggerEdge::GATE_ON);
+    assert(frame.events[0].velocity == 99U);
+    assert(!coordinator.hasPendingProjectModulationTriggers());
+
+    const std::array<RealtimeMidiEvent, 2> offEdges{{
+        RealtimeMidiEvent{
+            .deadlineUs = 1001U,
+            .type = RealtimeMidiEventType::NoteOff,
+            .channel = 4U,
+            .note = 60U,
+            .velocity = 17U,
+            .trackIndex = 3U,
+        },
+        RealtimeMidiEvent{
+            .deadlineUs = 1002U,
+            .type = RealtimeMidiEventType::NoteOn,
+            .channel = 5U,
+            .note = 61U,
+            .velocity = 0U,
+            .trackIndex = 2U,
+        },
+    }};
+    assert(queue.pushBatch(offEdges.data(), offEdges.size()).ok());
+    drain(queue, midi, 1002U);
+    assert(coordinator.drainProjectModulationTriggers(frame) == 2U);
+    assert(frame.events[0].edge == mod::ProjectModulationTriggerEdge::GATE_OFF);
+    assert(frame.events[0].velocity == 17U);
+    assert(frame.events[1].edge == mod::ProjectModulationTriggerEdge::GATE_OFF);
+    assert(frame.events[1].trigger.track == 2U);
+
+    for (uint16_t index = 0U;
+         index < mod::PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY + 1U;
+         ++index) {
+        const RealtimeMidiEvent event{
+            .deadlineUs = 2000U,
+            .type = RealtimeMidiEventType::NoteOn,
+            .channel = static_cast<uint8_t>(index % 16U),
+            .note = static_cast<uint8_t>(index % 128U),
+            .velocity = 100U,
+            .trackIndex = static_cast<uint8_t>((index / 16U) % 16U),
+        };
+        assert(queue.push(event));
+    }
+    drain(queue, midi, 2000U);
+    assert(coordinator.diagnostics().projectTriggerEventOverflowCount == 1U);
+    assert(coordinator.diagnostics().capturedProjectTriggerEventCount == 259U);
+    assert(coordinator.drainProjectModulationTriggers(frame) ==
+           mod::PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY);
+    assert(!coordinator.hasPendingProjectModulationTriggers());
+
+    assert(queue.push(firstOn));
+    drain(queue, midi, 2000U);
+    assert(coordinator.hasPendingProjectModulationTriggers());
+    coordinator.resetProject();
+    assert(!coordinator.hasPendingProjectModulationTriggers());
+    assert(coordinator.diagnostics().projectTriggerEventOverflowCount == 0U);
+    assert(coordinator.diagnostics().capturedProjectTriggerEventCount == 0U);
+
+    std::cout << "[PASS] physical Project trigger bus and bounded overflow\n";
+}
+
 void test_queue_rejection_keeps_old_generation_and_telemetry_atomic() {
     RealtimeMidiQueue queue;
     MidiCcGlobalFrameCoordinator coordinator{queue};
@@ -575,6 +663,7 @@ int main() {
 
     test_one_global_frame_uses_manual_lane_macro_priority();
     test_physical_dispatch_cache_and_removed_pending_retry();
+    test_project_trigger_bus_observes_only_physical_note_edges();
     test_queue_rejection_keeps_old_generation_and_telemetry_atomic();
     test_strict_source_validation();
     test_telemetry_view_is_stable_across_realtime_publications();

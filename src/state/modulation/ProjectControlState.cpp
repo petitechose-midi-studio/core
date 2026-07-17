@@ -11,6 +11,7 @@ FLASHMEM void ProjectControlState::clear() {
     plan = {};
     runtime = {};
     sourceScratch.fill(0.0f);
+    triggerScratch = {};
     audition = {};
     focus = {};
     authoredRevision = 1;

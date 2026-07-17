@@ -34,6 +34,14 @@ void proveCase(validation::ProjectModulationBenchmarkCase benchmarkCase) {
         assert(workspace->domain.curves.recordCount == 0U);
         assert(workspace->domain.curves.pointCount == 0U);
     }
+    if (benchmarkCase == validation::ProjectModulationBenchmarkCase::ADSR) {
+        assert(workspace->domain.modulation.triggerBindingCount ==
+               mod::PROJECT_MODULATION_TRIGGER_CAPACITY);
+        assert(workspace->triggers.count ==
+               mod::PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY);
+    } else {
+        assert(workspace->triggers.count == 0U);
+    }
 
     const auto result = validation::runProjectModulationBenchmark(
         *workspace,
@@ -58,10 +66,11 @@ void proveCase(validation::ProjectModulationBenchmarkCase benchmarkCase) {
 
 int main() {
     static_assert(
-        sizeof(validation::ProjectModulationBenchmarkWorkspace) == 183620U
+        sizeof(validation::ProjectModulationBenchmarkWorkspace) == 185160U
     );
     proveCase(validation::ProjectModulationBenchmarkCase::LFO);
     proveCase(validation::ProjectModulationBenchmarkCase::RECORDED_SHAPE);
+    proveCase(validation::ProjectModulationBenchmarkCase::ADSR);
     std::cout << "Project modulation benchmark tests passed\n";
     return 0;
 }

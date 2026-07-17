@@ -52,6 +52,10 @@ public:
     );
     [[nodiscard]] core::state::modulation::ProjectControlTimeSnapshot
         projectControlTimeSnapshot() const;
+    [[nodiscard]] bool projectModulationTriggersPending() const;
+    uint16_t drainProjectModulationTriggers(
+        core::state::modulation::ProjectModulationTriggerFrame& out
+    );
 
     static constexpr uint16_t stableAddress(
         uint8_t track,

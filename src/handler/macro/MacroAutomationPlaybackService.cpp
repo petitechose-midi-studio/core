@@ -71,6 +71,7 @@ void MacroAutomationPlaybackService::reset() {
     pages_.control.compiledRevision = 0;
     pages_.control.runtimeContextHash = 0;
     pages_.control.runtime = {};
+    pages_.control.triggerScratch = {};
     invalidateComputedRuntime_();
 }
 
@@ -434,7 +435,7 @@ bool MacroAutomationPlaybackService::produceProjectFrame_(
                 control.plan,
                 control.authored.curves,
                 frame->time,
-                nullptr,
+                &control.triggerScratch,
                 provideBase_,
                 frame,
                 control.runtime,
@@ -468,9 +469,12 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
     const bool addressContextChanged =
         pages_.currentActiveTrack() != cached_track_ ||
         pages_.currentActivePage() != cached_page_;
+    const bool triggerEventsPending = midi_runtime_ != nullptr &&
+        midi_runtime_->projectModulationTriggersPending();
     if (update_scheduled_ &&
         !oc::time::deadlineReachedMs(nowMs, next_due_ms_) &&
-        !ownerActivationPending && !addressContextChanged) {
+        !ownerActivationPending && !addressContextChanged &&
+        !triggerEventsPending) {
         return;
     }
     update_scheduled_ = true;
@@ -508,6 +512,15 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
     }
     if (!ensureProjectRuntime_(time)) return;
 
+    auto& control = pages_.control;
+    control.triggerScratch.count = 0U;
+    control.triggerScratch.reserved = 0U;
+    if (midi_runtime_ != nullptr) {
+        (void)midi_runtime_->drainProjectModulationTriggers(
+            control.triggerScratch
+        );
+    }
+
     FramePublicationContext publication{
         .owner = this,
         .time = time,
@@ -517,6 +530,7 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
             produceProjectFrame_,
             &publication
         );
+        control.triggerScratch.count = 0U;
         return;
     }
 
@@ -530,6 +544,7 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
             static_cast<uint16_t>(candidates.size()),
             candidateCount
         ) || direct_midi_fallback_ == nullptr) {
+        control.triggerScratch.count = 0U;
         return;
     }
     for (uint16_t i = 0; i < candidateCount; ++i) {
@@ -547,6 +562,7 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
         services_.pulseCcOut();
         sent_cc_values_[macroIndex] = candidate.localValue;
     }
+    control.triggerScratch.count = 0U;
 }
 
 }  // namespace core::handler
