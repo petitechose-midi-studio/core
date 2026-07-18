@@ -72,8 +72,6 @@ struct MacroPageData {
         else activeMacroMask = static_cast<uint8_t>(activeMacroMask & ~bit);
     }
 
-    uint8_t nextAddMacroIndex() const;
-    uint8_t activeMacroCount() const;
 };
 
 static_assert(sizeof(MacroPageData) == 60, "MacroPageData must be exactly 60 bytes");
@@ -181,10 +179,6 @@ public:
 
     void setMacroSlotActive(uint8_t index, bool active) {
         activePageData().setMacroActive(index, active);
-    }
-
-    uint8_t nextAddMacroIndex() const {
-        return activePageData().nextAddMacroIndex();
     }
 
     MacroPageData& pageData(uint8_t trackIndex, uint8_t pageIndex) {

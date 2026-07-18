@@ -439,7 +439,7 @@ void test_macro_slot_activation_is_sparse_and_marks_project_dirty() {
     assert(services.activateMacroSlot(5));
     assert(services.isMacroSlotActive(5));
     assert(services.isMacroAddSlot(1));
-    assert(state.pages.activePageData().activeMacroCount() == 2);
+    assert(state.pages.activePageData().activeMacroMask == 0x21U);
     assert(state.pages.activeConfigs[5].cc == 5);
     assert(state.configRevision.get() ==
            core::state::macro::nextMacroConfigRevision(initialRevision, 5));

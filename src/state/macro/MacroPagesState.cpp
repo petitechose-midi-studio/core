@@ -25,23 +25,6 @@ FLASHMEM void MacroPageData::initDefault(uint8_t pageIndex) {
     activeMacroMask = DEFAULT_ACTIVE_MACRO_MASK;
 }
 
-FLASHMEM uint8_t MacroPageData::nextAddMacroIndex() const {
-    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        if (!isMacroActive(i)) return i;
-    }
-    return MACRO_COUNT;
-}
-
-FLASHMEM uint8_t MacroPageData::activeMacroCount() const {
-    uint8_t count = 0;
-    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        if (isMacroActive(i)) {
-            count = static_cast<uint8_t>(count + 1U);
-        }
-    }
-    return count;
-}
-
 FLASHMEM MacroTrackData::MacroTrackData() {
     initDefaults(0);
 }

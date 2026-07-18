@@ -269,7 +269,6 @@ void test_macro_encoder_does_not_activate_empty_or_add_slots() {
 
     h.turn(Config::EncoderID::MACRO_2, 1.0f);
     assert(!h.state.pages.isMacroSlotActive(1));
-    assert(h.state.pages.nextAddMacroIndex() == 1);
     assert(h.midiTransport.ccCount == 0);
 
     std::cout << "[PASS] test_macro_encoder_does_not_activate_empty_or_add_slots\n";
