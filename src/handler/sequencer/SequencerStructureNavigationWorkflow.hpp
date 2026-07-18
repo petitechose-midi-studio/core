@@ -41,10 +41,14 @@ public:
     bool selectionActive() const;
     bool selectedItemsAvailable() const;
     bool stepFocusActive() const;
+    bool structureWorkspaceActive() const;
     bool previewingAddSlot() const;
 
     void moveByFocus(float delta);
     void cycleNavigationFocus();
+    void openStructureWorkspace();
+    void confirmStructureWorkspace();
+    void backStructureWorkspace();
     void enterSelectionModeForCurrentFocus();
     void cancelSelectionMode();
     void toggleSelectionAtCursor();
@@ -57,6 +61,10 @@ private:
     void movePage(float delta);
     void moveTrack(float delta);
     void moveStep(float delta);
+    void moveWorkspacePage(float delta);
+    void moveWorkspaceTrack(float delta);
+    void enterWorkspacePatternLevel();
+    void closeStructureWorkspace(bool restoreCaller);
     void setPagePreview(uint8_t pageIndex, bool addSlot);
     void setTrackPreview(uint8_t trackIndex, bool addSlot);
     uint8_t cursorForSelectionScope(core::state::StructureSelectionScope scope) const;

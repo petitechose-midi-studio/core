@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include <config/InputIDs.hpp>
+#include <config/Timing.hpp>
 #include "handler/common/NavigationUtils.hpp"
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/ViewSelectorItems.hpp"
@@ -25,6 +26,7 @@ FLASHMEM ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
     , pattern_quick_controls_(state.patternQuickControls)
     , step_property_inline_selector_(state.stepPropertyInlineSelector)
     , cc_lane_ui_(state.ccLaneUi)
+    , sequencer_structure_workspace_(state.sequencerStructureWorkspace)
     , track_structure_selection_(state.trackStructureSelection)
     , macro_page_selection_(state.macroPageSelection)
     , sequencer_page_selection_(state.sequencerPageSelection)
@@ -38,17 +40,32 @@ FLASHMEM ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
 }
 
 FLASHMEM void ViewSwitcherHandler::setupBindings() {
-    // Open selector from any active top-level view scope (latch behavior for toggle)
+    // Sequencer owns a short LEFT_TOP release for Pattern/Step selection.
+    // Preserve the global route there through an intentional hold; other
+    // top-level views keep the immediate selector gesture.
+    const auto sequencerScope =
+        view_scopes_[static_cast<std::size_t>(core::ui::ViewType::SEQUENCER)];
     oc::type::ScopeID lastBoundScope = 0;
     for (oc::type::ScopeID viewScope : view_scopes_) {
         if (!viewScope || viewScope == lastBoundScope) continue;
 
-        buttons_.button(ButtonID::LEFT_TOP)
-            .press()
-            .latch()
-            .scope(viewScope)
-            .when([this]() { return canOpenSelector(); })
-            .then([this]() { openSelector(); });
+        if (viewScope == sequencerScope) {
+            buttons_.button(ButtonID::LEFT_TOP)
+                .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+                .scope(viewScope)
+                .when([this]() { return canOpenSelector(); })
+                .then([this]() {
+                    buttons_.setPressOwner(ButtonID::LEFT_TOP, view_selector_scope_);
+                    openSelector();
+                });
+        } else {
+            buttons_.button(ButtonID::LEFT_TOP)
+                .press()
+                .latch()
+                .scope(viewScope)
+                .when([this]() { return canOpenSelector(); })
+                .then([this]() { openSelector(); });
+        }
 
         lastBoundScope = viewScope;
     }
@@ -108,7 +125,8 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
         return false;
     }
 
-    return !pattern_quick_controls_.selecting.get() &&
+    return !sequencer_structure_workspace_.active.get() &&
+           !pattern_quick_controls_.selecting.get() &&
            !pattern_quick_controls_.physicalHoldActive.get() &&
            !step_property_inline_selector_.selecting.get() &&
            !cc_lane_ui_.visible();
@@ -122,7 +140,6 @@ FLASHMEM void ViewSwitcherHandler::openSelector() {
     if (!view_selector_.visible.get()) {
         overlays_.show(core::ui::OverlayType::VIEW_SELECTOR, false);
     }
-
     encoders_.setMode(EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
 }
 

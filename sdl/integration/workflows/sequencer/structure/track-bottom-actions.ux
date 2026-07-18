@@ -1,36 +1,41 @@
-# UX workflow: Track bottom-left mute/remove actions.
-# Purpose: validates Track focus and Track selection share the same model:
-# tap toggles mute without deleting content; hold removes selected tracks.
+# UX workflow: Track mute/remove actions inside Structure.
+# Purpose: validates that Track current-item and selection actions share one
+# explicit structural surface: tap toggles mute, hold removes selected Tracks.
 # Expect: capture_changed:track_2_created=track_2_muted_by_tap, capture_match:track_2_created=track_2_unmuted_by_tap, capture_changed:track_selection_unmuted_by_tap=track_selection_remove_hold_applied
 
 0 scenario sequencer
-50 capture screen track_focus_initial
+50 capture screen pattern_focus_initial
 
-# Create a second track so mute and remove can be distinguished.
-150 encoder NAV 1
-350 capture screen track_2_add_preview
-450 tap NAV 60
-700 capture screen track_2_created
+# Open Structure and create Track 2 from the sole +Track slot. Creation enters
+# its Pattern list; Back returns to Tracks while preserving Track 2 as active.
+150 button NAV down
+1220 tick
+1280 button NAV up
+1480 encoder NAV 1
+1680 capture screen track_2_add_preview
+1780 tap NAV 60
+2130 capture screen track_2_patterns_open
+2230 tap LEFT_TOP 60
+2480 capture screen track_2_created
 
-# Track focus: tap toggles mute, a second tap toggles it back.
-800 tap BOTTOM_LEFT 60
-1050 capture screen track_2_muted_by_tap
-1150 tap BOTTOM_LEFT 60
-1400 capture screen track_2_unmuted_by_tap
+# Current Track action: tap toggles mute, a second tap restores it.
+2580 tap BOTTOM_LEFT 60
+2830 capture screen track_2_muted_by_tap
+2930 tap BOTTOM_LEFT 60
+3180 capture screen track_2_unmuted_by_tap
 
-# Track selection: select focused track, tap toggles mute, hold removes it.
-1500 button NAV down
-2600 tick
-2650 capture screen track_selection_entered
-2700 button NAV up
-2800 tap NAV 60
-3050 capture screen track_2_selected
-3150 tap BOTTOM_LEFT 60
-3400 capture screen track_selection_muted_by_tap
-3500 tap BOTTOM_LEFT 60
-3750 capture screen track_selection_unmuted_by_tap
-3850 button BOTTOM_LEFT down
-4900 tick
-4950 capture screen track_selection_remove_hold_applied
-5000 button BOTTOM_LEFT up
-5250 capture screen track_selection_removed
+# Structure LEFT_CENTER enters Track selection. Select Track 2, exercise mute,
+# then hold Remove; Track 1 remains as the valid project root.
+3280 tap LEFT_CENTER 60
+3530 capture screen track_selection_entered
+3630 tap NAV 60
+3880 capture screen track_2_selected
+3980 tap BOTTOM_LEFT 60
+4230 capture screen track_selection_muted_by_tap
+4330 tap BOTTOM_LEFT 60
+4580 capture screen track_selection_unmuted_by_tap
+4680 button BOTTOM_LEFT down
+5730 tick
+5780 capture screen track_selection_remove_hold_applied
+5830 button BOTTOM_LEFT up
+6080 capture screen track_selection_removed

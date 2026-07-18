@@ -148,6 +148,37 @@ void test_opt_encoder_edits_focused_step_in_step_focus() {
     std::cout << "[PASS] test_opt_encoder_edits_focused_step_in_step_focus\n";
 }
 
+void test_direct_state_edit_coalesces_as_state_history() {
+    SequencerMacroPropertyHarness h;
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.stepStatePropertyActive.set(true);
+
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_1, 1.0f);
+    assert(h.state.sequencer.pattern.isEnabled(0));
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+
+    h.advance(700);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    assert(h.state.undoSequencerHistory());
+    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(std::strcmp(
+        h.state.sequencer.historyFeedback.line2.data(),
+        "Step 01 State"
+    ) == 0);
+    assert(std::strcmp(
+        h.state.sequencer.historyFeedback.line3.data(),
+        "On -> Off"
+    ) == 0);
+
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.isEnabled(0));
+
+    std::cout << "[PASS] test_direct_state_edit_coalesces_as_state_history\n";
+}
+
 void test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step() {
     SequencerMacroPropertyHarness h;
     h.state.sequencer.pattern.length.set(8);
@@ -291,6 +322,17 @@ void test_macro_property_edits_are_blocked_by_modal_states() {
 
     {
         SequencerMacroPropertyHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+        h.turn(Config::EncoderID::MACRO_1, 1.0f);
+        assert(h.state.sequencer.pattern.note[0] != core::state::sequencer::SequencerState::DEFAULT_NOTE);
+    }
+
+    {
+        SequencerMacroPropertyHarness h;
+        h.state.sequencer.structureUi.workspace.active.set(true);
+        h.state.sequencer.structureUi.workspace.level.set(
+            core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
+        );
         h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
         assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
@@ -538,6 +580,7 @@ int main() {
     test_macro_encoder_edits_step_in_current_page_and_shows_feedback();
     test_opt_encoder_does_not_edit_without_step_focus();
     test_opt_encoder_edits_focused_step_in_step_focus();
+    test_direct_state_edit_coalesces_as_state_history();
     test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step();
     test_direct_edit_retires_runtime_projection_before_authored_revision();
     test_constrained_scale_pitch_edit_writes_scale_degree_note();

@@ -115,6 +115,25 @@ FLASHMEM sequencer::SequencerHistoryDescriptor makeStepPropertyHistoryDescriptor
     };
 }
 
+FLASHMEM sequencer::SequencerHistoryDescriptor makeStepStateHistoryDescriptor(
+    uint8_t track,
+    uint8_t step,
+    const sequencer::SequencerHistoryPatternSnapshot& before,
+    const sequencer::SequencerHistoryPatternSnapshot& after
+) {
+    const bool beforeEnabled = before.flat.enabledMask.test(step);
+    const bool afterEnabled = after.flat.enabledMask.test(step);
+    return sequencer::SequencerHistoryDescriptor{
+        .kind = sequencer::SequencerHistoryActionKind::StepToggle,
+        .trackIndex = track,
+        .stepIndex = step,
+        .property = sequencer::StepProperty::NOTE,
+        .hasValue = beforeEnabled != afterEnabled,
+        .beforeValue = beforeEnabled ? 1 : 0,
+        .afterValue = afterEnabled ? 1 : 0,
+    };
+}
+
 FLASHMEM const char* historyDirectionLabel(sequencer::SequencerHistoryDirection direction) {
     return direction == sequencer::SequencerHistoryDirection::Redo ? "REDO" : "UNDO";
 }
@@ -270,6 +289,14 @@ FLASHMEM void showSequencerHistoryFeedback(
 
     if (actionOverride != nullptr) {
         std::snprintf(line2, sizeof(line2), "%s", actionOverride);
+    } else if (descriptor.kind == sequencer::SequencerHistoryActionKind::StepToggle &&
+               descriptor.stepIndex != sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
+        std::snprintf(
+            line2,
+            sizeof(line2),
+            "Step %02u State",
+            static_cast<unsigned>(descriptor.stepIndex + 1U)
+        );
     } else if (descriptor.stepIndex != sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
         std::snprintf(
             line2,
@@ -679,12 +706,13 @@ FLASHMEM void CoreState::recordPreparedSequencerStructureHistory(
 FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     uint8_t step,
     sequencer::StepProperty property,
-    uint32_t nowMs
+    uint32_t nowMs,
+    bool stateProperty
 ) {
     auto& pending = sequencerDomain_.coalescedPatternHistory;
     const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
 
-    if (pending.matches(activeTrack, step, property)) {
+    if (pending.matches(activeTrack, step, property, stateProperty)) {
         pending.lastTouchedMs = nowMs;
         return true;
     }
@@ -704,6 +732,7 @@ FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     pending.activeTrack = activeTrack;
     pending.step = step;
     pending.property = property;
+    pending.stateProperty = stateProperty;
     pending.lastTouchedMs = nowMs;
     pending.before = std::move(before);
     return true;
@@ -718,6 +747,7 @@ FLASHMEM bool CoreState::commitSequencerPatternHistoryCoalescing() {
     const uint8_t targetTrack = pending.activeTrack;
     const uint8_t targetStep = pending.step;
     const auto targetProperty = pending.property;
+    const bool targetStateProperty = pending.stateProperty;
     sequencer::SequencerHistoryPatternSnapshot before = std::move(pending.before);
     pending.clear();
 
@@ -742,13 +772,20 @@ FLASHMEM bool CoreState::commitSequencerPatternHistoryCoalescing() {
         return false;
     }
 
-    auto descriptor = makeStepPropertyHistoryDescriptor(
-        targetTrack,
-        targetStep,
-        targetProperty,
-        before,
-        after
-    );
+    auto descriptor = targetStateProperty
+        ? makeStepStateHistoryDescriptor(
+              targetTrack,
+              targetStep,
+              before,
+              after
+          )
+        : makeStepPropertyHistoryDescriptor(
+              targetTrack,
+              targetStep,
+              targetProperty,
+              before,
+              after
+          );
 
     return recordSequencerPatternHistory(
         std::move(before),

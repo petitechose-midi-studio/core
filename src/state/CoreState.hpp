@@ -127,16 +127,19 @@ struct SequencerDomainState {
         uint8_t activeTrack = 0;
         uint8_t step = 0;
         sequencer::StepProperty property = sequencer::StepProperty::NOTE;
+        bool stateProperty = false;
         uint32_t lastTouchedMs = 0;
         sequencer::SequencerHistoryPatternSnapshot before{};
 
         bool matches(uint8_t nextActiveTrack,
                      uint8_t nextStep,
-                     sequencer::StepProperty nextProperty) const {
+                     sequencer::StepProperty nextProperty,
+                     bool nextStateProperty) const {
             return pending &&
                    activeTrack == nextActiveTrack &&
                    step == nextStep &&
-                   property == nextProperty;
+                   property == nextProperty &&
+                   stateProperty == nextStateProperty;
         }
 
         void clear() {
@@ -144,6 +147,7 @@ struct SequencerDomainState {
             activeTrack = 0;
             step = 0;
             property = sequencer::StepProperty::NOTE;
+            stateProperty = false;
             lastTouchedMs = 0;
             before.reset();
         }
@@ -346,7 +350,8 @@ public:
     bool recordSequencerStructureHistory(sequencer::SequencerHistoryTrackStructureChangePtr change);
     bool beginOrContinueSequencerPatternHistoryCoalescing(uint8_t step,
                                                           sequencer::StepProperty property,
-                                                          uint32_t nowMs);
+                                                          uint32_t nowMs,
+                                                          bool stateProperty = false);
     bool commitSequencerPatternHistoryCoalescing();
     bool updateSequencerPatternHistoryCoalescing(uint32_t nowMs);
     bool hasPendingSequencerPatternHistoryCoalescing() const;

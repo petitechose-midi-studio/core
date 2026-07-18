@@ -77,7 +77,17 @@ FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    const bool opening = isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::PRESS);
+    const bool opening =
+        isButton(
+            event,
+            Config::ButtonID::LEFT_TOP,
+            oc::core::input::ButtonBindingType::PRESS
+        ) ||
+        isButton(
+            event,
+            Config::ButtonID::LEFT_TOP,
+            oc::core::input::ButtonBindingType::LONG_PRESS
+        );
     const bool visible = view_selector_.visible.get();
     if (!opening && !visible) {
         return false;

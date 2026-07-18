@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 #include <iostream>
 
 #include <oc/api/ButtonAPI.hpp>
@@ -201,7 +202,7 @@ void test_property_selector_left_top_closes_without_reverting_selected_property(
     h.state.sequencer.activeStepProperty.set(StepProperty::GATE);
 
     openPropertySelector(h);
-    assert(h.state.sequencer.stepPropertyInlineSelector.selectedIndex.get() == 2);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selectedIndex.get() == 4);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.activeStepProperty.get() == StepProperty::NUDGE);
@@ -219,9 +220,7 @@ void test_property_selector_apply_keeps_selected_property() {
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
 
     openPropertySelector(h);
-    for (int i = 0; i < 4; ++i) {
-        h.turn(Config::EncoderID::NAV, 1.0f);
-    }
+    h.turn(Config::EncoderID::NAV, -1.0f);
     assert(h.state.sequencer.activeStepProperty.get() == StepProperty::PROBABILITY);
 
     h.tap(Config::ButtonID::LEFT_BOTTOM);
@@ -241,10 +240,12 @@ void test_property_selector_does_not_open_when_pattern_quick_controls_are_active
     std::cout << "[PASS] test_property_selector_does_not_open_when_pattern_quick_controls_are_active\n";
 }
 
-void test_property_selector_is_unavailable_in_track_focus() {
+void test_track_focus_is_projected_as_pattern_outside_structure() {
     SequencerInlineHarness h;
 
     h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
 
@@ -255,7 +256,48 @@ void test_property_selector_is_unavailable_in_track_focus() {
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
 
-    std::cout << "[PASS] test_property_selector_is_unavailable_in_track_focus\n";
+    std::cout << "[PASS] test_track_focus_is_projected_as_pattern_outside_structure\n";
+}
+
+void test_state_is_a_direct_step_property() {
+    SequencerInlineHarness h;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.focusedStep.set(0);
+
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(h.state.sequencer.stepPropertyInlineSelector.selectedIndex.get() == 2);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.sequencer.stepStatePropertyActive.get());
+    assert(h.state.sequencer.stepPropertyInlineSelector.selectedIndex.get() == 0);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.isEnabled(0));
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(h.state.sequencerHistory.undoCount() == 1);
+
+    assert(h.state.undoSequencerHistory());
+    assert(!h.state.sequencer.pattern.isEnabled(0));
+    assert(std::strcmp(
+        h.state.sequencer.historyFeedback.line2.data(),
+        "Step 01 State"
+    ) == 0);
+    assert(std::strcmp(
+        h.state.sequencer.historyFeedback.line3.data(),
+        "On -> Off"
+    ) == 0);
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.isEnabled(0));
+
+    h.turn(Config::MACRO_ENCODERS[1], 1.0f);
+    assert(h.state.sequencer.pattern.isEnabled(1));
+    h.turn(Config::MACRO_ENCODERS[1], 0.0f);
+    assert(!h.state.sequencer.pattern.isEnabled(1));
+
+    std::cout << "[PASS] test_state_is_a_direct_step_property\n";
 }
 
 void test_property_selector_is_unavailable_during_step_selection() {
@@ -555,7 +597,17 @@ void test_pattern_quick_controls_are_pattern_focus_only() {
 
     h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.patternQuickControls.selecting.get());
+    h.tap(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
+
+    h.state.sequencer.structureUi.workspace.active.set(true);
+    h.state.sequencer.structureUi.workspace.level.set(
+        core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
+    );
+    h.tap(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    h.state.sequencer.structureUi.workspace.active.set(false);
 
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     h.tap(Config::ButtonID::LEFT_CENTER);
@@ -884,7 +936,8 @@ int main() {
     test_property_selector_left_top_closes_without_reverting_selected_property();
     test_property_selector_apply_keeps_selected_property();
     test_property_selector_does_not_open_when_pattern_quick_controls_are_active();
-    test_property_selector_is_unavailable_in_track_focus();
+    test_track_focus_is_projected_as_pattern_outside_structure();
+    test_state_is_a_direct_step_property();
     test_property_selector_is_unavailable_during_step_selection();
     test_property_selector_edits_active_property_variation_range();
     test_property_selector_left_top_commits_live_variation_edit();

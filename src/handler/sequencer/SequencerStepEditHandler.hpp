@@ -63,6 +63,9 @@ public:
 
     void update(uint32_t nowMs);
 
+    /** Open the existing Step Editor on the focused Step and semantic row. */
+    bool openFocusedStepAtRow(uint8_t row);
+
 private:
     void setupBindings();
 

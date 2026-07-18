@@ -198,6 +198,11 @@ FLASHMEM void SequencerStepPropertyInlineSelectorState::reset() {
     suppressOpeningRelease = false;
 }
 
+FLASHMEM void SequencerStepContentSelectorState::reset() {
+    selecting.set(false);
+    focusedAction.set(SequencerStepContentAction::VARIATION);
+}
+
 FLASHMEM void SequencerStepInlineFeedbackState::show(
     uint8_t step,
     StepProperty stepProperty,
@@ -313,6 +318,15 @@ FLASHMEM void SequencerTrackPasteUiState::reset() {
     bump();
 }
 
+FLASHMEM void SequencerStructureWorkspaceState::reset() {
+    active.set(false);
+    level.set(SequencerStructureWorkspaceLevel::TRACKS);
+    callerFocus = core::state::StructureNavigationFocus::PAGE;
+    callerTrack = 0;
+    callerPage = 0;
+    callerStep = 0;
+}
+
 FLASHMEM SequencerStructureUiState::SequencerStructureUiState() = default;
 FLASHMEM SequencerStructureUiState::~SequencerStructureUiState() = default;
 
@@ -322,6 +336,7 @@ FLASHMEM void SequencerStructureUiState::reset() {
     pageHold.clear();
     pageSelection.reset(core::state::StructureSelectionScope::PAGE);
     stepSelection.reset();
+    workspace.reset();
     trackPaste.reset();
 }
 

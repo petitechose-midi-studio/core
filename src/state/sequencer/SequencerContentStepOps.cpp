@@ -93,6 +93,15 @@ FLASHMEM bool toggleActiveContentStep(SequencerState& sequencer, uint8_t step) {
     return changed;
 }
 
+FLASHMEM bool activeContentStepEnabled(const SequencerState& sequencer, uint8_t step) {
+    if (step >= activeContentLength(sequencer)) return false;
+    if (isRootContentView(sequencer)) return sequencer.pattern.isEnabled(step);
+
+    const auto nodeId = activeContentStepNodeId(sequencer, step);
+    const auto* node = graphNode(sequencer, nodeId);
+    return node != nullptr && nodeId != kInvalidId && nodeEnabled(*node);
+}
+
 FLASHMEM bool setActiveContentStepEnabled(SequencerState& sequencer, uint8_t step, bool enabled) {
     if (step >= activeContentLength(sequencer)) return false;
 

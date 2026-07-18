@@ -1,49 +1,44 @@
-# UX workflow: validate canonical sequencer scope cycling.
-# Purpose: captures the global grammar root cycle `Track -> Pattern -> Step -> Track`,
-# confirms Track does not expose musical property overlays, then validates the
-# child-context cycle `Pattern -> Step -> Pattern`.
-# Expect: capture_match:root_track_initial=root_track_after_cycle, capture_match:track_before_left_bottom=track_left_bottom_down, capture_match:child_pattern_focus=child_pattern_after_cycle
+# UX workflow: validate the direct Pattern/Step grammar and Structure workspace.
+# Purpose: proves short NAV stays on the musical hot path, NAV hold opens the
+# explicit Track/Pattern hierarchy, and Back restores the exact Step caller.
+# Expect: capture_match:pattern_after_cursor_move=pattern_after_hot_roundtrip, capture_match:step_caller_before_structure=step_caller_restored, capture_match:step_caller_before_structure=step_caller_restored_after_hierarchy
 
 0 scenario sequencer
-50 capture screen root_track_initial
+50 capture screen root_pattern_initial
 
-# Root scope cycle: Track -> Pattern -> Step -> Track.
+# Short NAV cycles only Pattern <-> Step. Move the Step cursor so caller
+# restoration proves more than a header-only scope change.
 150 tap NAV 60
-350 capture screen root_pattern_focus
-450 tap NAV 60
-650 capture screen root_step_focus
-750 tap NAV 60
-950 capture screen root_track_after_cycle
+350 encoder NAV 3
+550 capture screen step_caller_before_structure
+650 tap NAV 60
+850 capture screen pattern_after_cursor_move
+950 tap NAV 60
+1150 capture screen step_caller_before_structure_again
+1200 tap NAV 60
+1400 capture screen pattern_after_hot_roundtrip
+1450 tap NAV 60
 
-# Track keeps the left property selectors inactive.
-1050 capture screen track_before_left_bottom
-1100 button LEFT_BOTTOM down
-1320 capture screen track_left_bottom_down
-1370 button LEFT_BOTTOM up
+# NAV hold opens Structure / Tracks. Previewing +Track must not mutate until
+# confirmation; LEFT_TOP closes Structure and restores Step 4 exactly.
+1550 button NAV down
+2620 tick
+2680 capture screen structure_tracks_open
+2730 button NAV up
+2930 encoder NAV 1
+3130 capture screen structure_add_track_preview
+3230 tap LEFT_TOP 60
+3480 capture screen step_caller_restored
 
-# Move back into Pattern/Step, create a micro-sequence child context on step 1.
-1500 tap NAV 60
-1700 tap NAV 60
-1850 tap MACRO_1 60
-2050 button MACRO_1 down
-3110 tick
-3170 capture screen root_step_edit_for_micro
-3230 button MACRO_1 up
-
-# Focus Micro-sequence row and enter the child pattern context.
-3330 encoder NAV 1
-3410 encoder NAV 1
-3490 encoder NAV 1
-3570 encoder NAV 1
-3650 encoder NAV 1
-3730 encoder NAV 1
-3810 encoder NAV 1
-3890 capture screen parent_micro_row_focused
-3990 tap NAV 60
-4290 capture screen child_pattern_focus
-
-# Child scope cycle: Pattern -> Step -> Pattern.
-4390 tap NAV 60
-4590 capture screen child_step_focus
-4690 tap NAV 60
-4890 capture screen child_pattern_after_cycle
+# The second visit traverses Tracks -> Patterns -> Tracks, then returns to the
+# same musical caller without leaking a structural focus into the hot cycle.
+3580 button NAV down
+4650 tick
+4710 capture screen structure_tracks_reopened
+4760 button NAV up
+4960 tap NAV 60
+5210 capture screen structure_patterns_open
+5310 tap LEFT_TOP 60
+5560 capture screen structure_tracks_after_back
+5660 tap LEFT_TOP 60
+5910 capture screen step_caller_restored_after_hierarchy

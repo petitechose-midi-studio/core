@@ -21,6 +21,7 @@
 #include "handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
+#include "handler/sequencer/SequencerStepContentHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -43,7 +44,11 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
 #endif
 )
 #if defined(MS_UX_RECORDER)
-    : property_selector_ux_surface_(stateRefs.activeView, stateRefs.sequencer),
+    : property_selector_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.structureNavigationFocus,
+          stateRefs.sequencer
+      ),
       step_preset_ux_surface_(stateRefs.sequencer, stateRefs.trackActivations),
       cc_lane_ux_surface_(
           stateRefs.sequencer,
@@ -323,6 +328,21 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         oc::ui::lvgl::scopeID(step_edit_overlay_->getElement()),
         oc::ui::lvgl::scopeID(step_preset_overlay_->getElement())
     );
+    if (!step_handler_ || !step_edit_handler_) return;
+    step_content_handler_ =
+        core::app::makeExtmemUnique<core::handler::SequencerStepContentHandler>(
+            core::handler::SequencerStepContentHandler::StateRefs{
+                stateRefs.overlays,
+                stateRefs.sequencer,
+                stateRefs.trackNavigation,
+                stateRefs.structureNavigationFocus,
+            },
+            *step_handler_,
+            *step_edit_handler_,
+            encoders,
+            buttons,
+            sequencerViewScopeId
+        );
     cc_lane_workflow_ = core::app::makeExtmemUnique<core::handler::SequencerCcLaneWorkflow>(
         core::handler::SequencerCcLaneWorkflow::StateRefs{
             stateRefs.sequencer,
@@ -404,6 +424,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             oc::time::millis
         );
     valid_ = step_handler_ && quick_controls_handler_ && step_edit_handler_ &&
+             step_content_handler_ &&
              property_selector_handler_ && cc_lane_handler_ &&
              pattern_pitch_settings_handler_ &&
              macro_property_handler_;

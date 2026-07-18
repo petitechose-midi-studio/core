@@ -21,13 +21,6 @@ namespace interaction_policy = core::handler::sequencer::interaction_policy;
 
 namespace {
 
-FLASHMEM bool isPageSlotEnabled(
-    const core::state::sequencer::SequencerState& sequencer,
-    uint8_t index
-) {
-    return index < sequencer.activePageCount();
-}
-
 FLASHMEM uint8_t currentPageCursor(const core::state::sequencer::SequencerState& sequencer) {
     if (sequencer.structureUi.previewAddPageSlot.get()) {
         return sequencer.clampPage(sequencer.structureUi.previewPageIndex.get());
@@ -103,20 +96,38 @@ FLASHMEM bool SequencerStructureNavigationWorkflow::selectedItemsAvailable() con
 }
 
 FLASHMEM bool SequencerStructureNavigationWorkflow::stepFocusActive() const {
-    return navigation_focus_.get() == core::state::StructureNavigationFocus::STEP;
+    return !structureWorkspaceActive() &&
+           navigation_focus_.get() == core::state::StructureNavigationFocus::STEP;
+}
+
+FLASHMEM bool SequencerStructureNavigationWorkflow::structureWorkspaceActive() const {
+    return sequencer_.structureUi.workspace.active.get();
 }
 
 FLASHMEM bool SequencerStructureNavigationWorkflow::previewingAddSlot() const {
-    if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) return false;
-    return navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK
+    const auto focus = !structureWorkspaceActive() &&
+            navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK
+        ? core::state::StructureNavigationFocus::PAGE
+        : navigation_focus_.get();
+    if (focus == core::state::StructureNavigationFocus::STEP) return false;
+    return focus == core::state::StructureNavigationFocus::TRACK
         ? track_ui_.previewAddSlot.get()
         : sequencer_.structureUi.previewAddPageSlot.get();
 }
 
 FLASHMEM void SequencerStructureNavigationWorkflow::moveByFocus(float delta) {
+    if (structureWorkspaceActive()) {
+        if (sequencer_.structureUi.workspace.level.get() ==
+            core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS) {
+            moveWorkspaceTrack(delta);
+        } else {
+            moveWorkspacePage(delta);
+        }
+        return;
+    }
     switch (navigation_focus_.get()) {
         case core::state::StructureNavigationFocus::TRACK:
-            moveTrack(delta);
+            movePage(delta);
             return;
         case core::state::StructureNavigationFocus::STEP:
             moveStep(delta);
@@ -130,25 +141,9 @@ FLASHMEM void SequencerStructureNavigationWorkflow::moveByFocus(float delta) {
 
 FLASHMEM void SequencerStructureNavigationWorkflow::cycleNavigationFocus() {
     const auto current = navigation_focus_.get();
-    core::state::StructureNavigationFocus next = core::state::StructureNavigationFocus::PAGE;
-    if (core::state::sequencer::isChildContentView(sequencer_)) {
-        next = current == core::state::StructureNavigationFocus::STEP
-            ? core::state::StructureNavigationFocus::PAGE
-            : core::state::StructureNavigationFocus::STEP;
-    } else {
-        switch (current) {
-            case core::state::StructureNavigationFocus::TRACK:
-                next = core::state::StructureNavigationFocus::PAGE;
-                break;
-            case core::state::StructureNavigationFocus::PAGE:
-                next = core::state::StructureNavigationFocus::STEP;
-                break;
-            case core::state::StructureNavigationFocus::STEP:
-            default:
-                next = core::state::StructureNavigationFocus::TRACK;
-                break;
-        }
-    }
+    const auto next = current == core::state::StructureNavigationFocus::STEP
+        ? core::state::StructureNavigationFocus::PAGE
+        : core::state::StructureNavigationFocus::STEP;
     if (current == core::state::StructureNavigationFocus::PAGE &&
         sequencer_.structureUi.previewAddPageSlot.get()) {
         const uint8_t page = currentExistingPage(sequencer_);
@@ -162,8 +157,73 @@ FLASHMEM void SequencerStructureNavigationWorkflow::cycleNavigationFocus() {
     navigation_focus_.set(next);
 }
 
+FLASHMEM void SequencerStructureNavigationWorkflow::openStructureWorkspace() {
+    if (structureWorkspaceActive()) return;
+
+    auto& workspace = sequencer_.structureUi.workspace;
+    workspace.callerFocus =
+        navigation_focus_.get() == core::state::StructureNavigationFocus::STEP
+        ? core::state::StructureNavigationFocus::STEP
+        : core::state::StructureNavigationFocus::PAGE;
+    workspace.callerTrack = currentActiveTrack();
+    workspace.callerPage = sequencer_.visiblePage();
+    workspace.callerStep = sequencer_.focusedStep.get();
+    workspace.level.set(
+        core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
+    );
+    workspace.active.set(true);
+    sequencer_.structureUi.previewAddPageSlot.set(false);
+    track_ui_.previewAddSlot.set(false);
+    track_ui_.syncPreviewTrack(currentActiveTrack());
+    navigation_focus_.set(core::state::StructureNavigationFocus::TRACK);
+}
+
+FLASHMEM void SequencerStructureNavigationWorkflow::confirmStructureWorkspace() {
+    if (!structureWorkspaceActive()) return;
+
+    if (sequencer_.structureUi.workspace.level.get() ==
+        core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS) {
+        if (track_ui_.previewAddSlot.get()) {
+            createPreviewedStructure();
+        }
+        enterWorkspacePatternLevel();
+        return;
+    }
+
+    if (sequencer_.structureUi.previewAddPageSlot.get()) {
+        createPreviewedStructure();
+    }
+    closeStructureWorkspace(false);
+    navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
+}
+
+FLASHMEM void SequencerStructureNavigationWorkflow::backStructureWorkspace() {
+    if (!structureWorkspaceActive()) return;
+
+    if (sequencer_.structureUi.workspace.level.get() ==
+        core::state::sequencer::SequencerStructureWorkspaceLevel::PATTERNS) {
+        const uint8_t page = currentExistingPage(sequencer_);
+        sequencer_.page.set(page);
+        sequencer_.focusedStep.set(sequencer_.pageStartStepClamped(page));
+        sequencer_.structureUi.previewAddPageSlot.set(false);
+        sequencer_.structureUi.workspace.level.set(
+            core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
+        );
+        track_ui_.previewAddSlot.set(false);
+        track_ui_.syncPreviewTrack(currentActiveTrack());
+        navigation_focus_.set(core::state::StructureNavigationFocus::TRACK);
+        return;
+    }
+
+    closeStructureWorkspace(true);
+}
+
 FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrentFocus() {
-    auto scope = core::state::selectionScopeForFocus(navigation_focus_.get());
+    const auto effectiveFocus = !structureWorkspaceActive() &&
+            navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK
+        ? core::state::StructureNavigationFocus::PAGE
+        : navigation_focus_.get();
+    auto scope = core::state::selectionScopeForFocus(effectiveFocus);
     if (core::state::sequencer::isChildContentView(sequencer_)) {
         scope = core::state::StructureSelectionScope::STEP;
     }
@@ -395,14 +455,29 @@ FLASHMEM void SequencerStructureNavigationWorkflow::bindStateSync() {
 
 FLASHMEM void SequencerStructureNavigationWorkflow::movePage(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
+    const uint8_t pageCount = sequencer_.activePageCount();
+    if (pageCount == 0) return;
     const uint8_t next = structure_slots::wrapIndex(
-        currentPageCursor(sequencer_),
+        currentExistingPage(sequencer_),
         nav::turnStep(delta),
-        core::state::sequencer::SequencerState::PAGE_COUNT
+        pageCount
     );
-    const bool enabled = isPageSlotEnabled(sequencer_, next);
+    setPagePreview(next, false);
+}
 
-    setPagePreview(next, !enabled);
+FLASHMEM void SequencerStructureNavigationWorkflow::moveWorkspacePage(float delta) {
+    if (!nav::hasTurnDelta(delta)) return;
+    const uint8_t pageCount = sequencer_.activePageCount();
+    const uint16_t enabledMask = structure_slots::prefixMask(pageCount);
+    const auto target = structure_slots::nextNavigationTarget(
+        enabledMask,
+        currentPageCursor(sequencer_),
+        core::state::sequencer::SequencerState::PAGE_COUNT,
+        sequencer_.structureUi.previewAddPageSlot.get(),
+        nav::turnStep(delta)
+    );
+    if (!target.valid) return;
+    setPagePreview(target.index, target.addSlot);
 }
 
 FLASHMEM void SequencerStructureNavigationWorkflow::moveTrack(float delta) {
@@ -416,6 +491,89 @@ FLASHMEM void SequencerStructureNavigationWorkflow::moveTrack(float delta) {
     const bool enabled = structure_slots::isEnabled(enabledMask, next);
 
     setTrackPreview(next, !enabled);
+}
+
+FLASHMEM void SequencerStructureNavigationWorkflow::moveWorkspaceTrack(float delta) {
+    if (!nav::hasTurnDelta(delta)) return;
+    const uint16_t enabledMask = currentTrackEnabledMask();
+    const int addIndex = structure_slots::firstDisabledIndex(
+        enabledMask,
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+    );
+    const uint16_t visibleMask = addIndex < 0
+        ? enabledMask
+        : static_cast<uint16_t>(
+              enabledMask |
+              structure_slots::slotBit(static_cast<uint8_t>(addIndex))
+          );
+    const uint8_t target = structure_slots::nextEnabledIndex(
+        visibleMask,
+        currentTrackCursor(track_ui_),
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT,
+        nav::turnStep(delta)
+    );
+    setTrackPreview(
+        target,
+        addIndex >= 0 && target == static_cast<uint8_t>(addIndex)
+    );
+}
+
+FLASHMEM void SequencerStructureNavigationWorkflow::enterWorkspacePatternLevel() {
+    if (!structureWorkspaceActive()) return;
+    if (track_ui_.previewAddSlot.get()) return;
+
+    sequencer_.structureUi.workspace.level.set(
+        core::state::sequencer::SequencerStructureWorkspaceLevel::PATTERNS
+    );
+    navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
+    const uint8_t page = currentExistingPage(sequencer_);
+    sequencer_.page.set(page);
+    sequencer_.focusedStep.set(sequencer_.pageStartStepClamped(page));
+    sequencer_.structureUi.syncPreviewPage(page);
+    sequencer_.structureUi.previewAddPageSlot.set(false);
+}
+
+FLASHMEM void SequencerStructureNavigationWorkflow::closeStructureWorkspace(
+    bool restoreCaller
+) {
+    auto& workspace = sequencer_.structureUi.workspace;
+    if (!workspace.active.get()) return;
+
+    const auto callerFocus = workspace.callerFocus;
+    const uint8_t callerTrack = workspace.callerTrack;
+    const uint8_t callerPage = workspace.callerPage;
+    const uint8_t callerStep = workspace.callerStep;
+
+    workspace.active.set(false);
+    workspace.level.set(
+        core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
+    );
+    track_ui_.previewAddSlot.set(false);
+    sequencer_.structureUi.previewAddPageSlot.set(false);
+
+    if (restoreCaller && structure_slots::isEnabled(
+            currentTrackEnabledMask(),
+            callerTrack
+        )) {
+        applyTrackState(currentTrackEnabledMask(), callerTrack);
+        const uint8_t restoredPage = std::min<uint8_t>(
+            callerPage,
+            static_cast<uint8_t>(sequencer_.activePageCount() - 1U)
+        );
+        sequencer_.page.set(restoredPage);
+        const uint8_t length = core::state::sequencer::activeContentLength(sequencer_);
+        const uint8_t restoredStep = length == 0
+            ? 0
+            : std::min<uint8_t>(callerStep, static_cast<uint8_t>(length - 1U));
+        sequencer_.focusedStep.set(restoredStep);
+        sequencer_.structureUi.syncPreviewPage(restoredPage);
+        track_ui_.syncPreviewTrack(callerTrack);
+        navigation_focus_.set(callerFocus);
+        return;
+    }
+
+    syncPreviewToFocus(core::state::StructureNavigationFocus::PAGE);
+    navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
 }
 
 FLASHMEM void SequencerStructureNavigationWorkflow::moveStep(float delta) {

@@ -45,10 +45,13 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
 ) {
     const auto& sequencer = source.sequencer;
     const uint8_t activeTrack = source.sharedTrackActive.get();
+    const bool structureWorkspace = sequencer.structureUi.workspace.active.get();
     const bool focusingTrack =
+        structureWorkspace &&
         !source.trackNavigation.selection.active.get() &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
     const bool focusingStep =
+        !structureWorkspace &&
         !source.trackNavigation.selection.active.get() &&
         !sequencer.structureUi.pageSelection.active.get() &&
         !sequencer.structureUi.stepSelection.active.get() &&
@@ -136,6 +139,8 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID;
     const char* leftText = ccLaneGrid
         ? "CC lane"
+        : structureWorkspace
+        ? "Struct"
         : microContext
         ? "Micro"
         : (cycleContext
@@ -159,6 +164,16 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 )
             );
         }
+    } else if (structureWorkspace) {
+        std::snprintf(
+            badgeText.data(),
+            badgeText.size(),
+            "%s",
+            sequencer.structureUi.workspace.level.get() ==
+                    core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
+                ? "Tracks"
+                : "Patterns"
+        );
     } else if (!source.trackNavigation.selection.active.get() &&
         !sequencer.structureUi.pageSelection.active.get() &&
         !sequencer.structureUi.stepSelection.active.get()) {

@@ -55,6 +55,7 @@ class SequencerMacroPropertyHandler;
 class SequencerPatternQuickControlsHandler;
 class SequencerPropertySelectorHandler;
 class SequencerStepEditHandler;
+class SequencerStepContentHandler;
 class SequencerStepHandler;
 }  // namespace core::handler
 
@@ -155,6 +156,8 @@ private:
     core::app::ExtmemUniquePtr<core::handler::SequencerPatternQuickControlsHandler>
         quick_controls_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerStepEditHandler> step_edit_handler_;
+    core::app::ExtmemUniquePtr<core::handler::SequencerStepContentHandler>
+        step_content_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerPropertySelectorHandler>
         property_selector_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerCcLaneWorkflow>

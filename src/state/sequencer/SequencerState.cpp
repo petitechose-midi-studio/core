@@ -237,11 +237,13 @@ FLASHMEM void SequencerState::reset() {
     expandedVariationTelemetry.reset();
     variationTelemetryRevision.set(0);
     activeStepProperty.set(StepProperty::NOTE);
+    stepStatePropertyActive.set(false);
 
     stepEdit.reset();
     stepPresetPicker.reset();
     ccLaneUi.reset();
     stepPropertyInlineSelector.reset();
+    stepContentSelector.reset();
     stepInlineFeedback.reset();
     patternVariationFeedback.reset();
     historyFeedback.reset();

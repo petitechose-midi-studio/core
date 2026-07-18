@@ -1,54 +1,59 @@
-# UX workflow: Pattern/Page bottom-left clear/remove actions.
-# Purpose: validates that page focus and page selection share the same model:
-# tap clears page content while preserving page slots; hold removes pages and
-# compacts following pages.
+# UX workflow: Pattern clear/remove actions on current item and selection.
+# Purpose: validates one shallow/deep model: tap clears musical content while
+# preserving the slot; hold removes the Pattern and compacts following slots.
 # Expect: capture_changed:page_2_pattern_focus_with_content=page_2_cleared_by_tap, capture_changed:page_2_cleared_by_tap=page_2_remove_hold_applied, capture_changed:page_selection_cleared_by_tap=page_selection_removed
 
 0 scenario sequencer
-50 capture screen track_focus_initial
+50 capture screen pattern_1_initial
 
-# Pattern context: create page 2 and page 3, put content on page 2, then clear
-# page 2 with tap and remove it with hold.
-150 tap NAV 60
-350 capture screen pattern_focus
-450 encoder NAV 1
-650 capture screen page_2_add_preview
-750 tap NAV 60
-1000 capture screen page_2_created
-1100 encoder NAV 1
-1300 capture screen page_3_add_preview
-1400 tap NAV 60
-1650 capture screen page_3_created
-1750 encoder NAV -1
-1950 capture screen page_2_focus
-2050 tap NAV 60
-2250 capture screen page_2_step_focus
-2350 tap MACRO_3 60
-2600 capture screen page_2_step_3_enabled
-2700 tap NAV 60
-2900 capture screen track_focus_after_step
-3000 tap NAV 60
-3200 capture screen page_2_pattern_focus_with_content
-3300 tap BOTTOM_LEFT 60
-3550 capture screen page_2_cleared_by_tap
-3650 button BOTTOM_LEFT down
-4700 tick
-4750 capture screen page_2_remove_hold_applied
-4800 button BOTTOM_LEFT up
-5050 capture screen page_2_removed
+# Create Pattern 2.
+150 button NAV down
+1220 tick
+1280 button NAV up
+1480 tap NAV 60
+1680 encoder NAV 1
+1880 tap NAV 60
+2180 capture screen page_2_created
 
-# Pattern Selection context: select the focused remaining page, tap clears its
-# contents and keeps selection active; hold removes it and exits selection.
-5150 button NAV down
-6250 tick
-6300 capture screen page_selection_entered
-6350 button NAV up
-6450 tap NAV 60
-6700 capture screen page_selected
-6800 tap BOTTOM_LEFT 60
-7050 capture screen page_selection_cleared_by_tap
-7150 button BOTTOM_LEFT down
-8200 tick
-8250 capture screen page_selection_remove_hold_applied
-8300 button BOTTOM_LEFT up
-8550 capture screen page_selection_removed
+# Create Pattern 3.
+2280 button NAV down
+3350 tick
+3410 button NAV up
+3610 tap NAV 60
+3810 encoder NAV 1
+4010 tap NAV 60
+4310 capture screen page_3_created
+
+# Return to Pattern 2, add content in Step focus, then return to Pattern.
+4410 encoder NAV -1
+4610 capture screen page_2_focus
+4710 tap NAV 60
+4910 capture screen page_2_step_focus
+5010 tap MACRO_3 60
+5260 capture screen page_2_step_3_enabled
+5360 tap NAV 60
+5610 capture screen page_2_pattern_focus_with_content
+
+# Tap clears content but preserves Pattern 2; hold removes it and compacts the
+# former Pattern 3 into slot 2.
+5710 tap BOTTOM_LEFT 60
+5960 capture screen page_2_cleared_by_tap
+6060 button BOTTOM_LEFT down
+7110 tick
+7160 capture screen page_2_remove_hold_applied
+7210 button BOTTOM_LEFT up
+7460 capture screen page_2_removed
+
+# Root Pattern LEFT_TOP enters Page selection directly. Clear the selected
+# remaining Pattern 2, then remove it; Pattern 1 remains.
+7560 tap LEFT_TOP 60
+7810 capture screen page_selection_entered
+7910 tap NAV 60
+8160 capture screen page_selected
+8260 tap BOTTOM_LEFT 60
+8510 capture screen page_selection_cleared_by_tap
+8610 button BOTTOM_LEFT down
+9660 tick
+9710 capture screen page_selection_remove_hold_applied
+9760 button BOTTOM_LEFT up
+10010 capture screen page_selection_removed

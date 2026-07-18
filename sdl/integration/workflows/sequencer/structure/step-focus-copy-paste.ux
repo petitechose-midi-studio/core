@@ -4,13 +4,11 @@
 # Expect: capture_changed:step_4_focus_paste_target=step_4_pasted
 
 0 scenario sequencer
-50 capture screen track_focus
+50 capture screen pattern_focus
 
-# Move to Step focus and create an edited source step.
+# Move directly to Step focus and create an edited source step.
 150 tap NAV 60
-350 capture screen pattern_focus
-450 tap NAV 60
-650 capture screen step_focus
+350 capture screen step_focus
 750 tap MACRO_2 60
 950 capture screen step_2_enabled
 1050 encoder OPT 0.58

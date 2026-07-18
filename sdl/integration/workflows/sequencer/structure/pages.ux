@@ -1,75 +1,70 @@
-# UX workflow: create sequencer pages, select non-contiguous pages, copy, and
-# preview cursor-anchored paste destinations.
-# Purpose: validates the selection grammar `BOTTOM_RIGHT tap = copy selection`
-# and `BOTTOM_RIGHT hold = paste selection at cursor`.
+# UX workflow: sparse Pattern selection copy/paste.
+# Purpose: creates five contiguous Patterns through Structure, then validates
+# non-contiguous selection, sparse clipboard footprint, preview, and paste.
 # Expect: capture_changed:selection_mode_entered=pages_1_3_5_selected, capture_changed:paste_preview_overwrite_and_free=paste_selection_applied_by_hold
 
 0 scenario sequencer
-50 capture screen track_focus
+50 capture screen pattern_1
 
-# Enter page focus from the default track focus.
-150 tap NAV 60
-350 capture screen page_focus
+# Create Patterns 2 through 5. Each +Next Pattern is explicit and confirmation
+# returns to the new musical Pattern before the next structural visit.
+150 button NAV down
+1220 tick
+1280 button NAV up
+1480 tap NAV 60
+1680 encoder NAV 1
+1880 tap NAV 60
 
-# Create page 2 from the first add-slot preview.
-450 encoder NAV 1
-550 capture screen page_2_add_preview
-650 tap NAV 60
-850 capture screen page_2_created
+2080 button NAV down
+3150 tick
+3210 button NAV up
+3410 tap NAV 60
+3610 encoder NAV 1
+3810 tap NAV 60
 
-# Create page 3 from the next add-slot preview.
-950 encoder NAV 1
-1050 capture screen page_3_add_preview
-1150 tap NAV 60
-1350 capture screen page_3_created
+4010 button NAV down
+5080 tick
+5140 button NAV up
+5340 tap NAV 60
+5540 encoder NAV 1
+5740 tap NAV 60
 
-# Create page 4.
-1450 encoder NAV 1
-1550 capture screen page_4_add_preview
-1650 tap NAV 60
-1850 capture screen page_4_created
+5940 button NAV down
+7010 tick
+7070 button NAV up
+7270 tap NAV 60
+7470 encoder NAV 1
+7670 tap NAV 60
+7970 capture screen page_5_created
 
-# Create page 5.
-1950 encoder NAV 1
-2050 capture screen page_5_add_preview
-2150 tap NAV 60
-2350 capture screen page_5_created
+# Root Pattern LEFT_TOP enters selection at Pattern 5. Select Patterns 5, 1,
+# and 3 while preserving the gaps.
+8070 tap LEFT_TOP 60
+8320 capture screen selection_mode_entered
+8420 tap NAV 60
+8670 capture screen page_5_selected
+8770 encoder NAV -1
+8850 encoder NAV -1
+8930 encoder NAV -1
+9010 encoder NAV -1
+9260 capture screen selection_cursor_page_1
+9360 tap NAV 60
+9610 capture screen pages_1_and_5_selected
+9710 encoder NAV 1
+9790 encoder NAV 1
+10040 capture screen selection_cursor_page_3
+10140 tap NAV 60
+10390 capture screen pages_1_3_5_selected
 
-# Enter page selection mode on page 5.
-2450 button NAV down
-3500 tick
-3550 capture screen selection_mode_entered
-3600 button NAV up
-
-# Select page 5, then page 1 and page 3, preserving gaps.
-3750 tap NAV 60
-3950 capture screen page_5_selected
-4050 encoder NAV -1
-4150 encoder NAV -1
-4250 encoder NAV -1
-4350 encoder NAV -1
-4550 capture screen selection_cursor_page_1
-4650 tap NAV 60
-4850 capture screen pages_1_and_5_selected
-4950 encoder NAV 1
-5050 encoder NAV 1
-5250 capture screen selection_cursor_page_3
-5350 tap NAV 60
-5550 capture screen pages_1_3_5_selected
-
-# Copy keeps selection active and stores the sparse page footprint.
-5650 tap BOTTOM_RIGHT 60
-5900 capture screen pages_selection_copied
-
-# Move cursor to page 4. Paste preview should show page 4 as overwrite and
-# pages 6/8 as free destinations.
-6000 encoder NAV 1
-6200 capture screen paste_preview_overwrite_and_free
-
-# Hold paste applies the copied selection at the cursor.
-6300 button BOTTOM_RIGHT down
-6500 capture screen paste_selection_hold_started
-7400 tick
-7450 capture screen paste_selection_applied_by_hold
-7500 button BOTTOM_RIGHT up
-7750 capture screen paste_selection_released
+# Copy keeps selection active. Anchor at Pattern 4: preview combines overwrite
+# at 4 with free destinations 6 and 8; hold applies the sparse footprint.
+10490 tap BOTTOM_RIGHT 60
+10740 capture screen pages_selection_copied
+10840 encoder NAV 1
+11090 capture screen paste_preview_overwrite_and_free
+11190 button BOTTOM_RIGHT down
+11390 capture screen paste_selection_hold_started
+12240 tick
+12290 capture screen paste_selection_applied_by_hold
+12340 button BOTTOM_RIGHT up
+12590 capture screen paste_selection_released

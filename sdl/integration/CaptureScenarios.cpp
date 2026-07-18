@@ -1501,6 +1501,10 @@ bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
     if (!state.setSharedTrackState(0x0015, 0)) return false;
     state.structureNavigationFocus.set(StructureNavigationFocus::TRACK);
     state.trackNavigation.syncPreviewTrack(0);
+    state.sequencer.structureUi.workspace.level.set(
+        SequencerStructureWorkspaceLevel::TRACKS
+    );
+    state.sequencer.structureUi.workspace.active.set(true);
 
     state.sequencer.pattern.midiChannel.set(1);
     state.sequencer.setStepDataAt(0, 60, 104, 75, 0);

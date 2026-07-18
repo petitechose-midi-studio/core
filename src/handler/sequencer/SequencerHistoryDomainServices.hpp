@@ -49,7 +49,8 @@ public:
         void* context,
         uint8_t step,
         core::state::sequencer::StepProperty property,
-        uint32_t nowMs
+        uint32_t nowMs,
+        bool stateProperty
     );
 
     struct Operations {
@@ -113,7 +114,8 @@ public:
     bool beginCoalescedPatternEdit(
         uint8_t step,
         core::state::sequencer::StepProperty property,
-        uint32_t nowMs
+        uint32_t nowMs,
+        bool stateProperty = false
     ) const;
     bool commitCoalescedPatternEdit() const;
 

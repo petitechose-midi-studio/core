@@ -120,6 +120,9 @@ class SequencerPropertySelectorUxSurface final : public core::validation::ux::Se
 public:
     SequencerPropertySelectorUxSurface(
         oc::state::Signal<core::ui::ViewType, 8>& activeView,
+        oc::state::Signal<
+            core::state::StructureNavigationFocus,
+            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus,
         core::state::sequencer::SequencerState& sequencer
     );
 
@@ -130,6 +133,9 @@ public:
 
 private:
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     core::state::sequencer::SequencerState& sequencer_;
 };
 

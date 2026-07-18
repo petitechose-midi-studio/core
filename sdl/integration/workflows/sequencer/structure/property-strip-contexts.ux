@@ -1,56 +1,47 @@
-# UX workflow: verify context-specific property-strip affordances.
-# Purpose: validates that Track reserves strip space without active property
-# icons, Pattern exposes pattern dimensions plus musical prop selection, and
-# Step exposes the musical prop selector from LEFT_CENTER while OPT edits the
-# focused step.
-# Expect: capture_match:track_focus_strip_still_hidden=track_left_bottom_no_property_overlay, capture_match:track_focus_strip_still_hidden=track_left_center_no_pattern_overlay
+# UX workflow: verify the direct Pattern/Step control grammar.
+# Purpose: keeps Pattern quick controls intact, proves Step LEFT_CENTER owns
+# State/Chance/Note/Velocity/Gate/Nudge, and Step LEFT_BOTTOM exposes semantic
+# Variation/Chord/Micro/Cycle/Select actions without duplicating Step Editor.
+# Expect: capture_changed:step_state_on=step_state_off, capture_changed:step_content_chord_selected=step_editor_chord_open, capture_changed:root_pattern_initial=pattern_after_step_edit
 
 0 scenario sequencer
-50 capture screen track_focus_strip_hidden
+50 capture screen root_pattern_initial
 
-# Pattern focus: both pattern quick controls and prop selector are available.
-150 tap NAV 60
-350 capture screen pattern_focus_strip
-450 button LEFT_CENTER down
-650 capture screen pattern_quick_selector_open
-700 button LEFT_CENTER up
-900 capture screen pattern_quick_selector_closed
+# Pattern keeps its direct quick controls on LEFT_CENTER and musical property
+# selector on LEFT_BOTTOM.
+150 button LEFT_CENTER down
+350 capture screen pattern_quick_selector_open
+400 button LEFT_CENTER up
+600 capture screen pattern_quick_selector_closed
+700 button LEFT_BOTTOM down
+900 capture screen pattern_property_selector_open
+950 button LEFT_BOTTOM up
+1150 capture screen pattern_property_selector_closed
 
-# Direct OPT in Pattern edits the selected pattern dimension and shows the same
-# transient quick-control overlay without holding LEFT_CENTER.
-1000 encoder OPT 0.25
-1150 capture screen pattern_direct_opt_feedback
-1900 tick
-1950 capture screen pattern_direct_feedback_expired
+# Step LEFT_CENTER starts on Note. Move to State, switch the focused step Off,
+# and apply on release. The overlay must report the authored value immediately.
+1250 tap NAV 60
+1450 tap MACRO_1 60
+1650 capture screen step_state_on
+1750 button LEFT_CENTER down
+1950 capture screen step_property_note_selected
+2050 encoder NAV -1
+2130 encoder NAV -1
+2250 capture screen step_property_state_selected
+2350 encoder OPT -2.0
+2550 capture screen step_state_off_in_selector
+2600 button LEFT_CENTER up
+2850 capture screen step_state_off
 
-# LEFT_BOTTOM remains the musical prop selector in Pattern.
-2050 button LEFT_BOTTOM down
-2250 capture screen pattern_property_selector_open
-2300 button LEFT_BOTTOM up
-2500 capture screen pattern_property_selector_closed
-
-# Step focus: LEFT_CENTER now owns the focused step property selector; OPT edits
-# the focused step property when the selector is closed. LEFT_BOTTOM is kept for
-# secondary property actions and must not open a primary selector on its own.
-2600 tap NAV 60
-2800 capture screen step_focus_property_only
-2900 button LEFT_CENTER down
-3150 capture screen step_property_selector_open
-3200 button LEFT_CENTER up
-3400 capture screen step_property_selector_closed
-3500 encoder OPT 1.00
-3650 capture screen step_opt_edits_focused_property
-3750 button LEFT_BOTTOM down
-3950 capture screen step_left_bottom_no_property_overlay
-4000 button LEFT_BOTTOM up
-
-# Track focus: strip space remains reserved but property-strip controls are not
-# active.
-4200 tap NAV 60
-4400 capture screen track_focus_strip_still_hidden
-4500 button LEFT_BOTTOM down
-4750 capture screen track_left_bottom_no_property_overlay
-4800 button LEFT_BOTTOM up
-4900 button LEFT_CENTER down
-5150 capture screen track_left_center_no_pattern_overlay
-5200 button LEFT_CENTER up
+# LEFT_BOTTOM is the semantic content selector. Chord delegates to the existing
+# Step Editor at its Chord row; closing it returns to the original Pattern view.
+2950 button LEFT_BOTTOM down
+3150 capture screen step_content_variation_selected
+3250 encoder NAV 1
+3450 capture screen step_content_chord_selected
+3500 button LEFT_BOTTOM up
+3800 capture screen step_editor_chord_open
+3900 tap LEFT_TOP 60
+4200 capture screen step_after_chord_editor
+4300 tap NAV 60
+4550 capture screen pattern_after_step_edit

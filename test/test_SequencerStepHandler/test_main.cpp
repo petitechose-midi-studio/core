@@ -204,6 +204,79 @@ void holdHistoryControls(SequencerStepHarness& h) {
     assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
 }
 
+void openStructureWorkspace(SequencerStepHarness& h) {
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(h.state.sequencer.structureUi.workspace.active.get());
+    assert(
+        h.state.sequencer.structureUi.workspace.level.get() ==
+        core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
+    );
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
+    h.release(Config::ButtonID::NAV);
+    h.advance(1U);
+}
+
+void enterStructurePatterns(SequencerStepHarness& h) {
+    openStructureWorkspace(h);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.sequencer.structureUi.workspace.active.get());
+    assert(
+        h.state.sequencer.structureUi.workspace.level.get() ==
+        core::state::sequencer::SequencerStructureWorkspaceLevel::PATTERNS
+    );
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+}
+
+void test_short_nav_cycles_pattern_and_step_only() {
+    SequencerStepHarness h;
+
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
+    assert(!h.state.sequencer.structureUi.workspace.active.get());
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+    assert(!h.state.sequencer.structureUi.workspace.active.get());
+
+    std::cout << "[PASS] test_short_nav_cycles_pattern_and_step_only\n";
+}
+
+void test_structure_back_restores_exact_musical_caller() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0003, 0);
+    h.state.sequencer.pattern.length.set(16);
+    h.state.sequencer.page.set(1);
+    h.state.sequencer.focusedStep.set(11);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+
+    openStructureWorkspace(h);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1);
+    h.tap(Config::ButtonID::NAV);
+    assert(
+        h.state.sequencer.structureUi.workspace.level.get() ==
+        core::state::sequencer::SequencerStructureWorkspaceLevel::PATTERNS
+    );
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(
+        h.state.sequencer.structureUi.workspace.level.get() ==
+        core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
+    );
+    h.tap(Config::ButtonID::LEFT_TOP);
+
+    assert(!h.state.sequencer.structureUi.workspace.active.get());
+    assert(h.state.sequencerTracks.activeTrackIndex() == 0);
+    assert(h.state.sequencer.page.get() == 1);
+    assert(h.state.sequencer.focusedStep.get() == 11);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
+
+    std::cout << "[PASS] test_structure_back_restores_exact_musical_caller\n";
+}
+
 void test_step_toggle_undo_redo_workflow() {
     SequencerStepHarness h;
     h.state.sequencer.pattern.length.set(8);
@@ -246,7 +319,7 @@ void test_step_toggle_undo_redo_workflow() {
     std::cout << "[PASS] test_step_toggle_undo_redo_workflow\n";
 }
 
-void test_nav_selection_mode_deletes_selected_sequencer_page() {
+void test_left_top_selection_deletes_selected_sequencer_page() {
     SequencerStepHarness h;
     h.state.sequencer.pattern.length.set(16);
     h.state.sequencer.page.set(1);
@@ -255,16 +328,11 @@ void test_nav_selection_mode_deletes_selected_sequencer_page() {
     h.state.sequencer.pattern.velocity[8] = 90;
     h.state.sequencer.pattern.setEnabled(8, true);
 
-    h.press(Config::ButtonID::NAV);
-    h.tick(0);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.state.sequencer.structureUi.pageSelection.active.get());
     assert(h.state.sequencer.structureUi.pageSelection.scope.get() ==
            core::state::StructureSelectionScope::PAGE);
     assert(h.state.sequencer.structureUi.pageSelection.cursorIndex.get() == 1);
-
-    h.release(Config::ButtonID::NAV);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
 
     h.state.sequencer.structureUi.pageSelection.selectedMask.set(0x0002);
     assert(h.state.sequencer.structureUi.pageSelection.selectedMask.get() == 0x0002);
@@ -287,7 +355,7 @@ void test_nav_selection_mode_deletes_selected_sequencer_page() {
     assert(!h.state.sequencer.pattern.enabledMask.get().test(8));
     assert(!h.state.sequencer.structureUi.pageSelection.active.get());
 
-    std::cout << "[PASS] test_nav_selection_mode_deletes_selected_sequencer_page\n";
+    std::cout << "[PASS] test_left_top_selection_deletes_selected_sequencer_page\n";
 }
 
 void test_page_selection_cursor_can_move_across_inactive_slots() {
@@ -322,11 +390,13 @@ void test_page_selection_cursor_can_move_across_inactive_slots() {
     std::cout << "[PASS] test_page_selection_cursor_can_move_across_inactive_slots\n";
 }
 
-void test_sequencer_page_creation_extends_pattern_to_target_slot() {
+void test_structure_workspace_creates_only_the_next_page() {
     SequencerStepHarness h;
     h.state.sequencer.pattern.length.set(24);
     h.state.sequencer.page.set(2);
     h.state.sequencer.focusedStep.set(16);
+
+    enterStructurePatterns(h);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.structureUi.previewAddPageSlot.get());
@@ -335,23 +405,29 @@ void test_sequencer_page_creation_extends_pattern_to_target_slot() {
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.structureUi.previewAddPageSlot.get());
-    assert(h.state.sequencer.structureUi.previewPageIndex.get() == 4);
-    assert(h.state.sequencer.page.get() == 4);
+    assert(h.state.sequencer.structureUi.previewPageIndex.get() == 3);
+    assert(h.state.sequencer.page.get() == 3);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(!h.state.sequencer.structureUi.previewAddPageSlot.get());
+    assert(h.state.sequencer.structureUi.previewPageIndex.get() == 2);
+    assert(h.state.sequencer.page.get() == 2);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.structureUi.previewAddPageSlot.get());
-    assert(h.state.sequencer.structureUi.previewPageIndex.get() == 5);
-    assert(h.state.sequencer.page.get() == 5);
+    assert(h.state.sequencer.structureUi.previewPageIndex.get() == 3);
+    assert(h.state.sequencer.page.get() == 3);
 
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
 
     assert(!h.state.sequencer.structureUi.previewAddPageSlot.get());
-    assert(h.state.sequencer.pattern.length.get() == 48);
-    assert(h.state.sequencer.page.get() == 5);
-    assert(h.state.sequencer.focusedStep.get() == 40);
+    assert(!h.state.sequencer.structureUi.workspace.active.get());
+    assert(h.state.sequencer.pattern.length.get() == 32);
+    assert(h.state.sequencer.page.get() == 3);
+    assert(h.state.sequencer.focusedStep.get() == 24);
 
-    for (uint8_t step = 24; step < 48; ++step) {
+    for (uint8_t step = 24; step < 32; ++step) {
         assert(h.state.sequencer.pattern.note[step] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
         assert(h.state.sequencer.pattern.velocity[step] == core::state::sequencer::SequencerState::DEFAULT_VELOCITY);
         assert(h.state.sequencer.pattern.gate[step] == core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT);
@@ -360,31 +436,26 @@ void test_sequencer_page_creation_extends_pattern_to_target_slot() {
         assert(!h.state.sequencer.pattern.isEnabled(step));
     }
 
-    std::cout << "[PASS] test_sequencer_page_creation_extends_pattern_to_target_slot\n";
+    std::cout << "[PASS] test_structure_workspace_creates_only_the_next_page\n";
 }
 
-void test_nav_selection_mode_mutes_then_deletes_selected_sequencer_track() {
+void test_structure_selection_mutes_then_deletes_selected_sequencer_track() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
     h.state.sequencerTracks.track(1).midiChannel.set(5);
     h.state.sequencer.pattern.midiChannel.set(0);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
     assert(h.state.sequencer.pattern.midiChannel.get() == 5);
 
-    h.press(Config::ButtonID::NAV);
-    h.tick(0);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.trackNavigation.selection.active.get());
     assert(h.state.trackNavigation.selection.scope.get() ==
            core::state::StructureSelectionScope::TRACK);
     assert(h.state.trackNavigation.selection.cursorIndex.get() == 1);
-
-    h.release(Config::ButtonID::NAV);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
 
     h.state.trackNavigation.selection.selectedMask.set(0x0002);
     assert(h.state.trackNavigation.selection.selectedMask.get() == 0x0002);
@@ -411,7 +482,7 @@ void test_nav_selection_mode_mutes_then_deletes_selected_sequencer_track() {
     assert(h.state.sequencer.pattern.midiChannel.get() == 0);
     assert(!h.state.trackNavigation.selection.active.get());
 
-    std::cout << "[PASS] test_nav_selection_mode_mutes_then_deletes_selected_sequencer_track\n";
+    std::cout << "[PASS] test_structure_selection_mutes_then_deletes_selected_sequencer_track\n";
 }
 
 void test_track_focus_bottom_left_mutes_without_clearing_payload() {
@@ -421,7 +492,7 @@ void test_track_focus_bottom_left_mutes_without_clearing_payload() {
     h.state.sequencer.pattern.note[0] = 82;
     h.state.sequencer.pattern.velocity[0] = 108;
     h.state.sequencer.pattern.setEnabled(0, true);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
 
     const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
     h.press(Config::ButtonID::BOTTOM_LEFT);
@@ -682,7 +753,7 @@ void test_sequencer_selection_copy_paste_copies_track_payload() {
     h.state.sequencer.pattern.note[0] = 82;
     h.state.sequencer.pattern.velocity[0] = 108;
     h.state.sequencer.pattern.setEnabled(0, true);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
     h.state.trackNavigation.selection.active.set(true);
     h.state.trackNavigation.selection.scope.set(core::state::StructureSelectionScope::TRACK);
     h.state.trackNavigation.selection.cursorIndex.set(1);
@@ -739,7 +810,7 @@ void test_sequencer_track_copy_and_long_press_paste_to_add_slot() {
     h.state.sequencer.pattern.gate[0] = 72;
     h.state.sequencer.pattern.setEnabled(0, true);
     createRootMicroSequence(h, 0);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
@@ -791,7 +862,7 @@ void test_sequencer_track_paste_preserves_occupied_destination_routing_and_mute(
     h.state.sequencer.pattern.note[0] = 76;
     h.state.sequencer.pattern.velocity[0] = 104;
     h.state.sequencer.pattern.setEnabled(0, true);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
@@ -840,7 +911,7 @@ void test_track_paste_physical_undo_redo_restores_content_and_reports_outcome() 
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
 
     h.state.sequencer.pattern.midiChannel.set(2);
     h.state.sequencer.pattern.note[0] = 76;
@@ -899,7 +970,7 @@ void test_track_selection_paste_is_dense_atomic_and_one_history_entry() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0015, 0);  // Sources T1/T3, occupied T5.
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
 
     h.state.sequencer.pattern.note[0] = 61;
     h.state.sequencer.pattern.velocity[0] = 91;
@@ -985,7 +1056,7 @@ void test_out_of_range_track_selection_paste_changes_nothing() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0005, 0);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
     h.state.sequencer.pattern.note[0] = 62;
     h.state.sequencerTracks.track(2).note[0] = 74;
 
@@ -1020,7 +1091,7 @@ void test_track_paste_clamps_focus_to_short_source_before_history_commit() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0003, 0);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
     h.state.sequencer.pattern.length.set(8);
     h.state.sequencer.pattern.note[0] = 68;
     h.state.sequencerTracks.track(1).length.set(128);
@@ -1066,7 +1137,7 @@ void test_track_paste_mid_hold_release_cancels_without_mutation_or_history() {
     h.state.sequencer.pattern.note[0] = 81;
     h.state.sequencerTracks.track(1).note[0] = 44;
     h.state.sequencerTracks.track(1).midiChannel.set(6);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.pattern.note[0] == 44);
@@ -1100,7 +1171,7 @@ void test_track_paste_commits_once_at_absolute_long_threshold() {
     h.state.sequencer.pattern.note[0] = 83;
     h.state.sequencerTracks.track(1).note[0] = 45;
     h.state.sequencerTracks.track(1).midiChannel.set(7);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     h.turn(Config::EncoderID::NAV, 1.0f);
 
@@ -1130,7 +1201,7 @@ void test_track_paste_left_top_cancels_and_consumes_later_release() {
     h.state.setSharedTrackState(0x0003, 0);
     h.state.sequencer.pattern.note[0] = 84;
     h.state.sequencerTracks.track(1).note[0] = 46;
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     h.turn(Config::EncoderID::NAV, 1.0f);
 
@@ -1150,7 +1221,7 @@ void test_track_paste_details_nav_keeps_target_and_never_toggles_transport() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0015, 0);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
     auto& selection = h.state.trackNavigation.selection;
     selection.active.set(true);
     selection.scope.set(core::state::StructureSelectionScope::TRACK);
@@ -1186,7 +1257,7 @@ void test_track_paste_refreshes_route_during_hold_and_freezes_queued_plan() {
     h.state.sequencer.pattern.note[0] = 85;
     h.state.sequencerTracks.track(1).note[0] = 47;
     h.state.sequencerTracks.track(1).midiChannel.set(3);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     h.turn(Config::EncoderID::NAV, 1.0f);
 
@@ -1222,7 +1293,7 @@ void test_multi_track_paste_waits_for_every_exact_activation() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0015, 0);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
     auto& selection = h.state.trackNavigation.selection;
     selection.active.set(true);
     selection.scope.set(core::state::StructureSelectionScope::TRACK);
@@ -1265,7 +1336,7 @@ void test_deleted_track_slot_can_be_recreated_at_any_gap() {
     h.state.sequencerTracks.track(2).midiChannel.set(2);
     h.state.sequencerTracks.track(2).note[0] = 83;
     h.state.sequencerTracks.track(2).setEnabled(0, true);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.trackNavigation.previewAddSlot.get());
@@ -1301,6 +1372,7 @@ void test_created_page_is_undoable_and_redoable() {
     h.state.sequencer.page.set(0);
     h.state.sequencer.focusedStep.set(0);
 
+    enterStructurePatterns(h);
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.sequencer.structureUi.previewAddPageSlot.get());
     assert(h.state.sequencer.structureUi.previewPageIndex.get() == 1);
@@ -1343,7 +1415,7 @@ void test_created_track_is_undoable_and_redoable() {
     SequencerStepHarness h;
     h.state.sequencerTracks.reset();
     h.state.setSharedTrackState(0x0001, 0);
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    openStructureWorkspace(h);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.trackNavigation.previewAddSlot.get());
@@ -1415,12 +1487,9 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
         selectedChord
     ));
 
-    h.press(Config::ButtonID::NAV);
-    h.tick(0);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.state.sequencer.structureUi.stepSelection.active.get());
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
-    h.release(Config::ButtonID::NAV);
 
     h.tap(Config::MACRO_BUTTONS[1]);
     h.tap(Config::MACRO_BUTTONS[3]);
@@ -1755,12 +1824,9 @@ void test_child_content_nav_enters_step_selection_and_pastes_child_steps() {
     );
     assert(cycle.ok);
 
-    h.press(Config::ButtonID::NAV);
-    h.tick(0);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.handler.enterSelectionModeForCurrentFocus();
     assert(h.state.sequencer.structureUi.stepSelection.active.get());
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
-    h.release(Config::ButtonID::NAV);
 
     h.tap(Config::MACRO_BUTTONS[0]);
     h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -1868,11 +1934,13 @@ void test_child_step_focus_bottom_actions_use_local_step_payload() {
 }  // namespace
 
 int main() {
+    test_short_nav_cycles_pattern_and_step_only();
+    test_structure_back_restores_exact_musical_caller();
     test_step_toggle_undo_redo_workflow();
-    test_sequencer_page_creation_extends_pattern_to_target_slot();
-    test_nav_selection_mode_deletes_selected_sequencer_page();
+    test_structure_workspace_creates_only_the_next_page();
+    test_left_top_selection_deletes_selected_sequencer_page();
     test_page_selection_cursor_can_move_across_inactive_slots();
-    test_nav_selection_mode_mutes_then_deletes_selected_sequencer_track();
+    test_structure_selection_mutes_then_deletes_selected_sequencer_track();
     test_track_focus_bottom_left_mutes_without_clearing_payload();
     test_sequencer_page_copy_and_long_press_paste();
     test_child_content_clear_copy_and_paste_are_undoable();

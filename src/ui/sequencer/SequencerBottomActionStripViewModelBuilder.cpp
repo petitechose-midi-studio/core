@@ -206,6 +206,7 @@ core::state::sequencer::SequencerInteractionContext makeBottomInteractionContext
         source.navigationFocus.get()
     );
     const bool trackFocus =
+        source.sequencer.structureUi.workspace.active.get() &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
 
     if (context.stepSelectionActive) {
@@ -287,12 +288,15 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
     StripProps props;
     props.visible = true;
     const bool trackFocus =
+        source.sequencer.structureUi.workspace.active.get() &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
     const bool selectingTrack = source.trackNavigation.selection.active.get();
     const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
     const bool selectingStep = source.sequencer.structureUi.stepSelection.active.get();
     const bool selectingPatternVariation =
         source.sequencer.stepPropertyInlineSelector.selecting.get();
+    const bool selectingState = selectingPatternVariation &&
+        source.sequencer.stepStatePropertyActive.get();
     const uint16_t selectionMask = selectingTrack
         ? source.trackNavigation.selection.selectedMask.get()
         : source.sequencer.structureUi.pageSelection.selectedMask.get();
@@ -310,6 +314,13 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             standalone::icons::SETTINGS_GEAR,
             Visual::ACTIVE
         );
+        return props;
+    }
+
+    if (selectingState) {
+        props.slots[0].visualState = Visual::HIDDEN;
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2].visualState = Visual::HIDDEN;
         return props;
     }
 

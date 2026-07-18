@@ -8,6 +8,8 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 
+#include <config/Timing.hpp>
+
 #include "../../src/handler/view/ViewSwitcherHandler.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
@@ -61,6 +63,7 @@ struct ViewSwitcherHarness {
                       state.sequencer.patternQuickControls,
                       state.sequencer.stepPropertyInlineSelector,
                       state.sequencer.ccLaneUi,
+                      state.sequencer.structureUi.workspace,
                       state.trackNavigation.selection,
                       state.macroUi.pageSelection,
                       state.sequencer.structureUi.pageSelection,
@@ -111,6 +114,11 @@ struct ViewSwitcherHarness {
         release(id);
     }
 
+    void advance(uint32_t ms) {
+        g_now_ms += ms;
+        inputBinding.processTick();
+    }
+
     void turn(Config::EncoderID id, float value) {
         const auto encoderId = static_cast<oc::type::EncoderID>(id);
         encoderHw.setPosition(encoderId, value);
@@ -120,6 +128,13 @@ struct ViewSwitcherHarness {
 
 void openSelector(ViewSwitcherHarness& h) {
     h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.viewSelector.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::VIEW_SELECTOR);
+}
+
+void openSelectorFromSequencer(ViewSwitcherHarness& h) {
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     assert(h.state.viewSelector.visible.get());
     assert(h.overlays.current() == core::ui::OverlayType::VIEW_SELECTOR);
 }
@@ -179,16 +194,29 @@ void test_selector_uses_active_view_scope() {
     ViewSwitcherHarness h;
     h.state.activeView.set(core::ui::ViewType::SEQUENCER);
 
-    openSelector(h);
+    openSelectorFromSequencer(h);
     assert(h.state.viewSelector.selectedIndex.get() == 1);
 
     h.turn(Config::EncoderID::NAV, -1.0f);
     assert(h.state.viewSelector.selectedIndex.get() == 0);
 
-    h.tap(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
     assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
 
     std::cout << "[PASS] test_selector_uses_active_view_scope\n";
+}
+
+void test_sequencer_short_left_top_is_reserved_for_local_selection() {
+    ViewSwitcherHarness h;
+    h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+
+    assert(!h.state.viewSelector.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::NONE);
+    assert(h.state.activeView.get() == core::ui::ViewType::SEQUENCER);
+
+    std::cout << "[PASS] test_sequencer_short_left_top_is_reserved_for_local_selection\n";
 }
 
 void test_selector_uses_project_active_view_scope() {
@@ -281,6 +309,14 @@ void test_selector_does_not_open_while_sequencer_inline_modes_are_active() {
     {
         ViewSwitcherHarness h;
         h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.sequencer.structureUi.workspace.active.set(true);
+        h.tap(Config::ButtonID::LEFT_TOP);
+        assert(!h.state.viewSelector.visible.get());
+    }
+
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::SEQUENCER);
         h.state.sequencer.patternQuickControls.selecting.set(true);
         h.tap(Config::ButtonID::LEFT_TOP);
         assert(!h.state.viewSelector.visible.get());
@@ -343,6 +379,7 @@ int main() {
     test_nav_release_confirms_and_closes_selector();
     test_project_item_switches_to_project_view();
     test_selector_uses_active_view_scope();
+    test_sequencer_short_left_top_is_reserved_for_local_selection();
     test_selector_uses_project_active_view_scope();
     test_device_settings_item_switches_to_device_settings_view();
     test_sequencer_item_no_longer_exposes_settings_action();

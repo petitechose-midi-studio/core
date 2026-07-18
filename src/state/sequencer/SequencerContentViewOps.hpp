@@ -237,6 +237,7 @@ bool activeContentStepInPattern(const SequencerState& sequencer, uint8_t step);
 bool rotateActiveContentSteps(SequencerState& sequencer, int offsetSteps);
 
 bool toggleActiveContentStep(SequencerState& sequencer, uint8_t step);
+bool activeContentStepEnabled(const SequencerState& sequencer, uint8_t step);
 bool setActiveContentStepEnabled(SequencerState& sequencer, uint8_t step, bool enabled);
 bool setActiveContentStepFromNormalized(
     SequencerState& sequencer,

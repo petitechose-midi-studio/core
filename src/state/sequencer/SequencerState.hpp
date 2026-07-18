@@ -51,12 +51,15 @@ struct SequencerState {
 
     /// Active property edited by the 8 macro encoders in Sequencer view
     Signal<StepProperty, 6> activeStepProperty{StepProperty::NOTE};
+    /// State is a direct Step property without polluting the musical-value enum.
+    Signal<bool, 6> stepStatePropertyActive{false};
 
     // UI state
     SequencerStepEditOverlayState stepEdit;
     SequencerStepPresetPickerState stepPresetPicker;
     SequencerCcLaneUiState ccLaneUi;
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
+    SequencerStepContentSelectorState stepContentSelector;
     SequencerStepInlineFeedbackState stepInlineFeedback;
     SequencerPatternVariationFeedbackState patternVariationFeedback;
     SequencerHistoryFeedbackState historyFeedback;

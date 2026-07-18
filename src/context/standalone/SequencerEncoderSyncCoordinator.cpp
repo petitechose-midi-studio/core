@@ -142,6 +142,7 @@ FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
         sequencer_.pattern.graphRevision,
         sequencer_.focusedStep,
         sequencer_.activeStepProperty,
+        sequencer_.stepStatePropertyActive,
         sequencer_.contentView.kind,
         sequencer_.contentView.length,
         sequencer_.contentView.revision,
@@ -279,6 +280,27 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroLocalVariationValues(
     }
 }
 
+FLASHMEM void SequencerEncoderSyncCoordinator::syncMacroStateValues(uint8_t page) {
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        uint8_t abs = 0;
+        const float normalized =
+            core::state::sequencer::resolveActiveContentStepInPage(
+                sequencer_,
+                page,
+                i,
+                abs
+            ) && core::state::sequencer::activeContentStepEnabled(sequencer_, abs)
+            ? 1.0f
+            : 0.0f;
+        if (!macro_position_valid_[i] ||
+            hasMeaningfulEncoderDelta(macro_position_cache_[i], normalized)) {
+            encoders_.setPosition(Config::MACRO_ENCODERS[i], normalized);
+            macro_position_cache_[i] = normalized;
+            macro_position_valid_[i] = true;
+        }
+    }
+}
+
 FLASHMEM void SequencerEncoderSyncCoordinator::invalidateOptEncoderCache() {
     opt_steps_configured_ = 0;
     opt_ticks_per_step_configured_ = 0;
@@ -386,6 +408,16 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
 
     if (sequencer_.stepPropertyInlineSelector.selecting.get()) {
         invalidateOptEncoderCache();
+        if (sequencer_.stepStatePropertyActive.get()) {
+            input_utils::StepPropertyEncoderConfig stateConfig;
+            stateConfig.discreteSteps = 2;
+            stateConfig.discreteTicksPerStep =
+                input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
+            stateConfig.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
+            ensureMacroEncoderConfig(stateConfig);
+            syncMacroStateValues(page);
+            return;
+        }
         if (property == core::state::sequencer::StepProperty::PROBABILITY) {
             return;
         }
@@ -405,6 +437,36 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
         track_ui_,
         navigation_focus_.get()
     );
+    if (sequencer_.stepStatePropertyActive.get()) {
+        input_utils::StepPropertyEncoderConfig stateConfig;
+        stateConfig.discreteSteps = 2;
+        stateConfig.discreteTicksPerStep =
+            input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
+        stateConfig.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
+        ensureMacroEncoderConfig(stateConfig);
+        syncMacroStateValues(page);
+        if (policy.optTurn ==
+            core::state::sequencer::SequencerInteractionAction::EDIT_STEP_PROPERTY) {
+            ensureOptEncoderConfig(stateConfig);
+            const uint8_t length =
+                core::state::sequencer::activeContentLength(sequencer_);
+            const uint8_t step = length == 0
+                ? 0
+                : std::min<uint8_t>(
+                      sequencer_.focusedStep.get(),
+                      static_cast<uint8_t>(length - 1U)
+                  );
+            syncOptPosition(
+                length > 0 && core::state::sequencer::activeContentStepEnabled(
+                    sequencer_,
+                    step
+                ) ? 1.0f : 0.0f
+            );
+        } else {
+            invalidateOptEncoderCache();
+        }
+        return;
+    }
     const auto effectiveScale = core::state::sequencer::resolveEffectiveScaleSettings(
         track_bank_.projectScaleSettings(),
         sequencer_.pattern.scalePolicy,

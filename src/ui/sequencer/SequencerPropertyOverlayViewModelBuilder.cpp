@@ -1,5 +1,6 @@
 #include "ui/sequencer/SequencerPropertyOverlayViewModelBuilder.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -26,6 +27,44 @@ namespace core::ui::sequencer {
 namespace {
 
 using QuickItem = core::state::sequencer::PatternQuickControlItem;
+
+const char* stepContentActionIcon(
+    core::state::sequencer::SequencerStepContentAction action
+) {
+    using Action = core::state::sequencer::SequencerStepContentAction;
+    switch (action) {
+        case Action::CHORD:
+            return standalone::icons::CHORD;
+        case Action::MICRO_SEQUENCE:
+            return standalone::icons::MICRO_SEQUENCE;
+        case Action::CYCLE_STATES:
+            return standalone::icons::CYCLE_STATE;
+        case Action::SELECT_STEPS:
+            return standalone::icons::ACTION_PLACE_TARGET;
+        case Action::VARIATION:
+        default:
+            return standalone::icons::NOTE_PROP_RANDOM;
+    }
+}
+
+const char* stepContentActionLabel(
+    core::state::sequencer::SequencerStepContentAction action
+) {
+    using Action = core::state::sequencer::SequencerStepContentAction;
+    switch (action) {
+        case Action::CHORD:
+            return "Chord";
+        case Action::MICRO_SEQUENCE:
+            return "Micro";
+        case Action::CYCLE_STATES:
+            return "Cycle";
+        case Action::SELECT_STEPS:
+            return "Select steps";
+        case Action::VARIATION:
+        default:
+            return "Variation";
+    }
+}
 
 void formatQuickControlValue(
     char* buffer,
@@ -209,9 +248,52 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
 ) {
     const auto& sequencer = source.sequencer;
 
+    if (sequencer.stepContentSelector.selecting.get()) {
+        const auto action = sequencer.stepContentSelector.focusedAction.get();
+        StepPropertySelectionOverlayProps props{
+            .visible = true,
+            .customContent = true,
+            .icon = stepContentActionIcon(action),
+            .label = stepContentActionLabel(action),
+            .color = standalone::theme::color::STEP_STATE,
+        };
+        if (action == core::state::sequencer::SequencerStepContentAction::VARIATION) {
+            props.value = semantic::labelForProperty(
+                sequencer.activeStepProperty.get()
+            );
+        }
+        return props;
+    }
+
     if (sequencer.stepPropertyInlineSelector.selecting.get()) {
         const int selectedIndex =
             sequencer.stepPropertyInlineSelector.selectedIndex.get();
+        if (core::state::sequencer::sequencerPropertySelectionIsState(
+                selectedIndex
+            )) {
+            const uint8_t length =
+                core::state::sequencer::activeContentLength(sequencer);
+            const uint8_t step = length == 0
+                ? 0
+                : std::min<uint8_t>(
+                      sequencer.focusedStep.get(),
+                      static_cast<uint8_t>(length - 1U)
+                  );
+            return {
+                .visible = true,
+                .customContent = true,
+                .icon = standalone::icons::ACTION_VALIDATE,
+                .label = "State",
+                .value = length > 0 &&
+                        core::state::sequencer::activeContentStepEnabled(
+                            sequencer,
+                            step
+                        )
+                    ? "On"
+                    : "Off",
+                .color = standalone::theme::color::STEP_STATE,
+            };
+        }
         if (selectedIndex >=
             core::state::sequencer::SEQUENCER_BASE_STEP_PROPERTY_COUNT) {
             StepPropertySelectionOverlayProps props{

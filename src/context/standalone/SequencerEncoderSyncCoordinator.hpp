@@ -63,6 +63,7 @@ private:
         uint8_t page,
         core::state::sequencer::StepProperty property
     );
+    void syncMacroStateValues(uint8_t page);
     void invalidateOptEncoderCache();
     void syncOptPosition(float normalized);
     void syncFocusedStepOptValue(core::state::sequencer::StepProperty property);
@@ -78,7 +79,7 @@ private:
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     oc::api::EncoderAPI& encoders_;
-    oc::state::StaticWatchGroup<26> watcher_;
+    oc::state::StaticWatchGroup<27> watcher_;
 
     uint8_t macro_steps_configured_ = 0;
     uint16_t macro_ticks_per_step_configured_ = 0;

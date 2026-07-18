@@ -68,6 +68,9 @@ public:
 
     void update(uint32_t nowMs);
 
+    /** Explicit content-selection entry used by the Step action selector. */
+    void enterSelectionModeForCurrentFocus();
+
 private:
     void setupBindings();
 

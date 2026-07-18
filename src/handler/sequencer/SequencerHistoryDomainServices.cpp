@@ -154,14 +154,20 @@ FLASHMEM bool beginCoalescedPatternEditFromCoreState(
     void* context,
     uint8_t step,
     core::state::sequencer::StepProperty property,
-    uint32_t nowMs
+    uint32_t nowMs,
+    bool stateProperty
 ) {
     if (context == nullptr) {
         return false;
     }
 
     auto* state = static_cast<core::state::CoreState*>(context);
-    return state->beginOrContinueSequencerPatternHistoryCoalescing(step, property, nowMs);
+    return state->beginOrContinueSequencerPatternHistoryCoalescing(
+        step,
+        property,
+        nowMs,
+        stateProperty
+    );
 }
 
 FLASHMEM bool commitCoalescedPatternEditFromCoreState(void* context) {
@@ -302,14 +308,16 @@ FLASHMEM bool SequencerHistoryDomainServices::clear() const {
 FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedPatternEdit(
     uint8_t step,
     core::state::sequencer::StepProperty property,
-    uint32_t nowMs
+    uint32_t nowMs,
+    bool stateProperty
 ) const {
     return operations_.beginCoalescedPatternEdit != nullptr &&
            operations_.beginCoalescedPatternEdit(
                operations_.context,
                step,
                property,
-               nowMs
+               nowMs,
+               stateProperty
            );
 }
 

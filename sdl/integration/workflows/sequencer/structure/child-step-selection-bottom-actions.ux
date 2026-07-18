@@ -32,11 +32,17 @@
 3410 tap MACRO_3 60
 3660 capture screen child_steps_1_3_enabled
 
-# Enter child step selection, select steps 1 and 3, copy, then clear via hold.
-3760 button NAV down
-4860 tick
-4910 capture screen child_step_selection_entered
-4960 button NAV up
+# Enter child Step selection through the explicit semantic selector. Child
+# contexts keep LEFT_TOP for Back, so Select steps lives under LEFT_BOTTOM.
+3760 button LEFT_BOTTOM down
+3960 capture screen child_variation_action_selected
+4060 encoder NAV 1
+4140 encoder NAV 1
+4220 encoder NAV 1
+4300 encoder NAV 1
+4500 capture screen child_select_steps_action_selected
+4550 button LEFT_BOTTOM up
+4800 capture screen child_step_selection_entered
 5060 tap MACRO_1 60
 5310 capture screen child_step_1_selected
 5410 encoder NAV 2

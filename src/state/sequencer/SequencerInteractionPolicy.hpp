@@ -16,6 +16,8 @@ enum class SequencerInteractionScope : uint8_t {
     TRACK_SELECTION,
     PATTERN_SELECTION,
     STEP_SELECTION,
+    STEP_CONTENT_SELECTOR,
+    STRUCTURE,
     STEP_EDITOR,
 };
 
@@ -28,14 +30,20 @@ enum class SequencerInteractionAction : uint8_t {
     SELECT_PATTERN_DIMENSION,
     SELECT_MUSICAL_PROPERTY,
     SELECT_STEP_EDITOR_ROW,
+    SELECT_STEP_CONTENT_ACTION,
     CYCLE_SCOPE,
     CREATE_PREVIEW_STRUCTURE,
+    OPEN_STRUCTURE,
+    CONFIRM_STRUCTURE,
+    BACK_STRUCTURE,
     ENTER_SELECTION,
     TOGGLE_SELECTION,
     OPEN_PATTERN_DIMENSION_SELECTOR,
     OPEN_MUSICAL_PROPERTY_SELECTOR,
+    OPEN_STEP_CONTENT_SELECTOR,
     APPLY_PATTERN_DIMENSION_SELECTOR,
     APPLY_MUSICAL_PROPERTY_SELECTOR,
+    APPLY_STEP_CONTENT_SELECTOR,
     APPLY_STEP_EDITOR,
     CANCEL_TRANSIENT_CONTEXT,
     EDIT_PATTERN_DIMENSION,
@@ -87,9 +95,11 @@ struct SequencerInteractionContext {
     bool pageSelectionActive = false;
     bool trackSelectionActive = false;
     bool stepSelectionActive = false;
+    bool structureWorkspaceActive = false;
     bool patternQuickControlsActive = false;
     bool historyShortcutHoldActive = false;
     bool propertySelectorActive = false;
+    bool stepContentSelectorActive = false;
     bool stepEditorVisible = false;
     bool compatibleClipboardAvailable = false;
     bool currentStructureCanClear = true;

@@ -310,6 +310,30 @@ struct SequencerStepPropertyInlineSelectorState {
     void reset();
 };
 
+enum class SequencerStepContentAction : uint8_t {
+    VARIATION = 0,
+    CHORD,
+    MICRO_SEQUENCE,
+    CYCLE_STATES,
+    SELECT_STEPS,
+    COUNT,
+};
+
+/**
+ * Temporary LEFT_BOTTOM semantic action selector for Step focus.
+ *
+ * It does not own musical data. Applying an item delegates to the existing
+ * Step Editor or selection workflow, so there is only one editing authority.
+ */
+struct SequencerStepContentSelectorState {
+    Signal<bool, 6> selecting{false};
+    Signal<SequencerStepContentAction, 6> focusedAction{
+        SequencerStepContentAction::VARIATION
+    };
+
+    void reset();
+};
+
 struct SequencerStepInlineFeedbackState {
     static constexpr uint32_t DISPLAY_HOLD_MS = 700;
     static constexpr uint8_t MAX_STEPS = SequencerPatternState::MAX_STEPS;
@@ -481,12 +505,40 @@ struct SequencerTrackPasteUiState {
     void reset();
 };
 
+enum class SequencerStructureWorkspaceLevel : uint8_t {
+    TRACKS = 0,
+    PATTERNS,
+};
+
+/**
+ * Bounded session-only state for the NAV-hold Structure workspace.
+ *
+ * Caller fields are deliberately plain values: only active/level affect
+ * presentation. The snapshot is consumed synchronously when Back restores the
+ * exact musical surface and never enters persistence.
+ */
+struct SequencerStructureWorkspaceState {
+    Signal<bool, 6> active{false};
+    Signal<SequencerStructureWorkspaceLevel, 6> level{
+        SequencerStructureWorkspaceLevel::TRACKS
+    };
+
+    core::state::StructureNavigationFocus callerFocus =
+        core::state::StructureNavigationFocus::PAGE;
+    uint8_t callerTrack = 0;
+    uint8_t callerPage = 0;
+    uint8_t callerStep = 0;
+
+    void reset();
+};
+
 struct SequencerStructureUiState {
     Signal<bool, 4> previewAddPageSlot{false};
     Signal<uint8_t, 4> previewPageIndex{0};
     core::state::StructureHoldState pageHold;
     core::state::StructureSelectionState pageSelection;
     SequencerStepSelectionState stepSelection;
+    SequencerStructureWorkspaceState workspace;
     SequencerTrackPasteUiState trackPaste;
 
     SequencerStructureUiState();

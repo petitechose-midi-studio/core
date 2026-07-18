@@ -1,5 +1,7 @@
 #include "SequencerStepEditHandler.hpp"
 
+#include <algorithm>
+
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include <oc/time/Time.hpp>
@@ -318,6 +320,36 @@ FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) 
         return;
     }
     configureOptForFocusedRow();
+}
+
+FLASHMEM bool SequencerStepEditHandler::openFocusedStepAtRow(uint8_t row) {
+    const uint8_t length = core::state::sequencer::activeContentLength(sequencer_);
+    if (length == 0) return false;
+    const uint8_t focused = std::min<uint8_t>(
+        sequencer_.focusedStep.get(),
+        static_cast<uint8_t>(length - 1U)
+    );
+    sequencer_.page.set(core::state::sequencer::activeContentPageForStep(focused));
+    const uint8_t indexInPage = static_cast<uint8_t>(
+        focused % core::state::sequencer::SequencerState::STEPS_PER_PAGE
+    );
+    if (!step_edit_session_workflow::openForMacroInPage(
+            sequencer_,
+            history_,
+            open_release_latch_,
+            overlays_,
+            history_snapshot_,
+            history_snapshot_valid_,
+            indexInPage
+        )) {
+        return false;
+    }
+    // This entry path is completed by LEFT_BOTTOM, not a Macro button. No
+    // future Macro release belongs to the opening gesture.
+    open_release_latch_.clear();
+    sequencer_.stepEdit.focusedRow.set(row);
+    configureOptForFocusedRow();
+    return true;
 }
 
 FLASHMEM void SequencerStepEditHandler::commitStepEditHistory() {

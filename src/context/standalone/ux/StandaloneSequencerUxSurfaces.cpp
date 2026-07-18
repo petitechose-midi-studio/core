@@ -20,6 +20,7 @@
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerCcLanePropertySelection.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
@@ -257,10 +258,18 @@ FLASHMEM const char* actionName(SequencerAction action) {
             return "select_musical_property";
         case SequencerAction::SELECT_STEP_EDITOR_ROW:
             return "select_step_editor_row";
+        case SequencerAction::SELECT_STEP_CONTENT_ACTION:
+            return "select_step_content_action";
         case SequencerAction::CYCLE_SCOPE:
             return "cycle_scope";
         case SequencerAction::CREATE_PREVIEW_STRUCTURE:
             return "create_preview_structure";
+        case SequencerAction::OPEN_STRUCTURE:
+            return "open_structure";
+        case SequencerAction::CONFIRM_STRUCTURE:
+            return "confirm_structure";
+        case SequencerAction::BACK_STRUCTURE:
+            return "back_structure";
         case SequencerAction::ENTER_SELECTION:
             return "enter_selection";
         case SequencerAction::TOGGLE_SELECTION:
@@ -269,10 +278,14 @@ FLASHMEM const char* actionName(SequencerAction action) {
             return "open_pattern_dimension_selector";
         case SequencerAction::OPEN_MUSICAL_PROPERTY_SELECTOR:
             return "open_musical_property_selector";
+        case SequencerAction::OPEN_STEP_CONTENT_SELECTOR:
+            return "open_step_content_selector";
         case SequencerAction::APPLY_PATTERN_DIMENSION_SELECTOR:
             return "apply_pattern_dimension_selector";
         case SequencerAction::APPLY_MUSICAL_PROPERTY_SELECTOR:
             return "apply_musical_property_selector";
+        case SequencerAction::APPLY_STEP_CONTENT_SELECTOR:
+            return "apply_step_content_selector";
         case SequencerAction::APPLY_STEP_EDITOR:
             return "apply_step_editor";
         case SequencerAction::CANCEL_TRANSIENT_CONTEXT:
@@ -347,6 +360,21 @@ FLASHMEM const char* actionName(SequencerAction action) {
         default:
             return nullptr;
     }
+}
+
+FLASHMEM const char* stepContentActionName(
+    core::state::sequencer::SequencerStepContentAction action
+) {
+    using Action = core::state::sequencer::SequencerStepContentAction;
+    switch (action) {
+        case Action::VARIATION: return "variation";
+        case Action::CHORD: return "chord";
+        case Action::MICRO_SEQUENCE: return "micro_sequence";
+        case Action::CYCLE_STATES: return "cycle_states";
+        case Action::SELECT_STEPS: return "select_steps";
+        case Action::COUNT: return nullptr;
+    }
+    return nullptr;
 }
 
 FLASHMEM const char* armActionName(SequencerAction action) {
@@ -516,6 +544,10 @@ FLASHMEM const char* modeForScope(SequencerScope scope) {
             return "sequencer.quick_controls";
         case SequencerScope::MUSICAL_PROPERTY_SELECTOR:
             return "sequencer.property_selector";
+        case SequencerScope::STEP_CONTENT_SELECTOR:
+            return "sequencer.step_content_selector";
+        case SequencerScope::STRUCTURE:
+            return "sequencer.structure";
         case SequencerScope::TRACK_SELECTION:
         case SequencerScope::PATTERN_SELECTION:
             return "sequencer.structure_selection";
@@ -569,6 +601,9 @@ FLASHMEM SequencerAction structureActionForEvent(
     }
     if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
         return policy.leftTopTap;
+    }
+    if (isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::RELEASE)) {
+        return policy.leftCenterPress;
     }
     if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
         return policy.bottomLeftHold != SequencerAction::NONE
@@ -664,46 +699,125 @@ FLASHMEM bool fillResolvedStepUxContext(
 
 FLASHMEM SequencerPropertySelectorUxSurface::SequencerPropertySelectorUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
+    oc::state::Signal<
+        core::state::StructureNavigationFocus,
+        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus,
     core::state::sequencer::SequencerState& sequencer
-) : active_view_(activeView), sequencer_(sequencer) {}
+) : active_view_(activeView),
+    navigation_focus_(navigationFocus),
+    sequencer_(sequencer) {}
 
 FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    const bool opening =
-        isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::PRESS);
-    if (active_view_.get() != core::ui::ViewType::SEQUENCER ||
-        (!opening && !sequencer_.stepPropertyInlineSelector.selecting.get())) {
+    if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
+        return false;
+    }
+
+    const bool leftBottomPress = isButton(
+        event,
+        Config::ButtonID::LEFT_BOTTOM,
+        oc::core::input::ButtonBindingType::PRESS
+    );
+    const bool leftCenterPress = isButton(
+        event,
+        Config::ButtonID::LEFT_CENTER,
+        oc::core::input::ButtonBindingType::PRESS
+    );
+    const bool stepFocus = navigation_focus_.get() ==
+        core::state::StructureNavigationFocus::STEP;
+    const bool contentOpening = leftBottomPress && stepFocus &&
+        !sequencer_.structureUi.workspace.active.get() &&
+        !sequencer_.structureUi.stepSelection.active.get();
+    if (contentOpening || sequencer_.stepContentSelector.selecting.get()) {
+        const auto action = sequencer_.stepContentSelector.focusedAction.get();
+        out.mode = "sequencer.step_content_selector";
+        out.target = "step";
+        out.targetStep = static_cast<int16_t>(sequencer_.focusedStep.get());
+        out.property = stepContentActionName(action);
+        copyValueLabel(out.valueLabel, out.property);
+        if (contentOpening) {
+            out.effect = "open_step_content_selector";
+        } else if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "select_step_content_action";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::LEFT_BOTTOM,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "apply_step_content_selector";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::LEFT_TOP,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "cancel_step_content_selector";
+        }
+        return true;
+    }
+
+    const bool opening = leftBottomPress || leftCenterPress;
+    if (!opening && !sequencer_.stepPropertyInlineSelector.selecting.get()) {
         return false;
     }
 
     out.mode = "sequencer.property_selector";
     out.target = "property";
-    constexpr int CC_LANES_PROPERTY_INDEX =
-        static_cast<int>(core::state::sequencer::StepProperty::PROBABILITY) + 1;
-    const bool ccLanes = sequencer_.stepPropertyInlineSelector.selectedIndex.get() ==
-        CC_LANES_PROPERTY_INDEX;
-    out.property = ccLanes
-        ? "cc_lanes"
-        : core::state::sequencer::stepPropertyName(sequencer_.activeStepProperty.get());
-    std::snprintf(
-        out.valueLabel,
-        sizeof(out.valueLabel),
-        "%u",
-        static_cast<unsigned>(ccLanes
-            ? (core::state::sequencer::sequencerCcLaneView(sequencer_.pattern)
-                ? core::state::sequencer::sequencerCcLaneCount(
-                    *core::state::sequencer::sequencerCcLaneView(sequencer_.pattern))
-                : 0U)
-            : sequencer_.variationRangeForProperty(sequencer_.activeStepProperty.get()))
-    );
+    const int selected = sequencer_.stepPropertyInlineSelector.selectedIndex.get();
+    const bool state =
+        core::state::sequencer::sequencerPropertySelectionIsState(selected);
+    const bool ccLanes = selected >=
+        core::state::sequencer::SEQUENCER_BASE_STEP_PROPERTY_COUNT;
+    out.property = state
+        ? "state"
+        : (ccLanes
+               ? "cc_lanes"
+               : core::state::sequencer::stepPropertyName(
+                     sequencer_.activeStepProperty.get()
+                 ));
+    if (state) {
+        const uint8_t length =
+            core::state::sequencer::activeContentLength(sequencer_);
+        const uint8_t step = length == 0
+            ? 0
+            : std::min<uint8_t>(
+                  sequencer_.focusedStep.get(),
+                  static_cast<uint8_t>(length - 1U)
+              );
+        copyValueLabel(
+            out.valueLabel,
+            length > 0 && core::state::sequencer::activeContentStepEnabled(
+                sequencer_,
+                step
+            ) ? "On" : "Off"
+        );
+    } else {
+        std::snprintf(
+            out.valueLabel,
+            sizeof(out.valueLabel),
+            "%u",
+            static_cast<unsigned>(ccLanes
+                ? (core::state::sequencer::sequencerCcLaneView(sequencer_.pattern)
+                    ? core::state::sequencer::sequencerCcLaneCount(
+                        *core::state::sequencer::sequencerCcLaneView(
+                            sequencer_.pattern
+                        )
+                    )
+                    : 0U)
+                : sequencer_.variationRangeForProperty(
+                      sequencer_.activeStepProperty.get()
+                  ))
+        );
+    }
     if (opening) {
         out.effect = "open_property_selector";
     } else if (isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = "select_property";
     } else if (isEncoder(event, Config::EncoderID::OPT)) {
-        out.effect = ccLanes ? "noop" : "edit_variation_range";
+        out.effect = ccLanes
+            ? "noop"
+            : (state ? "edit_step_state" : "edit_variation_range");
         if (ccLanes) {
             out.outcome = "noop";
             out.reason = "enter_with_nav";
@@ -712,7 +826,8 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
                isButton(event, Config::ButtonID::NAV,
                         oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = "enter_cc_lane_selector";
-    } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE)) {
+    } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE) ||
+               isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = "apply_property";
     } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = "cancel_property";
@@ -1282,6 +1397,8 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
         isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE) ||
         isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::LONG_PRESS) ||
         leftTopRelease ||
+        isButton(event, Config::ButtonID::LEFT_CENTER,
+                 oc::core::input::ButtonBindingType::RELEASE) ||
         isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS) ||
         isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE) ||
         isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::LONG_PRESS) ||
@@ -1313,8 +1430,20 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
         scope = sequencer_.structureUi.pageSelection.scope.get();
     }
 
-    out.mode = modeForScope(policy.scope);
-    out.target = selectionActive ? structureTarget(scope) : targetForPolicyScope(policy.scope);
+    const bool structureWorkspace = policy.scope == SequencerScope::STRUCTURE;
+    const bool structureTracks = structureWorkspace &&
+        sequencer_.structureUi.workspace.level.get() ==
+            core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS;
+    out.mode = structureWorkspace
+        ? (structureTracks
+               ? "sequencer.structure.tracks"
+               : "sequencer.structure.patterns")
+        : modeForScope(policy.scope);
+    out.target = selectionActive
+        ? structureTarget(scope)
+        : (structureWorkspace
+               ? (structureTracks ? "track" : "page")
+               : targetForPolicyScope(policy.scope));
 
     uint8_t index = 0;
     if (scope == core::state::StructureSelectionScope::STEP && selectionActive) {
@@ -1336,9 +1465,11 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
         return true;
     }
 
-    const bool targetTrack =
-        selectionActive ? scope == core::state::StructureSelectionScope::TRACK
-                        : policyScopeTargetsTrack(policy.scope);
+    const bool targetTrack = selectionActive
+        ? scope == core::state::StructureSelectionScope::TRACK
+        : (structureWorkspace
+               ? structureTracks
+               : policyScopeTargetsTrack(policy.scope));
     const uint16_t targetMask = targetTrack ? tracks_.currentEnabledMask() : sequencerPageMask(sequencer_);
     out.targetMask = targetMask;
 
@@ -1662,11 +1793,23 @@ FLASHMEM bool SequencerStepGridUxSurface::captureSemanticUxContext(
     out.mode = modeForScope(policy.scope);
     out.target = "step";
     out.targetStep = static_cast<int16_t>(step);
+    const bool stateProperty = sequencer_.stepStatePropertyActive.get() &&
+        action != SequencerAction::TOGGLE_SELECTION;
     out.property = action == SequencerAction::TOGGLE_SELECTION
         ? (sequencer_.structureUi.stepSelection.selected(step) ? "selected" : "cursor")
-        : core::state::sequencer::stepPropertyName(property);
+        : (stateProperty
+               ? "state"
+               : core::state::sequencer::stepPropertyName(property));
     out.effect = actionName(action);
     fillResolvedStepUxContext(sequencer_, tracks_, step, property, out);
+    if (stateProperty) {
+        copyValueLabel(
+            out.valueLabel,
+            core::state::sequencer::activeContentStepEnabled(sequencer_, step)
+                ? "On"
+                : "Off"
+        );
+    }
     return true;
 }
 

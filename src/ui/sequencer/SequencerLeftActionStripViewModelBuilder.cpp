@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerInteractionContextOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "ui/font/StandaloneIcons.hpp"
@@ -58,6 +59,11 @@ const char* iconForLeftAction(
             return propertyIcon;
         case InteractionAction::EDIT_STEP_LOCAL_RANDOM:
             return standalone::icons::NOTE_PROP_RANDOM;
+        case InteractionAction::OPEN_STEP_CONTENT_SELECTOR:
+        case InteractionAction::APPLY_STEP_CONTENT_SELECTOR:
+            return standalone::icons::NOTE_PROP_RANDOM;
+        case InteractionAction::ENTER_SELECTION:
+            return standalone::icons::ACTION_PLACE_TARGET;
         default:
             return nullptr;
     }
@@ -91,6 +97,7 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
         source.sequencer.patternQuickControls.physicalHoldActive.get();
     const bool selectingPattern = source.sequencer.patternQuickControls.selecting.get();
     const bool selectingProperty = source.sequencer.stepPropertyInlineSelector.selecting.get();
+    const bool selectingStepContent = source.sequencer.stepContentSelector.selecting.get();
     const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
     const bool selectingStep = source.sequencer.structureUi.stepSelection.active.get();
     const bool selectingStructure = selectingTrack || selectingPage || selectingStep;
@@ -101,8 +108,9 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
             source.navigationFocus.get()
         )
     );
-    const char* propertyIcon =
-        visual::propertyIconGlyph(source.sequencer.activeStepProperty.get());
+    const char* propertyIcon = source.sequencer.stepStatePropertyActive.get()
+        ? standalone::icons::ACTION_VALIDATE
+        : visual::propertyIconGlyph(source.sequencer.activeStepProperty.get());
     const char* patternIcon = visual::quickControlIconGlyph(
         source.sequencer.patternQuickControls.focusedItem.get()
     );
@@ -194,7 +202,34 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
         return props;
     }
 
-    props.slots[0].visualState = Visual::HIDDEN;
+    if (selectingStepContent) {
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_CANCEL,
+            Visual::ACTIVE
+        );
+        props.slots[1].visualState = Visual::HIDDEN;
+        setStripIconFromAction(
+            props.slots[2],
+            interaction.leftBottomPress,
+            interaction.leftBottomVisibility,
+            patternIcon,
+            propertyIcon
+        );
+        return props;
+    }
+
+    if (source.sequencer.structureUi.workspace.active.get() ||
+        core::state::sequencer::isChildContentView(source.sequencer)) {
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_BACKWARD,
+            Visual::ACTIVE
+        );
+    } else {
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_PLACE_TARGET,
+            Visual::ACTIVE
+        );
+    }
     setStripIconFromAction(
         props.slots[1],
         interaction.leftCenterPress,

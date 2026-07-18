@@ -1,43 +1,63 @@
-# UX workflow: create sequencer pages/tracks and undo/redo structural history.
-# Purpose: validates semantic structure-history entries for structure creation
-# and the transient feedback toast for page/track structure changes.
-# Expect: capture_changed:page_2_created=page_creation_undone, capture_match:page_2_created=page_creation_redone, capture_changed:track_2_created=track_creation_undone
+# UX workflow: create Track/Pattern structure and replay its complete history.
+# Purpose: validates explicit Structure creation, contiguous Patterns, and that
+# Undo/Redo restores both domain state and the visible active Track/Pattern.
+# This subsumes the former isolated structure-track-redo-ui workflow.
+# Expect: capture_match:track_2_pattern_1=page_2_creation_undone, capture_changed:track_2_pattern_1=track_2_creation_undone, capture_match:track_2_pattern_1=track_2_creation_redone, capture_match:page_2_created=page_2_creation_redone
 
 0 scenario sequencer
-50 capture screen initial
+50 capture screen track_1_pattern_1
 
-# Create page 2 from the first add-slot preview.
-150 encoder NAV 1
-250 capture screen page_2_add_preview
-350 tap NAV 60
-550 capture screen page_2_created
+# Open Structure, create Track 2 from the sole +Track slot, enter its Pattern 1,
+# then confirm Pattern 1 to return to the musical surface.
+150 button NAV down
+1220 tick
+1280 capture screen structure_tracks_open
+1330 button NAV up
+1530 encoder NAV 1
+1730 capture screen track_2_add_preview
+1830 tap NAV 60
+2180 capture screen track_2_patterns_open
+2280 tap NAV 60
+2630 capture screen track_2_pattern_1
 
-# Undo page creation. Toast should identify Page Structure.
-650 button LEFT_CENTER down
-1650 tick
-1700 tap LEFT_TOP 60
-1850 capture screen undo_page_toast
-1950 button LEFT_CENTER up
-3300 capture screen page_creation_undone
+# Reopen Structure on Track 2 and create the only legal +Next Pattern.
+2730 button NAV down
+3800 tick
+3860 button NAV up
+4060 tap NAV 60
+4310 capture screen track_2_patterns_reopened
+4410 encoder NAV 1
+4610 capture screen pattern_2_add_preview
+4710 tap NAV 60
+5060 capture screen page_2_created
 
-# Redo page creation.
-3400 button LEFT_CENTER down
-4400 tick
-4450 tap LEFT_BOTTOM 60
-4600 capture screen redo_page_toast
-4700 button LEFT_CENTER up
-6050 capture screen page_creation_redone
+# Undo Pattern 2: the visible surface must return to Track 2 / Pattern 1.
+5160 button LEFT_CENTER down
+6230 tick
+6290 tap LEFT_TOP 60
+6470 capture screen undo_pattern_toast
+6520 button LEFT_CENTER up
+7900 capture screen page_2_creation_undone
 
-# Switch to track navigation, create track 2, then undo it.
-6150 tap NAV 60
-6350 encoder NAV 1
-6550 capture screen track_2_add_preview
-6650 tap NAV 60
-6850 capture screen track_2_created
+# Undo Track 2: the active UI must return to Track 1.
+8000 button LEFT_CENTER down
+9070 tick
+9130 tap LEFT_TOP 60
+9310 capture screen undo_track_toast
+9360 button LEFT_CENTER up
+10740 capture screen track_2_creation_undone
 
-6950 button LEFT_CENTER down
-7950 tick
-8000 tap LEFT_TOP 60
-8150 capture screen undo_track_toast
-8250 button LEFT_CENTER up
-9600 capture screen track_creation_undone
+# Redo Track 2, then Pattern 2. Both domain and focused UI must be restored.
+10840 button LEFT_CENTER down
+11910 tick
+11970 tap LEFT_BOTTOM 60
+12150 capture screen redo_track_toast
+12200 button LEFT_CENTER up
+13580 capture screen track_2_creation_redone
+
+13680 button LEFT_CENTER down
+14750 tick
+14810 tap LEFT_BOTTOM 60
+14990 capture screen redo_pattern_toast
+15040 button LEFT_CENTER up
+16420 capture screen page_2_creation_redone
