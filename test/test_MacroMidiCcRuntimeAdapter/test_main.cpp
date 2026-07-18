@@ -20,7 +20,6 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
-#include "support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -92,7 +91,6 @@ struct Harness {
         , adapter(
               core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                   pages,
-                  macroUi,
               },
               services,
               coordinator
@@ -112,191 +110,111 @@ struct Harness {
         return result;
     }
 
-    void addAutomation(uint8_t macroIndex) {
-        const auto address = core::state::macro::MacroAutomationSlotAddress{
-            .track = pages.currentActiveTrack(),
-            .page = pages.currentActivePage(),
-            .macro = macroIndex,
-        };
-        core::state::macro::MacroAutomationLane lane;
-        assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
-        assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
-        assert(test_support::project_control::assignAutomation(
-            pages.control,
-            address,
-            lane
-        ));
-    }
-
-    void addModulation(uint8_t macroIndex, float depth) {
-        const auto address = core::state::macro::MacroAutomationSlotAddress{
-            .track = pages.currentActiveTrack(),
-            .page = pages.currentActivePage(),
-            .macro = macroIndex,
-        };
-        core::state::macro::MacroModulationShape shape;
-        assert(core::state::macro::macroModulationAppendPoint(shape, 0.0f, -0.2f));
-        assert(core::state::macro::macroModulationAppendPoint(shape, 1.0f, 0.2f));
-        assert(test_support::project_control::assignModulation(
-            pages.control,
-            address,
-            shape,
-            depth
-        ));
-    }
 };
 
-void test_manual_publish_collects_every_active_macro_in_one_frame() {
-    Harness h;
-
-    const auto result = h.adapter.publishLiveManual(1, 100);
-    assert(result.ok());
-    assert(result.candidateCount == 2);
-    const auto resolved = h.resolveAndDrain();
-    assert(resolved.destinationCount == 1);
-    assert(resolved.conflictCount == 1);
-    assert(resolved.queuedEmissionCount == 1);
-    assert(h.transport.count == 1);
-    assert(h.transport.messages[0].value == 100);
-
-    auto telemetry = h.coordinator.readTelemetry();
-    assert(telemetry);
-    assert(telemetry->destinations[0].winner.author.candidateClass ==
-           MidiCcCandidateClass::LIVE_MANUAL);
-    assert(telemetry->destinations[0].winner.author.stableAddress == 1);
-    assert(telemetry->losers[0].author.candidateClass ==
-           MidiCcCandidateClass::MACRO_STATIC);
-    assert(telemetry->losers[0].author.stableAddress == 0);
-
-    std::cout << "[PASS] test_manual_publish_collects_every_active_macro_in_one_frame\n";
-}
-
-void test_computed_macro_beats_static_duplicate() {
-    Harness h;
-    h.addAutomation(1);
-
-    h.adapter.beginComputedFrame();
-    assert(h.adapter.setComputedValue(1, 90));
-    const auto live = h.adapter.publishComputedFrame();
-    assert(live.ok());
-    assert(live.candidateCount == 2);
-    assert(h.resolveAndDrain().queuedEmissionCount == 1);
-    assert(h.transport.messages[0].value == 90);
-    auto telemetry = h.coordinator.readTelemetry();
-    assert(telemetry);
-    assert(telemetry->destinations[0].winner.author.candidateClass ==
-           MidiCcCandidateClass::MACRO_COMPUTED);
-
-    std::cout << "[PASS] test_computed_macro_beats_static_duplicate\n";
-}
-
-void test_manual_override_publishes_one_resolved_live_author() {
-    Harness h;
-    h.addAutomation(1);
-    assert(h.services.takeManualControl(1, 0.75f));
-
-    h.adapter.beginComputedFrame();
-    // Playback stages the canonical audible Base + Modulation value. The
-    // adapter preserves Live priority without publishing a second author for
-    // the same macro.
-    assert(h.adapter.setComputedValue(1, 96));
-    const auto result = h.adapter.publishComputedFrame();
-    assert(result.ok());
-    assert(result.candidateCount == 2);
-    assert(h.resolveAndDrain().queuedEmissionCount == 1);
-    assert(h.transport.messages[0].value >= 95 && h.transport.messages[0].value <= 96);
-
-    auto telemetry = h.coordinator.readTelemetry();
-    assert(telemetry);
-    assert(telemetry->destinations[0].winner.author.candidateClass ==
-           MidiCcCandidateClass::LIVE_MANUAL);
-    assert(telemetry->destinations[0].loserCount == 1);
-    assert(telemetry->losers[0].author.candidateClass ==
-           MidiCcCandidateClass::MACRO_STATIC);
-
-    std::cout << "[PASS] test_manual_override_publishes_one_resolved_live_author\n";
-}
-
-void test_modulation_only_depth_zero_is_classified_as_computed() {
-    Harness h;
-    h.pages.setMacroSlotActive(0, false);
-    h.addModulation(1, 0.0f);
-
-    h.adapter.beginComputedFrame();
-    assert(h.adapter.setComputedValue(1, 32));
-    const auto result = h.adapter.publishComputedFrame();
-    assert(result.ok());
-    assert(result.candidateCount == 1);
-    assert(h.resolveAndDrain().queuedEmissionCount == 1);
-    assert(h.transport.messages[0].value == 32);
-    auto telemetry = h.coordinator.readTelemetry();
-    assert(telemetry);
-    assert(telemetry->destinations[0].winner.author.candidateClass ==
-           MidiCcCandidateClass::MACRO_COMPUTED);
-    assert(h.services.computedSourcePlaybackActiveFor(1));
-
-    std::cout << "[PASS] test_modulation_only_depth_zero_is_classified_as_computed\n";
-}
-
-void test_disabling_automation_restores_persisted_static_base_not_runtime_projection() {
-    Harness h;
-    h.pages.setMacroSlotActive(0, false);
-    h.pages.activePageData().values[1] = 0.25f;
-    h.macros[1].value.set(0.90f);
-    h.addAutomation(1);
-
-    h.adapter.beginComputedFrame();
-    assert(h.adapter.setComputedValue(1, 100));
-    assert(h.adapter.publishComputedFrame().ok());
-    assert(h.resolveAndDrain().queuedEmissionCount == 1);
-    assert(h.transport.messages[0].value == 100);
-
-    const auto address = core::state::macro::MacroAutomationSlotAddress{
-        .track = h.pages.currentActiveTrack(),
-        .page = h.pages.currentActivePage(),
-        .macro = 1,
+core::state::shared::MidiCcCandidate makeCandidate(
+    uint8_t track,
+    uint8_t page,
+    uint8_t macro,
+    uint8_t channel,
+    uint8_t controller,
+    uint8_t value,
+    MidiCcCandidateClass candidateClass
+) {
+    return {
+        .destination = {
+            .identity = {
+                .port = core::handler::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                .channel = channel,
+                .controller = controller,
+            },
+            .routeValidity = core::state::shared::MidiCcRouteValidity::VALID,
+        },
+        .author = {
+            .candidateClass = candidateClass,
+            .stableAddress =
+                core::handler::MacroMidiCcRuntimeAdapter::stableAddress(
+                    track, page, macro
+                ),
+        },
+        .localValue = value,
     };
-    assert(core::state::modulation::setProjectControlAutomationEnabled(
-        h.pages.control,
-        address,
-        false
-    ));
-
-    h.adapter.beginComputedFrame();
-    const auto fallback = h.adapter.publishComputedFrame();
-    assert(fallback.ok());
-    assert(h.resolveAndDrain().queuedEmissionCount == 1);
-    assert(h.transport.count == 2);
-    assert(h.transport.messages[1].value >= 31 && h.transport.messages[1].value <= 32);
-    auto telemetry = h.coordinator.readTelemetry();
-    assert(telemetry);
-    assert(telemetry->destinations[0].winner.author.candidateClass ==
-           MidiCcCandidateClass::MACRO_STATIC);
-
-    std::cout << "[PASS] test_disabling_automation_restores_persisted_static_base_not_runtime_projection\n";
 }
 
-void test_disabled_page_flushes_to_an_empty_bounded_frame_without_midi() {
+void test_manual_replace_preserves_complete_cross_track_frame() {
     Harness h;
-    assert(h.adapter.publishLiveManual(0, 60).ok());
-    assert(h.resolveAndDrain().queuedEmissionCount == 1);
+    const std::array authors{
+        makeCandidate(0U, 0U, 0U, 0U, 74U, 20U,
+                      MidiCcCandidateClass::MACRO_STATIC),
+        makeCandidate(0U, 0U, 1U, 0U, 74U, 80U,
+                      MidiCcCandidateClass::MACRO_COMPUTED),
+        makeCandidate(1U, 0U, 0U, 1U, 10U, 55U,
+                      MidiCcCandidateClass::MACRO_STATIC),
+    };
+    assert(h.coordinator.publishPersistentAuthors(authors.data(), authors.size()));
+
+    const auto result = h.adapter.publishLiveManual(1U, 100U);
+    assert(result.ok());
+    assert(result.candidateCount == authors.size());
+    const auto resolved = h.resolveAndDrain();
+    assert(resolved.destinationCount == 2U);
+    assert(resolved.conflictCount == 1U);
+    assert(resolved.queuedEmissionCount == 2U);
+
+    auto telemetry = h.coordinator.readTelemetry();
+    assert(telemetry);
+    bool foundManual = false;
+    bool foundRemote = false;
+    for (uint16_t index = 0U; index < telemetry->destinationCount; ++index) {
+        const auto& winner = telemetry->destinations[index].winner;
+        if (winner.author.stableAddress ==
+            core::handler::MacroMidiCcRuntimeAdapter::stableAddress(0U, 0U, 1U)) {
+            foundManual = winner.author.candidateClass ==
+                              MidiCcCandidateClass::LIVE_MANUAL &&
+                          winner.localValue == 100U;
+        }
+        if (winner.author.stableAddress ==
+            core::handler::MacroMidiCcRuntimeAdapter::stableAddress(1U, 0U, 0U)) {
+            foundRemote = winner.localValue == 55U;
+        }
+    }
+    assert(foundManual && foundRemote);
+    std::cout << "[PASS] Manual replace preserves the complete Project frame\n";
+}
+
+void test_missing_stable_author_rejects_without_local_fallback() {
+    Harness h;
+    const auto remote = makeCandidate(
+        1U, 0U, 0U, 1U, 10U, 55U, MidiCcCandidateClass::MACRO_STATIC
+    );
+    assert(h.coordinator.publishPersistentAuthors(&remote, 1U));
+
+    const auto result = h.adapter.publishLiveManual(1U, 100U);
+    assert(!result.ok());
+    const auto resolved = h.resolveAndDrain();
+    assert(resolved.destinationCount == 1U);
+    assert(resolved.queuedEmissionCount == 1U);
+    auto telemetry = h.coordinator.readTelemetry();
+    assert(telemetry && telemetry->destinationCount == 1U);
+    assert(telemetry->destinations[0].winner.author.stableAddress ==
+           remote.author.stableAddress);
+    std::cout << "[PASS] Missing author cannot trigger a lossy local fallback\n";
+}
+
+void test_inactive_context_rejects_manual_replace_without_mutation() {
+    Harness h;
+    const auto author = makeCandidate(
+        0U, 0U, 0U, 0U, 74U, 20U, MidiCcCandidateClass::MACRO_STATIC
+    );
+    assert(h.coordinator.publishPersistentAuthors(&author, 1U));
     h.pages.setPageEnabled(h.pages.currentActivePage(), false);
+    assert(!h.adapter.publishLiveManual(0U, 61U).ok());
 
-    const auto disabled = h.adapter.publishLiveManual(0, 61);
-    assert(disabled.ok());
-    assert(disabled.candidateCount == 0);
-    const auto disabledResolved = h.resolveAndDrain();
-    assert(disabledResolved.destinationCount == 0);
-    assert(disabledResolved.queuedEmissionCount == 0);
-    assert(h.transport.count == 1);
-
-    h.pages.setPageEnabled(h.pages.currentActivePage(), true);
-    const auto restored = h.adapter.publishLiveManual(0, 60);
-    assert(restored.ok());
-    assert(h.resolveAndDrain().queuedEmissionCount == 1);
-    assert(h.transport.count == 2);
-
-    std::cout << "[PASS] test_disabled_page_flushes_to_an_empty_bounded_frame_without_midi\n";
+    const auto resolved = h.resolveAndDrain();
+    assert(resolved.destinationCount == 1U);
+    auto telemetry = h.coordinator.readTelemetry();
+    assert(telemetry && telemetry->destinations[0].winner.localValue == 20U);
+    std::cout << "[PASS] Inactive context leaves the authoritative frame untouched\n";
 }
 
 void test_macro_stable_address_covers_full_v1_domain_without_collision() {
@@ -326,12 +244,9 @@ void test_macro_stable_address_covers_full_v1_domain_without_collision() {
 }  // namespace
 
 int main() {
-    test_manual_publish_collects_every_active_macro_in_one_frame();
-    test_computed_macro_beats_static_duplicate();
-    test_manual_override_publishes_one_resolved_live_author();
-    test_modulation_only_depth_zero_is_classified_as_computed();
-    test_disabling_automation_restores_persisted_static_base_not_runtime_projection();
-    test_disabled_page_flushes_to_an_empty_bounded_frame_without_midi();
+    test_manual_replace_preserves_complete_cross_track_frame();
+    test_missing_stable_author_rejects_without_local_fallback();
+    test_inactive_context_rejects_manual_replace_without_mutation();
     test_macro_stable_address_covers_full_v1_domain_without_collision();
 
     std::cout << "\nAll MacroMidiCcRuntimeAdapter tests passed.\n";

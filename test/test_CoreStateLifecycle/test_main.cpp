@@ -1,3 +1,4 @@
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -221,12 +222,21 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     };
     assert(state.macroUi.manualOverrides.activate(manualAddress, 0.61f) ==
            core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
-    // Recording temporarily removes Manual. A view/context teardown cancels
-    // the gesture and must restore the prior Project-scoped runtime state.
-    state.macroUi.automationRecording.active = true;
-    state.macroUi.automationRecording.address = manualAddress;
-    state.macroUi.automationRecording.restoreManualOnFailure = true;
-    state.macroUi.automationRecording.previousManualValue = 0.61f;
+    // A take temporarily removes Manual. A view/context teardown cancels the
+    // gesture and must restore the prior Project-scoped runtime state.
+    std::array<uint8_t,
+               core::state::macro::MacroAutomationTakeState::VALUE_COLUMN_COUNT>
+        takeBases{};
+    state.macroUi.automationTake.arm(
+        core::state::macro::MacroAutomationTakeTiming::HOLD,
+        0x0001U,
+        takeBases
+    );
+    state.macroUi.automationTake.track = manualAddress.track;
+    state.macroUi.automationTake.page = manualAddress.page;
+    assert(state.macroUi.automationTake.begin(1000U, 0U, 0U, 0U, 0U));
+    state.macroUi.automationTake.manualRestoreMask = 0x0001U;
+    state.macroUi.automationTake.previousManualValues[0] = 0.61f;
     assert(state.macroUi.manualOverrides.resume(manualAddress));
     core::state::macro::MacroWorkflow::setRuntimeValue(state.macros, 0, 0.93f);
     state.activeView.set(core::ui::ViewType::SEQUENCER);
@@ -253,7 +263,8 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(manualValue > 0.60f && manualValue < 0.62f);
     assert(std::fabs(state.macros[0].value.get() - manualValue) < 0.0005f);
     assert((state.macroUi.automationManualOverrideMask.get() & 0x0001U) != 0U);
-    assert(!state.macroUi.automationRecording.active);
+    assert(state.macroUi.automationTake.phase ==
+           core::state::macro::MacroAutomationTakePhase::IDLE);
     assert(state.macroRuntimeOwnerRevision.get() == beforeRuntimeOwnerRevision);
     std::cout << "[PASS] test_reset_standalone_transient_ui_clears_context_owned_state\n";
 }

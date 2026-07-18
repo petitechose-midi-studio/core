@@ -198,7 +198,6 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         core::app::makeExtmemUnique<core::handler::MacroMidiCcRuntimeAdapter>(
             core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                 stateRefs.pages,
-                stateRefs.macroUi,
             },
             performanceServices,
             *stateRefs.midiCcCoordinator

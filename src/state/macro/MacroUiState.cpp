@@ -56,14 +56,6 @@ FLASHMEM MacroUiState::MacroUiState() = default;
 FLASHMEM MacroUiState::~MacroUiState() = default;
 
 FLASHMEM void MacroUiState::resetInteraction() {
-    // Beginning a recording temporarily removes Manual so the live gesture can
-    // own the value. A context teardown is a cancellation, not Resume Auto.
-    if (automationRecording.active && automationRecording.restoreManualOnFailure) {
-        (void)manualOverrides.activate(
-            automationRecording.address,
-            automationRecording.previousManualValue
-        );
-    }
     if (automationTake.phase == MacroAutomationTakePhase::RECORDING) {
         for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
             const uint16_t bit = static_cast<uint16_t>(1U << macro);
@@ -89,7 +81,6 @@ FLASHMEM void MacroUiState::resetInteraction() {
     pageSelection.reset(core::state::StructureSelectionScope::PAGE);
     selectionDeleteGuard.set({});
     selectionDeleteFeedback.set({});
-    automationRecording.reset();
     automationTake.reset();
     automationTakeHistory.reset();
     automationTakeDomain.reset();

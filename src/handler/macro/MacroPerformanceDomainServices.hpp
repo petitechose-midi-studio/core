@@ -67,11 +67,6 @@ public:
     /// Resolve a physical absolute value with the currently-running modulation.
     core::state::macro::MacroResolvedValue resolveManualValue(uint8_t index,
                                                                float value) const;
-    bool beginAutomationRecording(uint8_t index, uint32_t nowMs) const;
-    bool recordAutomationPoint(uint8_t index, uint32_t nowMs, float value) const;
-    bool commitAutomationRecording(uint32_t nowMs) const;
-    bool cancelAutomationRecording() const;
-    bool automationRecordingActiveFor(uint8_t index) const;
     /** Arms one shared multi-Macro Automation take without mutating music. */
     bool armAutomationTake() const;
     bool setAutomationTakeTiming(
@@ -121,9 +116,6 @@ public:
 private:
     core::state::macro::MacroAutomationSlotAddress activeAddress_(uint8_t index) const;
     void refreshManualProjection_() const;
-    void restoreManualAfterFailedRecording_(
-        const core::state::macro::MacroUiState::AutomationRecordingState& recording
-    ) const;
     bool beginAutomationTake_(uint32_t nowMs) const;
     bool commitAutomationTake_(uint32_t nowMs) const;
     uint32_t automationTakeElapsedTicks_(uint32_t nowMs) const;

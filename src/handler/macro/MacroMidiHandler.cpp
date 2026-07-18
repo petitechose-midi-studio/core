@@ -35,7 +35,7 @@ void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t val
     const float normalized = core::midi::fromCC(value);
 
     bool accepted = true;
-    if (services_.automationRecordingActiveFor(macroIndex)) {
+    if (services_.automationTakeActiveFor(macroIndex)) {
         // Encoder input remains the recording author; external CC still gets
         // the same audible Base + Modulation projection.
         services_.setResolvedValue(

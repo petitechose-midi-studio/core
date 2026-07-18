@@ -127,7 +127,6 @@ struct Harness {
         , adapter(
               core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                   pages,
-                  macroUi,
               },
               services,
               coordinator

@@ -62,7 +62,6 @@ private:
         const core::state::modulation::ProjectLogicalMacroRuntimeValue& value
     );
     void syncActivePageRuntimeUi_(uint8_t track, uint8_t page);
-    void invalidateComputedRuntime_();
 
     core::state::macro::MacroPagesState& pages_;
     core::state::macro::MacroUiState& macro_ui_;

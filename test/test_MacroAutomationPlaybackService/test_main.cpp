@@ -77,7 +77,6 @@ public:
         , adapter_(
               core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                   state.pages,
-                  state.macroUi,
               },
               services,
               coordinator_
@@ -543,7 +542,7 @@ void test_modulation_only_playback_and_depth_zero_remain_computed() {
     std::cout << "[PASS] test_modulation_only_playback_and_depth_zero_remain_computed\n";
 }
 
-void test_recording_keeps_modulation_audible_and_active_after_commit() {
+void test_automation_take_keeps_modulation_audible_and_active_after_commit() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings,
                                  storage.macroLibrary,
@@ -567,18 +566,21 @@ void test_recording_keeps_modulation_audible_and_active_after_commit() {
     assert(midiTransport.ccCount == 1);
     assert(midiTransport.lastValue >= 31 && midiTransport.lastValue <= 32);
 
-    assert(services.beginAutomationRecording(0, 1100));
-    assert(services.recordAutomationPoint(0, 1200, 0.4f));
+    (void)services.setAutomationTakeTiming(
+        core::state::macro::MacroAutomationTakeTiming::HOLD
+    );
+    assert(services.armAutomationTake());
+    assert(services.recordAutomationTakeValue(0, 1100, 0.4f));
     playback.update(1250);
     assert(midiTransport.ccCount == 2);
     assert(midiTransport.lastValue >= 66 && midiTransport.lastValue <= 67);
     const auto projection = state.macroUi.runtimeProjections[0];
     assert(projection.valid && projection.modulationActive);
-    assert(std::fabs(projection.base - 0.4f) < 0.0001f);
+    assert(std::fabs(projection.base - 0.4f) < 0.005f);
     assert(std::fabs(projection.modulation - 0.125f) < 0.01f);
 
-    assert(services.recordAutomationPoint(0, 1600, 0.6f));
-    assert(services.commitAutomationRecording(2000));
+    assert(services.recordAutomationTakeValue(0, 1600, 0.6f));
+    assert(services.releaseAutomationTake(2000));
     const auto slot = test_support::project_control::readSlot(
         state.pages.control,
         {state.pages.currentActiveTrack(), state.pages.currentActivePage(), 0}
@@ -587,7 +589,7 @@ void test_recording_keeps_modulation_audible_and_active_after_commit() {
     assert(slot.compatibility.modulation.playbackState ==
            core::state::macro::MacroCurvePlaybackState::ACTIVE);
 
-    std::cout << "[PASS] recording captures raw Base while Modulation stays audible\n";
+    std::cout << "[PASS] take captures raw Base while Modulation stays audible\n";
 }
 
 void test_shared_take_publishes_live_base_without_printing_modulation() {
@@ -823,7 +825,7 @@ int main() {
     test_update_period_remains_bounded_across_millisecond_rollover();
     test_manual_override_replaces_automation_base_until_resume();
     test_modulation_only_playback_and_depth_zero_remain_computed();
-    test_recording_keeps_modulation_audible_and_active_after_commit();
+    test_automation_take_keeps_modulation_audible_and_active_after_commit();
     test_shared_take_publishes_live_base_without_printing_modulation();
     test_reactivating_slot_or_lane_resends_value_superseded_while_inactive();
     test_runtime_owner_epoch_is_independent_from_navigation_and_transport();

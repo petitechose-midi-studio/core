@@ -50,11 +50,6 @@ void MacroAutomationPlaybackService::reset() {
     pages_.control.runtime = {};
     pages_.control.timeTelemetry = {};
     pages_.control.triggerScratch = {};
-    invalidateComputedRuntime_();
-}
-
-void MacroAutomationPlaybackService::invalidateComputedRuntime_() {
-    midi_runtime_.clearComputedValues();
 }
 
 void MacroAutomationPlaybackService::syncActivePageRuntimeUi_(uint8_t track,
@@ -76,7 +71,6 @@ void MacroAutomationPlaybackService::consumeRuntimeOwnerActivation_() {
     pages_.control.runtime = {};
     pages_.control.timeTelemetry = {};
     syncActivePageRuntimeUi_(cached_track_, cached_page_);
-    invalidateComputedRuntime_();
 }
 
 core::state::modulation::ProjectModulationCompileContext
@@ -137,7 +131,6 @@ bool MacroAutomationPlaybackService::ensureProjectRuntime_(
             pages_.currentActiveTrack(),
             pages_.currentActivePage()
         );
-        invalidateComputedRuntime_();
     }
     return true;
 }
@@ -178,17 +171,6 @@ bool MacroAutomationPlaybackService::provideBase_(
         take.activeFor(address.macro)) {
         out.manualOverride = true;
         out.manualValue = take.latestBase(address.macro);
-    }
-    const auto& recording = owner.macro_ui_.automationRecording;
-    if (recording.active && recording.lane.pointCount > 0U &&
-        core::state::macro::macroAutomationAddressEquals(
-            recording.address,
-            address
-        )) {
-        out.manualOverride = true;
-        out.manualValue = core::state::macro::macroAutomationClamp01(
-            recording.lane.points[recording.lane.pointCount - 1U].value
-        );
     }
     return true;
 }
@@ -334,17 +316,6 @@ bool MacroAutomationPlaybackService::appendStaticAuthors_(
                 take.activeFor(address.macro)) {
                 live = true;
                 value = take.latestBase(address.macro);
-            }
-            const auto& recording = macro_ui_.automationRecording;
-            if (recording.active && recording.lane.pointCount > 0U &&
-                core::state::macro::macroAutomationAddressEquals(
-                    recording.address,
-                    address
-                )) {
-                live = true;
-                value = recording.lane.points[
-                    recording.lane.pointCount - 1U
-                ].value;
             }
             frame.candidates[frame.count++] = {
                 .destination = {

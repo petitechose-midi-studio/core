@@ -99,6 +99,24 @@ core::state::modulation::ProjectControlMacroSlotView configureModulation(
     return test_support::project_control::readSlot(control, address);
 }
 
+bool recordHoldAutomationTake(
+    const core::handler::MacroPerformanceDomainServices& services,
+    uint8_t macro,
+    uint32_t startedAtMs,
+    float firstValue,
+    uint32_t movedAtMs,
+    float movedValue,
+    uint32_t releasedAtMs
+) {
+    (void)services.setAutomationTakeTiming(
+        core::state::macro::MacroAutomationTakeTiming::HOLD
+    );
+    assert(services.armAutomationTake());
+    assert(services.recordAutomationTakeValue(macro, startedAtMs, firstValue));
+    assert(services.recordAutomationTakeValue(macro, movedAtMs, movedValue));
+    return services.releaseAutomationTake(releasedAtMs);
+}
+
 void assertCurvePayloadEquals(
     const core::state::modulation::ProjectControlState& control,
     core::state::modulation::ProjectCurveId expectedId,
@@ -518,7 +536,7 @@ void test_destination_activation_keeps_structure_contiguous_and_macros_sparse() 
     std::cout << "[PASS] destination topology is contiguous with sparse Macros\n";
 }
 
-void test_automation_recording_commits_to_current_macro_slot() {
+void test_automation_take_commits_to_current_macro_slot() {
     CoreStorages storage;
 
     core::state::CoreState state(storage.settings,
@@ -532,18 +550,21 @@ void test_automation_recording_commits_to_current_macro_slot() {
     // modulated runtime Out projection.
     services.setManualValue(0, 0.25f);
 
-    assert(services.beginAutomationRecording(0, 1000));
+    (void)services.setAutomationTakeTiming(
+        core::state::macro::MacroAutomationTakeTiming::HOLD
+    );
+    assert(services.armAutomationTake());
     assert(state.macroUi.automationRecordingStatus.get() ==
-           core::state::macro::MacroAutomationRecordingStatus::RECORDING);
-    assert(services.automationRecordingActiveFor(0));
-    assert(!services.beginAutomationRecording(1, 1000));
+           core::state::macro::MacroAutomationRecordingStatus::ARMED);
     assert(!state.project.metadata.dirty);
 
-    assert(services.recordAutomationPoint(0, 1500, 0.75f));
-    assert(services.commitAutomationRecording(2000));
+    assert(services.recordAutomationTakeValue(0, 1000, 0.25f));
+    assert(services.automationTakeActiveFor(0));
+    assert(services.recordAutomationTakeValue(0, 1500, 0.75f));
+    assert(services.releaseAutomationTake(2000));
     assert(state.macroUi.automationRecordingStatus.get() ==
            core::state::macro::MacroAutomationRecordingStatus::IDLE);
-    assert(!services.automationRecordingActiveFor(0));
+    assert(!services.automationTakeActiveFor(0));
     assert(state.project.metadata.dirty);
     assert(state.hasPendingProjectSessionSave());
 
@@ -559,30 +580,30 @@ void test_automation_recording_commits_to_current_macro_slot() {
     assert(core::state::macro::macroAutomationBeatsFromTicks(
         slot.compatibility.automation.durationTicks
     ) == 2.0f);
-    assert(slot.compatibility.automation.pointCount == 2);
+    assert(slot.compatibility.automation.pointCount >= 2U);
     const auto firstPoint = test_support::project_control::readCurvePoint(
         state.pages.control,
         slot.automationCurveId,
         0,
         false
     );
-    const auto secondPoint = test_support::project_control::readCurvePoint(
+    const auto lastPoint = test_support::project_control::readCurvePoint(
         state.pages.control,
         slot.automationCurveId,
-        1,
+        static_cast<uint16_t>(slot.compatibility.automation.pointCount - 1U),
         false
     );
     assert(std::fabs(firstPoint.beat - 0.0f) < 0.0001f);
-    assert(std::fabs(firstPoint.value - 0.25f) < 0.0001f);
-    assert(std::fabs(secondPoint.beat - 1.0f) < 0.0001f);
-    assert(std::fabs(secondPoint.value - 0.75f) < 0.0001f);
+    assert(std::fabs(firstPoint.value - 0.25f) < 0.005f);
+    assert(std::fabs(lastPoint.beat - 2.0f) < 0.0001f);
+    assert(std::fabs(lastPoint.value - 0.75f) < 0.005f);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_automation_recording_commits_to_current_macro_slot\n";
+    std::cout << "[PASS] test_automation_take_commits_to_current_macro_slot\n";
 }
 
-void test_automation_recording_cancel_discards_session() {
+void test_automation_take_cancel_discards_session() {
     CoreStorages storage;
 
     core::state::CoreState state(storage.settings,
@@ -591,12 +612,12 @@ void test_automation_recording_cancel_discards_session() {
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
-    assert(services.beginAutomationRecording(0, 1000));
-    assert(services.recordAutomationPoint(0, 1250, 0.8f));
-    assert(services.cancelAutomationRecording());
+    assert(services.armAutomationTake());
+    assert(services.recordAutomationTakeValue(0, 1000, 0.8f));
+    assert(services.cancelAutomationTake());
     assert(state.macroUi.automationRecordingStatus.get() ==
            core::state::macro::MacroAutomationRecordingStatus::IDLE);
-    assert(!services.commitAutomationRecording(1500));
+    assert(!services.releaseAutomationTake(1500));
 
     const auto slot = test_support::project_control::readSlot(
         state.pages.control,
@@ -609,7 +630,7 @@ void test_automation_recording_cancel_discards_session() {
     assert(!slot.present);
     assert(!state.project.metadata.dirty);
 
-    std::cout << "[PASS] test_automation_recording_cancel_discards_session\n";
+    std::cout << "[PASS] test_automation_take_cancel_discards_session\n";
 }
 
 void test_shared_automation_take_records_late_join_and_one_undo() {
@@ -730,7 +751,7 @@ void test_take_cancel_restores_manual_and_preflight_failure_is_clean() {
     std::cout << "[PASS] take Cancel and preflight failure are exact\n";
 }
 
-void test_automation_recording_without_motion_does_not_create_slot() {
+void test_armed_automation_take_without_motion_does_not_create_slot() {
     CoreStorages storage;
 
     core::state::CoreState state(storage.settings,
@@ -739,11 +760,11 @@ void test_automation_recording_without_motion_does_not_create_slot() {
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
-    assert(services.beginAutomationRecording(0, 1000));
-    assert(!services.commitAutomationRecording(1500));
+    assert(services.armAutomationTake());
+    assert(services.releaseAutomationTake(1500));
     assert(state.macroUi.automationRecordingStatus.get() ==
-           core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT);
-    assert(!services.automationRecordingActiveFor(0));
+           core::state::macro::MacroAutomationRecordingStatus::IDLE);
+    assert(!services.automationTakeRecording());
 
     const auto slot = test_support::project_control::readSlot(
         state.pages.control,
@@ -756,10 +777,10 @@ void test_automation_recording_without_motion_does_not_create_slot() {
     assert(!slot.present);
     assert(!state.project.metadata.dirty);
 
-    std::cout << "[PASS] test_automation_recording_without_motion_does_not_create_slot\n";
+    std::cout << "[PASS] armed take without motion is a clean no-op\n";
 }
 
-void test_failed_or_cancelled_recording_restores_previous_manual_state() {
+void test_cancelled_automation_take_restores_previous_manual_state() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings,
                                  storage.macroLibrary,
@@ -774,25 +795,23 @@ void test_failed_or_cancelled_recording_restores_previous_manual_state() {
     configureAutomation(state.pages.control, address);
     assert(services.takeManualControl(0, 0.42f));
 
-    assert(services.beginAutomationRecording(0, 1000));
+    assert(services.armAutomationTake());
+    assert(services.recordAutomationTakeValue(0, 1000, 0.9f));
     assert(!services.manualOverrideActiveFor(0));
-    assert(!services.commitAutomationRecording(1100));
-    assert(state.macroUi.automationRecordingStatus.get() ==
-           core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT);
+    assert(services.cancelAutomationTake());
     float restored = 0.0f;
     assert(services.manualOverrideValueFor(0, restored));
     assert(std::fabs(restored - 0.42f) < 0.0001f);
 
-    assert(services.beginAutomationRecording(0, 1200));
-    assert(services.recordAutomationPoint(0, 1400, 0.9f));
-    assert(services.cancelAutomationRecording());
+    assert(services.armAutomationTake());
+    assert(services.releaseAutomationTake(1400));
     assert(services.manualOverrideValueFor(0, restored));
     assert(std::fabs(restored - 0.42f) < 0.0001f);
 
-    std::cout << "[PASS] test_failed_or_cancelled_recording_restores_previous_manual_state\n";
+    std::cout << "[PASS] cancelled take restores previous Manual state\n";
 }
 
-void test_recording_preserves_active_modulation_without_resume() {
+void test_automation_take_preserves_active_modulation_without_resume() {
     CoreStorages storage;
     core::state::CoreState state(storage.settings,
                                  storage.macroLibrary,
@@ -820,9 +839,9 @@ void test_recording_preserves_active_modulation_without_resume() {
     );
 
     assert(services.computedSourcePlaybackActiveFor(0));
-    assert(services.beginAutomationRecording(0, 1000));
-    assert(services.recordAutomationPoint(0, 1500, 0.8f));
-    assert(services.commitAutomationRecording(2000));
+    assert(recordHoldAutomationTake(
+        services, 0U, 1000U, 0.2f, 1500U, 0.8f, 2000U
+    ));
 
     slot = test_support::project_control::readSlot(state.pages.control, address);
     assert(slot.automationEnabled);
@@ -858,10 +877,10 @@ void test_recording_preserves_active_modulation_without_resume() {
     assert(state.hasPendingProjectSessionSave());
 
     std::cout
-        << "[PASS] test_recording_preserves_active_modulation_without_resume\n";
+        << "[PASS] Automation take preserves active Modulation without Resume\n";
 }
 
-void test_recording_shared_lfos_preserves_graph_through_undo_redo() {
+void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     using namespace core::state::modulation;
     CoreStorages storage;
     core::state::CoreState state(storage.settings,
@@ -914,9 +933,9 @@ void test_recording_shared_lfos_preserves_graph_through_undo_redo() {
     const auto graphBefore = graph;
     const auto runtimeBefore = state.pages.control.runtime;
     assert(state.macroHistory.undoCount() == 0U);
-    assert(services.beginAutomationRecording(0, 1000));
-    assert(services.recordAutomationPoint(0, 1500, 0.8f));
-    assert(services.commitAutomationRecording(2000));
+    assert(recordHoldAutomationTake(
+        services, 0U, 1000U, 0.3f, 1500U, 0.8f, 2000U
+    ));
     assert(state.macroUi.automationRecordingStatus.get() ==
            core::state::macro::MacroAutomationRecordingStatus::IDLE);
     assert(state.macroHistory.undoCount() == 1U);
@@ -954,7 +973,7 @@ void test_recording_shared_lfos_preserves_graph_through_undo_redo() {
     ) == 0);
     slot = test_support::project_control::readSlot(state.pages.control, address);
     assert(slot.automationEnabled);
-    assert(slot.compatibility.automation.pointCount == 2U);
+    assert(slot.compatibility.automation.pointCount >= 2U);
     const auto first = test_support::project_control::readCurvePoint(
         state.pages.control,
         slot.automationCurveId,
@@ -964,16 +983,16 @@ void test_recording_shared_lfos_preserves_graph_through_undo_redo() {
     const auto second = test_support::project_control::readCurvePoint(
         state.pages.control,
         slot.automationCurveId,
-        1,
+        static_cast<uint16_t>(slot.compatibility.automation.pointCount - 1U),
         false
     );
-    assert(std::fabs(first.value - 0.3f) < 0.0001f);
-    assert(std::fabs(second.value - 0.8f) < 0.0001f);
+    assert(std::fabs(first.value - 0.3f) < 0.005f);
+    assert(std::fabs(second.value - 0.8f) < 0.005f);
 
     services.setManualValue(0, 0.6f);
-    assert(services.beginAutomationRecording(0, 3000));
-    assert(services.recordAutomationPoint(0, 3500, 0.1f));
-    assert(services.commitAutomationRecording(4000));
+    assert(recordHoldAutomationTake(
+        services, 0U, 3000U, 0.6f, 3500U, 0.1f, 4000U
+    ));
     assert(state.macroHistory.undoCount() == 2U);
     assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
     slot = test_support::project_control::readSlot(state.pages.control, address);
@@ -986,11 +1005,11 @@ void test_recording_shared_lfos_preserves_graph_through_undo_redo() {
     auto replacementSecond = test_support::project_control::readCurvePoint(
         state.pages.control,
         slot.automationCurveId,
-        1,
+        static_cast<uint16_t>(slot.compatibility.automation.pointCount - 1U),
         false
     );
-    assert(std::fabs(replacementFirst.value - 0.6f) < 0.0001f);
-    assert(std::fabs(replacementSecond.value - 0.1f) < 0.0001f);
+    assert(std::fabs(replacementFirst.value - 0.6f) < 0.005f);
+    assert(std::fabs(replacementSecond.value - 0.1f) < 0.005f);
 
     assert(state.macroHistory.undo(state.pages));
     assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
@@ -1004,7 +1023,7 @@ void test_recording_shared_lfos_preserves_graph_through_undo_redo() {
     replacementSecond = test_support::project_control::readCurvePoint(
         state.pages.control,
         slot.automationCurveId,
-        1,
+        static_cast<uint16_t>(slot.compatibility.automation.pointCount - 1U),
         false
     );
     assert(std::fabs(replacementFirst.value - first.value) < 0.0001f);
@@ -1022,16 +1041,16 @@ void test_recording_shared_lfos_preserves_graph_through_undo_redo() {
     replacementSecond = test_support::project_control::readCurvePoint(
         state.pages.control,
         slot.automationCurveId,
-        1,
+        static_cast<uint16_t>(slot.compatibility.automation.pointCount - 1U),
         false
     );
-    assert(std::fabs(replacementFirst.value - 0.6f) < 0.0001f);
-    assert(std::fabs(replacementSecond.value - 0.1f) < 0.0001f);
+    assert(std::fabs(replacementFirst.value - 0.6f) < 0.005f);
+    assert(std::fabs(replacementSecond.value - 0.1f) < 0.005f);
     std::cout
-        << "[PASS] shared-LFO recording preserves graph through Undo/Redo\n";
+        << "[PASS] Automation take preserves shared LFO graph through Undo/Redo\n";
 }
 
-void test_failed_first_recording_does_not_leave_an_empty_slot() {
+void test_failed_first_automation_take_does_not_leave_an_empty_slot() {
     CoreStorages storage;
 
     core::state::CoreState state(storage.settings,
@@ -1048,13 +1067,12 @@ void test_failed_first_recording_does_not_leave_an_empty_slot() {
     const uint16_t entryCountBefore =
         state.pages.control.authored.automation.entryCount;
 
-    assert(services.beginAutomationRecording(0, 1000));
-    assert(services.recordAutomationPoint(0, 1500, 0.75f));
-    assert(!services.commitAutomationRecording(2000));
+    assert(services.armAutomationTake());
+    assert(!services.recordAutomationTakeValue(0U, 1000U, 0.25f));
     assert(state.macroUi.automationRecordingStatus.get() ==
            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED);
 
-    assert(!services.automationRecordingActiveFor(0));
+    assert(!services.automationTakeRecording());
     assert(!test_support::project_control::readSlot(
         state.pages.control,
         address
@@ -1064,7 +1082,7 @@ void test_failed_first_recording_does_not_leave_an_empty_slot() {
            core::state::modulation::PROJECT_CURVE_POINT_CAPACITY);
     assert(!state.project.metadata.dirty);
 
-    std::cout << "[PASS] test_failed_first_recording_does_not_leave_an_empty_slot\n";
+    std::cout << "[PASS] failed first take leaves no empty slot\n";
 }
 
 void test_macro_edit_automation_lifecycle_actions() {
@@ -1077,9 +1095,9 @@ void test_macro_edit_automation_lifecycle_actions() {
     const auto performance = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const auto edit = core::handler::MacroEditDomainServices::fromCoreState(state);
 
-    assert(performance.beginAutomationRecording(0, 1000));
-    assert(performance.recordAutomationPoint(0, 1500, 0.75f));
-    assert(performance.commitAutomationRecording(2000));
+    assert(recordHoldAutomationTake(
+        performance, 0U, 1000U, 0.25f, 1500U, 0.75f, 2000U
+    ));
 
     assert(edit.copyAutomation(0));
     assert(state.structureClipboard.hasMacroAutomation());
@@ -1090,7 +1108,7 @@ void test_macro_edit_automation_lifecycle_actions() {
     const auto* pasted = edit.automationSlot(0);
     assert(pasted != nullptr);
     assert(pasted->automation.active);
-    assert(pasted->automation.pointCount == 2);
+    assert(pasted->automation.pointCount >= 2U);
 
     assert(edit.clearAutomation(0));
     const auto* cleared = edit.automationSlot(0);
@@ -1562,15 +1580,15 @@ int main() {
     test_macro_slot_activation_is_sparse_and_marks_project_dirty();
     test_addressed_macro_slot_activation_preserves_cold_page_cache();
     test_destination_activation_keeps_structure_contiguous_and_macros_sparse();
-    test_automation_recording_commits_to_current_macro_slot();
-    test_automation_recording_cancel_discards_session();
+    test_automation_take_commits_to_current_macro_slot();
+    test_automation_take_cancel_discards_session();
     test_shared_automation_take_records_late_join_and_one_undo();
     test_take_cancel_restores_manual_and_preflight_failure_is_clean();
-    test_automation_recording_without_motion_does_not_create_slot();
-    test_failed_or_cancelled_recording_restores_previous_manual_state();
-    test_recording_preserves_active_modulation_without_resume();
-    test_recording_shared_lfos_preserves_graph_through_undo_redo();
-    test_failed_first_recording_does_not_leave_an_empty_slot();
+    test_armed_automation_take_without_motion_does_not_create_slot();
+    test_cancelled_automation_take_restores_previous_manual_state();
+    test_automation_take_preserves_active_modulation_without_resume();
+    test_automation_take_preserves_shared_lfos_through_undo_redo();
+    test_failed_first_automation_take_does_not_leave_an_empty_slot();
     test_macro_edit_automation_lifecycle_actions();
     test_modulation_copy_paste_preserves_target_and_exact_payload();
     test_typed_slot_copy_paste_preserves_automation_and_modulation();

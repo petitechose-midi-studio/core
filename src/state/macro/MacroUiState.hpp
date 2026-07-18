@@ -5,7 +5,6 @@
 
 #include <oc/state/Signal.hpp>
 
-#include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroAutomationTake.hpp"
 #include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroRuntimeState.hpp"
@@ -96,28 +95,6 @@ struct MacroUiState {
         bool active = false;
     };
 
-    struct AutomationRecordingState {
-        bool active = false;
-        MacroAutomationSlotAddress address{};
-        uint32_t startedAtMs = 0;
-        bool preserveDuration = false;
-        uint16_t targetDurationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
-        bool restoreManualOnFailure = false;
-        float previousManualValue = 0.0f;
-        MacroAutomationLane lane{};
-
-        void reset() {
-            active = false;
-            address = {};
-            startedAtMs = 0;
-            preserveDuration = false;
-            targetDurationTicks = MACRO_AUTOMATION_TICKS_PER_BEAT;
-            restoreManualOnFailure = false;
-            previousManualValue = 0.0f;
-            lane = {};
-        }
-    };
-
     oc::state::Signal<MacroPerformanceProperty, 2> activeProperty{
         MacroPerformanceProperty::VALUE
     };
@@ -146,7 +123,6 @@ struct MacroUiState {
         selectionDeleteGuard{};
     oc::state::Signal<core::state::contextual::OperationFeedbackState, 4>
         selectionDeleteFeedback{};
-    AutomationRecordingState automationRecording;
     MacroAutomationTakeState automationTake;
     MacroHistoryChangePtr automationTakeHistory{};
     core::app::ExtmemUniquePtr<

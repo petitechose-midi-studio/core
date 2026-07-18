@@ -171,26 +171,6 @@ void MacroPerformanceDomainServices::refreshManualProjection_() const {
     );
 }
 
-void MacroPerformanceDomainServices::restoreManualAfterFailedRecording_(
-    const core::state::macro::MacroUiState::AutomationRecordingState& recording
-) const {
-    if (recording.restoreManualOnFailure) {
-        const auto status = macro_ui_->manualOverrides.activate(
-            recording.address,
-            recording.previousManualValue
-        );
-        if (status != core::state::macro::MacroManualOverrideState::ActivateStatus::INVALID_ADDRESS &&
-            status != core::state::macro::MacroManualOverrideState::ActivateStatus::CAPACITY_EXHAUSTED &&
-            core::state::macro::macroAutomationAddressEquals(
-                recording.address,
-                activeAddress_(recording.address.macro)
-            )) {
-            setResolvedValue(recording.address.macro, recording.previousManualValue);
-        }
-    }
-    refreshManualProjection_();
-}
-
 float MacroPerformanceDomainServices::runtimeValue(uint8_t index) const {
     return core::state::macro::MacroWorkflow::runtimeValue(*macros_, index);
 }
@@ -202,14 +182,6 @@ float MacroPerformanceDomainServices::absoluteBaseValue(uint8_t index) const {
         take.track == pages_->currentActiveTrack() &&
         take.page == pages_->currentActivePage() && take.activeFor(index)) {
         return take.latestBase(index);
-    }
-    const auto& recording = macro_ui_->automationRecording;
-    if (recording.active &&
-        core::state::macro::macroAutomationAddressEquals(
-            recording.address,
-            activeAddress_(index)
-        ) && recording.lane.pointCount > 0) {
-        return recording.lane.points[recording.lane.pointCount - 1U].value;
     }
     float manualValue = 0.0f;
     if (manualOverrideValueFor(index, manualValue)) return manualValue;
@@ -292,198 +264,10 @@ MacroPerformanceDomainServices::resolveManualValue(uint8_t index, float value) c
     return out;
 }
 
-FLASHMEM bool MacroPerformanceDomainServices::beginAutomationRecording(
-    uint8_t index,
-    uint32_t nowMs
-) const {
-    if (index >= core::state::macro::MACRO_COUNT) return false;
-    if (!pages_->isMacroSlotActive(index)) return false;
-    auto& recording = macro_ui_->automationRecording;
-    if (recording.active) return false;
-
-    recording.reset();
-    recording.address = activeAddress_(index);
-    recording.restoreManualOnFailure = macro_ui_->manualOverrides.valueFor(
-        recording.address,
-        recording.previousManualValue
-    );
-    core::state::modulation::ProjectControlMacroSlotView existing{};
-    if (core::state::modulation::readProjectControlMacroSlot(
-            pages_->control,
-            recording.address,
-            existing
-        ) && existing.automationStored) {
-        recording.preserveDuration = true;
-        recording.targetDurationTicks = existing.compatibility.automation.durationTicks;
-    }
-    // Recording owns the absolute source for the duration of the gesture.
-    // Modulation remains audible and is never suspended by recording.
-    (void)macro_ui_->manualOverrides.resume(recording.address);
-    refreshManualProjection_();
-    recording.active = true;
-    macro_ui_->automationRecordingStatus.set(
-        core::state::macro::MacroAutomationRecordingStatus::RECORDING
-    );
-    recording.startedAtMs = nowMs;
-    const bool appended = core::state::macro::macroAutomationAppendPoint(
-        recording.lane,
-        0.0f,
-        recording.restoreManualOnFailure
-            ? recording.previousManualValue
-            : absoluteBaseValue(index)
-    );
-    if (appended) {
-        bumpAutomationRecordingRevision(*macro_ui_);
-    } else {
-        restoreManualAfterFailedRecording_(recording);
-        recording.reset();
-        macro_ui_->automationRecordingStatus.set(
-            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
-        );
-    }
-    return appended;
-}
-
-bool MacroPerformanceDomainServices::recordAutomationPoint(uint8_t index,
-                                                           uint32_t nowMs,
-                                                           float value) const {
-    auto& recording = macro_ui_->automationRecording;
-    if (!recording.active ||
-        !core::state::macro::macroAutomationAddressEquals(
-            recording.address,
-            activeAddress_(index)
-        )) {
-        return false;
-    }
-
-    const float beat = core::state::macro::macroAutomationElapsedBeats(
-        recording.startedAtMs,
-        nowMs,
-        status_bar_->tempo.get()
-    );
-    bool reduced = false;
-    const bool appended = core::state::macro::macroAutomationAppendPoint(
-        recording.lane,
-        beat,
-        value,
-        &reduced
-    );
-    if (reduced) {
-        macro_ui_->automationRecordingStatus.set(
-            core::state::macro::MacroAutomationRecordingStatus::REDUCED
-        );
-    }
-    if (appended) {
-        bumpAutomationRecordingRevision(*macro_ui_);
-    }
-    return appended;
-}
-
-FLASHMEM bool MacroPerformanceDomainServices::commitAutomationRecording(
-    uint32_t nowMs
-) const {
-    auto& recording = macro_ui_->automationRecording;
-    if (!recording.active) return false;
-    if (recording.lane.pointCount < 2) {
-        restoreManualAfterFailedRecording_(recording);
-        recording.reset();
-        macro_ui_->automationRecordingStatus.set(
-            core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT
-        );
-        bumpAutomationRecordingRevision(*macro_ui_);
-        return false;
-    }
-
-    const float duration = core::state::macro::macroAutomationElapsedBeats(
-        recording.startedAtMs,
-        nowMs,
-        status_bar_->tempo.get()
-    );
-    if (recording.preserveDuration) {
-        core::state::macro::macroAutomationFinalizeRecordingWithDuration(
-            recording.lane,
-            duration,
-            core::state::macro::macroAutomationBeatsFromTicks(recording.targetDurationTicks)
-        );
-    } else {
-        core::state::macro::macroAutomationFinalizeRecording(recording.lane, duration);
-    }
-
-    auto historyChange = history_ != nullptr
-        ? history_->prepareAutomationRecording(
-              *pages_,
-              recording.address
-          )
-        : core::state::macro::MacroHistoryChangePtr{};
-    if (history_ != nullptr && !historyChange) {
-        restoreManualAfterFailedRecording_(recording);
-        recording.reset();
-        macro_ui_->automationRecordingStatus.set(
-            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
-        );
-        bumpAutomationRecordingRevision(*macro_ui_);
-        return false;
-    }
-
-    if (!core::state::modulation::assignProjectControlAutomation(
-            pages_->control,
-            recording.address,
-            recording.lane
-        )) {
-        if (historyChange && historyChange->automation) {
-            (void)core::state::macro::applyMacroAutomationHistorySnapshot(
-                *pages_,
-                historyChange->automation->before
-            );
-        }
-        restoreManualAfterFailedRecording_(recording);
-        recording.reset();
-        macro_ui_->automationRecordingStatus.set(
-            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
-        );
-        bumpAutomationRecordingRevision(*macro_ui_);
-        return false;
-    }
-    if (history_ != nullptr && !history_->commitPrepared(
-            *pages_,
-            std::move(historyChange)
-        )) {
-        restoreManualAfterFailedRecording_(recording);
-        recording.reset();
-        macro_ui_->automationRecordingStatus.set(
-            core::state::macro::MacroAutomationRecordingStatus::COMMIT_FAILED
-        );
-        bumpAutomationRecordingRevision(*macro_ui_);
-        return false;
-    }
-    (void)macro_ui_->manualOverrides.resume(recording.address);
-    refreshManualProjection_();
-    recording.reset();
-    macro_ui_->automationRecordingStatus.set(
-        core::state::macro::MacroAutomationRecordingStatus::IDLE
-    );
-    bumpAutomationRecordingRevision(*macro_ui_);
-    if (operations_.markProjectMutated != nullptr) {
-        operations_.markProjectMutated(operations_.context);
-    }
-    return true;
-}
-
-bool MacroPerformanceDomainServices::cancelAutomationRecording() const {
-    if (!macro_ui_->automationRecording.active) return false;
-    restoreManualAfterFailedRecording_(macro_ui_->automationRecording);
-    macro_ui_->automationRecording.reset();
-    macro_ui_->automationRecordingStatus.set(
-        core::state::macro::MacroAutomationRecordingStatus::IDLE
-    );
-    bumpAutomationRecordingRevision(*macro_ui_);
-    return true;
-}
-
 FLASHMEM bool MacroPerformanceDomainServices::armAutomationTake() const {
     using namespace core::state::macro;
     if (macro_ui_->automationTake.phase != MacroAutomationTakePhase::IDLE ||
-        macro_ui_->automationRecording.active || history_ == nullptr) {
+        history_ == nullptr) {
         return false;
     }
     const uint16_t candidates = pages_->activePageData().activeMacroMask;
@@ -906,16 +690,6 @@ bool MacroPerformanceDomainServices::automationTakeActiveFor(
     return take.phase == core::state::macro::MacroAutomationTakePhase::RECORDING &&
            take.track == pages_->currentActiveTrack() &&
            take.page == pages_->currentActivePage() && take.activeFor(index);
-}
-
-bool MacroPerformanceDomainServices::automationRecordingActiveFor(uint8_t index) const {
-    if (index >= core::state::macro::MACRO_COUNT) return false;
-    const auto& recording = macro_ui_->automationRecording;
-    return recording.active &&
-           core::state::macro::macroAutomationAddressEquals(
-               recording.address,
-               activeAddress_(index)
-           );
 }
 
 bool MacroPerformanceDomainServices::computedSourcePlaybackActiveFor(uint8_t index) const {

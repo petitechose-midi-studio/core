@@ -113,7 +113,6 @@ struct MacroValueHarness {
         , adapter(
               core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                   state.pages,
-                  state.macroUi,
               },
               services,
               coordinator
@@ -131,6 +130,34 @@ struct MacroValueHarness {
                   MACRO_SCOPE) {
         state.activeView.set(core::ui::ViewType::MACRO);
         g_now_ms = 0;
+        const auto& config = services.activeConfig(0U);
+        const core::state::shared::MidiCcCandidate initialAuthor{
+            .destination = {
+                .identity = {
+                    .port = core::handler::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                    .channel = config.channel,
+                    .controller = config.cc,
+                },
+                .routeValidity = core::state::shared::MidiCcRouteValidity::VALID,
+            },
+            .author = {
+                .candidateClass =
+                    core::state::shared::MidiCcCandidateClass::MACRO_STATIC,
+                .stableAddress =
+                    core::handler::MacroMidiCcRuntimeAdapter::stableAddress(
+                        state.pages.currentActiveTrack(),
+                        state.pages.currentActivePage(),
+                        0U
+                    ),
+            },
+            .localValue = 0U,
+        };
+        assert(coordinator.publishPersistentAuthors(&initialAuthor, 1U));
+        assert(coordinator.resolveLive(0U).ok());
+        queue.drainDue(midi, 0U, UINT32_MAX);
+        // The harness starts after the authoritative playback frame has been
+        // established; individual assertions count only gesture emissions.
+        midiTransport.ccCount = 0;
     }
 
     void turn(Config::EncoderID id, float value) {
@@ -218,7 +245,7 @@ void test_macro_encoder_sanitizes_non_finite_values_before_midi_conversion() {
         assert(std::fabs(h.state.macros[0].value.get()) < 0.0005f);
         assert(std::isfinite(h.state.pages.activePageData().values[0]));
         assert(std::fabs(h.state.pages.activePageData().values[0]) < 0.0005f);
-        assert(h.midiTransport.ccCount == 1);
+        assert(h.midiTransport.ccCount == 0);
         assert(h.midiTransport.lastValue == 0);
 
         core::state::macro::MacroWorkflow::setRuntimeValue(h.state.macros, 0, invalid);
@@ -311,16 +338,15 @@ void test_macro_button_hold_cannot_record_and_turn_stays_manual() {
 
     h.state.statusBar.tempo.set(120.0f);
     h.press(Config::ButtonID::MACRO_1);
-    assert(!h.state.macroUi.automationRecording.active);
+    assert(!h.services.automationTakeArmed());
 
     g_now_ms = 500;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
-    assert(!h.state.macroUi.automationRecording.active);
     assert(!h.services.automationTakeRecording());
 
     g_now_ms = 1000;
     h.release(Config::ButtonID::MACRO_1);
-    assert(!h.state.macroUi.automationRecording.active);
+    assert(!h.services.automationTakeArmed());
 
     const auto slot = test_support::project_control::readSlot(
         h.state.pages.control,
@@ -428,10 +454,10 @@ void test_macro_button_hold_without_turn_discards_recording() {
     MacroValueHarness h;
 
     h.press(Config::ButtonID::MACRO_1);
-    assert(!h.state.macroUi.automationRecording.active);
+    assert(!h.services.automationTakeArmed());
     g_now_ms = 1000;
     h.release(Config::ButtonID::MACRO_1);
-    assert(!h.state.macroUi.automationRecording.active);
+    assert(!h.services.automationTakeRecording());
 
     const auto slot = test_support::project_control::readSlot(
         h.state.pages.control,

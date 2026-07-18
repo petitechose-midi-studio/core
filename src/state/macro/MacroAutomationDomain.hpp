@@ -79,6 +79,10 @@ struct MacroAutomationLane {
     std::array<MacroCurvePoint, MACRO_AUTOMATION_RECORDING_MAX_POINTS> points{};
 };
 
+// This authoring scratch is intentionally cold and must never be embedded in
+// a hot/live owner. Durable Project storage uses packed curve points instead.
+static_assert(sizeof(MacroAutomationLane) == 16396U);
+
 // Temporary relative modulation shape. Values are signed offsets and are
 // scaled by MacroAutomationSlotState depth when persisted into the point pool.
 struct MacroModulationShape {
