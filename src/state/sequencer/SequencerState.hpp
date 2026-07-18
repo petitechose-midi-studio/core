@@ -107,33 +107,46 @@ struct SequencerState {
     bool setPatternNudgePercent(int value);
 
     bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
-        if (!pattern.setStepNoteAt(step, noteValue)) return false;
+        if (step >= MAX_STEPS) return false;
+        const uint8_t clamped = SequencerPatternState::clampMidi7(noteValue);
+        if (pattern.note[step] == clamped) return false;
+        // Runtime telemetry is a projection of the previous authored value.
+        // Retire it before publishing the authored-data revision so the first
+        // UI consumer of that revision cannot paint one stale frame.
         invalidateStepVariationTelemetry(step);
-        return true;
+        return pattern.setStepNoteAt(step, clamped);
     }
 
     bool setStepVelocityAt(uint8_t step, uint8_t velocityValue) {
-        if (!pattern.setStepVelocityAt(step, velocityValue)) return false;
+        if (step >= MAX_STEPS) return false;
+        const uint8_t clamped = SequencerPatternState::clampMidi7(velocityValue);
+        if (pattern.velocity[step] == clamped) return false;
         invalidateStepVariationTelemetry(step);
-        return true;
+        return pattern.setStepVelocityAt(step, clamped);
     }
 
     bool setStepGateAt(uint8_t step, uint16_t gatePercent) {
-        if (!pattern.setStepGateAt(step, gatePercent)) return false;
+        if (step >= MAX_STEPS) return false;
+        const uint16_t clamped = SequencerPatternState::clampGatePercent(gatePercent);
+        if (pattern.gate[step] == clamped) return false;
         invalidateStepVariationTelemetry(step);
-        return true;
+        return pattern.setStepGateAt(step, clamped);
     }
 
     bool setStepNudgeAt(uint8_t step, int8_t nudgeValue) {
-        if (!pattern.setStepNudgeAt(step, nudgeValue)) return false;
+        if (step >= MAX_STEPS) return false;
+        const int8_t clamped = SequencerPatternState::clampNudge(nudgeValue);
+        if (pattern.nudge[step] == clamped) return false;
         invalidateStepVariationTelemetry(step);
-        return true;
+        return pattern.setStepNudgeAt(step, clamped);
     }
 
     bool setStepProbabilityAt(uint8_t step, uint8_t probabilityValue) {
-        if (!pattern.setStepProbabilityAt(step, probabilityValue)) return false;
+        if (step >= MAX_STEPS) return false;
+        const uint8_t clamped = SequencerPatternState::clampProbability(probabilityValue);
+        if (pattern.probability[step] == clamped) return false;
         invalidateStepVariationTelemetry(step);
-        return true;
+        return pattern.setStepProbabilityAt(step, clamped);
     }
 
     bool setStepDataAt(uint8_t step, uint8_t noteValue, uint8_t velocityValue, uint16_t gatePercent) {
@@ -175,17 +188,30 @@ struct SequencerState {
         uint8_t probabilityValue
     ) {
         if (step >= MAX_STEPS) return false;
-        if (!pattern.setStepDataAt(
-                step,
-                noteValue,
-                velocityValue,
-                gatePercent,
-                nudgeValue,
-                probabilityValue
-            )) {
+        const uint8_t clampedNote = SequencerPatternState::clampMidi7(noteValue);
+        const uint8_t clampedVelocity = SequencerPatternState::clampMidi7(velocityValue);
+        const uint16_t clampedGate = SequencerPatternState::clampGatePercent(gatePercent);
+        const int8_t clampedNudge = SequencerPatternState::clampNudge(nudgeValue);
+        const uint8_t clampedProbability =
+            SequencerPatternState::clampProbability(probabilityValue);
+        if (pattern.note[step] == clampedNote &&
+            pattern.velocity[step] == clampedVelocity &&
+            pattern.gate[step] == clampedGate &&
+            pattern.nudge[step] == clampedNudge &&
+            pattern.probability[step] == clampedProbability) {
             return false;
         }
         invalidateStepVariationTelemetry(step);
+        if (!pattern.setStepDataAt(
+                step,
+                clampedNote,
+                clampedVelocity,
+                clampedGate,
+                clampedNudge,
+                clampedProbability
+            )) {
+            return false;
+        }
         return true;
     }
 

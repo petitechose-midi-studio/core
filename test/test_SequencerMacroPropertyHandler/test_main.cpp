@@ -8,6 +8,7 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
+#include <oc/state/NotificationQueue.hpp>
 
 #include "../../src/handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "../../src/handler/sequencer/SequencerInputUtils.hpp"
@@ -166,6 +167,61 @@ void test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step() {
     assert(h.state.sequencer.variationTelemetryRevision.get() == 11);
 
     std::cout << "[PASS] test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step\n";
+}
+
+void test_direct_edit_retires_runtime_projection_before_authored_revision() {
+    const StepProperty properties[] = {
+        StepProperty::NOTE,
+        StepProperty::VELOCITY,
+        StepProperty::GATE,
+        StepProperty::NUDGE,
+    };
+
+    for (const auto property : properties) {
+        SequencerMacroPropertyHarness h;
+        h.state.sequencer.pattern.length.set(8);
+        h.state.sequencer.activeStepProperty.set(property);
+
+        constexpr uint8_t step = 0;
+        h.state.sequencer.cycleVariationTelemetry.validMask.setBit(step, true);
+        h.state.sequencer.cycleVariationTelemetry.triggeredMask.setBit(step, true);
+        h.state.sequencer.cycleVariationTelemetry.resolvedNote[step] = 12;
+        h.state.sequencer.variationTelemetryRevision.set(10);
+        oc::state::NotificationQueue::instance().flush();
+
+        uint8_t callbackCount = 0;
+        uint8_t callbackOrder[2]{};
+        bool authoredRevisionSawCoherentState = false;
+        auto telemetrySubscription =
+            h.state.sequencer.variationTelemetryRevision.subscribe(
+                [&](const uint32_t&) {
+                    if (callbackCount < 2U) callbackOrder[callbackCount++] = 1U;
+                }
+            );
+        auto authoredSubscription = h.state.sequencer.pattern.stepDataRevision.subscribe(
+            [&](const uint32_t&) {
+                if (callbackCount < 2U) callbackOrder[callbackCount++] = 2U;
+                authoredRevisionSawCoherentState =
+                    !h.state.sequencer.cycleVariationTelemetry.validMask.test(step) &&
+                    !h.state.sequencer.cycleVariationTelemetry.triggeredMask.test(step) &&
+                    h.state.sequencer.stepInlineFeedback.visible.get() &&
+                    h.state.sequencer.stepInlineFeedback.touchedMask.get().test(step) &&
+                    h.state.sequencer.stepInlineFeedback.property.get() == property;
+            }
+        );
+        assert(telemetrySubscription.isValid());
+        assert(authoredSubscription.isValid());
+
+        h.turn(Config::EncoderID::MACRO_1, 1.0f);
+        oc::state::NotificationQueue::instance().flush();
+
+        assert(callbackCount == 2U);
+        assert(callbackOrder[0] == 1U);
+        assert(callbackOrder[1] == 2U);
+        assert(authoredRevisionSawCoherentState);
+    }
+
+    std::cout << "[PASS] test_direct_edit_retires_runtime_projection_before_authored_revision\n";
 }
 
 void test_constrained_scale_pitch_edit_writes_scale_degree_note() {
@@ -483,6 +539,7 @@ int main() {
     test_opt_encoder_does_not_edit_without_step_focus();
     test_opt_encoder_edits_focused_step_in_step_focus();
     test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step();
+    test_direct_edit_retires_runtime_projection_before_authored_revision();
     test_constrained_scale_pitch_edit_writes_scale_degree_note();
     test_macro_property_edits_are_blocked_by_modal_states();
     test_left_bottom_selector_macro_edits_local_variation_range();
