@@ -15,11 +15,8 @@ namespace core::context::standalone::macro_overlay_invalidation {
 inline constexpr uint32_t RENDER_EDIT = 1U << 0;
 inline constexpr uint32_t RENDER_AUTOMATION = 1U << 1;
 inline constexpr uint32_t RENDER_EDIT_SELECTOR = 1U << 2;
-inline constexpr uint32_t RENDER_PAGE_SELECTOR = 1U << 3;
-inline constexpr uint32_t RENDER_TARGET_SELECTOR = 1U << 4;
 inline constexpr uint32_t PHASE_RENDER_MASK =
-    RENDER_EDIT | RENDER_AUTOMATION | RENDER_EDIT_SELECTOR |
-    RENDER_PAGE_SELECTOR | RENDER_TARGET_SELECTOR;
+    RENDER_EDIT | RENDER_AUTOMATION | RENDER_EDIT_SELECTOR;
 
 struct StateRefs {
     core::state::MacroEditState& macroEdit;
@@ -55,9 +52,7 @@ public:
                clipboard_watcher_.subscriptionCount() +
                edit_watcher_.subscriptionCount() +
                automation_watcher_.subscriptionCount() +
-               edit_selector_watcher_.subscriptionCount() +
-               page_selector_watcher_.subscriptionCount() +
-               target_selector_watcher_.subscriptionCount();
+               edit_selector_watcher_.subscriptionCount();
     }
 
 private:
@@ -66,8 +61,6 @@ private:
     void requestEditRender();
     void requestAutomationRender();
     void requestEditSelectorRender();
-    void requestPageSelectorRender();
-    void requestTargetSelectorRender();
     void invalidate(uint32_t renderFlags);
 
     void* callback_context_ = nullptr;
@@ -75,10 +68,8 @@ private:
     oc::state::StaticWatchGroup<1> phase_watcher_;
     oc::state::StaticWatchGroup<1> clipboard_watcher_;
     oc::state::StaticWatchGroup<15> edit_watcher_;
-    oc::state::StaticWatchGroup<12> automation_watcher_;
+    oc::state::StaticWatchGroup<13> automation_watcher_;
     oc::state::StaticWatchGroup<2> edit_selector_watcher_;
-    oc::state::StaticWatchGroup<1> page_selector_watcher_;
-    oc::state::StaticWatchGroup<1> target_selector_watcher_;
 };
 
 }  // namespace core::context::standalone::macro_overlay_invalidation

@@ -73,15 +73,11 @@ FLASHMEM void configureDebugLabels(CoreState& state) {
     state.viewSelector.selectedIndex.setDebugLabel("core.viewSelector.selectedIndex");
     state.viewSelector.visible.setDebugLabel("core.viewSelector.visible");
 
-    state.pages.selector.selectedIndex.setDebugLabel("core.macroPages.selector.selectedIndex");
-    state.pages.selector.visible.setDebugLabel("core.macroPages.selector.visible");
-
     state.macroEdit.flowPhase.setDebugLabel("core.macroEdit.flowPhase");
     state.macroEdit.selector.visible.setDebugLabel("core.macroEdit.selector.visible");
     state.macroEdit.selector.editingRow.setDebugLabel("core.macroEdit.selector.editingRow");
     state.macroEdit.selector.selectedIndex.setDebugLabel("core.macroEdit.selector.selectedIndex");
-    state.macroEdit.macroSelector.visible.setDebugLabel("core.macroEdit.macroSelector.visible");
-    state.macroEdit.macroSelector.selectedIndex.setDebugLabel("core.macroEdit.macroSelector.selectedIndex");
+    state.macroEdit.modulatorPickerIndex.setDebugLabel("core.macroEdit.modulatorPickerIndex");
     state.macroEdit.contextGuard.setDebugLabel("core.macroEdit.contextGuard");
     state.macroEdit.contextFeedback.setDebugLabel("core.macroEdit.contextFeedback");
     state.macroEdit.contextButton.setDebugLabel("core.macroEdit.contextButton");

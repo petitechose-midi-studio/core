@@ -54,7 +54,7 @@ int main() {
     assert(bindings.bind(stateRefs, &probe, &Probe::invalidate));
     assert(bindings.phaseSubscriptionCount() == 1);
     assert(macroEdit.flowPhase.subscriberCount() == 1);
-    assert(bindings.subscriptionCount() == 33);
+    assert(bindings.subscriptionCount() == 32);
     assert(macroUi.runtimeProjectionRevision.subscriberCount() == 1);
     assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 1);
     assert(clipboard.revision.subscriberCount() == 1);
@@ -63,7 +63,7 @@ int main() {
     assert(bindings.bind(stateRefs, &probe, &Probe::invalidate));
     assert(bindings.phaseSubscriptionCount() == 1);
     assert(macroEdit.flowPhase.subscriberCount() == 1);
-    assert(bindings.subscriptionCount() == 33);
+    assert(bindings.subscriptionCount() == 32);
     assert(macroUi.runtimeProjectionRevision.subscriberCount() == 1);
     assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 1);
     assert(clipboard.revision.subscriberCount() == 1);
@@ -75,9 +75,13 @@ int main() {
     assert(probe.flags ==
            (invalidation::RENDER_EDIT |
             invalidation::RENDER_AUTOMATION |
-            invalidation::RENDER_EDIT_SELECTOR |
-            invalidation::RENDER_PAGE_SELECTOR |
-            invalidation::RENDER_TARGET_SELECTOR));
+            invalidation::RENDER_EDIT_SELECTOR));
+
+    probe.reset();
+    macroEdit.modulatorPickerIndex.set(1);
+    test_support::drainNotifications();
+    assert(probe.calls == 1);
+    assert(probe.flags == invalidation::RENDER_AUTOMATION);
 
     probe.reset();
     clipboard.revision.set(clipboard.revision.get() + 1U);

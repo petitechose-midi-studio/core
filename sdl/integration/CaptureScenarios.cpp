@@ -1675,12 +1675,6 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         return true;
     }
 
-    if (std::strcmp(scenario, "macro-page-selector") == 0) {
-        state.overlays.show(core::ui::OverlayType::PAGE_SELECTOR, false);
-        state.pages.selector.selectedIndex.set(state.pages.currentActivePage());
-        return true;
-    }
-
     if (std::strcmp(scenario, "view-selector") == 0) {
         state.overlays.show(core::ui::OverlayType::VIEW_SELECTOR, false);
         state.viewSelector.selectedIndex.set(static_cast<int>(state.activeView.get()));

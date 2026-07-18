@@ -930,43 +930,6 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         return true;
     }
 
-    if (phase == core::state::MacroEditFlowPhase::PAGE_SELECTOR) {
-        const auto data =
-            core::context::standalone::macro_overlay_presenter::buildPageSelectorRenderData(source);
-        if (!data.visible) return false;
-        out.mode = "macro.page_selector";
-        out.target = "page";
-        fillSelectedItem(out, data);
-        if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "select_macro_page";
-        } else if (isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "apply_macro_page";
-        } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "cancel_macro_page";
-        }
-        return true;
-    }
-
-    if (phase == core::state::MacroEditFlowPhase::TARGET_SELECTOR) {
-        const auto data =
-            core::context::standalone::macro_overlay_presenter::buildTargetSelectorRenderData(
-                source,
-                static_items_
-            );
-        if (!data.visible) return false;
-        out.mode = "macro.target_selector";
-        out.target = "macro";
-        fillSelectedItem(out, data);
-        if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "select_macro_target";
-        } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "apply_macro_target";
-        } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "cancel_macro_target";
-        }
-        return true;
-    }
-
     if (phase == core::state::MacroEditFlowPhase::AUTOMATION) {
         const auto data =
             core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(source);
@@ -1351,7 +1314,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         const auto& graph = pages_.control.authored.modulation;
         if (graph.sourceCount == 0U) return false;
         const int selected = std::clamp(
-            macro_edit_.macroSelector.selectedIndex.get(),
+            macro_edit_.modulatorPickerIndex.get(),
             0,
             static_cast<int>(graph.sourceCount) - 1
         );

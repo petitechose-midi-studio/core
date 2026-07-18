@@ -41,8 +41,6 @@ struct Source {
 struct StaticItems {
     std::array<std::array<char, 4>, 128> ccLabels{};
     std::array<const char*, 128> ccItems{};
-    std::array<std::array<char, 16>, core::state::MACRO_COUNT> macroLabels{};
-    std::array<const char*, core::state::MACRO_COUNT> macroItems{};
 };
 
 struct EditRenderData {
@@ -90,8 +88,6 @@ void buildEditRenderData(Source& source, EditRenderData& data);
 EditRenderData buildEditRenderData(Source& source);
 AutomationRenderData buildAutomationRenderData(const Source& source);
 SelectorRenderData buildEditSelectorRenderData(const Source& source, const StaticItems& items);
-SelectorRenderData buildPageSelectorRenderData(const Source& source);
-SelectorRenderData buildTargetSelectorRenderData(const Source& source, const StaticItems& items);
 core::ui::ContextActionStripProps buildEditActionStripProps(const Source& source);
 core::ui::ContextActionStripProps buildDetailActionStripProps(const Source& source);
 

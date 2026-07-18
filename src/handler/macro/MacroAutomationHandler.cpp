@@ -348,8 +348,8 @@ FLASHMEM void MacroAutomationHandler::moveFocus(float delta) {
             pages_.control.authored.modulation.sourceCount
         );
         if (count <= 0) return;
-        const int current = macro_edit_.macroSelector.selectedIndex.get();
-        macro_edit_.macroSelector.selectedIndex.set(
+        const int current = macro_edit_.modulatorPickerIndex.get();
+        macro_edit_.modulatorPickerIndex.set(
             nav::nextWrappedIndex(delta, current, count)
         );
         configureOptForFocusedRow();
@@ -1307,7 +1307,7 @@ FLASHMEM bool MacroAutomationHandler::openModulatorPicker() {
     );
     if (count <= 0) return false;
     const int selected = std::clamp(
-        macro_edit_.macroSelector.selectedIndex.get(),
+        macro_edit_.modulatorPickerIndex.get(),
         0,
         count - 1
     );
@@ -1319,7 +1319,7 @@ FLASHMEM bool MacroAutomationHandler::openModulatorPicker() {
 FLASHMEM bool MacroAutomationHandler::startExistingModulatorAudition() {
     if (!modulatorPickerActive()) return false;
     const auto& graph = pages_.control.authored.modulation;
-    const int selected = macro_edit_.macroSelector.selectedIndex.get();
+    const int selected = macro_edit_.modulatorPickerIndex.get();
     if (selected < 0 || selected >= static_cast<int>(graph.sourceCount)) {
         return false;
     }

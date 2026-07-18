@@ -891,17 +891,6 @@ FLASHMEM void initializeStaticItems(StaticItems& items) {
         items.ccItems[i] = items.ccLabels[i].data();
     }
 
-    for (uint8_t i = 0; i < core::state::MACRO_COUNT; ++i) {
-        size_t pos = oc::type::text::appendString(items.macroLabels[i].data(), items.macroLabels[i].size(), 0, "Macro ");
-        pos = oc::type::text::appendUnsigned(
-            items.macroLabels[i].data(),
-            items.macroLabels[i].size(),
-            pos,
-            static_cast<unsigned>(i) + 1U
-        );
-        oc::type::text::terminate(items.macroLabels[i].data(), items.macroLabels[i].size(), pos);
-        items.macroItems[i] = items.macroLabels[i].data();
-    }
 }
 
 FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
@@ -1404,7 +1393,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         data.rowCount = static_cast<int>(graph.sourceCount);
         data.selectedIndex = data.rowCount > 0
             ? std::clamp(
-                  source.macroEdit.macroSelector.selectedIndex.get(),
+                  source.macroEdit.modulatorPickerIndex.get(),
                   0,
                   data.rowCount - 1
               )
@@ -2354,57 +2343,6 @@ FLASHMEM SelectorRenderData buildEditSelectorRenderData(const Source& source, co
     data.selectedIndex = std::clamp(selector.selectedIndex.get(), 0, data.itemCount - 1);
     data.dataRevision = static_cast<uint32_t>(core::state::MacroEditFlowPhase::VALUE_SELECTOR) << 8 |
                         static_cast<uint32_t>(row + 1U);
-    data.visible = true;
-    return data;
-}
-
-FLASHMEM SelectorRenderData buildPageSelectorRenderData(const Source& source) {
-    SelectorRenderData data{};
-    if (source.macroEdit.flowPhase.get() != core::state::MacroEditFlowPhase::PAGE_SELECTOR ||
-        !source.pages.selector.visible.get()) {
-        return data;
-    }
-
-    static std::array<const char*, core::state::macro::PAGE_COUNT> pageItems{};
-    for (uint8_t i = 0; i < core::state::macro::PAGE_COUNT; ++i) {
-        pageItems[i] = source.pages.pageName(i);
-    }
-
-    data.title = "PAGE";
-    data.meta = "MACRO";
-    data.items = pageItems.data();
-    data.itemCount = core::state::macro::PAGE_COUNT;
-    data.selectedIndex = std::clamp(
-        static_cast<int>(source.pages.selector.selectedIndex.get()),
-        0,
-        static_cast<int>(core::state::macro::PAGE_COUNT) - 1
-    );
-    data.dataRevision =
-        (static_cast<uint32_t>(core::state::MacroEditFlowPhase::PAGE_SELECTOR) << 8) |
-        static_cast<uint32_t>(data.selectedIndex + 1);
-    data.visible = true;
-    return data;
-}
-
-FLASHMEM SelectorRenderData buildTargetSelectorRenderData(const Source& source, const StaticItems& items) {
-    SelectorRenderData data{};
-    if (source.macroEdit.flowPhase.get() != core::state::MacroEditFlowPhase::TARGET_SELECTOR ||
-        !source.macroEdit.macroSelector.visible.get()) {
-        return data;
-    }
-
-    data.title = "MACRO";
-    data.meta = "TARGET";
-    data.items = items.macroItems.data();
-    data.itemCount = core::state::MACRO_COUNT;
-    data.selectedIndex = std::clamp(
-        source.macroEdit.macroSelector.selectedIndex.get(),
-        0,
-        static_cast<int>(core::state::MACRO_COUNT) - 1
-    );
-    data.dataRevision =
-        (static_cast<uint32_t>(core::state::MacroEditFlowPhase::TARGET_SELECTOR) << 24) |
-        static_cast<uint32_t>(data.selectedIndex + 1);
     data.visible = true;
     return data;
 }

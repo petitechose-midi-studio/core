@@ -30,9 +30,7 @@ public:
                           ms::ui::VirtualListKeyValueOverlay& macroAutomationOverlay,
                           core::ui::ContextActionStrip& macroEditActionStrip,
                           core::ui::ContextActionStrip& macroAutomationActionStrip,
-                          ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay,
-                          ms::ui::VirtualListSelectorOverlay& pageSelectorOverlay,
-                          ms::ui::VirtualListSelectorOverlay& macroTargetSelectorOverlay);
+                          ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay);
 
     [[nodiscard]] bool bind();
     void refreshRuntimeTelemetry();
@@ -44,8 +42,6 @@ private:
     void renderEdit();
     void renderAutomation();
     void renderEditSelector();
-    void renderPageSelector();
-    void renderTargetSelector();
     void initializeStaticItems_();
 
     StateRefs state_refs_;
@@ -54,8 +50,6 @@ private:
     core::ui::ContextActionStrip& macro_edit_action_strip_;
     core::ui::ContextActionStrip& macro_automation_action_strip_;
     ms::ui::VirtualListSelectorOverlay& macro_edit_selector_overlay_;
-    ms::ui::VirtualListSelectorOverlay& page_selector_overlay_;
-    ms::ui::VirtualListSelectorOverlay& macro_target_selector_overlay_;
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
     macro_overlay_invalidation::Bindings invalidation_bindings_;
     // Presenter instances live in EXTMEM; keeping the sizeable preview here

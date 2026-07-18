@@ -51,8 +51,6 @@ public:
      * @param macroViewScope Scope element for macro view (open trigger)
      * @param overlayScope Scope element for main MacroEdit overlay
      * @param selectorScope Scope element for MacroEdit value selector overlay
-     * @param pageSelectorScope Scope element for page selector overlay
-     * @param macroSelectorScope Scope element for macro selector overlay
      */
     MacroEditHandler(
         StateRefs state,
@@ -63,8 +61,6 @@ public:
         oc::type::ScopeID macroViewScope,
         oc::type::ScopeID overlayScope,
         oc::type::ScopeID selectorScope,
-        oc::type::ScopeID pageSelectorScope,
-        oc::type::ScopeID macroSelectorScope,
         NowProvider nowProvider
     );
 
@@ -89,14 +85,6 @@ private:
     void openValueSelector();
     void navigateValueSelector(float delta);
     void applyValueSelectorAndClose();
-
-    void openPageSelector();
-    void navigatePageSelector(float delta);
-    void applyPageSelectorAndClose();
-
-    void openMacroTargetSelector();
-    void navigateMacroTargetSelector(float delta);
-    void applyMacroTargetSelectorAndClose();
 
     void beginContextSelector();
     void endContextSelector();
@@ -132,8 +120,6 @@ private:
     oc::type::ScopeID macro_view_scope_ = 0;
     oc::type::ScopeID overlay_scope_ = 0;
     oc::type::ScopeID selector_scope_ = 0;
-    oc::type::ScopeID page_selector_scope_ = 0;
-    oc::type::ScopeID macro_selector_scope_ = 0;
     NowProvider now_provider_ = nullptr;
     bool edit_entry_chord_active_ = false;
 };

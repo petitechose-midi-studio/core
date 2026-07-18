@@ -88,10 +88,8 @@ FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreStat
 }
 
 FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
-    state.overlays.registerItem(core::ui::OverlayType::PAGE_SELECTOR, state.pages.selector.visible);
     state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT, state.macroEdit.visible);
     state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_SELECTOR, state.macroEdit.selector.visible);
-    state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR, state.macroEdit.macroSelector.visible);
     state.overlays.registerItem(core::ui::OverlayType::MACRO_AUTOMATION, state.macroEdit.automationVisible);
     state.overlays.registerItem(core::ui::OverlayType::VIEW_SELECTOR, state.viewSelector.visible);
 

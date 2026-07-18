@@ -833,7 +833,7 @@ void test_add_source_create_focus_reaches_use_existing_without_picker_mutation()
     ) == 1U);
 
     const int pickerSelection =
-        h.state.macroEdit.macroSelector.selectedIndex.get();
+        h.state.macroEdit.modulatorPickerIndex.get();
     const uint32_t authoredRevision = h.state.pages.control.authoredRevision;
     const uint16_t sourceCount =
         h.state.pages.control.authored.modulation.sourceCount;
@@ -848,7 +848,7 @@ void test_add_source_create_focus_reaches_use_existing_without_picker_mutation()
     assert(h.encoderHw.getDiscreteSteps(
         static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
     ) == 1U);
-    assert(h.state.macroEdit.macroSelector.selectedIndex.get() ==
+    assert(h.state.macroEdit.modulatorPickerIndex.get() ==
            pickerSelection);
     assert(h.state.pages.control.authoredRevision == authoredRevision);
     assert(h.state.pages.control.authored.modulation.sourceCount == sourceCount);
@@ -864,7 +864,7 @@ void test_add_source_create_focus_reaches_use_existing_without_picker_mutation()
     h.release(Config::ButtonID::NAV);
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::MODULATOR_PICKER);
-    assert(h.state.macroEdit.macroSelector.selectedIndex.get() ==
+    assert(h.state.macroEdit.modulatorPickerIndex.get() ==
            pickerSelection);
     assert(h.state.pages.control.authoredRevision == authoredRevision);
     assert(h.state.macroHistory.undoCount() == 0U);

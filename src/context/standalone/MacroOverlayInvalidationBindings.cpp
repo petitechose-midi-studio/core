@@ -28,13 +28,6 @@ FLASHMEM bool Bindings::bind(StateRefs stateRefs,
     edit_selector_watcher_.bind<&Bindings::requestEditSelectorRender>(
         *this, 4, "MacroOverlay.editSelector"
     );
-    page_selector_watcher_.bind<&Bindings::requestPageSelectorRender>(
-        *this, 5, "MacroOverlay.pageSelector"
-    );
-    target_selector_watcher_.bind<&Bindings::requestTargetSelectorRender>(
-        *this, 6, "MacroOverlay.targetSelector"
-    );
-
     bool bound = phase_watcher_.watch(stateRefs.macroEdit.flowPhase);
     if (stateRefs.clipboard != nullptr) {
         bound = clipboard_watcher_.watch(stateRefs.clipboard->revision) && bound;
@@ -61,6 +54,7 @@ FLASHMEM bool Bindings::bind(StateRefs stateRefs,
         stateRefs.macroEdit.editingIndex,
         stateRefs.macroEdit.automationFocusedRow,
         stateRefs.macroEdit.modulationFocusedRow,
+        stateRefs.macroEdit.modulatorPickerIndex,
         stateRefs.macroEdit.modulatorNavigationFeedback,
         stateRefs.macroEdit.conversionPreview.revision,
         stateRefs.macroEdit.contextGuard,
@@ -74,13 +68,6 @@ FLASHMEM bool Bindings::bind(StateRefs stateRefs,
         stateRefs.macroEdit.selector.editingRow,
         stateRefs.macroEdit.selector.selectedIndex
     ) && bound;
-    bound = page_selector_watcher_.watch(
-        stateRefs.pages.selector.selectedIndex
-    ) && bound;
-    bound = target_selector_watcher_.watch(
-        stateRefs.macroEdit.macroSelector.selectedIndex
-    ) && bound;
-
     if (!bound) clear();
     return bound;
 }
@@ -91,8 +78,6 @@ FLASHMEM void Bindings::clear() {
     edit_watcher_.clear();
     automation_watcher_.clear();
     edit_selector_watcher_.clear();
-    page_selector_watcher_.clear();
-    target_selector_watcher_.clear();
     callback_context_ = nullptr;
     callback_ = nullptr;
 }
@@ -115,14 +100,6 @@ FLASHMEM void Bindings::requestAutomationRender() {
 
 FLASHMEM void Bindings::requestEditSelectorRender() {
     invalidate(RENDER_EDIT_SELECTOR);
-}
-
-FLASHMEM void Bindings::requestPageSelectorRender() {
-    invalidate(RENDER_PAGE_SELECTOR);
-}
-
-FLASHMEM void Bindings::requestTargetSelectorRender() {
-    invalidate(RENDER_TARGET_SELECTOR);
 }
 
 FLASHMEM void Bindings::invalidate(uint32_t renderFlags) {

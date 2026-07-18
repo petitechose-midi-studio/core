@@ -125,8 +125,6 @@ FLASHMEM MacroEditHandler::MacroEditHandler(
     oc::type::ScopeID macroViewScope,
     oc::type::ScopeID overlayScope,
     oc::type::ScopeID selectorScope,
-    oc::type::ScopeID pageSelectorScope,
-    oc::type::ScopeID macroSelectorScope,
     NowProvider nowProvider
 )
     : macro_edit_(state.macroEdit)
@@ -139,8 +137,6 @@ FLASHMEM MacroEditHandler::MacroEditHandler(
     , macro_view_scope_(macroViewScope)
     , overlay_scope_(overlayScope)
     , selector_scope_(selectorScope)
-    , page_selector_scope_(pageSelectorScope)
-    , macro_selector_scope_(macroSelectorScope)
     , now_provider_(nowProvider)
 {
     setupBindings();
@@ -311,8 +307,6 @@ FLASHMEM void MacroEditHandler::closeOverlay() {
         overlays_,
         std::array{
             core::ui::OverlayType::MACRO_EDIT_SELECTOR,
-            core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR,
-            core::ui::OverlayType::PAGE_SELECTOR,
             core::ui::OverlayType::MACRO_AUTOMATION,
         }
     );
@@ -323,8 +317,6 @@ FLASHMEM void MacroEditHandler::closeOverlay() {
         core::state::macro::MacroPerformanceOverlayMode::NONE
     );
     edit_entry_chord_active_ = false;
-    pages_.selector.visible.set(false);
-    pages_.selector.selectedIndex.set(pages_.currentActivePage());
 }
 
 FLASHMEM void MacroEditHandler::moveFocus(float delta) {
@@ -436,105 +428,6 @@ FLASHMEM void MacroEditHandler::applyValueSelectorAndClose() {
 
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::MACRO_EDIT_SELECTOR);
     macro_edit_.closeValueSelector();
-    configureOptForFocusedRow();
-}
-
-FLASHMEM void MacroEditHandler::openPageSelector() {
-    auto& edit = macro_edit_;
-    if (edit.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
-    cancelContextAction(
-        macro_edit_, now_provider_ ? now_provider_() : 0U, false
-    );
-
-    pages_.selector.selectedIndex.set(pages_.currentActivePage());
-    pages_.selector.visible.set(true);
-    edit.openPageSelector();
-    overlays_.show(core::ui::OverlayType::PAGE_SELECTOR, true);
-
-}
-
-FLASHMEM void MacroEditHandler::navigatePageSelector(float delta) {
-    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::PAGE_SELECTOR) return;
-    const int current = static_cast<int>(pages_.selector.selectedIndex.get());
-    int next = current;
-    if (!modal::advanceWrappedSelection(
-            delta,
-            pages_.selector.visible.get(),
-            current,
-            core::state::macro::PAGE_COUNT,
-            next
-        )) {
-        return;
-    }
-    pages_.selector.selectedIndex.set(static_cast<uint8_t>(next));
-}
-
-FLASHMEM void MacroEditHandler::applyPageSelectorAndClose() {
-    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::PAGE_SELECTOR) return;
-    if (!pages_.selector.visible.get()) return;
-
-    const uint8_t targetPage = std::clamp(
-        pages_.selector.selectedIndex.get(),
-        static_cast<uint8_t>(0),
-        static_cast<uint8_t>(core::state::macro::PAGE_COUNT - 1)
-    );
-
-    if (targetPage != pages_.currentActivePage()) {
-        commitEditedConfig();
-        services_.switchToPage(targetPage);
-        macro_ui_.syncPreviewPage(pages_.currentActivePage());
-
-        const uint8_t macroIndex = macro_edit_.editingIndex.get();
-        const auto& config = services_.activeConfig(macroIndex);
-        macro_edit_.loadActiveConfig(macroIndex, config.channel, config.cc);
-    }
-
-    modal::hideIfCurrent(overlays_, core::ui::OverlayType::PAGE_SELECTOR);
-    pages_.selector.visible.set(false);
-    macro_edit_.closePageSelector();
-    configureOptForFocusedRow();
-}
-
-FLASHMEM void MacroEditHandler::openMacroTargetSelector() {
-    auto& edit = macro_edit_;
-    if (edit.flowPhase.get() != core::state::MacroEditFlowPhase::EDIT) return;
-    cancelContextAction(
-        macro_edit_, now_provider_ ? now_provider_() : 0U, false
-    );
-
-    edit.openTargetSelector(macro_edit_.editingIndex.get());
-    overlays_.show(core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR, true);
-}
-
-FLASHMEM void MacroEditHandler::navigateMacroTargetSelector(float delta) {
-    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::TARGET_SELECTOR) return;
-    auto& selector = macro_edit_.macroSelector;
-    int next = selector.selectedIndex.get();
-    if (!modal::advanceWrappedSelection(delta, selector, core::state::macro::MACRO_COUNT, next)) {
-        return;
-    }
-    selector.selectedIndex.set(next);
-}
-
-FLASHMEM void MacroEditHandler::applyMacroTargetSelectorAndClose() {
-    if (macro_edit_.flowPhase.get() != core::state::MacroEditFlowPhase::TARGET_SELECTOR) return;
-    auto& selector = macro_edit_.macroSelector;
-    if (!selector.visible.get()) return;
-
-    const uint8_t targetMacro = static_cast<uint8_t>(std::clamp(
-        selector.selectedIndex.get(),
-        0,
-        static_cast<int>(core::state::macro::MACRO_COUNT) - 1
-    ));
-
-    if (targetMacro != macro_edit_.editingIndex.get()) {
-        commitEditedConfig();
-        const auto& config = services_.activeConfig(targetMacro);
-        macro_edit_.loadActiveConfig(targetMacro, config.channel, config.cc);
-    }
-
-    modal::hideIfCurrent(overlays_, core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR);
-    macro_edit_.closeTargetSelector();
     configureOptForFocusedRow();
 }
 

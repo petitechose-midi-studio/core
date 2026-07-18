@@ -76,7 +76,6 @@ Supported capture scenarios:
 |---|---|
 | `macro` | default macro page |
 | `macro-edit` | macro edit overlay |
-| `macro-page-selector` | macro page selector overlay |
 | `sequencer` | default sequencer page |
 | `seq-step-edit` | sequencer step edit overlay |
 | `seq-property-selector` | sequencer property inline selector |

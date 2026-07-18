@@ -20,15 +20,13 @@ enum class MacroEditFlowPhase : uint8_t {
     CLOSED = 0,
     EDIT = 1,
     VALUE_SELECTOR = 2,
-    PAGE_SELECTOR = 3,
-    TARGET_SELECTOR = 4,
-    AUTOMATION = 5,
-    MODULATION = 6,
-    CONVERT_PREVIEW = 7,
-    NEW_MODULATOR_AUDITION = 8,
-    MODULATOR_PICKER = 9,
-    EXISTING_MODULATOR_AUDITION = 10,
-    MODULATOR_CREATE = 11,
+    AUTOMATION = 3,
+    MODULATION = 4,
+    CONVERT_PREVIEW = 5,
+    NEW_MODULATOR_AUDITION = 6,
+    MODULATOR_PICKER = 7,
+    EXISTING_MODULATOR_AUDITION = 8,
+    MODULATOR_CREATE = 9,
 };
 
 enum class MacroSlotProperty : uint8_t {
@@ -91,18 +89,11 @@ struct MacroEditState {
         void reset();
     };
 
-    struct MacroSelectorState {
-        oc::state::Signal<bool, 4> visible{false};
-        oc::state::Signal<int, 4> selectedIndex{0};
-
-        void reset();
-    };
-
     /// Value selector sub-state (CH/CC choices)
     ValueSelectorState selector;
 
-    /// Macro selector sub-state (macro target while editing)
-    MacroSelectorState macroSelector;
+    /// Focused source in the live "Use Existing" Modulator picker.
+    oc::state::Signal<int, 4> modulatorPickerIndex{0};
 
     /// Focused row in the automation lifecycle overlay.
     oc::state::Signal<uint8_t, 4> automationFocusedRow{0};
@@ -161,14 +152,6 @@ struct MacroEditState {
     void openValueSelector(uint8_t row, int selectedIndex);
 
     void closeValueSelector();
-
-    void openPageSelector();
-
-    void closePageSelector();
-
-    void openTargetSelector(int selectedIndex);
-
-    void closeTargetSelector();
 
     void openAutomation();
 

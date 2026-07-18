@@ -117,14 +117,10 @@ FLASHMEM const char* overlayName(core::ui::OverlayType overlay) {
     switch (overlay) {
         case core::ui::OverlayType::NONE:
             return "none";
-        case core::ui::OverlayType::PAGE_SELECTOR:
-            return "page_selector";
         case core::ui::OverlayType::MACRO_EDIT:
             return "macro_edit";
         case core::ui::OverlayType::MACRO_EDIT_SELECTOR:
             return "macro_edit_selector";
-        case core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR:
-            return "macro_edit_macro_selector";
         case core::ui::OverlayType::MACRO_AUTOMATION:
             return "macro_automation";
         case core::ui::OverlayType::VIEW_SELECTOR:

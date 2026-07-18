@@ -202,7 +202,7 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
                                  storage.sequencerSetLibrary);
 
     state.macroEdit.openEditor(2, 1, 64, 1500);
-    state.macroEdit.openTargetSelector(4);
+    state.macroEdit.openModulatorPicker(4);
     state.deviceSettings.openView();
     state.deviceSettings.openSelector(2, 3);
     state.dataManager.openSession(core::state::DataManagerContext::SEQUENCER);
@@ -247,6 +247,7 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
 
     assert(!state.macroEdit.visible.get());
     assert(!state.macroEdit.selector.visible.get());
+    assert(state.macroEdit.modulatorPickerIndex.get() == 0);
     assert(state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
     assert(!state.deviceSettings.visible.get());
     assert(state.deviceSettings.flowPhase.get() == core::state::DeviceSettingsFlowPhase::CLOSED);

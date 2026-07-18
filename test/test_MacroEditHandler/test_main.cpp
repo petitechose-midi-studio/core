@@ -36,8 +36,6 @@ struct MacroEditHarness {
     static constexpr oc::type::ScopeID MACRO_VIEW_SCOPE = 401;
     static constexpr oc::type::ScopeID EDIT_SCOPE = 402;
     static constexpr oc::type::ScopeID VALUE_SCOPE = 403;
-    static constexpr oc::type::ScopeID PAGE_SCOPE = 404;
-    static constexpr oc::type::ScopeID TARGET_SCOPE = 405;
 
     CoreStorages storage;
     core::state::CoreState state;
@@ -74,13 +72,9 @@ struct MacroEditHarness {
                   MACRO_VIEW_SCOPE,
                   EDIT_SCOPE,
                   VALUE_SCOPE,
-                  PAGE_SCOPE,
-                  TARGET_SCOPE,
                   mockTimeMs) {
         overlays.registerCleanup(core::ui::OverlayType::MACRO_EDIT, EDIT_SCOPE);
         overlays.registerCleanup(core::ui::OverlayType::MACRO_EDIT_SELECTOR, VALUE_SCOPE);
-        overlays.registerCleanup(core::ui::OverlayType::PAGE_SELECTOR, PAGE_SCOPE);
-        overlays.registerCleanup(core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR, TARGET_SCOPE);
         overlays.setActiveViewProvider([]() { return MACRO_VIEW_SCOPE; });
     }
 
@@ -244,13 +238,11 @@ void test_macro_edit_cycles_active_macros_and_contextual_destination_props() {
     assert(h.services.activeConfig(3U).channel == 15U);
     h.release(Config::ButtonID::LEFT_BOTTOM);
     assert(!h.state.macroEdit.contextSelectorActive.get());
-    assert(!h.state.macroEdit.macroSelector.visible.get());
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.macroEdit.visible.get());
     assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
-    assert(!h.state.pages.selector.visible.get());
     assert(h.overlays.current() == core::ui::OverlayType::NONE);
 
     h.flushState();

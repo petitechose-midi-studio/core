@@ -151,26 +151,6 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         edit_selector_overlay_->getElement()
     )) return;
 
-    page_selector_overlay_ =
-        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
-    if (!page_selector_overlay_ || !page_selector_overlay_->getElement() ||
-        !registerOverlaySurface(
-        overlays,
-        overlayPresentations,
-        core::ui::OverlayType::PAGE_SELECTOR,
-        page_selector_overlay_->getElement()
-    )) return;
-
-    target_selector_overlay_ =
-        core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(mainZone);
-    if (!target_selector_overlay_ || !target_selector_overlay_->getElement() ||
-        !registerOverlaySurface(
-        overlays,
-        overlayPresentations,
-        core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR,
-        target_selector_overlay_->getElement()
-    )) return;
-
     presenter_ = core::app::makeExtmemUnique<MacroOverlayPresenter>(
         MacroOverlayPresenter::StateRefs{
             stateRefs.macroEdit,
@@ -184,9 +164,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         *automation_overlay_,
         *edit_action_strip_,
         *automation_action_strip_,
-        *edit_selector_overlay_,
-        *page_selector_overlay_,
-        *target_selector_overlay_
+        *edit_selector_overlay_
     );
     if (!presenter_ || !presenter_->bind()) return;
 
@@ -267,8 +245,6 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         macroViewScopeId,
         oc::ui::lvgl::scopeID(edit_overlay_->getElement()),
         oc::ui::lvgl::scopeID(edit_selector_overlay_->getElement()),
-        oc::ui::lvgl::scopeID(page_selector_overlay_->getElement()),
-        oc::ui::lvgl::scopeID(target_selector_overlay_->getElement()),
         oc::time::millis
     );
     automation_handler_ = core::app::makeExtmemUnique<core::handler::MacroAutomationHandler>(

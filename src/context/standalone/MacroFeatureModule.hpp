@@ -128,8 +128,6 @@ private:
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
         automation_action_strip_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> edit_selector_overlay_;
-    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> page_selector_overlay_;
-    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> target_selector_overlay_;
     core::app::ExtmemUniquePtr<core::context::standalone::MacroOverlayPresenter> presenter_;
     core::app::ExtmemUniquePtr<core::handler::MacroMidiCcRuntimeAdapter>
         macro_midi_runtime_;

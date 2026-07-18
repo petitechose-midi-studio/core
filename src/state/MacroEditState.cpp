@@ -11,11 +11,6 @@ FLASHMEM void MacroEditState::ValueSelectorState::reset() {
     selectedIndex.set(0);
 }
 
-FLASHMEM void MacroEditState::MacroSelectorState::reset() {
-    visible.set(false);
-    selectedIndex.set(0);
-}
-
 FLASHMEM void MacroEditState::ConversionPreviewState::reset() {
     policy = core::state::macro::MacroAutomationConversionPolicy::MEAN;
     plan = {};
@@ -42,7 +37,7 @@ FLASHMEM void MacroEditState::reset() {
     contextPropertyIndex.set(0);
     macroCycleActive.set(false);
     selector.reset();
-    macroSelector.reset();
+    modulatorPickerIndex.set(0);
     automationFocusedRow.set(0);
     modulationFocusedRow.set(0);
     modulatorNavigationFeedback.set(MacroModulatorNavigationFeedback::NONE);
@@ -88,29 +83,6 @@ FLASHMEM void MacroEditState::openValueSelector(uint8_t row, int selectedIndex) 
 
 FLASHMEM void MacroEditState::closeValueSelector() {
     selector.reset();
-    flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
-                                : MacroEditFlowPhase::CLOSED);
-}
-
-FLASHMEM void MacroEditState::openPageSelector() {
-    visible.set(true);
-    flowPhase.set(MacroEditFlowPhase::PAGE_SELECTOR);
-}
-
-FLASHMEM void MacroEditState::closePageSelector() {
-    flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
-                                : MacroEditFlowPhase::CLOSED);
-}
-
-FLASHMEM void MacroEditState::openTargetSelector(int selectedIndex) {
-    visible.set(true);
-    macroSelector.visible.set(true);
-    macroSelector.selectedIndex.set(selectedIndex);
-    flowPhase.set(MacroEditFlowPhase::TARGET_SELECTOR);
-}
-
-FLASHMEM void MacroEditState::closeTargetSelector() {
-    macroSelector.reset();
     flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
                                 : MacroEditFlowPhase::CLOSED);
 }
@@ -172,7 +144,7 @@ FLASHMEM void MacroEditState::cancelNewModulatorAudition(uint8_t focusedRow) {
 FLASHMEM void MacroEditState::openModulatorPicker(int selectedIndex) {
     visible.set(true);
     automationVisible.set(true);
-    macroSelector.selectedIndex.set(selectedIndex);
+    modulatorPickerIndex.set(selectedIndex);
     flowPhase.set(MacroEditFlowPhase::MODULATOR_PICKER);
 }
 

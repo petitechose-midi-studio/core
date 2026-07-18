@@ -14,9 +14,7 @@ FLASHMEM MacroOverlayPresenter::MacroOverlayPresenter(
     ms::ui::VirtualListKeyValueOverlay& macroAutomationOverlay,
     core::ui::ContextActionStrip& macroEditActionStrip,
     core::ui::ContextActionStrip& macroAutomationActionStrip,
-    ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay,
-    ms::ui::VirtualListSelectorOverlay& pageSelectorOverlay,
-    ms::ui::VirtualListSelectorOverlay& macroTargetSelectorOverlay
+    ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay
 )
     : state_refs_(stateRefs)
     , macro_edit_overlay_(macroEditOverlay)
@@ -24,8 +22,6 @@ FLASHMEM MacroOverlayPresenter::MacroOverlayPresenter(
     , macro_edit_action_strip_(macroEditActionStrip)
     , macro_automation_action_strip_(macroAutomationActionStrip)
     , macro_edit_selector_overlay_(macroEditSelectorOverlay)
-    , page_selector_overlay_(pageSelectorOverlay)
-    , macro_target_selector_overlay_(macroTargetSelectorOverlay)
     , render_scheduler_(
           core::ui::renderSchedulerDebugLabel("MacroOverlay"),
           &MacroOverlayPresenter::drainRenderQueue,
@@ -78,12 +74,6 @@ FLASHMEM void MacroOverlayPresenter::renderPending(uint32_t flags) {
     }
     if ((flags & macro_overlay_invalidation::RENDER_EDIT_SELECTOR) != 0) {
         renderEditSelector();
-    }
-    if ((flags & macro_overlay_invalidation::RENDER_PAGE_SELECTOR) != 0) {
-        renderPageSelector();
-    }
-    if ((flags & macro_overlay_invalidation::RENDER_TARGET_SELECTOR) != 0) {
-        renderTargetSelector();
     }
 }
 
@@ -156,45 +146,6 @@ FLASHMEM void MacroOverlayPresenter::renderEditSelector() {
     }
 
     macro_edit_selector_overlay_.render({
-        .title = data.title,
-        .meta = data.meta,
-        .items = data.items,
-        .itemCount = data.itemCount,
-        .selectedIndex = data.selectedIndex,
-        .showIndexColumn = false,
-        .visible = true,
-        .dataRevision = data.dataRevision,
-    });
-}
-
-FLASHMEM void MacroOverlayPresenter::renderPageSelector() {
-    const auto data = macro_overlay_presenter::buildPageSelectorRenderData(state_refs_);
-    if (!data.visible) {
-        page_selector_overlay_.render({.visible = false});
-        return;
-    }
-
-    page_selector_overlay_.render({
-        .title = data.title,
-        .meta = data.meta,
-        .items = data.items,
-        .itemCount = data.itemCount,
-        .selectedIndex = data.selectedIndex,
-        .showIndexColumn = false,
-        .visible = true,
-        .dataRevision = data.dataRevision,
-    });
-}
-
-FLASHMEM void MacroOverlayPresenter::renderTargetSelector() {
-    initializeStaticItems_();
-    const auto data = macro_overlay_presenter::buildTargetSelectorRenderData(state_refs_, static_items_);
-    if (!data.visible) {
-        macro_target_selector_overlay_.render({.visible = false});
-        return;
-    }
-
-    macro_target_selector_overlay_.render({
         .title = data.title,
         .meta = data.meta,
         .items = data.items,

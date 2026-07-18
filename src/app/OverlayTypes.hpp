@@ -6,10 +6,8 @@ namespace core::ui {
 
 enum class OverlayType : uint8_t {
     NONE = 0,
-    PAGE_SELECTOR,
     MACRO_EDIT,
     MACRO_EDIT_SELECTOR,
-    MACRO_EDIT_MACRO_SELECTOR,
     MACRO_AUTOMATION,
     VIEW_SELECTOR,
     SEQ_STEP_EDIT,
