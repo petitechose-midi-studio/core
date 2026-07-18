@@ -1,6 +1,7 @@
 # UX workflow: copy/paste a track containing chord step content.
 # Purpose: validates that track clipboard preserves the full sequencer graph,
 # including local chord state attached to root step nodes.
+# The Structure preview and committed Track surface are intentionally distinct.
 # Expect: capture_changed:track_2_paste_preview=track_2_chord_pasted
 # Expect: semantic:track_2_paste_pressed:surface_context=true
 # Expect: semantic:track_2_paste_pressed:effect=arm_paste_current_structure
@@ -56,24 +57,27 @@
 2620 encoder NAV 1
 2700 encoder NAV 1
 2900 capture screen chord_row_single
-3000 encoder OPT 1.0
+3000 encoder OPT 0.3
 3300 capture screen chord_row_local
 3400 tap LEFT_TOP 60
 3700 capture screen source_track_chord_badge
 
-# Return to Track focus, copy track 1, then paste it into the track 2 add slot.
-3800 tap NAV 60
-4050 capture screen track_focus_source
-4150 tap BOTTOM_RIGHT 60
-4400 capture screen track_1_chord_copied
-4500 encoder NAV 1
-4750 capture screen track_2_paste_preview
-4850 button BOTTOM_RIGHT down
-5000 capture screen track_2_paste_pressed
-5900 tick
-5950 capture screen track_2_paste_hold_applied
-6000 button BOTTOM_RIGHT up
-6300 capture screen track_2_chord_pasted
+# Open the explicit Structure / Tracks workspace, copy Track 1, then paste it
+# into the sole +Track slot. Short NAV deliberately never enters Track scope.
+3800 button NAV down
+4870 tick
+4930 button NAV up
+5000 capture screen track_focus_source
+5050 tap BOTTOM_RIGHT 60
+5200 capture screen track_1_chord_copied
+5250 encoder NAV 1
+5400 capture screen track_2_paste_preview
+5450 button BOTTOM_RIGHT down
+5550 capture screen track_2_paste_pressed
+6500 tick
+6520 capture screen track_2_paste_hold_applied
+6550 button BOTTOM_RIGHT up
+6700 capture screen track_2_chord_pasted
 
 # Prepare a deterministic multi-Track proof surface. Sources T1/T3 are
 # non-contiguous. T5 exists and is muted (overwrite); T6 is free. Destination

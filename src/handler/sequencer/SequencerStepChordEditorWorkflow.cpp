@@ -1,5 +1,7 @@
 #include "handler/sequencer/SequencerStepChordEditorWorkflow.hpp"
 
+#include <algorithm>
+
 #include <config/PlatformCompat.hpp>
 #include <oc/note/sequencer/StepSequencerChord.hpp>
 
@@ -74,11 +76,24 @@ FLASHMEM void setFocusedFieldValue(
             normalized,
             chord_edit_ops::modeChoiceCount(chord.rootContext)
         );
-        chord_edit_ops::applyModeChoice(sequencer, step, choice, chord.spec);
+        chord_edit_ops::applyModeChoice(
+            sequencer,
+            step,
+            choice,
+            chord.spec,
+            chord.scaleConstrained
+        );
         return;
     }
 
-    chord_edit_ops::applySpecField(sequencer, step, field, chord.spec, normalized);
+    chord_edit_ops::applySpecField(
+        sequencer,
+        step,
+        field,
+        chord.spec,
+        chord.scaleConstrained,
+        normalized
+    );
 }
 
 FLASHMEM void configureFocusedFieldEncoder(
@@ -111,6 +126,26 @@ FLASHMEM void configureFocusedFieldEncoder(
                 )
             );
             return;
+        case Field::HARMONY: {
+            const uint8_t count = oc::note::sequencer::chordHarmonyChoiceCount(
+                chord.scaleConstrained
+            );
+            const auto harmony = chord.spec.isSemantic()
+                ? chord.spec.harmony()
+                : oc::note::sequencer::defaultChordHarmony(chord.scaleConstrained);
+            encoders.setDiscreteSteps(encoderId, count);
+            encoders.setPosition(
+                encoderId,
+                input_utils::indexToNormalized(
+                    oc::note::sequencer::chordHarmonyChoiceIndex(
+                        harmony,
+                        chord.scaleConstrained
+                    ),
+                    count
+                )
+            );
+            return;
+        }
         case Field::VOICES:
             encoders.setDiscreteSteps(encoderId, Spec::MAX_VOICES - 1U);
             encoders.setPosition(
@@ -118,27 +153,32 @@ FLASHMEM void configureFocusedFieldEncoder(
                 chord_edit_ops::voiceCountToNormalized(chord.spec.voiceCount)
             );
             return;
-        case Field::COLOR:
-            encoders.setDiscreteSteps(encoderId, Spec::MAX_COLOR + 1U);
+        case Field::INVERSION: {
+            const uint8_t count = std::max<uint8_t>(chord.spec.voiceCount, 1U);
+            const uint8_t inversion = chord.spec.isSemantic()
+                ? std::min<uint8_t>(chord.spec.inversion(), count - 1U)
+                : 0U;
+            encoders.setDiscreteSteps(encoderId, count);
             encoders.setPosition(
                 encoderId,
-                input_utils::indexToNormalized(chord.spec.color, Spec::MAX_COLOR + 1)
+                input_utils::indexToNormalized(inversion, count)
             );
             return;
-        case Field::VARIANT:
-            encoders.setDiscreteSteps(encoderId, Spec::MAX_VARIANT + 1U);
+        }
+        case Field::VOICING: {
+            constexpr uint8_t count = static_cast<uint8_t>(
+                oc::note::sequencer::StepSequencerChordVoicing::Count
+            );
+            const auto voicing = chord.spec.isSemantic()
+                ? chord.spec.voicing()
+                : oc::note::sequencer::StepSequencerChordVoicing::Close;
+            encoders.setDiscreteSteps(encoderId, count);
             encoders.setPosition(
                 encoderId,
-                input_utils::indexToNormalized(chord.spec.variant, Spec::MAX_VARIANT + 1)
+                input_utils::indexToNormalized(static_cast<int>(voicing), count)
             );
             return;
-        case Field::SPREAD:
-            encoders.setDiscreteSteps(encoderId, Spec::MAX_SPREAD + 1U);
-            encoders.setPosition(
-                encoderId,
-                input_utils::indexToNormalized(chord.spec.spread, Spec::MAX_SPREAD + 1)
-            );
-            return;
+        }
         case Field::STRUM:
             encoders.setDiscreteSteps(
                 encoderId,
@@ -154,7 +194,7 @@ FLASHMEM void configureFocusedFieldEncoder(
                 )
             );
             return;
-        case Field::VELOCITY_CURVE:
+        case Field::VELOCITY_CONTOUR:
             encoders.setDiscreteSteps(
                 encoderId,
                 static_cast<uint8_t>(
@@ -179,12 +219,15 @@ FLASHMEM void configureFocusedFieldEncoder(
 
 FLASHMEM bool resetFocusedFieldToDefault(
     core::state::sequencer::SequencerState& sequencer,
-    uint8_t step
+    uint8_t step,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
+    const auto chord = resolvedChordState(sequencer, step, scaleSettings);
     return chord_edit_ops::resetSpecField(
         sequencer,
         step,
-        sequencer.stepEdit.chordEditor.focusedField.get()
+        sequencer.stepEdit.chordEditor.focusedField.get(),
+        chord.scaleConstrained
     );
 }
 

@@ -106,7 +106,12 @@ FLASHMEM void setFocusedRowValue(
             normalized,
             chord_edit_ops::quickChoiceCount(chord.rootContext)
         );
-        chord_edit_ops::applyQuickChoice(sequencer, step, choice);
+        chord_edit_ops::applyQuickChoice(
+            sequencer,
+            step,
+            choice,
+            chord.pitchUsesScaleDegrees && scaleSettings.isConstrained()
+        );
         return;
     }
 

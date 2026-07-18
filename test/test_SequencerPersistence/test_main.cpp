@@ -544,7 +544,7 @@ void test_pattern_envelope_rejects_incompatible_header() {
     buffer.bytes[0] = originalMagic;
     const uint8_t originalVersion = buffer.bytes[4];
     buffer.bytes[4] = static_cast<uint8_t>(
-        core::persistence::sequencer_codec::CC_LANE_ENVELOPE_VERSION + 1U
+        core::persistence::sequencer_codec::SEMANTIC_CHORD_ENVELOPE_VERSION + 1U
     );
     assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
         buffer.bytes.data(),
@@ -644,6 +644,66 @@ void test_pitch_policy_feature_selects_version_and_rejects_downgrade() {
     ));
 
     std::cout << "[PASS] test_pitch_policy_feature_selects_version_and_rejects_downgrade\n";
+}
+
+void test_semantic_chord_selects_v7_and_rejects_legacy_downgrade() {
+    core::state::sequencer::SequencerState source;
+    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+
+    auto spec = oc::note::sequencer::StepSequencerChordSpec::semantic(
+        oc::note::sequencer::StepSequencerChordHarmony::Minor7,
+        4,
+        oc::note::sequencer::StepSequencerChordVoicing::Wide,
+        1
+    );
+    spec.strum = -18;
+    spec.velocityCurve = 9;
+    assert(core::state::sequencer::setNodeChordSpec(
+        source.pattern,
+        core::state::sequencer::rootStepNodeId(0),
+        spec
+    ));
+
+    core::persistence::sequencer_codec::PatternEnvelopeBuffer buffer{};
+    const auto encoded = core::persistence::sequencer_codec::fillPatternEnvelope(
+        source.pattern,
+        buffer.bytes.data(),
+        buffer.bytes.size()
+    );
+    assert(encoded.ok);
+    assert(
+        buffer.bytes[4] ==
+        core::persistence::sequencer_codec::SEMANTIC_CHORD_ENVELOPE_VERSION
+    );
+
+    core::state::sequencer::SequencerState loaded;
+    loaded.reset();
+    assert(core::persistence::sequencer_codec::applyPatternEnvelope(
+        buffer.bytes.data(),
+        encoded.size,
+        loaded.pattern
+    ));
+    const auto* graph = core::state::sequencer::graphView(loaded.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(0));
+    assert(node != nullptr);
+    assert(node->chordSpec.isSemantic());
+    assert(node->chordSpec.harmony() == oc::note::sequencer::StepSequencerChordHarmony::Minor7);
+    assert(node->chordSpec.voicing() == oc::note::sequencer::StepSequencerChordVoicing::Wide);
+    assert(node->chordSpec.inversion() == 1);
+    assert(node->chordSpec.strum == -18);
+    assert(node->chordSpec.velocityCurve == 9);
+
+    buffer.bytes[4] = core::persistence::sequencer_codec::CC_LANE_ENVELOPE_VERSION;
+    loaded.pattern.midiChannel.set(11);
+    assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
+        buffer.bytes.data(),
+        encoded.size,
+        loaded.pattern
+    ));
+    assert(loaded.pattern.midiChannel.get() == 11);
+
+    std::cout << "[PASS] test_semantic_chord_selects_v7_and_rejects_legacy_downgrade\n";
 }
 
 void test_pattern_envelope_rejects_unknown_future_section() {
@@ -1142,6 +1202,7 @@ int main() {
     test_pattern_library_local_variation_only_allocates_graph();
     test_pattern_envelope_rejects_incompatible_header();
     test_pitch_policy_feature_selects_version_and_rejects_downgrade();
+    test_semantic_chord_selects_v7_and_rejects_legacy_downgrade();
     test_pattern_envelope_rejects_unknown_future_section();
     test_pattern_envelope_rejects_invalid_graph_section();
     test_pattern_envelope_rejects_broken_graph_links();

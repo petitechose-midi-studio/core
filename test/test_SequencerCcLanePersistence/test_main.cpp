@@ -347,7 +347,9 @@ void test_pattern_v6_roundtrip_v5_migration_and_malformed_atomicity() {
     ));
     assert(seq::sequencerCcLaneView(unchanged.pattern) == nullptr);
 
-    legacy.bytes[4] = static_cast<uint8_t>(codec::CC_LANE_ENVELOPE_VERSION + 1U);
+    legacy.bytes[4] = static_cast<uint8_t>(
+        codec::SEMANTIC_CHORD_ENVELOPE_VERSION + 1U
+    );
     unchanged.pattern.midiChannel.set(9);
     assert(!codec::applyPatternEnvelope(
         legacy.bytes.data(),

@@ -28,6 +28,7 @@ using namespace graph_ops_internal;
 
 constexpr uint32_t kStepGraphPresetMagic = 0x31504753;  // "SGP1"
 constexpr uint8_t kStepGraphPresetV1 = 1;
+constexpr uint8_t kStepGraphPresetV2 = 2;
 constexpr uint8_t kStepGraphPresetVersion =
     SequencerStepGraphPreset::CURRENT_FORMAT_VERSION;
 constexpr uint8_t kStepGraphPresetKind = 1;
@@ -98,9 +99,32 @@ FLASHMEM StepSequencerChordMode sanitizeChordMode(uint8_t mode) {
     return static_cast<StepSequencerChordMode>(mode);
 }
 
-FLASHMEM StepSequencerChordSpec sanitizeChordSpec(StepSequencerChordSpec spec) {
-    spec.clamp();
-    return spec;
+FLASHMEM bool chordSpecBytesEqual(const StepSequencerChordSpec& lhs,
+                                  const StepSequencerChordSpec& rhs) {
+    return lhs.voiceCount == rhs.voiceCount &&
+           lhs.harmonyData == rhs.harmonyData &&
+           lhs.voicingData == rhs.voicingData &&
+           lhs.inversionData == rhs.inversionData &&
+           lhs.strum == rhs.strum &&
+           lhs.velocityCurve == rhs.velocityCurve;
+}
+
+FLASHMEM bool decodeChordSpec(const SequencerGraphStepNodeRecord& record,
+                              uint8_t formatVersion,
+                              StepSequencerChordSpec& out) {
+    const StepSequencerChordSpec raw{
+        .voiceCount = record.chordVoiceCount,
+        .harmonyData = record.chordHarmonyData,
+        .voicingData = record.chordVoicingData,
+        .inversionData = record.chordInversionData,
+        .strum = record.chordStrum,
+        .velocityCurve = record.chordVelocityCurve,
+    };
+    if (formatVersion < kStepGraphPresetVersion && raw.isSemantic()) return false;
+
+    out = raw;
+    out.clamp();
+    return formatVersion < kStepGraphPresetVersion || chordSpecBytesEqual(raw, out);
 }
 
 FLASHMEM SequencerGraphSequenceRecord sequenceRecord(
@@ -132,9 +156,9 @@ FLASHMEM SequencerGraphStepNodeRecord stepNodeRecord(
         .localVariationNudge = source.localVariation.nudge,
         .chordMode = static_cast<uint8_t>(source.chordMode),
         .chordVoiceCount = source.chordSpec.voiceCount,
-        .chordColor = source.chordSpec.color,
-        .chordVariant = source.chordSpec.variant,
-        .chordSpread = source.chordSpec.spread,
+        .chordHarmonyData = source.chordSpec.harmonyData,
+        .chordVoicingData = source.chordSpec.voicingData,
+        .chordInversionData = source.chordSpec.inversionData,
         .chordStrum = source.chordSpec.strum,
         .chordVelocityCurve = source.chordSpec.velocityCurve,
     };
@@ -606,14 +630,8 @@ FLASHMEM bool decodeGraph(
             return false;
         }
         offset = static_cast<uint16_t>(offset + SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE);
-        const StepSequencerChordSpec chordSpec = sanitizeChordSpec({
-            .voiceCount = record.chordVoiceCount,
-            .color = record.chordColor,
-            .variant = record.chordVariant,
-            .spread = record.chordSpread,
-            .strum = record.chordStrum,
-            .velocityCurve = record.chordVelocityCurve,
-        });
+        StepSequencerChordSpec chordSpec{};
+        if (!decodeChordSpec(record, header.version, chordSpec)) return false;
         graph.stepNodes[i] = StepSequencerStepNode{
             .flags = record.flags,
             .noteOffset = record.noteOffset,
@@ -958,6 +976,7 @@ FLASHMEM bool decodeStepGraphPresetMetadata(
         return false;
     }
     if (header.version != kStepGraphPresetV1 &&
+        header.version != kStepGraphPresetV2 &&
         header.version != kStepGraphPresetVersion) {
         setReportStatus(report, SequencerGraphAssetStatus::UNSUPPORTED_VERSION);
         return false;
@@ -991,7 +1010,7 @@ FLASHMEM bool decodeStepGraphPresetMetadata(
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
         return false;
     }
-    out.formatVersion = kStepGraphPresetVersion;
+    out.formatVersion = header.version;
     out.mixedPitchPolicy =
         (metadata.scalePolicy & kStepGraphPresetScalePolicyMixed) != 0;
     out.scalePolicy = static_cast<SequencerStepGraphPreset::ScalePolicy>(
@@ -1047,6 +1066,7 @@ FLASHMEM bool decodeStepGraphPreset(
         return false;
     }
     if (header.version != kStepGraphPresetV1 &&
+        header.version != kStepGraphPresetV2 &&
         header.version != kStepGraphPresetVersion) {
         setReportStatus(report, SequencerGraphAssetStatus::UNSUPPORTED_VERSION);
         return false;
@@ -1081,7 +1101,7 @@ FLASHMEM bool decodeStepGraphPreset(
             setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
             return false;
         }
-        out.formatVersion = kStepGraphPresetVersion;
+        out.formatVersion = header.version;
         out.metadataDefaulted = false;
         out.mixedPitchPolicy =
             (metadata.scalePolicy & kStepGraphPresetScalePolicyMixed) != 0;

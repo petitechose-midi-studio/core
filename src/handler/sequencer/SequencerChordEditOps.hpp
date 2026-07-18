@@ -23,22 +23,26 @@ int quickChoiceIndex(const core::state::sequencer::SequencerStepChordUiState& ch
 
 void applyQuickChoice(core::state::sequencer::SequencerState& sequencer,
                       uint8_t step,
-                      int choice);
+                      int choice,
+                      bool scaleConstrained);
 
 bool applyModeChoice(core::state::sequencer::SequencerState& sequencer,
                      uint8_t step,
                      int choice,
-                     oc::note::sequencer::StepSequencerChordSpec specForLocal);
+                     oc::note::sequencer::StepSequencerChordSpec specForLocal,
+                     bool scaleConstrained);
 
 bool applySpecField(core::state::sequencer::SequencerState& sequencer,
                     uint8_t step,
                     core::state::sequencer::SequencerChordEditField field,
                     oc::note::sequencer::StepSequencerChordSpec spec,
+                    bool scaleConstrained,
                     float normalized);
 
 bool resetSpecField(core::state::sequencer::SequencerState& sequencer,
                     uint8_t step,
-                    core::state::sequencer::SequencerChordEditField field);
+                    core::state::sequencer::SequencerChordEditField field,
+                    bool scaleConstrained);
 
 float voiceCountToNormalized(uint8_t voiceCount);
 float signedToNormalized(int value, int minValue, int maxValue);

@@ -306,9 +306,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     const auto rootCycleNode = static_cast<uint16_t>(rootCycleSet->firstStateNode + 1);
     StepSequencerChordSpec rootCycleChord{};
     rootCycleChord.voiceCount = 4;
-    rootCycleChord.color = 2;
-    rootCycleChord.variant = 1;
-    rootCycleChord.spread = 3;
+    rootCycleChord.setLegacyRecipe({.color = 2, .variant = 1, .spread = 3});
     rootCycleChord.strum = -25;
     rootCycleChord.velocityCurve = 12;
     assert(setNodeChordSpec(pattern, rootCycleNode, rootCycleChord));
@@ -350,9 +348,7 @@ void configureProjectGraphContent(core::state::sequencer::SequencerPatternState&
     const auto microNode = static_cast<uint16_t>(rootMicroSequence->firstStepNode + 1);
     StepSequencerChordSpec microChord{};
     microChord.voiceCount = 5;
-    microChord.color = 3;
-    microChord.variant = 2;
-    microChord.spread = 4;
+    microChord.setLegacyRecipe({.color = 3, .variant = 2, .spread = 4});
     microChord.strum = 18;
     microChord.velocityCurve = -9;
     assert(setNodeChordSpec(pattern, microNode, microChord));
@@ -428,9 +424,10 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(rootCycleNode->has(STEP_NODE_CHORD_LOCAL));
     assert(rootCycleNode->chordMode == StepSequencerChordMode::Local);
     assert(rootCycleNode->chordSpec.voiceCount == 4);
-    assert(rootCycleNode->chordSpec.color == 2);
-    assert(rootCycleNode->chordSpec.variant == 1);
-    assert(rootCycleNode->chordSpec.spread == 3);
+    const auto rootCycleLegacy = rootCycleNode->chordSpec.legacyRecipe();
+    assert(rootCycleLegacy.color == 2);
+    assert(rootCycleLegacy.variant == 1);
+    assert(rootCycleLegacy.spread == 3);
     assert(rootCycleNode->chordSpec.strum == -25);
     assert(rootCycleNode->chordSpec.velocityCurve == 12);
     assert(rootCycleNode->noteOffset == 7);
@@ -483,9 +480,10 @@ void assertProjectGraphContent(const core::state::sequencer::SequencerPatternSta
     assert(microNode->has(STEP_NODE_CHORD_LOCAL));
     assert(microNode->chordMode == StepSequencerChordMode::Local);
     assert(microNode->chordSpec.voiceCount == 5);
-    assert(microNode->chordSpec.color == 3);
-    assert(microNode->chordSpec.variant == 2);
-    assert(microNode->chordSpec.spread == 4);
+    const auto microLegacy = microNode->chordSpec.legacyRecipe();
+    assert(microLegacy.color == 3);
+    assert(microLegacy.variant == 2);
+    assert(microLegacy.spread == 4);
     assert(microNode->chordSpec.strum == 18);
     assert(microNode->chordSpec.velocityCurve == -9);
     assert(microNode->noteOffset == 5);
@@ -1321,7 +1319,7 @@ void test_project_snapshot_future_or_corrupt_sequencer_envelope_blocks_overwrite
     };
 
     envelope->bytes[4] = static_cast<uint8_t>(
-        core::persistence::sequencer_codec::CC_LANE_ENVELOPE_VERSION + 1U
+        core::persistence::sequencer_codec::SEMANTIC_CHORD_ENVELOPE_VERSION + 1U
     );
     assertUnsafe(project_file::LoadCode::CHUNK_PAYLOAD_INVALID);
 

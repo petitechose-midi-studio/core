@@ -1082,6 +1082,13 @@ void test_step_edit_chord_detail_edits_all_chord_fields() {
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(
         h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
+        core::state::sequencer::SequencerChordEditField::HARMONY
+    );
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
         core::state::sequencer::SequencerChordEditField::VOICES
     );
     h.turn(Config::EncoderID::OPT, 1.0f);
@@ -1089,21 +1096,14 @@ void test_step_edit_chord_detail_edits_all_chord_fields() {
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(
         h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
-        core::state::sequencer::SequencerChordEditField::COLOR
+        core::state::sequencer::SequencerChordEditField::INVERSION
     );
     h.turn(Config::EncoderID::OPT, 1.0f);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(
         h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
-        core::state::sequencer::SequencerChordEditField::VARIANT
-    );
-    h.turn(Config::EncoderID::OPT, 1.0f);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
-        core::state::sequencer::SequencerChordEditField::SPREAD
+        core::state::sequencer::SequencerChordEditField::VOICING
     );
     h.turn(Config::EncoderID::OPT, 1.0f);
 
@@ -1117,7 +1117,7 @@ void test_step_edit_chord_detail_edits_all_chord_fields() {
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(
         h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
-        core::state::sequencer::SequencerChordEditField::VELOCITY_CURVE
+        core::state::sequencer::SequencerChordEditField::VELOCITY_CONTOUR
     );
     h.turn(Config::EncoderID::OPT, 1.0f);
 
@@ -1125,10 +1125,17 @@ void test_step_edit_chord_detail_edits_all_chord_fields() {
     node = graph ? graph->stepNode(core::state::sequencer::rootStepNodeId(1)) : nullptr;
     assert(node != nullptr);
     assert(node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL));
+    assert(node->chordSpec.isSemantic());
     assert(node->chordSpec.voiceCount == oc::note::sequencer::StepSequencerChordSpec::MAX_VOICES);
-    assert(node->chordSpec.color == oc::note::sequencer::StepSequencerChordSpec::MAX_COLOR);
-    assert(node->chordSpec.variant == oc::note::sequencer::StepSequencerChordSpec::MAX_VARIANT);
-    assert(node->chordSpec.spread == oc::note::sequencer::StepSequencerChordSpec::MAX_SPREAD);
+    assert(
+        node->chordSpec.harmony() ==
+        oc::note::sequencer::StepSequencerChordHarmony::Minor7
+    );
+    assert(
+        node->chordSpec.voicing() ==
+        oc::note::sequencer::StepSequencerChordVoicing::Wide
+    );
+    assert(node->chordSpec.inversion() == 7);
     assert(node->chordSpec.strum == oc::note::sequencer::StepSequencerChordSpec::MIN_STRUM);
     assert(
         node->chordSpec.velocityCurve ==
@@ -1218,9 +1225,7 @@ void test_step_edit_child_chord_detail_localizes_from_inherited_spec() {
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     oc::note::sequencer::StepSequencerChordSpec parentChord{};
     parentChord.voiceCount = 4;
-    parentChord.color = 2;
-    parentChord.variant = 3;
-    parentChord.spread = 4;
+    parentChord.setLegacyRecipe({.color = 2, .variant = 3, .spread = 4});
     parentChord.strum = 25;
     parentChord.velocityCurve = -12;
     assert(core::state::sequencer::setNodeChordSpec(
@@ -1248,10 +1253,9 @@ void test_step_edit_child_chord_detail_localizes_from_inherited_spec() {
     h.tap(Config::ButtonID::NAV);
     assert(h.state.sequencer.stepEdit.chordEditor.active.get());
     h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
     assert(
         h.state.sequencer.stepEdit.chordEditor.focusedField.get() ==
-        core::state::sequencer::SequencerChordEditField::COLOR
+        core::state::sequencer::SequencerChordEditField::HARMONY
     );
     h.turn(Config::EncoderID::OPT, 1.0f);
 
@@ -1262,10 +1266,17 @@ void test_step_edit_child_chord_detail_localizes_from_inherited_spec() {
     const auto* child = graph->stepNode(sequence->firstStepNode);
     assert(child != nullptr);
     assert(child->chordMode == oc::note::sequencer::StepSequencerChordMode::Local);
+    assert(child->chordSpec.isSemantic());
     assert(child->chordSpec.voiceCount == parentChord.voiceCount);
-    assert(child->chordSpec.color == oc::note::sequencer::StepSequencerChordSpec::MAX_COLOR);
-    assert(child->chordSpec.variant == parentChord.variant);
-    assert(child->chordSpec.spread == parentChord.spread);
+    assert(
+        child->chordSpec.harmony() ==
+        oc::note::sequencer::StepSequencerChordHarmony::Minor7
+    );
+    assert(
+        child->chordSpec.voicing() ==
+        oc::note::sequencer::StepSequencerChordVoicing::Close
+    );
+    assert(child->chordSpec.inversion() == 0);
     assert(child->chordSpec.strum == parentChord.strum);
     assert(child->chordSpec.velocityCurve == parentChord.velocityCurve);
 

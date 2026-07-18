@@ -71,9 +71,7 @@ StepSequencerChordSpec makeChord(
 ) {
     StepSequencerChordSpec spec{};
     spec.voiceCount = voices;
-    spec.color = color;
-    spec.variant = variant;
-    spec.spread = spread;
+    spec.setLegacyRecipe({.color = color, .variant = variant, .spread = spread});
     spec.strum = strum;
     spec.velocityCurve = velocityCurve;
     return spec;
@@ -84,9 +82,9 @@ void assertSameChordSpec(
     const StepSequencerChordSpec& expected
 ) {
     assert(actual.voiceCount == expected.voiceCount);
-    assert(actual.color == expected.color);
-    assert(actual.variant == expected.variant);
-    assert(actual.spread == expected.spread);
+    assert(actual.harmonyData == expected.harmonyData);
+    assert(actual.voicingData == expected.voicingData);
+    assert(actual.inversionData == expected.inversionData);
     assert(actual.strum == expected.strum);
     assert(actual.velocityCurve == expected.velocityCurve);
 }
@@ -487,6 +485,38 @@ void test_v1_decode_materializes_chromatic_runtime_policy() {
     std::cout << "[PASS] test_v1_decode_materializes_chromatic_runtime_policy\n";
 }
 
+void test_v3_semantic_chord_roundtrip_rejects_v2_reinterpretation() {
+    SequencerState source;
+    source.pattern.length.set(8);
+    auto semantic = StepSequencerChordSpec::semantic(
+        oc::note::sequencer::StepSequencerChordHarmony::Major7,
+        4,
+        oc::note::sequencer::StepSequencerChordVoicing::Open,
+        2
+    );
+    semantic.strum = 21;
+    assert(setNodeChordSpec(source.pattern, rootStepNodeId(0), semantic));
+
+    SequencerStepGraphPreset preset{};
+    assert(captureStepGraphPreset(source, 0, preset, nullptr));
+    std::array<uint8_t, 4096> bytes{};
+    const auto encoded = encodeStepGraphPreset(preset, bytes.data(), bytes.size());
+    assert(encoded.ok());
+    assert(bytes[4] == SequencerStepGraphPreset::CURRENT_FORMAT_VERSION);
+
+    SequencerStepGraphPreset decoded{};
+    assert(decodeStepGraphPreset(bytes.data(), encoded.bytesWritten, decoded, nullptr));
+    const auto* node = decoded.graph.stepNode(SequencerStepGraphPreset::ASSET_ROOT_NODE_ID);
+    assert(node != nullptr);
+    assertSameChordSpec(node->chordSpec, semantic);
+    assert(node->chordSpec.isSemantic());
+
+    bytes[4] = 2;
+    assert(!decodeStepGraphPreset(bytes.data(), encoded.bytesWritten, decoded, nullptr));
+
+    std::cout << "[PASS] test_v3_semantic_chord_roundtrip_rejects_v2_reinterpretation\n";
+}
+
 void test_v2_metadata_is_bounded_valid_utf8_and_nonempty() {
     SequencerState source;
     source.pattern.length.set(8);
@@ -553,6 +583,7 @@ int main() {
     test_focused_workflow_saves_and_loads_step_graph_preset();
     test_mixed_pitch_policy_roundtrip_preserves_every_node();
     test_v1_decode_materializes_chromatic_runtime_policy();
+    test_v3_semantic_chord_roundtrip_rejects_v2_reinterpretation();
     test_v2_metadata_is_bounded_valid_utf8_and_nonempty();
     std::cout << "[PASS] SequencerGraphAssetCodec tests\n";
     return 0;

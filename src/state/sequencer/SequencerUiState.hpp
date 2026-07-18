@@ -40,12 +40,12 @@ enum class PatternQuickControlItem : uint8_t {
 
 enum class SequencerChordEditField : uint8_t {
     MODE = 0,
+    HARMONY,
     VOICES,
-    COLOR,
-    VARIANT,
-    SPREAD,
+    INVERSION,
+    VOICING,
     STRUM,
-    VELOCITY_CURVE,
+    VELOCITY_CONTOUR,
     COUNT,
 };
 

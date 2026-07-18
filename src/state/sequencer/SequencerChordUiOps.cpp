@@ -12,6 +12,8 @@ FLASHMEM SequencerStepChordUiState resolveStepChordUiState(
 ) {
     SequencerStepChordUiState state{};
     state.rootContext = isRootContentView(sequencer);
+    state.pitchUsesScaleDegrees =
+        sequencer.pattern.pitchEditMode == SequencerPitchEditMode::SCALE_DEGREES;
     state.mode = defaultChordModeForContentContext(state.rootContext);
 
     if (step >= activeContentLength(sequencer)) return state;
@@ -23,6 +25,9 @@ FLASHMEM SequencerStepChordUiState resolveStepChordUiState(
     const auto nodeId = activeContentStepNodeId(sequencer, step);
     const auto* node = graph->stepNode(nodeId);
     if (node == nullptr) return state;
+
+    state.pitchUsesScaleDegrees =
+        !node->has(oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC);
 
     if (node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE)) {
         state.mode = node->chordMode;
@@ -61,14 +66,27 @@ FLASHMEM void resolveStepChordPreview(
         scaleSettings,
         chordState,
         projection.inheritedChord,
-        spanTicks
+        spanTicks,
+        chord.pitchUsesScaleDegrees
     );
     if (resolution.count == 0) return;
 
     chord.preview.valid = true;
     chord.preview.source = resolution.source;
+    chord.preview.semanticRecipe = resolution.semanticRecipe;
+    chord.preview.harmonyAdjustedForPitchMode =
+        resolution.harmonyAdjustedForPitchMode;
+    chord.preview.inversionClamped = resolution.inversionClamped;
+    chord.preview.rangeLimited = resolution.rangeLimited;
     chord.preview.voiceCount = resolution.count;
+    chord.preview.requestedVoiceCount = resolution.requestedVoiceCount;
+    chord.preview.effectiveInversion = resolution.effectiveInversion;
+    chord.preview.droppedVoiceCount = resolution.droppedVoiceCount;
+    chord.preview.harmony = resolution.harmony;
+    chord.preview.voicing = resolution.voicing;
     chord.preview.spanTicks = spanTicks;
+    chord.scaleConstrained =
+        chord.pitchUsesScaleDegrees && scaleSettings.isConstrained();
     chord.effectiveVoiceCount = resolution.count;
     if (resolution.activeForChildren.valid) {
         chord.spec = resolution.activeForChildren.spec;

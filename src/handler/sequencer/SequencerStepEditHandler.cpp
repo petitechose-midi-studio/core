@@ -557,7 +557,11 @@ FLASHMEM void SequencerStepEditHandler::resetFocusedChordFieldToDefault() {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
 
-    if (!step_chord_editor_workflow::resetFocusedFieldToDefault(sequencer_, step)) return;
+    if (!step_chord_editor_workflow::resetFocusedFieldToDefault(
+            sequencer_,
+            step,
+            effectiveScaleSettings(sequencer_, tracks_)
+        )) return;
     configureOptForFocusedRow();
 }
 

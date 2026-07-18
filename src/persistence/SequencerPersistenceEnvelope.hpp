@@ -18,6 +18,7 @@ inline constexpr uint8_t LEGACY_ENVELOPE_VERSION = 3;
 inline constexpr uint8_t PITCH_POLICY_ENVELOPE_VERSION = 4;
 inline constexpr uint8_t LEGACY_CC_LANE_ENVELOPE_VERSION = 5;
 inline constexpr uint8_t CC_LANE_ENVELOPE_VERSION = 6;
+inline constexpr uint8_t SEMANTIC_CHORD_ENVELOPE_VERSION = 7;
 inline constexpr uint32_t ENVELOPE_HEADER_SIZE = 12;
 inline constexpr uint32_t ENVELOPE_SECTION_HEADER_SIZE = 10;
 inline constexpr uint32_t MAX_GRAPH_ENVELOPE_SIZE =

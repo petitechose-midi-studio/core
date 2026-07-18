@@ -56,7 +56,7 @@ struct SequencerGraphAssetReport {
 
 struct SequencerStepGraphPreset {
     static constexpr uint16_t ASSET_ROOT_NODE_ID = 0;
-    static constexpr uint8_t CURRENT_FORMAT_VERSION = 2;
+    static constexpr uint8_t CURRENT_FORMAT_VERSION = 3;
     static constexpr size_t TECHNICAL_ID_SIZE = 55;
     static constexpr size_t SEMANTIC_NAME_SIZE = 32;
 

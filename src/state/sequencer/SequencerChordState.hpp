@@ -9,9 +9,9 @@ inline bool chordSpecEqualsSanitized(oc::note::sequencer::StepSequencerChordSpec
     lhs.clamp();
     rhs.clamp();
     return lhs.voiceCount == rhs.voiceCount &&
-           lhs.color == rhs.color &&
-           lhs.variant == rhs.variant &&
-           lhs.spread == rhs.spread &&
+           lhs.harmonyData == rhs.harmonyData &&
+           lhs.voicingData == rhs.voicingData &&
+           lhs.inversionData == rhs.inversionData &&
            lhs.strum == rhs.strum &&
            lhs.velocityCurve == rhs.velocityCurve;
 }

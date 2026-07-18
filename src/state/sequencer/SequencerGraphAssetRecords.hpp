@@ -35,9 +35,12 @@ struct SequencerGraphStepNodeRecord {
         oc::note::sequencer::StepSequencerChordMode::Single
     );
     uint8_t chordVoiceCount = 3;
-    uint8_t chordColor = 0;
-    uint8_t chordVariant = 0;
-    uint8_t chordSpread = 0;
+    // Same three persistent bytes for every supported version. Envelopes <= 6
+    // and presets <= 2 contain the legacy Color/Variant/Spread recipe. Newer
+    // formats use StepSequencerChordSpec's explicit semantic marker and values.
+    uint8_t chordHarmonyData = 0;
+    uint8_t chordVoicingData = 0;
+    uint8_t chordInversionData = 0;
     int8_t chordStrum = 0;
     int8_t chordVelocityCurve = 0;
 };
@@ -142,9 +145,9 @@ inline bool encodeSequencerGraphStepNodeRecord(const SequencerGraphStepNodeRecor
            graph_record_codec::writeU8(out, size, offset, record.localVariationNudge) &&
            graph_record_codec::writeU8(out, size, offset, record.chordMode) &&
            graph_record_codec::writeU8(out, size, offset, record.chordVoiceCount) &&
-           graph_record_codec::writeU8(out, size, offset, record.chordColor) &&
-           graph_record_codec::writeU8(out, size, offset, record.chordVariant) &&
-           graph_record_codec::writeU8(out, size, offset, record.chordSpread) &&
+           graph_record_codec::writeU8(out, size, offset, record.chordHarmonyData) &&
+           graph_record_codec::writeU8(out, size, offset, record.chordVoicingData) &&
+           graph_record_codec::writeU8(out, size, offset, record.chordInversionData) &&
            graph_record_codec::writeI8(out, size, offset, record.chordStrum) &&
            graph_record_codec::writeI8(out, size, offset, record.chordVelocityCurve) &&
            offset == size;
@@ -169,9 +172,9 @@ inline bool decodeSequencerGraphStepNodeRecord(const uint8_t* data,
            graph_record_codec::readU8(data, size, offset, record.localVariationNudge) &&
            graph_record_codec::readU8(data, size, offset, record.chordMode) &&
            graph_record_codec::readU8(data, size, offset, record.chordVoiceCount) &&
-           graph_record_codec::readU8(data, size, offset, record.chordColor) &&
-           graph_record_codec::readU8(data, size, offset, record.chordVariant) &&
-           graph_record_codec::readU8(data, size, offset, record.chordSpread) &&
+           graph_record_codec::readU8(data, size, offset, record.chordHarmonyData) &&
+           graph_record_codec::readU8(data, size, offset, record.chordVoicingData) &&
+           graph_record_codec::readU8(data, size, offset, record.chordInversionData) &&
            graph_record_codec::readI8(data, size, offset, record.chordStrum) &&
            graph_record_codec::readI8(data, size, offset, record.chordVelocityCurve) &&
            offset == size;

@@ -1,7 +1,9 @@
 # UX workflow: copy/paste page with chord step content.
 # Purpose: validates that page clipboard preserves the full root step-node
 # payload, including local chord state and nested step content.
-# Expect: capture_changed:page_2_paste_preview=page_2_chord_pasted
+# The destination preview is the exact post-paste surface; committing must not
+# visually jump to a different chord result.
+# Expect: capture_match:page_2_paste_preview=page_2_chord_pasted
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -24,7 +26,7 @@
 2620 encoder NAV 1
 2700 encoder NAV 1
 2900 capture screen chord_row_single
-3000 encoder OPT 1.0
+3000 encoder OPT 0.3
 3300 capture screen chord_row_local
 3400 tap LEFT_TOP 60
 3700 capture screen source_page_chord_badge

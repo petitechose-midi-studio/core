@@ -911,9 +911,9 @@ FLASHMEM void SequencerStepEditOverlay::render(
     };
     constexpr SequencerStepEditVisualSlot chordCompositionSlots[] = {
         SequencerStepEditVisualSlot::CHORD_MODE,
+        SequencerStepEditVisualSlot::CHORD_HARMONY,
         SequencerStepEditVisualSlot::CHORD_VOICES,
-        SequencerStepEditVisualSlot::CHORD_COLOR,
-        SequencerStepEditVisualSlot::CHORD_SHAPE,
+        SequencerStepEditVisualSlot::CHORD_INVERSION,
     };
     for (size_t i = 0; i < MUSICAL_PROPERTY_COUNT; ++i) {
         const size_t propertyIndex = musicalIndices[i];
@@ -934,7 +934,7 @@ FLASHMEM void SequencerStepEditOverlay::render(
 
     if (props.chordDetailLayout) {
         constexpr SequencerStepEditVisualSlot chordPerformanceSlots[] = {
-            SequencerStepEditVisualSlot::CHORD_SPREAD,
+            SequencerStepEditVisualSlot::CHORD_VOICING,
             SequencerStepEditVisualSlot::CHORD_STRUM,
             SequencerStepEditVisualSlot::CHORD_VELOCITY,
         };

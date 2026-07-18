@@ -35,6 +35,7 @@ constexpr uint32_t kEnvelopeMagic = 0x53514534;  // "SQE4"
 constexpr uint8_t kLegacyEnvelopeVersion = LEGACY_ENVELOPE_VERSION;
 constexpr uint8_t kPitchPolicyEnvelopeVersion = PITCH_POLICY_ENVELOPE_VERSION;
 constexpr uint8_t kCcLaneEnvelopeVersion = CC_LANE_ENVELOPE_VERSION;
+constexpr uint8_t kSemanticChordEnvelopeVersion = SEMANTIC_CHORD_ENVELOPE_VERSION;
 constexpr uint8_t kLegacyCcLaneEnvelopeVersion =
     LEGACY_CC_LANE_ENVELOPE_VERSION;
 constexpr uint16_t kEnvelopeHeaderSize = 12;
@@ -246,7 +247,21 @@ FLASHMEM bool graphRequiresPitchPolicyEnvelope(const StepSequencerGraph* graph) 
     return false;
 }
 
+FLASHMEM bool graphRequiresSemanticChordEnvelope(const StepSequencerGraph* graph) {
+    if (graph == nullptr || !graph->enabled) return false;
+    const uint16_t count = static_cast<uint16_t>(
+        std::min<uint16_t>(graph->stepNodeCount, graph->stepNodes.size())
+    );
+    for (uint16_t i = 0; i < count; ++i) {
+        if (graph->stepNodes[i].chordSpec.isSemantic()) return true;
+    }
+    return false;
+}
+
 FLASHMEM uint8_t envelopeVersionForGraph(const StepSequencerGraph* graph) {
+    if (graphRequiresSemanticChordEnvelope(graph)) {
+        return kSemanticChordEnvelopeVersion;
+    }
     return graphRequiresPitchPolicyEnvelope(graph)
         ? kPitchPolicyEnvelopeVersion
         : kLegacyEnvelopeVersion;
@@ -263,9 +278,10 @@ FLASHMEM uint8_t envelopeVersionForPattern(
     const StepSequencerGraph* graph,
     const state::sequencer::SequencerCcLaneBank* lanes
 ) {
-    return hasPersistableCcLanes(lanes)
-        ? kCcLaneEnvelopeVersion
-        : envelopeVersionForGraph(graph);
+    return std::max<uint8_t>(
+        hasPersistableCcLanes(lanes) ? kCcLaneEnvelopeVersion : kLegacyEnvelopeVersion,
+        envelopeVersionForGraph(graph)
+    );
 }
 
 FLASHMEM bool addCcLaneSection(
@@ -376,9 +392,9 @@ FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
             .localVariationNudge = source.localVariation.nudge,
             .chordMode = static_cast<uint8_t>(source.chordMode),
             .chordVoiceCount = source.chordSpec.voiceCount,
-            .chordColor = source.chordSpec.color,
-            .chordVariant = source.chordSpec.variant,
-            .chordSpread = source.chordSpec.spread,
+            .chordHarmonyData = source.chordSpec.harmonyData,
+            .chordVoicingData = source.chordSpec.voicingData,
+            .chordInversionData = source.chordSpec.inversionData,
             .chordStrum = source.chordSpec.strum,
             .chordVelocityCurve = source.chordSpec.velocityCurve,
         };
@@ -462,7 +478,8 @@ FLASHMEM bool isHeaderValid(const EnvelopeHeader& header, EnvelopeKind kind) {
            (header.version == kLegacyEnvelopeVersion ||
             header.version == kPitchPolicyEnvelopeVersion ||
             header.version == kLegacyCcLaneEnvelopeVersion ||
-            header.version == kCcLaneEnvelopeVersion) &&
+            header.version == kCcLaneEnvelopeVersion ||
+            header.version == kSemanticChordEnvelopeVersion) &&
            header.kind == static_cast<uint8_t>(kind) &&
            header.headerSize == kEnvelopeHeaderSize &&
            header.reserved0 == 0;
@@ -566,9 +583,32 @@ FLASHMEM StepSequencerChordMode sanitizeChordMode(uint8_t mode) {
     return static_cast<StepSequencerChordMode>(mode);
 }
 
-FLASHMEM StepSequencerChordSpec sanitizeChordSpec(StepSequencerChordSpec spec) {
-    spec.clamp();
-    return spec;
+FLASHMEM bool chordSpecBytesEqual(const StepSequencerChordSpec& lhs,
+                                  const StepSequencerChordSpec& rhs) {
+    return lhs.voiceCount == rhs.voiceCount &&
+           lhs.harmonyData == rhs.harmonyData &&
+           lhs.voicingData == rhs.voicingData &&
+           lhs.inversionData == rhs.inversionData &&
+           lhs.strum == rhs.strum &&
+           lhs.velocityCurve == rhs.velocityCurve;
+}
+
+FLASHMEM bool decodeChordSpec(const StepNodeRecord& record,
+                              uint8_t envelopeVersion,
+                              StepSequencerChordSpec& out) {
+    const StepSequencerChordSpec raw{
+        .voiceCount = record.chordVoiceCount,
+        .harmonyData = record.chordHarmonyData,
+        .voicingData = record.chordVoicingData,
+        .inversionData = record.chordInversionData,
+        .strum = record.chordStrum,
+        .velocityCurve = record.chordVelocityCurve,
+    };
+    if (envelopeVersion < kSemanticChordEnvelopeVersion && raw.isSemantic()) return false;
+
+    out = raw;
+    out.clamp();
+    return envelopeVersion < kSemanticChordEnvelopeVersion || chordSpecBytesEqual(raw, out);
 }
 
 FLASHMEM bool linkSequenceValid(const StepSequencerGraph& graph, uint16_t id) {
@@ -660,14 +700,8 @@ FLASHMEM bool decodeGraphSections(
             )) {
             return false;
         }
-        const StepSequencerChordSpec chordSpec = sanitizeChordSpec({
-            .voiceCount = record.chordVoiceCount,
-            .color = record.chordColor,
-            .variant = record.chordVariant,
-            .spread = record.chordSpread,
-            .strum = record.chordStrum,
-            .velocityCurve = record.chordVelocityCurve,
-        });
+        StepSequencerChordSpec chordSpec{};
+        if (!decodeChordSpec(record, envelopeVersion, chordSpec)) return false;
         graph->stepNodes[i] = StepSequencerStepNode{
             .flags = record.flags,
             .noteOffset = record.noteOffset,
@@ -973,16 +1007,11 @@ FLASHMEM EnvelopeEncodeResult fillProjectSequencerEnvelope(
     uint8_t envelopeVersion = kLegacyEnvelopeVersion;
     for (const auto* lanes : source.ccLanes) {
         if (hasPersistableCcLanes(lanes)) {
-            envelopeVersion = kCcLaneEnvelopeVersion;
-            break;
+            envelopeVersion = std::max(envelopeVersion, kCcLaneEnvelopeVersion);
         }
     }
     for (const auto* graph : source.graphs) {
-        if (envelopeVersion == kCcLaneEnvelopeVersion) break;
-        if (graphRequiresPitchPolicyEnvelope(graph)) {
-            envelopeVersion = kPitchPolicyEnvelopeVersion;
-            break;
-        }
+        envelopeVersion = std::max(envelopeVersion, envelopeVersionForGraph(graph));
     }
     EnvelopeWriter writer(
         out,
@@ -1065,18 +1094,16 @@ FLASHMEM EnvelopeEncodeResult fillSetEnvelope(
         if (hasPersistableCcLanes(
                 state::sequencer::sequencerCcLaneView(sourceTrack(trackBank, active, i))
             )) {
-            envelopeVersion = kCcLaneEnvelopeVersion;
-            break;
+            envelopeVersion = std::max(envelopeVersion, kCcLaneEnvelopeVersion);
         }
     }
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        if (envelopeVersion == kCcLaneEnvelopeVersion) break;
-        if (graphRequiresPitchPolicyEnvelope(
+        envelopeVersion = std::max(
+            envelopeVersion,
+            envelopeVersionForGraph(
                 state::sequencer::graphView(sourceTrack(trackBank, active, i))
-            )) {
-            envelopeVersion = kPitchPolicyEnvelopeVersion;
-            break;
-        }
+            )
+        );
     }
     EnvelopeWriter writer(out, capacity, EnvelopeKind::Set, envelopeVersion);
     uint8_t* flat = nullptr;

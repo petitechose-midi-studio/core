@@ -256,23 +256,72 @@ FLASHMEM const char* chordModeLabel(oc::note::sequencer::StepSequencerChordMode 
     }
 }
 
+FLASHMEM const char* chordHarmonyLabel(
+    oc::note::sequencer::StepSequencerChordHarmony harmony
+) {
+    using Harmony = oc::note::sequencer::StepSequencerChordHarmony;
+    switch (harmony) {
+        case Harmony::DiatonicTriad: return "Diatonic triad";
+        case Harmony::DiatonicSeventh: return "Diatonic 7th";
+        case Harmony::Suspended: return "Suspended";
+        case Harmony::Quartal: return "Quartal";
+        case Harmony::Fifths: return "Fifths";
+        case Harmony::Cluster: return "Cluster";
+        case Harmony::Major: return "Major";
+        case Harmony::Minor: return "Minor";
+        case Harmony::Diminished: return "Diminished";
+        case Harmony::Augmented: return "Augmented";
+        case Harmony::Sus2: return "Sus 2";
+        case Harmony::Sus4: return "Sus 4";
+        case Harmony::Dominant7: return "Dominant 7";
+        case Harmony::Major7: return "Major 7";
+        case Harmony::Minor7: return "Minor 7";
+        case Harmony::Count:
+        default: return "Harmony";
+    }
+}
+
+FLASHMEM const char* chordVoicingLabel(
+    oc::note::sequencer::StepSequencerChordVoicing voicing
+) {
+    using Voicing = oc::note::sequencer::StepSequencerChordVoicing;
+    switch (voicing) {
+        case Voicing::Open: return "Open";
+        case Voicing::Wide: return "Wide";
+        case Voicing::Close:
+        default: return "Close";
+    }
+}
+
+FLASHMEM void formatInversion(char* out, size_t outSize, uint8_t inversion) {
+    if (inversion == 0) {
+        copyText(out, outSize, "Root");
+        return;
+    }
+    const char* suffix = "th";
+    if (inversion == 1) suffix = "st";
+    else if (inversion == 2) suffix = "nd";
+    else if (inversion == 3) suffix = "rd";
+    std::snprintf(out, outSize, "%u%s", static_cast<unsigned>(inversion), suffix);
+}
+
 FLASHMEM const char* chordFieldLabel(core::state::sequencer::SequencerChordEditField field) {
     using Field = core::state::sequencer::SequencerChordEditField;
     switch (field) {
         case Field::MODE:
             return "Mode";
+        case Field::HARMONY:
+            return "Harmony";
         case Field::VOICES:
             return "Voices";
-        case Field::COLOR:
-            return "Color";
-        case Field::VARIANT:
-            return "Shape";
-        case Field::SPREAD:
-            return "Spread";
+        case Field::INVERSION:
+            return "Inversion";
+        case Field::VOICING:
+            return "Voicing";
         case Field::STRUM:
             return "Strum";
-        case Field::VELOCITY_CURVE:
-            return "Velocity";
+        case Field::VELOCITY_CONTOUR:
+            return "Velocity contour";
         case Field::COUNT:
         default:
             return "Chord";
@@ -284,17 +333,17 @@ FLASHMEM const char* chordFieldIcon(core::state::sequencer::SequencerChordEditFi
     switch (field) {
         case Field::MODE:
             return ::standalone::icons::CHORD_PROP_MODE;
+        case Field::HARMONY:
+            return ::standalone::icons::CHORD_PROP_HARMONY;
         case Field::VOICES:
             return ::standalone::icons::CHORD_PROP_VOICE;
-        case Field::COLOR:
-            return ::standalone::icons::CHORD_PROP_COLOR;
-        case Field::VARIANT:
-            return ::standalone::icons::CHORD_PROP_SHAPE;
-        case Field::SPREAD:
-            return ::standalone::icons::DIVISION;
+        case Field::INVERSION:
+            return ::standalone::icons::CHORD_PROP_INVERSION;
+        case Field::VOICING:
+            return ::standalone::icons::CHORD_PROP_VOICING;
         case Field::STRUM:
             return ::standalone::icons::SWING;
-        case Field::VELOCITY_CURVE:
+        case Field::VELOCITY_CONTOUR:
             return ::standalone::icons::NOTE_PROP_VEL;
         case Field::COUNT:
         default:
@@ -308,17 +357,17 @@ FLASHMEM uint32_t chordFieldColor(core::state::sequencer::SequencerChordEditFiel
     switch (field) {
         case Field::MODE:
             return core::ui::sequencer::semantic::color(Tone::CHORD_MODE);
+        case Field::HARMONY:
+            return core::ui::sequencer::semantic::color(Tone::CHORD_HARMONY);
         case Field::VOICES:
             return core::ui::sequencer::semantic::color(Tone::CHORD_VOICE);
-        case Field::COLOR:
-            return core::ui::sequencer::semantic::color(Tone::CHORD_COLOR);
-        case Field::VARIANT:
-            return core::ui::sequencer::semantic::color(Tone::CHORD_SHAPE);
-        case Field::SPREAD:
-            return core::ui::sequencer::semantic::color(Tone::CHORD_SPREAD);
+        case Field::INVERSION:
+            return core::ui::sequencer::semantic::color(Tone::CHORD_INVERSION);
+        case Field::VOICING:
+            return core::ui::sequencer::semantic::color(Tone::CHORD_VOICING);
         case Field::STRUM:
             return core::ui::sequencer::semantic::color(Tone::CHORD_STRUM);
-        case Field::VELOCITY_CURVE:
+        case Field::VELOCITY_CONTOUR:
             return core::ui::sequencer::semantic::color(Tone::CHORD_VELOCITY);
         case Field::COUNT:
         default:
@@ -334,17 +383,17 @@ FLASHMEM core::ui::SequencerStepEditVisualSlot chordFieldVisualSlot(
     switch (field) {
         case Field::MODE:
             return Slot::CHORD_MODE;
+        case Field::HARMONY:
+            return Slot::CHORD_HARMONY;
         case Field::VOICES:
             return Slot::CHORD_VOICES;
-        case Field::COLOR:
-            return Slot::CHORD_COLOR;
-        case Field::VARIANT:
-            return Slot::CHORD_SHAPE;
-        case Field::SPREAD:
-            return Slot::CHORD_SPREAD;
+        case Field::INVERSION:
+            return Slot::CHORD_INVERSION;
+        case Field::VOICING:
+            return Slot::CHORD_VOICING;
         case Field::STRUM:
             return Slot::CHORD_STRUM;
-        case Field::VELOCITY_CURVE:
+        case Field::VELOCITY_CONTOUR:
             return Slot::CHORD_VELOCITY;
         case Field::COUNT:
         default:
@@ -375,6 +424,19 @@ FLASHMEM void formatChordFieldValue(
         case Field::MODE:
             copyText(out, outSize, chordModeLabel(chord.mode));
             return;
+        case Field::HARMONY:
+            if (!chord.spec.isSemantic()) {
+                copyText(out, outSize, "Legacy recipe");
+            } else {
+                copyText(
+                    out,
+                    outSize,
+                    chordHarmonyLabel(
+                        chord.preview.valid ? chord.preview.harmony : chord.spec.harmony()
+                    )
+                );
+            }
+            return;
         case Field::VOICES:
             std::snprintf(
                 out,
@@ -387,19 +449,32 @@ FLASHMEM void formatChordFieldValue(
                 )
             );
             return;
-        case Field::COLOR:
-            std::snprintf(out, outSize, "%u", static_cast<unsigned>(chord.spec.color));
+        case Field::INVERSION:
+            if (!chord.spec.isSemantic()) {
+                copyText(out, outSize, "Legacy recipe");
+            } else {
+                formatInversion(
+                    out,
+                    outSize,
+                    chord.preview.valid
+                        ? chord.preview.effectiveInversion
+                        : chord.spec.inversion()
+                );
+            }
             return;
-        case Field::VARIANT:
-            std::snprintf(out, outSize, "%u", static_cast<unsigned>(chord.spec.variant));
-            return;
-        case Field::SPREAD:
-            std::snprintf(out, outSize, "%u", static_cast<unsigned>(chord.spec.spread));
+        case Field::VOICING:
+            copyText(
+                out,
+                outSize,
+                chord.spec.isSemantic()
+                    ? chordVoicingLabel(chord.spec.voicing())
+                    : "Legacy recipe"
+            );
             return;
         case Field::STRUM:
             formatSigned(out, outSize, chord.spec.strum, "%");
             return;
-        case Field::VELOCITY_CURVE:
+        case Field::VELOCITY_CONTOUR:
             formatSigned(out, outSize, chord.spec.velocityCurve);
             return;
         case Field::COUNT:
@@ -461,12 +536,24 @@ FLASHMEM void formatChordValue(
             copyText(out, outSize, "Inherit");
             return;
         case StepSequencerChordMode::Local:
-            std::snprintf(
-                out,
-                outSize,
-                "%u voices",
-                static_cast<unsigned>(std::max<uint8_t>(chord.spec.voiceCount, 1))
-            );
+            if (chord.preview.valid) {
+                char name[16] = {};
+                formatChordPreviewName(name, sizeof(name), chord.preview);
+                std::snprintf(
+                    out,
+                    outSize,
+                    "%s %uv",
+                    name,
+                    static_cast<unsigned>(chord.preview.voiceCount)
+                );
+            } else {
+                std::snprintf(
+                    out,
+                    outSize,
+                    "%u voices",
+                    static_cast<unsigned>(std::max<uint8_t>(chord.spec.voiceCount, 1))
+                );
+            }
             return;
         case StepSequencerChordMode::Single:
         default:
@@ -547,15 +634,16 @@ FLASHMEM void populateChordDetailOverlay(
     bool enabled
 ) {
     using Field = core::state::sequencer::SequencerChordEditField;
+    data.meta[0] = '\0';
 
     constexpr Field fields[] = {
         Field::MODE,
+        Field::HARMONY,
         Field::VOICES,
-        Field::COLOR,
-        Field::VARIANT,
-        Field::SPREAD,
+        Field::INVERSION,
+        Field::VOICING,
         Field::STRUM,
-        Field::VELOCITY_CURVE,
+        Field::VELOCITY_CONTOUR,
     };
     for (auto field : fields) {
         formatChordFieldValue(
@@ -572,6 +660,24 @@ FLASHMEM void populateChordDetailOverlay(
     } else {
         copyText(data.chordName.data(), data.chordName.size(), chordModeLabel(chord.mode));
         copyText(data.chordDetail.data(), data.chordDetail.size(), "");
+    }
+
+    if (!chord.spec.isSemantic() &&
+        chord.mode != oc::note::sequencer::StepSequencerChordMode::Single) {
+        copyText(data.meta.data(), data.meta.size(), "Legacy recipe");
+    } else if (chord.preview.droppedVoiceCount > 0) {
+        const auto dropped = static_cast<unsigned>(chord.preview.droppedVoiceCount);
+        std::snprintf(
+            data.meta.data(),
+            data.meta.size(),
+            "%u voice%s lost",
+            dropped,
+            dropped == 1U ? "" : "s"
+        );
+    } else if (chord.preview.harmonyAdjustedForPitchMode) {
+        copyText(data.meta.data(), data.meta.size(), "Pitch adapted");
+    } else if (chord.preview.inversionClamped) {
+        copyText(data.meta.data(), data.meta.size(), "Inv clamped");
     }
 
     const char* focusedValue = chordFieldBuffer(data, focusedField);
@@ -612,12 +718,12 @@ FLASHMEM void populateChordDetailOverlay(
     populateChordPreviewMarkers(data.overlayProps.chordPreview, chord.preview);
 
     setChordPropertyChip(data.overlayProps.properties[CHIP_PITCH_INDEX], data, Field::MODE);
-    setChordPropertyChip(data.overlayProps.properties[CHIP_VELOCITY_INDEX], data, Field::VOICES);
-    setChordPropertyChip(data.overlayProps.properties[CHIP_GATE_INDEX], data, Field::COLOR);
-    setChordPropertyChip(data.overlayProps.properties[CHIP_NUDGE_INDEX], data, Field::VARIANT);
-    setChordPropertyChip(data.overlayProps.chordPerformance[0], data, Field::SPREAD);
+    setChordPropertyChip(data.overlayProps.properties[CHIP_VELOCITY_INDEX], data, Field::HARMONY);
+    setChordPropertyChip(data.overlayProps.properties[CHIP_GATE_INDEX], data, Field::VOICES);
+    setChordPropertyChip(data.overlayProps.properties[CHIP_NUDGE_INDEX], data, Field::INVERSION);
+    setChordPropertyChip(data.overlayProps.chordPerformance[0], data, Field::VOICING);
     setChordPropertyChip(data.overlayProps.chordPerformance[1], data, Field::STRUM);
-    setChordPropertyChip(data.overlayProps.chordPerformance[2], data, Field::VELOCITY_CURVE);
+    setChordPropertyChip(data.overlayProps.chordPerformance[2], data, Field::VELOCITY_CONTOUR);
 }
 
 }  // namespace core::context::standalone::sequencer_overlay_presenter

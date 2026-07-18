@@ -17,9 +17,9 @@ enum class Tone : uint8_t {
     CHORD,
     CHORD_MODE,
     CHORD_VOICE,
-    CHORD_COLOR,
-    CHORD_SHAPE,
-    CHORD_SPREAD,
+    CHORD_HARMONY,
+    CHORD_INVERSION,
+    CHORD_VOICING,
     CHORD_STRUM,
     CHORD_VELOCITY,
     MICRO_SEQUENCE,
@@ -46,12 +46,12 @@ inline constexpr uint32_t color(Tone tone) {
             return standalone::theme::color::STEP_CHORD_MODE;
         case Tone::CHORD_VOICE:
             return standalone::theme::color::STEP_CHORD_VOICE;
-        case Tone::CHORD_COLOR:
-            return standalone::theme::color::STEP_CHORD_COLOR;
-        case Tone::CHORD_SHAPE:
-            return standalone::theme::color::STEP_CHORD_SHAPE;
-        case Tone::CHORD_SPREAD:
-            return standalone::theme::color::STEP_CHORD_SPREAD;
+        case Tone::CHORD_HARMONY:
+            return standalone::theme::color::STEP_CHORD_HARMONY;
+        case Tone::CHORD_INVERSION:
+            return standalone::theme::color::STEP_CHORD_INVERSION;
+        case Tone::CHORD_VOICING:
+            return standalone::theme::color::STEP_CHORD_VOICING;
         case Tone::CHORD_STRUM:
             return standalone::theme::color::STEP_CHORD_STRUM;
         case Tone::CHORD_VELOCITY:
@@ -84,12 +84,12 @@ inline constexpr const char* label(Tone tone) {
             return "Chord mode";
         case Tone::CHORD_VOICE:
             return "Chord voices";
-        case Tone::CHORD_COLOR:
-            return "Chord color";
-        case Tone::CHORD_SHAPE:
-            return "Chord shape";
-        case Tone::CHORD_SPREAD:
-            return "Chord spread";
+        case Tone::CHORD_HARMONY:
+            return "Chord harmony";
+        case Tone::CHORD_INVERSION:
+            return "Chord inversion";
+        case Tone::CHORD_VOICING:
+            return "Chord voicing";
         case Tone::CHORD_STRUM:
             return "Chord strum";
         case Tone::CHORD_VELOCITY:

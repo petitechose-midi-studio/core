@@ -654,9 +654,9 @@ void test_chord_state_is_explicit_and_resettable_per_node() {
 
     StepSequencerChordSpec spec{};
     spec.voiceCount = 99;
-    spec.color = 99;
-    spec.variant = 2;
-    spec.spread = 99;
+    spec.harmonyData = 99;
+    spec.voicingData = 2;
+    spec.inversionData = 99;
     spec.strum = 120;
     spec.velocityCurve = -80;
     assert(core::state::sequencer::setNodeChordSpec(state.pattern, rootNode, spec));
@@ -669,9 +669,10 @@ void test_chord_state_is_explicit_and_resettable_per_node() {
     assert(node->has(STEP_NODE_CHORD_LOCAL));
     assert(node->chordMode == StepSequencerChordMode::Local);
     assert(node->chordSpec.voiceCount == StepSequencerChordSpec::MAX_VOICES);
-    assert(node->chordSpec.color == StepSequencerChordSpec::MAX_COLOR);
-    assert(node->chordSpec.variant == 2);
-    assert(node->chordSpec.spread == StepSequencerChordSpec::MAX_SPREAD);
+    const auto legacy = node->chordSpec.legacyRecipe();
+    assert(legacy.color == StepSequencerChordSpec::MAX_COLOR);
+    assert(legacy.variant == 2);
+    assert(legacy.spread == StepSequencerChordSpec::MAX_SPREAD);
     assert(node->chordSpec.strum == StepSequencerChordSpec::MAX_STRUM);
     assert(node->chordSpec.velocityCurve == StepSequencerChordSpec::MIN_VELOCITY_CURVE);
 

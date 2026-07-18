@@ -27,6 +27,31 @@ FLASHMEM int8_t signedFromNormalized(float normalized, int minValue, int maxValu
     return static_cast<int8_t>(minValue + index);
 }
 
+FLASHMEM oc::note::sequencer::StepSequencerChordSpec semanticDefault(
+    bool scaleConstrained,
+    uint8_t voiceCount = 0
+) {
+    const auto harmony = oc::note::sequencer::defaultChordHarmony(scaleConstrained);
+    return oc::note::sequencer::StepSequencerChordSpec::semantic(
+        harmony,
+        voiceCount == 0
+            ? oc::note::sequencer::recommendedChordVoiceCount(harmony)
+            : voiceCount
+    );
+}
+
+FLASHMEM void ensureSemantic(
+    oc::note::sequencer::StepSequencerChordSpec& spec,
+    bool scaleConstrained
+) {
+    if (spec.isSemantic()) return;
+    const int8_t strum = spec.strum;
+    const int8_t velocityContour = spec.velocityCurve;
+    spec = semanticDefault(scaleConstrained, spec.voiceCount);
+    spec.strum = strum;
+    spec.velocityCurve = velocityContour;
+}
+
 }  // namespace
 
 FLASHMEM int editFieldCount() {
@@ -88,7 +113,8 @@ FLASHMEM int quickChoiceIndex(
 
 FLASHMEM void applyQuickChoice(core::state::sequencer::SequencerState& sequencer,
                                uint8_t step,
-                               int choice) {
+                               int choice,
+                               bool scaleConstrained) {
     using oc::note::sequencer::StepSequencerChordMode;
     using oc::note::sequencer::StepSequencerChordSpec;
 
@@ -105,10 +131,11 @@ FLASHMEM void applyQuickChoice(core::state::sequencer::SequencerState& sequencer
             StepSequencerChordMode::Single
         );
     } else {
-        StepSequencerChordSpec spec{};
+        StepSequencerChordSpec spec = semanticDefault(scaleConstrained);
         const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
         const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
-        if (node != nullptr) {
+        if (node != nullptr &&
+            node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL)) {
             spec = node->chordSpec;
         }
         spec.voiceCount = static_cast<uint8_t>(
@@ -127,12 +154,19 @@ FLASHMEM void applyQuickChoice(core::state::sequencer::SequencerState& sequencer
 FLASHMEM bool applyModeChoice(core::state::sequencer::SequencerState& sequencer,
                               uint8_t step,
                               int choice,
-                              oc::note::sequencer::StepSequencerChordSpec specForLocal) {
+                              oc::note::sequencer::StepSequencerChordSpec specForLocal,
+                              bool scaleConstrained) {
     using oc::note::sequencer::StepSequencerChordMode;
 
-    specForLocal.clamp();
     const bool rootContext = core::state::sequencer::isRootContentView(sequencer);
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
+    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
+    if (node == nullptr ||
+        !node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL)) {
+        specForLocal = semanticDefault(scaleConstrained);
+    }
+    specForLocal.clamp();
     bool changed = false;
 
     if (rootContext) {
@@ -169,28 +203,52 @@ FLASHMEM bool applySpecField(core::state::sequencer::SequencerState& sequencer,
                              uint8_t step,
                              core::state::sequencer::SequencerChordEditField field,
                              oc::note::sequencer::StepSequencerChordSpec spec,
+                             bool scaleConstrained,
                              float normalized) {
     using Field = core::state::sequencer::SequencerChordEditField;
     using Spec = oc::note::sequencer::StepSequencerChordSpec;
 
     switch (field) {
+        case Field::HARMONY: {
+            const uint8_t count = oc::note::sequencer::chordHarmonyChoiceCount(
+                scaleConstrained
+            );
+            const auto harmony = oc::note::sequencer::chordHarmonyForChoice(
+                static_cast<uint8_t>(input_utils::normalizedToIndex(normalized, count)),
+                scaleConstrained
+            );
+            spec.setHarmony(harmony);
+            spec.voiceCount = std::max<uint8_t>(
+                spec.voiceCount,
+                oc::note::sequencer::recommendedChordVoiceCount(harmony)
+            );
+            break;
+        }
         case Field::VOICES:
             spec.voiceCount = voiceCountFromNormalized(normalized);
+            if (spec.isSemantic() && spec.inversion() >= spec.voiceCount) {
+                spec.setInversion(static_cast<uint8_t>(spec.voiceCount - 1U));
+            }
             break;
-        case Field::COLOR:
-            spec.color = static_cast<uint8_t>(
-                input_utils::normalizedToInclusiveInt(normalized, Spec::MAX_COLOR)
-            );
+        case Field::INVERSION:
+            ensureSemantic(spec, scaleConstrained);
+            spec.setInversion(static_cast<uint8_t>(
+                input_utils::normalizedToInclusiveInt(
+                    normalized,
+                    static_cast<int>(spec.voiceCount) - 1
+                )
+            ));
             break;
-        case Field::VARIANT:
-            spec.variant = static_cast<uint8_t>(
-                input_utils::normalizedToInclusiveInt(normalized, Spec::MAX_VARIANT)
-            );
-            break;
-        case Field::SPREAD:
-            spec.spread = static_cast<uint8_t>(
-                input_utils::normalizedToInclusiveInt(normalized, Spec::MAX_SPREAD)
-            );
+        case Field::VOICING:
+            ensureSemantic(spec, scaleConstrained);
+            spec.setVoicing(static_cast<oc::note::sequencer::StepSequencerChordVoicing>(
+                input_utils::normalizedToInclusiveInt(
+                    normalized,
+                    static_cast<int>(
+                        oc::note::sequencer::StepSequencerChordVoicing::Count
+                    ) - 1
+                )
+            ));
             break;
         case Field::STRUM:
             spec.strum = signedFromNormalized(
@@ -199,7 +257,7 @@ FLASHMEM bool applySpecField(core::state::sequencer::SequencerState& sequencer,
                 Spec::MAX_STRUM
             );
             break;
-        case Field::VELOCITY_CURVE:
+        case Field::VELOCITY_CONTOUR:
             spec.velocityCurve = signedFromNormalized(
                 normalized,
                 Spec::MIN_VELOCITY_CURVE,
@@ -226,7 +284,8 @@ FLASHMEM bool applySpecField(core::state::sequencer::SequencerState& sequencer,
 
 FLASHMEM bool resetSpecField(core::state::sequencer::SequencerState& sequencer,
                              uint8_t step,
-                             core::state::sequencer::SequencerChordEditField field) {
+                             core::state::sequencer::SequencerChordEditField field,
+                             bool scaleConstrained) {
     using Field = core::state::sequencer::SequencerChordEditField;
     using Spec = oc::note::sequencer::StepSequencerChordSpec;
 
@@ -248,24 +307,33 @@ FLASHMEM bool resetSpecField(core::state::sequencer::SequencerState& sequencer,
     }
 
     auto spec = chord.spec;
-    const Spec defaults{};
+    const Spec defaults = semanticDefault(scaleConstrained);
     switch (field) {
+        case Field::HARMONY:
+            spec.setHarmony(defaults.harmony());
+            spec.voiceCount = std::max<uint8_t>(
+                spec.voiceCount,
+                oc::note::sequencer::recommendedChordVoiceCount(defaults.harmony())
+            );
+            break;
         case Field::VOICES:
             spec.voiceCount = defaults.voiceCount;
+            if (spec.isSemantic() && spec.inversion() >= spec.voiceCount) {
+                spec.setInversion(static_cast<uint8_t>(spec.voiceCount - 1U));
+            }
             break;
-        case Field::COLOR:
-            spec.color = defaults.color;
+        case Field::INVERSION:
+            ensureSemantic(spec, scaleConstrained);
+            spec.setInversion(0);
             break;
-        case Field::VARIANT:
-            spec.variant = defaults.variant;
-            break;
-        case Field::SPREAD:
-            spec.spread = defaults.spread;
+        case Field::VOICING:
+            ensureSemantic(spec, scaleConstrained);
+            spec.setVoicing(oc::note::sequencer::StepSequencerChordVoicing::Close);
             break;
         case Field::STRUM:
             spec.strum = defaults.strum;
             break;
-        case Field::VELOCITY_CURVE:
+        case Field::VELOCITY_CONTOUR:
             spec.velocityCurve = defaults.velocityCurve;
             break;
         case Field::MODE:
