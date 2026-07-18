@@ -10,6 +10,7 @@ FLASHMEM void ProjectControlState::clear() {
     authored.clear();
     plan = {};
     runtime = {};
+    timeTelemetry = {};
     sourceScratch.fill(0.0f);
     triggerScratch = {};
     audition = {};

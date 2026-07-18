@@ -50,6 +50,7 @@ FLASHMEM bool Bindings::bind(StateRefs stateRefs,
         stateRefs.macroEdit.contextButton,
         stateRefs.macroUi.automationRecordingRevision,
         stateRefs.macroUi.automationManualOverrideMask,
+        stateRefs.macroUi.runtimeProjectionRevision,
         stateRefs.configRevision
     ) && bound;
     bound = automation_watcher_.watchAll(

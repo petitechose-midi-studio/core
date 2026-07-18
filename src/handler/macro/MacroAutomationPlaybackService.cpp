@@ -48,6 +48,7 @@ void MacroAutomationPlaybackService::reset() {
     pages_.control.compiledRevision = 0;
     pages_.control.runtimeContextHash = 0;
     pages_.control.runtime = {};
+    pages_.control.timeTelemetry = {};
     pages_.control.triggerScratch = {};
     invalidateComputedRuntime_();
 }
@@ -73,6 +74,7 @@ void MacroAutomationPlaybackService::consumeRuntimeOwnerActivation_() {
     pages_.control.compiledRevision = 0;
     pages_.control.runtimeContextHash = 0;
     pages_.control.runtime = {};
+    pages_.control.timeTelemetry = {};
     syncActivePageRuntimeUi_(cached_track_, cached_page_);
     invalidateComputedRuntime_();
 }
@@ -435,6 +437,10 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
     }
 
     const auto time = midi_runtime_.projectControlTimeSnapshot();
+    core::state::modulation::publishProjectControlTimeTelemetry(
+        pages_.control.timeTelemetry,
+        time
+    );
     if (!ensureProjectRuntime_(time)) return;
 
     auto& control = pages_.control;

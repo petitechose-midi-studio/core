@@ -62,9 +62,11 @@ private:
     struct CurveSampleContext {
         const core::state::modulation::ProjectControlState* control = nullptr;
         const core::state::modulation::ModulatorSourceState* source = nullptr;
+        uint16_t runtimeSourceIndex = UINT16_MAX;
         uint16_t attackEndQ16 = 0U;
         uint16_t decayEndQ16 = 0U;
         uint16_t sustainEndQ16 = 0U;
+        uint16_t previousPositionQ16 = 0U;
         uint16_t previousValue = 0U;
         bool hasPrevious = false;
     };
@@ -86,6 +88,10 @@ private:
         void* context,
         uint16_t positionQ16,
         ms::ui::CurvePreviewSample& out
+    );
+    static bool sampleMarker(
+        void* context,
+        ms::ui::CurvePreviewMarker& out
     );
 
     lv_obj_t* root_ = nullptr;

@@ -5,6 +5,7 @@
 
 #include "state/macro/MacroAutomationState.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "ui/macro/MacroEditorLiveTrace.hpp"
 #include "ui/macro/MacroEditorPreviewModel.hpp"
 
 // The firmware UI is not part of the native core library. Keep this pure,
@@ -14,6 +15,23 @@
 namespace {
 
 using namespace core::state::macro;
+
+core::ui::MacroEditorPreviewSample sampleAt(
+    const core::ui::MacroEditorPreviewModel& model,
+    core::ui::MacroEditorPreviewFocus focus,
+    uint16_t positionQ16
+) {
+    core::ui::MacroEditorPreviewSample sample{};
+    assert(core::ui::sampleMacroEditorPreview(
+        model,
+        focus,
+        positionQ16,
+        0U,
+        false,
+        sample
+    ));
+    return sample;
+}
 
 MacroAutomationSlotState& makeSlot(
     MacroAutomationBankState& bank,
@@ -54,9 +72,20 @@ void test_manual_disengages_only_automation() {
     assert(!model.automationPlayback);
     assert(model.modulationPlayback);
     assert(!model.automationDrivingBase);
-    for (const auto base : model.base) assert(base == 128U);
-    assert(model.automation.front() < model.automation.back());
-    assert(model.out.front() < model.out.back());
+    const auto first = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::DESTINATION,
+        0U
+    );
+    const auto last = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::DESTINATION,
+        65535U
+    );
+    assert(std::abs(static_cast<int>(first.baseQ16) - 32768) <= 1);
+    assert(std::abs(static_cast<int>(last.baseQ16) - 32768) <= 1);
+    assert(first.automationQ16 < last.automationQ16);
+    assert(first.outQ16 < last.outQ16);
     std::cout << "[PASS] test_manual_disengages_only_automation\n";
 }
 
@@ -70,10 +99,20 @@ void test_out_clamps_and_reports_both_clip_directions() {
         bank.pointPool,
         false
     );
-    assert(model.clippedLow);
-    assert(model.clippedHigh);
-    assert(model.out.front() == 0U);
-    assert(model.out.back() == 255U);
+    const auto first = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::DESTINATION,
+        0U
+    );
+    const auto last = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::DESTINATION,
+        65535U
+    );
+    assert(first.clippedLow);
+    assert(last.clippedHigh);
+    assert(first.outQ16 == 0U);
+    assert(last.outQ16 == 65535U);
     std::cout << "[PASS] test_out_clamps_and_reports_both_clip_directions\n";
 }
 
@@ -89,14 +128,23 @@ void test_modulation_off_preserves_stored_preview_but_not_output_motion() {
     );
     assert(model.modulationStored);
     assert(!model.modulationPlayback);
-    assert(model.modulation.front() < model.modulation.back());
-    for (size_t i = 0; i < model.out.size(); ++i) {
-        assert(model.out[i] == model.base[i]);
-    }
+    const auto first = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::DESTINATION,
+        0U
+    );
+    const auto last = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::DESTINATION,
+        65535U
+    );
+    assert(first.modulationQ15 < last.modulationQ15);
+    assert(first.outQ16 == first.baseQ16);
+    assert(last.outQ16 == last.baseQ16);
     std::cout << "[PASS] test_modulation_off_preserves_stored_preview_but_not_output_motion\n";
 }
 
-void test_sources_share_one_timeline_and_keep_independent_loop_rates() {
+void test_domains_keep_their_own_truthful_timelines() {
     MacroAutomationBankState bank;
     auto* slot = macroAutomationGetOrCreateSlot(
         bank,
@@ -123,15 +171,36 @@ void test_sources_share_one_timeline_and_keep_independent_loop_rates() {
         bank.pointPool,
         false
     );
+    assert(model.automationDurationTicks == MACRO_AUTOMATION_TICKS_PER_BEAT);
+    assert(model.modulationDurationTicks ==
+           2U * MACRO_AUTOMATION_TICKS_PER_BEAT);
     assert(model.timelineDurationTicks == 2U * MACRO_AUTOMATION_TICKS_PER_BEAT);
-    static_assert(core::ui::MACRO_EDITOR_PREVIEW_SAMPLE_COUNT == 64U);
-    const int start = model.automation.front();
-    const int secondCycleStart = model.automation[32];
-    assert(std::abs(start - secondCycleStart) < 12);
-    assert(model.automation[15] > model.automation.front());
+    static_assert(sizeof(core::ui::MacroEditorPreviewModel) <= 96U);
+    const auto automationStart = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::AUTOMATION,
+        0U
+    );
+    const auto automationEnd = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::AUTOMATION,
+        65535U
+    );
+    const auto modulationStart = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::ALL_MODULATION,
+        0U
+    );
+    const auto modulationEnd = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::ALL_MODULATION,
+        65535U
+    );
+    assert(automationStart.automationQ16 < automationEnd.automationQ16);
+    assert(modulationStart.modulationQ15 < modulationEnd.modulationQ15);
 
     std::cout
-        << "[PASS] preview shares timeline and preserves independent loop rates\n";
+        << "[PASS] Automation loop and Modulation cycle keep distinct timelines\n";
 }
 
 void test_project_preview_applies_destination_global_depth() {
@@ -162,6 +231,24 @@ void test_project_preview_applies_destination_global_depth() {
         false,
         unity
     );
+    const auto peakFor = [](const core::ui::MacroEditorPreviewModel& model) {
+        int peak = 0;
+        for (uint16_t index = 0; index < 64U; ++index) {
+            const uint16_t position = static_cast<uint16_t>(
+                (static_cast<uint32_t>(index) * 65535U) / 63U
+            );
+            peak = std::max(
+                peak,
+                std::abs(static_cast<int>(sampleAt(
+                    model,
+                    core::ui::MacroEditorPreviewFocus::ALL_MODULATION,
+                    position
+                ).modulationQ15))
+            );
+        }
+        return peak;
+    };
+    const int unityPeak = peakFor(unity);
     assert(mod::setProjectModulationDestinationScale(
         control.authored.modulation,
         target,
@@ -175,15 +262,93 @@ void test_project_preview_applies_destination_global_depth() {
         false,
         half
     );
-    int unityPeak = 0;
-    int halfPeak = 0;
-    for (size_t index = 0; index < unity.modulation.size(); ++index) {
-        unityPeak = std::max(unityPeak, std::abs(unity.modulation[index]));
-        halfPeak = std::max(halfPeak, std::abs(half.modulation[index]));
-    }
+    const int halfPeak = peakFor(half);
     assert(unityPeak > 0 && halfPeak > 0);
     assert(std::abs(unityPeak - halfPeak * 2) <= 2);
     std::cout << "[PASS] Project preview reflects destination Global Depth\n";
+}
+
+void test_project_square_reports_explicit_discontinuity() {
+    namespace mod = core::state::modulation;
+    mod::ProjectControlState control{};
+    const MacroAutomationSlotAddress address{.track = 0, .page = 0, .macro = 0};
+    mod::ModulatorLfoDraft source{};
+    source.name = "Square";
+    source.reach.kind = mod::ModulatorReachKind::PROJECT;
+    source.parameters.shape = mod::ModulatorLfoShape::SQUARE;
+    const auto created = mod::createLfoModulator(control.authored.modulation, source);
+    assert(created.changed());
+    mod::ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination = mod::projectControlDestination(address);
+    binding.amountQ15 = 16384;
+    const auto bound = mod::addProjectModulationBinding(
+        control.authored.modulation,
+        binding
+    );
+    assert(bound.changed());
+    core::ui::MacroEditorPreviewModel model{};
+    core::ui::buildMacroEditorPreviewModel(
+        0.5f,
+        control,
+        address,
+        false,
+        bound.bindingId,
+        {},
+        model
+    );
+    core::ui::MacroEditorPreviewSample sample{};
+    assert(core::ui::sampleMacroEditorPreview(
+        model,
+        core::ui::MacroEditorPreviewFocus::FOCUSED_MODULATOR,
+        32768U,
+        32000U,
+        true,
+        sample
+    ));
+    assert(sample.discontinuityBefore);
+    std::cout << "[PASS] Project square exposes its authored edge\n";
+}
+
+void test_live_trace_is_bounded_contextual_and_time_true() {
+    core::ui::MacroEditorLiveTrace trace{};
+    trace.append(0x000001U, 1000U, {
+        .base = 0.0f,
+        .modulation = -1.0f,
+        .out = 0.0f,
+        .valid = true,
+    });
+    trace.append(0x000001U, 2000U, {
+        .base = 1.0f,
+        .modulation = 1.0f,
+        .out = 1.0f,
+        .valid = true,
+    });
+    core::ui::MacroEditorLiveTrace::Cursor cursor{};
+    core::ui::MacroEditorPreviewSample sample{};
+    assert(trace.sample(49152U, 2000U, cursor, sample));
+    assert(std::abs(static_cast<int>(sample.baseQ16) - 32768) <= 2);
+    assert(std::abs(static_cast<int>(sample.modulationQ15)) <= 2);
+    assert(std::abs(static_cast<int>(sample.outQ16) - 32768) <= 260);
+
+    trace.append(0x000002U, 2100U, {
+        .base = 0.25f,
+        .out = 0.25f,
+        .valid = true,
+    });
+    assert(trace.count() == 1U);
+    for (uint16_t index = 0U;
+         index < core::ui::MACRO_EDITOR_LIVE_TRACE_CAPACITY + 1U;
+         ++index) {
+        trace.append(0x000002U, 2200U + index, {
+            .base = 0.5f,
+            .out = 0.5f,
+            .valid = true,
+        });
+    }
+    assert(trace.count() == core::ui::MACRO_EDITOR_LIVE_TRACE_CAPACITY);
+    static_assert(sizeof(core::ui::MacroEditorLiveTrace) <= 4096U);
+    std::cout << "[PASS] rolling Destination trace is bounded and contextual\n";
 }
 
 }  // namespace
@@ -192,8 +357,10 @@ int main() {
     test_manual_disengages_only_automation();
     test_out_clamps_and_reports_both_clip_directions();
     test_modulation_off_preserves_stored_preview_but_not_output_motion();
-    test_sources_share_one_timeline_and_keep_independent_loop_rates();
+    test_domains_keep_their_own_truthful_timelines();
     test_project_preview_applies_destination_global_depth();
+    test_project_square_reports_explicit_discontinuity();
+    test_live_trace_is_bounded_contextual_and_time_true();
     std::cout << "All MacroEditorPreviewModel tests passed.\n";
     return 0;
 }

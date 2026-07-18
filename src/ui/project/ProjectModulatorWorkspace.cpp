@@ -7,6 +7,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <oc/time/Time.hpp>
 
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
@@ -82,18 +83,6 @@ FLASHMEM uint16_t normalizedToQ16(float value) {
     ));
 }
 
-FLASHMEM float liveSourceValue(
-    const ProjectControlState& control,
-    ModulatorId sourceId
-) {
-    for (uint16_t index = 0U; index < control.plan.sourceCount; ++index) {
-        if (control.plan.sources[index].id == sourceId) {
-            return std::clamp(control.sourceScratch[index], -1.0f, 1.0f);
-        }
-    }
-    return 0.0f;
-}
-
 FLASHMEM bool sourceUsesPositiveDomain(
     const ProjectControlState& control,
     const ModulatorSourceState& source
@@ -127,95 +116,6 @@ FLASHMEM bool actionableItem(Item item) {
     return item == Item::OPTIONS || item == Item::REACH ||
            item == Item::RENAME || item == Item::DESTINATIONS ||
            item == Item::TRIGGER;
-}
-
-struct AdsrMarkerState {
-    uint16_t positionQ16 = 0U;
-    bool visible = false;
-};
-
-FLASHMEM float inverseAdsrProgress(
-    ModulatorAdsrCurve curve,
-    float shaped
-) {
-    const float target = std::clamp(shaped, 0.0f, 1.0f);
-    float low = 0.0f;
-    float high = 1.0f;
-    for (uint8_t iteration = 0U; iteration < 8U; ++iteration) {
-        const float middle = (low + high) * 0.5f;
-        if (evaluateProjectAdsrProgress(curve, middle) < target) {
-            low = middle;
-        } else {
-            high = middle;
-        }
-    }
-    return (low + high) * 0.5f;
-}
-
-FLASHMEM AdsrMarkerState adsrMarkerState(
-    const ProjectControlState& control,
-    const ModulatorSourceState& source,
-    const adsr_ui::PreviewBoundaries& boundaries,
-    float live
-) {
-    const auto* runtime = adsr_ui::runtimeState(control, source.id);
-    if (!runtime || runtime->stage == ProjectModulationAdsrStage::IDLE) return {};
-    const float sustain = std::clamp(
-        static_cast<float>(source.parameters.adsr.sustainQ15) /
-            static_cast<float>(PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15),
-        0.0f,
-        1.0f
-    );
-    const float start = std::clamp(
-        static_cast<float>(runtime->stageStartLevelQ15) / 32767.0f,
-        0.0f,
-        1.0f
-    );
-    uint16_t begin = 0U;
-    uint16_t end = 0U;
-    float target = live;
-    switch (runtime->stage) {
-        case ProjectModulationAdsrStage::ATTACK:
-            end = boundaries.attackEndQ16;
-            target = 1.0f;
-            break;
-        case ProjectModulationAdsrStage::DECAY:
-            begin = boundaries.attackEndQ16;
-            end = boundaries.decayEndQ16;
-            target = sustain;
-            break;
-        case ProjectModulationAdsrStage::SUSTAIN:
-            return {
-                .positionQ16 = static_cast<uint16_t>(
-                    boundaries.decayEndQ16 +
-                    (boundaries.sustainEndQ16 - boundaries.decayEndQ16) / 2U
-                ),
-                .visible = true,
-            };
-        case ProjectModulationAdsrStage::RELEASE:
-            begin = boundaries.sustainEndQ16;
-            end = 65535U;
-            target = 0.0f;
-            break;
-        case ProjectModulationAdsrStage::IDLE:
-        default:
-            return {};
-    }
-    const float denominator = target - start;
-    const float shaped = std::fabs(denominator) > 0.0001f
-        ? (live - start) / denominator
-        : 1.0f;
-    const float progress = inverseAdsrProgress(
-        source.parameters.adsr.curve,
-        shaped
-    );
-    return {
-        .positionQ16 = static_cast<uint16_t>(std::lround(
-            static_cast<float>(begin) +
-            static_cast<float>(end - begin) * progress
-        )),
-        .visible = true,
-    };
 }
 
 FLASHMEM core::state::project::modulators::SourceDetailLayout layoutFor(
@@ -593,11 +493,30 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleCurve(
     const auto& source = *context->source;
     float value = 0.0f;
     bool positive = false;
+    bool discontinuity = false;
     if (source.kind == ModulatorKind::LFO) {
+        const float authoredPhase = static_cast<float>(
+            source.parameters.lfo.phaseQ15
+        ) / 32767.0f;
+        auto wrappedPhase = [authoredPhase](uint16_t position) {
+            float phase = static_cast<float>(position) / 65535.0f +
+                authoredPhase;
+            phase -= std::floor(phase);
+            return phase < 0.0f ? phase + 1.0f : phase;
+        };
+        const float phase = wrappedPhase(positionQ16);
         value = evaluateProjectLfoShape(
             source.parameters.lfo.shape,
-            static_cast<float>(positionQ16) / 65535.0f
+            phase
         );
+        if (context->hasPrevious &&
+            source.parameters.lfo.shape == ModulatorLfoShape::SQUARE) {
+            const float previousPhase = wrappedPhase(
+                context->previousPositionQ16
+            );
+            discontinuity = phase < previousPhase ||
+                (previousPhase < 0.5f && phase >= 0.5f);
+        }
     } else if (source.kind == ModulatorKind::ADSR) {
         positive = true;
         const adsr_ui::PreviewBoundaries boundaries{
@@ -627,6 +546,9 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleCurve(
                 static_cast<float>(PROJECT_CONTROL_TICKS_PER_BEAT),
             0.0f
         );
+        // Project curves currently author only linear interpolation. Unlike a
+        // Square LFO, a large adjacent delta is therefore not a semantic jump
+        // and must remain connected rather than inferred from magnitude.
     }
     const uint16_t curveValue = normalizedToQ16(
         positive ? value : value * 0.5f + 0.5f
@@ -635,14 +557,66 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleCurve(
         .curve = curveValue,
         .base = curveValue,
         .impact = curveValue,
-        .discontinuityBefore = context->hasPrevious &&
-            std::abs(
-                static_cast<int32_t>(curveValue) -
-                static_cast<int32_t>(context->previousValue)
-            ) > 16384,
+        .discontinuityBefore = discontinuity,
     };
+    context->previousPositionQ16 = positionQ16;
     context->previousValue = curveValue;
     context->hasPrevious = true;
+    return true;
+}
+
+FLASHMEM bool ProjectModulatorWorkspace::sampleMarker(
+    void* rawContext,
+    ms::ui::CurvePreviewMarker& out
+) {
+    auto* context = static_cast<CurveSampleContext*>(rawContext);
+    out = {};
+    if (!context || !context->control || !context->source) return false;
+    const auto& control = *context->control;
+    const auto& source = *context->source;
+    const auto time = extrapolateProjectControlTime(
+        control.timeTelemetry,
+        oc::time::millis()
+    );
+    ProjectModulatorRuntimeProjection projection{};
+    if (!projectModulatorRuntimeProjectionAtIndex(
+            control.plan,
+            control.authored.curves,
+            control.runtime,
+            time,
+            context->runtimeSourceIndex,
+            projection
+        )) {
+        return true;
+    }
+    uint16_t positionQ16 = projection.positionQ16;
+    if (source.kind == ModulatorKind::ADSR) {
+        if (!adsr_ui::runtimeMarkerPosition(
+                {
+                    context->attackEndQ16,
+                    context->decayEndQ16,
+                    context->sustainEndQ16,
+                },
+                projection.adsrStage,
+                projection.stageProgressQ16,
+                positionQ16
+            )) {
+            return true;
+        }
+    } else if (!projection.positionKnown) {
+        return true;
+    }
+    const bool positive = sourceUsesPositiveDomain(control, source);
+    out = {
+        .visible =
+            (source.flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U,
+        .positionQ16 = positionQ16,
+        .valueQ16 = normalizedToQ16(
+            positive
+                ? projection.value
+                : projection.value * 0.5f + 0.5f
+        ),
+    };
     return true;
 }
 
@@ -656,33 +630,34 @@ FLASHMEM void ProjectModulatorWorkspace::renderCurve(
     const bool enabled =
         (props.source->flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
     const bool positive = sourceUsesPositiveDomain(*props.control, *props.source);
-    const float live = liveSourceValue(*props.control, props.source->id);
     const auto adsrBoundaries = props.source->kind == ModulatorKind::ADSR
         ? adsr_ui::previewBoundaries(props.source->parameters.adsr)
         : adsr_ui::PreviewBoundaries{};
+    uint16_t runtimeSourceIndex = 0U;
+    while (runtimeSourceIndex < props.control->plan.sourceCount &&
+           props.control->plan.sources[runtimeSourceIndex].id !=
+               props.source->id) {
+        ++runtimeSourceIndex;
+    }
     curve_sample_context_ = {
         .control = props.control,
         .source = props.source,
+        .runtimeSourceIndex = runtimeSourceIndex,
         .attackEndQ16 = adsrBoundaries.attackEndQ16,
         .decayEndQ16 = adsrBoundaries.decayEndQ16,
         .sustainEndQ16 = adsrBoundaries.sustainEndQ16,
+        .previousPositionQ16 = 0U,
         .previousValue = 0U,
         .hasPrevious = false,
     };
-    const AdsrMarkerState adsrMarker = props.source->kind == ModulatorKind::ADSR
-        ? adsrMarkerState(
-              *props.control,
-              *props.source,
-              adsrBoundaries,
-              live
-          )
-        : AdsrMarkerState{.positionQ16 = 65535U, .visible = true};
     curve_preview_->render({
         .visible = true,
         .sampleProvider = &ProjectModulatorWorkspace::sampleCurve,
         .sampleContext = &curve_sample_context_,
         .geometryRevision = props.control->authoredRevision ^
             (props.source->id.value * 16777619U),
+        .markerProvider = &ProjectModulatorWorkspace::sampleMarker,
+        .markerContext = &curve_sample_context_,
         .showImpactBand = false,
         .showCenterGuide = !positive,
         .showRestGuide = positive,
@@ -707,13 +682,7 @@ FLASHMEM void ProjectModulatorWorkspace::renderCurve(
         .baseWidth = 1,
         .impactWidth = 1,
         .markerRadius = 2,
-        .marker = {
-            .visible = enabled && adsrMarker.visible,
-            .positionQ16 = adsrMarker.positionQ16,
-            .valueQ16 = normalizedToQ16(
-                positive ? live : live * 0.5f + 0.5f
-            ),
-        },
+        .marker = {},
     });
 }
 

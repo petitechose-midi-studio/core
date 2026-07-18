@@ -638,13 +638,31 @@ FLASHMEM ms::ui::KeyValueSparkline buildModulationSparkline(
     sparkline.centerLine = true;
     sparkline.sampleCount = sampleCount;
     for (uint8_t i = 0; i < sampleCount; ++i) {
-        const size_t sourceIndex = sampleCount > 1U
-            ? (static_cast<size_t>(i) *
-               (core::ui::MACRO_EDITOR_PREVIEW_SAMPLE_COUNT - 1U)) /
-                  (sampleCount - 1U)
+        const uint16_t positionQ16 = sampleCount > 1U
+            ? static_cast<uint16_t>(
+                (static_cast<uint32_t>(i) * 65535U) /
+                static_cast<uint32_t>(sampleCount - 1U)
+            )
             : 0U;
+        const uint16_t previousPositionQ16 = i > 0U
+            ? static_cast<uint16_t>(
+                (static_cast<uint32_t>(i - 1U) * 65535U) /
+                static_cast<uint32_t>(sampleCount - 1U)
+            )
+            : 0U;
+        core::ui::MacroEditorPreviewSample sample{};
+        if (!core::ui::sampleMacroEditorPreview(
+                preview,
+                core::ui::MacroEditorPreviewFocus::ALL_MODULATION,
+                positionQ16,
+                previousPositionQ16,
+                i > 0U,
+                sample
+            )) {
+            return {};
+        }
         const float value = std::clamp(
-            static_cast<float>(preview.modulation[sourceIndex]) / 255.0f,
+            static_cast<float>(sample.modulationQ15) / 32767.0f,
             -1.0f,
             1.0f
         );
@@ -983,6 +1001,20 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
          static_cast<uint16_t>(1U << macroIndex)) != 0;
     const bool automationStored = slot != nullptr && slot->automationStored;
     const bool modulationStored = slot != nullptr && slot->modulationStored;
+    core::state::modulation::ModulationBindingId focusedBindingId{};
+    const core::state::modulation::ModulationBindingState* focusedBinding =
+        nullptr;
+    if (slot != nullptr && slot->modulationStored) {
+        focusedBindingId =
+            core::state::modulation::projectControlFocusedModulationBinding(
+                source.pages.control,
+                address
+            );
+        focusedBinding = core::state::modulation::findProjectModulationBinding(
+            source.pages.control.authored.modulation,
+            focusedBindingId
+        );
+    }
     uint32_t baseBits = 0;
     std::memcpy(
         &baseBits,
@@ -1005,15 +1037,35 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         previewRevision,
         source.pages.control.authoredRevision
     );
+    previewRevision = mixRevision(previewRevision, focusedBindingId.value);
     if (data.previewRevision != previewRevision) {
         core::ui::buildMacroEditorPreviewModel(
             source.pages.activePageData().values[macroIndex],
             source.pages.control,
             address,
             manualOverride,
+            focusedBindingId,
+            {},
             data.preview
         );
         data.previewRevision = previewRevision;
+    }
+    data.preview.live = {};
+    if (source.macroUi.runtimeProjectionValidFor(
+            address.track,
+            address.page,
+            address.macro
+        )) {
+        const auto& projection = source.macroUi.runtimeProjections[macroIndex];
+        data.preview.live = {
+            .base = projection.base,
+            .modulation = projection.modulation,
+            .out = projection.resolved,
+            .timestampMs = source.pages.control.runtime.lastEvaluationMs,
+            .valid = projection.valid,
+            .clippedLow = projection.clippedLow,
+            .clippedHigh = projection.clippedHigh,
+        };
     }
     formatAutomationState(
         data.valueBuffers[1].data(),
@@ -1026,20 +1078,6 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         data.valueBuffers[2].size(),
         slot
     );
-    core::state::modulation::ModulationBindingId focusedBindingId{};
-    const core::state::modulation::ModulationBindingState* focusedBinding =
-        nullptr;
-    if (slot != nullptr && slot->modulationStored) {
-        focusedBindingId =
-            core::state::modulation::projectControlFocusedModulationBinding(
-                source.pages.control,
-                address
-            );
-        focusedBinding = core::state::modulation::findProjectModulationBinding(
-            source.pages.control.authored.modulation,
-            focusedBindingId
-        );
-    }
     if (slot != nullptr && focusedBinding != nullptr) {
         const auto* modulator = core::state::modulation::findProjectModulator(
             source.pages.control.authored.modulation,
@@ -1075,6 +1113,39 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
                 slot->modulationCount
             );
         }
+    }
+    if (source.macroEdit.focusedRow.get() == 0U) {
+        std::snprintf(data.meta.data(), data.meta.size(), "Live · 2s");
+    } else if (source.macroEdit.focusedRow.get() == 1U) {
+        const unsigned beats = std::max<unsigned>(
+            1U,
+            static_cast<unsigned>(data.preview.automationDurationTicks) /
+                core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
+        );
+        std::snprintf(
+            data.meta.data(),
+            data.meta.size(),
+            "Loop · %ub",
+            beats
+        );
+    } else if (focusedBinding != nullptr) {
+        const auto* focusedSource =
+            core::state::modulation::findProjectModulator(
+                source.pages.control.authored.modulation,
+                focusedBinding->sourceId
+            );
+        std::snprintf(
+            data.meta.data(),
+            data.meta.size(),
+            "%s · %.10s",
+            focusedSource != nullptr && focusedSource->kind ==
+                    core::state::modulation::ModulatorKind::ADSR
+                ? "Envelope"
+                : "Cycle",
+            focusedSource != nullptr ? focusedSource->name.data() : "Source"
+        );
+    } else {
+        std::snprintf(data.meta.data(), data.meta.size(), "Cycle · None");
     }
 
     data.rows = {{
@@ -1149,7 +1220,10 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
             revision,
             source.macroUi.automationRecordingRevision.get()
         ),
-        data.previewRevision
+        mixRevision(
+            data.previewRevision,
+            source.macroUi.runtimeProjectionRevision.get()
+        )
     );
 
 }

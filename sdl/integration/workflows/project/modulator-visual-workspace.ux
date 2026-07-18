@@ -1,9 +1,11 @@
 # UX workflow: source-first visual Modulator workspace.
 # Purpose: proves the stable LFO and Recorded Shape grammar, retained curve,
-# temporary exact feedback, local Details/Back, rename, disabled treatment,
+# temporary exact feedback, phase-shifted curve, local Details/Back, rename,
+# disabled treatment,
 # and an always-visible Destinations action at 320x240.
 # Expect: capture_changed:registry=lfo_workspace, capture_changed:lfo_workspace=shape_feedback, capture_changed:shape_feedback=shape_stable, capture_changed:shape_stable=free_timing_feedback
-# Expect: capture_changed:free_timing_feedback=details_workspace, capture_changed:rename_keyboard=renamed_details, capture_changed:recorded_workspace=recorded_disabled, capture_changed:recorded_disabled=recorded_destinations_focused
+# Expect: capture_changed:free_timing_feedback=details_workspace, capture_changed:details_workspace=phase_feedback, capture_changed:phase_feedback=phase_stable
+# Expect: capture_changed:rename_keyboard=renamed_details, capture_changed:recorded_workspace=recorded_disabled, capture_changed:recorded_disabled=recorded_destinations_focused
 # Expect: semantic:lfo_workspace:effect=open_modulator_detail, semantic:shape_feedback:effect=edit_modulator_property, semantic:details_workspace:mode=project.modulator_options
 
 0 scenario project-modulator-workspace
@@ -37,31 +39,38 @@
 3860 tap NAV 60
 4080 capture screen details_workspace
 
+# Phase edits move the authored curve itself; temporary precision feedback
+# disappears without reverting the phase-shifted source preview.
+4200 encoder OPT 0.90
+4420 capture screen phase_feedback
+5420 tick
+5580 capture screen phase_stable
+
 # Rename reuses the controller keyboard and returns locally to Details.
-4200 encoder NAV 1
-4280 encoder NAV 1
-4360 encoder NAV 1
-4480 tap NAV 60
-4700 capture screen rename_keyboard
-4820 tap LEFT_BOTTOM 60
-4940 tap NAV 60
-5060 tap BOTTOM_RIGHT 60
-5280 capture screen renamed_details
+5700 encoder NAV 1
+5780 encoder NAV 1
+5860 encoder NAV 1
+5980 tap NAV 60
+6200 capture screen rename_keyboard
+6320 tap LEFT_BOTTOM 60
+6440 tap NAV 60
+6560 tap BOTTOM_RIGHT 60
+6780 capture screen renamed_details
 
 # Back remains local first, then restores registry focus. Open Recorded Shape.
-5400 tap LEFT_TOP 60
-5520 tap LEFT_TOP 60
-5640 encoder NAV 1
-5720 encoder NAV 1
-5840 tap NAV 60
-6060 capture screen recorded_workspace
+6900 tap LEFT_TOP 60
+7020 tap LEFT_TOP 60
+7140 encoder NAV 1
+7220 encoder NAV 1
+7340 tap NAV 60
+7560 capture screen recorded_workspace
 
 # Disabled remains explicit in header/icon/text; Destinations never clips.
-6180 tap BOTTOM_LEFT 60
-6400 capture screen recorded_disabled
-6520 encoder NAV 1
-6600 encoder NAV 1
-6680 encoder NAV 1
-6900 capture screen recorded_destinations_focused
-7020 tap NAV 60
-7240 capture screen recorded_destinations
+7680 tap BOTTOM_LEFT 60
+7900 capture screen recorded_disabled
+8020 encoder NAV 1
+8100 encoder NAV 1
+8180 encoder NAV 1
+8400 capture screen recorded_destinations_focused
+8520 tap NAV 60
+8740 capture screen recorded_destinations

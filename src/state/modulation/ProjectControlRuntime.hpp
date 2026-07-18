@@ -25,6 +25,13 @@ struct ProjectControlTimeSnapshot {
     uint8_t reserved = 0;
 };
 
+/** Two bounded clock observations used only for smooth UI extrapolation. */
+struct ProjectControlTimeTelemetry {
+    ProjectControlTimeSnapshot previous{};
+    ProjectControlTimeSnapshot current{};
+    uint32_t revision = 0U;
+};
+
 /** Edge observed at the authoritative dispatch boundary. */
 enum class ProjectModulationTriggerEdge : uint8_t {
     PULSE = 0,
@@ -185,6 +192,52 @@ struct ProjectControlRuntimeResult {
     }
 };
 
+struct ProjectModulatorRuntimeProjection {
+    float value = 0.0f;
+    uint16_t positionQ16 = 0U;
+    uint16_t stageProgressQ16 = 0U;
+    ProjectModulationAdsrStage adsrStage = ProjectModulationAdsrStage::IDLE;
+    ModulatorKind kind = ModulatorKind::LFO;
+    bool positionKnown = false;
+    uint8_t reserved = 0U;
+};
+
+void publishProjectControlTimeTelemetry(
+    ProjectControlTimeTelemetry& telemetry,
+    const ProjectControlTimeSnapshot& time
+);
+
+[[nodiscard]] ProjectControlTimeSnapshot extrapolateProjectControlTime(
+    const ProjectControlTimeTelemetry& telemetry,
+    uint32_t nowMs
+);
+
+[[nodiscard]] uint16_t projectControlTimelinePositionQ16(
+    const ProjectControlRuntimeState& state,
+    const ProjectControlTimeSnapshot& time,
+    uint16_t durationTicks
+);
+
+/** Cold/UI projection using the exact runtime source evaluator semantics. */
+[[nodiscard]] bool projectModulatorRuntimeProjectionAtIndex(
+    const ProjectModulationRuntimePlan& plan,
+    const ProjectCurveArena& arena,
+    const ProjectControlRuntimeState& state,
+    const ProjectControlTimeSnapshot& time,
+    uint16_t sourceIndex,
+    ProjectModulatorRuntimeProjection& out
+);
+
+/** Convenience lookup for cold callers that do not retain a compiled index. */
+[[nodiscard]] bool projectModulatorRuntimeProjection(
+    const ProjectModulationRuntimePlan& plan,
+    const ProjectCurveArena& arena,
+    const ProjectControlRuntimeState& state,
+    const ProjectControlTimeSnapshot& time,
+    ModulatorId sourceId,
+    ProjectModulatorRuntimeProjection& out
+);
+
 /** Project activation boundary. */
 void resetProjectControlRuntimeState(
     ProjectControlRuntimeState& state,
@@ -270,6 +323,7 @@ ProjectControlRuntimeResult evaluateProjectControlRuntimeFrame(
 );
 
 static_assert(sizeof(ProjectControlTimeSnapshot) == 24U);
+static_assert(sizeof(ProjectControlTimeTelemetry) == 52U);
 static_assert(sizeof(ProjectModulationTriggerEvent) == 6U);
 static_assert(sizeof(ProjectModulationTriggerFrame) == 1540U);
 static_assert(sizeof(ProjectLogicalMacroBaseInput) == 12U);

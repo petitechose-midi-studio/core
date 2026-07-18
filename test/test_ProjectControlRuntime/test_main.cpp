@@ -1122,6 +1122,64 @@ void testExactMaximumGraphEvaluatesEverySourceAndBinding() {
            mod::PROJECT_MODULATION_BINDING_CAPACITY);
 }
 
+void testUiTimeTelemetryExtrapolatesBoundedly() {
+    mod::ProjectControlTimeTelemetry telemetry{};
+    mod::ProjectControlTimeSnapshot first{};
+    first.musicalTick = 100U;
+    first.monotonicMs = 1000U;
+    first.transportGeneration = 3U;
+    first.playing = true;
+    mod::publishProjectControlTimeTelemetry(telemetry, first);
+    auto second = first;
+    second.musicalTick = 104U;
+    second.monotonicMs = 1010U;
+    mod::publishProjectControlTimeTelemetry(telemetry, second);
+    const auto extrapolated = mod::extrapolateProjectControlTime(
+        telemetry,
+        1015U
+    );
+    assert(extrapolated.musicalTick == 106U);
+    assert(extrapolated.musicalTickFractionQ16 == 0U);
+    assert(extrapolated.monotonicMs == 1015U);
+
+    const auto bounded = mod::extrapolateProjectControlTime(telemetry, 2010U);
+    assert(bounded.musicalTick == 144U);
+    std::cout << "[PASS] UI clock extrapolation is coherent and bounded\n";
+}
+
+void testUiSourceProjectionReusesRuntimePhaseAuthority() {
+    auto domain = std::make_unique<mod::ProjectControlDomainState>();
+    const auto source = addLfo(
+        *domain,
+        mod::ModulatorLfoShape::TRIANGLE,
+        192U
+    );
+    auto plan = std::make_unique<mod::ProjectModulationRuntimePlan>();
+    assert(mod::compileProjectControlRuntimePlan(
+        *domain,
+        activeContext(),
+        *plan
+    ).compiled());
+    RuntimeFixture runtime;
+    runtime.activate(*plan);
+    mod::ProjectControlTimeSnapshot time{};
+    time.musicalTick = 48U;
+    time.monotonicMs = 250U;
+    mod::ProjectModulatorRuntimeProjection projection{};
+    assert(mod::projectModulatorRuntimeProjection(
+        *plan,
+        domain->curves,
+        *runtime.state,
+        time,
+        source,
+        projection
+    ));
+    assert(projection.positionKnown);
+    assert(std::abs(static_cast<int>(projection.positionQ16) - 16384) <= 1);
+    assert(near(projection.value, 1.0f));
+    std::cout << "[PASS] UI source marker shares runtime phase semantics\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1140,6 +1198,8 @@ int main() {
     testExplicitPerBindingSlewAndFailureAtomicity();
     testRuntimeStateSurvivesStableIdReordering();
     testExactMaximumGraphEvaluatesEverySourceAndBinding();
+    testUiTimeTelemetryExtrapolatesBoundedly();
+    testUiSourceProjectionReusesRuntimePhaseAuthority();
     std::cout << "Project control runtime tests passed\n";
     return 0;
 }

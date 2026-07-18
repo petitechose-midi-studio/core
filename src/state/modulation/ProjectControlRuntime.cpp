@@ -854,6 +854,226 @@ float applySlew(float previous,
 
 }  // namespace
 
+FLASHMEM void publishProjectControlTimeTelemetry(
+    ProjectControlTimeTelemetry& telemetry,
+    const ProjectControlTimeSnapshot& time
+) {
+    if (telemetry.revision == 0U) {
+        telemetry.previous = time;
+    } else {
+        telemetry.previous = telemetry.current;
+    }
+    telemetry.current = time;
+    ++telemetry.revision;
+    if (telemetry.revision == 0U) telemetry.revision = 1U;
+}
+
+FLASHMEM ProjectControlTimeSnapshot extrapolateProjectControlTime(
+    const ProjectControlTimeTelemetry& telemetry,
+    uint32_t nowMs
+) {
+    ProjectControlTimeSnapshot result = telemetry.current;
+    result.monotonicMs = nowMs;
+    if (telemetry.revision < 2U || !telemetry.current.playing ||
+        telemetry.previous.transportGeneration !=
+            telemetry.current.transportGeneration ||
+        telemetry.current.monotonicMs <= telemetry.previous.monotonicMs ||
+        telemetry.current.musicalTick < telemetry.previous.musicalTick ||
+        static_cast<int32_t>(nowMs - telemetry.current.monotonicMs) <= 0) {
+        return result;
+    }
+
+    const uint32_t observedMs = telemetry.current.monotonicMs -
+        telemetry.previous.monotonicMs;
+    const int64_t observedQ16 =
+        (static_cast<int64_t>(telemetry.current.musicalTick) -
+         static_cast<int64_t>(telemetry.previous.musicalTick)) * 65536LL +
+        static_cast<int32_t>(telemetry.current.musicalTickFractionQ16) -
+        static_cast<int32_t>(telemetry.previous.musicalTickFractionQ16);
+    if (observedQ16 <= 0 || observedMs == 0U) return result;
+
+    // A hidden/stalled UI must never extrapolate an unbounded fictional
+    // future. Normal LVGL service is well below this guard.
+    constexpr uint32_t MAX_EXTRAPOLATION_MS = 100U;
+    const uint32_t aheadMs = std::min<uint32_t>(
+        nowMs - telemetry.current.monotonicMs,
+        MAX_EXTRAPOLATION_MS
+    );
+    const uint64_t currentQ16 =
+        (static_cast<uint64_t>(telemetry.current.musicalTick) << 16U) |
+        telemetry.current.musicalTickFractionQ16;
+    const uint64_t advancedQ16 = currentQ16 + static_cast<uint64_t>(
+        (observedQ16 * static_cast<int64_t>(aheadMs)) /
+        static_cast<int64_t>(observedMs)
+    );
+    result.musicalTick = static_cast<uint32_t>(advancedQ16 >> 16U);
+    result.musicalTickFractionQ16 = static_cast<uint16_t>(advancedQ16);
+    return result;
+}
+
+FLASHMEM uint16_t projectControlTimelinePositionQ16(
+    const ProjectControlRuntimeState& state,
+    const ProjectControlTimeSnapshot& time,
+    uint16_t durationTicks
+) {
+    if (!state.initialized || durationTicks == 0U) return 0U;
+    uint32_t elapsedTick = 0U;
+    uint16_t elapsedFraction = 0U;
+    elapsedMusicalTime(
+        time,
+        state.activationMusicalTick,
+        state.activationMusicalTickFractionQ16,
+        elapsedTick,
+        elapsedFraction
+    );
+    const uint64_t localQ16 =
+        (static_cast<uint64_t>(elapsedTick % durationTicks) << 16U) +
+        elapsedFraction;
+    return static_cast<uint16_t>(std::min<uint64_t>(
+        65535U,
+        (localQ16 * 65535ULL) /
+            (static_cast<uint64_t>(durationTicks) << 16U)
+    ));
+}
+
+FLASHMEM bool projectModulatorRuntimeProjectionAtIndex(
+    const ProjectModulationRuntimePlan& plan,
+    const ProjectCurveArena& arena,
+    const ProjectControlRuntimeState& state,
+    const ProjectControlTimeSnapshot& time,
+    uint16_t index,
+    ProjectModulatorRuntimeProjection& out
+) {
+    out = {};
+    if (!state.initialized || !validTime(time)) return false;
+    if (index >= plan.sourceCount || index >= state.sourceCount ||
+        state.sources[index].id != plan.sources[index].id) {
+        return false;
+    }
+    const auto& source = plan.sources[index];
+    const auto& runtime = state.sources[index];
+    out.kind = source.kind;
+    out.positionKnown = true;
+
+    if (source.kind == ModulatorKind::ADSR) {
+        auto copy = runtime.payload.adsr;
+        out.value = advanceAdsrToTime(source, copy, time);
+        out.adsrStage = copy.stage;
+        float progress = 0.0f;
+        if (copy.stage == ProjectModulationAdsrStage::ATTACK ||
+            copy.stage == ProjectModulationAdsrStage::DECAY ||
+            copy.stage == ProjectModulationAdsrStage::RELEASE) {
+            (void)adsrStageCompleteAndProgress(
+                copy,
+                time,
+                source.traits.adsr.timing,
+                adsrStageDuration(source, copy.stage),
+                progress
+            );
+        } else if (copy.stage == ProjectModulationAdsrStage::SUSTAIN) {
+            progress = 0.5f;
+        } else {
+            out.positionKnown = false;
+        }
+        out.stageProgressQ16 = static_cast<uint16_t>(std::lround(
+            std::clamp(progress, 0.0f, 1.0f) * 65535.0f
+        ));
+        return true;
+    }
+
+    uint32_t elapsedTick = 0U;
+    uint16_t elapsedFraction = 0U;
+    elapsedMusicalTime(
+        time,
+        state.activationMusicalTick,
+        state.activationMusicalTickFractionQ16,
+        elapsedTick,
+        elapsedFraction
+    );
+    if (source.kind == ModulatorKind::RECORDED_SHAPE) {
+        const uint16_t duration = std::max<uint16_t>(
+            source.parameters.curve.durationTicks,
+            1U
+        );
+        const uint64_t localQ16 =
+            (static_cast<uint64_t>(elapsedTick % duration) << 16U) +
+            elapsedFraction;
+        out.positionQ16 = static_cast<uint16_t>(std::min<uint64_t>(
+            65535U,
+            (localQ16 * 65535ULL) /
+                (static_cast<uint64_t>(duration) << 16U)
+        ));
+        out.value = evaluateProjectCurve(
+            arena,
+            source.parameters.curve,
+            elapsedTick,
+            elapsedFraction,
+            0.0f,
+            nullptr
+        );
+        return true;
+    }
+
+    uint32_t musicalAnchor = state.activationMusicalTick;
+    uint16_t musicalAnchorFraction = state.activationMusicalTickFractionQ16;
+    uint32_t monotonicAnchor = state.activationMonotonicMs;
+    if (source.traits.lfo.retrigger == ModulatorRetriggerPolicy::TRANSPORT) {
+        musicalAnchor = time.transportStartMusicalTick;
+        musicalAnchorFraction = 0U;
+        monotonicAnchor = time.transportStartMonotonicMs;
+    } else if (
+        source.traits.lfo.retrigger ==
+            ModulatorRetriggerPolicy::EXPLICIT_TRIGGER &&
+        runtime.payload.lfo.explicitlyTriggered
+    ) {
+        musicalAnchor = runtime.payload.lfo.explicitMusicalAnchorTick;
+        musicalAnchorFraction =
+            runtime.payload.lfo.explicitMusicalAnchorFractionQ16;
+        monotonicAnchor = runtime.payload.lfo.explicitMonotonicAnchorMs;
+    }
+    const float phase = source.traits.lfo.timing == ModulatorTimingMode::FREE
+        ? phaseFromFreeTime(
+            time.monotonicMs,
+            monotonicAnchor,
+            source.parameters.lfo.freePeriodMs,
+            source.parameters.lfo.phaseQ15
+        )
+        : phaseFromMusicalTime(
+            time,
+            musicalAnchor,
+            musicalAnchorFraction,
+            source.parameters.lfo.periodTicks,
+            source.parameters.lfo.phaseQ15
+        );
+    out.positionQ16 = static_cast<uint16_t>(std::lround(
+        std::clamp(phase, 0.0f, 1.0f) * 65535.0f
+    ));
+    out.value = evaluateProjectLfoShape(source.traits.lfo.shape, phase);
+    return true;
+}
+
+FLASHMEM bool projectModulatorRuntimeProjection(
+    const ProjectModulationRuntimePlan& plan,
+    const ProjectCurveArena& arena,
+    const ProjectControlRuntimeState& state,
+    const ProjectControlTimeSnapshot& time,
+    ModulatorId sourceId,
+    ProjectModulatorRuntimeProjection& out
+) {
+    uint16_t index = 0U;
+    while (index < plan.sourceCount && plan.sources[index].id != sourceId) {
+        ++index;
+    }
+    return projectModulatorRuntimeProjectionAtIndex(
+        plan,
+        arena,
+        state,
+        time,
+        index,
+        out
+    );
+}
+
 FLASHMEM void resetProjectControlRuntimeState(
     ProjectControlRuntimeState& state,
     const ProjectControlTimeSnapshot& time

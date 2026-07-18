@@ -220,6 +220,44 @@ inline float previewValue(
     return sustain * (1.0f - shaped);
 }
 
+inline bool runtimeMarkerPosition(
+    const PreviewBoundaries& boundaries,
+    core::state::modulation::ProjectModulationAdsrStage stage,
+    uint16_t stageProgressQ16,
+    uint16_t& outPositionQ16
+) {
+    using core::state::modulation::ProjectModulationAdsrStage;
+    uint16_t begin = 0U;
+    uint16_t end = 0U;
+    switch (stage) {
+        case ProjectModulationAdsrStage::ATTACK:
+            end = boundaries.attackEndQ16;
+            break;
+        case ProjectModulationAdsrStage::DECAY:
+            begin = boundaries.attackEndQ16;
+            end = boundaries.decayEndQ16;
+            break;
+        case ProjectModulationAdsrStage::SUSTAIN:
+            outPositionQ16 = static_cast<uint16_t>(
+                boundaries.decayEndQ16 +
+                (boundaries.sustainEndQ16 - boundaries.decayEndQ16) / 2U
+            );
+            return true;
+        case ProjectModulationAdsrStage::RELEASE:
+            begin = boundaries.sustainEndQ16;
+            end = 65535U;
+            break;
+        case ProjectModulationAdsrStage::IDLE:
+        default:
+            return false;
+    }
+    outPositionQ16 = static_cast<uint16_t>(
+        begin +
+        (static_cast<uint32_t>(end - begin) * stageProgressQ16) / 65535U
+    );
+    return true;
+}
+
 inline const core::state::modulation::ProjectModulationRuntimeAdsrState*
 runtimeState(
     const core::state::modulation::ProjectControlState& control,

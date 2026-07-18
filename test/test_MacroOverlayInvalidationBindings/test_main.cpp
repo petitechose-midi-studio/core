@@ -54,7 +54,8 @@ int main() {
     assert(bindings.bind(stateRefs, &probe, &Probe::invalidate));
     assert(bindings.phaseSubscriptionCount() == 1);
     assert(macroEdit.flowPhase.subscriberCount() == 1);
-    assert(bindings.subscriptionCount() == 29);
+    assert(bindings.subscriptionCount() == 30);
+    assert(macroUi.runtimeProjectionRevision.subscriberCount() == 1);
     assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 1);
     assert(clipboard.revision.subscriberCount() == 1);
 
@@ -62,7 +63,8 @@ int main() {
     assert(bindings.bind(stateRefs, &probe, &Probe::invalidate));
     assert(bindings.phaseSubscriptionCount() == 1);
     assert(macroEdit.flowPhase.subscriberCount() == 1);
-    assert(bindings.subscriptionCount() == 29);
+    assert(bindings.subscriptionCount() == 30);
+    assert(macroUi.runtimeProjectionRevision.subscriberCount() == 1);
     assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 1);
     assert(clipboard.revision.subscriberCount() == 1);
 
@@ -88,6 +90,7 @@ int main() {
     assert(bindings.subscriptionCount() == 0);
     assert(macroEdit.flowPhase.subscriberCount() == 0);
     assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 0);
+    assert(macroUi.runtimeProjectionRevision.subscriberCount() == 0);
     assert(clipboard.revision.subscriberCount() == 0);
 
     std::cout << "Macro overlay invalidation binding tests passed\n";

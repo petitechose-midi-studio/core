@@ -8,6 +8,7 @@
 #include <ms/ui/widget/CurvePreviewWidget.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "ui/macro/MacroEditorLiveTrace.hpp"
 #include "ui/macro/MacroEditorPreviewModel.hpp"
 
 namespace core::ui {
@@ -64,12 +65,21 @@ private:
         uint16_t positionQ16,
         ms::ui::CurvePreviewSample& out
     );
+    static bool sampleMarker(
+        void* context,
+        ms::ui::CurvePreviewMarker& out
+    );
 
     struct CurveSampleContext {
         const MacroEditorPreviewModel* preview = nullptr;
-        int selectedDomain = 0;
-        uint16_t previousValue = 0U;
+        const MacroEditorLiveTrace* liveTrace = nullptr;
+        MacroEditorLiveTrace::Cursor liveCursor{};
+        uint32_t liveNowMs = 0U;
+        MacroEditorPreviewFocus focus = MacroEditorPreviewFocus::DESTINATION;
+        uint16_t previousPositionQ16 = 0U;
         bool hasPrevious = false;
+        bool clippedLow = false;
+        bool clippedHigh = false;
     };
 
     lv_obj_t* root_ = nullptr;
@@ -77,6 +87,7 @@ private:
     lv_obj_t* meta_ = nullptr;
     std::array<TabWidgets, 3> tabs_{};
     core::app::ExtmemUniquePtr<ms::ui::CurvePreviewWidget> curve_preview_;
+    MacroEditorLiveTrace live_trace_{};
     CurveSampleContext curve_sample_context_{};
     lv_obj_t* clipping_ = nullptr;
     lv_obj_t* hint_ = nullptr;
