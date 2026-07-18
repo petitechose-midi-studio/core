@@ -80,6 +80,31 @@ struct MacroAutomationHistoryPayload {
     MacroAutomationHistorySnapshot after{};
 };
 
+inline constexpr uint8_t MACRO_AUTOMATION_TAKE_DESTINATION_CAPACITY =
+    MACRO_COUNT;
+
+/**
+ * One multi-destination Automation history command.
+ *
+ * Before arrays are exact-length. Each after array reserves the recording
+ * maximum before t0, in PSRAM, so commit and Redo need no capture allocation.
+ */
+struct MacroAutomationTakeHistoryPayload {
+    std::array<
+        MacroAutomationHistorySnapshot,
+        MACRO_AUTOMATION_TAKE_DESTINATION_CAPACITY
+    > before{};
+    std::array<
+        MacroAutomationHistorySnapshot,
+        MACRO_AUTOMATION_TAKE_DESTINATION_CAPACITY
+    > after{};
+    uint16_t candidateMask = 0U;
+    uint16_t touchedMask = 0U;
+    uint8_t track = 0U;
+    uint8_t page = 0U;
+    std::array<uint8_t, 2> reserved{};
+};
+
 /**
  * Small graph delta for destination-first source creation.
  *
@@ -265,6 +290,8 @@ struct MacroHistoryChange {
     MacroAutomationSlotAddress address{};
     core::app::ExtmemUniquePtr<MacroSlotHistoryChangePayload> slot{};
     core::app::ExtmemUniquePtr<MacroAutomationHistoryPayload> automation{};
+    core::app::ExtmemUniquePtr<MacroAutomationTakeHistoryPayload>
+        automationTake{};
     core::app::ExtmemUniquePtr<MacroModulationAssignmentsHistoryPayload>
         modulationAssignments{};
     MacroDestinationScaleHistoryPayload destinationScale{};
@@ -343,6 +370,20 @@ public:
         const MacroPagesState& pages,
         const MacroAutomationSlotAddress& address
     ) const;
+
+    /** Reserves every possible lane and Redo point array before take t0. */
+    [[nodiscard]] MacroHistoryChangePtr prepareAutomationTake(
+        const MacroPagesState& pages,
+        uint8_t track,
+        uint8_t page,
+        uint16_t candidateMask
+    ) const;
+
+    /** Admits one already-published, allocation-free take transaction. */
+    [[nodiscard]] bool commitPreparedAutomationTake(
+        MacroPagesState& pages,
+        MacroHistoryChangePtr& change
+    );
 
     /**
      * Captures the post-state and records one action. On capture/admission

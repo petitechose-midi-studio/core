@@ -21,6 +21,11 @@ struct MacroEditorOverlayProps {
     const char* automation = "";
     const char* modulation = "";
     int selectedDomain = 0;
+    bool interactionOverlayVisible = false;
+    const char* interactionIcon = nullptr;
+    const char* interactionLabel = "";
+    const char* interactionValue = "";
+    uint32_t interactionColor = 0;
     const MacroEditorPreviewModel* preview = nullptr;
     uint32_t previewRevision = 0;
     uint32_t dataRevision = 0;
@@ -91,8 +96,14 @@ private:
     CurveSampleContext curve_sample_context_{};
     lv_obj_t* clipping_ = nullptr;
     lv_obj_t* hint_ = nullptr;
+    lv_obj_t* interaction_overlay_ = nullptr;
+    lv_obj_t* interaction_icon_ = nullptr;
+    lv_obj_t* interaction_label_ = nullptr;
+    lv_obj_t* interaction_value_ = nullptr;
     std::array<char, 24> titleText_{};
     std::array<char, 24> metaText_{};
+    std::array<char, 24> interactionLabelText_{};
+    std::array<char, 32> interactionValueText_{};
     uint32_t renderedRevision_ = UINT32_MAX;
     uint32_t renderedPreviewRevision_ = UINT32_MAX;
     bool visible_ = false;

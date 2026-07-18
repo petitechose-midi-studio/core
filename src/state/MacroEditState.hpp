@@ -77,6 +77,11 @@ struct MacroEditState {
 
     /// Focused Slot property (Destination, Automation, Modulation, Depth).
     oc::state::Signal<uint8_t> focusedRow{0};
+    /** Temporary LEFT_BOTTOM contextual-property selector. */
+    oc::state::Signal<bool, 4> contextSelectorActive{false};
+    oc::state::Signal<uint8_t, 4> contextPropertyIndex{0};
+    /** Temporary LEFT_CENTER active-Macro cycle. */
+    oc::state::Signal<bool, 4> macroCycleActive{false};
 
     struct ValueSelectorState {
         oc::state::Signal<bool, 4> visible{false};

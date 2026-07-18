@@ -8,10 +8,10 @@
 0 scenario macro-multi-modulation
 80 capture screen modulated_ready
 
-# The established hold-and-turn gesture records Base while Modulation remains
-# present on the performance ring.
-180 button MACRO_1 down
+# The explicit take gesture records Base while Modulation remains present on
+# the performance ring and in the resolved output.
+180 button LEFT_CENTER down
 500 encoder MACRO_1 0.90
 680 capture screen modulated_record_active
-1100 button MACRO_1 up
+1100 button LEFT_CENTER up
 1320 capture screen modulated_record_committed

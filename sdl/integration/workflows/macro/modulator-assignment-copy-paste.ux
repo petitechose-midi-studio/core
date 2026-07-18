@@ -10,9 +10,10 @@
 80 capture screen macro_ready
 
 # Open Macro 1 > Modulation using the same learned path.
-180 button MACRO_1 down
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
 1240 tick
-1300 button MACRO_1 up
+1300 button LEFT_BOTTOM up
 1450 encoder NAV 1
 1570 encoder NAV 1
 1690 tap NAV 60
@@ -27,9 +28,10 @@
 2590 tap LEFT_TOP 60
 
 # Open the empty Modulation destination on Macro 2.
-2710 button MACRO_2 down
+2710 button LEFT_BOTTOM down
+2790 tap MACRO_2 60
 3770 tick
-3830 button MACRO_2 up
+3830 button LEFT_BOTTOM up
 3950 encoder NAV 1
 4070 encoder NAV 1
 4190 tap NAV 60

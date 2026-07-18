@@ -6,6 +6,8 @@
 #include <oc/state/Signal.hpp>
 
 #include "state/macro/MacroAutomationState.hpp"
+#include "state/macro/MacroAutomationTake.hpp"
+#include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroRuntimeState.hpp"
 #include "state/StructureSelectionState.hpp"
 #include "state/contextual/GuardedActionState.hpp"
@@ -55,10 +57,17 @@ enum class MacroPerformanceProperty : uint8_t {
 
 enum class MacroAutomationRecordingStatus : uint8_t {
     IDLE = 0,
+    ARMED,
     RECORDING,
     REDUCED,
     TOO_SHORT,
     COMMIT_FAILED,
+};
+
+enum class MacroPerformanceOverlayMode : uint8_t {
+    NONE = 0,
+    EDIT,
+    AUTOMATION_TAKE,
 };
 
 struct MacroUiState {
@@ -113,6 +122,12 @@ struct MacroUiState {
         MacroPerformanceProperty::VALUE
     };
     oc::state::Signal<bool, 2> clutchActive{false};
+    oc::state::Signal<MacroPerformanceOverlayMode, 3> performanceOverlayMode{
+        MacroPerformanceOverlayMode::NONE
+    };
+    oc::state::Signal<MacroAutomationTakeTiming, 3> automationTakeTiming{
+        MacroAutomationTakeTiming::HOLD
+    };
     oc::state::Signal<uint32_t, 3> automationRecordingRevision{0};
     oc::state::Signal<MacroAutomationRecordingStatus, 3> automationRecordingStatus{
         MacroAutomationRecordingStatus::IDLE
@@ -132,6 +147,11 @@ struct MacroUiState {
     oc::state::Signal<core::state::contextual::OperationFeedbackState, 4>
         selectionDeleteFeedback{};
     AutomationRecordingState automationRecording;
+    MacroAutomationTakeState automationTake;
+    MacroHistoryChangePtr automationTakeHistory{};
+    core::app::ExtmemUniquePtr<
+        core::state::modulation::ProjectControlDomainState
+    > automationTakeDomain{};
 
     MacroUiState();
     ~MacroUiState();

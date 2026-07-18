@@ -64,7 +64,22 @@ FLASHMEM void MacroUiState::resetInteraction() {
             automationRecording.previousManualValue
         );
     }
+    if (automationTake.phase == MacroAutomationTakePhase::RECORDING) {
+        for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+            const uint16_t bit = static_cast<uint16_t>(1U << macro);
+            if ((automationTake.manualRestoreMask & bit) == 0U) continue;
+            (void)manualOverrides.activate(
+                MacroAutomationSlotAddress{
+                    .track = automationTake.track,
+                    .page = automationTake.page,
+                    .macro = macro,
+                },
+                automationTake.previousManualValues[macro]
+            );
+        }
+    }
     clutchActive.set(false);
+    performanceOverlayMode.set(MacroPerformanceOverlayMode::NONE);
     activeProperty.set(MacroPerformanceProperty::VALUE);
     automationManualOverrideMask.set(0);
     focusedMacroSlot.set(0);
@@ -75,6 +90,9 @@ FLASHMEM void MacroUiState::resetInteraction() {
     selectionDeleteGuard.set({});
     selectionDeleteFeedback.set({});
     automationRecording.reset();
+    automationTake.reset();
+    automationTakeHistory.reset();
+    automationTakeDomain.reset();
     automationRecordingStatus.set(MacroAutomationRecordingStatus::IDLE);
     clearRuntimeProjections();
 }

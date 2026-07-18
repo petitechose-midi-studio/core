@@ -43,7 +43,9 @@ core::state::macro::MacroInteractionContext macroInteractionContext(
             .navigationFocus = source.navigationFocus.get(),
             .enabledTrackMask = source.sharedTrackEnabledMask.get(),
             .blockingOverlay = false,
-            .slotPropertySelecting = source.macroUi.clutchActive.get(),
+            .slotPropertySelecting =
+                source.macroUi.performanceOverlayMode.get() !=
+                core::state::macro::MacroPerformanceOverlayMode::NONE,
         }
     );
 }
@@ -151,15 +153,16 @@ FLASHMEM MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource
          source.macroUi.pageSelection.scope.get() == core::state::StructureSelectionScope::PAGE)
             ? source.macroUi.pageSelection.selectedMask.get()
             : 0;
-    props.clutchActive = source.macroUi.clutchActive.get();
+    props.performanceOverlayMode = source.macroUi.performanceOverlayMode.get();
+    props.automationTakePhase = source.macroUi.automationTake.phase;
+    props.automationTakeTiming = source.macroUi.automationTake.timing;
+    props.automationTakeTouchedMask = source.macroUi.automationTake.touchedMask;
     props.focusingPage = focusingPage;
     props.focusingTrack = focusingTrack;
     props.selectingPage = selectingPage;
     props.selectingTrack = selectingTrack;
     props.previewPageAddSlot = previewPageAddSlot;
     props.previewTrackAddSlot = previewTrackAddSlot;
-    props.automationRecording = source.macroUi.automationRecording.active;
-    props.automationRecordingMacro = source.macroUi.automationRecording.address.macro;
     props.automationRecordingStatus = source.macroUi.automationRecordingStatus.get();
 
     props.pageOutputActivity.fill(0);
@@ -173,29 +176,60 @@ FLASHMEM MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource
 FLASHMEM StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
     const MacroViewModelSource& source
 ) {
-    if (!source.macroUi.clutchActive.get()) {
+    const auto mode = source.macroUi.performanceOverlayMode.get();
+    if (mode == core::state::macro::MacroPerformanceOverlayMode::NONE) {
         return {.visible = false};
     }
 
-    const auto property = source.macroUi.activeProperty.get();
     StepPropertySelectionOverlayProps props{
         .visible = true,
         .customContent = true,
         .useValueText = true,
     };
 
-    if (property == core::state::macro::MacroPerformanceProperty::AUTOMATION) {
-        props.icon = standalone::icons::ACTION_REDO;
-        props.label = "Automation";
-        props.color = standalone::theme::color::MACRO_AUTOMATION;
-        std::snprintf(props.valueText.data(), props.valueText.size(), "Restore");
+    if (mode == core::state::macro::MacroPerformanceOverlayMode::EDIT) {
+        props.icon = standalone::icons::KNOB;
+        props.label = "EDIT";
+        props.color = standalone::theme::color::MACRO_CC_COLOR;
+        std::snprintf(
+            props.valueText.data(),
+            props.valueText.size(),
+            "PRESS A MACRO"
+        );
         return props;
     }
 
-    props.icon = standalone::icons::MIDI_CC;
-    props.label = "CC";
-    props.color = standalone::theme::color::MACRO_CC_COLOR;
-    props.valueText[0] = '\0';
+    props.icon = standalone::icons::MACRO_AUTOMATION;
+    props.label = source.macroUi.automationTake.phase ==
+            core::state::macro::MacroAutomationTakePhase::RECORDING
+        ? "RECORDING"
+        : "AUTOMATION TAKE";
+    props.color = standalone::theme::color::MACRO_AUTOMATION;
+    if (source.macroUi.automationTake.phase ==
+        core::state::macro::MacroAutomationTakePhase::RECORDING) {
+        uint8_t count = 0U;
+        uint16_t mask = source.macroUi.automationTake.touchedMask;
+        while (mask != 0U) {
+            count = static_cast<uint8_t>(count + (mask & 1U));
+            mask = static_cast<uint16_t>(mask >> 1U);
+        }
+        std::snprintf(
+            props.valueText.data(),
+            props.valueText.size(),
+            "%u MACRO%s",
+            static_cast<unsigned>(count),
+            count == 1U ? "" : "S"
+        );
+    } else {
+        std::snprintf(
+            props.valueText.data(),
+            props.valueText.size(),
+            "%s",
+            core::state::macro::macroAutomationTakeTimingLabel(
+                source.macroUi.automationTake.timing
+            )
+        );
+    }
     return props;
 }
 
@@ -227,9 +261,26 @@ FLASHMEM ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewM
         return props;
     }
 
+    const auto performanceMode = source.macroUi.performanceOverlayMode.get();
     props.slots[0].visualState = Visual::HIDDEN;
-    props.slots[1].visualState = Visual::HIDDEN;
-    props.slots[2].visualState = Visual::HIDDEN;
+    props.slots[1] = {
+        .visualState = performanceMode ==
+                core::state::macro::MacroPerformanceOverlayMode::AUTOMATION_TAKE
+            ? Visual::PRESSED
+            : Visual::ACTIVE,
+        .tone = Tone::WARNING,
+        .showIcon = true,
+        .icon = standalone::icons::MACRO_AUTOMATION,
+    };
+    props.slots[2] = {
+        .visualState = performanceMode ==
+                core::state::macro::MacroPerformanceOverlayMode::EDIT
+            ? Visual::PRESSED
+            : Visual::ACTIVE,
+        .tone = Tone::NEUTRAL,
+        .showIcon = true,
+        .icon = standalone::icons::KNOB,
+    };
 
     return props;
 }
@@ -353,10 +404,11 @@ FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource
             source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP &&
             source.macroUi.focusedMacroSlot.get() == i;
         const bool recording =
-            source.macroUi.automationRecording.active &&
-            source.macroUi.automationRecording.address.track == source.pages.currentActiveTrack() &&
-            source.macroUi.automationRecording.address.page == source.pages.currentActivePage() &&
-            source.macroUi.automationRecording.address.macro == i;
+            source.macroUi.automationTake.phase ==
+                core::state::macro::MacroAutomationTakePhase::RECORDING &&
+            source.macroUi.automationTake.track == source.pages.currentActiveTrack() &&
+            source.macroUi.automationTake.page == source.pages.currentActivePage() &&
+            source.macroUi.automationTake.activeFor(i);
         const bool automationStored =
             controlSlotValid && controlSlot.automationStored;
         const bool modulationStored =

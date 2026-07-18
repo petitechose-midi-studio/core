@@ -72,6 +72,26 @@ public:
     bool commitAutomationRecording(uint32_t nowMs) const;
     bool cancelAutomationRecording() const;
     bool automationRecordingActiveFor(uint8_t index) const;
+    /** Arms one shared multi-Macro Automation take without mutating music. */
+    bool armAutomationTake() const;
+    bool setAutomationTakeTiming(
+        core::state::macro::MacroAutomationTakeTiming timing
+    ) const;
+    bool navigateAutomationTakeTiming(int delta) const;
+    /** Starts on first movement, joins late Macros, and stores Base only. */
+    bool recordAutomationTakeValue(
+        uint8_t index,
+        uint32_t nowMs,
+        float value
+    ) const;
+    /** Samples all joined columns and commits a completed fixed take. */
+    bool updateAutomationTake(uint32_t nowMs) const;
+    /** HOLD commits here; a fixed take continues after release. */
+    bool releaseAutomationTake(uint32_t nowMs) const;
+    bool cancelAutomationTake() const;
+    bool automationTakeArmed() const;
+    bool automationTakeRecording() const;
+    bool automationTakeActiveFor(uint8_t index) const;
     /// True when Automation or Modulation is stored and enabled for playback.
     bool computedSourcePlaybackActiveFor(uint8_t index) const;
     bool automationActiveFor(uint8_t index) const;
@@ -103,6 +123,13 @@ private:
     void refreshManualProjection_() const;
     void restoreManualAfterFailedRecording_(
         const core::state::macro::MacroUiState::AutomationRecordingState& recording
+    ) const;
+    bool beginAutomationTake_(uint32_t nowMs) const;
+    bool commitAutomationTake_(uint32_t nowMs) const;
+    uint32_t automationTakeElapsedTicks_(uint32_t nowMs) const;
+    void restoreAutomationTakeManual_() const;
+    void clearAutomationTake_(
+        core::state::macro::MacroAutomationRecordingStatus status
     ) const;
 
     core::state::MacroState* macros_ = nullptr;

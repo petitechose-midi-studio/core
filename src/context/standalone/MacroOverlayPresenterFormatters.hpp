@@ -50,6 +50,11 @@ struct EditRenderData {
     std::array<ms::ui::KeyValueRow, 4> rows{};
     std::array<char, 24> title{};
     std::array<char, 24> meta{};
+    std::array<char, 24> interactionLabel{};
+    std::array<char, 32> interactionValue{};
+    const char* interactionIcon = nullptr;
+    uint32_t interactionColor = 0;
+    bool interactionOverlayVisible = false;
     uint32_t dataRevision = 0;
     uint32_t previewRevision = UINT32_MAX;
     int selectedIndex = 0;

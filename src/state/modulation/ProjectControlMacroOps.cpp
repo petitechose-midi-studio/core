@@ -803,6 +803,43 @@ FLASHMEM bool replaceProjectControlAutomation(
     return true;
 }
 
+FLASHMEM bool replaceProjectControlAutomationInDomain(
+    ProjectControlDomainState& domain,
+    const macro::MacroAutomationSlotAddress& address,
+    const macro::MacroAutomationCurveRef& source,
+    const macro::MacroPackedCurvePoint* sourcePoints,
+    uint16_t sourcePointCount
+) {
+    if (!validAddress(address) ||
+        !macro::macroAutomationCurveLifecycleValid(source)) {
+        return false;
+    }
+    const auto destination = projectControlDestination(address);
+    if (!macro::macroCurveStored(source)) {
+        const auto removed = removeProjectAutomationCurve(
+            domain.automation,
+            domain.curves,
+            destination
+        );
+        return removed.changed() ||
+               findProjectAutomationCurve(domain.automation, destination) == nullptr;
+    }
+    if (source.pointCount == 0U || source.pointCount > sourcePointCount ||
+        sourcePoints == nullptr) {
+        return false;
+    }
+    const auto result = setProjectAutomationCurve(
+        domain.automation,
+        domain.curves,
+        destination,
+        curveSpec(source, ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR),
+        reinterpret_cast<const ProjectPackedCurvePoint*>(sourcePoints),
+        source.pointCount,
+        macro::macroCurvePlaybackActive(source)
+    );
+    return result.changed() || result.status == ProjectModulationStatus::NO_CHANGE;
+}
+
 FLASHMEM bool replaceProjectControlModulation(
     ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,

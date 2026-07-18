@@ -172,6 +172,13 @@ bool MacroAutomationPlaybackService::provideBase_(
         out.manualOverride = true;
         out.manualValue = core::state::macro::macroAutomationClamp01(manual);
     }
+    const auto& take = owner.macro_ui_.automationTake;
+    if (take.phase == core::state::macro::MacroAutomationTakePhase::RECORDING &&
+        take.track == address.track && take.page == address.page &&
+        take.activeFor(address.macro)) {
+        out.manualOverride = true;
+        out.manualValue = take.latestBase(address.macro);
+    }
     const auto& recording = owner.macro_ui_.automationRecording;
     if (recording.active && recording.lane.pointCount > 0U &&
         core::state::macro::macroAutomationAddressEquals(
@@ -320,6 +327,14 @@ bool MacroAutomationPlaybackService::appendStaticAuthors_(
             };
             float value = page.values[macroIndex];
             bool live = macro_ui_.manualOverrides.valueFor(address, value);
+            const auto& take = macro_ui_.automationTake;
+            if (take.phase ==
+                    core::state::macro::MacroAutomationTakePhase::RECORDING &&
+                take.track == address.track && take.page == address.page &&
+                take.activeFor(address.macro)) {
+                live = true;
+                value = take.latestBase(address.macro);
+            }
             const auto& recording = macro_ui_.automationRecording;
             if (recording.active && recording.lane.pointCount > 0U &&
                 core::state::macro::macroAutomationAddressEquals(

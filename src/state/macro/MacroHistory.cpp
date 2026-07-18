@@ -93,6 +93,98 @@ FLASHMEM bool automationSnapshotConsistent(
     return true;
 }
 
+FLASHMEM bool automationTakePayloadConsistent(
+    const MacroAutomationTakeHistoryPayload& payload,
+    bool requireTouched
+) {
+    if (payload.track >= TRACK_COUNT || payload.page >= PAGE_COUNT ||
+        payload.candidateMask == 0U ||
+        (payload.candidateMask & 0xFF00U) != 0U ||
+        (payload.touchedMask & ~payload.candidateMask) != 0U ||
+        (requireTouched && payload.touchedMask == 0U)) {
+        return false;
+    }
+    for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+        const uint16_t bit = static_cast<uint16_t>(1U << macro);
+        if ((payload.candidateMask & bit) == 0U) continue;
+        const auto& before = payload.before[macro];
+        const auto& after = payload.after[macro];
+        const MacroAutomationSlotAddress expected{
+            .track = payload.track,
+            .page = payload.page,
+            .macro = macro,
+        };
+        if (!macroAutomationAddressEquals(before.address, expected) ||
+            !macroAutomationAddressEquals(after.address, expected) ||
+            !automationSnapshotConsistent(before) || !after.points) {
+            return false;
+        }
+        if ((payload.touchedMask & bit) != 0U &&
+            !automationSnapshotConsistent(after)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool liveAutomationTakeMatches(
+    const MacroPagesState& pages,
+    const MacroAutomationTakeHistoryPayload& payload,
+    bool after
+) {
+    if (!automationTakePayloadConsistent(payload, true)) return false;
+    const auto& snapshots = after ? payload.after : payload.before;
+    for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+        const uint16_t bit = static_cast<uint16_t>(1U << macro);
+        if ((payload.touchedMask & bit) == 0U) continue;
+        if (!liveMacroAutomationMatchesHistorySnapshot(
+                pages,
+                snapshots[macro]
+            )) {
+            return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool applyAutomationTakeAtomically(
+    MacroPagesState& pages,
+    const MacroAutomationTakeHistoryPayload& payload,
+    bool after
+) {
+    if (!automationTakePayloadConsistent(payload, true)) return false;
+    auto pending = core::app::makeExtmemUnique<
+        core::state::modulation::ProjectControlDomainState
+    >();
+    if (!pending) return false;
+    *pending = pages.control.authored;
+    const auto& snapshots = after ? payload.after : payload.before;
+    for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+        const uint16_t bit = static_cast<uint16_t>(1U << macro);
+        if ((payload.touchedMask & bit) == 0U) continue;
+        const auto& snapshot = snapshots[macro];
+        if (!core::state::modulation::replaceProjectControlAutomationInDomain(
+                *pending,
+                snapshot.address,
+                snapshot.automation,
+                snapshot.pointCount > 0U ? snapshot.points.get() : nullptr,
+                snapshot.pointCount
+            )) {
+            return false;
+        }
+    }
+    if (!core::state::modulation::validProjectModulationDomain(
+            pending->modulation,
+            pending->curves,
+            &pending->automation
+        )) {
+        return false;
+    }
+    pages.control.authored = *pending;
+    pages.control.markAuthoredMutation();
+    return true;
+}
+
 FLASHMEM void normalizeCurveOffsets(MacroSlotHistorySnapshot& snapshot) {
     snapshot.slot.automation.pointOffset = 0;
     snapshot.slot.modulation.pointOffset = snapshot.automationPointCount;
@@ -1467,6 +1559,84 @@ MacroHistoryService::prepareAutomationRecording(
         return {};
     }
     return change;
+}
+
+FLASHMEM MacroHistoryChangePtr MacroHistoryService::prepareAutomationTake(
+    const MacroPagesState& pages,
+    uint8_t track,
+    uint8_t page,
+    uint16_t candidateMask
+) const {
+    candidateMask = static_cast<uint16_t>(candidateMask & 0x00FFU);
+    if (pendingModulatorSlot_() != nullptr || candidateMask == 0U ||
+        track >= TRACK_COUNT || page >= PAGE_COUNT) {
+        return {};
+    }
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return {};
+    change->automationTake = core::app::makeExtmemUnique<
+        MacroAutomationTakeHistoryPayload
+    >();
+    if (!change->automationTake) return {};
+    change->kind = MacroHistoryActionKind::RECORD_AUTOMATION;
+    change->address = {.track = track, .page = page, .macro = 0U};
+    auto& payload = *change->automationTake;
+    payload.candidateMask = candidateMask;
+    payload.track = track;
+    payload.page = page;
+    for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+        const uint16_t bit = static_cast<uint16_t>(1U << macro);
+        if ((candidateMask & bit) == 0U) continue;
+        const MacroAutomationSlotAddress address{
+            .track = track,
+            .page = page,
+            .macro = macro,
+        };
+        if (!captureMacroAutomationHistorySnapshot(
+                pages,
+                address,
+                payload.before[macro]
+            )) {
+            return {};
+        }
+        auto& after = payload.after[macro];
+        after.address = address;
+        after.points = core::app::makeExtmemUniqueArrayForOverwrite<
+            MacroPackedCurvePoint
+        >(MACRO_AUTOMATION_RECORDING_MAX_POINTS);
+        if (!after.points) return {};
+    }
+    if (!automationTakePayloadConsistent(payload, false)) return {};
+    return change;
+}
+
+FLASHMEM bool MacroHistoryService::commitPreparedAutomationTake(
+    MacroPagesState& pages,
+    MacroHistoryChangePtr& change
+) {
+    if (!change || change->kind != MacroHistoryActionKind::RECORD_AUTOMATION ||
+        !change->automationTake ||
+        !automationTakePayloadConsistent(*change->automationTake, true) ||
+        !liveAutomationTakeMatches(pages, *change->automationTake, true)) {
+        return false;
+    }
+    bool changed = false;
+    for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+        const uint16_t bit = static_cast<uint16_t>(1U << macro);
+        if ((change->automationTake->touchedMask & bit) == 0U) continue;
+        if (!sameMacroAutomationHistorySnapshot(
+                change->automationTake->before[macro],
+                change->automationTake->after[macro]
+            )) {
+            changed = true;
+            break;
+        }
+    }
+    if (!changed) return false;
+    endCoalescing();
+    push_(undo_, undo_count_, std::move(change));
+    clearRedo_();
+    return true;
 }
 
 FLASHMEM MacroHistoryChangePtr
@@ -3245,6 +3415,18 @@ FLASHMEM bool MacroHistoryService::undo(
             )) {
             return false;
         }
+    } else if (change->automationTake) {
+        if (!liveAutomationTakeMatches(
+                pages,
+                *change->automationTake,
+                true
+            ) || !applyAutomationTakeAtomically(
+                pages,
+                *change->automationTake,
+                false
+            )) {
+            return false;
+        }
     } else if (change->automation) {
         if (!liveMacroAutomationMatchesHistorySnapshot(
                 pages,
@@ -3352,6 +3534,18 @@ FLASHMEM bool MacroHistoryService::redo(
             !applyModulationAssignments(
                 pages,
                 change->modulationAssignments->after
+            )) {
+            return false;
+        }
+    } else if (change->automationTake) {
+        if (!liveAutomationTakeMatches(
+                pages,
+                *change->automationTake,
+                false
+            ) || !applyAutomationTakeAtomically(
+                pages,
+                *change->automationTake,
+                true
             )) {
             return false;
         }

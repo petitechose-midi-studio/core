@@ -7,9 +7,9 @@
 50 capture screen macro_ready
 
 # Record an automation on Macro 1, then copy the current Macro page.
-150 button MACRO_1 down
+150 button LEFT_CENTER down
 500 encoder MACRO_1 1.00
-1100 button MACRO_1 up
+1100 button LEFT_CENTER up
 1250 capture screen automation_recorded_on_page_1
 
 1400 tap BOTTOM_RIGHT 60

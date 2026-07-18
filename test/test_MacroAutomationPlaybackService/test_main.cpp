@@ -514,6 +514,39 @@ void test_recording_keeps_modulation_audible_and_active_after_commit() {
     std::cout << "[PASS] recording captures raw Base while Modulation stays audible\n";
 }
 
+void test_shared_take_publishes_live_base_without_printing_modulation() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    configureAutomation(state);
+    configureModulation(state, 1.0f);
+    state.statusBar.tempo.set(60.0f);
+    state.statusBar.playing.set(true);
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    const auto services =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    PlaybackHarness playback(state, services, midi);
+
+    playback.update(1000U);
+    assert(services.armAutomationTake());
+    assert(services.recordAutomationTakeValue(0U, 1200U, 0.4f));
+    playback.update(1250U);
+
+    const auto projection = state.macroUi.runtimeProjections[0];
+    assert(projection.valid && projection.modulationActive);
+    assert(std::fabs(projection.base - 0.4f) < 0.01f);
+    assert(std::fabs(projection.modulation - 0.125f) < 0.01f);
+    assert(midiTransport.lastValue >= 66U && midiTransport.lastValue <= 67U);
+    assert(services.cancelAutomationTake());
+
+    std::cout
+        << "[PASS] shared take publishes Base while Modulation stays live\n";
+}
+
 void test_reactivating_slot_or_lane_resends_value_superseded_while_inactive() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings,
@@ -714,6 +747,7 @@ int main() {
     test_manual_override_replaces_automation_base_until_resume();
     test_modulation_only_playback_and_depth_zero_remain_computed();
     test_recording_keeps_modulation_audible_and_active_after_commit();
+    test_shared_take_publishes_live_base_without_printing_modulation();
     test_reactivating_slot_or_lane_resends_value_superseded_while_inactive();
     test_runtime_owner_epoch_is_independent_from_navigation_and_transport();
     test_runtime_owner_activation_preserves_manual_ownership();

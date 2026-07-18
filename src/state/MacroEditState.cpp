@@ -38,6 +38,9 @@ FLASHMEM void MacroEditState::reset() {
     tempChannel.set(0);
     tempCC.set(0);
     focusedRow.set(0);
+    contextSelectorActive.set(false);
+    contextPropertyIndex.set(0);
+    macroCycleActive.set(false);
     selector.reset();
     macroSelector.reset();
     automationFocusedRow.set(0);

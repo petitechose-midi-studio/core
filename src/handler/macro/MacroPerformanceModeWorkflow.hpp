@@ -35,20 +35,17 @@ public:
     MacroPerformanceModeWorkflow(const MacroPerformanceModeWorkflow&) = delete;
     MacroPerformanceModeWorkflow& operator=(const MacroPerformanceModeWorkflow&) = delete;
 
-    bool clutchActive() const;
+    bool performanceOverlayActive() const;
 
-    void activateClutch();
-    void deactivateClutch();
-    void cancelClutch();
-    void navigateProperty(float delta);
+    void openEditPrompt();
+    void closePerformanceOverlay();
+    void navigateTakeTiming(float delta);
     void refreshEncoders();
 
 private:
     void configureMacroEncoders();
     void configureValueEncoders();
-    void configureDiscreteEncoders(uint8_t discreteSteps);
     void configureNormalizedEncoder(Config::EncoderID id);
-    void configureDiscreteEncoder(Config::EncoderID id, uint8_t discreteSteps);
 
     core::state::macro::MacroUiState& macro_ui_;
     core::state::macro::MacroPagesState& pages_;

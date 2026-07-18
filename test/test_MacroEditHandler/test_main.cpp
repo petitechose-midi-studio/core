@@ -132,15 +132,16 @@ struct MacroEditHarness {
 
 void openMacroEdit(MacroEditHarness& h, uint8_t macroIndex, uint32_t releaseAtMs) {
     h.tick(0);
+    h.state.macroUi.performanceOverlayMode.set(
+        core::state::macro::MacroPerformanceOverlayMode::EDIT
+    );
     h.pressMacro(macroIndex);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
-    assert(!h.state.macroEdit.visible.get());
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     assert(h.state.macroEdit.visible.get());
     assert(h.state.macroEdit.editingIndex.get() == macroIndex);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
     h.tick(releaseAtMs);
     h.releaseMacro(macroIndex);
+    h.release(Config::ButtonID::LEFT_BOTTOM);
 }
 
 void test_quick_release_keeps_macro_edit_open_and_left_top_closes() {
@@ -166,8 +167,13 @@ void test_quick_release_keeps_macro_edit_open_and_left_top_closes() {
     std::cout << "[PASS] test_quick_release_keeps_macro_edit_open_and_left_top_closes\n";
 }
 
-void test_slow_release_closes_macro_edit_immediately() {
+void test_macro_press_alone_is_inert_and_edit_release_never_closes() {
     MacroEditHarness h;
+
+    h.pressMacro(0U);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS * 2U);
+    h.releaseMacro(0U);
+    assert(!h.state.macroEdit.visible.get());
 
     openMacroEdit(
         h,
@@ -175,25 +181,22 @@ void test_slow_release_closes_macro_edit_immediately() {
         Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 600U
     );
 
-    assert(!h.state.macroEdit.visible.get());
-    assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
-    assert(h.overlays.current() == core::ui::OverlayType::NONE);
+    assert(h.state.macroEdit.visible.get());
+    assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
+    assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 
     h.flushState();
 
-    std::cout << "[PASS] test_slow_release_closes_macro_edit_immediately\n";
+    std::cout << "[PASS] Macro press is inert and Edit release is stable\n";
 }
 
-void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
+void test_macro_edit_cycles_active_macros_and_contextual_destination_props() {
     MacroEditHarness h;
 
     h.state.pages.setActiveTrackChannel(5);
-    h.state.pages.activeTrackData().pages[2].cc[0] = 67;
-    h.state.pages.activeTrackData().pages[2].cc[3] = 99;
-    std::strncpy(h.state.pages.activeTrackData().pages[2].name,
-                 "Mix Bus",
-                 core::state::macro::PAGE_NAME_SIZE - 1);
-    h.state.pages.activeTrackData().pages[2].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
+    h.state.pages.activePageData().setMacroActive(3U, true);
+    h.state.pages.activePageData().cc[3] = 99U;
+    h.state.pages.updateActiveConfigs();
 
     openMacroEdit(
         h,
@@ -220,38 +223,28 @@ void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
     assert(h.services.activeConfig(0).cc == 0);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 
-    h.tap(Config::ButtonID::LEFT_CENTER);
-    assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::PAGE_SELECTOR);
-    assert(h.state.pages.selector.visible.get());
-    assert(h.overlays.current() == core::ui::OverlayType::PAGE_SELECTOR);
-
+    h.press(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.macroEdit.macroCycleActive.get());
     h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.pages.selector.selectedIndex.get() == 2);
-    h.tap(Config::ButtonID::LEFT_CENTER);
-    assert(h.state.pages.currentActivePage() == 2);
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Mix Bus") == 0);
+    assert(h.state.macroEdit.editingIndex.get() == 3U);
+    assert(h.state.macroEdit.tempCC.get() == 99U);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.macroEdit.macroCycleActive.get());
+    assert(h.state.pages.currentActivePage() == 0U);
     assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
-    assert(h.state.macroEdit.tempChannel.get() == 5);
-    assert(h.state.macroEdit.tempCC.get() == 67);
     assert(h.state.pages.tracks[h.state.pages.currentActiveTrack()].pages[0].cc[0] == 1);
-    assert(h.state.pages.tracks[h.state.pages.currentActiveTrack()].channel == 5);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 
-    h.tap(Config::ButtonID::LEFT_BOTTOM);
-    assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::TARGET_SELECTOR);
-    assert(h.state.macroEdit.macroSelector.visible.get());
-    assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR);
-
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.macroEdit.contextSelectorActive.get());
+    assert(h.state.macroEdit.contextPropertyIndex.get() == 0U);
     h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroEdit.macroSelector.selectedIndex.get() == 3);
-    h.tap(Config::ButtonID::LEFT_BOTTOM);
-    assert(h.state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
-    assert(h.state.macroEdit.editingIndex.get() == 3);
-    assert(h.state.macroEdit.tempChannel.get() == 5);
-    assert(h.state.macroEdit.tempCC.get() == 99);
+    assert(h.state.macroEdit.contextPropertyIndex.get() == 1U);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.services.activeConfig(3U).channel == 15U);
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+    assert(!h.state.macroEdit.contextSelectorActive.get());
+    assert(!h.state.macroEdit.macroSelector.visible.get());
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
 
     h.tap(Config::ButtonID::LEFT_TOP);
@@ -262,7 +255,7 @@ void test_macro_edit_buffered_and_selector_flows_commit_on_transition() {
 
     h.flushState();
 
-    std::cout << "[PASS] test_macro_edit_buffered_and_selector_flows_commit_on_transition\n";
+    std::cout << "[PASS] active-Macro cycle and contextual Destination props\n";
 }
 
 void test_macro_edit_automation_row_exposes_direct_playback_and_detail() {
@@ -306,6 +299,19 @@ void test_macro_edit_automation_row_exposes_direct_playback_and_detail() {
 
     h.turn(Config::EncoderID::OPT, 1.0f);
     assert(h.services.automationPlaybackActiveFor(0));
+
+    // A running Automation can be in Manual takeover. In that state the
+    // contextual Playback shortcut projects as the resumable Off position;
+    // turning OPT On releases Manual without touching the stored curve.
+    h.services.setManualOverride(0, true);
+    assert(h.services.manualOverrideActiveFor(0));
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.macroEdit.contextSelectorActive.get());
+    assert(h.state.macroEdit.contextPropertyIndex.get() == 0U);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(!h.services.manualOverrideActiveFor(0));
+    assert(h.services.automationPlaybackActiveFor(0));
+    h.release(Config::ButtonID::LEFT_BOTTOM);
 
     h.tap(Config::ButtonID::NAV);
     assert(h.state.macroEdit.flowPhase.get() ==
@@ -372,8 +378,8 @@ void test_remove_waits_for_owner_scope_release_without_fallback_dispatch() {
 
 int main() {
     test_quick_release_keeps_macro_edit_open_and_left_top_closes();
-    test_slow_release_closes_macro_edit_immediately();
-    test_macro_edit_buffered_and_selector_flows_commit_on_transition();
+    test_macro_press_alone_is_inert_and_edit_release_never_closes();
+    test_macro_edit_cycles_active_macros_and_contextual_destination_props();
     test_macro_edit_automation_row_exposes_direct_playback_and_detail();
     test_remove_waits_for_owner_scope_release_without_fallback_dispatch();
     std::cout << "\nAll MacroEditHandler tests passed.\n";

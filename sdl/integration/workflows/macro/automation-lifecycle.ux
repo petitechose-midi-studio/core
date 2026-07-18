@@ -15,16 +15,17 @@
 50 capture screen macro_ready
 
 # Record an automation on Macro 1.
-150 button MACRO_1 down
+150 button LEFT_CENTER down
 500 encoder MACRO_1 1.00
-1100 button MACRO_1 up
+1100 button LEFT_CENTER up
 1250 capture screen automation_recorded
 
 # Open Macro Edit for Macro 1.
-1400 button MACRO_1 down
+1400 button LEFT_BOTTOM down
+1480 tap MACRO_1 60
 2500 tick
 2550 capture screen macro_edit_open
-2600 button MACRO_1 up
+2600 button LEFT_BOTTOM up
 
 # Focus Automation row and enter the Automation lifecycle overlay.
 2800 encoder NAV 1

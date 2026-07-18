@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 
 #include "../../src/state/CoreState.hpp"
@@ -373,6 +374,71 @@ void test_runtime_projection_revision_targets_one_macro_or_all() {
         << "test_runtime_projection_revision_targets_one_macro_or_all\n";
 }
 
+void test_macro_performance_projection_explains_edit_and_shared_take() {
+    CoreStorages storage;
+    core::state::CoreState state(
+        storage.settings,
+        storage.macroLibrary,
+        storage.sequencerPatternLibrary,
+        storage.sequencerSetLibrary
+    );
+    state.pages.setMacroSlotActive(0, true);
+    state.pages.setMacroSlotActive(2, true);
+
+    auto strip = core::ui::buildMacroLeftActionStripProps(sourceFor(state));
+    assert(strip.slots[0].visualState == ContextActionStripVisualState::HIDDEN);
+    assert(strip.slots[1].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(strip.slots[1].icon == standalone::icons::MACRO_AUTOMATION);
+    assert(strip.slots[2].visualState == ContextActionStripVisualState::ACTIVE);
+    assert(strip.slots[2].icon == standalone::icons::KNOB);
+
+    state.macroUi.performanceOverlayMode.set(
+        core::state::macro::MacroPerformanceOverlayMode::EDIT
+    );
+    auto overlay = core::ui::buildMacroSlotPropertyOverlayProps(sourceFor(state));
+    assert(overlay.visible);
+    assert(std::strcmp(overlay.label, "EDIT") == 0);
+    assert(std::strcmp(overlay.valueText.data(), "PRESS A MACRO") == 0);
+
+    std::array<uint8_t, 8> bases{};
+    bases[0] = 32U;
+    bases[2] = 64U;
+    state.macroUi.automationTake.arm(
+        core::state::macro::MacroAutomationTakeTiming::BARS_4,
+        0x0005U,
+        bases
+    );
+    state.macroUi.automationTake.track = state.pages.currentActiveTrack();
+    state.macroUi.automationTake.page = state.pages.currentActivePage();
+    state.macroUi.performanceOverlayMode.set(
+        core::state::macro::MacroPerformanceOverlayMode::AUTOMATION_TAKE
+    );
+    overlay = core::ui::buildMacroSlotPropertyOverlayProps(sourceFor(state));
+    assert(overlay.visible);
+    assert(std::strcmp(overlay.label, "AUTOMATION TAKE") == 0);
+    assert(std::strcmp(overlay.valueText.data(), "4 BARS") == 0);
+    auto header = core::ui::buildMacroHeaderBarProps(sourceFor(state));
+    assert(header.automationTakePhase ==
+           core::state::macro::MacroAutomationTakePhase::ARMED);
+    assert(header.automationTakeTiming ==
+           core::state::macro::MacroAutomationTakeTiming::BARS_4);
+
+    assert(state.macroUi.automationTake.begin(100U, 200U, 123456U, 3U, 7U));
+    assert(state.macroUi.automationTake.touch(0U, 48U, 1U));
+    assert(state.macroUi.automationTake.touch(2U, 80U, 2U));
+    overlay = core::ui::buildMacroSlotPropertyOverlayProps(sourceFor(state));
+    assert(std::strcmp(overlay.label, "RECORDING") == 0);
+    assert(std::strcmp(overlay.valueText.data(), "2 MACROS") == 0);
+    const auto frame = core::ui::buildMacroViewFrameState(sourceFor(state));
+    assert(frame.macros[0].automationRecording);
+    assert(!frame.macros[1].automationRecording);
+    assert(frame.macros[2].automationRecording);
+
+    std::cout
+        << "[PASS] "
+        << "test_macro_performance_projection_explains_edit_and_shared_take\n";
+}
+
 }  // namespace
 
 int main() {
@@ -383,6 +449,7 @@ int main() {
     test_macro_selection_delete_strip_projects_disabled_and_applied();
     test_macro_grid_distinguishes_stored_playback_modulation_and_manual();
     test_runtime_projection_revision_targets_one_macro_or_all();
+    test_macro_performance_projection_explains_edit_and_shared_take();
     std::cout << "\nAll MacroViewModelBuilder tests passed.\n";
     return 0;
 }

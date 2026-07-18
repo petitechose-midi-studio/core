@@ -7,10 +7,11 @@
 80 capture screen macro_grid_source
 
 # Open Macro Edit for Macro 2 on page 3.
-180 button MACRO_2 down
+180 button LEFT_BOTTOM down
+260 tap MACRO_2 60
 1280 tick
 1360 capture screen macro_2_edit_detail
-1460 button MACRO_2 up
+1460 button LEFT_BOTTOM up
 
 # Open Automation detail and focus Length.
 1620 encoder NAV 1

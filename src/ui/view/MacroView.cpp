@@ -153,24 +153,28 @@ FLASHMEM bool MacroView::bindToState() {
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.activeProperty.subscribe(
-            [this](core::state::macro::MacroPerformanceProperty) {
+        state_refs_.macroUi.performanceOverlayMode.subscribe(
+            [this](core::state::macro::MacroPerformanceOverlayMode) {
+                requestHeaderRender();
+                requestLeftActionStripRender();
                 requestSlotPropertyOverlayRender();
             }
         )
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.clutchActive.subscribe([this](bool) {
-            requestHeaderRender();
-            requestLeftActionStripRender();
-            requestSlotPropertyOverlayRender();
-        })
+        state_refs_.macroUi.automationTakeTiming.subscribe(
+            [this](core::state::macro::MacroAutomationTakeTiming) {
+                requestHeaderRender();
+                requestSlotPropertyOverlayRender();
+            }
+        )
     );
 
     subscriptions_.push_back(
         state_refs_.macroUi.automationRecordingRevision.subscribe([this](uint32_t) {
             markAutomationRecordingDirtyIfChanged();
+            requestSlotPropertyOverlayRender();
         })
     );
 
@@ -571,17 +575,17 @@ void MacroView::markAllConfigDirty() {
 }
 
 void MacroView::markAutomationRecordingDirtyIfChanged() {
-    const auto& recording = state_refs_.macroUi.automationRecording;
+    const auto& recording = state_refs_.macroUi.automationTake;
     const uint8_t activeTrack = state_refs_.pages.currentActiveTrack();
     const uint8_t activePage = state_refs_.pages.currentActivePage();
     uint32_t flags = 0;
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         const bool recordingThisSlot =
             state_refs_.pages.isMacroSlotActive(i) &&
-            recording.active &&
-            recording.address.track == activeTrack &&
-            recording.address.page == activePage &&
-            recording.address.macro == i;
+            recording.phase == core::state::macro::MacroAutomationTakePhase::RECORDING &&
+            recording.track == activeTrack &&
+            recording.page == activePage &&
+            recording.activeFor(i);
         if (rendered_automation_recording_[i] != recordingThisSlot) {
             flags |= configRenderFlag(i);
         }

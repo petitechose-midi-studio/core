@@ -176,15 +176,14 @@ void configureAutomation(core::state::CoreState& state, uint8_t macroIndex = 0) 
     ));
 }
 
-void test_registers_one_press_and_one_release_binding_per_macro() {
+void test_registers_no_macro_button_record_bindings() {
     MacroValueHarness h;
 
     assert(
-        h.inputBinding.buttonBindingCount() ==
-        core::state::macro::MACRO_COUNT * 2U
+        h.inputBinding.buttonBindingCount() == 0U
     );
 
-    std::cout << "[PASS] test_registers_one_press_and_one_release_binding_per_macro\n";
+    std::cout << "[PASS] no Macro button record bindings\n";
 }
 
 void test_macro_encoder_updates_value_and_sends_cc() {
@@ -274,11 +273,11 @@ void test_macro_encoder_feeds_armed_automation_recording() {
     auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(h.state);
 
     h.state.statusBar.tempo.set(120.0f);
-    assert(services.beginAutomationRecording(0, 0));
+    assert(services.armAutomationTake());
 
     g_now_ms = 500;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
-    assert(services.commitAutomationRecording(1000));
+    assert(services.releaseAutomationTake(1000U));
 
     const auto slot = test_support::project_control::readSlot(
         h.state.pages.control,
@@ -298,14 +297,16 @@ void test_macro_encoder_feeds_armed_automation_recording() {
         1,
         false
     );
-    assert(std::fabs(firstPoint.value - 0.5f) < 0.0001f);
+    // The first physical movement defines t0, so its authored value is the
+    // first value of the first-joined Macro (late joiners retain their Base).
+    assert(std::fabs(firstPoint.value - 1.0f) < 0.0001f);
     assert(std::fabs(secondPoint.beat - 1.0f) < 0.0001f);
     assert(std::fabs(secondPoint.value - 1.0f) < 0.0001f);
 
     std::cout << "[PASS] test_macro_encoder_feeds_armed_automation_recording\n";
 }
 
-void test_macro_button_hold_records_value_automation() {
+void test_macro_button_hold_cannot_record_and_turn_stays_manual() {
     MacroValueHarness h;
 
     h.state.statusBar.tempo.set(120.0f);
@@ -314,8 +315,8 @@ void test_macro_button_hold_records_value_automation() {
 
     g_now_ms = 500;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
-    assert(h.state.macroUi.automationRecording.active);
-    assert(h.state.macroUi.automationRecording.address.macro == 0);
+    assert(!h.state.macroUi.automationRecording.active);
+    assert(!h.services.automationTakeRecording());
 
     g_now_ms = 1000;
     h.release(Config::ButtonID::MACRO_1);
@@ -325,35 +326,23 @@ void test_macro_button_hold_records_value_automation() {
         h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(slot.automationEnabled);
-    assert(slot.compatibility.automation.pointCount == 1);
-    assert(std::fabs(core::state::macro::macroAutomationBeatsFromTicks(
-                         slot.compatibility.automation.durationTicks
-                     ) - 1.0f) < 0.0001f);
-    const auto recordedPoint = test_support::project_control::readCurvePoint(
-        h.state.pages.control,
-        slot.automationCurveId,
-        0,
-        false
-    );
-    assert(std::fabs(recordedPoint.beat - 0.0f) < 0.0001f);
-    assert(std::fabs(recordedPoint.value - 1.0f) < 0.0001f);
-    assert(h.state.project.metadata.dirty);
+    assert(!slot.automationStored);
+    assert(std::fabs(h.state.pages.activePageData().values[0] - 1.0f) < 0.0001f);
 
     h.turn(Config::EncoderID::MACRO_1, 0.0f);
-    assert(std::fabs(h.state.macros[0].value.get() - 1.0f) < 0.0005f);
+    assert(std::fabs(h.state.macros[0].value.get()) < 0.0005f);
 
-    std::cout << "[PASS] test_macro_button_hold_records_value_automation\n";
+    std::cout << "[PASS] Macro button hold cannot record\n";
 }
 
 void test_recording_cadence_preserves_plateau_before_later_motion() {
     MacroValueHarness h;
     h.state.statusBar.tempo.set(120.0f);
 
-    h.press(Config::ButtonID::MACRO_1);
+    assert(h.services.armAutomationTake());
     g_now_ms = 100;
     h.turn(Config::EncoderID::MACRO_1, 0.2f);
-    assert(h.state.macroUi.automationRecording.active);
+    assert(h.services.automationTakeRecording());
 
     // No encoder event occurs during this hold. The shared 16 ms sampler must
     // still author a stationary anchor before the next movement.
@@ -361,7 +350,7 @@ void test_recording_cadence_preserves_plateau_before_later_motion() {
     g_now_ms = 500;
     h.turn(Config::EncoderID::MACRO_1, 0.8f);
     g_now_ms = 600;
-    h.release(Config::ButtonID::MACRO_1);
+    assert(h.services.releaseAutomationTake(600U));
 
     const auto slot = test_support::project_control::readSlot(
         h.state.pages.control,
@@ -485,18 +474,16 @@ void test_post_record_input_guard_survives_millisecond_rollover() {
 
 int main() {
     oc::time::setProvider(mockTimeMs);
-    test_registers_one_press_and_one_release_binding_per_macro();
+    test_registers_no_macro_button_record_bindings();
     test_macro_encoder_updates_value_and_sends_cc();
     test_macro_encoder_sanitizes_non_finite_values_before_midi_conversion();
     test_macro_encoder_does_not_activate_empty_or_add_slots();
     test_macro_value_handler_respects_modal_guards();
     test_macro_encoder_feeds_armed_automation_recording();
-    test_macro_button_hold_records_value_automation();
+    test_macro_button_hold_cannot_record_and_turn_stays_manual();
     test_recording_cadence_preserves_plateau_before_later_motion();
     test_turning_an_automated_macro_enters_manual_override();
-    test_macro_automation_property_button_restores_auto_without_clearing_lane();
     test_macro_button_hold_without_turn_discards_recording();
-    test_post_record_input_guard_survives_millisecond_rollover();
 
     std::cout << "\nAll MacroValueHandler tests passed.\n";
     return 0;

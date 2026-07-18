@@ -134,6 +134,20 @@ FLASHMEM uint32_t mixRevision(uint32_t seed, uint32_t value) {
     return seed;
 }
 
+const core::state::modulation::ModulationBindingState* bindingAtDestination(
+    const core::state::modulation::ProjectModulationState& graph,
+    const core::state::modulation::ModulationDestination& destination,
+    uint16_t ordinal
+) {
+    uint16_t found = 0U;
+    for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
+        const auto& binding = graph.outputBindings[index];
+        if (binding.destination != destination) continue;
+        if (found++ == ordinal) return &binding;
+    }
+    return nullptr;
+}
+
 FLASHMEM void formatCurveSummary(char* out,
                                  size_t outSize,
                                  const core::state::macro::MacroAutomationCurveWindowSummary& summary
@@ -1173,6 +1187,164 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         {},
     }};
     data.selectedIndex = source.macroEdit.focusedRow.get();
+
+    const bool macroCycle = source.macroEdit.macroCycleActive.get();
+    const bool contextSelector = source.macroEdit.contextSelectorActive.get();
+    data.interactionOverlayVisible = macroCycle || contextSelector;
+    if (macroCycle) {
+        data.interactionIcon = ::standalone::icons::KNOB;
+        data.interactionColor = ::standalone::theme::color::getMacroColor(
+            macroIndex
+        );
+        std::snprintf(
+            data.interactionLabel.data(),
+            data.interactionLabel.size(),
+            "ACTIVE MACRO"
+        );
+        std::snprintf(
+            data.interactionValue.data(),
+            data.interactionValue.size(),
+            "MACRO %u",
+            static_cast<unsigned>(macroIndex) + 1U
+        );
+    } else if (contextSelector) {
+        const uint8_t row = std::min<uint8_t>(
+            source.macroEdit.focusedRow.get(), 2U
+        );
+        const uint8_t property = source.macroEdit.contextPropertyIndex.get();
+        if (row == 0U) {
+            const bool channel = property == 1U;
+            data.interactionIcon = channel
+                ? ::standalone::icons::MIDI_CHANNEL
+                : ::standalone::icons::MIDI_CC;
+            data.interactionColor = channel
+                ? ::standalone::theme::color::MACRO_CH_COLOR
+                : ::standalone::theme::color::MACRO_CC_COLOR;
+            std::snprintf(
+                data.interactionLabel.data(),
+                data.interactionLabel.size(),
+                "%s",
+                channel ? "TRACK CHANNEL" : "CC NUMBER"
+            );
+            std::snprintf(
+                data.interactionValue.data(),
+                data.interactionValue.size(),
+                channel ? "CHANNEL %u" : "CC %u",
+                static_cast<unsigned>(
+                    channel
+                        ? source.pages.activeConfigs[macroIndex].channel + 1U
+                        : source.macroEdit.tempCC.get()
+                )
+            );
+        } else if (row == 1U) {
+            const uint8_t bounded = std::min<uint8_t>(property, 3U);
+            const char* label = bounded == 0U
+                ? "PLAYBACK"
+                : (bounded == 1U
+                    ? "LENGTH"
+                    : (bounded == 2U ? "OFFSET" : "CONVERT"));
+            data.interactionIcon = ::standalone::icons::MACRO_AUTOMATION;
+            data.interactionColor = ::standalone::theme::color::MACRO_AUTOMATION;
+            std::snprintf(
+                data.interactionLabel.data(),
+                data.interactionLabel.size(),
+                "%s",
+                label
+            );
+            if (bounded == 0U) {
+                const bool manual =
+                    (source.macroUi.automationManualOverrideMask.get() &
+                     static_cast<uint16_t>(1U << macroIndex)) != 0U;
+                std::snprintf(
+                    data.interactionValue.data(),
+                    data.interactionValue.size(),
+                    "%s",
+                    manual
+                        ? "TURN OPT FOR AUTO"
+                        : (slot != nullptr && slot->automationEnabled
+                            ? "ON"
+                            : "OFF")
+                );
+            } else if (bounded == 1U || bounded == 2U) {
+                const uint16_t ticks = slot == nullptr
+                    ? 0U
+                    : (bounded == 1U
+                        ? slot->compatibility.automation.durationTicks
+                        : slot->compatibility.automation.windowOffsetTicks);
+                formatBeatDuration(
+                    data.interactionValue.data(),
+                    data.interactionValue.size(),
+                    ticks,
+                    " BEATS"
+                );
+            } else {
+                std::snprintf(
+                    data.interactionValue.data(),
+                    data.interactionValue.size(),
+                    "%s",
+                    slot != nullptr && slot->automationStored
+                        ? "TURN OPT TO PREVIEW"
+                        : "NO AUTOMATION"
+                );
+            }
+        } else {
+            const auto destination =
+                core::state::modulation::projectControlDestination(address);
+            const auto& graph = source.pages.control.authored.modulation;
+            const uint16_t assignmentCount = slot != nullptr
+                ? slot->modulationCount
+                : 0U;
+            data.interactionIcon = ::standalone::icons::MACRO_MODULATION;
+            data.interactionColor = ::standalone::theme::color::MACRO_MODULATION;
+            if (property < assignmentCount) {
+                const auto* binding = bindingAtDestination(
+                    graph, destination, property
+                );
+                const auto* modulator = binding != nullptr
+                    ? core::state::modulation::findProjectModulator(
+                        graph, binding->sourceId
+                    )
+                    : nullptr;
+                std::snprintf(
+                    data.interactionLabel.data(),
+                    data.interactionLabel.size(),
+                    "%s",
+                    modulator != nullptr ? modulator->name.data() : "SOURCE DEPTH"
+                );
+                const int depth = binding != nullptr
+                    ? static_cast<int>(std::lround(
+                        static_cast<float>(binding->amountQ15) /
+                        32767.0f * 100.0f
+                    ))
+                    : 0;
+                std::snprintf(
+                    data.interactionValue.data(),
+                    data.interactionValue.size(),
+                    "%+d%% DEPTH",
+                    depth
+                );
+            } else {
+                const uint16_t scale =
+                    core::state::modulation::projectModulationDestinationScaleQ15(
+                        graph, destination
+                    );
+                std::snprintf(
+                    data.interactionLabel.data(),
+                    data.interactionLabel.size(),
+                    "ALL DEPTH"
+                );
+                std::snprintf(
+                    data.interactionValue.data(),
+                    data.interactionValue.size(),
+                    "%u%%",
+                    static_cast<unsigned>(
+                        (static_cast<uint32_t>(scale) * 200U + 32767U) /
+                        65535U
+                    )
+                );
+            }
+        }
+    }
     uint32_t revision =
         (static_cast<uint32_t>(macroIndex & 0x07U) << 29) |
         (automationStored ? (1UL << 28) : 0U) |
@@ -1207,6 +1379,14 @@ FLASHMEM void buildEditRenderData(Source& source, EditRenderData& data) {
         revision = mixRevision(revision, depthBits);
     }
     revision = mixRevision(revision, focusedBindingId.value);
+    revision = mixRevision(
+        revision,
+        (source.macroEdit.contextSelectorActive.get() ? 1U : 0U) |
+            (source.macroEdit.macroCycleActive.get() ? 2U : 0U) |
+            (static_cast<uint32_t>(
+                 source.macroEdit.contextPropertyIndex.get()
+             ) << 8U)
+    );
     if (focusedBinding != nullptr) {
         revision = mixRevision(
             revision,

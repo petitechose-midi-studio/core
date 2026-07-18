@@ -54,7 +54,7 @@ int main() {
     assert(bindings.bind(stateRefs, &probe, &Probe::invalidate));
     assert(bindings.phaseSubscriptionCount() == 1);
     assert(macroEdit.flowPhase.subscriberCount() == 1);
-    assert(bindings.subscriptionCount() == 30);
+    assert(bindings.subscriptionCount() == 33);
     assert(macroUi.runtimeProjectionRevision.subscriberCount() == 1);
     assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 1);
     assert(clipboard.revision.subscriberCount() == 1);
@@ -63,7 +63,7 @@ int main() {
     assert(bindings.bind(stateRefs, &probe, &Probe::invalidate));
     assert(bindings.phaseSubscriptionCount() == 1);
     assert(macroEdit.flowPhase.subscriberCount() == 1);
-    assert(bindings.subscriptionCount() == 30);
+    assert(bindings.subscriptionCount() == 33);
     assert(macroUi.runtimeProjectionRevision.subscriberCount() == 1);
     assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 1);
     assert(clipboard.revision.subscriberCount() == 1);
@@ -85,6 +85,12 @@ int main() {
     assert(probe.calls == 1);
     assert(probe.flags ==
            (invalidation::RENDER_EDIT | invalidation::RENDER_AUTOMATION));
+
+    probe.reset();
+    macroEdit.contextSelectorActive.set(true);
+    test_support::drainNotifications();
+    assert(probe.calls == 1);
+    assert(probe.flags == invalidation::RENDER_EDIT);
 
     bindings.clear();
     assert(bindings.subscriptionCount() == 0);

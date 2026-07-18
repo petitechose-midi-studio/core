@@ -11,9 +11,10 @@
 80 capture screen macro_ready
 
 # Reuse the learned Macro > Modulation path.
-180 button MACRO_1 down
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
 1240 tick
-1300 button MACRO_1 up
+1300 button LEFT_BOTTOM up
 1450 encoder NAV 1
 1570 encoder NAV 1
 1690 tap NAV 60

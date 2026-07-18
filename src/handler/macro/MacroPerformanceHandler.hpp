@@ -74,6 +74,7 @@ private:
     bool policyAllows(core::state::macro::MacroInteractionAction action) const;
 
     MacroStructureWorkflow structure_workflow_;
+    MacroPerformanceDomainServices performance_services_;
     MacroPerformanceModeWorkflow performance_workflow_;
     oc::state::Signal<
         core::state::StructureNavigationFocus,
@@ -84,7 +85,6 @@ private:
     oc::type::ScopeID scope_id_ = 0;
     TimeProviderFn time_provider_ = core::time_compat::millis;
     bool nav_long_press_used_ = false;
-    bool left_bottom_held_ = false;
     bool selection_delete_press_active_ = false;
     bool ignore_next_bottom_left_release_ = false;
     bool ignore_next_bottom_right_release_ = false;

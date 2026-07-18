@@ -561,6 +561,124 @@ void test_automation_recording_cancel_discards_session() {
     std::cout << "[PASS] test_automation_recording_cancel_discards_session\n";
 }
 
+void test_shared_automation_take_records_late_join_and_one_undo() {
+    using namespace core::state::macro;
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto services =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    state.statusBar.tempo.set(120.0f);
+    state.pages.activePageData().setMacroActive(1U, true);
+    state.pages.activePageData().values[0] = 0.25f;
+    state.pages.activePageData().values[1] = 0.5f;
+    const MacroAutomationSlotAddress first{0U, 0U, 0U};
+    const MacroAutomationSlotAddress second{0U, 0U, 1U};
+    configureModulation(state.pages.control, first, 0.4f);
+    const auto graphBefore = state.pages.control.authored.modulation;
+    const uint8_t undoBefore = state.macroHistory.undoCount();
+
+    assert(services.setAutomationTakeTiming(MacroAutomationTakeTiming::BAR_1));
+    assert(services.armAutomationTake());
+    assert(services.automationTakeArmed());
+    assert(state.macroUi.automationRecordingStatus.get() ==
+           MacroAutomationRecordingStatus::ARMED);
+    assert(services.recordAutomationTakeValue(0U, 1000U, 0.75f));
+    assert(services.automationTakeRecording());
+    assert(services.recordAutomationTakeValue(1U, 1250U, 1.0f));
+    assert(services.releaseAutomationTake(1300U));
+    assert(services.automationTakeRecording());
+    assert(services.updateAutomationTake(3000U));
+    assert(!services.automationTakeRecording());
+    assert(state.macroHistory.undoCount() == undoBefore + 1U);
+    assert(std::memcmp(
+        &state.pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+
+    auto firstSlot = test_support::project_control::readSlot(
+        state.pages.control,
+        first
+    );
+    auto secondSlot = test_support::project_control::readSlot(
+        state.pages.control,
+        second
+    );
+    assert(firstSlot.automationEnabled && secondSlot.automationEnabled);
+    assert(firstSlot.compatibility.automation.durationTicks == 768U);
+    assert(secondSlot.compatibility.automation.durationTicks == 768U);
+    const auto secondStart = test_support::project_control::readCurvePoint(
+        state.pages.control,
+        secondSlot.automationCurveId,
+        0U,
+        false
+    );
+    assert(std::fabs(secondStart.value - 0.5f) < 0.005f);
+
+    assert(state.macroHistory.undo(state.pages));
+    firstSlot = test_support::project_control::readSlot(state.pages.control, first);
+    secondSlot = test_support::project_control::readSlot(state.pages.control, second);
+    assert(!firstSlot.automationStored);
+    assert(!secondSlot.automationStored);
+    assert(firstSlot.modulationEnabled);
+    assert(state.macroHistory.redo(state.pages));
+    assert(test_support::project_control::readSlot(
+        state.pages.control,
+        first
+    ).automationEnabled);
+    assert(test_support::project_control::readSlot(
+        state.pages.control,
+        second
+    ).automationEnabled);
+    std::cout << "[PASS] shared take has late join and one Undo\n";
+}
+
+void test_take_cancel_restores_manual_and_preflight_failure_is_clean() {
+    using namespace core::state::macro;
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto services =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    const MacroAutomationSlotAddress address{0U, 0U, 0U};
+    configureAutomation(state.pages.control, address);
+    assert(services.takeManualControl(0U, 0.42f));
+    assert(services.armAutomationTake());
+    assert(services.recordAutomationTakeValue(0U, 1000U, 0.8f));
+    assert(!services.manualOverrideActiveFor(0U));
+    assert(services.cancelAutomationTake());
+    float restored = 0.0f;
+    assert(services.manualOverrideValueFor(0U, restored));
+    assert(std::fabs(restored - 0.42f) < 0.0001f);
+
+    // A full arena fails before the first authored/manual mutation.
+    state.macroUi.manualOverrides.clearProjectRuntime();
+    core::state::CoreState full(storage.settings,
+                                storage.macroLibrary,
+                                storage.sequencerPatternLibrary,
+                                storage.sequencerSetLibrary);
+    const auto fullServices =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(full);
+    fillAutomationPointPoolExcept(full.pages.control, address);
+    const auto authoredBefore = full.pages.control.authored;
+    const uint8_t undoBefore = full.macroHistory.undoCount();
+    assert(fullServices.armAutomationTake());
+    assert(!fullServices.recordAutomationTakeValue(0U, 1000U, 0.7f));
+    assert(full.macroUi.automationTake.phase == MacroAutomationTakePhase::IDLE);
+    assert(full.macroHistory.undoCount() == undoBefore);
+    assert(std::memcmp(
+        &full.pages.control.authored,
+        &authoredBefore,
+        sizeof(authoredBefore)
+    ) == 0);
+    std::cout << "[PASS] take Cancel and preflight failure are exact\n";
+}
+
 void test_automation_recording_without_motion_does_not_create_slot() {
     CoreStorages storage;
 
@@ -1384,6 +1502,8 @@ int main() {
     test_addressed_macro_slot_activation_preserves_cold_page_cache();
     test_automation_recording_commits_to_current_macro_slot();
     test_automation_recording_cancel_discards_session();
+    test_shared_automation_take_records_late_join_and_one_undo();
+    test_take_cancel_restores_manual_and_preflight_failure_is_clean();
     test_automation_recording_without_motion_does_not_create_slot();
     test_failed_or_cancelled_recording_restores_previous_manual_state();
     test_recording_preserves_active_modulation_without_resume();

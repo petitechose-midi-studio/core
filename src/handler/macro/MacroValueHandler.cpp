@@ -3,31 +3,14 @@
 #include <cmath>
 
 #include <config/PlatformCompat.hpp>
-#include <config/Timing.hpp>
 #include <config/TimeCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
-#include <oc/time/Time.hpp>
-#include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/macro/MacroAutomationTiming.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "midi/MidiUtils.hpp"
 #include "state/macro/MacroAutomationDomain.hpp"
 
 namespace core::handler {
-
-namespace input_utils = core::handler::sequencer::input_utils;
-
-namespace {
-
-constexpr uint32_t POST_RECORD_INPUT_GUARD_MS = 120;
-
-float quantizedMidi7(float value) {
-    return core::midi::fromCC(core::midi::toCC(
-        core::state::macro::macroAutomationClamp01(value)
-    ));
-}
-
-}  // namespace
 
 FLASHMEM MacroValueHandler::MacroValueHandler(StateRefs state,
                                      MacroPerformanceDomainServices services,
@@ -54,54 +37,7 @@ FLASHMEM void MacroValueHandler::setupBindings() {
             .turn()
             .scope(scope_id_)
             .when([this]() { return shouldHandleTurns(); })
-            .then([this, i](float value) {
-                if (!macro_ui_.clutchActive.get() ||
-                    macro_ui_.activeProperty.get() == core::state::macro::MacroPerformanceProperty::VALUE) {
-                    handleValueChange(i, value);
-                    return;
-                }
-                handleConfigChange(i, value);
-            });
-
-        buttons_.button(Config::MACRO_BUTTONS[i])
-            .press()
-            .scope(scope_id_)
-            .when([this]() {
-                return shouldHandleAutomationRecordPress() ||
-                       shouldHandleAutomationRestorePress();
-            })
-            .then([this, i]() {
-                // These modes are mutually exclusive (Clutch off records;
-                // Clutch + Automation restores). A single binding preserves
-                // one press owner and avoids duplicating eight registry rows.
-                if (shouldHandleAutomationRecordPress()) {
-                    if (!ensureActiveSlot(i)) return;
-                    macro_button_held_[i] = true;
-                    return;
-                }
-                restoreAutomation(i);
-            });
-
-        buttons_.button(Config::MACRO_BUTTONS[i])
-            .release()
-            .scope(scope_id_)
-            .then([this, i]() {
-                macro_button_held_[i] = false;
-                if (!macro_ui_.automationRecording.active ||
-                    macro_ui_.automationRecording.address.macro != i) {
-                    return;
-                }
-                const uint32_t nowMs = core::time_compat::millis();
-                (void)services_.recordAutomationPoint(
-                    i,
-                    nowMs,
-                    quantizedMidi7(services_.absoluteBaseValue(i))
-                );
-                services_.commitAutomationRecording(nowMs);
-                record_sample_clock_active_ = false;
-                post_record_guard_active_[i] = true;
-                post_record_guard_until_ms_[i] = nowMs + POST_RECORD_INPUT_GUARD_MS;
-            });
+            .then([this, i](float value) { handleValueChange(i, value); });
     }
 }
 
@@ -111,34 +47,7 @@ bool MacroValueHandler::shouldHandleTurns() const {
            !macro_edit_.visible.get();
 }
 
-bool MacroValueHandler::shouldHandleAutomationRecordPress() const {
-    return shouldHandleTurns() && !macro_ui_.clutchActive.get();
-}
-
-bool MacroValueHandler::shouldHandleAutomationRestorePress() const {
-    return shouldHandleTurns() &&
-           macro_ui_.clutchActive.get() &&
-           macro_ui_.activeProperty.get() ==
-               core::state::macro::MacroPerformanceProperty::AUTOMATION;
-}
-
-bool MacroValueHandler::shouldIgnorePostRecordTurn(uint8_t index, uint32_t nowMs) {
-    if (index >= post_record_guard_until_ms_.size() || !post_record_guard_active_[index]) {
-        return false;
-    }
-    if (!oc::time::deadlineReachedMs(nowMs, post_record_guard_until_ms_[index])) return true;
-    post_record_guard_active_[index] = false;
-    return false;
-}
-
-bool MacroValueHandler::shouldStartAutomationRecording(uint8_t index) const {
-    return index < macro_button_held_.size() &&
-           macro_button_held_[index] &&
-           !macro_ui_.clutchActive.get() &&
-           !macro_ui_.automationRecording.active;
-}
-
-bool MacroValueHandler::ensureActiveSlot(uint8_t index) {
+FLASHMEM bool MacroValueHandler::ensureActiveSlot(uint8_t index) {
     return services_.isMacroSlotActive(index);
 }
 
@@ -146,7 +55,6 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     OC_PERF_SCOPE(perfValueChange, "macro.value-change");
     const uint32_t nowMs = core::time_compat::millis();
     if (!ensureActiveSlot(index)) return;
-    if (shouldIgnorePostRecordTurn(index, nowMs)) return;
 
     const float sanitized = core::state::macro::macroAutomationClamp01(value);
     const uint8_t cc_value = core::midi::toCC(sanitized);
@@ -154,18 +62,23 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
 
     if (std::abs(services_.absoluteBaseValue(index) - quantized) < 0.0005f) return;
 
-    // A hold alone is inert. Recording starts only after a value movement has
-    // crossed the same quantized threshold used for output.
-    if (shouldStartAutomationRecording(index)) {
-        if (services_.beginAutomationRecording(index, nowMs)) {
-            last_record_sample_ms_ = nowMs;
-            record_sample_clock_active_ = true;
-        }
+    const bool takeRequested = services_.automationTakeArmed() ||
+                               services_.automationTakeRecording();
+    bool takeCaptured = false;
+    if (takeRequested) {
+        takeCaptured = services_.recordAutomationTakeValue(
+            index,
+            nowMs,
+            quantized
+        );
+        if (!takeCaptured) return;
+        last_record_sample_ms_ = nowMs;
+        record_sample_clock_active_ = true;
     }
-    const bool recordingActive = services_.automationRecordingActiveFor(index);
 
-    if (recordingActive) {
-        services_.recordAutomationPoint(index, nowMs, quantized);
+    if (takeCaptured) {
+        // The take owns Base authoring. Modulation remains a live relative
+        // projection and is deliberately absent from the recorded column.
     } else if (services_.automationPlaybackActiveFor(index)) {
         if (!services_.takeManualControl(index, quantized)) return;
     } else {
@@ -185,41 +98,13 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     );
 }
 
-void MacroValueHandler::handleConfigChange(uint8_t index, float value) {
-    if (!ensureActiveSlot(index)) return;
-    const float normalized = core::state::macro::macroAutomationClamp01(value);
-    const auto current = services_.activeConfig(index);
-
-    switch (macro_ui_.activeProperty.get()) {
-        case core::state::macro::MacroPerformanceProperty::CC: {
-            const uint8_t cc = input_utils::normalizedToMidi7(normalized);
-            services_.setConfig(index, current.channel, cc);
-            return;
-        }
-        case core::state::macro::MacroPerformanceProperty::AUTOMATION: {
-            (void)normalized;
-            return;
-        }
-        case core::state::macro::MacroPerformanceProperty::VALUE:
-        default:
-            handleValueChange(index, normalized);
-            return;
-    }
-}
-
-void MacroValueHandler::restoreAutomation(uint8_t index) {
-    if (!ensureActiveSlot(index)) return;
-    (void)services_.resumeComputedSources(index);
-}
-
-void MacroValueHandler::update(uint32_t nowMs) {
-    const auto& recording = macro_ui_.automationRecording;
-    if (!recording.active) {
+FLASHMEM void MacroValueHandler::update(uint32_t nowMs) {
+    if (!services_.automationTakeRecording()) {
         record_sample_clock_active_ = false;
         return;
     }
     if (!record_sample_clock_active_) {
-        last_record_sample_ms_ = recording.startedAtMs;
+        last_record_sample_ms_ = macro_ui_.automationTake.startedAtMs;
         record_sample_clock_active_ = true;
     }
     if ((nowMs - last_record_sample_ms_) <
@@ -227,14 +112,8 @@ void MacroValueHandler::update(uint32_t nowMs) {
         return;
     }
 
-    const uint8_t index = recording.address.macro;
-    (void)services_.recordAutomationPoint(
-        index,
-        nowMs,
-        quantizedMidi7(services_.absoluteBaseValue(index))
-    );
-    // Even a saturated/reduced temporary lane remains bounded to one attempt
-    // per cadence; never retry at the 1920 Hz app-loop rate.
+    (void)services_.updateAutomationTake(nowMs);
+    // One shared sample per cadence; never retry at the 1920 Hz app-loop rate.
     last_record_sample_ms_ = nowMs;
 }
 

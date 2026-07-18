@@ -25,9 +25,9 @@
 1080 capture screen second_slot_value_edited
 
 # Record automation on Macro 1.
-1220 button MACRO_1 down
+1220 button LEFT_CENTER down
 1520 encoder MACRO_1 1.00
-1870 button MACRO_1 up
+1870 button LEFT_CENTER up
 2040 capture screen automation_committed
 
 # Transport playback shows automation driving the value.

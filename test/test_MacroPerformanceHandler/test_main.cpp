@@ -829,84 +829,71 @@ void test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove() {
     std::cout << "[PASS] test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove\n";
 }
 
-void test_left_bottom_toggles_macro_slot_property_selector() {
+void test_left_bottom_shows_temporary_edit_prompt() {
     MacroPerformanceHarness h;
 
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::VALUE);
-    assert(!h.state.macroUi.clutchActive.get());
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::NONE);
 
     h.press(Config::ButtonID::LEFT_BOTTOM);
     h.tick(1);
-    assert(h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::CC);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::EDIT);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::AUTOMATION);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::CC);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::EDIT);
 
     h.release(Config::ButtonID::LEFT_BOTTOM);
     h.tick(2);
-    assert(h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::CC);
-
-    h.press(Config::ButtonID::LEFT_BOTTOM);
-    h.tick(3);
-    h.release(Config::ButtonID::LEFT_BOTTOM);
-    h.tick(4);
-    assert(!h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::VALUE);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::NONE);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_left_bottom_toggles_macro_slot_property_selector\n";
+    std::cout << "[PASS] LEFT_BOTTOM shows temporary Edit prompt\n";
 }
 
-void test_left_top_cancels_macro_slot_property_selector_without_committing_preview() {
+void test_left_top_cancels_edit_prompt() {
     MacroPerformanceHarness h;
 
     h.press(Config::ButtonID::LEFT_BOTTOM);
     h.tick(1);
-    assert(h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::CC);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::AUTOMATION);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::EDIT);
 
     h.release(Config::ButtonID::LEFT_TOP);
     h.tick(2);
-    assert(!h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::VALUE);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::NONE);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_left_top_cancels_macro_slot_property_selector_without_committing_preview\n";
+    std::cout << "[PASS] LEFT_TOP cancels Edit prompt\n";
 }
 
-void test_left_center_is_reserved_and_does_not_open_macro_set_controls() {
+void test_left_center_arms_take_and_nav_selects_timing() {
     MacroPerformanceHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
     h.tick(1);
+    assert(h.state.macroUi.automationTake.phase ==
+           core::state::macro::MacroAutomationTakePhase::ARMED);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::AUTOMATION_TAKE);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroUi.automationTakeTiming.get() ==
+           core::state::macro::MacroAutomationTakeTiming::NOTE_1_16);
     h.release(Config::ButtonID::LEFT_CENTER);
     h.tick(2);
-    assert(!h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::VALUE);
+    assert(h.state.macroUi.automationTake.phase ==
+           core::state::macro::MacroAutomationTakePhase::IDLE);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::NONE);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_left_center_is_reserved_and_does_not_open_macro_set_controls\n";
+    std::cout << "[PASS] LEFT_CENTER arms take and NAV selects timing\n";
 }
 
 }  // namespace
@@ -927,9 +914,9 @@ int main() {
     test_macro_track_copy_and_long_press_paste_to_add_slot();
     test_macro_track_copy_preserves_multiple_pages_and_automations();
     test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove();
-    test_left_bottom_toggles_macro_slot_property_selector();
-    test_left_top_cancels_macro_slot_property_selector_without_committing_preview();
-    test_left_center_is_reserved_and_does_not_open_macro_set_controls();
+    test_left_bottom_shows_temporary_edit_prompt();
+    test_left_top_cancels_edit_prompt();
+    test_left_center_arms_take_and_nav_selects_timing();
     std::cout << "\nAll MacroPerformanceHandler tests passed.\n";
     return 0;
 }

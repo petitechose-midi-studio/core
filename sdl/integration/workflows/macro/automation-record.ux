@@ -1,31 +1,56 @@
-# UX workflow: record a live automation lane from one macro encoder.
-# Purpose: validates the controller-facing automation gesture:
-# hold a macro button, turn the same macro, release to commit.
-# Expect: capture_changed:macro_ready=macro_record_active, capture_changed:macro_record_active=macro_record_committed
+# UX workflow: record one phase-coherent Automation take across two Macros.
+# Purpose: validates the explicit performance grammar: create a second Macro,
+# hold LEFT_CENTER, choose a duration, move several Macros, and let the fixed
+# take complete after release.
+# Expect: capture_changed:macro_ready=two_macros_ready, capture_changed:take_armed=macro_record_active, capture_changed:macro_record_active=macro_record_committed
+# Expect: capture_changed:macro_record_active=take_continues_after_release, capture_changed:macro_1_editor=macro_2_editor
+# Expect: semantic:take_armed:effect=select_macro_automation_take_duration, semantic:macro_record_active:effect=record_macro_automation_take_value, semantic:take_continues_after_release:effect=continue_fixed_macro_automation_take, semantic:macro_2_editor:effect=cycle_active_macro
 
 0 scenario macro-automation-clean
 50 capture screen macro_ready
 
-# Hold Macro 1. Holding alone keeps the existing long-press edit path available;
-# recording starts only once the held macro moves.
-150 button MACRO_1 down
-220 capture screen macro_button_held
+# Create Macro 2 through the normal add-slot grammar.
+150 tap NAV 60
+240 tap NAV 60
+330 encoder NAV 1
+420 tap NAV 60
+520 capture screen two_macros_ready
 
-# Move the held macro: this arms recording, changes the live CC value, and records a point.
-500 encoder MACRO_1 1.00
-650 capture screen macro_record_active
+# LEFT_CENTER arms a shared take; NAV selects a visible 1/4-note duration.
+650 button LEFT_CENTER down
+700 encoder NAV 1
+740 encoder NAV 1
+780 encoder NAV 1
+840 capture screen take_armed
+980 encoder MACRO_1 0.85
+# Macro 2 joins late but shares the exact same t0 and final duration.
+1080 encoder MACRO_2 0.25
+1160 capture screen macro_record_active
 
-# Release commits the automation lane for the current track/page/macro slot.
-1100 button MACRO_1 up
-1250 capture screen macro_record_committed
+# Releasing the modifier does not truncate a fixed take.
+1220 button LEFT_CENTER up
+1300 capture screen take_continues_after_release
+# Both lanes publish together when the shared duration completes.
+1600 capture screen macro_record_committed
 
 # Start transport: the committed automation should now drive the macro value.
-1350 tap BOTTOM_CENTER 60
-1650 capture screen macro_playback_running
-1750 tap BOTTOM_CENTER 60
+1740 tap BOTTOM_CENTER 60
+2040 capture screen macro_playback_running
+2160 tap BOTTOM_CENTER 60
 
-# A hold without movement should be non-destructive and create no lane.
-2050 button MACRO_2 down
-2200 capture screen macro_record_no_motion_held
-2400 button MACRO_2 up
-2550 capture screen macro_record_no_motion_discarded
+# Arm/release without moving a Macro is non-destructive.
+2320 button LEFT_CENTER down
+2460 capture screen macro_record_no_motion_held
+2620 button LEFT_CENTER up
+2780 capture screen macro_record_no_motion_discarded
+
+# The same session closes by exercising the active-only Macro cycle in Edit.
+2920 button LEFT_BOTTOM down
+3000 tap MACRO_1 60
+3120 button LEFT_BOTTOM up
+3240 capture screen macro_1_editor
+3360 button LEFT_CENTER down
+3480 encoder NAV 1
+3600 capture screen macro_2_editor
+3720 button LEFT_CENTER up
+3840 tap LEFT_TOP 60

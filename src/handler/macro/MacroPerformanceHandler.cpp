@@ -40,6 +40,7 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
           },
           structureServices
       )
+    , performance_services_(performanceServices)
     , performance_workflow_(
           MacroPerformanceModeWorkflow::StateRefs{
               state.macroUi,
@@ -66,13 +67,26 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
 FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::LEFT_BOTTOM)
         .press()
-        .latch()
         .scope(scope_id_)
         .when([this]() {
-            left_bottom_held_ = true;
             return policyAllows(MacroAction::OPEN_SLOT_PROPERTIES);
         })
-        .then([this]() { performance_workflow_.activateClutch(); });
+        .then([this]() { performance_workflow_.openEditPrompt(); });
+
+    buttons_.button(Config::ButtonID::LEFT_CENTER)
+        .press()
+        .scope(scope_id_)
+        .when([this]() {
+            return MacroPolicy::performanceAvailable(interactionContext());
+        })
+        .then([this]() { (void)performance_services_.armAutomationTake(); });
+
+    buttons_.button(Config::ButtonID::LEFT_CENTER)
+        .release()
+        .scope(scope_id_)
+        .then([this]() {
+            (void)performance_services_.releaseAutomationTake(time_provider_());
+        });
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
@@ -105,9 +119,8 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .then([this]() {
-            left_bottom_held_ = false;
             if (policyAllows(MacroAction::APPLY_SLOT_PROPERTIES)) {
-                performance_workflow_.deactivateClutch();
+                performance_workflow_.closePerformanceOverlay();
             }
         });
 
@@ -139,7 +152,11 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .turn()
         .scope(scope_id_)
         .when([this]() { return policyAllows(MacroAction::MOVE_SLOT_PROPERTY); })
-        .then([this](float delta) { performance_workflow_.navigateProperty(delta); });
+        .then([this](float delta) {
+            if (performance_services_.automationTakeArmed()) {
+                performance_workflow_.navigateTakeTiming(delta);
+            }
+        });
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
@@ -312,22 +329,26 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() { return policyAllows(MacroAction::CANCEL_SLOT_PROPERTIES); })
-        .then([this]() { performance_workflow_.cancelClutch(); });
+        .then([this]() {
+            if (!performance_services_.cancelAutomationTake()) {
+                performance_workflow_.closePerformanceOverlay();
+            }
+        });
 }
 
-void MacroPerformanceHandler::update(uint32_t nowMs) {
+FLASHMEM void MacroPerformanceHandler::update(uint32_t nowMs) {
     structure_workflow_.updateSelectionDeleteGuard(nowMs);
 }
 
 core::state::macro::MacroInteractionContext
-MacroPerformanceHandler::interactionContext() const {
+FLASHMEM MacroPerformanceHandler::interactionContext() const {
     return structure_workflow_.interactionContext(
         overlays_.hasVisible(),
-        performance_workflow_.clutchActive()
+        performance_workflow_.performanceOverlayActive()
     );
 }
 
-bool MacroPerformanceHandler::policyAllows(
+FLASHMEM bool MacroPerformanceHandler::policyAllows(
     core::state::macro::MacroInteractionAction action
 ) const {
     const auto context = interactionContext();

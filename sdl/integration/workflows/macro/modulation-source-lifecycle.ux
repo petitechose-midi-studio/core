@@ -13,11 +13,12 @@
 0 scenario macro-auto-mod
 80 capture screen source_grid
 
-# Open the combined Macro editor. The three direct domains and the superposed
+# Open the combined Macro editor with the explicit Edit chord. The three direct domains and the superposed
 # A / Base / Mod / Out preview are visible before entering a detail context.
-180 button MACRO_1 down
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
 1240 tick
-1300 button MACRO_1 up
+1300 button LEFT_BOTTOM up
 1450 capture screen macro_editor
 1580 encoder NAV 1
 1710 encoder NAV 1
@@ -32,9 +33,10 @@
 2740 capture screen manual_override_grid
 
 # Resume lives only in Automation detail and is explicitly named Resume Auto.
-2880 button MACRO_1 down
+2880 button LEFT_BOTTOM down
+2960 tap MACRO_1 60
 3940 tick
-4000 button MACRO_1 up
+4000 button LEFT_BOTTOM up
 4140 capture screen manual_macro_editor
 4270 encoder NAV 1
 4400 tap NAV 60

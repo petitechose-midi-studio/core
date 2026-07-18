@@ -82,7 +82,6 @@ private:
     void setupBindings();
 
     void openEdit(uint8_t macroIndex);
-    void handleOpeningMacroRelease(uint8_t macroIndex);
     void closeOverlay();
 
     void moveFocus(float delta);
@@ -98,6 +97,17 @@ private:
     void openMacroTargetSelector();
     void navigateMacroTargetSelector(float delta);
     void applyMacroTargetSelectorAndClose();
+
+    void beginContextSelector();
+    void endContextSelector();
+    void navigateContextProperty(float delta);
+    int contextPropertyCount() const;
+    int contextValueCount() const;
+    int contextValue() const;
+    void setContextValue(float normalized);
+    void beginMacroCycle();
+    void endMacroCycle();
+    void cycleActiveMacro(float delta);
 
     void setValueForRow(uint8_t row, int value);
     int valueForRow(uint8_t row) const;
@@ -125,7 +135,7 @@ private:
     oc::type::ScopeID page_selector_scope_ = 0;
     oc::type::ScopeID macro_selector_scope_ = 0;
     NowProvider now_provider_ = nullptr;
-    bool ignore_next_left_bottom_release_ = false;
+    bool edit_entry_chord_active_ = false;
 };
 
 }  // namespace core::handler

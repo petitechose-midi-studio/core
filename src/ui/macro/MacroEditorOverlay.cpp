@@ -131,6 +131,40 @@ FLASHMEM void MacroEditorOverlay::createUi(lv_obj_t* parent) {
     );
     lv_obj_set_pos(hint_, 8, 185);
     lv_obj_set_size(hint_, 304, 15);
+
+    interaction_overlay_ = lv_obj_create(root_);
+    lv_obj_remove_style_all(interaction_overlay_);
+    lv_obj_set_pos(interaction_overlay_, 44, 88);
+    lv_obj_set_size(interaction_overlay_, 232, 62);
+    lv_obj_set_style_bg_color(
+        interaction_overlay_,
+        lv_color_hex(theme::color::KNOB_BACKGROUND),
+        0
+    );
+    lv_obj_set_style_bg_opa(interaction_overlay_, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(interaction_overlay_, 1, 0);
+    lv_obj_set_style_radius(interaction_overlay_, 4, 0);
+    lv_obj_clear_flag(interaction_overlay_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(interaction_overlay_, LV_OBJ_FLAG_HIDDEN);
+
+    interaction_icon_ = createLabel(
+        interaction_overlay_, standalone_fonts.icons_16,
+        theme::color::TEXT_PRIMARY, LV_TEXT_ALIGN_CENTER
+    );
+    lv_obj_set_pos(interaction_icon_, 10, 21);
+    lv_obj_set_size(interaction_icon_, 26, 20);
+    interaction_label_ = createLabel(
+        interaction_overlay_, fonts.inter_12_medium,
+        theme::color::TEXT_SECONDARY
+    );
+    lv_obj_set_pos(interaction_label_, 45, 9);
+    lv_obj_set_size(interaction_label_, 176, 17);
+    interaction_value_ = createLabel(
+        interaction_overlay_, fonts.inter_14_semibold,
+        theme::color::TEXT_PRIMARY
+    );
+    lv_obj_set_pos(interaction_value_, 45, 29);
+    lv_obj_set_size(interaction_value_, 176, 20);
 }
 
 FLASHMEM void MacroEditorOverlay::createTab(
@@ -511,6 +545,36 @@ FLASHMEM void MacroEditorOverlay::render(
         "Relative loop · Press to edit",
     };
     lv_label_set_text_static(hint_, HINTS[static_cast<size_t>(selected)]);
+
+    if (props.interactionOverlayVisible) {
+        lv_label_set_text(
+            interaction_icon_,
+            props.interactionIcon ? props.interactionIcon : standalone::icons::KNOB
+        );
+        if (copyText(interactionLabelText_, props.interactionLabel)) {
+            lv_label_set_text_static(
+                interaction_label_, interactionLabelText_.data()
+            );
+        }
+        if (copyText(interactionValueText_, props.interactionValue)) {
+            lv_label_set_text_static(
+                interaction_value_, interactionValueText_.data()
+            );
+        }
+        const uint32_t color = props.interactionColor != 0U
+            ? props.interactionColor
+            : theme::color::TEXT_PRIMARY;
+        lv_obj_set_style_border_color(
+            interaction_overlay_, lv_color_hex(color), 0
+        );
+        lv_obj_set_style_text_color(
+            interaction_icon_, lv_color_hex(color), 0
+        );
+        lv_obj_clear_flag(interaction_overlay_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(interaction_overlay_);
+    } else {
+        lv_obj_add_flag(interaction_overlay_, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 }  // namespace core::ui

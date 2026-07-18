@@ -127,6 +127,18 @@ struct ProjectControlMacroSlotView {
     uint16_t sourcePointCount
 );
 
+/**
+ * Cold transaction variant. It mutates only the caller-owned authored domain
+ * and never publishes a revision or touches derived runtime state.
+ */
+[[nodiscard]] bool replaceProjectControlAutomationInDomain(
+    ProjectControlDomainState& domain,
+    const macro::MacroAutomationSlotAddress& address,
+    const macro::MacroAutomationCurveRef& source,
+    const macro::MacroPackedCurvePoint* sourcePoints,
+    uint16_t sourcePointCount
+);
+
 /** Replaces only the slot-compatible primary Recorded Shape assignment. */
 [[nodiscard]] bool replaceProjectControlModulation(
     ProjectControlState& control,

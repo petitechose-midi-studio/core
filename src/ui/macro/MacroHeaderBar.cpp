@@ -25,6 +25,16 @@ constexpr lv_opa_t PAGE_SELECTOR_BASE_OPA_DISABLED = static_cast<lv_opa_t>(8);
 constexpr lv_opa_t PAGE_SELECTOR_ACTIVE_BONUS = static_cast<lv_opa_t>(48);
 constexpr lv_opa_t ACTIVITY_VELOCITY_RANGE = static_cast<lv_opa_t>(36);
 constexpr uint32_t HEADER_BG_COLOR = theme::color::TEXT_PRIMARY;
+
+uint8_t bitCount(uint16_t mask) {
+    uint8_t count = 0U;
+    while (mask != 0U) {
+        count = static_cast<uint8_t>(count + (mask & 1U));
+        mask = static_cast<uint16_t>(mask >> 1U);
+    }
+    return count;
+}
+
 bool isTrackEnabled(uint16_t enabledMask, uint8_t index) {
     return (enabledMask & static_cast<uint16_t>(1U << index)) != 0;
 }
@@ -89,15 +99,25 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
             ? props.previewPage
             : props.activePage;
     const bool trackScope = props.selectingTrack || props.focusingTrack;
-    char recordingLabel[12] = {};
-    if (props.automationRecording) {
+    char recordingLabel[16] = {};
+    if (props.automationTakePhase ==
+        core::state::macro::MacroAutomationTakePhase::ARMED) {
+        std::snprintf(recordingLabel,
+                      sizeof(recordingLabel),
+                      "TAKE %s",
+                      core::state::macro::macroAutomationTakeTimingLabel(
+                          props.automationTakeTiming
+                      ));
+    } else if (props.automationTakePhase ==
+               core::state::macro::MacroAutomationTakePhase::RECORDING) {
+        const unsigned count = bitCount(props.automationTakeTouchedMask);
         std::snprintf(recordingLabel,
                       sizeof(recordingLabel),
                       props.automationRecordingStatus ==
                               core::state::macro::MacroAutomationRecordingStatus::REDUCED
-                          ? "REC~ M%u"
-                          : "REC M%u",
-                      static_cast<unsigned>(props.automationRecordingMacro) + 1U);
+                          ? "REC~ %u MAC"
+                          : "REC %u MAC",
+                      count);
     } else if (props.automationRecordingStatus ==
                core::state::macro::MacroAutomationRecordingStatus::TOO_SHORT) {
         std::snprintf(recordingLabel, sizeof(recordingLabel), "REC SHORT");
@@ -111,13 +131,17 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
     rowProps.leftText = showRecordingStatus ? recordingLabel : focusLabel(trackScope);
     rowProps.itemCount = core::state::macro::PAGE_COUNT;
     rowProps.accentColor = showRecordingStatus
-        ? theme::color::getMacroColor(props.automationRecordingMacro)
+        ? theme::color::MACRO_AUTOMATION
         : (isTrackEnabled(props.trackEnabledMask, displayTrack)
             ? trackColor(displayTrack)
             : trackInactiveColor());
     rowProps.accentOpa = LV_OPA_80;
     rowProps.backgroundColor = HEADER_BG_COLOR;
-    rowProps.backgroundOpa = props.clutchActive ? HEADER_BG_OPA_CLUTCH : HEADER_BG_OPA_IDLE;
+    rowProps.backgroundOpa =
+        props.performanceOverlayMode !=
+                core::state::macro::MacroPerformanceOverlayMode::NONE
+            ? HEADER_BG_OPA_CLUTCH
+            : HEADER_BG_OPA_IDLE;
     rowProps.showCursor = props.selectingPage || props.focusingPage;
     rowProps.cursorIndex = displayPage;
     rowProps.selectedMask = props.selectingPage ? props.selectedPageMask : 0;

@@ -1614,6 +1614,108 @@ void test_recorded_source_duplicate_undo_restores_shared_reference() {
     std::cout << "[PASS] recorded source duplicate shares and Undo restores\n";
 }
 
+void test_multi_macro_take_is_one_atomic_undo_redo_action() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    seedCurves(pages);
+    constexpr macro::MacroAutomationSlotAddress second{
+        .track = 0,
+        .page = 0,
+        .macro = 2,
+    };
+    macro::MacroAutomationLane oldSecond{};
+    assert(macro::macroAutomationAppendPoint(oldSecond, 0.0f, 0.1f));
+    assert(macro::macroAutomationAppendPoint(oldSecond, 1.0f, 0.3f));
+    assert(test_support::project_control::assignAutomation(
+        pages.control,
+        second,
+        oldSecond
+    ));
+
+    macro::MacroAutomationHistorySnapshot firstBefore{};
+    macro::MacroAutomationHistorySnapshot secondBefore{};
+    assert(macro::captureMacroAutomationHistorySnapshot(
+        pages,
+        kAddress,
+        firstBefore
+    ));
+    assert(macro::captureMacroAutomationHistorySnapshot(
+        pages,
+        second,
+        secondBefore
+    ));
+    const auto modulationBefore = pages.control.authored.modulation;
+
+    macro::MacroHistoryService history;
+    auto change = history.prepareAutomationTake(
+        pages,
+        0U,
+        0U,
+        static_cast<uint16_t>((1U << 1U) | (1U << 2U))
+    );
+    assert(change && change->automationTake);
+    auto& payload = *change->automationTake;
+    payload.touchedMask = payload.candidateMask;
+    for (uint8_t macroIndex : {uint8_t{1U}, uint8_t{2U}}) {
+        auto& snapshot = payload.after[macroIndex];
+        snapshot.automation.active = true;
+        snapshot.automation.playbackState = macro::MacroCurvePlaybackState::ACTIVE;
+        snapshot.automation.pointOffset = 0U;
+        snapshot.automation.pointCount = 2U;
+        snapshot.automation.sourceDurationTicks = 768U;
+        snapshot.automation.durationTicks = 768U;
+        snapshot.automation.windowOffsetTicks = 100U;
+        snapshot.automation.interpolation =
+            macro::MacroAutomationInterpolation::LINEAR;
+        snapshot.automation.modulationOrigin = macro::MacroModulationOrigin::NATIVE;
+        snapshot.pointCount = 2U;
+        snapshot.points[0] = {0U, static_cast<int16_t>(4000 * macroIndex)};
+        snapshot.points[1] = {768U, static_cast<int16_t>(12000 + 3000 * macroIndex)};
+    }
+
+    auto staged = core::app::makeExtmemUnique<ProjectControlDomainState>();
+    assert(staged);
+    *staged = pages.control.authored;
+    for (uint8_t macroIndex : {uint8_t{1U}, uint8_t{2U}}) {
+        const auto& snapshot = payload.after[macroIndex];
+        assert(replaceProjectControlAutomationInDomain(
+            *staged,
+            snapshot.address,
+            snapshot.automation,
+            snapshot.points.get(),
+            snapshot.pointCount
+        ));
+    }
+    assert(validProjectModulationDomain(
+        staged->modulation,
+        staged->curves,
+        &staged->automation
+    ));
+    const uint32_t revisionBeforePublish = pages.control.authoredRevision;
+    pages.control.authored = *staged;
+    pages.control.markAuthoredMutation();
+    assert(history.commitPreparedAutomationTake(pages, change));
+    assert(history.undoCount() == 1U);
+    assert(pages.control.authoredRevision == revisionBeforePublish + 1U);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &modulationBefore,
+        sizeof(modulationBefore)
+    ) == 0);
+
+    assert(history.undo(pages));
+    assert(macro::liveMacroAutomationMatchesHistorySnapshot(pages, firstBefore));
+    assert(macro::liveMacroAutomationMatchesHistorySnapshot(pages, secondBefore));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &modulationBefore,
+        sizeof(modulationBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(history.undoCount() == 1U);
+    std::cout << "[PASS] multi-Macro take is one atomic Undo/Redo action\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1647,6 +1749,7 @@ int main() {
     test_root_delete_undo_restores_graph_and_recorded_curve_exactly();
     test_root_delete_undo_restores_shared_curve_reference();
     test_recorded_source_duplicate_undo_restores_shared_reference();
+    test_multi_macro_take_is_one_atomic_undo_redo_action();
     test_assignment_history_is_destination_scoped_and_order_stable();
     test_assignment_remove_and_clear_keep_roots_and_unrelated_edges();
     std::cout << "All MacroHistory tests passed\n";
