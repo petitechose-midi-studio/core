@@ -29,6 +29,16 @@ struct StateRefs {
     uint8_t focusedRow
 );
 
+/** Opens the real Project source workspace for one provisional new source. */
+[[nodiscard]] bool openAuditionSourceFromMacro(
+    StateRefs state,
+    uint8_t macroIndex
+);
+
+[[nodiscard]] bool macroAuditionReturnPending(
+    const core::state::project::ProjectNavigationState& navigation
+);
+
 [[nodiscard]] bool macroReturnPending(
     const core::state::project::ProjectNavigationState& navigation
 );
@@ -40,5 +50,12 @@ struct StateRefs {
 
 /** Restores the exact Macro assignment, or the nearest deterministic fallback. */
 [[nodiscard]] bool returnToMacro(StateRefs state, uint32_t nowMs);
+
+/** Returns from the provisional source workspace after Apply or Cancel. */
+[[nodiscard]] bool returnToMacroFromAudition(
+    StateRefs state,
+    bool committed,
+    uint32_t nowMs
+);
 
 }  // namespace core::handler::modulator_navigation

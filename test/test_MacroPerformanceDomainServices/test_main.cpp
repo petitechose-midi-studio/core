@@ -1090,11 +1090,9 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
         state.pages.control,
         sourceAddress
     );
-    assert(core::state::modulation::setProjectModulatorReach(
-        state.pages.control.authored.modulation,
-        source.modulationSourceId,
-        {.kind = core::state::modulation::ModulatorReachKind::PROJECT}
-    ).changed());
+    assert(core::state::modulation::isProjectModulatorGlobalReach(
+        state.pages.control.authored.modulation.sources[0].reach
+    ));
     auto* sourceCurve = test_support::project_control::mutableCurve(
         state.pages.control,
         source.modulationCurveId

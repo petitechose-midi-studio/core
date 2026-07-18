@@ -157,11 +157,9 @@ DomainPtr makeTypicalDomain() {
 
     assert(domain->modulation.sourceCount == 1U);
     const auto original = domain->modulation.sources[0].id;
-    assert(mod::setProjectModulatorReach(
-        domain->modulation,
-        original,
-        mod::ModulatorReach{.kind = mod::ModulatorReachKind::PROJECT}
-    ).changed());
+    assert(mod::isProjectModulatorGlobalReach(
+        domain->modulation.sources[0].reach
+    ));
     const auto clone = mod::duplicateProjectModulator(
         domain->modulation,
         domain->curves,
@@ -572,9 +570,7 @@ void testLegacyLiftIsDeterministicCanonicalAndAtomic() {
     const auto& source = first->modulation.sources[0];
     assert(source.id.value == 1U);
     assert(std::strcmp(source.name.data(), "T03 P02 M4") == 0);
-    assert(source.reach.kind == mod::ModulatorReachKind::MACRO);
-    assert(source.reach.track == 2U && source.reach.page == 1U &&
-           source.reach.macro == 3U);
+    assert(mod::isProjectModulatorGlobalReach(source.reach));
     assert(first->modulation.outputBindings[0].amountQ15 == 16384);
 
     const auto* modulationCurve = mod::findProjectCurve(
@@ -853,6 +849,65 @@ void testCurrentRoundTripSharingAndIndependentRecovery() {
     assert(result.modulationStatus == control::ChunkStatus::MISSING);
     assert(decoded->automation.entryCount == 0U &&
            decoded->modulation.sourceCount == 0U);
+}
+
+void testSupportedReachBytesNormalizeToCanonicalProjectAvailability() {
+    auto source = makeTypicalDomain();
+    std::vector<uint8_t> canonicalBytes;
+    const auto encoded = encodeDomain(*source, canonicalBytes);
+    const uint32_t directory = encoded.modulationOffset +
+        control::PROJECT_CONTROL_CHUNK_HEADER_SIZE;
+    constexpr uint32_t TRACK_MASK_OFFSET = 20U;
+    constexpr uint32_t KIND_OFFSET = 22U;
+    constexpr uint32_t TRACK_OFFSET = 23U;
+    constexpr uint32_t PAGE_OFFSET = 24U;
+    constexpr uint32_t MACRO_OFFSET = 25U;
+
+    struct LegacyReachBytes {
+        uint16_t trackMask;
+        mod::ModulatorReachKind kind;
+        uint8_t track;
+        uint8_t page;
+        uint8_t macro;
+    };
+    constexpr std::array<LegacyReachBytes, 3> LEGACY_REACHES{{
+        {0U, mod::ModulatorReachKind::DETACHED, 0U, 0U, 0U},
+        {0U, mod::ModulatorReachKind::MACRO, 2U, 3U, 4U},
+        {0x0005U, mod::ModulatorReachKind::TRACK_SET, 0U, 0U, 0U},
+    }};
+
+    for (const auto& legacy : LEGACY_REACHES) {
+        auto bytes = canonicalBytes;
+        bytes[directory + TRACK_MASK_OFFSET] =
+            static_cast<uint8_t>(legacy.trackMask & 0xFFU);
+        bytes[directory + TRACK_MASK_OFFSET + 1U] =
+            static_cast<uint8_t>(legacy.trackMask >> 8U);
+        bytes[directory + KIND_OFFSET] = static_cast<uint8_t>(legacy.kind);
+        bytes[directory + TRACK_OFFSET] = legacy.track;
+        bytes[directory + PAGE_OFFSET] = legacy.page;
+        bytes[directory + MACRO_OFFSET] = legacy.macro;
+
+        auto decoded = std::make_unique<mod::ProjectControlDomainState>();
+        const auto result = control::decodeProjectControlPayloads(
+            automationView(bytes, encoded),
+            modulationView(bytes, encoded),
+            *decoded
+        );
+        assert(result.decoded() && !result.partial);
+        assert(mod::isProjectModulatorGlobalReach(
+            decoded->modulation.sources[0].reach
+        ));
+
+        std::vector<uint8_t> normalized;
+        encodeDomain(*decoded, normalized);
+        assert(normalized[directory + TRACK_MASK_OFFSET] == 0U);
+        assert(normalized[directory + TRACK_MASK_OFFSET + 1U] == 0U);
+        assert(normalized[directory + KIND_OFFSET] ==
+               static_cast<uint8_t>(mod::ModulatorReachKind::PROJECT));
+        assert(normalized[directory + TRACK_OFFSET] == 0U);
+        assert(normalized[directory + PAGE_OFFSET] == 0U);
+        assert(normalized[directory + MACRO_OFFSET] == 0U);
+    }
 }
 
 void testModg13AdsrRoundTripVersionGateAndCorruptionAtomicity() {
@@ -1184,6 +1239,7 @@ int main() {
     testLegacyLiftIsDeterministicCanonicalAndAtomic();
     testLegacyV14V15DecodeAndAmbiguityPolicy();
     testCurrentRoundTripSharingAndIndependentRecovery();
+    testSupportedReachBytesNormalizeToCanonicalProjectAvailability();
     testModg13AdsrRoundTripVersionGateAndCorruptionAtomicity();
     testModg12GlobalDepthMigratesAndReencodesCanonical13();
     testModg10ApplicationLiftPreservesSoundAndReencodesCanonical13();

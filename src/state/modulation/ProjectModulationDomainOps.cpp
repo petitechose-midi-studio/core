@@ -972,7 +972,7 @@ FLASHMEM ProjectModulationResult createLfoModulator(
     ModulatorSourceState source{};
     source.id = {takeId(state.nextSourceId)};
     copyName(source.name, draft.name, "LFO");
-    source.reach = draft.reach;
+    source.reach = projectModulatorGlobalReach();
     source.kind = ModulatorKind::LFO;
     source.flags = draft.enabled ? PROJECT_MODULATOR_FLAG_ENABLED : 0U;
     source.accent = draft.accent;
@@ -999,7 +999,7 @@ FLASHMEM ProjectModulationResult createAdsrModulator(
     ModulatorSourceState source{};
     source.id = {takeId(state.nextSourceId)};
     copyName(source.name, draft.name, "ADSR");
-    source.reach = draft.reach;
+    source.reach = projectModulatorGlobalReach();
     source.kind = ModulatorKind::ADSR;
     source.flags = draft.enabled ? PROJECT_MODULATOR_FLAG_ENABLED : 0U;
     source.accent = draft.accent;
@@ -1039,7 +1039,7 @@ FLASHMEM ProjectModulationResult createRecordedShapeModulator(
     ModulatorSourceState source{};
     source.id = {takeId(state.nextSourceId)};
     copyName(source.name, draft.name, "Recorded Shape");
-    source.reach = draft.reach;
+    source.reach = projectModulatorGlobalReach();
     source.kind = ModulatorKind::RECORDED_SHAPE;
     source.flags = draft.enabled ? PROJECT_MODULATOR_FLAG_ENABLED : 0U;
     source.accent = draft.accent;
@@ -1104,6 +1104,7 @@ FLASHMEM ProjectModulationResult duplicateProjectModulator(
 
     ModulatorSourceState clone = existing;
     clone.id = {takeId(state.nextSourceId)};
+    clone.reach = projectModulatorGlobalReach();
     copyName(clone.name, cloneName, existing.name.data());
     state.sources[state.sourceCount++] = clone;
     if (curve != nullptr) ++curve->referenceCount;
@@ -1167,20 +1168,6 @@ FLASHMEM ProjectModulationResult splitProjectModulator(
             return result(ProjectModulationStatus::INVALID_ID, request.sourceId);
         }
     }
-    for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
-        const auto& binding = state.outputBindings[index];
-        if (binding.sourceId != request.sourceId) continue;
-        const auto& reach = selectedForSplit(binding.id, request)
-            ? request.cloneReach
-            : request.retainedReach;
-        if (!modulatorReachContains(reach, binding.destination)) {
-            return result(
-                ProjectModulationStatus::REACH_VIOLATION,
-                request.sourceId,
-                binding.id
-            );
-        }
-    }
     if (state.sourceCount >= PROJECT_MODULATOR_CAPACITY) {
         return result(
             ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED,
@@ -1225,7 +1212,7 @@ FLASHMEM ProjectModulationResult splitProjectModulator(
 
     ModulatorSourceState clone = existing;
     clone.id = {takeId(state.nextSourceId)};
-    clone.reach = request.cloneReach;
+    clone.reach = projectModulatorGlobalReach();
     copyName(clone.name, request.cloneName, existing.name.data());
     state.sources[state.sourceCount++] = clone;
     if (curve != nullptr) ++curve->referenceCount;
@@ -1239,7 +1226,7 @@ FLASHMEM ProjectModulationResult splitProjectModulator(
         state.triggerBindings[state.triggerBindingCount++] = trigger;
     }
     state.sources[static_cast<uint16_t>(existingIndex)].reach =
-        request.retainedReach;
+        projectModulatorGlobalReach();
     for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
         auto& binding = state.outputBindings[index];
         if (binding.sourceId == request.sourceId &&
@@ -1307,24 +1294,12 @@ FLASHMEM ProjectModulationResult setProjectModulatorReach(
     if (!validModulatorReach(reach)) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
     }
-    for (uint16_t bindingIndex = 0;
-         bindingIndex < state.outputBindingCount;
-         ++bindingIndex) {
-        const auto& binding = state.outputBindings[bindingIndex];
-        if (binding.sourceId == sourceId &&
-            !modulatorReachContains(reach, binding.destination)) {
-            return result(
-                ProjectModulationStatus::REACH_VIOLATION,
-                sourceId,
-                binding.id
-            );
-        }
-    }
     auto& source = state.sources[static_cast<uint16_t>(index)];
-    if (sameReach(source.reach, reach)) {
+    const ModulatorReach canonical = projectModulatorGlobalReach();
+    if (sameReach(source.reach, canonical)) {
         return result(ProjectModulationStatus::NO_CHANGE, sourceId);
     }
-    source.reach = reach;
+    source.reach = canonical;
     return result(ProjectModulationStatus::OK, sourceId);
 }
 
@@ -1429,9 +1404,6 @@ FLASHMEM ProjectModulationResult addProjectModulationBinding(
             static_cast<uint8_t>(ModulationApplication::FROM_BASE) ||
         draft.transfer != ModulationTransfer::LINEAR) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT, draft.sourceId);
-    }
-    if (!modulatorReachContains(source->reach, draft.destination)) {
-        return result(ProjectModulationStatus::REACH_VIOLATION, draft.sourceId);
     }
     for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
         const auto& existing = state.outputBindings[index];
@@ -1757,7 +1729,8 @@ FLASHMEM bool validProjectModulationDomain(
     for (uint16_t index = 0; index < state.sourceCount; ++index) {
         const auto& source = state.sources[index];
         if (!valid(source.id) || !validSourceName(source) ||
-            !validModulatorReach(source.reach) || source.schemaVersion != 1U ||
+            !isProjectModulatorGlobalReach(source.reach) ||
+            source.schemaVersion != 1U ||
             (source.flags & ~SOURCE_FLAGS) != 0U ||
             !allZero(source.reserved) ||
             static_cast<uint8_t>(source.kind) >
@@ -1802,7 +1775,6 @@ FLASHMEM bool validProjectModulationDomain(
         const auto* source = findProjectModulator(state, binding.sourceId);
         if (!valid(binding.id) || source == nullptr ||
             !modulationDestinationValid(binding.destination) ||
-            !modulatorReachContains(source->reach, binding.destination) ||
             binding.amountQ15 == std::numeric_limits<int16_t>::min() ||
             static_cast<uint8_t>(binding.application) >
                 static_cast<uint8_t>(ModulationApplication::FROM_BASE) ||

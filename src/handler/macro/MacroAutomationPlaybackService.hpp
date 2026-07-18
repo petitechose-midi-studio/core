@@ -56,6 +56,7 @@ private:
         uint16_t& written
     );
     bool appendStaticAuthors_(FramePublicationContext& context) const;
+    [[nodiscard]] uint16_t activeAuthorCount_() const;
     void stageVisibleProjection_(
         FramePublicationContext& context,
         const core::state::modulation::ProjectLogicalMacroRuntimeValue& value

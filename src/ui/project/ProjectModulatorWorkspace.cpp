@@ -12,6 +12,7 @@
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/macro/MacroLfoAuditionModel.hpp"
 #include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "ui/project/ProjectModulatorUiModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -98,6 +99,7 @@ FLASHMEM bool sourceUsesPositiveDomain(
 }
 
 FLASHMEM bool editableItem(Item item, ModulatorKind kind) {
+    if (item == Item::DEPTH) return true;
     if (kind == ModulatorKind::LFO) {
         return item == Item::SHAPE || item == Item::TIMING ||
                item == Item::RATE || item == Item::PHASE ||
@@ -113,18 +115,43 @@ FLASHMEM bool editableItem(Item item, ModulatorKind kind) {
 }
 
 FLASHMEM bool actionableItem(Item item) {
-    return item == Item::OPTIONS || item == Item::REACH ||
-           item == Item::RENAME || item == Item::DESTINATIONS ||
+    return item == Item::OPTIONS || item == Item::RENAME ||
+           item == Item::DESTINATIONS ||
            item == Item::TRIGGER;
 }
 
 FLASHMEM core::state::project::modulators::SourceDetailLayout layoutFor(
     ModulatorKind kind,
-    bool options
+    bool options,
+    bool audition
 ) {
+    if (audition) {
+        return options
+            ? core::state::project::modulators::sourceAuditionOptionsLayout(kind)
+            : core::state::project::modulators::sourceAuditionLayout(kind);
+    }
     return options
         ? core::state::project::modulators::sourceOptionsLayout(kind)
         : core::state::project::modulators::sourceDetailLayout(kind);
+}
+
+FLASHMEM void populateAuditionDepthRow(
+    const ModulationBindingState* binding,
+    ms::ui::KeyValueRowBuffer& out
+) {
+    std::snprintf(out.key.data(), out.key.size(), "Depth");
+    const int percent = binding
+        ? core::ui::macro::lfo_audition::depthQ15ToPercent(binding->amountQ15)
+        : 0;
+    std::snprintf(out.value.data(), out.value.size(), "%+d%%", percent);
+    std::snprintf(
+        out.icon.data(),
+        out.icon.size(),
+        "%s",
+        standalone::icons::MACRO_MODULATION
+    );
+    out.iconFont = standalone_fonts.icons_14;
+    out.iconColor = theme::color::MACRO_MODULATION;
 }
 
 }  // namespace
@@ -187,7 +214,7 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
     title_ = createLabel(root_, fonts.inter_14_semibold, theme::color::TEXT_PRIMARY);
     if (title_) {
         lv_obj_set_pos(title_, 27, 1);
-        lv_obj_set_size(title_, 150, HEADER_HEIGHT);
+        lv_obj_set_size(title_, 110, HEADER_HEIGHT);
     }
     state_icon_ = createLabel(
         root_,
@@ -196,8 +223,8 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
         LV_TEXT_ALIGN_RIGHT
     );
     if (state_icon_) {
-        lv_obj_set_pos(state_icon_, 178, 3);
-        lv_obj_set_size(state_icon_, 32, 15);
+        lv_obj_set_pos(state_icon_, 140, 3);
+        lv_obj_set_size(state_icon_, 14, 15);
     }
     state_text_ = createLabel(
         root_,
@@ -206,8 +233,8 @@ FLASHMEM void ProjectModulatorWorkspace::createUi(lv_obj_t* parent) {
         LV_TEXT_ALIGN_RIGHT
     );
     if (state_text_) {
-        lv_obj_set_pos(state_text_, 210, 3);
-        lv_obj_set_size(state_text_, 68, 15);
+        lv_obj_set_pos(state_text_, 156, 3);
+        lv_obj_set_size(state_text_, 156, 15);
     }
 
     curve_preview_ = core::app::makeExtmemUnique<ms::ui::CurvePreviewWidget>(root_);
@@ -319,8 +346,9 @@ FLASHMEM void ProjectModulatorWorkspace::createCard(uint8_t index) {
 }
 
 FLASHMEM void ProjectModulatorWorkspace::renderHeader(
-    const ModulatorSourceState& source
+    const ProjectModulatorWorkspaceProps& props
 ) {
+    const auto& source = *props.source;
     const bool enabled =
         (source.flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
     if (copyText(titleText_, source.name.data())) {
@@ -344,33 +372,54 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     );
     standalone::icons::set(
         state_icon_,
-        enabled ? standalone::icons::STATUS_RESUME
-                : standalone::icons::STATUS_PAUSED,
+        props.audition ? standalone::icons::ACTION_APPLY
+                       : (enabled ? standalone::icons::STATUS_RESUME
+                                  : standalone::icons::STATUS_PAUSED),
         standalone::icons::Size::S
     );
     lv_obj_set_style_text_color(
         state_icon_,
         lv_color_hex(
-            enabled ? theme::color::MACRO_MODULATION : theme::color::INACTIVE
+            props.audition || enabled
+                ? theme::color::MACRO_MODULATION
+                : theme::color::INACTIVE
         ),
         0
     );
-    std::snprintf(
-        stateText_.data(),
-        stateText_.size(),
-        SOURCE_STATE_FORMAT,
-        source.kind == ModulatorKind::LFO
-            ? SOURCE_KIND_LFO
-            : (source.kind == ModulatorKind::ADSR
-                ? SOURCE_KIND_ADSR
-                : SOURCE_KIND_MOTION),
-        enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF
-    );
+    if (props.audition && props.auditionBinding) {
+        const auto& destination = props.auditionBinding->destination;
+        const int depth = core::ui::macro::lfo_audition::depthQ15ToPercent(
+            props.auditionBinding->amountQ15
+        );
+        std::snprintf(
+            stateText_.data(),
+            stateText_.size(),
+            "PREVIEW · T%u/P%u/M%u · %+d%%",
+            static_cast<unsigned>(destination.track + 1U),
+            static_cast<unsigned>(destination.page + 1U),
+            static_cast<unsigned>(destination.macro + 1U),
+            depth
+        );
+    } else {
+        std::snprintf(
+            stateText_.data(),
+            stateText_.size(),
+            SOURCE_STATE_FORMAT,
+            source.kind == ModulatorKind::LFO
+                ? SOURCE_KIND_LFO
+                : (source.kind == ModulatorKind::ADSR
+                    ? SOURCE_KIND_ADSR
+                    : SOURCE_KIND_MOTION),
+            enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF
+        );
+    }
     lv_label_set_text_static(state_text_, stateText_.data());
     lv_obj_set_style_text_color(
         state_text_,
         lv_color_hex(
-            enabled ? theme::color::TEXT_SECONDARY : theme::color::INACTIVE
+            props.audition || enabled
+                ? theme::color::TEXT_SECONDARY
+                : theme::color::INACTIVE
         ),
         0
     );
@@ -379,7 +428,11 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
 FLASHMEM void ProjectModulatorWorkspace::renderCards(
     const ProjectModulatorWorkspaceProps& props
 ) {
-    const auto layout = layoutFor(props.source->kind, props.options);
+    const auto layout = layoutFor(
+        props.source->kind,
+        props.options,
+        props.audition
+    );
     const bool adsr = props.source->kind == ModulatorKind::ADSR;
     const uint8_t bottomCount = adsr && layout.count >= 6U
         ? 3U
@@ -420,7 +473,10 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
         lv_obj_set_width(card.value, std::max<lv_coord_t>(1, width - 25));
 
         ms::ui::KeyValueRowBuffer row{};
-        if (props.options) {
+        const Item item = layout.at(index);
+        if (item == Item::DEPTH) {
+            populateAuditionDepthRow(props.auditionBinding, row);
+        } else if (props.options) {
             core::ui::project::modulators::populateSourceOptionsRow(
                 *props.control,
                 *props.source,
@@ -445,7 +501,6 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
             lv_label_set_text_static(card.value, card.valueText.data());
         }
 
-        const Item item = layout.at(index);
         const bool selected = index == props.selectedIndex;
         const bool mutableValue = editableItem(item, props.source->kind);
         const bool action = actionableItem(item);
@@ -703,13 +758,19 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
     bool sourceChanged
 ) {
     if (!sourceChanged || !has_rendered_source_) return;
-    const auto layout = layoutFor(props.source->kind, props.options);
+    const auto layout = layoutFor(
+        props.source->kind,
+        props.options,
+        props.audition
+    );
     if (props.selectedIndex >= layout.count) return;
     const Item item = layout.at(props.selectedIndex);
     if (!editableItem(item, props.source->kind)) return;
 
     ms::ui::KeyValueRowBuffer row{};
-    if (props.options) {
+    if (item == Item::DEPTH) {
+        populateAuditionDepthRow(props.auditionBinding, row);
+    } else if (props.options) {
         core::ui::project::modulators::populateSourceOptionsRow(
             *props.control,
             *props.source,
@@ -729,6 +790,7 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
     if (item == Item::DECAY) copyText(editFeedbackKeyText_, "Decay");
     if (item == Item::SUSTAIN) copyText(editFeedbackKeyText_, "Sustain");
     if (item == Item::RELEASE) copyText(editFeedbackKeyText_, "Release");
+    if (item == Item::DEPTH) copyText(editFeedbackKeyText_, "Depth");
     copyText(editFeedbackValueText_, row.value.data());
     if (item == Item::TIMING && props.source->kind == ModulatorKind::ADSR) {
         copyText(
@@ -792,7 +854,8 @@ FLASHMEM void ProjectModulatorWorkspace::render(
 
     const bool sameContext = has_rendered_source_ &&
         rendered_source_id_ == props.source->id &&
-        rendered_options_ == props.options;
+        rendered_options_ == props.options &&
+        rendered_audition_ == props.audition;
     const bool selectionChanged = !sameContext ||
         rendered_selected_index_ != props.selectedIndex;
     const bool sourceChanged = sameContext &&
@@ -803,7 +866,7 @@ FLASHMEM void ProjectModulatorWorkspace::render(
         ) != 0;
     if (selectionChanged) hideEditFeedback();
 
-    renderHeader(*props.source);
+    renderHeader(props);
     renderCards(props);
     renderCurve(props);
     showEditFeedback(props, sourceChanged && !selectionChanged);
@@ -812,6 +875,7 @@ FLASHMEM void ProjectModulatorWorkspace::render(
     rendered_source_id_ = props.source->id;
     rendered_selected_index_ = props.selectedIndex;
     rendered_options_ = props.options;
+    rendered_audition_ = props.audition;
     has_rendered_source_ = true;
 }
 

@@ -5,7 +5,7 @@
 # Expect: capture_changed:adsr_destination_picker=adsr_preview, capture_changed:adsr_preview=adsr_applied, capture_changed:adsr_applied=adsr_workspace
 # Expect: capture_changed:adsr_workspace=attack_feedback, capture_changed:attack_feedback=trigger_editor, capture_changed:trigger_editor=trigger_route_edited
 # Expect: capture_changed:trigger_route_edited=adsr_more, capture_changed:adsr_more=smooth_curve_feedback
-# Expect: semantic:adsr_preview:effect=start_adsr_destination_audition, semantic:adsr_preview:projection=audible_audition
+# Expect: semantic:adsr_preview:mode=project.modulator_detail, semantic:adsr_preview:projection=audible_audition
 # Expect: semantic:trigger_route_edited:mode=project.modulator_trigger, semantic:trigger_route_edited:effect=edit_trigger_route, semantic:trigger_route_edited:property=note
 # Expect: semantic:adsr_more:mode=project.modulator_options, semantic:smooth_curve_feedback:property=curve
 

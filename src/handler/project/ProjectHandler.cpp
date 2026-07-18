@@ -25,6 +25,7 @@ const char FEEDBACK_PREVIEW_PENDING[] PROGMEM = "Preview - Apply or Back";
 
 FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
                                         SequencerSettingsDomainServices sequencerSettings,
+                                        MacroEditDomainServices macroEditServices,
                                         oc::api::EncoderAPI& encoders,
                                         oc::api::ButtonAPI& buttons,
                                         oc::type::ScopeID projectViewScope,
@@ -45,6 +46,7 @@ FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
     , history_(state.history)
     , lifecycle_(state.lifecycle)
     , sequencer_settings_(sequencerSettings)
+    , macro_edit_services_(macroEditServices)
     , encoders_(encoders)
     , buttons_(buttons)
     , project_view_scope_(projectViewScope)
@@ -71,7 +73,7 @@ FLASHMEM bool ProjectHandler::regularProjectInputActive() const {
 
 FLASHMEM void ProjectHandler::enterPhysicalHoldLayer() {
     core::state::macro::MacroAutomationSlotAddress address{};
-    if (destinationPickerAuditionAddress(address)) {
+    if (modulatorAuditionAddress(address)) {
         navigation_.setLifecycleFeedback(FEEDBACK_PREVIEW_PENDING);
         return;
     }
@@ -91,7 +93,6 @@ ProjectHandler::focusedModulator() {
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME ||
         node == core::state::project::ProjectNodeId::MODULATOR_TRIGGER ||
-        node == core::state::project::ProjectNodeId::MODULATOR_REACH ||
         node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
         (node ==
              core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER &&
@@ -157,15 +158,21 @@ FLASHMEM uint16_t ProjectHandler::focusedModulatorDetailRowCount() const {
         );
     }
     if (navigation_.currentNode.get() ==
-        core::state::project::ProjectNodeId::MODULATOR_REACH) {
-        return core::state::project::modulators::sourceReachChoiceLayout(
-            pages_.control.authored.modulation,
-            source->id
+        core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
+        if (pages_.control.audition.active &&
+            pages_.control.audition.sourceCreated &&
+            pages_.control.audition.sourceId == source->id) {
+            return core::state::project::modulators::
+                sourceAuditionOptionsLayout(source->kind).count;
+        }
+        return core::state::project::modulators::sourceOptionsLayout(
+            source->kind
         ).count;
     }
-    if (navigation_.currentNode.get() ==
-        core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
-        return core::state::project::modulators::sourceOptionsLayout(
+    if (pages_.control.audition.active &&
+        pages_.control.audition.sourceCreated &&
+        pages_.control.audition.sourceId == source->id) {
+        return core::state::project::modulators::sourceAuditionLayout(
             source->kind
         ).count;
     }
@@ -201,10 +208,31 @@ FLASHMEM void ProjectHandler::refreshModulatorPreview(
 FLASHMEM void ProjectHandler::reconcileModulatorNavigationAfterHistory() {
     using core::state::project::ProjectNodeId;
     auto& graph = pages_.control.authored.modulation;
-    const auto* selected = core::state::modulation::findProjectModulator(
+    const bool destinations = navigation_.currentNode.get() ==
+        ProjectNodeId::MODULATOR_DESTINATIONS;
+    auto* selected = core::state::modulation::findProjectModulator(
         graph,
         navigation_.selectedModulator
     );
+    if ((selected == nullptr || destinations) &&
+        core::state::modulation::valid(
+            navigation_.selectedModulationBinding
+        )) {
+        const auto* binding =
+            core::state::modulation::findProjectModulationBinding(
+                graph,
+                navigation_.selectedModulationBinding
+            );
+        selected = binding
+            ? core::state::modulation::findProjectModulator(
+                  graph,
+                  binding->sourceId
+              )
+            : nullptr;
+        if (selected != nullptr) {
+            navigation_.selectedModulator = selected->id;
+        }
+    }
     if (selected == nullptr) {
         while (navigation_.depth.get() > 0U) {
             (void)core::state::project::backProjectNavigation(navigation_);
@@ -222,16 +250,28 @@ FLASHMEM void ProjectHandler::reconcileModulatorNavigationAfterHistory() {
             }
         }
     }
-    if (navigation_.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS) {
+    if (destinations) {
         const uint16_t count =
             core::state::project::modulators::sourceDestinationCount(
                 graph,
                 selected->id
             );
-        navigation_.focusedRow.set(static_cast<uint8_t>(std::min<uint16_t>(
-            navigation_.focusedRow.get(),
-            count
-        )));
+        uint16_t row = std::min<uint16_t>(navigation_.focusedRow.get(), count);
+        if (core::state::modulation::valid(
+                navigation_.selectedModulationBinding
+            )) {
+            uint16_t ordinal = 0U;
+            for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
+                const auto& binding = graph.outputBindings[index];
+                if (binding.sourceId != selected->id) continue;
+                if (binding.id == navigation_.selectedModulationBinding) {
+                    row = ordinal;
+                    break;
+                }
+                ++ordinal;
+            }
+        }
+        navigation_.focusedRow.set(static_cast<uint8_t>(row));
         const auto* binding = focusedModulationBinding();
         navigation_.selectedModulationBinding = binding
             ? binding->id
@@ -338,7 +378,8 @@ FLASHMEM void ProjectHandler::beginModulatorBottomRight() {
     const auto node = navigation_.currentNode.get();
     if (node != core::state::project::ProjectNodeId::MODULATORS_ROOT &&
         node != core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
-        node != core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
+        node != core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS &&
+        node != core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS) {
         return;
     }
     const auto* source = focusedModulator();
@@ -357,6 +398,7 @@ FLASHMEM void ProjectHandler::beginModulatorBottomRight() {
     }
     navigation_.guardedClipboardModulator = source->id;
     navigation_.modulatorClipboardPasteAvailable =
+        node != core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS &&
         clipboard_.hasProjectModulatorSource() &&
         core::state::modulation::findProjectModulator(
             pages_.control.authored.modulation,
@@ -434,6 +476,62 @@ FLASHMEM void ProjectHandler::pasteProjectModulatorSource() {
     navigation_.setLifecycleFeedback(feedback);
 }
 
+FLASHMEM void ProjectHandler::makeFocusedModulatorIndependent() {
+    using namespace core::state::modulation;
+    auto& graph = pages_.control.authored.modulation;
+    const auto* binding = focusedModulationBinding();
+    const auto* source = binding
+        ? findProjectModulator(graph, binding->sourceId)
+        : nullptr;
+    if (!binding || !source) {
+        navigation_.setLifecycleFeedback("Destination unavailable");
+        return;
+    }
+    if (core::state::project::modulators::sourceDestinationCount(
+            graph,
+            source->id
+        ) <= 1U) {
+        navigation_.setLifecycleFeedback("Already independent");
+        return;
+    }
+
+    char name[PROJECT_MODULATOR_NAME_CAPACITY]{};
+    formatNextProjectModulatorName(
+        graph,
+        source->kind,
+        name,
+        sizeof(name)
+    );
+    const ModulationBindingId bindingId = binding->id;
+    const ModulatorSplitRequest request{
+        .sourceId = source->id,
+        .cloneName = name,
+        .retainedReach = projectModulatorGlobalReach(),
+        .cloneReach = projectModulatorGlobalReach(),
+        .bindingIdsToMove = &bindingId,
+        .bindingCountToMove = 1U,
+    };
+    const auto split = macro_history_.splitProjectModulator(pages_, request);
+    if (!split.changed()) {
+        navigation_.setLifecycleFeedback("Cannot make independent");
+        return;
+    }
+
+    navigation_.selectedModulator = split.sourceId;
+    navigation_.selectedModulationBinding = bindingId;
+    navigation_.focusedRow.set(0U);
+    publishModulatorMutation(false);
+    char feedback[48]{};
+    std::snprintf(
+        feedback,
+        sizeof(feedback),
+        "Independent · %s",
+        name
+    );
+    navigation_.setLifecycleFeedback(feedback);
+    syncFocusedEncoder();
+}
+
 FLASHMEM void ProjectHandler::releaseModulatorBottomRight() {
     auto guard = navigation_.modulatorClipboardGuard.get();
     if (!core::state::modulation::valid(
@@ -453,7 +551,13 @@ FLASHMEM void ProjectHandler::releaseModulatorBottomRight() {
         now
     );
     navigation_.modulatorClipboardGuard.set(guard);
-    if (outcome == core::state::contextual::GuardedActionRelease::TAP) {
+    const bool destination = navigation_.currentNode.get() ==
+        core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS;
+    if (destination &&
+        (outcome == core::state::contextual::GuardedActionRelease::TAP ||
+         outcome == core::state::contextual::GuardedActionRelease::COMMITTED)) {
+        makeFocusedModulatorIndependent();
+    } else if (outcome == core::state::contextual::GuardedActionRelease::TAP) {
         copyFocusedModulator();
     } else if (
         outcome == core::state::contextual::GuardedActionRelease::COMMITTED
@@ -551,6 +655,7 @@ void ProjectHandler::update(uint32_t nowMs) {
     const bool modulatorContext =
         active_view_.get() == core::ui::ViewType::PROJECT &&
         canHandleProjectInput() &&
+        !pages_.control.audition.active &&
         !navigation_.physicalHoldActive.get() &&
         (navigation_.currentNode.get() ==
              core::state::project::ProjectNodeId::MODULATORS_ROOT ||
@@ -575,13 +680,16 @@ void ProjectHandler::update(uint32_t nowMs) {
 
     const bool clipboardContext =
         active_view_.get() == core::ui::ViewType::PROJECT &&
-        canHandleProjectInput() && !navigation_.physicalHoldActive.get() &&
+        canHandleProjectInput() && !pages_.control.audition.active &&
+        !navigation_.physicalHoldActive.get() &&
         (navigation_.currentNode.get() ==
              core::state::project::ProjectNodeId::MODULATORS_ROOT ||
          navigation_.currentNode.get() ==
              core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
          navigation_.currentNode.get() ==
-             core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+             core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
+         navigation_.currentNode.get() ==
+             core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS);
     const bool bottomRightPressed =
         buttons_.isPressed(Config::ButtonID::BOTTOM_RIGHT);
     if (clipboardContext && bottomRightPressed &&

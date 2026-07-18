@@ -53,19 +53,6 @@ FLASHMEM const char* sourceKind(const ModulatorSourceState& source) {
     return "recorded_shape";
 }
 
-FLASHMEM const char* reachName(
-    core::state::modulation::ModulatorReachKind reach
-) {
-    using core::state::modulation::ModulatorReachKind;
-    switch (reach) {
-        case ModulatorReachKind::MACRO: return "macro";
-        case ModulatorReachKind::TRACK_SET: return "track_set";
-        case ModulatorReachKind::PROJECT: return "project";
-        case ModulatorReachKind::DETACHED:
-        default: return "detached";
-    }
-}
-
 FLASHMEM const char* detailProperty(SourceDetailItem item) {
     switch (item) {
         case SourceDetailItem::PREVIEW: return "source";
@@ -77,7 +64,6 @@ FLASHMEM const char* detailProperty(SourceDetailItem item) {
         case SourceDetailItem::RETRIGGER: return "retrigger";
         case SourceDetailItem::LENGTH: return "length";
         case SourceDetailItem::SOURCE_DOMAIN: return "domain";
-        case SourceDetailItem::REACH: return "reach";
         case SourceDetailItem::DESTINATIONS: return "destinations";
         case SourceDetailItem::OPTIONS: return "details";
         case SourceDetailItem::RENAME: return "rename";
@@ -87,6 +73,7 @@ FLASHMEM const char* detailProperty(SourceDetailItem item) {
         case SourceDetailItem::RELEASE: return "release";
         case SourceDetailItem::TRIGGER: return "trigger";
         case SourceDetailItem::CURVE: return "curve";
+        case SourceDetailItem::DEPTH: return "depth";
     }
     return "source";
 }
@@ -186,13 +173,12 @@ FLASHMEM const char* feedbackOutcome(const char* feedback) {
     if (!feedback || feedback[0] == '\0') return nullptr;
     if (std::strstr(feedback, "cancelled") != nullptr) return "cancelled";
     if (std::strncmp(feedback, "Deleted ", 8U) == 0 ||
-        std::strncmp(feedback, "Split ", 6U) == 0 ||
-        std::strncmp(feedback, "Reach · ", 8U) == 0 ||
         std::strcmp(feedback, "Destination removed") == 0 ||
         std::strcmp(feedback, "Destination applied") == 0 ||
         std::strcmp(feedback, "Applied - one Undo") == 0 ||
         std::strncmp(feedback, "Pasted ", 7U) == 0 ||
-        std::strncmp(feedback, "Copied ", 7U) == 0) {
+        std::strncmp(feedback, "Copied ", 7U) == 0 ||
+        std::strncmp(feedback, "Independent", 11U) == 0) {
         return "applied";
     }
     if (std::strstr(feedback, "failed") != nullptr ||
@@ -232,7 +218,6 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         node != ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
         node != ProjectNodeId::MODULATOR_SOURCE_OPTIONS &&
         node != ProjectNodeId::MODULATOR_SOURCE_RENAME &&
-        node != ProjectNodeId::MODULATOR_REACH &&
         node != ProjectNodeId::MODULATOR_DESTINATIONS &&
         node != ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER &&
         node != ProjectNodeId::MODULATOR_TRIGGER &&
@@ -244,6 +229,15 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     const auto& graph = control.authored.modulation;
     const auto* source = focusedSource(navigation_, graph);
     const auto* binding = focusedBinding(navigation_, graph);
+    const bool sourceAudition = source != nullptr && control.audition.active &&
+        control.audition.sourceCreated &&
+        control.audition.sourceId == source->id;
+    const auto* auditionBinding = sourceAudition
+        ? core::state::modulation::findProjectModulationBinding(
+              graph,
+              control.audition.bindingId
+          )
+        : nullptr;
     const char* feedback = navigation_.lifecycleFeedback.empty()
         ? nullptr : navigation_.lifecycleFeedback.get();
 
@@ -251,6 +245,14 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     out.hasOperationGeneration = history_.undoCount() > 0U;
     out.operationGeneration = history_.undoCount();
     out.outcome = feedbackOutcome(feedback);
+    if (sourceAudition) {
+        out.projection = "audible_audition";
+        out.hasOperationGeneration = true;
+        out.operationGeneration = control.audition.generation;
+        out.operationStatus = "audition";
+        out.sourceTrack = control.audition.destination.track;
+        out.targetTrack = control.audition.destination.track;
+    }
 
     if (node == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
         const bool adsr = navigation_.focusedRow.get() != 0U;
@@ -362,11 +364,13 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     out.mappingCount = static_cast<int16_t>(destinationCount);
     out.source = sourceKind(*source);
     out.winner = source->name.data();
-    out.routePolicy = reachName(source->reach.kind);
-    out.operationStatus =
-        (source->flags & core::state::modulation::PROJECT_MODULATOR_FLAG_ENABLED)
-            != 0U
-        ? "enabled" : "disabled";
+    out.routePolicy = "project";
+    if (!sourceAudition) {
+        out.operationStatus =
+            (source->flags &
+             core::state::modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U
+            ? "enabled" : "disabled";
+    }
 
     if (node == ProjectNodeId::MODULATORS_ROOT) {
         out.mode = "project.modulators";
@@ -418,36 +422,6 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                 );
             }
         }
-    } else if (node == ProjectNodeId::MODULATOR_REACH) {
-        const auto layout =
-            core::state::project::modulators::sourceReachChoiceLayout(
-                graph,
-                source->id
-            );
-        const auto choice = layout.at(navigation_.focusedRow.get());
-        using core::state::project::modulators::ReachChoiceKind;
-        out.mode = "project.modulator_reach";
-        out.target = "modulator_reach";
-        out.targetIndex = navigation_.focusedRow.get();
-        if (choice.kind == ReachChoiceKind::TIGHTEST) {
-            out.property = "tightest";
-            std::snprintf(out.valueLabel, sizeof(out.valueLabel), "%s", "minimum");
-        } else if (choice.kind == ReachChoiceKind::PROJECT) {
-            out.property = "project";
-            std::snprintf(out.valueLabel, sizeof(out.valueLabel), "%s", "all");
-        } else {
-            out.property = "split_track";
-            out.targetTrack = choice.track;
-            out.mappingCount = static_cast<int16_t>(choice.destinationCount);
-            std::snprintf(
-                out.valueLabel,
-                sizeof(out.valueLabel),
-                "T%u x%u",
-                static_cast<unsigned>(choice.track + 1U),
-                static_cast<unsigned>(choice.destinationCount)
-            );
-        }
-        out.operationStatus = "explicit_selection";
     } else if (node == ProjectNodeId::MODULATOR_DESTINATIONS) {
         out.mode = "project.modulator_destinations";
         if (binding == nullptr) {
@@ -476,20 +450,32 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                        : "project.modulator_detail");
         out.target = "modulator";
         out.targetIndex = navigation_.focusedRow.get();
-        const auto layout = options
-            ? core::state::project::modulators::sourceOptionsLayout(source->kind)
-            : core::state::project::modulators::sourceDetailLayout(source->kind);
+        const auto layout = sourceAudition
+            ? (options
+                ? core::state::project::modulators::sourceAuditionOptionsLayout(
+                      source->kind
+                  )
+                : core::state::project::modulators::sourceAuditionLayout(
+                      source->kind
+                  ))
+            : (options
+                ? core::state::project::modulators::sourceOptionsLayout(
+                      source->kind
+                  )
+                : core::state::project::modulators::sourceDetailLayout(
+                      source->kind
+                  ));
         const auto item = layout.at(navigation_.focusedRow.get());
         out.property = rename ? "name" : detailProperty(item);
-        if (item == SourceDetailItem::REACH) {
-            std::snprintf(out.valueLabel, sizeof(out.valueLabel), "%s", out.routePolicy);
-        } else if (item == SourceDetailItem::DESTINATIONS) {
+        if (item == SourceDetailItem::DESTINATIONS) {
             std::snprintf(
                 out.valueLabel,
                 sizeof(out.valueLabel),
                 "%u",
                 static_cast<unsigned>(destinationCount)
             );
+        } else if (item == SourceDetailItem::DEPTH && auditionBinding != nullptr) {
+            formatBindingDepth(out.valueLabel, *auditionBinding);
         } else {
             formatSourcePrimary(out.valueLabel, control, *source);
         }
@@ -498,8 +484,6 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     if (isEncoder(event, Config::EncoderID::NAV)) {
         if (navigation_.physicalHoldActive.get()) {
             out.effect = "open_modulators_tab";
-        } else if (node == ProjectNodeId::MODULATOR_REACH) {
-            out.effect = "focus_reach_choice";
         } else if (node == ProjectNodeId::MODULATOR_TRIGGER) {
             out.effect = "focus_trigger_field";
         } else {
@@ -508,8 +492,12 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     } else if (isEncoder(event, Config::EncoderID::OPT)) {
         if (node == ProjectNodeId::MODULATOR_TRIGGER) {
             out.effect = "edit_trigger_route";
-        } else if (node != ProjectNodeId::MODULATOR_REACH) {
-            out.effect = binding ? "edit_modulator_depth"
+        } else {
+            out.effect = (binding ||
+                          (sourceAudition && auditionBinding != nullptr &&
+                           out.property != nullptr &&
+                           std::strcmp(out.property, "depth") == 0))
+                ? "edit_modulator_depth"
                                  : "edit_modulator_property";
         }
     } else if (isButton(
@@ -518,12 +506,7 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                    oc::core::input::ButtonBindingType::RELEASE
                )) {
         if (node == ProjectNodeId::MODULATORS_ROOT) {
-            out.effect = feedback && std::strncmp(feedback, "Split ", 6U) == 0
-                ? "split_modulator_by_track" : "open_modulator_detail";
-        } else if (node == ProjectNodeId::MODULATOR_REACH) {
-            out.effect = out.property &&
-                    std::strcmp(out.property, "split_track") == 0
-                ? "split_modulator_by_track" : "apply_modulator_reach";
+            out.effect = "open_modulator_detail";
         } else if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
                    node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
             if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
@@ -539,16 +522,13 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                        std::strcmp(out.property, "trigger") == 0) {
                 out.effect = "open_modulator_trigger";
             } else if (out.property &&
-                       std::strcmp(out.property, "reach") == 0) {
-                out.effect = "open_modulator_reach";
-            } else if (out.property &&
                        std::strcmp(out.property, "rename") == 0) {
                 out.effect = "open_modulator_rename";
             } else {
                 out.effect = "inspect_modulator_property";
             }
         } else {
-            out.effect = binding ? "focus_modulator_assignment"
+            out.effect = binding ? "open_macro_destination"
                                  : "open_destination_picker";
         }
     } else if (isButton(
@@ -556,7 +536,10 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                    Config::ButtonID::LEFT_TOP,
                    oc::core::input::ButtonBindingType::RELEASE
                )) {
-        out.effect = "back_modulator_context";
+        out.effect = sourceAudition &&
+                node == ProjectNodeId::MODULATOR_SOURCE_DETAIL
+            ? "cancel_destination_audition"
+            : "back_modulator_context";
     } else if (isButton(
                    event,
                    Config::ButtonID::BOTTOM_LEFT,
@@ -588,17 +571,25 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                    Config::ButtonID::BOTTOM_RIGHT,
                    oc::core::input::ButtonBindingType::PRESS
                )) {
-        out.effect = clipboard_.hasProjectModulatorSource()
-            ? "press_source_copy_or_paste" : "press_source_copy";
+        out.effect = node == ProjectNodeId::MODULATOR_DESTINATIONS
+            ? "press_make_modulator_independent"
+            : (clipboard_.hasProjectModulatorSource()
+                ? "press_source_copy_or_paste" : "press_source_copy");
     } else if (isButton(
                    event,
                    Config::ButtonID::BOTTOM_RIGHT,
                    oc::core::input::ButtonBindingType::RELEASE
                )) {
+        if (sourceAudition) {
+            out.effect = "apply_destination_audition";
+            return true;
+        }
         if (node == ProjectNodeId::MODULATOR_DESTINATIONS && feedback &&
             (std::strcmp(feedback, "Destination applied") == 0 ||
              std::strcmp(feedback, "Applied - one Undo") == 0)) {
             out.effect = "apply_destination_audition";
+        } else if (node == ProjectNodeId::MODULATOR_DESTINATIONS) {
+            out.effect = "make_modulator_independent";
         } else {
             const auto guard = navigation_.modulatorClipboardGuard.get();
             out.effect = guard.phase ==

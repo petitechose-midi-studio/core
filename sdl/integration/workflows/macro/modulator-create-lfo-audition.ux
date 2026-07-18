@@ -1,9 +1,9 @@
 # UX workflow: create and apply a destination-first LFO from an empty Macro.
 # Purpose: proves explicit selection before sound, useful musical defaults,
-# direct Shape/Rate/Depth editing, a live curve marker, and one-tap Apply.
+# full Source editing, native curve feedback, explicit Depth, and atomic Apply.
 # Expect: capture_changed:modulation_empty=lfo_audition_default, capture_changed:lfo_audition_default=lfo_audition_edited, capture_changed:lfo_audition_edited=lfo_applied
-# Expect: semantic:lfo_audition_default:effect=start_lfo_audition, semantic:lfo_audition_default:projection=audible_audition, semantic:lfo_audition_default:source=lfo
-# Expect: semantic:lfo_audition_edited:effect=edit_lfo_depth, semantic:lfo_applied:effect=apply_lfo_audition
+# Expect: semantic:lfo_audition_default:mode=project.modulator_detail, semantic:lfo_audition_default:projection=audible_audition, semantic:lfo_audition_default:source=lfo
+# Expect: semantic:lfo_audition_edited:effect=edit_modulator_depth, semantic:lfo_audition_edited:property=depth, semantic:lfo_audition_edited:projection=audible_audition
 
 0 scenario macro
 80 capture screen macro_ready
@@ -18,18 +18,21 @@
 1690 tap NAV 60
 1900 capture screen modulation_empty
 
-# Merely opening/focusing is silent. Selecting New LFO starts the audition.
+# Selecting New LFO starts an audible transaction in the real Source workspace.
 2020 tap NAV 60
 2240 capture screen lfo_audition_default
 
-# Shape, then Rate, then signed Depth remain one NAV focus + OPT edit away.
+# Shape, fastest Sync Rate, then signed destination Depth use NAV + OPT.
 2360 encoder OPT 1.00
 2480 encoder NAV 1
-2600 encoder OPT -0.50
-2720 encoder NAV 1
-2840 encoder OPT 0.75
-3060 capture screen lfo_audition_edited
+2540 encoder NAV 1
+2660 encoder OPT 0.00
+2780 encoder NAV 1
+2840 encoder NAV 1
+2900 encoder NAV 1
+3020 encoder OPT 0.75
+3240 capture screen lfo_audition_edited
 
-# Validate uses the established bottom-right Apply location.
-3180 tap BOTTOM_RIGHT 60
-3400 capture screen lfo_applied
+# Apply returns to the exact Macro assignment and creates one history action.
+3360 tap BOTTOM_RIGHT 60
+3580 capture screen lfo_applied

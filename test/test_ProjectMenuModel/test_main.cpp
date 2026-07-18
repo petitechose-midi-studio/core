@@ -481,31 +481,54 @@ void test_modulator_workspace_layouts_are_semantic_and_bounded() {
     assert(adsr.at(6) == Item::DESTINATIONS);
 
     const auto lfoOptions = modulators::sourceOptionsLayout(ModulatorKind::LFO);
-    assert(lfoOptions.count == 5U);
+    assert(lfoOptions.count == 4U);
     assert(lfoOptions.at(0) == Item::PHASE);
     assert(lfoOptions.at(1) == Item::RETRIGGER);
-    assert(lfoOptions.at(2) == Item::REACH);
-    assert(lfoOptions.at(3) == Item::RENAME);
-    assert(lfoOptions.at(4) == Item::DESTINATIONS);
+    assert(lfoOptions.at(2) == Item::RENAME);
+    assert(lfoOptions.at(3) == Item::DESTINATIONS);
 
     const auto recordedOptions = modulators::sourceOptionsLayout(
         ModulatorKind::RECORDED_SHAPE
     );
-    assert(recordedOptions.count == 3U);
-    assert(recordedOptions.at(0) == Item::REACH);
-    assert(recordedOptions.at(1) == Item::RENAME);
-    assert(recordedOptions.at(2) == Item::DESTINATIONS);
+    assert(recordedOptions.count == 2U);
+    assert(recordedOptions.at(0) == Item::RENAME);
+    assert(recordedOptions.at(1) == Item::DESTINATIONS);
 
     const auto adsrOptions = modulators::sourceOptionsLayout(
         ModulatorKind::ADSR
     );
-    assert(adsrOptions.count == 6U);
+    assert(adsrOptions.count == 5U);
     assert(adsrOptions.at(0) == Item::TIMING);
     assert(adsrOptions.at(1) == Item::CURVE);
     assert(adsrOptions.at(2) == Item::RETRIGGER);
-    assert(adsrOptions.at(3) == Item::REACH);
-    assert(adsrOptions.at(4) == Item::RENAME);
-    assert(adsrOptions.at(5) == Item::DESTINATIONS);
+    assert(adsrOptions.at(3) == Item::RENAME);
+    assert(adsrOptions.at(4) == Item::DESTINATIONS);
+
+    const auto lfoAudition = modulators::sourceAuditionLayout(
+        ModulatorKind::LFO
+    );
+    assert(lfoAudition.count == 6U);
+    assert(lfoAudition.at(0) == Item::SHAPE);
+    assert(lfoAudition.at(1) == Item::TIMING);
+    assert(lfoAudition.at(2) == Item::RATE);
+    assert(lfoAudition.at(3) == Item::PHASE);
+    assert(lfoAudition.at(4) == Item::RETRIGGER);
+    assert(lfoAudition.at(5) == Item::DEPTH);
+
+    const auto adsrAudition = modulators::sourceAuditionLayout(
+        ModulatorKind::ADSR
+    );
+    assert(adsrAudition.count == 7U);
+    assert(adsrAudition.at(4) == Item::TRIGGER);
+    assert(adsrAudition.at(5) == Item::OPTIONS);
+    assert(adsrAudition.at(6) == Item::DEPTH);
+    const auto adsrAuditionOptions = modulators::sourceAuditionOptionsLayout(
+        ModulatorKind::ADSR
+    );
+    assert(adsrAuditionOptions.count == 3U);
+    assert(adsrAuditionOptions.at(0) == Item::TIMING);
+    assert(adsrAuditionOptions.at(1) == Item::CURVE);
+    assert(adsrAuditionOptions.at(2) == Item::RETRIGGER);
     std::cout << "[PASS] test_modulator_workspace_layouts_are_semantic_and_bounded\n";
 }
 
@@ -522,21 +545,14 @@ void test_modulator_workspace_navigation_restores_local_focus() {
     assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
     assert(navigation.activeTab.get() == ProjectTab::MODULATORS);
 
-    navigation.focusedRow.set(4U);
+    navigation.focusedRow.set(3U);
     assert(core::state::project::openProjectModulatorDestinations(navigation));
     assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS);
     assert(core::state::project::backProjectNavigation(navigation));
     assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
-    assert(navigation.focusedRow.get() == 4U);
+    assert(navigation.focusedRow.get() == 3U);
 
     navigation.focusedRow.set(2U);
-    assert(core::state::project::openProjectModulatorReach(navigation));
-    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_REACH);
-    assert(core::state::project::backProjectNavigation(navigation));
-    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
-    assert(navigation.focusedRow.get() == 2U);
-
-    navigation.focusedRow.set(3U);
     assert(core::state::project::openProjectNameEditor(
         navigation,
         ProjectNodeId::MODULATOR_SOURCE_RENAME,
@@ -547,7 +563,7 @@ void test_modulator_workspace_navigation_restores_local_focus() {
     assert(std::string(navigation.editingProjectSlug.data()) == "Shared LFO");
     assert(core::state::project::backProjectNavigation(navigation));
     assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
-    assert(navigation.focusedRow.get() == 3U);
+    assert(navigation.focusedRow.get() == 2U);
     std::cout << "[PASS] test_modulator_workspace_navigation_restores_local_focus\n";
 }
 

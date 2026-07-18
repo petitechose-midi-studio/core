@@ -90,6 +90,7 @@ FLASHMEM void ProjectHandler::setupBindings() {
         .when([this]() {
             const auto node = navigation_.currentNode.get();
             return regularProjectInputActive() &&
+                   !pages_.control.audition.active &&
                    (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
@@ -104,10 +105,11 @@ FLASHMEM void ProjectHandler::setupBindings() {
             if (!regularProjectInputActive()) return false;
             const auto node = navigation_.currentNode.get();
             return isProjectNameEditorNode(node) ||
-                   node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
-                   node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
-                   node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
-                   node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS;
+                   (!pages_.control.audition.active &&
+                    (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
+                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
+                     node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS));
         })
         .then([this]() {
             if (isProjectNameEditorNode(navigation_.currentNode.get())) {
@@ -144,8 +146,15 @@ FLASHMEM void ProjectHandler::setupBindings() {
         .scope(project_view_scope_)
         .when([this]() {
             core::state::macro::MacroAutomationSlotAddress address{};
+            const auto node = navigation_.currentNode.get();
             return regularProjectInputActive() &&
-                   destinationPickerAuditionAddress(address);
+                   (node == core::state::project::ProjectNodeId::
+                                MODULATOR_DESTINATION_PICKER ||
+                    node == core::state::project::ProjectNodeId::
+                                MODULATOR_SOURCE_DETAIL ||
+                    node == core::state::project::ProjectNodeId::
+                                MODULATOR_SOURCE_OPTIONS) &&
+                   modulatorAuditionAddress(address);
         })
         .then([this]() { applyDestinationPickerAudition(); });
 
@@ -155,9 +164,11 @@ FLASHMEM void ProjectHandler::setupBindings() {
         .when([this]() {
             const auto node = navigation_.currentNode.get();
             return regularProjectInputActive() &&
+                   !pages_.control.audition.active &&
                    (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
-                    node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+                    node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
+                    node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS);
         })
         .then([this]() { beginModulatorBottomRight(); });
 
@@ -168,9 +179,11 @@ FLASHMEM void ProjectHandler::setupBindings() {
             if (!regularProjectInputActive()) return false;
             const auto node = navigation_.currentNode.get();
             return isProjectNameEditorNode(node) ||
-                   node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
-                   node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
-                   node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS;
+                   (!pages_.control.audition.active &&
+                    (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
+                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
+                     node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS));
         })
         .then([this]() {
             if (isProjectNameEditorNode(navigation_.currentNode.get())) {

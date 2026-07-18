@@ -1,16 +1,15 @@
 # UX workflow: create, apply, and reopen a destination-first ADSR.
-# Purpose: proves silent kind choice, current-Track note-trigger defaults,
-# direct A/D/S/R/Depth editing, atomic Apply, and the reversible source deep-link.
-# Expect: capture_changed:modulation_empty=adsr_choice, capture_changed:adsr_choice=adsr_audition_default, capture_changed:adsr_audition_default=adsr_audition_edited, capture_changed:adsr_audition_edited=adsr_applied, capture_changed:adsr_applied=adsr_assignment, capture_changed:adsr_assignment=adsr_source_workspace, capture_changed:adsr_source_workspace=adsr_assignment_restored
+# Purpose: proves silent kind choice, Track-note defaults, the complete Source
+# workspace, direct A/D/S/R/Depth, atomic Apply, and reversible source access.
+# Expect: capture_changed:modulation_empty=adsr_choice, capture_changed:adsr_choice=adsr_audition_default, capture_changed:adsr_audition_default=adsr_audition_edited, capture_changed:adsr_audition_edited=adsr_applied, capture_changed:adsr_applied=adsr_source_workspace, capture_changed:adsr_source_workspace=adsr_assignment_restored
 # Expect: semantic:adsr_choice:effect=focus_modulation_creation, semantic:adsr_choice:projection=silent_selection
-# Expect: semantic:adsr_audition_default:effect=start_adsr_audition, semantic:adsr_audition_default:projection=audible_audition, semantic:adsr_audition_default:source=adsr
-# Expect: semantic:adsr_audition_edited:effect=edit_adsr_depth, semantic:adsr_applied:effect=apply_adsr_audition
-# Expect: semantic:adsr_source_workspace:effect=open_modulator_detail, semantic:adsr_source_workspace:source=adsr
+# Expect: semantic:adsr_audition_default:mode=project.modulator_detail, semantic:adsr_audition_default:projection=audible_audition, semantic:adsr_audition_default:source=adsr
+# Expect: semantic:adsr_audition_edited:effect=edit_modulator_depth, semantic:adsr_audition_edited:property=depth, semantic:adsr_audition_edited:projection=audible_audition
+# Expect: semantic:adsr_source_workspace:mode=project.modulator_detail, semantic:adsr_source_workspace:source=adsr
 
 0 scenario macro
 80 capture screen macro_ready
 
-# Reuse the learned Macro > Modulation path.
 180 button LEFT_BOTTOM down
 260 tap MACRO_1 60
 1240 tick
@@ -20,13 +19,13 @@
 1690 tap NAV 60
 1910 capture screen modulation_empty
 
-# Focus is silent. New ADSR is adjacent to New LFO and starts only on tap.
+# New ADSR is adjacent to New LFO; browsing remains silent until selection.
 2030 encoder NAV 1
 2250 capture screen adsr_choice
 2370 tap NAV 60
 2590 capture screen adsr_audition_default
 
-# A/D/S/R and signed destination Depth share the same NAV + OPT grammar.
+# A/D/S/R and signed destination Depth share one visual grammar.
 2710 encoder OPT 0.40
 2830 encoder NAV 1
 2950 encoder OPT 0.20
@@ -35,19 +34,18 @@
 3310 encoder NAV 1
 3430 encoder OPT 0.50
 3550 encoder NAV 1
-3670 encoder OPT 0.75
-3890 capture screen adsr_audition_edited
+3610 encoder NAV 1
+3670 encoder NAV 1
+3790 encoder OPT 0.75
+4010 capture screen adsr_audition_edited
 
-# Apply is one destination-local operation.
-4010 tap BOTTOM_RIGHT 60
-4230 capture screen adsr_applied
+4130 tap BOTTOM_RIGHT 60
+4350 capture screen adsr_applied
 
-# Reopen Modulation: the committed edge is focused and its source is one tap away.
-4350 tap NAV 60
-4570 capture screen adsr_assignment
-4690 tap NAV 60
-4910 capture screen adsr_source_workspace
+# The committed assignment opens the same source in one tap.
+4470 tap NAV 60
+4690 capture screen adsr_source_workspace
 
-# Back restores the same Macro assignment by stable source/binding IDs.
-5030 tap LEFT_TOP 60
-5250 capture screen adsr_assignment_restored
+# Back restores the exact Macro assignment by stable source/binding IDs.
+4810 tap LEFT_TOP 60
+5030 capture screen adsr_assignment_restored

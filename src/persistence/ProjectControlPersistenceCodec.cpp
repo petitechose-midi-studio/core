@@ -365,14 +365,16 @@ FLASHMEM bool writeModulationPayload(
 
     for (uint16_t order = 0; order < graph.sourceCount; ++order) {
         const auto* state = sourceAtOrder(graph, order);
+        constexpr auto canonicalReach =
+            modulation::projectModulatorGlobalReach();
         if (state == nullptr ||
             !writer.writeU32(state->id.value) ||
             !writer.writeBytes(state->name.data(), state->name.size()) ||
-            !writer.writeU16(state->reach.trackMask) ||
-            !writer.writeU8(static_cast<uint8_t>(state->reach.kind)) ||
-            !writer.writeU8(state->reach.track) ||
-            !writer.writeU8(state->reach.page) ||
-            !writer.writeU8(state->reach.macro) ||
+            !writer.writeU16(canonicalReach.trackMask) ||
+            !writer.writeU8(static_cast<uint8_t>(canonicalReach.kind)) ||
+            !writer.writeU8(canonicalReach.track) ||
+            !writer.writeU8(canonicalReach.page) ||
+            !writer.writeU8(canonicalReach.macro) ||
             !writer.writeU8(static_cast<uint8_t>(state->kind)) ||
             !writer.writeU8(state->flags) ||
             !writer.writeU8(state->accent) ||
@@ -796,6 +798,10 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
         }
         previousId = source.id.value;
         source.reach.kind = static_cast<modulation::ModulatorReachKind>(reachKind);
+        if (!modulation::validModulatorReach(source.reach)) {
+            return fail(ChunkStatus::INVALID_PAYLOAD);
+        }
+        source.reach = modulation::projectModulatorGlobalReach();
         source.kind = static_cast<modulation::ModulatorKind>(kind);
     }
 

@@ -373,6 +373,30 @@ bool MacroAutomationPlaybackService::appendStaticAuthors_(
     return true;
 }
 
+uint16_t MacroAutomationPlaybackService::activeAuthorCount_() const {
+    uint16_t count = 0U;
+    const uint16_t enabledTracks = pages_.currentTrackEnabledMask();
+    for (uint8_t trackIndex = 0U;
+         trackIndex < core::state::macro::TRACK_COUNT;
+         ++trackIndex) {
+        if ((enabledTracks & static_cast<uint16_t>(1U << trackIndex)) == 0U) {
+            continue;
+        }
+        const auto& track = pages_.tracks[trackIndex];
+        const uint8_t pageIndex = track.activePage;
+        if (pageIndex >= core::state::macro::PAGE_COUNT ||
+            !track.isPageEnabled(pageIndex)) {
+            continue;
+        }
+        uint8_t mask = track.pages[pageIndex].activeMacroMask;
+        while (mask != 0U) {
+            count = static_cast<uint16_t>(count + (mask & 1U));
+            mask = static_cast<uint8_t>(mask >> 1U);
+        }
+    }
+    return count;
+}
+
 bool MacroAutomationPlaybackService::produceProjectFrame_(
     void* context,
     core::state::shared::MidiCcCandidate* destination,
@@ -439,6 +463,8 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
         return;
     }
     update_scheduled_ = true;
+    // A failure remains bounded at the legacy-safe cadence. A successful
+    // frame below tightens this deadline from the actual compiled workload.
     next_due_ms_ = nowMs + macro::MACRO_AUTOMATION_UPDATE_PERIOD_MS;
     OC_PERF_SCOPE(perfUpdate, "macro.automation-playback");
 
@@ -469,10 +495,19 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
         .owner = this,
         .time = time,
     };
-    (void)midi_runtime_.publishProjectFrame(
+    const bool published = midi_runtime_.publishProjectFrame(
         produceProjectFrame_,
         &publication
     );
+    if (published) {
+        next_due_ms_ = nowMs +
+            macro::projectControlUpdatePeriodMilliseconds(
+                control.plan,
+                control.authored.curves,
+                control.timeTelemetry,
+                activeAuthorCount_()
+            );
+    }
     control.triggerScratch.count = 0U;
 }
 

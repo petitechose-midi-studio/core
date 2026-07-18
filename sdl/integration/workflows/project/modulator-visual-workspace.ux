@@ -1,16 +1,17 @@
-# UX workflow: source-first visual Modulator workspace.
-# Purpose: proves the stable LFO and Recorded Shape grammar, retained curve,
-# temporary exact feedback, phase-shifted curve, local Details/Back, rename,
-# disabled treatment,
-# and an always-visible Destinations action at 320x240.
-# Expect: capture_changed:registry=lfo_workspace, capture_changed:lfo_workspace=shape_feedback, capture_changed:shape_feedback=shape_stable, capture_changed:shape_stable=free_timing_feedback
-# Expect: capture_changed:free_timing_feedback=details_workspace, capture_changed:details_workspace=phase_feedback, capture_changed:phase_feedback=phase_stable
-# Expect: capture_changed:rename_keyboard=renamed_details, capture_changed:recorded_workspace=recorded_disabled, capture_changed:recorded_disabled=recorded_destinations_focused
-# Expect: semantic:lfo_workspace:effect=open_modulator_detail, semantic:shape_feedback:effect=edit_modulator_property, semantic:details_workspace:mode=project.modulator_options
+# UX workflow: source-first visual Modulator workspace and complete LFO range.
+# Purpose: proves retained curves, exact temporary feedback, 1/64..32 Bars,
+# 8 ms..32 s Free timing, local Details/Back, rename, disabled treatment, and
+# an always-visible Destinations action at 320x240.
+# Expect: capture_changed:registry=lfo_workspace, capture_changed:lfo_workspace=shape_feedback, capture_changed:shape_feedback=sync_fast_feedback, capture_changed:sync_fast_feedback=sync_slow_feedback
+# Expect: capture_changed:sync_slow_feedback=free_fast_feedback, capture_changed:free_fast_feedback=free_slow_feedback, capture_changed:free_slow_feedback=details_workspace
+# Expect: capture_changed:details_workspace=phase_feedback, capture_changed:phase_feedback=phase_stable, capture_changed:rename_keyboard=renamed_details
+# Expect: capture_changed:recorded_workspace=recorded_disabled, capture_changed:recorded_disabled=recorded_destinations_focused
+# Expect: semantic:lfo_workspace:effect=open_modulator_detail, semantic:shape_feedback:effect=edit_modulator_property
+# Expect: semantic:sync_fast_feedback:property=rate, semantic:sync_slow_feedback:property=rate, semantic:free_fast_feedback:property=rate, semantic:free_slow_feedback:property=rate
+# Expect: semantic:details_workspace:mode=project.modulator_options
 
 0 scenario project-modulator-workspace
 
-# Learned Project shortcut opens the compact Project-owned registry.
 100 button LEFT_CENTER down
 700 encoder NAV 1
 780 encoder NAV 2
@@ -24,53 +25,58 @@
 1440 tap NAV 60
 1660 capture screen lfo_workspace
 1780 encoder OPT 0.75
-1980 capture screen shape_feedback
-2940 tick
-3100 capture screen shape_stable
+2000 capture screen shape_feedback
 
-# Timing immediately switches the Rate card from musical division to time.
+# The complete supported Sync range is explicit on the Rate card.
+2120 encoder NAV 1
+2180 encoder NAV 1
+2300 encoder OPT 0.00
+2520 capture screen sync_fast_feedback
+2640 encoder OPT 1.00
+2860 capture screen sync_slow_feedback
+
+# Free keeps the same card and spans fast control to slow evolving movement.
+2980 encoder NAV -1
+3100 encoder OPT 1.00
 3220 encoder NAV 1
-3340 encoder OPT 1.0
-3540 capture screen free_timing_feedback
+3340 encoder OPT 0.00
+3560 capture screen free_fast_feedback
+3680 encoder OPT 1.00
+3900 capture screen free_slow_feedback
 
-# Details is local and keeps the same curve plus visible Destinations.
-3660 encoder NAV 1
-3740 encoder NAV 1
-3860 tap NAV 60
-4080 capture screen details_workspace
+# Details is local and keeps the source curve visible.
+4020 encoder NAV 1
+4140 tap NAV 60
+4360 capture screen details_workspace
+4480 encoder OPT 0.90
+4700 capture screen phase_feedback
+5700 tick
+5860 capture screen phase_stable
 
-# Phase edits move the authored curve itself; temporary precision feedback
-# disappears without reverting the phase-shifted source preview.
-4200 encoder OPT 0.90
-4420 capture screen phase_feedback
-5420 tick
-5580 capture screen phase_stable
-
-# Rename reuses the controller keyboard and returns locally to Details.
-5700 encoder NAV 1
-5780 encoder NAV 1
-5860 encoder NAV 1
-5980 tap NAV 60
-6200 capture screen rename_keyboard
-6320 tap LEFT_BOTTOM 60
-6440 tap NAV 60
-6560 tap BOTTOM_RIGHT 60
-6780 capture screen renamed_details
+# Rename is the third Details card and returns to the same local context.
+5980 encoder NAV 1
+6040 encoder NAV 1
+6160 tap NAV 60
+6380 capture screen rename_keyboard
+6500 tap LEFT_BOTTOM 60
+6620 tap NAV 60
+6740 tap BOTTOM_RIGHT 60
+6960 capture screen renamed_details
 
 # Back remains local first, then restores registry focus. Open Recorded Shape.
-6900 tap LEFT_TOP 60
-7020 tap LEFT_TOP 60
-7140 encoder NAV 1
-7220 encoder NAV 1
-7340 tap NAV 60
-7560 capture screen recorded_workspace
+7080 tap LEFT_TOP 60
+7200 tap LEFT_TOP 60
+7320 encoder NAV 1
+7380 encoder NAV 1
+7500 tap NAV 60
+7720 capture screen recorded_workspace
 
-# Disabled remains explicit in header/icon/text; Destinations never clips.
-7680 tap BOTTOM_LEFT 60
-7900 capture screen recorded_disabled
-8020 encoder NAV 1
-8100 encoder NAV 1
+# Disabled remains explicit; Destinations stays visible and directly reachable.
+7840 tap BOTTOM_LEFT 60
+8060 capture screen recorded_disabled
 8180 encoder NAV 1
-8400 capture screen recorded_destinations_focused
-8520 tap NAV 60
-8740 capture screen recorded_destinations
+8240 encoder NAV 1
+8300 encoder NAV 1
+8520 capture screen recorded_destinations_focused
+8640 tap NAV 60
+8860 capture screen recorded_destinations

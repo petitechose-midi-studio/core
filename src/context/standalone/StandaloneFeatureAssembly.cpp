@@ -149,6 +149,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                     state.sequencerTracks,
                 }
             },
+            core::handler::MacroEditDomainServices::fromCoreState(state),
             encoders,
             buttons,
             projectViewElement

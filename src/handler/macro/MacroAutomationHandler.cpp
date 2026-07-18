@@ -492,7 +492,7 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
             );
             (void)services_.setLfoAuditionPeriodTicks(
                 index,
-                detail_ui::lfo_audition::RATE_PERIOD_TICKS[rate]
+                detail_ui::lfo_audition::ratePeriodTicks(rate)
             );
         } else {
             const int16_t percent = static_cast<int16_t>(
@@ -1265,6 +1265,18 @@ FLASHMEM bool MacroAutomationHandler::startLfoAudition() {
     const auto result = services_.beginDefaultLfoAudition(macroIndex());
     if (!result.changed()) return false;
     macro_edit_.openNewModulatorAudition();
+    if (modulator_navigation::openAuditionSourceFromMacro(
+            {
+                overlays_state_,
+                active_view_,
+                project_navigation_,
+                macro_edit_,
+                pages_,
+            },
+            macroIndex()
+        )) {
+        return true;
+    }
     configureOptForFocusedRow();
     return true;
 }
@@ -1273,6 +1285,18 @@ FLASHMEM bool MacroAutomationHandler::startAdsrAudition() {
     const auto result = services_.beginDefaultAdsrAudition(macroIndex());
     if (!result.changed()) return false;
     macro_edit_.openNewModulatorAudition();
+    if (modulator_navigation::openAuditionSourceFromMacro(
+            {
+                overlays_state_,
+                active_view_,
+                project_navigation_,
+                macro_edit_,
+                pages_,
+            },
+            macroIndex()
+        )) {
+        return true;
+    }
     configureOptForFocusedRow();
     return true;
 }

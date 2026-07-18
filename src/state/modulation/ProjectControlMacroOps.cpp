@@ -145,45 +145,16 @@ FLASHMEM ProjectModulationFocusEntry& allocateFocusEntry(
     return *selected;
 }
 
-bool sourceHasOtherEdges(
-    const ProjectModulationState& state,
-    ModulatorId sourceId,
-    ModulationBindingId excluded
-) {
-    for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
-        const auto& binding = state.outputBindings[index];
-        if (binding.sourceId == sourceId && binding.id != excluded) return true;
-    }
-    for (uint16_t index = 0; index < state.triggerBindingCount; ++index) {
-        if (state.triggerBindings[index].sourceId == sourceId) return true;
-    }
-    return false;
-}
-
 FLASHMEM bool removePrimaryModulation(
     ProjectControlDomainState& domain,
     const ProjectControlMacroSlotView& view
 ) {
     if (!view.modulationStored || view.compatibilityMutationAmbiguous) return false;
-    const bool deleteSource = !sourceHasOtherEdges(
-        domain.modulation,
-        view.modulationSourceId,
-        view.modulationBindingId
-    );
     const auto removed = removeProjectModulationBinding(
         domain.modulation,
         view.modulationBindingId
     );
-    if (!removed.changed()) return false;
-    if (deleteSource) {
-        const auto deleted = deleteProjectModulator(
-            domain.modulation,
-            domain.curves,
-            view.modulationSourceId
-        );
-        if (!deleted.changed()) return false;
-    }
-    return true;
+    return removed.changed();
 }
 
 ProjectCurveSpec curveSpec(
@@ -213,13 +184,7 @@ FLASHMEM bool appendRecordedShape(
     const ModulationDestination destination = projectControlDestination(address);
     RecordedShapeDraft source{};
     source.name = "Recorded Shape";
-    source.reach = {
-        .trackMask = 0,
-        .kind = ModulatorReachKind::MACRO,
-        .track = address.track,
-        .page = address.page,
-        .macro = address.macro,
-    };
+    source.reach = projectModulatorGlobalReach();
     source.curve = curveSpec(curve, ProjectCurveValueDomain::BIPOLAR);
     source.points = points;
     source.pointCount = curve.pointCount;
@@ -542,18 +507,10 @@ FLASHMEM bool setProjectControlModulationEnabled(
         control.authored.modulation,
         view.modulationBindingId
     );
-    auto* source = findProjectModulator(
-        control.authored.modulation,
-        view.modulationSourceId
-    );
-    if (binding == nullptr || source == nullptr) return false;
-    const bool localSingle =
-        source->reach.kind == ModulatorReachKind::MACRO &&
-        !sourceHasOtherEdges(
+    if (binding == nullptr || findProjectModulator(
             control.authored.modulation,
-            source->id,
-            binding->id
-        );
+            view.modulationSourceId
+        ) == nullptr) return false;
     bool changed = false;
     const uint8_t bindingFlags = enabled
         ? PROJECT_MODULATION_BINDING_FLAG_ENABLED
@@ -561,13 +518,6 @@ FLASHMEM bool setProjectControlModulationEnabled(
     if (binding->flags != bindingFlags) {
         binding->flags = bindingFlags;
         changed = true;
-    }
-    if (localSingle) {
-        const uint8_t sourceFlags = enabled ? PROJECT_MODULATOR_FLAG_ENABLED : 0U;
-        if (source->flags != sourceFlags) {
-            source->flags = sourceFlags;
-            changed = true;
-        }
     }
     if (!changed) return false;
     control.markAuthoredMutation();

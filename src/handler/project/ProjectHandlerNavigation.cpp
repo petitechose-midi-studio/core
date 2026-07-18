@@ -5,6 +5,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "handler/common/ModulatorNavigationWorkflow.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/macro/MacroWorkflow.hpp"
@@ -24,7 +25,6 @@ const char FEEDBACK_SOURCE_FULL[] PROGMEM = "Source full - remove one";
 const char FEEDBACK_BINDINGS_FULL[] PROGMEM =
     "Assignments full - remove one";
 const char FEEDBACK_ALREADY_ASSIGNED[] PROGMEM = "Already assigned";
-const char FEEDBACK_WIDEN_REACH[] PROGMEM = "Widen Reach first";
 const char FEEDBACK_UNDO_FULL[] PROGMEM = "Undo memory full";
 const char FEEDBACK_SOURCE_MISSING[] PROGMEM = "Source missing - retry";
 const char FEEDBACK_SOURCE_IDS_FULL[] PROGMEM = "Source IDs full";
@@ -32,49 +32,13 @@ const char FEEDBACK_STATE_CHANGED[] PROGMEM = "State changed - retry";
 const char FEEDBACK_NO_CHANGE[] PROGMEM = "No change";
 const char FEEDBACK_ASSIGN_FAILED[] PROGMEM = "Cannot assign - retry";
 const char FEEDBACK_ADD_MACRO_FIRST_FORMAT[] PROGMEM = "Add Macro %u first";
-const char FEEDBACK_MACRO_REACH_FORMAT[] PROGMEM = "M%u +25%% + Reach";
 const char FEEDBACK_MACRO_PREVIEW_FORMAT[] PROGMEM = "M%u +25%% - Preview";
-const char FEEDBACK_REACH_PREVIEW[] PROGMEM = "+25% + Reach";
 const char FEEDBACK_PREVIEW[] PROGMEM = "+25% - Preview";
 const char FEEDBACK_APPLY_FAILED[] PROGMEM =
     "State changed - Back to cancel";
 const char FEEDBACK_APPLIED_UNDO[] PROGMEM = "Applied - one Undo";
 const char FEEDBACK_DESTINATION_APPLIED[] PROGMEM = "Destination applied";
 const char FEEDBACK_PREVIEW_CANCELLED[] PROGMEM = "Preview cancelled";
-
-FLASHMEM core::state::modulation::ModulatorReach minimumReachForDestination(
-    const core::state::modulation::ModulatorReach& current,
-    const core::state::modulation::ModulationDestination& destination
-) {
-    using namespace core::state::modulation;
-    if (modulatorReachContains(current, destination)) return current;
-    switch (current.kind) {
-        case ModulatorReachKind::DETACHED:
-            return {
-                .kind = ModulatorReachKind::MACRO,
-                .track = destination.track,
-                .page = destination.page,
-                .macro = destination.macro,
-            };
-        case ModulatorReachKind::MACRO:
-            return {
-                .trackMask = static_cast<uint16_t>(
-                    (1U << current.track) | (1U << destination.track)
-                ),
-                .kind = ModulatorReachKind::TRACK_SET,
-            };
-        case ModulatorReachKind::TRACK_SET:
-            return {
-                .trackMask = static_cast<uint16_t>(
-                    current.trackMask | (1U << destination.track)
-                ),
-                .kind = ModulatorReachKind::TRACK_SET,
-            };
-        case ModulatorReachKind::PROJECT:
-        default:
-            return current;
-    }
-}
 
 FLASHMEM bool sourceAlreadyTargets(
     const core::state::modulation::ProjectModulationState& graph,
@@ -107,9 +71,6 @@ FLASHMEM const char* destinationAuditionFailureLabel(
     if (branchStatus == ProjectModulationStatus::DUPLICATE_BINDING) {
         return FEEDBACK_ALREADY_ASSIGNED;
     }
-    if (branchStatus == ProjectModulationStatus::REACH_VIOLATION) {
-        return FEEDBACK_WIDEN_REACH;
-    }
     if (branchStatus == ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED) {
         return FEEDBACK_UNDO_FULL;
     }
@@ -131,13 +92,11 @@ FLASHMEM const char* destinationAuditionFailureLabel(
 
 }  // namespace
 
-FLASHMEM bool ProjectHandler::destinationPickerAuditionAddress(
+FLASHMEM bool ProjectHandler::modulatorAuditionAddress(
     core::state::macro::MacroAutomationSlotAddress& out
 ) const {
     using core::state::modulation::ModulationDestinationKind;
-    if (navigation_.currentNode.get() !=
-            core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER ||
-        !pages_.control.audition.active ||
+    if (!pages_.control.audition.active ||
         pages_.control.audition.destination.kind !=
             ModulationDestinationKind::MACRO_SLOT) {
         return false;
@@ -149,7 +108,9 @@ FLASHMEM bool ProjectHandler::destinationPickerAuditionAddress(
 
 FLASHMEM void ProjectHandler::navigate(float delta) {
     core::state::macro::MacroAutomationSlotAddress auditionAddress{};
-    if (delta != 0.0f && destinationPickerAuditionAddress(auditionAddress)) {
+    if (delta != 0.0f && navigation_.currentNode.get() ==
+            core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER &&
+        modulatorAuditionAddress(auditionAddress)) {
         navigation_.setLifecycleFeedback(FEEDBACK_PREVIEW_PENDING);
         return;
     }
@@ -193,7 +154,6 @@ FLASHMEM void ProjectHandler::enterFocused() {
     if (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
-        node == core::state::project::ProjectNodeId::MODULATOR_REACH ||
         node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER ||
         node == core::state::project::ProjectNodeId::MODULATOR_TRIGGER ||
@@ -253,109 +213,14 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
         return;
     }
 
-    if (navigation_.currentNode.get() == ProjectNodeId::MODULATOR_REACH) {
-        using namespace core::state::modulation;
-        using core::state::project::modulators::ReachChoiceKind;
-        const auto* source = focusedModulator();
-        if (!source) return;
-        const auto& graph = pages_.control.authored.modulation;
-        const auto layout =
-            core::state::project::modulators::sourceReachChoiceLayout(
-                graph,
-                source->id
-            );
-        const auto choice = layout.at(navigation_.focusedRow.get());
-        if (choice.kind != ReachChoiceKind::SPLIT_TRACK) {
-            const ModulatorReach reach = choice.kind == ReachChoiceKind::PROJECT
-                ? ModulatorReach{.kind = ModulatorReachKind::PROJECT}
-                : core::state::project::modulators::tightestSourceReach(
-                      graph,
-                      source->id
-                  );
-            if (macro_history_.setProjectModulatorReach(
-                    pages_,
-                    source->id,
-                    reach
-                )) {
-                publishModulatorMutation(false);
-                navigation_.setLifecycleFeedback(
-                    choice.kind == ReachChoiceKind::PROJECT
-                        ? "Reach · Project" : "Reach · Tightest"
-                );
-            } else {
-                navigation_.setLifecycleFeedback(
-                    choice.kind == ReachChoiceKind::PROJECT
-                        ? "Already Project" : "Already Tightest"
-                );
-            }
-            return;
-        }
-
-        const ModulatorReach retainedReach =
-            core::state::project::modulators::sourcePartitionReach(
-                graph,
-                source->id,
-                choice.track,
-                false
-            );
-        const ModulatorReach cloneReach =
-            core::state::project::modulators::sourcePartitionReach(
-                graph,
-                source->id,
-                choice.track,
-                true
-            );
-        const ModulatorId retainedSourceId = source->id;
-        char cloneName[PROJECT_MODULATOR_NAME_CAPACITY]{};
-        std::snprintf(
-            cloneName,
-            sizeof(cloneName),
-            "T%u %.10s",
-            static_cast<unsigned>(choice.track + 1U),
-            source->name.data()
-        );
-        const auto split = macro_history_.splitProjectModulatorTrack(
-            pages_,
-            source->id,
-            choice.track,
-            cloneName,
-            retainedReach,
-            cloneReach
-        );
-        if (!split.changed()) {
-            navigation_.setLifecycleFeedback("Split unavailable");
-            return;
-        }
-        while (navigation_.depth.get() > 0U) {
-            (void)core::state::project::backProjectNavigation(navigation_);
-        }
-        auto& liveGraph = pages_.control.authored.modulation;
-        for (uint16_t index = 0; index < liveGraph.sourceCount; ++index) {
-            if (liveGraph.sources[index].id == retainedSourceId) {
-                navigation_.focusedRow.set(static_cast<uint8_t>(index));
-                break;
-            }
-        }
-        navigation_.selectedModulator = retainedSourceId;
-        publishModulatorMutation(false);
-        char feedback[48]{};
-        std::snprintf(
-            feedback,
-            sizeof(feedback),
-            "Split T%u · %u dest.",
-            static_cast<unsigned>(choice.track + 1U),
-            static_cast<unsigned>(choice.destinationCount)
-        );
-        navigation_.setLifecycleFeedback(feedback);
-        return;
-    }
-
     if (navigation_.currentNode.get() == ProjectNodeId::MODULATOR_TRIGGER) {
         return;
     }
 
     if (navigation_.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS) {
-        if (focusedModulationBinding() == nullptr) {
+        if (focusedModulationBinding() != nullptr) {
+            openFocusedModulationDestination();
+        } else {
             (void)core::state::project::openProjectModulatorDestinationPicker(
                 navigation_,
                 pages_.currentActiveTrack(),
@@ -370,9 +235,20 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
     if (!source) return;
     const bool options = navigation_.currentNode.get() ==
         ProjectNodeId::MODULATOR_SOURCE_OPTIONS;
-    const auto layout = options
-        ? core::state::project::modulators::sourceOptionsLayout(source->kind)
-        : core::state::project::modulators::sourceDetailLayout(source->kind);
+    const bool audition = pages_.control.audition.active &&
+        pages_.control.audition.sourceCreated &&
+        pages_.control.audition.sourceId == source->id;
+    const auto layout = audition
+        ? (options
+            ? core::state::project::modulators::sourceAuditionOptionsLayout(
+                  source->kind
+              )
+            : core::state::project::modulators::sourceAuditionLayout(
+                  source->kind
+              ))
+        : (options
+            ? core::state::project::modulators::sourceOptionsLayout(source->kind)
+            : core::state::project::modulators::sourceDetailLayout(source->kind));
     const auto item = layout.at(navigation_.focusedRow.get());
     using Item = core::state::project::modulators::SourceDetailItem;
     if (item == Item::OPTIONS) {
@@ -384,8 +260,6 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
                 ? first->id
                 : core::state::modulation::ModulationBindingId{};
         }
-    } else if (item == Item::REACH) {
-        (void)core::state::project::openProjectModulatorReach(navigation_);
     } else if (item == Item::RENAME) {
         (void)core::state::project::openProjectNameEditor(
             navigation_,
@@ -397,6 +271,81 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
     }
 }
 
+FLASHMEM void ProjectHandler::openFocusedModulationDestination() {
+    using namespace core::state::modulation;
+    const auto* binding = focusedModulationBinding();
+    if (binding == nullptr ||
+        binding->destination.kind != ModulationDestinationKind::MACRO_SLOT ||
+        binding->destination.track >= core::state::macro::TRACK_COUNT ||
+        binding->destination.page >= core::state::macro::PAGE_COUNT ||
+        binding->destination.macro >= core::state::macro::MACRO_COUNT) {
+        navigation_.setLifecycleFeedback("Destination unavailable");
+        return;
+    }
+
+    const auto destination = binding->destination;
+    const uint16_t trackBit = static_cast<uint16_t>(1U << destination.track);
+    if ((pages_.currentTrackEnabledMask() & trackBit) == 0U) {
+        char feedback[32]{};
+        std::snprintf(
+            feedback,
+            sizeof(feedback),
+            "Track %u is Off",
+            static_cast<unsigned>(destination.track + 1U)
+        );
+        navigation_.setLifecycleFeedback(feedback);
+        return;
+    }
+
+    const auto bindingId = binding->id;
+    macro_edit_services_.switchToTrack(destination.track);
+    if (pages_.currentActiveTrack() != destination.track) {
+        navigation_.setLifecycleFeedback("Destination unavailable");
+        return;
+    }
+    macro_edit_services_.switchToPage(destination.page);
+    if (pages_.currentActivePage() != destination.page) {
+        navigation_.setLifecycleFeedback("Destination unavailable");
+        return;
+    }
+
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        destination.track,
+        destination.page,
+        destination.macro,
+    };
+    (void)setProjectControlFocusedModulationBinding(
+        pages_.control,
+        address,
+        bindingId
+    );
+
+    uint16_t assignmentCount = 0U;
+    uint16_t selectedOrdinal = 0U;
+    const auto& graph = pages_.control.authored.modulation;
+    for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
+        const auto& candidate = graph.outputBindings[index];
+        if (candidate.destination != destination) continue;
+        if (candidate.id == bindingId) selectedOrdinal = assignmentCount;
+        ++assignmentCount;
+    }
+    const uint8_t focusedRow = static_cast<uint8_t>(
+        (assignmentCount > 0U ? 1U : 0U) + selectedOrdinal
+    );
+
+    navigation_.modulatorReturn = {};
+    navigation_.clearLifecycleFeedback();
+    overlays_.hideAll();
+    macro_edit_.loadActiveConfig(
+        destination.macro,
+        pages_.activeConfigs[destination.macro].channel,
+        pages_.activeConfigs[destination.macro].cc
+    );
+    macro_edit_.openModulation(focusedRow);
+    active_view_.set(core::ui::ViewType::MACRO);
+    overlays_.show(core::ui::OverlayType::MACRO_AUTOMATION, false);
+}
+
 FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     using namespace core::state::modulation;
     if (navigation_.currentNode.get() !=
@@ -404,7 +353,7 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
         return;
     }
     core::state::macro::MacroAutomationSlotAddress pendingAddress{};
-    if (destinationPickerAuditionAddress(pendingAddress)) {
+    if (modulatorAuditionAddress(pendingAddress)) {
         navigation_.setLifecycleFeedback(FEEDBACK_PREVIEW_PENDING);
         return;
     }
@@ -505,16 +454,9 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     binding.application = ModulationApplication::NATURAL;
 
     ProjectModulationResult begun{};
-    bool reachWidened = false;
     if (creating) {
-        const ModulatorReach reach{
-            .kind = ModulatorReachKind::MACRO,
-            .track = track,
-            .page = page,
-            .macro = row,
-        };
         if (creatingKind == ModulatorKind::ADSR) {
-            adsrDraft.reach = reach;
+            adsrDraft.reach = projectModulatorGlobalReach();
             begun = macro_history_.beginAdsrModulatorAudition(
                 pages_,
                 address,
@@ -524,7 +466,7 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
                 createMacro
             );
         } else {
-            sourceDraft.reach = reach;
+            sourceDraft.reach = projectModulatorGlobalReach();
             begun = macro_history_.beginLfoModulatorAudition(
                 pages_, address, sourceDraft, binding, createMacro
             );
@@ -540,17 +482,12 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
             navigation_.setLifecycleFeedback(FEEDBACK_ALREADY_ASSIGNED);
             return;
         }
-        const ModulatorReach widened = minimumReachForDestination(
-            source->reach,
-            destination
-        );
-        reachWidened = !modulatorReachContains(source->reach, destination);
         begun = macro_history_.beginExistingModulatorAudition(
             pages_,
             address,
             targetSource,
             binding,
-            reachWidened ? &widened : nullptr,
+            nullptr,
             createMacro
         );
     }
@@ -562,29 +499,36 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     }
     navigation_.selectedModulationBinding = begun.bindingId;
     refreshModulatorPreview(createMacro, row);
+    if (creating) {
+        (void)core::state::project::openProjectModulatorWorkspace(
+            navigation_,
+            begun.sourceId
+        );
+        navigation_.selectedModulationBinding = begun.bindingId;
+        navigation_.focusedRow.set(0U);
+    }
     if (createMacro) {
         char feedback[48]{};
         std::snprintf(
             feedback,
             sizeof(feedback),
-            reachWidened ? FEEDBACK_MACRO_REACH_FORMAT :
-                           FEEDBACK_MACRO_PREVIEW_FORMAT,
+            FEEDBACK_MACRO_PREVIEW_FORMAT,
             static_cast<unsigned>(row + 1U)
         );
         navigation_.setLifecycleFeedback(feedback);
     } else {
-        navigation_.setLifecycleFeedback(
-            reachWidened ? FEEDBACK_REACH_PREVIEW : FEEDBACK_PREVIEW
-        );
+        navigation_.setLifecycleFeedback(FEEDBACK_PREVIEW);
     }
 }
 
 FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
     using namespace core::state::modulation;
     core::state::macro::MacroAutomationSlotAddress address{};
-    if (!destinationPickerAuditionAddress(address)) return;
+    if (!modulatorAuditionAddress(address)) return;
     const auto audition = pages_.control.audition;
     const bool sourceCreated = audition.sourceCreated;
+    const bool macroReturn =
+        modulator_navigation::macroAuditionReturnPending(navigation_);
     if (!macro_history_.commitModulatorAudition(pages_, address)) {
         navigation_.setLifecycleFeedback(FEEDBACK_APPLY_FAILED);
         return;
@@ -595,6 +539,21 @@ FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
         pages_
     );
     auto& graph = pages_.control.authored.modulation;
+    publishModulatorMutation(false);
+    if (macroReturn) {
+        (void)modulator_navigation::returnToMacroFromAudition(
+            {
+                overlays_,
+                active_view_,
+                navigation_,
+                macro_edit_,
+                pages_,
+            },
+            true,
+            time_provider_ ? time_provider_() : 0U
+        );
+        return;
+    }
     (void)core::state::project::backProjectNavigation(navigation_);
     if (sourceCreated) {
         while (navigation_.depth.get() > 0U) {
@@ -621,7 +580,6 @@ FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
         static_cast<uint8_t>(destinationCount > 0U ? destinationCount - 1U : 0U)
     );
     navigation_.selectedModulationBinding = audition.bindingId;
-    publishModulatorMutation(false);
     navigation_.setLifecycleFeedback(
         sourceCreated ? FEEDBACK_APPLIED_UNDO : FEEDBACK_DESTINATION_APPLIED
     );
@@ -630,20 +588,62 @@ FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
 
 FLASHMEM bool ProjectHandler::cancelDestinationPickerAudition() {
     core::state::macro::MacroAutomationSlotAddress address{};
-    if (!destinationPickerAuditionAddress(address)) return false;
+    const auto node = navigation_.currentNode.get();
+    if ((node != core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER &&
+         node != core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL) ||
+        !modulatorAuditionAddress(address)) {
+        return false;
+    }
+    const auto audition = pages_.control.audition;
+    const bool macroReturn =
+        modulator_navigation::macroAuditionReturnPending(navigation_);
+    const auto creatingKind = navigation_.creatingModulatorKind;
+    const auto pickerTrack = navigation_.destinationPickerTrack;
+    const auto pickerPage = navigation_.destinationPickerPage;
     if (!macro_history_.cancelModulatorAudition(pages_, address)) {
         navigation_.setLifecycleFeedback(FEEDBACK_STATE_CHANGED);
         return true;
     }
     navigation_.selectedModulationBinding = {};
     refreshModulatorPreview(true, address.macro);
+    if (macroReturn) {
+        (void)modulator_navigation::returnToMacroFromAudition(
+            {
+                overlays_,
+                active_view_,
+                navigation_,
+                macro_edit_,
+                pages_,
+            },
+            false,
+            time_provider_ ? time_provider_() : 0U
+        );
+        return true;
+    }
+    if (audition.sourceCreated && node ==
+            core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
+        while (navigation_.depth.get() > 0U) {
+            (void)core::state::project::backProjectNavigation(navigation_);
+        }
+        if (core::state::project::openProjectModulatorKindPicker(navigation_)) {
+            navigation_.creatingModulatorKind = creatingKind;
+            if (core::state::project::openProjectModulatorDestinationPicker(
+                    navigation_,
+                    pickerTrack,
+                    pickerPage,
+                    true
+                )) {
+                navigation_.focusedRow.set(address.macro);
+            }
+        }
+    }
     navigation_.setLifecycleFeedback(FEEDBACK_PREVIEW_CANCELLED);
     return true;
 }
 
 FLASHMEM void ProjectHandler::setFocusedValue(float normalized) {
     core::state::macro::MacroAutomationSlotAddress auditionAddress{};
-    const bool auditioning = destinationPickerAuditionAddress(auditionAddress);
+    const bool auditioning = modulatorAuditionAddress(auditionAddress);
     if (setFocusedProjectValue(normalized)) {
         if (!auditioning) navigation_.clearLifecycleFeedback();
     }
@@ -656,7 +656,8 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
     const uint8_t row = navigation_.focusedRow.get();
 
     core::state::macro::MacroAutomationSlotAddress auditionAddress{};
-    if (destinationPickerAuditionAddress(auditionAddress)) {
+    if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER &&
+        modulatorAuditionAddress(auditionAddress)) {
         const auto* binding =
             core::state::modulation::findProjectModulationBinding(
                 pages_.control.authored.modulation,
@@ -757,9 +758,25 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             configureOptDiscrete(encoders_, 1, 0.0f);
             return;
         }
-        const auto layout = node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS
-            ? core::state::project::modulators::sourceOptionsLayout(source->kind)
-            : core::state::project::modulators::sourceDetailLayout(source->kind);
+        const bool audition = pages_.control.audition.active &&
+            pages_.control.audition.sourceCreated &&
+            pages_.control.audition.sourceId == source->id;
+        const bool options = node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS;
+        const auto layout = audition
+            ? (options
+                ? core::state::project::modulators::sourceAuditionOptionsLayout(
+                      source->kind
+                  )
+                : core::state::project::modulators::sourceAuditionLayout(
+                      source->kind
+                  ))
+            : (options
+                ? core::state::project::modulators::sourceOptionsLayout(
+                      source->kind
+                  )
+                : core::state::project::modulators::sourceDetailLayout(
+                      source->kind
+                  ));
         const auto item = layout.at(row);
         using Item = core::state::project::modulators::SourceDetailItem;
         using namespace core::state::modulation;
@@ -862,6 +879,27 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                     )
                 );
                 return;
+            case Item::DEPTH: {
+                const auto* binding = findProjectModulationBinding(
+                    pages_.control.authored.modulation,
+                    pages_.control.audition.bindingId
+                );
+                configureOptDiscrete(
+                    encoders_,
+                    201,
+                    binding
+                        ? std::clamp(
+                              (static_cast<float>(binding->amountQ15) /
+                                   32767.0f +
+                               1.0f) *
+                                  0.5f,
+                              0.0f,
+                              1.0f
+                          )
+                        : 0.5f
+                );
+                return;
+            }
             case Item::ATTACK:
             case Item::DECAY:
             case Item::RELEASE: {
@@ -908,23 +946,10 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                     )
                 );
                 return;
-            case Item::REACH:
-                configureOptDiscrete(
-                    encoders_,
-                    2,
-                    source->reach.kind == ModulatorReachKind::PROJECT
-                        ? 1.0f : 0.0f
-                );
-                return;
             default:
                 configureOptDiscrete(encoders_, 1, 0.0f);
                 return;
         }
-    }
-
-    if (node == ProjectNodeId::MODULATOR_REACH) {
-        configureOptDiscrete(encoders_, 1, 0.0f);
-        return;
     }
 
     if (node == ProjectNodeId::MODULATOR_DESTINATIONS) {

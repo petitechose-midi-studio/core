@@ -334,59 +334,8 @@ FLASHMEM bool sourceAssignedTo(
     return false;
 }
 
-FLASHMEM void formatReachCompact(
-    char* out,
-    size_t outSize,
-    const core::state::modulation::ModulatorReach& reach
-) {
-    using Kind = core::state::modulation::ModulatorReachKind;
-    switch (reach.kind) {
-        case Kind::MACRO:
-            std::snprintf(
-                out,
-                outSize,
-                "M%u",
-                static_cast<unsigned>(reach.macro) + 1U
-            );
-            break;
-        case Kind::TRACK_SET: {
-            uint8_t first = 0;
-            uint8_t count = 0;
-            for (uint8_t track = 0; track < 16U; ++track) {
-                if ((reach.trackMask & static_cast<uint16_t>(1U << track)) == 0U) {
-                    continue;
-                }
-                if (count == 0U) first = track;
-                ++count;
-            }
-            std::snprintf(
-                out,
-                outSize,
-                count > 1U ? "T%u+" : "T%u",
-                static_cast<unsigned>(first) + 1U
-            );
-            break;
-        }
-        case Kind::PROJECT:
-            std::snprintf(out, outSize, "%s", "All");
-            break;
-        case Kind::DETACHED:
-        default:
-            std::snprintf(out, outSize, "%s", "None");
-            break;
-    }
-}
-
 FLASHMEM const char* lfoRateCompact(uint8_t index) {
-    static constexpr const char* labels[] = {
-        "1/16", "1/8", "1/4", "1/2", "1 bar", "2 bars"
-    };
-    return labels[std::min<uint8_t>(
-        index,
-        static_cast<uint8_t>(
-            core::ui::macro::lfo_audition::RATE_COUNT - 1U
-        )
-    )];
+    return core::ui::macro::lfo_audition::rateCompactLabel(index);
 }
 
 FLASHMEM ms::ui::KeyValueSparkline buildSourceSparkline(
@@ -445,14 +394,8 @@ FLASHMEM void provideModulatorPickerRow(
     };
     const auto destination =
         core::state::modulation::projectControlDestination(address);
-    const bool inReach = core::state::modulation::modulatorReachContains(
-        modulator.reach,
-        destination
-    );
     const bool assigned = sourceAssignedTo(graph, modulator.id, destination);
     const uint16_t usage = sourceUsageCount(graph, modulator.id);
-    char reach[12]{};
-    formatReachCompact(reach, sizeof(reach), modulator.reach);
     const char* primary = "Motion";
     if (modulator.kind == core::state::modulation::ModulatorKind::LFO) {
         primary = lfoRateCompact(
@@ -470,24 +413,15 @@ FLASHMEM void provideModulatorPickerRow(
         std::snprintf(
             out.value.data(),
             out.value.size(),
-            "Assigned · x%u",
-            static_cast<unsigned>(usage)
-        );
-    } else if (!inReach) {
-        std::snprintf(
-            out.value.data(),
-            out.value.size(),
-            "Reach %s · x%u",
-            reach,
+            "Assigned · Used %u",
             static_cast<unsigned>(usage)
         );
     } else {
         std::snprintf(
             out.value.data(),
             out.value.size(),
-            "%s · %s · x%u",
+            "%s · Used by %u",
             primary,
-            reach,
             static_cast<unsigned>(usage)
         );
     }
@@ -505,7 +439,7 @@ FLASHMEM void provideModulatorPickerRow(
     const bool enabled =
         (modulator.flags &
          core::state::modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
-    out.iconColor = inReach && enabled
+    out.iconColor = enabled
         ? ::standalone::theme::color::MACRO_MODULATION
         : ::standalone::theme::color::TEXT_SECONDARY;
 }

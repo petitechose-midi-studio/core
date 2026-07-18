@@ -29,11 +29,10 @@ const char LABEL_ON_PLAY[] PROGMEM = "On Play";
 const char LABEL_TRIGGERED[] PROGMEM = "Triggered";
 const char LABEL_FREE_RUN[] PROGMEM = "Free Run";
 const char LABEL_RUN[] PROGMEM = "Run";
-const char LABEL_AVAILABLE_IN[] PROGMEM = "Available in";
 const char LABEL_DETAILS[] PROGMEM = "Details";
 const char LABEL_MORE[] PROGMEM = "More >";
 const char LABEL_RENAME[] PROGMEM = "Rename";
-const char LABEL_DESTINATIONS[] PROGMEM = "Destinations";
+const char LABEL_USED_BY[] PROGMEM = "Used by";
 const char LABEL_LINEAR[] PROGMEM = "Linear";
 const char LABEL_SMOOTH[] PROGMEM = "Smooth";
 const char LABEL_EXPONENTIAL[] PROGMEM = "Exponential";
@@ -52,21 +51,6 @@ const char PICKER_DEPTH_PREVIEW[] PROGMEM = "+25% · Preview";
 const char PICKER_CREATE_ASSIGN[] PROGMEM = "Create + assign";
 const char PICKER_PREREQUISITE_FORMAT[] PROGMEM = "Add M%u first";
 const char PICKER_UNAVAILABLE[] PROGMEM = "Unavailable";
-
-const char RATE_1_16[] PROGMEM = "1/16";
-const char RATE_1_8[] PROGMEM = "1/8";
-const char RATE_1_4[] PROGMEM = "1/4";
-const char RATE_1_2[] PROGMEM = "1/2";
-const char RATE_1_BAR[] PROGMEM = "1B";
-const char RATE_2_BARS[] PROGMEM = "2B";
-const char* const COMPACT_RATE_LABELS[] PROGMEM = {
-    RATE_1_16,
-    RATE_1_8,
-    RATE_1_4,
-    RATE_1_2,
-    RATE_1_BAR,
-    RATE_2_BARS,
-};
 
 FLASHMEM const char* shapeLabel(ModulatorLfoShape shape) {
     return core::ui::macro::lfo_audition::shapeLabel(shape);
@@ -147,7 +131,12 @@ FLASHMEM void formatRate(char* out,
     const uint8_t index = core::ui::macro::lfo_audition::rateIndex(
         lfo.periodTicks
     );
-    std::snprintf(out, size, "%s", COMPACT_RATE_LABELS[index]);
+    std::snprintf(
+        out,
+        size,
+        "%s",
+        core::ui::macro::lfo_audition::rateCompactLabel(index)
+    );
 }
 
 FLASHMEM void formatDuration(char* out, size_t size, uint16_t ticks) {
@@ -218,65 +207,6 @@ FLASHMEM void formatTriggerSummary(
             note
         );
     }
-}
-
-FLASHMEM void formatReach(char* out, size_t size, const ModulatorReach& reach) {
-    switch (reach.kind) {
-        case ModulatorReachKind::MACRO:
-            std::snprintf(
-                out,
-                size,
-                "T%uP%uM%u",
-                static_cast<unsigned>(reach.track + 1U),
-                static_cast<unsigned>(reach.page + 1U),
-                static_cast<unsigned>(reach.macro + 1U)
-            );
-            return;
-        case ModulatorReachKind::TRACK_SET: {
-            uint8_t count = 0;
-            uint8_t first = 0;
-            uint8_t second = 0;
-            for (uint8_t track = 0; track < PROJECT_MODULATION_TRACK_COUNT; ++track) {
-                if ((reach.trackMask & (1U << track)) == 0U) continue;
-                if (count == 0U) first = track;
-                if (count == 1U) second = track;
-                ++count;
-            }
-            if (count == 1U) {
-                std::snprintf(out, size, "T%u", static_cast<unsigned>(first + 1U));
-            } else if (count == 2U) {
-                std::snprintf(
-                    out,
-                    size,
-                    "T%u,%u",
-                    static_cast<unsigned>(first + 1U),
-                    static_cast<unsigned>(second + 1U)
-                );
-            } else {
-                std::snprintf(out, size, "%u Tracks", static_cast<unsigned>(count));
-            }
-            return;
-        }
-        case ModulatorReachKind::PROJECT:
-            std::snprintf(out, size, "%s", "Project");
-            return;
-        case ModulatorReachKind::DETACHED:
-        default:
-            std::snprintf(out, size, "%s", "Detached");
-            return;
-    }
-}
-
-FLASHMEM void formatRegistryReach(
-    char* out,
-    size_t size,
-    const ModulatorReach& reach
-) {
-    if (reach.kind == ModulatorReachKind::MACRO) {
-        std::snprintf(out, size, "%s", "Macro");
-        return;
-    }
-    formatReach(out, size, reach);
 }
 
 FLASHMEM float liveSourceValue(const ProjectControlState& control, ModulatorId id) {
@@ -494,25 +424,13 @@ FLASHMEM void populateRegistryRow(const ProjectControlState& control,
         );
         formatDuration(primary, sizeof(primary), curve ? curve->durationTicks : 0U);
     }
-    char reach[16]{};
-    formatRegistryReach(reach, sizeof(reach), source.reach);
-    if (destinations == 0U) {
-        std::snprintf(
-            out.detail.data(),
-            out.detail.size(),
-            "%s · Unassigned",
-            primary
-        );
-    } else {
-        std::snprintf(
-            out.detail.data(),
-            out.detail.size(),
-            "%s · %s · x%u",
-            primary,
-            reach,
-            static_cast<unsigned>(destinations)
-        );
-    }
+    std::snprintf(
+        out.detail.data(),
+        out.detail.size(),
+        "%s · Used by %u",
+        primary,
+        static_cast<unsigned>(destinations)
+    );
     out.iconFont = standalone_fonts.icons_14;
     setText(out.icon, sourceIcon(source.kind));
     out.iconColor = enabled
@@ -676,12 +594,6 @@ FLASHMEM void populateSourceDetailRow(
             setText(out.value, value);
             setText(out.icon, standalone::icons::NOTE_PROP_GATE);
             break;
-        case SourceDetailItem::REACH:
-            setText(out.key, LABEL_AVAILABLE_IN);
-            formatReach(value, sizeof(value), source.reach);
-            setText(out.value, value);
-            setText(out.icon, standalone::icons::ROUTE_PIN);
-            break;
         case SourceDetailItem::OPTIONS:
             setText(out.key, LABEL_DETAILS);
             setText(out.value, LABEL_MORE);
@@ -693,7 +605,7 @@ FLASHMEM void populateSourceDetailRow(
             setText(out.icon, standalone::icons::ACTION_PLACE_TARGET);
             break;
         case SourceDetailItem::DESTINATIONS:
-            setText(out.key, LABEL_DESTINATIONS);
+            setText(out.key, LABEL_USED_BY);
             std::snprintf(
                 value,
                 sizeof(value),
@@ -762,19 +674,13 @@ FLASHMEM void populateSourceOptionsRow(
             );
             setText(out.icon, standalone::icons::CYCLE_STATE);
             break;
-        case SourceDetailItem::REACH:
-            setText(out.key, LABEL_AVAILABLE_IN);
-            formatReach(value, sizeof(value), source.reach);
-            setText(out.value, value);
-            setText(out.icon, standalone::icons::ROUTE_PIN);
-            break;
         case SourceDetailItem::RENAME:
             setText(out.key, LABEL_RENAME);
             setText(out.value, source.name.data());
             setText(out.icon, standalone::icons::ACTION_PLACE_TARGET);
             break;
         case SourceDetailItem::DESTINATIONS:
-            setText(out.key, LABEL_DESTINATIONS);
+            setText(out.key, LABEL_USED_BY);
             std::snprintf(
                 value,
                 sizeof(value),
@@ -903,66 +809,6 @@ FLASHMEM void populateDestinationRow(
     out.iconColor = enabled
         ? standalone::theme::color::MACRO_MODULATION
         : standalone::theme::color::INACTIVE;
-}
-
-FLASHMEM void populateReachRow(
-    const ProjectControlState& control,
-    ModulatorId sourceId,
-    int index,
-    ms::ui::KeyValueRowBuffer& out
-) {
-    if (index < 0) return;
-    const auto& graph = control.authored.modulation;
-    const auto* source = findProjectModulator(graph, sourceId);
-    if (!source) return;
-    const auto layout =
-        core::state::project::modulators::sourceReachChoiceLayout(
-            graph,
-            sourceId
-        );
-    if (index >= layout.count) return;
-    const auto choice = layout.at(static_cast<uint8_t>(index));
-    using core::state::project::modulators::ReachChoiceKind;
-    out.iconFont = standalone_fonts.icons_14;
-    out.iconColor = standalone::theme::color::MACRO_MODULATION;
-
-    if (choice.kind == ReachChoiceKind::TIGHTEST) {
-        setText(out.key, "Tightest");
-        char value[20]{};
-        const auto reach =
-            core::state::project::modulators::tightestSourceReach(
-                graph,
-                sourceId
-            );
-        formatReach(value, sizeof(value), reach);
-        setText(out.value, value);
-        setText(out.icon, standalone::icons::ROUTE_PIN);
-        return;
-    }
-    if (choice.kind == ReachChoiceKind::PROJECT) {
-        setText(out.key, "Project");
-        setText(
-            out.value,
-            source->reach.kind == ModulatorReachKind::PROJECT
-                ? "Current" : "Allow all"
-        );
-        setText(out.icon, standalone::icons::ROUTING);
-        return;
-    }
-
-    std::snprintf(
-        out.key.data(),
-        out.key.size(),
-        "Split T%u",
-        static_cast<unsigned>(choice.track + 1U)
-    );
-    std::snprintf(
-        out.value.data(),
-        out.value.size(),
-        "%u dest.",
-        static_cast<unsigned>(choice.destinationCount)
-    );
-    setText(out.icon, standalone::icons::ACTION_COPY);
 }
 
 FLASHMEM void populateDestinationPickerRow(

@@ -49,6 +49,7 @@ public:
 
     ProjectFeatureModule(StateRefs stateRefs,
                          core::handler::SequencerSettingsDomainServices sequencerSettings,
+                         core::handler::MacroEditDomainServices macroEditServices,
                          oc::api::EncoderAPI& encoders,
                          oc::api::ButtonAPI& buttons,
                          lv_obj_t* projectViewElement

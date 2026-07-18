@@ -42,6 +42,25 @@ struct ModulatorReach {
     uint8_t macro = 0;
 };
 
+/**
+ * Canonical live availability for every Project-owned source.
+ *
+ * The six persisted bytes remain in the current MODG record only so supported
+ * older payloads can be decoded.  Runtime/domain code must normalize them to
+ * this value and must not use Reach as a second routing authority.
+ */
+[[nodiscard]] constexpr ModulatorReach projectModulatorGlobalReach() {
+    return {.kind = ModulatorReachKind::PROJECT};
+}
+
+[[nodiscard]] constexpr bool isProjectModulatorGlobalReach(
+    const ModulatorReach& reach
+) {
+    return reach.trackMask == 0U &&
+           reach.kind == ModulatorReachKind::PROJECT &&
+           reach.track == 0U && reach.page == 0U && reach.macro == 0U;
+}
+
 enum class ModulatorLfoShape : uint8_t {
     SINE = 0,
     TRIANGLE,
@@ -234,7 +253,8 @@ struct ModulationTriggerBindingState {
 
 /**
  * Project-owned authored graph. Storage ownership is independent from Track,
- * Macro and UI context; reach only controls where assignments may point.
+ * Macro and UI context. The retained Reach bytes are compatibility-only and
+ * are canonicalized to Project availability in every live source.
  */
 struct ProjectModulationState {
     uint32_t nextSourceId = 1;

@@ -52,7 +52,9 @@ FLASHMEM DestinationAssignments inspectDestination(
 }
 
 constexpr uint8_t rowForOrdinal(uint16_t count, int ordinal) {
-    const int first = count > 1U ? 1 : 0;
+    // The Macro Modulation screen always exposes its aggregate All row as
+    // soon as at least one assignment exists.
+    const int first = count > 0U ? 1 : 0;
     return static_cast<uint8_t>(first + std::max(ordinal, 0));
 }
 
@@ -125,6 +127,62 @@ FLASHMEM bool openSourceFromMacro(
     state.overlays.hideAll();
     state.activeView.set(core::ui::ViewType::PROJECT);
     return true;
+}
+
+FLASHMEM bool openAuditionSourceFromMacro(StateRefs state, uint8_t macroIndex) {
+    using namespace core::state::modulation;
+    if (state.activeView.get() != core::ui::ViewType::MACRO ||
+        state.macroEdit.flowPhase.get() !=
+            core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION ||
+        macroIndex >= core::state::macro::MACRO_COUNT ||
+        state.macroEdit.editingIndex.get() != macroIndex) {
+        return false;
+    }
+
+    const MacroAutomationSlotAddress address{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = macroIndex,
+    };
+    const auto& audition = state.pages.control.audition;
+    const auto destination = projectControlDestination(address);
+    const auto& graph = state.pages.control.authored.modulation;
+    const auto* source = findProjectModulator(graph, audition.sourceId);
+    const auto* binding = findProjectModulationBinding(
+        graph,
+        audition.bindingId
+    );
+    if (!audition.active || !audition.sourceCreated ||
+        audition.destination != destination || source == nullptr ||
+        binding == nullptr || binding->sourceId != source->id ||
+        binding->destination != destination ||
+        !core::state::project::openProjectModulatorWorkspace(
+            state.projectNavigation,
+            source->id
+        )) {
+        return false;
+    }
+
+    state.projectNavigation.modulatorReturn = {
+        .sourceId = source->id,
+        .bindingId = binding->id,
+        .macroAddress = address,
+        .caller = core::state::project::
+            ModulatorNavigationCaller::MACRO_AUDITION,
+        .focusedRow = 0U,
+    };
+    state.projectNavigation.setLifecycleFeedback("Preview · Apply or Back");
+    state.overlays.hideAll();
+    state.activeView.set(core::ui::ViewType::PROJECT);
+    return true;
+}
+
+bool macroAuditionReturnPending(
+    const core::state::project::ProjectNavigationState& navigation
+) {
+    return navigation.modulatorReturn.active() &&
+           navigation.modulatorReturn.caller == core::state::project::
+               ModulatorNavigationCaller::MACRO_AUDITION;
 }
 
 bool macroReturnPending(
@@ -225,6 +283,24 @@ FLASHMEM bool returnToMacro(StateRefs state, uint32_t nowMs) {
     state.macroEdit.openModulation(focusedRow);
     state.macroEdit.setModulatorNavigationFeedback(feedback, nowMs);
     restoreMacroOverlayStack(state);
+    return true;
+}
+
+FLASHMEM bool returnToMacroFromAudition(
+    StateRefs state,
+    bool committed,
+    uint32_t nowMs
+) {
+    if (!macroAuditionReturnPending(state.projectNavigation)) return false;
+    state.projectNavigation.modulatorReturn.caller = core::state::project::
+        ModulatorNavigationCaller::MACRO_ASSIGNMENT;
+    if (!returnToMacro(state, nowMs)) return false;
+    if (!committed) {
+        state.macroEdit.setModulatorNavigationFeedback(
+            core::state::MacroModulatorNavigationFeedback::NONE,
+            nowMs
+        );
+    }
     return true;
 }
 

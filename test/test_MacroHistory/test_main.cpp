@@ -823,8 +823,9 @@ void test_macro_create_widening_cancel_and_failed_commit_are_exact() {
     );
     assert(begun.changed());
     assert(pages.pageData(0, 0).isMacroActive(kAddress.macro));
-    assert(pages.control.authored.modulation.sources[0].reach.kind ==
-           ModulatorReachKind::MACRO);
+    assert(isProjectModulatorGlobalReach(
+        pages.control.authored.modulation.sources[0].reach
+    ));
 
     constexpr macro::MacroAutomationSlotAddress wrongAddress{0, 0, 2};
     assert(!history.commitModulatorAudition(pages, wrongAddress));
@@ -1279,7 +1280,7 @@ void test_adsr_duplicate_copies_trigger_and_undo_is_exact() {
     std::cout << "[PASS] ADSR duplicate carries its trigger route exactly\n";
 }
 
-void test_existing_assignment_reach_widening_cancel_and_undo_are_exact() {
+void test_existing_global_assignment_cancel_and_undo_are_exact() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
@@ -1318,8 +1319,9 @@ void test_existing_assignment_reach_widening_cancel_and_undo_are_exact() {
     );
     assert(begun.changed());
     assert(history.commitModulatorAudition(pages, other));
-    assert(pages.control.authored.modulation.sources[0].reach.kind ==
-           ModulatorReachKind::TRACK_SET);
+    assert(isProjectModulatorGlobalReach(
+        pages.control.authored.modulation.sources[0].reach
+    ));
     assert(history.undo(pages));
     assert(std::memcmp(
         &pages.control.authored.modulation.sources[0],
@@ -1328,10 +1330,11 @@ void test_existing_assignment_reach_widening_cancel_and_undo_are_exact() {
     ) == 0);
     assert(pages.control.authored.modulation.outputBindingCount == 0U);
     assert(history.redo(pages));
-    assert(pages.control.authored.modulation.sources[0].reach.trackMask ==
-           widened.trackMask);
+    assert(isProjectModulatorGlobalReach(
+        pages.control.authored.modulation.sources[0].reach
+    ));
     assert(pages.control.authored.modulation.outputBindingCount == 1U);
-    std::cout << "[PASS] Reach widening Cancel and Undo restore the root\n";
+    std::cout << "[PASS] Global assignment Cancel and Undo restore the root\n";
 }
 
 void test_project_modulator_split_is_one_exact_undo_action() {
@@ -1744,7 +1747,7 @@ int main() {
     test_adsr_audition_cancel_and_apply_are_atomic();
     test_adsr_parameters_and_trigger_route_coalesce_by_stable_identity();
     test_adsr_duplicate_copies_trigger_and_undo_is_exact();
-    test_existing_assignment_reach_widening_cancel_and_undo_are_exact();
+    test_existing_global_assignment_cancel_and_undo_are_exact();
     test_project_modulator_split_is_one_exact_undo_action();
     test_root_delete_undo_restores_graph_and_recorded_curve_exactly();
     test_root_delete_undo_restores_shared_curve_reference();

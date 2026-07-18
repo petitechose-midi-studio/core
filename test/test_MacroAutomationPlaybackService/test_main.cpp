@@ -12,6 +12,7 @@
 
 #include "../../src/handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "../../src/handler/macro/MacroAutomationPlaybackService.hpp"
+#include "../../src/handler/macro/MacroAutomationTiming.hpp"
 #include "../../src/handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "../../src/sequencer/RealtimeMidiQueue.hpp"
 #include "../../src/state/CoreState.hpp"
@@ -267,6 +268,81 @@ void test_runtime_projection_publication_is_atomic() {
     assert(!state.macroUi.runtimeProjectionValidFor(0, 1, 0));
 
     std::cout << "[PASS] runtime projection publishes complete frames only\n";
+}
+
+void test_project_control_cadence_tracks_motion_without_unbounded_work() {
+    namespace modulation = core::state::modulation;
+    namespace timing = core::handler::macro;
+
+    modulation::ProjectModulationRuntimePlan plan{};
+    modulation::ProjectCurveArena curves{};
+    modulation::ProjectControlTimeTelemetry telemetry{};
+
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        0U
+    ) == timing::MACRO_AUTOMATION_UPDATE_PERIOD_MS);
+
+    auto& source = plan.sources[0];
+    plan.sourceCount = 1U;
+    source.kind = modulation::ModulatorKind::LFO;
+    source.flags = modulation::PROJECT_MODULATOR_FLAG_ENABLED;
+    source.traits.lfo.timing = modulation::ModulatorTimingMode::FREE;
+    source.parameters.lfo.freePeriodMs = 8U;
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        1U
+    ) == timing::MACRO_AUTOMATION_MIN_UPDATE_PERIOD_MS);
+
+    source.traits.lfo.timing = modulation::ModulatorTimingMode::SYNC;
+    source.parameters.lfo.periodTicks = 12U;  // 1/64.
+    modulation::publishProjectControlTimeTelemetry(
+        telemetry,
+        {.musicalTick = 0U, .monotonicMs = 0U, .playing = true}
+    );
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        1U
+    ) == 2U);  // Safe first-frame estimate at the supported 300 BPM ceiling.
+
+    modulation::publishProjectControlTimeTelemetry(
+        telemetry,
+        {.musicalTick = 384U, .monotonicMs = 1000U, .playing = true}
+    );
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        1U
+    ) == 4U);  // 1/64 at the observed 120 BPM clock.
+
+    // Dense Projects trade visual/control oversampling for a strict bounded
+    // evaluation budget; the analytic generator remains time-correct.
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        128U
+    ) == timing::MACRO_AUTOMATION_UPDATE_PERIOD_MS);
+
+    source.kind = modulation::ModulatorKind::ADSR;
+    source.parameters.adsr.attack = 0U;
+    source.parameters.adsr.decay = 0U;
+    source.parameters.adsr.release = 0U;
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        1U
+    ) == timing::MACRO_AUTOMATION_UPDATE_PERIOD_MS);
+
+    std::cout << "[PASS] adaptive cadence follows motion and bounds workload\n";
 }
 
 void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
@@ -741,6 +817,7 @@ void test_runtime_owner_activation_preserves_manual_ownership() {
 int main() {
     oc::time::setProvider(mockTimeMs);
     test_runtime_projection_publication_is_atomic();
+    test_project_control_cadence_tracks_motion_without_unbounded_work();
     test_playback_updates_runtime_and_sends_cc_when_value_changes();
     test_stopped_transport_publishes_static_owner_without_playing_curve();
     test_update_period_remains_bounded_across_millisecond_rollover();

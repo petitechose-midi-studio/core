@@ -233,27 +233,6 @@ FLASHMEM bool openProjectModulatorDestinations(
     return true;
 }
 
-FLASHMEM bool openProjectModulatorReach(ProjectNavigationState& navigation) {
-    const auto node = navigation.currentNode.get();
-    if (!core::state::modulation::valid(navigation.selectedModulator) ||
-        (node != ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
-         node != ProjectNodeId::MODULATOR_SOURCE_OPTIONS)) {
-        return false;
-    }
-    const uint8_t currentDepth = navigation.depth.get();
-    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1U) return false;
-    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
-    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1U);
-    navigation.pathStack[nextDepth] = ProjectNodeId::MODULATOR_REACH;
-    navigation.focusedRowByDepth[nextDepth] = 0;
-    navigation.depth.set(nextDepth);
-    navigation.currentNode.set(ProjectNodeId::MODULATOR_REACH);
-    navigation.activeTab.set(ProjectTab::MODULATORS);
-    navigation.focusedRow.set(0);
-    navigation.notifyContentChanged();
-    return true;
-}
-
 FLASHMEM bool openProjectModulatorTrigger(
     ProjectNavigationState& navigation
 ) {

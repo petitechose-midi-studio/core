@@ -2126,13 +2126,7 @@ MacroHistoryService::beginExistingModulatorAudition(
         failure.status = ProjectModulationStatus::INVALID_ID;
         return failure;
     }
-    const ModulatorReach effectiveReach = widenedReach ? *widenedReach
-                                                       : source->reach;
-    if (!validModulatorReach(effectiveReach) ||
-        !modulatorReachContains(effectiveReach, bindingDraft.destination)) {
-        failure.status = ProjectModulationStatus::REACH_VIOLATION;
-        return failure;
-    }
+    (void)widenedReach;  // Compatibility-only parameter; all sources are global.
     if (graph.outputBindingCount >= PROJECT_MODULATION_BINDING_CAPACITY) {
         failure.status = ProjectModulationStatus::BINDING_CAPACITY_EXCEEDED;
         return failure;
@@ -2168,20 +2162,6 @@ MacroHistoryService::beginExistingModulatorAudition(
     if (!applyMacroCreation(pages, address, payload)) {
         (void)takePending_();
         return failure;
-    }
-
-    if (widenedReach != nullptr &&
-        !core::state::modulation::setProjectModulatorReach(
-             graph,
-             sourceId,
-             *widenedReach
-         ).changed()) {
-        if (source->reach.kind != widenedReach->kind ||
-            std::memcmp(&source->reach, widenedReach, sizeof(*widenedReach)) != 0) {
-            restoreCreationBefore(pages, address, payload, true);
-            (void)takePending_();
-            return failure;
-        }
     }
 
     auto binding = bindingDraft;

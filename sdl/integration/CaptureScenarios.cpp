@@ -196,8 +196,9 @@ core::state::modulation::ModulatorId addReusableLfo(
 }
 
 void prepareMacroReusableModulatorsScenario(core::state::CoreState& state) {
+    using namespace core::state::modulation;
     prepareMacroAutomationCleanScenario(state);
-    state.setSharedTrackState(0x0001, 0);
+    state.setSharedTrackState(0x0003, 0);
 
     auto& track = state.pages.tracks[0];
     track.channel = 5;
@@ -209,7 +210,17 @@ void prepareMacroReusableModulatorsScenario(core::state::CoreState& state) {
     page.setMacroActive(0, true);
     std::snprintf(page.name, sizeof(page.name), "%s", "Reusable LFOs");
 
-    state.pages.syncSharedTrackState(0x0001, 0);
+    auto& remoteTrack = state.pages.tracks[1];
+    remoteTrack.channel = 6;
+    remoteTrack.activePage = 0;
+    remoteTrack.enabledPageMask = 0x0001;
+    auto& remotePage = remoteTrack.pages[0];
+    remotePage.cc[0] = 71;
+    remotePage.values[0] = 0.5f;
+    remotePage.setMacroActive(0, true);
+    std::snprintf(remotePage.name, sizeof(remotePage.name), "%s", "Remote use");
+
+    state.pages.syncSharedTrackState(0x0003, 0);
     state.pages.setActivePage(0);
     state.macroUi.syncPreviewPage(0);
     state.trackNavigation.syncPreviewTrack(0);
@@ -231,6 +242,18 @@ void prepareMacroReusableModulatorsScenario(core::state::CoreState& state) {
     );
     if (core::state::modulation::valid(slowTide) ||
         core::state::modulation::valid(pulseLift)) {
+        state.pages.control.markAuthoredMutation();
+    }
+    if (valid(slowTide)) {
+        ModulationBindingDraft remote{};
+        remote.sourceId = slowTide;
+        remote.destination = projectControlDestination({1U, 0U, 0U});
+        remote.amountQ15 = 4096;
+        remote.application = ModulationApplication::NATURAL;
+        (void)addProjectModulationBinding(
+            state.pages.control.authored.modulation,
+            remote
+        );
         state.pages.control.markAuthoredMutation();
     }
 
@@ -424,16 +447,20 @@ void prepareProjectModulatorsScenario(core::state::CoreState& state) {
 
     auto& graph = state.pages.control.authored.modulation;
     if (graph.sourceCount >= 2U) {
-        graph.sources[0].reach = {
-            .trackMask = 0x0003,
-            .kind = ModulatorReachKind::TRACK_SET,
-        };
-        graph.sources[1].reach = {
-            .kind = ModulatorReachKind::MACRO,
-            .track = 0,
-            .page = 0,
-            .macro = 2,
-        };
+        graph.sources[0].reach = projectModulatorGlobalReach();
+        graph.sources[1].reach = projectModulatorGlobalReach();
+        // The reusable-Macro scenario seeds one remote use. This Project
+        // scenario authors its own exact two-destination shared graph.
+        for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
+            const auto& candidate = graph.outputBindings[index];
+            if (candidate.sourceId == graph.sources[0].id &&
+                candidate.destination == projectControlDestination(
+                    {1U, 0U, 0U}
+                )) {
+                (void)removeProjectModulationBinding(graph, candidate.id);
+                break;
+            }
+        }
         const auto addBinding = [&](ModulatorId sourceId,
                                     uint8_t track,
                                     uint8_t macro,
@@ -461,6 +488,7 @@ void prepareProjectModulatorsScenario(core::state::CoreState& state) {
     state.projectNavigation.reset();
     state.activeView.set(core::ui::ViewType::PROJECT);
     state.overlays.hideAll();
+    (void)state.setSharedTrackState(0x0003U, 0U);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(
         state.configRevision.get()
     ));
@@ -500,12 +528,7 @@ void prepareProjectModulatorWorkspaceScenario(core::state::CoreState& state) {
     }};
     RecordedShapeDraft draft{};
     draft.name = "Breath Arc";
-    draft.reach = {
-        .kind = ModulatorReachKind::MACRO,
-        .track = 0,
-        .page = 0,
-        .macro = 1,
-    };
+    draft.reach = projectModulatorGlobalReach();
     draft.curve = {
         .sourceDurationTicks = 384U,
         .durationTicks = 384U,

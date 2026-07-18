@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 #include <config/PlatformCompat.hpp>
 
@@ -218,7 +219,9 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
     using namespace core::state::modulation;
     using Item = core::state::project::modulators::SourceDetailItem;
     core::state::macro::MacroAutomationSlotAddress auditionAddress{};
-    if (destinationPickerAuditionAddress(auditionAddress)) {
+    const bool auditioning = modulatorAuditionAddress(auditionAddress);
+    if (auditioning && navigation_.currentNode.get() ==
+            core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         auto* binding = findProjectModulationBinding(
             pages_.control.authored.modulation,
             pages_.control.audition.bindingId
@@ -266,7 +269,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         using core::state::project::modulators::TriggerDetailItem;
         auto* source = focusedModulator();
         if (!source || source->kind != ModulatorKind::ADSR) return false;
-        const auto* binding = findProjectModulationTriggerForSource(
+        auto* binding = findProjectModulationTriggerForSource(
             pages_.control.authored.modulation,
             source->id
         );
@@ -294,12 +297,22 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
                 ? PROJECT_MODULATION_TRIGGER_ANY_NOTE
                 : static_cast<uint8_t>(choice - 1);
         }
-        if (macro_history_.setProjectModulationTriggerCoalesced(
-                pages_,
-                source->id,
-                trigger,
-                (binding->flags & PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U
-            )) {
+        const bool provisional = auditioning &&
+            pages_.control.audition.sourceCreated &&
+            pages_.control.audition.sourceId == source->id;
+        if (provisional) {
+            if (binding->trigger != trigger) {
+                binding->trigger = trigger;
+                pages_.control.markAuthoredMutation();
+                refreshModulatorPreview(false);
+            }
+        } else if (macro_history_.setProjectModulationTriggerCoalesced(
+                       pages_,
+                       source->id,
+                       trigger,
+                       (binding->flags &
+                        PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U
+                   )) {
             publishModulatorMutation(false);
         }
         return true;
@@ -308,39 +321,57 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
     if (!source) return false;
 
     const auto node = navigation_.currentNode.get();
+    const bool provisional = auditioning &&
+        pages_.control.audition.sourceCreated &&
+        pages_.control.audition.sourceId == source->id;
     Item item = Item::RATE;
     if (node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
-        item = core::state::project::modulators::sourceDetailLayout(source->kind).at(
-            navigation_.focusedRow.get()
-        );
+        item = (provisional
+            ? core::state::project::modulators::sourceAuditionLayout(source->kind)
+            : core::state::project::modulators::sourceDetailLayout(source->kind)
+        ).at(navigation_.focusedRow.get());
     } else if (node ==
                core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
-        item = core::state::project::modulators::sourceOptionsLayout(source->kind).at(
-            navigation_.focusedRow.get()
-        );
+        item = (provisional
+            ? core::state::project::modulators::sourceAuditionOptionsLayout(
+                  source->kind
+              )
+            : core::state::project::modulators::sourceOptionsLayout(source->kind)
+        ).at(navigation_.focusedRow.get());
     } else if (node != core::state::project::ProjectNodeId::MODULATORS_ROOT) {
         return false;
     }
 
     const float value = clampNormalized(normalized);
+    if (item == Item::DEPTH) {
+        auto* binding = findProjectModulationBinding(
+            pages_.control.authored.modulation,
+            pages_.control.audition.bindingId
+        );
+        if (!provisional || binding == nullptr) return false;
+        const int16_t percent = static_cast<int16_t>(value * 200.0f + 0.5f) -
+            100;
+        const int16_t amount =
+            core::ui::macro::lfo_audition::depthPercentToQ15(percent);
+        if (binding->amountQ15 != amount) {
+            binding->amountQ15 = amount;
+            pages_.control.markAuthoredMutation();
+            refreshModulatorPreview(false);
+        }
+        char feedback[48]{};
+        std::snprintf(
+            feedback,
+            sizeof(feedback),
+            FEEDBACK_DEPTH_PREVIEW_FORMAT,
+            static_cast<int>(percent)
+        );
+        navigation_.setLifecycleFeedback(feedback);
+        return true;
+    }
     if (item == Item::ENABLED) {
         const bool enabled = value >= 0.5f;
         if (macro_history_.setProjectModulatorEnabled(
                 pages_, source->id, enabled
-            )) {
-            publishModulatorMutation(false);
-        }
-        return true;
-    }
-    if (item == Item::REACH) {
-        const ModulatorReach reach = value >= 0.5f
-            ? ModulatorReach{.kind = ModulatorReachKind::PROJECT}
-            : core::state::project::modulators::tightestSourceReach(
-                  pages_.control.authored.modulation,
-                  source->id
-              );
-        if (macro_history_.setProjectModulatorReach(
-                pages_, source->id, reach
             )) {
             publishModulatorMutation(false);
         }
@@ -423,9 +454,18 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             default:
                 return false;
         }
-        if (macro_history_.setProjectAdsrParametersCoalesced(
-                pages_, source->id, parameters
-            )) {
+        if (provisional && std::memcmp(
+                &source->parameters.adsr,
+                &parameters,
+                sizeof(parameters)
+            ) != 0) {
+            source->parameters.adsr = parameters;
+            pages_.control.markAuthoredMutation();
+            refreshModulatorPreview(false);
+        } else if (!provisional &&
+                   macro_history_.setProjectAdsrParametersCoalesced(
+                       pages_, source->id, parameters
+                   )) {
             publishModulatorMutation(false);
         }
         return true;
@@ -452,12 +492,12 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
                 ];
             } else {
                 parameters.periodTicks =
-                    core::ui::macro::lfo_audition::RATE_PERIOD_TICKS[
-                        static_cast<size_t>(normalizedToIndex(
+                    core::ui::macro::lfo_audition::ratePeriodTicks(
+                        static_cast<uint8_t>(normalizedToIndex(
                             value,
                             core::ui::macro::lfo_audition::RATE_COUNT
                         ))
-                    ];
+                    );
             }
             break;
         case Item::TIMING:
@@ -485,9 +525,18 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
         default:
             return false;
     }
-    if (macro_history_.setProjectLfoParametersCoalesced(
-            pages_, source->id, parameters
-        )) {
+    if (provisional && std::memcmp(
+            &source->parameters.lfo,
+            &parameters,
+            sizeof(parameters)
+        ) != 0) {
+        source->parameters.lfo = parameters;
+        pages_.control.markAuthoredMutation();
+        refreshModulatorPreview(false);
+    } else if (!provisional &&
+               macro_history_.setProjectLfoParametersCoalesced(
+                   pages_, source->id, parameters
+               )) {
         publishModulatorMutation(false);
     }
     return true;

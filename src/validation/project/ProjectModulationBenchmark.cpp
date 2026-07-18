@@ -95,12 +95,14 @@ void populateSource(
     if (benchmarkCase == ProjectModulationBenchmarkCase::LFO) {
         source.kind = mod::ModulatorKind::LFO;
         source.parameters.lfo = mod::ModulatorLfoParameters{};
-        source.parameters.lfo.periodTicks = static_cast<uint32_t>(
-            mod::PROJECT_CONTROL_TICKS_PER_BEAT + sourceIndex
-        );
-        source.parameters.lfo.freePeriodMs = static_cast<uint32_t>(
-            750U + sourceIndex
-        );
+        // Exercise both legal UI extremes in the same maximum graph. Phase is
+        // analytic, so rate changes must not allocate or increase frame cost.
+        source.parameters.lfo.periodTicks = sourceIndex % 4U == 0U
+            ? 12U       // 1/64.
+            : 24576U;   // 32 bars.
+        source.parameters.lfo.freePeriodMs = sourceIndex % 4U == 1U
+            ? 8U
+            : 32000U;
         source.parameters.lfo.phaseQ15 = static_cast<int16_t>(sourceIndex * 127U);
         source.parameters.lfo.shape = static_cast<mod::ModulatorLfoShape>(
             sourceIndex % 5U
@@ -109,10 +111,9 @@ void populateSource(
             sourceIndex % 2U == 0U
                 ? mod::ModulatorRetriggerPolicy::FREE_RUNNING
                 : mod::ModulatorRetriggerPolicy::TRANSPORT;
-        source.parameters.lfo.timing =
-            sourceIndex % 3U == 0U
-                ? mod::ModulatorTimingMode::FREE
-                : mod::ModulatorTimingMode::SYNC;
+        source.parameters.lfo.timing = sourceIndex % 2U == 0U
+            ? mod::ModulatorTimingMode::SYNC
+            : mod::ModulatorTimingMode::FREE;
         return;
     }
 

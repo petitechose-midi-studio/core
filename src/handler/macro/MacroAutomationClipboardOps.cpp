@@ -488,10 +488,6 @@ FLASHMEM MacroTypedPastePreflight preflightModulationPaste(
             rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
             return rejected;
         }
-        if (!modulatorReachContains(source->reach, draft.destination)) {
-            rejected.status = MacroTypedPasteStatus::INVALID_TARGET;
-            return rejected;
-        }
         bool duplicate = false;
         for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
             const auto& existing = graph.outputBindings[index];

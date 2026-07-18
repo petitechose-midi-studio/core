@@ -102,7 +102,6 @@ bool openProjectModulatorWorkspace(
 );
 bool openProjectModulatorOptions(ProjectNavigationState& navigation);
 bool openProjectModulatorDestinations(ProjectNavigationState& navigation);
-bool openProjectModulatorReach(ProjectNavigationState& navigation);
 bool openProjectModulatorTrigger(ProjectNavigationState& navigation);
 bool openProjectModulatorDestinationPicker(
     ProjectNavigationState& navigation,

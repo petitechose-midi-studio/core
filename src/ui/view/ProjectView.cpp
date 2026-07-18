@@ -412,7 +412,6 @@ void ProjectView::render() {
         node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
-        node == core::state::project::ProjectNodeId::MODULATOR_REACH ||
         node == core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
         node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER ||
         node == core::state::project::ProjectNodeId::MODULATOR_TRIGGER ||
@@ -539,15 +538,6 @@ void ProjectView::populateModulatorRow(
         );
         return;
     }
-    if (node == core::state::project::ProjectNodeId::MODULATOR_REACH) {
-        core::ui::project::modulators::populateReachRow(
-            self->state_refs_.pages.control,
-            self->state_refs_.navigation.selectedModulator,
-            index,
-            out
-        );
-        return;
-    }
     const auto* source = core::state::modulation::findProjectModulator(
         self->state_refs_.pages.control.authored.modulation,
         self->state_refs_.navigation.selectedModulator
@@ -588,13 +578,24 @@ void ProjectView::renderModulators() {
     const bool sourceWorkspace =
         node == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
         node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS;
+    const bool sourceAudition = sourceWorkspace && source != nullptr &&
+        control.audition.active && control.audition.sourceCreated &&
+        control.audition.sourceId == source->id;
+    const auto* auditionBinding = sourceAudition
+        ? core::state::modulation::findProjectModulationBinding(
+              graph,
+              control.audition.bindingId
+          )
+        : nullptr;
     if (sourceWorkspace && source != nullptr) {
         modulator_registry_->render({.visible = false});
         modulator_workspace_->render({
             .visible = true,
             .control = &control,
             .source = source,
+            .auditionBinding = auditionBinding,
             .options = node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS,
+            .audition = sourceAudition,
             .selectedIndex = state_refs_.navigation.focusedRow.get(),
             .telemetryRevision = state_refs_.navigation.telemetryRevision.get(),
         });
@@ -661,6 +662,18 @@ void ProjectView::renderModulators() {
         std::snprintf(meta, sizeof(meta), "Choose a modulation source");
     } else if (node == ProjectNodeId::MODULATOR_TRIGGER && source) {
         std::snprintf(meta, sizeof(meta), "%s · Track Note", source->name.data());
+    } else if (node == ProjectNodeId::MODULATOR_DESTINATIONS && source) {
+        const auto count = core::ui::project::modulators::sourceDestinationCount(
+            graph,
+            source->id
+        );
+        std::snprintf(
+            meta,
+            sizeof(meta),
+            count > 1U ? "Used by %u · Copy = Independent"
+                       : "Used by %u · Independent",
+            static_cast<unsigned>(count)
+        );
     } else if (node != ProjectNodeId::MODULATORS_ROOT && source) {
         const auto count = core::ui::project::modulators::sourceDestinationCount(
             graph,
@@ -706,13 +719,6 @@ void ProjectView::renderModulators() {
     } else if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         rowCount = static_cast<int>(core::state::macro::MACRO_COUNT) +
             (state_refs_.navigation.creatingModulatorSource ? 1 : 0);
-    } else if (node == ProjectNodeId::MODULATOR_REACH && source) {
-        rowCount = static_cast<int>(
-            core::state::project::modulators::sourceReachChoiceLayout(
-                graph,
-                source->id
-            ).count
-        );
     } else if (node == ProjectNodeId::MODULATOR_DESTINATIONS && source) {
         rowCount = static_cast<int>(
             core::ui::project::modulators::sourceDestinationCount(
@@ -734,8 +740,6 @@ void ProjectView::renderModulators() {
         title = "TRIGGER";
     } else if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         title = MODULATOR_ADD_ROUTE_TITLE;
-    } else if (node == ProjectNodeId::MODULATOR_REACH) {
-        title = "REACH";
     } else if (node == ProjectNodeId::MODULATOR_DESTINATIONS) {
         title = "DESTINATIONS";
     }
@@ -771,8 +775,6 @@ void ProjectView::renderModulatorActionStrips(
         state_refs_.navigation.currentNode.get() ==
             core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
         state_refs_.navigation.currentNode.get() ==
-            core::state::project::ProjectNodeId::MODULATOR_REACH ||
-        state_refs_.navigation.currentNode.get() ==
             core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS ||
         state_refs_.navigation.currentNode.get() ==
             core::state::project::ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER ||
@@ -792,10 +794,13 @@ void ProjectView::renderModulatorActionStrips(
         core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS;
     const bool destinationPicker = state_refs_.navigation.currentNode.get() ==
         core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER;
-    const bool reachPicker = state_refs_.navigation.currentNode.get() ==
-        core::state::project::ProjectNodeId::MODULATOR_REACH;
-    const bool destinationAudition = destinationPicker &&
-        state_refs_.pages.control.audition.active;
+    const bool destinationAudition =
+        state_refs_.pages.control.audition.active &&
+        (destinationPicker ||
+         state_refs_.navigation.currentNode.get() ==
+             core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+         state_refs_.navigation.currentNode.get() ==
+             core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
     const auto* binding = destinations && source
         ? core::state::project::modulators::sourceBindingAtOrdinal(
               state_refs_.pages.control.authored.modulation,
@@ -810,7 +815,7 @@ void ProjectView::renderModulatorActionStrips(
             ContextActionStripVisualState::ACTIVE,
             ContextActionStripTone::POSITIVE
         );
-    } else if (!destinationPicker && !reachPicker && source != nullptr &&
+    } else if (!destinationPicker && source != nullptr &&
         (!destinations || binding != nullptr)) {
         bottom.visible = true;
         const bool enabled = destinations
@@ -830,6 +835,15 @@ void ProjectView::renderModulatorActionStrips(
                 standalone::icons::ACTION_COPY,
                 ContextActionStripVisualState::ACTIVE,
                 ContextActionStripTone::NEUTRAL
+            );
+        } else if (core::ui::project::modulators::sourceDestinationCount(
+                       state_refs_.pages.control.authored.modulation,
+                       source->id
+                   ) > 1U) {
+            bottom.slots[2] = makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_COPY,
+                ContextActionStripVisualState::ACTIVE,
+                ContextActionStripTone::POSITIVE
             );
         }
 
@@ -859,7 +873,7 @@ void ProjectView::renderModulatorActionStrips(
             state_refs_.navigation.modulatorClipboardGuard.get();
         const bool clipboardGuardMatches =
             state_refs_.navigation.guardedClipboardModulator == source->id;
-        if (!destinations && clipboardGuardMatches) {
+        if (clipboardGuardMatches) {
             if (clipboardGuard.phase ==
                 core::state::contextual::GuardedActionPhase::PRESSED) {
                 bottom.slots[2].visualState =

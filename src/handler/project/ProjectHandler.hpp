@@ -8,6 +8,7 @@
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 #include "handler/project/ProjectLifecycleDomainServices.hpp"
+#include "handler/macro/MacroEditDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
 #include "state/MidiSyncState.hpp"
@@ -46,6 +47,7 @@ public:
 
     ProjectHandler(StateRefs state,
                    SequencerSettingsDomainServices sequencerSettings,
+                   MacroEditDomainServices macroEditServices,
                    oc::api::EncoderAPI& encoders,
                    oc::api::ButtonAPI& buttons,
                    oc::type::ScopeID projectViewScope,
@@ -87,10 +89,11 @@ private:
     bool setFocusedNameEditorValue(float normalized);
     bool setFocusedModulatorValue(float normalized);
     void enterFocusedModulator();
+    void openFocusedModulationDestination();
     void startDestinationPickerAudition();
     void applyDestinationPickerAudition();
     bool cancelDestinationPickerAudition();
-    [[nodiscard]] bool destinationPickerAuditionAddress(
+    [[nodiscard]] bool modulatorAuditionAddress(
         core::state::macro::MacroAutomationSlotAddress& out
     ) const;
     void refreshModulatorPreview(
@@ -104,6 +107,7 @@ private:
     void releaseModulatorBottomRight();
     void copyFocusedModulator();
     void pasteProjectModulatorSource();
+    void makeFocusedModulatorIndependent();
     void toggleFocusedModulator();
     void deleteGuardedModulator();
     void publishModulatorMutation(bool markAuthored = true);
@@ -143,6 +147,7 @@ private:
     SequencerHistoryDomainServices history_;
     ProjectLifecycleDomainServices lifecycle_;
     SequencerSettingsDomainServices sequencer_settings_;
+    MacroEditDomainServices macro_edit_services_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID project_view_scope_ = 0;

@@ -34,7 +34,6 @@ enum class ProjectNodeId : uint8_t {
     ROUTING_ROOT,
     MODULATORS_ROOT,
     MODULATOR_SOURCE_DETAIL,
-    MODULATOR_REACH,
     MODULATOR_DESTINATIONS,
     MODULATOR_DESTINATION_PICKER,
     NEW_PROJECT_CONFIRM,
@@ -68,6 +67,7 @@ struct ProjectBrowserState {
 enum class ModulatorNavigationCaller : uint8_t {
     NONE = 0,
     MACRO_ASSIGNMENT,
+    MACRO_AUDITION,
 };
 
 /**

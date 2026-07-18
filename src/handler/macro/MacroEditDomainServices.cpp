@@ -29,6 +29,12 @@ void switchToPageFromCoreState(void* context, uint8_t pageIndex) {
     core::state::macro::MacroWorkflow::switchToPage(*state, pageIndex);
 }
 
+void switchToTrackFromCoreState(void* context, uint8_t trackIndex) {
+    auto* state = static_cast<core::state::CoreState*>(context);
+    if (state == nullptr) return;
+    core::state::macro::MacroWorkflow::switchToTrack(*state, trackIndex);
+}
+
 void markProjectMutatedFromCoreState(void* context) {
     auto* state = static_cast<core::state::CoreState*>(context);
     if (state == nullptr) return;
@@ -96,6 +102,7 @@ MacroEditDomainServices MacroEditDomainServices::fromCoreState(core::state::Core
             &state,
             setConfigFromCoreState,
             switchToPageFromCoreState,
+            switchToTrackFromCoreState,
             markProjectMutatedFromCoreState,
         },
     };
@@ -134,6 +141,12 @@ bool MacroEditDomainServices::setConfig(uint8_t index, uint8_t channel, uint8_t 
 void MacroEditDomainServices::switchToPage(uint8_t pageIndex) const {
     if (operations_.switchToPage != nullptr) {
         operations_.switchToPage(operations_.context, pageIndex);
+    }
+}
+
+void MacroEditDomainServices::switchToTrack(uint8_t trackIndex) const {
+    if (operations_.switchToTrack != nullptr) {
+        operations_.switchToTrack(operations_.context, trackIndex);
     }
 }
 
@@ -941,12 +954,7 @@ MacroEditDomainServices::beginDefaultLfoAudition(uint8_t index) const {
     );
     ModulatorLfoDraft source{};
     source.name = name;
-    source.reach = {
-        .kind = ModulatorReachKind::MACRO,
-        .track = address.track,
-        .page = address.page,
-        .macro = address.macro,
-    };
+    source.reach = projectModulatorGlobalReach();
     source.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     source.parameters.shape = ModulatorLfoShape::SINE;
     source.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
@@ -983,12 +991,7 @@ MacroEditDomainServices::beginDefaultAdsrAudition(uint8_t index) const {
     );
     ModulatorAdsrDraft source{};
     source.name = name;
-    source.reach = {
-        .kind = ModulatorReachKind::MACRO,
-        .track = address.track,
-        .page = address.page,
-        .macro = address.macro,
-    };
+    source.reach = projectModulatorGlobalReach();
 
     ModulationTriggerDraft trigger{};
     trigger.trigger = {

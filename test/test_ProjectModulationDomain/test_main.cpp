@@ -543,25 +543,22 @@ void testStableIdsDuplicateAndDelete() {
     assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
 }
 
-void testReachAndDuplicateBindingAreStrictAndAtomic() {
+void testGlobalAvailabilityAndDuplicateBindingAreStrictAndAtomic() {
     Fixture fixture;
     const auto source = addLfo(fixture, macroReach(2, 3, 4));
+    assert(mod::isProjectModulatorGlobalReach(fixture.state->sources[0].reach));
     addBinding(fixture, source, destination(2, 3, 4));
 
-    const auto stable = std::make_unique<mod::ProjectModulationState>(
-        *fixture.state
-    );
     mod::ModulationBindingDraft outside{};
     outside.sourceId = source;
     outside.destination = destination(2, 3, 5);
     outside.amountQ15 = 1000;
-    assert(mod::addProjectModulationBinding(*fixture.state, outside).status ==
-           mod::ProjectModulationStatus::REACH_VIOLATION);
-    assert(std::memcmp(
-        fixture.state.get(),
-        stable.get(),
-        sizeof(*fixture.state)
-    ) == 0);
+    assert(mod::addProjectModulationBinding(*fixture.state, outside).changed());
+    assert(fixture.state->outputBindingCount == 2U);
+
+    const auto stable = std::make_unique<mod::ProjectModulationState>(
+        *fixture.state
+    );
 
     mod::ModulationBindingDraft duplicate{};
     duplicate.sourceId = source;
@@ -579,7 +576,7 @@ void testReachAndDuplicateBindingAreStrictAndAtomic() {
         *fixture.state,
         source,
         macroReach(1, 0, 0)
-    ).status == mod::ProjectModulationStatus::REACH_VIOLATION);
+    ).status == mod::ProjectModulationStatus::NO_CHANGE);
     assert(std::memcmp(
         fixture.state.get(),
         stable.get(),
@@ -932,39 +929,29 @@ void testUniqueCurveCanReclaimItsFullPoolRange() {
     assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
 }
 
-void testFailedSplitLeavesDomainUntouched() {
+void testSplitNormalizesCompatibilityReachAndMovesOnlySelectedEdges() {
     Fixture fixture;
     const auto source = addLfo(fixture);
     addBinding(fixture, source, destination(0, 0, 0));
     const auto moved = addBinding(fixture, source, destination(1, 0, 0));
-    const auto stableState = std::make_unique<mod::ProjectModulationState>(
-        *fixture.state
-    );
-    const auto stableArena = std::make_unique<mod::ProjectCurveArena>(
-        *fixture.arena
-    );
-
     mod::ModulatorSplitRequest split{};
     split.sourceId = source;
     split.retainedReach = macroReach(0, 0, 0);
-    split.cloneReach = macroReach(2, 0, 0);  // moved binding actually targets T2
+    split.cloneReach = macroReach(2, 0, 0);
     split.bindingIdsToMove = &moved;
     split.bindingCountToMove = 1;
-    assert(mod::splitProjectModulator(
+    const auto created = mod::splitProjectModulator(
         *fixture.state,
         *fixture.arena,
         split
-    ).status == mod::ProjectModulationStatus::REACH_VIOLATION);
-    assert(std::memcmp(
-        fixture.state.get(),
-        stableState.get(),
-        sizeof(*fixture.state)
-    ) == 0);
-    assert(std::memcmp(
-        fixture.arena.get(),
-        stableArena.get(),
-        sizeof(*fixture.arena)
-    ) == 0);
+    );
+    assert(created.changed());
+    assert(fixture.state->sourceCount == 2U);
+    assert(mod::isProjectModulatorGlobalReach(fixture.state->sources[0].reach));
+    assert(mod::isProjectModulatorGlobalReach(fixture.state->sources[1].reach));
+    assert(fixture.state->outputBindings[0].sourceId == source);
+    assert(fixture.state->outputBindings[1].sourceId == created.sourceId);
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
 }
 
 void testRuntimeSumClampOrderingAndEnableFlags() {
@@ -1325,7 +1312,7 @@ int main() {
     testDestinationScaleCompilesAndAppliesOnceBeforeFinalClamp();
     testCurveContractPreservesLegacyLoopWindowsAndSameTickPoints();
     testStableIdsDuplicateAndDelete();
-    testReachAndDuplicateBindingAreStrictAndAtomic();
+    testGlobalAvailabilityAndDuplicateBindingAreStrictAndAtomic();
     testAdvertised128SourcesAnd512BindingsCompileWithoutTruncation();
     testInactivePagesAreExplicitlyExcluded();
     testRuntimeCompilationFailureDoesNotPublishPartialPlan();
@@ -1334,7 +1321,7 @@ int main() {
     testDeleteRemovesEdgesAndCompactsCurveArenaWithStableIds();
     testFullSharedCurveCowFailureIsAtomic();
     testUniqueCurveCanReclaimItsFullPoolRange();
-    testFailedSplitLeavesDomainUntouched();
+    testSplitNormalizesCompatibilityReachAndMovesOnlySelectedEdges();
     testRuntimeSumClampOrderingAndEnableFlags();
     testNaturalApplicationResolvesSourceDomainBeforeTheHotLoop();
     testUnknownApplicationIsRejectedAtomically();

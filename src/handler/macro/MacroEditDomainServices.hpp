@@ -36,6 +36,7 @@ class MacroEditDomainServices {
 public:
     using SetConfigFn = bool (*)(void* context, uint8_t index, uint8_t channel, uint8_t cc);
     using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
+    using SwitchToTrackFn = void (*)(void* context, uint8_t trackIndex);
     using MarkProjectMutatedFn = void (*)(void* context);
 
     struct StateRefs {
@@ -50,6 +51,7 @@ public:
         void* context = nullptr;
         SetConfigFn setConfig = nullptr;
         SwitchToPageFn switchToPage = nullptr;
+        SwitchToTrackFn switchToTrack = nullptr;
         MarkProjectMutatedFn markProjectMutated = nullptr;
     };
 
@@ -60,6 +62,7 @@ public:
     bool isMacroSlotActive(uint8_t index) const;
     bool setConfig(uint8_t index, uint8_t channel, uint8_t cc) const;
     void switchToPage(uint8_t pageIndex) const;
+    void switchToTrack(uint8_t trackIndex) const;
     core::state::macro::MacroAutomationSlotAddress automationAddress(uint8_t index) const;
     const core::state::macro::MacroAutomationSlotState* automationSlot(uint8_t index) const;
     bool automationClipboardAvailable() const;

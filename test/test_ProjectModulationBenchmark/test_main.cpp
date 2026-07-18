@@ -42,6 +42,23 @@ void proveCase(validation::ProjectModulationBenchmarkCase benchmarkCase) {
     } else {
         assert(workspace->triggers.count == 0U);
     }
+    if (benchmarkCase == validation::ProjectModulationBenchmarkCase::LFO) {
+        bool hasFastSync = false;
+        bool hasSlowSync = false;
+        bool hasFastFree = false;
+        bool hasSlowFree = false;
+        for (uint16_t index = 0U; index < workspace->plan.sourceCount; ++index) {
+            const auto& source = workspace->plan.sources[index];
+            if (source.traits.lfo.timing == mod::ModulatorTimingMode::SYNC) {
+                hasFastSync |= source.parameters.lfo.periodTicks == 12U;
+                hasSlowSync |= source.parameters.lfo.periodTicks == 24576U;
+            } else {
+                hasFastFree |= source.parameters.lfo.freePeriodMs == 8U;
+                hasSlowFree |= source.parameters.lfo.freePeriodMs == 32000U;
+            }
+        }
+        assert(hasFastSync && hasSlowSync && hasFastFree && hasSlowFree);
+    }
 
     const auto result = validation::runProjectModulationBenchmark(
         *workspace,

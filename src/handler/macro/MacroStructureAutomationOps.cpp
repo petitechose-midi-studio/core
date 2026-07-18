@@ -79,18 +79,6 @@ FLASHMEM bool selected(
            (selection.mask & static_cast<uint16_t>(1U << destination.page)) != 0U;
 }
 
-FLASHMEM bool sourceScopeRemoved(
-    const ProjectScopeSelection& selection,
-    const modulation::ModulatorReach& reach
-) {
-    if (reach.kind != modulation::ModulatorReachKind::MACRO) return false;
-    if (selection.kind == ScopeKind::TRACK) {
-        return (selection.mask & static_cast<uint16_t>(1U << reach.track)) != 0U;
-    }
-    return reach.track == selection.track &&
-           (selection.mask & static_cast<uint16_t>(1U << reach.page)) != 0U;
-}
-
 FLASHMEM bool clearProjectSelectionInDomain(
     modulation::ProjectControlDomainState& domain,
     const ProjectScopeSelection& selection
@@ -152,32 +140,6 @@ FLASHMEM bool clearProjectSelectionInDomain(
         }
     }
 
-    for (uint16_t index = 0; index < domain.modulation.sourceCount; ++index) {
-        const auto current = domain.modulation.sources[index];
-        modulation::ModulatorReach normalized = current.reach;
-        bool normalize = sourceScopeRemoved(selection, current.reach);
-        if (selection.kind == ScopeKind::TRACK &&
-            current.reach.kind == modulation::ModulatorReachKind::TRACK_SET) {
-            normalized.trackMask = static_cast<uint16_t>(
-                current.reach.trackMask & ~selection.mask
-            );
-            if (normalized.trackMask == 0U) normalized = {};
-            normalize = normalized.trackMask != current.reach.trackMask ||
-                        normalized.kind != current.reach.kind;
-        } else if (normalize) {
-            normalized = {};
-        }
-        if (!normalize) continue;
-        const auto result = modulation::setProjectModulatorReach(
-            domain.modulation,
-            current.id,
-            normalized
-        );
-        if (!result.changed() &&
-            result.status != modulation::ProjectModulationStatus::NO_CHANGE) {
-            return false;
-        }
-    }
     return true;
 }
 
@@ -208,24 +170,6 @@ FLASHMEM bool clearProjectDestinationInDomain(
                 domain.modulation,
                 binding.id
             ).changed()) {
-            return false;
-        }
-    }
-    for (uint16_t index = 0; index < domain.modulation.sourceCount; ++index) {
-        const auto source = domain.modulation.sources[index];
-        if (source.reach.kind != modulation::ModulatorReachKind::MACRO ||
-            source.reach.track != address.track ||
-            source.reach.page != address.page ||
-            source.reach.macro != address.macro) {
-            continue;
-        }
-        const auto normalized = modulation::setProjectModulatorReach(
-            domain.modulation,
-            source.id,
-            {}
-        );
-        if (!normalized.changed() &&
-            normalized.status != modulation::ProjectModulationStatus::NO_CHANGE) {
             return false;
         }
     }
@@ -267,75 +211,8 @@ FLASHMEM bool duplicateBinding(
         sourceBinding.sourceId
     );
     if (sourcePtr == nullptr) return false;
-    const auto source = *sourcePtr;
-    modulation::ModulatorId targetSourceId = source.id;
-
-    if (source.reach.kind == modulation::ModulatorReachKind::MACRO) {
-        const auto duplicated = modulation::duplicateProjectModulator(
-            domain.modulation,
-            domain.curves,
-            source.id,
-            nullptr
-        );
-        if (!duplicated.changed()) return false;
-        targetSourceId = duplicated.sourceId;
-
-        modulation::ModulatorReach targetReach{};
-        targetReach.kind = modulation::ModulatorReachKind::MACRO;
-        targetReach.track = destination.track;
-        targetReach.page = destination.page;
-        targetReach.macro = destination.macro;
-        if (!modulation::setProjectModulatorReach(
-                domain.modulation,
-                targetSourceId,
-                targetReach
-            ).changed()) {
-            return false;
-        }
-        auto* clonedTrigger =
-            modulation::findProjectModulationTriggerForSource(
-                domain.modulation,
-                targetSourceId
-            );
-        if (clonedTrigger != nullptr &&
-            clonedTrigger->trigger.kind ==
-                modulation::ModulationTriggerKind::TRACK_NOTE &&
-            clonedTrigger->trigger.track ==
-                sourceBinding.destination.track &&
-            clonedTrigger->trigger.track != destination.track) {
-            auto remapped = clonedTrigger->trigger;
-            remapped.track = destination.track;
-            if (!modulation::setProjectModulationTrigger(
-                    domain.modulation,
-                    targetSourceId,
-                    remapped,
-                    (clonedTrigger->flags &
-                        modulation::PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U
-                ).changed()) {
-                return false;
-            }
-        }
-    } else if (!modulation::modulatorReachContains(source.reach, destination)) {
-        if (source.reach.kind != modulation::ModulatorReachKind::TRACK_SET) {
-            return false;
-        }
-        auto widened = source.reach;
-        widened.trackMask = static_cast<uint16_t>(
-            widened.trackMask | static_cast<uint16_t>(1U << destination.track)
-        );
-        const auto widenedResult = modulation::setProjectModulatorReach(
-            domain.modulation,
-            source.id,
-            widened
-        );
-        if (!widenedResult.changed() &&
-            widenedResult.status != modulation::ProjectModulationStatus::NO_CHANGE) {
-            return false;
-        }
-    }
-
     modulation::ModulationBindingDraft draft{};
-    draft.sourceId = targetSourceId;
+    draft.sourceId = sourcePtr->id;
     draft.destination = destination;
     draft.amountQ15 = sourceBinding.amountQ15;
     draft.application = sourceBinding.application;

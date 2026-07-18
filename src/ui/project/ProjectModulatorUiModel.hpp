@@ -25,6 +25,18 @@ inline SourceDetailLayout sourceOptionsLayout(
     return core::state::project::modulators::sourceOptionsLayout(kind);
 }
 
+inline SourceDetailLayout sourceAuditionLayout(
+    core::state::modulation::ModulatorKind kind
+) {
+    return core::state::project::modulators::sourceAuditionLayout(kind);
+}
+
+inline SourceDetailLayout sourceAuditionOptionsLayout(
+    core::state::modulation::ModulatorKind kind
+) {
+    return core::state::project::modulators::sourceAuditionOptionsLayout(kind);
+}
+
 [[nodiscard]] const core::state::modulation::ModulatorSourceState*
 sourceAtRegistryIndex(
     const core::state::modulation::ProjectControlState& control,
@@ -66,13 +78,6 @@ void populateSourceDetailRow(
 void populateSourceOptionsRow(
     const core::state::modulation::ProjectControlState& control,
     const core::state::modulation::ModulatorSourceState& source,
-    int index,
-    ms::ui::KeyValueRowBuffer& out
-);
-
-void populateReachRow(
-    const core::state::modulation::ProjectControlState& control,
-    core::state::modulation::ModulatorId sourceId,
     int index,
     ms::ui::KeyValueRowBuffer& out
 );

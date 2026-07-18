@@ -8,6 +8,7 @@ namespace core::context::standalone {
 
 FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
                                                     core::handler::SequencerSettingsDomainServices sequencerSettings,
+                                                    core::handler::MacroEditDomainServices macroEditServices,
                                                     oc::api::EncoderAPI& encoders,
                                                     oc::api::ButtonAPI& buttons,
                                                     lv_obj_t* projectViewElement
@@ -57,6 +58,7 @@ FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
             stateRefs.lifecycle,
         },
         sequencerSettings,
+        macroEditServices,
         encoders,
         buttons,
         viewScope,

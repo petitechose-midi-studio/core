@@ -18,7 +18,10 @@ struct ProjectModulatorWorkspaceProps {
     bool visible = false;
     const core::state::modulation::ProjectControlState* control = nullptr;
     const core::state::modulation::ModulatorSourceState* source = nullptr;
+    const core::state::modulation::ModulationBindingState* auditionBinding =
+        nullptr;
     bool options = false;
+    bool audition = false;
     uint8_t selectedIndex = 0U;
     uint8_t telemetryRevision = 0U;
 };
@@ -74,7 +77,7 @@ private:
     void createUi(lv_obj_t* parent);
     void createCard(uint8_t index);
     void renderHeader(
-        const core::state::modulation::ModulatorSourceState& source
+        const ProjectModulatorWorkspaceProps& props
     );
     void renderCards(const ProjectModulatorWorkspaceProps& props);
     void renderCurve(const ProjectModulatorWorkspaceProps& props);
@@ -109,13 +112,14 @@ private:
     CurveSampleContext curve_sample_context_{};
     core::state::modulation::ModulatorSourceState rendered_source_{};
     std::array<char, 24> titleText_{};
-    std::array<char, 16> stateText_{};
+    std::array<char, 40> stateText_{};
     std::array<char, 32> editFeedbackKeyText_{};
     std::array<char, 32> editFeedbackValueText_{};
     core::state::modulation::ModulatorId rendered_source_id_{};
     uint32_t edit_feedback_deadline_ms_ = 0U;
     uint8_t rendered_selected_index_ = UINT8_MAX;
     bool rendered_options_ = false;
+    bool rendered_audition_ = false;
     bool has_rendered_source_ = false;
     bool visible_ = false;
 };
