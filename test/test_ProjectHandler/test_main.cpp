@@ -1348,7 +1348,6 @@ void test_project_modulator_creation_and_destination_workflow() {
     auto& graph = h.state.pages.control.authored.modulation;
     assert(graph.sourceCount == 1U);
     assert(graph.outputBindingCount == 1U);
-    assert(isProjectModulatorGlobalReach(graph.sources[0].reach));
     assert(graph.sources[0].parameters.lfo.shape == ModulatorLfoShape::SQUARE);
     assert(graph.sources[0].parameters.lfo.timing == ModulatorTimingMode::FREE);
     assert(graph.sources[0].parameters.lfo.freePeriodMs == 8U);
@@ -1370,12 +1369,10 @@ void test_project_modulator_creation_and_destination_workflow() {
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(graph.outputBindingCount == 2U);
     assert(h.state.pages.pageData(0, 0).isMacroActive(1));
-    assert(isProjectModulatorGlobalReach(graph.sources[0].reach));
     assert(h.state.macroHistory.undoCount() == 2U);
 
     projectModulatorUndo(h);
     assert(graph.outputBindingCount == 1U);
-    assert(isProjectModulatorGlobalReach(graph.sources[0].reach));
     assert(!h.state.pages.pageData(0, 0).isMacroActive(1));
     projectModulatorRedo(h);
     assert(graph.outputBindingCount == 2U);
@@ -1479,7 +1476,6 @@ void test_project_modulator_explicit_unassigned_creation() {
            ProjectNodeId::MODULATORS_ROOT);
     assert(graph.sourceCount == 1U);
     assert(graph.outputBindingCount == 0U);
-    assert(isProjectModulatorGlobalReach(graph.sources[0].reach));
     assert(h.state.macroHistory.undoCount() == 1U);
     projectModulatorUndo(h);
     assert(graph.sourceCount == 0U);
@@ -1648,7 +1644,6 @@ void test_project_modulator_source_copy_and_guarded_paste() {
 
     ModulatorLfoDraft draft{};
     draft.name = "LFO 1";
-    draft.reach = {.kind = ModulatorReachKind::PROJECT};
     draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     auto& graph = h.state.pages.control.authored.modulation;
     const auto created = createLfoModulator(graph, draft);
@@ -1690,7 +1685,6 @@ void test_project_modulator_options_expose_global_destinations_without_reach() {
 
     ModulatorLfoDraft draft{};
     draft.name = "Slow Tide";
-    draft.reach = {.kind = ModulatorReachKind::PROJECT};
     draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     auto& graph = h.state.pages.control.authored.modulation;
     const auto created = createLfoModulator(graph, draft);
@@ -1750,7 +1744,6 @@ void test_project_modulator_options_expose_global_destinations_without_reach() {
     assert(graph.outputBindingCount == 2U);
     assert(graph.outputBindings[0].sourceId == created.sourceId);
     assert(graph.outputBindings[1].sourceId == created.sourceId);
-    assert(isProjectModulatorGlobalReach(graph.sources[0].reach));
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_DESTINATIONS);
     assert(h.state.projectNavigation.selectedModulator == originalSource);
@@ -1783,7 +1776,6 @@ void test_project_destination_deep_link_opens_exact_macro_assignment() {
     auto& graph = h.state.pages.control.authored.modulation;
     ModulatorLfoDraft draft{};
     draft.name = "Cross Track";
-    draft.reach = projectModulatorGlobalReach();
     const auto source = createLfoModulator(graph, draft);
     assert(source.changed());
     ModulationBindingDraft binding{};
@@ -1825,7 +1817,6 @@ void openMacroCreatedLfoWorkspace(ProjectHandlerHarness& h) {
 
     ModulatorLfoDraft source{};
     source.name = "LFO 1";
-    source.reach = projectModulatorGlobalReach();
     source.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     source.parameters.shape = ModulatorLfoShape::SINE;
     source.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
@@ -1934,7 +1925,6 @@ void test_macro_deep_link_back_restores_exact_assignment() {
 
     ModulatorLfoDraft firstDraft{};
     firstDraft.name = "LFO 1";
-    firstDraft.reach = {.kind = ModulatorReachKind::PROJECT};
     const auto firstSource = createLfoModulator(graph, firstDraft);
     assert(firstSource.changed());
     ModulatorLfoDraft secondDraft = firstDraft;
@@ -1998,7 +1988,6 @@ void test_macro_deep_link_deleted_source_returns_with_explicit_fallback() {
 
     ModulatorLfoDraft draft{};
     draft.name = "Transient LFO";
-    draft.reach = {.kind = ModulatorReachKind::PROJECT};
     const auto source = createLfoModulator(authored.modulation, draft);
     assert(source.changed());
     ModulationBindingDraft binding{};

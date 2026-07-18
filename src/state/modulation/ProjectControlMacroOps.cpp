@@ -184,7 +184,6 @@ FLASHMEM bool appendRecordedShape(
     const ModulationDestination destination = projectControlDestination(address);
     RecordedShapeDraft source{};
     source.name = "Recorded Shape";
-    source.reach = projectModulatorGlobalReach();
     source.curve = curveSpec(curve, ProjectCurveValueDomain::BIPOLAR);
     source.points = points;
     source.pointCount = curve.pointCount;

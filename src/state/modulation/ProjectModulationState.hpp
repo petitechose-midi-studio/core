@@ -26,41 +26,6 @@ enum class ModulatorKind : uint8_t {
     ADSR,
 };
 
-enum class ModulatorReachKind : uint8_t {
-    DETACHED = 0,
-    MACRO,
-    TRACK_SET,
-    PROJECT,
-};
-
-/** Persisted assignment perimeter. It never owns the source. */
-struct ModulatorReach {
-    uint16_t trackMask = 0;
-    ModulatorReachKind kind = ModulatorReachKind::DETACHED;
-    uint8_t track = 0;
-    uint8_t page = 0;
-    uint8_t macro = 0;
-};
-
-/**
- * Canonical live availability for every Project-owned source.
- *
- * The six persisted bytes remain in the current MODG record only so supported
- * older payloads can be decoded.  Runtime/domain code must normalize them to
- * this value and must not use Reach as a second routing authority.
- */
-[[nodiscard]] constexpr ModulatorReach projectModulatorGlobalReach() {
-    return {.kind = ModulatorReachKind::PROJECT};
-}
-
-[[nodiscard]] constexpr bool isProjectModulatorGlobalReach(
-    const ModulatorReach& reach
-) {
-    return reach.trackMask == 0U &&
-           reach.kind == ModulatorReachKind::PROJECT &&
-           reach.track == 0U && reach.page == 0U && reach.macro == 0U;
-}
-
 enum class ModulatorLfoShape : uint8_t {
     SINE = 0,
     TRIANGLE,
@@ -135,12 +100,10 @@ inline constexpr uint8_t PROJECT_MODULATOR_FLAG_ENABLED = 0x01U;
 struct ModulatorSourceState {
     ModulatorId id{};
     std::array<char, PROJECT_MODULATOR_NAME_CAPACITY> name{};
-    ModulatorReach reach{};
     ModulatorKind kind = ModulatorKind::LFO;
     uint8_t flags = PROJECT_MODULATOR_FLAG_ENABLED;
     uint8_t accent = 0;
     uint8_t schemaVersion = 1;
-    std::array<uint8_t, 2> reserved{};
     ModulatorParameters parameters{};
 };
 
@@ -252,9 +215,10 @@ struct ModulationTriggerBindingState {
 };
 
 /**
- * Project-owned authored graph. Storage ownership is independent from Track,
- * Macro and UI context. The retained Reach bytes are compatibility-only and
- * are canonicalized to Project availability in every live source.
+ * Project-owned authored graph. Storage and availability are independent from
+ * Track, Macro and UI context; only output bindings define where a source acts.
+ * Historical Reach bytes exist solely at the persistence boundary and never
+ * enter this live domain.
  */
 struct ProjectModulationState {
     uint32_t nextSourceId = 1;
@@ -278,21 +242,20 @@ struct ProjectModulationState {
     > destinationScales{};
 };
 
-static_assert(sizeof(ModulatorReach) == 6U);
 static_assert(sizeof(ModulatorLfoParameters) == 16U);
 static_assert(sizeof(ModulatorAdsrParameters) == 12U);
 static_assert(sizeof(ModulatorParameters) == 16U);
-static_assert(sizeof(ModulatorSourceState) == 48U);
+static_assert(sizeof(ModulatorSourceState) == 40U);
 static_assert(sizeof(ModulationBindingState) == 20U);
 static_assert(sizeof(ModulationDestinationScaleState) == 6U);
 static_assert(sizeof(ModulationTriggerRef) == 4U);
 static_assert(sizeof(ModulationTriggerBindingState) == 16U);
-static_assert(sizeof(ProjectModulationState) == 21520U);
+static_assert(sizeof(ProjectModulationState) == 20496U);
 static_assert(
     sizeof(ProjectModulationState) +
         sizeof(ProjectAutomationCurveDirectory) +
         sizeof(ProjectCurveArena) ==
-    160540U
+    159516U
 );
 static_assert(std::is_trivially_copyable_v<ModulatorSourceState>);
 static_assert(std::is_trivially_copyable_v<ModulationBindingState>);

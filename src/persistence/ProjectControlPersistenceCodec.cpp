@@ -28,6 +28,43 @@ struct PayloadLayout {
     uint32_t size = 0;
 };
 
+// MODG v3 retains the former six-byte Reach directory field. Reach is no
+// longer a live product concept: decode validates the historical shape and
+// discards it, while encode writes the single canonical Project value.
+enum class LegacyReachKind : uint8_t {
+    DETACHED = 0,
+    MACRO = 1,
+    TRACK_SET = 2,
+    PROJECT = 3,
+};
+
+struct LegacyReach {
+    uint16_t trackMask = 0U;
+    LegacyReachKind kind = LegacyReachKind::DETACHED;
+    uint8_t track = 0U;
+    uint8_t page = 0U;
+    uint8_t macro = 0U;
+};
+
+FLASHMEM bool validLegacyReach(const LegacyReach& reach) {
+    switch (reach.kind) {
+        case LegacyReachKind::DETACHED:
+        case LegacyReachKind::PROJECT:
+            return reach.trackMask == 0U && reach.track == 0U &&
+                   reach.page == 0U && reach.macro == 0U;
+        case LegacyReachKind::MACRO:
+            return reach.trackMask == 0U &&
+                   reach.track < modulation::PROJECT_MODULATION_TRACK_COUNT &&
+                   reach.page < modulation::PROJECT_MODULATION_PAGE_COUNT &&
+                   reach.macro < modulation::PROJECT_MODULATION_MACRO_COUNT;
+        case LegacyReachKind::TRACK_SET:
+            return reach.trackMask != 0U && reach.track == 0U &&
+                   reach.page == 0U && reach.macro == 0U;
+        default:
+            return false;
+    }
+}
+
 template <size_t Capacity>
 FLASHMEM bool containsCurve(
     const std::array<modulation::ProjectCurveId, Capacity>& ids,
@@ -365,16 +402,14 @@ FLASHMEM bool writeModulationPayload(
 
     for (uint16_t order = 0; order < graph.sourceCount; ++order) {
         const auto* state = sourceAtOrder(graph, order);
-        constexpr auto canonicalReach =
-            modulation::projectModulatorGlobalReach();
         if (state == nullptr ||
             !writer.writeU32(state->id.value) ||
             !writer.writeBytes(state->name.data(), state->name.size()) ||
-            !writer.writeU16(canonicalReach.trackMask) ||
-            !writer.writeU8(static_cast<uint8_t>(canonicalReach.kind)) ||
-            !writer.writeU8(canonicalReach.track) ||
-            !writer.writeU8(canonicalReach.page) ||
-            !writer.writeU8(canonicalReach.macro) ||
+            !writer.writeU16(0U) ||
+            !writer.writeU8(static_cast<uint8_t>(LegacyReachKind::PROJECT)) ||
+            !writer.writeU8(0U) ||
+            !writer.writeU8(0U) ||
+            !writer.writeU8(0U) ||
             !writer.writeU8(static_cast<uint8_t>(state->kind)) ||
             !writer.writeU8(state->flags) ||
             !writer.writeU8(state->accent) ||
@@ -772,7 +807,8 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
     uint32_t previousId = 0;
     for (uint16_t index = 0; index < sourceCount; ++index) {
         auto& source = graph.sources[index];
-        uint8_t reachKind = 0;
+        LegacyReach legacyReach{};
+        uint8_t reachKind = 0U;
         uint8_t kind = 0;
         uint16_t payloadIndex = 0;
         uint16_t reserved0 = 0;
@@ -780,11 +816,11 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
         source = {};
         if (!reader.readU32(source.id.value) ||
             !reader.readBytes(source.name.data(), source.name.size()) ||
-            !reader.readU16(source.reach.trackMask) ||
+            !reader.readU16(legacyReach.trackMask) ||
             !reader.readU8(reachKind) ||
-            !reader.readU8(source.reach.track) ||
-            !reader.readU8(source.reach.page) ||
-            !reader.readU8(source.reach.macro) ||
+            !reader.readU8(legacyReach.track) ||
+            !reader.readU8(legacyReach.page) ||
+            !reader.readU8(legacyReach.macro) ||
             !reader.readU8(kind) ||
             !reader.readU8(source.flags) ||
             !reader.readU8(source.accent) ||
@@ -797,11 +833,10 @@ FLASHMEM ChunkStatus decodeModulationCurrent(
             return fail(ChunkStatus::INVALID_PAYLOAD);
         }
         previousId = source.id.value;
-        source.reach.kind = static_cast<modulation::ModulatorReachKind>(reachKind);
-        if (!modulation::validModulatorReach(source.reach)) {
+        legacyReach.kind = static_cast<LegacyReachKind>(reachKind);
+        if (!validLegacyReach(legacyReach)) {
             return fail(ChunkStatus::INVALID_PAYLOAD);
         }
-        source.reach = modulation::projectModulatorGlobalReach();
         source.kind = static_cast<modulation::ModulatorKind>(kind);
     }
 

@@ -210,7 +210,6 @@ void test_project_preview_applies_destination_global_depth() {
     const auto target = mod::projectControlDestination(address);
     mod::ModulatorLfoDraft source{};
     source.name = "Square";
-    source.reach.kind = mod::ModulatorReachKind::PROJECT;
     source.parameters.shape = mod::ModulatorLfoShape::SQUARE;
     const auto created = mod::createLfoModulator(control.authored.modulation, source);
     assert(created.changed());
@@ -274,7 +273,6 @@ void test_project_square_reports_explicit_discontinuity() {
     const MacroAutomationSlotAddress address{.track = 0, .page = 0, .macro = 0};
     mod::ModulatorLfoDraft source{};
     source.name = "Square";
-    source.reach.kind = mod::ModulatorReachKind::PROJECT;
     source.parameters.shape = mod::ModulatorLfoShape::SQUARE;
     const auto created = mod::createLfoModulator(control.authored.modulation, source);
     assert(created.changed());

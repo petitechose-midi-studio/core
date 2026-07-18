@@ -23,7 +23,6 @@ enum class ProjectModulationStatus : uint8_t {
     DESTINATION_SCALE_CAPACITY_EXCEEDED,
     DUPLICATE_BINDING,
     DUPLICATE_TRIGGER,
-    REACH_VIOLATION,
     INVARIANT_VIOLATION,
     HISTORY_CAPACITY_EXCEEDED,
 };
@@ -41,7 +40,6 @@ struct ProjectModulationResult {
 
 struct ModulatorLfoDraft {
     const char* name = nullptr;
-    ModulatorReach reach{};
     ModulatorLfoParameters parameters{};
     uint8_t accent = 0;
     bool enabled = true;
@@ -49,7 +47,6 @@ struct ModulatorLfoDraft {
 
 struct ModulatorAdsrDraft {
     const char* name = nullptr;
-    ModulatorReach reach{};
     ModulatorAdsrParameters parameters{};
     uint8_t accent = 0;
     bool enabled = true;
@@ -61,7 +58,6 @@ struct ModulatorAdsrDraft {
 
 struct RecordedShapeDraft {
     const char* name = nullptr;
-    ModulatorReach reach{};
     ProjectCurveSpec curve{};
     const ProjectPackedCurvePoint* points = nullptr;
     uint16_t pointCount = 0;
@@ -88,17 +84,9 @@ struct ModulationTriggerDraft {
 struct ModulatorSplitRequest {
     ModulatorId sourceId{};
     const char* cloneName = nullptr;
-    ModulatorReach retainedReach{};
-    ModulatorReach cloneReach{};
     const ModulationBindingId* bindingIdsToMove = nullptr;
     uint16_t bindingCountToMove = 0;
 };
-
-[[nodiscard]] bool validModulatorReach(const ModulatorReach& reach);
-[[nodiscard]] bool modulatorReachContains(
-    const ModulatorReach& reach,
-    const ModulationDestination& destination
-);
 [[nodiscard]] bool validProjectCurveSpec(
     const ProjectCurveSpec& spec,
     const ProjectPackedCurvePoint* points,
@@ -236,11 +224,6 @@ ProjectModulationResult deleteProjectModulator(
     ProjectModulationState& state,
     ProjectCurveArena& arena,
     ModulatorId sourceId
-);
-ProjectModulationResult setProjectModulatorReach(
-    ProjectModulationState& state,
-    ModulatorId sourceId,
-    const ModulatorReach& reach
 );
 ProjectModulationResult setProjectModulatorEnabled(
     ProjectModulationState& state,

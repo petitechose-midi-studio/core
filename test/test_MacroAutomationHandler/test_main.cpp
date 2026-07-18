@@ -772,7 +772,6 @@ core::state::modulation::ModulatorId createReusableLfo(
     using namespace core::state::modulation;
     ModulatorLfoDraft draft{};
     draft.name = "Shared LFO";
-    draft.reach = {.kind = ModulatorReachKind::PROJECT};
     draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     draft.parameters.shape = ModulatorLfoShape::TRIANGLE;
     draft.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;

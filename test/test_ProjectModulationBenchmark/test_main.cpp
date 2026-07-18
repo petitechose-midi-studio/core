@@ -83,7 +83,7 @@ void proveCase(validation::ProjectModulationBenchmarkCase benchmarkCase) {
 
 int main() {
     static_assert(
-        sizeof(validation::ProjectModulationBenchmarkWorkspace) == 185568U
+        sizeof(validation::ProjectModulationBenchmarkWorkspace) == 184544U
     );
     proveCase(validation::ProjectModulationBenchmarkCase::LFO);
     proveCase(validation::ProjectModulationBenchmarkCase::RECORDED_SHAPE);

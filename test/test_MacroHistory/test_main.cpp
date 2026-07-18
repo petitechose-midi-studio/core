@@ -269,12 +269,6 @@ core::state::modulation::ModulatorLfoDraft defaultLfoDraft() {
     using namespace core::state::modulation;
     ModulatorLfoDraft draft{};
     draft.name = "LFO 1";
-    draft.reach = {
-        .kind = ModulatorReachKind::MACRO,
-        .track = kAddress.track,
-        .page = kAddress.page,
-        .macro = kAddress.macro,
-    };
     draft.parameters.periodTicks = 384;
     draft.parameters.shape = ModulatorLfoShape::SINE;
     draft.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
@@ -286,12 +280,6 @@ core::state::modulation::ModulatorAdsrDraft defaultAdsrDraft() {
     using namespace core::state::modulation;
     ModulatorAdsrDraft draft{};
     draft.name = "ADSR 1";
-    draft.reach = {
-        .kind = ModulatorReachKind::MACRO,
-        .track = kAddress.track,
-        .page = kAddress.page,
-        .macro = kAddress.macro,
-    };
     return draft;
 }
 
@@ -323,7 +311,6 @@ core::state::modulation::ModulatorId addProjectLfo(
     using namespace core::state::modulation;
     auto draft = defaultLfoDraft();
     draft.name = name;
-    draft.reach = {.kind = ModulatorReachKind::PROJECT};
     const auto result = createLfoModulator(
         pages.control.authored.modulation,
         draft
@@ -901,7 +888,6 @@ void test_macro_create_duplicate_and_capacity_failures_are_exact_noops() {
         kAddress,
         source.sourceId,
         binding,
-        nullptr,
         true
     );
     assert(duplicate.status == ProjectModulationStatus::DUPLICATE_BINDING);
@@ -973,12 +959,11 @@ void test_macro_create_stale_add_slot_is_rejected_without_history() {
     std::cout << "[PASS] stale Macro add-slot selection is an exact rejection\n";
 }
 
-void test_macro_create_widening_cancel_and_failed_commit_are_exact() {
+void test_macro_create_cancel_and_failed_commit_are_exact() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     auto draft = defaultLfoDraft();
-    draft.reach = {};
     const auto source = createLfoModulator(
         pages.control.authored.modulation,
         draft
@@ -986,25 +971,15 @@ void test_macro_create_widening_cancel_and_failed_commit_are_exact() {
     assert(source.changed());
     const auto pageBefore = pages.pageData(0, 0);
     const auto graphBefore = pages.control.authored.modulation;
-    const ModulatorReach widened{
-        .kind = ModulatorReachKind::MACRO,
-        .track = kAddress.track,
-        .page = kAddress.page,
-        .macro = kAddress.macro,
-    };
     const auto begun = history.beginExistingModulatorAudition(
         pages,
         kAddress,
         source.sourceId,
         defaultBindingDraft(),
-        &widened,
         true
     );
     assert(begun.changed());
     assert(pages.pageData(0, 0).isMacroActive(kAddress.macro));
-    assert(isProjectModulatorGlobalReach(
-        pages.control.authored.modulation.sources[0].reach
-    ));
 
     constexpr macro::MacroAutomationSlotAddress wrongAddress{0, 0, 2};
     assert(!history.commitModulatorAudition(pages, wrongAddress));
@@ -1021,7 +996,7 @@ void test_macro_create_widening_cancel_and_failed_commit_are_exact() {
         sizeof(graphBefore)
     ) == 0);
     assert(history.undoCount() == 0U);
-    std::cout << "[PASS] widening Cancel after rejected commit is exact\n";
+    std::cout << "[PASS] Macro-create Cancel after rejected commit is exact\n";
 }
 
 void test_existing_modulator_cancel_preserves_root_and_is_byte_stable() {
@@ -1211,7 +1186,6 @@ void test_unassigned_lfo_creation_is_one_undo_action() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     auto draft = defaultLfoDraft();
-    draft.reach = {};
     const auto created = history.createUnassignedLfo(pages, draft);
     assert(created.changed());
     assert(pages.control.authored.modulation.sourceCount == 1U);
@@ -1232,7 +1206,6 @@ void test_unassigned_adsr_creation_includes_trigger_in_one_undo_action() {
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
     auto source = defaultAdsrDraft();
-    source.reach = {};
     const auto graphBefore = pages.control.authored.modulation;
     const auto created = history.createUnassignedAdsr(
         pages,
@@ -1459,7 +1432,7 @@ void test_adsr_duplicate_copies_trigger_and_undo_is_exact() {
     std::cout << "[PASS] ADSR duplicate carries its trigger route exactly\n";
 }
 
-void test_existing_global_assignment_cancel_and_undo_are_exact() {
+void test_existing_assignment_cancel_and_undo_are_exact() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
     macro::MacroHistoryService history;
@@ -1476,13 +1449,9 @@ void test_existing_global_assignment_cancel_and_undo_are_exact() {
     };
     auto binding = defaultBindingDraft();
     binding.destination = projectControlDestination(other);
-    const ModulatorReach widened{
-        .trackMask = static_cast<uint16_t>((1U << 0U) | (1U << 3U)),
-        .kind = ModulatorReachKind::TRACK_SET,
-    };
 
     auto begun = history.beginExistingModulatorAudition(
-        pages, other, created.sourceId, binding, &widened
+        pages, other, created.sourceId, binding
     );
     assert(begun.changed());
     assert(history.cancelModulatorAudition(pages, other));
@@ -1494,13 +1463,10 @@ void test_existing_global_assignment_cancel_and_undo_are_exact() {
     assert(pages.control.authored.modulation.outputBindingCount == 0U);
 
     begun = history.beginExistingModulatorAudition(
-        pages, other, created.sourceId, binding, &widened
+        pages, other, created.sourceId, binding
     );
     assert(begun.changed());
     assert(history.commitModulatorAudition(pages, other));
-    assert(isProjectModulatorGlobalReach(
-        pages.control.authored.modulation.sources[0].reach
-    ));
     assert(history.undo(pages));
     assert(std::memcmp(
         &pages.control.authored.modulation.sources[0],
@@ -1509,11 +1475,8 @@ void test_existing_global_assignment_cancel_and_undo_are_exact() {
     ) == 0);
     assert(pages.control.authored.modulation.outputBindingCount == 0U);
     assert(history.redo(pages));
-    assert(isProjectModulatorGlobalReach(
-        pages.control.authored.modulation.sources[0].reach
-    ));
     assert(pages.control.authored.modulation.outputBindingCount == 1U);
-    std::cout << "[PASS] Global assignment Cancel and Undo restore the root\n";
+    std::cout << "[PASS] Existing assignment Cancel and Undo restore the root\n";
 }
 
 void test_project_modulator_split_is_one_exact_undo_action() {
@@ -1527,7 +1490,6 @@ void test_project_modulator_split_is_one_exact_undo_action() {
     }};
     RecordedShapeDraft sourceDraft{};
     sourceDraft.name = "Slow Tide";
-    sourceDraft.reach = {.kind = ModulatorReachKind::PROJECT};
     sourceDraft.curve = {
         .sourceDurationTicks = 384,
         .durationTicks = 384,
@@ -1572,18 +1534,6 @@ void test_project_modulator_split_is_one_exact_undo_action() {
     const ModulatorSplitRequest request{
         .sourceId = created.sourceId,
         .cloneName = "Slow Tide T2",
-        .retainedReach = {
-            .kind = ModulatorReachKind::MACRO,
-            .track = kAddress.track,
-            .page = kAddress.page,
-            .macro = kAddress.macro,
-        },
-        .cloneReach = {
-            .kind = ModulatorReachKind::MACRO,
-            .track = movedAddress.track,
-            .page = movedAddress.page,
-            .macro = movedAddress.macro,
-        },
         .bindingIdsToMove = &movedBinding,
         .bindingCountToMove = 1,
     };
@@ -1634,7 +1584,6 @@ void test_root_delete_undo_restores_graph_and_recorded_curve_exactly() {
     }};
     RecordedShapeDraft draft{};
     draft.name = "Motion 1";
-    draft.reach = defaultLfoDraft().reach;
     draft.curve = {
         .sourceDurationTicks = 384,
         .durationTicks = 384,
@@ -1697,7 +1646,6 @@ void test_root_delete_undo_restores_shared_curve_reference() {
     }};
     RecordedShapeDraft draft{};
     draft.name = "Motion 1";
-    draft.reach = defaultLfoDraft().reach;
     draft.curve = {
         .sourceDurationTicks = 384,
         .durationTicks = 384,
@@ -1746,7 +1694,6 @@ void test_recorded_source_duplicate_undo_restores_shared_reference() {
     }};
     RecordedShapeDraft draft{};
     draft.name = "Motion 1";
-    draft.reach = defaultLfoDraft().reach;
     draft.curve = {
         .sourceDurationTicks = 384,
         .durationTicks = 384,
@@ -1917,7 +1864,7 @@ int main() {
     test_missing_track_page_and_sparse_macro_commit_atomically();
     test_macro_create_duplicate_and_capacity_failures_are_exact_noops();
     test_macro_create_stale_add_slot_is_rejected_without_history();
-    test_macro_create_widening_cancel_and_failed_commit_are_exact();
+    test_macro_create_cancel_and_failed_commit_are_exact();
     test_existing_modulator_cancel_preserves_root_and_is_byte_stable();
     test_existing_modulator_apply_undo_redo_moves_only_binding();
     test_project_source_edits_coalesce_and_restore_exact_source();
@@ -1927,7 +1874,7 @@ int main() {
     test_adsr_audition_cancel_and_apply_are_atomic();
     test_adsr_parameters_and_trigger_route_coalesce_by_stable_identity();
     test_adsr_duplicate_copies_trigger_and_undo_is_exact();
-    test_existing_global_assignment_cancel_and_undo_are_exact();
+    test_existing_assignment_cancel_and_undo_are_exact();
     test_project_modulator_split_is_one_exact_undo_action();
     test_root_delete_undo_restores_graph_and_recorded_curve_exactly();
     test_root_delete_undo_restores_shared_curve_reference();

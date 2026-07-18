@@ -152,7 +152,6 @@ void test_modulation_assignment_clipboard_references_shared_source_only() {
     };
     ModulatorLfoDraft sourceDraft{};
     sourceDraft.name = "Shared LFO";
-    sourceDraft.reach = {.kind = ModulatorReachKind::PROJECT};
     sourceDraft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     const auto source = createLfoModulator(
         pages.control.authored.modulation,
@@ -198,7 +197,6 @@ void test_project_modulator_source_clipboard_keeps_stable_reference() {
 
     ModulatorLfoDraft draft{};
     draft.name = "Shared Source";
-    draft.reach = {.kind = ModulatorReachKind::PROJECT};
     draft.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     const auto created = createLfoModulator(
         pages.control.authored.modulation,

@@ -25,28 +25,6 @@ struct Fixture {
         std::make_unique<mod::ProjectCurveArena>();
 };
 
-mod::ModulatorReach projectReach() {
-    mod::ModulatorReach reach{};
-    reach.kind = mod::ModulatorReachKind::PROJECT;
-    return reach;
-}
-
-mod::ModulatorReach macroReach(uint8_t track, uint8_t page, uint8_t macro) {
-    mod::ModulatorReach reach{};
-    reach.kind = mod::ModulatorReachKind::MACRO;
-    reach.track = track;
-    reach.page = page;
-    reach.macro = macro;
-    return reach;
-}
-
-mod::ModulatorReach trackReach(uint16_t trackMask) {
-    mod::ModulatorReach reach{};
-    reach.kind = mod::ModulatorReachKind::TRACK_SET;
-    reach.trackMask = trackMask;
-    return reach;
-}
-
 mod::ModulationDestination destination(
     uint8_t track,
     uint8_t page,
@@ -62,12 +40,10 @@ mod::ModulationDestination destination(
 
 mod::ModulatorId addLfo(
     Fixture& fixture,
-    const mod::ModulatorReach& reach = projectReach(),
     const char* name = "LFO"
 ) {
     mod::ModulatorLfoDraft draft{};
     draft.name = name;
-    draft.reach = reach;
     const auto created = mod::createLfoModulator(*fixture.state, draft);
     assert(created.changed());
     return created.sourceId;
@@ -75,12 +51,10 @@ mod::ModulatorId addLfo(
 
 mod::ModulatorId addAdsr(
     Fixture& fixture,
-    const mod::ModulatorReach& reach = projectReach(),
     const char* name = "ADSR"
 ) {
     mod::ModulatorAdsrDraft draft{};
     draft.name = name;
-    draft.reach = reach;
     const auto created = mod::createAdsrModulator(*fixture.state, draft);
     assert(created.changed());
     return created.sourceId;
@@ -131,14 +105,12 @@ mod::ProjectCurveSpec curveSpec(
 mod::ModulatorId addRecorded(
     Fixture& fixture,
     const std::vector<mod::ProjectPackedCurvePoint>& points,
-    const mod::ModulatorReach& reach = projectReach(),
     const char* name = "Shape",
     mod::ProjectCurveValueDomain valueDomain =
         mod::ProjectCurveValueDomain::BIPOLAR
 ) {
     mod::RecordedShapeDraft draft{};
     draft.name = name;
-    draft.reach = reach;
     draft.curve = curveSpec(
         static_cast<uint16_t>(points.empty() ? 1U : points.size()),
         valueDomain
@@ -170,15 +142,15 @@ void testExactMemoryContract() {
     assert(sizeof(mod::ModulationDestinationScaleState) == 6U);
     assert(sizeof(mod::ModulatorAdsrParameters) == 12U);
     assert(sizeof(mod::ModulatorParameters) == 16U);
-    assert(sizeof(mod::ModulatorSourceState) == 48U);
-    assert(sizeof(mod::ProjectModulationState) == 21520U);
+    assert(sizeof(mod::ModulatorSourceState) == 40U);
+    assert(sizeof(mod::ProjectModulationState) == 20496U);
     assert(sizeof(mod::ProjectAutomationCurveDirectory) == 1540U);
     assert(sizeof(mod::ProjectCurveArena) == 137480U);
     assert(sizeof(mod::ProjectModulationRuntimePlan) == 16296U);
     assert(sizeof(mod::ProjectModulationState) +
                sizeof(mod::ProjectAutomationCurveDirectory) +
                sizeof(mod::ProjectCurveArena) ==
-           160540U);
+           159516U);
 }
 
 void testAdsrDomainIsPositiveCompactAndStrict() {
@@ -509,8 +481,8 @@ void testCurveContractPreservesLegacyLoopWindowsAndSameTickPoints() {
 
 void testStableIdsDuplicateAndDelete() {
     Fixture fixture;
-    const auto first = addLfo(fixture, projectReach(), "First");
-    const auto keeper = addLfo(fixture, projectReach(), "Keeper");
+    const auto first = addLfo(fixture, "First");
+    const auto keeper = addLfo(fixture, "Keeper");
     assert(first.value == 1U && keeper.value == 2U);
 
     mod::ModulationTriggerDraft trigger{};
@@ -525,7 +497,7 @@ void testStableIdsDuplicateAndDelete() {
     ).changed());
     assert(mod::findProjectModulator(*fixture.state, keeper) != nullptr);
 
-    const auto third = addLfo(fixture, projectReach(), "Third");
+    const auto third = addLfo(fixture, "Third");
     assert(third.value == 3U);
     const auto clone = mod::duplicateProjectModulator(
         *fixture.state,
@@ -545,8 +517,7 @@ void testStableIdsDuplicateAndDelete() {
 
 void testGlobalAvailabilityAndDuplicateBindingAreStrictAndAtomic() {
     Fixture fixture;
-    const auto source = addLfo(fixture, macroReach(2, 3, 4));
-    assert(mod::isProjectModulatorGlobalReach(fixture.state->sources[0].reach));
+    const auto source = addLfo(fixture);
     addBinding(fixture, source, destination(2, 3, 4));
 
     mod::ModulationBindingDraft outside{};
@@ -572,16 +543,6 @@ void testGlobalAvailabilityAndDuplicateBindingAreStrictAndAtomic() {
         sizeof(*fixture.state)
     ) == 0);
 
-    assert(mod::setProjectModulatorReach(
-        *fixture.state,
-        source,
-        macroReach(1, 0, 0)
-    ).status == mod::ProjectModulationStatus::NO_CHANGE);
-    assert(std::memcmp(
-        fixture.state.get(),
-        stable.get(),
-        sizeof(*fixture.state)
-    ) == 0);
 }
 
 void testAdvertised128SourcesAnd512BindingsCompileWithoutTruncation() {
@@ -618,7 +579,6 @@ void testAdvertised128SourcesAnd512BindingsCompileWithoutTruncation() {
         *fixture.state
     );
     mod::ModulatorLfoDraft overflowSource{};
-    overflowSource.reach = projectReach();
     assert(mod::createLfoModulator(*fixture.state, overflowSource).status ==
            mod::ProjectModulationStatus::SOURCE_CAPACITY_EXCEEDED);
     assert(std::memcmp(
@@ -765,8 +725,6 @@ void testSplitSharesAFullCurveWithoutCopyingPoints() {
     mod::ModulatorSplitRequest split{};
     split.sourceId = source;
     split.cloneName = "Track 2 Shape";
-    split.retainedReach = trackReach(1U << 0U);
-    split.cloneReach = trackReach(1U << 1U);
     split.bindingIdsToMove = &movedBinding;
     split.bindingCountToMove = 1;
     const auto created = mod::splitProjectModulator(
@@ -828,11 +786,10 @@ void testDeleteRemovesEdgesAndCompactsCurveArenaWithStableIds() {
     auto survivorPoints = linearPoints(2);
     survivorPoints[0].value = -1234;
     survivorPoints[1].value = 5678;
-    const auto removed = addRecorded(fixture, firstPoints, projectReach(), "A");
+    const auto removed = addRecorded(fixture, firstPoints, "A");
     const auto survivor = addRecorded(
         fixture,
         survivorPoints,
-        projectReach(),
         "B"
     );
     const auto survivorCurve =
@@ -929,15 +886,13 @@ void testUniqueCurveCanReclaimItsFullPoolRange() {
     assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
 }
 
-void testSplitNormalizesCompatibilityReachAndMovesOnlySelectedEdges() {
+void testSplitMovesOnlySelectedEdges() {
     Fixture fixture;
     const auto source = addLfo(fixture);
     addBinding(fixture, source, destination(0, 0, 0));
     const auto moved = addBinding(fixture, source, destination(1, 0, 0));
     mod::ModulatorSplitRequest split{};
     split.sourceId = source;
-    split.retainedReach = macroReach(0, 0, 0);
-    split.cloneReach = macroReach(2, 0, 0);
     split.bindingIdsToMove = &moved;
     split.bindingCountToMove = 1;
     const auto created = mod::splitProjectModulator(
@@ -947,8 +902,6 @@ void testSplitNormalizesCompatibilityReachAndMovesOnlySelectedEdges() {
     );
     assert(created.changed());
     assert(fixture.state->sourceCount == 2U);
-    assert(mod::isProjectModulatorGlobalReach(fixture.state->sources[0].reach));
-    assert(mod::isProjectModulatorGlobalReach(fixture.state->sources[1].reach));
     assert(fixture.state->outputBindings[0].sourceId == source);
     assert(fixture.state->outputBindings[1].sourceId == created.sourceId);
     assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
@@ -1045,7 +998,6 @@ void testNaturalApplicationResolvesSourceDomainBeforeTheHotLoop() {
     const auto positive = addRecorded(
         fixture,
         positivePoints,
-        projectReach(),
         "Envelope",
         mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
     );
@@ -1177,10 +1129,9 @@ void testUnknownApplicationIsRejectedAtomically() {
 
 void testSourceRenameIsBoundedAndPreservesStableGraphReferences() {
     Fixture fixture;
-    const auto source = addLfo(fixture, projectReach(), "Original");
+    const auto source = addLfo(fixture, "Original");
     const auto binding = addBinding(fixture, source, destination(1, 2, 3));
     const auto stableBinding = fixture.state->outputBindings[0];
-    const auto stableReach = fixture.state->sources[0].reach;
 
     assert(mod::setProjectModulatorName(
         *fixture.state,
@@ -1192,11 +1143,6 @@ void testSourceRenameIsBoundedAndPreservesStableGraphReferences() {
         "123456789012345"
     ) == 0);
     assert(fixture.state->sources[0].id == source);
-    assert(std::memcmp(
-        &fixture.state->sources[0].reach,
-        &stableReach,
-        sizeof(stableReach)
-    ) == 0);
     assert(fixture.state->outputBindingCount == 1U);
     assert(fixture.state->outputBindings[0].id == binding);
     assert(std::memcmp(
@@ -1282,7 +1228,6 @@ void testValidatorRejectsDanglingDuplicateAndBadReferenceCount() {
     addRecorded(
         crossChunkFixture,
         positivePoints,
-        projectReach(),
         "Positive",
         mod::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
     );
@@ -1321,7 +1266,7 @@ int main() {
     testDeleteRemovesEdgesAndCompactsCurveArenaWithStableIds();
     testFullSharedCurveCowFailureIsAtomic();
     testUniqueCurveCanReclaimItsFullPoolRange();
-    testSplitNormalizesCompatibilityReachAndMovesOnlySelectedEdges();
+    testSplitMovesOnlySelectedEdges();
     testRuntimeSumClampOrderingAndEnableFlags();
     testNaturalApplicationResolvesSourceDomainBeforeTheHotLoop();
     testUnknownApplicationIsRejectedAtomically();

@@ -87,7 +87,6 @@ void populateSource(
     source.name[2] = 'n';
     source.name[3] = 'c';
     source.name[4] = 'h';
-    source.reach.kind = mod::ModulatorReachKind::PROJECT;
     source.flags = mod::PROJECT_MODULATOR_FLAG_ENABLED;
     source.schemaVersion = 1U;
     source.parameters.raw.fill(0U);

@@ -183,7 +183,6 @@ core::state::modulation::ModulatorId addReusableLfo(
     using namespace core::state::modulation;
     ModulatorLfoDraft draft{};
     draft.name = name;
-    draft.reach = {.kind = ModulatorReachKind::PROJECT};
     draft.parameters.periodTicks = periodTicks;
     draft.parameters.shape = shape;
     draft.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
@@ -447,8 +446,6 @@ void prepareProjectModulatorsScenario(core::state::CoreState& state) {
 
     auto& graph = state.pages.control.authored.modulation;
     if (graph.sourceCount >= 2U) {
-        graph.sources[0].reach = projectModulatorGlobalReach();
-        graph.sources[1].reach = projectModulatorGlobalReach();
         // The reusable-Macro scenario seeds one remote use. This Project
         // scenario authors its own exact two-destination shared graph.
         for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
@@ -528,7 +525,6 @@ void prepareProjectModulatorWorkspaceScenario(core::state::CoreState& state) {
     }};
     RecordedShapeDraft draft{};
     draft.name = "Breath Arc";
-    draft.reach = projectModulatorGlobalReach();
     draft.curve = {
         .sourceDurationTicks = 384U,
         .durationTicks = 384U,

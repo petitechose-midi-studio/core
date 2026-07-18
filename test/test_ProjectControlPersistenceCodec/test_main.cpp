@@ -157,9 +157,6 @@ DomainPtr makeTypicalDomain() {
 
     assert(domain->modulation.sourceCount == 1U);
     const auto original = domain->modulation.sources[0].id;
-    assert(mod::isProjectModulatorGlobalReach(
-        domain->modulation.sources[0].reach
-    ));
     const auto clone = mod::duplicateProjectModulator(
         domain->modulation,
         domain->curves,
@@ -178,7 +175,6 @@ DomainPtr makeTypicalDomain() {
 
     mod::ModulatorLfoDraft lfo{};
     lfo.name = "Slow LFO";
-    lfo.reach.kind = mod::ModulatorReachKind::PROJECT;
     lfo.parameters.periodTicks = 1536U;
     lfo.parameters.freePeriodMs = 12345U;
     lfo.parameters.shape = mod::ModulatorLfoShape::TRIANGLE;
@@ -245,7 +241,6 @@ DomainPtr makePositiveRecordedShapeDomain() {
     }};
     mod::RecordedShapeDraft source{};
     source.name = "Envelope";
-    source.reach.kind = mod::ModulatorReachKind::PROJECT;
     source.curve.sourceDurationTicks = 1U;
     source.curve.durationTicks = 1U;
     source.curve.valueDomain =
@@ -279,7 +274,6 @@ DomainPtr makeAdsrDomain() {
     auto domain = std::make_unique<mod::ProjectControlDomainState>();
     mod::ModulatorAdsrDraft source{};
     source.name = "Note Envelope";
-    source.reach.kind = mod::ModulatorReachKind::PROJECT;
     source.parameters.attack = 7U;
     source.parameters.decay = 384U;
     source.parameters.release = 1536U;
@@ -370,7 +364,6 @@ DomainPtr makeDenseDomain() {
         source = {};
         source.id = {static_cast<uint32_t>(index + 1U)};
         writeSourceName(source.name, index);
-        source.reach.kind = mod::ModulatorReachKind::PROJECT;
         source.kind = mod::ModulatorKind::RECORDED_SHAPE;
         source.flags = mod::PROJECT_MODULATOR_FLAG_ENABLED;
         source.schemaVersion = 1U;
@@ -502,7 +495,7 @@ uint32_t firstDestinationScaleOffset(
 }
 
 void testExactLayoutEmptyRoundTripAndPreflightAtomicity() {
-    assert(sizeof(mod::ProjectControlDomainState) == 160540U);
+    assert(sizeof(mod::ProjectControlDomainState) == 159516U);
     assert(control::PROJECT_AUTOMATION_MAX_PAYLOAD_SIZE == 134688U);
     assert(control::PROJECT_MODULATION_GRAPH_MAX_PAYLOAD_SIZE == 155680U);
     assert(control::PROJECT_CONTROL_COMBINED_MAX_PAYLOAD_SIZE == 159296U);
@@ -570,7 +563,6 @@ void testLegacyLiftIsDeterministicCanonicalAndAtomic() {
     const auto& source = first->modulation.sources[0];
     assert(source.id.value == 1U);
     assert(std::strcmp(source.name.data(), "T03 P02 M4") == 0);
-    assert(mod::isProjectModulatorGlobalReach(source.reach));
     assert(first->modulation.outputBindings[0].amountQ15 == 16384);
 
     const auto* modulationCurve = mod::findProjectCurve(
@@ -863,17 +855,23 @@ void testSupportedReachBytesNormalizeToCanonicalProjectAvailability() {
     constexpr uint32_t PAGE_OFFSET = 24U;
     constexpr uint32_t MACRO_OFFSET = 25U;
 
+    enum class LegacyReachKind : uint8_t {
+        DETACHED = 0U,
+        MACRO = 1U,
+        TRACK_SET = 2U,
+        PROJECT = 3U,
+    };
     struct LegacyReachBytes {
         uint16_t trackMask;
-        mod::ModulatorReachKind kind;
+        LegacyReachKind kind;
         uint8_t track;
         uint8_t page;
         uint8_t macro;
     };
     constexpr std::array<LegacyReachBytes, 3> LEGACY_REACHES{{
-        {0U, mod::ModulatorReachKind::DETACHED, 0U, 0U, 0U},
-        {0U, mod::ModulatorReachKind::MACRO, 2U, 3U, 4U},
-        {0x0005U, mod::ModulatorReachKind::TRACK_SET, 0U, 0U, 0U},
+        {0U, LegacyReachKind::DETACHED, 0U, 0U, 0U},
+        {0U, LegacyReachKind::MACRO, 2U, 3U, 4U},
+        {0x0005U, LegacyReachKind::TRACK_SET, 0U, 0U, 0U},
     }};
 
     for (const auto& legacy : LEGACY_REACHES) {
@@ -894,8 +892,11 @@ void testSupportedReachBytesNormalizeToCanonicalProjectAvailability() {
             *decoded
         );
         assert(result.decoded() && !result.partial);
-        assert(mod::isProjectModulatorGlobalReach(
-            decoded->modulation.sources[0].reach
+        assert(decoded->modulation.sourceCount == source->modulation.sourceCount);
+        assert(mod::validProjectModulationDomain(
+            decoded->modulation,
+            decoded->curves,
+            &decoded->automation
         ));
 
         std::vector<uint8_t> normalized;
@@ -903,7 +904,7 @@ void testSupportedReachBytesNormalizeToCanonicalProjectAvailability() {
         assert(normalized[directory + TRACK_MASK_OFFSET] == 0U);
         assert(normalized[directory + TRACK_MASK_OFFSET + 1U] == 0U);
         assert(normalized[directory + KIND_OFFSET] ==
-               static_cast<uint8_t>(mod::ModulatorReachKind::PROJECT));
+               static_cast<uint8_t>(LegacyReachKind::PROJECT));
         assert(normalized[directory + TRACK_OFFSET] == 0U);
         assert(normalized[directory + PAGE_OFFSET] == 0U);
         assert(normalized[directory + MACRO_OFFSET] == 0U);

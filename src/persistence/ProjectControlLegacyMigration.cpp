@@ -199,7 +199,6 @@ FLASHMEM Result liftLegacyMacroAutomationBankIntoPending(
             source = {};
             source.id = {pending.modulation.nextSourceId++};
             writeLegacySourceName(source.name, entry->address);
-            source.reach = modulation::projectModulatorGlobalReach();
             source.kind = modulation::ModulatorKind::RECORDED_SHAPE;
             source.flags = macro::macroCurvePlaybackActive(
                 entry->state.modulation

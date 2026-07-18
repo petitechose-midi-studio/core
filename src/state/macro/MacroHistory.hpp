@@ -481,7 +481,6 @@ public:
             const MacroAutomationSlotAddress& address,
             core::state::modulation::ModulatorId sourceId,
             const core::state::modulation::ModulationBindingDraft& bindingDraft,
-            const core::state::modulation::ModulatorReach* widenedReach = nullptr,
             bool createMacroSlot = false,
             const MacroDestinationActivationPlan* destinationPlan = nullptr
         );
@@ -589,11 +588,6 @@ public:
         const core::state::modulation::ModulationTriggerRef& trigger,
         bool enabled
     );
-    [[nodiscard]] bool setProjectModulatorReach(
-        MacroPagesState& pages,
-        core::state::modulation::ModulatorId sourceId,
-        const core::state::modulation::ModulatorReach& reach
-    );
     [[nodiscard]] core::state::modulation::ProjectModulationResult
         splitProjectModulator(
             MacroPagesState& pages,
@@ -604,9 +598,7 @@ public:
             MacroPagesState& pages,
             core::state::modulation::ModulatorId sourceId,
             uint8_t track,
-            const char* cloneName,
-            const core::state::modulation::ModulatorReach& retainedReach,
-            const core::state::modulation::ModulatorReach& cloneReach
+            const char* cloneName
         );
     [[nodiscard]] core::state::modulation::ProjectModulationResult
         deleteProjectModulator(

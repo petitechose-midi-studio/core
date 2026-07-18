@@ -885,7 +885,6 @@ void test_recording_shared_lfos_preserves_graph_through_undo_redo() {
     auto& graph = state.pages.control.authored.modulation;
     ModulatorLfoDraft sharedDraft{};
     sharedDraft.name = "Shared LFO";
-    sharedDraft.reach = {.kind = ModulatorReachKind::PROJECT};
     sharedDraft.parameters.shape = ModulatorLfoShape::TRIANGLE;
     sharedDraft.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
     const auto shared = createLfoModulator(graph, sharedDraft);
@@ -1141,9 +1140,6 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
         state.pages.control,
         sourceAddress
     );
-    assert(core::state::modulation::isProjectModulatorGlobalReach(
-        state.pages.control.authored.modulation.sources[0].reach
-    ));
     auto* sourceCurve = test_support::project_control::mutableCurve(
         state.pages.control,
         source.modulationCurveId

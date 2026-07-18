@@ -235,14 +235,6 @@ FLASHMEM int16_t triggerBindingIndex(
     return -1;
 }
 
-FLASHMEM bool sameReach(const ModulatorReach& lhs, const ModulatorReach& rhs) {
-    return lhs.trackMask == rhs.trackMask &&
-           lhs.kind == rhs.kind &&
-           lhs.track == rhs.track &&
-           lhs.page == rhs.page &&
-           lhs.macro == rhs.macro;
-}
-
 FLASHMEM bool sameCurvePayload(
     const ProjectCurveArena& arena,
     const ProjectCurveRecord& record,
@@ -529,48 +521,6 @@ FLASHMEM bool validProjectModulatorAdsrParameters(
     const ModulatorAdsrParameters& parameters
 ) {
     return validAdsrParameters(parameters);
-}
-
-FLASHMEM bool validModulatorReach(const ModulatorReach& reach) {
-    switch (reach.kind) {
-        case ModulatorReachKind::DETACHED:
-        case ModulatorReachKind::PROJECT:
-            return reach.trackMask == 0 && reach.track == 0 &&
-                   reach.page == 0 && reach.macro == 0;
-        case ModulatorReachKind::MACRO:
-            return reach.trackMask == 0 &&
-                   reach.track < PROJECT_MODULATION_TRACK_COUNT &&
-                   reach.page < PROJECT_MODULATION_PAGE_COUNT &&
-                   reach.macro < PROJECT_MODULATION_MACRO_COUNT;
-        case ModulatorReachKind::TRACK_SET:
-            return reach.trackMask != 0 && reach.track == 0 &&
-                   reach.page == 0 && reach.macro == 0;
-        default:
-            return false;
-    }
-}
-
-FLASHMEM bool modulatorReachContains(
-    const ModulatorReach& reach,
-    const ModulationDestination& destination
-) {
-    if (!validModulatorReach(reach) ||
-        !modulationDestinationValid(destination)) {
-        return false;
-    }
-    switch (reach.kind) {
-        case ModulatorReachKind::MACRO:
-            return destination.track == reach.track &&
-                   destination.page == reach.page &&
-                   destination.macro == reach.macro;
-        case ModulatorReachKind::TRACK_SET:
-            return (reach.trackMask & (1U << destination.track)) != 0;
-        case ModulatorReachKind::PROJECT:
-            return true;
-        case ModulatorReachKind::DETACHED:
-        default:
-            return false;
-    }
 }
 
 FLASHMEM bool validProjectCurveSpec(
@@ -958,8 +908,7 @@ FLASHMEM ProjectModulationResult createLfoModulator(
     ProjectModulationState& state,
     const ModulatorLfoDraft& draft
 ) {
-    if (!validModulatorReach(draft.reach) ||
-        !validLfoParameters(draft.parameters)) {
+    if (!validLfoParameters(draft.parameters)) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT);
     }
     if (state.sourceCount >= PROJECT_MODULATOR_CAPACITY) {
@@ -972,7 +921,6 @@ FLASHMEM ProjectModulationResult createLfoModulator(
     ModulatorSourceState source{};
     source.id = {takeId(state.nextSourceId)};
     copyName(source.name, draft.name, "LFO");
-    source.reach = projectModulatorGlobalReach();
     source.kind = ModulatorKind::LFO;
     source.flags = draft.enabled ? PROJECT_MODULATOR_FLAG_ENABLED : 0U;
     source.accent = draft.accent;
@@ -985,8 +933,7 @@ FLASHMEM ProjectModulationResult createAdsrModulator(
     ProjectModulationState& state,
     const ModulatorAdsrDraft& draft
 ) {
-    if (!validModulatorReach(draft.reach) ||
-        !validAdsrParameters(draft.parameters)) {
+    if (!validAdsrParameters(draft.parameters)) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT);
     }
     if (state.sourceCount >= PROJECT_MODULATOR_CAPACITY) {
@@ -999,7 +946,6 @@ FLASHMEM ProjectModulationResult createAdsrModulator(
     ModulatorSourceState source{};
     source.id = {takeId(state.nextSourceId)};
     copyName(source.name, draft.name, "ADSR");
-    source.reach = projectModulatorGlobalReach();
     source.kind = ModulatorKind::ADSR;
     source.flags = draft.enabled ? PROJECT_MODULATOR_FLAG_ENABLED : 0U;
     source.accent = draft.accent;
@@ -1013,8 +959,7 @@ FLASHMEM ProjectModulationResult createRecordedShapeModulator(
     ProjectCurveArena& arena,
     const RecordedShapeDraft& draft
 ) {
-    if (!validModulatorReach(draft.reach) ||
-        !validProjectCurveSpec(draft.curve, draft.points, draft.pointCount) ||
+    if (!validProjectCurveSpec(draft.curve, draft.points, draft.pointCount) ||
         curveInputAliasesArena(arena, draft.points, draft.pointCount)) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT);
     }
@@ -1039,7 +984,6 @@ FLASHMEM ProjectModulationResult createRecordedShapeModulator(
     ModulatorSourceState source{};
     source.id = {takeId(state.nextSourceId)};
     copyName(source.name, draft.name, "Recorded Shape");
-    source.reach = projectModulatorGlobalReach();
     source.kind = ModulatorKind::RECORDED_SHAPE;
     source.flags = draft.enabled ? PROJECT_MODULATOR_FLAG_ENABLED : 0U;
     source.accent = draft.accent;
@@ -1104,7 +1048,6 @@ FLASHMEM ProjectModulationResult duplicateProjectModulator(
 
     ModulatorSourceState clone = existing;
     clone.id = {takeId(state.nextSourceId)};
-    clone.reach = projectModulatorGlobalReach();
     copyName(clone.name, cloneName, existing.name.data());
     state.sources[state.sourceCount++] = clone;
     if (curve != nullptr) ++curve->referenceCount;
@@ -1128,9 +1071,7 @@ FLASHMEM ProjectModulationResult splitProjectModulator(
     if (existingIndex < 0) {
         return result(ProjectModulationStatus::INVALID_ID, request.sourceId);
     }
-    if (!validModulatorReach(request.retainedReach) ||
-        !validModulatorReach(request.cloneReach) ||
-        request.bindingIdsToMove == nullptr ||
+    if (request.bindingIdsToMove == nullptr ||
         request.bindingCountToMove == 0) {
         return result(ProjectModulationStatus::INVALID_ARGUMENT, request.sourceId);
     }
@@ -1212,7 +1153,6 @@ FLASHMEM ProjectModulationResult splitProjectModulator(
 
     ModulatorSourceState clone = existing;
     clone.id = {takeId(state.nextSourceId)};
-    clone.reach = projectModulatorGlobalReach();
     copyName(clone.name, request.cloneName, existing.name.data());
     state.sources[state.sourceCount++] = clone;
     if (curve != nullptr) ++curve->referenceCount;
@@ -1225,8 +1165,6 @@ FLASHMEM ProjectModulationResult splitProjectModulator(
         trigger.sourceId = clone.id;
         state.triggerBindings[state.triggerBindingCount++] = trigger;
     }
-    state.sources[static_cast<uint16_t>(existingIndex)].reach =
-        projectModulatorGlobalReach();
     for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
         auto& binding = state.outputBindings[index];
         if (binding.sourceId == request.sourceId &&
@@ -1279,27 +1217,6 @@ FLASHMEM ProjectModulationResult deleteProjectModulator(
     if (source.kind == ModulatorKind::RECORDED_SHAPE) {
         releaseCurve(arena, source.parameters.recordedCurveId);
     }
-    return result(ProjectModulationStatus::OK, sourceId);
-}
-
-FLASHMEM ProjectModulationResult setProjectModulatorReach(
-    ProjectModulationState& state,
-    ModulatorId sourceId,
-    const ModulatorReach& reach
-) {
-    const int16_t index = sourceIndex(state, sourceId);
-    if (index < 0) {
-        return result(ProjectModulationStatus::INVALID_ID, sourceId);
-    }
-    if (!validModulatorReach(reach)) {
-        return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
-    }
-    auto& source = state.sources[static_cast<uint16_t>(index)];
-    const ModulatorReach canonical = projectModulatorGlobalReach();
-    if (sameReach(source.reach, canonical)) {
-        return result(ProjectModulationStatus::NO_CHANGE, sourceId);
-    }
-    source.reach = canonical;
     return result(ProjectModulationStatus::OK, sourceId);
 }
 
@@ -1729,10 +1646,8 @@ FLASHMEM bool validProjectModulationDomain(
     for (uint16_t index = 0; index < state.sourceCount; ++index) {
         const auto& source = state.sources[index];
         if (!valid(source.id) || !validSourceName(source) ||
-            !isProjectModulatorGlobalReach(source.reach) ||
             source.schemaVersion != 1U ||
             (source.flags & ~SOURCE_FLAGS) != 0U ||
-            !allZero(source.reserved) ||
             static_cast<uint8_t>(source.kind) >
                 static_cast<uint8_t>(ModulatorKind::ADSR)) {
             return false;

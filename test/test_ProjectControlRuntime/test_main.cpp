@@ -32,12 +32,6 @@ mod::ModulationDestination destination(uint8_t track,
     };
 }
 
-mod::ModulatorReach projectReach() {
-    mod::ModulatorReach reach{};
-    reach.kind = mod::ModulatorReachKind::PROJECT;
-    return reach;
-}
-
 mod::ProjectModulationCompileContext activeContext() {
     mod::ProjectModulationCompileContext context{};
     context.enabledTrackMask = 0xFFFFU;
@@ -57,7 +51,6 @@ mod::ModulatorId addLfo(
 ) {
     mod::ModulatorLfoDraft draft{};
     draft.name = "LFO";
-    draft.reach = projectReach();
     draft.parameters.shape = shape;
     draft.parameters.periodTicks = periodTicks;
     draft.parameters.freePeriodMs = freePeriodMs;
@@ -77,7 +70,6 @@ mod::ModulatorId addAdsr(
 ) {
     mod::ModulatorAdsrDraft draft{};
     draft.name = "ADSR";
-    draft.reach = projectReach();
     draft.parameters = parameters;
     const auto created = mod::createAdsrModulator(domain.modulation, draft);
     assert(created.changed());
@@ -761,7 +753,6 @@ void testFractionalRecordedCurveAndFromBaseBinding() {
     }};
     mod::RecordedShapeDraft shape{};
     shape.name = "Motion";
-    shape.reach = projectReach();
     shape.curve.sourceDurationTicks = 2U;
     shape.curve.durationTicks = 2U;
     shape.curve.valueDomain = mod::ProjectCurveValueDomain::BIPOLAR;
@@ -804,7 +795,6 @@ void testPositiveRecordedCurveUsesNaturalAndExplicitAroundBase() {
     }};
     mod::RecordedShapeDraft shape{};
     shape.name = "Envelope";
-    shape.reach = projectReach();
     shape.curve.sourceDurationTicks = 2U;
     shape.curve.durationTicks = 2U;
     shape.curve.valueDomain =
@@ -869,7 +859,6 @@ void testRecordedCurveHintPreservesJumpsWrapAndDuplicateTicks() {
     }};
     mod::RecordedShapeDraft shape{};
     shape.name = "Hint";
-    shape.reach = projectReach();
     shape.curve.sourceDurationTicks = 16U;
     shape.curve.durationTicks = 16U;
     shape.curve.valueDomain = mod::ProjectCurveValueDomain::BIPOLAR;

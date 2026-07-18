@@ -2152,12 +2152,7 @@ MacroHistoryService::createUnassignedModulator_(
     ProjectModulationResult failure{};
     failure.status = ProjectModulationStatus::INVALID_ARGUMENT;
     if ((lfoDraft == nullptr) == (adsrDraft == nullptr)) return failure;
-    const auto& reach = lfoDraft != nullptr
-        ? lfoDraft->reach
-        : adsrDraft->reach;
-    if (reach.kind != ModulatorReachKind::DETACHED ||
-        !validModulatorReach(reach) ||
-        pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
+    if (pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
         return failure;
     }
     auto& graph = pages.control.authored.modulation;
@@ -2335,7 +2330,6 @@ MacroHistoryService::beginExistingModulatorAudition(
     const MacroAutomationSlotAddress& address,
     core::state::modulation::ModulatorId sourceId,
     const core::state::modulation::ModulationBindingDraft& bindingDraft,
-    const core::state::modulation::ModulatorReach* widenedReach,
     bool createMacroSlot,
     const MacroDestinationActivationPlan* destinationPlan
 ) {
@@ -2359,7 +2353,6 @@ MacroHistoryService::beginExistingModulatorAudition(
         failure.status = ProjectModulationStatus::INVALID_ID;
         return failure;
     }
-    (void)widenedReach;  // Compatibility-only parameter; all sources are global.
     if (graph.outputBindingCount >= PROJECT_MODULATION_BINDING_CAPACITY) {
         failure.status = ProjectModulationStatus::BINDING_CAPACITY_EXCEEDED;
         return failure;
@@ -3194,48 +3187,12 @@ FLASHMEM bool MacroHistoryService::setProjectModulationTriggerCoalesced(
     return true;
 }
 
-FLASHMEM bool MacroHistoryService::setProjectModulatorReach(
-    MacroPagesState& pages,
-    core::state::modulation::ModulatorId sourceId,
-    const core::state::modulation::ModulatorReach& reach
-) {
-    using namespace core::state::modulation;
-    if (pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
-        return false;
-    }
-    auto* source = findProjectModulator(
-        pages.control.authored.modulation,
-        sourceId
-    );
-    if (!source) return false;
-    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
-    if (!change) return false;
-    change->kind = MacroHistoryActionKind::PROJECT_MODULATOR_SOURCE_EDIT;
-    change->sourceEdit.before = *source;
-    const auto result = core::state::modulation::setProjectModulatorReach(
-        pages.control.authored.modulation,
-        sourceId,
-        reach
-    );
-    if (!result.changed()) return false;
-    pages.control.markAuthoredMutation();
-    change->sourceEdit.after = *findProjectModulator(
-        pages.control.authored.modulation,
-        sourceId
-    );
-    change->sourceEdit.valid = true;
-    endCoalescing();
-    return commitProjectSourceEdit_(pages, std::move(change), false);
-}
-
 FLASHMEM core::state::modulation::ProjectModulationResult
 MacroHistoryService::splitProjectModulatorTrack(
     MacroPagesState& pages,
     core::state::modulation::ModulatorId sourceId,
     uint8_t track,
-    const char* cloneName,
-    const core::state::modulation::ModulatorReach& retainedReach,
-    const core::state::modulation::ModulatorReach& cloneReach
+    const char* cloneName
 ) {
     using namespace core::state::modulation;
     ProjectModulationResult failure{};
@@ -3273,8 +3230,6 @@ MacroHistoryService::splitProjectModulatorTrack(
     const ModulatorSplitRequest request{
         .sourceId = sourceId,
         .cloneName = cloneName,
-        .retainedReach = retainedReach,
-        .cloneReach = cloneReach,
         .bindingIdsToMove = bindingIds.get(),
         .bindingCountToMove = bindingCount,
     };

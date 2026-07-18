@@ -955,7 +955,6 @@ MacroEditDomainServices::beginDefaultLfoAudition(uint8_t index) const {
     );
     ModulatorLfoDraft source{};
     source.name = name;
-    source.reach = projectModulatorGlobalReach();
     source.parameters.periodTicks = PROJECT_CONTROL_TICKS_PER_BEAT;
     source.parameters.shape = ModulatorLfoShape::SINE;
     source.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
@@ -992,7 +991,6 @@ MacroEditDomainServices::beginDefaultAdsrAudition(uint8_t index) const {
     );
     ModulatorAdsrDraft source{};
     source.name = name;
-    source.reach = projectModulatorGlobalReach();
 
     ModulationTriggerDraft trigger{};
     trigger.trigger = {

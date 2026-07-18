@@ -108,12 +108,6 @@ void test_track_duplication_shares_project_adsr_and_keeps_its_note_route() {
     };
     modulation::ModulatorAdsrDraft source{};
     source.name = "Local ADSR";
-    source.reach = {
-        .kind = modulation::ModulatorReachKind::MACRO,
-        .track = sourceAddress.track,
-        .page = sourceAddress.page,
-        .macro = sourceAddress.macro,
-    };
     const auto created = modulation::createAdsrModulator(
         control.authored.modulation,
         source
@@ -149,7 +143,6 @@ void test_track_duplication_shares_project_adsr_and_keeps_its_note_route() {
     assert(graph.sourceCount == 1U);
     assert(graph.outputBindingCount == 2U);
     assert(graph.triggerBindingCount == 1U);
-    assert(modulation::isProjectModulatorGlobalReach(graph.sources[0].reach));
     assert(graph.outputBindings[1].destination.track == 3U);
     assert(graph.outputBindings[1].sourceId == graph.sources[0].id);
     assert(graph.triggerBindings[0].sourceId == graph.sources[0].id);
@@ -168,7 +161,6 @@ void test_track_clear_removes_note_route_without_deleting_root_source() {
     modulation::ProjectControlState control;
     modulation::ModulatorAdsrDraft source{};
     source.name = "Shared ADSR";
-    source.reach.kind = modulation::ModulatorReachKind::PROJECT;
     const auto created = modulation::createAdsrModulator(
         control.authored.modulation,
         source

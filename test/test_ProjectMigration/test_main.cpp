@@ -121,7 +121,6 @@ std::vector<uint8_t> buildModg10ApplicationFixture() {
     auto& control = *snapshot.projectControl;
     modulation::ModulatorLfoDraft source{};
     source.name = "Compat LFO";
-    source.reach.kind = modulation::ModulatorReachKind::PROJECT;
     const auto created = modulation::createLfoModulator(
         control.modulation,
         source
@@ -247,7 +246,6 @@ std::vector<uint8_t> buildAdsr13Fixture() {
 
     modulation::ModulatorAdsrDraft source{};
     source.name = "Fixture ADSR";
-    source.reach.kind = modulation::ModulatorReachKind::PROJECT;
     source.parameters.attack = 12U;
     source.parameters.decay = 384U;
     source.parameters.release = 1536U;

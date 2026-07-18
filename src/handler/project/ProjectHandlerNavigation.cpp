@@ -431,12 +431,10 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     if (creating && pickerTarget.kind == RowKind::KEEP_UNASSIGNED) {
         ProjectModulationResult created{};
         if (creatingKind == ModulatorKind::ADSR) {
-            adsrDraft.reach = {};
             created = macro_history_.createUnassignedAdsr(
                 pages_, adsrDraft, triggerDraft
             );
         } else {
-            sourceDraft.reach = {};
             created = macro_history_.createUnassignedLfo(pages_, sourceDraft);
         }
         if (!created.changed()) {
@@ -486,7 +484,6 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     ProjectModulationResult begun{};
     if (creating) {
         if (creatingKind == ModulatorKind::ADSR) {
-            adsrDraft.reach = projectModulatorGlobalReach();
             begun = macro_history_.beginAdsrModulatorAudition(
                 pages_,
                 address,
@@ -497,7 +494,6 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
                 &topology
             );
         } else {
-            sourceDraft.reach = projectModulatorGlobalReach();
             begun = macro_history_.beginLfoModulatorAudition(
                 pages_, address, sourceDraft, binding, false, &topology
             );
@@ -518,7 +514,6 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
             address,
             targetSource,
             binding,
-            nullptr,
             false,
             &topology
         );

@@ -76,7 +76,7 @@ struct ProjectModulationBenchmarkResult {
     uint32_t measuredFrames = PROJECT_MODULATION_BENCHMARK_MEASURED_FRAMES
 );
 
-static_assert(sizeof(ProjectModulationBenchmarkWorkspace) == 185568U);
+static_assert(sizeof(ProjectModulationBenchmarkWorkspace) == 184544U);
 static_assert(std::is_trivially_copyable_v<ProjectModulationBenchmarkWorkspace>);
 
 }  // namespace core::validation::project

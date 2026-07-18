@@ -291,7 +291,6 @@ void test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr() {
 
     mod::ModulatorAdsrDraft source{};
     source.name = "Gate";
-    source.reach.kind = mod::ModulatorReachKind::PROJECT;
     source.parameters.attack = 0U;
     source.parameters.decay = 0U;
     source.parameters.sustainQ15 = 8192U;

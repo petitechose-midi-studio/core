@@ -509,8 +509,6 @@ FLASHMEM void ProjectHandler::makeFocusedModulatorIndependent() {
     const ModulatorSplitRequest request{
         .sourceId = source->id,
         .cloneName = name,
-        .retainedReach = projectModulatorGlobalReach(),
-        .cloneReach = projectModulatorGlobalReach(),
         .bindingIdsToMove = &bindingId,
         .bindingCountToMove = 1U,
     };
