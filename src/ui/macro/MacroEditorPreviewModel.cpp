@@ -7,99 +7,20 @@
 
 #include "state/modulation/ProjectControlRuntime.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "ui/modulation/ModulatorAdsrUiModel.hpp"
 
 namespace core::ui {
 namespace {
 
 namespace macro = core::state::macro;
-namespace modulation = core::state::modulation;
+namespace state_mod = core::state::modulation;
+namespace adsr_ui = core::ui::modulation::adsr;
 
 struct ContributionSample {
     float stored = 0.0f;
     float active = 0.0f;
     bool discontinuityBefore = false;
 };
-
-struct AdsrPreviewBoundaries {
-    uint16_t attackEndQ16 = 0U;
-    uint16_t decayEndQ16 = 0U;
-    uint16_t sustainEndQ16 = 0U;
-};
-
-AdsrPreviewBoundaries adsrPreviewBoundaries(
-    const modulation::ModulatorAdsrParameters& parameters
-) {
-    uint32_t attack = parameters.attack;
-    uint32_t decay = parameters.decay;
-    uint32_t release = parameters.release;
-    const uint32_t moving = attack + decay + release;
-    uint32_t sustain = std::max<uint32_t>(1U, moving / 4U);
-    if (moving == 0U) {
-        attack = decay = release = sustain = 1U;
-    }
-    const uint64_t total = attack + decay + sustain + release;
-    return {
-        .attackEndQ16 = static_cast<uint16_t>(attack * 65535ULL / total),
-        .decayEndQ16 = static_cast<uint16_t>(
-            (attack + decay) * 65535ULL / total
-        ),
-        .sustainEndQ16 = static_cast<uint16_t>(
-            (attack + decay + sustain) * 65535ULL / total
-        ),
-    };
-}
-
-float adsrSegmentProgress(uint16_t position, uint16_t begin, uint16_t end) {
-    if (end <= begin) return 1.0f;
-    return std::clamp(
-        static_cast<float>(position - begin) /
-            static_cast<float>(end - begin),
-        0.0f,
-        1.0f
-    );
-}
-
-float adsrPreviewValue(
-    const modulation::ModulatorAdsrParameters& parameters,
-    uint16_t positionQ16
-) {
-    const auto boundaries = adsrPreviewBoundaries(parameters);
-    const float sustain = std::clamp(
-        static_cast<float>(parameters.sustainQ15) /
-            static_cast<float>(
-                modulation::PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15
-            ),
-        0.0f,
-        1.0f
-    );
-    if (positionQ16 < boundaries.attackEndQ16) {
-        return modulation::evaluateProjectAdsrProgress(
-            parameters.curve,
-            adsrSegmentProgress(positionQ16, 0U, boundaries.attackEndQ16)
-        );
-    }
-    if (positionQ16 < boundaries.decayEndQ16) {
-        const float shaped = modulation::evaluateProjectAdsrProgress(
-            parameters.curve,
-            adsrSegmentProgress(
-                positionQ16,
-                boundaries.attackEndQ16,
-                boundaries.decayEndQ16
-            )
-        );
-        return 1.0f + (sustain - 1.0f) * shaped;
-    }
-    if (positionQ16 < boundaries.sustainEndQ16) return sustain;
-    const float shaped = modulation::evaluateProjectAdsrProgress(
-        parameters.curve,
-        adsrSegmentProgress(
-            positionQ16,
-            boundaries.sustainEndQ16,
-            65535U
-        )
-    );
-    return sustain * (1.0f - shaped);
-}
 
 uint16_t quantizeUnipolar(float value) {
     return static_cast<uint16_t>(std::lround(
@@ -136,18 +57,25 @@ bool crossesSquareEdge(float previous, float current) {
 
 float sourcePreviewValue(
     const MacroEditorPreviewModel& model,
-    const modulation::ModulatorSourceState& source,
+    const state_mod::ModulatorSourceState& source,
     uint16_t positionQ16,
     bool naturalTimeline,
     float& phase
 ) {
-    if (source.kind == modulation::ModulatorKind::ADSR) {
+    if (source.kind == state_mod::ModulatorKind::ADSR) {
         phase = normalizedPosition(positionQ16);
-        return adsrPreviewValue(source.parameters.adsr, positionQ16);
+        const auto boundaries = adsr_ui::previewBoundaries(
+            source.parameters.adsr
+        );
+        return adsr_ui::previewValue(
+            source.parameters.adsr,
+            boundaries,
+            positionQ16
+        );
     }
-    if (source.kind == modulation::ModulatorKind::RECORDED_SHAPE) {
+    if (source.kind == state_mod::ModulatorKind::RECORDED_SHAPE) {
         phase = normalizedPosition(positionQ16);
-        const auto* curve = modulation::findProjectCurve(
+        const auto* curve = state_mod::findProjectCurve(
             model.control->authored.curves,
             source.parameters.recordedCurveId
         );
@@ -156,7 +84,7 @@ float sourcePreviewValue(
             ? phase * static_cast<float>(curve->durationTicks) /
                 static_cast<float>(macro::MACRO_AUTOMATION_TICKS_PER_BEAT)
             : elapsedBeat(model.timelineDurationTicks, positionQ16);
-        return modulation::evaluateProjectControlCurve(
+        return state_mod::evaluateProjectControlCurve(
             *model.control,
             source.parameters.recordedCurveId,
             beat,
@@ -167,7 +95,7 @@ float sourcePreviewValue(
     const float authored = static_cast<float>(source.parameters.lfo.phaseQ15) /
         32767.0f;
     if (naturalTimeline ||
-        source.parameters.lfo.timing == modulation::ModulatorTimingMode::FREE) {
+        source.parameters.lfo.timing == state_mod::ModulatorTimingMode::FREE) {
         phase = wrapPhase(normalizedPosition(positionQ16) + authored);
     } else {
         const float tick = normalizedPosition(positionQ16) *
@@ -182,7 +110,7 @@ float sourcePreviewValue(
             )) + authored
         );
     }
-    return modulation::evaluateProjectLfoShape(
+    return state_mod::evaluateProjectLfoShape(
         source.parameters.lfo.shape,
         phase
     );
@@ -190,28 +118,28 @@ float sourcePreviewValue(
 
 ContributionSample sampleProjectContribution(
     const MacroEditorPreviewModel& model,
-    const modulation::ModulationBindingState& binding,
+    const state_mod::ModulationBindingState& binding,
     uint16_t positionQ16,
     uint16_t previousPositionQ16,
     bool hasPrevious,
     bool naturalTimeline,
-    const modulation::ModulatorSourceState* knownSource = nullptr
+    const state_mod::ModulatorSourceState* knownSource = nullptr
 ) {
     ContributionSample result{};
     const auto& graph = model.control->authored.modulation;
     const auto* source = knownSource != nullptr &&
             knownSource->id == binding.sourceId
         ? knownSource
-        : modulation::findProjectModulator(graph, binding.sourceId);
+        : state_mod::findProjectModulator(graph, binding.sourceId);
     if (source == nullptr) return result;
-    modulation::ModulatorNaturalDomain naturalDomain{};
-    modulation::ResolvedModulationMapping mapping{};
-    if (!modulation::projectModulatorNaturalDomain(
+    state_mod::ModulatorNaturalDomain naturalDomain{};
+    state_mod::ResolvedModulationMapping mapping{};
+    if (!state_mod::projectModulatorNaturalDomain(
             *source,
             model.control->authored.curves,
             naturalDomain
         ) ||
-        !modulation::resolveModulationApplication(
+        !state_mod::resolveModulationApplication(
             binding.application,
             naturalDomain,
             mapping
@@ -226,19 +154,19 @@ ContributionSample sampleProjectContribution(
         naturalTimeline,
         phase
     );
-    sourceValue = modulation::applyResolvedModulationMapping(
+    sourceValue = state_mod::applyResolvedModulationMapping(
         sourceValue,
         mapping
     );
     result.stored = sourceValue *
         (static_cast<float>(binding.amountQ15) / 32767.0f);
     const bool active =
-        (binding.flags & modulation::PROJECT_MODULATION_BINDING_FLAG_ENABLED) !=
+        (binding.flags & state_mod::PROJECT_MODULATION_BINDING_FLAG_ENABLED) !=
             0U &&
-        (source->flags & modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
+        (source->flags & state_mod::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
     result.active = active ? result.stored : 0.0f;
-    if (hasPrevious && source->kind == modulation::ModulatorKind::LFO &&
-        source->parameters.lfo.shape == modulation::ModulatorLfoShape::SQUARE) {
+    if (hasPrevious && source->kind == state_mod::ModulatorKind::LFO &&
+        source->parameters.lfo.shape == state_mod::ModulatorLfoShape::SQUARE) {
         float previousPhase = 0.0f;
         (void)sourcePreviewValue(
             model,
@@ -254,11 +182,11 @@ ContributionSample sampleProjectContribution(
 
 float sampleProjectAutomation(
     const MacroEditorPreviewModel& model,
-    const modulation::ProjectControlMacroSlotView& view,
+    const state_mod::ProjectControlMacroSlotView& view,
     uint16_t positionQ16
 ) {
     if (!view.automationStored) return model.staticBase;
-    return modulation::evaluateProjectControlCurve(
+    return state_mod::evaluateProjectControlCurve(
         *model.control,
         view.automationCurveId,
         elapsedBeat(model.automationDurationTicks, positionQ16),
@@ -267,10 +195,10 @@ float sampleProjectAutomation(
 }
 
 void selectFirstBinding(MacroEditorPreviewModel& model) {
-    if (model.control == nullptr || modulation::valid(model.focusedBindingId)) {
+    if (model.control == nullptr || state_mod::valid(model.focusedBindingId)) {
         return;
     }
-    const auto destination = modulation::projectControlDestination(model.address);
+    const auto destination = state_mod::projectControlDestination(model.address);
     const auto& graph = model.control->authored.modulation;
     for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
         if (graph.outputBindings[index].destination == destination) {
@@ -352,7 +280,7 @@ FLASHMEM void buildMacroEditorPreviewModel(
 
 FLASHMEM void buildMacroEditorPreviewModel(
     float staticBase,
-    const modulation::ProjectControlState& control,
+    const state_mod::ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,
     bool manualOverride,
     core::state::modulation::ModulationBindingId focusedBindingId,
@@ -368,15 +296,15 @@ FLASHMEM void buildMacroEditorPreviewModel(
     model.staticBase = macro::macroAutomationClamp01(staticBase);
     model.manualOverride = manualOverride;
 
-    modulation::ProjectControlMacroSlotView view{};
-    if (!modulation::readProjectControlMacroSlot(control, address, view)) {
+    state_mod::ProjectControlMacroSlotView view{};
+    if (!state_mod::readProjectControlMacroSlot(control, address, view)) {
         return;
     }
     model.automationStored = view.automationStored;
     model.automationPlayback = view.automationEnabled && !manualOverride;
     model.automationDrivingBase = model.automationPlayback;
     if (view.automationStored) {
-        const auto* curve = modulation::findProjectCurve(
+        const auto* curve = state_mod::findProjectCurve(
             control.authored.curves,
             view.automationCurveId
         );
@@ -392,7 +320,7 @@ FLASHMEM void buildMacroEditorPreviewModel(
         }
     }
 
-    const auto destination = modulation::projectControlDestination(address);
+    const auto destination = state_mod::projectControlDestination(address);
     const auto& graph = control.authored.modulation;
     for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
         const auto& binding = graph.outputBindings[index];
@@ -400,7 +328,7 @@ FLASHMEM void buildMacroEditorPreviewModel(
         if (binding.id == model.focusedBindingId) {
             model.focusedBindingIndex = index;
         }
-        const auto* source = modulation::findProjectModulator(
+        const auto* source = state_mod::findProjectModulator(
             graph,
             binding.sourceId
         );
@@ -408,11 +336,11 @@ FLASHMEM void buildMacroEditorPreviewModel(
         model.modulationStored = true;
         model.modulationPlayback = model.modulationPlayback || (
             (binding.flags &
-             modulation::PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U &&
-            (source->flags & modulation::PROJECT_MODULATOR_FLAG_ENABLED) != 0U
+             state_mod::PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U &&
+            (source->flags & state_mod::PROJECT_MODULATOR_FLAG_ENABLED) != 0U
         );
-        if (source->kind == modulation::ModulatorKind::RECORDED_SHAPE) {
-            const auto* curve = modulation::findProjectCurve(
+        if (source->kind == state_mod::ModulatorKind::RECORDED_SHAPE) {
+            const auto* curve = state_mod::findProjectCurve(
                 control.authored.curves,
                 source->parameters.recordedCurveId
             );
@@ -426,9 +354,9 @@ FLASHMEM void buildMacroEditorPreviewModel(
                     curve->durationTicks
                 );
             }
-        } else if (source->kind == modulation::ModulatorKind::LFO &&
+        } else if (source->kind == state_mod::ModulatorKind::LFO &&
                    source->parameters.lfo.timing ==
-                       modulation::ModulatorTimingMode::SYNC) {
+                       state_mod::ModulatorTimingMode::SYNC) {
             const uint16_t duration = static_cast<uint16_t>(
                 std::min<uint32_t>(
                     source->parameters.lfo.periodTicks,
@@ -451,7 +379,7 @@ FLASHMEM void buildMacroEditorPreviewModel(
 
 FLASHMEM void buildMacroEditorPreviewModel(
     float staticBase,
-    const modulation::ProjectControlState& control,
+    const state_mod::ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,
     bool manualOverride,
     MacroEditorPreviewModel& model
@@ -527,8 +455,8 @@ FLASHMEM bool sampleMacroEditorPreview(
         model.backend == MacroEditorPreviewModel::Backend::PROJECT_CONTROL &&
         model.control != nullptr
     ) {
-        modulation::ProjectControlMacroSlotView view{};
-        (void)modulation::readProjectControlMacroSlot(
+        state_mod::ProjectControlMacroSlotView view{};
+        (void)state_mod::readProjectControlMacroSlot(
             *model.control,
             model.address,
             view
@@ -539,14 +467,14 @@ FLASHMEM bool sampleMacroEditorPreview(
             model.live.valid) {
             base = model.live.base;
         }
-        const auto destination = modulation::projectControlDestination(model.address);
+        const auto destination = state_mod::projectControlDestination(model.address);
         const float scale = static_cast<float>(
-            modulation::projectModulationDestinationScaleQ15(
+            state_mod::projectModulationDestinationScaleQ15(
                 model.control->authored.modulation,
                 destination
             )
         ) / static_cast<float>(
-            modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15
+            state_mod::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15
         );
         const auto& graph = model.control->authored.modulation;
         const auto* focusedSource =

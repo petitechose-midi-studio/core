@@ -16,6 +16,7 @@
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
 #include "ui/modulation/ModulatorAdsrUiModel.hpp"
+#include "ui/modulation/ModulatorSparklineModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::project::modulators {
@@ -211,148 +212,6 @@ FLASHMEM void formatTriggerSummary(
     }
 }
 
-FLASHMEM float liveSourceValue(const ProjectControlState& control, ModulatorId id) {
-    for (uint16_t index = 0; index < control.plan.sourceCount; ++index) {
-        if (control.plan.sources[index].id == id) {
-            return std::clamp(control.sourceScratch[index], -1.0f, 1.0f);
-        }
-    }
-    return 0.0f;
-}
-
-FLASHMEM ms::ui::KeyValueSparkline lfoSparkline(
-    ModulatorLfoShape shape,
-    float live,
-    bool enabled
-) {
-    ms::ui::KeyValueSparkline out{};
-    out.enabled = true;
-    out.centerLine = true;
-    out.liveMarker = enabled;
-    out.sampleCount = static_cast<uint8_t>(ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT);
-    out.liveValue = static_cast<uint8_t>(std::lround(
-        std::clamp(live * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f
-    ));
-    switch (shape) {
-        case ModulatorLfoShape::TRIANGLE:
-            out.samples = {{128, 179, 230, 255, 204, 153, 102, 51, 0, 26, 77, 128}};
-            break;
-        case ModulatorLfoShape::SAW_UP:
-            out.samples = {{0, 23, 46, 70, 93, 116, 139, 162, 185, 209, 232, 255}};
-            break;
-        case ModulatorLfoShape::SAW_DOWN:
-            out.samples = {{255, 232, 209, 185, 162, 139, 116, 93, 70, 46, 23, 0}};
-            break;
-        case ModulatorLfoShape::SQUARE:
-            out.samples = {{255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0}};
-            break;
-        case ModulatorLfoShape::SINE:
-        default:
-            out.samples = {{128, 197, 244, 255, 221, 164, 91, 34, 1, 11, 58, 128}};
-            break;
-    }
-    return out;
-}
-
-FLASHMEM ms::ui::KeyValueSparkline recordedSparkline(
-    const ProjectControlState& control,
-    const ModulatorSourceState& source,
-    bool enabled
-) {
-    ms::ui::KeyValueSparkline out{};
-    const auto* record = findProjectCurve(
-        control.authored.curves,
-        source.parameters.recordedCurveId
-    );
-    if (record == nullptr || record->pointCount == 0U) return out;
-    out.enabled = true;
-    out.centerLine = true;
-    out.liveMarker = enabled;
-    out.liveValue = static_cast<uint8_t>(std::lround(
-        std::clamp(liveSourceValue(control, source.id) * 0.5f + 0.5f, 0.0f, 1.0f) *
-        255.0f
-    ));
-    out.sampleCount = static_cast<uint8_t>(ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT);
-    const uint16_t duration = std::max<uint16_t>(record->durationTicks, 1U);
-    for (uint8_t index = 0; index < out.sampleCount; ++index) {
-        const uint32_t tick =
-            (static_cast<uint32_t>(index) * (duration - 1U)) /
-            (out.sampleCount - 1U);
-        const float beat = static_cast<float>(tick) /
-            static_cast<float>(PROJECT_CONTROL_TICKS_PER_BEAT);
-        const float value = evaluateProjectControlCurve(
-            control,
-            source.parameters.recordedCurveId,
-            beat,
-            0.0f
-        );
-        out.samples[index] = static_cast<uint8_t>(std::lround(
-            std::clamp(value * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f
-        ));
-    }
-    return out;
-}
-
-FLASHMEM ms::ui::KeyValueSparkline adsrSparkline(
-    const ProjectControlState& control,
-    const ModulatorSourceState& source,
-    float live,
-    bool enabled
-) {
-    ms::ui::KeyValueSparkline out{};
-    out.enabled = true;
-    out.centerLine = false;
-    const auto* runtime = adsr_ui::runtimeState(control, source.id);
-    out.liveMarker = enabled && runtime != nullptr &&
-        runtime->stage != ProjectModulationAdsrStage::IDLE;
-    out.liveValue = static_cast<uint8_t>(std::lround(
-        std::clamp(live, 0.0f, 1.0f) * 255.0f
-    ));
-    out.sampleCount = static_cast<uint8_t>(
-        ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT
-    );
-    const auto boundaries = adsr_ui::previewBoundaries(source.parameters.adsr);
-    for (uint8_t index = 0U; index < out.sampleCount; ++index) {
-        const uint16_t position = static_cast<uint16_t>(
-            (static_cast<uint32_t>(index) * 65535U) /
-            static_cast<uint32_t>(out.sampleCount - 1U)
-        );
-        const float value = adsr_ui::previewValue(
-            source.parameters.adsr,
-            boundaries,
-            position
-        );
-        out.samples[index] = static_cast<uint8_t>(std::lround(
-            std::clamp(value, 0.0f, 1.0f) * 255.0f
-        ));
-    }
-    return out;
-}
-
-FLASHMEM ms::ui::KeyValueSparkline sourceSparkline(
-    const ProjectControlState& control,
-    const ModulatorSourceState& source
-) {
-    const bool enabled =
-        (source.flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
-    if (source.kind == ModulatorKind::LFO) {
-        return lfoSparkline(
-            source.parameters.lfo.shape,
-            liveSourceValue(control, source.id),
-            enabled
-        );
-    }
-    if (source.kind == ModulatorKind::ADSR) {
-        return adsrSparkline(
-            control,
-            source,
-            liveSourceValue(control, source.id),
-            enabled
-        );
-    }
-    return recordedSparkline(control, source, enabled);
-}
-
 FLASHMEM void setText(std::array<char, ms::ui::KEY_VALUE_ROW_TEXT_CAPACITY>& out,
                       const char* text) {
     std::snprintf(out.data(), out.size(), "%s", text ? text : "");
@@ -438,7 +297,10 @@ FLASHMEM void populateRegistryRow(const ProjectControlState& control,
     out.iconColor = enabled
         ? standalone::theme::color::MACRO_MODULATION
         : standalone::theme::color::INACTIVE;
-    out.sparkline = sourceSparkline(control, source);
+    out.sparkline = core::ui::modulation::sparkline::buildSource(
+        control,
+        source
+    );
 }
 
 FLASHMEM void populateSourceKindRow(
@@ -477,7 +339,10 @@ FLASHMEM void populateSourceDetailRow(
                 out.icon,
                 sourceIcon(source.kind)
             );
-            out.sparkline = sourceSparkline(control, source);
+            out.sparkline = core::ui::modulation::sparkline::buildSource(
+                control,
+                source
+            );
             break;
         case SourceDetailItem::ENABLED:
             setText(out.key, "Enabled");

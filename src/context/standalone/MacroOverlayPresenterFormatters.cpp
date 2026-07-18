@@ -15,6 +15,7 @@
 #include "ui/macro/MacroLfoAuditionModel.hpp"
 #include "ui/macro/MacroSourceDetailLayout.hpp"
 #include "ui/modulation/ModulatorAdsrUiModel.hpp"
+#include "ui/modulation/ModulatorSparklineModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone::macro_overlay_presenter {
@@ -22,6 +23,7 @@ namespace core::context::standalone::macro_overlay_presenter {
 namespace {
 
 namespace adsr_ui = core::ui::modulation::adsr;
+namespace mod_sparkline = core::ui::modulation::sparkline;
 
 FLASHMEM void formatBeatDuration(char* out,
                                  size_t outSize,
@@ -220,94 +222,6 @@ FLASHMEM ms::ui::KeyValueSparkline buildCurveSparkline(
     return sparkline;
 }
 
-FLASHMEM float liveSourceValue(
-    const core::state::modulation::ProjectControlState& control,
-    core::state::modulation::ModulatorId sourceId
-) {
-    for (uint16_t index = 0; index < control.plan.sourceCount; ++index) {
-        if (control.plan.sources[index].id == sourceId) {
-            return std::clamp(control.sourceScratch[index], -1.0f, 1.0f);
-        }
-    }
-    return 0.0f;
-}
-
-FLASHMEM ms::ui::KeyValueSparkline buildLfoSparkline(
-    core::state::modulation::ModulatorLfoShape shape,
-    float liveValue
-) {
-    using Shape = core::state::modulation::ModulatorLfoShape;
-    ms::ui::KeyValueSparkline sparkline{};
-    sparkline.enabled = true;
-    sparkline.liveMarker = true;
-    sparkline.sampleCount = static_cast<uint8_t>(
-        ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT
-    );
-    sparkline.liveValue = static_cast<uint8_t>(std::lround(
-        std::clamp(liveValue * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f
-    ));
-    switch (shape) {
-        case Shape::TRIANGLE:
-            sparkline.samples = {{128, 179, 230, 255, 204, 153,
-                                  102, 51, 0, 26, 77, 128}};
-            break;
-        case Shape::SAW_UP:
-            sparkline.samples = {{0, 23, 46, 70, 93, 116,
-                                  139, 162, 185, 209, 232, 255}};
-            break;
-        case Shape::SAW_DOWN:
-            sparkline.samples = {{255, 232, 209, 185, 162, 139,
-                                  116, 93, 70, 46, 23, 0}};
-            break;
-        case Shape::SQUARE:
-            sparkline.samples = {{255, 255, 255, 255, 255, 255,
-                                  0, 0, 0, 0, 0, 0}};
-            break;
-        case Shape::SINE:
-        default:
-            sparkline.samples = {{128, 197, 244, 255, 221, 164,
-                                  91, 34, 1, 11, 58, 128}};
-            break;
-    }
-    return sparkline;
-}
-
-FLASHMEM ms::ui::KeyValueSparkline buildAdsrSparkline(
-    const core::state::modulation::ProjectControlState& control,
-    const core::state::modulation::ModulatorSourceState& source
-) {
-    using namespace core::state::modulation;
-    ms::ui::KeyValueSparkline sparkline{};
-    sparkline.enabled = true;
-    sparkline.centerLine = false;
-    sparkline.sampleCount = static_cast<uint8_t>(
-        ms::ui::KEY_VALUE_SPARKLINE_SAMPLE_COUNT
-    );
-    const auto boundaries = adsr_ui::previewBoundaries(source.parameters.adsr);
-    for (uint8_t index = 0U; index < sparkline.sampleCount; ++index) {
-        const uint16_t position = static_cast<uint16_t>(
-            (static_cast<uint32_t>(index) * 65535U) /
-            static_cast<uint32_t>(sparkline.sampleCount - 1U)
-        );
-        const float value = adsr_ui::previewValue(
-            source.parameters.adsr,
-            boundaries,
-            position
-        );
-        sparkline.samples[index] = static_cast<uint8_t>(std::lround(
-            std::clamp(value, 0.0f, 1.0f) * 255.0f
-        ));
-    }
-    const auto* runtime = adsr_ui::runtimeState(control, source.id);
-    sparkline.liveMarker =
-        (source.flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U &&
-        runtime != nullptr && runtime->stage != ProjectModulationAdsrStage::IDLE;
-    sparkline.liveValue = static_cast<uint8_t>(std::lround(
-        std::clamp(liveSourceValue(control, source.id), 0.0f, 1.0f) * 255.0f
-    ));
-    return sparkline;
-}
-
 FLASHMEM uint16_t sourceUsageCount(
     const core::state::modulation::ProjectModulationState& graph,
     core::state::modulation::ModulatorId sourceId
@@ -336,45 +250,6 @@ FLASHMEM bool sourceAssignedTo(
 
 FLASHMEM const char* lfoRateCompact(uint8_t index) {
     return core::ui::macro::lfo_audition::rateCompactLabel(index);
-}
-
-FLASHMEM ms::ui::KeyValueSparkline buildSourceSparkline(
-    const core::state::modulation::ProjectControlState& control,
-    const core::state::modulation::ModulatorSourceState& source
-) {
-    if (source.kind == core::state::modulation::ModulatorKind::LFO) {
-        return buildLfoSparkline(
-            source.parameters.lfo.shape,
-            liveSourceValue(control, source.id)
-        );
-    }
-    if (source.kind == core::state::modulation::ModulatorKind::ADSR) {
-        return buildAdsrSparkline(control, source);
-    }
-    const auto curveId = source.parameters.recordedCurveId;
-    const auto* record = core::state::modulation::findProjectCurve(
-        control.authored.curves,
-        curveId
-    );
-    if (record == nullptr) return {};
-    core::state::macro::MacroAutomationCurveRef curve{};
-    curve.active = true;
-    curve.pointOffset = record->pointOffset;
-    curve.pointCount = record->pointCount;
-    curve.sourceDurationTicks = record->sourceDurationTicks;
-    curve.durationTicks = record->durationTicks;
-    curve.windowOffsetTicks = record->windowOffsetTicks;
-    auto sparkline = buildCurveSparkline(control, curveId, curve);
-    sparkline.centerLine = true;
-    sparkline.liveMarker = true;
-    sparkline.liveValue = static_cast<uint8_t>(std::lround(
-        std::clamp(
-            liveSourceValue(control, source.id) * 0.5f + 0.5f,
-            0.0f,
-            1.0f
-        ) * 255.0f
-    ));
-    return sparkline;
 }
 
 FLASHMEM void provideModulatorPickerRow(
@@ -407,7 +282,10 @@ FLASHMEM void provideModulatorPickerRow(
                core::state::modulation::ModulatorKind::ADSR) {
         primary = "ADSR";
     }
-    out.sparkline = buildSourceSparkline(source->pages.control, modulator);
+    out.sparkline = mod_sparkline::buildSource(
+        source->pages.control,
+        modulator
+    );
     std::snprintf(out.key.data(), out.key.size(), "%s", modulator.name.data());
     if (assigned) {
         std::snprintf(
@@ -1410,7 +1288,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             const auto& modulator = graph.sources[static_cast<uint16_t>(index)];
             const uint32_t live = static_cast<uint32_t>(std::lround(
                 std::clamp(
-                    liveSourceValue(source.pages.control, modulator.id) * 0.5f +
+                    mod_sparkline::liveValue(source.pages.control, modulator.id) * 0.5f +
                         0.5f,
                     0.0f,
                     1.0f
@@ -1465,7 +1343,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             static_cast<int>(depth)
         );
         data.rows = {{
-            {.key = "Source", .value = "", .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = buildSourceSparkline(source.pages.control, *modulator)},
+            {.key = "Source", .value = "", .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = mod_sparkline::buildSource(source.pages.control, *modulator)},
             {.key = "Depth", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
             {},
             {},
@@ -1480,7 +1358,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
         );
         const uint32_t live = static_cast<uint32_t>(std::lround(
             std::clamp(
-                liveSourceValue(source.pages.control, modulator->id) * 0.5f +
+                mod_sparkline::liveValue(source.pages.control, modulator->id) * 0.5f +
                     0.5f,
                 0.0f,
                 1.0f
@@ -1565,7 +1443,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                 )
             );
             data.rows = {{
-                {.key = "Attack", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::NOTE_PROP_GATE, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = buildAdsrSparkline(source.pages.control, *modulator)},
+                {.key = "Attack", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::NOTE_PROP_GATE, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = mod_sparkline::buildSource(source.pages.control, *modulator)},
                 {.key = "Decay", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::LENGTH, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
                 {.key = "Sustain", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
                 {.key = "Release", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::LENGTH, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
@@ -1578,7 +1456,7 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
                 source.macroEdit.modulationFocusedRow.get(),
                 adsr_ui::AUDITION_ITEM_COUNT - 1U
             );
-            const float live = liveSourceValue(
+            const float live = mod_sparkline::liveValue(
                 source.pages.control, modulator->id
             );
             const auto* runtime = adsr_ui::runtimeState(
@@ -1638,12 +1516,12 @@ FLASHMEM AutomationRenderData buildAutomationRenderData(const Source& source) {
             "%+d%%",
             static_cast<int>(depth)
         );
-        const float live = liveSourceValue(
+        const float live = mod_sparkline::liveValue(
             source.pages.control,
             modulator->id
         );
         data.rows = {{
-            {.key = "Shape", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = buildLfoSparkline(modulator->parameters.lfo.shape, live)},
+            {.key = "Shape", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = mod_sparkline::buildSource(source.pages.control, *modulator)},
             {.key = "Rate", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::DIVISION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
             {.key = "Depth", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION},
             {},
