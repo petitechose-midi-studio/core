@@ -6,6 +6,7 @@
 
 #include "state/modulation/ProjectControlState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
 
 namespace core::ui::project::modulators {
@@ -91,10 +92,8 @@ void populateDestinationRow(
 
 void populateDestinationPickerRow(
     const core::state::macro::MacroPagesState& pages,
+    const core::state::project::ProjectNavigationState& navigation,
     core::state::modulation::ModulatorId sourceId,
-    uint8_t track,
-    uint8_t page,
-    bool creatingSource,
     int index,
     ms::ui::KeyValueRowBuffer& out
 );

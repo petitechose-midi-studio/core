@@ -22,6 +22,17 @@ FLASHMEM bool configsMatch(
     return true;
 }
 
+FLASHMEM int nextContiguousIndex(uint16_t mask, uint8_t count) {
+    int highest = -1;
+    for (uint8_t index = 0U; index < count; ++index) {
+        if ((mask & static_cast<uint16_t>(1U << index)) != 0U) {
+            highest = index;
+        }
+    }
+    const int next = highest + 1;
+    return next < count ? next : -1;
+}
+
 }  // namespace
 
 FLASHMEM void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& macros,
@@ -108,17 +119,10 @@ FLASHMEM MacroSlotActivationPlan MacroWorkflow::planMacroSlotActivation(
     if (!macroAutomationAddressValid(address)) return plan;
 
     const auto& page = pages.pageData(address.track, address.page);
-    if (page.isMacroActive(address.macro) ||
-        page.nextAddMacroIndex() != address.macro) {
+    if (page.isMacroActive(address.macro)) {
         return plan;
     }
-
-    uint8_t sourceIndex = 0;
-    for (uint8_t i = 0; i < address.macro; ++i) {
-        if (page.isMacroActive(i)) sourceIndex = i;
-    }
-    const uint16_t nextCc = static_cast<uint16_t>(page.cc[sourceIndex]) + 1U;
-    plan.cc = static_cast<uint8_t>(nextCc > 127U ? 127U : nextCc);
+    plan.cc = defaultMacroCc(address.page, address.macro);
     plan.baseValue = 0.5f;
     plan.valid = true;
     return plan;
@@ -141,6 +145,107 @@ FLASHMEM bool MacroWorkflow::applyMacroSlotActivation(
     page.setMacroActive(plan.address.macro, true);
     if (pages.currentActiveTrack() == plan.address.track &&
         pages.currentActivePage() == plan.address.page) {
+        pages.updateActiveConfigs();
+    }
+    return true;
+}
+
+FLASHMEM MacroDestinationActivationPlan
+MacroWorkflow::planDestinationActivation(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address
+) {
+    MacroDestinationActivationPlan plan{};
+    plan.address = address;
+    if (!macroAutomationAddressValid(address)) return plan;
+
+    plan.expectedTrackEnabledMask = pages.currentTrackEnabledMask();
+    const bool trackEnabled = pages.isTrackEnabled(address.track);
+    if (!trackEnabled) {
+        const int nextTrack = nextContiguousIndex(
+            plan.expectedTrackEnabledMask,
+            TRACK_COUNT
+        );
+        if (nextTrack < 0 || address.track != static_cast<uint8_t>(nextTrack) ||
+            address.page != 0U) {
+            return plan;
+        }
+        plan.expectedPageEnabledMask =
+            pages.tracks[address.track].enabledPageMask;
+        plan.createTrack = true;
+        plan.createPage = true;
+        plan.createMacro = true;
+        plan.valid = true;
+        return plan;
+    }
+
+    const auto& track = pages.tracks[address.track];
+    plan.expectedPageEnabledMask = track.enabledPageMask;
+    if (!track.isPageEnabled(address.page)) {
+        const int nextPage = nextContiguousIndex(
+            track.enabledPageMask,
+            PAGE_COUNT
+        );
+        if (nextPage < 0 || address.page != static_cast<uint8_t>(nextPage)) {
+            return plan;
+        }
+        plan.createPage = true;
+        plan.createMacro = true;
+        plan.valid = true;
+        return plan;
+    }
+
+    plan.createMacro = !track.pages[address.page].isMacroActive(address.macro);
+    plan.valid = true;
+    return plan;
+}
+
+FLASHMEM bool MacroWorkflow::applyDestinationActivation(
+    MacroPagesState& pages,
+    const MacroDestinationActivationPlan& plan
+) {
+    if (!plan.valid || !macroAutomationAddressValid(plan.address) ||
+        pages.currentTrackEnabledMask() != plan.expectedTrackEnabledMask) {
+        return false;
+    }
+    const auto live = planDestinationActivation(pages, plan.address);
+    if (!live.valid || live.expectedTrackEnabledMask !=
+            plan.expectedTrackEnabledMask ||
+        live.expectedPageEnabledMask != plan.expectedPageEnabledMask ||
+        live.createTrack != plan.createTrack ||
+        live.createPage != plan.createPage ||
+        live.createMacro != plan.createMacro) {
+        return false;
+    }
+
+    const auto address = plan.address;
+    if (plan.createTrack) {
+        pages.tracks[address.track].initDefaults(address.track);
+    }
+    auto& track = pages.tracks[address.track];
+    if (plan.createPage) {
+        track.pages[address.page].initDefault(address.page);
+        // A destination-created Page contains exactly the requested physical
+        // Macro position; Macro 1 is not silently inserted as a prerequisite.
+        track.pages[address.page].activeMacroMask = 0U;
+        track.setPageEnabled(address.page, true);
+    }
+    if (plan.createMacro) {
+        auto& page = track.pages[address.page];
+        page.cc[address.macro] = defaultMacroCc(address.page, address.macro);
+        page.values[address.macro] = 0.5f;
+        page.setMacroActive(address.macro, true);
+    }
+    if (plan.createTrack) {
+        pages.syncSharedTrackState(
+            static_cast<uint16_t>(
+                plan.expectedTrackEnabledMask |
+                static_cast<uint16_t>(1U << address.track)
+            ),
+            pages.currentActiveTrack()
+        );
+    } else if (pages.currentActiveTrack() == address.track) {
+        pages.syncActiveTrackCache();
         pages.updateActiveConfigs();
     }
     return true;

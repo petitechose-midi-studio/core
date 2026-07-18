@@ -144,7 +144,10 @@ FLASHMEM uint16_t ProjectHandler::focusedModulatorDetailRowCount() const {
     }
     if (navigation_.currentNode.get() ==
         core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
-        return navigation_.creatingModulatorSource ? 9U : 8U;
+        return core::state::project::modulators::destinationPickerRowCount(
+            pages_,
+            navigation_
+        );
     }
     const auto* source = focusedModulator();
     if (!source) return 0U;
@@ -736,6 +739,35 @@ FLASHMEM void ProjectHandler::back() {
         syncFocusedEncoder();
         return;
     }
+    if (navigation_.currentNode.get() ==
+        core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        using Level = core::state::project::ModulatorDestinationPickerLevel;
+        if (navigation_.destinationPickerLevel == Level::MACRO) {
+            navigation_.destinationPickerLevel = Level::PAGE;
+            navigation_.focusedRow.set(
+                core::state::project::modulators::destinationPickerPageRow(
+                    pages_,
+                    navigation_.destinationPickerTrack,
+                    navigation_.destinationPickerPage
+                )
+            );
+            navigation_.notifyContentChanged();
+            syncFocusedEncoder();
+            return;
+        }
+        if (navigation_.destinationPickerLevel == Level::PAGE) {
+            navigation_.destinationPickerLevel = Level::TRACK;
+            navigation_.focusedRow.set(
+                core::state::project::modulators::destinationPickerTrackRow(
+                    pages_,
+                    navigation_.destinationPickerTrack
+                )
+            );
+            navigation_.notifyContentChanged();
+            syncFocusedEncoder();
+            return;
+        }
+    }
     if (modulator_navigation::shouldReturnToMacroOnBack(navigation_) &&
         modulator_navigation::returnToMacro(
             {
@@ -757,6 +789,7 @@ FLASHMEM void ProjectHandler::consumeUndo() {
     if (navigation_.activeTab.get() ==
             core::state::project::ProjectTab::MODULATORS &&
         macro_history_.undo(pages_)) {
+        (void)macro_edit_services_.synchronizeSharedTrackState();
         core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
             macros_,
             pages_
@@ -774,6 +807,7 @@ FLASHMEM void ProjectHandler::consumeRedo() {
     if (navigation_.activeTab.get() ==
             core::state::project::ProjectTab::MODULATORS &&
         macro_history_.redo(pages_)) {
+        (void)macro_edit_services_.synchronizeSharedTrackState();
         core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
             macros_,
             pages_

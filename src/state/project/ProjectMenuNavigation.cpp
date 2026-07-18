@@ -276,6 +276,7 @@ FLASHMEM bool openProjectModulatorDestinationPicker(
     navigation.creatingModulatorSource = creatingSource;
     navigation.destinationPickerTrack = track;
     navigation.destinationPickerPage = page;
+    navigation.destinationPickerLevel = ModulatorDestinationPickerLevel::TRACK;
     navigation.depth.set(nextDepth);
     navigation.currentNode.set(ProjectNodeId::MODULATOR_DESTINATION_PICKER);
     navigation.activeTab.set(ProjectTab::MODULATORS);

@@ -1286,6 +1286,21 @@ void projectModulatorRedo(ProjectHandlerHarness& h) {
     h.release(Config::ButtonID::LEFT_CENTER);
 }
 
+void enterCurrentDestinationMacroPicker(ProjectHandlerHarness& h) {
+    using core::state::project::ModulatorDestinationPickerLevel;
+    using core::state::project::ProjectNodeId;
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_DESTINATION_PICKER);
+    assert(h.state.projectNavigation.destinationPickerLevel ==
+           ModulatorDestinationPickerLevel::TRACK);
+    h.tap(Config::ButtonID::NAV);  // Current Track
+    assert(h.state.projectNavigation.destinationPickerLevel ==
+           ModulatorDestinationPickerLevel::PAGE);
+    h.tap(Config::ButtonID::NAV);  // Current Page
+    assert(h.state.projectNavigation.destinationPickerLevel ==
+           ModulatorDestinationPickerLevel::MACRO);
+}
+
 void test_project_modulator_creation_and_destination_workflow() {
     using namespace core::state::modulation;
     using core::state::project::ProjectNodeId;
@@ -1299,6 +1314,7 @@ void test_project_modulator_creation_and_destination_workflow() {
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_DESTINATION_PICKER);
     assert(h.state.projectNavigation.creatingModulatorSource);
+    enterCurrentDestinationMacroPicker(h);
     h.tap(Config::ButtonID::NAV);
     assert(h.state.pages.control.audition.active);
     assert(h.state.macroHistory.undoCount() == 0U);
@@ -1345,13 +1361,15 @@ void test_project_modulator_creation_and_destination_workflow() {
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_DESTINATION_PICKER);
+    enterCurrentDestinationMacroPicker(h);
     h.turn(Config::EncoderID::NAV, 1.0f);  // Macro 2
     h.tap(Config::ButtonID::NAV);
     assert(h.state.pages.control.audition.active);
-    assert(h.state.pages.pageData(0, 0).isMacroActive(1));
+    assert(!h.state.pages.pageData(0, 0).isMacroActive(1));
     assert(h.state.macroHistory.undoCount() == 1U);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(graph.outputBindingCount == 2U);
+    assert(h.state.pages.pageData(0, 0).isMacroActive(1));
     assert(isProjectModulatorGlobalReach(graph.sources[0].reach));
     assert(h.state.macroHistory.undoCount() == 2U);
 
@@ -1376,12 +1394,13 @@ void test_project_macro_destination_audition_cancel_is_exact_and_clean() {
 
     h.tap(Config::ButtonID::NAV);         // Source kind
     h.tap(Config::ButtonID::NAV);         // LFO destination picker
+    enterCurrentDestinationMacroPicker(h);
     h.turn(Config::EncoderID::NAV, 1.0f); // legal + Macro 2
     h.tap(Config::ButtonID::NAV);         // audible create-and-bind preview
     assert(h.state.pages.control.audition.active);
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_SOURCE_DETAIL);
-    assert(h.state.pages.pageData(0, 0).isMacroActive(1));
+    assert(!h.state.pages.pageData(0, 0).isMacroActive(1));
     assert(h.state.pages.control.authored.modulation.sourceCount == 1U);
     assert(h.state.pages.control.authored.modulation.outputBindingCount == 1U);
     assert(h.state.project.metadata.dirty == dirtyBefore);
@@ -1420,6 +1439,7 @@ void test_project_created_source_undo_returns_to_registry_and_redo_restores() {
     enterModulatorsRoot(h);
     h.tap(Config::ButtonID::NAV);
     h.tap(Config::ButtonID::NAV);
+    enterCurrentDestinationMacroPicker(h);
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.tap(Config::ButtonID::NAV);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
@@ -1451,7 +1471,7 @@ void test_project_modulator_explicit_unassigned_creation() {
     enterModulatorsRoot(h);
     h.tap(Config::ButtonID::NAV);
     h.tap(Config::ButtonID::NAV);
-    h.turn(Config::EncoderID::NAV, 8.0f);
+    h.turn(Config::EncoderID::NAV, 2.0f);  // Keep Unassigned
     h.tap(Config::ButtonID::NAV);
 
     auto& graph = h.state.pages.control.authored.modulation;
@@ -1464,6 +1484,77 @@ void test_project_modulator_explicit_unassigned_creation() {
     projectModulatorUndo(h);
     assert(graph.sourceCount == 0U);
     std::cout << "[PASS] Unassigned source creation stays explicit and undoable\n";
+}
+
+void test_project_destination_creates_new_track_page_and_sparse_macro_atomically() {
+    using core::state::project::ModulatorDestinationPickerLevel;
+    using core::state::project::ProjectNodeId;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+    const auto targetTrackBefore = h.state.pages.tracks[1U];
+    const uint16_t sharedMaskBefore = h.state.currentSharedTrackEnabledMask();
+
+    h.tap(Config::ButtonID::NAV);          // Source kind
+    h.tap(Config::ButtonID::NAV);          // LFO -> Track picker
+    h.turn(Config::EncoderID::NAV, 1.0f);  // + Track 2
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.destinationPickerLevel ==
+           ModulatorDestinationPickerLevel::PAGE);
+    h.tap(Config::ButtonID::NAV);          // + Page 1
+    assert(h.state.projectNavigation.destinationPickerLevel ==
+           ModulatorDestinationPickerLevel::MACRO);
+    h.turn(Config::EncoderID::NAV, 5.0f);  // Physical Macro 6
+    h.tap(Config::ButtonID::NAV);          // Silent structural preview
+    assert(h.state.pages.control.audition.active);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    assert(h.state.pages.currentTrackEnabledMask() == sharedMaskBefore);
+    assert(h.state.currentSharedTrackEnabledMask() == sharedMaskBefore);
+    assert(std::memcmp(
+        &h.state.pages.tracks[1U],
+        &targetTrackBefore,
+        sizeof(targetTrackBefore)
+    ) == 0);
+
+    h.tap(Config::ButtonID::LEFT_TOP);  // Exact Cancel, back to Macro 6
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_DESTINATION_PICKER);
+    assert(h.state.projectNavigation.destinationPickerLevel ==
+           ModulatorDestinationPickerLevel::MACRO);
+    assert(h.state.projectNavigation.focusedRow.get() == 5U);
+    assert(!h.state.pages.control.audition.active);
+    assert(h.state.pages.control.authored.modulation.sourceCount == 0U);
+    assert(h.state.pages.currentTrackEnabledMask() == sharedMaskBefore);
+    assert(std::memcmp(
+        &h.state.pages.tracks[1U],
+        &targetTrackBefore,
+        sizeof(targetTrackBefore)
+    ) == 0);
+
+    h.tap(Config::ButtonID::NAV);
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);  // One atomic Apply
+    assert(h.state.pages.currentTrackEnabledMask() == 0x0003U);
+    assert(h.state.currentSharedTrackEnabledMask() == 0x0003U);
+    assert(h.state.pages.tracks[1U].enabledPageMask == 0x0001U);
+    const auto& createdPage = h.state.pages.pageData(1U, 0U);
+    assert(createdPage.activeMacroMask == 0x20U);
+    assert(createdPage.cc[5U] == core::state::macro::defaultMacroCc(0U, 5U));
+    assert(h.state.pages.control.authored.modulation.outputBindingCount == 1U);
+
+    projectModulatorUndo(h);
+    assert(h.state.pages.currentTrackEnabledMask() == sharedMaskBefore);
+    assert(h.state.currentSharedTrackEnabledMask() == sharedMaskBefore);
+    assert(std::memcmp(
+        &h.state.pages.tracks[1U],
+        &targetTrackBefore,
+        sizeof(targetTrackBefore)
+    ) == 0);
+    projectModulatorRedo(h);
+    assert(h.state.pages.currentTrackEnabledMask() == 0x0003U);
+    assert(h.state.currentSharedTrackEnabledMask() == 0x0003U);
+    assert(h.state.pages.pageData(1U, 0U).activeMacroMask == 0x20U);
+    std::cout
+        << "[PASS] new Track/Page/sparse Macro destination is one exact action\n";
 }
 
 void test_project_adsr_creation_editing_and_trigger_route() {
@@ -1479,6 +1570,7 @@ void test_project_adsr_creation_editing_and_trigger_route() {
     h.tap(Config::ButtonID::NAV);          // Destination picker
     assert(h.state.projectNavigation.creatingModulatorKind ==
            ModulatorKind::ADSR);
+    enterCurrentDestinationMacroPicker(h);
     h.tap(Config::ButtonID::NAV);          // Macro 1 preview
 
     auto& graph = h.state.pages.control.authored.modulation;
@@ -1994,6 +2086,7 @@ int main() {
     test_project_macro_destination_audition_cancel_is_exact_and_clean();
     test_project_created_source_undo_returns_to_registry_and_redo_restores();
     test_project_modulator_explicit_unassigned_creation();
+    test_project_destination_creates_new_track_page_and_sparse_macro_atomically();
     test_project_adsr_creation_editing_and_trigger_route();
     test_project_modulator_source_copy_and_guarded_paste();
     test_project_modulator_options_expose_global_destinations_without_reach();

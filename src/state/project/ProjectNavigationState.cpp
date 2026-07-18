@@ -51,6 +51,7 @@ FLASHMEM void ProjectNavigationState::reset() {
     creatingModulatorKind = core::state::modulation::ModulatorKind::LFO;
     destinationPickerTrack = 0;
     destinationPickerPage = 0;
+    destinationPickerLevel = ModulatorDestinationPickerLevel::TRACK;
     modulatorGuard.set({});
     autosaveEnabled = true;
     scaleConstrainEnabled = true;

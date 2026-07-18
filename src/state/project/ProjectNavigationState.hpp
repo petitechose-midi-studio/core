@@ -70,6 +70,12 @@ enum class ModulatorNavigationCaller : uint8_t {
     MACRO_AUDITION,
 };
 
+enum class ModulatorDestinationPickerLevel : uint8_t {
+    TRACK = 0,
+    PAGE,
+    MACRO,
+};
+
 /**
  * Session-only return address for a Macro -> Project Modulator deep-link.
  *
@@ -118,6 +124,8 @@ struct ProjectNavigationState {
         core::state::modulation::ModulatorKind::LFO;
     uint8_t destinationPickerTrack = 0;
     uint8_t destinationPickerPage = 0;
+    ModulatorDestinationPickerLevel destinationPickerLevel =
+        ModulatorDestinationPickerLevel::TRACK;
 
     bool autosaveEnabled = true;
     bool scaleConstrainEnabled = true;

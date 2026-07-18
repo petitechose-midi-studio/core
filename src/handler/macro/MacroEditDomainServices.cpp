@@ -41,6 +41,20 @@ void markProjectMutatedFromCoreState(void* context) {
     state->markProjectMutated();
 }
 
+bool synchronizeSharedTrackStateFromCoreState(
+    void* context,
+    uint16_t enabledMask,
+    uint8_t activeTrack
+) {
+    auto* state = static_cast<core::state::CoreState*>(context);
+    if (state == nullptr) return false;
+    if (state->currentSharedTrackEnabledMask() == enabledMask &&
+        state->currentSharedActiveTrack() == activeTrack) {
+        return true;
+    }
+    return state->setSharedTrackState(enabledMask, activeTrack);
+}
+
 bool computedSourcePlaybackActive(
     const core::state::macro::MacroAutomationSlotState* slot
 ) {
@@ -104,8 +118,19 @@ MacroEditDomainServices MacroEditDomainServices::fromCoreState(core::state::Core
             switchToPageFromCoreState,
             switchToTrackFromCoreState,
             markProjectMutatedFromCoreState,
+            synchronizeSharedTrackStateFromCoreState,
         },
     };
+}
+
+bool MacroEditDomainServices::synchronizeSharedTrackState() const {
+    return pages_ != nullptr &&
+           operations_.synchronizeSharedTrackState != nullptr &&
+           operations_.synchronizeSharedTrackState(
+               operations_.context,
+               pages_->currentTrackEnabledMask(),
+               pages_->currentActiveTrack()
+           );
 }
 
 void MacroEditDomainServices::publishModulationMutation_() const {
@@ -715,35 +740,11 @@ FLASHMEM bool MacroEditDomainServices::clearModulation(uint8_t index) const {
 
 FLASHMEM bool MacroEditDomainServices::removeSlot(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT ||
-        !pages_->isMacroSlotActive(index)) {
+        !pages_->isMacroSlotActive(index) || history_ == nullptr) {
         return false;
     }
     const auto address = automationAddress(index);
-    auto change = history_ != nullptr
-        ? history_->prepare(
-              *pages_,
-              address,
-              core::state::macro::MacroHistoryActionKind::REMOVE_SLOT
-          )
-        : core::state::macro::MacroHistoryChangePtr{};
-    if (history_ != nullptr && !change) return false;
-
-    const core::state::macro::MacroAutomationSlotState empty{};
-    if (!core::state::modulation::replaceProjectControlMacroSlot(
-            pages_->control,
-            address,
-            empty,
-            nullptr,
-            0
-        )) {
-        return false;
-    }
-    auto& page = pages_->activePageData();
-    page.setMacroActive(index, false);
-    page.cc[index] = 0;
-    page.values[index] = 0.5f;
-    pages_->updateActiveConfigs();
-    if (history_ != nullptr && !history_->commitPrepared(*pages_, std::move(change))) {
+    if (!history_->removeMacroSlot(*pages_, address)) {
         return false;
     }
     if (macro_ui_ != nullptr) {
@@ -1234,6 +1235,7 @@ bool MacroEditDomainServices::undo() const {
     if (history_ == nullptr) return false;
     core::state::macro::MacroAutomationSlotAddress address{};
     if (!history_->undo(*pages_, &address)) return false;
+    (void)synchronizeSharedTrackState();
     if (macro_ui_ != nullptr) {
         (void)macro_ui_->manualOverrides.resume(address);
         macro_ui_->refreshManualOverrideMask(
@@ -1260,6 +1262,7 @@ bool MacroEditDomainServices::redo() const {
     if (history_ == nullptr) return false;
     core::state::macro::MacroAutomationSlotAddress address{};
     if (!history_->redo(*pages_, &address)) return false;
+    (void)synchronizeSharedTrackState();
     if (macro_ui_ != nullptr) {
         (void)macro_ui_->manualOverrides.resume(address);
         macro_ui_->refreshManualOverrideMask(

@@ -658,7 +658,9 @@ FLASHMEM bool MacroStructureDomainServices::clearMacroAutomation(uint8_t index) 
 }
 
 FLASHMEM bool MacroStructureDomainServices::removeMacroAutomation(uint8_t index) const {
-    if (index >= core::state::macro::MACRO_COUNT) return false;
+    if (index >= core::state::macro::MACRO_COUNT || history_ == nullptr) {
+        return false;
+    }
     const auto address = core::state::macro::MacroAutomationSlotAddress{
         .track = pages_->currentActiveTrack(),
         .page = pages_->currentActivePage(),
@@ -666,26 +668,7 @@ FLASHMEM bool MacroStructureDomainServices::removeMacroAutomation(uint8_t index)
     };
     if (!pages_->isMacroSlotActive(index)) return false;
     flushMutationCoalescing(operations_);
-    auto change = history_ != nullptr
-        ? history_->prepare(
-              *pages_,
-              address,
-              core::state::macro::MacroHistoryActionKind::REMOVE_SLOT
-          )
-        : core::state::macro::MacroHistoryChangePtr{};
-    if (history_ != nullptr && !change) return false;
-    if (!structure_automation_ops::clearMacroSlot(pages_->control, address)) {
-        return false;
-    }
-    auto& page = pages_->activePageData();
-    page.setMacroActive(index, false);
-    page.cc[index] = 0;
-    page.values[index] = 0.5f;
-    pages_->updateActiveConfigs();
-    if (history_ != nullptr && !history_->commitPrepared(
-            *pages_,
-            std::move(change)
-        )) {
+    if (!history_->removeMacroSlot(*pages_, address)) {
         return false;
     }
 

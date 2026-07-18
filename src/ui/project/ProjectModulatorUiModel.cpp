@@ -12,6 +12,7 @@
 #include "state/modulation/ProjectControlRuntime.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/macro/MacroWorkflow.hpp"
+#include "state/project/ProjectModulatorMenuModel.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/macro/MacroLfoAuditionModel.hpp"
 #include "ui/modulation/ModulatorAdsrUiModel.hpp"
@@ -49,8 +50,9 @@ const char PICKER_PREVIEW_FORMAT[] PROGMEM = "Preview %+d%%";
 const char PICKER_ASSIGNED[] PROGMEM = "Assigned";
 const char PICKER_DEPTH_PREVIEW[] PROGMEM = "+25% · Preview";
 const char PICKER_CREATE_ASSIGN[] PROGMEM = "Create + assign";
-const char PICKER_PREREQUISITE_FORMAT[] PROGMEM = "Add M%u first";
-const char PICKER_UNAVAILABLE[] PROGMEM = "Unavailable";
+const char PICKER_EXISTING[] PROGMEM = "Existing";
+const char PICKER_CREATE[] PROGMEM = "Create";
+const char PICKER_CREATE_NEXT[] PROGMEM = "Create next";
 
 FLASHMEM const char* shapeLabel(ModulatorLfoShape shape) {
     return core::ui::macro::lfo_audition::shapeLabel(shape);
@@ -813,18 +815,21 @@ FLASHMEM void populateDestinationRow(
 
 FLASHMEM void populateDestinationPickerRow(
     const core::state::macro::MacroPagesState& pages,
+    const core::state::project::ProjectNavigationState& navigation,
     ModulatorId sourceId,
-    uint8_t track,
-    uint8_t page,
-    bool creatingSource,
     int index,
     ms::ui::KeyValueRowBuffer& out
 ) {
-    if (index < 0 || track >= core::state::macro::TRACK_COUNT ||
-        page >= core::state::macro::PAGE_COUNT) {
-        return;
-    }
-    if (creatingSource && index == core::state::macro::MACRO_COUNT) {
+    using RowKind = core::state::project::modulators::DestinationPickerRowKind;
+    if (index < 0) return;
+    const auto target = core::state::project::modulators::
+        destinationPickerTargetAtRow(
+            pages,
+            navigation,
+            static_cast<uint16_t>(index)
+        );
+    if (!target.valid) return;
+    if (target.kind == RowKind::KEEP_UNASSIGNED) {
         setText(out.key, "Keep Unassigned");
         setText(out.value, "Explicit");
         setText(out.icon, standalone::icons::ROUTE_PIN);
@@ -832,13 +837,40 @@ FLASHMEM void populateDestinationPickerRow(
         out.iconColor = standalone::theme::color::INACTIVE;
         return;
     }
-    if (index >= core::state::macro::MACRO_COUNT) return;
+    if (target.kind == RowKind::TRACK) {
+        std::snprintf(
+            out.key.data(),
+            out.key.size(),
+            target.create ? "+ Track %u" : "Track %u",
+            static_cast<unsigned>(target.index + 1U)
+        );
+        setText(out.value, target.create ? PICKER_CREATE_NEXT : PICKER_EXISTING);
+        setText(out.icon, standalone::icons::ROUTING);
+        out.iconFont = standalone_fonts.icons_14;
+        out.iconColor = standalone::theme::color::MACRO_MODULATION;
+        return;
+    }
+    if (target.kind == RowKind::PAGE) {
+        std::snprintf(
+            out.key.data(),
+            out.key.size(),
+            target.create ? "+ Page %u" : "Page %u",
+            static_cast<unsigned>(target.index + 1U)
+        );
+        setText(out.value, target.create ? PICKER_CREATE : PICKER_EXISTING);
+        setText(out.icon, standalone::icons::ROUTE_PIN);
+        out.iconFont = standalone_fonts.icons_14;
+        out.iconColor = standalone::theme::color::MACRO_MODULATION;
+        return;
+    }
 
-    const uint8_t macro = static_cast<uint8_t>(index);
-    const auto& pageData = pages.pageData(track, page);
-    const bool active = pageData.isMacroActive(macro);
-    const uint8_t nextAdd = pageData.nextAddMacroIndex();
-    const bool addSlot = !active && nextAdd == macro;
+    const uint8_t track = navigation.destinationPickerTrack;
+    const uint8_t page = navigation.destinationPickerPage;
+    const uint8_t macro = target.index;
+    const bool pageExists = pages.isTrackEnabled(track) &&
+        pages.tracks[track].isPageEnabled(page);
+    const bool active = pageExists && pages.pageData(track, page).isMacroActive(macro);
+    const bool addSlot = target.create;
     const ModulationDestination destination{
         ModulationDestinationKind::MACRO_SLOT,
         track,
@@ -864,15 +896,9 @@ FLASHMEM void populateDestinationPickerRow(
             }
         }
     }
-    uint8_t displayCc = pageData.cc[macro];
-    if (addSlot) {
-        const auto plan =
-            core::state::macro::MacroWorkflow::planMacroSlotActivation(
-                pages,
-                {track, page, macro}
-            );
-        if (plan.valid) displayCc = plan.cc;
-    }
+    const uint8_t displayCc = addSlot
+        ? core::state::macro::defaultMacroCc(page, macro)
+        : pages.pageData(track, page).cc[macro];
     std::snprintf(
         out.key.data(),
         out.key.size(),
@@ -903,15 +929,8 @@ FLASHMEM void populateDestinationPickerRow(
         );
     } else if (addSlot) {
         setText(out.value, PICKER_CREATE_ASSIGN);
-    } else if (nextAdd < core::state::macro::MACRO_COUNT) {
-        std::snprintf(
-            out.value.data(),
-            out.value.size(),
-            PICKER_PREREQUISITE_FORMAT,
-            static_cast<unsigned>(nextAdd + 1U)
-        );
     } else {
-        setText(out.value, PICKER_UNAVAILABLE);
+        setText(out.value, PICKER_DEPTH_PREVIEW);
     }
     setText(
         out.icon,

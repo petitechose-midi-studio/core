@@ -6,6 +6,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroWorkflow.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 
 namespace core::state::macro {
@@ -106,6 +107,24 @@ struct MacroAutomationTakeHistoryPayload {
 };
 
 /**
+ * Exact cold snapshot for topology created by one destination assignment.
+ *
+ * The complete target Macro Track is retained in PSRAM only when a missing
+ * Track, Page, or Macro position is requested. This keeps ordinary assignment
+ * history compact while making Cancel/Undo/Redo byte-stable for hidden state.
+ */
+struct MacroDestinationStructureHistoryPayload {
+    MacroDestinationActivationPlan plan{};
+    MacroTrackData beforeTrack{};
+    MacroTrackData afterTrack{};
+    uint16_t beforeTrackEnabledMask = MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
+    uint16_t afterTrackEnabledMask = MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
+    uint8_t beforeActiveTrack = 0U;
+    uint8_t afterActiveTrack = 0U;
+    bool applied = false;
+};
+
+/**
  * Small graph delta for destination-first source creation.
  *
  * The before-tail values make Cancel byte-stable even when a dense directory
@@ -143,6 +162,8 @@ struct MacroModulatorCreationHistoryPayload {
     bool sharedCurveReferenceCreated = false;
     bool macroCreated = false;
     bool pending = false;
+    core::app::ExtmemUniquePtr<MacroDestinationStructureHistoryPayload>
+        destinationStructure{};
 };
 
 inline constexpr uint16_t MACRO_MODULATION_ASSIGNMENT_CAPACITY =
@@ -178,6 +199,20 @@ struct MacroModulationAssignmentSnapshot {
 struct MacroModulationAssignmentsHistoryPayload {
     MacroModulationAssignmentSnapshot before{};
     MacroModulationAssignmentSnapshot after{};
+};
+
+/** Exact destination removal state; all large/cold members live in PSRAM. */
+struct MacroSlotRemovalState {
+    MacroAutomationHistorySnapshot automation{};
+    MacroModulationAssignmentSnapshot modulation{};
+    bool macroActive = false;
+    uint8_t cc = 0U;
+    float staticValue = 0.5f;
+};
+
+struct MacroSlotRemovalHistoryPayload {
+    MacroSlotRemovalState before{};
+    MacroSlotRemovalState after{};
 };
 
 /** Compact destination-wide Depth delta; no binding array is retained. */
@@ -294,6 +329,7 @@ struct MacroHistoryChange {
         automationTake{};
     core::app::ExtmemUniquePtr<MacroModulationAssignmentsHistoryPayload>
         modulationAssignments{};
+    core::app::ExtmemUniquePtr<MacroSlotRemovalHistoryPayload> slotRemoval{};
     MacroDestinationScaleHistoryPayload destinationScale{};
     MacroModulatorCreationHistoryPayload modulator{};
     ProjectModulatorSourceHistoryPayload sourceEdit{};
@@ -405,7 +441,8 @@ public:
             const MacroAutomationSlotAddress& address,
             const core::state::modulation::ModulatorLfoDraft& sourceDraft,
             const core::state::modulation::ModulationBindingDraft& bindingDraft,
-            bool createMacroSlot = false
+            bool createMacroSlot = false,
+            const MacroDestinationActivationPlan* destinationPlan = nullptr
         );
     [[nodiscard]] core::state::modulation::ProjectModulationResult
         beginAdsrModulatorAudition(
@@ -414,7 +451,8 @@ public:
             const core::state::modulation::ModulatorAdsrDraft& sourceDraft,
             const core::state::modulation::ModulationTriggerDraft& triggerDraft,
             const core::state::modulation::ModulationBindingDraft& bindingDraft,
-            bool createMacroSlot = false
+            bool createMacroSlot = false,
+            const MacroDestinationActivationPlan* destinationPlan = nullptr
         );
 
     /** Creates one explicit detached LFO as one compact Undo action. */
@@ -444,7 +482,8 @@ public:
             core::state::modulation::ModulatorId sourceId,
             const core::state::modulation::ModulationBindingDraft& bindingDraft,
             const core::state::modulation::ModulatorReach* widenedReach = nullptr,
-            bool createMacroSlot = false
+            bool createMacroSlot = false,
+            const MacroDestinationActivationPlan* destinationPlan = nullptr
         );
 
     /** Exact rollback with no Undo entry and no authored ID/capacity residue. */
@@ -505,6 +544,12 @@ public:
     );
 
     [[nodiscard]] bool clearModulationBindings(
+        MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address
+    );
+
+    /** Removes one physical Macro and every authored destination-owned value. */
+    [[nodiscard]] bool removeMacroSlot(
         MacroPagesState& pages,
         const MacroAutomationSlotAddress& address
     );
@@ -594,7 +639,8 @@ private:
             const core::state::modulation::ModulatorAdsrDraft* adsrDraft,
             const core::state::modulation::ModulationTriggerDraft* triggerDraft,
             const core::state::modulation::ModulationBindingDraft& bindingDraft,
-            bool createMacroSlot
+            bool createMacroSlot,
+            const MacroDestinationActivationPlan* destinationPlan
         );
     [[nodiscard]] core::state::modulation::ProjectModulationResult
         createUnassignedModulator_(

@@ -1,10 +1,13 @@
-# UX workflow: atomic Project Modulator destination and Macro creation.
-# Purpose: proves an audible full-Source preview, explicit Depth, exact Cancel,
-# learned Apply/Back grammar, and one Undo/Redo for Macro + source + edge.
-# Expect: capture_changed:empty_registry=source_kind_picker, capture_changed:source_kind_picker=destination_picker, capture_changed:destination_picker=add_macro_focused, capture_changed:add_macro_focused=macro_destination_preview
+# UX workflow: atomic Project Modulator destination and sparse structure creation.
+# Purpose: proves Track > Page > Macro routing, a truthful silent preview while
+# the destination does not exist, exact Cancel, and one Undo/Redo for the whole
+# Track + Page + physical Macro 6 + source + edge transaction.
+# Expect: capture_changed:empty_registry=source_kind_picker, capture_changed:source_kind_picker=track_picker, capture_changed:track_picker=new_track_focused, capture_changed:new_track_focused=page_picker
+# Expect: capture_changed:page_picker=macro_picker, capture_changed:macro_picker=sparse_macro_focused, capture_changed:sparse_macro_focused=macro_destination_preview
 # Expect: capture_changed:macro_destination_preview=preview_depth_edited, capture_changed:preview_depth_edited=preview_cancelled, capture_changed:preview_cancelled=destination_applied
 # Expect: capture_changed:destination_applied=creation_undone, capture_changed:creation_undone=creation_redone
-# Expect: semantic:macro_destination_preview:mode=project.modulator_detail, semantic:macro_destination_preview:projection=audible_audition
+# Expect: semantic:track_picker:mode=project.modulator_destination.track, semantic:page_picker:mode=project.modulator_destination.page, semantic:macro_picker:mode=project.modulator_destination.macro
+# Expect: semantic:macro_destination_preview:mode=project.modulator_detail, semantic:macro_destination_preview:projection=silent_preview
 # Expect: semantic:preview_depth_edited:effect=edit_modulator_depth, semantic:preview_depth_edited:property=depth, semantic:preview_cancelled:effect=cancel_destination_audition
 # Expect: semantic:destination_applied:effect=apply_destination_audition, semantic:destination_applied:outcome=applied
 
@@ -20,39 +23,49 @@
 1180 button LEFT_CENTER up
 1400 capture screen empty_registry
 
-# Add Source asks for its type, then opens the destination picker.
+# Add Source asks for its type, then exposes the route hierarchy.
 1520 tap NAV 60
 1740 capture screen source_kind_picker
 1860 tap NAV 60
-2080 capture screen destination_picker
+2080 capture screen track_picker
 2200 encoder NAV 1
-2420 capture screen add_macro_focused
-
-# Creating M2 opens the full provisional Source workspace. Depth is the last
-# LFO card, visibly tied to the implied destination.
+2420 capture screen new_track_focused
 2540 tap NAV 60
-2780 capture screen macro_destination_preview
-2900 encoder NAV 1
-2960 encoder NAV 1
-3020 encoder NAV 1
-3080 encoder NAV 1
-3140 encoder NAV 1
-3260 encoder OPT 0.80
-3480 capture screen preview_depth_edited
-3600 tap LEFT_TOP 60
-3840 capture screen preview_cancelled
+2760 capture screen page_picker
+2880 tap NAV 60
+3100 capture screen macro_picker
+3220 encoder NAV 1
+3280 encoder NAV 1
+3340 encoder NAV 1
+3400 encoder NAV 1
+3460 encoder NAV 1
+3680 capture screen sparse_macro_focused
+
+# Creating T2/P1/M6 opens the full provisional Source workspace without
+# pretending the non-existent destination is audible. Depth remains explicit.
+3800 tap NAV 60
+4040 capture screen macro_destination_preview
+4160 encoder NAV 1
+4220 encoder NAV 1
+4280 encoder NAV 1
+4340 encoder NAV 1
+4400 encoder NAV 1
+4520 encoder OPT 0.80
+4740 capture screen preview_depth_edited
+4860 tap LEFT_TOP 60
+5100 capture screen preview_cancelled
 
 # Repeat and Apply with the same bottom-right grammar.
-3960 tap NAV 60
-4200 tap BOTTOM_RIGHT 60
-4440 capture screen destination_applied
+5220 tap NAV 60
+5460 tap BOTTOM_RIGHT 60
+5700 capture screen destination_applied
 
 # The whole creation is one action; Undo/Redo leaves no partial structure.
-4560 button LEFT_CENTER down
-5160 tap LEFT_TOP 60
-5380 button LEFT_CENTER up
-5620 capture screen creation_undone
-5740 button LEFT_CENTER down
-6340 tap LEFT_BOTTOM 60
-6560 button LEFT_CENTER up
-6800 capture screen creation_redone
+5820 button LEFT_CENTER down
+6420 tap LEFT_TOP 60
+6640 button LEFT_CENTER up
+6880 capture screen creation_undone
+7000 button LEFT_CENTER down
+7600 tap LEFT_BOTTOM 60
+7820 button LEFT_CENTER up
+8060 capture screen creation_redone

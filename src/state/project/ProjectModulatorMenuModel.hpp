@@ -2,7 +2,9 @@
 
 #include <cstdint>
 
+#include "state/macro/MacroPagesState.hpp"
 #include "state/modulation/ProjectModulationState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 
 namespace core::state::project::modulators {
 
@@ -36,6 +38,42 @@ enum class TriggerDetailItem : uint8_t {
 
 inline constexpr uint8_t MODULATOR_SOURCE_KIND_COUNT = 2U;
 inline constexpr uint8_t MODULATOR_TRIGGER_DETAIL_COUNT = 3U;
+
+enum class DestinationPickerRowKind : uint8_t {
+    TRACK = 0,
+    PAGE,
+    MACRO,
+    KEEP_UNASSIGNED,
+};
+
+struct DestinationPickerRowTarget {
+    DestinationPickerRowKind kind = DestinationPickerRowKind::TRACK;
+    uint8_t index = 0U;
+    bool create = false;
+    bool valid = false;
+};
+
+uint16_t destinationPickerRowCount(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::project::ProjectNavigationState& navigation
+);
+
+DestinationPickerRowTarget destinationPickerTargetAtRow(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::project::ProjectNavigationState& navigation,
+    uint16_t row
+);
+
+uint8_t destinationPickerTrackRow(
+    const core::state::macro::MacroPagesState& pages,
+    uint8_t track
+);
+
+uint8_t destinationPickerPageRow(
+    const core::state::macro::MacroPagesState& pages,
+    uint8_t track,
+    uint8_t page
+);
 
 struct SourceDetailLayout {
     static constexpr uint8_t CAPACITY = 9;

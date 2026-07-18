@@ -562,6 +562,88 @@ FLASHMEM bool macroCreationStateMatches(
            sameFloatBits(page.values[address.macro], value);
 }
 
+FLASHMEM bool sameMacroTrackData(
+    const MacroTrackData& lhs,
+    const MacroTrackData& rhs
+) {
+    return std::memcmp(&lhs, &rhs, sizeof(MacroTrackData)) == 0;
+}
+
+FLASHMEM bool destinationStructureMatches(
+    const MacroPagesState& pages,
+    const MacroDestinationStructureHistoryPayload& payload,
+    bool after
+) {
+    const uint8_t track = payload.plan.address.track;
+    if (track >= TRACK_COUNT) return false;
+    const uint16_t expectedMask = after
+        ? payload.afterTrackEnabledMask
+        : payload.beforeTrackEnabledMask;
+    const uint8_t expectedActive = after
+        ? payload.afterActiveTrack
+        : payload.beforeActiveTrack;
+    const auto& expectedTrack = after ? payload.afterTrack : payload.beforeTrack;
+    return pages.currentTrackEnabledMask() == expectedMask &&
+           pages.currentActiveTrack() == expectedActive &&
+           sameMacroTrackData(pages.tracks[track], expectedTrack);
+}
+
+FLASHMEM bool prepareDestinationStructure(
+    const MacroPagesState& pages,
+    const MacroDestinationActivationPlan* plan,
+    MacroModulatorCreationHistoryPayload& payload
+) {
+    if (plan == nullptr || !plan->changesTopology()) return true;
+    if (!plan->valid || !macroAutomationAddressValid(plan->address)) {
+        return false;
+    }
+    auto snapshot = core::app::makeExtmemUnique<
+        MacroDestinationStructureHistoryPayload
+    >();
+    if (!snapshot) return false;
+    snapshot->plan = *plan;
+    snapshot->beforeTrackEnabledMask = pages.currentTrackEnabledMask();
+    snapshot->beforeActiveTrack = pages.currentActiveTrack();
+    snapshot->beforeTrack = pages.tracks[plan->address.track];
+    if (!destinationStructureMatches(pages, *snapshot, false)) return false;
+    payload.destinationStructure = std::move(snapshot);
+    return true;
+}
+
+FLASHMEM bool applyDestinationStructure(
+    MacroPagesState& pages,
+    MacroModulatorCreationHistoryPayload& payload
+) {
+    auto* snapshot = payload.destinationStructure.get();
+    if (snapshot == nullptr) return true;
+    if (snapshot->applied ||
+        !destinationStructureMatches(pages, *snapshot, false) ||
+        !MacroWorkflow::applyDestinationActivation(pages, snapshot->plan)) {
+        return false;
+    }
+    snapshot->afterTrackEnabledMask = pages.currentTrackEnabledMask();
+    snapshot->afterActiveTrack = pages.currentActiveTrack();
+    snapshot->afterTrack = pages.tracks[snapshot->plan.address.track];
+    snapshot->applied = true;
+    return destinationStructureMatches(pages, *snapshot, true);
+}
+
+FLASHMEM void restoreDestinationStructure(
+    MacroPagesState& pages,
+    const MacroModulatorCreationHistoryPayload& payload,
+    bool after
+) {
+    const auto* snapshot = payload.destinationStructure.get();
+    if (snapshot == nullptr || !snapshot->applied) return;
+    const uint8_t track = snapshot->plan.address.track;
+    pages.tracks[track] = after ? snapshot->afterTrack : snapshot->beforeTrack;
+    pages.syncSharedTrackState(
+        after ? snapshot->afterTrackEnabledMask
+              : snapshot->beforeTrackEnabledMask,
+        after ? snapshot->afterActiveTrack : snapshot->beforeActiveTrack
+    );
+}
+
 FLASHMEM void restoreMacroCreationState(
     MacroPagesState& pages,
     const MacroAutomationSlotAddress& address,
@@ -627,6 +709,17 @@ FLASHMEM bool creationIdentityMatches(
         return false;
     }
     if (!macroCreationStateMatches(pages, address, payload, true)) return false;
+    if (payload.destinationStructure != nullptr) {
+        const bool after = payload.destinationStructure->applied;
+        if (exactAfter && !after) return false;
+        if (!destinationStructureMatches(
+                pages,
+                *payload.destinationStructure,
+                after
+            )) {
+            return false;
+        }
+    }
     const auto* source = core::state::modulation::findProjectModulator(
         graph,
         payload.source.id
@@ -690,6 +783,14 @@ FLASHMEM bool creationBeforeMatches(
         return false;
     }
     if (!macroCreationStateMatches(pages, address, payload, false)) return false;
+    if (payload.destinationStructure != nullptr &&
+        !destinationStructureMatches(
+            pages,
+            *payload.destinationStructure,
+            false
+        )) {
+        return false;
+    }
     if (payload.sourceCreated) {
         if (payload.beforeSourceCount >= graph.sources.size() ||
             !sameObjectBits(
@@ -758,6 +859,7 @@ FLASHMEM void restoreCreationBefore(
     }
     graph.nextBindingId = payload.beforeNextBindingId;
     restoreMacroCreationState(pages, address, payload, false);
+    restoreDestinationStructure(pages, payload, false);
     if (exactCancel) {
         control.authoredRevision = payload.beforeAuthoredRevision;
     } else {
@@ -808,6 +910,7 @@ FLASHMEM void restoreCreationAfter(
     }
     graph.nextBindingId = payload.afterNextBindingId;
     restoreMacroCreationState(pages, address, payload, true);
+    restoreDestinationStructure(pages, payload, true);
     control.markAuthoredMutation();
 }
 
@@ -1131,12 +1234,11 @@ FLASHMEM bool liveModulationAssignmentsMatch(
     return assignment == expected.assignmentCount;
 }
 
-FLASHMEM bool applyModulationAssignments(
-    MacroPagesState& pages,
+FLASHMEM bool applyModulationAssignmentsToGraph(
+    core::state::modulation::ProjectModulationState& graph,
     const MacroModulationAssignmentSnapshot& target
 ) {
     using namespace core::state::modulation;
-    auto& graph = pages.control.authored.modulation;
     if (target.assignmentCount > target.assignments.size() ||
         target.globalBindingCount > graph.outputBindings.size() ||
         (target.assignmentCount == 0U &&
@@ -1233,6 +1335,19 @@ FLASHMEM bool applyModulationAssignments(
             target.destination,
             target.destinationScaleQ15
         ).changed()) {
+        return false;
+    }
+    return true;
+}
+
+FLASHMEM bool applyModulationAssignments(
+    MacroPagesState& pages,
+    const MacroModulationAssignmentSnapshot& target
+) {
+    if (!applyModulationAssignmentsToGraph(
+            pages.control.authored.modulation,
+            target
+        )) {
         return false;
     }
     pages.control.markAuthoredMutation();
@@ -1512,6 +1627,104 @@ FLASHMEM bool applyMacroAutomationHistorySnapshot(
     );
 }
 
+namespace {
+
+FLASHMEM bool captureMacroSlotRemovalState(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    MacroSlotRemovalState& out
+) {
+    if (!macroAutomationAddressValid(address) ||
+        !captureMacroAutomationHistorySnapshot(
+            pages,
+            address,
+            out.automation
+        ) || !captureModulationAssignments(
+            pages,
+            address,
+            out.modulation
+        )) {
+        return false;
+    }
+    const auto& page = pages.pageData(address.track, address.page);
+    out.macroActive = page.isMacroActive(address.macro);
+    out.cc = page.cc[address.macro];
+    out.staticValue = page.values[address.macro];
+    return true;
+}
+
+FLASHMEM bool liveMacroSlotRemovalStateMatches(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    const MacroSlotRemovalState& expected
+) {
+    if (!macroAutomationAddressValid(address) ||
+        !macroAutomationAddressEquals(expected.automation.address, address) ||
+        expected.modulation.destination !=
+            core::state::modulation::projectControlDestination(address)) {
+        return false;
+    }
+    const auto& page = pages.pageData(address.track, address.page);
+    return page.isMacroActive(address.macro) == expected.macroActive &&
+           page.cc[address.macro] == expected.cc &&
+           sameFloatBits(page.values[address.macro], expected.staticValue) &&
+           liveMacroAutomationMatchesHistorySnapshot(
+               pages,
+               expected.automation
+           ) && liveModulationAssignmentsMatch(pages, expected.modulation);
+}
+
+FLASHMEM bool applyMacroSlotRemovalState(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    const MacroSlotRemovalState& target
+) {
+    using namespace core::state::modulation;
+    if (!macroAutomationAddressValid(address) ||
+        !macroAutomationAddressEquals(target.automation.address, address) ||
+        target.modulation.destination != projectControlDestination(address)) {
+        return false;
+    }
+
+    // Removal and its history replay are cold structural operations. Build the
+    // complete Project Control result in one PSRAM scratch object so failure can
+    // never expose a half-cleared destination to the realtime runtime.
+    auto pending = core::app::makeExtmemUnique<ProjectControlDomainState>();
+    if (!pending) return false;
+    *pending = pages.control.authored;
+    if (!replaceProjectControlAutomationInDomain(
+            *pending,
+            address,
+            target.automation.automation,
+            target.automation.pointCount > 0U
+                ? target.automation.points.get() : nullptr,
+            target.automation.pointCount
+        ) || !applyModulationAssignmentsToGraph(
+            pending->modulation,
+            target.modulation
+        ) || !validProjectModulationDomain(
+            pending->modulation,
+            pending->curves,
+            &pending->automation
+        )) {
+        return false;
+    }
+
+    pages.control.authored = *pending;
+    pages.control.markAuthoredMutation();
+    auto& page = pages.pageData(address.track, address.page);
+    page.setMacroActive(address.macro, target.macroActive);
+    page.cc[address.macro] = target.cc;
+    page.values[address.macro] = target.staticValue;
+    if (pages.currentActiveTrack() == address.track &&
+        pages.currentActivePage() == address.page) {
+        pages.updateActiveConfigs();
+    }
+    return true;
+}
+
+}  // namespace
+
 FLASHMEM MacroHistoryService::MacroHistoryService() = default;
 FLASHMEM MacroHistoryService::~MacroHistoryService() = default;
 
@@ -1759,7 +1972,8 @@ MacroHistoryService::beginNewModulatorAudition_(
     const core::state::modulation::ModulatorAdsrDraft* adsrDraft,
     const core::state::modulation::ModulationTriggerDraft* triggerDraft,
     const core::state::modulation::ModulationBindingDraft& bindingDraft,
-    bool createMacroSlot
+    bool createMacroSlot,
+    const MacroDestinationActivationPlan* destinationPlan
 ) {
     using namespace core::state::modulation;
     ProjectModulationResult failure{};
@@ -1767,6 +1981,11 @@ MacroHistoryService::beginNewModulatorAudition_(
     if ((lfoDraft == nullptr) == (adsrDraft == nullptr) ||
         !macroAutomationAddressValid(address) ||
         bindingDraft.destination != projectControlDestination(address) ||
+        (destinationPlan != nullptr &&
+         (!destinationPlan->valid || destinationPlan->address.track != address.track ||
+          destinationPlan->address.page != address.page ||
+          destinationPlan->address.macro != address.macro)) ||
+        (createMacroSlot && destinationPlan != nullptr) ||
         pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
         return failure;
     }
@@ -1808,6 +2027,10 @@ MacroHistoryService::beginNewModulatorAudition_(
     payload.triggerCreated = triggerDraft != nullptr;
     payload.macroCreated = createMacroSlot;
     payload.pending = true;
+    if (!prepareDestinationStructure(pages, destinationPlan, payload)) {
+        failure.status = ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED;
+        return failure;
+    }
     MacroHistoryChange* reserved = change.get();
     if (!parkPending_(std::move(change))) {
         failure.status = ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED;
@@ -1881,7 +2104,8 @@ MacroHistoryService::beginLfoModulatorAudition(
     const MacroAutomationSlotAddress& address,
     const core::state::modulation::ModulatorLfoDraft& sourceDraft,
     const core::state::modulation::ModulationBindingDraft& bindingDraft,
-    bool createMacroSlot
+    bool createMacroSlot,
+    const MacroDestinationActivationPlan* destinationPlan
 ) {
     return beginNewModulatorAudition_(
         pages,
@@ -1890,7 +2114,8 @@ MacroHistoryService::beginLfoModulatorAudition(
         nullptr,
         nullptr,
         bindingDraft,
-        createMacroSlot
+        createMacroSlot,
+        destinationPlan
     );
 }
 
@@ -1901,7 +2126,8 @@ MacroHistoryService::beginAdsrModulatorAudition(
     const core::state::modulation::ModulatorAdsrDraft& sourceDraft,
     const core::state::modulation::ModulationTriggerDraft& triggerDraft,
     const core::state::modulation::ModulationBindingDraft& bindingDraft,
-    bool createMacroSlot
+    bool createMacroSlot,
+    const MacroDestinationActivationPlan* destinationPlan
 ) {
     return beginNewModulatorAudition_(
         pages,
@@ -1910,7 +2136,8 @@ MacroHistoryService::beginAdsrModulatorAudition(
         &sourceDraft,
         &triggerDraft,
         bindingDraft,
-        createMacroSlot
+        createMacroSlot,
+        destinationPlan
     );
 }
 
@@ -2109,13 +2336,19 @@ MacroHistoryService::beginExistingModulatorAudition(
     core::state::modulation::ModulatorId sourceId,
     const core::state::modulation::ModulationBindingDraft& bindingDraft,
     const core::state::modulation::ModulatorReach* widenedReach,
-    bool createMacroSlot
+    bool createMacroSlot,
+    const MacroDestinationActivationPlan* destinationPlan
 ) {
     using namespace core::state::modulation;
     ProjectModulationResult failure{};
     failure.status = ProjectModulationStatus::INVALID_ARGUMENT;
     if (!macroAutomationAddressValid(address) || !valid(sourceId) ||
         bindingDraft.destination != projectControlDestination(address) ||
+        (destinationPlan != nullptr &&
+         (!destinationPlan->valid || destinationPlan->address.track != address.track ||
+          destinationPlan->address.page != address.page ||
+          destinationPlan->address.macro != address.macro)) ||
+        (createMacroSlot && destinationPlan != nullptr) ||
         pendingModulatorSlot_() != nullptr || pages.control.audition.active) {
         return failure;
     }
@@ -2153,6 +2386,10 @@ MacroHistoryService::beginExistingModulatorAudition(
     payload.bindingCreated = true;
     payload.macroCreated = createMacroSlot;
     payload.pending = true;
+    if (!prepareDestinationStructure(pages, destinationPlan, payload)) {
+        failure.status = ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED;
+        return failure;
+    }
     MacroHistoryChange* reserved = change.get();
     if (!parkPending_(std::move(change))) {
         failure.status = ProjectModulationStatus::HISTORY_CAPACITY_EXCEEDED;
@@ -2235,6 +2472,7 @@ FLASHMEM bool MacroHistoryService::commitModulatorAudition(
         !creationIdentityMatches(pages, address, payload, false)) {
         return false;
     }
+    if (!applyDestinationStructure(pages, payload)) return false;
     const auto& graph = pages.control.authored.modulation;
     const auto* source = core::state::modulation::findProjectModulator(
         graph,
@@ -2660,6 +2898,60 @@ FLASHMEM bool MacroHistoryService::clearModulationBindings(
     }
     pages.control.markAuthoredMutation();
     return commitModulationAssignments_(pages, std::move(change));
+}
+
+FLASHMEM bool MacroHistoryService::removeMacroSlot(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address
+) {
+    using namespace core::state::modulation;
+    if (pendingModulatorSlot_() != nullptr ||
+        !macroAutomationAddressValid(address) ||
+        !pages.pageData(address.track, address.page).isMacroActive(
+            address.macro
+        )) {
+        return false;
+    }
+
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return false;
+    change->slotRemoval =
+        core::app::makeExtmemUnique<MacroSlotRemovalHistoryPayload>();
+    if (!change->slotRemoval) return false;
+    change->kind = MacroHistoryActionKind::REMOVE_SLOT;
+    change->address = address;
+    auto& payload = *change->slotRemoval;
+    if (!captureMacroSlotRemovalState(pages, address, payload.before)) {
+        return false;
+    }
+
+    payload.after.automation.address = address;
+    payload.after.modulation = payload.before.modulation;
+    payload.after.modulation.globalBindingCount = static_cast<uint16_t>(
+        payload.before.modulation.globalBindingCount -
+        payload.before.modulation.assignmentCount
+    );
+    payload.after.modulation.assignmentCount = 0U;
+    payload.after.modulation.destinationScaleQ15 =
+        PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
+    payload.after.modulation.assignments = {};
+    payload.after.macroActive = false;
+    payload.after.cc = defaultMacroCc(address.page, address.macro);
+    payload.after.staticValue = 0.5f;
+
+    if (!liveMacroSlotRemovalStateMatches(pages, address, payload.before) ||
+        !applyMacroSlotRemovalState(pages, address, payload.after) ||
+        !liveMacroSlotRemovalStateMatches(pages, address, payload.after)) {
+        if (!liveMacroSlotRemovalStateMatches(pages, address, payload.before)) {
+            (void)applyMacroSlotRemovalState(pages, address, payload.before);
+        }
+        return false;
+    }
+
+    endCoalescing();
+    push_(undo_, undo_count_, std::move(change));
+    clearRedo_();
+    return true;
 }
 
 FLASHMEM bool MacroHistoryService::pasteModulationBinding(
@@ -3384,6 +3676,18 @@ FLASHMEM bool MacroHistoryService::undo(
             return false;
         }
         pages.control.markAuthoredMutation();
+    } else if (change->slotRemoval) {
+        if (!liveMacroSlotRemovalStateMatches(
+                pages,
+                change->address,
+                change->slotRemoval->after
+            ) || !applyMacroSlotRemovalState(
+                pages,
+                change->address,
+                change->slotRemoval->before
+            )) {
+            return false;
+        }
     } else if (change->modulationAssignments) {
         if (!liveModulationAssignmentsMatch(
                 pages,
@@ -3506,6 +3810,18 @@ FLASHMEM bool MacroHistoryService::redo(
             return false;
         }
         pages.control.markAuthoredMutation();
+    } else if (change->slotRemoval) {
+        if (!liveMacroSlotRemovalStateMatches(
+                pages,
+                change->address,
+                change->slotRemoval->before
+            ) || !applyMacroSlotRemovalState(
+                pages,
+                change->address,
+                change->slotRemoval->after
+            )) {
+            return false;
+        }
     } else if (change->modulationAssignments) {
         if (!liveModulationAssignmentsMatch(
                 pages,

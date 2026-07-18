@@ -187,7 +187,7 @@ public:
     }
 
     bool isMacroAddSlot(uint8_t index) const {
-        return activePageData().nextAddMacroIndex() == index;
+        return index < MACRO_COUNT && !activePageData().isMacroActive(index);
     }
 
     void setMacroSlotActive(uint8_t index, bool active) {

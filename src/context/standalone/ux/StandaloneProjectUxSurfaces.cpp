@@ -238,6 +238,19 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
               control.audition.bindingId
           )
         : nullptr;
+    const auto& auditionDestination = control.audition.destination;
+    const bool auditionDestinationExists = control.audition.active &&
+        auditionDestination.track < core::state::macro::TRACK_COUNT &&
+        auditionDestination.page < core::state::macro::PAGE_COUNT &&
+        auditionDestination.macro < core::state::macro::MACRO_COUNT &&
+        pages_.isTrackEnabled(auditionDestination.track) &&
+        pages_.tracks[auditionDestination.track].isPageEnabled(
+            auditionDestination.page
+        ) &&
+        pages_.pageData(
+            auditionDestination.track,
+            auditionDestination.page
+        ).isMacroActive(auditionDestination.macro);
     const char* feedback = navigation_.lifecycleFeedback.empty()
         ? nullptr : navigation_.lifecycleFeedback.get();
 
@@ -246,7 +259,8 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     out.operationGeneration = history_.undoCount();
     out.outcome = feedbackOutcome(feedback);
     if (sourceAudition) {
-        out.projection = "audible_audition";
+        out.projection = auditionDestinationExists
+            ? "audible_audition" : "silent_preview";
         out.hasOperationGeneration = true;
         out.operationGeneration = control.audition.generation;
         out.operationStatus = "audition";
@@ -282,10 +296,22 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     }
 
     if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        using PickerLevel =
+            core::state::project::ModulatorDestinationPickerLevel;
         const bool auditioning = control.audition.active;
-        out.mode = "project.modulator_destination_picker";
-        out.projection = auditioning ? "audible_audition" : "committed";
-        out.target = "macro_destination";
+        const auto level = navigation_.destinationPickerLevel;
+        out.mode = level == PickerLevel::TRACK
+            ? "project.modulator_destination.track"
+            : (level == PickerLevel::PAGE
+                   ? "project.modulator_destination.page"
+                   : "project.modulator_destination.macro");
+        out.projection = auditioning
+            ? (auditionDestinationExists
+                   ? "audible_audition" : "silent_preview")
+            : "committed";
+        out.target = level == PickerLevel::TRACK
+            ? "track"
+            : (level == PickerLevel::PAGE ? "page" : "macro_destination");
         out.targetIndex = navigation_.focusedRow.get();
         out.sourceTrack = navigation_.destinationPickerTrack;
         out.targetTrack = navigation_.destinationPickerTrack;
@@ -297,25 +323,37 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
             : "destination";
         out.operationStatus = auditioning
             ? "audition"
-            : (navigation_.creatingModulatorSource
-                   ? "creating_source" : "adding_destination");
+            : (level == PickerLevel::TRACK
+                   ? "selecting_track"
+                   : (level == PickerLevel::PAGE
+                          ? "selecting_page"
+                          : (navigation_.creatingModulatorSource
+                                 ? "creating_source"
+                                 : "adding_destination")));
         if (auditioning) {
             out.hasOperationGeneration = true;
             out.operationGeneration = control.audition.generation;
         }
         if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "focus_destination";
+            out.effect = level == PickerLevel::TRACK
+                ? "focus_track"
+                : (level == PickerLevel::PAGE
+                       ? "focus_page" : "focus_destination");
         } else if (isButton(
                        event,
                        Config::ButtonID::NAV,
                        oc::core::input::ButtonBindingType::RELEASE
                    )) {
-            out.effect = navigation_.creatingModulatorSource
-                ? (navigation_.creatingModulatorKind ==
-                           core::state::modulation::ModulatorKind::ADSR
-                       ? "start_adsr_destination_audition"
-                       : "start_lfo_destination_audition")
-                : "start_destination_audition";
+            out.effect = level == PickerLevel::TRACK
+                ? "choose_track"
+                : (level == PickerLevel::PAGE
+                       ? "choose_page"
+                       : (navigation_.creatingModulatorSource
+                              ? (navigation_.creatingModulatorKind ==
+                                         core::state::modulation::ModulatorKind::ADSR
+                                     ? "start_adsr_destination_audition"
+                                     : "start_lfo_destination_audition")
+                              : "start_destination_audition"));
         } else if (isEncoder(event, Config::EncoderID::OPT) && auditioning) {
             out.effect = "edit_destination_audition_depth";
         } else if (isButton(

@@ -609,6 +609,42 @@ void test_modulator_kind_and_trigger_navigation_are_reversible() {
     std::cout << "[PASS] kind and Trigger journeys preserve local context\n";
 }
 
+void test_destination_picker_exposes_hierarchy_and_sparse_macro_positions() {
+    using namespace core::state::project;
+    using namespace core::state::project::modulators;
+    core::state::macro::MacroPagesState pages;
+    ProjectNavigationState navigation;
+    navigation.creatingModulatorSource = true;
+    navigation.destinationPickerLevel = ModulatorDestinationPickerLevel::TRACK;
+
+    assert(destinationPickerRowCount(pages, navigation) == 3U);
+    auto row = destinationPickerTargetAtRow(pages, navigation, 0U);
+    assert(row.valid && row.kind == DestinationPickerRowKind::TRACK &&
+           row.index == 0U && !row.create);
+    row = destinationPickerTargetAtRow(pages, navigation, 1U);
+    assert(row.valid && row.kind == DestinationPickerRowKind::TRACK &&
+           row.index == 1U && row.create);
+    row = destinationPickerTargetAtRow(pages, navigation, 2U);
+    assert(row.valid && row.kind == DestinationPickerRowKind::KEEP_UNASSIGNED);
+
+    navigation.destinationPickerTrack = 0U;
+    navigation.destinationPickerLevel = ModulatorDestinationPickerLevel::PAGE;
+    assert(destinationPickerRowCount(pages, navigation) == 2U);
+    row = destinationPickerTargetAtRow(pages, navigation, 1U);
+    assert(row.valid && row.kind == DestinationPickerRowKind::PAGE &&
+           row.index == 1U && row.create);
+
+    navigation.destinationPickerPage = 0U;
+    navigation.destinationPickerLevel = ModulatorDestinationPickerLevel::MACRO;
+    assert(destinationPickerRowCount(pages, navigation) ==
+           core::state::macro::MACRO_COUNT);
+    row = destinationPickerTargetAtRow(pages, navigation, 3U);
+    assert(row.valid && row.kind == DestinationPickerRowKind::MACRO &&
+           row.index == 3U && row.create);
+    assert(core::state::macro::defaultMacroCc(0U, 3U) == 3U);
+    std::cout << "[PASS] destination picker is hierarchical and sparse\n";
+}
+
 }  // namespace
 
 int main() {
@@ -634,6 +670,7 @@ int main() {
     test_modulator_workspace_layouts_are_semantic_and_bounded();
     test_modulator_workspace_navigation_restores_local_focus();
     test_modulator_kind_and_trigger_navigation_are_reversible();
+    test_destination_picker_exposes_hierarchy_and_sparse_macro_positions();
 
     std::cout << "\nAll ProjectMenuModel tests passed.\n";
     return 0;

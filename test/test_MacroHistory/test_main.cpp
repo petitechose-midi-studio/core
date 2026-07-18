@@ -496,6 +496,101 @@ void test_assignment_remove_and_clear_keep_roots_and_unrelated_edges() {
     std::cout << "[PASS] assignment remove/clear retain roots and unrelated edges\n";
 }
 
+void test_sparse_macro_removal_purges_all_destination_state_atomically() {
+    using namespace core::state::modulation;
+    constexpr macro::MacroAutomationSlotAddress kUnrelatedAddress{
+        .track = 0,
+        .page = 0,
+        .macro = 4,
+    };
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    seedCurves(pages);  // Absolute Automation + first modulation source.
+    const auto secondSource = addProjectLfo(pages, "Second");
+    const auto unrelatedSource = addProjectLfo(pages, "Unrelated");
+    const auto secondBinding = addBinding(
+        pages,
+        secondSource,
+        kAddress,
+        -12288
+    );
+    const auto unrelatedBinding = addBinding(
+        pages,
+        unrelatedSource,
+        kUnrelatedAddress,
+        4096
+    );
+    assert(valid(secondBinding) && valid(unrelatedBinding));
+    const auto sourceCountBefore =
+        pages.control.authored.modulation.sourceCount;
+    auto before = core::app::makeExtmemUnique<ProjectControlDomainState>();
+    assert(before);
+    *before = pages.control.authored;
+    macro::MacroAutomationHistorySnapshot automationBefore{};
+    assert(macro::captureMacroAutomationHistorySnapshot(
+        pages,
+        kAddress,
+        automationBefore
+    ));
+    const auto pageBefore = pages.pageData(0U, 0U);
+
+    assert(history.removeMacroSlot(pages, kAddress));
+    assert(history.undoCount() == 1U);
+    const auto& removedPage = pages.pageData(0U, 0U);
+    assert(!removedPage.isMacroActive(kAddress.macro));
+    assert(removedPage.cc[kAddress.macro] ==
+           macro::defaultMacroCc(kAddress.page, kAddress.macro));
+    assert(removedPage.values[kAddress.macro] == 0.5f);
+    const auto removedSlot =
+        test_support::project_control::readSlot(pages.control, kAddress);
+    assert(!removedSlot.present);
+    assert(pages.control.authored.modulation.sourceCount == sourceCountBefore);
+    assert(findProjectModulationBinding(
+        pages.control.authored.modulation,
+        unrelatedBinding
+    ) != nullptr);
+    assert(findProjectModulationBinding(
+        pages.control.authored.modulation,
+        secondBinding
+    ) == nullptr);
+    assert(projectModulationDestinationScaleQ15(
+        pages.control.authored.modulation,
+        projectControlDestination(kAddress)
+    ) == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15);
+    auto after = core::app::makeExtmemUnique<ProjectControlDomainState>();
+    assert(after);
+    *after = pages.control.authored;
+
+    assert(history.undo(pages));
+    assert(macro::liveMacroAutomationMatchesHistorySnapshot(
+        pages,
+        automationBefore
+    ));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &before->modulation,
+        sizeof(before->modulation)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.pageData(0U, 0U),
+        &pageBefore,
+        sizeof(pageBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &after->modulation,
+        sizeof(after->modulation)
+    ) == 0);
+    assert(!test_support::project_control::readSlot(
+        pages.control,
+        kAddress
+    ).present);
+    assert(!pages.pageData(0U, 0U).isMacroActive(kAddress.macro));
+    std::cout
+        << "[PASS] sparse Macro removal purges every destination-owned value\n";
+}
+
 void test_lfo_audition_cancel_is_byte_stable_and_history_free() {
     using namespace core::state::modulation;
     macro::MacroPagesState pages;
@@ -697,6 +792,90 @@ void test_macro_create_and_assignment_are_one_undo_redo_action() {
         sizeof(graphAfter)
     ) == 0);
     std::cout << "[PASS] Macro creation plus assignment is one Undo/Redo action\n";
+}
+
+void test_missing_track_page_and_sparse_macro_commit_atomically() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    macro::MacroHistoryService history;
+    constexpr macro::MacroAutomationSlotAddress address{1U, 0U, 5U};
+    const auto plan = macro::MacroWorkflow::planDestinationActivation(
+        pages,
+        address
+    );
+    assert(plan.valid && plan.createTrack && plan.createPage &&
+           plan.createMacro);
+    auto binding = defaultBindingDraft();
+    binding.destination = projectControlDestination(address);
+    const auto trackBefore = pages.tracks[address.track];
+    const auto graphBefore = pages.control.authored.modulation;
+
+    auto begun = history.beginLfoModulatorAudition(
+        pages,
+        address,
+        defaultLfoDraft(),
+        binding,
+        false,
+        &plan
+    );
+    assert(begun.changed());
+    assert(pages.currentTrackEnabledMask() == 0x0001U);
+    assert(std::memcmp(
+        &pages.tracks[address.track],
+        &trackBefore,
+        sizeof(trackBefore)
+    ) == 0);
+    assert(history.cancelModulatorAudition(pages, address));
+    assert(pages.currentTrackEnabledMask() == 0x0001U);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+
+    begun = history.beginLfoModulatorAudition(
+        pages,
+        address,
+        defaultLfoDraft(),
+        binding,
+        false,
+        &plan
+    );
+    assert(begun.changed());
+    assert(history.commitModulatorAudition(pages, address));
+    assert(history.undoCount() == 1U);
+    assert(pages.currentTrackEnabledMask() == 0x0003U);
+    assert(pages.pageData(1U, 0U).activeMacroMask == 0x20U);
+    assert(pages.pageData(1U, 0U).cc[5] == 5U);
+    assert(pages.currentActiveTrack() == 0U);
+    const auto trackAfter = pages.tracks[address.track];
+    const auto graphAfter = pages.control.authored.modulation;
+
+    assert(history.undo(pages));
+    assert(pages.currentTrackEnabledMask() == 0x0001U);
+    assert(std::memcmp(
+        &pages.tracks[address.track],
+        &trackBefore,
+        sizeof(trackBefore)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    assert(history.redo(pages));
+    assert(pages.currentTrackEnabledMask() == 0x0003U);
+    assert(std::memcmp(
+        &pages.tracks[address.track],
+        &trackAfter,
+        sizeof(trackAfter)
+    ) == 0);
+    assert(std::memcmp(
+        &pages.control.authored.modulation,
+        &graphAfter,
+        sizeof(graphAfter)
+    ) == 0);
+    std::cout << "[PASS] missing Track/Page/sparse Macro is one exact action\n";
 }
 
 void test_macro_create_duplicate_and_capacity_failures_are_exact_noops() {
@@ -1735,6 +1914,7 @@ int main() {
     test_lfo_audition_capacity_failure_has_no_partial_state();
     test_macro_create_audition_cancel_restores_page_graph_and_ids();
     test_macro_create_and_assignment_are_one_undo_redo_action();
+    test_missing_track_page_and_sparse_macro_commit_atomically();
     test_macro_create_duplicate_and_capacity_failures_are_exact_noops();
     test_macro_create_stale_add_slot_is_rejected_without_history();
     test_macro_create_widening_cancel_and_failed_commit_are_exact();
@@ -1755,6 +1935,7 @@ int main() {
     test_multi_macro_take_is_one_atomic_undo_redo_action();
     test_assignment_history_is_destination_scoped_and_order_stable();
     test_assignment_remove_and_clear_keep_roots_and_unrelated_edges();
+    test_sparse_macro_removal_purges_all_destination_state_atomically();
     std::cout << "All MacroHistory tests passed\n";
     return 0;
 }

@@ -29,39 +29,42 @@
 2120 tap NAV 60
 2340 capture screen adsr_destination_picker
 
-# M1 produces one provisional ADSR + Track Note route + destination. Apply
-# publishes the complete set as one Undo action.
+# The explicit Track > Page > Macro route leads to M1. It produces one
+# provisional ADSR + Track Note route + destination. Apply publishes the
+# complete set as one Undo action.
 2460 tap NAV 60
-2700 capture screen adsr_preview
-2820 tap BOTTOM_RIGHT 60
-3060 capture screen adsr_applied
-3180 tap LEFT_TOP 60
-3400 capture screen adsr_workspace
+2580 tap NAV 60
+2700 tap NAV 60
+2940 capture screen adsr_preview
+3060 tap BOTTOM_RIGHT 60
+3300 capture screen adsr_applied
+3420 tap LEFT_TOP 60
+3640 capture screen adsr_workspace
 
 # A/D/S/R are direct cards; exact units appear temporarily over the curve.
-3520 encoder OPT 0.40
-3740 capture screen attack_feedback
+3760 encoder OPT 0.40
+3980 capture screen attack_feedback
 
 # Trigger remains one visible card and opens the three-field route editor.
-3800 encoder NAV 1
-3860 encoder NAV 1
-3920 encoder NAV 1
-3980 encoder NAV 1
-4040 tap NAV 60
-4200 capture screen trigger_editor
-4320 encoder OPT 0.13
-4440 encoder NAV 1
-4560 encoder OPT 0.25
+4040 encoder NAV 1
+4100 encoder NAV 1
+4160 encoder NAV 1
+4220 encoder NAV 1
+4280 tap NAV 60
+4440 capture screen trigger_editor
+4560 encoder OPT 0.13
 4680 encoder NAV 1
-4800 encoder OPT 0.4765625
-5020 capture screen trigger_route_edited
+4800 encoder OPT 0.25
+4920 encoder NAV 1
+5040 encoder OPT 0.4765625
+5260 capture screen trigger_route_edited
 
 # Back restores Trigger focus. More keeps the curve visible while Timing,
 # Curve and Retrigger stay one click away.
-5140 tap LEFT_TOP 60
-5260 encoder NAV 1
-5380 tap NAV 60
-5600 capture screen adsr_more
-5720 encoder NAV 1
-5840 encoder OPT 0.50
-6060 capture screen smooth_curve_feedback
+5380 tap LEFT_TOP 60
+5500 encoder NAV 1
+5620 tap NAV 60
+5840 capture screen adsr_more
+5960 encoder NAV 1
+6080 encoder OPT 0.50
+6300 capture screen smooth_curve_feedback

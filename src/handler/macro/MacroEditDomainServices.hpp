@@ -38,6 +38,11 @@ public:
     using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
     using SwitchToTrackFn = void (*)(void* context, uint8_t trackIndex);
     using MarkProjectMutatedFn = void (*)(void* context);
+    using SynchronizeSharedTrackStateFn = bool (*)(
+        void* context,
+        uint16_t enabledMask,
+        uint8_t activeTrack
+    );
 
     struct StateRefs {
         core::state::macro::MacroPagesState& pages;
@@ -53,6 +58,7 @@ public:
         SwitchToPageFn switchToPage = nullptr;
         SwitchToTrackFn switchToTrack = nullptr;
         MarkProjectMutatedFn markProjectMutated = nullptr;
+        SynchronizeSharedTrackStateFn synchronizeSharedTrackState = nullptr;
     };
 
     MacroEditDomainServices(StateRefs state, Operations operations);
@@ -63,6 +69,7 @@ public:
     bool setConfig(uint8_t index, uint8_t channel, uint8_t cc) const;
     void switchToPage(uint8_t pageIndex) const;
     void switchToTrack(uint8_t trackIndex) const;
+    bool synchronizeSharedTrackState() const;
     core::state::macro::MacroAutomationSlotAddress automationAddress(uint8_t index) const;
     const core::state::macro::MacroAutomationSlotState* automationSlot(uint8_t index) const;
     bool automationClipboardAvailable() const;

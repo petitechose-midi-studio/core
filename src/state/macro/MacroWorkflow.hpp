@@ -24,12 +24,33 @@ namespace core::state::macro {
  */
 constexpr uint8_t kMacroConfigDirtyAll = 0xFF;
 
-/** Cold plan for the one legal next Macro slot. */
+/** Cold plan for one physical Macro position on an existing Page. */
 struct MacroSlotActivationPlan {
     MacroAutomationSlotAddress address{};
     float baseValue = 0.5f;
     uint8_t cc = 0;
     bool valid = false;
+};
+
+/**
+ * Cold, allocation-free plan for a destination selected from a root source.
+ *
+ * Track and Page order remain contiguous; the eight physical Macro positions
+ * are independent. Missing topology is applied only when the audition is
+ * committed, never while the musician is still browsing a route.
+ */
+struct MacroDestinationActivationPlan {
+    MacroAutomationSlotAddress address{};
+    uint16_t expectedTrackEnabledMask = 0;
+    uint16_t expectedPageEnabledMask = 0;
+    bool createTrack = false;
+    bool createPage = false;
+    bool createMacro = false;
+    bool valid = false;
+
+    [[nodiscard]] constexpr bool changesTopology() const {
+        return createTrack || createPage || createMacro;
+    }
 };
 
 inline uint32_t nextMacroConfigRevision(uint32_t current, uint8_t dirtyIndex = kMacroConfigDirtyAll) {
@@ -63,6 +84,14 @@ struct MacroWorkflow {
     static bool applyMacroSlotActivation(
         MacroPagesState& pages,
         const MacroSlotActivationPlan& plan
+    );
+    static MacroDestinationActivationPlan planDestinationActivation(
+        const MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address
+    );
+    static bool applyDestinationActivation(
+        MacroPagesState& pages,
+        const MacroDestinationActivationPlan& plan
     );
     static bool activateMacroSlot(core::state::MacroState& macros,
                                   MacroPagesState& pages,

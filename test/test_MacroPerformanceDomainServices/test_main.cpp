@@ -403,7 +403,7 @@ void test_status_bar_pulses_are_forwarded() {
     std::cout << "[PASS] test_status_bar_pulses_are_forwarded\n";
 }
 
-void test_macro_slot_activation_is_sequential_and_marks_project_dirty() {
+void test_macro_slot_activation_is_sparse_and_marks_project_dirty() {
     CoreStorages storage;
 
     core::state::CoreState state(storage.settings,
@@ -415,19 +415,19 @@ void test_macro_slot_activation_is_sequential_and_marks_project_dirty() {
     assert(services.isMacroSlotActive(0));
     assert(!services.isMacroSlotActive(1));
     assert(services.isMacroAddSlot(1));
-    assert(!services.activateMacroSlot(2));
+    assert(services.isMacroAddSlot(2));
 
     const uint32_t initialRevision = state.configRevision.get();
-    assert(services.activateMacroSlot(1));
-    assert(services.isMacroSlotActive(1));
-    assert(services.isMacroAddSlot(2));
+    assert(services.activateMacroSlot(5));
+    assert(services.isMacroSlotActive(5));
+    assert(services.isMacroAddSlot(1));
     assert(state.pages.activePageData().activeMacroCount() == 2);
-    assert(state.pages.activeConfigs[1].cc == 1);
+    assert(state.pages.activeConfigs[5].cc == 5);
     assert(state.configRevision.get() ==
-           core::state::macro::nextMacroConfigRevision(initialRevision, 1));
+           core::state::macro::nextMacroConfigRevision(initialRevision, 5));
     assert(state.project.metadata.dirty);
 
-    std::cout << "[PASS] test_macro_slot_activation_is_sequential_and_marks_project_dirty\n";
+    std::cout << "[PASS] test_macro_slot_activation_is_sparse_and_marks_project_dirty\n";
 }
 
 void test_addressed_macro_slot_activation_preserves_cold_page_cache() {
@@ -465,6 +465,57 @@ void test_addressed_macro_slot_activation_preserves_cold_page_cache() {
     assert(state.pages.activeConfigs[1].cc == 9U);
 
     std::cout << "[PASS] addressed Macro activation preserves cold-page caches\n";
+}
+
+void test_destination_activation_keeps_structure_contiguous_and_macros_sparse() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    using core::state::macro::MacroAutomationSlotAddress;
+    using core::state::macro::MacroWorkflow;
+
+    const auto sparse = MacroWorkflow::planDestinationActivation(
+        state.pages,
+        MacroAutomationSlotAddress{0U, 0U, 5U}
+    );
+    assert(sparse.valid && !sparse.createTrack && !sparse.createPage &&
+           sparse.createMacro);
+    assert(MacroWorkflow::applyDestinationActivation(state.pages, sparse));
+    assert(state.pages.pageData(0U, 0U).activeMacroMask == 0x21U);
+    assert(state.pages.pageData(0U, 0U).cc[5] == 5U);
+
+    const auto nextPage = MacroWorkflow::planDestinationActivation(
+        state.pages,
+        MacroAutomationSlotAddress{0U, 1U, 3U}
+    );
+    assert(nextPage.valid && !nextPage.createTrack && nextPage.createPage &&
+           nextPage.createMacro);
+    assert(MacroWorkflow::applyDestinationActivation(state.pages, nextPage));
+    assert(state.pages.tracks[0].enabledPageMask == 0x0003U);
+    assert(state.pages.pageData(0U, 1U).activeMacroMask == 0x08U);
+    assert(state.pages.pageData(0U, 1U).cc[3] == 11U);
+    assert(state.pages.currentActivePage() == 0U);
+
+    const auto skippedTrack = MacroWorkflow::planDestinationActivation(
+        state.pages,
+        MacroAutomationSlotAddress{2U, 0U, 5U}
+    );
+    assert(!skippedTrack.valid);
+    const auto nextTrack = MacroWorkflow::planDestinationActivation(
+        state.pages,
+        MacroAutomationSlotAddress{1U, 0U, 5U}
+    );
+    assert(nextTrack.valid && nextTrack.createTrack && nextTrack.createPage &&
+           nextTrack.createMacro);
+    assert(MacroWorkflow::applyDestinationActivation(state.pages, nextTrack));
+    assert(state.pages.currentTrackEnabledMask() == 0x0003U);
+    assert(state.pages.pageData(1U, 0U).activeMacroMask == 0x20U);
+    assert(state.pages.pageData(1U, 0U).cc[5] == 5U);
+    assert(state.pages.currentActiveTrack() == 0U);
+
+    std::cout << "[PASS] destination topology is contiguous with sparse Macros\n";
 }
 
 void test_automation_recording_commits_to_current_macro_slot() {
@@ -1291,8 +1342,14 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
         .macro = 0,
     };
     state.pages.pageData(0, 0).setMacroActive(0, true);
+    state.pages.pageData(0, 0).setMacroActive(3, true);
+    state.pages.pageData(0, 0).setMacroActive(5, true);
     state.pages.pageData(0, 0).cc[0] = 74;
     state.pages.pageData(0, 0).values[0] = 0.36f;
+    state.pages.pageData(0, 0).cc[3] = 33;
+    state.pages.pageData(0, 0).values[3] = 0.44f;
+    state.pages.pageData(0, 0).cc[5] = 55;
+    state.pages.pageData(0, 0).values[5] = 0.66f;
     configureAutomation(state.pages.control, source);
     auto sourceSlot = configureModulation(state.pages.control, source, 0.33f);
     assert(core::state::modulation::setProjectControlAutomationEnabled(
@@ -1346,6 +1403,11 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
     assert(std::fabs(targetSlot.compatibility.modulationDepth - 0.33f) < 0.0001f);
     assert(state.pages.pageData(0, 1).cc[0] == 74);
     assert(std::fabs(state.pages.pageData(0, 1).values[0] - 0.36f) < 0.0001f);
+    assert(state.pages.pageData(0, 1).activeMacroMask == 0x29U);
+    assert(state.pages.pageData(0, 1).cc[3] == 33U);
+    assert(std::fabs(state.pages.pageData(0, 1).values[3] - 0.44f) < 0.0001f);
+    assert(state.pages.pageData(0, 1).cc[5] == 55U);
+    assert(std::fabs(state.pages.pageData(0, 1).values[5] - 0.66f) < 0.0001f);
 
     assert(state.structureClipboard.storeMacroTrack(
         state.pages.tracks[0],
@@ -1380,6 +1442,11 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
     assert(std::fabs(targetSlot.compatibility.modulationDepth - 0.33f) < 0.0001f);
     assert(state.pages.pageData(1, 0).cc[0] == 74);
     assert(std::fabs(state.pages.pageData(1, 0).values[0] - 0.36f) < 0.0001f);
+    assert(state.pages.pageData(1, 0).activeMacroMask == 0x29U);
+    assert(state.pages.pageData(1, 0).cc[3] == 33U);
+    assert(std::fabs(state.pages.pageData(1, 0).values[3] - 0.44f) < 0.0001f);
+    assert(state.pages.pageData(1, 0).cc[5] == 55U);
+    assert(std::fabs(state.pages.pageData(1, 0).values[5] - 0.66f) < 0.0001f);
 
     std::cout
         << "[PASS] test_page_and_track_copy_preserve_automation_and_modulation\n";
@@ -1496,8 +1563,9 @@ int main() {
     test_switch_to_page_updates_runtime_status_and_marks_project_dirty();
     test_track_config_batch_requires_shared_channel_and_marks_project_dirty_when_valid();
     test_status_bar_pulses_are_forwarded();
-    test_macro_slot_activation_is_sequential_and_marks_project_dirty();
+    test_macro_slot_activation_is_sparse_and_marks_project_dirty();
     test_addressed_macro_slot_activation_preserves_cold_page_cache();
+    test_destination_activation_keeps_structure_contiguous_and_macros_sparse();
     test_automation_recording_commits_to_current_macro_slot();
     test_automation_recording_cancel_discards_session();
     test_shared_automation_take_records_late_join_and_one_undo();

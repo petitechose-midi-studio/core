@@ -21,7 +21,9 @@ namespace {
 namespace style = oc::ui::lvgl::style;
 namespace theme = standalone::theme;
 
-const char MODULATOR_ADD_ROUTE_TITLE[] PROGMEM = "ADD ROUTE";
+const char MODULATOR_SELECT_TRACK_TITLE[] PROGMEM = "SELECT TRACK";
+const char MODULATOR_SELECT_PAGE_TITLE[] PROGMEM = "SELECT PAGE";
+const char MODULATOR_SELECT_MACRO_TITLE[] PROGMEM = "SELECT MACRO";
 
 constexpr lv_coord_t TAB_STRIP_HEIGHT = 24;
 constexpr lv_coord_t TAB_ACTIVE_WIDTH = 92;
@@ -520,10 +522,8 @@ void ProjectView::populateModulatorRow(
         core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         core::ui::project::modulators::populateDestinationPickerRow(
             self->state_refs_.pages,
+            self->state_refs_.navigation,
             self->state_refs_.navigation.selectedModulator,
-            self->state_refs_.navigation.destinationPickerTrack,
-            self->state_refs_.navigation.destinationPickerPage,
-            self->state_refs_.navigation.creatingModulatorSource,
             index,
             out
         );
@@ -641,23 +641,42 @@ void ProjectView::renderModulators() {
             count == 1U ? "" : "s"
         );
     } else if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
-        std::snprintf(
-            meta,
-            sizeof(meta),
-            "T%u · P%u%s",
-            static_cast<unsigned>(
-                state_refs_.navigation.destinationPickerTrack + 1U
-            ),
-            static_cast<unsigned>(
-                state_refs_.navigation.destinationPickerPage + 1U
-            ),
-            state_refs_.navigation.creatingModulatorSource
-                ? (state_refs_.navigation.creatingModulatorKind ==
-                           core::state::modulation::ModulatorKind::ADSR
-                       ? " · New ADSR"
-                       : " · New LFO")
-                : ""
-        );
+        using PickerLevel =
+            core::state::project::ModulatorDestinationPickerLevel;
+        const auto level = state_refs_.navigation.destinationPickerLevel;
+        const char* sourceSuffix = state_refs_.navigation.creatingModulatorSource
+            ? (state_refs_.navigation.creatingModulatorKind ==
+                       core::state::modulation::ModulatorKind::ADSR
+                   ? " · New ADSR"
+                   : " · New LFO")
+            : "";
+        if (level == PickerLevel::TRACK) {
+            std::snprintf(meta, sizeof(meta), "Choose destination%s", sourceSuffix);
+        } else if (level == PickerLevel::PAGE) {
+            const uint8_t track = state_refs_.navigation.destinationPickerTrack;
+            std::snprintf(
+                meta,
+                sizeof(meta),
+                "T%u%s%s",
+                static_cast<unsigned>(track + 1U),
+                state_refs_.pages.isTrackEnabled(track) ? "" : " · Create",
+                sourceSuffix
+            );
+        } else {
+            const uint8_t track = state_refs_.navigation.destinationPickerTrack;
+            const uint8_t page = state_refs_.navigation.destinationPickerPage;
+            const bool pageExists = state_refs_.pages.isTrackEnabled(track) &&
+                state_refs_.pages.tracks[track].isPageEnabled(page);
+            std::snprintf(
+                meta,
+                sizeof(meta),
+                "T%u · P%u%s%s",
+                static_cast<unsigned>(track + 1U),
+                static_cast<unsigned>(page + 1U),
+                pageExists ? "" : " · Create",
+                sourceSuffix
+            );
+        }
     } else if (node == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
         std::snprintf(meta, sizeof(meta), "Choose a modulation source");
     } else if (node == ProjectNodeId::MODULATOR_TRIGGER && source) {
@@ -717,8 +736,12 @@ void ProjectView::renderModulators() {
     } else if (node == ProjectNodeId::MODULATOR_TRIGGER) {
         rowCount = core::state::project::modulators::MODULATOR_TRIGGER_DETAIL_COUNT;
     } else if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
-        rowCount = static_cast<int>(core::state::macro::MACRO_COUNT) +
-            (state_refs_.navigation.creatingModulatorSource ? 1 : 0);
+        rowCount = static_cast<int>(
+            core::state::project::modulators::destinationPickerRowCount(
+                state_refs_.pages,
+                state_refs_.navigation
+            )
+        );
     } else if (node == ProjectNodeId::MODULATOR_DESTINATIONS && source) {
         rowCount = static_cast<int>(
             core::ui::project::modulators::sourceDestinationCount(
@@ -739,7 +762,14 @@ void ProjectView::renderModulators() {
     } else if (node == ProjectNodeId::MODULATOR_TRIGGER) {
         title = "TRIGGER";
     } else if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
-        title = MODULATOR_ADD_ROUTE_TITLE;
+        using PickerLevel =
+            core::state::project::ModulatorDestinationPickerLevel;
+        const auto level = state_refs_.navigation.destinationPickerLevel;
+        title = level == PickerLevel::TRACK
+            ? MODULATOR_SELECT_TRACK_TITLE
+            : (level == PickerLevel::PAGE
+                   ? MODULATOR_SELECT_PAGE_TITLE
+                   : MODULATOR_SELECT_MACRO_TITLE);
     } else if (node == ProjectNodeId::MODULATOR_DESTINATIONS) {
         title = "DESTINATIONS";
     }
@@ -760,7 +790,16 @@ void ProjectView::renderModulators() {
             control,
             state_refs_.navigation.telemetryRevision.get(),
             state_refs_.navigation.focusedRow.get()
-        ) ^ (static_cast<uint32_t>(node) << 16U),
+        ) ^ (static_cast<uint32_t>(node) << 16U) ^
+            (static_cast<uint32_t>(
+                 state_refs_.navigation.destinationPickerLevel
+             ) << 12U) ^
+            (static_cast<uint32_t>(
+                 state_refs_.navigation.destinationPickerTrack
+             ) << 8U) ^
+            static_cast<uint32_t>(
+                state_refs_.navigation.destinationPickerPage
+            ),
     });
     renderModulatorActionStrips(source);
 }

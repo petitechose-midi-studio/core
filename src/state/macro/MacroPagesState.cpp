@@ -19,7 +19,7 @@ FLASHMEM void MacroPageData::initDefault(uint8_t pageIndex) {
     oc::type::text::terminate(name, PAGE_NAME_SIZE, pos);
 
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        cc[i] = static_cast<uint8_t>(pageIndex * MACRO_COUNT + i);
+        cc[i] = defaultMacroCc(pageIndex, i);
         values[i] = 0.5f;
     }
     activeMacroMask = DEFAULT_ACTIVE_MACRO_MASK;

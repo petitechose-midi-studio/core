@@ -673,13 +673,13 @@ FLASHMEM void MacroStructureWorkflow::moveTrack(float delta) {
 FLASHMEM void MacroStructureWorkflow::moveMacroSlot(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
 
-    const uint8_t nextAdd = pages_.nextAddMacroIndex();
-    const uint8_t maxIndex = nextAdd < core::state::macro::MACRO_COUNT
-        ? nextAdd
-        : static_cast<uint8_t>(core::state::macro::MACRO_COUNT - 1U);
     const int step = nav::turnStep(delta);
     const int current = macro_ui_.focusedMacroSlot.get();
-    const int next = std::clamp(current + step, 0, static_cast<int>(maxIndex));
+    const int next = std::clamp(
+        current + step,
+        0,
+        static_cast<int>(core::state::macro::MACRO_COUNT - 1U)
+    );
     macro_ui_.focusedMacroSlot.set(static_cast<uint8_t>(next));
 }
 
@@ -709,10 +709,9 @@ FLASHMEM void MacroStructureWorkflow::syncPreviewToCurrentContext() {
 }
 
 FLASHMEM void MacroStructureWorkflow::clampFocusedMacroSlot() {
-    const uint8_t nextAdd = pages_.nextAddMacroIndex();
-    const uint8_t maxIndex = nextAdd < core::state::macro::MACRO_COUNT
-        ? nextAdd
-        : static_cast<uint8_t>(core::state::macro::MACRO_COUNT - 1U);
+    const uint8_t maxIndex = static_cast<uint8_t>(
+        core::state::macro::MACRO_COUNT - 1U
+    );
     if (macro_ui_.focusedMacroSlot.get() > maxIndex) {
         macro_ui_.focusedMacroSlot.set(maxIndex);
     }

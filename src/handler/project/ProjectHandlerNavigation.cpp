@@ -31,8 +31,12 @@ const char FEEDBACK_SOURCE_IDS_FULL[] PROGMEM = "Source IDs full";
 const char FEEDBACK_STATE_CHANGED[] PROGMEM = "State changed - retry";
 const char FEEDBACK_NO_CHANGE[] PROGMEM = "No change";
 const char FEEDBACK_ASSIGN_FAILED[] PROGMEM = "Cannot assign - retry";
-const char FEEDBACK_ADD_MACRO_FIRST_FORMAT[] PROGMEM = "Add Macro %u first";
-const char FEEDBACK_MACRO_PREVIEW_FORMAT[] PROGMEM = "M%u +25%% - Preview";
+const char FEEDBACK_CREATE_TRACK_FORMAT[] PROGMEM =
+    "Creates T%u · P1 · M%u on Apply";
+const char FEEDBACK_CREATE_PAGE_FORMAT[] PROGMEM =
+    "Creates P%u · M%u on Apply";
+const char FEEDBACK_CREATE_MACRO_FORMAT[] PROGMEM =
+    "Creates M%u on Apply";
 const char FEEDBACK_PREVIEW[] PROGMEM = "+25% - Preview";
 const char FEEDBACK_APPLY_FAILED[] PROGMEM =
     "State changed - Back to cancel";
@@ -209,6 +213,41 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
 
     if (navigation_.currentNode.get() ==
         ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        using Level = core::state::project::ModulatorDestinationPickerLevel;
+        using RowKind = core::state::project::modulators::
+            DestinationPickerRowKind;
+        const auto target = core::state::project::modulators::
+            destinationPickerTargetAtRow(
+                pages_,
+                navigation_,
+                navigation_.focusedRow.get()
+            );
+        if (!target.valid) return;
+        if (navigation_.destinationPickerLevel == Level::TRACK &&
+            target.kind == RowKind::TRACK) {
+            navigation_.destinationPickerTrack = target.index;
+            navigation_.destinationPickerPage = pages_.isTrackEnabled(target.index)
+                ? pages_.tracks[target.index].activePage
+                : 0U;
+            navigation_.destinationPickerLevel = Level::PAGE;
+            navigation_.focusedRow.set(
+                core::state::project::modulators::destinationPickerPageRow(
+                    pages_,
+                    target.index,
+                    navigation_.destinationPickerPage
+                )
+            );
+            navigation_.notifyContentChanged();
+            return;
+        }
+        if (navigation_.destinationPickerLevel == Level::PAGE &&
+            target.kind == RowKind::PAGE) {
+            navigation_.destinationPickerPage = target.index;
+            navigation_.destinationPickerLevel = Level::MACRO;
+            navigation_.focusedRow.set(0U);
+            navigation_.notifyContentChanged();
+            return;
+        }
         startDestinationPickerAudition();
         return;
     }
@@ -348,6 +387,7 @@ FLASHMEM void ProjectHandler::openFocusedModulationDestination() {
 
 FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
     using namespace core::state::modulation;
+    using RowKind = core::state::project::modulators::DestinationPickerRowKind;
     if (navigation_.currentNode.get() !=
         core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         return;
@@ -358,7 +398,13 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
         return;
     }
     const bool creating = navigation_.creatingModulatorSource;
-    const uint8_t row = navigation_.focusedRow.get();
+    const auto pickerTarget = core::state::project::modulators::
+        destinationPickerTargetAtRow(
+            pages_,
+            navigation_,
+            navigation_.focusedRow.get()
+        );
+    if (!pickerTarget.valid) return;
     const uint8_t track = navigation_.destinationPickerTrack;
     const uint8_t page = navigation_.destinationPickerPage;
     auto& graph = pages_.control.authored.modulation;
@@ -382,7 +428,7 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
         .data = PROJECT_MODULATION_TRIGGER_ANY_NOTE,
     };
 
-    if (creating && row == core::state::macro::MACRO_COUNT) {
+    if (creating && pickerTarget.kind == RowKind::KEEP_UNASSIGNED) {
         ProjectModulationResult created{};
         if (creatingKind == ModulatorKind::ADSR) {
             adsrDraft.reach = {};
@@ -417,36 +463,20 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
         );
         return;
     }
-    if (row >= core::state::macro::MACRO_COUNT) return;
-    const auto& pageData = pages_.pageData(track, page);
-    const bool active = pageData.isMacroActive(row);
-    const bool createMacro = !active && pageData.nextAddMacroIndex() == row;
-    if (!active && !createMacro) {
-        char feedback[48]{};
-        const uint8_t next = pageData.nextAddMacroIndex();
-        if (next < core::state::macro::MACRO_COUNT) {
-            std::snprintf(
-                feedback,
-                sizeof(feedback),
-                FEEDBACK_ADD_MACRO_FIRST_FORMAT,
-                static_cast<unsigned>(next + 1U)
-            );
-        } else {
-            std::snprintf(
-                feedback,
-                sizeof(feedback),
-                FEEDBACK_STATE_CHANGED
-            );
-        }
-        navigation_.setLifecycleFeedback(feedback);
-        return;
-    }
+    if (pickerTarget.kind != RowKind::MACRO) return;
+    const uint8_t row = pickerTarget.index;
 
     const auto address = core::state::macro::MacroAutomationSlotAddress{
         track,
         page,
         row,
     };
+    const auto topology = core::state::macro::MacroWorkflow::
+        planDestinationActivation(pages_, address);
+    if (!topology.valid) {
+        navigation_.setLifecycleFeedback(FEEDBACK_STATE_CHANGED);
+        return;
+    }
     const auto destination = projectControlDestination(address);
     ModulationBindingDraft binding{};
     binding.destination = destination;
@@ -463,12 +493,13 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
                 adsrDraft,
                 triggerDraft,
                 binding,
-                createMacro
+                false,
+                &topology
             );
         } else {
             sourceDraft.reach = projectModulatorGlobalReach();
             begun = macro_history_.beginLfoModulatorAudition(
-                pages_, address, sourceDraft, binding, createMacro
+                pages_, address, sourceDraft, binding, false, &topology
             );
         }
     } else {
@@ -488,7 +519,8 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
             targetSource,
             binding,
             nullptr,
-            createMacro
+            false,
+            &topology
         );
     }
     if (!begun.changed()) {
@@ -498,7 +530,7 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
         return;
     }
     navigation_.selectedModulationBinding = begun.bindingId;
-    refreshModulatorPreview(createMacro, row);
+    refreshModulatorPreview(false);
     if (creating) {
         (void)core::state::project::openProjectModulatorWorkspace(
             navigation_,
@@ -507,14 +539,32 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
         navigation_.selectedModulationBinding = begun.bindingId;
         navigation_.focusedRow.set(0U);
     }
-    if (createMacro) {
+    if (topology.changesTopology()) {
         char feedback[48]{};
-        std::snprintf(
-            feedback,
-            sizeof(feedback),
-            FEEDBACK_MACRO_PREVIEW_FORMAT,
-            static_cast<unsigned>(row + 1U)
-        );
+        if (topology.createTrack) {
+            std::snprintf(
+                feedback,
+                sizeof(feedback),
+                FEEDBACK_CREATE_TRACK_FORMAT,
+                static_cast<unsigned>(track + 1U),
+                static_cast<unsigned>(row + 1U)
+            );
+        } else if (topology.createPage) {
+            std::snprintf(
+                feedback,
+                sizeof(feedback),
+                FEEDBACK_CREATE_PAGE_FORMAT,
+                static_cast<unsigned>(page + 1U),
+                static_cast<unsigned>(row + 1U)
+            );
+        } else {
+            std::snprintf(
+                feedback,
+                sizeof(feedback),
+                FEEDBACK_CREATE_MACRO_FORMAT,
+                static_cast<unsigned>(row + 1U)
+            );
+        }
         navigation_.setLifecycleFeedback(feedback);
     } else {
         navigation_.setLifecycleFeedback(FEEDBACK_PREVIEW);
@@ -533,6 +583,8 @@ FLASHMEM void ProjectHandler::applyDestinationPickerAudition() {
         navigation_.setLifecycleFeedback(FEEDBACK_APPLY_FAILED);
         return;
     }
+
+    (void)macro_edit_services_.synchronizeSharedTrackState();
 
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
         macros_,
@@ -633,6 +685,8 @@ FLASHMEM bool ProjectHandler::cancelDestinationPickerAudition() {
                     pickerPage,
                     true
                 )) {
+                navigation_.destinationPickerLevel =
+                    core::state::project::ModulatorDestinationPickerLevel::MACRO;
                 navigation_.focusedRow.set(address.macro);
             }
         }
