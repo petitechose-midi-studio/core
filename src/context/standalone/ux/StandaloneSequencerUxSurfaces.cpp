@@ -532,8 +532,6 @@ FLASHMEM bool isSelectionScope(SequencerScope scope) {
 
 FLASHMEM const char* modeForScope(SequencerScope scope) {
     switch (scope) {
-        case SequencerScope::TRACK:
-            return "sequencer.track";
         case SequencerScope::PATTERN:
             return "sequencer.pattern";
         case SequencerScope::STEP:
@@ -572,8 +570,7 @@ FLASHMEM core::state::StructureSelectionScope selectionScopeForPolicyScope(Seque
 }
 
 FLASHMEM bool policyScopeTargetsTrack(SequencerScope scope) {
-    return scope == SequencerScope::TRACK ||
-           scope == SequencerScope::TRACK_SELECTION;
+    return scope == SequencerScope::TRACK_SELECTION;
 }
 
 FLASHMEM bool policyScopeTargetsStep(SequencerScope scope) {

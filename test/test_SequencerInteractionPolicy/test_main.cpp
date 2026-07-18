@@ -23,14 +23,14 @@ SequencerInteractionContext baseContext(Focus focus = Focus::PAGE) {
 
 void expectsRootFocusMatrix() {
     auto track = buildSequencerInteractionPolicy(baseContext(Focus::TRACK));
-    assert(track.scope == Scope::TRACK);
-    assert(track.navTurn == Action::MOVE_TRACK);
-    assert(track.optTurn == Action::NONE);
+    assert(track.scope == Scope::PATTERN);
+    assert(track.navTurn == Action::MOVE_PATTERN);
+    assert(track.optTurn == Action::EDIT_PATTERN_DIMENSION);
     assert(track.macroLongPress == Action::OPEN_STEP_EDITOR);
-    assert(track.bottomLeftTap == Action::MUTE_CURRENT_TRACK);
+    assert(track.bottomLeftTap == Action::CLEAR_CURRENT_STRUCTURE);
     assert(track.bottomLeftHold == Action::REMOVE_CURRENT_STRUCTURE);
-    assert(track.leftCenterVisibility == Visibility::HIDDEN);
-    assert(track.leftBottomVisibility == Visibility::HIDDEN);
+    assert(track.leftCenterVisibility == Visibility::ACTIVE);
+    assert(track.leftBottomVisibility == Visibility::ACTIVE);
 
     auto pattern = buildSequencerInteractionPolicy(baseContext(Focus::PAGE));
     assert(pattern.scope == Scope::PATTERN);

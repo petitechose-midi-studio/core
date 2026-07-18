@@ -258,18 +258,6 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
     const bool childContentView = context.childContentView;
 
     switch (context.navigationFocus) {
-        case Focus::TRACK:
-            policy.scope = Scope::TRACK;
-            policy.navTurn = Action::MOVE_TRACK;
-            policy.navTap = cycleOrCreatePreview(context);
-            policy.navLongPress = Action::OPEN_STRUCTURE;
-            policy.optTurn = Action::NONE;
-            policy.macroTap = Action::NONE;
-            policy.macroTurn = Action::NONE;
-            hideLeftSelectors(policy);
-            applyTrackBottomActions(policy, context);
-            break;
-
         case Focus::STEP:
             policy.scope = Scope::STEP;
             policy.navTurn = Action::MOVE_STEP;
@@ -286,8 +274,12 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
             applyStepBottomActions(policy, context);
             break;
 
+        case Focus::TRACK:
         case Focus::PAGE:
         default:
+            // TRACK is only actionable inside the Structure workspace. The
+            // context builder already normalizes it to PAGE on the main
+            // musical surface; this fallback also makes direct callers safe.
             policy.scope = childContentView ? Scope::CHILD_PATTERN : Scope::PATTERN;
             policy.navTurn = Action::MOVE_PATTERN;
             policy.navTap = cycleOrCreatePreview(context);
