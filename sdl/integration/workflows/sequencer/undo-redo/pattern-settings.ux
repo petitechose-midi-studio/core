@@ -5,8 +5,8 @@
 0 scenario sequencer
 50 capture screen sequencer_ready
 
-# Open the pitch property settings from the NOTE property selector.
-60 tap NAV 60
+# The sequencer now starts in Pattern scope. Open the Pitch property settings
+# directly from the Pattern property selector; cycling NAV here would enter Step.
 150 button LEFT_BOTTOM down
 300 capture screen pitch_property_selector_open
 400 tap BOTTOM_LEFT 60
