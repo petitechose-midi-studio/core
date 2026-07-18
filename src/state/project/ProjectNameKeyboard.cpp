@@ -8,7 +8,7 @@ namespace core::state::project {
 
 namespace {
 
-constexpr std::array<ProjectNameKeyboardCell, PROJECT_NAME_KEYBOARD_CELL_COUNT> CELLS{{
+constexpr std::array<ProjectNameKeyboardCell, PROJECT_NAME_KEYBOARD_CELL_COUNT> CELLS PROGMEM{{
     {"1", '1', 0, 0, 1},
     {"2", '2', 0, 1, 1},
     {"3", '3', 0, 2, 1},

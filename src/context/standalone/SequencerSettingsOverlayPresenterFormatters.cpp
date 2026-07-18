@@ -11,7 +11,7 @@ namespace {
 
 namespace catalog = core::state::sequencer::scale_catalog;
 
-constexpr const char* const ROW_KEYS[] = {"Root", "Scale", "Mode"};
+constexpr const char* const ROW_KEYS[] PROGMEM = {"Root", "Scale", "Mode"};
 
 }  // namespace
 

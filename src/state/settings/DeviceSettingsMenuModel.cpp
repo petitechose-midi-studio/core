@@ -6,7 +6,7 @@
 namespace core::state::settings {
 namespace {
 
-constexpr const char* const ROW_LABELS[] = {"Mode", "Follow", "Timeout", "Lock"};
+constexpr const char* const ROW_LABELS[] PROGMEM = {"Mode", "Follow", "Timeout", "Lock"};
 
 FLASHMEM const char* modeLabel(core::state::MidiSyncMode mode) {
     switch (mode) {

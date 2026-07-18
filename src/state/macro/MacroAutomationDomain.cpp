@@ -10,7 +10,7 @@ namespace core::state::macro {
 
 namespace {
 
-constexpr std::array<float, 5> kShortDurationTableBeats{
+constexpr std::array<float, 5> kShortDurationTableBeats PROGMEM{
     0.25f,
     0.5f,
     1.0f,

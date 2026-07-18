@@ -8,9 +8,9 @@
 namespace core::context::standalone {
 namespace {
 
-constexpr const char* const MODE_ITEMS[] = {"MASTER", "SLAVE", "AUTO"};
-constexpr const char* const FOLLOW_ITEMS[] = {"OFF", "ON"};
-constexpr const char* const FALLBACK_ITEMS[] = {
+constexpr const char* const MODE_ITEMS[] PROGMEM = {"MASTER", "SLAVE", "AUTO"};
+constexpr const char* const FOLLOW_ITEMS[] PROGMEM = {"OFF", "ON"};
+constexpr const char* const FALLBACK_ITEMS[] PROGMEM = {
     "150 ms",
     "250 ms",
     "500 ms",
@@ -19,7 +19,7 @@ constexpr const char* const FALLBACK_ITEMS[] = {
     "1500 ms",
     "2000 ms"
 };
-constexpr const char* const LOCK_ITEMS[] = {"1", "2", "3", "4", "6", "8", "12", "24"};
+constexpr const char* const LOCK_ITEMS[] PROGMEM = {"1", "2", "3", "4", "6", "8", "12", "24"};
 
 struct SelectorRenderData {
     const char* title = "";

@@ -34,7 +34,7 @@ constexpr ProjectMenuRow row(const char* label,
     };
 }
 
-constexpr const char* const ROUTING_TRACK_LABELS[] = {
+constexpr const char* const ROUTING_TRACK_LABELS[] PROGMEM = {
     "Track 1",
     "Track 2",
     "Track 3",

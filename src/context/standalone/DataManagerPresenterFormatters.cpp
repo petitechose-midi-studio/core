@@ -12,8 +12,8 @@ namespace core::context::standalone::data_manager_presenter {
 namespace {
 
 constexpr const char* DEFAULT_OVERLAY_META = "NAV=MAP  L/R=RUN  C=ALL";
-constexpr const char* const SET_MODE_ITEMS[] = {"REPLACE", "MERGE"};
-constexpr const char* const CONFIRM_ITEMS[] = {"CANCEL", "CONFIRM"};
+constexpr const char* const SET_MODE_ITEMS[] PROGMEM = {"REPLACE", "MERGE"};
+constexpr const char* const CONFIRM_ITEMS[] PROGMEM = {"CANCEL", "CONFIRM"};
 
 FLASHMEM uint32_t hashFeedback(const char* feedback) {
     uint32_t hash = 0;

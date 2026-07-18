@@ -8,7 +8,7 @@ namespace core::persistence {
 
 namespace {
 
-constexpr const char* kLayoutDirectories[] = {
+constexpr const char* const kLayoutDirectories[] PROGMEM = {
     ProductFileService::PRODUCT_ROOT,
     ProductFileService::SESSION_DIR,
     ProductFileService::PROJECTS_DIR,

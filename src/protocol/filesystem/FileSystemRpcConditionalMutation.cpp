@@ -27,7 +27,7 @@ constexpr const char* RESOLVED_PROTOCOL_TMP_PREFIX = "/midi-studio/tmp/rpc-";
 constexpr uint8_t JOURNAL_VERSION = 1;
 constexpr size_t JOURNAL_BUFFER_SIZE = 512;
 constexpr size_t HASH_READ_BUFFER_SIZE = 512;
-constexpr uint8_t JOURNAL_MAGIC[] = {'F', 'S', 'T', 'X'};
+constexpr uint8_t JOURNAL_MAGIC[] PROGMEM = {'F', 'S', 'T', 'X'};
 
 enum class ConditionalMutationKind : uint8_t {
     REPLACE = 1,
@@ -98,8 +98,8 @@ public:
     }
 
 private:
-    void transform_(const uint8_t block[64]) {
-        static constexpr uint32_t roundConstants[64] = {
+    FLASHMEM void transform_(const uint8_t block[64]) {
+        static constexpr uint32_t roundConstants[64] PROGMEM = {
             0x428a2f98U, 0x71374491U, 0xb5c0fbcfU, 0xe9b5dba5U,
             0x3956c25bU, 0x59f111f1U, 0x923f82a4U, 0xab1c5ed5U,
             0xd807aa98U, 0x12835b01U, 0x243185beU, 0x550c7dc3U,
@@ -618,7 +618,7 @@ FLASHMEM Result<size_t> encodeConditionalResponse(
     uint8_t* response,
     size_t responseSize
 ) {
-    static constexpr uint8_t zeroDigest[FILESYSTEM_RPC_SHA256_SIZE] = {};
+    static constexpr uint8_t zeroDigest[FILESYSTEM_RPC_SHA256_SIZE] PROGMEM = {};
     ByteWriter writer(response, responseSize);
     if (!writeFrameHeader(writer, messageId, requestId) ||
         !writer.writeU8(static_cast<uint8_t>(status)) ||
