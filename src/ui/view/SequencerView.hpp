@@ -30,6 +30,7 @@
 #include "ui/sequencer/StepPropertySelectionOverlay.hpp"
 #include "ui/sequencer/StepGrid.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
+#include "ui/common/StructureSelectionInvalidation.hpp"
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/view/MainViewFrame.hpp"
 
@@ -93,6 +94,7 @@ private:
     bool bindToState();
     void bindHeaderState();
     void bindHeaderStripState();
+    bool bindStructureSelectionState();
     void bindGridState();
     void bindSelectorOverlayState();
     void bindOverlayVisibilityState();
@@ -112,6 +114,7 @@ private:
     void requestHeaderStripRender();
     void requestHeaderAndLeftRender();
     void requestHeaderStripAndLeftRender();
+    void requestStructureSelectionRender();
     void requestSelectorOverlayRender();
     void requestLeftActionStripRender();
     void requestBottomActionStripRender();
@@ -131,12 +134,15 @@ private:
     StateRefs state_refs_;
     oc::state::StaticWatchGroup<13> header_watcher_;
     oc::state::StaticWatchGroup<14> header_strip_watcher_;
+    oc::state::StaticWatchGroup<
+        2U * core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT>
+        structure_selection_watcher_;
     oc::state::StaticWatchGroup<41> grid_watcher_;
     oc::state::StaticWatchGroup<1> grid_tick_watcher_;
     oc::state::StaticWatchGroup<24> selector_overlay_watcher_;
     oc::state::StaticWatchGroup<9> overlay_visibility_watcher_;
     oc::state::StaticWatchGroup<10> left_action_strip_watcher_;
-    oc::state::StaticWatchGroup<21> bottom_action_strip_watcher_;
+    oc::state::StaticWatchGroup<23> bottom_action_strip_watcher_;
     oc::state::StaticWatchGroup<2> history_feedback_watcher_;
     oc::state::StaticWatchGroup<1> track_switch_ready_watcher_;
     oc::state::StaticWatchGroup<9> track_paste_preflight_watcher_;

@@ -431,6 +431,10 @@ FLASHMEM bool StandaloneUiAssembly::bindGlobalTrackStrip() {
         core_state_.trackNavigation.previewAddSlot,
         core_state_.trackNavigation.previewTrackIndex
     ) && bound;
+    bound = core::ui::watchStructureSelectionInvalidation(
+        global_track_structure_watcher_,
+        core_state_.trackNavigation.selection
+    ) && bound;
 
     global_track_activity_low_watcher_.bind<
         &StandaloneUiAssembly::requestGlobalTrackStripRender

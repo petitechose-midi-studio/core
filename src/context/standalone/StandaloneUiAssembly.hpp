@@ -7,6 +7,7 @@
 #include <oc/type/Ids.hpp>
 #include <oc/ui/lvgl/RetainedSurfaceParkingLot.hpp>
 
+#include "ui/common/StructureSelectionInvalidation.hpp"
 #include "ui/common/TrackNavigationStrip.hpp"
 
 namespace core::state {
@@ -88,7 +89,9 @@ private:
     oc::type::ScopeID project_view_scope_ = 0;
     oc::type::ScopeID device_settings_view_scope_ = 0;
     oc::state::StaticWatchGroup<2> global_track_context_watcher_;
-    oc::state::StaticWatchGroup<5> global_track_structure_watcher_;
+    oc::state::StaticWatchGroup<
+        5U + core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT>
+        global_track_structure_watcher_;
     oc::state::StaticWatchGroup<8> global_track_activity_low_watcher_;
     oc::state::StaticWatchGroup<8> global_track_activity_high_watcher_;
     oc::state::StaticWatchGroup<1> overlay_visibility_watcher_;
