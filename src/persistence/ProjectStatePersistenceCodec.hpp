@@ -40,17 +40,6 @@ bool decodeMusicalContextPayload(const uint8_t* data,
 void applyMusicalContextPayload(const ProjectMusicalContextPayload& payload,
                                 core::state::project::ProjectMusicalContext& target);
 
-void fillRoutingPayload(const core::state::project::ProjectRoutingState& source,
-                        ProjectRoutingPayload& out);
-bool encodeRoutingPayload(const ProjectRoutingPayload& payload,
-                          uint8_t* out,
-                          uint32_t outCapacity);
-bool decodeRoutingPayload(const uint8_t* data,
-                          uint32_t size,
-                          ProjectRoutingPayload& out);
-void applyRoutingPayload(const ProjectRoutingPayload& payload,
-                         core::state::project::ProjectRoutingState& target);
-
 void fillEditingPayload(const core::state::project::ProjectEditingState& source,
                         ProjectEditingPayload& out);
 bool encodeEditingPayload(const ProjectEditingPayload& payload,

@@ -7,6 +7,7 @@
 #include "SequencerInputUtils.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler::sequencer::chord_edit_ops {
 
@@ -123,31 +124,38 @@ FLASHMEM void applyQuickChoice(core::state::sequencer::SequencerState& sequencer
     bool changed = false;
 
     if (choice <= 0) {
-        changed = core::state::sequencer::clearNodeChordState(sequencer.pattern, nodeId);
+        changed = core::state::sequencer::clearAuthoringNodeChordState(
+            sequencer, nodeId
+        );
     } else if (!rootContext && choice == 1) {
-        changed = core::state::sequencer::setNodeChordMode(
-            sequencer.pattern,
+        changed = core::state::sequencer::setAuthoringNodeChordMode(
+            sequencer,
             nodeId,
             StepSequencerChordMode::Single
         );
     } else {
         StepSequencerChordSpec spec = semanticDefault(scaleConstrained);
-        const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
-        const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
-        if (node != nullptr &&
-            node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL)) {
-            spec = node->chordSpec;
+        const auto current =
+            core::state::sequencer::resolveStepChordUiState(sequencer, step);
+        if (current.valid &&
+            current.mode == StepSequencerChordMode::Local) {
+            spec = current.spec;
         }
         spec.voiceCount = static_cast<uint8_t>(
             rootContext
                 ? std::clamp<int>(choice + 1, 2, StepSequencerChordSpec::MAX_VOICES)
                 : std::clamp<int>(choice, 2, StepSequencerChordSpec::MAX_VOICES)
         );
-        changed = core::state::sequencer::setNodeChordSpec(sequencer.pattern, nodeId, spec);
+        changed = core::state::sequencer::setAuthoringNodeChordSpec(
+            sequencer,
+            nodeId,
+            spec
+        );
     }
 
     if (changed) {
         sequencer.invalidateVariationTelemetry();
+        core::state::sequencer::notifyStepContentDraftMutation(sequencer);
     }
 }
 
@@ -160,10 +168,10 @@ FLASHMEM bool applyModeChoice(core::state::sequencer::SequencerState& sequencer,
 
     const bool rootContext = core::state::sequencer::isRootContentView(sequencer);
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
-    const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
-    if (node == nullptr ||
-        !node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL)) {
+    const auto current =
+        core::state::sequencer::resolveStepChordUiState(sequencer, step);
+    if (!current.valid ||
+        current.mode != StepSequencerChordMode::Local) {
         specForLocal = semanticDefault(scaleConstrained);
     }
     specForLocal.clamp();
@@ -171,23 +179,27 @@ FLASHMEM bool applyModeChoice(core::state::sequencer::SequencerState& sequencer,
 
     if (rootContext) {
         changed = choice <= 0
-            ? core::state::sequencer::clearNodeChordState(sequencer.pattern, nodeId)
-            : core::state::sequencer::setNodeChordSpec(
-                  sequencer.pattern,
+            ? core::state::sequencer::clearAuthoringNodeChordState(
+                  sequencer, nodeId
+              )
+            : core::state::sequencer::setAuthoringNodeChordSpec(
+                  sequencer,
                   nodeId,
                   specForLocal
               );
     } else if (choice <= 0) {
-        changed = core::state::sequencer::clearNodeChordState(sequencer.pattern, nodeId);
+        changed = core::state::sequencer::clearAuthoringNodeChordState(
+            sequencer, nodeId
+        );
     } else if (choice == 1) {
-        changed = core::state::sequencer::setNodeChordMode(
-            sequencer.pattern,
+        changed = core::state::sequencer::setAuthoringNodeChordMode(
+            sequencer,
             nodeId,
             StepSequencerChordMode::Single
         );
     } else {
-        changed = core::state::sequencer::setNodeChordSpec(
-            sequencer.pattern,
+        changed = core::state::sequencer::setAuthoringNodeChordSpec(
+            sequencer,
             nodeId,
             specForLocal
         );
@@ -195,6 +207,7 @@ FLASHMEM bool applyModeChoice(core::state::sequencer::SequencerState& sequencer,
 
     if (changed) {
         sequencer.invalidateVariationTelemetry();
+        core::state::sequencer::notifyStepContentDraftMutation(sequencer);
     }
     return changed;
 }
@@ -271,13 +284,14 @@ FLASHMEM bool applySpecField(core::state::sequencer::SequencerState& sequencer,
     }
 
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
-    const bool changed = core::state::sequencer::setNodeChordSpec(
-        sequencer.pattern,
+    const bool changed = core::state::sequencer::setAuthoringNodeChordSpec(
+        sequencer,
         nodeId,
         spec
     );
     if (changed) {
         sequencer.invalidateVariationTelemetry();
+        core::state::sequencer::notifyStepContentDraftMutation(sequencer);
     }
     return changed;
 }
@@ -291,12 +305,13 @@ FLASHMEM bool resetSpecField(core::state::sequencer::SequencerState& sequencer,
 
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
     if (field == Field::MODE) {
-        const bool changed = core::state::sequencer::clearNodeChordState(
-            sequencer.pattern,
-            nodeId
-        );
+        const bool changed =
+            core::state::sequencer::clearAuthoringNodeChordState(
+                sequencer, nodeId
+            );
         if (changed) {
             sequencer.invalidateVariationTelemetry();
+            core::state::sequencer::notifyStepContentDraftMutation(sequencer);
         }
         return changed;
     }
@@ -342,13 +357,14 @@ FLASHMEM bool resetSpecField(core::state::sequencer::SequencerState& sequencer,
             return false;
     }
 
-    const bool changed = core::state::sequencer::setNodeChordSpec(
-        sequencer.pattern,
+    const bool changed = core::state::sequencer::setAuthoringNodeChordSpec(
+        sequencer,
         nodeId,
         spec
     );
     if (changed) {
         sequencer.invalidateVariationTelemetry();
+        core::state::sequencer::notifyStepContentDraftMutation(sequencer);
     }
     return changed;
 }

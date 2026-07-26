@@ -3,8 +3,12 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
+#include <utility>
+
 #include "state/CoreState.hpp"
 #include "state/macro/MacroAutomationDomain.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
+#include "state/project/ProjectTrackDomainServices.hpp"
 
 namespace core::state::macro {
 
@@ -15,7 +19,7 @@ FLASHMEM bool configsMatch(
     const std::array<MacroConfig, MACRO_COUNT>& rhs
 ) {
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
-        if (lhs[i].cc != rhs[i].cc || lhs[i].channel != rhs[i].channel) {
+        if (lhs[i].cc != rhs[i].cc) {
             return false;
         }
     }
@@ -81,20 +85,105 @@ FLASHMEM bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t 
     if (channel > 15 || cc > 127) return false;
 
     auto& page = state.pages.activePageData();
-    const bool channelChanged = state.pages.activeTrackChannel() != channel;
+    const uint8_t track = state.pages.currentActiveTrack();
+    const bool channelChanged =
+        project::projectTrackMidiChannel(state.projectTracks, track) != channel;
     const bool ccChanged = page.cc[index] != cc;
     if (!channelChanged && !ccChanged) {
         return false;
     }
 
-    if (channelChanged) {
-        state.pages.setActiveTrackChannel(channel);
+    const MacroAutomationSlotAddress address{
+        .track = track,
+        .page = state.pages.currentActivePage(),
+        .macro = index,
+    };
+    const auto previousProjectTracks = state.projectTracks.authored;
+    auto configHistory = ccChanged
+        ? state.macroHistory.prepare(
+              state.pages,
+              address,
+              MacroHistoryActionKind::CONFIG_EDIT
+          )
+        : MacroHistoryChangePtr{};
+    if (ccChanged && !configHistory) return false;
+    if (channelChanged && ccChanged) {
+        configHistory->auxiliary = core::app::makeExtmemUnique<
+            MacroAuxiliaryHistoryPayload
+        >();
+        if (!configHistory->auxiliary) return false;
+        configHistory->auxiliary->trackRouting.before = previousProjectTracks;
+        configHistory->auxiliary->trackRouting.valid = true;
     }
+
+    const uint8_t previousCc = page.cc[index];
     page.cc[index] = cc;
+    if (channelChanged) {
+        if (ccChanged) {
+            if (!project::setProjectTrackMidiChannel(
+                    state.projectTracks,
+                    track,
+                    channel
+                ).changed()) {
+                page.cc[index] = previousCc;
+                state.pages.updateActiveConfigs();
+                return false;
+            }
+            configHistory->auxiliary->trackRouting.after =
+                state.projectTracks.authored;
+            if (!state.macroHistory.commitPrepared(
+                    state.pages,
+                    std::move(configHistory)
+                )) {
+                page.cc[index] = previousCc;
+                (void)project::applyProjectTrackSnapshot(
+                    state.projectTracks,
+                    previousProjectTracks
+                );
+                return false;
+            }
+            state.pages.updateActiveConfigs();
+            state.configRevision.set(nextMacroConfigRevision(
+                state.configRevision.get(),
+                kMacroConfigDirtyAll
+            ));
+            state.markProjectMutated();
+            return true;
+        }
+        auto trackDomain =
+            project::ProjectTrackDomainServices::fromCoreState(state);
+        if (!trackDomain.setMidiChannel(track, channel)) {
+            page.cc[index] = previousCc;
+            state.pages.updateActiveConfigs();
+            return false;
+        }
+        if (ccChanged && !state.macroHistory.commitPrepared(
+                state.pages,
+                std::move(configHistory)
+            )) {
+            page.cc[index] = previousCc;
+            (void)trackDomain.undo();
+            state.projectTrackHistory.discardRedoBranch();
+            return false;
+        }
+        // The canonical Track commit projects every runtime view, bumps
+        // the all-config revision and marks the Project after the CC write.
+        return true;
+    }
+    if (!state.macroHistory.commitPrepared(
+            state.pages,
+            std::move(configHistory)
+        )) {
+        page.cc[index] = previousCc;
+        state.pages.updateActiveConfigs();
+        return false;
+    }
+    // Config edits are content-only for Track identity. Refresh the active
+    // projection only after history accepted the authored CC change.
     state.pages.updateActiveConfigs();
     state.configRevision.set(nextMacroConfigRevision(
         state.configRevision.get(),
-        channelChanged ? kMacroConfigDirtyAll : index
+        index
     ));
     state.markProjectMutated();
     return true;
@@ -102,12 +191,12 @@ FLASHMEM bool MacroWorkflow::setConfig(CoreState& state, uint8_t index, uint8_t 
 
 FLASHMEM bool MacroWorkflow::setTrackChannel(CoreState& state, uint8_t channel) {
     if (channel > 15) return false;
-    if (state.pages.activeTrackChannel() == channel) return false;
-
-    state.pages.setActiveTrackChannel(channel);
-    state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
-    state.markProjectMutated();
-    return true;
+    const uint8_t track = state.pages.currentActiveTrack();
+    if (project::projectTrackMidiChannel(state.projectTracks, track) == channel) {
+        return false;
+    }
+    return project::ProjectTrackDomainServices::fromCoreState(state)
+        .setMidiChannel(track, channel);
 }
 
 FLASHMEM MacroSlotActivationPlan MacroWorkflow::planMacroSlotActivation(

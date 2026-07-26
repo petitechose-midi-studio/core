@@ -209,9 +209,8 @@ void configurePattern(SequencerPatternState& pattern, uint8_t track) {
     const uint8_t length = static_cast<uint8_t>(8U + (track % 8U));
     const uint8_t step = static_cast<uint8_t>(track % length);
 
-    pattern.length.set(length);
+    pattern.setContentLength(length);
     pattern.stepsPerBeat.set(static_cast<uint8_t>(2U + (track % 4U)));
-    pattern.midiChannel.set(track);
     pattern.enabledMask.set({});
     pattern.setStepDataAt(
         step,
@@ -228,7 +227,6 @@ void configurePattern(SequencerPatternState& pattern, uint8_t track) {
 
 void prepareStoredFullBank(CoreState& state) {
     state.sequencerTracks.syncSharedTrackState(0xFFFFU, 0);
-    assert(state.sequencerTracks.setMutedMask(0xAAAAU));
 
     configurePattern(state.sequencer.pattern, 0);
     for (uint8_t track = 1; track < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
@@ -247,9 +245,8 @@ void prepareDifferentLiveBank(CoreState& state) {
     state.sequencer.reset();
     assert(state.setSharedTrackState(0x0001U, 0));
 
-    state.sequencer.pattern.length.set(64);
+    state.sequencer.pattern.setContentLength(64);
     state.sequencer.pattern.stepsPerBeat.set(8);
-    state.sequencer.pattern.midiChannel.set(15);
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(63, 12, 34, 150, -12, 42);
     state.sequencer.pattern.setEnabled(63, true);
@@ -274,7 +271,7 @@ void sampleQueue(oc::state::NotificationQueue& queue, size_t& peakPending) {
 void test_full_bank_apply_at_next_playhead_step_stays_within_notification_capacity() {
     static_assert(
         oc::state::NotificationQueue::maxPending() == 96,
-        "MIDI Studio requires headroom above its measured 66-entry atomic wave"
+        "MIDI Studio requires headroom above its measured 64-entry atomic wave"
     );
 
     CoreStorages storage;
@@ -326,15 +323,14 @@ void test_full_bank_apply_at_next_playhead_step_stays_within_notification_capaci
     state.update();
     sampleQueue(queue, peakPending);
 
-    // This scenario is intentionally large enough to prove the former
-    // 64-entry production capacity would overflow.
-    assert(peakPending == 66);
+    // The measured atomic wave dropped by two when canonical Project Track
+    // commits replaced the duplicate MIDI-channel and mute coalescer watches.
+    assert(peakPending == 64);
 
     const size_t droppedBeforeFlush = queue.overflowCount();
 
     assert(!state.hasPendingSequencerApply());
     assert(state.sequencerTracks.currentEnabledMask() == 0xFFFFU);
-    assert(state.sequencerTracks.currentMutedMask() == 0xAAAAU);
     assert(state.currentSharedTrackEnabledMask() == 0xFFFFU);
     assert(state.currentSharedActiveTrack() == 5);
     assert(state.sequencer.pattern.length.get() == 13);

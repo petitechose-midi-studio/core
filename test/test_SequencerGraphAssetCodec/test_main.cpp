@@ -91,7 +91,7 @@ void assertSameChordSpec(
 
 void test_root_step_graph_preset_roundtrip_preserves_nested_payload() {
     SequencerState source;
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     source.pattern.setEnabled(2, true);
     assert(source.setStepDataAt(2, 65, 91, 160, -7, 72));
 
@@ -150,7 +150,7 @@ void test_root_step_graph_preset_roundtrip_preserves_nested_payload() {
     assert(decoded.rootValuesValid);
 
     SequencerState target;
-    target.pattern.length.set(8);
+    target.pattern.setContentLength(8);
     target.pattern.setEnabled(5, true);
     assert(target.setStepDataAt(5, 40, 10, 50, 3, 100));
     assert(applyStepGraphPreset(target, 5, decoded, &report));
@@ -209,7 +209,7 @@ void test_root_step_graph_preset_roundtrip_preserves_nested_payload() {
 
 void test_child_step_graph_preset_roundtrip_preserves_local_payload_only() {
     SequencerState source;
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     const auto sourceMicro = createMicroSequence(source.pattern, rootStepNodeId(1), 2);
     assert(sourceMicro.ok);
     assert(enterMicroSequenceContentView(source, rootStepNodeId(1), sourceMicro.id));
@@ -242,7 +242,7 @@ void test_child_step_graph_preset_roundtrip_preserves_local_payload_only() {
     assert(!decoded.rootContext);
 
     SequencerState target;
-    target.pattern.length.set(8);
+    target.pattern.setContentLength(8);
     const auto targetMicro = createMicroSequence(target.pattern, rootStepNodeId(3), 3);
     assert(targetMicro.ok);
     assert(enterMicroSequenceContentView(target, rootStepNodeId(3), targetMicro.id));
@@ -267,13 +267,13 @@ void test_child_step_graph_preset_roundtrip_preserves_local_payload_only() {
 
 void test_context_mismatch_is_reported() {
     SequencerState rootSource;
-    rootSource.pattern.length.set(8);
+    rootSource.pattern.setContentLength(8);
     SequencerStepGraphPreset rootPreset{};
     SequencerGraphAssetReport report{};
     assert(captureStepGraphPreset(rootSource, 0, rootPreset, &report));
 
     SequencerState childTarget;
-    childTarget.pattern.length.set(8);
+    childTarget.pattern.setContentLength(8);
     const auto micro = createMicroSequence(childTarget.pattern, rootStepNodeId(0), 2);
     assert(micro.ok);
     assert(enterMicroSequenceContentView(childTarget, rootStepNodeId(0), micro.id));
@@ -291,7 +291,7 @@ void test_decode_rejects_invalid_buffers() {
     assert(report.status == SequencerGraphAssetStatus::INVALID_ARGUMENT);
 
     SequencerState source;
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     SequencerStepGraphPreset preset{};
     assert(captureStepGraphPreset(source, 0, preset, nullptr));
     std::array<uint8_t, 512> bytes{};
@@ -306,7 +306,7 @@ void test_decode_rejects_invalid_buffers() {
 
 void test_focused_workflow_saves_and_loads_step_graph_preset() {
     SequencerState source;
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     source.focusedStep.set(3);
     source.pattern.setEnabled(3, true);
     assert(source.setStepDataAt(3, 62, 82, 120, 5, 88));
@@ -327,7 +327,7 @@ void test_focused_workflow_saves_and_loads_step_graph_preset() {
     assert(saved.bytesWritten > 0);
 
     SequencerState target;
-    target.pattern.length.set(8);
+    target.pattern.setContentLength(8);
     target.focusedStep.set(5);
     const auto loaded = loadFocusedStepGraphPreset(target, bytes.data(), saved.bytesWritten);
     assert(loaded.ok());
@@ -375,7 +375,7 @@ void test_focused_workflow_saves_and_loads_step_graph_preset() {
 
 void test_mixed_pitch_policy_roundtrip_preserves_every_node() {
     SequencerState source;
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     source.pattern.setPitchEditMode(SequencerPitchEditMode::CHROMATIC);
     const auto root = rootStepNodeId(0);
     const auto micro = createMicroSequence(source.pattern, root, 2);
@@ -444,9 +444,9 @@ void test_mixed_pitch_policy_roundtrip_preserves_every_node() {
     std::cout << "[PASS] test_mixed_pitch_policy_roundtrip_preserves_every_node\n";
 }
 
-void test_v1_decode_materializes_chromatic_runtime_policy() {
+void test_previous_format_is_rejected_strictly() {
     SequencerState source;
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     source.pattern.setPitchEditMode(SequencerPitchEditMode::SCALE_DEGREES);
     assert(setNodeNoteOffset(source.pattern, rootStepNodeId(0), 1));
 
@@ -454,40 +454,30 @@ void test_v1_decode_materializes_chromatic_runtime_policy() {
     assert(captureStepGraphPreset(source, 0, preset, nullptr));
     assert(setStepGraphPresetMetadata(
         preset,
-        "legacy-fixture",
-        "Legacy fixture",
+        "previous-fixture",
+        "Previous fixture",
         SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE,
         {}
     ));
-    std::array<uint8_t, 4096> v2{};
-    const auto encoded = encodeStepGraphPreset(preset, v2.data(), v2.size());
+    std::array<uint8_t, 4096> bytes{};
+    const auto encoded = encodeStepGraphPreset(preset, bytes.data(), bytes.size());
     assert(encoded.ok());
 
-    constexpr size_t v1Header = core::state::sequencer::STEP_GRAPH_PRESET_V1_HEADER_SIZE;
-    constexpr size_t v2Header = core::state::sequencer::STEP_GRAPH_PRESET_HEADER_SIZE;
-    std::vector<uint8_t> v1;
-    v1.reserve(encoded.bytesWritten - (v2Header - v1Header));
-    v1.insert(v1.end(), v2.begin(), v2.begin() + v1Header);
-    v1.insert(v1.end(), v2.begin() + v2Header, v2.begin() + encoded.bytesWritten);
-    v1[4] = 1;  // format version
-    v1[6] = static_cast<uint8_t>(v1Header);
+    bytes[4] = static_cast<uint8_t>(
+        SequencerStepGraphPreset::CURRENT_FORMAT_VERSION - 1U
+    );
 
     SequencerStepGraphPreset decoded{};
     SequencerGraphAssetReport report{};
-    assert(decodeStepGraphPreset(v1.data(), v1.size(), decoded, &report));
-    assert(decoded.metadataDefaulted);
-    assert(decoded.scalePolicy == SequencerStepGraphPreset::ScalePolicy::CHROMATIC);
-    assert(!decoded.mixedPitchPolicy);
-    for (uint16_t i = 0; i < decoded.graph.stepNodeCount; ++i) {
-        assert(decoded.graph.stepNodes[i].has(STEP_NODE_PITCH_CHROMATIC));
-    }
+    assert(!decodeStepGraphPreset(bytes.data(), encoded.bytesWritten, decoded, &report));
+    assert(report.status == SequencerGraphAssetStatus::UNSUPPORTED_VERSION);
 
-    std::cout << "[PASS] test_v1_decode_materializes_chromatic_runtime_policy\n";
+    std::cout << "[PASS] test_previous_format_is_rejected_strictly\n";
 }
 
-void test_v3_semantic_chord_roundtrip_rejects_v2_reinterpretation() {
+void test_current_semantic_chord_roundtrip_rejects_previous_version() {
     SequencerState source;
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     auto semantic = StepSequencerChordSpec::semantic(
         oc::note::sequencer::StepSequencerChordHarmony::Major7,
         4,
@@ -514,12 +504,12 @@ void test_v3_semantic_chord_roundtrip_rejects_v2_reinterpretation() {
     bytes[4] = 2;
     assert(!decodeStepGraphPreset(bytes.data(), encoded.bytesWritten, decoded, nullptr));
 
-    std::cout << "[PASS] test_v3_semantic_chord_roundtrip_rejects_v2_reinterpretation\n";
+    std::cout << "[PASS] test_current_semantic_chord_roundtrip_rejects_previous_version\n";
 }
 
-void test_v2_metadata_is_bounded_valid_utf8_and_nonempty() {
+void test_current_metadata_is_bounded_valid_utf8_and_nonempty() {
     SequencerState source;
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     SequencerStepGraphPreset preset{};
     assert(captureStepGraphPreset(source, 0, preset, nullptr));
 
@@ -557,7 +547,7 @@ void test_v2_metadata_is_bounded_valid_utf8_and_nonempty() {
     assert(std::strcmp(decoded.semanticName, "Nom \"A\" \\ scene") == 0);
 
     constexpr size_t semanticOffset =
-        core::state::sequencer::STEP_GRAPH_PRESET_V1_HEADER_SIZE + 4U +
+        core::state::sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
         SequencerStepGraphPreset::TECHNICAL_ID_SIZE;
     auto corruptBytes = bytes;
     corruptBytes[semanticOffset] = static_cast<uint8_t>(0xC3);
@@ -570,7 +560,7 @@ void test_v2_metadata_is_bounded_valid_utf8_and_nonempty() {
         nullptr
     ));
 
-    std::cout << "[PASS] test_v2_metadata_is_bounded_valid_utf8_and_nonempty\n";
+    std::cout << "[PASS] test_current_metadata_is_bounded_valid_utf8_and_nonempty\n";
 }
 
 }  // namespace
@@ -582,9 +572,9 @@ int main() {
     test_decode_rejects_invalid_buffers();
     test_focused_workflow_saves_and_loads_step_graph_preset();
     test_mixed_pitch_policy_roundtrip_preserves_every_node();
-    test_v1_decode_materializes_chromatic_runtime_policy();
-    test_v3_semantic_chord_roundtrip_rejects_v2_reinterpretation();
-    test_v2_metadata_is_bounded_valid_utf8_and_nonempty();
+    test_previous_format_is_rejected_strictly();
+    test_current_semantic_chord_roundtrip_rejects_previous_version();
+    test_current_metadata_is_bounded_valid_utf8_and_nonempty();
     std::cout << "[PASS] SequencerGraphAssetCodec tests\n";
     return 0;
 }

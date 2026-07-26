@@ -21,14 +21,17 @@ constexpr lv_coord_t ITEM_MIN_SIZE = 11;
 constexpr lv_coord_t ITEM_GAP = 2;
 constexpr lv_opa_t ITEM_BASE_OPA = static_cast<lv_opa_t>(34);
 constexpr lv_opa_t ITEM_MUTED_OPA = static_cast<lv_opa_t>(18);
-constexpr lv_opa_t ITEM_MUTED_ACTIVE_MIN_OPA = LV_OPA_40;
+constexpr lv_opa_t ITEM_SOLO_EXCLUDED_OPA = static_cast<lv_opa_t>(13);
+constexpr lv_opa_t ITEM_INAUDIBLE_ACTIVE_MIN_OPA = LV_OPA_20;
 constexpr lv_opa_t ITEM_ACTIVE_MIN_OPA = LV_OPA_80;
 constexpr lv_opa_t ITEM_ACTIVITY_RANGE = static_cast<lv_opa_t>(42);
 constexpr lv_coord_t ACTIVE_CURSOR_HEIGHT = 2;
 constexpr lv_coord_t CURRENT_CURSOR_WIDTH = 2;
 constexpr lv_opa_t CURRENT_CURSOR_OPA = LV_OPA_COVER;
-constexpr lv_coord_t OUTLINE_WIDTH = 1;
-constexpr lv_opa_t OUTLINE_OPA_SELECTED = LV_OPA_70;
+constexpr lv_coord_t SOLO_BORDER_WIDTH = 1;
+constexpr lv_opa_t SOLO_BORDER_OPA = LV_OPA_COVER;
+constexpr lv_coord_t SELECTION_OUTLINE_WIDTH = 1;
+constexpr lv_opa_t SELECTION_OUTLINE_OPA = LV_OPA_70;
 
 }  // namespace
 
@@ -136,33 +139,48 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
         auto& cache = item_cache_[i];
         const uint16_t trackBit = static_cast<uint16_t>(1U << i);
         const bool enabled = (props.enabledMask & trackBit) != 0;
-        const bool muted = enabled && (props.mutedMask & trackBit) != 0;
+        const bool explicitlyMuted =
+            enabled && (props.explicitMutedMask & trackBit) != 0;
+        const bool soloed = enabled && (props.soloMask & trackBit) != 0;
+        const bool inaudible = enabled && (props.inaudibleMask & trackBit) != 0;
         const bool addSlot = props.addTrackIndex == i && !enabled;
         const bool isActive = props.activeTrack == i;
         const bool isPreview = props.previewTrack == i;
-        const bool focusedCursor = (props.focusingTrack || props.selectingTrack) && isPreview;
-        const bool selected = (props.selectedMask & static_cast<uint16_t>(1U << i)) != 0;
+        const bool focusedCursor =
+            (props.focusingTrack || props.selectingTrack) && isPreview;
+        const bool selected =
+            (props.selectedMask & trackBit) != 0U;
         const lv_coord_t width = item_width_cache_[i];
         if (!cache.initialized || cache.width != width) {
             cache.width = width;
             cache.bgColor = 0;
             cache.bgOpa = LV_OPA_TRANSP;
             cache.addVisible = false;
+            cache.borderWidth = -1;
+            cache.borderOpa = LV_OPA_TRANSP;
             cache.outlineWidth = -1;
             cache.outlineOpa = LV_OPA_TRANSP;
         }
         const lv_color_t baseColor = lv_color_hex(enabled ? theme::color::trackColor(i)
                                                           : theme::color::INACTIVE);
-        lv_color_t fillColor = muted ? lv_color_darken(baseColor, LV_OPA_50) : baseColor;
+        // Mute is authored and therefore darkened. A Track excluded only by
+        // another Track's Solo remains chromatically identifiable but dim.
+        lv_color_t fillColor = explicitlyMuted
+            ? lv_color_darken(baseColor, LV_OPA_50)
+            : baseColor;
         lv_opa_t fillOpa = static_cast<lv_opa_t>(
             ITEM_BASE_OPA +
             (static_cast<uint16_t>(props.activity[i]) * static_cast<uint16_t>(ITEM_ACTIVITY_RANGE) / 127U)
         );
-        if (muted) {
+        if (explicitlyMuted) {
             fillOpa = ITEM_MUTED_OPA;
+        } else if (inaudible) {
+            fillOpa = ITEM_SOLO_EXCLUDED_OPA;
         }
         if (isActive) {
-            const lv_opa_t minOpa = muted ? ITEM_MUTED_ACTIVE_MIN_OPA : ITEM_ACTIVE_MIN_OPA;
+            const lv_opa_t minOpa = inaudible
+                ? ITEM_INAUDIBLE_ACTIVE_MIN_OPA
+                : ITEM_ACTIVE_MIN_OPA;
             fillOpa = static_cast<lv_opa_t>(std::max<uint16_t>(fillOpa, minOpa));
             fillColor = lv_color_lighten(fillColor, LV_OPA_20);
         }
@@ -193,22 +211,40 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
             cache.addVisible = false;
         }
 
-        const lv_coord_t outlineWidth = selected ? OUTLINE_WIDTH : 0;
+        const lv_coord_t borderWidth = soloed ? SOLO_BORDER_WIDTH : 0;
+        if (!cache.initialized || cache.borderWidth != borderWidth) {
+            lv_obj_set_style_border_width(items_[i], borderWidth, 0);
+            cache.borderWidth = borderWidth;
+        }
+        const lv_opa_t borderOpa = soloed ? SOLO_BORDER_OPA : LV_OPA_TRANSP;
+        if (!cache.initialized || cache.borderOpa != borderOpa) {
+            if (soloed) {
+                lv_obj_set_style_border_color(
+                    items_[i], lv_color_hex(theme::color::MACRO_3), 0
+                );
+            }
+            lv_obj_set_style_border_opa(items_[i], borderOpa, 0);
+            cache.borderOpa = borderOpa;
+        }
+
+        const lv_coord_t outlineWidth =
+            selected ? SELECTION_OUTLINE_WIDTH : 0;
         if (!cache.initialized || cache.outlineWidth != outlineWidth) {
             lv_obj_set_style_outline_width(items_[i], outlineWidth, 0);
             cache.outlineWidth = outlineWidth;
         }
-        if (selected) {
-            if (!cache.initialized || cache.outlineOpa != OUTLINE_OPA_SELECTED) {
-                lv_obj_set_style_outline_color(items_[i], lv_color_hex(theme::color::TEXT_PRIMARY), 0);
-                lv_obj_set_style_outline_opa(items_[i], OUTLINE_OPA_SELECTED, 0);
-                cache.outlineOpa = OUTLINE_OPA_SELECTED;
+        const lv_opa_t outlineOpa =
+            selected ? SELECTION_OUTLINE_OPA : LV_OPA_TRANSP;
+        if (!cache.initialized || cache.outlineOpa != outlineOpa) {
+            if (selected) {
+                lv_obj_set_style_outline_color(
+                    items_[i],
+                    lv_color_hex(theme::color::TEXT_PRIMARY),
+                    0
+                );
             }
-        } else {
-            if (!cache.initialized || cache.outlineOpa != LV_OPA_TRANSP) {
-                lv_obj_set_style_outline_opa(items_[i], LV_OPA_TRANSP, 0);
-                cache.outlineOpa = LV_OPA_TRANSP;
-            }
+            lv_obj_set_style_outline_opa(items_[i], outlineOpa, 0);
+            cache.outlineOpa = outlineOpa;
         }
 
         cache.initialized = true;
@@ -271,7 +307,7 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
     const lv_coord_t itemY = item_y_cache_[props.previewTrack];
     const lv_coord_t itemW = item_width_cache_[props.previewTrack];
     const lv_coord_t itemH = item_height_cache_[props.previewTrack];
-    const lv_opa_t cursorOpa = props.selectingTrack ? LV_OPA_COVER : CURRENT_CURSOR_OPA;
+    const lv_opa_t cursorOpa = CURRENT_CURSOR_OPA;
 
     if (!current_cursor_visible_cache_) {
         lv_obj_clear_flag(current_cursor_, LV_OBJ_FLAG_HIDDEN);

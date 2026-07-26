@@ -1,9 +1,11 @@
-# UX workflow: create and apply a destination-first LFO from an empty Macro.
-# Purpose: proves explicit selection before sound, useful musical defaults,
-# full Source editing, native curve feedback, explicit Depth, and atomic Apply.
-# Expect: capture_changed:modulation_empty=lfo_audition_default, capture_changed:lfo_audition_default=lfo_audition_edited, capture_changed:lfo_audition_edited=lfo_applied
+# UX workflow: cancel, recreate, and apply a destination-first LFO.
+# Purpose: proves explicit selection before sound, one common Source workspace,
+# exact Cancel, native curve feedback, signed Depth, and one atomic Apply.
+# Expect: capture_changed:modulation_empty=lfo_audition_default, capture_changed:lfo_audition_default=lfo_cancel_edit, capture_changed:lfo_cancel_edit=lfo_creation_restored, capture_changed:lfo_audition_reentered=lfo_audition_edited, capture_changed:lfo_audition_edited=lfo_applied
 # Expect: semantic:lfo_audition_default:mode=project.modulator_detail, semantic:lfo_audition_default:projection=audible_audition, semantic:lfo_audition_default:source=lfo
+# Expect: semantic:lfo_cancel_edit:effect=edit_modulator_property, semantic:lfo_creation_restored:effect=cancel_destination_audition
 # Expect: semantic:lfo_audition_edited:effect=edit_modulator_depth, semantic:lfo_audition_edited:property=depth, semantic:lfo_audition_edited:projection=audible_audition
+# Expect: semantic:lfo_applied:effect=apply_destination_audition
 
 0 scenario macro
 80 capture screen macro_ready
@@ -22,17 +24,24 @@
 2020 tap NAV 60
 2240 capture screen lfo_audition_default
 
-# Shape, fastest Sync Rate, then signed destination Depth use NAV + OPT.
+# First pass proves exact local Cancel and restores the same New LFO choice.
 2360 encoder OPT 1.00
-2480 encoder NAV 1
-2540 encoder NAV 1
-2660 encoder OPT 0.00
-2780 encoder NAV 1
-2840 encoder NAV 1
-2900 encoder NAV 1
-3020 encoder OPT 0.75
-3240 capture screen lfo_audition_edited
+2580 capture screen lfo_cancel_edit
+2700 tap LEFT_TOP 60
+2920 capture screen lfo_creation_restored
+
+# Re-entering starts a fresh transaction with the same musical defaults.
+3040 tap NAV 60
+3260 capture screen lfo_audition_reentered
+
+# Shape, fastest Sync Rate, then signed destination Depth use NAV + OPT.
+3380 encoder OPT 1.00
+3500 encoder NAV 1
+3680 encoder OPT 0.00
+3800 encoder NAV 1
+4040 encoder OPT 0.75
+4260 capture screen lfo_audition_edited
 
 # Apply returns to the exact Macro assignment and creates one history action.
-3360 tap BOTTOM_RIGHT 60
-3580 capture screen lfo_applied
+4380 tap BOTTOM_RIGHT 60
+4600 capture screen lfo_applied

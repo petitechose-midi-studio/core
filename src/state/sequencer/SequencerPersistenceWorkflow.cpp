@@ -56,6 +56,9 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadPatternSl
     const persistence::SlotLoadStatus status =
         state.sequencerPersistence.loadPatternSlot(slotIndex, *staged);
     if (status == persistence::SlotLoadStatus::OK) {
+        if (!state.clearSequencerHistory()) {
+            return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+        }
         auto& bankTarget = state.sequencerTracks.track(
             state.sequencerTracks.activeTrackIndex()
         );
@@ -63,7 +66,6 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadPatternSl
             return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
         }
         installPatternStateToEditor(state.sequencer, staged->pattern);
-        state.clearSequencerHistory();
         state.markSequencerProjectMutated();
     }
 
@@ -135,6 +137,9 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
     const persistence::SlotLoadStatus status =
         state.sequencerPersistence.loadSetSlot(slotIndex, *stagedBank, *staged);
     if (status == persistence::SlotLoadStatus::OK) {
+        if (!state.clearSequencerHistory()) {
+            return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+        }
         if (merge) {
             auto& bankTarget = state.sequencerTracks.track(
                 state.sequencerTracks.activeTrackIndex()
@@ -158,7 +163,6 @@ FLASHMEM persistence::SlotLoadStatus SequencerPersistenceWorkflow::loadSetSlot(
             state.sequencerTracks.currentEnabledMask(),
             state.sequencerTracks.activeTrackIndex()
         );
-        state.clearSequencerHistory();
         state.markSequencerProjectMutated();
     }
 

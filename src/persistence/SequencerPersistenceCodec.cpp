@@ -31,12 +31,6 @@ uint8_t sanitizeStepsPerBeat(uint8_t spb) {
     return spb;
 }
 
-uint8_t sanitizeMidiChannel(uint8_t channel) {
-    return (channel > 15U)
-               ? sequencer::SequencerPatternState::DEFAULT_MIDI_CHANNEL_0BASED
-               : channel;
-}
-
 uint8_t sanitizeMidi7(uint8_t value) {
     return (value > 127U) ? 127U : value;
 }
@@ -88,7 +82,6 @@ uint8_t sanitizeFocusedStep(uint8_t focused, uint8_t length) {
 struct PatternEncodeView {
     uint8_t length = sequencer::SequencerPatternState::DEFAULT_LENGTH;
     uint8_t stepsPerBeat = sequencer::SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
-    uint8_t midiChannel = sequencer::SequencerPatternState::DEFAULT_MIDI_CHANNEL_0BASED;
     sequencer::SequencerPitchEditMode pitchEditMode =
         sequencer::SequencerPitchEditMode::CHROMATIC;
     oc::note::sequencer::StepSequencerVariationRanges variationRanges{};
@@ -111,7 +104,6 @@ FLASHMEM PatternEncodeView patternEncodeView(
     return {
         .length = source.length.get(),
         .stepsPerBeat = source.stepsPerBeat.get(),
-        .midiChannel = source.midiChannel.get(),
         .pitchEditMode = source.pitchEditMode,
         .variationRanges = source.variationRanges,
         .swingOffsetPercent = source.swingOffsetPercent.get(),
@@ -133,7 +125,6 @@ FLASHMEM PatternEncodeView patternEncodeView(
     return {
         .length = source.length,
         .stepsPerBeat = source.stepsPerBeat,
-        .midiChannel = source.midiChannel,
         .pitchEditMode = source.pitchEditMode,
         .variationRanges = source.variationRanges,
         .swingOffsetPercent = source.swingOffsetPercent,
@@ -165,7 +156,6 @@ FLASHMEM bool writePattern(binary::Writer& writer, const PatternEncodeView& sour
 
     if (!writer.writeU8(length) ||
         !writer.writeU8(sanitizeStepsPerBeat(source.stepsPerBeat)) ||
-        !writer.writeU8(sanitizeMidiChannel(source.midiChannel)) ||
         !writer.writeU8(static_cast<uint8_t>(source.pitchEditMode)) ||
         !writer.writeU8(variationRanges.pitchSemitones) ||
         !writer.writeU8(variationRanges.velocity) ||
@@ -217,11 +207,6 @@ FLASHMEM bool writeProjectSequencerSnapshotPayload(
             enabledMask,
             snapshot.activeTrack
         );
-    const uint16_t mutedMask =
-        sequencer::SequencerTrackBankState::sanitizeMutedMask(
-            snapshot.mutedMask,
-            enabledMask
-        );
     const auto projectScale = sanitizeScaleSettings(snapshot.projectScaleSettings);
     const uint8_t focused = sanitizeFocusedStep(
         focusedStep,
@@ -233,7 +218,9 @@ FLASHMEM bool writeProjectSequencerSnapshotPayload(
 
     if (!writer.writeU8(activeTrack) ||
         !writer.writeU16(enabledMask) ||
-        !writer.writeU16(mutedMask) ||
+        // Track Mute belongs exclusively to the Project Track chunk. Retain
+        // two zeroed bytes so the fixed payload geometry stays unchanged.
+        !writer.writeU16(0U) ||
         !writer.writeU8(projectScale.root) ||
         !writer.writeU8(static_cast<uint8_t>(projectScale.type)) ||
         !writer.writeU8(static_cast<uint8_t>(projectScale.mode)) ||
@@ -265,7 +252,6 @@ FLASHMEM bool readPattern(binary::Reader& reader,
                           sequencer::SequencerPatternState& target) {
     uint8_t lengthRaw = 0;
     uint8_t stepsPerBeat = 0;
-    uint8_t midiChannel = 0;
     uint8_t pitchEditMode = 0;
     uint8_t variationPitch = 0;
     uint8_t variationVelocity = 0;
@@ -282,7 +268,6 @@ FLASHMEM bool readPattern(binary::Reader& reader,
 
     if (!reader.readU8(lengthRaw) ||
         !reader.readU8(stepsPerBeat) ||
-        !reader.readU8(midiChannel) ||
         !reader.readU8(pitchEditMode) ||
         !reader.readU8(variationPitch) ||
         !reader.readU8(variationVelocity) ||
@@ -300,9 +285,8 @@ FLASHMEM bool readPattern(binary::Reader& reader,
     }
 
     const uint8_t length = sanitizeLength(lengthRaw);
-    target.length.set(length);
+    target.setContentLength(length);
     target.stepsPerBeat.set(sanitizeStepsPerBeat(stepsPerBeat));
-    target.midiChannel.set(sanitizeMidiChannel(midiChannel));
     target.setPitchEditMode(sequencer::sanitizePitchEditMode(pitchEditMode));
     target.setPatternVariationRanges(sanitizeVariationRanges({
         .pitchSemitones = variationPitch,
@@ -412,27 +396,27 @@ FLASHMEM bool applyProjectSequencerPayload(const uint8_t* data,
     binary::Reader reader(data, size);
     uint8_t activeTrackRaw = 0;
     uint16_t enabledMask = 0;
-    uint16_t mutedMask = 0;
+    uint16_t reservedProjectTrackState = 0;
     uint8_t projectScaleRoot = 0;
     uint8_t projectScaleType = 0;
     uint8_t projectScaleConstraintMode = 0;
     uint8_t reserved = 0;
     if (!reader.readU8(activeTrackRaw) ||
         !reader.readU16(enabledMask) ||
-        !reader.readU16(mutedMask) ||
+        !reader.readU16(reservedProjectTrackState) ||
         !reader.readU8(projectScaleRoot) ||
         !reader.readU8(projectScaleType) ||
         !reader.readU8(projectScaleConstraintMode) ||
         !reader.readU8(reserved)) {
         return false;
     }
+    (void)reservedProjectTrackState;
     (void)reserved;
 
     const uint8_t requestedActiveTrack =
         sequencer::SequencerTrackBankState::clampTrackIndex(activeTrackRaw);
     trackBank.reset();
     trackBank.syncSharedTrackState(enabledMask, requestedActiveTrack);
-    trackBank.setMutedMask(mutedMask);
     trackBank.setProjectScaleSettings(payloadScaleSettings(
         projectScaleRoot,
         projectScaleType,
@@ -495,7 +479,8 @@ FLASHMEM bool fillSetPayload(const sequencer::SequencerTrackBankState& trackBank
     if (!writer.writeU8(sequencer::SequencerTrackBankState::TRACK_COUNT) ||
         !writer.writeU8(activeTrack) ||
         !writer.writeU16(trackBank.currentEnabledMask()) ||
-        !writer.writeU16(trackBank.currentMutedMask()) ||
+        // Set assets carry Sequencer topology/content, never Project Track mix.
+        !writer.writeU16(0U) ||
         !writer.writeU8(projectScale.root) ||
         !writer.writeU8(static_cast<uint8_t>(projectScale.type)) ||
         !writer.writeU8(static_cast<uint8_t>(projectScale.mode)) ||
@@ -521,7 +506,7 @@ FLASHMEM bool applySetPayload(const uint8_t* data,
     uint8_t trackCountRaw = 0;
     uint8_t activeTrackRaw = 0;
     uint16_t enabledMask = 0;
-    uint16_t mutedMask = 0;
+    uint16_t reservedProjectTrackState = 0;
     uint8_t projectScaleRoot = 0;
     uint8_t projectScaleType = 0;
     uint8_t projectScaleConstraintMode = 0;
@@ -529,13 +514,14 @@ FLASHMEM bool applySetPayload(const uint8_t* data,
     if (!reader.readU8(trackCountRaw) ||
         !reader.readU8(activeTrackRaw) ||
         !reader.readU16(enabledMask) ||
-        !reader.readU16(mutedMask) ||
+        !reader.readU16(reservedProjectTrackState) ||
         !reader.readU8(projectScaleRoot) ||
         !reader.readU8(projectScaleType) ||
         !reader.readU8(projectScaleConstraintMode) ||
         !reader.readU8(reserved)) {
         return false;
     }
+    (void)reservedProjectTrackState;
     (void)reserved;
 
     const uint8_t trackCount = static_cast<uint8_t>(std::min<uint16_t>(
@@ -547,7 +533,6 @@ FLASHMEM bool applySetPayload(const uint8_t* data,
 
     trackBank.reset();
     trackBank.syncSharedTrackState(enabledMask, 0);
-    trackBank.setMutedMask(mutedMask);
     trackBank.setProjectScaleSettings(payloadScaleSettings(
         projectScaleRoot,
         projectScaleType,

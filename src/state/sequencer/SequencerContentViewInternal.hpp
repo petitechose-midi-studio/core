@@ -8,6 +8,7 @@
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerPitchEditAuthority.hpp"
 
 namespace core::state::sequencer::content_view_internal {
 

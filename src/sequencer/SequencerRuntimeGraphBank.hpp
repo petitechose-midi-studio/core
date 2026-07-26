@@ -58,9 +58,11 @@ private:
     struct SourceSignature {
         const Graph* source = nullptr;
         uint32_t revision = 0;
+        uint32_t draftRevision = 0;
 
         bool matches(const SourceSignature& other) const {
-            return source == other.source && revision == other.revision;
+            return source == other.source && revision == other.revision &&
+                   draftRevision == other.draftRevision;
         }
     };
 

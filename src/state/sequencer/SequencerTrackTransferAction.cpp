@@ -53,7 +53,7 @@ FLASHMEM contextual::ContextActionSpec buildSequencerTrackTransferActionSpec(
     };
     spec.target = {
         .kind = contextual::ContextEntityKind::TRACK,
-        .track = plan.firstTarget,
+        .track = plan.entry.targetTrack,
         .item = plan.targetMask,
     };
 

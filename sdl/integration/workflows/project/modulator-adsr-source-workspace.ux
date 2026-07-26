@@ -1,70 +1,107 @@
-# UX workflow: create and edit one Project-owned ADSR from the source side.
-# Purpose: proves explicit source kind, atomic source/trigger/destination Apply,
-# direct A/D/S/R cards, typed Trigger editing, and visual More controls.
-# Expect: capture_changed:empty_registry=source_kind_picker, capture_changed:source_kind_picker=adsr_kind_selected, capture_changed:adsr_kind_selected=adsr_destination_picker
-# Expect: capture_changed:adsr_destination_picker=adsr_preview, capture_changed:adsr_preview=adsr_applied, capture_changed:adsr_applied=adsr_workspace
-# Expect: capture_changed:adsr_workspace=attack_feedback, capture_changed:attack_feedback=trigger_editor, capture_changed:trigger_editor=trigger_route_edited
-# Expect: capture_changed:trigger_route_edited=adsr_more, capture_changed:adsr_more=smooth_curve_feedback
-# Expect: semantic:adsr_preview:mode=project.modulator_detail, semantic:adsr_preview:projection=audible_audition
-# Expect: semantic:trigger_route_edited:mode=project.modulator_trigger, semantic:trigger_route_edited:effect=edit_trigger_route, semantic:trigger_route_edited:property=note
-# Expect: semantic:adsr_more:mode=project.modulator_options, semantic:smooth_curve_feedback:property=curve
+# UX workflow: create and edit one Project-owned DAHDSR end to end.
+# Purpose: proves explicit DAHDSR creation, atomic source/trigger/destination
+# Apply, the compact A/D/S/R source surface, the retained curve in Trigger and
+# Details, all five trigger filters, per-parameter Sync Feel, and destinations.
+# Expect: capture_changed:empty_registry=source_kind_picker, capture_changed:source_kind_picker=dahdsr_kind_selected, capture_changed:dahdsr_kind_selected=dahdsr_destination_picker
+# Expect: capture_changed:dahdsr_destination_picker=dahdsr_preview, capture_changed:dahdsr_preview=dahdsr_applied, capture_changed:dahdsr_applied=dahdsr_workspace
+# Expect: capture_changed:dahdsr_workspace=attack_feedback, capture_changed:attack_feedback=trigger_editor, capture_changed:trigger_editor=trigger_route_edited
+# Expect: capture_changed:trigger_route_edited=dahdsr_details, capture_changed:dahdsr_details=sync_timing, capture_changed:sync_timing=hold_triplet
+# Expect: capture_changed:hold_triplet=details_edited, capture_changed:details_edited=destinations_restored
+# Expect: semantic:dahdsr_preview:mode=project.modulator_detail, semantic:dahdsr_preview:projection=audible_audition
+# Expect: semantic:trigger_editor:mode=project.modulator_trigger, semantic:trigger_editor:property=track
+# Expect: semantic:trigger_route_edited:mode=project.modulator_trigger, semantic:trigger_route_edited:effect=edit_trigger_route, semantic:trigger_route_edited:property=velocity_high
+# Expect: semantic:sync_timing:mode=project.modulator_options, semantic:sync_timing:property=timing
+# Expect: semantic:hold_triplet:mode=project.modulator_options, semantic:hold_triplet:effect=cycle_modulator_feel, semantic:hold_triplet:property=hold
+# Expect: semantic:details_edited:mode=project.modulator_options, semantic:details_edited:property=retrigger
+# Expect: semantic:destinations_restored:mode=project.modulator_destinations
 
 0 scenario project-modulator-destination
 
-# Reach the empty Project Modulator registry through the common tab gesture.
-100 button LEFT_CENTER down
-700 encoder NAV 1
-780 encoder NAV 2
-860 encoder NAV 3
-940 encoder NAV 4
-1020 encoder NAV 5
-1100 button LEFT_CENTER up
+# Reach the empty first-rank Modulators view from Project Settings.
+100 button LEFT_TOP down
+700 encoder NAV -1
+1100 button LEFT_TOP up
 1320 capture screen empty_registry
 
 # Type is explicit before any destination or provisional musical data exists.
 1440 tap NAV 60
 1660 capture screen source_kind_picker
 1780 encoder NAV 1
-2000 capture screen adsr_kind_selected
+2000 capture screen dahdsr_kind_selected
 2120 tap NAV 60
-2340 capture screen adsr_destination_picker
+2340 capture screen dahdsr_destination_picker
 
-# The explicit Track > Page > Macro route leads to M1. It produces one
-# provisional ADSR + Track Note route + destination. Apply publishes the
-# complete set as one Undo action.
+# Track > Page > Macro leads to M1. Apply publishes Source, Track Note trigger,
+# destination and initial Depth as one Undo action.
 2460 tap NAV 60
 2580 tap NAV 60
 2700 tap NAV 60
-2940 capture screen adsr_preview
+2940 capture screen dahdsr_preview
 3060 tap BOTTOM_RIGHT 60
-3300 capture screen adsr_applied
+3300 capture screen dahdsr_applied
 3420 tap LEFT_TOP 60
-3640 capture screen adsr_workspace
+3640 capture screen dahdsr_workspace
 
-# A/D/S/R are direct cards; exact units appear temporarily over the curve.
+# A/D/S/R remain direct cards; exact units appear temporarily over the curve.
 3760 encoder OPT 0.40
 3980 capture screen attack_feedback
 
-# Trigger remains one visible card and opens the three-field route editor.
-4040 encoder NAV 1
+# Trigger is one source card. Its retained workspace exposes the complete,
+# deterministic Track / note range / velocity range filter without hiding the
+# DAHDSR curve.
 4100 encoder NAV 1
-4160 encoder NAV 1
-4220 encoder NAV 1
-4280 tap NAV 60
-4440 capture screen trigger_editor
-4560 encoder OPT 0.13
-4680 encoder NAV 1
-4800 encoder OPT 0.25
-4920 encoder NAV 1
-5040 encoder OPT 0.4765625
-5260 capture screen trigger_route_edited
+4180 encoder NAV 1
+4260 encoder NAV 1
+4340 encoder NAV 1
+4460 tap NAV 60
+4680 capture screen trigger_editor
+4800 encoder OPT 0.20
+5000 encoder NAV 1
+5200 encoder OPT 0.25
+5400 encoder NAV 1
+5600 encoder OPT -0.25
+5800 encoder NAV 1
+6000 encoder OPT 0.20
+6200 encoder NAV 1
+6400 encoder OPT -0.20
+6620 capture screen trigger_route_edited
 
-# Back restores Trigger focus. More keeps the curve visible while Timing,
-# Curve and Retrigger stay one click away.
-5380 tap LEFT_TOP 60
-5500 encoder NAV 1
-5620 tap NAV 60
-5840 capture screen adsr_more
-5960 encoder NAV 1
-6080 encoder OPT 0.50
-6300 capture screen smooth_curve_feedback
+# Back restores Trigger focus; the adjacent Details card keeps the same curve
+# visible and exposes D/H/Timing/Smooth/Response/Retrigger/Rename.
+6740 tap LEFT_TOP 60
+6860 encoder NAV 1
+6980 tap NAV 60
+7200 capture screen dahdsr_details
+7320 encoder OPT 0.10
+7440 encoder NAV 1
+7560 encoder OPT 0.20
+7680 encoder NAV 1
+7800 encoder OPT -1.00
+7920 encoder OPT -1.00
+8040 encoder OPT -1.00
+8160 encoder OPT -1.00
+8380 capture screen sync_timing
+
+# In Sync timing a NAV tap on one temporal card cycles its independent Feel.
+8500 encoder NAV -1
+8620 tap NAV 60
+8840 capture screen hold_triplet
+
+# Smooth, response and retrigger stay in the same local editor.
+8960 encoder NAV 1
+9040 encoder NAV 1
+9160 encoder OPT 0.35
+9280 encoder NAV 1
+9400 encoder OPT -1.00
+9520 encoder OPT -1.00
+9640 encoder NAV 1
+9760 encoder OPT 1.00
+9880 encoder OPT 1.00
+10100 encoder OPT 1.00
+10320 capture screen details_edited
+
+# Returning to the source and opening Destinations preserves the assignment.
+10440 tap LEFT_TOP 60
+10560 encoder NAV 1
+10680 tap NAV 60
+10900 capture screen destinations_restored

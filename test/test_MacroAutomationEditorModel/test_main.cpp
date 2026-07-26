@@ -10,12 +10,14 @@ bool near(float lhs, float rhs, float epsilon = 0.0001f) {
     return std::fabs(lhs - rhs) <= epsilon;
 }
 
-core::state::macro::MacroAutomationSlotState makeSlotWithSourceDuration(float beats) {
-    core::state::macro::MacroAutomationSlotState slot;
-    slot.automation.active = true;
-    slot.automation.sourceDurationTicks =
+core::state::modulation::ProjectControlCurveView
+makeAutomationWithSourceDuration(float beats) {
+    core::state::modulation::ProjectControlCurveView automation;
+    automation.id = {1U};
+    automation.pointCount = 1U;
+    automation.spec.sourceDurationTicks =
         core::state::macro::macroAutomationTicksFromBeats(beats);
-    return slot;
+    return automation;
 }
 
 void test_length_range_edits_one_beat_steps_by_default() {
@@ -56,15 +58,17 @@ void test_length_range_uses_four_beat_steps_when_coarse() {
 void test_offset_range_is_bounded_by_source_duration_and_wrap_semantics() {
     using namespace core::handler;
 
-    const auto shortSlot = makeSlotWithSourceDuration(2.0f);
-    const auto shortRange = macroAutomationOffsetEditRange(&shortSlot, false);
+    const auto shortAutomation = makeAutomationWithSourceDuration(2.0f);
+    const auto shortRange =
+        macroAutomationOffsetEditRange(&shortAutomation, false);
     assert(shortRange.minBeat == 0);
     assert(shortRange.beatStep == 1);
     assert(shortRange.stepCount == 2);
     assert(near(macroAutomationEncoderPositionToBeat(1.0f, shortRange), 1.0f));
 
-    const auto longSlot = makeSlotWithSourceDuration(8.0f);
-    const auto coarseRange = macroAutomationOffsetEditRange(&longSlot, true);
+    const auto longAutomation = makeAutomationWithSourceDuration(8.0f);
+    const auto coarseRange =
+        macroAutomationOffsetEditRange(&longAutomation, true);
     assert(coarseRange.minBeat == 0);
     assert(coarseRange.beatStep == 4);
     assert(coarseRange.stepCount == 2);

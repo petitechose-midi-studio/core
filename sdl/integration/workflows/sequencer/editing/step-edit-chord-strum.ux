@@ -7,9 +7,10 @@
 50 capture screen sequencer_ready
 
 # Move to Step focus, enable step 1, and open the Step Editor.
-150 tap NAV 60
-350 capture screen pattern_focus
-450 tap NAV 60
+150 capture screen pattern_focus
+450 button NAV down
+510 encoder NAV 1
+570 button NAV up
 650 capture screen step_focus
 750 tap MACRO_1 60
 950 capture screen step_1_enabled
@@ -44,3 +45,5 @@
 4250 capture screen velocity_contour_zero
 4350 encoder OPT 1.0
 4550 capture screen velocity_contour_adjusted
+4650 tap BOTTOM_RIGHT 60
+4900 capture screen chord_published

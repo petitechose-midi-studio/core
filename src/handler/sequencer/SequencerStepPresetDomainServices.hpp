@@ -99,7 +99,6 @@ public:
         core::persistence::ProductFileService& files
     );
 
-    SequencerStepPresetListResult listPresets(Entry* entries, uint8_t capacity) const;
     SequencerStepPresetListResult listPresetsPage(
         Entry* entries,
         uint8_t capacity,
@@ -142,15 +141,9 @@ public:
         const char* expectedSemanticName
     ) const;
 
-    // Compatibility wrappers for non-picker callers.
-    SequencerStepPresetActionResult savePreset(const char* presetId) const;
-    SequencerStepPresetActionResult loadPreset(const char* presetId) const;
-
 private:
     core::state::CoreState* state_ = nullptr;
     core::persistence::ProductFileService* files_ = nullptr;
 };
-
-const char* sequencerStepPresetStatusLabel(SequencerStepPresetStatus status);
 
 }  // namespace core::handler

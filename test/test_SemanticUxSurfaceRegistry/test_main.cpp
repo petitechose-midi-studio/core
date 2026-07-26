@@ -93,6 +93,22 @@ void test_capacity_is_deterministic() {
     std::cout << "[PASS] test_capacity_is_deterministic\n";
 }
 
+void test_capacity_covers_standalone_surface_set() {
+    constexpr std::size_t REQUIRED_STANDALONE_SURFACES = 18;
+    static_assert(
+        core::validation::ux::SemanticUxSurfaceRegistry::CAPACITY >=
+        REQUIRED_STANDALONE_SURFACES
+    );
+
+    core::validation::ux::SemanticUxSurfaceRegistry registry;
+    MatchSurface surface{"surface"};
+    for (std::size_t i = 0; i < REQUIRED_STANDALONE_SURFACES; ++i) {
+        assert(registry.add(surface));
+    }
+    assert(registry.count() == REQUIRED_STANDALONE_SURFACES);
+    std::cout << "[PASS] test_capacity_covers_standalone_surface_set\n";
+}
+
 void test_lower_priority_runs_first() {
     core::validation::ux::SemanticUxSurfaceRegistry registry;
     MatchSurface low{"low"};
@@ -132,6 +148,7 @@ int main() {
     test_first_matching_surface_wins();
     test_no_match_leaves_context_empty();
     test_capacity_is_deterministic();
+    test_capacity_covers_standalone_surface_set();
     test_lower_priority_runs_first();
     test_clear_resets_registry();
 

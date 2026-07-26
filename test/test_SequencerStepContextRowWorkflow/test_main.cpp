@@ -6,6 +6,7 @@
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "support/CoreStorages.hpp"
 
 namespace {
@@ -47,7 +48,7 @@ void test_focused_context_row_opens_or_creates_matching_child() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
 
     sequencer.stepEdit.focusedRow.set(step_edit_rows::MICRO_SEQUENCE);
     auto result = step_context_row_workflow::openOrCreateFocusedContextChild(
@@ -56,18 +57,22 @@ void test_focused_context_row_opens_or_creates_matching_child() {
     );
     assert(result.opened);
     assert(result.created);
+    assert(result.draft);
     assert(core::state::sequencer::isMicroSequenceContentView(sequencer));
     assert(core::state::sequencer::activeContentLength(sequencer) ==
            core::state::sequencer::DEFAULT_MICRO_SEQUENCE_LENGTH);
 
+    assert(core::state::sequencer::publishStepContentDraft(sequencer));
     assert(core::state::sequencer::leaveContentView(sequencer));
     sequencer.stepEdit.focusedRow.set(step_edit_rows::CYCLE_STATES);
     result = step_context_row_workflow::openOrCreateFocusedContextChild(sequencer, 2);
     assert(result.opened);
     assert(result.created);
+    assert(result.draft);
     assert(core::state::sequencer::isCycleStatesContentView(sequencer));
     assert(core::state::sequencer::activeContentLength(sequencer) ==
            core::state::sequencer::DEFAULT_CYCLE_STATE_COUNT);
+    assert(core::state::sequencer::publishStepContentDraft(sequencer));
 
     std::cout << "[PASS] test_focused_context_row_opens_or_creates_matching_child\n";
 }
@@ -77,7 +82,7 @@ void test_copy_paste_requires_focused_child_kind() {
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
     auto& clipboard = state.structureClipboard;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
 
     sequencer.stepEdit.focusedRow.set(step_edit_rows::MICRO_SEQUENCE);
     auto result = step_context_row_workflow::openOrCreateFocusedContextChild(
@@ -85,6 +90,7 @@ void test_copy_paste_requires_focused_child_kind() {
         0
     );
     assert(result.opened);
+    assert(core::state::sequencer::publishStepContentDraft(sequencer));
     assert(core::state::sequencer::leaveContentView(sequencer));
 
     assert(step_context_row_workflow::copyFocusedContextChildToClipboard(
@@ -126,7 +132,7 @@ void test_clear_focused_context_child() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.stepEdit.focusedRow.set(step_edit_rows::CYCLE_STATES);
 
     auto result = step_context_row_workflow::openOrCreateFocusedContextChild(
@@ -134,6 +140,7 @@ void test_clear_focused_context_child() {
         4
     );
     assert(result.opened);
+    assert(core::state::sequencer::publishStepContentDraft(sequencer));
     assert(core::state::sequencer::leaveContentView(sequencer));
     assert(rootStepHasCycleStates(sequencer.pattern, 4));
 

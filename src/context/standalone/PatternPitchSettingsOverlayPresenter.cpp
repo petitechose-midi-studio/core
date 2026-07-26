@@ -34,6 +34,8 @@ FLASHMEM PatternPitchSettingsOverlayPresenter::PatternPitchSettingsOverlayPresen
           this
       ) {}
 
+FLASHMEM PatternPitchSettingsOverlayPresenter::~PatternPitchSettingsOverlayPresenter() = default;
+
 FLASHMEM bool PatternPitchSettingsOverlayPresenter::bind() {
     bool bound = render_scheduler_.valid();
     overlay_watcher_.bind<&PatternPitchSettingsOverlayPresenter::requestOverlayRender>(

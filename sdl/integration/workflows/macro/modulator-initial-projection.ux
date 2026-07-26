@@ -6,30 +6,32 @@
 0 scenario macro-initial-projection
 300 capture screen cold_projection
 
-# PAGE is one focus step from TRACK; the first navigation lands directly on
-# Page 2 and must already show its distinct Base plus modulation rail.
-440 tap NAV 60
-580 encoder NAV 1
-720 tap NAV 60
-940 capture screen page_2_projection
+# Page is the canonical hot focus. Preview then commit Page 2; its first frame
+# must already show the distinct Base plus modulation rail.
+440 encoder NAV 1
+580 tap NAV 60
+800 capture screen page_2_projection
 
-# Return focus through STEP to TRACK, then land on Track 2 in one turn. The
-# first Track 2 frame must be coherent without toggling away and back.
-1080 tap NAV 60
-1220 tap NAV 60
-1360 encoder NAV 1
-1600 capture screen track_2_projection
+# Track is reachable only through Structure. Select Track 2, descend to Page,
+# apply the context, and verify its first hot frame without a refresh gesture.
+940 button NAV down
+2010 tick
+2070 button NAV up
+2210 encoder NAV 1
+2350 tap NAV 60
+2490 tap NAV 60
+2730 capture screen track_2_projection
 
 # Leave Macro for Project, then return through the same global selector. View
 # entry must reuse/publish the coherent Track 2 tuple, not repaint Out as Base.
-1740 button LEFT_TOP down
-1860 encoder NAV 1
-1980 encoder NAV 1
-2100 button LEFT_TOP up
-2320 capture screen project_view
+2870 button LEFT_TOP down
+2990 encoder NAV 1
+3110 encoder NAV 1
+3230 button LEFT_TOP up
+3450 capture screen project_view
 
-2460 button LEFT_TOP down
-2580 encoder NAV -1
-2700 encoder NAV -1
-2820 button LEFT_TOP up
-3100 capture screen macro_reentered
+3590 button LEFT_TOP down
+3710 encoder NAV -1
+3830 encoder NAV -1
+3950 button LEFT_TOP up
+4230 capture screen macro_reentered

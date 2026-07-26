@@ -25,6 +25,7 @@
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/ProjectControlTestUtils.hpp"
+#include "../support/ProjectTrackRuntimeSnapshotTestFixture.hpp"
 
 namespace {
 
@@ -92,6 +93,9 @@ struct MacroValueHarness {
     core::handler::MidiCcGlobalFrameCoordinator coordinator;
     core::handler::MacroMidiCcRuntimeAdapter adapter;
     core::handler::MacroValueHandler handler;
+    core::sequencer::ProjectTrackRuntimeSnapshot runtimeTracks{
+        test_support::makeAllAudibleProjectTrackRuntimeSnapshot()
+    };
     uint32_t deadlineUs = 0U;
 
     MacroValueHarness()
@@ -113,6 +117,7 @@ struct MacroValueHarness {
         , adapter(
               core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                   state.pages,
+                  state.projectTracks,
               },
               services,
               coordinator
@@ -135,7 +140,7 @@ struct MacroValueHarness {
             .destination = {
                 .identity = {
                     .port = core::handler::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
-                    .channel = config.channel,
+                    .channel = services.activeTrackChannel(),
                     .controller = config.cc,
                 },
                 .routeValidity = core::state::shared::MidiCcRouteValidity::VALID,
@@ -153,7 +158,7 @@ struct MacroValueHarness {
             .localValue = 0U,
         };
         assert(coordinator.publishPersistentAuthors(&initialAuthor, 1U));
-        assert(coordinator.resolveLive(0U).ok());
+        assert(coordinator.resolveLive(0U, runtimeTracks).ok());
         queue.drainDue(midi, 0U, UINT32_MAX);
         // The harness starts after the authoritative playback frame has been
         // established; individual assertions count only gesture emissions.
@@ -181,7 +186,7 @@ struct MacroValueHarness {
 
     void flushMidi() {
         deadlineUs += 1000U;
-        assert(coordinator.resolveLive(deadlineUs).ok());
+        assert(coordinator.resolveLive(deadlineUs, runtimeTracks).ok());
         queue.drainDue(midi, deadlineUs, UINT32_MAX);
     }
 };
@@ -309,17 +314,17 @@ void test_macro_encoder_feeds_armed_automation_recording() {
         h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(slot.automationEnabled);
-    assert(slot.compatibility.automation.pointCount == 2);
+    assert(slot.automation.enabled);
+    assert(slot.automation.pointCount == 2);
     const auto firstPoint = test_support::project_control::readCurvePoint(
         h.state.pages.control,
-        slot.automationCurveId,
+        slot.automation.id,
         0,
         false
     );
     const auto secondPoint = test_support::project_control::readCurvePoint(
         h.state.pages.control,
-        slot.automationCurveId,
+        slot.automation.id,
         1,
         false
     );
@@ -351,8 +356,8 @@ void test_macro_button_hold_cannot_record_and_turn_stays_manual() {
         h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(!slot.automationStored);
-    assert(std::fabs(h.state.pages.activePageData().values[0] - 1.0f) < 0.0001f);
+    assert(!slot.automation.stored());
+    assert(std::fabs(h.state.pages.activePageData().values[0] - 0.5f) < 0.0001f);
 
     h.turn(Config::EncoderID::MACRO_1, 0.0f);
     assert(std::fabs(h.state.macros[0].value.get()) < 0.0005f);
@@ -381,16 +386,16 @@ void test_recording_cadence_preserves_plateau_before_later_motion() {
         h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(slot.compatibility.automation.pointCount >= 3U);
+    assert(slot.automation.pointCount >= 3U);
     const float held = core::state::modulation::evaluateProjectControlCurve(
         h.state.pages.control,
-        slot.automationCurveId,
+        slot.automation.id,
         0.3f,
         0.5f
     );
     const float afterMotion = core::state::modulation::evaluateProjectControlCurve(
         h.state.pages.control,
-        slot.automationCurveId,
+        slot.automation.id,
         0.9f,
         0.5f
     );
@@ -420,6 +425,21 @@ void test_turning_an_automated_macro_enters_manual_override() {
     assert(h.midiTransport.ccCount == 1);
     assert(h.midiTransport.lastValue == 127);
 
+    h.turn(Config::EncoderID::MACRO_1, 0.25f);
+    float overrideValue = 0.0f;
+    assert(h.state.macroUi.manualOverrides.valueFor(
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = h.state.pages.currentActiveTrack(),
+            .page = h.state.pages.currentActivePage(),
+            .macro = 0,
+        },
+        overrideValue
+    ));
+    const float quantized = core::midi::fromCC(core::midi::toCC(0.25f));
+    assert(std::fabs(overrideValue - quantized) < 0.0001f);
+    assert(std::fabs(h.state.pages.activePageData().values[0] - quantized) < 0.0001f);
+    assert(h.midiTransport.ccCount == 2);
+
     std::cout << "[PASS] test_turning_an_automated_macro_enters_manual_override\n";
 }
 
@@ -442,8 +462,8 @@ void test_macro_automation_property_button_restores_auto_without_clearing_lane()
         h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(preserved.automationEnabled);
-    assert(preserved.compatibility.automation.pointCount == 2);
+    assert(preserved.automation.enabled);
+    assert(preserved.automation.pointCount == 2);
     assert(h.midiTransport.ccCount == 0);
 
     std::cout << "[PASS] test_macro_automation_property_button_restores_auto_without_clearing_lane\n";
@@ -462,7 +482,7 @@ void test_macro_button_hold_without_turn_discards_recording() {
         h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
     );
-    assert(!slot.present);
+    assert(!slot.present());
     assert(!h.state.project.metadata.dirty);
 
     std::cout << "[PASS] test_macro_button_hold_without_turn_discards_recording\n";
@@ -472,13 +492,16 @@ void test_post_record_input_guard_survives_millisecond_rollover() {
     MacroValueHarness h;
 
     h.state.statusBar.tempo.set(120.0f);
-    h.press(Config::ButtonID::MACRO_1);
+    assert(h.services.setAutomationTakeTiming(
+        core::state::macro::MacroAutomationTakeTiming::NOTE_1_4
+    ));
+    assert(h.services.armAutomationTake());
     g_now_ms = 0xFFFF'FF00U;
     h.turn(Config::EncoderID::MACRO_1, 1.0f);
     g_now_ms = 0xFFFF'FF40U;
     h.turn(Config::EncoderID::MACRO_1, 0.75f);
     g_now_ms = 0xFFFF'FF88U;
-    h.release(Config::ButtonID::MACRO_1);
+    assert(h.services.releaseAutomationTake(g_now_ms));
 
     const float recordedValue = h.state.macros[0].value.get();
     const int ccCountAfterRecording = h.midiTransport.ccCount;

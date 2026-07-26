@@ -38,6 +38,8 @@ private:
         uint32_t bgColor = 0;
         lv_opa_t bgOpa = LV_OPA_TRANSP;
         bool addVisible = false;
+        lv_coord_t borderWidth = -1;
+        lv_opa_t borderOpa = LV_OPA_TRANSP;
         lv_coord_t outlineWidth = -1;
         lv_opa_t outlineOpa = LV_OPA_TRANSP;
     };

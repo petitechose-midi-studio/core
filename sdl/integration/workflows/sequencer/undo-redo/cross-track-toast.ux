@@ -1,6 +1,5 @@
-# UX workflow: record undoable sequencer actions on two tracks, then undo them
-# while staying on the current track and showing the affected track in the
-# transient history toast.
+# UX workflow: create Track 2, then record undoable sequencer actions on two
+# existing tracks and undo them while staying on the current musical surface.
 # Purpose: validates centralized sequencer history across tracks without
 # automatic navigation jumps.
 # Expect: capture_changed:t02_step_on=t02_step_off_after_toast, capture_changed:t01_step_on=t01_step_off_verified
@@ -8,37 +7,48 @@
 0 scenario sequencer
 50 capture screen initial_t01
 
-# Action A on Track 1: enable step 1.
-150 tap MACRO_1 60
-350 capture screen t01_step_on
+# Create Track 2 first so its structural history is older than both musical
+# edits. The two later Undo actions must therefore target Step State exactly.
+150 button NAV down
+210 encoder NAV -1
+270 button NAV up
+330 tap LEFT_CENTER 60
+1480 encoder NAV 1
+1680 capture screen t02_add_preview
+1780 tap NAV 60
+2130 capture screen t02_created
 
-# Switch navigation focus from page to track, then create/select Track 2.
-450 tap NAV 60
-650 encoder NAV 1
-850 capture screen t02_add_preview
-950 tap NAV 60
-1250 capture screen t02_created
+# Return to the already-existing Track 1 without creating history, then record
+# action A there.
+2230 encoder NAV -1
+2580 capture screen t01_selected
+2680 tap MACRO_1 60
+2880 capture screen t01_step_on
 
-# Action B on Track 2: enable step 1.
-1350 tap MACRO_1 60
-1550 capture screen t02_step_on
+# Switch to the already-existing Track 2 without mutation and record action B.
+2980 encoder NAV 1
+3330 capture screen t02_selected
+3430 tap MACRO_1 60
+3630 capture screen t02_step_on
 
-# Undo B. The visible track stays T02 and the toast identifies T02.
-1650 button LEFT_CENTER down
-2650 tick
-2700 tap LEFT_TOP 60
-2850 capture screen undo_t02_toast
-2950 button LEFT_CENTER up
-4300 capture screen t02_step_off_after_toast
+# Undo B. The visible track stays T02.
+3730 tap LEFT_TOP 60
+4800 tick
+4860 capture screen selector_undo_t02_ready
+4910 tap LEFT_CENTER 60
+5040 capture screen selector_undo_t01_ready
+5090 tap LEFT_TOP 60
+6470 capture screen t02_step_off_after_toast
 
-# Undo A. The visible track still stays T02, but the toast identifies T01.
-4400 button LEFT_CENTER down
-5400 tick
-5450 tap LEFT_TOP 60
-5600 capture screen undo_t01_toast
-5700 button LEFT_CENTER up
-7050 capture screen still_t02_after_t01_undo
+# Undo A. The visible track still stays T02 while history targets T01.
+6570 tap LEFT_TOP 60
+7640 tick
+7700 capture screen selector_undo_t01_ready_again
+7750 tap LEFT_CENTER 60
+7880 capture screen selector_redo_t01_ready
+7930 tap LEFT_TOP 60
+9310 capture screen still_t02_after_t01_undo
 
-# Navigate back to Track 1 to verify the hidden-track undo actually applied.
-7150 encoder NAV -1
-7350 capture screen t01_step_off_verified
+# Hot-switch back to Track 1 and verify the hidden-track undo.
+9410 encoder NAV -1
+9760 capture screen t01_step_off_verified

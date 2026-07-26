@@ -31,9 +31,11 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "support/InputTestHardware.hpp"
 #include "support/ProjectControlTestUtils.hpp"
+#include "support/ProjectTrackRuntimeSnapshotTestFixture.hpp"
 
 namespace {
 
@@ -86,6 +88,7 @@ struct Harness {
     core::state::MacroState macros;
     core::state::macro::MacroPagesState pages;
     core::state::macro::MacroUiState macroUi;
+    core::state::project::ProjectTrackState projectTracks;
     core::state::MacroEditState macroEdit;
     core::state::StatusBarState statusBar;
     oc::state::Signal<core::ui::ViewType, 8> activeView{core::ui::ViewType::MACRO};
@@ -106,6 +109,9 @@ struct Harness {
     core::handler::MacroMidiCcRuntimeAdapter adapter;
     core::handler::MacroValueHandler valueHandler;
     core::handler::MacroAutomationPlaybackService playback;
+    core::sequencer::ProjectTrackRuntimeSnapshot runtimeTracks{
+        test_support::makeAllAudibleProjectTrackRuntimeSnapshot()
+    };
 
     Harness()
         : inputBinding(eventBus, mockTimeMs)
@@ -120,6 +126,7 @@ struct Harness {
                   macroUi,
                   configRevision,
                   statusBar,
+                  projectTracks,
               },
               core::handler::MacroPerformanceDomainServices::Operations{}
           )
@@ -127,6 +134,7 @@ struct Harness {
         , adapter(
               core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                   pages,
+                  projectTracks,
               },
               services,
               coordinator
@@ -146,10 +154,11 @@ struct Harness {
           )
         , playback(
               core::handler::MacroAutomationPlaybackService::StateRefs{
+                  macros,
                   pages,
                   macroUi,
+                  projectTracks,
               },
-              services,
               adapter
           ) {
         pages.setMacroSlotActive(0, true);
@@ -166,7 +175,7 @@ struct Harness {
     core::handler::MidiCcGlobalFrameResult resolveAndDrain(
         uint32_t deadlineUs
     ) {
-        const auto result = coordinator.resolveLive(deadlineUs);
+        const auto result = coordinator.resolveLive(deadlineUs, runtimeTracks);
         queue.drainDue(midi, deadlineUs, UINT32_MAX);
         return result;
     }
@@ -224,9 +233,8 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
         assert(telemetry->destinations[0].conflict);
     }
 
-    // Playback evaluates both lanes at the next 16 ms frame. The manual lane
-    // stays a single Live author carrying its resolved Base + Modulation Out,
-    // and the shared cache prevents a second send.
+    // Playback evaluates both lanes at the next frame. The underlying
+    // Automation author continues advancing beside the winning Live author.
     h.coordinator.publishProjectControlClock(12, true, 1500000, 41667);
     h.playback.update(1500);
     assert(h.resolveAndDrain(1500).ok());
@@ -234,10 +242,26 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
     {
         auto telemetry = h.coordinator.readTelemetry();
         assert(telemetry);
-        assert(telemetry->candidateCount == 2);
+        assert(telemetry->candidateCount == 3);
         assert(telemetry->destinations[0].winner.author.candidateClass ==
                core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
         assert(telemetry->destinations[0].finalValue == 127);
+        bool advancingBaseFound = false;
+        const auto& destination = telemetry->destinations[0];
+        for (uint16_t relative = 0U;
+             relative < destination.loserCount;
+             ++relative) {
+            const auto& candidate = telemetry->losers[
+                static_cast<uint16_t>(destination.firstLoser + relative)
+            ];
+            if (candidate.author.candidateClass ==
+                    core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED &&
+                candidate.author.stableAddress == 1U) {
+                advancingBaseFound = candidate.localValue > 0U &&
+                    candidate.localValue < 127U;
+            }
+        }
+        assert(advancingBaseFound);
     }
 
     h.statusBar.playing.set(false);
@@ -294,7 +318,10 @@ void test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr() {
     source.parameters.decay = 0U;
     source.parameters.sustainQ15 = 8192U;
     source.parameters.release = 0U;
-    source.parameters.curve = mod::ModulatorAdsrCurve::LINEAR;
+    source.parameters.traits = mod::withModulatorAdsrCurve(
+        source.parameters.traits,
+        mod::ModulatorAdsrCurve::LINEAR
+    );
     const auto created = mod::createAdsrModulator(
         h.pages.control.authored.modulation,
         source
@@ -319,11 +346,13 @@ void test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr() {
     mod::ModulationTriggerDraft trigger{};
     trigger.sourceId = created.sourceId;
     trigger.trigger = {
-        mod::ModulationTriggerKind::TRACK_NOTE,
-        0U,
-        mod::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
-        mod::PROJECT_MODULATION_TRIGGER_ANY_NOTE,
+        .kind = mod::ModulationTriggerKind::TRACK_NOTE,
+        .track = 0U,
+        .noteMin = 0U,
+        .noteMax = 127U,
     };
+    trigger.velocityMin = 0U;
+    trigger.velocityMax = 127U;
     assert(mod::addProjectModulationTrigger(
         h.pages.control.authored.modulation,
         trigger
@@ -340,10 +369,10 @@ void test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr() {
     const core::sequencer::RealtimeMidiEvent noteOn{
         .deadlineUs = 1001000U,
         .type = core::sequencer::RealtimeMidiEventType::NoteOn,
+        .trackIndex = 0U,
         .channel = 9U,
         .note = 67U,
         .velocity = 111U,
-        .trackIndex = 0U,
     };
     assert(h.queue.push(noteOn));
     g_now_ms = 1001U;
@@ -365,10 +394,10 @@ void test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr() {
     const core::sequencer::RealtimeMidiEvent noteOff{
         .deadlineUs = 1002000U,
         .type = core::sequencer::RealtimeMidiEventType::NoteOff,
+        .trackIndex = 0U,
         .channel = 9U,
         .note = 67U,
         .velocity = 0U,
-        .trackIndex = 0U,
     };
     assert(h.queue.push(noteOff));
     g_now_ms = 1002U;

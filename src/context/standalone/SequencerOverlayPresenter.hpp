@@ -38,6 +38,7 @@ public:
                               core::ui::ContextActionStrip& stepEditActionStrip,
                               ms::ui::VirtualListSelectorOverlay& stepPresetOverlay,
                               core::ui::ContextActionStrip& stepPresetActionStrip);
+    ~SequencerOverlayPresenter();
 
     [[nodiscard]] bool bind();
 

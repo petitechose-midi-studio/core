@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "state/sequencer/SequencerContentViewInternal.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::state::sequencer {
 using namespace content_view_internal;
@@ -34,17 +35,18 @@ FLASHMEM bool resetChildStepPropertyOffsetToDefault(
     SequencerGraphNodeId nodeId,
     StepProperty property
 ) {
+    auto& pattern = authoringPattern(sequencer);
     switch (property) {
         case StepProperty::NOTE:
-            return setNodeNoteOffset(sequencer.pattern, nodeId, 0);
+            return setNodeNoteOffset(pattern, nodeId, 0);
         case StepProperty::VELOCITY:
-            return setNodeVelocityOffset(sequencer.pattern, nodeId, 0);
+            return setNodeVelocityOffset(pattern, nodeId, 0);
         case StepProperty::GATE:
-            return setNodeGateOffset(sequencer.pattern, nodeId, 0);
+            return setNodeGateOffset(pattern, nodeId, 0);
         case StepProperty::NUDGE:
-            return setNodeNudgeOffset(sequencer.pattern, nodeId, 0);
+            return setNodeNudgeOffset(pattern, nodeId, 0);
         case StepProperty::PROBABILITY:
-            return setNodeProbabilityOffset(sequencer.pattern, nodeId, 0);
+            return setNodeProbabilityOffset(pattern, nodeId, 0);
     }
     return false;
 }
@@ -55,15 +57,16 @@ FLASHMEM bool rotateActiveContentSteps(SequencerState& sequencer, int offsetStep
     if (!isChildContentView(sequencer)) return false;
 
     bool changed = false;
+    auto& pattern = authoringPattern(sequencer);
     if (isMicroSequenceContentView(sequencer)) {
         changed = rotateMicroSequenceSteps(
-            sequencer.pattern,
+            pattern,
             sequencer.contentView.sequenceId.get(),
             offsetSteps
         );
     } else if (isCycleStatesContentView(sequencer)) {
         changed = rotateCycleStateSetSteps(
-            sequencer.pattern,
+            pattern,
             sequencer.contentView.cycleSetId.get(),
             offsetSteps
         );
@@ -72,6 +75,7 @@ FLASHMEM bool rotateActiveContentSteps(SequencerState& sequencer, int offsetStep
     if (!changed) return false;
     refreshContentView(sequencer);
     sequencer.contentView.bump();
+    notifyStepContentDraftMutation(sequencer);
     return true;
 }
 
@@ -87,9 +91,12 @@ FLASHMEM bool toggleActiveContentStep(SequencerState& sequencer, uint8_t step) {
     if (node == nullptr || nodeId == kInvalidId) return false;
 
     const bool changed = nodeEnabled(*node)
-        ? setNodeEnabledOverride(sequencer.pattern, nodeId, false)
-        : clearNodeEnabledOverride(sequencer.pattern, nodeId);
-    if (changed) sequencer.contentView.bump();
+        ? setNodeEnabledOverride(authoringPattern(sequencer), nodeId, false)
+        : clearNodeEnabledOverride(authoringPattern(sequencer), nodeId);
+    if (changed) {
+        sequencer.contentView.bump();
+        notifyStepContentDraftMutation(sequencer);
+    }
     return changed;
 }
 
@@ -120,8 +127,15 @@ FLASHMEM bool setActiveContentStepEnabled(SequencerState& sequencer, uint8_t ste
     const bool current = nodeEnabled(*node);
     if (current == enabled) return false;
 
-    const bool changed = setNodeEnabledOverride(sequencer.pattern, nodeId, enabled);
-    if (changed) sequencer.contentView.bump();
+    const bool changed = setNodeEnabledOverride(
+        authoringPattern(sequencer),
+        nodeId,
+        enabled
+    );
+    if (changed) {
+        sequencer.contentView.bump();
+        notifyStepContentDraftMutation(sequencer);
+    }
     return changed;
 }
 
@@ -184,11 +198,12 @@ FLASHMEM bool resetActiveContentStepPropertyToDefault(
     }
 
     changed = setNodeLocalVariationRange(
-        sequencer.pattern,
+        authoringPattern(sequencer),
         activeContentStepNodeId(sequencer, step),
         property,
         0
     ) || changed;
+    if (changed) notifyStepContentDraftMutation(sequencer);
     return changed;
 }
 
@@ -214,7 +229,7 @@ FLASHMEM bool resizeActiveMicroSequenceContent(SequencerState& sequencer, uint8_
     if (!isMicroSequenceContentView(sequencer)) return false;
     const uint8_t clamped = std::clamp<uint8_t>(length, MICRO_LENGTH_MIN, MICRO_LENGTH_MAX);
     const bool changed = resizeMicroSequence(
-        sequencer.pattern,
+        authoringPattern(sequencer),
         sequencer.contentView.sequenceId.get(),
         clamped
     );
@@ -225,7 +240,10 @@ FLASHMEM bool resizeActiveMicroSequenceContent(SequencerState& sequencer, uint8_
         sequencer.focusedStep.set(static_cast<uint8_t>(nextLength - 1U));
     }
     sequencer.page.set(normalizeActiveContentPage(sequencer, sequencer.page.get()));
-    if (changed) sequencer.contentView.bump();
+    if (changed) {
+        sequencer.contentView.bump();
+        notifyStepContentDraftMutation(sequencer);
+    }
     return changed;
 }
 
@@ -234,7 +252,7 @@ FLASHMEM bool resizeActiveCycleStatesContent(SequencerState& sequencer, uint8_t 
     const uint8_t clamped =
         std::clamp<uint8_t>(length, CYCLE_STATE_LENGTH_MIN, CYCLE_STATE_LENGTH_MAX);
     const bool changed = resizeCycleStateSet(
-        sequencer.pattern,
+        authoringPattern(sequencer),
         sequencer.contentView.cycleSetId.get(),
         clamped
     );
@@ -245,7 +263,10 @@ FLASHMEM bool resizeActiveCycleStatesContent(SequencerState& sequencer, uint8_t 
         sequencer.focusedStep.set(static_cast<uint8_t>(nextLength - 1U));
     }
     sequencer.page.set(normalizeActiveContentPage(sequencer, sequencer.page.get()));
-    if (changed) sequencer.contentView.bump();
+    if (changed) {
+        sequencer.contentView.bump();
+        notifyStepContentDraftMutation(sequencer);
+    }
     return changed;
 }
 

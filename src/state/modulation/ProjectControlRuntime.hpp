@@ -53,7 +53,8 @@ inline constexpr uint16_t PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY = 256U;
 
 struct ProjectModulationTriggerFrame {
     uint16_t count = 0;
-    uint16_t reserved = 0;
+    /** Lost SPSC edges since the previous drain; forces a safe gate release. */
+    uint16_t droppedEventCount = 0;
     std::array<
         ProjectModulationTriggerEvent,
         PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY
@@ -74,6 +75,9 @@ inline constexpr uint8_t PROJECT_LOGICAL_MACRO_FLAG_CLIPPED = 0x08U;
 
 struct ProjectLogicalMacroRuntimeValue {
     ModulationDestination destination{};
+    /** Automation/static base evaluated at the current phase, before Manual. */
+    float underlyingBase = 0.0f;
+    /** Effective base: underlyingBase or the current Manual override. */
     float base = 0.0f;
     float modulation = 0.0f;
     float value = 0.0f;
@@ -117,7 +121,9 @@ struct ProjectModulationRuntimeRecordedCurveState {
 
 enum class ProjectModulationAdsrStage : uint8_t {
     IDLE = 0,
+    DELAY,
     ATTACK,
+    HOLD,
     DECAY,
     SUSTAIN,
     RELEASE,
@@ -131,6 +137,9 @@ struct ProjectModulationRuntimeAdsrState {
     uint32_t stageAnchor = 0U;
     uint16_t stageAnchorFractionQ16 = 0U;
     int16_t stageStartLevelQ15 = 0;
+    int16_t smoothedLevelQ15 = 0;
+    uint16_t routeSignature = 0U;
+    std::array<uint32_t, 4> acceptedNotes{};
 };
 
 union ProjectModulationRuntimeSourcePayload {
@@ -144,6 +153,35 @@ struct ProjectModulationRuntimeSourceState {
     ProjectModulationRuntimeSourcePayload payload{};
 };
 
+enum class ProjectRecordedShapeRuntimeAuditionMode : uint8_t {
+    NONE = 0,
+    SOURCE_OVERRIDE,
+    DESTINATION_ADD,
+};
+
+/**
+ * One session-only Recorded Shape audition projected by the hot resolver.
+ *
+ * The capture grid remains in lazy PSRAM UI state. The runtime retains only
+ * its current signed sample and routing identity, so live overdub never copies
+ * or recompiles a curve per encoder event.
+ */
+struct ProjectRecordedShapeRuntimeAudition {
+    ModulatorId sourceId{};
+    ModulationDestination destination{};
+    int16_t sourceValueQ15 = 0;
+    int16_t amountQ15 = 0;
+    uint16_t destinationScaleQ15 =
+        PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
+    ProjectRecordedShapeRuntimeAuditionMode mode =
+        ProjectRecordedShapeRuntimeAuditionMode::NONE;
+    uint8_t reserved = 0U;
+
+    [[nodiscard]] bool active() const {
+        return mode != ProjectRecordedShapeRuntimeAuditionMode::NONE;
+    }
+};
+
 /**
  * Runtime-only phase and slew memory. IDs let a cold graph publication retain
  * unaffected phase/slew state without heap allocation or array-position
@@ -153,12 +191,15 @@ struct ProjectControlRuntimeState {
     uint32_t activationMusicalTick = 0;
     uint32_t activationMonotonicMs = 0;
     uint32_t lastEvaluationMs = 0;
+    uint32_t lastEvaluationMusicalTick = 0;
     uint32_t frameSequence = 0;
     uint16_t activationMusicalTickFractionQ16 = 0;
+    uint16_t lastEvaluationMusicalTickFractionQ16 = 0;
     uint16_t sourceCount = 0;
     uint16_t bindingCount = 0;
     bool initialized = false;
     uint8_t reserved = 0;
+    ProjectRecordedShapeRuntimeAudition recordedShapeAudition{};
     std::array<
         ProjectModulationRuntimeSourceState,
         PROJECT_MODULATOR_CAPACITY
@@ -194,6 +235,7 @@ struct ProjectControlRuntimeResult {
 
 struct ProjectModulatorRuntimeProjection {
     float value = 0.0f;
+    float rawValue = 0.0f;
     uint16_t positionQ16 = 0U;
     uint16_t stageProgressQ16 = 0U;
     ProjectModulationAdsrStage adsrStage = ProjectModulationAdsrStage::IDLE;
@@ -216,6 +258,22 @@ void publishProjectControlTimeTelemetry(
     const ProjectControlRuntimeState& state,
     const ProjectControlTimeSnapshot& time,
     uint16_t durationTicks
+);
+
+/**
+ * Maps the phase-shifted LFO runtime position back onto the unshifted preview
+ * timeline. Curve sampling applies authored phase itself; markers must use
+ * this coordinate exactly once to stay aligned with the rendered waveform.
+ */
+[[nodiscard]] uint16_t projectLfoPreviewPositionQ16(
+    uint16_t runtimePositionQ16,
+    int16_t authoredPhaseQ15
+);
+
+/** Applies authored phase once to a phase-free preview coordinate. */
+[[nodiscard]] uint16_t projectLfoShapePositionQ16(
+    uint16_t previewPositionQ16,
+    int16_t authoredPhaseQ15
 );
 
 /** Cold/UI projection using the exact runtime source evaluator semantics. */
@@ -242,6 +300,27 @@ void publishProjectControlTimeTelemetry(
 void resetProjectControlRuntimeState(
     ProjectControlRuntimeState& state,
     const ProjectControlTimeSnapshot& time
+);
+
+/** Publishes the current take sample over one already-compiled Source. */
+[[nodiscard]] bool setProjectRecordedShapeSourceAudition(
+    ProjectControlRuntimeState& state,
+    ModulatorId sourceId,
+    int16_t sourceValueQ15
+);
+
+/** Adds one not-yet-committed edge to an already-compiled destination. */
+[[nodiscard]] bool setProjectRecordedShapeDestinationAudition(
+    ProjectControlRuntimeState& state,
+    const ModulationDestination& destination,
+    int16_t amountQ15,
+    int16_t sourceValueQ15,
+    uint16_t destinationScaleQ15 =
+        PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15
+);
+
+void clearProjectRecordedShapeRuntimeAudition(
+    ProjectControlRuntimeState& state
 );
 
 /**
@@ -327,13 +406,14 @@ static_assert(sizeof(ProjectControlTimeTelemetry) == 52U);
 static_assert(sizeof(ProjectModulationTriggerEvent) == 6U);
 static_assert(sizeof(ProjectModulationTriggerFrame) == 1540U);
 static_assert(sizeof(ProjectLogicalMacroBaseInput) == 12U);
-static_assert(sizeof(ProjectLogicalMacroRuntimeValue) == 20U);
+static_assert(sizeof(ProjectLogicalMacroRuntimeValue) == 24U);
 static_assert(sizeof(ProjectModulationRuntimeLfoState) == 12U);
 static_assert(sizeof(ProjectModulationRuntimeRecordedCurveState) == 12U);
-static_assert(sizeof(ProjectModulationRuntimeAdsrState) == 12U);
-static_assert(sizeof(ProjectModulationRuntimeSourcePayload) == 12U);
-static_assert(sizeof(ProjectModulationRuntimeSourceState) == 16U);
-static_assert(sizeof(ProjectControlRuntimeState) == 5144U);
+static_assert(sizeof(ProjectModulationRuntimeAdsrState) == 32U);
+static_assert(sizeof(ProjectModulationRuntimeSourcePayload) == 32U);
+static_assert(sizeof(ProjectModulationRuntimeSourceState) == 36U);
+static_assert(sizeof(ProjectRecordedShapeRuntimeAudition) <= 20U);
+static_assert(sizeof(ProjectControlRuntimeState) == 7728U);
 static_assert(std::is_trivially_copyable_v<ProjectControlRuntimeState>);
 static_assert(std::is_trivially_copyable_v<ProjectControlRuntimeFrame>);
 static_assert(std::is_trivially_copyable_v<ProjectModulationTriggerFrame>);

@@ -2,12 +2,13 @@
 
 #include <stdint.h>
 
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 
 namespace core::state::sequencer {
 
 enum class SequencerInteractionScope : uint8_t {
     PATTERN,
+    TRACK,
     STEP,
     CHILD_PATTERN,
     PATTERN_DIMENSION_SELECTOR,
@@ -16,7 +17,6 @@ enum class SequencerInteractionScope : uint8_t {
     PATTERN_SELECTION,
     STEP_SELECTION,
     STEP_CONTENT_SELECTOR,
-    STRUCTURE,
     STEP_EDITOR,
 };
 
@@ -30,11 +30,6 @@ enum class SequencerInteractionAction : uint8_t {
     SELECT_MUSICAL_PROPERTY,
     SELECT_STEP_EDITOR_ROW,
     SELECT_STEP_CONTENT_ACTION,
-    CYCLE_SCOPE,
-    CREATE_PREVIEW_STRUCTURE,
-    OPEN_STRUCTURE,
-    CONFIRM_STRUCTURE,
-    BACK_STRUCTURE,
     ENTER_SELECTION,
     TOGGLE_SELECTION,
     OPEN_PATTERN_DIMENSION_SELECTOR,
@@ -50,6 +45,9 @@ enum class SequencerInteractionAction : uint8_t {
     EDIT_STEP_PROPERTY,
     EDIT_STEP_LOCAL_RANDOM,
     EDIT_STEP_EDITOR_ROW,
+    RETARGET_STEP_EDITOR,
+    OPEN_TRACK_EDITOR,
+    OPEN_PATTERN_EDITOR,
     OPEN_STEP_EDITOR,
     TOGGLE_VISIBLE_STEP,
     EDIT_VISIBLE_STEP_PROPERTY,
@@ -74,8 +72,6 @@ enum class SequencerInteractionAction : uint8_t {
     DELETE_SELECTION,
     RESET_STEP_SELECTION_SHALLOW,
     RESET_STEP_SELECTION_DEEP,
-    COPY_SELECTION,
-    PASTE_SELECTION,
     COPY_STEP_SELECTION,
     PASTE_STEP_SELECTION,
 };
@@ -91,12 +87,10 @@ struct SequencerInteractionContext {
     bool childContentView = false;
     bool overlayVisible = false;
     bool previewingAddSlot = false;
-    bool pageSelectionActive = false;
     bool trackSelectionActive = false;
+    bool pageSelectionActive = false;
     bool stepSelectionActive = false;
-    bool structureWorkspaceActive = false;
     bool patternQuickControlsActive = false;
-    bool historyShortcutHoldActive = false;
     bool propertySelectorActive = false;
     bool stepContentSelectorActive = false;
     bool stepEditorVisible = false;
@@ -114,7 +108,7 @@ struct SequencerInteractionContext {
 struct SequencerInteractionPolicy {
     SequencerInteractionScope scope = SequencerInteractionScope::PATTERN;
     SequencerInteractionAction navTurn = SequencerInteractionAction::MOVE_PATTERN;
-    SequencerInteractionAction navTap = SequencerInteractionAction::CYCLE_SCOPE;
+    SequencerInteractionAction navTap = SequencerInteractionAction::NONE;
     SequencerInteractionAction navLongPress = SequencerInteractionAction::ENTER_SELECTION;
     SequencerInteractionAction optTurn = SequencerInteractionAction::EDIT_PATTERN_DIMENSION;
     SequencerInteractionAction leftTopTap = SequencerInteractionAction::NONE;

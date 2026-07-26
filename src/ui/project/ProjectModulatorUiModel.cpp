@@ -11,10 +11,12 @@
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/modulation/ProjectModulatorSourceSession.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
 #include "ui/font/StandaloneIcons.hpp"
-#include "ui/macro/MacroLfoAuditionModel.hpp"
+#include "ui/modulation/ModulationDepthUiModel.hpp"
+#include "ui/modulation/ModulatorLfoUiModel.hpp"
 #include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "ui/modulation/ModulatorSparklineModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -24,6 +26,8 @@ namespace {
 
 using namespace core::state::modulation;
 namespace adsr_ui = core::ui::modulation::adsr;
+namespace depth_ui = core::ui::modulation::depth;
+namespace project_modulators = core::state::project::modulators;
 
 const char LABEL_FREE[] PROGMEM = "Free";
 const char LABEL_TEMPO_SYNC[] PROGMEM = "Tempo Sync";
@@ -36,7 +40,7 @@ const char LABEL_MORE[] PROGMEM = "More >";
 const char LABEL_RENAME[] PROGMEM = "Rename";
 const char LABEL_USED_BY[] PROGMEM = "Used by";
 const char LABEL_LINEAR[] PROGMEM = "Linear";
-const char LABEL_SMOOTH[] PROGMEM = "Smooth";
+const char LABEL_EASE[] PROGMEM = "Ease";
 const char LABEL_EXPONENTIAL[] PROGMEM = "Exponential";
 const char LABEL_SYNC[] PROGMEM = "Sync";
 const char LABEL_EXPO[] PROGMEM = "Expo";
@@ -49,14 +53,14 @@ const char PICKER_ADD_KEY_FORMAT[] PROGMEM = "+ M%u · CC%u";
 const char PICKER_KEY_FORMAT[] PROGMEM = "M%u · CC%u";
 const char PICKER_PREVIEW_FORMAT[] PROGMEM = "Preview %+d%%";
 const char PICKER_ASSIGNED[] PROGMEM = "Assigned";
-const char PICKER_DEPTH_PREVIEW[] PROGMEM = "+25% · Preview";
+const char PICKER_DEPTH_PREVIEW_FORMAT[] PROGMEM = "%+d%% · Preview";
 const char PICKER_CREATE_ASSIGN[] PROGMEM = "Create + assign";
 const char PICKER_EXISTING[] PROGMEM = "Existing";
 const char PICKER_CREATE[] PROGMEM = "Create";
 const char PICKER_CREATE_NEXT[] PROGMEM = "Create next";
 
 FLASHMEM const char* shapeLabel(ModulatorLfoShape shape) {
-    return core::ui::macro::lfo_audition::shapeLabel(shape);
+    return core::ui::modulation::lfo::shapeLabel(shape);
 }
 
 FLASHMEM const char* timingLabel(ModulatorTimingMode timing) {
@@ -77,10 +81,36 @@ FLASHMEM const char* retriggerLabel(ModulatorRetriggerPolicy retrigger) {
 FLASHMEM const char* adsrCurveLabel(ModulatorAdsrCurve curve) {
     switch (curve) {
         case ModulatorAdsrCurve::LINEAR: return LABEL_LINEAR;
-        case ModulatorAdsrCurve::SMOOTH: return LABEL_SMOOTH;
+        case ModulatorAdsrCurve::SMOOTH: return LABEL_EASE;
         case ModulatorAdsrCurve::EXPONENTIAL:
         default: return LABEL_EXPONENTIAL;
     }
+}
+
+FLASHMEM int defaultBindingDepthPercent(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::project::ProjectNavigationState& navigation,
+    ModulatorId requestedSource
+) {
+    auto scale = depth_ui::Scale::STANDARD;
+    if (valid(requestedSource)) {
+        const auto* source = findProjectModulator(
+            pages.control.authored.modulation,
+            requestedSource
+        );
+        if (source != nullptr) {
+            scale = depth_ui::scaleFor(
+                *source,
+                pages.control.authored.curves
+            );
+        }
+    } else if (navigation.creatingModulatorSource &&
+               navigation.creatingModulatorKind ==
+                   ModulatorKind::RECORDED_SHAPE) {
+        // New Recorded Shapes are authored in the canonical bipolar domain.
+        scale = depth_ui::Scale::RECORDED_SHAPE_BIPOLAR;
+    }
+    return depth_ui::amountQ15ToPercent(8192, scale);
 }
 
 FLASHMEM const char* adsrCurveCardLabel(ModulatorAdsrCurve curve) {
@@ -124,21 +154,21 @@ FLASHMEM void formatRate(char* out,
         formatFreePeriod(out, size, lfo.freePeriodMs);
         return;
     }
-    const char* label = core::ui::macro::lfo_audition::rateLabel(
-        core::ui::macro::lfo_audition::rateIndex(lfo.periodTicks)
+    const char* label = core::ui::modulation::lfo::rateLabel(
+        core::ui::modulation::lfo::rateIndex(lfo.periodTicks)
     );
     if (!compact) {
         std::snprintf(out, size, "%s", label);
         return;
     }
-    const uint8_t index = core::ui::macro::lfo_audition::rateIndex(
+    const uint8_t index = core::ui::modulation::lfo::rateIndex(
         lfo.periodTicks
     );
     std::snprintf(
         out,
         size,
         "%s",
-        core::ui::macro::lfo_audition::rateCompactLabel(index)
+        core::ui::modulation::lfo::rateCompactLabel(index)
     );
 }
 
@@ -172,42 +202,40 @@ FLASHMEM void formatTriggerSummary(
         return;
     }
     const auto& trigger = binding->trigger;
-    char note[8]{};
-    if (trigger.data != PROJECT_MODULATION_TRIGGER_ANY_NOTE) {
-        core::midi::formatNoteName(note, sizeof(note), trigger.data);
-    }
-    if (trigger.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL &&
-        trigger.data == PROJECT_MODULATION_TRIGGER_ANY_NOTE) {
+    if (trigger.noteMin == 0U && trigger.noteMax == 127U &&
+        binding->velocityMin == 0U && binding->velocityMax == 127U) {
         std::snprintf(
             out,
             size,
             "T%u · Any",
             static_cast<unsigned>(trigger.track + 1U)
         );
-    } else if (trigger.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL) {
+        return;
+    }
+    char low[8]{};
+    char high[8]{};
+    core::midi::formatNoteName(low, sizeof(low), trigger.noteMin);
+    core::midi::formatNoteName(high, sizeof(high), trigger.noteMax);
+    if (trigger.noteMin == trigger.noteMax) {
         std::snprintf(
             out,
             size,
-            "T%u · %s",
+            "T%u · %s · V%u-%u",
             static_cast<unsigned>(trigger.track + 1U),
-            note
-        );
-    } else if (trigger.data == PROJECT_MODULATION_TRIGGER_ANY_NOTE) {
-        std::snprintf(
-            out,
-            size,
-            "T%u · Ch%u",
-            static_cast<unsigned>(trigger.track + 1U),
-            static_cast<unsigned>(trigger.channel + 1U)
+            low,
+            static_cast<unsigned>(binding->velocityMin),
+            static_cast<unsigned>(binding->velocityMax)
         );
     } else {
         std::snprintf(
             out,
             size,
-            "T%u C%u · %s",
+            "T%u · %s-%s · V%u-%u",
             static_cast<unsigned>(trigger.track + 1U),
-            static_cast<unsigned>(trigger.channel + 1U),
-            note
+            low,
+            high,
+            static_cast<unsigned>(binding->velocityMin),
+            static_cast<unsigned>(binding->velocityMax)
         );
     }
 }
@@ -263,13 +291,13 @@ FLASHMEM void populateRegistryRow(const ProjectControlState& control,
             attack,
             sizeof(attack),
             source.parameters.adsr.attack,
-            source.parameters.adsr.timing
+            modulatorAdsrTiming(source.parameters.adsr.traits)
         );
         adsr_ui::formatDuration(
             release,
             sizeof(release),
             source.parameters.adsr.release,
-            source.parameters.adsr.timing
+            modulatorAdsrTiming(source.parameters.adsr.traits)
         );
         std::snprintf(
             primary,
@@ -307,16 +335,34 @@ FLASHMEM void populateSourceKindRow(
     int index,
     ms::ui::KeyValueRowBuffer& out
 ) {
+    if (index < 0 ||
+        index >= project_modulators::MODULATOR_SOURCE_KIND_COUNT) {
+        return;
+    }
+    const auto target = project_modulators::sourceKindTargetAtRow(
+        static_cast<uint8_t>(index)
+    );
+    if (!target.valid) return;
     out.iconFont = standalone_fonts.icons_14;
     out.iconColor = standalone::theme::color::MACRO_MODULATION;
-    if (index == 0) {
-        setText(out.key, "LFO");
-        setText(out.value, "Cyclic");
-        setText(out.icon, standalone::icons::MACRO_MODULATION);
-    } else if (index == 1) {
-        setText(out.key, "ADSR");
-        setText(out.value, "Note envelope");
-        setText(out.icon, standalone::icons::NOTE_PROP_GATE);
+    switch (target.kind) {
+        case ModulatorKind::LFO:
+            setText(out.key, "LFO");
+            setText(out.value, "Cyclic");
+            setText(out.icon, standalone::icons::MACRO_MODULATION);
+            break;
+        case ModulatorKind::ADSR:
+            setText(out.key, "DAHDSR");
+            setText(out.value, "Note envelope");
+            setText(out.icon, standalone::icons::NOTE_PROP_GATE);
+            break;
+        case ModulatorKind::RECORDED_SHAPE:
+            setText(out.key, "Recorded Shape");
+            setText(out.value, "Recorded motion");
+            setText(out.icon, standalone::icons::MACRO_AUTOMATION);
+            break;
+        default:
+            return;
     }
 }
 
@@ -331,7 +377,7 @@ FLASHMEM void populateSourceDetailRow(
     const auto item = layout.at(static_cast<uint8_t>(index));
     out.iconFont = standalone_fonts.icons_14;
     out.iconColor = standalone::theme::color::MACRO_MODULATION;
-    char value[32]{};
+    char value[ms::ui::KEY_VALUE_ROW_TEXT_CAPACITY]{};
     switch (item) {
         case SourceDetailItem::PREVIEW:
             setText(out.key, "Source");
@@ -384,6 +430,11 @@ FLASHMEM void populateSourceDetailRow(
             setText(out.value, retriggerLabel(source.parameters.lfo.retrigger));
             setText(out.icon, standalone::icons::CYCLE_STATE);
             break;
+        case SourceDetailItem::RECORD:
+            setText(out.key, "Record");
+            setText(out.value, "HOLD + TURN");
+            setText(out.icon, standalone::icons::MACRO_AUTOMATION);
+            break;
         case SourceDetailItem::LENGTH: {
             setText(out.key, "Length");
             const auto* curve = findProjectCurve(
@@ -429,7 +480,7 @@ FLASHMEM void populateSourceDetailRow(
                 value,
                 sizeof(value),
                 duration,
-                source.parameters.adsr.timing
+                modulatorAdsrTiming(source.parameters.adsr.traits)
             );
             setText(out.value, value);
             setText(out.icon, standalone::icons::LENGTH);
@@ -503,21 +554,48 @@ FLASHMEM void populateSourceOptionsRow(
     out.iconColor = standalone::theme::color::MACRO_MODULATION;
     char value[32]{};
     switch (item) {
+        case SourceDetailItem::DELAY:
+        case SourceDetailItem::HOLD:
+        case SourceDetailItem::SMOOTH: {
+            const auto parameter = item == SourceDetailItem::DELAY
+                ? ModulatorEnvelopeTimeParameter::DELAY
+                : (item == SourceDetailItem::HOLD
+                    ? ModulatorEnvelopeTimeParameter::HOLD
+                    : ModulatorEnvelopeTimeParameter::SMOOTH);
+            setText(
+                out.key,
+                item == SourceDetailItem::DELAY
+                    ? "Delay"
+                    : (item == SourceDetailItem::HOLD ? "Hold" : "Smooth")
+            );
+            adsr_ui::formatDuration(
+                value,
+                sizeof(value),
+                modulatorEnvelopeDuration(source.parameters.adsr, parameter),
+                modulatorAdsrTiming(source.parameters.adsr.traits)
+            );
+            setText(out.value, value);
+            setText(out.icon, standalone::icons::LENGTH);
+            break;
+        }
         case SourceDetailItem::TIMING:
             setText(out.key, "Timing");
             setText(
                 out.value,
-                source.parameters.adsr.timing == ModulatorTimingMode::FREE
+                modulatorAdsrTiming(source.parameters.adsr.traits) ==
+                        ModulatorTimingMode::FREE
                     ? LABEL_FREE
                     : LABEL_SYNC
             );
             setText(out.icon, standalone::icons::TEMPO);
             break;
-        case SourceDetailItem::CURVE:
-            setText(out.key, "Curve");
+        case SourceDetailItem::RESPONSE:
+            setText(out.key, "Response");
             setText(
                 out.value,
-                adsrCurveCardLabel(source.parameters.adsr.curve)
+                adsrCurveCardLabel(modulatorAdsrCurve(
+                    source.parameters.adsr.traits
+                ))
             );
             setText(out.icon, standalone::icons::MACRO_MODULATION);
             break;
@@ -536,7 +614,9 @@ FLASHMEM void populateSourceOptionsRow(
             setText(
                 out.value,
                 source.kind == ModulatorKind::ADSR
-                    ? adsrRetriggerLabel(source.parameters.adsr.retrigger)
+                    ? adsrRetriggerLabel(modulatorAdsrRetrigger(
+                          source.parameters.adsr.traits
+                      ))
                     : retriggerLabel(source.parameters.lfo.retrigger)
             );
             setText(out.icon, standalone::icons::CYCLE_STATE);
@@ -595,33 +675,44 @@ FLASHMEM void populateTriggerRow(
             "%u",
             static_cast<unsigned>(trigger.track + 1U)
         );
-    } else if (item == TriggerDetailItem::CHANNEL) {
-        setText(out.key, "Channel");
-        if (trigger.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL) {
-            std::snprintf(value, sizeof(value), "Any");
-        } else {
-            std::snprintf(
-                value,
-                sizeof(value),
-                "%u",
-                static_cast<unsigned>(trigger.channel + 1U)
-            );
-        }
+    } else if (item == TriggerDetailItem::NOTE_LOW ||
+               item == TriggerDetailItem::NOTE_HIGH) {
+        const uint8_t noteValue = item == TriggerDetailItem::NOTE_LOW
+            ? trigger.noteMin
+            : trigger.noteMax;
+        setText(
+            out.key,
+            item == TriggerDetailItem::NOTE_LOW ? "Note Low" : "Note High"
+        );
+        char note[8]{};
+        core::midi::formatNoteName(note, sizeof(note), noteValue);
+        std::snprintf(
+            value,
+            sizeof(value),
+            "%s · %u",
+            note,
+            static_cast<unsigned>(noteValue)
+        );
+    } else if (item == TriggerDetailItem::VELOCITY_LOW ||
+               item == TriggerDetailItem::VELOCITY_HIGH) {
+        setText(
+            out.key,
+            item == TriggerDetailItem::VELOCITY_LOW
+                ? "Velocity Low"
+                : "Velocity High"
+        );
+        std::snprintf(
+            value,
+            sizeof(value),
+            "%u",
+            static_cast<unsigned>(
+                item == TriggerDetailItem::VELOCITY_LOW
+                    ? binding->velocityMin
+                    : binding->velocityMax
+            )
+        );
     } else {
-        setText(out.key, "Note");
-        if (trigger.data == PROJECT_MODULATION_TRIGGER_ANY_NOTE) {
-            std::snprintf(value, sizeof(value), "Any");
-        } else {
-            char note[8]{};
-            core::midi::formatNoteName(note, sizeof(note), trigger.data);
-            std::snprintf(
-                value,
-                sizeof(value),
-                "%s · %u",
-                note,
-                static_cast<unsigned>(trigger.data)
-            );
-        }
+        return;
     }
     setText(out.value, value);
 }
@@ -660,8 +751,14 @@ FLASHMEM void populateDestinationRow(
         static_cast<unsigned>(destination.page + 1U),
         static_cast<unsigned>(destination.macro + 1U)
     );
-    const int16_t percent =
-        core::ui::macro::lfo_audition::depthQ15ToPercent(binding->amountQ15);
+    const int16_t percent = depth_ui::amountQ15ToPercent(
+        binding->amountQ15,
+        depth_ui::scaleFor(
+            graph,
+            pages.control.authored.curves,
+            *binding
+        )
+    );
     const bool enabled =
         (binding->flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U;
     std::snprintf(
@@ -742,11 +839,18 @@ FLASHMEM void populateDestinationPickerRow(
         page,
         macro,
     };
-    const bool auditioned = pages.control.audition.active &&
-        pages.control.audition.destination == destination;
-    const ModulatorId effectiveSource = valid(sourceId)
+    const ModulatorId requestedSource = valid(sourceId)
         ? sourceId
-        : (auditioned ? pages.control.audition.sourceId : ModulatorId{});
+        : pages.control.audition.sourceId;
+    const auto sourceSession = resolveProjectModulatorSourceSession(
+        pages.control,
+        requestedSource
+    );
+    const bool auditioned = sourceSession.audition() &&
+        pages.control.audition.destination == destination;
+    const ModulatorId effectiveSource = pages.control.audition.active()
+        ? (sourceSession.valid() ? sourceSession.sourceId : ModulatorId{})
+        : sourceId;
     bool alreadyAssigned = false;
     if (valid(effectiveSource)) {
         const auto& graph = pages.control.authored.modulation;
@@ -776,9 +880,14 @@ FLASHMEM void populateDestinationPickerRow(
             pages.control.authored.modulation,
             pages.control.audition.bindingId
         );
-        const int16_t percent = binding
-            ? core::ui::macro::lfo_audition::depthQ15ToPercent(
-                  binding->amountQ15
+        const int16_t percent = binding != nullptr
+            ? depth_ui::amountQ15ToPercent(
+                  binding->amountQ15,
+                  depth_ui::scaleFor(
+                      pages.control.authored.modulation,
+                      pages.control.authored.curves,
+                      *binding
+                  )
               )
             : 0;
         std::snprintf(
@@ -788,14 +897,29 @@ FLASHMEM void populateDestinationPickerRow(
             static_cast<int>(percent)
         );
     } else if (active) {
-        setText(
-            out.value,
-            alreadyAssigned ? PICKER_ASSIGNED : PICKER_DEPTH_PREVIEW
-        );
+        if (alreadyAssigned) {
+            setText(out.value, PICKER_ASSIGNED);
+        } else {
+            std::snprintf(
+                out.value.data(),
+                out.value.size(),
+                PICKER_DEPTH_PREVIEW_FORMAT,
+                defaultBindingDepthPercent(
+                    pages,
+                    navigation,
+                    requestedSource
+                )
+            );
+        }
     } else if (addSlot) {
         setText(out.value, PICKER_CREATE_ASSIGN);
     } else {
-        setText(out.value, PICKER_DEPTH_PREVIEW);
+        std::snprintf(
+            out.value.data(),
+            out.value.size(),
+            PICKER_DEPTH_PREVIEW_FORMAT,
+            defaultBindingDepthPercent(pages, navigation, requestedSource)
+        );
     }
     setText(
         out.icon,
@@ -808,10 +932,8 @@ FLASHMEM void populateDestinationPickerRow(
 }
 
 FLASHMEM uint32_t registryRevision(const ProjectControlState& control,
-                                   uint8_t telemetryRevision,
                                    uint8_t focusedRow) {
     uint32_t revision = control.authoredRevision * 16777619U;
-    revision ^= static_cast<uint32_t>(telemetryRevision) * 2246822519U;
     revision ^= static_cast<uint32_t>(focusedRow) << 24U;
     return revision == 0U ? 1U : revision;
 }

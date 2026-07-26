@@ -100,7 +100,7 @@ struct SequencerMacroPropertyHarness {
 
 void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(16);
+    h.state.sequencer.pattern.setContentLength(16);
     h.state.sequencer.page.set(1);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     g_now_ms = 1234;
@@ -118,7 +118,7 @@ void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
 
 void test_opt_encoder_does_not_edit_without_step_focus() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.focusedStep.set(4);
     h.state.sequencer.activeStepProperty.set(StepProperty::GATE);
 
@@ -132,7 +132,7 @@ void test_opt_encoder_does_not_edit_without_step_focus() {
 
 void test_opt_encoder_edits_focused_step_in_step_focus() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.focusedStep.set(4);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
@@ -150,7 +150,7 @@ void test_opt_encoder_edits_focused_step_in_step_focus() {
 
 void test_direct_state_edit_coalesces_as_state_history() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.stepStatePropertyActive.set(true);
 
     g_now_ms = 100;
@@ -181,7 +181,7 @@ void test_direct_state_edit_coalesces_as_state_history() {
 
 void test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
 
     const uint8_t step = 2;
@@ -210,7 +210,7 @@ void test_direct_edit_retires_runtime_projection_before_authored_revision() {
 
     for (const auto property : properties) {
         SequencerMacroPropertyHarness h;
-        h.state.sequencer.pattern.length.set(8);
+        h.state.sequencer.pattern.setContentLength(8);
         h.state.sequencer.activeStepProperty.set(property);
 
         constexpr uint8_t step = 0;
@@ -257,7 +257,7 @@ void test_direct_edit_retires_runtime_projection_before_authored_revision() {
 
 void test_constrained_scale_pitch_edit_writes_scale_degree_note() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
     h.state.sequencer.setStepNoteAt(0, 60);
 
@@ -294,20 +294,6 @@ void test_macro_property_edits_are_blocked_by_modal_states() {
 
     {
         SequencerMacroPropertyHarness h;
-        h.state.trackNavigation.selection.active.set(true);
-        h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
-    }
-
-    {
-        SequencerMacroPropertyHarness h;
-        h.state.sequencer.structureUi.pageSelection.active.set(true);
-        h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
-    }
-
-    {
-        SequencerMacroPropertyHarness h;
         h.state.sequencer.structureUi.stepSelection.active.set(true);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
         assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
@@ -327,23 +313,12 @@ void test_macro_property_edits_are_blocked_by_modal_states() {
         assert(h.state.sequencer.pattern.note[0] != core::state::sequencer::SequencerState::DEFAULT_NOTE);
     }
 
-    {
-        SequencerMacroPropertyHarness h;
-        h.state.sequencer.structureUi.workspace.active.set(true);
-        h.state.sequencer.structureUi.workspace.level.set(
-            core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
-        );
-        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
-        h.turn(Config::EncoderID::MACRO_1, 1.0f);
-        assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
-    }
-
     std::cout << "[PASS] test_macro_property_edits_are_blocked_by_modal_states\n";
 }
 
 void test_left_bottom_selector_macro_edits_local_variation_range() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
     h.state.sequencer.pattern.note[2] = 60;
     h.state.sequencer.stepPropertyInlineSelector.selecting.set(true);
@@ -391,7 +366,7 @@ void test_left_bottom_selector_macro_edits_local_variation_range() {
 
 void test_left_bottom_selector_does_not_randomize_probability() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::PROBABILITY);
     h.state.sequencer.pattern.probability[0] = 64;
     h.state.sequencer.stepPropertyInlineSelector.selecting.set(true);
@@ -412,11 +387,10 @@ void test_left_bottom_selector_does_not_randomize_probability() {
 
 void test_left_center_quick_controls_do_not_randomize_step() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
     h.state.sequencer.pattern.note[0] = 60;
     h.state.sequencer.patternQuickControls.selecting.set(true);
-    h.state.sequencer.patternQuickControls.physicalHoldActive.set(true);
     h.press(Config::ButtonID::LEFT_CENTER);
 
     g_now_ms = 100;
@@ -433,7 +407,7 @@ void test_left_center_quick_controls_do_not_randomize_step() {
 
 void test_macro_property_edits_coalesce_until_idle() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     h.state.sequencer.pattern.velocity[0] = 0;
 
@@ -463,7 +437,7 @@ void test_macro_property_edits_coalesce_until_idle() {
 
 void test_macro_property_step_change_commits_previous_coalesced_edit() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::GATE);
     h.state.sequencer.pattern.gate[0] = 50;
     h.state.sequencer.pattern.gate[1] = 60;
@@ -495,7 +469,7 @@ void test_macro_property_step_change_commits_previous_coalesced_edit() {
 void test_macro_property_track_change_commits_pending_coalesced_edit() {
     SequencerMacroPropertyHarness h;
     h.state.setSharedTrackState(0x0003, 0);
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     h.state.sequencer.pattern.velocity[0] = 10;
 
@@ -520,7 +494,7 @@ void test_macro_property_track_change_commits_pending_coalesced_edit() {
 
 void test_macro_property_pending_edit_undoes_with_single_command() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
     h.state.sequencer.pattern.note[0] = 60;
 
@@ -546,7 +520,7 @@ void test_macro_property_pending_edit_undoes_with_single_command() {
 
 void test_macro_property_new_pending_edit_invalidates_redo_on_commit() {
     SequencerMacroPropertyHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     h.state.sequencer.pattern.velocity[0] = 10;
     h.state.sequencer.pattern.velocity[1] = 20;

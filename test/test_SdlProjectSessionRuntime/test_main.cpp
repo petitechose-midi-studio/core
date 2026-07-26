@@ -46,7 +46,7 @@ void configureProject(core::state::CoreState& state, uint8_t note) {
                  "SDL parity",
                  state.project.metadata.name.size() - 1U);
     state.project.metadata.hasSavedIdentity = true;
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     state.sequencer.setStepDataAt(0, note, 100, 75);
     state.sequencer.pattern.toggle(0);
     state.markProjectMutated();

@@ -28,6 +28,30 @@ namespace {
 
 using QuickItem = core::state::sequencer::PatternQuickControlItem;
 
+const char* sequencerContextLabel(core::state::StructureNavigationFocus focus) {
+    switch (focus) {
+        case core::state::StructureNavigationFocus::TRACK:
+            return "Track";
+        case core::state::StructureNavigationFocus::STEP:
+            return "Step";
+        case core::state::StructureNavigationFocus::PAGE:
+        default:
+            return "Pattern";
+    }
+}
+
+const char* sequencerContextIcon(core::state::StructureNavigationFocus focus) {
+    switch (focus) {
+        case core::state::StructureNavigationFocus::TRACK:
+            return standalone::icons::ROUTING;
+        case core::state::StructureNavigationFocus::STEP:
+            return standalone::icons::NOTE;
+        case core::state::StructureNavigationFocus::PAGE:
+        default:
+            return standalone::icons::LENGTH;
+    }
+}
+
 const char* stepContentActionIcon(
     core::state::sequencer::SequencerStepContentAction action
 ) {
@@ -39,11 +63,8 @@ const char* stepContentActionIcon(
             return standalone::icons::MICRO_SEQUENCE;
         case Action::CYCLE_STATES:
             return standalone::icons::CYCLE_STATE;
-        case Action::SELECT_STEPS:
-            return standalone::icons::ACTION_PLACE_TARGET;
-        case Action::VARIATION:
         default:
-            return standalone::icons::NOTE_PROP_RANDOM;
+            return standalone::icons::CHORD;
     }
 }
 
@@ -58,11 +79,38 @@ const char* stepContentActionLabel(
             return "Micro";
         case Action::CYCLE_STATES:
             return "Cycle";
-        case Action::SELECT_STEPS:
-            return "Select steps";
-        case Action::VARIATION:
         default:
-            return "Variation";
+            return "Chord";
+    }
+}
+
+FLASHMEM const char* stepContentDraftFailureValue(
+    const core::state::sequencer::SequencerStepContentDraftSession& draft
+) {
+    using Failure = core::state::sequencer::SequencerStepContentDraftFailure;
+    using Transition =
+        core::state::sequencer::SequencerStepContentDraftBlockedTransition;
+    switch (draft.failure) {
+        case Failure::OUT_OF_MEMORY:
+            return "Out of memory";
+        case Failure::HISTORY_UNAVAILABLE:
+            return "History unavailable";
+        case Failure::PUBLISH_FAILED:
+            return "Publish failed";
+        case Failure::UNPUBLISHABLE_MUTATION:
+            return "Unsupported edit";
+        case Failure::TRANSITION_BLOCKED:
+            switch (draft.blockedTransition) {
+                case Transition::TRACK: return "Apply before track";
+                case Transition::VIEW: return "Apply before view";
+                case Transition::PROJECT_LOAD: return "Apply before load";
+                case Transition::RESET: return "Apply before reset";
+                case Transition::NONE:
+                default: return "Apply or discard";
+            }
+        case Failure::NONE:
+        default:
+            return "";
     }
 }
 
@@ -248,6 +296,82 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
 ) {
     const auto& sequencer = source.sequencer;
 
+    if (sequencer.stepContentDraft.exitPromptVisible.get()) {
+        using Choice = core::state::sequencer::SequencerStepContentDraftExitChoice;
+        switch (sequencer.stepContentDraft.exitChoice.get()) {
+            case Choice::CONTINUE:
+                return {
+                    .visible = true,
+                    .customContent = true,
+                    .icon = standalone::icons::ACTION_BACKWARD,
+                    .label = "Continue",
+                    .value = "NAV turn/press",
+                    .color = standalone::theme::color::STEP_STATE,
+                };
+            case Choice::DISCARD:
+                return {
+                    .visible = true,
+                    .customContent = true,
+                    .icon = standalone::icons::ACTION_CANCEL,
+                    .label = "Discard draft",
+                    .value = "NAV turn/press",
+                    .color = standalone::theme::color::STEP_CYCLE_STATE,
+                };
+            case Choice::SAVE:
+            case Choice::COUNT:
+            default:
+                return {
+                    .visible = true,
+                    .customContent = true,
+                    .icon = standalone::icons::ACTION_VALIDATE,
+                    .label = sequencer.stepContentDraft.failure ==
+                                     core::state::sequencer::
+                                         SequencerStepContentDraftFailure::NONE
+                                 ? "Save draft"
+                                 : "Apply failed",
+                    .value = sequencer.stepContentDraft.failure ==
+                                     core::state::sequencer::
+                                         SequencerStepContentDraftFailure::NONE
+                                 ? "NAV turn/press"
+                                 : stepContentDraftFailureValue(
+                                       sequencer.stepContentDraft
+                                   ),
+                    .color = standalone::theme::color::STEP_MICRO_SEQUENCE,
+                };
+        }
+    }
+
+    if (sequencer.stepContentDraft.failure !=
+        core::state::sequencer::SequencerStepContentDraftFailure::NONE) {
+        return {
+            .visible = true,
+            .customContent = true,
+            .icon = standalone::icons::ACTION_CANCEL,
+            .label = sequencer.stepContentDraft.failure ==
+                             core::state::sequencer::
+                                 SequencerStepContentDraftFailure::TRANSITION_BLOCKED
+                         ? "Finish draft first"
+                         : "Apply failed",
+            .value = stepContentDraftFailureValue(sequencer.stepContentDraft),
+            .color = standalone::theme::color::STEP_CYCLE_STATE,
+        };
+    }
+
+    if (sequencer.contextSelector.visible) {
+        const auto focus = sequencer.contextSelector.previewFocus;
+        return {
+            .visible = true,
+            .customContent = true,
+            .icon = sequencerContextIcon(focus),
+            .label = sequencerContextLabel(focus),
+            .value = sequencer.contextSelector.feedback ==
+                    core::state::sequencer::SequencerContextSelectorFeedback::EDITOR_UNAVAILABLE
+                ? "No editor yet"
+                : "Turn NAV · release",
+            .color = standalone::theme::color::STEP_STATE,
+        };
+    }
+
     if (sequencer.stepContentSelector.selecting.get()) {
         const auto action = sequencer.stepContentSelector.focusedAction.get();
         StepPropertySelectionOverlayProps props{
@@ -257,11 +381,6 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
             .label = stepContentActionLabel(action),
             .color = standalone::theme::color::STEP_STATE,
         };
-        if (action == core::state::sequencer::SequencerStepContentAction::VARIATION) {
-            props.value = semantic::labelForProperty(
-                sequencer.activeStepProperty.get()
-            );
-        }
         return props;
     }
 

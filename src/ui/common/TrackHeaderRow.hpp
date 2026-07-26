@@ -26,7 +26,6 @@ struct TrackHeaderRowProps {
     std::array<bool, MAX_ITEM_COUNT> itemAddSlot{};
     bool showCursor = false;
     uint8_t cursorIndex = 0;
-    uint16_t selectedMask = 0;
     uint32_t cursorColor = 0;
     lv_opa_t cursorOpa = LV_OPA_80;
 };
@@ -66,9 +65,6 @@ private:
     std::array<lv_opa_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_opa_cache_{};
     std::array<bool, TrackHeaderRowProps::MAX_ITEM_COUNT> item_hidden_cache_{};
     std::array<bool, TrackHeaderRowProps::MAX_ITEM_COUNT> item_add_visible_cache_{};
-    std::array<lv_coord_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_border_width_cache_{};
-    std::array<uint32_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_border_color_cache_{};
-    std::array<lv_opa_t, TrackHeaderRowProps::MAX_ITEM_COUNT> item_border_opa_cache_{};
     bool item_geometry_cache_initialized_ = false;
     bool dense_layout_cache_ = false;
     lv_coord_t item_size_cache_ = -1;

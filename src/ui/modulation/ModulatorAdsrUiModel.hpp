@@ -6,44 +6,47 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "state/modulation/ModulatorEnvelopeTiming.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
+#include "state/modulation/ProjectControlState.hpp"
 
 namespace core::ui::modulation::adsr {
 
-enum class AuditionItem : uint8_t {
-    ATTACK = 0,
-    DECAY,
-    SUSTAIN,
-    RELEASE,
-    DEPTH,
-};
-
-inline constexpr uint8_t AUDITION_ITEM_COUNT = 5U;
-inline constexpr uint8_t DURATION_COUNT = 16U;
+inline constexpr uint16_t FREE_DURATION_STEP_COUNT =
+    core::state::modulation::MODULATOR_ENVELOPE_FREE_DURATION_STEP_COUNT;
 inline constexpr uint8_t SUSTAIN_STEP_COUNT = 101U;
 
-inline constexpr std::array<uint16_t, DURATION_COUNT> FREE_DURATIONS{{
-    0U, 4U, 8U, 16U, 32U, 64U, 125U, 250U,
-    500U, 1000U, 2000U, 4000U, 8000U, 16000U, 32000U, 65535U,
-}};
-
-inline constexpr std::array<uint16_t, DURATION_COUNT> SYNC_DURATIONS{{
-    0U, 3U, 6U, 12U, 24U, 48U, 96U, 192U,
-    384U, 768U, 1536U, 3072U, 6144U, 12288U, 24576U, 65535U,
-}};
-
-inline uint8_t durationIndex(
-    uint16_t duration,
-    core::state::modulation::ModulatorTimingMode timing
+[[nodiscard]] inline uint16_t durationCount(
+    core::state::modulation::ModulatorTimingMode timing,
+    core::state::modulation::ModulatorEnvelopeTimeParameter parameter
 ) {
-    const auto& values = timing ==
-            core::state::modulation::ModulatorTimingMode::FREE
-        ? FREE_DURATIONS
-        : SYNC_DURATIONS;
-    uint8_t nearest = 0U;
+    using namespace core::state::modulation;
+    if (timing == ModulatorTimingMode::FREE) {
+        return FREE_DURATION_STEP_COUNT;
+    }
+    uint16_t count = 0U;
+    const uint16_t maximum = maximumModulatorEnvelopeSyncBaseTicks(parameter);
+    for (uint16_t value : MODULATOR_ENVELOPE_SYNC_BASE_TICKS) {
+        if (value > maximum) break;
+        ++count;
+    }
+    return std::max<uint16_t>(count, 1U);
+}
+
+[[nodiscard]] inline uint16_t durationIndex(
+    uint16_t duration,
+    core::state::modulation::ModulatorTimingMode timing,
+    core::state::modulation::ModulatorEnvelopeTimeParameter parameter
+) {
+    using namespace core::state::modulation;
+    if (timing == ModulatorTimingMode::FREE) {
+        return modulatorEnvelopeFreeDurationIndex(duration, parameter);
+    }
+    uint16_t nearest = 0U;
     uint32_t nearestDistance = UINT32_MAX;
-    for (uint8_t index = 0U; index < values.size(); ++index) {
-        const uint32_t value = values[index];
+    const uint16_t count = durationCount(timing, parameter);
+    for (uint16_t index = 0U; index < count; ++index) {
+        const uint32_t value = MODULATOR_ENVELOPE_SYNC_BASE_TICKS[index];
         const uint32_t distance = value > duration
             ? value - duration
             : duration - value;
@@ -55,71 +58,34 @@ inline uint8_t durationIndex(
     return nearest;
 }
 
-inline uint16_t durationAt(
-    uint8_t index,
-    core::state::modulation::ModulatorTimingMode timing
+[[nodiscard]] inline uint16_t durationAt(
+    uint16_t index,
+    core::state::modulation::ModulatorTimingMode timing,
+    core::state::modulation::ModulatorEnvelopeTimeParameter parameter
 ) {
-    const auto& values = timing ==
-            core::state::modulation::ModulatorTimingMode::FREE
-        ? FREE_DURATIONS
-        : SYNC_DURATIONS;
-    return values[std::min<uint8_t>(index, DURATION_COUNT - 1U)];
+    using namespace core::state::modulation;
+    const uint16_t count = durationCount(timing, parameter);
+    index = std::min<uint16_t>(index, static_cast<uint16_t>(count - 1U));
+    if (timing == ModulatorTimingMode::SYNC) {
+        return MODULATOR_ENVELOPE_SYNC_BASE_TICKS[index];
+    }
+    return modulatorEnvelopeFreeDurationAt(index, parameter);
 }
 
-/** Shared compact duration grammar for Project and Macro ADSR surfaces. */
-inline void formatDuration(
+void formatDuration(
     char* out,
     std::size_t size,
     uint16_t duration,
     core::state::modulation::ModulatorTimingMode timing
+);
+
+[[nodiscard]] inline const char* feelLabel(
+    core::state::modulation::ModulatorEnvelopeFeel feel
 ) {
-    if (out == nullptr || size == 0U) return;
-    if (timing == core::state::modulation::ModulatorTimingMode::FREE) {
-        if (duration >= 1000U) {
-            const uint32_t tenths =
-                (static_cast<uint32_t>(duration) + 50U) / 100U;
-            std::snprintf(
-                out,
-                size,
-                "%u.%us",
-                static_cast<unsigned>(tenths / 10U),
-                static_cast<unsigned>(tenths % 10U)
-            );
-        } else {
-            std::snprintf(
-                out,
-                size,
-                "%ums",
-                static_cast<unsigned>(duration)
-            );
-        }
-        return;
-    }
-    if (duration == 0U) {
-        std::snprintf(out, size, "0");
-        return;
-    }
-    constexpr uint32_t TICKS_PER_BEAT =
-        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT;
-    const uint32_t tenths =
-        (static_cast<uint32_t>(duration) * 10U + TICKS_PER_BEAT / 2U) /
-        TICKS_PER_BEAT;
-    if ((tenths % 10U) == 0U) {
-        std::snprintf(
-            out,
-            size,
-            "%ub",
-            static_cast<unsigned>(tenths / 10U)
-        );
-    } else {
-        std::snprintf(
-            out,
-            size,
-            "%u.%ub",
-            static_cast<unsigned>(tenths / 10U),
-            static_cast<unsigned>(tenths % 10U)
-        );
-    }
+    using core::state::modulation::ModulatorEnvelopeFeel;
+    if (feel == ModulatorEnvelopeFeel::TRIPLET) return "Triplet";
+    if (feel == ModulatorEnvelopeFeel::DOTTED) return "Dotted";
+    return "Straight";
 }
 
 inline uint8_t sustainQ15ToPercent(uint16_t sustainQ15) {
@@ -139,41 +105,66 @@ inline uint16_t sustainPercentToQ15(uint8_t percent) {
 }
 
 struct PreviewBoundaries {
+    uint16_t delayEndQ16 = 0U;
     uint16_t attackEndQ16 = 0U;
+    uint16_t holdEndQ16 = 0U;
     uint16_t decayEndQ16 = 0U;
+    /** Authored preview note-off boundary; Sustain itself has no duration. */
     uint16_t sustainEndQ16 = 0U;
+    uint32_t totalDuration = 0U;
 };
 
 inline PreviewBoundaries previewBoundaries(
     const core::state::modulation::ModulatorAdsrParameters& parameters
 ) {
-    uint32_t attack = parameters.attack;
-    uint32_t decay = parameters.decay;
-    uint32_t release = parameters.release;
-    const uint32_t moving = attack + decay + release;
-    uint32_t sustain = std::max<uint32_t>(1U, moving / 4U);
-    if (moving == 0U) {
-        attack = 1U;
-        decay = 1U;
-        release = 1U;
-        sustain = 1U;
+    using namespace core::state::modulation;
+    const auto timing = modulatorAdsrTiming(parameters.traits);
+    const auto effective = [&](ModulatorEnvelopeTimeParameter parameter) {
+        const uint16_t base = modulatorEnvelopeDuration(parameters, parameter);
+        return timing == ModulatorTimingMode::FREE
+            ? static_cast<uint32_t>(base)
+            : resolveModulatorEnvelopeSyncTicks(
+                  base,
+                  modulatorAdsrFeel(parameters.traits, parameter)
+              );
+    };
+    const auto positionQ16 = [](uint64_t elapsed, uint64_t total) {
+        return static_cast<uint16_t>((elapsed * 65535U) / total);
+    };
+    const uint32_t delay = effective(ModulatorEnvelopeTimeParameter::DELAY);
+    const uint32_t attack = effective(ModulatorEnvelopeTimeParameter::ATTACK);
+    const uint32_t hold = effective(ModulatorEnvelopeTimeParameter::HOLD);
+    const uint32_t decay = effective(ModulatorEnvelopeTimeParameter::DECAY);
+    const uint32_t release = effective(
+        ModulatorEnvelopeTimeParameter::RELEASE
+    );
+    const uint64_t beforeNoteOff = delay + attack + hold + decay;
+    const uint64_t total = beforeNoteOff + release;
+    if (total == 0U) {
+        return {
+            .delayEndQ16 = 0U,
+            .attackEndQ16 = 0U,
+            .holdEndQ16 = 0U,
+            .decayEndQ16 = 0U,
+            .sustainEndQ16 = 65535U,
+            .totalDuration = 1U,
+        };
     }
-    const uint64_t total = attack + decay + sustain + release;
     return {
-        .attackEndQ16 = static_cast<uint16_t>(
-            (static_cast<uint64_t>(attack) * 65535U) / total
-        ),
-        .decayEndQ16 = static_cast<uint16_t>(
-            (static_cast<uint64_t>(attack + decay) * 65535U) / total
-        ),
-        .sustainEndQ16 = static_cast<uint16_t>(
-            (static_cast<uint64_t>(attack + decay + sustain) * 65535U) /
-                total
-        ),
+        .delayEndQ16 = positionQ16(delay, total),
+        .attackEndQ16 = positionQ16(delay + attack, total),
+        .holdEndQ16 = positionQ16(delay + attack + hold, total),
+        .decayEndQ16 = positionQ16(delay + attack + hold + decay, total),
+        .sustainEndQ16 = positionQ16(beforeNoteOff, total),
+        .totalDuration = static_cast<uint32_t>(total),
     };
 }
 
-inline float segmentProgress(uint16_t position, uint16_t begin, uint16_t end) {
+inline float segmentProgress(
+    uint16_t position,
+    uint16_t begin,
+    uint16_t end
+) {
     if (end <= begin) return 1.0f;
     return std::clamp(
         static_cast<float>(position - begin) /
@@ -195,18 +186,25 @@ inline float previewValue(
         0.0f,
         1.0f
     );
+    const auto response = modulatorAdsrCurve(parameters.traits);
+    if (positionQ16 < boundaries.delayEndQ16) return 0.0f;
     if (positionQ16 < boundaries.attackEndQ16) {
         return evaluateProjectAdsrProgress(
-            parameters.curve,
-            segmentProgress(positionQ16, 0U, boundaries.attackEndQ16)
-        );
-    }
-    if (positionQ16 < boundaries.decayEndQ16) {
-        const float shaped = evaluateProjectAdsrProgress(
-            parameters.curve,
+            response,
             segmentProgress(
                 positionQ16,
-                boundaries.attackEndQ16,
+                boundaries.delayEndQ16,
+                boundaries.attackEndQ16
+            )
+        );
+    }
+    if (positionQ16 < boundaries.holdEndQ16) return 1.0f;
+    if (positionQ16 < boundaries.decayEndQ16) {
+        const float shaped = evaluateProjectAdsrProgress(
+            response,
+            segmentProgress(
+                positionQ16,
+                boundaries.holdEndQ16,
                 boundaries.decayEndQ16
             )
         );
@@ -214,7 +212,7 @@ inline float previewValue(
     }
     if (positionQ16 < boundaries.sustainEndQ16) return sustain;
     const float shaped = evaluateProjectAdsrProgress(
-        parameters.curve,
+        response,
         segmentProgress(positionQ16, boundaries.sustainEndQ16, 65535U)
     );
     return sustain * (1.0f - shaped);
@@ -230,11 +228,19 @@ inline bool runtimeMarkerPosition(
     uint16_t begin = 0U;
     uint16_t end = 0U;
     switch (stage) {
+        case ProjectModulationAdsrStage::DELAY:
+            end = boundaries.delayEndQ16;
+            break;
         case ProjectModulationAdsrStage::ATTACK:
+            begin = boundaries.delayEndQ16;
             end = boundaries.attackEndQ16;
             break;
-        case ProjectModulationAdsrStage::DECAY:
+        case ProjectModulationAdsrStage::HOLD:
             begin = boundaries.attackEndQ16;
+            end = boundaries.holdEndQ16;
+            break;
+        case ProjectModulationAdsrStage::DECAY:
+            begin = boundaries.holdEndQ16;
             end = boundaries.decayEndQ16;
             break;
         case ProjectModulationAdsrStage::SUSTAIN:
@@ -266,7 +272,8 @@ runtimeState(
     using namespace core::state::modulation;
     for (uint16_t index = 0U; index < control.runtime.sourceCount; ++index) {
         const auto& state = control.runtime.sources[index];
-        if (state.id == sourceId && state.payload.adsr.kind == ModulatorKind::ADSR) {
+        if (state.id == sourceId &&
+            state.payload.adsr.kind == ModulatorKind::ADSR) {
             return &state.payload.adsr;
         }
     }

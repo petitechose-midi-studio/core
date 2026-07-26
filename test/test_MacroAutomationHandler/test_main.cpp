@@ -16,6 +16,7 @@
 #include "../../src/handler/macro/MacroAutomationHandler.hpp"
 #include "../../src/handler/macro/MacroEditDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/modulation/ProjectModulationDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/NotificationTestUtils.hpp"
@@ -66,6 +67,7 @@ struct MacroAutomationHarness {
                       state.projectNavigation,
                       state.macroEdit,
                       state.pages,
+                      state.projectTracks,
                   },
                   services,
                   overlays,
@@ -122,10 +124,14 @@ struct MacroAutomationHarness {
             .page = state.pages.currentActivePage(),
             .macro = macroIndex,
         };
-        core::state::macro::MacroModulationShape shape;
+        test_support::project_control::ModulationShape shape;
         shape.durationBeats = 2.0f;
-        assert(core::state::macro::macroModulationAppendPoint(shape, 0.0f, 0.25f));
-        assert(core::state::macro::macroModulationAppendPoint(shape, 1.0f, -0.25f));
+        assert(test_support::project_control::appendModulationPoint(
+            shape, 0.0f, 0.25f
+        ));
+        assert(test_support::project_control::appendModulationPoint(
+            shape, 1.0f, -0.25f
+        ));
         assert(test_support::project_control::assignModulation(
             state.pages.control,
             address,
@@ -177,7 +183,7 @@ void test_assignment_tap_opens_exact_source_workspace() {
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
 
-    assert(h.state.activeView.get() == core::ui::ViewType::PROJECT);
+    assert(h.state.activeView.get() == core::ui::ViewType::MODULATORS);
     assert(!h.state.overlays.hasVisible());
     assert(h.state.projectNavigation.currentNode.get() ==
            core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL);
@@ -207,7 +213,7 @@ void test_macro_view_return_resynchronizes_focused_depth_encoder() {
     h.state.activeView.set(core::ui::ViewType::MACRO);
     h.handler.update(20U);
 
-    assert(h.encoderHw.getDiscreteSteps(opt) == 201U);
+    assert(h.encoderHw.getDiscreteSteps(opt) == 0U);
     assert(std::fabs(h.encoderHw.getPosition(opt) - 0.75f) < 0.0001f);
     std::cout << "[PASS] Macro return resynchronizes focused Depth before input\n";
 }
@@ -242,16 +248,16 @@ void test_playback_row_toggles_automation_without_clearing_curve() {
             .macro = 0,
         }
     );
-    assert(preserved.automationStored);
-    assert(!preserved.automationEnabled);
+    assert(preserved.automation.stored());
+    assert(!preserved.automation.enabled);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
     preserved = test_support::project_control::readSlot(
         h.state.pages.control,
         preserved.address
     );
-    assert(preserved.automationEnabled);
-    assert(preserved.compatibility.automation.pointCount == 3);
+    assert(preserved.automation.enabled);
+    assert(preserved.automation.pointCount == 3);
 
     h.flushState();
 
@@ -263,18 +269,73 @@ void test_modulation_entry_synchronizes_opt_to_focused_depth() {
     MacroAutomationHarness h;
     h.configureAutomation();
     h.configureModulation();
-    assert(h.services.sourceModeFor(0) == core::handler::MacroSourceMode::AUTO_MOD);
+    assert(h.services.automationPlaybackActiveFor(0));
+    assert(h.services.modulationPlaybackActiveFor(0));
     h.openModulationEditor();
 
     h.handler.update(0);
 
     const auto opt = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
-    assert(h.encoderHw.getDiscreteSteps(opt) == 201);
+    assert(h.encoderHw.getDiscreteSteps(opt) == 0U);
     assert(std::fabs(h.encoderHw.getPosition(opt) - 0.75f) < 0.0001f);
 
     std::cout
         << "[PASS] "
         << "test_modulation_entry_synchronizes_opt_to_focused_depth\n";
+}
+
+void test_recorded_shape_assignment_depth_uses_typed_full_range() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    h.state.pages.setMacroSlotActive(0U, true);
+    auto& control = h.state.pages.control;
+    auto& graph = control.authored.modulation;
+
+    const ProjectPackedCurvePoint points[]{
+        {0U, -32767},
+        {192U, 32767},
+    };
+    RecordedShapeDraft sourceDraft{};
+    sourceDraft.name = "Gesture";
+    sourceDraft.curve = {
+        .sourceDurationTicks = 192U,
+        .durationTicks = 192U,
+        .valueDomain = ProjectCurveValueDomain::BIPOLAR,
+    };
+    sourceDraft.points = points;
+    sourceDraft.pointCount = 2U;
+    const auto source = createRecordedShapeModulator(
+        graph,
+        control.authored.curves,
+        sourceDraft
+    );
+    assert(source.changed());
+
+    ModulationBindingDraft bindingDraft{};
+    bindingDraft.sourceId = source.sourceId;
+    bindingDraft.destination = projectControlDestination({0U, 0U, 0U});
+    bindingDraft.amountQ15 = 16384;
+    const auto assigned = addProjectModulationBinding(graph, bindingDraft);
+    assert(assigned.changed());
+    control.markAuthoredMutation();
+    assert(h.services.focusModulationBinding(0U, assigned.bindingId));
+
+    h.openModulationEditor();
+    h.handler.update(0U);
+    const auto opt = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
+    assert(h.encoderHw.getDiscreteSteps(opt) == 0U);
+    assert(std::fabs(h.encoderHw.getPosition(opt) - 0.75f) < 0.001f);
+
+    h.turn(Config::EncoderID::OPT, 0.625f);
+    const auto* binding = findProjectModulationBinding(
+        graph,
+        assigned.bindingId
+    );
+    assert(binding != nullptr);
+    assert(binding->amountQ15 == 8192);
+    h.flushState();
+
+    std::cout << "[PASS] Recorded Shape assignment Depth uses ±200% UI\n";
 }
 
 void test_all_row_edits_global_depth_without_rewriting_assignment() {
@@ -307,7 +368,7 @@ void test_all_row_edits_global_depth_without_rewriting_assignment() {
     assert(binding != nullptr && binding->amountQ15 == bindingBefore.amountQ15);
     assert(binding->flags == bindingBefore.flags);
 
-    assert(h.services.undo());
+    assert(h.state.undoProjectHistory());
     assert(projectModulationDestinationScaleQ15(
         h.state.pages.control.authored.modulation,
         destination
@@ -364,18 +425,29 @@ void test_conversion_is_one_turn_away_and_switches_playback_truth() {
            core::state::MacroEditFlowPhase::MODULATION);
     assert(h.state.macroEdit.contextFeedback.get().status ==
            core::state::contextual::OperationFeedbackStatus::APPLIED);
-    const auto* slot = h.services.automationSlot(0);
+    const auto* slot = h.services.controlDestination(0);
     assert(slot != nullptr);
-    assert(core::state::macro::macroCurveStored(slot->automation));
-    assert(!core::state::macro::macroCurvePlaybackActive(slot->automation));
-    assert(core::state::macro::macroCurveStored(slot->modulation));
-    assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
+    assert(slot->automation.stored());
+    assert(!slot->automation.enabled);
+    assert(slot->primaryModulation.recordedShape.stored());
+    assert(slot->primaryModulation.enabled);
     // The triangular 0 -> 1 -> 0 automation is centered on 0.5 and has a
     // symmetric amplitude of 0.5. Conversion preserves that audible range.
-    assert(std::fabs(slot->modulationDepth - 0.5f) < 0.0001f);
+    assert(std::fabs(slot->primaryModulation.amount - 0.5f) < 0.0001f);
+
+    // Conversion disables Automation by default but does not make that choice
+    // irreversible: reopening its stored lane and turning Playback on must
+    // combine the original absolute movement with the new relative source.
+    h.state.macroEdit.openAutomation();
+    h.handler.update(110U);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    slot = h.services.controlDestination(0);
+    assert(slot != nullptr);
+    assert(slot->automation.enabled);
+    assert(slot->primaryModulation.enabled);
 
     std::cout
-        << "[PASS] test_conversion_is_one_turn_away_and_switches_playback_truth\n";
+        << "[PASS] conversion defaults Automation off and remains explicitly reversible\n";
 }
 
 void test_modulation_tap_toggles_and_hold_clears_only_modulation() {
@@ -396,10 +468,10 @@ void test_modulation_tap_toggles_and_hold_clears_only_modulation() {
             .macro = 0,
         }
     );
-    assert(slot.automationEnabled);
-    assert(slot.modulationStored);
-    assert(!slot.modulationEnabled);
-    assert(std::fabs(slot.compatibility.modulationDepth - 0.5f) < 0.0001f);
+    assert(slot.automation.enabled);
+    assert(slot.modulationCount > 0U);
+    assert(!slot.primaryModulation.enabled);
+    assert(std::fabs(slot.primaryModulation.amount - 0.5f) < 0.0001f);
     assert(h.state.pages.isMacroSlotActive(0));
 
     h.press(Config::ButtonID::BOTTOM_LEFT);
@@ -416,9 +488,9 @@ void test_modulation_tap_toggles_and_hold_clears_only_modulation() {
         h.state.pages.control,
         slot.address
     );
-    assert(slot.automationEnabled);
-    assert(!slot.modulationStored);
-    assert(slot.compatibility.modulationDepth == 0.0f);
+    assert(slot.automation.enabled);
+    assert(slot.modulationCount == 0U);
+    assert(slot.primaryModulation.amount == 0.0f);
     assert(h.state.pages.isMacroSlotActive(0));
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::MODULATION);
@@ -442,7 +514,7 @@ void test_typed_paste_preflight_rejects_invalid_payload_without_mutation() {
     MacroAutomationHarness h;
     seedTypedAutomationPaste(h);
     auto& payload = *h.state.structureClipboard.macroAutomationSet;
-    auto& source = payload.entries[0].state;
+    auto& source = payload.entries[0].control;
     const auto address = core::state::macro::MacroAutomationSlotAddress{
         .track = h.state.pages.currentActiveTrack(),
         .page = h.state.pages.currentActivePage(),
@@ -475,13 +547,13 @@ void test_typed_paste_preflight_rejects_invalid_payload_without_mutation() {
         ) == 0);
     };
 
-    const auto validPlaybackState = source.automation.playbackState;
-    source.automation.playbackState =
-        static_cast<core::state::macro::MacroCurvePlaybackState>(0xFFU);
+    const auto validValueDomain = source.automation.spec.valueDomain;
+    source.automation.spec.valueDomain =
+        core::state::modulation::ProjectCurveValueDomain::BIPOLAR;
     assertRejectedWithoutMutation();
 
-    source.automation.playbackState = validPlaybackState;
-    source.modulationDepth = std::numeric_limits<float>::quiet_NaN();
+    source.automation.spec.valueDomain = validValueDomain;
+    source.automation.pointOffset = payload.pointPool.used;
     assertRejectedWithoutMutation();
 
     std::cout
@@ -504,7 +576,7 @@ void test_typed_paste_quick_release_keeps_copy_semantics() {
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target.compatibility.automation.durationTicks
+        target.automation.spec.durationTicks
     ) == 4.0f);
     std::cout << "[PASS] test_typed_paste_quick_release_keeps_copy_semantics\n";
 }
@@ -526,7 +598,7 @@ void test_typed_paste_early_armed_release_cancels_without_copy_or_mutation() {
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target.compatibility.automation.durationTicks
+        target.automation.spec.durationTicks
     ) == 4.0f);
     assert(h.state.macroEdit.contextFeedback.get().status ==
            core::state::contextual::OperationFeedbackStatus::CANCELLED);
@@ -545,7 +617,7 @@ void test_typed_paste_commits_once_after_full_guard() {
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target.compatibility.automation.durationTicks
+        target.automation.spec.durationTicks
     ) == 4.0f);
     assert(h.state.macroEdit.contextGuard.get().phase ==
            core::state::contextual::GuardedActionPhase::COMMITTED);
@@ -557,10 +629,10 @@ void test_typed_paste_commits_once_after_full_guard() {
         target.address
     );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target.compatibility.automation.durationTicks
+        target.automation.spec.durationTicks
     ) == 2.0f);
-    assert(target.modulationStored);
-    assert(std::fabs(target.compatibility.modulationDepth - 0.75f) < 0.0001f);
+    assert(target.modulationCount > 0U);
+    assert(std::fabs(target.primaryModulation.amount - 0.75f) < 0.0001f);
     assert(h.state.macroEdit.contextFeedback.get().status ==
            core::state::contextual::OperationFeedbackStatus::APPLIED);
     std::cout << "[PASS] test_typed_paste_commits_once_after_full_guard\n";
@@ -593,11 +665,11 @@ void test_hold_clear_automation_keeps_slot_and_detail_surface() {
     assert(h.overlays.hasVisible());
     // Clearing the last Project Control assignment removes the cold control
     // slot itself. The musical Macro slot and its editor remain present.
-    assert(h.services.automationSlot(0) == nullptr);
+    assert(h.services.controlDestination(0) == nullptr);
     assert(!test_support::project_control::readSlot(
         h.state.pages.control,
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 0}
-    ).automationStored);
+    ).automation.stored());
 
     std::cout
         << "[PASS] Automation hold-clear preserves Slot and detail surface\n";
@@ -626,7 +698,7 @@ void test_navigation_cancels_completed_guard_before_release_without_mutation() {
         {h.state.pages.currentActiveTrack(), h.state.pages.currentActivePage(), 1}
     );
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        target.compatibility.automation.durationTicks
+        target.automation.spec.durationTicks
     ) == 4.0f);
     std::cout
         << "[PASS] test_navigation_cancels_completed_guard_before_release_without_mutation\n";
@@ -650,19 +722,19 @@ void test_length_row_resizes_automation_duration_without_scaling_points() {
             .macro = 0,
         }
     );
-    assert(slot.automationEnabled);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.durationTicks) == 3.0f);
+    assert(slot.automation.enabled);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.automation.spec.durationTicks) == 3.0f);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
 
     slot = test_support::project_control::readSlot(h.state.pages.control, slot.address);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.durationTicks) == 64.0f);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.sourceDurationTicks) == 2.0f);
-    assert(slot.compatibility.automation.pointCount == 3);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.automation.spec.durationTicks) == 64.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.automation.spec.sourceDurationTicks) == 2.0f);
+    assert(slot.automation.pointCount == 3);
 
     const auto point = test_support::project_control::readCurvePoint(
         h.state.pages.control,
-        slot.automationCurveId,
+        slot.automation.id,
         1,
         false
     );
@@ -672,7 +744,40 @@ void test_length_row_resizes_automation_duration_without_scaling_points() {
     assert(h.state.macroEdit.automationFocusedRow.get() == 3);
     h.turn(Config::EncoderID::OPT, 1.0f);
     slot = test_support::project_control::readSlot(h.state.pages.control, slot.address);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.windowOffsetTicks) == 1.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.automation.spec.windowOffsetTicks) == 1.0f);
+
+    assert(h.state.macroHistory.undoCount() == 2U);
+    assert(h.state.undoProjectHistory());
+    slot = test_support::project_control::readSlot(
+        h.state.pages.control,
+        slot.address
+    );
+    assert(core::state::macro::macroAutomationBeatsFromTicks(
+        slot.automation.spec.windowOffsetTicks
+    ) == 0.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(
+        slot.automation.spec.durationTicks
+    ) == 64.0f);
+    assert(h.state.undoProjectHistory());
+    slot = test_support::project_control::readSlot(
+        h.state.pages.control,
+        slot.address
+    );
+    assert(core::state::macro::macroAutomationBeatsFromTicks(
+        slot.automation.spec.durationTicks
+    ) == 2.0f);
+    assert(h.state.redoProjectHistory());
+    assert(h.state.redoProjectHistory());
+    slot = test_support::project_control::readSlot(
+        h.state.pages.control,
+        slot.address
+    );
+    assert(core::state::macro::macroAutomationBeatsFromTicks(
+        slot.automation.spec.durationTicks
+    ) == 64.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(
+        slot.automation.spec.windowOffsetTicks
+    ) == 1.0f);
 
     h.flushState();
 
@@ -701,7 +806,7 @@ void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
             .macro = 0,
         }
     );
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.durationTicks) == 8.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.automation.spec.durationTicks) == 8.0f);
 
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 64);
@@ -714,7 +819,7 @@ void test_left_center_enables_coarse_length_and_offset_steps_temporarily() {
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 2);
     h.turn(Config::EncoderID::OPT, 1.0f);
     slot = test_support::project_control::readSlot(h.state.pages.control, slot.address);
-    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.compatibility.automation.windowOffsetTicks) == 4.0f);
+    assert(core::state::macro::macroAutomationBeatsFromTicks(slot.automation.spec.windowOffsetTicks) == 4.0f);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.encoderHw.getDiscreteSteps(static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)) == 8);
 
@@ -740,8 +845,11 @@ void test_new_lfo_selection_opens_full_project_source_workspace() {
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
     assert(h.state.macroEdit.flowPhase.get() ==
-           core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION);
-    assert(h.state.pages.control.audition.active);
+           core::state::MacroEditFlowPhase::MODULATOR_CREATE);
+    assert(h.state.pages.control.audition.active());
+    assert(h.state.pages.control.audition.sourceCreated());
+    assert(h.state.pages.control.audition.mode ==
+           ProjectModulatorSourceSessionMode::AUDITION_NEW);
     assert(h.state.pages.control.authored.modulation.sourceCount == 1);
     assert(h.state.pages.control.authored.modulation.outputBindingCount == 1);
     assert(h.state.macroHistory.undoCount() == 0);
@@ -754,16 +862,68 @@ void test_new_lfo_selection_opens_full_project_source_workspace() {
     assert(source.parameters.lfo.retrigger == ModulatorRetriggerPolicy::TRANSPORT);
     assert(binding.amountQ15 == 8192);
     assert(binding.application == ModulationApplication::NATURAL);
-    assert(h.state.activeView.get() == core::ui::ViewType::PROJECT);
+    assert(h.state.activeView.get() == core::ui::ViewType::MODULATORS);
     assert(!h.state.overlays.hasVisible());
     assert(h.state.projectNavigation.currentNode.get() ==
            core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL);
     assert(h.state.projectNavigation.selectedModulator == source.id);
     assert(h.state.projectNavigation.modulatorReturn.caller ==
            core::state::project::ModulatorNavigationCaller::MACRO_AUDITION);
+    assert(h.state.projectNavigation.modulatorReturn.target ==
+           core::state::project::ModulatorMacroReturnTarget::MODULATOR_CREATE);
+    assert(h.state.projectNavigation.modulatorReturn.sourceId == source.id);
     assert(h.state.projectNavigation.modulatorReturn.bindingId == binding.id);
+    assert(h.state.projectNavigation.modulatorReturn.macroAddress.track ==
+           h.state.pages.currentActiveTrack());
+    assert(h.state.projectNavigation.modulatorReturn.macroAddress.page ==
+           h.state.pages.currentActivePage());
+    assert(h.state.projectNavigation.modulatorReturn.macroAddress.macro == 0U);
+    assert(h.state.projectNavigation.modulatorReturn.focusedRow == 0U);
     std::cout
         << "[PASS] New LFO opens the full Project source workspace\n";
+}
+
+void test_new_adsr_selection_keeps_create_origin_and_exact_return_ids() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    h.state.pages.setMacroSlotActive(0, true);
+    h.openModulationEditor();
+    h.handler.update(0);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 1U);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+
+    const auto& graph = h.state.pages.control.authored.modulation;
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATOR_CREATE);
+    assert(h.state.pages.control.audition.mode ==
+           ProjectModulatorSourceSessionMode::AUDITION_NEW);
+    assert(graph.sourceCount == 1U);
+    assert(graph.outputBindingCount == 1U);
+    const auto& source = graph.sources[0];
+    const auto& binding = graph.outputBindings[0];
+    assert(source.kind == ModulatorKind::ADSR);
+    assert(h.state.pages.control.audition.sourceId == source.id);
+    assert(h.state.pages.control.audition.bindingId == binding.id);
+    assert(h.state.macroHistory.undoCount() == 0U);
+
+    assert(h.state.activeView.get() == core::ui::ViewType::MODULATORS);
+    assert(!h.state.overlays.hasVisible());
+    assert(h.state.projectNavigation.currentNode.get() ==
+           core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    assert(h.state.projectNavigation.selectedModulator == source.id);
+    const auto& returnContext = h.state.projectNavigation.modulatorReturn;
+    assert(returnContext.caller ==
+           core::state::project::ModulatorNavigationCaller::MACRO_AUDITION);
+    assert(returnContext.target ==
+           core::state::project::ModulatorMacroReturnTarget::MODULATOR_CREATE);
+    assert(returnContext.sourceId == source.id);
+    assert(returnContext.bindingId == binding.id);
+    assert(returnContext.focusedRow == 1U);
+    std::cout
+        << "[PASS] New ADSR keeps Create origin and exact Project return IDs\n";
 }
 
 core::state::modulation::ModulatorId createReusableLfo(
@@ -810,6 +970,131 @@ core::state::modulation::ModulationBindingId bindReusableLfo(
     assert(result.changed());
     h.state.pages.control.markAuthoredMutation();
     return result.bindingId;
+}
+
+void test_stale_assignment_row_cannot_remove_the_replacement_edge() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    const auto firstSource = createReusableLfo(h);
+    const auto secondSource = createReusableLfo(h);
+    const auto armedBinding = bindReusableLfo(h, firstSource, 0, 8192);
+    const auto replacementBinding = bindReusableLfo(h, secondSource, 0, 4096);
+
+    h.openModulationEditor(0);
+    h.handler.update(0U);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 1U);
+    assert(h.services.focusedModulationBinding(0) == armedBinding);
+
+    h.setNow(0U);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.handler.update(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(h.state.macroEdit.contextGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::COMMITTED);
+
+    // Simulate the projected edge disappearing before release. Dense storage
+    // moves the second edge into the same UI ordinal; the armed action must
+    // retain the original BindingId and fail closed, never retarget by row.
+    auto& graph = h.state.pages.control.authored.modulation;
+    assert(removeProjectModulationBinding(graph, armedBinding).changed());
+    h.state.pages.control.markAuthoredMutation();
+    assert(graph.outputBindingCount == 1U);
+    assert(graph.outputBindings[0].id == replacementBinding);
+
+    h.setNow(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 10U);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    assert(graph.outputBindingCount == 1U);
+    assert(findProjectModulationBinding(graph, replacementBinding) != nullptr);
+    assert(h.state.macroEdit.contextFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::FAILED);
+
+    h.flushState();
+    std::cout
+        << "[PASS] stale assignment row cannot remove its replacement edge\n";
+}
+
+void test_stale_all_row_cannot_clear_replacement_assignments() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    const auto firstSource = createReusableLfo(h);
+    const auto replacementSource = createReusableLfo(h);
+    const auto armedBinding = bindReusableLfo(h, firstSource, 0, 8192);
+
+    h.openModulationEditor(0);
+    h.handler.update(0U);
+    h.state.macroEdit.modulationFocusedRow.set(0U);
+    h.setNow(0U);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.handler.update(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(h.state.macroEdit.contextGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::COMMITTED);
+    assert(h.state.macroEdit.contextFeedback.get().action ==
+           core::state::contextual::ContextActionId::CLEAR);
+
+    auto& graph = h.state.pages.control.authored.modulation;
+    assert(removeProjectModulationBinding(graph, armedBinding).changed());
+    h.state.pages.control.markAuthoredMutation();
+    const auto replacementBinding =
+        bindReusableLfo(h, replacementSource, 0, 4096);
+    assert(graph.outputBindingCount == 1U);
+
+    h.setNow(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 10U);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    assert(graph.outputBindingCount == 1U);
+    assert(findProjectModulationBinding(graph, replacementBinding) != nullptr);
+    assert(h.state.macroEdit.contextFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::FAILED);
+
+    h.flushState();
+    std::cout
+        << "[PASS] stale All row cannot clear replacement assignments\n";
+}
+
+void test_stale_assignment_row_cannot_paste_over_replacement_edge() {
+    using namespace core::state::modulation;
+    MacroAutomationHarness h;
+    const auto sourceId = createReusableLfo(h);
+    (void)bindReusableLfo(h, sourceId, 0, 16384);
+    const auto armedTarget = bindReusableLfo(h, sourceId, 1, -8192);
+
+    h.openModulationEditor(0);
+    h.handler.update(0U);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.setNow(100U);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.structureClipboard.hasMacroModulationAssignment());
+
+    h.openModulationEditor(1);
+    h.handler.update(0U);
+    h.setNow(0U);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.handler.update(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(h.state.macroEdit.contextGuard.get().phase ==
+           core::state::contextual::GuardedActionPhase::COMMITTED);
+    assert(h.state.macroEdit.contextFeedback.get().action ==
+           core::state::contextual::ContextActionId::OVERWRITE);
+
+    auto& graph = h.state.pages.control.authored.modulation;
+    assert(removeProjectModulationBinding(graph, armedTarget).changed());
+    h.state.pages.control.markAuthoredMutation();
+    const auto replacementTarget = bindReusableLfo(h, sourceId, 1, -4096);
+
+    h.setNow(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 10U);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    const auto* replacement = findProjectModulationBinding(
+        graph,
+        replacementTarget
+    );
+    assert(replacement != nullptr);
+    assert(replacement->amountQ15 == -4096);
+    assert(h.state.macroEdit.contextFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::FAILED);
+
+    h.flushState();
+    std::cout
+        << "[PASS] stale assignment row cannot Paste over replacement edge\n";
 }
 
 void test_add_source_create_focus_reaches_use_existing_without_picker_mutation() {
@@ -872,7 +1157,7 @@ void test_add_source_create_focus_reaches_use_existing_without_picker_mutation()
         << "[PASS] Add Source focus reaches Use Existing without mutation\n";
 }
 
-void test_use_existing_browse_is_silent_and_cancel_preserves_source() {
+void test_use_existing_opens_common_project_source_with_typed_return() {
     using namespace core::state::modulation;
     MacroAutomationHarness h;
     h.state.pages.setMacroSlotActive(0, true);
@@ -898,74 +1183,45 @@ void test_use_existing_browse_is_silent_and_cancel_preserves_source() {
     h.press(Config::ButtonID::NAV);
     h.release(Config::ButtonID::NAV);
     assert(h.state.macroEdit.flowPhase.get() ==
-           core::state::MacroEditFlowPhase::EXISTING_MODULATOR_AUDITION);
-    assert(h.state.pages.control.audition.active);
-    assert(!h.state.pages.control.audition.sourceCreated);
+           core::state::MacroEditFlowPhase::MODULATOR_PICKER);
+    assert(h.state.pages.control.audition.active());
+    assert(!h.state.pages.control.audition.sourceCreated());
+    assert(h.state.pages.control.audition.existingSource());
+    assert(h.state.pages.control.audition.mode ==
+           ProjectModulatorSourceSessionMode::AUDITION_EXISTING);
     assert(h.state.pages.control.audition.sourceId == sourceId);
     assert(h.state.pages.control.authored.modulation.sourceCount == 1U);
     assert(h.state.pages.control.authored.modulation.outputBindingCount == 1U);
     assert(h.state.macroHistory.undoCount() == 0U);
-    assert(h.encoderHw.getDiscreteSteps(
-        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT)
-    ) == 201U);
-    h.turn(Config::EncoderID::OPT, 0.0f);
-    assert(h.state.pages.control.authored.modulation.outputBindings[0]
-               .amountQ15 == -32767);
-
-    h.press(Config::ButtonID::LEFT_TOP);
-    h.release(Config::ButtonID::LEFT_TOP);
-    assert(h.state.macroEdit.flowPhase.get() ==
-           core::state::MacroEditFlowPhase::MODULATOR_PICKER);
-    assert(h.state.pages.control.authored.modulation.outputBindingCount == 0U);
-    assert(h.state.macroHistory.undoCount() == 0U);
+    const auto& binding =
+        h.state.pages.control.authored.modulation.outputBindings[0];
+    assert(binding.id == h.state.pages.control.audition.bindingId);
+    assert(binding.sourceId == sourceId);
     assert(std::memcmp(
         &h.state.pages.control.authored.modulation.sources[0],
         &root,
         sizeof(root)
     ) == 0);
-    std::cout << "[PASS] Use Existing browse is silent and Cancel preserves root\n";
-}
-
-void test_use_existing_apply_is_one_edge_history_and_focus() {
-    using namespace core::state::modulation;
-    MacroAutomationHarness h;
-    h.state.pages.setMacroSlotActive(0, true);
-    const auto sourceId = createReusableLfo(h);
-    const auto root = h.state.pages.control.authored.modulation.sources[0];
-    h.openModulationEditor();
-    h.handler.update(0);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.press(Config::ButtonID::NAV);
-    h.release(Config::ButtonID::NAV);
-    h.press(Config::ButtonID::NAV);
-    h.release(Config::ButtonID::NAV);
-
-    h.turn(Config::EncoderID::OPT, 0.75f);
-    const auto bindingId =
-        h.state.pages.control.authored.modulation.outputBindings[0].id;
-    h.press(Config::ButtonID::BOTTOM_RIGHT);
-    h.setNow(100);
-    h.release(Config::ButtonID::BOTTOM_RIGHT);
-    assert(h.state.macroEdit.flowPhase.get() ==
-           core::state::MacroEditFlowPhase::EDIT);
-    assert(h.state.macroHistory.undoCount() == 1U);
-    assert(h.services.focusedModulationBinding(0) == bindingId);
-    assert(h.state.pages.control.authored.modulation.sources[0].id == sourceId);
-
-    assert(h.state.macroHistory.undo(h.state.pages));
-    assert(h.state.pages.control.authored.modulation.sourceCount == 1U);
-    assert(h.state.pages.control.authored.modulation.outputBindingCount == 0U);
-    assert(std::memcmp(
-        &h.state.pages.control.authored.modulation.sources[0],
-        &root,
-        sizeof(root)
-    ) == 0);
-    assert(h.state.macroHistory.redo(h.state.pages));
-    assert(h.state.pages.control.authored.modulation.outputBindingCount == 1U);
-    assert(h.state.pages.control.authored.modulation.outputBindings[0].id ==
-           bindingId);
-    std::cout << "[PASS] Use Existing Apply stores one focused edge action\n";
+    assert(h.state.activeView.get() == core::ui::ViewType::MODULATORS);
+    assert(!h.state.overlays.hasVisible());
+    assert(h.state.projectNavigation.currentNode.get() ==
+           core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    assert(h.state.projectNavigation.selectedModulator == sourceId);
+    const auto& returnContext = h.state.projectNavigation.modulatorReturn;
+    assert(returnContext.caller ==
+           core::state::project::ModulatorNavigationCaller::MACRO_AUDITION);
+    assert(returnContext.target ==
+           core::state::project::ModulatorMacroReturnTarget::MODULATOR_PICKER);
+    assert(h.state.projectNavigation.focusedRow.get() == 2U);
+    assert(returnContext.sourceId == sourceId);
+    assert(returnContext.bindingId == binding.id);
+    assert(returnContext.macroAddress.track ==
+           h.state.pages.currentActiveTrack());
+    assert(returnContext.macroAddress.page ==
+           h.state.pages.currentActivePage());
+    assert(returnContext.macroAddress.macro == 0U);
+    std::cout
+        << "[PASS] Use Existing opens common Project Source with typed return\n";
 }
 
 void test_assignment_copy_pastes_shared_source_to_empty_macro_with_one_undo() {
@@ -1079,6 +1335,7 @@ int main() {
     test_unstacked_modulation_back_materializes_macro_editor_parent();
     test_playback_row_toggles_automation_without_clearing_curve();
     test_modulation_entry_synchronizes_opt_to_focused_depth();
+    test_recorded_shape_assignment_depth_uses_typed_full_range();
     test_all_row_edits_global_depth_without_rewriting_assignment();
     test_contextual_resume_row_restores_sources_and_disappears();
     test_conversion_is_one_turn_away_and_switches_playback_truth();
@@ -1092,9 +1349,12 @@ int main() {
     test_length_row_resizes_automation_duration_without_scaling_points();
     test_left_center_enables_coarse_length_and_offset_steps_temporarily();
     test_new_lfo_selection_opens_full_project_source_workspace();
+    test_new_adsr_selection_keeps_create_origin_and_exact_return_ids();
+    test_stale_assignment_row_cannot_paste_over_replacement_edge();
+    test_stale_all_row_cannot_clear_replacement_assignments();
+    test_stale_assignment_row_cannot_remove_the_replacement_edge();
     test_add_source_create_focus_reaches_use_existing_without_picker_mutation();
-    test_use_existing_browse_is_silent_and_cancel_preserves_source();
-    test_use_existing_apply_is_one_edge_history_and_focus();
+    test_use_existing_opens_common_project_source_with_typed_return();
     test_assignment_copy_pastes_shared_source_to_empty_macro_with_one_undo();
     test_assignment_paste_overwrites_only_matching_edge_with_stable_id();
     std::cout << "\nAll MacroAutomationHandler tests passed.\n";

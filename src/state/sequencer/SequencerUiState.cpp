@@ -5,6 +5,19 @@
 namespace core::state::sequencer {
 
 FLASHMEM SequencerPatternQuickControlsState::SequencerPatternQuickControlsState() = default;
+FLASHMEM SequencerPatternQuickControlsState::~SequencerPatternQuickControlsState() = default;
+
+FLASHMEM SequencerContentViewState::SequencerContentViewState() = default;
+FLASHMEM SequencerContentViewState::~SequencerContentViewState() = default;
+
+FLASHMEM SequencerStepEditOverlayState::SequencerStepEditOverlayState() = default;
+FLASHMEM SequencerStepEditOverlayState::~SequencerStepEditOverlayState() = default;
+
+FLASHMEM SequencerStepPresetPickerState::SequencerStepPresetPickerState() = default;
+FLASHMEM SequencerStepPresetPickerState::~SequencerStepPresetPickerState() = default;
+
+FLASHMEM SequencerStepSelectionState::SequencerStepSelectionState() = default;
+FLASHMEM SequencerStepSelectionState::~SequencerStepSelectionState() = default;
 
 FLASHMEM void SequencerContentViewState::reset() {
     kind.set(SequencerContentViewKind::ROOT);
@@ -32,6 +45,18 @@ FLASHMEM void SequencerStepEditOverlayState::reset() {
     localVariationEditActive.set(false);
     chordEditor.reset();
     contextHold.clear();
+}
+
+FLASHMEM void SequencerContextSelectorState::bump() {
+    revision.set(revision.get() + 1U);
+}
+
+FLASHMEM void SequencerContextSelectorState::reset() {
+    visible = false;
+    previewFocus = core::state::StructureNavigationFocus::PAGE;
+    feedback = SequencerContextSelectorFeedback::NONE;
+    feedbackUntilMs = 0;
+    bump();
 }
 
 FLASHMEM void SequencerStepPresetPickerState::open(
@@ -168,6 +193,7 @@ FLASHMEM void SequencerCcLaneUiState::reset() {
     focusedStep = 0;
     transitionStep = 0;
     selectedTransition = SequencerCcLaneTransition::HOLD;
+    compactTransitionPicker = false;
     transitionAppliedFeedback = false;
     focusedField = SequencerCcLaneDraftField::CONTROLLER;
     draft = {};
@@ -200,7 +226,7 @@ FLASHMEM void SequencerStepPropertyInlineSelectorState::reset() {
 
 FLASHMEM void SequencerStepContentSelectorState::reset() {
     selecting.set(false);
-    focusedAction.set(SequencerStepContentAction::VARIATION);
+    focusedAction.set(SequencerStepContentAction::CHORD);
 }
 
 FLASHMEM void SequencerStepInlineFeedbackState::show(
@@ -272,7 +298,6 @@ FLASHMEM void SequencerPatternQuickControlsState::showFeedback(uint32_t nowMs) {
 
 FLASHMEM void SequencerPatternQuickControlsState::reset() {
     selecting.set(false);
-    physicalHoldActive.set(false);
     feedbackVisible.set(false);
     focusedItem.set(PatternQuickControlItem::LENGTH);
     offsetSteps.set(0);
@@ -310,21 +335,10 @@ FLASHMEM void SequencerTrackPasteUiState::reset() {
     interactionGeneration = 0;
     operationGeneration = 0;
     activationGeneration = 0;
-    focusedIndex = 0;
     detailVisible = false;
     buttonOwned = false;
     commitConsumed = false;
-    selectionContext = false;
     bump();
-}
-
-FLASHMEM void SequencerStructureWorkspaceState::reset() {
-    active.set(false);
-    level.set(SequencerStructureWorkspaceLevel::TRACKS);
-    callerFocus = core::state::StructureNavigationFocus::PAGE;
-    callerTrack = 0;
-    callerPage = 0;
-    callerStep = 0;
 }
 
 FLASHMEM SequencerStructureUiState::SequencerStructureUiState() = default;
@@ -336,7 +350,6 @@ FLASHMEM void SequencerStructureUiState::reset() {
     pageHold.clear();
     pageSelection.reset(core::state::StructureSelectionScope::PAGE);
     stepSelection.reset();
-    workspace.reset();
     trackPaste.reset();
 }
 

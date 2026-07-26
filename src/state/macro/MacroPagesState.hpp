@@ -5,7 +5,6 @@
  * @brief Multi-page macro configuration with persistence support
  *
  * Manages a bank of macro tracks. Each track stores:
- * - Track MIDI channel
  * - Active page index
  * - Page enabled mask
  * - 16 pages of macro configuration
@@ -32,11 +31,13 @@
 namespace core::state::macro {
 
 /**
- * @brief Single macro configuration (CC + track channel)
+ * @brief Single Macro destination configuration.
+ *
+ * Track routing is deliberately absent: ProjectTrackState is the sole
+ * authored MIDI-channel authority.
  */
 struct MacroConfig {
-    uint8_t cc = 0;       ///< MIDI CC number (0-127)
-    uint8_t channel = 0;  ///< MIDI channel (0-15)
+    uint8_t cc = 0;  ///< MIDI CC number (0-127)
 };
 
 /**
@@ -54,11 +55,6 @@ struct MacroPageData {
 
     /// Initialize with page number
     void initDefault(uint8_t pageIndex);
-
-    /// Get config for a macro
-    MacroConfig getConfig(uint8_t macroIndex, uint8_t trackChannel) const {
-        return {cc[macroIndex], trackChannel};
-    }
 
     bool isMacroActive(uint8_t macroIndex) const {
         if (macroIndex >= MACRO_COUNT) return false;
@@ -79,10 +75,10 @@ static_assert(sizeof(MacroPageData) == 60, "MacroPageData must be exactly 60 byt
 /**
  * @brief Persisted data for one macro track
  *
- * One track carries a single MIDI channel and up to 16 macro pages.
+ * One Track carries up to 16 Macro Pages. Track route identity lives only in
+ * ProjectTrackState.
  */
 struct MacroTrackData {
-    uint8_t channel = 0;          ///< Track MIDI channel (0-15)
     uint8_t activePage = 0;       ///< Active page within this track
     uint16_t enabledPageMask = 0x0001;  ///< Enabled macro pages for this track
     std::array<MacroPageData, PAGE_COUNT> pages{};
@@ -105,6 +101,9 @@ struct MacroTrackData {
         if (enabled) enabledPageMask |= bit;
         else enabledPageMask &= static_cast<uint16_t>(~bit);
     }
+
+    /** Retains selected Pages, compacts them in order, and remaps activePage. */
+    bool compactPages(uint16_t retainedPageMask);
 };
 
 /**
@@ -139,9 +138,6 @@ public:
     void initDefaults();
     void syncSharedTrackState(uint16_t enabledTrackMask, uint8_t trackIndex);
     void captureSharedTrackState(uint16_t& enabledTrackMaskOut, uint8_t& activeTrackOut) const;
-    void restoreTracksPreservingSharedState(
-        const std::array<MacroTrackData, TRACK_COUNT>& persistedTracks
-    );
     void restoreTracksWithSharedState(
         const std::array<MacroTrackData, TRACK_COUNT>& persistedTracks,
         uint16_t enabledTrackMaskIn,
@@ -188,12 +184,6 @@ public:
     const MacroPageData& pageData(uint8_t trackIndex, uint8_t pageIndex) const {
         return tracks[trackIndex].pages[pageIndex];
     }
-
-    uint8_t activeTrackChannel() const {
-        return activeTrackData().channel;
-    }
-
-    void setActiveTrackChannel(uint8_t channel);
 
     /// Get page name
     const char* pageName(uint8_t index) const {

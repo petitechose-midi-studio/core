@@ -106,6 +106,8 @@ FLASHMEM const char* viewName(core::ui::ViewType view) {
             return "sequencer";
         case core::ui::ViewType::PROJECT:
             return "project";
+        case core::ui::ViewType::MODULATORS:
+            return "modulators";
         case core::ui::ViewType::DEVICE_SETTINGS:
             return "device_settings";
         default:
@@ -145,6 +147,10 @@ FLASHMEM const char* overlayName(core::ui::OverlayType overlay) {
             return "data_manager";
         case core::ui::OverlayType::DATA_MANAGER_DIALOG:
             return "data_manager_dialog";
+        case core::ui::OverlayType::SEQ_PATTERN_EDIT:
+            return "seq_pattern_edit";
+        case core::ui::OverlayType::SEQ_TRACK_EDIT:
+            return "seq_track_edit";
         default:
             return "unknown_overlay";
     }

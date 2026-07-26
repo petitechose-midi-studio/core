@@ -7,7 +7,9 @@
 50 capture screen pattern_focus
 
 # Move directly to Step focus and create an edited source step.
-150 tap NAV 60
+150 button NAV down
+210 encoder NAV 1
+270 button NAV up
 350 capture screen step_focus
 750 tap MACRO_2 60
 950 capture screen step_2_enabled

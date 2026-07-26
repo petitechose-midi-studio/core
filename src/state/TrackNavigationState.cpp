@@ -4,6 +4,8 @@
 
 namespace core::state {
 
+FLASHMEM TrackNavigationState::~TrackNavigationState() = default;
+
 FLASHMEM void TrackNavigationState::syncPreviewTrack(uint8_t trackIndex) {
     previewTrackIndex.set(trackIndex);
 }

@@ -79,6 +79,7 @@
 10080 capture screen nested_cycle_note_shifted
 10180 tap NAV 60
 10480 capture screen nested_cycle_props_applied
+10500 tap BOTTOM_RIGHT 40
 
 # Back to the intermediate cycle parent: it should display the resolved nested child.
 10580 tap LEFT_TOP 60

@@ -4,6 +4,10 @@
 
 namespace core::context::standalone::macro_overlay_invalidation {
 
+FLASHMEM Bindings::Bindings() {}
+
+FLASHMEM Bindings::~Bindings() {}
+
 FLASHMEM bool Bindings::bind(StateRefs stateRefs,
                              void* callbackContext,
                              InvalidateCallback callback) {
@@ -19,6 +23,15 @@ FLASHMEM bool Bindings::bind(StateRefs stateRefs,
     clipboard_watcher_.bind<&Bindings::requestClipboardRenders>(
         *this, 1, "MacroOverlay.clipboard"
     );
+    capture_watcher_.bind<&Bindings::requestCaptureRenders>(
+        *this, 5, "MacroOverlay.recordedShapeCapture"
+    );
+    content_watcher_.bind<&Bindings::requestContentRenders>(
+        *this, 7, "MacroOverlay.automationContent"
+    );
+    live_watcher_.bind<&Bindings::requestEditLiveRender>(
+        *this, 6, "MacroOverlay.editLive"
+    );
     edit_watcher_.bind<&Bindings::requestEditRender>(
         *this, 2, "MacroOverlay.edit"
     );
@@ -32,6 +45,15 @@ FLASHMEM bool Bindings::bind(StateRefs stateRefs,
     if (stateRefs.clipboard != nullptr) {
         bound = clipboard_watcher_.watch(stateRefs.clipboard->revision) && bound;
     }
+    bound = capture_watcher_.watch(
+        stateRefs.macroUi.recordedShapeCaptureRevision
+    ) && bound;
+    bound = content_watcher_.watch(
+        stateRefs.macroUi.automationEditRevision
+    ) && bound;
+    bound = live_watcher_.watch(
+        stateRefs.macroUi.runtimeProjectionRevision
+    ) && bound;
     bound = edit_watcher_.watchAll(
         stateRefs.macroEdit.visible,
         stateRefs.macroEdit.editingIndex,
@@ -44,9 +66,8 @@ FLASHMEM bool Bindings::bind(StateRefs stateRefs,
         stateRefs.macroEdit.contextGuard,
         stateRefs.macroEdit.contextFeedback,
         stateRefs.macroEdit.contextButton,
-        stateRefs.macroUi.automationRecordingRevision,
+        stateRefs.macroUi.automationRecordingStatus,
         stateRefs.macroUi.automationManualOverrideMask,
-        stateRefs.macroUi.runtimeProjectionRevision,
         stateRefs.configRevision
     ) && bound;
     bound = automation_watcher_.watchAll(
@@ -60,7 +81,7 @@ FLASHMEM bool Bindings::bind(StateRefs stateRefs,
         stateRefs.macroEdit.contextGuard,
         stateRefs.macroEdit.contextFeedback,
         stateRefs.macroEdit.contextButton,
-        stateRefs.macroUi.automationRecordingRevision,
+        stateRefs.macroUi.automationRecordingStatus,
         stateRefs.macroUi.automationManualOverrideMask,
         stateRefs.configRevision
     ) && bound;
@@ -75,6 +96,9 @@ FLASHMEM bool Bindings::bind(StateRefs stateRefs,
 FLASHMEM void Bindings::clear() {
     phase_watcher_.clear();
     clipboard_watcher_.clear();
+    capture_watcher_.clear();
+    content_watcher_.clear();
+    live_watcher_.clear();
     edit_watcher_.clear();
     automation_watcher_.clear();
     edit_selector_watcher_.clear();
@@ -88,6 +112,18 @@ FLASHMEM void Bindings::requestPhaseRenders() {
 
 FLASHMEM void Bindings::requestClipboardRenders() {
     invalidate(RENDER_EDIT | RENDER_AUTOMATION);
+}
+
+FLASHMEM void Bindings::requestCaptureRenders() {
+    invalidate(RENDER_EDIT | RENDER_AUTOMATION);
+}
+
+FLASHMEM void Bindings::requestContentRenders() {
+    invalidate(RENDER_EDIT | RENDER_AUTOMATION);
+}
+
+void Bindings::requestEditLiveRender() {
+    invalidate(RENDER_EDIT_LIVE);
 }
 
 FLASHMEM void Bindings::requestEditRender() {

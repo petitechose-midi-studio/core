@@ -9,7 +9,7 @@
 #include "state/project/ProjectNameKeyboard.hpp"
 #include "state/project/ProjectState.hpp"
 #include "state/contextual/GuardedActionState.hpp"
-#include "state/macro/MacroAutomationState.hpp"
+#include "state/macro/MacroAutomationAddress.hpp"
 #include "state/modulation/ModulationIds.hpp"
 #include "state/modulation/ProjectModulationState.hpp"
 
@@ -70,6 +70,13 @@ enum class ModulatorNavigationCaller : uint8_t {
     MACRO_AUDITION,
 };
 
+/** Exact Macro surface restored when a Project Source session exits. */
+enum class ModulatorMacroReturnTarget : uint8_t {
+    MODULATION_ASSIGNMENT = 0,
+    MODULATOR_CREATE,
+    MODULATOR_PICKER,
+};
+
 enum class ModulatorDestinationPickerLevel : uint8_t {
     TRACK = 0,
     PAGE,
@@ -87,6 +94,8 @@ struct ModulatorReturnContext {
     core::state::modulation::ModulationBindingId bindingId{};
     core::state::macro::MacroAutomationSlotAddress macroAddress{};
     ModulatorNavigationCaller caller = ModulatorNavigationCaller::NONE;
+    ModulatorMacroReturnTarget target =
+        ModulatorMacroReturnTarget::MODULATION_ASSIGNMENT;
     uint8_t focusedRow = 0;
 
     [[nodiscard]] constexpr bool active() const {
@@ -94,7 +103,7 @@ struct ModulatorReturnContext {
     }
 };
 
-static_assert(sizeof(ModulatorReturnContext) <= 16U);
+static_assert(sizeof(ModulatorReturnContext) == 16U);
 
 struct ProjectNavigationState {
     static constexpr uint8_t MAX_DEPTH = 4;
@@ -105,7 +114,6 @@ struct ProjectNavigationState {
     oc::state::Signal<uint8_t, 8> focusedRow{0};
     oc::state::Signal<bool, 8> physicalHoldActive{false};
     oc::state::Signal<uint8_t, 8> contentRevision{0};
-    oc::state::Signal<uint8_t, 8> telemetryRevision{0};
     oc::state::SignalLabel lifecycleFeedback;
 
     core::state::modulation::ModulatorId selectedModulator{};
@@ -132,6 +140,8 @@ struct ProjectNavigationState {
     bool patternsInheritScale = true;
     bool clipsInheritScale = true;
     ProjectStepPasteMode stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
+    std::array<uint8_t, PROJECT_CC_LANE_DEFAULT_COUNT>
+        ccLaneDefaultControllers = PROJECT_CC_LANE_DEFAULT_CONTROLLERS;
     uint8_t transportSwingPercent = 0;
     uint8_t transportRunMode = 0;
     std::array<char, ProjectMetadata::ID_SIZE> pendingLoadProjectId{};
@@ -151,9 +161,10 @@ struct ProjectNavigationState {
     };
     std::array<uint8_t, MAX_DEPTH> focusedRowByDepth{};
 
+    ~ProjectNavigationState();
+
     void reset();
     void notifyContentChanged();
-    void notifyTelemetryChanged();
     void setLifecycleFeedback(const char* message);
     void clearLifecycleFeedback();
 };

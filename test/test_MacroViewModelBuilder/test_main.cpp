@@ -4,7 +4,8 @@
 #include <iostream>
 
 #include "../../src/state/CoreState.hpp"
-#include "../../src/state/macro/MacroAutomationState.hpp"
+#include "../../src/state/macro/MacroAutomationAddress.hpp"
+#include "../../src/state/macro/MacroAutomationDomain.hpp"
 #include "../../src/ui/font/StandaloneIcons.hpp"
 #include "../../src/ui/view/MacroViewModelBuilder.hpp"
 #include "../support/CoreStorages.hpp"
@@ -147,97 +148,7 @@ void test_macro_add_slot_focus_dims_structure_actions() {
     std::cout << "[PASS] test_macro_add_slot_focus_dims_structure_actions\n";
 }
 
-void test_macro_selection_delete_strip_projects_guard_lifecycle() {
-    CoreStorages storage;
-    core::state::CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
-    );
-    state.pages.setPageEnabled(1, true);
-    state.macroUi.pageSelection.active.set(true);
-    state.macroUi.pageSelection.scope.set(
-        core::state::StructureSelectionScope::PAGE
-    );
-    state.macroUi.pageSelection.cursorIndex.set(1);
-    state.macroUi.pageSelection.selectedMask.set(0x0002);
 
-    auto props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
-    assert(props.slots[0].visualState ==
-           ContextActionStripVisualState::AVAILABLE);
-    assert(props.slots[0].tone == ContextActionStripTone::DESTRUCTIVE);
-    assert(props.slots[0].icon == standalone::icons::ACTION_REMOVE);
-    assert(!props.slots[0].holdActive);
-
-    core::state::contextual::GuardedActionState guard;
-    assert(core::state::contextual::beginGuardedActionPress(guard, 100, 1000));
-    state.macroUi.selectionDeleteGuard.set(guard);
-    props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
-    assert(props.slots[0].visualState ==
-           ContextActionStripVisualState::PRESSED);
-    assert(!props.slots[0].holdActive);
-
-    assert(core::state::contextual::armGuardedAction(guard, 100));
-    assert(core::state::contextual::updateGuardedAction(guard, 300));
-    state.macroUi.selectionDeleteGuard.set(guard);
-    props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
-    assert(props.slots[0].visualState ==
-           ContextActionStripVisualState::ARMED);
-    assert(props.slots[0].holdActive);
-    assert(props.slots[0].holdStartedAtMs == 100);
-    assert(props.slots[0].holdDurationMs == 1000);
-
-    assert(core::state::contextual::cancelGuardedAction(guard));
-    state.macroUi.selectionDeleteGuard.set(guard);
-    props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
-    assert(props.slots[0].visualState ==
-           ContextActionStripVisualState::CANCELLED);
-    assert(props.slots[0].tone == ContextActionStripTone::WARNING);
-    assert(props.slots[0].icon == standalone::icons::ACTION_CANCEL);
-
-    std::cout << "[PASS] test_macro_selection_delete_strip_projects_guard_lifecycle\n";
-}
-
-void test_macro_selection_delete_strip_projects_disabled_and_applied() {
-    CoreStorages storage;
-    core::state::CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
-    );
-    state.pages.setPageEnabled(1, true);
-    state.macroUi.pageSelection.active.set(true);
-    state.macroUi.pageSelection.selectedMask.set(0);
-
-    auto props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
-    assert(props.slots[0].visualState ==
-           ContextActionStripVisualState::DISABLED);
-
-    state.macroUi.pageSelection.reset(core::state::StructureSelectionScope::PAGE);
-    core::state::contextual::OperationFeedbackState feedback;
-    core::state::contextual::setOperationFeedback(
-        feedback,
-        core::state::contextual::ContextActionId::REMOVE,
-        {},
-        {},
-        core::state::contextual::OperationFeedbackStatus::APPLIED,
-        core::state::contextual::ContextActionReason::NONE,
-        core::state::contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
-        1000,
-        1200
-    );
-    state.macroUi.selectionDeleteFeedback.set(feedback);
-    props = core::ui::buildMacroBottomActionStripProps(sourceFor(state));
-    assert(props.slots[0].visualState ==
-           ContextActionStripVisualState::APPLIED);
-    assert(props.slots[0].tone == ContextActionStripTone::POSITIVE);
-    assert(props.slots[0].icon == standalone::icons::ACTION_VALIDATE);
-    assert(props.slots[2].visualState == ContextActionStripVisualState::HIDDEN);
-
-    std::cout << "[PASS] test_macro_selection_delete_strip_projects_disabled_and_applied\n";
-}
 
 void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     CoreStorages storage;
@@ -249,14 +160,14 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     );
     state.pages.setMacroSlotActive(0, true);
     const auto address = configureAutomation(state, 0, 0.42f);
-    core::state::macro::MacroModulationShape shape;
+    test_support::project_control::ModulationShape shape;
     shape.durationBeats = 2.0f;
-    assert(core::state::macro::macroModulationAppendPoint(
+    assert(test_support::project_control::appendModulationPoint(
         shape,
         0.0f,
         -0.5f
     ));
-    assert(core::state::macro::macroModulationAppendPoint(
+    assert(test_support::project_control::appendModulationPoint(
         shape,
         1.0f,
         0.5f
@@ -424,6 +335,19 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
            core::state::macro::MacroAutomationTakeTiming::BARS_4);
 
     assert(state.macroUi.automationTake.begin(100U, 200U, 123456U, 3U, 7U));
+    state.macroUi.setRuntimeProjection(
+        state.pages.currentActiveTrack(),
+        state.pages.currentActivePage(),
+        0U,
+        {
+            .base = 0.1f,
+            .modulation = 0.05f,
+            .resolved = 0.15f,
+            .modulationStored = true,
+            .modulationActive = true,
+        },
+        1.0f
+    );
     assert(state.macroUi.automationTake.touch(0U, 48U, 1U));
     assert(state.macroUi.automationTake.touch(2U, 80U, 2U));
     overlay = core::ui::buildMacroSlotPropertyOverlayProps(sourceFor(state));
@@ -433,6 +357,11 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
     assert(frame.macros[0].automationRecording);
     assert(!frame.macros[1].automationRecording);
     assert(frame.macros[2].automationRecording);
+    assert(std::fabs(frame.macros[0].baseValue - (48.0f / 127.0f)) < 0.0001f);
+    assert(std::fabs(frame.macros[0].modulationDelta - 0.05f) < 0.0001f);
+    assert(std::fabs(
+        frame.macros[0].value - (48.0f / 127.0f + 0.05f)
+    ) < 0.0001f);
 
     std::cout
         << "[PASS] "
@@ -445,8 +374,6 @@ int main() {
     test_macro_slot_focus_shows_guarded_slot_actions();
     test_macro_slot_focus_only_arms_paste_for_typed_slot_clipboard();
     test_macro_add_slot_focus_dims_structure_actions();
-    test_macro_selection_delete_strip_projects_guard_lifecycle();
-    test_macro_selection_delete_strip_projects_disabled_and_applied();
     test_macro_grid_distinguishes_stored_playback_modulation_and_manual();
     test_runtime_projection_revision_targets_one_macro_or_all();
     test_macro_performance_projection_explains_edit_and_shared_take();

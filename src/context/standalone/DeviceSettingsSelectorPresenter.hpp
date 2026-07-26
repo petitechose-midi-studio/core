@@ -21,6 +21,7 @@ public:
 
     DeviceSettingsSelectorPresenter(StateRefs stateRefs,
                                     ms::ui::VirtualListSelectorOverlay& selectorOverlay);
+    ~DeviceSettingsSelectorPresenter();
 
     [[nodiscard]] bool bind();
 

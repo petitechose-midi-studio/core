@@ -122,6 +122,8 @@ private:
     uint32_t dropped_count_ = 0;
     uint32_t reported_dropped_count_ = 0;
     oc::core::input::InputBindingTraceEvent last_semantic_event_{};
+    const char* last_semantic_effect_ = nullptr;
+    const char* last_semantic_outcome_ = nullptr;
     uint32_t last_semantic_sequence_ = 0;
     bool has_last_semantic_event_ = false;
     bool allow_state_projection_capture_ = false;

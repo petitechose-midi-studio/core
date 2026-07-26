@@ -14,32 +14,63 @@ namespace core::state::sequencer {
 
 namespace {
 
-FLASHMEM bool copyPatternToEditor(SequencerState& target, const SequencerPatternState& source) {
+FLASHMEM void copyFlatPatternToEditor(
+    SequencerState& target,
+    const SequencerPatternState& source
+) {
     const uint8_t focusedBefore = target.focusedStep.get();
-
-    if (!copyPatternState(target.pattern, source)) return false;
+    SequencerPatternSnapshot snapshot;
+    captureSnapshot(source, snapshot);
+    applySnapshotToEditorPreservingGraph(target, snapshot);
+    target.pattern.ccLaneRevision.set(source.ccLaneRevision.get());
 
     const uint8_t length = target.pattern.length.get();
     const uint8_t focused =
         (focusedBefore >= length) ? static_cast<uint8_t>(length - 1U) : focusedBefore;
     target.focusedStep.set(focused);
     target.page.set(target.pageForStep(focused));
-    return true;
 }
 
 FLASHMEM bool copyEditorToPattern(SequencerPatternState& target, const SequencerState& source) {
     return copyPatternState(target, source.pattern);
 }
 
+FLASHMEM void copyFlatEditorToPattern(
+    SequencerPatternState& target,
+    const SequencerState& source
+) {
+    SequencerPatternSnapshot snapshot;
+    captureSnapshot(source.pattern, snapshot);
+    applySnapshotPreservingGraph(target, snapshot);
+    target.ccLaneRevision.set(source.pattern.ccLaneRevision.get());
+}
+
+FLASHMEM void exchangeColdPayload(
+    SequencerPatternState& left,
+    SequencerPatternState& right
+) {
+    using std::swap;
+    swap(left.graph, right.graph);
+    swap(left.ccLanes, right.ccLanes);
+}
+
 }  // namespace
 
 FLASHMEM void resetTransientTrackState(SequencerState& state) {
+    if (state.stepContentDraft.active.get()) {
+        state.stepContentDraft.noteBlockedTransition(
+            SequencerStepContentDraftBlockedTransition::RESET
+        );
+        return;
+    }
     state.stepEdit.reset();
+    state.contextSelector.reset();
     state.ccLaneUi.reset();
     state.stepPropertyInlineSelector.reset();
     state.stepInlineFeedback.reset();
     state.patternQuickControls.reset();
     state.contentView.reset();
+    state.stepContentDraft.resetSession();
 }
 
 FLASHMEM bool initializeTrackBankFromActive(
@@ -84,9 +115,25 @@ FLASHMEM bool switchActiveTrack(
     if (clampedNext == current) {
         return false;
     }
+    if (active.stepContentDraft.active.get()) {
+        active.stepContentDraft.noteBlockedTransition(
+            SequencerStepContentDraftBlockedTransition::TRACK
+        );
+        return false;
+    }
 
-    if (!storeActiveTrack(bank, active)) return false;
-    if (!copyPatternToEditor(active, bank.track(clampedNext))) return false;
+    auto& outgoing = bank.track(current);
+    auto& incoming = bank.track(clampedNext);
+
+    // Signals in the retained editor must keep their addresses because UI
+    // bindings subscribe to them. Copy only the flat values, then rotate the
+    // two PSRAM-owned payload pointers through the editor. The active bank slot
+    // is intentionally a spare while that Track is edited, as it already was
+    // for flat values before this refactor.
+    copyFlatEditorToPattern(outgoing, active);
+    exchangeColdPayload(active.pattern, outgoing);
+    copyFlatPatternToEditor(active, incoming);
+    exchangeColdPayload(active.pattern, incoming);
     resetTransientTrackState(active);
 
     bank.syncSharedTrackState(bank.currentEnabledMask(), clampedNext);
@@ -101,7 +148,6 @@ FLASHMEM void captureTrackBankSnapshot(
     const uint8_t activeTrack = SequencerTrackBankState::clampTrackIndex(bank.activeTrackIndex());
     out.activeTrack = activeTrack;
     out.enabledMask = bank.currentEnabledMask();
-    out.mutedMask = bank.currentMutedMask();
     out.projectScaleRevision = bank.projectScaleRevisionSignal().get();
     out.projectScaleSettings = bank.projectScaleSettings();
 
@@ -115,9 +161,14 @@ FLASHMEM void applyTrackBankSnapshot(
     SequencerState& active,
     const SequencerTrackBankSnapshot& snapshot
 ) {
+    if (active.stepContentDraft.active.get()) {
+        active.stepContentDraft.noteBlockedTransition(
+            SequencerStepContentDraftBlockedTransition::PROJECT_LOAD
+        );
+        return;
+    }
     bank.reset();
     bank.syncSharedTrackState(snapshot.enabledMask, snapshot.activeTrack);
-    bank.setMutedMask(snapshot.mutedMask);
     bank.setProjectScaleSettings(snapshot.projectScaleSettings);
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
@@ -135,6 +186,12 @@ FLASHMEM void installTrackBankState(
     SequencerTrackBankState& stagedBank,
     SequencerState& stagedActive
 ) {
+    if (active.stepContentDraft.active.get()) {
+        active.stepContentDraft.noteBlockedTransition(
+            SequencerStepContentDraftBlockedTransition::PROJECT_LOAD
+        );
+        return;
+    }
     SequencerTrackBankSnapshot snapshot;
     captureTrackBankSnapshot(stagedBank, stagedActive, snapshot);
 

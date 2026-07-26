@@ -96,13 +96,13 @@ void test_library_load_preserves_project_macro_automation_bank() {
         .page = 0,
         .macro = 0,
     };
-    core::state::macro::MacroModulationShape modulation{};
-    assert(core::state::macro::macroModulationAppendPoint(
+    test_support::project_control::ModulationShape modulation{};
+    assert(test_support::project_control::appendModulationPoint(
         modulation,
         0.0f,
         -0.25f
     ));
-    assert(core::state::macro::macroModulationAppendPoint(
+    assert(test_support::project_control::appendModulationPoint(
         modulation,
         1.0f,
         0.25f
@@ -121,8 +121,8 @@ void test_library_load_preserves_project_macro_automation_bank() {
         loaded.control,
         address
     );
-    assert(preserved.modulationStored);
-    assert(std::fabs(preserved.compatibility.modulationDepth - 0.75f) < 0.0001f);
+    assert(preserved.modulationCount > 0U);
+    assert(std::fabs(preserved.primaryModulation.amount - 0.75f) < 0.0001f);
 
     std::cout << "[PASS] library load preserves Project Control authority\n";
 }

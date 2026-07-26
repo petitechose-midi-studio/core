@@ -7,11 +7,14 @@
 
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerStructureHistory.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::handler {
+
+FLASHMEM PreparedSequencerTrackTransfer::~PreparedSequencerTrackTransfer() {}
 
 namespace {
 
@@ -31,8 +34,7 @@ FLASHMEM SourcePayload sourcePayload(
     const core::state::ClipboardTransferPlanEntry& entry
 ) {
     if (clipboard.kind.get() == core::state::StructureClipboardKind::SEQUENCER_TRACK) {
-        if (entry.clipboardIndex != 0 ||
-            clipboard.sequencerTrackSource != entry.sourceTrack) {
+        if (clipboard.sequencerTrackSource != entry.sourceTrack) {
             return {};
         }
         return {
@@ -42,15 +44,7 @@ FLASHMEM SourcePayload sourcePayload(
         };
     }
 
-    if (clipboard.kind.get() !=
-        core::state::StructureClipboardKind::SEQUENCER_TRACK_SELECTION) {
-        return {};
-    }
-    const auto* selection = clipboard.sequencerTrackSelection.get();
-    if (selection == nullptr || entry.clipboardIndex >= selection->count) return {};
-    const auto& source = selection->tracks[entry.clipboardIndex];
-    if (!source.valid || source.sourceTrack != entry.sourceTrack) return {};
-    return {&source.snapshot, source.graph.get(), source.ccLanes.get()};
+    return {};
 }
 
 FLASHMEM bool copyGraphIntoReservedStorage(GraphPtr& destination, const Graph* source) {
@@ -61,12 +55,6 @@ FLASHMEM bool copyGraphIntoReservedStorage(GraphPtr& destination, const Graph* s
     if (!destination) return false;
     *destination = *source;
     return true;
-}
-
-FLASHMEM uint8_t historyMidiChannel(uint8_t destinationChannel) {
-    // Preserve the route identity exactly, including the current >15 sentinel
-    // used for an explicitly unassigned destination.
-    return destinationChannel;
 }
 
 FLASHMEM uint8_t sanitizedLength(uint8_t length) {
@@ -104,14 +92,10 @@ FLASHMEM void updateCommitTimeRoutes(
     PreparedSequencerTrackTransfer& prepared,
     const core::state::ClipboardTransferPlan& livePlan
 ) {
-    for (uint8_t i = 0; i < prepared.plan.count; ++i) {
-        auto& destination = prepared.plan.entries[i];
-        const auto& live = livePlan.entries[i];
-        destination.targetMidiChannel = live.targetMidiChannel;
-        destination.targetRouteValid = live.targetRouteValid;
-        prepared.history->after.tracks[destination.targetTrack].flat.midiChannel =
-            historyMidiChannel(live.targetMidiChannel);
-    }
+    auto& destination = prepared.plan.entry;
+    const auto& live = livePlan.entry;
+    destination.targetMidiChannel = live.targetMidiChannel;
+    destination.targetRouteValid = live.targetRouteValid;
     prepared.plan.availability = livePlan.availability;
     prepared.plan.reason = livePlan.reason;
 }
@@ -132,6 +116,7 @@ FLASHMEM SequencerTrackTransferResult resultFromPrepared(
 
 FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     const core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::project::ProjectTrackState& projectTracks,
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,
@@ -142,6 +127,10 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     bool transportPlaying
 ) {
     PreparedSequencerTrackTransfer prepared;
+    if (sequencer.stepContentDraft.active.get()) {
+        prepared.status = SequencerTrackTransferStatus::INCONSISTENT_STATE;
+        return prepared;
+    }
     prepared.activationQueue = activationQueue;
     prepared.pendingTrackMask = static_cast<uint16_t>(
         pendingTrackMask |
@@ -150,9 +139,9 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     prepared.plan = core::state::buildSequencerTrackClipboardTransferPlan(
         clipboard,
         tracks,
+        projectTracks,
         targetTrack,
-        prepared.pendingTrackMask,
-        &sequencer
+        prepared.pendingTrackMask
     );
     if (!prepared.plan.canCommit()) return prepared;
 
@@ -163,9 +152,12 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     }
 
     prepared.initialEnabledMask = tracks.currentEnabledMask();
-    prepared.initialMutedMask = tracks.currentMutedMask();
+    prepared.initialProjectMutedMask = projectTracks.authored.mutedMask;
+    prepared.initialAudibleMask = core::state::project::audibleMask(
+        projectTracks,
+        prepared.initialEnabledMask
+    );
     prepared.previousActiveTrack = tracks.activeTrackIndex();
-    prepared.previousActiveMidiChannel = sequencer.pattern.midiChannel.get();
     if (sharedTracks.enabledMask() != prepared.initialEnabledMask ||
         sharedTracks.activeTrack() != prepared.previousActiveTrack) {
         prepared.status = SequencerTrackTransferStatus::INCONSISTENT_STATE;
@@ -175,6 +167,10 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
 
     prepared.nextEnabledMask = static_cast<uint16_t>(
         prepared.initialEnabledMask | prepared.plan.targetMask
+    );
+    prepared.nextAudibleMask = core::state::project::audibleMask(
+        projectTracks,
+        prepared.nextEnabledMask
     );
     prepared.historyMask = static_cast<uint16_t>(
         prepared.plan.targetMask |
@@ -191,15 +187,12 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         prepared.plan.reason = core::state::ClipboardTransferReason::ALLOCATION_UNAVAILABLE;
         return prepared;
     }
-    prepared.history->preserveDestinationBindingsMask = prepared.plan.targetMask;
-
     auto& after = prepared.history->after;
     after.enabledMask = prepared.nextEnabledMask;
-    after.mutedMask = prepared.initialMutedMask;
-    after.activeTrack = prepared.plan.firstTarget;
+    after.activeTrack = prepared.plan.entry.targetTrack;
     after.capturedTrackMask = prepared.history->before.capturedTrackMask;
 
-    const SourcePayload firstSource = sourcePayload(clipboard, prepared.plan.entries[0]);
+    const SourcePayload firstSource = sourcePayload(clipboard, prepared.plan.entry);
     if (firstSource.snapshot == nullptr) {
         prepared.status = SequencerTrackTransferStatus::STALE;
         return prepared;
@@ -243,53 +236,47 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         }
     }
 
-    for (uint8_t i = 0; i < prepared.plan.count; ++i) {
-        const auto& destination = prepared.plan.entries[i];
-        const SourcePayload source = sourcePayload(clipboard, destination);
-        if (source.snapshot == nullptr) {
-            prepared.status = SequencerTrackTransferStatus::STALE;
-            return prepared;
-        }
-
-        auto& afterTrack = after.tracks[destination.targetTrack];
-        const auto* destinationCcLanes = prepared.history->before
-            .tracks[destination.targetTrack].ccLanes.get();
-        afterTrack.flat = *source.snapshot;
-        afterTrack.flat.midiChannel = historyMidiChannel(destination.targetMidiChannel);
-        afterTrack.focusedStep = after.focusedStep;
-        afterTrack.ccLanesCaptured = true;
-        if (!copyGraphIntoReservedStorage(afterTrack.graph, source.graph) ||
-            !core::state::cloneSequencerGraph(prepared.bankGraphs[i], source.graph) ||
-            !core::state::sequencer::cloneSequencerCcLaneBank(
-                afterTrack.ccLanes,
-                source.ccLanes
-            )) {
-            prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
-            prepared.plan.availability = core::state::ClipboardTransferAvailability::DISABLED;
-            prepared.plan.reason = core::state::ClipboardTransferReason::ALLOCATION_UNAVAILABLE;
-            return prepared;
-        }
-        if (afterTrack.ccLanes) {
-            rebaseIncomingCcLaneLifecycles(
-                *afterTrack.ccLanes,
-                destinationCcLanes
-            );
-        }
-        // The exact rebased payload is shared by History.after and both live
-        // installation owners. Independent source clones could accidentally
-        // reintroduce the source generation and preserve a destination hold.
-        if (!core::state::sequencer::cloneSequencerCcLaneBank(
-                prepared.bankCcLanes[i],
-                afterTrack.ccLanes.get()
-            )) {
-            prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
-            prepared.plan.availability = core::state::ClipboardTransferAvailability::DISABLED;
-            prepared.plan.reason = core::state::ClipboardTransferReason::ALLOCATION_UNAVAILABLE;
-            return prepared;
-        }
+    const auto& destination = prepared.plan.entry;
+    const SourcePayload source = sourcePayload(clipboard, destination);
+    if (source.snapshot == nullptr) {
+        prepared.status = SequencerTrackTransferStatus::STALE;
+        return prepared;
     }
 
-    const auto& firstAfter = after.tracks[prepared.plan.entries[0].targetTrack];
+    auto& afterTrack = after.tracks[destination.targetTrack];
+    const auto* destinationCcLanes = prepared.history->before
+        .tracks[destination.targetTrack].ccLanes.get();
+    afterTrack.flat = *source.snapshot;
+    afterTrack.focusedStep = after.focusedStep;
+    afterTrack.ccLanesCaptured = true;
+    if (!copyGraphIntoReservedStorage(afterTrack.graph, source.graph) ||
+        !core::state::cloneSequencerGraph(prepared.bankGraph, source.graph) ||
+        !core::state::sequencer::cloneSequencerCcLaneBank(
+            afterTrack.ccLanes,
+            source.ccLanes
+        )) {
+        prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
+        prepared.plan.availability = core::state::ClipboardTransferAvailability::DISABLED;
+        prepared.plan.reason = core::state::ClipboardTransferReason::ALLOCATION_UNAVAILABLE;
+        return prepared;
+    }
+    if (afterTrack.ccLanes) {
+        rebaseIncomingCcLaneLifecycles(*afterTrack.ccLanes, destinationCcLanes);
+    }
+    // The exact rebased payload is shared by History.after and both live
+    // installation owners. Independent source clones could accidentally
+    // reintroduce the source generation and preserve a destination hold.
+    if (!core::state::sequencer::cloneSequencerCcLaneBank(
+            prepared.bankCcLanes,
+            afterTrack.ccLanes.get()
+        )) {
+        prepared.status = SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE;
+        prepared.plan.availability = core::state::ClipboardTransferAvailability::DISABLED;
+        prepared.plan.reason = core::state::ClipboardTransferReason::ALLOCATION_UNAVAILABLE;
+        return prepared;
+    }
+
+    const auto& firstAfter = after.tracks[prepared.plan.entry.targetTrack];
     if (!core::state::cloneSequencerGraph(prepared.editorGraph, firstSource.graph) ||
         !core::state::sequencer::cloneSequencerCcLaneBank(
             prepared.editorCcLanes,
@@ -315,12 +302,11 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     if (prepared.activationQueue != nullptr) {
         if (!prepared.activationQueue->prepare(
                 prepared.plan.targetMask,
-                prepared.initialEnabledMask,
-            prepared.initialMutedMask,
-            transportPlaying,
-            prepared.activationBatch,
-            core::state::sequencer::SequencerTrackActivationOrigin::TRACK_PASTE
-        )) {
+                prepared.initialAudibleMask,
+                transportPlaying,
+                prepared.activationBatch,
+                core::state::sequencer::SequencerTrackActivationOrigin::TRACK_PASTE
+            )) {
             prepared.status = SequencerTrackTransferStatus::STALE;
             prepared.plan.availability =
                 core::state::ClipboardTransferAvailability::DISABLED;
@@ -328,6 +314,10 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         }
         prepared.history->activation =
             core::state::sequencer::activationHistoryRef(prepared.activationBatch);
+        prepared.history->activationBeforeAudibleMask =
+            prepared.initialAudibleMask;
+        prepared.history->activationAfterAudibleMask =
+            prepared.nextAudibleMask;
     }
     if (!history.canRecordStructure(*prepared.history)) {
         prepared.status = SequencerTrackTransferStatus::HISTORY_UNAVAILABLE;
@@ -342,17 +332,32 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
 
 FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
     core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::project::ProjectTrackState& projectTracks,
     core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,
     const SequencerHistoryDomainServices& history,
     PreparedSequencerTrackTransfer prepared
 ) {
+    if (sequencer.stepContentDraft.active.get()) {
+        sequencer.stepContentDraft.noteBlockedTransition(
+            core::state::sequencer::
+                SequencerStepContentDraftBlockedTransition::TRACK
+        );
+        return resultFromPrepared(
+            SequencerTrackTransferStatus::INCONSISTENT_STATE,
+            prepared
+        );
+    }
     if (!prepared.ready()) {
         return resultFromPrepared(prepared.status, prepared);
     }
     if (tracks.currentEnabledMask() != prepared.initialEnabledMask ||
-        tracks.currentMutedMask() != prepared.initialMutedMask ||
+        projectTracks.authored.mutedMask != prepared.initialProjectMutedMask ||
+        core::state::project::audibleMask(
+            projectTracks,
+            prepared.initialEnabledMask
+        ) != prepared.initialAudibleMask ||
         tracks.activeTrackIndex() != prepared.previousActiveTrack ||
         sharedTracks.enabledMask() != prepared.initialEnabledMask ||
         sharedTracks.activeTrack() != prepared.previousActiveTrack) {
@@ -362,20 +367,12 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
     const uint16_t previousActiveBit = sequencerStructureHistoryTrackBit(
         prepared.previousActiveTrack
     );
-    if ((prepared.plan.targetMask & previousActiveBit) == 0 &&
-        sequencer.pattern.midiChannel.get() != prepared.previousActiveMidiChannel) {
-        // The outgoing editor route is part of the before snapshot. A change
-        // between prepare and commit requires a fresh preparation so Undo can
-        // never restore an older binding.
-        return resultFromPrepared(SequencerTrackTransferStatus::STALE, prepared);
-    }
-
     const auto livePlan = core::state::buildSequencerTrackClipboardTransferPlan(
         clipboard,
         tracks,
-        prepared.plan.firstTarget,
-        prepared.pendingTrackMask,
-        &sequencer
+        projectTracks,
+        prepared.plan.entry.targetTrack,
+        prepared.pendingTrackMask
     );
     if (!sameStableProjection(prepared.plan, livePlan)) {
         return resultFromPrepared(SequencerTrackTransferStatus::STALE, prepared);
@@ -404,7 +401,6 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
 
     if ((prepared.plan.targetMask & previousActiveBit) == 0) {
         auto& outgoing = tracks.track(prepared.previousActiveTrack);
-        outgoing.midiChannel.set(prepared.previousActiveMidiChannel);
         core::state::sequencer::installTrackContentSnapshotWithOwnedPayload(
             outgoing,
             prepared.history->before.tracks[prepared.previousActiveTrack].flat,
@@ -413,24 +409,18 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
         );
     }
 
-    for (uint8_t i = 0; i < prepared.plan.count; ++i) {
-        const auto& destination = prepared.plan.entries[i];
-        const SourcePayload source = sourcePayload(clipboard, destination);
-        // Payload identity was checked immediately above and the clipboard is
-        // immutable during this synchronous commit.
-        auto& target = tracks.track(destination.targetTrack);
-        target.midiChannel.set(destination.targetMidiChannel);
-        core::state::sequencer::installTrackContentSnapshotWithOwnedPayload(
-            target,
-            *source.snapshot,
-            std::move(prepared.bankGraphs[i]),
-            std::move(prepared.bankCcLanes[i])
-        );
-    }
-
-    const auto& firstDestination = prepared.plan.entries[0];
+    const auto& firstDestination = prepared.plan.entry;
     const SourcePayload firstSource = sourcePayload(clipboard, firstDestination);
-    sequencer.pattern.midiChannel.set(firstDestination.targetMidiChannel);
+    // Payload identity was checked immediately above and the clipboard is
+    // immutable during this synchronous commit.
+    auto& target = tracks.track(firstDestination.targetTrack);
+    core::state::sequencer::installTrackContentSnapshotWithOwnedPayload(
+        target,
+        *firstSource.snapshot,
+        std::move(prepared.bankGraph),
+        std::move(prepared.bankCcLanes)
+    );
+
     core::state::sequencer::installTrackContentSnapshotToEditorWithOwnedPayload(
         sequencer,
         *firstSource.snapshot,
@@ -443,7 +433,7 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
 
     sharedTracks.publishPreparedSequencerState(
         prepared.nextEnabledMask,
-        prepared.plan.firstTarget
+        prepared.plan.entry.targetTrack
     );
     history.recordPreparedStructure(std::move(prepared.history));
     if (prepared.activationQueue != nullptr) {
@@ -454,6 +444,7 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
 
 FLASHMEM SequencerTrackTransferResult executeSequencerTrackTransfer(
     core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::project::ProjectTrackState& projectTracks,
     core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,
@@ -465,6 +456,7 @@ FLASHMEM SequencerTrackTransferResult executeSequencerTrackTransfer(
 ) {
     auto prepared = prepareSequencerTrackTransfer(
         tracks,
+        projectTracks,
         sequencer,
         clipboard,
         sharedTracks,
@@ -476,6 +468,7 @@ FLASHMEM SequencerTrackTransferResult executeSequencerTrackTransfer(
     );
     return commitPreparedSequencerTrackTransfer(
         tracks,
+        projectTracks,
         sequencer,
         clipboard,
         sharedTracks,

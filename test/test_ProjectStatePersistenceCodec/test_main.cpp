@@ -46,11 +46,8 @@ bool sameProjectCore(const project::ProjectState& lhs, const project::ProjectSta
     if (lhs.musical.patternsInheritScale != rhs.musical.patternsInheritScale) return false;
     if (lhs.musical.clipsInheritScale != rhs.musical.clipsInheritScale) return false;
     if (lhs.editing.stepPasteMode != rhs.editing.stepPasteMode) return false;
-    for (uint8_t i = 0; i < lhs.routing.outputMidiChannels.size(); ++i) {
-        if (lhs.routing.outputMidiChannels[i] != rhs.routing.outputMidiChannels[i]) {
-            return false;
-        }
-    }
+    if (lhs.editing.ccLaneDefaultControllers !=
+        rhs.editing.ccLaneDefaultControllers) return false;
     return true;
 }
 
@@ -72,9 +69,7 @@ project::ProjectState makeProject() {
     state.musical.patternsInheritScale = false;
     state.musical.clipsInheritScale = true;
     state.editing.stepPasteMode = project::ProjectStepPasteMode::WRAP;
-    for (uint8_t i = 0; i < state.routing.outputMidiChannels.size(); ++i) {
-        state.routing.outputMidiChannels[i] = static_cast<uint8_t>(15U - i);
-    }
+    state.editing.ccLaneDefaultControllers = {0U, 22U, 99U, 127U};
     return state;
 }
 
@@ -194,80 +189,7 @@ void test_missing_optional_chunks_default_and_report_without_blocking_overwrite(
     std::cout << "[PASS] test_missing_optional_chunks_default_and_report_without_blocking_overwrite\n";
 }
 
-void test_transport_v0_chunk_migrates_to_current_payload() {
-    const auto transport = makeTransportV0Fixture(142, 12);
-
-    const project_file::ChunkView chunks[] = {{
-        .id = project_file::chunkIdValue(project_file::ChunkId::TRANSPORT),
-        .versionMajor = 0,
-        .versionMinor = 0,
-        .flags = 0,
-        .data = transport.data(),
-        .size = static_cast<uint32_t>(transport.size()),
-    }};
-
-    uint8_t bytes[160] = {};
-    auto encodeResult = project_file::encode(chunks, 1, 0, bytes, sizeof(bytes));
-    assert(encodeResult.status == project_file::Status::OK);
-
-    project::ProjectState loaded;
-    project_file::LoadReport report{};
-    auto decodeResult = container_support::decode(
-        bytes,
-        encodeResult.bytesWritten,
-        loaded,
-        &report
-    );
-    assert(decodeResult.ok);
-    assert(decodeResult.overwriteSafe);
-    assert(report.status == project_file::LoadStatus::MIGRATED);
-    assert(!report.hasUnknownUnsupportedData);
-    assert(reportHas(report, project_file::LoadCode::MIGRATED_CHUNK));
-    assert(loaded.transport.tempoBpm == 142.0f);
-    assert(loaded.transport.swingPercent == 12);
-    assert(loaded.transport.runMode == project::ProjectTransportState::DEFAULT_RUN_MODE);
-
-    std::cout << "[PASS] test_transport_v0_chunk_migrates_to_current_payload\n";
-}
-
-void test_project_meta_v1_0_chunk_migrates_generated_id_to_slug() {
-    const auto meta = makeProjectMetaV1_0Fixture("P042", "Project 042", 42, 0x03);
-
-    const project_file::ChunkView chunks[] = {{
-        .id = project_file::chunkIdValue(project_file::ChunkId::PROJECT_META),
-        .versionMajor = codec::PROJECT_STATE_CHUNK_VERSION_MAJOR,
-        .versionMinor = 0,
-        .flags = 0,
-        .data = meta.data(),
-        .size = static_cast<uint32_t>(meta.size()),
-    }};
-
-    uint8_t bytes[256] = {};
-    auto encodeResult = project_file::encode(chunks, 1, 0, bytes, sizeof(bytes));
-    assert(encodeResult.status == project_file::Status::OK);
-
-    project::ProjectState loaded;
-    project_file::LoadReport report{};
-    auto decodeResult = container_support::decode(
-        bytes,
-        encodeResult.bytesWritten,
-        loaded,
-        &report
-    );
-    assert(decodeResult.ok);
-    assert(decodeResult.overwriteSafe);
-    assert(report.status == project_file::LoadStatus::MIGRATED);
-    assert(reportHas(report, project_file::LoadCode::MIGRATED_CHUNK));
-    assert(std::strcmp(loaded.metadata.id.data(), "p042") == 0);
-    assert(std::strcmp(loaded.metadata.name.data(), "p042") == 0);
-    assert(loaded.metadata.modifiedCounter == 42);
-    assert(loaded.metadata.dirty);
-    assert(loaded.metadata.hasSavedIdentity);
-
-    std::cout << "[PASS] test_project_meta_v1_0_chunk_migrates_generated_id_to_slug\n";
-}
-
-void test_same_size_stale_minor_without_migrator_defaults_and_blocks_overwrite() {
+void test_same_size_stale_minor_defaults_and_blocks_overwrite() {
     codec::ProjectTransportPayload transport{};
     transport.tempoCentiBpm = 18000;
     std::array<uint8_t, codec::PROJECT_TRANSPORT_PAYLOAD_SIZE> transportBytes{};
@@ -304,7 +226,7 @@ void test_same_size_stale_minor_without_migrator_defaults_and_blocks_overwrite()
     assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
     assert(loaded.transport.tempoBpm == project::ProjectTransportState::DEFAULT_TEMPO_BPM);
 
-    std::cout << "[PASS] test_same_size_stale_minor_without_migrator_defaults_and_blocks_overwrite\n";
+    std::cout << "[PASS] stale minor defaults and blocks overwrite\n";
 }
 
 void test_future_chunk_version_defaults_and_blocks_overwrite() {
@@ -381,6 +303,70 @@ void test_invalid_payload_size_defaults_and_reports_partial_load() {
     std::cout << "[PASS] test_invalid_payload_size_defaults_and_reports_partial_load\n";
 }
 
+void test_editing_defaults_roundtrip_explicit_cc_zero_without_growth() {
+    static_assert(codec::PROJECT_EDITING_PAYLOAD_SIZE == 8U);
+    codec::ProjectEditingPayload source{};
+    source.stepPasteMode = static_cast<uint8_t>(project::ProjectStepPasteMode::PAGE);
+    source.ccLaneDefaultControllers[0] = 0U;
+    source.ccLaneDefaultControllers[1] = 17U;
+    source.ccLaneDefaultControllers[2] = 96U;
+    source.ccLaneDefaultControllers[3] = 127U;
+
+    std::array<uint8_t, codec::PROJECT_EDITING_PAYLOAD_SIZE> bytes{};
+    assert(codec::encodeEditingPayload(source, bytes.data(), bytes.size()));
+    assert(bytes[1] == codec::PROJECT_EDITING_CC_LANE_DEFAULTS_MARKER);
+    assert(bytes[2] == 0U);
+    assert(bytes[6] == 0U && bytes[7] == 0U);
+
+    codec::ProjectEditingPayload decoded{};
+    assert(codec::decodeEditingPayload(bytes.data(), bytes.size(), decoded));
+    assert(decoded.stepPasteMode == source.stepPasteMode);
+    for (uint8_t lane = 0; lane < project::PROJECT_CC_LANE_DEFAULT_COUNT; ++lane) {
+        assert(decoded.ccLaneDefaultControllers[lane] ==
+               source.ccLaneDefaultControllers[lane]);
+    }
+
+    std::cout << "[PASS] editing defaults roundtrip explicit CC0 in unchanged payload\n";
+}
+
+void test_editing_corruption_is_rejected_transactionally() {
+    const codec::ProjectEditingPayload sentinel = [] {
+        codec::ProjectEditingPayload value{};
+        value.ccLaneDefaultControllers[0] = 9U;
+        return value;
+    }();
+    const auto expectRejected = [&](std::array<uint8_t, 8> bytes) {
+        auto output = sentinel;
+        assert(!codec::decodeEditingPayload(bytes.data(), bytes.size(), output));
+        assert(output.ccLaneDefaultControllers[0] == 9U);
+        assert(output.ccLaneDefaultsMarker == sentinel.ccLaneDefaultsMarker);
+    };
+
+    std::array<uint8_t, 8> invalidMarker{
+        0U, 0x55U, 1U, 11U, 74U, 71U, 0U, 0U
+    };
+    expectRejected(invalidMarker);
+
+    std::array<uint8_t, 8> invalidController{
+        0U, codec::PROJECT_EDITING_CC_LANE_DEFAULTS_MARKER,
+        1U, 11U, 128U, 71U, 0U, 0U
+    };
+    expectRejected(invalidController);
+
+    std::array<uint8_t, 8> invalidReserved{
+        0U, codec::PROJECT_EDITING_CC_LANE_DEFAULTS_MARKER,
+        1U, 11U, 74U, 71U, 1U, 0U
+    };
+    expectRejected(invalidReserved);
+
+    std::array<uint8_t, 8> invalidMarkerPayload{
+        0U, 0U, 0U, 0U, 1U, 0U, 0U, 0U
+    };
+    expectRejected(invalidMarkerPayload);
+
+    std::cout << "[PASS] marker/controller/reserved corruption rejects transactionally\n";
+}
+
 }  // namespace
 
 int main() {
@@ -391,11 +377,11 @@ int main() {
     test_project_state_roundtrip_core_chunks();
     test_project_state_roundtrip_long_slug();
     test_missing_optional_chunks_default_and_report_without_blocking_overwrite();
-    test_transport_v0_chunk_migrates_to_current_payload();
-    test_project_meta_v1_0_chunk_migrates_generated_id_to_slug();
-    test_same_size_stale_minor_without_migrator_defaults_and_blocks_overwrite();
+    test_same_size_stale_minor_defaults_and_blocks_overwrite();
     test_future_chunk_version_defaults_and_blocks_overwrite();
     test_invalid_payload_size_defaults_and_reports_partial_load();
+    test_editing_defaults_roundtrip_explicit_cc_zero_without_growth();
+    test_editing_corruption_is_rejected_transactionally();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

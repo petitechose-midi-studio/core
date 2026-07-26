@@ -22,6 +22,14 @@ static_assert(
     mod::PROJECT_CURVE_POINT_CAPACITY
 );
 
+constexpr bool isDahdsrBenchmarkCase(
+    ProjectModulationBenchmarkCase benchmarkCase
+) {
+    return benchmarkCase == ProjectModulationBenchmarkCase::ADSR ||
+        benchmarkCase ==
+            ProjectModulationBenchmarkCase::DAHDSR_SHARED_TRACK;
+}
+
 mod::ModulationDestination benchmarkDestination(uint16_t stableAddress) {
     return {
         mod::ModulationDestinationKind::MACRO_SLOT,
@@ -116,30 +124,58 @@ void populateSource(
         return;
     }
 
-    if (benchmarkCase == ProjectModulationBenchmarkCase::ADSR) {
+    if (isDahdsrBenchmarkCase(benchmarkCase)) {
         source.kind = mod::ModulatorKind::ADSR;
+        source.schemaVersion = mod::PROJECT_MODULATOR_ADSR_SCHEMA_VERSION;
         source.parameters.adsr = mod::ModulatorAdsrParameters{};
-        source.parameters.adsr.attack = static_cast<uint16_t>(
-            8U + sourceIndex % 16U
-        );
-        source.parameters.adsr.decay = static_cast<uint16_t>(
-            96U + sourceIndex
-        );
-        source.parameters.adsr.release = static_cast<uint16_t>(
-            192U + sourceIndex
-        );
+        const bool free = sourceIndex % 2U == 0U;
+        source.parameters.adsr.delay = free
+            ? static_cast<uint16_t>(4U + sourceIndex % 8U)
+            : 12U;
+        source.parameters.adsr.attack = free
+            ? static_cast<uint16_t>(8U + sourceIndex % 16U)
+            : 24U;
+        source.parameters.adsr.hold = free
+            ? static_cast<uint16_t>(16U + sourceIndex % 32U)
+            : 48U;
+        source.parameters.adsr.decay = free
+            ? static_cast<uint16_t>(96U + sourceIndex)
+            : 96U;
+        source.parameters.adsr.release = free
+            ? static_cast<uint16_t>(192U + sourceIndex)
+            : 192U;
+        source.parameters.adsr.smooth = free
+            ? static_cast<uint16_t>(32U + sourceIndex % 64U)
+            : 384U;
         source.parameters.adsr.sustainQ15 = static_cast<uint16_t>(
             8192U + sourceIndex * 128U
         );
-        source.parameters.adsr.timing = sourceIndex % 2U == 0U
-            ? mod::ModulatorTimingMode::FREE
-            : mod::ModulatorTimingMode::SYNC;
-        source.parameters.adsr.retrigger = sourceIndex % 2U == 0U
-            ? mod::ModulatorAdsrRetriggerMode::RETRIGGER
-            : mod::ModulatorAdsrRetriggerMode::LEGATO;
-        source.parameters.adsr.curve = static_cast<mod::ModulatorAdsrCurve>(
-            sourceIndex % 3U
+        source.parameters.adsr.traits = mod::makeModulatorAdsrTraits(
+            free
+                ? mod::ModulatorTimingMode::FREE
+                : mod::ModulatorTimingMode::SYNC,
+            free
+                ? mod::ModulatorAdsrRetriggerMode::RETRIGGER
+                : mod::ModulatorAdsrRetriggerMode::LEGATO,
+            static_cast<mod::ModulatorAdsrCurve>(sourceIndex % 3U)
         );
+        constexpr mod::ModulatorEnvelopeTimeParameter PARAMETERS[]{
+            mod::ModulatorEnvelopeTimeParameter::DELAY,
+            mod::ModulatorEnvelopeTimeParameter::ATTACK,
+            mod::ModulatorEnvelopeTimeParameter::HOLD,
+            mod::ModulatorEnvelopeTimeParameter::DECAY,
+            mod::ModulatorEnvelopeTimeParameter::RELEASE,
+            mod::ModulatorEnvelopeTimeParameter::SMOOTH,
+        };
+        for (uint8_t parameter = 0U; parameter < 6U; ++parameter) {
+            source.parameters.adsr.traits = mod::withModulatorAdsrFeel(
+                source.parameters.adsr.traits,
+                PARAMETERS[parameter],
+                static_cast<mod::ModulatorEnvelopeFeel>(
+                    (sourceIndex + parameter) % 3U
+                )
+            );
+        }
 
         auto& trigger = domain.modulation.triggerBindings[sourceIndex];
         trigger.id = {
@@ -150,10 +186,17 @@ void populateSource(
         trigger.sourceId = source.id;
         trigger.trigger = {
             mod::ModulationTriggerKind::TRACK_NOTE,
-            static_cast<uint8_t>(sourceIndex % 16U),
-            static_cast<uint8_t>((sourceIndex / 16U) % 16U),
-            static_cast<uint8_t>(sourceIndex),
+            benchmarkCase ==
+                    ProjectModulationBenchmarkCase::DAHDSR_SHARED_TRACK
+                ? static_cast<uint8_t>(0U)
+                : static_cast<uint8_t>(
+                    sourceIndex % mod::PROJECT_MODULATION_TRACK_COUNT
+                ),
+            static_cast<uint8_t>(sourceIndex % 128U),
+            static_cast<uint8_t>(sourceIndex % 128U),
         };
+        trigger.velocityMin = 20U;
+        trigger.velocityMax = 110U;
         trigger.flags = mod::PROJECT_MODULATION_TRIGGER_FLAG_ENABLED;
         return;
     }
@@ -254,6 +297,32 @@ bool evaluateFrame(
         context.sinkCount == mod::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY;
 }
 
+uint32_t triggerTestsPerFrame(
+    const mod::ProjectModulationRuntimePlan& plan,
+    const mod::ProjectModulationTriggerFrame& triggers
+) {
+    uint32_t testCount = 0U;
+    for (uint16_t eventIndex = 0U;
+         eventIndex < triggers.count;
+         ++eventIndex) {
+        const auto& trigger = triggers.events[eventIndex].trigger;
+        if (trigger.track >= mod::PROJECT_MODULATION_TRACK_COUNT ||
+            trigger.channel >= 16U ||
+            static_cast<uint8_t>(trigger.kind) >=
+                mod::PROJECT_MODULATION_TRIGGER_KIND_COUNT) {
+            continue;
+        }
+        const uint16_t bucket = mod::projectModulationTriggerBucketIndex(
+            trigger
+        );
+        const uint16_t start = plan.triggerBucketOffset[bucket];
+        const uint16_t end = plan.triggerBucketOffset[bucket + 1U];
+        if (start > end || end > plan.triggerRouteCount) return 0U;
+        testCount += static_cast<uint32_t>(end - start);
+    }
+    return testCount;
+}
+
 }  // namespace
 
 const char* projectModulationBenchmarkCaseLabel(
@@ -263,7 +332,9 @@ const char* projectModulationBenchmarkCaseLabel(
         case ProjectModulationBenchmarkCase::RECORDED_SHAPE:
             return "recorded-shape-128x512";
         case ProjectModulationBenchmarkCase::ADSR:
-            return "adsr-128x512-256-events";
+            return "dahdsr-128x512-256-events";
+        case ProjectModulationBenchmarkCase::DAHDSR_SHARED_TRACK:
+            return "dahdsr-shared-track-128x512-32768-tests";
         case ProjectModulationBenchmarkCase::LFO:
         default:
             return "lfo-128x512";
@@ -284,15 +355,13 @@ bool prepareProjectModulationBenchmark(
     );
     auto& domain = workspace.domain;
     domain.modulation.nextSourceId = mod::PROJECT_MODULATOR_CAPACITY + 1U;
-    domain.modulation.nextBindingId = benchmarkCase ==
-            ProjectModulationBenchmarkCase::ADSR
+    domain.modulation.nextBindingId = isDahdsrBenchmarkCase(benchmarkCase)
         ? mod::PROJECT_MODULATION_BINDING_CAPACITY +
             mod::PROJECT_MODULATION_TRIGGER_CAPACITY + 1U
         : mod::PROJECT_MODULATION_BINDING_CAPACITY + 1U;
     domain.modulation.sourceCount = mod::PROJECT_MODULATOR_CAPACITY;
     domain.modulation.outputBindingCount = mod::PROJECT_MODULATION_BINDING_CAPACITY;
-    domain.modulation.triggerBindingCount = benchmarkCase ==
-            ProjectModulationBenchmarkCase::ADSR
+    domain.modulation.triggerBindingCount = isDahdsrBenchmarkCase(benchmarkCase)
         ? mod::PROJECT_MODULATION_TRIGGER_CAPACITY
         : 0U;
     domain.modulation.destinationScaleCount =
@@ -320,13 +389,19 @@ bool prepareProjectModulationBenchmark(
         };
         workspace.bases[destination].staticValue = 0.5f;
     }
-    if (benchmarkCase == ProjectModulationBenchmarkCase::ADSR) {
+    if (isDahdsrBenchmarkCase(benchmarkCase)) {
         workspace.triggers.count =
             mod::PROJECT_MODULATION_TRIGGER_EVENT_CAPACITY;
         for (uint16_t source = 0U;
              source < mod::PROJECT_MODULATOR_CAPACITY;
              ++source) {
-            const auto trigger = domain.modulation.triggerBindings[source].trigger;
+            const auto filter = domain.modulation.triggerBindings[source].trigger;
+            const mod::ModulationTriggerRef trigger{
+                .kind = filter.kind,
+                .track = filter.track,
+                .channel = static_cast<uint8_t>(source % 16U),
+                .data = static_cast<uint8_t>(source % 128U),
+            };
             workspace.triggers.events[source * 2U] = {
                 .trigger = trigger,
                 .edge = mod::ProjectModulationTriggerEdge::GATE_ON,
@@ -381,12 +456,19 @@ ProjectModulationBenchmarkResult runProjectModulationBenchmark(
     result.sourceCount = workspace.plan.sourceCount;
     result.bindingCount = workspace.plan.bindingCount;
     result.destinationCount = workspace.plan.destinationCount;
+    result.triggerEventCount = workspace.triggers.count;
+    result.triggerRouteCount = workspace.plan.triggerRouteCount;
+    result.triggerTestsPerFrame = triggerTestsPerFrame(
+        workspace.plan,
+        workspace.triggers
+    );
     result.prepared =
         measuredFrames > 0U &&
         result.sourceCount == mod::PROJECT_MODULATOR_CAPACITY &&
         result.bindingCount == mod::PROJECT_MODULATION_BINDING_CAPACITY &&
         result.destinationCount ==
-            mod::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY;
+            mod::PROJECT_MODULATION_LIVE_DESTINATION_CAPACITY &&
+        result.workloadMatchesCase();
     if (!result.prepared) return result;
 
     EvaluationContext context{.workspace = &workspace};

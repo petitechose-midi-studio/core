@@ -15,6 +15,5 @@
 2520 capture screen selector_open_late
 2580 button LEFT_TOP up
 
-2660 tap NAV 60
 2840 tap BOTTOM_CENTER 60
 3040 capture screen overlay_closed

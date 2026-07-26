@@ -23,95 +23,6 @@ void test_remove_index_keeps_at_least_one_enabled_slot() {
     std::cout << "[PASS] test_remove_index_keeps_at_least_one_enabled_slot\n";
 }
 
-void test_remove_selected_rejects_empty_or_full_delete() {
-    const auto empty = slots::removeSelected(0x0007, 0x0000, 1, 4);
-    assert(!empty.changed);
-    assert(empty.nextMask == 0x0007);
-    assert(empty.nextActive == 1);
-
-    const auto all = slots::removeSelected(0x0007, 0x0007, 1, 4);
-    assert(!all.changed);
-    assert(all.nextMask == 0x0007);
-    assert(all.nextActive == 1);
-
-    const auto partial = slots::removeSelected(0x0007, 0x0002, 1, 4);
-    assert(partial.changed);
-    assert(partial.nextMask == 0x0005);
-    assert(partial.nextActive == 2);
-
-    std::cout << "[PASS] test_remove_selected_rejects_empty_or_full_delete\n";
-}
-
-void test_duplicate_selection_copies_enabled_selected_slots_into_free_slots() {
-    std::vector<uint8_t> copiedSources;
-    std::vector<uint8_t> copiedDestinations;
-
-    const auto result = slots::duplicateSelectionIntoFreeSlots(
-        0x000B,
-        0x0003,
-        5,
-        [&](uint8_t source, uint8_t dest) {
-            copiedSources.push_back(source);
-            copiedDestinations.push_back(dest);
-            return true;
-        }
-    );
-
-    assert(result.changed);
-    assert(result.nextMask == 0x001F);
-    assert(result.firstDuplicated == 2);
-    assert(copiedSources.size() == 2);
-    assert(copiedSources[0] == 0);
-    assert(copiedDestinations[0] == 2);
-    assert(copiedSources[1] == 1);
-    assert(copiedDestinations[1] == 4);
-
-    std::cout << "[PASS] test_duplicate_selection_copies_enabled_selected_slots_into_free_slots\n";
-}
-
-void test_duplicate_selection_stops_when_no_free_slot_remains() {
-    uint8_t copyCount = 0;
-    const auto result = slots::duplicateSelectionIntoFreeSlots(
-        0x0007,
-        0x0007,
-        4,
-        [&](uint8_t, uint8_t dest) {
-            ++copyCount;
-            assert(dest == 3);
-            return true;
-        }
-    );
-
-    assert(result.changed);
-    assert(result.nextMask == 0x000F);
-    assert(result.firstDuplicated == 3);
-    assert(copyCount == 1);
-
-    std::cout << "[PASS] test_duplicate_selection_stops_when_no_free_slot_remains\n";
-}
-
-void test_duplicate_selection_does_not_enable_a_rejected_destination() {
-    uint8_t copyCount = 0;
-    const auto result = slots::duplicateSelectionIntoFreeSlots(
-        0x0003,
-        0x0003,
-        4,
-        [&](uint8_t source, uint8_t dest) {
-            ++copyCount;
-            assert(source == 0);
-            assert(dest == 2);
-            return false;
-        }
-    );
-
-    assert(!result.changed);
-    assert(result.nextMask == 0x0003);
-    assert(result.firstDuplicated == 4);
-    assert(copyCount == 1);
-
-    std::cout << "[PASS] test_duplicate_selection_does_not_enable_a_rejected_destination\n";
-}
-
 void test_enabled_navigation_wraps_over_gaps() {
     assert(slots::nextEnabledIndex(0x0009, 0, 4, 1) == 3);
     assert(slots::nextEnabledIndex(0x0009, 0, 4, -1) == 3);
@@ -149,10 +60,6 @@ void test_add_slot_navigation_is_terminal_after_highest_enabled_slot() {
 
 int main() {
     test_remove_index_keeps_at_least_one_enabled_slot();
-    test_remove_selected_rejects_empty_or_full_delete();
-    test_duplicate_selection_copies_enabled_selected_slots_into_free_slots();
-    test_duplicate_selection_stops_when_no_free_slot_remains();
-    test_duplicate_selection_does_not_enable_a_rejected_destination();
     test_enabled_navigation_wraps_over_gaps();
     test_add_slot_navigation_is_terminal_after_highest_enabled_slot();
 

@@ -15,59 +15,30 @@ using Telemetry = std::array<
     seq::SequencerTrackActivationTelemetry,
     seq::SequencerTrackBankState::TRACK_COUNT>;
 
-ui::SequencerTrackPasteProjection projection(
-    uint8_t count = 1,
-    bool overwriteAll = false
-) {
+ui::SequencerTrackPasteProjection projection(bool overwrite = false) {
     ui::SequencerTrackPasteProjection out{};
     auto& plan = out.plan;
-    plan.payloadKind = count == 1
-        ? core::state::StructureClipboardKind::SEQUENCER_TRACK
-        : core::state::StructureClipboardKind::SEQUENCER_TRACK_SELECTION;
-    plan.sourceCount = count;
-    plan.count = count;
-    plan.firstSource = 0;
-    plan.lastSource = static_cast<uint8_t>(count - 1U);
-    plan.firstTarget = count == 16 ? 0 : 4;
-    plan.lastTarget = static_cast<uint8_t>(plan.firstTarget + count - 1U);
-    plan.targetEndExclusive = static_cast<uint16_t>(plan.firstTarget + count);
+    plan.payloadKind = core::state::StructureClipboardKind::SEQUENCER_TRACK;
+    plan.sourceMask = 0x0001;
+    plan.targetMask = 0x0010;
+    plan.createMask = overwrite ? 0 : 0x0010;
+    plan.overwriteMask = overwrite ? 0x0010 : 0;
     plan.availability = core::state::ClipboardTransferAvailability::READY;
     plan.reason = core::state::ClipboardTransferReason::NONE;
-    for (uint8_t i = 0; i < count; ++i) {
-        const uint8_t target = static_cast<uint8_t>(plan.firstTarget + i);
-        const uint16_t sourceBit = static_cast<uint16_t>(1U << i);
-        const uint16_t targetBit = static_cast<uint16_t>(1U << target);
-        plan.entries[i] = {
-            .clipboardIndex = i,
-            .sourceTrack = i,
-            .targetTrack = target,
-            .targetMidiChannel = static_cast<uint8_t>(i % 16U),
-            .targetRouteValid = true,
-            .targetMuted = (i & 1U) != 0,
-            .inheritedLaneCount = static_cast<uint8_t>(i == 1 ? 2 : 0),
-            .pinnedLaneCount = static_cast<uint8_t>(i == 1 ? 1 : 0),
-            .targetKind = overwriteAll || (i & 1U) != 0
-                ? core::state::ClipboardTransferTargetKind::OVERWRITE
-                : core::state::ClipboardTransferTargetKind::FREE,
-        };
-        plan.sourceMask = static_cast<uint16_t>(plan.sourceMask | sourceBit);
-        plan.targetMask = static_cast<uint16_t>(plan.targetMask | targetBit);
-        plan.inheritedLaneCount = static_cast<uint8_t>(
-            plan.inheritedLaneCount + plan.entries[i].inheritedLaneCount
-        );
-        plan.pinnedLaneCount = static_cast<uint8_t>(
-            plan.pinnedLaneCount + plan.entries[i].pinnedLaneCount
-        );
-        if (plan.entries[i].targetKind ==
-            core::state::ClipboardTransferTargetKind::FREE) {
-            plan.createMask = static_cast<uint16_t>(plan.createMask | targetBit);
-        } else {
-            plan.overwriteMask = static_cast<uint16_t>(
-                plan.overwriteMask | targetBit
-            );
-        }
-    }
-    out.targetTrack = plan.firstTarget;
+    plan.entry = {
+        .sourceTrack = 0,
+        .targetTrack = 4,
+        .targetMidiChannel = 0,
+        .targetRouteValid = true,
+        .targetMuted = false,
+        .inheritedLaneCount = 0,
+        .pinnedLaneCount = 0,
+        .targetKind = overwrite
+            ? core::state::ClipboardTransferTargetKind::OVERWRITE
+            : core::state::ClipboardTransferTargetKind::FREE,
+    };
+    plan.hasEntry = true;
+    out.targetTrack = plan.entry.targetTrack;
     out.copyAvailable = true;
     out.action = seq::buildSequencerTrackTransferActionSpec(
         plan,
@@ -77,7 +48,6 @@ ui::SequencerTrackPasteProjection projection(
     );
     return out;
 }
-
 void feedback(
     ui::SequencerTrackPasteProjection& value,
     contextual::OperationFeedbackStatus status
@@ -141,71 +111,28 @@ void test_guard_phases_explain_copy_cancel_and_progress() {
     assert(std::strstr(model.detail.data(), "no changes") != nullptr);
 }
 
-void assertDetailMapping(
-    uint8_t count,
-    uint8_t focused,
-    const char* expectedOrdinal,
-    const char* expectedMapping
-) {
-    auto value = projection(count);
-    feedback(value, contextual::OperationFeedbackStatus::PREVIEW);
-    value.detailVisible = true;
-    value.focusedIndex = focused;
-    const auto model = ui::buildSequencerTrackPastePreflightViewModel(
-        value,
-        false,
-        Telemetry{}
-    );
-    assert(model.visible);
-    assert(std::strstr(model.header.data(), expectedOrdinal) != nullptr);
-    assert(std::strcmp(model.mapping.data(), expectedMapping) == 0);
-    assert(model.mappingIndex == focused);
-    assert(model.mappingCount == count);
-    assert(model.sourceTrack == value.plan.entries[focused].sourceTrack);
-    assert(model.targetTrack == value.plan.entries[focused].targetTrack);
-    assert(model.targetRouteValid);
-}
-
-void test_details_cover_first_middle_last_for_1_2_16_without_truncation() {
-    assertDetailMapping(1, 0, "1/1", "T1 -> T5 | Ch1");
-    assertDetailMapping(2, 0, "1/2", "T1 -> T5 | Ch1");
-    assertDetailMapping(2, 1, "2/2", "T2 -> T6 | Ch2");
-    assertDetailMapping(16, 0, "1/16", "T1 -> T1 | Ch1");
-    assertDetailMapping(16, 7, "8/16", "T8 -> T8 | Ch8");
-    assertDetailMapping(16, 15, "16/16", "T16 -> T16 | Ch16");
-
-    auto summaryValue = projection(16);
-    feedback(summaryValue, contextual::OperationFeedbackStatus::PRESSED);
-    const auto summary = ui::buildSequencerTrackPastePreflightViewModel(
-        summaryValue,
-        false,
-        Telemetry{}
-    );
-    assert(std::strstr(summary.mapping.data(), "T1>T1/C1") != nullptr);
-    assert(std::strstr(summary.mapping.data(), "T8>T8/C8") != nullptr);
-    assert(std::strstr(summary.mapping.data(), "T16>T16/C16") != nullptr);
-    assert(std::strlen(summary.mapping.data()) < summary.mapping.size() - 1U);
-}
-
 void test_detail_exposes_kind_mute_lane_and_live_route_semantics() {
-    auto value = projection(3);
+    auto value = projection(true);
+    value.plan.entry.targetMuted = true;
+    value.plan.entry.inheritedLaneCount = 2;
+    value.plan.entry.pinnedLaneCount = 1;
+    value.plan.entry.targetMidiChannel = 1;
     feedback(value, contextual::OperationFeedbackStatus::PREVIEW);
     value.detailVisible = true;
-    value.focusedIndex = 1;
     auto model = ui::buildSequencerTrackPastePreflightViewModel(
         value,
         false,
         Telemetry{}
     );
-    assert(std::strcmp(model.header.data(), "Track paste | 2/3") == 0);
-    assert(std::strcmp(model.mapping.data(), "T2 -> T6 | Ch2") == 0);
+    assert(std::strcmp(model.header.data(), "Track paste | 1/1") == 0);
+    assert(std::strcmp(model.mapping.data(), "T1 -> T5 | Ch2") == 0);
     assert(std::strcmp(model.footprint.data(), "Overwrite | Mute kept") == 0);
     assert(std::strcmp(
         model.laneBindings.data(),
         "CC | 2 inherit target | 1 pinned"
     ) == 0);
 
-    value.plan.entries[1].targetMidiChannel = 8;
+    value.plan.entry.targetMidiChannel = 8;
     model = ui::buildSequencerTrackPastePreflightViewModel(
         value,
         false,
@@ -214,19 +141,13 @@ void test_detail_exposes_kind_mute_lane_and_live_route_semantics() {
     assert(std::strstr(model.mapping.data(), "Ch9") != nullptr);
     assert(model.targetMidiChannel == 8);
 }
-
-void test_exact_activation_generation_drives_mixed_then_applied() {
-    auto value = projection(2, true);
+void test_exact_activation_generation_drives_queued_then_applied() {
+    auto value = projection(true);
     feedback(value, contextual::OperationFeedbackStatus::QUEUED);
     value.operationGeneration = 41;
     value.activationGeneration = 7;
     Telemetry telemetry{};
     telemetry[4] = {
-        seq::SequencerTrackActivationStatus::APPLIED,
-        7,
-        seq::SequencerTrackActivationOrigin::TRACK_PASTE,
-    };
-    telemetry[5] = {
         seq::SequencerTrackActivationStatus::QUEUED,
         7,
         seq::SequencerTrackActivationOrigin::TRACK_PASTE,
@@ -240,7 +161,7 @@ void test_exact_activation_generation_drives_mixed_then_applied() {
     assert(model.activationGeneration == 7);
     assert(model.operationGeneration == 41);
 
-    telemetry[5].status = seq::SequencerTrackActivationStatus::APPLIED;
+    telemetry[4].status = seq::SequencerTrackActivationStatus::APPLIED;
     model = ui::buildSequencerTrackPastePreflightViewModel(
         value,
         false,
@@ -251,7 +172,6 @@ void test_exact_activation_generation_drives_mixed_then_applied() {
     assert(!ui::shouldShowSequencerTrackPasteAppliedConfirmation(model, 41));
 
     telemetry[4].generation = 8;
-    telemetry[5].generation = 8;
     model = ui::buildSequencerTrackPastePreflightViewModel(
         value,
         false,
@@ -260,7 +180,6 @@ void test_exact_activation_generation_drives_mixed_then_applied() {
     // A later operation must never be mistaken for generation 7.
     assert(model.phase == ui::SequencerTrackPastePreflightPhase::QUEUED);
 }
-
 void test_immediate_apply_uses_operation_identity_without_activation_generation() {
     auto value = projection();
     feedback(value, contextual::OperationFeedbackStatus::APPLIED);
@@ -298,9 +217,8 @@ void test_blocked_reason_is_explicit() {
 int main() {
     test_ready_preflight_is_quiet_until_details_are_requested();
     test_guard_phases_explain_copy_cancel_and_progress();
-    test_details_cover_first_middle_last_for_1_2_16_without_truncation();
     test_detail_exposes_kind_mute_lane_and_live_route_semantics();
-    test_exact_activation_generation_drives_mixed_then_applied();
+    test_exact_activation_generation_drives_queued_then_applied();
     test_immediate_apply_uses_operation_identity_without_activation_generation();
     test_blocked_reason_is_explicit();
     return 0;

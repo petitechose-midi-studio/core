@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
 
 namespace core::state::sequencer {
@@ -14,27 +15,21 @@ FLASHMEM SequencerInteractionContext makeSequencerInteractionContext(
     bool overlayVisible
 ) {
     SequencerInteractionContext context{};
-    context.structureWorkspaceActive = sequencer.structureUi.workspace.active.get();
-    context.navigationFocus =
-        !context.structureWorkspaceActive &&
-            navigationFocus == core::state::StructureNavigationFocus::TRACK
-        ? core::state::StructureNavigationFocus::PAGE
-        : navigationFocus;
+    context.navigationFocus = navigationFocus;
     context.childContentView = isChildContentView(sequencer);
-    context.overlayVisible = overlayVisible || sequencer.ccLaneUi.visible();
+    context.overlayVisible = overlayVisible || sequencer.ccLaneUi.visible() ||
+                             sequencer.stepContentDraft.exitPromptVisible.get() ||
+                             sequencer.patternEditor.active.get();
     context.previewingAddSlot =
         context.navigationFocus == core::state::StructureNavigationFocus::TRACK
         ? trackUi.previewAddSlot.get()
         : context.navigationFocus == core::state::StructureNavigationFocus::PAGE
             ? sequencer.structureUi.previewAddPageSlot.get()
             : false;
-    context.pageSelectionActive = sequencer.structureUi.pageSelection.active.get();
     context.trackSelectionActive = trackUi.selection.active.get();
+    context.pageSelectionActive = sequencer.structureUi.pageSelection.active.get();
     context.stepSelectionActive = sequencer.structureUi.stepSelection.active.get();
     context.patternQuickControlsActive = sequencer.patternQuickControls.selecting.get();
-    context.historyShortcutHoldActive =
-        sequencer.patternQuickControls.physicalHoldActive.get() &&
-        !context.patternQuickControlsActive;
     context.propertySelectorActive = sequencer.stepPropertyInlineSelector.selecting.get();
     context.stepContentSelectorActive = sequencer.stepContentSelector.selecting.get();
     context.stepEditorVisible = sequencer.stepEdit.visible.get();
@@ -53,8 +48,8 @@ FLASHMEM SequencerInteractionContext makeSequencerInteractionContext(
             const auto childKind = step_edit_rows::childKindForContextRow(row);
             context.stepEditorContextHasChild =
                 childKind == StepContentChildKind::MICRO_SEQUENCE
-                    ? stepNodeHasMicroSequence(sequencer.pattern, nodeId)
-                    : stepNodeHasCycleStateSet(sequencer.pattern, nodeId);
+                    ? stepNodeHasMicroSequence(authoringPattern(sequencer), nodeId)
+                    : stepNodeHasCycleStateSet(authoringPattern(sequencer), nodeId);
         }
     }
     return context;

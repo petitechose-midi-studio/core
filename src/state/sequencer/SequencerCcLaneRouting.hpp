@@ -116,7 +116,7 @@ struct SequencerCcLaneDuplicatePreflight {
     core::state::shared::MidiCcDestination resolvedCandidate{};
 };
 
-/** Global 16-Pattern preflight used by both Add Lane and Lane Settings. */
+/** Global 16-Pattern preflight used by direct creation and Lane Settings. */
 SequencerCcLaneDuplicatePreflight preflightSequencerCcLaneDestination(
     const SequencerCcProjectRoutingView& project,
     SequencerCcLaneAddress candidateAddress,
@@ -138,8 +138,8 @@ struct SequencerCcLaneConflictScan {
 };
 
 /**
- * Reports every losing lane exactly once. Existing/migrated duplicates retain
- * the lowest stable address as their deterministic winner.
+ * Reports every losing lane exactly once. Existing duplicates retain the
+ * lowest stable address as their deterministic winner.
  */
 SequencerCcLaneConflictScan scanSequencerCcLaneConflicts(
     const SequencerCcProjectRoutingView& project

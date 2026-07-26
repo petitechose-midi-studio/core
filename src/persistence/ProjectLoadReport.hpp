@@ -29,12 +29,10 @@ enum class LoadCode : uint8_t {
     MISSING_OPTIONAL_CHUNK,
     DEFAULTED_CHUNK,
     UNSUPPORTED_CHUNK_VERSION,
-    MIGRATED_CHUNK,
 };
 
 enum class LoadStatus : uint8_t {
     OK = 0,
-    MIGRATED,
     PARTIAL,
     FAILED,
 };
@@ -67,7 +65,7 @@ struct LoadReport {
              uint8_t targetMajor = 0,
              uint8_t targetMinor = 0);
 
-    bool ok() const { return status == LoadStatus::OK || status == LoadStatus::MIGRATED; }
+    bool ok() const { return status == LoadStatus::OK; }
     bool hasIssues() const { return status != LoadStatus::OK; }
     bool failed() const { return status == LoadStatus::FAILED; }
 };

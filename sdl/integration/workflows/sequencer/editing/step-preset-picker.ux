@@ -64,16 +64,17 @@
 7500 capture screen step_preset_applied_to_step_2
 8700 capture screen returned_after_applied_feedback
 
-# Close Step Edit and undo the exact preset action from the shared history layer.
+# Close Step Edit and undo the exact preset action from the global View
+# Selector.
 8800 tap MACRO_2 60
 9000 capture screen step_2_after_apply
-9100 button LEFT_CENTER down
+9100 tap LEFT_TOP 60
 10100 tick
-10150 capture screen preset_undo_layer
-10200 tap LEFT_TOP 60
-11700 capture screen step_2_after_preset_undo
-11800 button LEFT_CENTER up
-12000 capture screen preset_undo_layer_closed
+10150 capture screen selector_preset_undo_ready
+10200 tap LEFT_CENTER 60
+11700 capture screen selector_preset_redo_ready
+11800 tap LEFT_TOP 60
+12000 capture screen step_2_after_preset_undo
 
 # While transport is running, applying to another empty step stays explicit as
 # queued instead of pretending that the audible runtime changed immediately.

@@ -20,11 +20,9 @@
 #include "protocol/filesystem/FileSystemRpc.hpp"
 #include "config/TimeCompat.hpp"
 #include "state/CoreState.hpp"
-#include "state/ViewSelectorItems.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
 #include <ms/ui/font/CoreFonts.hpp>
 #include "ui/font/StandaloneFonts.hpp"
-#include "ui/font/StandaloneIcons.hpp"
 #include "ui/transportbar/ContextSoftkeyBar.hpp"
 #include "ui/transportbar/TransportBar.hpp"
 
@@ -329,12 +327,19 @@ FLASHMEM void StandaloneContext::syncEncodersFromState() {
         Config::EncoderID::OPT,
         input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
     );
+    encoders().setMode(
+        Config::EncoderID::OPT,
+        oc::interface::EncoderMode::NORMALIZED
+    );
+    encoders().setBounds(Config::EncoderID::OPT, 0.0f, 1.0f);
     encoders().setNormalizedTurns(
         Config::EncoderID::OPT,
         input_utils::DEFAULT_NORMALIZED_TURNS
     );
+    encoders().setContinuous(Config::EncoderID::OPT);
 
-    // Leaving Sequencer view disables discrete steps.
+    // The Macro root owns a normalized continuous OPT contract. Reset the
+    // Sequencer's cache as well so a later return reapplies its own contract.
     if (feature_assembly_) {
         feature_assembly_->resetSequencerEncoderSync();
     }
@@ -349,11 +354,15 @@ FLASHMEM bool StandaloneContext::setupViewSelectorRendering() {
     return view_selector_render_scheduler_ && view_selector_render_scheduler_->valid() &&
            view_selector_watcher_.watchAll(
         core_state_.viewSelector.visible,
-        core_state_.viewSelector.selectedIndex
+        core_state_.viewSelector.selectedIndex,
+        core_state_.projectHistory.revision
     );
 }
 
 FLASHMEM void StandaloneContext::requestViewSelectorRender() {
+    const bool visible = core_state_.viewSelector.visible.get();
+    if (!visible && !view_selector_was_visible_) return;
+    view_selector_was_visible_ = visible;
     syncViewSelectorChrome();
     if (view_selector_render_scheduler_) {
         view_selector_render_scheduler_->request(1U);
@@ -377,14 +386,16 @@ FLASHMEM void StandaloneContext::renderViewSelectorProjection() {
 FLASHMEM void StandaloneContext::syncViewSelectorChrome() {
     if (!ui_assembly_) return;
 
-    const auto item = core::state::viewSelectorItemAt(
-        core_state_.viewSelector.selectedIndex.get()
-    );
-    const bool showSequencerSettingsAction =
-        core_state_.viewSelector.visible.get() &&
-        core::state::viewSelectorItemHasSettingsAction(item);
-    if (showSequencerSettingsAction) {
-        ui_assembly_->contextSoftkeyBar().setLeftIcon(::standalone::icons::SETTINGS_GEAR);
+    if (core_state_.viewSelector.visible.get()) {
+        char undoLabel[40]{};
+        char redoLabel[40]{};
+        core_state_.projectHistory.formatUndoLabel(undoLabel, sizeof(undoLabel));
+        core_state_.projectHistory.formatRedoLabel(redoLabel, sizeof(redoLabel));
+        ui_assembly_->contextSoftkeyBar().setLabels(
+            undoLabel,
+            redoLabel,
+            "Nav Select"
+        );
         ui_assembly_->contextSoftkeyBar().show();
         ui_assembly_->transportBar().hide();
     } else {
@@ -407,6 +418,7 @@ FLASHMEM oc::type::ScopeID StandaloneContext::activeViewScopeId() const {
         case core::ui::ViewType::SEQUENCER:
             return ui_assembly_->sequencerViewScope();
         case core::ui::ViewType::PROJECT:
+        case core::ui::ViewType::MODULATORS:
             return ui_assembly_->projectViewScope();
         case core::ui::ViewType::DEVICE_SETTINGS:
             return ui_assembly_->deviceSettingsViewScope();

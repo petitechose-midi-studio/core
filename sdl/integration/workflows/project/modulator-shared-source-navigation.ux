@@ -9,13 +9,9 @@
 
 0 scenario project-modulators
 
-100 button LEFT_CENTER down
-700 encoder NAV 1
-780 encoder NAV 2
-860 encoder NAV 3
-940 encoder NAV 4
-1020 encoder NAV 5
-1100 button LEFT_CENTER up
+100 button LEFT_TOP down
+700 encoder NAV -1
+1100 button LEFT_TOP up
 1320 tap NAV 60
 1540 capture screen source_workspace
 
@@ -43,15 +39,19 @@
 3280 tap NAV 60
 3500 capture screen destinations_from_macro
 
-# Split only this edge, then Undo the complete operation.
+# Split only this edge, then Undo the complete operation from the global View
+# Selector while retaining the deep-link return address.
 3620 tap BOTTOM_RIGHT 60
 3860 capture screen destination_independent
-3980 button LEFT_CENTER down
-4580 tap LEFT_TOP 60
-4800 button LEFT_CENTER up
-5020 capture screen independence_undone
+3980 button LEFT_TOP down
+5050 tick
+5110 capture screen selector_undo_independence_ready
+5210 tap LEFT_CENTER 60
+5430 capture screen selector_redo_independence_ready
+5530 button LEFT_TOP up
+6930 capture screen independence_undone
 
 # Back to Source, then Back restores the exact Macro assignment.
-5140 tap LEFT_TOP 60
-5260 tap LEFT_TOP 60
-5480 capture screen macro_assignment_restored
+7050 tap LEFT_TOP 60
+7170 tap LEFT_TOP 60
+7390 capture screen macro_assignment_restored

@@ -1,7 +1,0 @@
-# StepGraphPreset v1 fixture.
-# Root context with scalar step values, a local chord, and a two-step micro-sequence.
-53 47 50 31 01 01 15 03 01 3C 40 64 00 00 64 03 00 01 00 00 00
-01 01 00 02 00
-80 06 00 00 00 00 00 00 00 00 00 00 FF FF 00 00 00 00 02 04 02 01 03 F4 08
-04 00 07 00 00 00 00 00 00 00 FF FF FF FF 00 16 00 00 00 03 00 00 00 00 00
-00 00 00 00 00 00 00 00 00 00 FF FF FF FF 00 00 00 00 00 03 00 00 00 00 00

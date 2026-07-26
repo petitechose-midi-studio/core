@@ -17,6 +17,9 @@ public:
     uint32_t remaining() const {
         return (offset_ <= capacity_) ? static_cast<uint32_t>(capacity_ - offset_) : 0U;
     }
+    uint8_t* current() {
+        return ok_ && offset_ <= capacity_ ? data_ + offset_ : nullptr;
+    }
 
     bool writeU8(uint8_t value) { return writeByte_(value); }
     bool writeI8(int8_t value) { return writeByte_(static_cast<uint8_t>(value)); }
@@ -76,6 +79,27 @@ public:
         return true;
     }
 
+    bool reserveBytes(uint32_t size, uint8_t*& out) {
+        out = nullptr;
+        if (!ok_ || size > remaining()) {
+            ok_ = false;
+            return false;
+        }
+        out = data_ + offset_;
+        offset_ += size;
+        return true;
+    }
+
+    bool patchU16(uint32_t offset, uint16_t value) {
+        if (!ok_ || offset > capacity_ || capacity_ - offset < sizeof(uint16_t)) {
+            ok_ = false;
+            return false;
+        }
+        data_[offset] = static_cast<uint8_t>(value & 0xFFU);
+        data_[offset + 1U] = static_cast<uint8_t>((value >> 8U) & 0xFFU);
+        return true;
+    }
+
 private:
     bool writeByte_(uint8_t value) {
         if (!ok_ || offset_ >= capacity_) {
@@ -103,6 +127,9 @@ public:
     uint32_t offset() const { return offset_; }
     uint32_t remaining() const {
         return (offset_ <= size_) ? static_cast<uint32_t>(size_ - offset_) : 0U;
+    }
+    const uint8_t* current() const {
+        return ok_ && offset_ <= size_ ? data_ + offset_ : nullptr;
     }
 
     bool readU8(uint8_t& out) { return readByte_(out); }

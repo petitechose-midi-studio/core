@@ -210,10 +210,6 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     state.sequencer.stepEdit.visible.set(true);
     state.sequencer.stepPropertyInlineSelector.selecting.set(true);
     state.sequencer.patternQuickControls.selecting.set(true);
-    state.trackNavigation.selection.active.set(true);
-    state.trackNavigation.selection.scope.set(core::state::StructureSelectionScope::TRACK);
-    state.trackNavigation.selection.cursorIndex.set(7);
-    state.trackNavigation.selection.selectedMask.set(0x0080);
     state.setSharedTrackState(state.currentSharedTrackEnabledMask(), 3);
     const auto manualAddress = core::state::macro::MacroAutomationSlotAddress{
         .track = state.pages.currentActiveTrack(),
@@ -257,8 +253,6 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(!state.sequencer.stepEdit.visible.get());
     assert(!state.sequencer.stepPropertyInlineSelector.selecting.get());
     assert(!state.sequencer.patternQuickControls.selecting.get());
-    assert(!state.trackNavigation.selection.active.get());
-    assert(state.trackNavigation.selection.cursorIndex.get() == 0);
     float manualValue = 0.0f;
     assert(state.macroUi.manualOverrides.valueFor(manualAddress, manualValue));
     assert(manualValue > 0.60f && manualValue < 0.62f);

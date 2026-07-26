@@ -14,13 +14,9 @@
 0 scenario project-modulator-destination
 80 capture screen project_overview
 
-180 button LEFT_CENTER down
-780 encoder NAV 1
-860 encoder NAV 2
-940 encoder NAV 3
-1020 encoder NAV 4
-1100 encoder NAV 5
-1180 button LEFT_CENTER up
+180 button LEFT_TOP down
+780 encoder NAV -1
+1180 button LEFT_TOP up
 1400 capture screen empty_registry
 
 # Add Source asks for its type, then exposes the route hierarchy.
@@ -47,9 +43,6 @@
 4040 capture screen macro_destination_preview
 4160 encoder NAV 1
 4220 encoder NAV 1
-4280 encoder NAV 1
-4340 encoder NAV 1
-4400 encoder NAV 1
 4520 encoder OPT 0.80
 4740 capture screen preview_depth_edited
 4860 tap LEFT_TOP 60
@@ -60,12 +53,19 @@
 5460 tap BOTTOM_RIGHT 60
 5700 capture screen destination_applied
 
-# The whole creation is one action; Undo/Redo leaves no partial structure.
-5820 button LEFT_CENTER down
-6420 tap LEFT_TOP 60
-6640 button LEFT_CENTER up
-6880 capture screen creation_undone
-7000 button LEFT_CENTER down
-7600 tap LEFT_BOTTOM 60
-7820 button LEFT_CENTER up
-8060 capture screen creation_redone
+# The whole creation is one action; Undo/Redo from the global View Selector
+# leaves no partial structure.
+5820 button LEFT_TOP down
+6890 tick
+6950 capture screen selector_undo_creation_ready
+7050 tap LEFT_CENTER 60
+7270 capture screen selector_redo_creation_ready
+7370 button LEFT_TOP up
+8770 capture screen creation_undone
+8870 button LEFT_TOP down
+9940 tick
+10000 capture screen selector_redo_creation_ready_again
+10100 tap LEFT_BOTTOM 60
+10320 capture screen selector_undo_creation_restored
+10420 button LEFT_TOP up
+11820 capture screen creation_redone

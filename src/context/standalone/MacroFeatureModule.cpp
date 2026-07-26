@@ -40,6 +40,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
           stateRefs.activeView,
           stateRefs.macroEdit,
           stateRefs.pages,
+          stateRefs.projectTracks,
           stateRefs.macroUi,
           stateRefs.configRevision,
           stateRefs.structureClipboard,
@@ -70,24 +71,23 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
 #endif
 {
 #if defined(MS_UX_RECORDER)
-    if (uxRegistry) {
-        uxRegistry->add(
+    if (uxRegistry &&
+        (!uxRegistry->add(
             macro_edit_ux_surface_,
             core::context::standalone::ux::priority::MACRO_EDIT
-        );
-        uxRegistry->add(
+        ) ||
+         !uxRegistry->add(
             macro_structure_ux_surface_,
             core::context::standalone::ux::priority::MACRO_STRUCTURE
-        );
-        uxRegistry->add(
+        ) ||
+         !uxRegistry->add(
             macro_performance_ux_surface_,
             core::context::standalone::ux::priority::MACRO_PERFORMANCE
-        );
-        uxRegistry->add(
+        ) ||
+         !uxRegistry->add(
             macro_value_ux_surface_,
             core::context::standalone::ux::priority::MACRO_VALUE
-        );
-    }
+        ))) return;
 #endif
     if (!mainZone || !macroViewScope) return;
 
@@ -155,10 +155,12 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         MacroOverlayPresenter::StateRefs{
             stateRefs.macroEdit,
             stateRefs.pages,
+            stateRefs.projectTracks,
             stateRefs.macroUi,
             stateRefs.configRevision,
             &stateRefs.structureClipboard,
             stateRefs.midiCcCoordinator,
+            &stateRefs.statusBar,
         },
         *edit_overlay_,
         *automation_overlay_,
@@ -176,6 +178,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
         core::app::makeExtmemUnique<core::handler::MacroMidiCcRuntimeAdapter>(
             core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                 stateRefs.pages,
+                stateRefs.projectTracks,
             },
             performanceServices,
             *stateRefs.midiCcCoordinator
@@ -225,11 +228,12 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
     );
     automation_playback_ = std::make_unique<core::handler::MacroAutomationPlaybackService>(
         core::handler::MacroAutomationPlaybackService::StateRefs{
+            stateRefs.macros,
             stateRefs.pages,
             stateRefs.macroUi,
+            stateRefs.projectTracks,
             stateRefs.runtimeOwnerRevision,
         },
-        performanceServices,
         *macro_midi_runtime_
     );
     edit_handler_ = core::app::makeExtmemUnique<core::handler::MacroEditHandler>(
@@ -237,8 +241,12 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
             stateRefs.macroEdit,
             stateRefs.pages,
             stateRefs.macroUi,
+            stateRefs.statusBar,
+            stateRefs.macroHistory,
         },
         editServices,
+        performanceServices,
+        *macro_midi_runtime_,
         overlays,
         encoders,
         buttons,
@@ -254,6 +262,7 @@ FLASHMEM MacroFeatureModule::MacroFeatureModule(
             stateRefs.projectNavigation,
             stateRefs.macroEdit,
             stateRefs.pages,
+            stateRefs.projectTracks,
         },
         editServices,
         overlays,
@@ -298,12 +307,16 @@ void MacroFeatureModule::update(uint32_t nowMs) {
     if (automation_handler_) {
         automation_handler_->update(nowMs);
     }
-    if (presenter_ && (nowMs - last_telemetry_refresh_ms_) >= 100U) {
-        last_telemetry_refresh_ms_ = nowMs;
-        presenter_->refreshRuntimeTelemetry();
-    }
     if (automation_playback_) {
         automation_playback_->update(nowMs);
+    }
+}
+
+FLASHMEM void MacroFeatureModule::attachTrackEditor(
+    core::handler::ProjectTrackEditorHandler& handler
+) {
+    if (performance_handler_ && edit_handler_) {
+        performance_handler_->attachEditors(*edit_handler_, handler);
     }
 }
 

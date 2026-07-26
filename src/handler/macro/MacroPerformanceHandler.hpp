@@ -11,6 +11,7 @@
 #include "handler/macro/MacroPerformanceModeWorkflow.hpp"
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "handler/macro/MacroStructureWorkflow.hpp"
+#include "handler/common/PressHoldTurnReleaseGesture.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroInteractionPolicy.hpp"
@@ -24,6 +25,9 @@ struct StructureUxTraceState;
 }
 
 namespace core::handler {
+
+class MacroEditHandler;
+class ProjectTrackEditorHandler;
 
 /**
  * Binds macro performance buttons/encoders to macro workflows.
@@ -67,27 +71,36 @@ public:
     MacroPerformanceHandler& operator=(const MacroPerformanceHandler&) = delete;
 
     void update(uint32_t nowMs);
+    void attachEditors(MacroEditHandler& macroEditor,
+                       ProjectTrackEditorHandler& trackEditor);
 
 private:
     void setupBindings();
     core::state::macro::MacroInteractionContext interactionContext() const;
     bool policyAllows(core::state::macro::MacroInteractionAction action) const;
+    void beginContextSelector();
+    void moveContextSelector(float delta);
+    void releaseContextSelector();
+    void beginMacroButtonGesture(uint8_t index);
+    void releaseMacroButtonGesture(uint8_t index);
 
+    core::state::macro::MacroUiState& macro_ui_;
     MacroStructureWorkflow structure_workflow_;
     MacroPerformanceDomainServices performance_services_;
     MacroPerformanceModeWorkflow performance_workflow_;
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
     TimeProviderFn time_provider_ = core::time_compat::millis;
-    bool nav_long_press_used_ = false;
-    bool selection_delete_press_active_ = false;
+    PressHoldTurnReleaseGesture context_selector_gesture_{};
+    MacroEditHandler* macro_editor_ = nullptr;
+    ProjectTrackEditorHandler* track_editor_ = nullptr;
     bool ignore_next_bottom_left_release_ = false;
     bool ignore_next_bottom_right_release_ = false;
+    bool paste_only_press_active_ = false;
+    uint16_t owned_macro_button_mask_ = 0U;
+    uint16_t edit_chord_macro_mask_ = 0U;
 #if defined(MS_UX_RECORDER)
     core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
 #endif

@@ -30,8 +30,17 @@ FORBIDDEN_HEAP_REACTIVE_STORAGE = (
     "std::vector<oc::state::Subscription>",
 )
 
+DIRECT_EXTMEM_OWNERS = (
+    "app/ExtmemAllocator.hpp",
+    "state/CoreState.cpp",
+)
+
 RETAINED_VIEW_CONSTRUCTION = re.compile(
     r"makeExtmemUnique\s*<\s*core::ui::([A-Za-z0-9_]+View)\s*>"
+)
+
+DIRECT_EXTMEM_CALL = re.compile(
+    r"\bextmem_(?:malloc|calloc|realloc|free)\s*\("
 )
 
 HOT_UI_FLASHMEM = re.compile(
@@ -69,6 +78,15 @@ def main() -> int:
     platformio = PLATFORMIO.read_text(encoding="utf-8")
     if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
         errors.append("platformio.ini: Teensy base must use the product linker script")
+    if not re.search(
+        r"^\s*post:script/pio/check_memory_budget\.py\s*$",
+        platformio,
+        flags=re.MULTILINE,
+    ):
+        errors.append(
+            "platformio.ini: Teensy builds must execute the post-link memory "
+            "and placement gate"
+        )
 
     for linker_path in (PRODUCT_LINKER, UX_LINKER, DIAGNOSTICS_LINKER):
         if not linker_path.exists():
@@ -133,6 +151,7 @@ def main() -> int:
         "elf_placement_violations" not in memory_gate
         or "product_placement_violations" not in memory_gate
         or "diagnostics_placement_violations" not in memory_gate
+        or "normal_build_diagnostics_violations" not in memory_gate
     ):
         errors.append(
             "script/pio/check_memory_budget.py: missing post-link placement gates"
@@ -145,6 +164,39 @@ def main() -> int:
         errors.append(
             "diagnostics/PerformanceReporter.cpp: samples and counters must stay in RAM2"
         )
+    memory_reporter = (
+        SOURCE_ROOT / "diagnostics" / "MemoryFootprintReporter.cpp"
+    ).read_text(encoding="utf-8")
+    if "DMAMEM uint8_t memoryHighWaterStorage" not in memory_reporter:
+        errors.append(
+            "diagnostics/MemoryFootprintReporter.cpp: memory counters must stay in RAM2"
+        )
+
+    extmem_allocator = (
+        SOURCE_ROOT / "app" / "ExtmemAllocator.hpp"
+    ).read_text(encoding="utf-8")
+    for marker in (
+        "trackExtmemAllocation",
+        "trackExtmemFree",
+    ):
+        if marker not in extmem_allocator:
+            errors.append(
+                "app/ExtmemAllocator.hpp: diagnostics must track every "
+                f"product EXTMEM lifetime via {marker}"
+            )
+
+    core_state = (SOURCE_ROOT / "state" / "CoreState.cpp").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "trackExtmemAllocation",
+        "trackExtmemFree",
+    ):
+        if marker not in core_state:
+            errors.append(
+                "state/CoreState.cpp: custom PendingApply EXTMEM lifetime "
+                f"must call {marker}"
+            )
 
     state_diagnostics = (
         SOURCE_ROOT / "state" / "CoreStateDiagnostics.cpp"
@@ -171,6 +223,11 @@ def main() -> int:
                 errors.append(
                     f"{rel}: fixed UI signal topology must not allocate via {marker}"
                 )
+
+        if DIRECT_EXTMEM_CALL.search(content) and rel not in DIRECT_EXTMEM_OWNERS:
+            errors.append(
+                f"{rel}: direct EXTMEM allocation bypasses the tracked owners"
+            )
 
         if not rel.startswith("diagnostics/") and "[Perf]" in content:
             errors.append(f"{rel}: performance log formatting belongs in diagnostics/")

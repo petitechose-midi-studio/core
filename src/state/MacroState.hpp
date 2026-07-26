@@ -62,6 +62,7 @@ struct MacroState {
     MacroSlot slots[MACRO_COUNT];
 
     MacroState();
+    ~MacroState();
 
     MacroSlot& operator[](uint8_t index) { return slots[index]; }
     const MacroSlot& operator[](uint8_t index) const { return slots[index]; }

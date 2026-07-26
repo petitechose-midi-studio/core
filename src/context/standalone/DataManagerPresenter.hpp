@@ -32,6 +32,7 @@ public:
                          ms::ui::VirtualListSelectorOverlay& dialogOverlay,
                          core::ui::ContextSoftkeyBar& softkeyBar,
                          core::ui::TransportBar& transportBar);
+    ~DataManagerPresenter();
 
     [[nodiscard]] bool bind();
 

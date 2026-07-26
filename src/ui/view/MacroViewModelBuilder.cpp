@@ -3,10 +3,10 @@
 #include <cstdio>
 
 #include <config/PlatformCompat.hpp>
+#include <oc/diagnostics/Performance.hpp>
 #include "config/Timing.hpp"
 #include "state/macro/MacroInteractionContextBuilder.hpp"
 #include "state/macro/MacroInteractionPolicy.hpp"
-#include "state/macro/MacroSelectionDeleteAction.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
@@ -31,7 +31,7 @@ uint8_t clampPagePreviewIndex(uint8_t index) {
     return static_cast<uint8_t>(std::min<uint16_t>(index, core::state::macro::PAGE_COUNT - 1U));
 }
 
-core::state::macro::MacroInteractionContext macroInteractionContext(
+FLASHMEM core::state::macro::MacroInteractionContext macroInteractionContext(
     const MacroViewModelSource& source
 ) {
     return core::state::macro::buildMacroInteractionContext(
@@ -66,47 +66,20 @@ ContextActionStripVisualState macroVisual(
     }
 }
 
-ContextActionStripVisualState selectionDeleteVisual(
-    core::state::macro::MacroSelectionDeletePresentationState state
-) {
-    using Presentation = core::state::macro::MacroSelectionDeletePresentationState;
-    switch (state) {
-        case Presentation::AVAILABLE:
-            return ContextActionStripVisualState::AVAILABLE;
-        case Presentation::PRESSED:
-            return ContextActionStripVisualState::PRESSED;
-        case Presentation::ARMED:
-            return ContextActionStripVisualState::ARMED;
-        case Presentation::CANCELLED:
-            return ContextActionStripVisualState::CANCELLED;
-        case Presentation::APPLIED:
-            return ContextActionStripVisualState::APPLIED;
-        case Presentation::DISABLED:
-        default:
-            return ContextActionStripVisualState::DISABLED;
-    }
-}
-
 }  // namespace
 
 FLASHMEM MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource& source) {
+    OC_PERF_SCOPE(perfProjection, "ui.macro.projection.header");
     MacroHeaderBarProps props;
+    const auto focus = core::state::macro::effectiveMacroNavigationFocus(
+        source.navigationFocus.get()
+    );
     const bool focusingTrack =
-        !source.trackNavigation.selection.active.get() &&
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
+        focus == core::state::StructureNavigationFocus::TRACK;
     const bool focusingPage =
-        !source.macroUi.pageSelection.active.get() &&
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE;
-    const bool selectingTrack =
-        source.trackNavigation.selection.active.get() &&
-        source.trackNavigation.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
-    const bool selectingPage =
-        source.macroUi.pageSelection.active.get() &&
-        source.macroUi.pageSelection.scope.get() == core::state::StructureSelectionScope::PAGE;
-    const bool previewAddTrackSlot =
-        !source.trackNavigation.selection.active.get() && source.trackNavigation.previewAddSlot.get();
-    const bool previewAddPageSlot =
-        !source.macroUi.pageSelection.active.get() && source.macroUi.previewAddPageSlot.get();
+        focus == core::state::StructureNavigationFocus::PAGE;
+    const bool previewAddTrackSlot = source.trackNavigation.previewAddSlot.get();
+    const bool previewAddPageSlot = source.macroUi.previewAddPageSlot.get();
     const uint8_t activeTrack = source.sharedTrackActive.get();
     const uint8_t addTrackIndex =
         previewAddTrackSlot
@@ -116,11 +89,10 @@ FLASHMEM MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource
         clampTrackPreviewIndex(source.trackNavigation.previewTrackIndex.get());
     const bool previewTrackAddSlot =
         previewAddTrackSlot &&
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK &&
+        focus == core::state::StructureNavigationFocus::TRACK &&
         addTrackIndex < core::state::macro::TRACK_COUNT;
-    const uint8_t displayTrack = selectingTrack
-        ? source.trackNavigation.selection.cursorIndex.get()
-        : ((focusingTrack || previewTrackAddSlot) ? previewTrackIndex : activeTrack);
+    const uint8_t displayTrack =
+        (focusingTrack || previewTrackAddSlot) ? previewTrackIndex : activeTrack;
     const auto& displayTrackData = source.pages.tracks[displayTrack];
     const uint8_t addPageIndex = nextAddIndexOrCount(
         displayTrackData.enabledPageMask,
@@ -128,17 +100,16 @@ FLASHMEM MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource
     );
     const uint8_t previewPageIndex =
         (previewAddPageSlot &&
-         source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
+         focus == core::state::StructureNavigationFocus::PAGE &&
          addPageIndex < core::state::macro::PAGE_COUNT)
             ? addPageIndex
             : clampPagePreviewIndex(source.macroUi.previewPageIndex.get());
     const bool previewPageAddSlot =
         previewAddPageSlot &&
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
+        focus == core::state::StructureNavigationFocus::PAGE &&
         addPageIndex < core::state::macro::PAGE_COUNT;
-    const uint8_t displayPage = selectingPage
-        ? source.macroUi.pageSelection.cursorIndex.get()
-        : ((focusingPage || previewPageAddSlot) ? previewPageIndex : displayTrackData.activePage);
+    const uint8_t displayPage =
+        (focusingPage || previewPageAddSlot) ? previewPageIndex : displayTrackData.activePage;
 
     props.activeTrack = activeTrack;
     props.previewTrack = displayTrack;
@@ -148,19 +119,12 @@ FLASHMEM MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource
     props.addTrackIndex = addTrackIndex;
     props.enabledMask = displayTrackData.enabledPageMask;
     props.trackEnabledMask = source.sharedTrackEnabledMask.get();
-    props.selectedPageMask =
-        (source.macroUi.pageSelection.active.get() &&
-         source.macroUi.pageSelection.scope.get() == core::state::StructureSelectionScope::PAGE)
-            ? source.macroUi.pageSelection.selectedMask.get()
-            : 0;
     props.performanceOverlayMode = source.macroUi.performanceOverlayMode.get();
     props.automationTakePhase = source.macroUi.automationTake.phase;
     props.automationTakeTiming = source.macroUi.automationTake.timing;
     props.automationTakeTouchedMask = source.macroUi.automationTake.touchedMask;
     props.focusingPage = focusingPage;
     props.focusingTrack = focusingTrack;
-    props.selectingPage = selectingPage;
-    props.selectingTrack = selectingTrack;
     props.previewPageAddSlot = previewPageAddSlot;
     props.previewTrackAddSlot = previewTrackAddSlot;
     props.automationRecordingStatus = source.macroUi.automationRecordingStatus.get();
@@ -176,6 +140,29 @@ FLASHMEM MacroHeaderBarProps buildMacroHeaderBarProps(const MacroViewModelSource
 FLASHMEM StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
     const MacroViewModelSource& source
 ) {
+    OC_PERF_SCOPE(perfProjection, "ui.macro.projection.slot-overlay");
+    if (source.macroUi.contextSelector.visible) {
+        const auto focus = source.macroUi.contextSelector.previewFocus;
+        const bool track = focus == core::state::StructureNavigationFocus::TRACK;
+        const bool page = focus == core::state::StructureNavigationFocus::PAGE;
+        StepPropertySelectionOverlayProps props{
+            .visible = true,
+            .customContent = true,
+            .icon = track
+                ? standalone::icons::TRACK_MUTE
+                : page ? standalone::icons::LENGTH : standalone::icons::KNOB,
+            .label = track ? "TRACK" : page ? "PAGE" : "MACRO",
+            .useValueText = true,
+            .color = standalone::theme::color::MACRO_CC_COLOR,
+        };
+        std::snprintf(
+            props.valueText.data(),
+            props.valueText.size(),
+            "TURN + RELEASE"
+        );
+        return props;
+    }
+
     const auto mode = source.macroUi.performanceOverlayMode.get();
     if (mode == core::state::macro::MacroPerformanceOverlayMode::NONE) {
         return {.visible = false};
@@ -234,32 +221,12 @@ FLASHMEM StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
 }
 
 FLASHMEM ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewModelSource& source) {
+    OC_PERF_SCOPE(perfProjection, "ui.macro.projection.left-actions");
     using Visual = ContextActionStripVisualState;
     using Tone = ContextActionStripTone;
 
     ContextActionStripProps props;
     props.visible = true;
-
-    if (source.trackNavigation.selection.active.get() || source.macroUi.pageSelection.active.get()) {
-        const bool trackScope =
-            source.trackNavigation.selection.active.get();
-        props.slots[0] = {
-            .visualState = Visual::ACTIVE,
-            .tone = Tone::NEUTRAL,
-            .showIcon = true,
-            .icon = standalone::icons::ACTION_CANCEL
-        };
-        props.slots[1] = {
-            .visualState = Visual::ACTIVE,
-            .tone = Tone::NEUTRAL,
-            .showIcon = false,
-            .icon = nullptr,
-            .showLabel = true,
-            .label = trackScope ? "TRK" : "PG"
-        };
-        props.slots[2].visualState = Visual::HIDDEN;
-        return props;
-    }
 
     const auto performanceMode = source.macroUi.performanceOverlayMode.get();
     props.slots[0].visualState = Visual::HIDDEN;
@@ -286,62 +253,13 @@ FLASHMEM ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewM
 }
 
 FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroViewModelSource& source) {
+    OC_PERF_SCOPE(perfProjection, "ui.macro.projection.bottom-actions");
     ContextActionStripProps props;
     props.visible = true;
 
-    const auto selectionFeedback = source.macroUi.selectionDeleteFeedback.get();
-    const bool appliedSelectionDeleteFeedback =
-        selectionFeedback.active &&
-        selectionFeedback.action == core::state::contextual::ContextActionId::REMOVE &&
-        selectionFeedback.status ==
-            core::state::contextual::OperationFeedbackStatus::APPLIED;
-    if (source.trackNavigation.selection.active.get() ||
-        source.macroUi.pageSelection.active.get() ||
-        appliedSelectionDeleteFeedback) {
-        const auto context = macroInteractionContext(source);
-        const auto presentation = appliedSelectionDeleteFeedback
-            ? core::state::macro::MacroSelectionDeletePresentationState::APPLIED
-            : core::state::macro::macroSelectionDeletePresentationState(
-                context.selectionDeleteAction,
-                source.macroUi.selectionDeleteGuard.get(),
-                selectionFeedback
-            );
-        const bool armed = presentation ==
-            core::state::macro::MacroSelectionDeletePresentationState::ARMED;
-        const bool cancelled = presentation ==
-            core::state::macro::MacroSelectionDeletePresentationState::CANCELLED;
-        const bool applied = presentation ==
-            core::state::macro::MacroSelectionDeletePresentationState::APPLIED;
-        props.slots[0] = {
-            .visualState = selectionDeleteVisual(presentation),
-            .tone = applied ? ContextActionStripTone::POSITIVE
-                            : (cancelled ? ContextActionStripTone::WARNING
-                                         : ContextActionStripTone::DESTRUCTIVE),
-            .showIcon = true,
-            .icon = applied ? standalone::icons::ACTION_VALIDATE
-                            : (cancelled ? standalone::icons::ACTION_CANCEL
-                                         : standalone::icons::ACTION_REMOVE),
-            .holdActive = armed,
-            .holdStartedAtMs = source.macroUi.selectionDeleteGuard.get().pressedAtMs,
-            .holdDurationMs = context.selectionDeleteAction.guard.durationMs,
-        };
-        props.slots[1].visualState = ContextActionStripVisualState::HIDDEN;
-        if (appliedSelectionDeleteFeedback) {
-            props.slots[2].visualState = ContextActionStripVisualState::HIDDEN;
-        } else {
-            props.slots[2] = {
-                .visualState = ContextActionStripVisualState::ACTIVE,
-                .tone = ContextActionStripTone::CONSTRUCTIVE,
-                .showIcon = true,
-                .icon = standalone::icons::ACTION_COPY
-            };
-        }
-        return props;
-    }
-
-    const bool trackFocus =
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
     const auto context = macroInteractionContext(source);
+    const bool trackFocus =
+        context.navigationFocus == core::state::StructureNavigationFocus::TRACK;
     const auto policy = core::state::macro::MacroInteractionPolicy::actionStrip(context);
     const bool canPaste = context.compatibleClipboardAvailable;
     const auto& holdState = trackFocus ? source.trackNavigation.hold : source.macroUi.pageHold;
@@ -378,85 +296,119 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
     return props;
 }
 
+FLASHMEM MacroWidgetProps buildMacroWidgetProps(
+    const MacroViewModelSource& source,
+    uint8_t index
+) {
+    OC_PERF_SCOPE(perfProjection, "ui.macro.projection.knob");
+    OC_PERF_UNITS(perfProjection, index, 0U);
+    if (index >= Config::MACRO_COUNT) return {};
+
+    const auto focus = core::state::macro::effectiveMacroNavigationFocus(
+        source.navigationFocus.get()
+    );
+    const auto& config = source.pages.activeConfigs[index];
+    const bool active = source.pages.isMacroSlotActive(index);
+    const bool addSlot = !active && source.pages.isMacroAddSlot(index);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = source.pages.currentActiveTrack(),
+        .page = source.pages.currentActivePage(),
+        .macro = index,
+    };
+    core::state::modulation::ProjectControlMacroDestinationView controlSlot{};
+    const bool controlSlotValid =
+        core::state::modulation::readProjectControlMacroDestination(
+            source.pages.control,
+            address,
+            controlSlot
+        );
+    const uint16_t overrideBit = static_cast<uint16_t>(1U << index);
+    const bool manualOverride =
+        (source.macroUi.automationManualOverrideMask.get() & overrideBit) != 0;
+    const bool focused =
+        focus == core::state::StructureNavigationFocus::STEP &&
+        source.macroUi.focusedMacroSlot.get() == index;
+    const bool recording =
+        source.macroUi.automationTake.phase ==
+            core::state::macro::MacroAutomationTakePhase::RECORDING &&
+        source.macroUi.automationTake.track == source.pages.currentActiveTrack() &&
+        source.macroUi.automationTake.page == source.pages.currentActivePage() &&
+        source.macroUi.automationTake.activeFor(index);
+    const bool automationStored =
+        controlSlotValid && controlSlot.automation.stored();
+    const bool modulationStored =
+        controlSlotValid && controlSlot.modulationCount > 0U;
+    const bool automationPlayback =
+        automationStored && controlSlot.automation.enabled;
+    const bool modulationPlayback =
+        modulationStored && controlSlot.activeModulationCount > 0U;
+    const bool modulationPaused =
+        modulationPlayback && controlSlot.modulationCount == 1U &&
+        controlSlot.primaryModulation.amount == 0.0f;
+    const auto& projection = source.macroUi.runtimeProjections[index];
+    const bool projectionValid =
+        source.macroUi.runtimeProjectionValidFor(
+            address.track,
+            address.page,
+            index
+        );
+    const float fallbackValue = source.macros.slots[index].value.get();
+    const float projectedBase = projectionValid
+        ? projection.base
+        : fallbackValue;
+    const float projectedModulation = projectionValid
+        ? projection.modulation
+        : 0.0f;
+    // A physical Record gesture is newer than the last periodic runtime
+    // frame. Prioritize its Base immediately while retaining the current
+    // relative Modulation contribution; otherwise the ring appears frozen
+    // until the next playback evaluation.
+    const float visibleBase = recording
+        ? source.macroUi.automationTake.latestBase(index)
+        : projectedBase;
+    const float visibleUnclamped = visibleBase + projectedModulation;
+    const float visibleResolved = recording
+        ? core::state::macro::macroAutomationClamp01(visibleUnclamped)
+        : (projectionValid ? projection.resolved : fallbackValue);
+    return {
+        .value = visibleResolved,
+        .baseValue = visibleBase,
+        .modulationDelta = projectedModulation,
+        .modulationDepth = controlSlotValid
+            ? controlSlot.primaryModulation.amount
+            : 0.0f,
+        .modulationSourceCount = static_cast<uint8_t>(
+            controlSlotValid
+                ? std::min<uint16_t>(controlSlot.modulationCount, 7U)
+                : 0U
+        ),
+        .cc = config.cc,
+        .automationStored = active && automationStored,
+        .automationActive = active && automationPlayback && !manualOverride,
+        .modulationStored = active && modulationStored,
+        .modulationActive = active && modulationPlayback &&
+            !modulationPaused,
+        .modulationPaused = active && modulationPaused,
+        .automationRecording = active && recording,
+        .automationManualOverride = active && manualOverride,
+        .clippedLow = recording
+            ? visibleUnclamped < 0.0f
+            : (projectionValid && projection.clippedLow),
+        .clippedHigh = recording
+            ? visibleUnclamped > 1.0f
+            : (projectionValid && projection.clippedHigh),
+        .active = active,
+        .addSlot = addSlot,
+        .focused = focused,
+    };
+}
+
 FLASHMEM MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource& source) {
+    OC_PERF_SCOPE(perfProjection, "ui.macro.projection.frame");
     MacroViewFrameState frame;
-
-    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        const auto& config = source.pages.activeConfigs[i];
-        const bool active = source.pages.isMacroSlotActive(i);
-        const bool addSlot = !active && source.pages.isMacroAddSlot(i);
-        const auto address = core::state::macro::MacroAutomationSlotAddress{
-            .track = source.pages.currentActiveTrack(),
-            .page = source.pages.currentActivePage(),
-            .macro = i,
-        };
-        core::state::modulation::ProjectControlMacroSlotView controlSlot{};
-        const bool controlSlotValid =
-            core::state::modulation::readProjectControlMacroSlot(
-                source.pages.control,
-                address,
-                controlSlot
-            );
-        const uint16_t overrideBit = static_cast<uint16_t>(1U << i);
-        const bool manualOverride =
-            (source.macroUi.automationManualOverrideMask.get() & overrideBit) != 0;
-        const bool focused =
-            source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP &&
-            source.macroUi.focusedMacroSlot.get() == i;
-        const bool recording =
-            source.macroUi.automationTake.phase ==
-                core::state::macro::MacroAutomationTakePhase::RECORDING &&
-            source.macroUi.automationTake.track == source.pages.currentActiveTrack() &&
-            source.macroUi.automationTake.page == source.pages.currentActivePage() &&
-            source.macroUi.automationTake.activeFor(i);
-        const bool automationStored =
-            controlSlotValid && controlSlot.automationStored;
-        const bool modulationStored =
-            controlSlotValid && controlSlot.modulationStored;
-        const bool automationPlayback =
-            automationStored && controlSlot.automationEnabled;
-        const bool modulationPlayback =
-            modulationStored && controlSlot.activeModulationCount > 0U;
-        const bool modulationPaused =
-            modulationPlayback && controlSlot.modulationCount == 1U &&
-            controlSlot.compatibility.modulationDepth == 0.0f;
-        const auto& projection = source.macroUi.runtimeProjections[i];
-        const bool projectionValid =
-            source.macroUi.runtimeProjectionValidFor(
-                address.track,
-                address.page,
-                i
-            );
-        const float fallbackValue = source.macros.slots[i].value.get();
-        frame.macros[i] = {
-            .value = projectionValid ? projection.resolved : fallbackValue,
-            .baseValue = projectionValid ? projection.base : fallbackValue,
-            .modulationDelta = projectionValid ? projection.modulation : 0.0f,
-            .modulationDepth = controlSlotValid
-                ? controlSlot.compatibility.modulationDepth
-                : 0.0f,
-            .modulationSourceCount = static_cast<uint8_t>(
-                controlSlotValid
-                    ? std::min<uint16_t>(controlSlot.modulationCount, 7U)
-                    : 0U
-            ),
-            .cc = config.cc,
-            .automationStored = active && automationStored,
-            .automationActive = active && automationPlayback && !manualOverride,
-            .modulationStored = active && modulationStored,
-            .modulationActive = active && modulationPlayback &&
-                !modulationPaused,
-            .modulationPaused = active && modulationPaused,
-            .automationRecording = active && recording,
-            .automationManualOverride = active && manualOverride,
-            .clippedLow = projectionValid && projection.clippedLow,
-            .clippedHigh = projectionValid && projection.clippedHigh,
-            .active = active,
-            .addSlot = addSlot,
-            .focused = focused,
-        };
+    for (uint8_t index = 0; index < Config::MACRO_COUNT; ++index) {
+        frame.macros[index] = buildMacroWidgetProps(source, index);
     }
-
     return frame;
 }
 

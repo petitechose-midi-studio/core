@@ -15,12 +15,12 @@
 #endif
 
 #include "persistence/ProjectFileLimits.hpp"
-#include "persistence/ProjectMigration.hpp"
+#include "persistence/ProjectFileInspection.hpp"
 #include "StepGraphPresetTool.hpp"
 
 namespace {
 
-namespace migration = core::persistence::project_file_migration;
+namespace inspection = core::persistence::project_file_inspection;
 namespace project_file = core::persistence::project_file;
 namespace step_graph_preset_tool = core::tools::ms_core_file_tool;
 
@@ -37,8 +37,6 @@ const char* loadStatusName(project_file::LoadStatus status) {
     switch (status) {
         case project_file::LoadStatus::OK:
             return "ok";
-        case project_file::LoadStatus::MIGRATED:
-            return "migrated";
         case project_file::LoadStatus::PARTIAL:
             return "partial";
         case project_file::LoadStatus::FAILED:
@@ -118,8 +116,6 @@ const char* codeName(project_file::LoadCode code) {
             return "defaulted_chunk";
         case project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION:
             return "unsupported_chunk_version";
-        case project_file::LoadCode::MIGRATED_CHUNK:
-            return "migrated_chunk";
         default:
             return "unknown";
     }
@@ -153,13 +149,13 @@ bool writeFile(const std::string& path, const uint8_t* data, uint32_t size) {
     return static_cast<bool>(file);
 }
 
-void printJsonReport(const migration::Result& result,
+void printJsonReport(const inspection::Result& result,
                      const project_file::LoadReport& report,
                      const char* operation) {
     std::cout << "{";
     std::cout << "\"operation\":\"" << operation << "\",";
     std::cout << "\"fileKind\":\"project\",";
-    std::cout << "\"status\":\"" << migration::statusName(result.status) << "\",";
+    std::cout << "\"status\":\"" << inspection::statusName(result.status) << "\",";
     std::cout << "\"loadStatus\":\"" << loadStatusName(result.loadStatus) << "\",";
     std::cout << "\"containerStatus\":\"" << containerStatusName(result.containerStatus) << "\",";
     std::cout << "\"overwriteSafe\":" << (result.overwriteSafe ? "true" : "false") << ",";
@@ -183,10 +179,10 @@ void printJsonReport(const migration::Result& result,
     std::cout << "]}\n";
 }
 
-void printTextReport(const migration::Result& result,
+void printTextReport(const inspection::Result& result,
                      const project_file::LoadReport& report,
                      const char* operation) {
-    std::cout << operation << ": " << migration::statusName(result.status)
+    std::cout << operation << ": " << inspection::statusName(result.status)
               << " load=" << loadStatusName(result.loadStatus)
               << " container=" << containerStatusName(result.containerStatus)
               << " overwriteSafe=" << (result.overwriteSafe ? "true" : "false")
@@ -204,7 +200,7 @@ void printTextReport(const migration::Result& result,
     }
 }
 
-void printReport(const migration::Result& result,
+void printReport(const inspection::Result& result,
                  const project_file::LoadReport& report,
                  const Args& args) {
     if (args.json) {
@@ -214,14 +210,13 @@ void printReport(const migration::Result& result,
     }
 }
 
-int statusExitCode(migration::Status status) {
+int statusExitCode(inspection::Status status) {
     switch (status) {
-        case migration::Status::CURRENT:
-        case migration::Status::MIGRATED:
+        case inspection::Status::CURRENT:
             return 0;
-        case migration::Status::PARTIAL:
+        case inspection::Status::PARTIAL:
             return 2;
-        case migration::Status::FAILED:
+        case inspection::Status::FAILED:
         default:
             return 1;
     }
@@ -231,7 +226,7 @@ void printUsage() {
     std::cerr << "Usage:\n"
               << "  ms-core-file-tool inspect <file.mspj> [--json]\n"
               << "  ms-core-file-tool validate <file.mspj> [--json]\n"
-              << "  ms-core-file-tool migrate <file.mspj> --out <file.mspj> "
+              << "  ms-core-file-tool rewrite <file.mspj> --out <file.mspj> "
                  "[--json] [--allow-partial]\n"
               << "  ms-core-file-tool inspect-step-graph-preset <file.mssp> [--json]\n"
               << "  ms-core-file-tool validate-step-graph-preset <file.mssp> [--json]\n"
@@ -297,14 +292,14 @@ bool parseArgs(int argc, char** argv, Args& out) {
     }
     if (out.command != "inspect" &&
         out.command != "validate" &&
-        out.command != "migrate" &&
+        out.command != "rewrite" &&
         !step_graph_preset_tool::isStepGraphPresetCommand(out.command)) {
         return false;
     }
     const bool renamePreset = out.command == "rename-step-graph-preset";
-    if ((out.command == "migrate" || renamePreset) && out.outputPath.empty()) return false;
-    if (out.command != "migrate" && !renamePreset && !out.outputPath.empty()) return false;
-    const bool writesOutput = out.command == "migrate" || renamePreset;
+    if ((out.command == "rewrite" || renamePreset) && out.outputPath.empty()) return false;
+    if (out.command != "rewrite" && !renamePreset && !out.outputPath.empty()) return false;
+    const bool writesOutput = out.command == "rewrite" || renamePreset;
     if (writesOutput && sameOutputPath(out.inputPath, out.outputPath)) return false;
     if (renamePreset && out.semanticName.empty()) return false;
     if (!renamePreset && !out.semanticName.empty()) return false;
@@ -352,10 +347,10 @@ int runMain(int argc, char** argv) {
     }
 
     project_file::LoadReport report{};
-    migration::Result result{};
-    if (args.command == "migrate") {
+    inspection::Result result{};
+    if (args.command == "rewrite") {
         std::vector<uint8_t> output(core::persistence::PROJECT_FILE_MAX_SIZE);
-        result = migration::migrateProjectBytesToCurrent(
+        result = inspection::rewriteProjectBytes(
             input.data(),
             static_cast<uint32_t>(input.size()),
             output.data(),
@@ -370,7 +365,7 @@ int runMain(int argc, char** argv) {
             }
         }
     } else {
-        result = migration::inspectProjectBytes(
+        result = inspection::inspectProjectBytes(
             input.data(),
             static_cast<uint32_t>(input.size()),
             &report
@@ -378,7 +373,7 @@ int runMain(int argc, char** argv) {
     }
 
     printReport(result, report, args);
-    if (args.command == "validate" && result.status != migration::Status::CURRENT) {
+    if (args.command == "validate" && result.status != inspection::Status::CURRENT) {
         return statusExitCode(result.status);
     }
     return statusExitCode(result.status);

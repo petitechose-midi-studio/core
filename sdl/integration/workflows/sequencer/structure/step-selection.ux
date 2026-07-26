@@ -1,49 +1,46 @@
-# UX workflow: enter Step selection from the semantic action selector.
-# Purpose: validates the explicit LEFT_BOTTOM Select action, immediate selection
-# feedback, sparse copy footprint, paste preview, and one complete paste action.
+# UX workflow: enter Step selection from a stationary NAV hold.
+# Purpose: validates contextual selection entry, immediate feedback, sparse copy
+# footprint, paste preview, and one complete paste action.
 # Expect: capture_changed:step_selection_entered=steps_3_5_selected, capture_changed:paste_preview_step_6=pasted_steps
 
 0 scenario sequencer
 50 capture screen pattern_focus
 
-# Move to Step, then choose Select steps from the LEFT_BOTTOM semantic selector.
-150 tap NAV 60
+# Move to Step, then hold NAV without rotation through the selection timeout.
+150 button NAV down
+210 encoder NAV 1
+270 button NAV up
 350 capture screen step_focus
-450 button LEFT_BOTTOM down
-650 capture screen variation_action_selected
-750 encoder NAV 1
-800 encoder NAV 1
-850 encoder NAV 1
-900 encoder NAV 1
-950 capture screen select_steps_action_selected
-1000 button LEFT_BOTTOM up
-1250 capture screen step_selection_entered
+450 button NAV down
+1510 tick
+1570 button NAV up
+1800 capture screen step_selection_entered
 
 # Select visible step 3 with its macro button.
-1350 tap MACRO_3 60
-1550 capture screen step_3_selected
+1900 tap MACRO_3 60
+2100 capture screen step_3_selected
 
 # Move cursor to step 5 and select it, leaving step 4 unselected.
-1650 encoder NAV 2
-1850 capture screen cursor_step_5
-1950 tap MACRO_5 60
-2150 capture screen steps_3_5_selected
+2200 encoder NAV 2
+2400 capture screen cursor_step_5
+2500 tap MACRO_5 60
+2700 capture screen steps_3_5_selected
 
 # Long-pressing a Macro while selection is active must not open Step Editor.
-2250 button MACRO_3 down
-3320 tick
-3380 capture screen selection_blocks_step_edit_open
-3430 button MACRO_3 up
-3630 capture screen selection_still_active_after_macro_hold
+2800 button MACRO_3 down
+3870 tick
+3930 capture screen selection_blocks_step_edit_open
+3980 button MACRO_3 up
+4180 capture screen selection_still_active_after_macro_hold
 
 # Copy the sparse selection, move to step 6, preview its 6/8 footprint, paste.
-3730 tap BOTTOM_RIGHT 60
-3980 capture screen steps_copied
-4080 encoder NAV 1
-4280 capture screen paste_footprint_step_6
-4380 button BOTTOM_RIGHT down
-4580 capture screen paste_preview_step_6
-5450 tick
-5510 capture screen paste_hold_armed
-5560 button BOTTOM_RIGHT up
-5810 capture screen pasted_steps
+4280 tap BOTTOM_RIGHT 60
+4530 capture screen steps_copied
+4630 encoder NAV 1
+4830 capture screen paste_footprint_step_6
+4930 button BOTTOM_RIGHT down
+5130 capture screen paste_preview_step_6
+6000 tick
+6060 capture screen paste_hold_armed
+6110 button BOTTOM_RIGHT up
+6360 capture screen pasted_steps

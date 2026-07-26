@@ -19,10 +19,20 @@ namespace core::persistence {
  */
 class MacroPersistence {
 public:
+    struct LibrarySlotData {
+        std::array<
+            state::macro::MacroTrackData,
+            state::macro::TRACK_COUNT
+        > tracks{};
+        uint16_t enabledTrackMask =
+            state::macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
+        uint8_t activeTrack = 0U;
+    };
+
     static constexpr uint16_t LIBRARY_SLOT_COUNT = 16;
 
     static constexpr uint32_t LIBRARY_MAGIC = 0x4D4C4942;    // "MLIB"
-    static constexpr uint8_t LIBRARY_DATA_VERSION = 1;
+    static constexpr uint8_t LIBRARY_DATA_VERSION = 2;
     static constexpr uint16_t LIBRARY_PAYLOAD_SIZE =
         macro_track_codec::MACRO_TRACK_BANK_PAYLOAD_SIZE;
     static constexpr size_t LIBRARY_STORAGE_CAPACITY =
@@ -39,6 +49,7 @@ public:
     bool saveLibrarySlot(uint8_t slotIndex, const state::macro::MacroPagesState& pages);
     PersistenceWriteStatus saveLibrarySlotStatus(uint8_t slotIndex,
                                                  const state::macro::MacroPagesState& pages);
+    SlotLoadStatus loadLibrarySlot(uint8_t slotIndex, LibrarySlotData& out);
     SlotLoadStatus loadLibrarySlot(uint8_t slotIndex, state::macro::MacroPagesState& pages);
     bool eraseLibrarySlot(uint8_t slotIndex);
     PersistenceWriteStatus eraseLibrarySlotStatus(uint8_t slotIndex);

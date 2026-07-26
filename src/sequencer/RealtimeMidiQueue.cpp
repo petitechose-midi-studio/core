@@ -6,22 +6,15 @@
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
 
-#include "state/macro/MacroConstants.hpp"
-#include "state/sequencer/SequencerCcLaneDomain.hpp"
-#include "state/sequencer/SequencerTrackBankState.hpp"
+#include "state/shared/MidiCcDestinationResolver.hpp"
 
 namespace core::sequencer {
 
 static_assert(
-    RealtimeMidiQueue::MAX_SEQUENCER_CC_EVENTS_PER_FRAME ==
-    core::state::sequencer::SequencerTrackBankState::TRACK_COUNT *
-        core::state::sequencer::SequencerCcLaneBank::MAX_LANES
+    RealtimeMidiQueue::MAX_RESOLVED_CC_EVENTS_PER_FRAME ==
+    core::state::shared::MidiCcResolutionTelemetry::MAX_DESTINATIONS
 );
-static_assert(
-    RealtimeMidiQueue::MAX_MACRO_CC_EVENTS_PER_FRAME ==
-    core::state::macro::MACRO_COUNT
-);
-static_assert(RealtimeMidiQueue::MAX_QUEUE_DEPTH == 328U);
+static_assert(RealtimeMidiQueue::MAX_QUEUE_DEPTH == 576U);
 
 bool RealtimeMidiQueue::push(const RealtimeMidiEvent& event) {
     return pushBatch(&event, 1).ok();
@@ -31,22 +24,7 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::pushBatch(
     const RealtimeMidiEvent* events,
     size_t count
 ) {
-    return pushBatchImpl_(events, count, false, 0, false);
-}
-
-RealtimeMidiQueueBatchResult RealtimeMidiQueue::replaceTrackEventsWithBatch(
-    uint8_t trackIndex,
-    const RealtimeMidiEvent* events,
-    size_t count
-) {
-    return pushBatchImpl_(events, count, true, trackIndex, false);
-}
-
-RealtimeMidiQueueBatchResult RealtimeMidiQueue::replaceControlChangeEventsWithBatch(
-    const RealtimeMidiEvent* events,
-    size_t count
-) {
-    return pushBatchImpl_(events, count, false, 0, true);
+    return pushBatchImpl_(events, count);
 }
 
 RealtimeMidiQueueBatchResult RealtimeMidiQueue::replaceTrackEventsWithNoteOffBatch(
@@ -158,14 +136,14 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::replaceTrackEventsWithNoteOffBat
     for (uint8_t channel = 0; channel < channelCount; ++channel) {
         for (uint8_t note = 0; note < 128U; ++note) {
             if (!activeNotesByChannel[channel].test(note)) continue;
-            insertNoFail_(RealtimeMidiEvent{
-                .deadlineUs = deadlineUs,
-                .type = RealtimeMidiEventType::NoteOff,
-                .channel = channel,
-                .note = note,
-                .velocity = 0,
-                .trackIndex = trackIndex,
-            });
+            RealtimeMidiEvent noteOff{};
+            noteOff.deadlineUs = deadlineUs;
+            noteOff.type = RealtimeMidiEventType::NoteOff;
+            noteOff.trackIndex = trackIndex;
+            noteOff.channel = channel;
+            noteOff.note = note;
+            noteOff.velocity = 0U;
+            insertNoFail_(noteOff);
         }
     }
     diagnostics_.displacedNoteOnCount = realtimeMidiSaturatingAdd(
@@ -183,10 +161,7 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::replaceTrackEventsWithNoteOffBat
 
 RealtimeMidiQueueBatchResult RealtimeMidiQueue::pushBatchImpl_(
     const RealtimeMidiEvent* events,
-    size_t count,
-    bool cancelTrack,
-    uint8_t trackIndex,
-    bool cancelControlChanges
+    size_t count
 ) {
     RealtimeMidiQueueBatchResult result{};
     result.requestedCount = static_cast<uint16_t>(
@@ -198,8 +173,7 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::pushBatchImpl_(
         recordRejectedBatch_(events, count, true);
         return result;
     }
-    if ((count > 0 && events == nullptr) ||
-        (cancelTrack && trackIndex >= track_observers_.size())) {
+    if (count > 0 && events == nullptr) {
         result.status = RealtimeMidiQueueBatchStatus::INVALID_INPUT;
         recordRejectedBatch_(events, count, false);
         return result;
@@ -207,10 +181,7 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::pushBatchImpl_(
 
     uint16_t batchNoteOffCount = 0;
     for (size_t i = 0; i < count; ++i) {
-        if (!validEvent_(events[i]) ||
-            (cancelTrack && events[i].trackIndex != trackIndex) ||
-            (cancelControlChanges &&
-             events[i].type != RealtimeMidiEventType::ControlChange)) {
+        if (!validEvent_(events[i])) {
             result.status = RealtimeMidiQueueBatchStatus::INVALID_INPUT;
             recordRejectedBatch_(events, count, false);
             return result;
@@ -224,11 +195,6 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::pushBatchImpl_(
     size_t existingNoteOnCount = 0;
     size_t existingControlChangeCount = 0;
     for (size_t i = 0; i < count_; ++i) {
-        if ((cancelTrack && events_[i].trackIndex == trackIndex) ||
-            (cancelControlChanges &&
-             events_[i].type == RealtimeMidiEventType::ControlChange)) {
-            continue;
-        }
         ++survivorCount;
         if (events_[i].type == RealtimeMidiEventType::NoteOn) {
             ++existingNoteOnCount;
@@ -261,28 +227,8 @@ RealtimeMidiQueueBatchResult RealtimeMidiQueue::pushBatchImpl_(
         requiredEvictions - result.displacedNoteOnCount
     );
 
-    // Preflight above proves that every mutation below is no-fail. This makes
-    // cancellation/eviction plus insertion one observable transaction.
-    if (cancelTrack || cancelControlChanges) {
-        size_t index = 0;
-        while (index < count_) {
-            const bool removeTrack =
-                cancelTrack && events_[index].trackIndex == trackIndex;
-            const bool removeControl = cancelControlChanges &&
-                events_[index].type == RealtimeMidiEventType::ControlChange;
-            if (removeTrack || removeControl) {
-                remove_(
-                    index,
-                    removeTrack
-                        ? RealtimeMidiQueueLifecycleReason::TRACK_CANCELLED
-                        : RealtimeMidiQueueLifecycleReason::SOURCE_REPLACED
-                );
-                ++result.cancelledCount;
-                continue;
-            }
-            ++index;
-        }
-    }
+    // Preflight above proves that eviction plus insertion is one no-fail
+    // observable transaction.
 
     uint16_t noteOnsToEvict = result.displacedNoteOnCount;
     for (size_t i = count_; i > 0 && noteOnsToEvict > 0; --i) {
@@ -346,6 +292,40 @@ uint32_t RealtimeMidiQueue::cancelPendingEvents(uint8_t trackIndex) {
 
     if (removed > 0) {
         OC_PERF_RECORD("midi.queue.cancel-track", 0, removed, trackIndex);
+    }
+    return removed;
+}
+
+uint32_t RealtimeMidiQueue::cancelPendingNoteEvents(uint8_t trackIndex) {
+    uint32_t removed = 0U;
+    size_t index = 0U;
+    while (index < count_) {
+        const auto type = events_[index].type;
+        if (events_[index].trackIndex == trackIndex &&
+            (type == RealtimeMidiEventType::NoteOn ||
+             type == RealtimeMidiEventType::NoteOff)) {
+            remove_(index, RealtimeMidiQueueLifecycleReason::TRACK_CANCELLED);
+            ++removed;
+            continue;
+        }
+        ++index;
+    }
+    if (removed > 0U) {
+        OC_PERF_RECORD("midi.queue.cancel-track-notes", 0, removed, trackIndex);
+    }
+    return removed;
+}
+
+uint32_t RealtimeMidiQueue::cancelControlChangeEvents() {
+    uint32_t removed = 0U;
+    size_t index = 0U;
+    while (index < count_) {
+        if (events_[index].type == RealtimeMidiEventType::ControlChange) {
+            remove_(index, RealtimeMidiQueueLifecycleReason::SOURCE_REPLACED);
+            ++removed;
+            continue;
+        }
+        ++index;
     }
     return removed;
 }

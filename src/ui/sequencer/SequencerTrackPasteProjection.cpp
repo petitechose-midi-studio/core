@@ -11,46 +11,34 @@
 namespace core::ui::sequencer {
 
 FLASHMEM SequencerTrackPasteProjection projectSequencerTrackPaste(
-    const SequencerViewModelSource& source,
-    bool selectionActive
+    const SequencerViewModelSource& source
 ) {
     SequencerTrackPasteProjection projection{};
-    projection.targetTrack = selectionActive
+    projection.targetTrack = source.trackNavigation.previewAddSlot.get()
         ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-              source.trackNavigation.selection.cursorIndex.get()
+              source.trackNavigation.previewTrackIndex.get()
           )
-        : (source.trackNavigation.previewAddSlot.get()
-               ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-                     source.trackNavigation.previewTrackIndex.get()
-                 )
-               : core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-                     source.sharedTrackActive.get()
-                 ));
+        : core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+              source.sharedTrackActive.get()
+          );
 
     projection.plan = core::state::buildSequencerTrackClipboardTransferPlan(
         source.structureClipboard,
         source.tracks,
+        source.projectTracks,
         projection.targetTrack,
-        source.trackActivations.pendingTrackMask(),
-        &source.sequencer
+        source.trackActivations.pendingTrackMask()
     );
-    const uint16_t selectedEnabledMask = static_cast<uint16_t>(
-        source.trackNavigation.selection.selectedMask.get() &
-        source.sharedTrackEnabledMask.get()
-    );
-    projection.copyAvailable = selectionActive
-        ? selectedEnabledMask != 0
-        : !source.trackNavigation.previewAddSlot.get();
+    projection.copyAvailable = !source.trackNavigation.previewAddSlot.get();
     const auto& paste = source.sequencer.structureUi.trackPaste;
     if (paste.feedback.active && paste.plan.hasEntries()) {
         projection.plan = paste.plan;
-        projection.targetTrack = paste.plan.firstTarget;
+        projection.targetTrack = paste.plan.entry.targetTrack;
     }
     projection.guard = paste.guard;
     projection.feedback = paste.feedback;
     projection.operationGeneration = paste.operationGeneration;
     projection.activationGeneration = paste.activationGeneration;
-    projection.focusedIndex = paste.focusedIndex;
     projection.detailVisible = paste.detailVisible;
     projection.action =
         core::state::sequencer::buildSequencerTrackTransferActionSpec(
@@ -65,14 +53,9 @@ FLASHMEM SequencerTrackPasteProjection projectSequencerTrackPaste(
 FLASHMEM SequencerTrackPastePreflightViewModel projectSequencerTrackPastePreflight(
     const SequencerViewModelSource& source
 ) {
-    const bool selectionActive =
-        source.trackNavigation.selection.active.get() &&
-        source.trackNavigation.selection.scope.get() ==
-            core::state::StructureSelectionScope::TRACK;
-    const auto projection = projectSequencerTrackPaste(source, selectionActive);
-    const bool trackContext = selectionActive ||
-        source.navigationFocus.get() ==
-            core::state::StructureNavigationFocus::TRACK;
+    const auto projection = projectSequencerTrackPaste(source);
+    const bool trackContext = source.navigationFocus.get() ==
+        core::state::StructureNavigationFocus::TRACK;
     if (!trackContext && !projection.feedback.active) return {};
     std::array<
         core::state::sequencer::SequencerTrackActivationTelemetry,

@@ -1,15 +1,16 @@
 # UX workflow: author one named chord, invert and voice it, then inherit it.
 # Purpose: prove that the musician edits semantic intent while the preview shows
 # the exact sounding name/notes and the child reuses the same resolved result.
-# Expect: capture_changed:chord_row_single=chord_row_local, capture_changed:harmony_major=harmony_minor7, capture_changed:inversion_root=inversion_first, capture_changed:voicing_close=voicing_wide, capture_changed:step_1_enabled=chord_badge_on_grid
+# Expect: capture_changed:harmony_major=harmony_minor7, capture_changed:inversion_root=inversion_first, capture_changed:voicing_close=voicing_wide, capture_changed:step_1_enabled=chord_badge_on_grid
 
 0 scenario sequencer
 50 capture screen sequencer_ready
 
 # Move to Step focus, enable step 1, and open the Step Editor.
-150 tap NAV 60
-350 capture screen pattern_focus
-450 tap NAV 60
+150 capture screen pattern_focus
+450 button NAV down
+510 encoder NAV 1
+570 button NAV up
 650 capture screen step_focus
 750 tap MACRO_1 60
 950 capture screen step_1_enabled
@@ -26,17 +27,14 @@
 2620 encoder NAV 1
 2700 encoder NAV 1
 2900 capture screen chord_row_single
-3000 encoder OPT 0.3
-3300 capture screen chord_row_local
-
-# NAV opens the semantic editor. Change the named Harmony, then make the
-# resulting four-voice Minor 7 explicitly first-inversion and Wide.
-3400 tap NAV 60
-3650 capture screen chord_detail_mode
-3750 encoder NAV 1
-3900 capture screen harmony_major
-4000 encoder OPT 2.0
-4200 capture screen harmony_minor7
+# NAV opens the transactional semantic editor. Change the named Harmony, then
+# make the resulting four-voice Minor 7 explicitly first-inversion and Wide.
+3000 tap NAV 60
+3300 capture screen chord_detail_mode
+3400 encoder NAV 1
+3650 capture screen harmony_major
+3750 encoder OPT 2.0
+4100 capture screen harmony_minor7
 4300 encoder NAV 1
 4450 capture screen voices_four
 4550 encoder NAV 1
@@ -51,6 +49,7 @@
 # Close the detail, then close the editor and reveal the chord badge on the step tile.
 5650 tap NAV 60
 5850 capture screen chord_row_after_detail
+5880 tap BOTTOM_RIGHT 40
 5950 tap LEFT_TOP 60
 6250 capture screen chord_badge_on_grid
 
@@ -70,6 +69,7 @@
 8200 capture screen root_micro_row_for_inherit
 8300 tap NAV 60
 8600 capture screen child_context_after_chord_parent
+8620 tap BOTTOM_RIGHT 40
 8700 button MACRO_1 down
 9750 tick
 9800 capture screen child_step_editor_open
@@ -83,3 +83,5 @@
 10550 capture screen child_chord_row_inherit
 10650 tap NAV 60
 10950 capture screen child_chord_detail_inherit
+11050 tap BOTTOM_RIGHT 60
+11300 capture screen child_chord_published

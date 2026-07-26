@@ -2,7 +2,7 @@
 # Purpose: proves direct source access, full Project-source editing, and Back
 # restoring the exact assignment without introducing another navigation model.
 # Expect: capture_changed:assignment_focused=source_workspace, capture_changed:source_workspace=source_shape_edited, capture_changed:source_shape_edited=assignment_restored, capture_changed:assignment_restored=macro_editor_parent
-# Expect: semantic:source_workspace:effect=open_modulator_detail, semantic:source_shape_edited:effect=edit_modulator_property
+# Expect: semantic:source_workspace:effect=open_modulator_source, semantic:source_shape_edited:effect=edit_modulator_property
 
 0 scenario macro-multi-modulation
 80 capture screen macro_ready

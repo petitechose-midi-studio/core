@@ -25,8 +25,7 @@ void test_refresh_captures_active_editor_state() {
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
-    sequencer.pattern.length.set(12);
-    sequencer.pattern.midiChannel.set(4);
+    sequencer.pattern.setContentLength(12);
     sequencer.pattern.note[0] = 67;
     sequencer.pattern.bumpStepDataRevision();
 
@@ -36,7 +35,6 @@ void test_refresh_captures_active_editor_state() {
     const auto& snapshot = bank.activeSnapshot();
     assert(snapshot.activeTrack == 0);
     assert(snapshot.tracks[0].length == 12);
-    assert(snapshot.tracks[0].midiChannel == 4);
     assert(snapshot.tracks[0].note[0] == 67);
 
     std::cout << "[PASS] test_refresh_captures_active_editor_state\n";
@@ -48,11 +46,11 @@ void test_refresh_preserves_active_snapshot_until_commit() {
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     uint8_t index = bank.refresh();
     bank.commit(index);
 
-    sequencer.pattern.length.set(16);
+    sequencer.pattern.setContentLength(16);
     index = bank.refresh();
 
     assert(bank.activeSnapshot().tracks[0].length == 8);
@@ -70,7 +68,7 @@ void test_refresh_keeps_alternating_buffers_current_without_full_copy() {
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.bumpStepDataRevision();
     uint8_t index = bank.refresh();
@@ -87,6 +85,59 @@ void test_refresh_keeps_alternating_buffers_current_without_full_copy() {
     assert(bank.activeSnapshot().tracks[0].note[0] == 72);
 
     std::cout << "[PASS] test_refresh_keeps_alternating_buffers_current_without_full_copy\n";
+}
+
+void test_region_markers_invalidate_both_flat_runtime_buffers() {
+    core::state::sequencer::SequencerState sequencer;
+    core::state::sequencer::SequencerTrackBankState trackBank;
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{
+        sequencer,
+        trackBank,
+        projectNavigation,
+    };
+
+    uint8_t index = bank.refresh();
+    bank.commit(index);
+    index = bank.refresh();
+    bank.commit(index);
+
+    const auto before = core::sequencer::captureRuntimeStateSignature(
+        sequencer.pattern,
+        {},
+        {}
+    );
+    const uint32_t unchangedRevision = sequencer.pattern.patternTimingRevision.get();
+    // Reproduce a snapshot restore where the historical revision can be equal
+    // even though the persisted region changed.
+    sequencer.pattern.playStart = 1;
+    sequencer.pattern.loopStart = 2;
+    sequencer.pattern.loopEnd = 6;
+    assert(sequencer.pattern.patternTimingRevision.get() == unchangedRevision);
+    const auto after = core::sequencer::captureRuntimeStateSignature(
+        sequencer.pattern,
+        {},
+        {}
+    );
+    assert(!before.matches(after));
+    assert(after.matches(core::sequencer::captureRuntimeStateSignature(
+        sequencer.pattern,
+        {},
+        {}
+    )));
+
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.activeSnapshot().tracks[0].playStart == 1);
+    assert(bank.activeSnapshot().tracks[0].loopStart == 2);
+    assert(bank.activeSnapshot().tracks[0].loopEnd == 6);
+    index = bank.refresh();
+    bank.commit(index);
+    assert(bank.activeSnapshot().tracks[0].playStart == 1);
+    assert(bank.activeSnapshot().tracks[0].loopStart == 2);
+    assert(bank.activeSnapshot().tracks[0].loopEnd == 6);
+
+    std::cout << "[PASS] test_region_markers_invalidate_both_flat_runtime_buffers\n";
 }
 
 void test_refresh_skips_unchanged_cc_lane_payloads_per_buffer() {
@@ -165,21 +216,17 @@ void test_refresh_captures_inactive_bank_track() {
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
     auto& inactiveTrack = trackBank.track(2);
-    inactiveTrack.length.set(24);
-    inactiveTrack.midiChannel.set(2);
+    inactiveTrack.setContentLength(24);
     inactiveTrack.note[0] = 72;
     inactiveTrack.bumpStepDataRevision();
 
     trackBank.syncSharedTrackState(0x0005, 0);
-    assert(trackBank.setTrackMuted(2, true));
     const uint8_t index = bank.refresh();
     bank.commit(index);
 
     const auto& snapshot = bank.activeSnapshot();
     assert(snapshot.enabledMask == 0x0005);
-    assert(snapshot.mutedMask == 0x0004);
     assert(snapshot.tracks[2].length == 24);
-    assert(snapshot.tracks[2].midiChannel == 2);
     assert(snapshot.tracks[2].note[0] == 72);
 
     std::cout << "[PASS] test_refresh_captures_inactive_bank_track\n";
@@ -191,8 +238,7 @@ void test_refresh_switches_active_track_sources() {
     core::state::project::ProjectNavigationState projectNavigation;
     core::sequencer::SequencerRuntimeSnapshotBank bank{sequencer, trackBank, projectNavigation};
 
-    sequencer.pattern.length.set(12);
-    sequencer.pattern.midiChannel.set(4);
+    sequencer.pattern.setContentLength(12);
     sequencer.pattern.note[0] = 67;
     sequencer.pattern.bumpStepDataRevision();
 
@@ -201,13 +247,11 @@ void test_refresh_switches_active_track_sources() {
     bank.commit(index);
 
     auto& inactiveTrack0 = trackBank.track(0);
-    inactiveTrack0.length.set(8);
-    inactiveTrack0.midiChannel.set(1);
+    inactiveTrack0.setContentLength(8);
     inactiveTrack0.note[0] = 60;
     inactiveTrack0.bumpStepDataRevision();
 
-    sequencer.pattern.length.set(32);
-    sequencer.pattern.midiChannel.set(9);
+    sequencer.pattern.setContentLength(32);
     sequencer.pattern.note[0] = 80;
     sequencer.pattern.bumpStepDataRevision();
 
@@ -219,10 +263,8 @@ void test_refresh_switches_active_track_sources() {
     assert(snapshot.activeTrack == 2);
     assert(snapshot.enabledMask == 0x0005);
     assert(snapshot.tracks[0].length == 8);
-    assert(snapshot.tracks[0].midiChannel == 1);
     assert(snapshot.tracks[0].note[0] == 60);
     assert(snapshot.tracks[2].length == 32);
-    assert(snapshot.tracks[2].midiChannel == 9);
     assert(snapshot.tracks[2].note[0] == 80);
 
     std::cout << "[PASS] test_refresh_switches_active_track_sources\n";
@@ -236,8 +278,7 @@ void test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload() {
 
     trackBank.syncSharedTrackState(0x0003, 0);
     auto& staleTrack = trackBank.track(1);
-    staleTrack.length.set(16);
-    staleTrack.midiChannel.set(1);
+    staleTrack.setContentLength(16);
     staleTrack.setStepDataAt(0, 99, 111, 80);
     staleTrack.setEnabled(0, true);
 
@@ -249,9 +290,7 @@ void test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload() {
     assert(bank.activeSnapshot().tracks[1].enabledMask.test(0));
 
     sequencer.reset();
-    sequencer.pattern.midiChannel.set(1);
     trackBank.track(1).reset();
-    trackBank.track(1).midiChannel.set(1);
     trackBank.syncSharedTrackState(0x0003, 1);
 
     index = bank.refresh();
@@ -260,7 +299,6 @@ void test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload() {
     assert(bank.activeSnapshot().tracks[1].note[0] ==
            core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(!bank.activeSnapshot().tracks[1].enabledMask.test(0));
-    assert(bank.activeSnapshot().tracks[1].midiChannel == 1);
 
     index = bank.refresh();
     bank.commit(index);
@@ -359,6 +397,7 @@ int main() {
     test_refresh_captures_active_editor_state();
     test_refresh_preserves_active_snapshot_until_commit();
     test_refresh_keeps_alternating_buffers_current_without_full_copy();
+    test_region_markers_invalidate_both_flat_runtime_buffers();
     test_refresh_skips_unchanged_cc_lane_payloads_per_buffer();
     test_refresh_captures_inactive_bank_track();
     test_refresh_switches_active_track_sources();

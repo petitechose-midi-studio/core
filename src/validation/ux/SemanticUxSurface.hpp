@@ -19,7 +19,9 @@ public:
 
 class SemanticUxSurfaceRegistry final : public SemanticUxContextProvider {
 public:
-    static constexpr std::size_t CAPACITY = 16;
+    // The standalone application currently owns 18 semantic surfaces. Keep
+    // headroom here so adding a surface cannot silently evict global controls.
+    static constexpr std::size_t CAPACITY = 24;
 
     bool add(const SemanticUxSurface& surface, uint8_t priority = 128);
     void clear();

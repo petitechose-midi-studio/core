@@ -91,14 +91,14 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
     if (!container_ || !header_row_) return;
 
     const uint8_t displayTrack =
-        (props.selectingTrack || props.focusingTrack || props.previewTrackAddSlot)
+        (props.focusingTrack || props.previewTrackAddSlot)
             ? props.previewTrack
             : props.activeTrack;
     const uint8_t displayPage =
-        (props.selectingPage || props.focusingPage || props.previewPageAddSlot)
+        (props.focusingPage || props.previewPageAddSlot)
             ? props.previewPage
             : props.activePage;
-    const bool trackScope = props.selectingTrack || props.focusingTrack;
+    const bool trackScope = props.focusingTrack;
     char recordingLabel[16] = {};
     if (props.automationTakePhase ==
         core::state::macro::MacroAutomationTakePhase::ARMED) {
@@ -142,12 +142,9 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
                 core::state::macro::MacroPerformanceOverlayMode::NONE
             ? HEADER_BG_OPA_CLUTCH
             : HEADER_BG_OPA_IDLE;
-    rowProps.showCursor = props.selectingPage || props.focusingPage;
+    rowProps.showCursor = props.focusingPage;
     rowProps.cursorIndex = displayPage;
-    rowProps.selectedMask = props.selectingPage ? props.selectedPageMask : 0;
-    rowProps.cursorColor = (props.selectingPage || props.selectingTrack)
-        ? theme::color::TEXT_PRIMARY
-        : rowProps.accentColor;
+    rowProps.cursorColor = rowProps.accentColor;
     rowProps.cursorOpa = LV_OPA_COVER;
 
     for (uint8_t i = 0; i < rowProps.itemCount; ++i) {

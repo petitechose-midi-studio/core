@@ -8,8 +8,13 @@
 
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerCcLaneRuntime.hpp"
+#include "sequencer/TemporalMidiCcAuthorSpool.hpp"
 #include "state/shared/MidiCcDestinationResolver.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
+
+namespace core::sequencer {
+struct ProjectTrackRuntimeSnapshot;
+}
 
 namespace core::handler {
 
@@ -30,6 +35,7 @@ enum class MidiCcGlobalFrameStatus : uint8_t {
     NO_CHANGE,
     INVALID_SOURCE_FRAME,
     RESOLVE_FAILED,
+    TEMPORAL_REJECTED,
     QUEUE_REJECTED,
 };
 
@@ -57,6 +63,11 @@ struct MidiCcGlobalFrameDiagnostics {
     uint32_t publishedLaneFrameCount = 0;
     uint32_t resolvedLiveFrameCount = 0;
     uint32_t queueRejectedFrameCount = 0;
+    uint32_t temporalRejectedFrameCount = 0;
+    uint32_t stagedAuthorTransitionCount = 0;
+    uint32_t committedDeadlineGroupCount = 0;
+    uint32_t trackInvalidationCount = 0;
+    uint32_t laneGenerationInvalidationCount = 0;
     uint32_t pendingRemovalRetryCount = 0;
     uint32_t capturedProjectTriggerEventCount = 0;
     uint32_t projectTriggerEventOverflowCount = 0;
@@ -68,7 +79,9 @@ struct MidiCcGlobalFrameDiagnostics {
  * Producers publish complete, immutable frames. Manual entries are ordinary
  * persistent LIVE_MANUAL candidates: they remain present until Gate 7 Resume Auto
  * removes them. The single consumer composes Manual/Macro + all 64 lane holds,
- * resolves once, and atomically replaces pending CC in RealtimeMidiQueue.
+ * diffs stable authors, schedules their transitions, and arbitrates only when
+ * each transition reaches its physical deadline. Resolved events are appended
+ * transactionally; delayed trajectories are never globally replaced.
  *
  * Source publication is triple-buffered under InterruptGuard. Resolution and
  * queue commit have one single LIVE owner (SequencerRuntimeService, including
@@ -138,6 +151,15 @@ public:
     MidiCcGlobalFrameCoordinator(const MidiCcGlobalFrameCoordinator&) = delete;
     MidiCcGlobalFrameCoordinator& operator=(const MidiCcGlobalFrameCoordinator&) = delete;
 
+    /**
+     * Deterministic complete-frame publication primitive.
+     *
+     * Production adapters normally use publishPersistentAuthorsGenerated() to
+     * avoid an intermediate frame. This direct bounded form remains useful to
+     * domain adapters and tests that already own immutable candidate storage;
+     * it has the same validation, deduplication, and transactional publication
+     * contract as the generated form.
+     */
     bool publishPersistentAuthors(
         const core::state::shared::MidiCcCandidate* candidates,
         size_t candidateCount
@@ -147,12 +169,11 @@ public:
         void* context
     );
     /**
-     * Replaces one author in the currently published complete frame.
-     * Returns false without publishing when that stable author is absent, so
-     * callers can rebuild from their current structural context instead of
-     * accidentally retaining authors from a stale page.
+     * Replaces or appends one bounded persistent author slot.
+     * Used by immediate LIVE_MANUAL input so the underlying Base author stays
+     * present and keeps advancing until the next complete producer frame.
      */
-    bool replacePersistentAuthor(
+    bool upsertPersistentAuthor(
         const core::state::shared::MidiCcCandidate& candidate,
         uint16_t& publishedCandidateCount
     );
@@ -170,8 +191,16 @@ public:
     [[nodiscard]] core::state::modulation::ProjectControlTimeSnapshot
         projectControlTimeSnapshot() const;
 
-    [[nodiscard]] bool needsLiveResolution() const;
-    MidiCcGlobalFrameResult resolveLive(uint32_t deadlineUs);
+    [[nodiscard]] bool needsLiveResolution(uint32_t nowUs) const;
+    MidiCcGlobalFrameResult resolveLive(
+        uint32_t nowUs,
+        const core::sequencer::ProjectTrackRuntimeSnapshot& projectTracks,
+        uint32_t tickPeriodUs = 0U,
+        bool allowPredictiveLookahead = false
+    );
+
+    /** Cancel stale generations and remove this Track from arbitration now. */
+    void invalidateTrack(uint8_t trackIndex);
 
     /** True when physically dispatched Note edges await Project evaluation. */
     [[nodiscard]] bool hasPendingProjectModulationTriggers() const;
@@ -187,8 +216,10 @@ public:
     /**
      * A transport stop deliberately drops pending realtime events without
      * changing the authored frame or the last physically dispatched values.
-     * Suppress only the queue-removal retry created by that drop: holds remain
-     * authoritative and resume can re-evaluate them on its next musical tick.
+     * Queue-removal retry is deferred, not discarded: identical Lane holds
+     * remain silent while stopped, then the first resume clock retries any
+     * accepted-but-undispatched intent exactly once. Persistent Macro source
+     * revisions remain independently resolvable while transport is stopped.
      */
     void discardPendingRetryForTransportStop();
 
@@ -212,12 +243,45 @@ private:
             core::state::shared::MidiCcCandidate,
             core::sequencer::SequencerCcLaneRuntimeFrame::MAX_CANDIDATES
         > candidates{};
+        std::array<uint16_t, core::sequencer::SequencerCcLaneRuntime::ADDRESS_COUNT>
+            lifecycleGenerations{};
+        uint64_t predictiveAuthorMask = 0U;
+    };
+
+    struct TemporalAuthorState {
+        core::state::shared::MidiCcCandidate candidate{};
+        uint16_t lifecycleGeneration = 0U;
+        bool present = false;
     };
 
     bool captureCombinedCandidates_();
-    MidiCcGlobalFrameResult resolve_(uint32_t deadlineUs);
+    MidiCcGlobalFrameResult resolve_(
+        uint32_t nowUs,
+        const core::sequencer::ProjectTrackRuntimeSnapshot& projectTracks,
+        uint32_t tickPeriodUs,
+        bool allowPredictiveLookahead
+    );
+    bool stageLogicalFrame_(
+        uint32_t nowUs,
+        const core::sequencer::ProjectTrackRuntimeSnapshot& projectTracks,
+        uint32_t tickPeriodUs,
+        bool allowPredictiveLookahead,
+        MidiCcGlobalFrameResult& result
+    );
+    bool processDueGroups_(uint32_t nowUs, MidiCcGlobalFrameResult& result);
+    bool resolveEffective_(uint32_t deadlineUs, MidiCcGlobalFrameResult& result);
+    void rollbackEffectiveTransitions_(size_t count);
+    void clearTrackAuthorStates_(uint8_t trackIndex);
+    void synchronizeStoppedLaneLogicalState_();
+    uint32_t deadlineForAuthor_(
+        const core::state::shared::MidiCcAuthor& author,
+        uint32_t nowUs,
+        const core::sequencer::ProjectTrackRuntimeSnapshot& projectTracks,
+        uint32_t tickPeriodUs,
+        bool allowPredictiveLookahead
+    ) const;
     void releaseTelemetryReader_(uint8_t index) const;
-    bool dispatchedValueMatches_(const DesiredValue& desired) const;
+    bool plannedValueMatches_(const DesiredValue& desired) const;
     void publishDesiredAndPruneDispatched_(
         const std::array<DesiredValue,
                          core::state::shared::MidiCcResolutionTelemetry::MAX_DESTINATIONS>&
@@ -261,11 +325,53 @@ private:
     uint32_t last_live_lane_revision_ = 0;
     uint32_t captured_persistent_revision_ = 0;
     uint32_t captured_lane_revision_ = 0;
+    std::array<uint16_t, core::sequencer::SequencerCcLaneRuntime::ADDRESS_COUNT>
+        captured_lane_lifecycle_generations_{};
+    uint64_t captured_lane_predictive_author_mask_ = 0U;
+    std::array<uint16_t, core::sequencer::SequencerCcLaneRuntime::ADDRESS_COUNT>
+        logical_lane_lifecycle_generations_{};
     std::array<
         core::state::shared::MidiCcCandidate,
         core::state::shared::MidiCcResolutionTelemetry::MAX_CANDIDATES
     > combined_candidates_{};
     uint16_t combined_candidate_count_ = 0;
+    std::array<uint16_t,
+               core::state::shared::MidiCcResolutionTelemetry::MAX_CANDIDATES>
+        target_author_slots_{};
+    std::array<TemporalAuthorState,
+               core::sequencer::TemporalMidiCcAuthorSpool::AUTHOR_SLOT_COUNT>
+        logical_authors_{};
+    std::array<TemporalAuthorState,
+               core::sequencer::TemporalMidiCcAuthorSpool::AUTHOR_SLOT_COUNT>
+        effective_authors_{};
+    std::array<uint16_t,
+               core::state::shared::MidiCcResolutionTelemetry::MAX_CANDIDATES>
+        effective_active_slots_{};
+    uint16_t effective_active_slot_count_ = 0U;
+    std::array<uint16_t,
+               core::state::shared::MidiCcResolutionTelemetry::MAX_CANDIDATES>
+        effective_active_slots_rollback_{};
+    uint16_t effective_active_slot_count_rollback_ = 0U;
+    std::array<uint16_t,
+               core::state::shared::MidiCcResolutionTelemetry::MAX_CANDIDATES>
+        logical_active_slots_{};
+    uint16_t logical_active_slot_count_ = 0U;
+    std::array<uint16_t,
+               core::sequencer::TemporalMidiCcAuthorSpool::AUTHOR_SLOT_COUNT>
+        target_seen_generation_{};
+    uint16_t next_target_seen_generation_ = 1U;
+    core::sequencer::TemporalMidiCcAuthorSpool temporal_spool_{};
+    std::array<core::sequencer::TemporalMidiCcAuthorTransition,
+               core::sequencer::TemporalMidiCcAuthorSpool::MAX_DUE_TRANSITIONS>
+        transition_scratch_{};
+    std::array<TemporalAuthorState,
+               core::sequencer::TemporalMidiCcAuthorSpool::MAX_DUE_TRANSITIONS>
+        transition_rollback_states_{};
+    std::array<uint16_t,
+               core::sequencer::TemporalMidiCcAuthorSpool::MAX_DUE_TRANSITIONS>
+        transition_rollback_slots_{};
+    bool source_restage_required_ = false;
+    bool effective_dirty_ = false;
     std::array<Telemetry, TELEMETRY_FRAME_COUNT>
         telemetry_frames_{};
     volatile uint8_t published_telemetry_index_ = 0;
@@ -275,6 +381,7 @@ private:
         core::state::shared::MidiCcResolutionTelemetry::MAX_DESTINATIONS
     > desired_values_{};
     uint16_t desired_value_count_ = 0;
+    bool planned_values_valid_ = true;
     std::array<
         DesiredValue,
         core::state::shared::MidiCcResolutionTelemetry::MAX_DESTINATIONS
@@ -289,6 +396,12 @@ private:
         core::state::shared::MidiCcResolutionTelemetry::MAX_DESTINATIONS
     > pending_desired_values_{};
     bool retry_requested_ = false;
+    // Set only at the explicit Stop boundary when queue removal invalidated a
+    // planned CC set. While armed, desired_values_ is a logical stop-time
+    // fence: it suppresses Lane fallback/re-emission but remains distinct from
+    // dispatched_values_. Resume invalidates that fence and requests one
+    // physical reconciliation against what was actually dispatched.
+    bool transport_retry_deferred_until_resume_ = false;
     bool replacing_pending_controls_ = false;
     bool lifecycle_attached_ = false;
     core::state::modulation::ProjectControlTimeSnapshot control_time_{};
@@ -305,6 +418,8 @@ private:
     > project_trigger_events_{};
     std::atomic<uint16_t> project_trigger_write_sequence_{0U};
     std::atomic<uint16_t> project_trigger_read_sequence_{0U};
+    std::atomic<uint16_t> project_trigger_overflow_sequence_{0U};
+    uint16_t project_trigger_last_drained_overflow_sequence_ = 0U;
     MidiCcGlobalFrameDiagnostics diagnostics_{};
 };
 
@@ -319,6 +434,9 @@ static_assert(
     0U
 );
 static_assert(std::atomic<uint16_t>::is_always_lock_free);
-static_assert(sizeof(MidiCcGlobalFrameCoordinator) <= 48U * 1024U);
+// Production ownership is one EXTMEM allocation; the realtime lane keeps only
+// the pointer in RAM2. The generous bound prevents accidental RAM1 placement
+// while still catching unbounded growth.
+static_assert(sizeof(MidiCcGlobalFrameCoordinator) <= 512U * 1024U);
 
 }  // namespace core::handler

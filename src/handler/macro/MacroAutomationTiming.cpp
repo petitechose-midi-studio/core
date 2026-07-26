@@ -1,9 +1,12 @@
 #include "handler/macro/MacroAutomationTiming.hpp"
 
 #include <algorithm>
+#include <array>
 #include <limits>
 
 #include <config/PlatformCompat.hpp>
+
+#include "state/modulation/ModulatorEnvelopeTiming.hpp"
 
 namespace core::handler::macro {
 namespace {
@@ -27,16 +30,14 @@ constexpr uint32_t cadenceForCycle(uint32_t periodMs) {
     );
 }
 
-constexpr uint16_t shortestNonZero(
-    uint16_t first,
-    uint16_t second,
-    uint16_t third
+constexpr uint32_t shortestNonZero(
+    const std::array<uint32_t, 6>& values
 ) {
-    uint16_t shortest = std::numeric_limits<uint16_t>::max();
-    if (first != 0U) shortest = std::min(shortest, first);
-    if (second != 0U) shortest = std::min(shortest, second);
-    if (third != 0U) shortest = std::min(shortest, third);
-    return shortest == std::numeric_limits<uint16_t>::max() ? 0U : shortest;
+    uint32_t shortest = std::numeric_limits<uint32_t>::max();
+    for (uint32_t value : values) {
+        if (value != 0U) shortest = std::min(shortest, value);
+    }
+    return shortest == std::numeric_limits<uint32_t>::max() ? 0U : shortest;
 }
 
 FLASHMEM uint32_t sourceCadence(
@@ -64,15 +65,34 @@ FLASHMEM uint32_t sourceCadence(
     }
     if (source.kind == ModulatorKind::ADSR) {
         const auto& adsr = source.parameters.adsr;
-        const uint16_t shortest = shortestNonZero(
-            adsr.attack,
-            adsr.decay,
-            adsr.release
-        );
+        constexpr ModulatorEnvelopeTimeParameter temporal[]{
+            ModulatorEnvelopeTimeParameter::DELAY,
+            ModulatorEnvelopeTimeParameter::ATTACK,
+            ModulatorEnvelopeTimeParameter::HOLD,
+            ModulatorEnvelopeTimeParameter::DECAY,
+            ModulatorEnvelopeTimeParameter::RELEASE,
+            ModulatorEnvelopeTimeParameter::SMOOTH,
+        };
+        std::array<uint32_t, 6> durations{};
+        for (uint8_t index = 0U; index < durations.size(); ++index) {
+            const uint16_t base = modulatorEnvelopeDuration(
+                adsr,
+                temporal[index]
+            );
+            durations[index] = source.traits.adsr.timing ==
+                    ModulatorTimingMode::FREE
+                ? base
+                : resolveModulatorEnvelopeSyncTicks(
+                      base,
+                      modulatorAdsrFeel(adsr.traits, temporal[index])
+                  );
+        }
+        const uint32_t shortest = shortestNonZero(durations);
         // Zero-duration stages are instantaneous transitions, not motion that
         // benefits from polling every millisecond.
         if (shortest == 0U) return MACRO_AUTOMATION_UPDATE_PERIOD_MS;
-        const uint32_t stage = adsr.timing == ModulatorTimingMode::FREE
+        const uint32_t stage =
+            source.traits.adsr.timing == ModulatorTimingMode::FREE
             ? shortest
             : musicalPeriodMilliseconds(shortest, telemetry);
         return cadenceForCycle(stage);

@@ -13,6 +13,7 @@
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 
 namespace core::handler {
 
@@ -26,6 +27,7 @@ public:
         core::state::project::ProjectNavigationState& projectNavigation;
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
+        const core::state::project::ProjectTrackState& projectTracks;
     };
 
     MacroAutomationHandler(
@@ -50,11 +52,8 @@ private:
     bool automationDetailActive() const;
     bool modulationDetailActive() const;
     bool conversionPreviewActive() const;
-    bool newModulatorAuditionActive() const;
     bool modulatorCreateActive() const;
     bool modulatorPickerActive() const;
-    bool existingModulatorAuditionActive() const;
-    bool modulatorAuditionActive() const;
     uint8_t macroIndex() const;
     void moveFocus(float delta);
     void editFocusedValue(float normalized);
@@ -76,14 +75,13 @@ private:
     bool startAdsrAudition();
     bool openModulatorPicker();
     bool startExistingModulatorAudition();
-    bool cancelModulatorAudition();
-    bool applyModulatorAudition();
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_state_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::project::ProjectNavigationState& project_navigation_;
     core::state::MacroEditState& macro_edit_;
     core::state::macro::MacroPagesState& pages_;
+    const core::state::project::ProjectTrackState& project_tracks_;
     MacroEditDomainServices services_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;

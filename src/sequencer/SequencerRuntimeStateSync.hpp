@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include <oc/note/sequencer/StepBitMask128.hpp>
+#include <oc/note/sequencer/StepSequencerPlaybackRegion.hpp>
 #include <oc/note/sequencer/StepSequencerRuntimeState.hpp>
 
 #include "state/sequencer/SequencerState.hpp"
@@ -22,8 +23,10 @@ struct ProjectTimingContext {
  */
 struct SequencerRuntimeStateSignature {
     uint8_t length = 0;
+    uint8_t playStart = 0;
+    uint8_t loopStart = 0;
+    uint8_t loopEnd = 0;
     uint8_t stepsPerBeat = 0;
-    uint8_t midiChannel = 0;
     oc::note::sequencer::StepBitMask128 enabledMask{};
     uint32_t stepDataRevision = 0;
     uint32_t patternVariationRevision = 0;
@@ -36,8 +39,10 @@ struct SequencerRuntimeStateSignature {
 
     bool matches(const SequencerRuntimeStateSignature& other) const {
         return length == other.length &&
+               playStart == other.playStart &&
+               loopStart == other.loopStart &&
+               loopEnd == other.loopEnd &&
                stepsPerBeat == other.stepsPerBeat &&
-               midiChannel == other.midiChannel &&
                enabledMask == other.enabledMask &&
                stepDataRevision == other.stepDataRevision &&
                patternVariationRevision == other.patternVariationRevision &&
@@ -84,6 +89,10 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
 );
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
+    const core::state::sequencer::SequencerPatternSnapshot& source
+);
+
+oc::note::sequencer::StepSequencerPlaybackRegion runtimePlaybackRegion(
     const core::state::sequencer::SequencerPatternSnapshot& source
 );
 

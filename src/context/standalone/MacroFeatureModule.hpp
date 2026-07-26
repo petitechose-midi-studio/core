@@ -25,6 +25,7 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 
@@ -56,6 +57,7 @@ class MacroEditHandler;
 class MacroMidiHandler;
 class MacroPerformanceHandler;
 class MacroValueHandler;
+class ProjectTrackEditorHandler;
 }  // namespace core::handler
 
 namespace core::context::standalone {
@@ -76,6 +78,7 @@ public:
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
+        const core::state::project::ProjectTrackState& projectTracks;
         core::state::TrackNavigationState& trackNavigation;
         oc::state::Signal<uint8_t, 8>& sharedTrackActive;
         oc::state::Signal<
@@ -84,6 +87,7 @@ public:
         core::state::StructureClipboardState& structureClipboard;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::StatusBarState& statusBar;
+        core::state::macro::MacroHistoryService& macroHistory;
         const oc::state::Signal<uint32_t>* runtimeOwnerRevision = nullptr;
         core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
     };
@@ -112,6 +116,7 @@ public:
     void onCC(uint8_t channel, uint8_t cc, uint8_t value);
     void onNoteIn();
     void update(uint32_t nowMs);
+    void attachTrackEditor(core::handler::ProjectTrackEditorHandler& handler);
 
 private:
 #if defined(MS_UX_RECORDER)
@@ -137,7 +142,6 @@ private:
     core::app::ExtmemUniquePtr<core::handler::MacroPerformanceHandler> performance_handler_;
     core::app::ExtmemUniquePtr<core::handler::MacroEditHandler> edit_handler_;
     core::app::ExtmemUniquePtr<core::handler::MacroAutomationHandler> automation_handler_;
-    uint32_t last_telemetry_refresh_ms_ = 0;
     bool valid_ = false;
 };
 

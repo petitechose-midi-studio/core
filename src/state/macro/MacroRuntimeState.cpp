@@ -5,6 +5,8 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/macro/MacroAutomationDomain.hpp"
+
 namespace core::state::macro {
 
 namespace {
@@ -149,6 +151,45 @@ FLASHMEM uint8_t MacroManualOverrideState::clearPage(uint8_t track, uint8_t page
     entryCount = write;
     noteMutation();
     return removed;
+}
+
+FLASHMEM uint8_t MacroManualOverrideState::compactPages(
+    uint8_t track,
+    uint16_t retainedPageMask
+) {
+    if (track >= TRACK_COUNT || retainedPageMask == 0U) return 0U;
+    const uint8_t count = entryCount > CAPACITY ? CAPACITY : entryCount;
+    uint8_t write = 0U;
+    uint8_t affected = 0U;
+    for (uint8_t read = 0U; read < count; ++read) {
+        auto entry = entries[read];
+        if (entry.active && entry.address.track == track) {
+            const uint16_t pageBit = static_cast<uint16_t>(
+                1U << entry.address.page
+            );
+            if ((retainedPageMask & pageBit) == 0U) {
+                ++affected;
+                continue;
+            }
+            uint8_t compactedPage = 0U;
+            for (uint8_t page = 0U; page < entry.address.page; ++page) {
+                if ((retainedPageMask & static_cast<uint16_t>(1U << page)) !=
+                    0U) {
+                    ++compactedPage;
+                }
+            }
+            if (compactedPage != entry.address.page) {
+                entry.address.page = compactedPage;
+                ++affected;
+            }
+        }
+        entries[write++] = entry;
+    }
+    if (affected == 0U) return 0U;
+    for (uint8_t index = write; index < count; ++index) entries[index] = {};
+    entryCount = write;
+    noteMutation();
+    return affected;
 }
 
 FLASHMEM uint8_t MacroManualOverrideState::clearTrack(uint8_t track) {

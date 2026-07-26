@@ -6,6 +6,7 @@
 #include <config/TimeCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include "handler/macro/MacroAutomationTiming.hpp"
+#include "handler/macro/MacroAutomationTakeInputWorkflow.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "midi/MidiUtils.hpp"
 #include "state/macro/MacroAutomationDomain.hpp"
@@ -55,6 +56,11 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
     OC_PERF_SCOPE(perfValueChange, "macro.value-change");
     const uint32_t nowMs = core::time_compat::millis();
     if (!ensureActiveSlot(index)) return;
+    if (buttons_.isPressed(Config::MACRO_BUTTONS[index])) return;
+
+    const bool takeRequested = services_.automationTakeArmed() ||
+                               services_.automationTakeRecording();
+    if (!takeRequested && macro_ui_.blocksPostTakeInput(index, nowMs)) return;
 
     const float sanitized = core::state::macro::macroAutomationClamp01(value);
     const uint8_t cc_value = core::midi::toCC(sanitized);
@@ -62,11 +68,11 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
 
     if (std::abs(services_.absoluteBaseValue(index) - quantized) < 0.0005f) return;
 
-    const bool takeRequested = services_.automationTakeArmed() ||
-                               services_.automationTakeRecording();
     bool takeCaptured = false;
     if (takeRequested) {
-        takeCaptured = services_.recordAutomationTakeValue(
+        takeCaptured = MacroAutomationTakeInputWorkflow::recordAndPublish(
+            services_,
+            midi_runtime_,
             index,
             nowMs,
             quantized
@@ -78,8 +84,11 @@ void MacroValueHandler::handleValueChange(uint8_t index, float value) {
 
     if (takeCaptured) {
         // The take owns Base authoring. Modulation remains a live relative
-        // projection and is deliberately absent from the recorded column.
-    } else if (services_.automationPlaybackActiveFor(index)) {
+        // projection and is deliberately absent from the recorded column. The
+        // canonical take-input workflow already published UI and MIDI.
+        return;
+    } else if (services_.manualOverrideActiveFor(index) ||
+               services_.automationPlaybackActiveFor(index)) {
         if (!services_.takeManualControl(index, quantized)) return;
     } else {
         // Manual movement always authors the durable absolute base. A running

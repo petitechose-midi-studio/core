@@ -8,12 +8,14 @@
 #include <oc/state/Signal.hpp>
 
 #include "sequencer/MidiClockSyncService.hpp"
+#include "sequencer/ProjectTrackRuntimeSnapshotBank.hpp"
 #include "sequencer/SequencerRuntimeGraphBank.hpp"
 #include "sequencer/SequencerRuntimeSnapshotBank.hpp"
 #include "sequencer/SequencerRuntimeStateSync.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -42,6 +44,7 @@ public:
     struct StateRefs {
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& trackBank;
+        const core::state::project::ProjectTrackState& projectTracks;
         core::state::project::ProjectNavigationState& projectNavigation;
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
@@ -79,6 +82,7 @@ private:
     oc::api::MidiAPI& midi_;
     core::state::sequencer::SequencerState& sequencer_state_;
     core::state::sequencer::SequencerTrackBankState& track_bank_state_;
+    const core::state::project::ProjectTrackState& project_track_state_;
     core::state::StatusBarState& status_bar_state_;
     core::state::MidiSyncState& midi_sync_state_;
     core::state::sequencer::SequencerTrackActivationQueue& track_activations_;

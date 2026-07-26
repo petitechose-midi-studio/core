@@ -25,11 +25,14 @@
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "state/CoreState.hpp"
+#include "state/project/ProjectSnapshot.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "validation/ux/SequencerCcLaneSemanticGesture.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/NotificationTestUtils.hpp"
+#include "../support/ProjectTrackRuntimeSnapshotTestFixture.hpp"
 
 namespace {
 
@@ -55,11 +58,12 @@ struct Harness {
         storages.sequencerSetLibrary,
     };
     core::handler::SequencerCcLaneDomainServices services{
-        {state.sequencer, state.sequencerTracks, nullptr}
+        {state.sequencer, state.sequencerTracks, state.projectTracks, nullptr}
     };
     core::handler::SequencerCcLaneWorkflow workflow{
         {state.sequencer,
          state.sequencerTracks,
+         state.projectNavigation,
          core::handler::SequencerHistoryDomainServices::fromCoreState(state),
          state.statusBar},
         services,
@@ -148,28 +152,72 @@ struct Harness {
     }
 };
 
-void openAdd(Harness& h) {
+void createDefaultLane(Harness& h, uint32_t nowMs = 10U) {
     h.workflow.openLaneSelector();
     assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_SELECTOR);
+    for (uint8_t scan = 0; scan < seq::SequencerCcLaneBank::MAX_LANES + 1U &&
+                           !h.workflow.selectorFocusesAdd(); ++scan) {
+        h.workflow.moveSelector(1.0f);
+    }
     assert(h.workflow.selectorFocusesAdd());
-    assert(h.workflow.activateSelector());
-    assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT);
+    assert(h.workflow.activateSelector(nowMs));
+    assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
 }
 
-void test_draft_is_silent_create_and_event_edit_coalesces() {
+void test_slot_defaults_reuse_and_local_override_are_exact() {
     Harness h;
-    openAdd(h);
+    h.state.projectNavigation.ccLaneDefaultControllers = {20U, 40U, 60U, 80U};
+
+    for (uint8_t lane = 0; lane < seq::SequencerCcLaneBank::MAX_LANES; ++lane) {
+        createDefaultLane(h, static_cast<uint32_t>(10U + lane));
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank != nullptr && bank->lanes[lane].occupied);
+        assert(bank->lanes[lane].destination.controller ==
+               h.state.projectNavigation.ccLaneDefaultControllers[lane]);
+        assert(!bank->lanes[lane].activeMask.any());
+        assert(h.state.sequencerHistory.undoCount() == lane + 1U);
+    }
+
+    assert(h.workflow.openLane(0U));
+    assert(h.workflow.openSettings());
+    h.workflow.editDraft(1.0f);
+    assert(h.state.sequencer.ccLaneUi.draft.destination.controller == 21U);
+    assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 30U));
+    assert(h.state.projectNavigation.ccLaneDefaultControllers[0] == 20U);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)
+               ->lanes[0].destination.controller == 21U);
+
+    assert(h.workflow.openSettings());
+    assert(h.workflow.beginGuard(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT, 100U));
+    assert(h.workflow.releaseGuard(
+        seq::SequencerCcLaneActionSlot::BOTTOM_LEFT,
+        100U + seq::SequencerCcLaneUiState::ACTION_GUARD_MS
+    ));
+    assert(!seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].occupied);
+
+    createDefaultLane(h, 1000U);
+    const auto* reused = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(reused->lanes[0].occupied);
+    assert(reused->lanes[0].destination.controller == 20U);
+    assert(!reused->lanes[0].activeMask.any());
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] four slot defaults, local override and first-slot reuse are exact\n";
+}
+
+void test_direct_default_create_is_silent_atomic_and_event_edit_coalesces() {
+    Harness h;
     assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
     assert(h.state.sequencerHistory.undoCount() == 0);
-    assert(contextual::canExecute(
-        h.state.sequencer.ccLaneUi
-            .action(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT).tap
-    ));
-
-    assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 10));
+    createDefaultLane(h);
     assert(h.state.sequencerHistory.undoCount() == 1);
     const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
     assert(bank != nullptr && bank->lanes[0].occupied);
+    assert(bank->lanes[0].destination.controller == 1U);
+    assert(bank->lanes[0].destination.minimum == 0U);
+    assert(bank->lanes[0].destination.maximum == 127U);
+    assert(bank->lanes[0].destination.routePolicy ==
+           seq::SequencerCcLaneRoutePolicy::INHERIT_TRACK);
     assert(!bank->lanes[0].activeMask.any());
     assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
     assert(!h.state.sequencer.ccLaneUi.hasAuthoredValue);
@@ -182,7 +230,8 @@ void test_draft_is_silent_create_and_event_edit_coalesces() {
     assert(h.workflow.editFocusedEvent(1.0f, 120));
     assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].values[0] == 65);
     assert(h.state.sequencerHistory.undoCount() == 1);
-    h.workflow.update(500);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.updateSequencerPatternHistoryCoalescing(500));
     assert(h.state.sequencerHistory.undoCount() == 2);
 
     assert(h.state.undoSequencerHistory());
@@ -192,12 +241,188 @@ void test_draft_is_silent_create_and_event_edit_coalesces() {
     assert(h.state.redoSequencerHistory());
     assert(seq::sequencerCcLaneView(h.state.sequencer.pattern)->lanes[0].values[0] == 65);
     test_support::drainNotifications();
-    std::cout << "[PASS] silent draft/create and coalesced `--` -> Initial event edit\n";
+    std::cout << "[PASS] direct default create is silent/atomic; event edit coalesces\n";
+}
+
+void test_pending_event_is_committed_before_cross_track_switch_and_replays_on_t1() {
+    Harness h;
+    createDefaultLane(h);
+    assert(h.workflow.editFocusedEvent(1.0f, 100U));
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+
+    // The Track boundary must close T1 while it is still the active editor.
+    assert(h.state.setSharedTrackState(0x0003U, 1U));
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 2U);
+    const auto* t1 = seq::sequencerCcLaneView(h.state.sequencerTracks.track(0U));
+    assert(t1 != nullptr && t1->lanes[0].activeMask.test(0U));
+    assert(t1->lanes[0].values[0] == 64U);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+
+    // Global history targets T1 without replacing or contaminating active T2.
+    assert(h.state.undoProjectHistory());
+    assert(h.state.sequencerTracks.activeTrackIndex() == 1U);
+    t1 = seq::sequencerCcLaneView(h.state.sequencerTracks.track(0U));
+    assert(t1 != nullptr && !t1->lanes[0].activeMask.test(0U));
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+    assert(h.state.redoProjectHistory());
+    t1 = seq::sequencerCcLaneView(h.state.sequencerTracks.track(0U));
+    assert(t1 != nullptr && t1->lanes[0].activeMask.test(0U));
+    assert(t1->lanes[0].values[0] == 64U);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+
+    assert(h.state.setSharedTrackState(0x0003U, 0U));
+    const auto* active = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(active != nullptr && active->lanes[0].activeMask.test(0U));
+    assert(active->lanes[0].values[0] == 64U);
+
+    test_support::drainNotifications();
+    std::cout
+        << "[PASS] pending CC edit closes on T1 before Track switch; Undo/Redo target T1\n";
+}
+
+void test_global_undo_commits_and_consumes_the_pending_cc_event_once() {
+    Harness h;
+    createDefaultLane(h);
+    assert(h.workflow.editFocusedEvent(1.0f, 100U));
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+
+    assert(h.state.undoProjectHistory());
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+    assert(h.state.sequencerHistory.redoCount() == 1U);
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(bank != nullptr && !bank->lanes[0].activeMask.test(0U));
+
+    assert(h.state.redoProjectHistory());
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(bank != nullptr && bank->lanes[0].activeMask.test(0U));
+    assert(bank->lanes[0].values[0] == 64U);
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] global Undo commits and consumes one pending CC event\n";
+}
+
+void test_snapshot_and_reset_boundaries_see_or_purge_the_central_cc_transaction() {
+    Harness h;
+    createDefaultLane(h);
+    assert(h.workflow.editFocusedEvent(1.0f, 100U));
+    assert(h.state.hasPendingProjectTransaction());
+
+    core::state::project::ProjectSnapshot snapshot;
+    assert(core::state::project::captureProjectSnapshot(h.state, snapshot));
+    const auto* captured = snapshot.sequencer.editorCcLanes.get();
+    assert(captured != nullptr && captured->lanes[0].activeMask.test(0U));
+    assert(captured->lanes[0].values[0] == 64U);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+
+    // A transient UI reset retains authored data but closes the history unit.
+    h.state.resetStandaloneTransientUi();
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 2U);
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(bank != nullptr && bank->lanes[0].activeMask.test(0U));
+
+    // A Project reset is destructive and must leave no stale transaction or
+    // retained entry that could later address the replaced graph.
+    assert(h.workflow.openLane(0U));
+    assert(h.workflow.editFocusedEvent(1.0f, 200U));
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    h.state.resetMusicalProject();
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(!h.state.projectHistory.canUndo());
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] snapshots see pending CC data; reset boundaries close or purge it\n";
+}
+
+void test_immediate_create_and_settings_follow_pending_event_without_double_publish() {
+    {
+        Harness h;
+        createDefaultLane(h);
+        assert(h.workflow.editFocusedEvent(1.0f, 100U));
+        assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+
+        h.workflow.openLaneSelector();
+        while (!h.workflow.selectorFocusesAdd()) h.workflow.moveSelector(1.0f);
+        assert(h.workflow.activateSelector(120U));
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.sequencerHistory.undoCount() == 3U);
+
+        assert(h.state.undoProjectHistory());
+        auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank != nullptr && bank->lanes[0].occupied && !bank->lanes[1].occupied);
+        assert(bank->lanes[0].activeMask.test(0U));
+        assert(h.state.undoProjectHistory());
+        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank != nullptr && !bank->lanes[0].activeMask.test(0U));
+    }
+
+    {
+        Harness h;
+        createDefaultLane(h);
+        assert(h.workflow.editFocusedEvent(1.0f, 100U));
+        assert(h.workflow.openSettings());
+        const uint8_t controller = h.state.sequencer.ccLaneUi.draft.destination.controller;
+        h.workflow.editDraft(1.0f);
+        assert(h.workflow.executeTap(
+            seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT,
+            120U
+        ));
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.sequencerHistory.undoCount() == 3U);
+
+        assert(h.state.undoProjectHistory());
+        auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank != nullptr);
+        assert(bank->lanes[0].destination.controller == controller);
+        assert(bank->lanes[0].activeMask.test(0U));
+        assert(h.state.undoProjectHistory());
+        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank != nullptr && !bank->lanes[0].activeMask.test(0U));
+    }
+
+    test_support::drainNotifications();
+    std::cout
+        << "[PASS] immediate Create/Settings follow one pending CC entry in exact order\n";
+}
+
+void test_history_preflight_failure_does_not_publish_the_staged_cc_event() {
+    Harness h;
+    createDefaultLane(h);
+    core::handler::SequencerCcLaneWorkflow unavailableHistory{
+        {h.state.sequencer,
+         h.state.sequencerTracks,
+         h.state.projectNavigation,
+         core::handler::SequencerHistoryDomainServices{},
+         h.state.statusBar},
+        h.services,
+    };
+    assert(unavailableHistory.openLane(0U));
+
+    const auto* before = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(before != nullptr && !before->lanes[0].activeMask.test(0U));
+    assert(!unavailableHistory.editFocusedEvent(1.0f, 100U));
+    const auto* after = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(after != nullptr && !after->lanes[0].activeMask.test(0U));
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+    assert(h.state.sequencer.ccLaneUi.operationFeedback.get().reason ==
+           contextual::ContextActionReason::HISTORY_UNAVAILABLE);
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] unavailable history rejects CC staging before publication\n";
 }
 
 void test_nav_grammar_toggles_events_and_reveals_advanced_settings() {
     Harness h;
-    openAdd(h);
+    createDefaultLane(h);
+    assert(h.workflow.openSettings());
     auto& ui = h.state.sequencer.ccLaneUi;
     assert(!ui.advancedSettings);
 
@@ -228,10 +453,9 @@ void test_nav_grammar_toggles_events_and_reveals_advanced_settings() {
 
 void test_clear_settings_cancel_and_guarded_remove_are_exact_history() {
     Harness h;
-    openAdd(h);
-    assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 10));
+    createDefaultLane(h);
     assert(h.workflow.editFocusedEvent(1.0f, 20));
-    h.workflow.update(500);
+    assert(h.state.updateSequencerPatternHistoryCoalescing(500));
     assert(h.state.sequencerHistory.undoCount() == 2);
 
     assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT, 600));
@@ -286,6 +510,62 @@ void test_clear_settings_cancel_and_guarded_remove_are_exact_history() {
     assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
     test_support::drainNotifications();
     std::cout << "[PASS] clear/cancel/remove semantics and exact history\n";
+}
+
+void test_global_history_closes_a_cc_lane_session_when_its_lane_disappears() {
+    Harness createUndoRedo;
+    createDefaultLane(createUndoRedo);
+    assert(createUndoRedo.state.sequencer.ccLaneUi.mode ==
+           seq::SequencerCcLaneUiMode::LANE_GRID);
+
+    assert(createUndoRedo.state.undoProjectHistory());
+    assert(seq::sequencerCcLaneView(createUndoRedo.state.sequencer.pattern) == nullptr);
+    assert(createUndoRedo.state.sequencer.ccLaneUi.mode ==
+           seq::SequencerCcLaneUiMode::CLOSED);
+    assert(!createUndoRedo.state.sequencer.ccLaneUi.visible());
+    assert(!createUndoRedo.state.sequencer.ccLaneUi.overlayVisible.get());
+
+    assert(createUndoRedo.state.redoProjectHistory());
+    const auto* restored =
+        seq::sequencerCcLaneView(createUndoRedo.state.sequencer.pattern);
+    assert(restored != nullptr && restored->lanes[0].occupied);
+    // Redo restores authored data only. The user explicitly reopens the lane.
+    assert(createUndoRedo.state.sequencer.ccLaneUi.mode ==
+           seq::SequencerCcLaneUiMode::CLOSED);
+    assert(createUndoRedo.workflow.openLane(0U));
+
+    Harness removeUndoReopenRedo;
+    createDefaultLane(removeUndoReopenRedo);
+    assert(removeUndoReopenRedo.workflow.openSettings());
+    assert(removeUndoReopenRedo.workflow.beginGuard(
+        seq::SequencerCcLaneActionSlot::BOTTOM_LEFT,
+        100U
+    ));
+    assert(removeUndoReopenRedo.workflow.releaseGuard(
+        seq::SequencerCcLaneActionSlot::BOTTOM_LEFT,
+        100U + seq::SequencerCcLaneUiState::ACTION_GUARD_MS
+    ));
+    assert(seq::sequencerCcLaneView(removeUndoReopenRedo.state.sequencer.pattern) ==
+           nullptr);
+
+    assert(removeUndoReopenRedo.state.undoProjectHistory());
+    restored = seq::sequencerCcLaneView(removeUndoReopenRedo.state.sequencer.pattern);
+    assert(restored != nullptr && restored->lanes[0].occupied);
+    assert(removeUndoReopenRedo.workflow.openLane(0U));
+    assert(removeUndoReopenRedo.state.sequencer.ccLaneUi.mode ==
+           seq::SequencerCcLaneUiMode::LANE_GRID);
+
+    assert(removeUndoReopenRedo.state.redoProjectHistory());
+    assert(seq::sequencerCcLaneView(removeUndoReopenRedo.state.sequencer.pattern) ==
+           nullptr);
+    assert(removeUndoReopenRedo.state.sequencer.ccLaneUi.mode ==
+           seq::SequencerCcLaneUiMode::CLOSED);
+    assert(!removeUndoReopenRedo.state.sequencer.ccLaneUi.visible());
+    assert(!removeUndoReopenRedo.state.sequencer.ccLaneUi.overlayVisible.get());
+
+    test_support::drainNotifications();
+    std::cout
+        << "[PASS] global history closes CC-lane sessions whose lane disappears\n";
 }
 
 void test_semantic_gesture_classifier_never_claims_early_hold_mutation() {
@@ -358,10 +638,7 @@ void test_semantic_gesture_classifier_never_claims_early_hold_mutation() {
 
 void test_guard_release_promotes_elapsed_hold_without_periodic_update() {
     const auto prepareRemove = [](Harness& h) {
-        openAdd(h);
-        assert(h.workflow.executeTap(
-            seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 10
-        ));
+        createDefaultLane(h);
         assert(h.workflow.openSettings());
     };
 
@@ -406,61 +683,53 @@ void test_guard_release_promotes_elapsed_hold_without_periodic_update() {
         << "[PASS] guarded release handles short/exact/elapsed holds without update tick\n";
 }
 
-void test_lane_duplicate_blocks_but_macro_conflict_uses_amber_hold() {
+void test_slot_defaults_conflicts_and_macro_arbitration_are_direct() {
     Harness h;
-    openAdd(h);
-    assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 10));
+    createDefaultLane(h);
+    h.state.projectNavigation.ccLaneDefaultControllers[1] = 1U;
     h.workflow.openLaneSelector();
     h.workflow.moveSelector(1.0f);
     assert(h.workflow.selectorFocusesAdd());
-    assert(h.workflow.activateSelector());
-    const auto duplicateSpec = h.state.sequencer.ccLaneUi.action(
-        seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT
-    );
-    assert(duplicateSpec.tap.availability == contextual::ContextActionAvailability::DISABLED);
-    assert(duplicateSpec.tap.reason == contextual::ContextActionReason::CONFLICT);
-    assert(!h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 20));
+    assert(!h.workflow.activateSelector(20));
     assert(seq::sequencerCcLaneCount(*seq::sequencerCcLaneView(h.state.sequencer.pattern)) == 1);
+    assert(h.state.sequencerHistory.undoCount() == 1);
 
     Harness macroHarness;
     auto& page = macroHarness.state.pages.activePageData();
-    page.cc[0] = 74;
-    macroHarness.state.pages.activeTrackData().channel =
-        macroHarness.state.sequencer.pattern.midiChannel.get();
+    page.cc[0] = 1;
+    assert(core::state::project::setProjectTrackMidiChannel(
+        macroHarness.state.projectTracks, 0U, 9U
+    ).changed());
+    // Both the inherited Lane and active Macro route resolve through
+    // ProjectTrackState.
     core::handler::SequencerCcLaneDomainServices macroServices{
         {macroHarness.state.sequencer,
          macroHarness.state.sequencerTracks,
+         macroHarness.state.projectTracks,
          &macroHarness.state.pages}
     };
     core::handler::SequencerCcLaneWorkflow macroWorkflow{
         {macroHarness.state.sequencer,
          macroHarness.state.sequencerTracks,
+         macroHarness.state.projectNavigation,
          core::handler::SequencerHistoryDomainServices::fromCoreState(macroHarness.state),
          macroHarness.state.statusBar},
         macroServices,
     };
     macroWorkflow.openLaneSelector();
-    assert(macroWorkflow.activateSelector());
-    const auto macroSpec = macroHarness.state.sequencer.ccLaneUi.action(
-        seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT
-    );
-    assert(macroSpec.tap.availability == contextual::ContextActionAvailability::DISABLED);
-    assert(macroSpec.hold.availability == contextual::ContextActionAvailability::WARNING);
-    assert(macroSpec.hold.visual.tone == contextual::ContextTone::AMBER);
-    assert(macroWorkflow.beginGuard(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 100));
-    macroWorkflow.update(800);
-    assert(macroWorkflow.releaseGuard(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 800));
+    assert(macroWorkflow.activateSelector(100));
     const auto* accepted = seq::sequencerCcLaneView(macroHarness.state.sequencer.pattern);
     assert(accepted != nullptr && accepted->lanes[0].acceptedMacroConflict);
+    assert(accepted->lanes[0].destination.pinnedChannel == 9U);
+    assert(macroServices.trackRoute(0U).channel == 9U);
     assert(macroHarness.state.sequencerHistory.undoCount() == 1);
     test_support::drainNotifications();
-    std::cout << "[PASS] lane duplicate blocked; Macro conflict accepted by amber hold\n";
+    std::cout << "[PASS] duplicate default blocks atomically; Macro arbitration stays direct\n";
 }
 
 void test_live_projection_requires_the_lane_in_committed_runtime_telemetry() {
     Harness h;
-    openAdd(h);
-    assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 10));
+    createDefaultLane(h);
     assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
     assert(!h.state.sequencer.ccLaneUi.liveProjection);
 
@@ -476,6 +745,7 @@ void test_live_projection_requires_the_lane_in_committed_runtime_telemetry() {
     core::handler::SequencerCcLaneWorkflow liveWorkflow{
         {h.state.sequencer,
          h.state.sequencerTracks,
+         h.state.projectNavigation,
          core::handler::SequencerHistoryDomainServices::fromCoreState(h.state),
          h.state.statusBar,
          &coordinator},
@@ -487,8 +757,10 @@ void test_live_projection_requires_the_lane_in_committed_runtime_telemetry() {
         .destination = {
             .identity = {
                 .port = 0,
-                .channel = h.state.sequencer.pattern.midiChannel.get(),
-                .controller = 74,
+                .channel = core::state::project::projectTrackMidiChannel(
+                    h.state.projectTracks, 0U
+                ),
+                .controller = 1,
             },
             .routeValidity = core::state::shared::MidiCcRouteValidity::VALID,
         },
@@ -500,7 +772,9 @@ void test_live_projection_requires_the_lane_in_committed_runtime_telemetry() {
         .localValue = 91,
     };
     assert(coordinator.publishSequencerLanes(frame));
-    assert(coordinator.resolveLive(1000).ok());
+    const auto runtimeTracks =
+        test_support::makeAllAudibleProjectTrackRuntimeSnapshot();
+    assert(coordinator.resolveLive(1000, runtimeTracks).ok());
     liveWorkflow.refreshProjection();
     assert(h.state.sequencer.ccLaneUi.liveProjection);
     assert(h.state.sequencer.ccLaneUi.hasResolvedValue);
@@ -515,7 +789,8 @@ void test_live_projection_requires_the_lane_in_committed_runtime_telemetry() {
 
 void test_handler_owns_a_centered_directional_opt_contract() {
     Harness h;
-    openAdd(h);
+    createDefaultLane(h);
+    assert(h.workflow.openSettings());
 
     constexpr auto OPT = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
     h.encoderHw.setDiscreteSteps(OPT, 31);
@@ -567,8 +842,7 @@ void test_handler_owns_a_centered_directional_opt_contract() {
 
 void test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape() {
     Harness h;
-    openAdd(h);
-    assert(h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 10));
+    createDefaultLane(h);
     h.overlays.show(core::ui::OverlayType::SEQ_CC_LANE);
     h.handler.update(20);
 
@@ -630,6 +904,61 @@ void test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape() 
     std::cout << "[PASS] eight Macro controls map 1:1 to values, toggles and shapes\n";
 }
 
+void test_nav_tap_hold_and_hold_turn_have_distinct_cc_lane_grammar() {
+    Harness h;
+    createDefaultLane(h);
+
+    // A genuine tap keeps the existing event toggle contract.
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(bank != nullptr && bank->lanes[0].activeMask.test(0));
+    const std::size_t afterToggle = h.state.sequencerHistory.undoCount();
+
+    // A hold without rotation is deliberately inert.
+    h.press(Config::ButtonID::NAV);
+    h.handler.update(g_now_ms);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
+    h.release(Config::ButtonID::NAV);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(bank->lanes[0].activeMask.test(0));
+    assert(h.state.sequencerHistory.undoCount() == afterToggle);
+
+    // Hold+turn opens only the compact current-choice card and commits on
+    // release. It neither toggles the event nor moves the focused Step.
+    h.press(Config::ButtonID::NAV);
+    h.handler.update(g_now_ms);
+    h.turnNav(1.0f);
+    assert(h.state.sequencer.ccLaneUi.mode ==
+           seq::SequencerCcLaneUiMode::TRANSITION_PICKER);
+    assert(h.state.sequencer.ccLaneUi.compactTransitionPicker);
+    assert(h.state.sequencer.ccLaneUi.selectedTransition ==
+           seq::SequencerCcLaneTransition::LINEAR);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
+    assert(!h.state.sequencer.ccLaneUi.compactTransitionPicker);
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(bank->lanes[0].activeMask.test(0));
+    assert(seq::sequencerCcLaneTransition(bank->lanes[0], 0) ==
+           seq::SequencerCcLaneTransition::LINEAR);
+
+    assert(h.state.undoProjectHistory());
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(seq::sequencerCcLaneTransition(bank->lanes[0], 0) ==
+           seq::SequencerCcLaneTransition::HOLD);
+    assert(h.state.redoProjectHistory());
+    bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+    assert(seq::sequencerCcLaneTransition(bank->lanes[0], 0) ==
+           seq::SequencerCcLaneTransition::LINEAR);
+
+    // Rotation without the button remains plain Step navigation.
+    h.turnNav(1.0f);
+    assert(h.state.sequencer.ccLaneUi.focusedStep == 1U);
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] CC NAV tap/hold/hold-turn grammar is unambiguous\n";
+}
+
 void test_handler_registers_only_guard_capable_action_presses() {
     Harness h;
 
@@ -648,13 +977,21 @@ void test_handler_registers_only_guard_capable_action_presses() {
 }  // namespace
 
 int main() {
-    test_draft_is_silent_create_and_event_edit_coalesces();
+    test_direct_default_create_is_silent_atomic_and_event_edit_coalesces();
+    test_pending_event_is_committed_before_cross_track_switch_and_replays_on_t1();
+    test_global_undo_commits_and_consumes_the_pending_cc_event_once();
+    test_snapshot_and_reset_boundaries_see_or_purge_the_central_cc_transaction();
+    test_immediate_create_and_settings_follow_pending_event_without_double_publish();
+    test_history_preflight_failure_does_not_publish_the_staged_cc_event();
+    test_slot_defaults_reuse_and_local_override_are_exact();
     test_nav_grammar_toggles_events_and_reveals_advanced_settings();
     test_clear_settings_cancel_and_guarded_remove_are_exact_history();
-    test_lane_duplicate_blocks_but_macro_conflict_uses_amber_hold();
+    test_global_history_closes_a_cc_lane_session_when_its_lane_disappears();
+    test_slot_defaults_conflicts_and_macro_arbitration_are_direct();
     test_live_projection_requires_the_lane_in_committed_runtime_telemetry();
     test_handler_owns_a_centered_directional_opt_contract();
     test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape();
+    test_nav_tap_hold_and_hold_turn_have_distinct_cc_lane_grammar();
     test_handler_registers_only_guard_capable_action_presses();
     test_semantic_gesture_classifier_never_claims_early_hold_mutation();
     test_guard_release_promotes_elapsed_hold_without_periodic_update();

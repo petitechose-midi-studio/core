@@ -115,6 +115,20 @@ FLASHMEM void setMidiChannelValue(ProjectMenuRow& target, uint8_t channel0Based)
     target.value = buffer;
 }
 
+FLASHMEM void setMidiCcValue(ProjectMenuRow& target, uint8_t controller) {
+    auto* buffer = target.valueText.data();
+    const auto size = target.valueText.size();
+    size_t pos = oc::type::text::appendString(buffer, size, 0, "CC ");
+    pos = oc::type::text::appendUnsigned(
+        buffer,
+        size,
+        pos,
+        static_cast<unsigned>(controller)
+    );
+    oc::type::text::terminate(buffer, size, pos);
+    target.value = buffer;
+}
+
 FLASHMEM const char* projectIdentityLabel(const ProjectMenuContext& context) {
     if (context.projectHasSavedIdentity && context.projectId[0] != '\0') {
         return context.projectId.data();
@@ -286,6 +300,10 @@ FLASHMEM void buildMusicRootRows(ProjectMenuPage& page, ProjectMenuContext conte
     addRow(page, row("Pattern Default", "Inherit", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
     addRow(page, row("Clip Default", "Inherit", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
     addRow(page, row("Step Paste", "Extend", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row("Lane 1 Default", "CC 1", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row("Lane 2 Default", "CC 11", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row("Lane 3 Default", "CC 74", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row("Lane 4 Default", "CC 71", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
 }
 
 FLASHMEM void buildMusicScaleRows(ProjectMenuPage& page, ProjectMenuContext context) {
@@ -473,6 +491,10 @@ FLASHMEM uint32_t revisionFor(const ProjectNavigationState& navigation,
     revision ^= static_cast<uint32_t>(navigation.loadProjects.count) << 16;
     revision = (revision * 16777619u) ^
                static_cast<uint32_t>(navigation.stepPasteMode);
+    for (uint8_t lane = 0; lane < PROJECT_CC_LANE_DEFAULT_COUNT; ++lane) {
+        revision = (revision * 16777619u) ^
+            static_cast<uint32_t>(navigation.ccLaneDefaultControllers[lane]);
+    }
     revision ^= navigation.loadProjects.truncated ? 0x40000000u : 0u;
     for (uint8_t i = 0; i < context.projectId.size() && context.projectId[i] != '\0'; ++i) {
         revision = (revision * 16777619u) ^ static_cast<uint8_t>(context.projectId[i]);
@@ -514,6 +536,14 @@ FLASHMEM void applyDynamicValues(ProjectMenuPage& page,
         case ProjectNodeId::MUSIC_ROOT:
             if (page.rowCount > 3) {
                 setRowValue(page.rows[3], stepPasteModeValue(navigation.stepPasteMode));
+            }
+            for (uint8_t lane = 0;
+                 lane < PROJECT_CC_LANE_DEFAULT_COUNT && 4U + lane < page.rowCount;
+                 ++lane) {
+                setMidiCcValue(
+                    page.rows[static_cast<uint8_t>(4U + lane)],
+                    navigation.ccLaneDefaultControllers[lane]
+                );
             }
             break;
         case ProjectNodeId::MUSIC_SCALE:
@@ -573,7 +603,7 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
         case ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER:
         case ProjectNodeId::MODULATOR_TRIGGER:
         case ProjectNodeId::MODULATORS_ROOT:
-            // These pages are rendered by the bounded virtual source registry.
+            // Dedicated retained Project surfaces render these nodes.
             break;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
             buildNewProjectConfirmRows(page, context);

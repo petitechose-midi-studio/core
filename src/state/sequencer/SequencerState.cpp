@@ -125,7 +125,9 @@ FLASHMEM bool SequencerPatternState::setPatternNudgePercent(int value) {
     return true;
 }
 
-FLASHMEM SequencerState::SequencerState() = default;
+FLASHMEM SequencerState::SequencerState() {
+    stepContentDraft.bindRevisionSignal(contentView.revision);
+}
 FLASHMEM SequencerState::~SequencerState() = default;
 
 FLASHMEM void SequencerState::invalidateVariationTelemetry() {
@@ -204,7 +206,127 @@ FLASHMEM bool SequencerState::setPatternNudgePercent(int value) {
     return true;
 }
 
+FLASHMEM bool SequencerState::setStepNoteAt(uint8_t step, uint8_t noteValue) {
+    if (step >= MAX_STEPS) return false;
+    const uint8_t clamped = SequencerPatternState::clampMidi7(noteValue);
+    if (pattern.note[step] == clamped) return false;
+    // Runtime telemetry is a projection of the previous authored value.
+    // Retire it before publishing the authored-data revision so the first
+    // UI consumer of that revision cannot paint one stale frame.
+    invalidateStepVariationTelemetry(step);
+    return pattern.setStepNoteAt(step, clamped);
+}
+
+FLASHMEM bool SequencerState::setStepVelocityAt(uint8_t step, uint8_t velocityValue) {
+    if (step >= MAX_STEPS) return false;
+    const uint8_t clamped = SequencerPatternState::clampMidi7(velocityValue);
+    if (pattern.velocity[step] == clamped) return false;
+    invalidateStepVariationTelemetry(step);
+    return pattern.setStepVelocityAt(step, clamped);
+}
+
+FLASHMEM bool SequencerState::setStepGateAt(uint8_t step, uint16_t gatePercent) {
+    if (step >= MAX_STEPS) return false;
+    const uint16_t clamped = SequencerPatternState::clampGatePercent(gatePercent);
+    if (pattern.gate[step] == clamped) return false;
+    invalidateStepVariationTelemetry(step);
+    return pattern.setStepGateAt(step, clamped);
+}
+
+FLASHMEM bool SequencerState::setStepNudgeAt(uint8_t step, int8_t nudgeValue) {
+    if (step >= MAX_STEPS) return false;
+    const int8_t clamped = SequencerPatternState::clampNudge(nudgeValue);
+    if (pattern.nudge[step] == clamped) return false;
+    invalidateStepVariationTelemetry(step);
+    return pattern.setStepNudgeAt(step, clamped);
+}
+
+FLASHMEM bool SequencerState::setStepProbabilityAt(
+    uint8_t step,
+    uint8_t probabilityValue
+) {
+    if (step >= MAX_STEPS) return false;
+    const uint8_t clamped = SequencerPatternState::clampProbability(probabilityValue);
+    if (pattern.probability[step] == clamped) return false;
+    invalidateStepVariationTelemetry(step);
+    return pattern.setStepProbabilityAt(step, clamped);
+}
+
+FLASHMEM bool SequencerState::setStepDataAt(
+    uint8_t step,
+    uint8_t noteValue,
+    uint8_t velocityValue,
+    uint16_t gatePercent
+) {
+    if (step >= MAX_STEPS) return false;
+    return setStepDataAt(
+        step,
+        noteValue,
+        velocityValue,
+        gatePercent,
+        pattern.nudge[step],
+        pattern.probability[step]
+    );
+}
+
+FLASHMEM bool SequencerState::setStepDataAt(
+    uint8_t step,
+    uint8_t noteValue,
+    uint8_t velocityValue,
+    uint16_t gatePercent,
+    int8_t nudgeValue
+) {
+    if (step >= MAX_STEPS) return false;
+    return setStepDataAt(
+        step,
+        noteValue,
+        velocityValue,
+        gatePercent,
+        nudgeValue,
+        pattern.probability[step]
+    );
+}
+
+FLASHMEM bool SequencerState::setStepDataAt(
+    uint8_t step,
+    uint8_t noteValue,
+    uint8_t velocityValue,
+    uint16_t gatePercent,
+    int8_t nudgeValue,
+    uint8_t probabilityValue
+) {
+    if (step >= MAX_STEPS) return false;
+    const uint8_t clampedNote = SequencerPatternState::clampMidi7(noteValue);
+    const uint8_t clampedVelocity = SequencerPatternState::clampMidi7(velocityValue);
+    const uint16_t clampedGate = SequencerPatternState::clampGatePercent(gatePercent);
+    const int8_t clampedNudge = SequencerPatternState::clampNudge(nudgeValue);
+    const uint8_t clampedProbability =
+        SequencerPatternState::clampProbability(probabilityValue);
+    if (pattern.note[step] == clampedNote &&
+        pattern.velocity[step] == clampedVelocity &&
+        pattern.gate[step] == clampedGate &&
+        pattern.nudge[step] == clampedNudge &&
+        pattern.probability[step] == clampedProbability) {
+        return false;
+    }
+    invalidateStepVariationTelemetry(step);
+    if (!pattern.setStepDataAt(
+            step,
+            clampedNote,
+            clampedVelocity,
+            clampedGate,
+            clampedNudge,
+            clampedProbability
+        )) {
+        return false;
+    }
+    return true;
+}
+
 FLASHMEM void SequencerPatternState::reset() {
+    playStart = 0;
+    loopStart = 0;
+    loopEnd = DEFAULT_LENGTH;
     oc::note::sequencer::StepSequencerState::reset();
     bumpStepDataRevision();
     variationRanges = {};
@@ -223,6 +345,12 @@ FLASHMEM void SequencerPatternState::reset() {
 }
 
 FLASHMEM void SequencerState::reset() {
+    if (stepContentDraft.active.get()) {
+        stepContentDraft.noteBlockedTransition(
+            SequencerStepContentDraftBlockedTransition::RESET
+        );
+        return;
+    }
     pattern.reset();
     page.set(0);
     focusedStep.set(0);
@@ -240,6 +368,7 @@ FLASHMEM void SequencerState::reset() {
     stepStatePropertyActive.set(false);
 
     stepEdit.reset();
+    contextSelector.reset();
     stepPresetPicker.reset();
     ccLaneUi.reset();
     stepPropertyInlineSelector.reset();
@@ -248,7 +377,9 @@ FLASHMEM void SequencerState::reset() {
     patternVariationFeedback.reset();
     historyFeedback.reset();
     patternQuickControls.reset();
+    patternEditor.reset();
     contentView.reset();
+    stepContentDraft.resetSession();
     structureUi.reset();
 }
 

@@ -3,7 +3,6 @@
 # Expect: capture_changed:pitch_runtime_feedback=pitch_runtime_edit_immediate, capture_changed:pitch_runtime_feedback=velocity_runtime_feedback, capture_changed:velocity_runtime_feedback=gate_runtime_feedback
 
 0 scenario seq-variation-pitch
-80 tap NAV 60
 240 capture screen pitch_runtime_feedback
 
 # Editing pitch while runtime telemetry exists must refresh the visual immediately,

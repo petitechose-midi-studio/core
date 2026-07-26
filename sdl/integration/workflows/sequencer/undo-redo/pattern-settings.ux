@@ -24,13 +24,13 @@
 1450 tap LEFT_TOP 60
 1750 capture screen sequencer_after_pattern_settings
 
-# Undo the pattern setting.
-1850 button LEFT_CENTER down
+# Undo the pattern setting through the global View Selector.
+1850 tap LEFT_TOP 60
 2850 tick
-2900 capture screen undo_layer
-2950 tap LEFT_TOP 60
-4450 capture screen pattern_settings_undone_toast
-4550 button LEFT_CENTER up
+2900 capture screen selector_undo_ready
+2950 tap LEFT_CENTER 60
+4450 capture screen selector_redo_ready
+4550 tap LEFT_TOP 60
 5850 capture screen pattern_settings_undone_closed
 
 # Reopen the pitch settings to verify that undo restored Inherit explicitly.
@@ -40,13 +40,13 @@
 6500 capture screen pattern_settings_undone_inspected
 6600 tap LEFT_TOP 60
 
-# Redo the pattern setting.
-6850 button LEFT_CENTER down
+# Redo the pattern setting through the same global surface.
+6850 tap LEFT_TOP 60
 7850 tick
-7900 capture screen redo_layer
+7900 capture screen selector_redo_ready_again
 7950 tap LEFT_BOTTOM 60
-9450 capture screen pattern_settings_redone_toast
-9550 button LEFT_CENTER up
+9450 capture screen selector_undo_restored
+9550 tap LEFT_TOP 60
 10850 capture screen pattern_settings_redone_closed
 
 # Reopen once more: redo must restore the exact Override state.

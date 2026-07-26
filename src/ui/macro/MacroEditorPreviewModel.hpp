@@ -3,7 +3,12 @@
 #include <cstdint>
 
 #include "state/macro/MacroAutomationDomain.hpp"
+#include "state/macro/MacroAutomationTake.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
+
+namespace core::state::modulation {
+struct ProjectRecordedShapeCaptureState;
+}
 
 namespace core::ui {
 
@@ -44,17 +49,17 @@ struct MacroEditorLiveValue {
  * second 64/320-point cache and is safe to copy on native test paths.
  */
 struct MacroEditorPreviewModel {
-    enum class Backend : uint8_t { NONE = 0, LEGACY_SLOT, PROJECT_CONTROL };
+    enum class Backend : uint8_t { NONE = 0, PROJECT_CONTROL };
 
-    const core::state::macro::MacroAutomationSlotState* legacySlot = nullptr;
-    const core::state::macro::MacroAutomationPointPool* legacyPool = nullptr;
     const core::state::modulation::ProjectControlState* control = nullptr;
+    const core::state::macro::MacroAutomationTakeState* activeTake = nullptr;
+    const core::state::modulation::ProjectRecordedShapeCaptureState*
+        recordedShapeCapture = nullptr;
     core::state::macro::MacroAutomationSlotAddress address{};
     core::state::modulation::ModulationBindingId focusedBindingId{};
     uint16_t focusedBindingIndex = UINT16_MAX;
     uint16_t focusedSourceIndex = UINT16_MAX;
     uint16_t focusedRuntimeSourceIndex = UINT16_MAX;
-    MacroEditorLiveValue live{};
     float staticBase = 0.0f;
     uint16_t automationDurationTicks =
         core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT;
@@ -62,6 +67,7 @@ struct MacroEditorPreviewModel {
         core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT;
     uint16_t timelineDurationTicks =
         core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT;
+    float timelineTempoBpm = 120.0f;
     Backend backend = Backend::NONE;
     bool automationStored = false;
     bool modulationStored = false;
@@ -69,6 +75,8 @@ struct MacroEditorPreviewModel {
     bool modulationPlayback = false;
     bool automationDrivingBase = false;
     bool manualOverride = false;
+    bool timelineHasActiveSource = false;
+    uint8_t activeTakeMacro = UINT8_MAX;
 };
 
 static_assert(
@@ -76,27 +84,13 @@ static_assert(
     "Macro preview context must remain a small PSRAM presentation descriptor"
 );
 
-MacroEditorPreviewModel buildMacroEditorPreviewModel(
-    float staticBase,
-    const core::state::macro::MacroAutomationSlotState* slot,
-    const core::state::macro::MacroAutomationPointPool& pool,
-    bool manualOverride
-);
-
-void buildMacroEditorPreviewModel(
-    float staticBase,
-    const core::state::macro::MacroAutomationSlotState* slot,
-    const core::state::macro::MacroAutomationPointPool& pool,
-    bool manualOverride,
-    MacroEditorPreviewModel& model
-);
-
 void buildMacroEditorPreviewModel(
     float staticBase,
     const core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address,
     bool manualOverride,
-    MacroEditorPreviewModel& model
+    MacroEditorPreviewModel& model,
+    float timelineTempoBpm = 120.0f
 );
 
 void buildMacroEditorPreviewModel(
@@ -105,7 +99,26 @@ void buildMacroEditorPreviewModel(
     const core::state::macro::MacroAutomationSlotAddress& address,
     bool manualOverride,
     core::state::modulation::ModulationBindingId focusedBindingId,
-    const MacroEditorLiveValue& live,
+    MacroEditorPreviewModel& model,
+    float timelineTempoBpm = 120.0f
+);
+
+/** Adds the in-progress circular Automation authority without copying it. */
+void attachMacroAutomationTakePreview(
+    const core::state::macro::MacroAutomationTakeState& take,
+    uint8_t macro,
+    MacroEditorPreviewModel& model
+);
+
+/**
+ * Adds one live Project Recorded Shape gesture without copying its PSRAM grid.
+ *
+ * CREATE_ASSIGNED is projected as a provisional edge for this Macro;
+ * REPLACE_EXISTING substitutes the captured source wherever it already feeds
+ * this Macro. Detached Project captures are intentionally not attached.
+ */
+void attachProjectRecordedShapeCapturePreview(
+    const core::state::modulation::ProjectRecordedShapeCaptureState& capture,
     MacroEditorPreviewModel& model
 );
 

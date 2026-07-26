@@ -16,13 +16,20 @@
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
+#include "handler/common/ProjectRecordedShapeCaptureWorkflow.hpp"
 #include "handler/macro/MacroEditDomainServices.hpp"
+#include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "state/MacroEditState.hpp"
+#include "state/StatusBarState.hpp"
+#include "state/macro/MacroHistory.hpp"
+#include "state/macro/MacroEditMenuModel.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "app/OverlayTypes.hpp"
 
 namespace core::handler {
+
+class MacroMidiCcRuntimeAdapter;
 
 /**
  * @brief Handles input for MacroEdit overlay
@@ -40,6 +47,8 @@ public:
         core::state::MacroEditState& macroEdit;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
+        core::state::StatusBarState& statusBar;
+        core::state::macro::MacroHistoryService& history;
     };
 
     /**
@@ -55,6 +64,8 @@ public:
     MacroEditHandler(
         StateRefs state,
         MacroEditDomainServices services,
+        MacroPerformanceDomainServices performanceServices,
+        MacroMidiCcRuntimeAdapter& midiRuntime,
         oc::context::OverlayManager<core::ui::OverlayType>& overlays,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
@@ -73,6 +84,7 @@ public:
     MacroEditHandler& operator=(MacroEditHandler&&) = delete;
 
     void update(uint32_t nowMs);
+    void openFocusedMacro(uint8_t macroIndex) { openEdit(macroIndex); }
 
 private:
     void setupBindings();
@@ -97,9 +109,9 @@ private:
     void endMacroCycle();
     void cycleActiveMacro(float delta);
 
-    void setValueForRow(uint8_t row, int value);
-    int valueForRow(uint8_t row) const;
-    int valueCountForRow(uint8_t row) const;
+    void setValueForRow(core::state::macro::MacroRootItem item, int value);
+    int valueForRow(core::state::macro::MacroRootItem item) const;
+    int valueCountForRow(core::state::macro::MacroRootItem item) const;
     void commitEditedConfig();
     void configureOptForFocusedRow();
     void copyFocusedDomain();
@@ -108,11 +120,15 @@ private:
     void beginBottomLeftAction();
     void releaseBottomLeftAction();
     void commitGuardedAction(uint32_t nowMs);
+    void publishRecordedShapeCaptureRevision();
 
     core::state::MacroEditState& macro_edit_;
     core::state::macro::MacroPagesState& pages_;
     core::state::macro::MacroUiState& macro_ui_;
     MacroEditDomainServices services_;
+    MacroPerformanceDomainServices performance_services_;
+    ProjectRecordedShapeCaptureWorkflow recorded_shape_capture_;
+    MacroMidiCcRuntimeAdapter& midi_runtime_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
@@ -121,7 +137,9 @@ private:
     oc::type::ScopeID overlay_scope_ = 0;
     oc::type::ScopeID selector_scope_ = 0;
     NowProvider now_provider_ = nullptr;
-    bool edit_entry_chord_active_ = false;
+    bool context_record_active_ = false;
+    bool context_recorded_shape_active_ = false;
+    bool track_channel_gesture_active_ = false;
 };
 
 }  // namespace core::handler

@@ -35,6 +35,7 @@
 4360 capture screen t01_micro_step_note_offset
 4460 tap NAV 60
 4700 capture screen t01_micro_context_edited
+4720 tap BOTTOM_RIGHT 40
 
 # Return to the root grid.
 4800 tap LEFT_TOP 60
@@ -44,7 +45,9 @@
 
 # Switch navigation focus from page to track, create/select Track 2, then come
 # back to Track 1.
-5680 tap NAV 60
+5680 button NAV down
+5740 encoder NAV -1
+5800 button NAV up
 5880 capture screen track_navigation_focus
 5980 encoder NAV 1
 6180 capture screen t02_add_preview

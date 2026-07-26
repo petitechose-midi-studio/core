@@ -133,6 +133,13 @@ ProjectLifecycleDomainServices::resetMusicalProject() const {
     if (state_ == nullptr) {
         return unavailable();
     }
+    if (state_->sequencer.stepContentDraft.active.get()) {
+        state_->sequencer.stepContentDraft.noteBlockedTransition(
+            core::state::sequencer::
+                SequencerStepContentDraftBlockedTransition::RESET
+        );
+        return Result{.status = Status::DRAFT_ACTIVE};
+    }
     state_->resetMusicalProject();
     state_->requestProjectSessionSave();
     return Result{.status = Status::OK};
@@ -330,6 +337,13 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
 ) const {
     if (state_ == nullptr || product_files_ == nullptr) {
         return unavailable();
+    }
+    if (state_->sequencer.stepContentDraft.active.get()) {
+        state_->sequencer.stepContentDraft.noteBlockedTransition(
+            core::state::sequencer::
+                SequencerStepContentDraftBlockedTransition::PROJECT_LOAD
+        );
+        return Result{.status = Status::DRAFT_ACTIVE};
     }
     if (projectId == nullptr || projectId[0] == '\0') {
         return invalidArgument();

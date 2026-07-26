@@ -42,7 +42,8 @@ void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t val
             macroIndex,
             services_.resolveManualValue(macroIndex, normalized)
         );
-    } else if (services_.automationPlaybackActiveFor(macroIndex)) {
+    } else if (services_.manualOverrideActiveFor(macroIndex) ||
+               services_.automationPlaybackActiveFor(macroIndex)) {
         accepted = services_.takeManualControl(macroIndex, normalized);
     } else {
         services_.setManualValue(macroIndex, normalized);
@@ -62,10 +63,11 @@ void MacroMidiHandler::handleIncomingCC(uint8_t channel, uint8_t cc, uint8_t val
 }
 
 int8_t MacroMidiHandler::findMacroForCC(uint8_t channel, uint8_t cc) const {
+    if (services_.activeTrackChannel() != channel) return -1;
     for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
         if (!services_.isMacroSlotActive(i)) continue;
         const auto& config = services_.activeConfig(i);
-        if (config.cc == cc && config.channel == channel) {
+        if (config.cc == cc) {
             return static_cast<int8_t>(i);
         }
     }

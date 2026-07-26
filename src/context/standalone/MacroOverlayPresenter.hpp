@@ -33,13 +33,12 @@ public:
                           ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay);
 
     [[nodiscard]] bool bind();
-    void refreshRuntimeTelemetry();
-
 private:
     static void requestRenderFlags(void* context, uint32_t flags);
     static void drainRenderQueue(void* context, uint32_t flags);
     void renderPending(uint32_t flags);
     void renderEdit();
+    void renderEditLive();
     void renderAutomation();
     void renderEditSelector();
     void initializeStaticItems_();
@@ -55,6 +54,9 @@ private:
     // Presenter instances live in EXTMEM; keeping the sizeable preview here
     // avoids rebuilding it through multiple RAM1 stack copies per render.
     macro_overlay_presenter::EditRenderData edit_render_data_{};
+    // The visible list retains sampler descriptors between renders. Its
+    // preview context therefore shares the same PSRAM-owned lifetime.
+    macro_overlay_presenter::AutomationRenderData automation_render_data_{};
     bool static_items_initialized_ = false;
     macro_overlay_presenter::StaticItems static_items_{};
 };

@@ -42,14 +42,9 @@ FLASHMEM void ProjectMusicalContext::reset() {
     clipsInheritScale = true;
 }
 
-FLASHMEM void ProjectRoutingState::reset() {
-    for (uint8_t i = 0; i < outputMidiChannels.size(); ++i) {
-        outputMidiChannels[i] = static_cast<uint8_t>(i % 16U);
-    }
-}
-
 FLASHMEM void ProjectEditingState::reset() {
     stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
+    ccLaneDefaultControllers = PROJECT_CC_LANE_DEFAULT_CONTROLLERS;
 }
 
 FLASHMEM ProjectState::ProjectState() {
@@ -60,7 +55,6 @@ FLASHMEM void ProjectState::reset() {
     metadata.reset();
     transport.reset();
     musical.reset();
-    routing.reset();
     editing.reset();
 }
 

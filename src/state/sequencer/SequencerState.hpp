@@ -11,6 +11,8 @@
 #include <oc/note/sequencer/StepSequencerRuntimeState.hpp>
 
 #include "SequencerPatternState.hpp"
+#include "SequencerPatternEditorState.hpp"
+#include "SequencerStepContentDraftSession.hpp"
 #include "SequencerUiState.hpp"
 
 namespace core::state::sequencer {
@@ -56,6 +58,7 @@ struct SequencerState {
 
     // UI state
     SequencerStepEditOverlayState stepEdit;
+    SequencerContextSelectorState contextSelector;
     SequencerStepPresetPickerState stepPresetPicker;
     SequencerCcLaneUiState ccLaneUi;
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
@@ -64,7 +67,11 @@ struct SequencerState {
     SequencerPatternVariationFeedbackState patternVariationFeedback;
     SequencerHistoryFeedbackState historyFeedback;
     SequencerPatternQuickControlsState patternQuickControls;
+    SequencerPatternEditorState patternEditor;
     SequencerContentViewState contentView;
+    // One cold PSRAM scratch shared by Chord/Micro/Cycle creation sessions.
+    // Published Pattern data remains untouched until explicit Apply/Save.
+    SequencerStepContentDraftSession stepContentDraft;
     SequencerStructureUiState structureUi;
 
     SequencerState();
@@ -109,60 +116,22 @@ struct SequencerState {
     bool setPatternSwingOffsetPercent(int value);
     bool setPatternNudgePercent(int value);
 
-    bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
-        if (step >= MAX_STEPS) return false;
-        const uint8_t clamped = SequencerPatternState::clampMidi7(noteValue);
-        if (pattern.note[step] == clamped) return false;
-        // Runtime telemetry is a projection of the previous authored value.
-        // Retire it before publishing the authored-data revision so the first
-        // UI consumer of that revision cannot paint one stale frame.
-        invalidateStepVariationTelemetry(step);
-        return pattern.setStepNoteAt(step, clamped);
-    }
+    bool setStepNoteAt(uint8_t step, uint8_t noteValue);
 
-    bool setStepVelocityAt(uint8_t step, uint8_t velocityValue) {
-        if (step >= MAX_STEPS) return false;
-        const uint8_t clamped = SequencerPatternState::clampMidi7(velocityValue);
-        if (pattern.velocity[step] == clamped) return false;
-        invalidateStepVariationTelemetry(step);
-        return pattern.setStepVelocityAt(step, clamped);
-    }
+    bool setStepVelocityAt(uint8_t step, uint8_t velocityValue);
 
-    bool setStepGateAt(uint8_t step, uint16_t gatePercent) {
-        if (step >= MAX_STEPS) return false;
-        const uint16_t clamped = SequencerPatternState::clampGatePercent(gatePercent);
-        if (pattern.gate[step] == clamped) return false;
-        invalidateStepVariationTelemetry(step);
-        return pattern.setStepGateAt(step, clamped);
-    }
+    bool setStepGateAt(uint8_t step, uint16_t gatePercent);
 
-    bool setStepNudgeAt(uint8_t step, int8_t nudgeValue) {
-        if (step >= MAX_STEPS) return false;
-        const int8_t clamped = SequencerPatternState::clampNudge(nudgeValue);
-        if (pattern.nudge[step] == clamped) return false;
-        invalidateStepVariationTelemetry(step);
-        return pattern.setStepNudgeAt(step, clamped);
-    }
+    bool setStepNudgeAt(uint8_t step, int8_t nudgeValue);
 
-    bool setStepProbabilityAt(uint8_t step, uint8_t probabilityValue) {
-        if (step >= MAX_STEPS) return false;
-        const uint8_t clamped = SequencerPatternState::clampProbability(probabilityValue);
-        if (pattern.probability[step] == clamped) return false;
-        invalidateStepVariationTelemetry(step);
-        return pattern.setStepProbabilityAt(step, clamped);
-    }
+    bool setStepProbabilityAt(uint8_t step, uint8_t probabilityValue);
 
-    bool setStepDataAt(uint8_t step, uint8_t noteValue, uint8_t velocityValue, uint16_t gatePercent) {
-        if (step >= MAX_STEPS) return false;
-        return setStepDataAt(
-            step,
-            noteValue,
-            velocityValue,
-            gatePercent,
-            pattern.nudge[step],
-            pattern.probability[step]
-        );
-    }
+    bool setStepDataAt(
+        uint8_t step,
+        uint8_t noteValue,
+        uint8_t velocityValue,
+        uint16_t gatePercent
+    );
 
     bool setStepDataAt(
         uint8_t step,
@@ -170,17 +139,7 @@ struct SequencerState {
         uint8_t velocityValue,
         uint16_t gatePercent,
         int8_t nudgeValue
-    ) {
-        if (step >= MAX_STEPS) return false;
-        return setStepDataAt(
-            step,
-            noteValue,
-            velocityValue,
-            gatePercent,
-            nudgeValue,
-            pattern.probability[step]
-        );
-    }
+    );
 
     bool setStepDataAt(
         uint8_t step,
@@ -189,34 +148,7 @@ struct SequencerState {
         uint16_t gatePercent,
         int8_t nudgeValue,
         uint8_t probabilityValue
-    ) {
-        if (step >= MAX_STEPS) return false;
-        const uint8_t clampedNote = SequencerPatternState::clampMidi7(noteValue);
-        const uint8_t clampedVelocity = SequencerPatternState::clampMidi7(velocityValue);
-        const uint16_t clampedGate = SequencerPatternState::clampGatePercent(gatePercent);
-        const int8_t clampedNudge = SequencerPatternState::clampNudge(nudgeValue);
-        const uint8_t clampedProbability =
-            SequencerPatternState::clampProbability(probabilityValue);
-        if (pattern.note[step] == clampedNote &&
-            pattern.velocity[step] == clampedVelocity &&
-            pattern.gate[step] == clampedGate &&
-            pattern.nudge[step] == clampedNudge &&
-            pattern.probability[step] == clampedProbability) {
-            return false;
-        }
-        invalidateStepVariationTelemetry(step);
-        if (!pattern.setStepDataAt(
-                step,
-                clampedNote,
-                clampedVelocity,
-                clampedGate,
-                clampedNudge,
-                clampedProbability
-            )) {
-            return false;
-        }
-        return true;
-    }
+    );
 
     void reset();
 

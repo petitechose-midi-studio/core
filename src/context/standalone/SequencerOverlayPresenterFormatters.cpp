@@ -15,6 +15,7 @@
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
@@ -69,6 +70,31 @@ FLASHMEM const char* availabilityLabel(
     }
 }
 
+FLASHMEM const char* draftFailureLabel(
+    const core::state::sequencer::SequencerStepContentDraftSession& draft
+) {
+    using Failure = core::state::sequencer::SequencerStepContentDraftFailure;
+    using Transition =
+        core::state::sequencer::SequencerStepContentDraftBlockedTransition;
+    switch (draft.failure) {
+        case Failure::OUT_OF_MEMORY: return "APPLY FAILED · OUT OF MEMORY";
+        case Failure::HISTORY_UNAVAILABLE: return "APPLY FAILED · HISTORY FULL";
+        case Failure::PUBLISH_FAILED: return "APPLY FAILED · PUBLISH";
+        case Failure::UNPUBLISHABLE_MUTATION: return "APPLY FAILED · INVALID EDIT";
+        case Failure::TRANSITION_BLOCKED:
+            switch (draft.blockedTransition) {
+                case Transition::TRACK: return "APPLY BEFORE CHANGING TRACK";
+                case Transition::VIEW: return "APPLY BEFORE CHANGING VIEW";
+                case Transition::PROJECT_LOAD: return "APPLY BEFORE LOADING";
+                case Transition::RESET: return "APPLY BEFORE RESET";
+                case Transition::NONE:
+                default: return "APPLY OR DISCARD DRAFT";
+            }
+        case Failure::NONE:
+        default: return nullptr;
+    }
+}
+
 FLASHMEM uint32_t mixRevision(uint32_t seed, uint32_t value) {
     return (seed ^ value) * 16777619U;
 }
@@ -115,10 +141,16 @@ FLASHMEM uint32_t buildStepEditDataRevision(
     uint8_t len
 ) {
     const auto& sequencer = source.sequencer;
+    const auto& pattern = core::state::sequencer::authoringPattern(sequencer);
     uint32_t revision = 2166136261U;
-    revision = mixRevision(revision, sequencer.pattern.stepDataRevision.get());
-    revision = mixRevision(revision, sequencer.pattern.graphRevision.get());
-    revision = mixRevision(revision, sequencer.pattern.patternScaleRevision.get());
+    revision = mixRevision(revision, pattern.stepDataRevision.get());
+    revision = mixRevision(revision, pattern.graphRevision.get());
+    revision = mixRevision(revision, pattern.patternScaleRevision.get());
+    revision = mixRevision(revision, sequencer.stepContentDraft.revision.get());
+    revision = mixRevision(
+        revision,
+        static_cast<uint32_t>(sequencer.stepContentDraft.exitChoice.get())
+    );
     revision = mixRevision(revision, source.tracks.projectScaleRevisionSignal().get());
     revision = mixResolvedStepRevision(revision, resolved);
     revision = mixRevision(revision, localVariationMode ? 1U : 0U);
@@ -154,8 +186,7 @@ FLASHMEM bool focusedRowIsContextRow(const core::state::sequencer::SequencerStat
 FLASHMEM bool focusedRowIsValueRow(const core::state::sequencer::SequencerState& sequencer) {
     const uint8_t row = sequencer.stepEdit.focusedRow.get();
     return step_edit_rows::isActivated(row) ||
-           step_edit_rows::isProperty(row) ||
-           step_edit_rows::isChord(row);
+           step_edit_rows::isProperty(row);
 }
 
 FLASHMEM core::state::sequencer::StepContentChildKind childKindForContextRow(size_t row) {
@@ -183,8 +214,14 @@ FLASHMEM bool focusedContextHasChild(
     if (step_edit_rows::isContext(static_cast<uint8_t>(row))) {
         const auto childKind = childKindForContextRow(row);
         return childKind == core::state::sequencer::StepContentChildKind::MICRO_SEQUENCE
-            ? core::state::sequencer::stepNodeHasMicroSequence(sequencer.pattern, nodeId)
-            : core::state::sequencer::stepNodeHasCycleStateSet(sequencer.pattern, nodeId);
+            ? core::state::sequencer::stepNodeHasMicroSequence(
+                  core::state::sequencer::authoringPattern(sequencer),
+                  nodeId
+              )
+            : core::state::sequencer::stepNodeHasCycleStateSet(
+                  core::state::sequencer::authoringPattern(sequencer),
+                  nodeId
+              );
     }
     return false;
 }
@@ -332,6 +369,57 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         data.rowCount - 1
     );
 
+    if (sequencer.stepContentDraft.exitPromptVisible.get()) {
+        const auto choice = sequencer.stepContentDraft.exitChoice.get();
+        copyText(data.stepBadge.data(), data.stepBadge.size(), "BACK");
+        copyText(data.summary.data(), data.summary.size(), "UNSAVED DRAFT");
+        copyText(
+            data.meta.data(),
+            data.meta.size(),
+            draftFailureLabel(sequencer.stepContentDraft) != nullptr
+                ? draftFailureLabel(sequencer.stepContentDraft)
+                : "Save is the default action"
+        );
+        copyText(data.focusLabel.data(), data.focusLabel.size(), "NAV turn/press");
+        data.overlayProps = {
+            .visible = true,
+            .stepBadge = data.stepBadge.data(),
+            .title = data.summary.data(),
+            .meta = data.meta.data(),
+            .focusLabel = data.focusLabel.data(),
+            .titleCentered = true,
+            .focusLabelVisible = true,
+            .actionsVisible = true,
+            .dataRevision = sequencer.stepContentDraft.revision.get(),
+            .selectedVisualSlot = static_cast<core::ui::SequencerStepEditVisualSlot>(
+                static_cast<uint8_t>(core::ui::SequencerStepEditVisualSlot::ACTION_0) +
+                static_cast<uint8_t>(choice)
+            ),
+        };
+        data.overlayProps.actions[0] = {
+            .key = "Continue",
+            .value = "Continue",
+            .icon = ::standalone::icons::ACTION_BACKWARD,
+            .color = core::ui::sequencer::semantic::color(
+                core::ui::sequencer::semantic::Tone::STATE
+            ),
+        };
+        data.overlayProps.actions[1] = {
+            .key = "Discard",
+            .value = "Discard",
+            .icon = ::standalone::icons::ACTION_CANCEL,
+            .color = CYCLE_STATE_COLOR,
+        };
+        data.overlayProps.actions[2] = {
+            .key = "Save",
+            .value = "Save",
+            .icon = ::standalone::icons::ACTION_VALIDATE,
+            .color = MICRO_SEQUENCE_COLOR,
+        };
+        data.dataRevision = data.overlayProps.dataRevision;
+        return data;
+    }
+
     size_t titlePos = oc::type::text::appendString(data.title.data(), data.title.size(), 0, "STEP ");
     titlePos = oc::type::text::appendUnsigned(
         data.title.data(),
@@ -340,17 +428,6 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         static_cast<unsigned>(step) + 1U
     );
     oc::type::text::terminate(data.title.data(), data.title.size(), titlePos);
-
-    if (len > 0) {
-        oc::type::text::formatFraction(
-            data.meta.data(),
-            data.meta.size(),
-            static_cast<unsigned>(step) + 1U,
-            static_cast<unsigned>(len)
-        );
-    } else {
-        oc::type::text::formatUnsigned(data.meta.data(), data.meta.size(), static_cast<unsigned>(step) + 1U);
-    }
 
     const bool selectedRowIsProperty =
         step_edit_rows::isProperty(static_cast<uint8_t>(data.selectedIndex));
@@ -363,13 +440,13 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
             source.tracks.projectScaleSettings(),
             selectedProperty
         );
-    const auto touchedMask = sequencer.stepInlineFeedback.touchedMask.get();
-    const bool stepInlineEditActive =
-        sequencer.stepInlineFeedback.visible.get() && touchedMask.test(step);
-    const auto resolved = core::state::sequencer::buildSequencerResolvedStepDisplayState(
+    // Step Editor is an authoring surface. Runtime variation telemetry may be
+    // republished before playback has consumed the edited pattern revision;
+    // never let that previous-cycle projection replace the value just written
+    // by OPT in the same presentation frame.
+    const auto resolved = core::state::sequencer::buildSequencerStepEditorDisplayState(
         displayContext,
-        step,
-        stepInlineEditActive
+        step
     );
     if (!resolved.valid) {
         data.visible = false;
@@ -387,6 +464,21 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         return data;
     }
 
+    std::snprintf(
+        data.meta.data(),
+        data.meta.size(),
+        "PATTERN %u · STEP %u/%u · %s",
+        static_cast<unsigned>(
+            core::state::sequencer::activeContentPageForStep(step)
+        ) + 1U,
+        static_cast<unsigned>(step) + 1U,
+        static_cast<unsigned>(len),
+        projection.enabled ? "ON" : "OFF"
+    );
+    if (const char* failure = draftFailureLabel(sequencer.stepContentDraft)) {
+        copyText(data.meta.data(), data.meta.size(), failure);
+    }
+
     const auto displayValues =
         core::state::sequencer::sequencerResolvedStepDisplayValues(resolved);
 
@@ -396,7 +488,9 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         core::state::sequencer::stepPropertySupportsLocalVariation(selectedProperty);
 
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(
+        core::state::sequencer::authoringPattern(sequencer)
+    );
     const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
     auto chordUi = core::state::sequencer::resolveStepChordUiState(sequencer, step);
     const bool chordDetailMode = sequencer.stepEdit.chordEditor.active.get();
@@ -543,10 +637,13 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         };
     }
 
-    formatChordValue(
+    const bool hasChord = node != nullptr &&
+        (node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE) ||
+         node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL));
+    copyText(
         data.valueBuffers[step_edit_rows::CHORD].data(),
         data.valueBuffers[step_edit_rows::CHORD].size(),
-        chordUi
+        hasChord ? "Edit" : "Create"
     );
     data.rows[step_edit_rows::CHORD] = makeIconRow(
         "Chord",
@@ -674,6 +771,35 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
         return props;
     }
 
+    if (sequencer.stepContentDraft.exitPromptVisible.get()) {
+        props.visible = true;
+        props.slots[0].visualState = Visual::HIDDEN;
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2].visualState = Visual::HIDDEN;
+        return props;
+    }
+
+    if (sequencer.stepContentDraft.active.get()) {
+        props.visible = true;
+        if (focusedRowIsValueRow(sequencer)) {
+            constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
+            props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+                core::ui::sequencer::interactionActionIcon(resetAction),
+                Visual::ACTIVE,
+                Tone::WARNING
+            );
+        } else {
+            props.slots[0].visualState = Visual::HIDDEN;
+        }
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            ::standalone::icons::ACTION_VALIDATE,
+            Visual::ACTIVE,
+            Tone::POSITIVE
+        );
+        return props;
+    }
+
     if (focusedRowIsValueRow(sequencer)) {
         constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
         props.visible = true;
@@ -729,91 +855,6 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
     props.slots[2].holdActive = pasteHoldActive && canPaste;
     props.slots[2].holdStartedAtMs = sequencer.stepEdit.contextHold.startedAtMs.get();
     props.slots[2].holdDurationMs = Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
-    return props;
-}
-
-FLASHMEM StepPresetPickerRenderData buildStepPresetPickerRenderData(
-    const Source& source
-) {
-    return core::ui::sequencer::buildSequencerStepPresetPickerPresentation(
-        source.sequencer
-    );
-}
-
-FLASHMEM core::ui::ContextActionStripProps buildStepPresetActionStripProps(
-    const Source& source
-) {
-    StripProps props{};
-    const auto& picker = source.sequencer.stepPresetPicker;
-    if (!picker.visible.get()) {
-        props.visible = false;
-        return props;
-    }
-
-    const auto action = core::ui::sequencer::
-        buildSequencerStepPresetActionPresentation(picker);
-    using ActionVisual = core::ui::sequencer::SequencerStepPresetActionVisual;
-    using ActionTone = core::ui::sequencer::SequencerStepPresetActionTone;
-    const auto visual = [&]() {
-        switch (action.visual) {
-            case ActionVisual::ACTIVE: return Visual::ACTIVE;
-            case ActionVisual::PRESSED: return Visual::PRESSED;
-            case ActionVisual::ARMED: return Visual::ARMED;
-            case ActionVisual::CANCELLED: return Visual::CANCELLED;
-            case ActionVisual::APPLIED: return Visual::APPLIED;
-            case ActionVisual::DISABLED:
-            default: return Visual::DISABLED;
-        }
-    }();
-    const auto tone = [&]() {
-        switch (action.tone) {
-            case ActionTone::CONSTRUCTIVE: return Tone::CONSTRUCTIVE;
-            case ActionTone::DESTRUCTIVE: return Tone::DESTRUCTIVE;
-            case ActionTone::POSITIVE: return Tone::POSITIVE;
-            case ActionTone::WARNING: return Tone::WARNING;
-            case ActionTone::NEUTRAL:
-            default: return Tone::NEUTRAL;
-        }
-    }();
-
-    props.visible = true;
-    props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        ::standalone::icons::ACTION_CANCEL,
-        Visual::ACTIVE,
-        Tone::NEUTRAL
-    );
-    props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-        action.saveIcon
-            ? ::standalone::icons::ACTION_APPLY
-            : ::standalone::icons::STORAGE,
-        Visual::ACTIVE,
-        action.saveIcon ? Tone::CONSTRUCTIVE : Tone::POSITIVE
-    );
-    props.slots[1].showLabel = true;
-    std::snprintf(
-        props.slots[1].labelText.data(),
-        props.slots[1].labelText.size(),
-        "%s",
-        action.saveIcon ? "Load" : "Save"
-    );
-    props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-        action.statusIcon != nullptr
-            ? action.statusIcon
-            : (action.overwriteIcon
-                ? ::standalone::icons::ACTION_OVERWRITE
-                : (action.saveIcon
-                    ? ::standalone::icons::STORAGE
-                    : ::standalone::icons::ACTION_APPLY)),
-        visual,
-        tone
-    );
-    props.slots[2].holdActive = action.holdActive;
-    props.slots[2].holdStartedAtMs = action.holdStartedAtMs;
-    props.slots[2].holdDurationMs = action.holdDurationMs;
-    if (action.showLabel) {
-        props.slots[2].showLabel = true;
-        props.slots[2].labelText = action.label;
-    }
     return props;
 }
 

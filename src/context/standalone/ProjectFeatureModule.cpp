@@ -2,7 +2,6 @@
 
 #include <config/PlatformCompat.hpp>
 #include <oc/ui/lvgl/Scope.hpp>
-#include <oc/time/Time.hpp>
 
 namespace core::context::standalone {
 
@@ -22,23 +21,22 @@ FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
           stateRefs.activeView,
           stateRefs.navigation,
           stateRefs.pages,
+          stateRefs.macroUi,
           stateRefs.clipboard,
           stateRefs.macroHistory
       )
 #endif
 {
 #if defined(MS_UX_RECORDER)
-    if (uxRegistry) {
-        uxRegistry->add(
+    if (uxRegistry &&
+        !uxRegistry->add(
             modulators_ux_surface_,
             core::context::standalone::ux::priority::PROJECT_MODULATORS
-        );
-    }
+        )) return;
 #endif
     if (!projectViewElement) return;
     const auto viewScope = oc::ui::lvgl::scopeID(projectViewElement);
     if (viewScope == 0) return;
-    navigation_ = &stateRefs.navigation;
     handler_ = core::app::makeExtmemUnique<core::handler::ProjectHandler>(
         core::handler::ProjectHandler::StateRefs{
             stateRefs.overlays,
@@ -46,13 +44,17 @@ FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
             stateRefs.navigation,
             stateRefs.sequencer,
             stateRefs.sequencerTracks,
+            stateRefs.projectTracks,
+            stateRefs.trackDomain,
             stateRefs.statusBar,
             stateRefs.midiSync,
             stateRefs.pages,
+            stateRefs.macroUi,
             stateRefs.macros,
             stateRefs.macroEdit,
             stateRefs.configRevision,
             stateRefs.macroHistory,
+            stateRefs.settingsHistory,
             stateRefs.clipboard,
             stateRefs.history,
             stateRefs.lifecycle,
@@ -68,14 +70,6 @@ FLASHMEM ProjectFeatureModule::ProjectFeatureModule(StateRefs stateRefs,
 
 void ProjectFeatureModule::update(uint32_t nowMs) {
     if (handler_) handler_->update(nowMs);
-    if (!navigation_ ||
-        navigation_->activeTab.get() !=
-            core::state::project::ProjectTab::MODULATORS ||
-        (nowMs - last_telemetry_refresh_ms_) < 100U) {
-        return;
-    }
-    last_telemetry_refresh_ms_ = nowMs;
-    navigation_->notifyTelemetryChanged();
 }
 
 FLASHMEM ProjectFeatureModule::~ProjectFeatureModule() = default;

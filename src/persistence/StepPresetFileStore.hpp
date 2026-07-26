@@ -30,7 +30,6 @@ struct StepPresetFileListEntry {
     ] = {};
     uint32_t sizeBytes = 0;
     bool metadataReadable = false;
-    bool metadataDefaulted = false;
 };
 
 struct StepPresetFileListResult {

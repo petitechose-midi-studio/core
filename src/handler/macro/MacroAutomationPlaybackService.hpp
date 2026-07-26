@@ -4,11 +4,12 @@
 
 #include <oc/state/Signal.hpp>
 
-#include "handler/macro/MacroPerformanceDomainServices.hpp"
-#include "state/macro/MacroAutomationState.hpp"
+#include "state/MacroState.hpp"
+#include "state/macro/MacroAutomationAddress.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/shared/MidiCcDestinationResolver.hpp"
 
 namespace core::handler {
@@ -18,13 +19,14 @@ class MacroMidiCcRuntimeAdapter;
 class MacroAutomationPlaybackService {
 public:
     struct StateRefs {
+        core::state::MacroState& macros;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
+        const core::state::project::ProjectTrackState& projectTracks;
         const oc::state::Signal<uint32_t>* runtimeOwnerRevision = nullptr;
     };
 
     MacroAutomationPlaybackService(StateRefs state,
-                                   MacroPerformanceDomainServices services,
                                    MacroMidiCcRuntimeAdapter& midiRuntime);
 
     void update(uint32_t nowMs);
@@ -63,22 +65,24 @@ private:
     );
     void syncActivePageRuntimeUi_(uint8_t track, uint8_t page);
 
+    core::state::MacroState& macros_;
     core::state::macro::MacroPagesState& pages_;
     core::state::macro::MacroUiState& macro_ui_;
+    const core::state::project::ProjectTrackState& project_tracks_;
     const oc::state::Signal<uint32_t>* runtime_owner_revision_ = nullptr;
-    MacroPerformanceDomainServices services_;
     MacroMidiCcRuntimeAdapter& midi_runtime_;
 
     bool update_scheduled_ = false;
     uint32_t next_due_ms_ = 0;
     uint32_t consumed_runtime_owner_revision_ = 0;
+    uint32_t consumed_project_track_revision_ = 0;
     uint8_t cached_track_ = 0xFF;
     uint8_t cached_page_ = 0xFF;
 };
 
 // Hot service: keep the target-side default-heap allocation intentionally small.
 static_assert(
-    sizeof(void*) != 4U || sizeof(MacroAutomationPlaybackService) == 80U
+    sizeof(void*) != 4U || sizeof(MacroAutomationPlaybackService) <= 48U
 );
 
 }  // namespace core::handler

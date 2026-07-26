@@ -194,7 +194,6 @@ FLASHMEM void CoreStateLifecycle::persistFactoryDefaults_(CoreState& state) {
 }
 
 FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
-    state.macroHistory.clear();
     state.pages.initDefaults();
     state.midiSync.reset();
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
@@ -210,10 +209,8 @@ FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
 }
 
 FLASHMEM void CoreStateLifecycle::resetSequencerDomain_(CoreState& state) {
-    state.sequencerDomain_.coalescedPatternHistory.clear();
     state.sequencer.reset();
     state.sequencerTracks.reset();
-    state.sequencerHistory.clear();
     if (!sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer)) {
         OC_LOG_ERROR("[CoreState] Failed to initialize sequencer track bank");
     }
@@ -235,8 +232,9 @@ FLASHMEM void CoreStateLifecycle::resetUiState_(CoreState& state) {
     // resetMacroDomain_. This second pass owns UI/session state only.
     state.macroUi.resetInteraction();
     state.projectNavigation.reset();
+    state.projectTrackEditor.reset();
     state.trackNavigation.reset();
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     state.structureClipboard.clear();
     state.activeView.set(core::ui::ViewType::MACRO);
     state.overlays.hideAll();
@@ -250,47 +248,66 @@ void CoreStateLifecycle::update(CoreState& state) {
     applyPendingSequencerApplyIfReady(state);
     state.sequencer.updateUi(nowMs);
     state.updateSequencerPatternHistoryCoalescing(nowMs);
+    state.updateMacroValueHistoryCoalescing(nowMs);
     updateMutationCoalescers_(state);
     updatePendingSharedTrackPersist_(state);
 }
 
 FLASHMEM void CoreStateLifecycle::flush(CoreState& state) {
+    state.flushMacroValueHistoryCoalescing();
+    state.projectSettingsHistory.endCoalescing();
     flushMutationCoalescers_(state);
     flushPendingSharedTrackPersist_(state);
 }
 
 FLASHMEM void CoreStateLifecycle::flushProjectMutationCoalescing(CoreState& state) {
+    state.flushMacroValueHistoryCoalescing();
+    state.projectSettingsHistory.endCoalescing();
     flushMutationCoalescers_(state);
 }
 
 FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
+    if (state.sequencer.stepContentDraft.active.get()) {
+        state.sequencer.stepContentDraft.noteBlockedTransition(
+            sequencer::SequencerStepContentDraftBlockedTransition::RESET
+        );
+        return;
+    }
     state.macroEdit.reset();
     state.macroUi.resetInteraction();
     reprojectActiveMacroManualOverrides(state);
     state.trackNavigation.reset();
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     state.structureClipboard.clear();
     state.sequencer.stepEdit.visible.set(false);
     state.sequencer.stepEdit.reset();
+    state.sequencer.patternEditor.reset();
+    state.sequencer.contextSelector.reset();
     state.sequencer.stepPresetPicker.reset();
     state.sequencer.stepPropertyInlineSelector.reset();
     state.sequencer.patternQuickControls.reset();
     state.sequencer.structureUi.reset();
     state.projectNavigation.reset();
+    state.projectTrackEditor.reset();
     state.deviceSettings.reset();
     state.sequencerSettings.reset();
     state.dataManager.resetSession(DataManagerContext::MACRO);
 }
 
 FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
+    if (state.sequencer.stepContentDraft.active.get()) {
+        state.sequencer.stepContentDraft.noteBlockedTransition(
+            sequencer::SequencerStepContentDraftBlockedTransition::RESET
+        );
+        return;
+    }
+    const bool historyBoundaryCleared = state.clearProjectHistory();
     state.project.reset();
-    state.macroHistory.clear();
+    state.projectTracks.reset();
     state.pages.initDefaults();
 
-    state.sequencerDomain_.coalescedPatternHistory.clear();
     state.sequencer.reset();
     state.sequencerTracks.reset();
-    state.sequencerHistory.clear();
     if (!sequencer::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer)) {
         OC_LOG_ERROR("[CoreState] Failed to initialize sequencer track bank");
     }
@@ -311,10 +328,12 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.macroUi.resetProjectRuntime();
     state.requestMacroRuntimeOwnerActivation();
     state.trackNavigation.reset();
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     state.structureClipboard.clear();
     state.sequencer.stepEdit.visible.set(false);
     state.sequencer.stepEdit.reset();
+    state.sequencer.patternEditor.reset();
+    state.sequencer.contextSelector.reset();
     state.sequencer.stepPresetPicker.reset();
     state.sequencer.stepPropertyInlineSelector.reset();
     state.sequencer.patternQuickControls.reset();
@@ -323,25 +342,58 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.sequencerSettings.reset();
     state.patternPitchSettings.reset();
     state.projectNavigation.reset();
+    state.projectTrackEditor.reset();
 
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
+
+    if (!historyBoundaryCleared) {
+        // A full Project replacement no longer needs rollback facts. If the
+        // transient pair was already inconsistent, discard every stale owner
+        // only after the replacement has made the old graph unreachable.
+        OC_LOG_ERROR(
+            "[CoreState] Invalid Modulator audition discarded by Project reset"
+        );
+        state.sequencerDomain_.coalescedPatternHistory.clear();
+        state.macroHistory.clear();
+        state.sequencerHistory.clear();
+        state.projectTrackHistory.clear();
+        state.projectHistory.clear();
+    }
 
     flushMutationCoalescers_(state);
 }
 
 FLASHMEM void CoreStateLifecycle::factoryReset(CoreState& state) {
+    if (state.sequencer.stepContentDraft.active.get()) {
+        state.sequencer.stepContentDraft.noteBlockedTransition(
+            sequencer::SequencerStepContentDraftBlockedTransition::RESET
+        );
+        return;
+    }
     const auto resetStatus = state.settings.factoryResetStatus();
     if (resetStatus != persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[CoreState] CoreSettings factory reset failed: {}",
                     persistence::persistenceWriteStatusLabel(resetStatus));
     }
+    const bool historyBoundaryCleared = state.clearProjectHistory();
     resetMacroDomain_(state);
     state.requestMacroRuntimeOwnerActivation();
     resetSequencerDomain_(state);
     state.project.reset();
+    state.projectTracks.reset();
     resetUiState_(state);
     state.sharedTrackPersistPending_ = false;
     state.sharedTrackPersistTimestampMs_ = 0;
+    if (!historyBoundaryCleared) {
+        OC_LOG_ERROR(
+            "[CoreState] Invalid Modulator audition discarded by factory reset"
+        );
+        state.sequencerDomain_.coalescedPatternHistory.clear();
+        state.macroHistory.clear();
+        state.sequencerHistory.clear();
+        state.projectTrackHistory.clear();
+        state.projectHistory.clear();
+    }
     persistFactoryDefaults_(state);
 }
 
@@ -350,6 +402,12 @@ FLASHMEM bool CoreStateLifecycle::queuePendingSequencerApply(
     sequencer::SequencerState& staged,
     bool merge
 ) {
+    if (state.sequencer.stepContentDraft.active.get()) {
+        state.sequencer.stepContentDraft.noteBlockedTransition(
+            sequencer::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD
+        );
+        return false;
+    }
     if (!state.sequencerDomain_.pendingApply) return false;
 
     GraphPtr activeTrackGraph;
@@ -382,6 +440,12 @@ FLASHMEM bool CoreStateLifecycle::queuePendingSequencerBankApply(
     sequencer::SequencerTrackBankState& stagedBank,
     sequencer::SequencerState& staged
 ) {
+    if (state.sequencer.stepContentDraft.active.get()) {
+        state.sequencer.stepContentDraft.noteBlockedTransition(
+            sequencer::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD
+        );
+        return false;
+    }
     if (!state.sequencerDomain_.pendingApply) return false;
     auto& pending = *state.sequencerDomain_.pendingApply;
     clearCapturedPayloads(pending);
@@ -411,10 +475,25 @@ FLASHMEM void CoreStateLifecycle::clearPendingSequencerApply(CoreState& state) {
 void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
     if (!state.sequencerDomain_.pendingApply || !state.sequencerDomain_.pendingApply->valid) return;
 
+    if (state.sequencer.stepContentDraft.active.get()) {
+        state.sequencer.stepContentDraft.noteBlockedTransition(
+            sequencer::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD
+        );
+        return;
+    }
+
     if (state.statusBar.playing.get()) {
         const int16_t playhead = state.sequencer.playheadStep.get();
         if (playhead < 0) return;
         if (playhead == state.sequencerDomain_.pendingApply->anchorPlayhead) return;
+    }
+
+    if (!state.clearSequencerHistory()) {
+        OC_LOG_ERROR(
+            "[CoreState] Pending Sequencer load cancelled: invalid Project transaction"
+        );
+        clearPendingSequencerApply(state);
+        return;
     }
 
     if (state.sequencerDomain_.pendingApply->fullBank) {
@@ -479,7 +558,6 @@ void CoreStateLifecycle::applyPendingSequencerApplyIfReady(CoreState& state) {
     }
     state.markProjectMutated();
     state.refreshSharedTrackStateFromSequencer();
-    state.clearSequencerHistory();
     state.sequencerDomain_.pendingApply->valid = false;
     clearCapturedPayloads(*state.sequencerDomain_.pendingApply);
 }

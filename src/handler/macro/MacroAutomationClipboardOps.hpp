@@ -1,7 +1,7 @@
 #pragma once
 
 #include "state/StructureClipboardState.hpp"
-#include "state/macro/MacroAutomationState.hpp"
+#include "state/macro/MacroAutomationAddress.hpp"
 
 namespace core::handler::macro::automation_clipboard_ops {
 

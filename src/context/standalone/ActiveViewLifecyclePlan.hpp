@@ -42,6 +42,7 @@ constexpr ActiveViewLifecyclePlan makeActiveViewLifecyclePlan(core::ui::ViewType
                 ActiveViewLifecycleStep::ACTIVATE_SEQUENCER,
                 ActiveViewLifecycleStep::SYNC_SEQUENCER_ENCODERS,
             };
+        case core::ui::ViewType::MODULATORS:
         case core::ui::ViewType::PROJECT:
             return {
                 ActiveViewLifecycleStep::DEACTIVATE_MACRO,

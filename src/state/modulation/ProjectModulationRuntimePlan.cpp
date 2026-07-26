@@ -101,6 +101,7 @@ FLASHMEM bool bindingComesBefore(
 FLASHMEM bool sourceConsumesTrigger(
     const ProjectModulationRuntimeSource& source
 ) {
+    if ((source.flags & PROJECT_MODULATOR_FLAG_ENABLED) == 0U) return false;
     return source.kind == ModulatorKind::ADSR ||
            (source.kind == ModulatorKind::LFO &&
             source.traits.lfo.retrigger ==
@@ -271,9 +272,15 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
             runtime.traits.lfo.timing = source.parameters.lfo.timing;
         } else if (source.kind == ModulatorKind::ADSR) {
             runtime.parameters.adsr = source.parameters.adsr;
-            runtime.traits.adsr.curve = source.parameters.adsr.curve;
-            runtime.traits.adsr.retrigger = source.parameters.adsr.retrigger;
-            runtime.traits.adsr.timing = source.parameters.adsr.timing;
+            runtime.traits.adsr.curve = modulatorAdsrCurve(
+                source.parameters.adsr.traits
+            );
+            runtime.traits.adsr.retrigger = modulatorAdsrRetrigger(
+                source.parameters.adsr.traits
+            );
+            runtime.traits.adsr.timing = modulatorAdsrTiming(
+                source.parameters.adsr.traits
+            );
         }
         for (uint16_t triggerIndex = 0;
              triggerIndex < state.triggerBindingCount;
@@ -282,14 +289,14 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
             if (trigger.sourceId != source.id) continue;
             runtime.trigger = trigger.trigger;
             runtime.triggerFlags = trigger.flags;
+            runtime.triggerVelocityMin = trigger.velocityMin;
+            runtime.triggerVelocityMax = trigger.velocityMax;
             break;
         }
     }
 
-    // Compile a compact sparse routing index once at publication. A physical
-    // edge can still fan out to every matching source, including wildcard Note
-    // routes, but the hot evaluator only scans its Track/channel bucket plus
-    // the Track wildcard-channel bucket.
+    // Compile a compact sparse Track routing index once at publication. The
+    // physical MIDI channel remains an event fact; the Track owns routing.
     uint16_t triggerRouteWrite = 0U;
     for (uint16_t bucket = 0U;
          bucket < PROJECT_MODULATION_TRIGGER_BUCKET_COUNT;
@@ -305,9 +312,6 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
                 (source.triggerFlags &
                  PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) == 0U ||
                 source.trigger.track >= PROJECT_MODULATION_TRACK_COUNT ||
-                (source.trigger.channel >= 16U &&
-                 source.trigger.channel !=
-                    PROJECT_MODULATION_TRIGGER_ANY_CHANNEL) ||
                 static_cast<uint8_t>(source.trigger.kind) >=
                     PROJECT_MODULATION_TRIGGER_KIND_COUNT ||
                 projectModulationTriggerBucketIndex(source.trigger) != bucket) {
@@ -315,14 +319,6 @@ FLASHMEM ProjectModulationCompileResult compileRuntimePlan(
             }
             out.triggerSourceOrder[triggerRouteWrite++] =
                 static_cast<uint8_t>(sourceIndex);
-            if (source.trigger.kind == ModulationTriggerKind::TRACK_NOTE &&
-                source.trigger.channel ==
-                    PROJECT_MODULATION_TRIGGER_ANY_CHANNEL) {
-                out.triggerWildcardTrackMask = static_cast<uint16_t>(
-                    out.triggerWildcardTrackMask |
-                    (1U << source.trigger.track)
-                );
-            }
         }
     }
     out.triggerBucketOffset[PROJECT_MODULATION_TRIGGER_BUCKET_COUNT] =

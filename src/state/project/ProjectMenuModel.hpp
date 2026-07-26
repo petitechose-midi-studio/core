@@ -9,6 +9,10 @@
 #include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
+namespace core::state::modulation {
+struct ProjectModulationState;
+}
+
 namespace core::state::project {
 
 enum class ProjectMenuRowKind : uint8_t {
@@ -87,7 +91,13 @@ bool openProjectNameEditor(ProjectNavigationState& navigation,
 bool projectNavigationInNewProjectConfirmation(const ProjectNavigationState& navigation);
 bool projectNavigationInProjectConfirmation(const ProjectNavigationState& navigation);
 void switchProjectTab(ProjectNavigationState& navigation, int delta);
+void openProjectRootTab(ProjectNavigationState& navigation, ProjectTab tab);
 bool projectNavigationAtRoot(const ProjectNavigationState& navigation);
+void reconcileProjectModulatorNavigationAfterHistory(
+    ProjectNavigationState& navigation,
+    const core::state::modulation::ProjectModulationState& graph,
+    bool preserveMissingSelection = true
+);
 uint16_t projectCurrentRowCount(const ProjectNavigationState& navigation,
                                 uint16_t modulatorSourceCount = 0,
                                 uint16_t modulatorDetailRowCount = 0);

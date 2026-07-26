@@ -19,6 +19,12 @@ core::persistence::SlotFileStoreConfig makeConfig() {
     return config;
 }
 
+std::vector<uint8_t> readRegion(MemoryStorage& storage, uint32_t address, size_t size) {
+    std::vector<uint8_t> bytes(size);
+    assert(storage.read(address, bytes.data(), bytes.size()) == bytes.size());
+    return bytes;
+}
+
 void test_init_formats_empty_storage() {
     MemoryStorage storage;
     storage.init();
@@ -26,7 +32,7 @@ void test_init_formats_empty_storage() {
     core::persistence::PersistenceSlotFileStore store(storage, makeConfig());
     const bool initialized = store.init();
     assert(initialized);
-    assert(storage.commitCount == 1);
+    assert(storage.commitCount == 2);
 
     uint8_t payload[32] = {};
     const auto status = store.loadSlot(0, payload, sizeof(payload));
@@ -189,6 +195,182 @@ void test_roundtrips_payload_larger_than_uint16() {
     std::cout << "[PASS] test_roundtrips_payload_larger_than_uint16\n";
 }
 
+void test_nonzero_base_addresses_are_bank_relative_and_bounded() {
+    auto config = makeConfig();
+    config.baseAddress = 73;
+    const size_t bankCapacity =
+        core::persistence::PersistenceSlotFileStore::requiredCapacity(
+            config.slotCount,
+            config.slotPayloadSize
+        );
+    MemoryStorage storage(config.baseAddress + bankCapacity + 41);
+    storage.init();
+
+    const std::vector<uint8_t> prefix(73, 0xA5);
+    const std::vector<uint8_t> suffix(41, 0x5A);
+    assert(storage.write(0, prefix.data(), prefix.size()) == prefix.size());
+    assert(storage.write(
+               static_cast<uint32_t>(config.baseAddress + bankCapacity),
+               suffix.data(),
+               suffix.size()
+           ) == suffix.size());
+    assert(storage.commit());
+
+    core::persistence::PersistenceSlotFileStore store(storage, config);
+    assert(store.baseAddress() == config.baseAddress);
+    assert(store.bankCapacity() == bankCapacity);
+    assert(store.slotHeaderAddress(0) ==
+           config.baseAddress + core::persistence::PersistenceSlotFileStore::FILE_HEADER_SIZE);
+    assert(store.init());
+
+    const uint8_t payload[] = {8, 6, 7, 5, 3, 0, 9};
+    assert(store.saveSlot(3, payload, sizeof(payload), 11));
+    uint8_t loaded[32] = {};
+    assert(store.loadSlot(3, loaded, sizeof(loaded)) ==
+           core::persistence::SlotLoadStatus::OK);
+    assert(std::memcmp(payload, loaded, sizeof(payload)) == 0);
+
+    assert(readRegion(storage, 0, prefix.size()) == prefix);
+    assert(readRegion(
+               storage,
+               static_cast<uint32_t>(config.baseAddress + bankCapacity),
+               suffix.size()
+           ) == suffix);
+
+    std::cout << "[PASS] test_nonzero_base_addresses_are_bank_relative_and_bounded\n";
+}
+
+void test_layout_probe_is_read_only_and_exposes_only_crc_verified_layout() {
+    using ProbeStatus = core::persistence::SlotFileLayoutProbeStatus;
+
+    auto config = makeConfig();
+    config.baseAddress = 96;
+    const size_t bankCapacity =
+        core::persistence::PersistenceSlotFileStore::requiredCapacity(
+            config.slotCount,
+            config.slotPayloadSize
+        );
+    MemoryStorage storage(config.baseAddress + bankCapacity);
+    storage.init();
+
+    const auto empty = core::persistence::PersistenceSlotFileStore::probeLayout(
+        storage,
+        config.baseAddress
+    );
+    assert(empty.status == ProbeStatus::EMPTY);
+    assert(empty.config.fileMagic == 0);
+    assert(storage.commitCount == 0);
+
+    core::persistence::PersistenceSlotFileStore store(storage, config);
+    assert(store.format());
+    const int commitsAfterFormat = storage.commitCount;
+    const auto valid = core::persistence::PersistenceSlotFileStore::probeLayout(
+        storage,
+        config.baseAddress
+    );
+    assert(valid.status == ProbeStatus::VALID);
+    assert(valid.config.baseAddress == config.baseAddress);
+    assert(valid.config.fileMagic == config.fileMagic);
+    assert(valid.config.domainVersion == config.domainVersion);
+    assert(valid.config.slotCount == config.slotCount);
+    assert(valid.config.slotPayloadSize == config.slotPayloadSize);
+    assert(storage.commitCount == commitsAfterFormat);
+
+    auto expected = config;
+    ++expected.domainVersion;
+    core::persistence::PersistenceSlotFileStore mismatchedStore(storage, expected);
+    const auto mismatch = mismatchedStore.probe();
+    assert(mismatch.status == ProbeStatus::MISMATCH);
+    assert(mismatch.config.domainVersion == config.domainVersion);
+
+    uint8_t corrupt = 0;
+    assert(storage.write(config.baseAddress + 15, &corrupt, 1) == 1);
+    const auto corruptProbe = core::persistence::PersistenceSlotFileStore::probeLayout(
+        storage,
+        config.baseAddress
+    );
+    assert(corruptProbe.status == ProbeStatus::MISMATCH);
+    assert(corruptProbe.config.fileMagic == 0);
+    assert(corruptProbe.config.slotCount == 0);
+
+    MemoryStorage unavailable;
+    assert(core::persistence::PersistenceSlotFileStore::probeLayout(unavailable, 0).status ==
+           ProbeStatus::IO);
+    MemoryStorage tooSmall(
+        core::persistence::PersistenceSlotFileStore::FILE_HEADER_SIZE - 1
+    );
+    tooSmall.init();
+    assert(core::persistence::PersistenceSlotFileStore::probeLayout(tooSmall, 0).status ==
+           ProbeStatus::CAPACITY);
+
+    std::cout
+        << "[PASS] test_layout_probe_is_read_only_and_exposes_only_crc_verified_layout\n";
+}
+
+void test_header_last_publication_preserves_neighbor_bank() {
+    using ProbeStatus = core::persistence::SlotFileLayoutProbeStatus;
+    using WriteStatus = core::persistence::PersistenceWriteStatus;
+
+    auto firstConfig = makeConfig();
+    const size_t bankCapacity =
+        core::persistence::PersistenceSlotFileStore::requiredCapacity(
+            firstConfig.slotCount,
+            firstConfig.slotPayloadSize
+        );
+    auto secondConfig = makeConfig();
+    secondConfig.baseAddress = static_cast<uint32_t>(bankCapacity);
+    secondConfig.fileMagic = 0x50535432;
+    secondConfig.domainVersion = 2;
+
+    MemoryStorage storage(bankCapacity * 2);
+    storage.init();
+    core::persistence::PersistenceSlotFileStore first(storage, firstConfig);
+    assert(first.format());
+    const uint8_t firstPayload[] = {0x11, 0x22, 0x33};
+    assert(first.saveSlot(1, firstPayload, sizeof(firstPayload), 4));
+    const auto firstBankBefore = readRegion(storage, 0, bankCapacity);
+
+    std::vector<uint8_t> stale(bankCapacity, 0xA5);
+    assert(storage.write(
+               secondConfig.baseAddress,
+               stale.data(),
+               stale.size()
+           ) == stale.size());
+    assert(storage.commit());
+
+    core::persistence::PersistenceSlotFileStore second(storage, secondConfig);
+    const int commitsBeforeErase = storage.commitCount;
+    assert(second.eraseUnpublishedBankStatus() == WriteStatus::OK);
+    assert(storage.commitCount == commitsBeforeErase + 1);
+    assert(readRegion(storage, secondConfig.baseAddress, bankCapacity) ==
+           std::vector<uint8_t>(bankCapacity, 0xFF));
+    assert(core::persistence::PersistenceSlotFileStore::probeLayout(
+               storage,
+               secondConfig.baseAddress
+           ).status == ProbeStatus::EMPTY);
+
+    const uint8_t secondPayload[] = {0x91, 0x82, 0x73, 0x64};
+    assert(second.saveSlotStatus(2, secondPayload, sizeof(secondPayload), 9) ==
+           WriteStatus::OK);
+    // Slot data can be built and verified while the bank remains unpublished.
+    assert(core::persistence::PersistenceSlotFileStore::probeLayout(
+               storage,
+               secondConfig.baseAddress
+           ).status == ProbeStatus::EMPTY);
+    uint8_t loaded[32] = {};
+    assert(second.loadSlot(2, loaded, sizeof(loaded)) ==
+           core::persistence::SlotLoadStatus::OK);
+    assert(std::memcmp(loaded, secondPayload, sizeof(secondPayload)) == 0);
+
+    const int commitsBeforePublish = storage.commitCount;
+    assert(second.publishHeaderStatus() == WriteStatus::OK);
+    assert(storage.commitCount == commitsBeforePublish + 1);
+    assert(second.probe().status == ProbeStatus::VALID);
+    assert(readRegion(storage, 0, bankCapacity) == firstBankBefore);
+
+    std::cout << "[PASS] test_header_last_publication_preserves_neighbor_bank\n";
+}
+
 }  // namespace
 
 int main() {
@@ -203,6 +385,9 @@ int main() {
     test_load_latest_picks_newest_valid_slot();
     test_load_latest_falls_back_when_newest_is_corrupted();
     test_roundtrips_payload_larger_than_uint16();
+    test_nonzero_base_addresses_are_bank_relative_and_bounded();
+    test_layout_probe_is_read_only_and_exposes_only_crc_verified_layout();
+    test_header_last_publication_preserves_neighbor_bank();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

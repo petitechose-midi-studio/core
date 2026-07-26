@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "state/macro/MacroAutomationDomain.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
 
 namespace core::handler {
 
@@ -18,7 +18,7 @@ constexpr uint8_t MACRO_AUTOMATION_EDITOR_COARSE_BEAT_STEP = 4;
 
 MacroAutomationEditRange macroAutomationLengthEditRange(bool coarse);
 MacroAutomationEditRange macroAutomationOffsetEditRange(
-    const core::state::macro::MacroAutomationSlotState* slot,
+    const core::state::modulation::ProjectControlCurveView* automation,
     bool coarse);
 
 float macroAutomationEncoderPositionToBeat(float normalized,

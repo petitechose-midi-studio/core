@@ -1,346 +1,8 @@
 #pragma once
 
-#include <array>
-#include <cstdint>
-
-#include "app/ExtmemAllocator.hpp"
-#include "state/macro/MacroAutomationState.hpp"
-#include "state/macro/MacroPagesState.hpp"
-#include "state/macro/MacroWorkflow.hpp"
-#include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/macro/MacroHistoryTypes.hpp"
 
 namespace core::state::macro {
-
-/**
- * Bounded, Slot-scoped Macro history.
- *
- * A history entry stores only the addressed Slot and its packed curve points,
- * never the 128 KiB project point pool. The 4096-point admission limit covers
- * the maximum authored Automation plus Modulation pair (2 x 2048 points) and
- * makes memory use deterministic on the controller.
- */
-inline constexpr uint16_t MACRO_HISTORY_POINT_CAPACITY =
-    static_cast<uint16_t>(MACRO_AUTOMATION_RECORDING_MAX_POINTS * 2U);
-
-enum class MacroHistoryActionKind : uint8_t {
-    CONVERT_AUTOMATION = 0,
-    PASTE_SLOT,
-    PASTE_DESTINATION,
-    PASTE_AUTOMATION,
-    PASTE_MODULATION,
-    CLEAR_AUTOMATION,
-    CLEAR_MODULATION,
-    REMOVE_SLOT,
-    DEPTH_EDIT,
-    GLOBAL_DEPTH_EDIT,
-    SOURCE_STATE,
-    CREATE_MODULATOR_ASSIGNMENT,
-    REMOVE_MODULATOR_ASSIGNMENT,
-    PROJECT_MODULATOR_SOURCE_EDIT,
-    PROJECT_MODULATOR_TRIGGER_EDIT,
-    CREATE_PROJECT_MODULATOR,
-    SPLIT_PROJECT_MODULATOR,
-    DELETE_PROJECT_MODULATOR,
-    RECORD_AUTOMATION,
-};
-
-struct MacroSlotHistorySnapshot {
-    MacroAutomationSlotAddress address{};
-    bool macroActive = false;
-    uint8_t cc = 0;
-    float staticValue = 0.0f;
-    bool slotPresent = false;
-    MacroAutomationSlotState slot{};
-    uint16_t automationPointCount = 0;
-    uint16_t modulationPointCount = 0;
-    uint16_t destinationScaleQ15 =
-        core::state::modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
-    std::array<MacroPackedCurvePoint, MACRO_HISTORY_POINT_CAPACITY> points{};
-};
-
-struct MacroSlotHistoryChangePayload {
-    MacroSlotHistorySnapshot before{};
-    MacroSlotHistorySnapshot after{};
-};
-
-/**
- * Absolute-Automation-only snapshot.
- *
- * Point storage is exact-length PSRAM so recording history never retains a
- * Modulation source, binding, graph, curve arena, or fixed maximum point array.
- */
-struct MacroAutomationHistorySnapshot {
-    MacroAutomationSlotAddress address{};
-    MacroAutomationCurveRef automation{};
-    uint16_t pointCount = 0;
-    core::app::ExtmemUniqueArray<MacroPackedCurvePoint> points{};
-};
-
-struct MacroAutomationHistoryPayload {
-    MacroAutomationHistorySnapshot before{};
-    MacroAutomationHistorySnapshot after{};
-};
-
-inline constexpr uint8_t MACRO_AUTOMATION_TAKE_DESTINATION_CAPACITY =
-    MACRO_COUNT;
-
-/**
- * One multi-destination Automation history command.
- *
- * Before arrays are exact-length. Each after array reserves the recording
- * maximum before t0, in PSRAM, so commit and Redo need no capture allocation.
- */
-struct MacroAutomationTakeHistoryPayload {
-    std::array<
-        MacroAutomationHistorySnapshot,
-        MACRO_AUTOMATION_TAKE_DESTINATION_CAPACITY
-    > before{};
-    std::array<
-        MacroAutomationHistorySnapshot,
-        MACRO_AUTOMATION_TAKE_DESTINATION_CAPACITY
-    > after{};
-    uint16_t candidateMask = 0U;
-    uint16_t touchedMask = 0U;
-    uint8_t track = 0U;
-    uint8_t page = 0U;
-    std::array<uint8_t, 2> reserved{};
-};
-
-/**
- * Exact cold snapshot for topology created by one destination assignment.
- *
- * The complete target Macro Track is retained in PSRAM only when a missing
- * Track, Page, or Macro position is requested. This keeps ordinary assignment
- * history compact while making Cancel/Undo/Redo byte-stable for hidden state.
- */
-struct MacroDestinationStructureHistoryPayload {
-    MacroDestinationActivationPlan plan{};
-    MacroTrackData beforeTrack{};
-    MacroTrackData afterTrack{};
-    uint16_t beforeTrackEnabledMask = MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
-    uint16_t afterTrackEnabledMask = MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
-    uint8_t beforeActiveTrack = 0U;
-    uint8_t afterActiveTrack = 0U;
-    bool applied = false;
-};
-
-/**
- * Small graph delta for destination-first source creation.
- *
- * The before-tail values make Cancel byte-stable even when a dense directory
- * slot was previously used. The committed after objects are sufficient for
- * stable-ID Undo/Redo and avoid retaining the complete Project graph.
- */
-struct MacroModulatorCreationHistoryPayload {
-    core::state::modulation::ModulatorSourceState beforeSourceTail{};
-    core::state::modulation::ModulatorSourceState beforeSource{};
-    core::state::modulation::ModulationBindingState beforeBindingTail{};
-    core::state::modulation::ModulationTriggerBindingState beforeTriggerTail{};
-    core::state::modulation::ModulatorSourceState source{};
-    core::state::modulation::ModulationBindingState binding{};
-    core::state::modulation::ModulationTriggerBindingState trigger{};
-    core::state::modulation::ProjectCurveId sharedCurveId{};
-    uint32_t beforeNextSourceId = 1;
-    uint32_t beforeNextBindingId = 1;
-    uint32_t afterNextSourceId = 1;
-    uint32_t afterNextBindingId = 1;
-    uint32_t beforeAuthoredRevision = 1;
-    uint32_t generation = 0;
-    uint16_t beforeSourceCount = 0;
-    uint16_t beforeBindingCount = 0;
-    uint16_t beforeTriggerCount = 0;
-    uint16_t beforeSharedCurveReferenceCount = 0;
-    float beforeMacroValue = 0.5f;
-    float afterMacroValue = 0.5f;
-    uint8_t beforeMacroActiveMask = 0;
-    uint8_t afterMacroActiveMask = 0;
-    uint8_t beforeMacroCc = 0;
-    uint8_t afterMacroCc = 0;
-    bool sourceCreated = false;
-    bool bindingCreated = false;
-    bool triggerCreated = false;
-    bool sharedCurveReferenceCreated = false;
-    bool macroCreated = false;
-    bool pending = false;
-    core::app::ExtmemUniquePtr<MacroDestinationStructureHistoryPayload>
-        destinationStructure{};
-};
-
-inline constexpr uint16_t MACRO_MODULATION_ASSIGNMENT_CAPACITY =
-    core::state::modulation::PROJECT_MODULATOR_CAPACITY;
-
-struct MacroModulationAssignmentSnapshotEntry {
-    core::state::modulation::ModulationBindingState binding{};
-    uint16_t globalIndex = 0;
-    uint16_t reserved = 0;
-};
-
-/**
- * Destination-scoped graph snapshot used by edge edits and aggregate bypass.
- *
- * A Macro can receive at most one edge from each Project source, hence the
- * 128-entry bound. Global positions plus an unrelated-state hash make Undo
- * restore stable list order without retaining the complete Project graph.
- */
-struct MacroModulationAssignmentSnapshot {
-    core::state::modulation::ModulationDestination destination{};
-    uint32_t nextBindingId = 1;
-    uint32_t unrelatedHash = 0;
-    uint16_t globalBindingCount = 0;
-    uint16_t assignmentCount = 0;
-    uint16_t destinationScaleQ15 =
-        core::state::modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
-    std::array<
-        MacroModulationAssignmentSnapshotEntry,
-        MACRO_MODULATION_ASSIGNMENT_CAPACITY
-    > assignments{};
-};
-
-struct MacroModulationAssignmentsHistoryPayload {
-    MacroModulationAssignmentSnapshot before{};
-    MacroModulationAssignmentSnapshot after{};
-};
-
-/** Exact destination removal state; all large/cold members live in PSRAM. */
-struct MacroSlotRemovalState {
-    MacroAutomationHistorySnapshot automation{};
-    MacroModulationAssignmentSnapshot modulation{};
-    bool macroActive = false;
-    uint8_t cc = 0U;
-    float staticValue = 0.5f;
-};
-
-struct MacroSlotRemovalHistoryPayload {
-    MacroSlotRemovalState before{};
-    MacroSlotRemovalState after{};
-};
-
-/** Compact destination-wide Depth delta; no binding array is retained. */
-struct MacroDestinationScaleHistoryPayload {
-    core::state::modulation::ModulationDestination destination{};
-    uint16_t beforeScaleQ15 =
-        core::state::modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
-    uint16_t afterScaleQ15 =
-        core::state::modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
-    bool valid = false;
-};
-
-/** One root-source edit; no graph or curve-arena snapshot is retained. */
-struct ProjectModulatorSourceHistoryPayload {
-    core::state::modulation::ModulatorSourceState before{};
-    core::state::modulation::ModulatorSourceState after{};
-    bool valid = false;
-};
-
-/** One stable-ID typed trigger edit; source and graph order remain untouched. */
-struct ProjectModulatorTriggerHistoryPayload {
-    core::state::modulation::ModulationTriggerBindingState before{};
-    core::state::modulation::ModulationTriggerBindingState after{};
-    bool valid = false;
-};
-
-struct ProjectModulatorDeleteBindingEntry {
-    core::state::modulation::ModulationBindingState binding{};
-    uint16_t globalIndex = 0;
-};
-
-struct ProjectModulatorDeleteTriggerEntry {
-    core::state::modulation::ModulationTriggerBindingState trigger{};
-    uint16_t globalIndex = 0;
-};
-
-struct ProjectModulatorDeleteScaleEntry {
-    core::state::modulation::ModulationDestinationScaleState scale{};
-};
-
-struct ProjectModulatorSplitBindingEntry {
-    core::state::modulation::ModulationBindingState before{};
-    core::state::modulation::ModulationBindingState after{};
-    uint16_t globalIndex = 0;
-};
-
-/**
- * Exact cold delta for one root-source Split.
- *
- * Split never copies curve points: a recorded source adds one immutable curve
- * reference. Only the moved output edges are retained in an exact-length PSRAM
- * array, so a one-destination Split does not reserve the 512-edge maximum.
- */
-struct ProjectModulatorSplitHistoryPayload {
-    core::state::modulation::ModulatorSourceState retainedBefore{};
-    core::state::modulation::ModulatorSourceState retainedAfter{};
-    core::state::modulation::ModulatorSourceState beforeSourceTail{};
-    core::state::modulation::ModulatorSourceState clone{};
-    core::state::modulation::ModulationTriggerBindingState beforeTriggerTail{};
-    core::state::modulation::ModulationTriggerBindingState cloneTrigger{};
-    core::state::modulation::ProjectCurveId sharedCurveId{};
-    uint32_t beforeNextSourceId = 1;
-    uint32_t beforeNextBindingId = 1;
-    uint32_t afterNextSourceId = 1;
-    uint32_t afterNextBindingId = 1;
-    uint16_t sourceIndex = 0;
-    uint16_t beforeSourceCount = 0;
-    uint16_t beforeBindingCount = 0;
-    uint16_t beforeTriggerCount = 0;
-    uint16_t movedBindingCount = 0;
-    uint16_t beforeSharedCurveReferenceCount = 0;
-    bool triggerCreated = false;
-    bool sharedCurveReferenceCreated = false;
-    core::app::ExtmemUniqueArray<ProjectModulatorSplitBindingEntry>
-        movedBindings{};
-};
-
-/** Cold source-scoped delete delta; never snapshots the complete graph/arena. */
-struct ProjectModulatorDeleteHistoryPayload {
-    core::state::modulation::ModulatorSourceState source{};
-    core::state::modulation::ProjectCurveRecord curve{};
-    uint32_t nextSourceId = 1;
-    uint32_t nextBindingId = 1;
-    uint32_t nextCurveId = 1;
-    uint32_t unrelatedHash = 0;
-    uint16_t sourceIndex = 0;
-    uint16_t beforeSourceCount = 0;
-    uint16_t beforeBindingCount = 0;
-    uint16_t beforeTriggerCount = 0;
-    uint16_t beforeScaleCount = 0;
-    uint16_t beforeCurveRecordCount = 0;
-    uint16_t beforeCurveArenaPointCount = 0;
-    uint16_t curveRecordIndex = 0;
-    uint16_t bindingCount = 0;
-    uint16_t triggerCount = 0;
-    uint16_t scaleCount = 0;
-    uint16_t curvePointCount = 0;
-    bool curvePresent = false;
-    bool curveShared = false;
-    core::app::ExtmemUniqueArray<ProjectModulatorDeleteBindingEntry> bindings{};
-    core::app::ExtmemUniqueArray<ProjectModulatorDeleteTriggerEntry> triggers{};
-    core::app::ExtmemUniqueArray<ProjectModulatorDeleteScaleEntry> scales{};
-    core::app::ExtmemUniqueArray<
-        core::state::modulation::ProjectPackedCurvePoint
-    > curvePoints{};
-};
-
-struct MacroHistoryChange {
-    MacroHistoryActionKind kind = MacroHistoryActionKind::SOURCE_STATE;
-    MacroAutomationSlotAddress address{};
-    core::app::ExtmemUniquePtr<MacroSlotHistoryChangePayload> slot{};
-    core::app::ExtmemUniquePtr<MacroAutomationHistoryPayload> automation{};
-    core::app::ExtmemUniquePtr<MacroAutomationTakeHistoryPayload>
-        automationTake{};
-    core::app::ExtmemUniquePtr<MacroModulationAssignmentsHistoryPayload>
-        modulationAssignments{};
-    core::app::ExtmemUniquePtr<MacroSlotRemovalHistoryPayload> slotRemoval{};
-    MacroDestinationScaleHistoryPayload destinationScale{};
-    MacroModulatorCreationHistoryPayload modulator{};
-    ProjectModulatorSourceHistoryPayload sourceEdit{};
-    ProjectModulatorTriggerHistoryPayload triggerEdit{};
-    core::app::ExtmemUniquePtr<ProjectModulatorDeleteHistoryPayload>
-        modulatorDelete{};
-    core::app::ExtmemUniquePtr<ProjectModulatorSplitHistoryPayload>
-        modulatorSplit{};
-};
-
-using MacroHistoryChangePtr = core::app::ExtmemUniquePtr<MacroHistoryChange>;
 
 [[nodiscard]] bool captureMacroSlotHistorySnapshot(
     const MacroPagesState& pages,
@@ -395,6 +57,12 @@ public:
     MacroHistoryService(const MacroHistoryService&) = delete;
     MacroHistoryService& operator=(const MacroHistoryService&) = delete;
 
+    void setProjectHistoryEventSink(
+        const core::state::project::ProjectHistoryEventSink* sink
+    ) {
+        project_history_sink_ = sink;
+    }
+
     [[nodiscard]] MacroHistoryChangePtr prepare(
         const MacroPagesState& pages,
         const MacroAutomationSlotAddress& address,
@@ -429,6 +97,35 @@ public:
         MacroPagesState& pages,
         MacroHistoryChangePtr change,
         bool coalesce = false
+    );
+
+    [[nodiscard]] MacroHistoryChangePtr prepareTrackConfig(
+        const MacroPagesState& pages,
+        const core::state::project::ProjectTrackState& projectTracks,
+        uint8_t track,
+        uint8_t page
+    ) const;
+    [[nodiscard]] bool commitPreparedTrackConfig(
+        MacroPagesState& pages,
+        core::state::project::ProjectTrackState& projectTracks,
+        MacroHistoryChangePtr change
+    );
+
+    /** Applies one contiguous Page compaction and records it as one action. */
+    [[nodiscard]] bool compactPages(
+        MacroPagesState& pages,
+        uint8_t track,
+        uint16_t retainedPageMask
+    );
+
+    /** Reserves exact before/after storage for any non-compacting Page edit. */
+    [[nodiscard]] MacroHistoryChangePtr preparePageStructureSnapshot(
+        const MacroPagesState& pages,
+        uint8_t track
+    ) const;
+    [[nodiscard]] bool commitPreparedPageStructureSnapshot(
+        MacroPagesState& pages,
+        MacroHistoryChangePtr change
     );
 
     /**
@@ -468,6 +165,22 @@ public:
             const core::state::modulation::ModulationTriggerDraft& triggerDraft
         );
     [[nodiscard]] core::state::modulation::ProjectModulationResult
+        createUnassignedRecordedShape(
+            MacroPagesState& pages,
+            const core::state::modulation::RecordedShapeDraft& sourceDraft
+        );
+
+    /** Creates one Recorded Shape and its destination as one exact Undo. */
+    [[nodiscard]] core::state::modulation::ProjectModulationResult
+        createAssignedRecordedShape(
+            MacroPagesState& pages,
+            const MacroAutomationSlotAddress& address,
+            const core::state::modulation::RecordedShapeDraft& sourceDraft,
+            const core::state::modulation::ModulationBindingDraft& bindingDraft,
+            bool createMacroSlot = false,
+            const MacroDestinationActivationPlan* destinationPlan = nullptr
+        );
+    [[nodiscard]] core::state::modulation::ProjectModulationResult
         duplicateProjectModulator(
             MacroPagesState& pages,
             core::state::modulation::ModulatorId sourceId,
@@ -501,11 +214,42 @@ public:
         const MacroAutomationSlotAddress& address
     ) const;
 
+    /** Fail-closed transaction predicate, including inconsistent transient state. */
+    [[nodiscard]] bool hasPendingModulatorAuditionTransaction(
+        const MacroPagesState& pages
+    ) const;
+
+    /** Exact lifecycle rollback before a history boundary destroys pending state. */
+    [[nodiscard]] bool abortPendingModulatorAudition(MacroPagesState& pages);
+
     /** Depth edit fast path: one allocation on first turn, none while coalescing. */
     [[nodiscard]] bool setModulationDepthCoalesced(
         MacroPagesState& pages,
         const MacroAutomationSlotAddress& address,
         float depth
+    );
+
+    /** One allocation on the first delta, then in-place gesture coalescing. */
+    [[nodiscard]] bool setMacroValueCoalesced(
+        MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address,
+        float value
+    );
+
+    /** One takeover gesture: Manual authority and optional Base edit together. */
+    [[nodiscard]] bool setManualOverrideCoalesced(
+        MacroPagesState& pages,
+        MacroManualOverrideState& overrides,
+        const MacroAutomationSlotAddress& address,
+        float value,
+        bool coalesceValue
+    );
+
+    /** One discrete command that hands authority back to computed sources. */
+    [[nodiscard]] bool resumeManualOverride(
+        MacroPagesState& pages,
+        MacroManualOverrideState& overrides,
+        const MacroAutomationSlotAddress& address
     );
 
     /** Signed Depth edit for one stable assignment; coalesced per gesture. */
@@ -582,11 +326,22 @@ public:
         core::state::modulation::ModulatorId sourceId,
         const core::state::modulation::ModulatorAdsrParameters& parameters
     );
+    /** Re-records one source, preserving stable IDs or applying exact COW. */
+    [[nodiscard]] core::state::modulation::ProjectModulationResult
+        replaceProjectRecordedShapeCurve(
+            MacroPagesState& pages,
+            core::state::modulation::ModulatorId sourceId,
+            const core::state::modulation::ProjectCurveSpec& curve,
+            const core::state::modulation::ProjectPackedCurvePoint* points,
+            uint16_t pointCount
+        );
     [[nodiscard]] bool setProjectModulationTriggerCoalesced(
         MacroPagesState& pages,
         core::state::modulation::ModulatorId sourceId,
-        const core::state::modulation::ModulationTriggerRef& trigger,
-        bool enabled
+        const core::state::modulation::ModulationTriggerFilter& trigger,
+        bool enabled,
+        uint8_t velocityMin = 0U,
+        uint8_t velocityMax = 127U
     );
     [[nodiscard]] core::state::modulation::ProjectModulationResult
         splitProjectModulator(
@@ -609,11 +364,15 @@ public:
     void endCoalescing();
     [[nodiscard]] bool undo(
         MacroPagesState& pages,
-        MacroAutomationSlotAddress* appliedAddress = nullptr
+        MacroAutomationSlotAddress* appliedAddress = nullptr,
+        MacroManualOverrideState* manualOverrides = nullptr,
+        core::state::project::ProjectTrackState* projectTracks = nullptr
     );
     [[nodiscard]] bool redo(
         MacroPagesState& pages,
-        MacroAutomationSlotAddress* appliedAddress = nullptr
+        MacroAutomationSlotAddress* appliedAddress = nullptr,
+        MacroManualOverrideState* manualOverrides = nullptr,
+        core::state::project::ProjectTrackState* projectTracks = nullptr
     );
     void clear();
 
@@ -621,6 +380,33 @@ public:
     [[nodiscard]] bool canRedo() const { return redo_count_ > 0; }
     [[nodiscard]] uint8_t undoCount() const { return undo_count_; }
     [[nodiscard]] uint8_t redoCount() const { return redo_count_; }
+    [[nodiscard]] uintptr_t projectHistoryUndoIdentity() const {
+        return undo_count_ > 0U && undo_[undo_count_ - 1U]
+            ? reinterpret_cast<uintptr_t>(undo_[undo_count_ - 1U].get())
+            : 0U;
+    }
+    [[nodiscard]] uintptr_t projectHistoryRedoIdentity() const {
+        return redo_count_ > 0U && redo_[redo_count_ - 1U]
+            ? reinterpret_cast<uintptr_t>(redo_[redo_count_ - 1U].get())
+            : 0U;
+    }
+    [[nodiscard]] bool projectHistoryUndoTouchesDurableState() const {
+        const auto* change = undo_count_ > 0U
+            ? undo_[undo_count_ - 1U].get()
+            : nullptr;
+        return change != nullptr &&
+               (change->kind != MacroHistoryActionKind::MANUAL_OVERRIDE_STATE ||
+                change->valueEdit.valid);
+    }
+    [[nodiscard]] bool projectHistoryRedoTouchesDurableState() const {
+        const auto* change = redo_count_ > 0U
+            ? redo_[redo_count_ - 1U].get()
+            : nullptr;
+        return change != nullptr &&
+               (change->kind != MacroHistoryActionKind::MANUAL_OVERRIDE_STATE ||
+                change->valueEdit.valid);
+    }
+    void discardRedoBranch();
 
 private:
     [[nodiscard]] core::state::modulation::ProjectModulationResult
@@ -640,6 +426,15 @@ private:
             const core::state::modulation::ModulatorLfoDraft* lfoDraft,
             const core::state::modulation::ModulatorAdsrDraft* adsrDraft,
             const core::state::modulation::ModulationTriggerDraft* triggerDraft
+        );
+    [[nodiscard]] core::state::modulation::ProjectModulationResult
+        createRecordedShape_(
+            MacroPagesState& pages,
+            const MacroAutomationSlotAddress* address,
+            const core::state::modulation::RecordedShapeDraft& sourceDraft,
+            const core::state::modulation::ModulationBindingDraft* bindingDraft,
+            bool createMacroSlot,
+            const MacroDestinationActivationPlan* destinationPlan
         );
     [[nodiscard]] MacroHistoryChangePtr prepareModulationAssignments_(
         const MacroPagesState& pages,
@@ -663,8 +458,10 @@ private:
     static void push_(
         std::array<MacroHistoryChangePtr, ENTRY_LIMIT>& stack,
         uint8_t& count,
-        MacroHistoryChangePtr change
+        MacroHistoryChangePtr change,
+        const core::state::project::ProjectHistoryEventSink* sink
     );
+    void recordNewEntry_(MacroHistoryChangePtr change);
     void clearRedo_();
 
     std::array<MacroHistoryChangePtr, ENTRY_LIMIT> undo_{};
@@ -674,6 +471,7 @@ private:
     bool coalescing_ = false;
     MacroHistoryActionKind coalesced_kind_ = MacroHistoryActionKind::SOURCE_STATE;
     MacroAutomationSlotAddress coalesced_address_{};
+    const core::state::project::ProjectHistoryEventSink* project_history_sink_ = nullptr;
 };
 
 }  // namespace core::state::macro

@@ -41,6 +41,7 @@ struct StepContentCreationAvailability {
 struct StepContentOpenResult {
     bool opened = false;
     bool created = false;
+    bool draft = false;
     StepContentCreationBlockReason blockedReason =
         StepContentCreationBlockReason::INACTIVE_CONTEXT;
     StepContentChildKind childKind = StepContentChildKind::MICRO_SEQUENCE;

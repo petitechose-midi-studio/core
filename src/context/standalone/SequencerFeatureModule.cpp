@@ -8,22 +8,28 @@
 
 #include "context/standalone/PatternPitchSettingsOverlayPresenter.hpp"
 #include "context/standalone/OverlayPresentationRegistry.hpp"
+#include "context/standalone/ProjectTrackEditorPresenter.hpp"
 #include "context/standalone/SequencerEncoderSyncCoordinator.hpp"
 #include "context/standalone/SequencerCcLaneOverlayPresenter.hpp"
 #include "context/standalone/SequencerOverlayPresenter.hpp"
+#include "context/standalone/SequencerPatternEditorPresenter.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/PatternPitchSettingsDomainServices.hpp"
 #include "handler/sequencer/PatternPitchSettingsHandler.hpp"
+#include "handler/sequencer/ProjectTrackEditorHandler.hpp"
 #include "handler/sequencer/SequencerCcLaneDomainServices.hpp"
 #include "handler/sequencer/SequencerCcLaneHandler.hpp"
 #include "handler/sequencer/SequencerCcLaneWorkflow.hpp"
 #include "handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
+#include "handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
 #include "handler/sequencer/SequencerStepContentHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
+#include "ui/sequencer/SequencerPatternEditorOverlay.hpp"
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
+#include "ui/project/ProjectTrackEditorOverlay.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone {
@@ -31,6 +37,7 @@ namespace core::context::standalone {
 FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     StateRefs stateRefs,
     core::handler::SharedTrackDomainServices sharedTracks,
+    core::state::project::ProjectTrackDomainServices trackDomain,
     core::handler::SequencerStepPresetDomainServices stepPresets,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     OverlayPresentationRegistry& overlayPresentations,
@@ -44,15 +51,23 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
 #endif
 )
 #if defined(MS_UX_RECORDER)
-    : property_selector_ux_surface_(
+      : track_editor_ux_surface_(
+          stateRefs.activeView,
+          stateRefs.projectTrackEditor,
+          stateRefs.projectTracks
+      ),
+      property_selector_ux_surface_(
           stateRefs.activeView,
           stateRefs.structureNavigationFocus,
+          stateRefs.trackNavigation,
           stateRefs.sequencer
       ),
       step_preset_ux_surface_(stateRefs.sequencer, stateRefs.trackActivations),
       cc_lane_ux_surface_(
           stateRefs.sequencer,
           stateRefs.sequencerTracks,
+          stateRefs.projectNavigation,
+          stateRefs.projectTracks,
           stateRefs.midiCcCoordinator
       ),
       quick_controls_ux_surface_(stateRefs.activeView, stateRefs.sequencer),
@@ -63,6 +78,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
           stateRefs.structureClipboard,
           stateRefs.sequencer,
           stateRefs.sequencerTracks,
+          stateRefs.projectTracks,
           stateRefs.trackActivations,
           &structure_ux_trace_state_
       ),
@@ -83,36 +99,39 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
 #endif
 {
 #if defined(MS_UX_RECORDER)
-    if (uxRegistry) {
-        uxRegistry->add(
+    if (uxRegistry &&
+        (!uxRegistry->add(
+            track_editor_ux_surface_,
+            core::context::standalone::ux::priority::SEQUENCER_TRACK_EDIT
+        ) ||
+         !uxRegistry->add(
             step_preset_ux_surface_,
             core::context::standalone::ux::priority::SEQUENCER_STEP_PRESET
-        );
-        uxRegistry->add(
+        ) ||
+         !uxRegistry->add(
             cc_lane_ux_surface_,
             core::context::standalone::ux::priority::SEQUENCER_CC_LANE
-        );
-        uxRegistry->add(
+        ) ||
+         !uxRegistry->add(
             step_edit_ux_surface_,
             core::context::standalone::ux::priority::SEQUENCER_STEP_EDIT
-        );
-        uxRegistry->add(
+        ) ||
+         !uxRegistry->add(
             property_selector_ux_surface_,
             core::context::standalone::ux::priority::SEQUENCER_PROPERTY_SELECTOR
-        );
-        uxRegistry->add(
+        ) ||
+         !uxRegistry->add(
             quick_controls_ux_surface_,
             core::context::standalone::ux::priority::SEQUENCER_QUICK_CONTROLS
-        );
-        uxRegistry->add(
+        ) ||
+         !uxRegistry->add(
             structure_ux_surface_,
             core::context::standalone::ux::priority::SEQUENCER_STRUCTURE
-        );
-        uxRegistry->add(
+        ) ||
+         !uxRegistry->add(
             step_grid_ux_surface_,
             core::context::standalone::ux::priority::SEQUENCER_STEP_GRID
-        );
-    }
+        ))) return;
 #endif
 
     if (!overlayRoot || !sequencerViewScope || stateRefs.statusBar == nullptr) return;
@@ -130,6 +149,65 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         encoders
     );
     if (!encoder_sync_) return;
+    pattern_randomize_session_ = core::app::makeExtmemUnique<
+        core::state::sequencer::SequencerPatternRandomizeSession>();
+    if (!pattern_randomize_session_) return;
+#if defined(MS_UX_RECORDER)
+    pattern_editor_ux_surface_ = core::app::makeExtmemUnique<
+        core::context::standalone::ux::SequencerPatternEditorUxSurface>(
+            stateRefs.activeView,
+            stateRefs.sequencer,
+            *pattern_randomize_session_
+        );
+    if (!pattern_editor_ux_surface_) return;
+    if (uxRegistry &&
+        !uxRegistry->add(
+            *pattern_editor_ux_surface_,
+            core::context::standalone::ux::priority::SEQUENCER_PATTERN_EDIT
+        )) return;
+#endif
+    pattern_editor_overlay_ =
+        core::app::makeExtmemUnique<core::ui::SequencerPatternEditorOverlay>(
+            overlayRoot
+        );
+    if (!pattern_editor_overlay_ || !pattern_editor_overlay_->getElement()) return;
+    pattern_editor_action_strip_ =
+        core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
+            pattern_editor_overlay_->getElement(),
+            core::ui::ContextActionStripOrientation::HORIZONTAL
+        );
+    if (!pattern_editor_action_strip_ ||
+        !pattern_editor_action_strip_->getElement()) return;
+    if (auto* strip = pattern_editor_action_strip_->getElement()) {
+        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
+        lv_obj_align(
+            strip,
+            LV_ALIGN_BOTTOM_MID,
+            0,
+            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
+        );
+        lv_obj_move_foreground(strip);
+    }
+    track_editor_overlay_ = core::app::makeExtmemUnique<
+        core::ui::project::ProjectTrackEditorOverlay>(overlayRoot);
+    if (!track_editor_overlay_ || !track_editor_overlay_->getElement()) return;
+    track_editor_action_strip_ =
+        core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
+            track_editor_overlay_->getElement(),
+            core::ui::ContextActionStripOrientation::HORIZONTAL
+        );
+    if (!track_editor_action_strip_ ||
+        !track_editor_action_strip_->getElement()) return;
+    if (auto* strip = track_editor_action_strip_->getElement()) {
+        lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
+        lv_obj_align(
+            strip,
+            LV_ALIGN_BOTTOM_MID,
+            0,
+            -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
+        );
+        lv_obj_move_foreground(strip);
+    }
     step_edit_overlay_ =
         core::app::makeExtmemUnique<core::ui::SequencerStepEditOverlay>(overlayRoot);
     if (!step_edit_overlay_ || !step_edit_overlay_->getElement()) return;
@@ -201,6 +279,18 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     if (!registerOverlaySurface(
         overlays,
         overlayPresentations,
+        core::ui::OverlayType::SEQ_PATTERN_EDIT,
+        pattern_editor_overlay_->getElement()
+    )) return;
+    if (!registerOverlaySurface(
+        overlays,
+        overlayPresentations,
+        core::ui::OverlayType::SEQ_TRACK_EDIT,
+        track_editor_overlay_->getElement()
+    )) return;
+    if (!registerOverlaySurface(
+        overlays,
+        overlayPresentations,
         core::ui::OverlayType::SEQ_STEP_EDIT,
         step_edit_overlay_->getElement()
     )) return;
@@ -249,11 +339,36 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         *step_preset_action_strip_
     );
     if (!presenter_ || !presenter_->bind()) return;
+    pattern_editor_presenter_ =
+        core::app::makeExtmemUnique<SequencerPatternEditorPresenter>(
+            SequencerPatternEditorPresenter::StateRefs{
+                stateRefs.sequencer,
+                stateRefs.sequencerTracks,
+                *pattern_randomize_session_,
+            },
+            *pattern_editor_overlay_,
+            *pattern_editor_action_strip_
+        );
+    if (!pattern_editor_presenter_ || !pattern_editor_presenter_->bind()) return;
+    track_editor_presenter_ =
+        core::app::makeExtmemUnique<ProjectTrackEditorPresenter>(
+            ProjectTrackEditorPresenter::StateRefs{
+                stateRefs.projectTrackEditor,
+                stateRefs.projectTracks,
+                stateRefs.sharedTrackEnabledMask,
+                stateRefs.sharedTrackActive,
+            },
+            *track_editor_overlay_,
+            *track_editor_action_strip_
+        );
+    if (!track_editor_presenter_ || !track_editor_presenter_->bind()) return;
     cc_lane_presenter_ =
         core::app::makeExtmemUnique<SequencerCcLaneOverlayPresenter>(
             SequencerCcLaneOverlayPresenter::StateRefs{
                 stateRefs.sequencer,
                 stateRefs.sequencerTracks,
+                stateRefs.projectNavigation,
+                stateRefs.projectTracks,
                 *stateRefs.statusBar,
                 stateRefs.midiCcCoordinator,
             },
@@ -283,6 +398,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.structureNavigationFocus,
             stateRefs.trackNavigation,
             stateRefs.projectNavigation,
+            stateRefs.projectTracks,
+            trackDomain,
             stateRefs.structureClipboard,
             sharedTracks,
             stateRefs.history,
@@ -310,6 +427,34 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             buttons,
             sequencerViewScopeId
         );
+    pattern_editor_handler_ =
+        core::app::makeExtmemUnique<core::handler::SequencerPatternEditorHandler>(
+            core::handler::SequencerPatternEditorHandler::StateRefs{
+                stateRefs.sequencer,
+                stateRefs.sequencerTracks,
+                *pattern_randomize_session_,
+                stateRefs.history,
+            },
+            overlays,
+            encoders,
+            buttons,
+            sequencerViewScopeId,
+            oc::ui::lvgl::scopeID(pattern_editor_overlay_->getElement())
+        );
+    track_editor_handler_ =
+        core::app::makeExtmemUnique<core::handler::ProjectTrackEditorHandler>(
+            core::handler::ProjectTrackEditorHandler::StateRefs{
+                stateRefs.projectTrackEditor,
+                stateRefs.projectTracks,
+                sharedTracks,
+                trackDomain,
+            },
+            overlays,
+            encoders,
+            buttons,
+            sequencerViewScopeId,
+            oc::ui::lvgl::scopeID(track_editor_overlay_->getElement())
+        );
     step_edit_handler_ = core::app::makeExtmemUnique<core::handler::SequencerStepEditHandler>(
         core::handler::SequencerStepEditHandler::StateRefs{
             stateRefs.overlays,
@@ -328,7 +473,11 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         oc::ui::lvgl::scopeID(step_edit_overlay_->getElement()),
         oc::ui::lvgl::scopeID(step_preset_overlay_->getElement())
     );
-    if (!step_handler_ || !step_edit_handler_) return;
+    if (!step_handler_ || !step_edit_handler_ || !pattern_editor_handler_ ||
+        !track_editor_handler_) return;
+    step_handler_->attachStepEditHandler(*step_edit_handler_);
+    step_handler_->attachPatternEditorHandler(*pattern_editor_handler_);
+    step_handler_->attachTrackEditorHandler(*track_editor_handler_);
     step_content_handler_ =
         core::app::makeExtmemUnique<core::handler::SequencerStepContentHandler>(
             core::handler::SequencerStepContentHandler::StateRefs{
@@ -337,7 +486,6 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
                 stateRefs.trackNavigation,
                 stateRefs.structureNavigationFocus,
             },
-            *step_handler_,
             *step_edit_handler_,
             encoders,
             buttons,
@@ -347,6 +495,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         core::handler::SequencerCcLaneWorkflow::StateRefs{
             stateRefs.sequencer,
             stateRefs.sequencerTracks,
+            stateRefs.projectNavigation,
             stateRefs.history,
             *stateRefs.statusBar,
             stateRefs.midiCcCoordinator,
@@ -355,6 +504,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             core::handler::SequencerCcLaneDomainServices::StateRefs{
                 stateRefs.sequencer,
                 stateRefs.sequencerTracks,
+                stateRefs.projectTracks,
                 stateRefs.macroPages,
             }
         }
@@ -423,7 +573,9 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             sequencerViewScopeId,
             oc::time::millis
         );
-    valid_ = step_handler_ && quick_controls_handler_ && step_edit_handler_ &&
+    valid_ = step_handler_ && quick_controls_handler_ && pattern_editor_handler_ &&
+             track_editor_handler_ && track_editor_presenter_ &&
+             step_edit_handler_ &&
              step_content_handler_ &&
              property_selector_handler_ && cc_lane_handler_ &&
              pattern_pitch_settings_handler_ &&
@@ -438,6 +590,15 @@ void SequencerFeatureModule::update(uint32_t nowMs) {
     }
     if (step_edit_handler_) {
         step_edit_handler_->update(nowMs);
+    }
+    if (pattern_editor_handler_) {
+        pattern_editor_handler_->update(nowMs);
+    }
+    if (track_editor_handler_) {
+        track_editor_handler_->update(nowMs);
+    }
+    if (track_editor_presenter_) {
+        track_editor_presenter_->update();
     }
     if (cc_lane_handler_) {
         cc_lane_handler_->update(nowMs);

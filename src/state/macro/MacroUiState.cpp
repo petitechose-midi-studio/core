@@ -78,12 +78,14 @@ FLASHMEM void MacroUiState::resetInteraction() {
     previewAddPageSlot.set(false);
     previewPageIndex.set(0);
     pageHold.clear();
-    pageSelection.reset(core::state::StructureSelectionScope::PAGE);
-    selectionDeleteGuard.set({});
-    selectionDeleteFeedback.set({});
+    contextSelector.reset();
     automationTake.reset();
+    postTakeInputGuardStartedAtMs = 0U;
+    postTakeInputGuardMask = 0U;
     automationTakeHistory.reset();
     automationTakeDomain.reset();
+    recordedShapeCapture.reset();
+    recordedShapeCaptureRevision.set(recordedShapeCapture.revision);
     automationRecordingStatus.set(MacroAutomationRecordingStatus::IDLE);
     clearRuntimeProjections();
 }
@@ -112,6 +114,30 @@ FLASHMEM void MacroUiState::refreshManualOverrideMask(uint8_t track, uint8_t pag
         }
     }
     automationManualOverrideMask.set(mask);
+}
+
+FLASHMEM void MacroUiState::armPostTakeInputGuard(
+    uint16_t macroMask,
+    uint32_t nowMs
+) {
+    postTakeInputGuardMask = static_cast<uint16_t>(macroMask & 0x00FFU);
+    postTakeInputGuardStartedAtMs = nowMs;
+}
+
+FLASHMEM bool MacroUiState::blocksPostTakeInput(
+    uint8_t macro,
+    uint32_t nowMs
+) {
+    if (macro >= MACRO_COUNT ||
+        (postTakeInputGuardMask & static_cast<uint16_t>(1U << macro)) == 0U) {
+        return false;
+    }
+    // Unsigned elapsed arithmetic is deliberately rollover-safe.
+    if ((nowMs - postTakeInputGuardStartedAtMs) >= POST_TAKE_INPUT_GUARD_MS) {
+        postTakeInputGuardMask = 0U;
+        return false;
+    }
+    return true;
 }
 
 FLASHMEM void MacroUiState::setRuntimeProjection(

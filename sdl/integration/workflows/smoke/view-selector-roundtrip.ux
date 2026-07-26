@@ -6,56 +6,61 @@
 0 tick
 500 capture screen macro_initial
 
-# Macro -> Sequencer -> settle -> Macro.
-700 button LEFT_TOP down
-780 tick
-860 encoder NAV 1
-940 button LEFT_TOP up
-1240 tick
-1440 capture screen sequencer_open
-8940 tick
+# Macro -> Sequencer -> settle -> Macro. A short tap opens the selector; a
+# second short tap applies the highlighted view.
+700 tap LEFT_TOP 60
+900 tick
+1000 encoder NAV 1
+1100 tap LEFT_TOP 60
+1400 tick
+1600 capture screen sequencer_open
+8900 tick
 
-# In Sequencer a short LEFT_TOP belongs to local musical selection. Hold it to
-# make the global View Selector explicit, then return to Macro with NAV.
-9040 button LEFT_TOP down
-10100 tick
-10180 encoder NAV -1
-10260 button LEFT_TOP up
-10560 tick
-10760 capture screen macro_after_sequencer
+# In Sequencer a short LEFT_TOP opens the global View Selector, consistently
+# with every other top-level view. Contextual selection belongs to NAV hold.
+9000 tap LEFT_TOP 60
+9200 tick
+9300 encoder NAV -1
+9400 tap LEFT_TOP 60
+9700 tick
+9900 capture screen macro_after_sequencer
 
 # Macro -> Project -> settle -> Macro.
-10860 button LEFT_TOP down
-10940 tick
-11020 encoder NAV 1
-11100 encoder NAV 1
-11180 button LEFT_TOP up
-11480 tick
-11680 capture screen project_open
-19180 tick
-19280 button LEFT_TOP down
-19360 tick
-19440 encoder NAV -1
-19520 encoder NAV -1
-19600 button LEFT_TOP up
-19900 tick
-20100 capture screen macro_after_project
+10000 tap LEFT_TOP 60
+10200 tick
+10300 encoder NAV 1
+10400 encoder NAV 1
+10500 encoder NAV 1
+10600 tap LEFT_TOP 60
+10900 tick
+11100 capture screen project_open
+18600 tick
+18700 tap LEFT_TOP 60
+18900 tick
+19000 encoder NAV -1
+19100 encoder NAV -1
+19200 encoder NAV -1
+19300 tap LEFT_TOP 60
+19600 tick
+19800 capture screen macro_after_project
 
 # Macro -> Device Settings -> settle -> Macro.
-20200 button LEFT_TOP down
-20280 tick
-20360 encoder NAV 1
-20440 encoder NAV 1
-20520 encoder NAV 1
-20600 button LEFT_TOP up
+19900 tap LEFT_TOP 60
+20100 tick
+20200 encoder NAV 1
+20300 encoder NAV 1
+20400 encoder NAV 1
+20500 encoder NAV 1
+20600 tap LEFT_TOP 60
 20900 tick
 21100 capture screen device_settings_open
 28600 tick
-28700 button LEFT_TOP down
-28780 tick
-28860 encoder NAV -1
-28940 encoder NAV -1
-29020 encoder NAV -1
-29100 button LEFT_TOP up
-29400 tick
-29600 capture screen macro_final
+28700 tap LEFT_TOP 60
+28900 tick
+29000 encoder NAV -1
+29100 encoder NAV -1
+29200 encoder NAV -1
+29300 encoder NAV -1
+29400 tap LEFT_TOP 60
+29700 tick
+29900 capture screen macro_final

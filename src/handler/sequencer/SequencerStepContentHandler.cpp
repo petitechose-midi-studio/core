@@ -41,8 +41,7 @@ inline oc::type::IsActiveFn selecting(
 }
 
 FLASHMEM uint8_t rowForAction(
-    Action action,
-    core::state::sequencer::StepProperty activeProperty
+    Action action
 ) {
     switch (action) {
         case Action::CHORD:
@@ -50,12 +49,8 @@ FLASHMEM uint8_t rowForAction(
         case Action::MICRO_SEQUENCE:
             return step_edit_rows::MICRO_SEQUENCE;
         case Action::CYCLE_STATES:
-            return step_edit_rows::CYCLE_STATES;
-        case Action::VARIATION:
         default:
-            return static_cast<uint8_t>(
-                step_edit_rows::PROPERTY_OFFSET + static_cast<uint8_t>(activeProperty)
-            );
+            return step_edit_rows::CYCLE_STATES;
     }
 }
 
@@ -63,7 +58,6 @@ FLASHMEM uint8_t rowForAction(
 
 FLASHMEM SequencerStepContentHandler::SequencerStepContentHandler(
     StateRefs state,
-    SequencerStepHandler& stepHandler,
     SequencerStepEditHandler& stepEditHandler,
     oc::api::EncoderAPI& encoders,
     oc::api::ButtonAPI& buttons,
@@ -73,7 +67,6 @@ FLASHMEM SequencerStepContentHandler::SequencerStepContentHandler(
     , sequencer_(state.sequencer)
     , track_ui_(state.trackNavigation)
     , navigation_focus_(state.navigationFocus)
-    , step_handler_(stepHandler)
     , step_edit_handler_(stepEditHandler)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -132,13 +125,13 @@ FLASHMEM void SequencerStepContentHandler::navigate(float delta) {
 FLASHMEM void SequencerStepContentHandler::apply() {
     const auto action = sequencer_.stepContentSelector.focusedAction.get();
     sequencer_.stepContentSelector.selecting.set(false);
-    if (action == Action::SELECT_STEPS) {
-        step_handler_.enterSelectionModeForCurrentFocus();
-        return;
+    if (!step_edit_handler_.openFocusedStepContentAtRow(
+            rowForAction(action)
+        )) {
+        // Keep the selector available when graph capacity or the current Step
+        // prevents the requested child from opening.
+        sequencer_.stepContentSelector.selecting.set(true);
     }
-    (void)step_edit_handler_.openFocusedStepAtRow(
-        rowForAction(action, sequencer_.activeStepProperty.get())
-    );
 }
 
 }  // namespace core::handler

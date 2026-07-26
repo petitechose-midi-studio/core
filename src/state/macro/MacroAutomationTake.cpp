@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 
 #include <config/PlatformCompat.hpp>
+#include <oc/diagnostics/Performance.hpp>
 
 namespace core::state::macro {
 
@@ -64,57 +66,63 @@ int16_t packMidi7(uint8_t value) {
     );
 }
 
-bool segmentFits(
-    const MacroPackedCurvePoint* points,
-    uint16_t start,
-    uint16_t end
+uint16_t simplifyPacked(
+    core::state::modulation::ProjectPackedCurvePoint* points,
+    uint16_t count
 ) {
-    if (points == nullptr || end <= static_cast<uint16_t>(start + 1U)) {
-        return true;
-    }
-    const auto& first = points[start];
-    const auto& last = points[end];
-    const int32_t span = static_cast<int32_t>(last.tick) - first.tick;
-    if (span <= 0) return false;
-    for (uint16_t index = static_cast<uint16_t>(start + 1U);
-         index < end;
-         ++index) {
-        const auto& point = points[index];
-        const int32_t position = static_cast<int32_t>(point.tick) - first.tick;
-        const int64_t valueDelta =
-            static_cast<int32_t>(last.value) - first.value;
-        const int32_t expected = static_cast<int32_t>(
-            static_cast<int64_t>(first.value) +
-            (valueDelta * position + (span / 2)) / span
-        );
-        if (std::abs(static_cast<int32_t>(point.value) - expected) >
-            kPackedMidi7HalfStepError) {
-            return false;
-        }
-    }
-    return true;
-}
-
-uint16_t simplifyPacked(MacroPackedCurvePoint* points, uint16_t count) {
     if (points == nullptr || count <= 2U) return count;
+    OC_PERF_SCOPE(perfSimplify, "macro.take.commit.simplify");
+
+    // Linear-time bounded-error corridor. The previous implementation retried
+    // every progressively longer segment and became quadratic for dense,
+    // near-linear 2,048-point overdub grids.
     uint16_t write = 1U;
     uint16_t anchor = 0U;
-    uint16_t candidate = 2U;
+    uint16_t candidate = 1U;
+    double lowerSlope = -std::numeric_limits<double>::infinity();
+    double upperSlope = std::numeric_limits<double>::infinity();
     while (candidate < count) {
-        if (segmentFits(points, anchor, candidate)) {
+        const int32_t span = static_cast<int32_t>(points[candidate].tick) -
+            points[anchor].tick;
+        if (span <= 0) {
+            points[write++] = points[candidate++];
+            anchor = static_cast<uint16_t>(candidate - 1U);
+            lowerSlope = -std::numeric_limits<double>::infinity();
+            upperSlope = std::numeric_limits<double>::infinity();
+            continue;
+        }
+        const double delta = static_cast<double>(
+            static_cast<int32_t>(points[candidate].value) - points[anchor].value
+        );
+        const double slope = delta / static_cast<double>(span);
+        if (candidate == static_cast<uint16_t>(anchor + 1U) ||
+            (slope >= lowerSlope && slope <= upperSlope)) {
+            lowerSlope = std::max(
+                lowerSlope,
+                (delta - kPackedMidi7HalfStepError) /
+                    static_cast<double>(span)
+            );
+            upperSlope = std::min(
+                upperSlope,
+                (delta + kPackedMidi7HalfStepError) /
+                    static_cast<double>(span)
+            );
             ++candidate;
             continue;
         }
         const uint16_t keep = static_cast<uint16_t>(candidate - 1U);
         points[write++] = points[keep];
         anchor = keep;
-        candidate = static_cast<uint16_t>(anchor + 2U);
+        candidate = static_cast<uint16_t>(anchor + 1U);
+        lowerSlope = -std::numeric_limits<double>::infinity();
+        upperSlope = std::numeric_limits<double>::infinity();
     }
     const auto last = points[static_cast<uint16_t>(count - 1U)];
     if (points[static_cast<uint16_t>(write - 1U)].tick != last.tick ||
         points[static_cast<uint16_t>(write - 1U)].value != last.value) {
         points[write++] = last;
     }
+    OC_PERF_UNITS(perfSimplify, count, write);
     return write;
 }
 
@@ -183,13 +191,19 @@ FLASHMEM void MacroAutomationTakeState::reset() {
     touchedMask = 0U;
     changedMask = 0U;
     manualRestoreMask = 0U;
+    writeCursorMask = 0U;
+    latestElapsedTick = 0U;
+    scratchCurveRevision = 0U;
     timing = MacroAutomationTakeTiming::HOLD;
     phase = MacroAutomationTakePhase::IDLE;
     track = 0U;
     page = 0U;
+    circular = false;
     reduced = false;
     initialValues.fill(0U);
     currentValues.fill(0U);
+    lastWriteValues.fill(0U);
+    lastWriteElapsedTicks.fill(0U);
     previousManualValues.fill(0.0f);
 }
 
@@ -200,11 +214,13 @@ FLASHMEM void MacroAutomationTakeState::arm(
 ) {
     reset();
     timing = selectedTiming;
+    circular = timing != MacroAutomationTakeTiming::HOLD;
     candidateMask = static_cast<uint16_t>(candidates & 0x00FFU);
     for (uint8_t macro = 0U; macro < VALUE_COLUMN_COUNT; ++macro) {
         initialValues[macro] = std::min<uint8_t>(bases[macro], 127U);
     }
     currentValues = initialValues;
+    lastWriteValues = initialValues;
     durationTicks = macroAutomationTakeFixedDurationTicks(timing);
     phase = MacroAutomationTakePhase::ARMED;
 }
@@ -224,10 +240,15 @@ FLASHMEM bool MacroAutomationTakeState::begin(
     startProjectPhaseTick = projectPhaseTick;
     transportGeneration = generation;
     authoredRevision = revision;
-    sampleCount = 1U;
-    elapsedTicks[0] = 0U;
-    for (uint8_t macro = 0U; macro < VALUE_COLUMN_COUNT; ++macro) {
-        values[macro][0] = currentValues[macro];
+    latestElapsedTick = 0U;
+    if (fixedLength()) {
+        initializeFixedGrid_();
+    } else {
+        sampleCount = 1U;
+        elapsedTicks[0] = 0U;
+        for (uint8_t macro = 0U; macro < VALUE_COLUMN_COUNT; ++macro) {
+            values[macro][0] = currentValues[macro];
+        }
     }
     phase = MacroAutomationTakePhase::RECORDING;
     return true;
@@ -243,8 +264,36 @@ FLASHMEM bool MacroAutomationTakeState::touch(
         (candidateMask & static_cast<uint16_t>(1U << macro)) == 0U) {
         return false;
     }
-    const uint8_t bounded = std::min<uint8_t>(value, 127U);
     const uint16_t bit = static_cast<uint16_t>(1U << macro);
+    const uint8_t bounded = std::min<uint8_t>(value, 127U);
+    if (fixedLength()) {
+        const uint32_t monotoneElapsed = std::max(
+            elapsedTick,
+            latestElapsedTick
+        );
+        // Every previously joined Macro advances on the same clock. The Macro
+        // receiving this encoder event interpolates to the new value; other
+        // columns retain their current value over the same traversed region.
+        for (uint8_t candidate = 0U;
+             candidate < VALUE_COLUMN_COUNT;
+             ++candidate) {
+            const uint16_t candidateBit = static_cast<uint16_t>(1U << candidate);
+            if (candidate != macro && (touchedMask & candidateBit) != 0U &&
+                !sampleFixedColumn_(
+                    candidate,
+                    monotoneElapsed,
+                    currentValues[candidate]
+                )) {
+                return false;
+            }
+        }
+        touchedMask = static_cast<uint16_t>(touchedMask | bit);
+        currentValues[macro] = bounded;
+        if (!sampleFixedColumn_(macro, monotoneElapsed, bounded)) return false;
+        latestElapsedTick = monotoneElapsed;
+        return true;
+    }
+
     touchedMask = static_cast<uint16_t>(touchedMask | bit);
     if (bounded != initialValues[macro]) {
         changedMask = static_cast<uint16_t>(changedMask | bit);
@@ -255,9 +304,24 @@ FLASHMEM bool MacroAutomationTakeState::touch(
 
 FLASHMEM bool MacroAutomationTakeState::sample(uint32_t elapsedTick) {
     if (phase != MacroAutomationTakePhase::RECORDING) return false;
+    if (fixedLength()) {
+        const uint32_t monotoneElapsed = std::max(
+            elapsedTick,
+            latestElapsedTick
+        );
+        for (uint8_t macro = 0U; macro < VALUE_COLUMN_COUNT; ++macro) {
+            const uint16_t bit = static_cast<uint16_t>(1U << macro);
+            if ((touchedMask & bit) != 0U &&
+                !sampleFixedColumn_(macro, monotoneElapsed, currentValues[macro])) {
+                return false;
+            }
+        }
+        latestElapsedTick = monotoneElapsed;
+        return true;
+    }
     uint16_t tick = static_cast<uint16_t>(std::min<uint32_t>(
         elapsedTick,
-        fixedLength() ? durationTicks : UINT16_MAX
+        UINT16_MAX
     ));
     if (sampleCount > 0U) {
         const uint16_t last = elapsedTicks[static_cast<uint16_t>(sampleCount - 1U)];
@@ -285,26 +349,30 @@ FLASHMEM bool MacroAutomationTakeState::finish(uint32_t elapsedTick) {
         return false;
     }
     const uint32_t raw = std::max<uint32_t>(elapsedTick, 1U);
-    durationTicks = fixedLength()
-        ? macroAutomationTakeFixedDurationTicks(timing)
-        : macroAutomationTakeQuantizeHoldTicks(raw);
+    if (!fixedLength()) {
+        durationTicks = macroAutomationTakeQuantizeHoldTicks(raw);
+    }
     const uint32_t terminal = fixedLength()
-        ? durationTicks
+        ? raw
         : std::min<uint32_t>(raw, UINT16_MAX);
     return sample(terminal);
 }
 
 FLASHMEM bool MacroAutomationTakeState::fixedLength() const {
-    return timing != MacroAutomationTakeTiming::HOLD;
+    return circular;
 }
 
-FLASHMEM bool MacroAutomationTakeState::completeAt(uint32_t elapsedTick) const {
-    return phase == MacroAutomationTakePhase::RECORDING && fixedLength() &&
-           elapsedTick >= durationTicks;
+FLASHMEM bool MacroAutomationTakeState::overrideFixedDuration(uint16_t ticks) {
+    if (phase != MacroAutomationTakePhase::ARMED || ticks == 0U) return false;
+    circular = true;
+    durationTicks = ticks;
+    return true;
 }
 
 FLASHMEM uint16_t MacroAutomationTakeState::playbackWindowOffsetTicks() const {
     if (durationTicks == 0U) return 0U;
+    // Fixed takes are authored directly in Project timeline phase coordinates.
+    if (fixedLength()) return 0U;
     const uint16_t phaseTick = static_cast<uint16_t>(
         startProjectPhaseTick % durationTicks
     );
@@ -323,9 +391,74 @@ FLASHMEM float MacroAutomationTakeState::latestBase(uint8_t macro) const {
     return static_cast<float>(currentValues[macro]) / 127.0f;
 }
 
+FLASHMEM bool MacroAutomationTakeState::sampleFixedPreviewValue(
+    uint8_t macro,
+    uint16_t positionQ16,
+    float& value
+) const {
+    if (phase != MacroAutomationTakePhase::RECORDING || !fixedLength() ||
+        !activeFor(macro) || sampleCount < 2U) {
+        return false;
+    }
+    const uint16_t intervals = static_cast<uint16_t>(sampleCount - 1U);
+    const uint32_t scaled =
+        static_cast<uint32_t>(positionQ16) * intervals;
+    const uint16_t lower = static_cast<uint16_t>(scaled / 65535U);
+    const uint16_t upper = std::min<uint16_t>(
+        static_cast<uint16_t>(lower + 1U),
+        intervals
+    );
+    const uint32_t fraction = scaled % 65535U;
+    const uint32_t inverse = 65535U - fraction;
+    const uint32_t interpolated =
+        static_cast<uint32_t>(values[macro][lower]) * inverse +
+        static_cast<uint32_t>(values[macro][upper]) * fraction;
+    value = static_cast<float>(interpolated) /
+        (65535.0f * 127.0f);
+    return true;
+}
+
+FLASHMEM bool MacroAutomationTakeState::fixedWritePositionQ16(
+    uint8_t macro,
+    uint16_t& positionQ16
+) const {
+    if (phase != MacroAutomationTakePhase::RECORDING || !fixedLength() ||
+        !activeFor(macro) || durationTicks == 0U) {
+        return false;
+    }
+    const uint32_t phaseTick = static_cast<uint32_t>(
+        (static_cast<uint64_t>(startProjectPhaseTick % durationTicks) +
+         static_cast<uint64_t>(latestElapsedTick % durationTicks)) %
+        durationTicks
+    );
+    positionQ16 = static_cast<uint16_t>(
+        (static_cast<uint64_t>(phaseTick) * 65535U + durationTicks / 2U) /
+        durationTicks
+    );
+    return true;
+}
+
+FLASHMEM bool MacroAutomationTakeState::seedFixedGridValue(
+    uint8_t macro,
+    uint16_t sample,
+    uint8_t value
+) {
+    if (phase != MacroAutomationTakePhase::RECORDING || !fixedLength() ||
+        macro >= VALUE_COLUMN_COUNT || sample >= sampleCount ||
+        (touchedMask & static_cast<uint16_t>(1U << macro)) != 0U) {
+        return false;
+    }
+    const uint8_t bounded = std::min<uint8_t>(value, 127U);
+    if (values[macro][sample] != bounded) {
+        values[macro][sample] = bounded;
+        ++scratchCurveRevision;
+    }
+    return true;
+}
+
 FLASHMEM bool MacroAutomationTakeState::buildPackedCurve(
     uint8_t macro,
-    MacroPackedCurvePoint* output,
+    core::state::modulation::ProjectPackedCurvePoint* output,
     uint16_t capacity,
     uint16_t& written
 ) const {
@@ -336,17 +469,21 @@ FLASHMEM bool MacroAutomationTakeState::buildPackedCurve(
         durationTicks == 0U) {
         return false;
     }
-    const uint16_t rawDuration = std::max<uint16_t>(
-        elapsedTicks[static_cast<uint16_t>(sampleCount - 1U)],
-        1U
-    );
+    const uint16_t rawDuration = fixedLength()
+        ? durationTicks
+        : std::max<uint16_t>(
+              elapsedTicks[static_cast<uint16_t>(sampleCount - 1U)],
+              1U
+          );
     for (uint16_t index = 0U; index < sampleCount; ++index) {
-        const uint16_t tick = static_cast<uint16_t>(std::min<uint32_t>(
-            (static_cast<uint32_t>(elapsedTicks[index]) * durationTicks +
-             rawDuration / 2U) /
-                rawDuration,
-            durationTicks
-        ));
+        const uint16_t tick = fixedLength()
+            ? elapsedTicks[index]
+            : static_cast<uint16_t>(std::min<uint32_t>(
+                  (static_cast<uint32_t>(elapsedTicks[index]) * durationTicks +
+                   rawDuration / 2U) /
+                      rawDuration,
+                  durationTicks
+              ));
         const int16_t value = packMidi7(values[macro][index]);
         if (written > 0U && output[static_cast<uint16_t>(written - 1U)].tick == tick) {
             output[static_cast<uint16_t>(written - 1U)].value = value;
@@ -363,6 +500,122 @@ FLASHMEM bool MacroAutomationTakeState::buildPackedCurve(
     output[static_cast<uint16_t>(written - 1U)].tick = durationTicks;
     written = simplifyPacked(output, written);
     return written > 0U;
+}
+
+FLASHMEM void MacroAutomationTakeState::initializeFixedGrid_() {
+    const uint32_t requested = static_cast<uint32_t>(durationTicks) + 1U;
+    sampleCount = static_cast<uint16_t>(std::min<uint32_t>(
+        requested,
+        SAMPLE_CAPACITY
+    ));
+    if (sampleCount < 2U) sampleCount = 2U;
+    reduced = requested > SAMPLE_CAPACITY;
+    const uint16_t intervals = static_cast<uint16_t>(sampleCount - 1U);
+    for (uint16_t sample = 0U; sample < sampleCount; ++sample) {
+        elapsedTicks[sample] = static_cast<uint16_t>(
+            (static_cast<uint32_t>(sample) * durationTicks + intervals / 2U) /
+            intervals
+        );
+        for (uint8_t macro = 0U; macro < VALUE_COLUMN_COUNT; ++macro) {
+            values[macro][sample] = initialValues[macro];
+        }
+    }
+}
+
+FLASHMEM void MacroAutomationTakeState::writeFixedGridValue_(
+    uint8_t macro,
+    uint64_t absoluteGridOrdinal,
+    uint8_t value
+) {
+    if (macro >= VALUE_COLUMN_COUNT || sampleCount < 2U) return;
+    const uint16_t intervals = static_cast<uint16_t>(sampleCount - 1U);
+    const uint16_t sample = static_cast<uint16_t>(
+        absoluteGridOrdinal % intervals
+    );
+    const uint8_t bounded = std::min<uint8_t>(value, 127U);
+    const bool endpointChanged = sample == 0U &&
+        values[macro][intervals] != bounded;
+    if (values[macro][sample] != bounded || endpointChanged) {
+        changedMask = static_cast<uint16_t>(
+            changedMask | static_cast<uint16_t>(1U << macro)
+        );
+        ++scratchCurveRevision;
+    }
+    values[macro][sample] = bounded;
+    if (sample == 0U) {
+        values[macro][intervals] = bounded;
+    }
+}
+
+FLASHMEM bool MacroAutomationTakeState::sampleFixedColumn_(
+    uint8_t macro,
+    uint32_t elapsedTick,
+    uint8_t value
+) {
+    if (macro >= VALUE_COLUMN_COUNT || sampleCount < 2U || durationTicks == 0U) {
+        return false;
+    }
+    const uint16_t bit = static_cast<uint16_t>(1U << macro);
+    const uint16_t intervals = static_cast<uint16_t>(sampleCount - 1U);
+    const uint64_t absoluteTick =
+        static_cast<uint64_t>(startProjectPhaseTick) + elapsedTick;
+    const uint64_t currentOrdinal =
+        (absoluteTick * intervals) / durationTicks;
+    const uint8_t bounded = std::min<uint8_t>(value, 127U);
+    if ((writeCursorMask & bit) == 0U) {
+        writeFixedGridValue_(macro, currentOrdinal, bounded);
+        lastWriteElapsedTicks[macro] = elapsedTick;
+        lastWriteValues[macro] = bounded;
+        writeCursorMask = static_cast<uint16_t>(writeCursorMask | bit);
+        return true;
+    }
+
+    const uint32_t previousElapsed = lastWriteElapsedTicks[macro];
+    if (elapsedTick < previousElapsed) return false;
+    const uint64_t previousTick =
+        static_cast<uint64_t>(startProjectPhaseTick) + previousElapsed;
+    const uint64_t previousOrdinal =
+        (previousTick * intervals) / durationTicks;
+    uint64_t firstOrdinal = previousOrdinal;
+    if (currentOrdinal > firstOrdinal + intervals) {
+        // A clock jump can overwrite at most the most recent complete loop.
+        firstOrdinal = currentOrdinal - intervals;
+    }
+    const uint32_t span = elapsedTick - previousElapsed;
+    const int32_t valueDelta = static_cast<int32_t>(bounded) -
+        lastWriteValues[macro];
+    for (uint64_t ordinal = firstOrdinal + 1U;
+         ordinal <= currentOrdinal;
+         ++ordinal) {
+        const uint64_t crossedAbsoluteTick =
+            (ordinal * durationTicks + intervals - 1U) / intervals;
+        const uint64_t crossedElapsed = crossedAbsoluteTick > startProjectPhaseTick
+            ? crossedAbsoluteTick - startProjectPhaseTick
+            : 0U;
+        const uint32_t relative = span == 0U
+            ? span
+            : static_cast<uint32_t>(std::min<uint64_t>(
+                  crossedElapsed > previousElapsed
+                      ? crossedElapsed - previousElapsed
+                      : 0U,
+                  span
+              ));
+        const int32_t interpolated = span == 0U
+            ? bounded
+            : static_cast<int32_t>(lastWriteValues[macro]) +
+                  (valueDelta * static_cast<int32_t>(relative) +
+                   static_cast<int32_t>(span / 2U)) /
+                      static_cast<int32_t>(span);
+        writeFixedGridValue_(
+            macro,
+            ordinal,
+            static_cast<uint8_t>(std::clamp<int32_t>(interpolated, 0, 127))
+        );
+    }
+    writeFixedGridValue_(macro, currentOrdinal, bounded);
+    lastWriteElapsedTicks[macro] = elapsedTick;
+    lastWriteValues[macro] = bounded;
+    return true;
 }
 
 FLASHMEM void MacroAutomationTakeState::decimate_() {

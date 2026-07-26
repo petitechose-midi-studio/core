@@ -46,6 +46,7 @@ struct SequencerCcLaneGridProps {
     uint32_t accentColor = 0;
     uint32_t statusColor = 0;
     bool transitionPicker = false;
+    bool compactTransitionPicker = false;
     core::state::sequencer::SequencerCcLaneTransition pickerSelection =
         core::state::sequencer::SequencerCcLaneTransition::HOLD;
     bool contextualHint = false;
@@ -87,6 +88,12 @@ private:
                           size_t index,
                           lv_opa_t opacity,
                           lv_coord_t width);
+    void drawTransitionChoice(
+        lv_layer_t* layer,
+        const lv_area_t& area,
+        core::state::sequencer::SequencerCcLaneTransition transition,
+        bool selected
+    );
     void drawSurface(lv_layer_t* layer);
     void invalidatePlayheadCell(size_t index);
     [[nodiscard]] bool staticVisualChanged(

@@ -34,6 +34,8 @@ struct MidiSyncState {
     oc::state::Signal<ClockSourceActive> activeSource{ClockSourceActive::INTERNAL};
     oc::state::Signal<bool> externalClockPresent{false};
 
+    ~MidiSyncState();
+
     void reset();
 };
 

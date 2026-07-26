@@ -48,11 +48,25 @@
 
 /* Macro overlay projection is rebuilt only after authored/UI state changes.
  * Its top-level formatters already use FLASHMEM, but out-of-line text helpers
- * emitted by the compiler otherwise leak into ITCM. Keep the complete cold
- * projection object and its labels together in memory-mapped Flash. */
-*MacroOverlayPresenterFormatters.cpp.o(.text* .rodata*)
+ * emitted by the compiler otherwise leak into ITCM. Keep every formatter
+ * partition and its labels together in memory-mapped Flash. */
+*MacroOverlayPresenter*Formatters.cpp.o(.text* .rodata*)
 
 /* Project handlers serve modal navigation and authored edits. They are never
  * entered by the control evaluator, MIDI publication, sequencer tick, or LVGL
  * draw loop; compiler-generated dispatch thunks therefore belong in Flash. */
 *ProjectHandler*.cpp.o(.text* .rodata*)
+
+/* Macro history is entered only by authored edit, undo, and redo commands.
+ * It is never part of macro playback, modulation evaluation, MIDI dispatch,
+ * or retained-view rendering.  Keep compiler-emitted smart-pointer helpers
+ * beside the already-FLASHMEM history transactions instead of leaking those
+ * cold templates into scarce ITCM. */
+*MacroHistory.cpp.o(.text* .rodata*)
+
+/* Domain codecs run only at explicit project/session save or restore
+ * boundaries. Keep low-level filesystem streaming in ITCM, but execute
+ * encode/decode logic from cached Flash so persistence does not consume the
+ * realtime code budget. */
+*PersistenceCodec.cpp.o(.text* .rodata*)
+*PersistenceEnvelope.cpp.o(.text* .rodata*)

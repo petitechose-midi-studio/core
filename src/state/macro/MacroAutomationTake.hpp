@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "state/macro/MacroAutomationDomain.hpp"
+#include "state/modulation/ProjectCurveArena.hpp"
 
 namespace core::state::macro {
 
@@ -61,6 +62,8 @@ struct MacroAutomationTakeState {
     > values{};
     std::array<uint8_t, VALUE_COLUMN_COUNT> initialValues{};
     std::array<uint8_t, VALUE_COLUMN_COUNT> currentValues{};
+    std::array<uint8_t, VALUE_COLUMN_COUNT> lastWriteValues{};
+    std::array<uint32_t, VALUE_COLUMN_COUNT> lastWriteElapsedTicks{};
     std::array<float, VALUE_COLUMN_COUNT> previousManualValues{};
     uint32_t startedAtMs = 0U;
     uint32_t startedMusicalTick = 0U;
@@ -73,10 +76,14 @@ struct MacroAutomationTakeState {
     uint16_t touchedMask = 0U;
     uint16_t changedMask = 0U;
     uint16_t manualRestoreMask = 0U;
+    uint16_t writeCursorMask = 0U;
+    uint32_t latestElapsedTick = 0U;
+    uint32_t scratchCurveRevision = 0U;
     MacroAutomationTakeTiming timing = MacroAutomationTakeTiming::HOLD;
     MacroAutomationTakePhase phase = MacroAutomationTakePhase::IDLE;
     uint8_t track = 0U;
     uint8_t page = 0U;
+    bool circular = false;
     bool reduced = false;
 
     void reset();
@@ -92,20 +99,44 @@ struct MacroAutomationTakeState {
     [[nodiscard]] bool sample(uint32_t elapsedTick);
     [[nodiscard]] bool finish(uint32_t elapsedTick);
     [[nodiscard]] bool fixedLength() const;
-    [[nodiscard]] bool completeAt(uint32_t elapsedTick) const;
+    [[nodiscard]] bool overrideFixedDuration(uint16_t ticks);
     [[nodiscard]] uint16_t playbackWindowOffsetTicks() const;
     [[nodiscard]] bool activeFor(uint8_t macro) const;
     [[nodiscard]] float latestBase(uint8_t macro) const;
+    /** Samples one circular take column at a normalized UI position. */
+    [[nodiscard]] bool sampleFixedPreviewValue(
+        uint8_t macro,
+        uint16_t positionQ16,
+        float& value
+    ) const;
+    /** Returns the shared circular write head for one joined Macro. */
+    [[nodiscard]] bool fixedWritePositionQ16(
+        uint8_t macro,
+        uint16_t& positionQ16
+    ) const;
+    /** Replaces one fixed-grid seed before that Macro joins the take. */
+    [[nodiscard]] bool seedFixedGridValue(
+        uint8_t macro,
+        uint16_t sample,
+        uint8_t value
+    );
 
     /** Builds one rationalized absolute curve into caller-owned cold storage. */
     [[nodiscard]] bool buildPackedCurve(
         uint8_t macro,
-        MacroPackedCurvePoint* output,
+        core::state::modulation::ProjectPackedCurvePoint* output,
         uint16_t capacity,
         uint16_t& written
     ) const;
 
 private:
+    void initializeFixedGrid_();
+    bool sampleFixedColumn_(uint8_t macro,
+                            uint32_t elapsedTick,
+                            uint8_t value);
+    void writeFixedGridValue_(uint8_t macro,
+                              uint64_t absoluteGridOrdinal,
+                              uint8_t value);
     void decimate_();
 };
 

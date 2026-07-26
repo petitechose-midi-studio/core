@@ -5,7 +5,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "state/MacroState.hpp"
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
@@ -69,6 +69,10 @@ StepPropertySelectionOverlayProps buildMacroSlotPropertyOverlayProps(
 );
 ContextActionStripProps buildMacroLeftActionStripProps(const MacroViewModelSource& source);
 ContextActionStripProps buildMacroBottomActionStripProps(const MacroViewModelSource& source);
+MacroWidgetProps buildMacroWidgetProps(
+    const MacroViewModelSource& source,
+    uint8_t index
+);
 MacroViewFrameState buildMacroViewFrameState(const MacroViewModelSource& source);
 
 }  // namespace core::ui

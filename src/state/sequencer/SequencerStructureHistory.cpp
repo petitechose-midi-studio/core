@@ -1,6 +1,7 @@
 #include "state/sequencer/SequencerStructureHistory.hpp"
 
 #include <utility>
+#include <cstring>
 
 #include <config/PlatformCompat.hpp>
 
@@ -31,7 +32,6 @@ FLASHMEM bool captureStructureSnapshot(
         out = SequencerHistoryTrackStructureSnapshot{};
     }
     out.enabledMask = bank.currentEnabledMask();
-    out.mutedMask = bank.currentMutedMask();
     out.activeTrack = bank.activeTrackIndex();
     out.focusedStep = active.focusedStep.get();
     out.page = active.page.get();
@@ -132,32 +132,16 @@ FLASHMEM bool captureHistoryStructureSnapshotUsingReservedGraphs(
 FLASHMEM bool applyHistoryStructureSnapshot(
     SequencerTrackBankState& bank,
     SequencerState& active,
-    const SequencerHistoryTrackStructureSnapshot& snapshot,
-    uint16_t preserveDestinationBindingsMask
+    const SequencerHistoryTrackStructureSnapshot& snapshot
 ) {
     const uint16_t capturedMask = sequencerHistorySanitizeTrackMask(
         static_cast<uint16_t>(snapshot.capturedTrackMask | sequencerHistoryTrackBit(snapshot.activeTrack))
-    );
-    const uint16_t preservedBindingsMask = static_cast<uint16_t>(
-        preserveDestinationBindingsMask & capturedMask & kTrackMaskAll
     );
     const uint8_t targetActive = SequencerTrackBankState::clampTrackIndex(
         snapshot.activeTrack
     );
     if ((capturedMask & sequencerHistoryTrackBit(bank.activeTrackIndex())) == 0) {
         return false;
-    }
-
-    // The active editor is authoritative for its Track. Its bank slot can be
-    // stale until a Track switch, so capture destination bindings from the
-    // editor for that one Track and from the bank for every other Track.
-    std::array<uint8_t, SequencerTrackBankState::TRACK_COUNT> preservedMidiChannels{};
-    const uint8_t currentActive = bank.activeTrackIndex();
-    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((preservedBindingsMask & sequencerHistoryTrackBit(i)) == 0) continue;
-        preservedMidiChannels[i] = i == currentActive
-            ? active.pattern.midiChannel.get()
-            : bank.track(i).midiChannel.get();
     }
 
     std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT> bankGraphs{};
@@ -215,17 +199,9 @@ FLASHMEM bool applyHistoryStructureSnapshot(
         installSequencerCcLaneBank(active.pattern, std::move(editorCcLanes));
     }
     bank.syncSharedTrackState(snapshot.enabledMask, targetActive);
-    bank.setMutedMask(snapshot.mutedMask);
     active.focusedStep.set(snapshot.focusedStep);
     active.page.set(snapshot.page);
 
-    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((preservedBindingsMask & sequencerHistoryTrackBit(i)) == 0) continue;
-        bank.track(i).midiChannel.set(preservedMidiChannels[i]);
-    }
-    if ((preservedBindingsMask & sequencerHistoryTrackBit(targetActive)) != 0) {
-        active.pattern.midiChannel.set(preservedMidiChannels[targetActive]);
-    }
     return true;
 }
 
@@ -234,7 +210,6 @@ FLASHMEM bool sameMusicalHistoryStructureSnapshot(
     const SequencerHistoryTrackStructureSnapshot& rhs
 ) {
     if (lhs.enabledMask != rhs.enabledMask ||
-        lhs.mutedMask != rhs.mutedMask ||
         lhs.activeTrack != rhs.activeTrack) {
         return false;
     }
@@ -254,6 +229,140 @@ FLASHMEM bool sameMusicalHistoryStructureSnapshot(
     }
 
     return true;
+}
+
+FLASHMEM bool captureMacroTrackStructureHistoryBefore(
+    const core::state::macro::MacroPagesState& pages,
+    uint16_t trackMask,
+    SequencerHistoryTrackStructureChange& change
+) {
+    const uint16_t sanitized = sequencerHistorySanitizeTrackMask(trackMask);
+    auto payload = core::app::makeExtmemUnique<
+        SequencerHistoryMacroTrackStructurePayload
+    >();
+    if (!payload) return false;
+    payload->beforeControl = core::app::makeExtmemUnique<
+        core::state::modulation::ProjectControlDomainState
+    >(pages.control.authored);
+    payload->afterControl = core::app::makeExtmemUnique<
+        core::state::modulation::ProjectControlDomainState
+    >();
+    if (!payload->beforeControl || !payload->afterControl) return false;
+    payload->capturedTrackMask = sanitized;
+    for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
+        if ((sanitized & sequencerHistoryTrackBit(track)) == 0U) continue;
+        payload->beforeTracks[track] = pages.tracks[track];
+    }
+    change.macroStructure = std::move(payload);
+    return true;
+}
+
+FLASHMEM bool captureMacroTrackStructureHistoryAfter(
+    const core::state::macro::MacroPagesState& pages,
+    SequencerHistoryTrackStructureChange& change
+) {
+    auto* payload = change.macroStructure.get();
+    if (payload == nullptr || payload->capturedTrackMask == 0U ||
+        !payload->beforeControl || !payload->afterControl) {
+        return false;
+    }
+    for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
+        if ((payload->capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
+            continue;
+        }
+        payload->afterTracks[track] = pages.tracks[track];
+    }
+    *payload->afterControl = pages.control.authored;
+    if (std::memcmp(
+            payload->beforeControl.get(),
+            payload->afterControl.get(),
+            sizeof(core::state::modulation::ProjectControlDomainState)
+        ) == 0) {
+        payload->afterControl.reset();
+    }
+    payload->afterCaptured = true;
+    return true;
+}
+
+FLASHMEM bool macroTrackStructureHistoryChanged(
+    const SequencerHistoryTrackStructureChange& change
+) {
+    const auto* payload = change.macroStructure.get();
+    if (payload == nullptr || !payload->beforeControl ||
+        !payload->afterCaptured) return false;
+    if (payload->afterControl != nullptr) return true;
+    for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
+        if ((payload->capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
+            continue;
+        }
+        if (std::memcmp(
+                &payload->beforeTracks[track],
+                &payload->afterTracks[track],
+                sizeof(core::state::macro::MacroTrackData)
+            ) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+FLASHMEM bool liveMacroTrackStructureMatches(
+    const core::state::macro::MacroPagesState& pages,
+    const SequencerHistoryMacroTrackStructurePayload& payload,
+    bool after
+) {
+    if (!payload.afterCaptured) return false;
+    const auto* control = after && payload.afterControl
+        ? payload.afterControl.get()
+        : payload.beforeControl.get();
+    if (control == nullptr || std::memcmp(
+            &pages.control.authored,
+            control,
+            sizeof(core::state::modulation::ProjectControlDomainState)
+        ) != 0) {
+        return false;
+    }
+    const auto& tracks = after ? payload.afterTracks : payload.beforeTracks;
+    for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
+        if ((payload.capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
+            continue;
+        }
+        if (std::memcmp(
+                &pages.tracks[track],
+                &tracks[track],
+                sizeof(core::state::macro::MacroTrackData)
+            ) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool applyMacroTrackStructureHistory(
+    core::state::macro::MacroPagesState& pages,
+    const SequencerHistoryMacroTrackStructurePayload& payload,
+    bool after
+) {
+    const bool expectedAfter = !after;
+    if (!liveMacroTrackStructureMatches(pages, payload, expectedAfter)) {
+        return false;
+    }
+    const auto* control = after && payload.afterControl
+        ? payload.afterControl.get()
+        : payload.beforeControl.get();
+    if (control == nullptr) return false;
+    pages.control.authored = *control;
+    pages.control.markAuthoredMutation();
+    const auto& tracks = after ? payload.afterTracks : payload.beforeTracks;
+    for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
+        if ((payload.capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
+            continue;
+        }
+        pages.tracks[track] = tracks[track];
+    }
+    pages.syncActiveTrackCache();
+    pages.updateActiveConfigs();
+    return liveMacroTrackStructureMatches(pages, payload, after);
 }
 
 }  // namespace core::state::sequencer

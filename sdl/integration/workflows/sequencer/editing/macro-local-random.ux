@@ -8,10 +8,11 @@
 0 scenario sequencer
 50 capture screen sequencer_ready
 
-# Move to Step focus so LEFT_CENTER opens the musical property selector.
-150 tap NAV 60
-350 capture screen pattern_focus
-450 tap NAV 60
+# Select Step with the shared NAV hold+turn context grammar so LEFT_CENTER
+# opens the musical property selector instead of the retained Pattern Editor.
+150 button NAV down
+210 encoder NAV 1
+270 button NAV up
 650 capture screen step_focus
 
 # Enable the first step so the local range has a visible anchor.

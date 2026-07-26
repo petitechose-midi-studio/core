@@ -9,7 +9,6 @@
 #include "ui/sequencer/SequencerViewModelBuilder.hpp"
 #include "ui/sequencer/SequencerCcLaneGridViewModelBuilder.hpp"
 #include "ui/sequencer/SequencerTrackPasteProjection.hpp"
-#include "ui/sequencer/SequencerStructureWorkspaceViewModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 #include "ui/view/RetainedViewRenderPolicy.hpp"
 
@@ -34,7 +33,6 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     if (!property_selection_overlay_ || !property_selection_overlay_->getElement()) return;
     createGrid();
     if (!step_grid_ || !step_grid_->getElement() ||
-        !structure_workspace_ || !structure_workspace_->getElement() ||
         !cc_lane_grid_ || !cc_lane_grid_->getElement()) return;
     createTrackPastePreflightCard();
     if (!track_paste_preflight_card_ || !track_paste_preflight_card_->valid()) return;
@@ -48,7 +46,6 @@ FLASHMEM SequencerView::~SequencerView() {
 
     track_paste_preflight_card_.reset();
     cc_lane_grid_.reset();
-    structure_workspace_.reset();
     step_grid_.reset();
     bottom_action_strip_.reset();
     property_selection_overlay_.reset();
@@ -97,8 +94,6 @@ FLASHMEM void SequencerView::createGrid() {
         onStepGridGeometryInvalidated,
         this
     );
-    structure_workspace_ = core::app::makeExtmemUnique<
-        core::ui::sequencer::SequencerStructureWorkspace>(center_column_);
     cc_lane_grid_ = core::app::makeExtmemUnique<SequencerCcLaneGrid>(
         center_column_,
         SequencerCcLaneGridLayout::EMBEDDED
@@ -243,22 +238,12 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
         state_refs_.sequencer.structureUi.previewAddPageSlot,
-        state_refs_.trackNavigation.selection.active,
-        state_refs_.trackNavigation.selection.scope,
-        state_refs_.trackNavigation.selection.cursorIndex,
-        state_refs_.trackNavigation.selection.selectedMask,
-        state_refs_.sequencer.structureUi.pageSelection.active,
-        state_refs_.sequencer.structureUi.pageSelection.scope,
-        state_refs_.sequencer.structureUi.pageSelection.cursorIndex,
-        state_refs_.sequencer.structureUi.pageSelection.selectedMask,
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.revision,
-        state_refs_.sequencer.ccLaneUi.revision,
-        state_refs_.sequencer.structureUi.workspace.active,
-        state_refs_.sequencer.structureUi.workspace.level
+        state_refs_.sequencer.ccLaneUi.revision
     );
 }
 
@@ -276,21 +261,11 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
         state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
         state_refs_.sequencer.structureUi.previewAddPageSlot,
-        state_refs_.trackNavigation.selection.active,
-        state_refs_.trackNavigation.selection.scope,
-        state_refs_.trackNavigation.selection.cursorIndex,
-        state_refs_.trackNavigation.selection.selectedMask,
-        state_refs_.sequencer.structureUi.pageSelection.active,
-        state_refs_.sequencer.structureUi.pageSelection.scope,
-        state_refs_.sequencer.structureUi.pageSelection.cursorIndex,
-        state_refs_.sequencer.structureUi.pageSelection.selectedMask,
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
-        state_refs_.sequencer.contentView.revision,
-        state_refs_.sequencer.structureUi.workspace.active,
-        state_refs_.sequencer.structureUi.workspace.level
+        state_refs_.sequencer.contentView.revision
     );
 }
 
@@ -334,8 +309,6 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.contentView.depth,
         state_refs_.sequencer.contentView.revision,
         state_refs_.sequencer.ccLaneUi.revision,
-        state_refs_.sequencer.structureUi.workspace.active,
-        state_refs_.sequencer.structureUi.workspace.level,
         state_refs_.sharedTrackActive,
         state_refs_.sharedTrackEnabledMask,
         state_refs_.trackNavigation.previewAddSlot,
@@ -356,6 +329,7 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         *this, 3, "SequencerView.selectorOverlay"
     );
     selector_overlay_watcher_.watchAll(
+        state_refs_.sequencer.contextSelector.revision,
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepStatePropertyActive,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
@@ -368,7 +342,6 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.patternQuickControls.focusedItem,
         state_refs_.sequencer.patternQuickControls.offsetSteps,
-        state_refs_.sequencer.patternQuickControls.physicalHoldActive,
         state_refs_.sequencer.patternQuickControls.feedbackVisible,
         state_refs_.sequencer.pattern.stepsPerBeat,
         state_refs_.sequencer.pattern.swingOffsetPercent,
@@ -390,6 +363,7 @@ FLASHMEM void SequencerView::bindOverlayVisibilityState() {
     overlay_visibility_watcher_.watchAll(
         state_refs_.viewSelector.visible,
         state_refs_.sequencer.stepEdit.visible,
+        state_refs_.sequencer.patternEditor.active,
         state_refs_.deviceSettings.visible,
         state_refs_.deviceSettings.selector.visible,
         state_refs_.sequencerSettings.visible,
@@ -406,20 +380,14 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
     left_action_strip_watcher_.watchAll(
         state_refs_.sequencer.patternQuickControls.selecting,
         state_refs_.sequencer.patternQuickControls.focusedItem,
-        state_refs_.sequencer.patternQuickControls.physicalHoldActive,
         state_refs_.sequencer.activeStepProperty,
         state_refs_.sequencer.stepStatePropertyActive,
         state_refs_.sequencer.stepPropertyInlineSelector.selecting,
         state_refs_.sequencer.stepContentSelector.selecting,
         state_refs_.sequencer.stepContentSelector.focusedAction,
-        state_refs_.trackNavigation.selection.active,
-        state_refs_.trackNavigation.selection.scope,
-        state_refs_.sequencer.structureUi.pageSelection.active,
-        state_refs_.sequencer.structureUi.pageSelection.scope,
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.contentView.kind,
-        state_refs_.sequencer.ccLaneUi.revision,
-        state_refs_.sequencer.structureUi.workspace.active
+        state_refs_.sequencer.ccLaneUi.revision
     );
 }
 
@@ -434,10 +402,6 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.structureUi.trackPaste.revision,
         state_refs_.sequencer.structureUi.pageHold.action,
         state_refs_.sequencer.structureUi.pageHold.startedAtMs,
-        state_refs_.trackNavigation.selection.active,
-        state_refs_.trackNavigation.selection.selectedMask,
-        state_refs_.sequencer.structureUi.pageSelection.active,
-        state_refs_.sequencer.structureUi.pageSelection.selectedMask,
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.structureUi.stepSelection.pastePreviewActive,
@@ -487,23 +451,12 @@ FLASHMEM void SequencerView::bindTrackPastePreflightState() {
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.trackPaste.revision,
-        state_refs_.trackNavigation.selection.active,
-        state_refs_.trackNavigation.selection.scope,
-        state_refs_.trackNavigation.selection.cursorIndex,
         state_refs_.sharedTrackActive,
         state_refs_.tracks.activeTrackSignal(),
         state_refs_.tracks.enabledMaskSignal(),
-        state_refs_.tracks.mutedMaskSignal(),
-        state_refs_.sequencer.pattern.midiChannel,
+        state_refs_.projectTracks.revision,
         state_refs_.trackActivations.telemetryRevision()
     );
-    for (uint8_t track = 0;
-         track < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-         ++track) {
-        track_paste_preflight_watcher_.watch(
-            state_refs_.tracks.track(track).midiChannel
-        );
-    }
 }
 
 FLASHMEM void SequencerView::bindClipboardState() {
@@ -537,6 +490,7 @@ bool SequencerView::canDrainRender(void* context) {
 bool SequencerView::hasBlockingOverlay() const {
     return state_refs_.viewSelector.visible.get() ||
            state_refs_.sequencer.stepEdit.visible.get() ||
+           state_refs_.sequencer.patternEditor.active.get() ||
            state_refs_.deviceSettings.visible.get() ||
            state_refs_.deviceSettings.selector.visible.get() ||
            state_refs_.sequencerSettings.visible.get() ||
@@ -650,8 +604,8 @@ void SequencerView::render(uint32_t flags) {
         (flags & RENDER_HISTORY_FEEDBACK) != 0 && history_toast_;
     const bool needsHeaderTop = (flags & RENDER_HEADER_TOP) != 0 && header_bar_;
     const bool needsHeaderStrip = (flags & RENDER_HEADER_STRIP) != 0 && header_bar_;
-    const bool needsGrid = (flags & RENDER_GRID) != 0 && step_grid_ &&
-        structure_workspace_ && cc_lane_grid_;
+    const bool needsGrid =
+        (flags & RENDER_GRID) != 0 && step_grid_ && cc_lane_grid_;
     const bool needsTrackPastePreflight =
         (flags & RENDER_TRACK_PASTE_PREFLIGHT) != 0 &&
         track_paste_preflight_card_;
@@ -664,11 +618,15 @@ void SequencerView::render(uint32_t flags) {
     const auto source = modelSource();
 
     if (needsLeftActionStrip) {
-        left_action_strip_->render(sequencer::buildLeftActionStripProps(source));
+        const auto props = sequencer::buildLeftActionStripProps(source);
+        OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.left-actions");
+        left_action_strip_->render(props);
     }
 
     if (needsBottomActionStrip) {
-        bottom_action_strip_->render(sequencer::buildBottomActionStripProps(source));
+        const auto props = sequencer::buildBottomActionStripProps(source);
+        OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.bottom-actions");
+        bottom_action_strip_->render(props);
     }
 
     if (needsSelectorOverlay) {
@@ -679,6 +637,7 @@ void SequencerView::render(uint32_t flags) {
 
     if (needsHeaderTop || needsHeaderStrip) {
         const auto headerProps = sequencer::buildHeaderBarProps(source);
+        OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.header");
         if (needsHeaderTop) {
             header_bar_->renderTopRowOnly(headerProps);
         }
@@ -688,41 +647,44 @@ void SequencerView::render(uint32_t flags) {
     }
 
     if (needsGrid) {
-        const auto structureProps =
-            sequencer::buildSequencerStructureWorkspaceProps(source);
         const auto ccLaneProps = sequencer::buildSequencerCcLaneGridProps(source);
-        if (structureProps.visible) {
-            lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
-            cc_lane_grid_->render({.visible = false});
-            structure_workspace_->render(structureProps);
-        } else if (ccLaneProps.visible) {
-            structure_workspace_->render({.visible = false});
+        if (ccLaneProps.visible) {
+            OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.cc-lane");
             lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
             cc_lane_grid_->render(ccLaneProps);
         } else {
-            structure_workspace_->render({.visible = false});
+            const auto stepGridProps = sequencer::buildStepGridProps(source);
+            OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.step-grid");
             cc_lane_grid_->render({.visible = false});
             lv_obj_clear_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
-            step_grid_->render(sequencer::buildStepGridProps(source));
+            step_grid_->render(stepGridProps);
         }
     }
 
     if (needsHistoryToast) {
+        OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.history-toast");
         renderHistoryToast();
     }
     if (needsTrackPastePreflight) {
-        track_paste_preflight_card_->render(
-            sequencer::projectSequencerTrackPastePreflight(source)
-        );
+        const auto props = [&]() {
+            OC_PERF_SCOPE(
+                perfProjection,
+                "ui.sequencer.projection.track-paste"
+            );
+            return sequencer::projectSequencerTrackPastePreflight(source);
+        }();
+        OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.track-paste");
+        track_paste_preflight_card_->render(props);
     }
 }
 
 void SequencerView::renderSelectorOverlay() {
     if (!property_selection_overlay_) return;
 
-    property_selection_overlay_->render(
-        sequencer::buildPropertySelectionOverlayProps(modelSource())
-    );
+    const auto props =
+        sequencer::buildPropertySelectionOverlayProps(modelSource());
+    OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.selector");
+    property_selection_overlay_->render(props);
 }
 
 void SequencerView::renderHistoryToast() {
@@ -746,8 +708,9 @@ void SequencerView::renderHistoryToast() {
 
 sequencer::SequencerViewModelSource SequencerView::modelSource() const {
     return {
-        .sequencer = state_refs_.sequencer,
-        .tracks = state_refs_.tracks,
+          .sequencer = state_refs_.sequencer,
+          .tracks = state_refs_.tracks,
+          .projectTracks = state_refs_.projectTracks,
         .trackNavigation = state_refs_.trackNavigation,
         .navigationFocus = state_refs_.structureNavigationFocus,
         .sharedTrackActive = state_refs_.sharedTrackActive,

@@ -9,10 +9,8 @@
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructurePageClipboardOps.hpp"
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
-#include "handler/sequencer/SequencerStructurePageSelectionOps.hpp"
 #include "handler/sequencer/SequencerStructureStepPasteWorkflow.hpp"
 #include "handler/sequencer/SequencerStructureStepOps.hpp"
-#include "handler/sequencer/SequencerStructureTrackSelectionOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackTransferTransaction.hpp"
 #include "state/shared/StructureSlotOps.hpp"
@@ -41,6 +39,8 @@ FLASHMEM SequencerStructureEditWorkflow::SequencerStructureEditWorkflow(StateRef
     , navigation_focus_(state.navigationFocus)
     , track_ui_(state.trackNavigation)
     , project_navigation_(state.projectNavigation)
+    , project_tracks_(state.projectTracks)
+    , project_track_domain_(state.projectTrackDomain)
     , structure_clipboard_(state.structureClipboard)
     , shared_tracks_(state.sharedTracks)
     , history_(state.history)
@@ -65,7 +65,7 @@ FLASHMEM bool SequencerStructureEditWorkflow::canRemoveCurrentStructure() const 
 
 FLASHMEM bool SequencerStructureEditWorkflow::canPasteCurrentStructure() const {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
-        return buildTrackPastePlan(false).canCommit();
+        return buildTrackPastePlan().canCommit();
     }
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
         return canPasteFocusedStep();
@@ -78,7 +78,7 @@ FLASHMEM void SequencerStructureEditWorkflow::beginHoldAction(
 ) {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (action == core::state::StructureHoldAction::PASTE) {
-            beginTrackPasteAction(trackPasteSelectionContext(), core::time_compat::millis());
+            beginTrackPasteAction(core::time_compat::millis());
             return;
         }
         track_ui_.hold.begin(action, core::time_compat::millis());
@@ -92,31 +92,18 @@ FLASHMEM void SequencerStructureEditWorkflow::clearHoldAction() {
     sequencer_.structureUi.pageHold.clear();
 }
 
-FLASHMEM bool SequencerStructureEditWorkflow::trackPasteSelectionContext() const {
-    return track_ui_.selection.active.get() &&
-           track_ui_.selection.scope.get() ==
-               core::state::StructureSelectionScope::TRACK;
-}
-
-FLASHMEM uint8_t SequencerStructureEditWorkflow::trackPasteTarget(
-    bool selectionContext
-) const {
-    if (selectionContext) {
-        return core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-            track_ui_.selection.cursorIndex.get()
-        );
-    }
+FLASHMEM uint8_t SequencerStructureEditWorkflow::trackPasteTarget() const {
     return sequencerStructureTrackTarget(track_ui_, currentActiveTrack());
 }
 
 FLASHMEM core::state::ClipboardTransferPlan
-SequencerStructureEditWorkflow::buildTrackPastePlan(bool selectionContext) const {
+SequencerStructureEditWorkflow::buildTrackPastePlan() const {
     return core::state::buildSequencerTrackClipboardTransferPlan(
         structure_clipboard_,
         tracks_,
-        trackPasteTarget(selectionContext),
-        track_activations_ != nullptr ? track_activations_->pendingTrackMask() : 0,
-        &sequencer_
+        project_tracks_,
+        trackPasteTarget(),
+        track_activations_ != nullptr ? track_activations_->pendingTrackMask() : 0
     );
 }
 
@@ -133,12 +120,12 @@ FLASHMEM void SequencerStructureEditWorkflow::setTrackPasteFeedback(
         contextual::ContextActionId::PASTE,
         {
             .kind = contextual::ContextEntityKind::TRACK,
-            .track = paste.plan.firstSource,
+            .track = paste.plan.entry.sourceTrack,
             .item = paste.plan.sourceMask,
         },
         {
             .kind = contextual::ContextEntityKind::TRACK,
-            .track = paste.plan.firstTarget,
+            .track = paste.plan.entry.targetTrack,
             .item = paste.plan.targetMask,
         },
         status,
@@ -149,12 +136,9 @@ FLASHMEM void SequencerStructureEditWorkflow::setTrackPasteFeedback(
     );
 }
 
-FLASHMEM bool SequencerStructureEditWorkflow::beginTrackPasteAction(
-    bool selectionContext,
-    uint32_t nowMs
-) {
+FLASHMEM bool SequencerStructureEditWorkflow::beginTrackPasteAction(uint32_t nowMs) {
     auto& paste = sequencer_.structureUi.trackPaste;
-    const auto plan = buildTrackPastePlan(selectionContext);
+    const auto plan = buildTrackPastePlan();
     if (!plan.canCommit()) return false;
 
     uint32_t nextGeneration = paste.interactionGeneration + 1U;
@@ -167,11 +151,9 @@ FLASHMEM bool SequencerStructureEditWorkflow::beginTrackPasteAction(
     paste.interactionGeneration = nextGeneration;
     paste.operationGeneration = 0;
     paste.activationGeneration = 0;
-    paste.focusedIndex = 0;
     paste.detailVisible = false;
     paste.buttonOwned = true;
     paste.commitConsumed = false;
-    paste.selectionContext = selectionContext;
     if (!contextual::beginGuardedActionPress(
             paste.guard,
             nowMs,
@@ -214,9 +196,9 @@ FLASHMEM void SequencerStructureEditWorkflow::refreshTrackPastePreview(
         const auto live = core::state::buildSequencerTrackClipboardTransferPlan(
             structure_clipboard_,
             tracks_,
-            paste.plan.firstTarget,
-            track_activations_ != nullptr ? track_activations_->pendingTrackMask() : 0,
-            &sequencer_
+            project_tracks_,
+            paste.plan.entry.targetTrack,
+            track_activations_ != nullptr ? track_activations_->pendingTrackMask() : 0
         );
         if (paste.clipboardKind != structure_clipboard_.kind.get() ||
             paste.clipboardRevision != structure_clipboard_.revision.get() ||
@@ -240,16 +222,15 @@ FLASHMEM void SequencerStructureEditWorkflow::refreshTrackPastePreview(
         }
         if (!core::state::sameSequencerTrackClipboardTransferPlan(paste.plan, live)) {
             paste.plan = live;
-            if (paste.focusedIndex >= paste.plan.count) paste.focusedIndex = 0;
             paste.bump();
         }
         return;
     }
 
-    const bool trackContext = trackPasteSelectionContext() ||
+    const bool trackContext =
         navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK;
     const auto live = trackContext
-        ? buildTrackPastePlan(trackPasteSelectionContext())
+        ? buildTrackPastePlan()
         : core::state::ClipboardTransferPlan{};
     if (!trackContext || !live.canCommit()) {
         const bool changed = paste.plan.hasEntries() || paste.detailVisible ||
@@ -257,7 +238,6 @@ FLASHMEM void SequencerStructureEditWorkflow::refreshTrackPastePreview(
         paste.plan = {};
         paste.clipboardKind = core::state::StructureClipboardKind::NONE;
         paste.clipboardRevision = 0;
-        paste.focusedIndex = 0;
         paste.detailVisible = false;
         contextual::clearOperationFeedback(paste.feedback);
         if (changed) paste.bump();
@@ -272,7 +252,6 @@ FLASHMEM void SequencerStructureEditWorkflow::refreshTrackPastePreview(
     paste.plan = live;
     paste.clipboardKind = structure_clipboard_.kind.get();
     paste.clipboardRevision = structure_clipboard_.revision.get();
-    if (paste.focusedIndex >= paste.plan.count) paste.focusedIndex = 0;
     setTrackPasteFeedback(
         contextual::OperationFeedbackStatus::PREVIEW,
         core::state::sequencer::contextualReasonForTrackTransfer(live.reason),
@@ -292,30 +271,17 @@ FLASHMEM void SequencerStructureEditWorkflow::updateTrackPasteActivation(
         return;
     }
 
-    uint8_t applied = 0;
-    bool cancelled = false;
-    for (uint8_t i = 0; i < paste.plan.count; ++i) {
-        const auto telemetry = track_activations_->telemetry(
-            paste.plan.entries[i].targetTrack
-        );
-        if (telemetry.generation != paste.activationGeneration ||
-            telemetry.origin !=
-                core::state::sequencer::SequencerTrackActivationOrigin::TRACK_PASTE) {
-            return;
-        }
-        if (telemetry.status ==
-            core::state::sequencer::SequencerTrackActivationStatus::APPLIED) {
-            ++applied;
-        } else if (telemetry.status ==
-                   core::state::sequencer::SequencerTrackActivationStatus::CANCELLED) {
-            cancelled = true;
-        } else if (telemetry.status !=
-                   core::state::sequencer::SequencerTrackActivationStatus::QUEUED) {
-            return;
-        }
+    const auto telemetry = track_activations_->telemetry(
+        paste.plan.entry.targetTrack
+    );
+    if (telemetry.generation != paste.activationGeneration ||
+        telemetry.origin !=
+            core::state::sequencer::SequencerTrackActivationOrigin::TRACK_PASTE) {
+        return;
     }
 
-    if (cancelled) {
+    if (telemetry.status ==
+        core::state::sequencer::SequencerTrackActivationStatus::CANCELLED) {
         setTrackPasteFeedback(
             contextual::OperationFeedbackStatus::CANCELLED,
             contextual::ContextActionReason::FAILED,
@@ -324,7 +290,8 @@ FLASHMEM void SequencerStructureEditWorkflow::updateTrackPasteActivation(
             TRACK_PASTE_CANCELLED_MS
         );
         paste.bump();
-    } else if (applied == paste.plan.count) {
+    } else if (telemetry.status ==
+               core::state::sequencer::SequencerTrackActivationStatus::APPLIED) {
         setTrackPasteFeedback(
             contextual::OperationFeedbackStatus::APPLIED,
             contextual::ContextActionReason::NONE,
@@ -344,11 +311,12 @@ FLASHMEM bool SequencerStructureEditWorkflow::commitTrackPaste(uint32_t nowMs) {
 
     const auto result = executeSequencerTrackTransfer(
         tracks_,
+        project_tracks_,
         sequencer_,
         structure_clipboard_,
         shared_tracks_,
         history_,
-        paste.plan.firstTarget,
+        paste.plan.entry.targetTrack,
         0,
         track_activations_,
         status_bar_ != nullptr && status_bar_->playing.get()
@@ -358,7 +326,6 @@ FLASHMEM bool SequencerStructureEditWorkflow::commitTrackPaste(uint32_t nowMs) {
     paste.operationGeneration = result.operationId != 0
         ? result.operationId
         : paste.interactionGeneration;
-    paste.focusedIndex = 0;
 
     if (!result.applied()) {
         auto reason = core::state::sequencer::contextualReasonForTrackTransfer(
@@ -405,11 +372,7 @@ FLASHMEM bool SequencerStructureEditWorkflow::commitTrackPaste(uint32_t nowMs) {
         nowMs,
         result.activationGeneration != 0 ? 0 : TRACK_PASTE_APPLIED_MS
     );
-    if (paste.selectionContext) {
-        cancelSelectionMode();
-    } else {
-        syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
-    }
+    syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
     paste.bump();
     return true;
 }
@@ -494,7 +457,6 @@ FLASHMEM bool SequencerStructureEditWorkflow::cancelTrackPasteAction(
     bool changed = false;
     if (paste.detailVisible) {
         paste.detailVisible = false;
-        paste.focusedIndex = 0;
         changed = true;
     }
     if (contextual::cancelGuardedAction(paste.guard)) {
@@ -509,10 +471,6 @@ FLASHMEM bool SequencerStructureEditWorkflow::cancelTrackPasteAction(
     }
     if (changed) paste.bump();
     return changed;
-}
-
-FLASHMEM bool SequencerStructureEditWorkflow::trackPasteGestureActive() const {
-    return sequencer_.structureUi.trackPaste.gestureActive();
 }
 
 FLASHMEM bool SequencerStructureEditWorkflow::trackPasteNavigationBlocked() const {
@@ -533,19 +491,6 @@ FLASHMEM void SequencerStructureEditWorkflow::toggleTrackPasteDetails() {
     auto& paste = sequencer_.structureUi.trackPaste;
     if (!trackPastePlanInspectable()) return;
     paste.detailVisible = !paste.detailVisible;
-    if (paste.focusedIndex >= paste.plan.count) paste.focusedIndex = 0;
-    paste.bump();
-}
-
-FLASHMEM void SequencerStructureEditWorkflow::navigateTrackPasteDetails(
-    float delta
-) {
-    auto& paste = sequencer_.structureUi.trackPaste;
-    if (!paste.detailVisible || paste.plan.count == 0 || delta == 0.0f) return;
-    const int direction = delta > 0.0f ? 1 : -1;
-    const int count = paste.plan.count;
-    const int next = (static_cast<int>(paste.focusedIndex) + direction + count) % count;
-    paste.focusedIndex = static_cast<uint8_t>(next);
     paste.bump();
 }
 
@@ -553,11 +498,11 @@ FLASHMEM void SequencerStructureEditWorkflow::applyBottomLeftTapCurrentStructure
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (track_ui_.previewAddSlot.get()) return;
         const uint8_t activeTrack = currentActiveTrack();
-        const uint16_t historyMask = sequencerStructureHistoryTrackBit(activeTrack);
-        auto change = captureTrackHistoryBefore(historyMask);
-        if (!change) return;
-        if (!toggleSequencerStructureTrackMute(tracks_, activeTrack)) return;
-        recordTrackHistoryAfter(std::move(change), historyMask);
+        (void)toggleSequencerStructureTrackMute(
+            project_tracks_,
+            project_track_domain_,
+            activeTrack
+        );
         return;
     }
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
@@ -570,29 +515,6 @@ FLASHMEM void SequencerStructureEditWorkflow::applyBottomLeftTapCurrentStructure
     if (clearCurrentSequencerStructurePage(sequencer_)) {
         recordPageHistoryAfter(std::move(historyChange));
     }
-}
-
-FLASHMEM void SequencerStructureEditWorkflow::toggleTrackSelectionMute() {
-    auto& selection = track_ui_.selection;
-    if (!selection.active.get() ||
-        selection.scope.get() != core::state::StructureSelectionScope::TRACK) {
-        return;
-    }
-
-    const uint16_t selectedMask = activeTrackSelectionMask(
-        selection.selectedMask.get(),
-        currentTrackEnabledMask()
-    );
-    if (selectedMask == 0) return;
-
-    const uint16_t historyMask = static_cast<uint16_t>(
-        selectedMask | sequencerStructureHistoryTrackBit(currentActiveTrack())
-    );
-    auto change = captureTrackHistoryBefore(historyMask);
-    if (!change) return;
-
-    if (!toggleSelectedSequencerStructureTrackMute(tracks_, selectedMask)) return;
-    recordTrackHistoryAfter(std::move(change), historyMask);
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::removeCurrentStructure() {
@@ -666,6 +588,7 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
             sequencerStructureTrackTarget(track_ui_, currentActiveTrack());
         const auto result = executeSequencerTrackTransfer(
                 tracks_,
+                project_tracks_,
                 sequencer_,
                 structure_clipboard_,
                 shared_tracks_,
@@ -709,18 +632,6 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
     recordPageHistoryAfter(std::move(historyChange));
 }
 
-FLASHMEM bool SequencerStructureEditWorkflow::canPasteSelection() const {
-    if (track_ui_.selection.active.get()) {
-        return track_ui_.selection.scope.get() ==
-                   core::state::StructureSelectionScope::TRACK &&
-               buildTrackPastePlan(true).canCommit();
-    }
-    if (sequencer_.structureUi.pageSelection.active.get()) {
-        return structure_clipboard_.hasSequencerPageSelection();
-    }
-    return false;
-}
-
 FLASHMEM bool SequencerStructureEditWorkflow::canPasteFocusedStep() const {
     return structure_clipboard_.hasSequencerSteps() &&
            structure_clipboard_.sequencerSteps.rootContext ==
@@ -743,63 +654,6 @@ FLASHMEM void SequencerStructureEditWorkflow::copyFocusedStep() {
 
 FLASHMEM void SequencerStructureEditWorkflow::pasteFocusedStep() {
     pasteStepClipboardAt(sequencer_.focusedStep.get(), false);
-}
-
-FLASHMEM void SequencerStructureEditWorkflow::clearSelection() {
-    if (track_ui_.selection.active.get()) {
-        return;
-    }
-
-    auto& selection = sequencer_.structureUi.pageSelection;
-    if (!selection.active.get()) return;
-
-    const uint16_t selectedMask = activePageSelectionMask(
-        sequencer_,
-        selection.selectedMask.get()
-    );
-    if (selectedMask == 0) return;
-
-    auto historyChange = capturePageHistoryBefore();
-    if (!historyChange) return;
-
-    if (!clearSelectedPages(sequencer_, selectedMask)) return;
-    recordPageHistoryAfter(std::move(historyChange));
-}
-
-FLASHMEM void SequencerStructureEditWorkflow::copySelection() {
-    if (track_ui_.selection.active.get()) {
-        const uint16_t selectedMask = activeTrackSelectionMask(
-            track_ui_.selection.selectedMask.get(),
-            currentTrackEnabledMask()
-        );
-        auto clipboard = captureTrackSelectionClipboard(
-            tracks_,
-            sequencer_,
-            selectedMask
-        );
-        if (!clipboard) return;
-        if (!structure_clipboard_.storeSequencerTrackSelection(std::move(clipboard))) {
-            return;
-        }
-        return;
-    }
-
-    auto& selection = sequencer_.structureUi.pageSelection;
-    if (!selection.active.get()) return;
-
-    const uint16_t selectedMask = activePageSelectionMask(
-        sequencer_,
-        selection.selectedMask.get()
-    );
-
-    core::state::SequencerPageSelectionClipboard clipboard;
-    if (!capturePageSelectionClipboard(sequencer_, selectedMask, clipboard)) return;
-    if (!structure_clipboard_.storeSequencerPageSelection(
-        clipboard,
-        core::state::sequencer::graphView(sequencer_.pattern)
-    )) {
-        return;
-    }
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::copyStepSelection() {
@@ -881,97 +735,6 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepSelection() {
     pasteStepClipboardAt(selection.cursorStep.get(), true);
 }
 
-FLASHMEM void SequencerStructureEditWorkflow::pasteSelection() {
-    if (track_ui_.selection.active.get()) {
-        if (!structure_clipboard_.hasSequencerTrackSelection()) return;
-        const uint8_t cursorTrack =
-            core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
-                track_ui_.selection.cursorIndex.get()
-            );
-        const auto result = executeSequencerTrackTransfer(
-                tracks_,
-                sequencer_,
-                structure_clipboard_,
-                shared_tracks_,
-                history_,
-                cursorTrack,
-                0,
-                track_activations_,
-                status_bar_ != nullptr && status_bar_->playing.get()
-            );
-        if (!result.applied()) return;
-        cancelSelectionMode();
-        return;
-    }
-
-    auto& selection = sequencer_.structureUi.pageSelection;
-    if (!selection.active.get() || !structure_clipboard_.hasSequencerPageSelection()) return;
-
-    const auto plan = buildPageSelectionPastePlan(
-        sequencer_,
-        structure_clipboard_,
-        selection.cursorIndex.get()
-    );
-    if (!plan.hasEntries()) return;
-
-    auto historyChange = capturePageHistoryBefore();
-    if (!historyChange) return;
-
-    pastePageSelectionClipboard(sequencer_, structure_clipboard_, plan);
-    sequencer_.pattern.bumpStepDataRevision();
-    sequencer_.page.set(plan.firstDestinationPage);
-    sequencer_.focusedStep.set(sequencer_.pageStartStep(plan.firstDestinationPage));
-    sequencer_.structureUi.syncPreviewPage(plan.firstDestinationPage);
-    sequencer_.structureUi.previewAddPageSlot.set(false);
-    cancelSelectionMode();
-    recordPageHistoryAfter(std::move(historyChange));
-}
-
-FLASHMEM void SequencerStructureEditWorkflow::deleteSelection() {
-    auto& selection = track_ui_.selection.active.get() ? track_ui_.selection
-                                                       : sequencer_.structureUi.pageSelection;
-    if (!selection.active.get()) return;
-
-    const uint16_t selectedMask = selection.selectedMask.get();
-    if (selectedMask == 0) return;
-
-    if (selection.scope.get() == core::state::StructureSelectionScope::TRACK) {
-        const uint16_t trackMask = activeTrackSelectionMask(
-            selectedMask,
-            currentTrackEnabledMask()
-        );
-        if (trackMask == 0) return;
-
-        const auto mutation = removeSelectedSequencerStructureTracks(
-            currentTrackEnabledMask(),
-            trackMask,
-            currentActiveTrack()
-        );
-        if (!mutation.changed) return;
-        const uint16_t historyMask = static_cast<uint16_t>(
-            trackMask |
-            sequencerStructureHistoryTrackBit(currentActiveTrack()) |
-            sequencerStructureHistoryTrackBit(mutation.nextActive)
-        );
-        auto change = captureTrackHistoryBefore(historyMask);
-        if (!change) return;
-        const bool changed = applyTrackState(mutation.nextMask, mutation.nextActive);
-        if (!changed) return;
-        cancelSelectionMode();
-        recordTrackHistoryAfter(std::move(change), historyMask);
-        return;
-    } else {
-        const uint16_t pageMask = activePageSelectionMask(sequencer_, selectedMask);
-        if (pageMask == 0) return;
-
-        auto historyChange = capturePageHistoryBefore();
-        if (!historyChange) return;
-        if (!removeSelectedPages(sequencer_, pageMask)) return;
-        cancelSelectionMode();
-        recordPageHistoryAfter(std::move(historyChange));
-    }
-}
-
 FLASHMEM SequencerStructureEditWorkflow::HistoryPatternChangePtr
 SequencerStructureEditWorkflow::capturePageHistoryBefore() const {
     return captureSequencerPageStructureHistoryBefore(sequencer_);
@@ -1019,21 +782,6 @@ FLASHMEM void SequencerStructureEditWorkflow::syncPreviewToFocus(
     syncSequencerPagePreviewToVisible(
         sequencer_,
         focus == core::state::StructureNavigationFocus::PAGE
-    );
-}
-
-FLASHMEM void SequencerStructureEditWorkflow::cancelSelectionMode() {
-    auto& selection = track_ui_.selection.active.get() ? track_ui_.selection
-                                                       : sequencer_.structureUi.pageSelection;
-    const auto scope = selection.scope.get();
-    const uint8_t cursor = scope == core::state::StructureSelectionScope::TRACK
-        ? currentActiveTrack()
-        : sequencer_.visiblePage();
-    selection.reset(scope, cursor);
-    syncPreviewToFocus(
-        scope == core::state::StructureSelectionScope::TRACK
-            ? core::state::StructureNavigationFocus::TRACK
-            : core::state::StructureNavigationFocus::PAGE
     );
 }
 

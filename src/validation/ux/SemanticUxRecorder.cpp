@@ -245,6 +245,13 @@ FLASHMEM void formatContextFields(char* out,
     } else if (post.targetStep >= 0) {
         appendIntField(out, size, "target_step", static_cast<int>(post.targetStep));
     }
+    const SemanticUxContext& targetRange = post.targetCount >= 0 ? post : pre;
+    if (targetRange.targetCount >= 0) {
+        appendIntField(out, size, "target_count", static_cast<int>(targetRange.targetCount));
+    }
+    if (targetRange.targetPage >= 0) {
+        appendIntField(out, size, "target_page", static_cast<int>(targetRange.targetPage));
+    }
     if (pre.targetMask >= 0) {
         appendIntField(out, size, "pre_target_mask", static_cast<int>(pre.targetMask));
     }
@@ -360,6 +367,18 @@ FLASHMEM void formatContextFields(char* out,
     if (resolvedValue.hasResolvedValue) {
         appendIntField(out, size, "resolved_value", resolvedValue.resolvedValue);
     }
+    const SemanticUxContext& controller = post.controller >= 0 ? post : pre;
+    if (controller.controller >= 0) {
+        appendIntField(out, size, "controller", static_cast<int>(controller.controller));
+    }
+    if (controller.defaultController >= 0) {
+        appendIntField(
+            out,
+            size,
+            "default_controller",
+            static_cast<int>(controller.defaultController)
+        );
+    }
     if (post.hasStepOn) {
         appendBoolField(out, size, "step_on", post.stepOn);
     } else if (pre.hasStepOn) {
@@ -374,6 +393,50 @@ FLASHMEM void formatContextFields(char* out,
         appendIntField(out, size, "resolved_probability", resolved.resolvedProbability);
         appendBoolField(out, size, "resolved_variation", resolved.resolvedVariationVisible);
     }
+
+    appendField(
+        out,
+        size,
+        "draft_kind",
+        post.draftKind ? post.draftKind : pre.draftKind
+    );
+    const SemanticUxContext& draftState = post.hasDraftActive ? post : pre;
+    if (draftState.hasDraftActive) {
+        appendBoolField(out, size, "draft_active", draftState.draftActive);
+    }
+    const SemanticUxContext& draftDirty =
+        post.hasDraftActive && post.draftActive && post.hasDraftDirty ? post : pre;
+    if (draftDirty.hasDraftDirty) {
+        appendBoolField(out, size, "dirty", draftDirty.draftDirty);
+    }
+    appendField(
+        out,
+        size,
+        "exit_choice",
+        post.exitChoice ? post.exitChoice : pre.exitChoice
+    );
+    appendField(
+        out,
+        size,
+        "draft_failure",
+        post.draftFailure ? post.draftFailure : pre.draftFailure
+    );
+    const char* action = pre.action ? pre.action : post.action;
+    appendField(out, size, "action", action);
+
+    // Publication is a transition fact, not another retained bit of UI state.
+    // Derive it from the pre/post draft authority so a failed Apply remains
+    // active and can never be reported as published.
+    const SemanticUxContext& publication = post.hasPublished ? post : pre;
+    if (publication.hasPublished) {
+        appendBoolField(out, size, "published", publication.published);
+    } else if (pre.hasDraftActive && pre.draftActive && post.hasDraftActive &&
+               !post.draftActive) {
+        const bool published = action != nullptr &&
+            (std::strcmp(action, "apply") == 0 ||
+             std::strcmp(action, "save") == 0);
+        appendBoolField(out, size, "published", published);
+    }
 }
 
 FLASHMEM bool hasSemanticContext(const SemanticUxContext& context) {
@@ -382,7 +445,8 @@ FLASHMEM bool hasSemanticContext(const SemanticUxContext& context) {
            context.source || context.winner || context.winnerSource ||
            context.property ||
            context.valueLabel[0] != '\0' || context.targetIndex >= 0 ||
-           context.targetStep >= 0 || context.targetMask >= 0 ||
+           context.targetStep >= 0 || context.targetCount >= 0 ||
+           context.targetPage >= 0 || context.targetMask >= 0 ||
            context.sourceMask >= 0 || context.createMask >= 0 ||
            context.overwriteMask >= 0 || context.hasTargetRoute ||
            context.hasActivationGeneration || context.mappingIndex >= 0 ||
@@ -392,8 +456,12 @@ FLASHMEM bool hasSemanticContext(const SemanticUxContext& context) {
            context.operationOrigin || context.hasOperationGeneration ||
            context.operationStatus ||
            context.hasConflict || context.hasAuthoredValue ||
-           context.hasResolvedValue || context.hasStepOn ||
-           context.hasResolvedStep;
+           context.hasResolvedValue || context.controller >= 0 ||
+           context.defaultController >= 0 || context.hasStepOn ||
+           context.hasResolvedStep || context.draftKind ||
+           context.hasDraftActive || context.hasDraftDirty ||
+           context.hasPublished ||
+           context.exitChoice || context.draftFailure || context.action;
 }
 
 FLASHMEM bool isIgnoredSemanticContext(const SemanticUxContext& context) {
@@ -533,6 +601,8 @@ FLASHMEM void SemanticUxRecorder::capture(uint32_t nowMs,
 
 FLASHMEM void SemanticUxRecorder::resetCaptureContext(bool allowCurrentSurfaceProjection) {
     has_last_semantic_event_ = false;
+    last_semantic_effect_ = nullptr;
+    last_semantic_outcome_ = nullptr;
     last_semantic_sequence_ = 0;
     allow_state_projection_capture_ = allowCurrentSurfaceProjection;
 }
@@ -578,9 +648,18 @@ FLASHMEM void SemanticUxRecorder::writeRecord_(uint32_t nowMs,
 
     const SemanticUxContext& meaningfulContext =
         hasSemanticContext(postContext) ? postContext : record.preContext;
+    const bool ignoredContext =
+        isIgnoredSemanticContext(record.preContext) ||
+        isIgnoredSemanticContext(postContext);
     if (hasSemanticContext(meaningfulContext) &&
-        !isIgnoredSemanticContext(meaningfulContext)) {
+        !ignoredContext) {
         last_semantic_event_ = record.traceEvent;
+        last_semantic_effect_ = record.preContext.effect
+            ? record.preContext.effect
+            : postContext.effect;
+        last_semantic_outcome_ = record.preContext.outcome
+            ? record.preContext.outcome
+            : postContext.outcome;
         last_semantic_sequence_ = record.sequence;
         has_last_semantic_event_ = true;
     }
@@ -675,6 +754,10 @@ FLASHMEM void SemanticUxRecorder::writeCapture_(uint32_t nowMs,
     if (has_last_semantic_event_) {
         if (auto* provider = currentSemanticUxContextProvider()) {
             provider->captureSemanticUxContext(last_semantic_event_, context);
+        }
+        if (last_semantic_effect_) context.effect = last_semantic_effect_;
+        if (last_semantic_outcome_ && !context.outcome) {
+            context.outcome = last_semantic_outcome_;
         }
     } else if (allow_state_projection_capture_) {
         oc::core::input::InputBindingTraceEvent projectionEvent{};

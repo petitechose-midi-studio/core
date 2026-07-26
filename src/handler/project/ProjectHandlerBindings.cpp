@@ -72,25 +72,13 @@ FLASHMEM void ProjectHandler::setupBindings() {
         .when([this]() { return regularProjectInputActive(); })
         .then([this](float normalized) { setFocusedValue(normalized); });
 
-    buttons_.button(ButtonID::LEFT_TOP)
-        .release()
-        .scope(project_view_scope_)
-        .when([this]() { return physicalHoldActive(); })
-        .then([this]() { consumeUndo(); });
-
-    buttons_.button(ButtonID::LEFT_BOTTOM)
-        .release()
-        .scope(project_view_scope_)
-        .when([this]() { return physicalHoldActive(); })
-        .then([this]() { consumeRedo(); });
-
     buttons_.button(ButtonID::BOTTOM_LEFT)
         .press()
         .scope(project_view_scope_)
         .when([this]() {
             const auto node = navigation_.currentNode.get();
             return regularProjectInputActive() &&
-                   !pages_.control.audition.active &&
+                   !pages_.control.audition.active() &&
                    (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
@@ -105,7 +93,7 @@ FLASHMEM void ProjectHandler::setupBindings() {
             if (!regularProjectInputActive()) return false;
             const auto node = navigation_.currentNode.get();
             return isProjectNameEditorNode(node) ||
-                   (!pages_.control.audition.active &&
+                   (!pages_.control.audition.active() &&
                     (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
                      node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
                      node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
@@ -150,10 +138,12 @@ FLASHMEM void ProjectHandler::setupBindings() {
             return regularProjectInputActive() &&
                    (node == core::state::project::ProjectNodeId::
                                 MODULATOR_DESTINATION_PICKER ||
-                    node == core::state::project::ProjectNodeId::
-                                MODULATOR_SOURCE_DETAIL ||
-                    node == core::state::project::ProjectNodeId::
-                                MODULATOR_SOURCE_OPTIONS) &&
+                     node == core::state::project::ProjectNodeId::
+                                 MODULATOR_SOURCE_DETAIL ||
+                     node == core::state::project::ProjectNodeId::
+                                 MODULATOR_SOURCE_OPTIONS ||
+                     node == core::state::project::ProjectNodeId::
+                                 MODULATOR_TRIGGER) &&
                    modulatorAuditionAddress(address);
         })
         .then([this]() { applyDestinationPickerAudition(); });
@@ -164,7 +154,7 @@ FLASHMEM void ProjectHandler::setupBindings() {
         .when([this]() {
             const auto node = navigation_.currentNode.get();
             return regularProjectInputActive() &&
-                   !pages_.control.audition.active &&
+                   !pages_.control.audition.active() &&
                    (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
                     node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
@@ -179,7 +169,7 @@ FLASHMEM void ProjectHandler::setupBindings() {
             if (!regularProjectInputActive()) return false;
             const auto node = navigation_.currentNode.get();
             return isProjectNameEditorNode(node) ||
-                   (!pages_.control.audition.active &&
+                   (!pages_.control.audition.active() &&
                     (node == core::state::project::ProjectNodeId::MODULATORS_ROOT ||
                      node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
                      node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||

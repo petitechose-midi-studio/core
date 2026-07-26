@@ -12,13 +12,9 @@
 
 0 scenario project-modulator-workspace
 
-100 button LEFT_CENTER down
-700 encoder NAV 1
-780 encoder NAV 2
-860 encoder NAV 3
-940 encoder NAV 4
-1020 encoder NAV 5
-1100 button LEFT_CENTER up
+100 button LEFT_TOP down
+700 encoder NAV -1
+1100 button LEFT_TOP up
 1320 capture screen registry
 
 # Source level: Shape / Timing / Rate / Details / Destinations.

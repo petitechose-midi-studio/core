@@ -1,5 +1,7 @@
 #include "context/standalone/StandaloneOverlayAssembly.hpp"
 
+#include <cstdio>
+
 #include <config/PlatformCompat.hpp>
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
@@ -54,14 +56,48 @@ FLASHMEM void StandaloneOverlayAssembly::renderViewSelector(int selectedIndex, b
         return;
     }
 
+    const auto* undoEntry = core_state_.projectHistory.peekUndo();
+    const auto* redoEntry = core_state_.projectHistory.peekRedo();
+    char undoLabel[48]{};
+    char redoLabel[48]{};
+    std::snprintf(
+        undoLabel,
+        sizeof(undoLabel),
+        "C  Undo %s",
+        undoEntry
+            ? core::state::project::ProjectHistoryCoordinator::actionLabel(*undoEntry)
+            : "-"
+    );
+    std::snprintf(
+        redoLabel,
+        sizeof(redoLabel),
+        "B  Redo %s",
+        redoEntry
+            ? core::state::project::ProjectHistoryCoordinator::actionLabel(*redoEntry)
+            : "-"
+    );
+
+    const uint32_t historyRevision = core_state_.projectHistory.revision.get();
+    const bool wasVisible = !lv_obj_has_flag(
+        view_selector_->getElement(),
+        LV_OBJ_FLAG_HIDDEN
+    );
+    if (wasVisible && historyRevision != view_selector_history_revision_) {
+        // A history action only changes the header. Re-show once so LVGL
+        // redraws the complete transparent overlay instead of leaving the
+        // unchanged list outside a partial refresh region.
+        view_selector_->hide();
+    }
     view_selector_->show();
+    view_selector_history_revision_ = historyRevision;
     view_selector_->render({
-        .title = "Select View",
-        .meta = "Hold Back + Nav",
+        .title = undoLabel,
+        .meta = redoLabel,
         .rows = view_selector_rows_.data(),
         .rowCount = core::state::VIEW_SELECTOR_ITEM_COUNT,
         .selectedIndex = selectedIndex,
         .dataRevision = 1,
+        .headerLayout = ms::ui::MenuListHeaderLayout::Stacked,
     });
 }
 

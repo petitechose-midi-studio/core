@@ -10,6 +10,8 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/modulation/ProjectControlState.hpp"
+#include "state/modulation/ProjectModulatorSourceSession.hpp"
+#include "state/modulation/ProjectRecordedShapeCaptureState.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
 
 namespace core::ui::project {
@@ -20,10 +22,13 @@ struct ProjectModulatorWorkspaceProps {
     const core::state::modulation::ModulatorSourceState* source = nullptr;
     const core::state::modulation::ModulationBindingState* auditionBinding =
         nullptr;
+    core::state::modulation::ProjectModulatorSourceSessionDescriptor session{};
+    const core::state::modulation::ProjectRecordedShapeCaptureState* capture =
+        nullptr;
+    const char* transientFeedback = nullptr;
     bool options = false;
-    bool audition = false;
+    bool trigger = false;
     uint8_t selectedIndex = 0U;
-    uint8_t telemetryRevision = 0U;
 };
 
 /**
@@ -65,10 +70,16 @@ private:
     struct CurveSampleContext {
         const core::state::modulation::ProjectControlState* control = nullptr;
         const core::state::modulation::ModulatorSourceState* source = nullptr;
+        const core::state::modulation::ProjectRecordedShapeTake* recordedTake =
+            nullptr;
         uint16_t runtimeSourceIndex = UINT16_MAX;
+        uint16_t delayEndQ16 = 0U;
         uint16_t attackEndQ16 = 0U;
+        uint16_t holdEndQ16 = 0U;
         uint16_t decayEndQ16 = 0U;
         uint16_t sustainEndQ16 = 0U;
+        uint32_t previewDuration = 0U;
+        uint32_t smoothDuration = 0U;
         uint16_t previousPositionQ16 = 0U;
         uint16_t previousValue = 0U;
         bool hasPrevious = false;
@@ -85,6 +96,11 @@ private:
         const ProjectModulatorWorkspaceProps& props,
         bool sourceChanged
     );
+    void showCaptureFeedback(
+        const ProjectModulatorWorkspaceProps& props,
+        bool captureActive
+    );
+    void presentFeedback(const char* key, const char* value);
     void hideEditFeedback();
     static void onEditFeedbackTimeout(lv_timer_t* timer);
     static bool sampleCurve(
@@ -116,11 +132,19 @@ private:
     std::array<char, 32> editFeedbackKeyText_{};
     std::array<char, 32> editFeedbackValueText_{};
     core::state::modulation::ModulatorId rendered_source_id_{};
+    uint32_t rendered_authored_revision_ = 0U;
     uint32_t edit_feedback_deadline_ms_ = 0U;
+    lv_coord_t rendered_layout_width_ = -1;
     uint8_t rendered_selected_index_ = UINT8_MAX;
+    uint8_t rendered_layout_item_count_ = UINT8_MAX;
+    uint8_t rendered_layout_bottom_count_ = UINT8_MAX;
     bool rendered_options_ = false;
-    bool rendered_audition_ = false;
+    bool rendered_trigger_ = false;
+    core::state::modulation::ProjectModulatorSourceSessionMode
+        rendered_session_mode_ = core::state::modulation::
+            ProjectModulatorSourceSessionMode::DURABLE_PROJECT;
     bool has_rendered_source_ = false;
+    bool rendered_capture_active_ = false;
     bool visible_ = false;
 };
 

@@ -11,9 +11,6 @@ namespace core::context::standalone {
  * Entering the macro view must refresh runtime macro values and the status-page
  * label from the active persisted macro page before input handlers resume.
  */
-inline void prepareMacroViewActivation(core::state::CoreState& state) {
-    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
-    state.statusBar.pageName.set(state.pages.activePageData().name);
-}
+void prepareMacroViewActivation(core::state::CoreState& state);
 
 }  // namespace core::context::standalone

@@ -68,7 +68,7 @@ FLASHMEM PersistenceWriteStatus MacroPersistence::saveLibrarySlotStatus(
 
 FLASHMEM SlotLoadStatus MacroPersistence::loadLibrarySlot(
     uint8_t slotIndex,
-    state::macro::MacroPagesState& pages
+    LibrarySlotData& out
 ) {
     if (slotIndex >= LIBRARY_SLOT_COUNT) return SlotLoadStatus::OUT_OF_RANGE;
 
@@ -86,14 +86,33 @@ FLASHMEM SlotLoadStatus MacroPersistence::loadLibrarySlot(
         return SlotLoadStatus::HEADER_MISMATCH;
     }
 
-    if (!macro_track_codec::applyPagesPayload(
+    if (!macro_track_codec::decodeTrackBankPayloadInto(
             payload->data(),
             static_cast<uint32_t>(payload->size()),
-            pages
+            out.tracks,
+            out.enabledTrackMask,
+            out.activeTrack
         )) {
         return SlotLoadStatus::HEADER_MISMATCH;
     }
     return SlotLoadStatus::OK;
+}
+
+FLASHMEM SlotLoadStatus MacroPersistence::loadLibrarySlot(
+    uint8_t slotIndex,
+    state::macro::MacroPagesState& pages
+) {
+    auto staged = core::app::makeExtmemUnique<LibrarySlotData>();
+    if (!staged) return SlotLoadStatus::STORAGE_UNAVAILABLE;
+    const auto status = loadLibrarySlot(slotIndex, *staged);
+    if (status == SlotLoadStatus::OK) {
+        pages.restoreTracksWithSharedState(
+            staged->tracks,
+            staged->enabledTrackMask,
+            staged->activeTrack
+        );
+    }
+    return status;
 }
 
 FLASHMEM bool MacroPersistence::eraseLibrarySlot(uint8_t slotIndex) {

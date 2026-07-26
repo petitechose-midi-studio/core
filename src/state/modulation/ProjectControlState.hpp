@@ -10,6 +10,19 @@
 namespace core::state::modulation {
 
 /**
+ * Ownership contract for the shared Project Modulator source workspace.
+ *
+ * DURABLE_PROJECT is also the canonical inactive value for the transient
+ * audition projection.  The two audition modes make source ownership
+ * explicit without retaining a second source draft.
+ */
+enum class ProjectModulatorSourceSessionMode : uint8_t {
+    DURABLE_PROJECT = 0U,
+    AUDITION_NEW,
+    AUDITION_EXISTING,
+};
+
+/**
  * Transient projection of one destination-first Modulator audition.
  *
  * This lives beside the EXTMEM Project-control domain so controller UI can
@@ -22,9 +35,22 @@ struct ProjectModulatorAuditionState {
     ModulationBindingId bindingId{};
     ModulationDestination destination{};
     uint32_t generation = 0;
-    bool active = false;
-    bool sourceCreated = false;
-    std::array<uint8_t, 2> reserved{};
+    ProjectModulatorSourceSessionMode mode =
+        ProjectModulatorSourceSessionMode::DURABLE_PROJECT;
+    std::array<uint8_t, 3> reserved{};
+
+    [[nodiscard]] constexpr bool active() const {
+        return mode == ProjectModulatorSourceSessionMode::AUDITION_NEW ||
+               mode == ProjectModulatorSourceSessionMode::AUDITION_EXISTING;
+    }
+
+    [[nodiscard]] constexpr bool sourceCreated() const {
+        return mode == ProjectModulatorSourceSessionMode::AUDITION_NEW;
+    }
+
+    [[nodiscard]] constexpr bool existingSource() const {
+        return mode == ProjectModulatorSourceSessionMode::AUDITION_EXISTING;
+    }
 };
 
 inline constexpr uint8_t PROJECT_MODULATION_FOCUS_CACHE_CAPACITY = 8;
@@ -51,9 +77,9 @@ struct ProjectModulationFocusState {
  * Complete live Project-control owner.
  *
  * MacroPagesState embeds this object in its existing EXTMEM allocation. The
- * authored domain replaces the legacy MacroAutomationBankState; the compiled
- * plan and runtime state are derived facts, never a second writable musical
- * authority. Per-frame scratch is bounded to the 128-source value array and
+ * authored domain is the sole writable musical authority; the slot projection,
+ * compiled plan and runtime state are derived facts. Per-frame scratch is
+ * bounded to the 128-source value array and
  * one drained trigger frame; both stay in the enclosing EXTMEM owner.
  */
 struct ProjectControlState {
@@ -83,7 +109,9 @@ struct ProjectControlState {
 static_assert(sizeof(ProjectModulatorAuditionState) == 20U);
 static_assert(sizeof(ProjectModulationFocusEntry) == 12U);
 static_assert(sizeof(ProjectModulationFocusState) == 100U);
-static_assert(sizeof(ProjectControlState) == 183196U);
+// DAHDSR adds exact accepted-note masks and smoothing state to the EXTMEM
+// runtime slab; no authored Source, persistent payload or RAM1 static grows.
+static_assert(sizeof(ProjectControlState) == 186036U);
 static_assert(std::is_trivially_copyable_v<ProjectControlState>);
 
 }  // namespace core::state::modulation

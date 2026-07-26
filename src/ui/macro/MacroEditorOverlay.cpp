@@ -1,7 +1,6 @@
 #include "ui/macro/MacroEditorOverlay.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
@@ -12,7 +11,6 @@
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "ui/font/StandaloneFonts.hpp"
 #include "ui/font/StandaloneIcons.hpp"
-#include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui {
@@ -20,7 +18,6 @@ namespace {
 
 namespace theme = standalone::theme;
 namespace state_mod = core::state::modulation;
-namespace adsr_ui = core::ui::modulation::adsr;
 
 constexpr lv_coord_t TAB_X = 8;
 constexpr lv_coord_t TAB_Y = 30;
@@ -31,7 +28,6 @@ constexpr lv_coord_t GRAPH_X = 8;
 constexpr lv_coord_t GRAPH_Y = 72;
 constexpr lv_coord_t GRAPH_WIDTH = 304;
 constexpr lv_coord_t GRAPH_HEIGHT = 92;
-
 template <size_t N>
 bool copyText(std::array<char, N>& destination, const char* source) {
     const char* text = source ? source : "";
@@ -41,10 +37,10 @@ bool copyText(std::array<char, N>& destination, const char* source) {
     return true;
 }
 
-lv_obj_t* createLabel(lv_obj_t* parent,
-                      const lv_font_t* font,
-                      uint32_t color,
-                      lv_text_align_t align = LV_TEXT_ALIGN_LEFT) {
+FLASHMEM lv_obj_t* createLabel(lv_obj_t* parent,
+                               const lv_font_t* font,
+                               uint32_t color,
+                               lv_text_align_t align = LV_TEXT_ALIGN_LEFT) {
     auto* label = lv_label_create(parent);
     lv_obj_set_style_text_font(label, font ? font : LV_FONT_DEFAULT, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
@@ -239,16 +235,7 @@ FLASHMEM bool MacroEditorOverlay::sampleCurve(
     auto* context = static_cast<CurveSampleContext*>(rawContext);
     if (context == nullptr || context->preview == nullptr) return false;
     MacroEditorPreviewSample sample{};
-    const bool sampled =
-        context->focus == MacroEditorPreviewFocus::DESTINATION &&
-        context->liveTrace != nullptr && context->liveTrace->count() > 0U
-        ? context->liveTrace->sample(
-            positionQ16,
-            context->liveNowMs,
-            context->liveCursor,
-            sample
-        )
-        : sampleMacroEditorPreview(
+    const bool sampled = sampleMacroEditorPreview(
             *context->preview,
             context->focus,
             positionQ16,
@@ -263,7 +250,8 @@ FLASHMEM bool MacroEditorOverlay::sampleCurve(
     if (context->focus == MacroEditorPreviewFocus::AUTOMATION) {
         curve = sample.automationQ16;
     } else if (
-        context->focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR
+        context->focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR ||
+        context->focus == MacroEditorPreviewFocus::ALL_MODULATION
     ) {
         curve = static_cast<uint16_t>(std::clamp<int32_t>(
             32768 + static_cast<int32_t>(sample.modulationQ15),
@@ -291,8 +279,7 @@ FLASHMEM bool MacroEditorOverlay::sampleMarker(
     auto* context = static_cast<CurveSampleContext*>(rawContext);
     out = {};
     if (context == nullptr || context->preview == nullptr ||
-        context->preview->control == nullptr ||
-        context->focus == MacroEditorPreviewFocus::DESTINATION) {
+        context->preview->control == nullptr) {
         return true;
     }
     const auto& model = *context->preview;
@@ -302,66 +289,35 @@ FLASHMEM bool MacroEditorOverlay::sampleMarker(
         oc::time::millis()
     );
     uint16_t positionQ16 = 0U;
-    if (context->focus == MacroEditorPreviewFocus::AUTOMATION) {
-        if (!model.automationStored || !control.runtime.initialized) return true;
+    bool positionKnown = false;
+    if (control.runtime.initialized) {
         positionQ16 = state_mod::projectControlTimelinePositionQ16(
             control.runtime,
             time,
-            model.automationDurationTicks
+            model.timelineDurationTicks
         );
-    } else {
-        const auto& graph = control.authored.modulation;
-        if (model.focusedBindingIndex >= graph.outputBindingCount ||
-            model.focusedSourceIndex >= graph.sourceCount ||
-            model.focusedRuntimeSourceIndex >= control.plan.sourceCount) {
-            return true;
-        }
-        const auto& binding = graph.outputBindings[model.focusedBindingIndex];
-        if (binding.id != model.focusedBindingId ||
-            (binding.flags &
-             state_mod::PROJECT_MODULATION_BINDING_FLAG_ENABLED) == 0U) {
-            return true;
-        }
-        const auto& source = graph.sources[model.focusedSourceIndex];
-        if (source.id != binding.sourceId ||
-            (source.flags & state_mod::PROJECT_MODULATOR_FLAG_ENABLED) == 0U) {
-            return true;
-        }
-        state_mod::ProjectModulatorRuntimeProjection projection{};
-        if (!state_mod::projectModulatorRuntimeProjectionAtIndex(
-                control.plan,
-                control.authored.curves,
-                control.runtime,
-                time,
-                model.focusedRuntimeSourceIndex,
-                projection
-            )) {
-            return true;
-        }
-        positionQ16 = projection.positionQ16;
-        if (source.kind == state_mod::ModulatorKind::ADSR) {
-            if (!adsr_ui::runtimeMarkerPosition(
-                    adsr_ui::previewBoundaries(source.parameters.adsr),
-                    projection.adsrStage,
-                    projection.stageProgressQ16,
-                    positionQ16
-                )) {
-                return true;
-            }
-        } else if (source.kind == state_mod::ModulatorKind::LFO) {
-            const int32_t authoredPhase = static_cast<int32_t>(std::lround(
-                (static_cast<float>(source.parameters.lfo.phaseQ15) /
-                 32767.0f) * 65535.0f
-            ));
-            int32_t naturalPosition = static_cast<int32_t>(positionQ16) -
-                authoredPhase;
-            naturalPosition %= 65536;
-            if (naturalPosition < 0) naturalPosition += 65536;
-            positionQ16 = static_cast<uint16_t>(naturalPosition);
-        } else if (!projection.positionKnown) {
-            return true;
+        positionKnown = true;
+    }
+    if (!positionKnown && model.activeTake != nullptr) {
+        const auto& take = *model.activeTake;
+        if (take.activeFor(model.activeTakeMacro)) {
+            const uint32_t duration = std::max<uint16_t>(
+                model.timelineDurationTicks,
+                1U
+            );
+            const uint32_t phaseTick = static_cast<uint32_t>(
+                (static_cast<uint64_t>(take.startProjectPhaseTick % duration) +
+                 static_cast<uint64_t>(take.latestElapsedTick % duration)) %
+                duration
+            );
+            positionQ16 = static_cast<uint16_t>(
+                (static_cast<uint64_t>(phaseTick) * 65535U + duration / 2U) /
+                duration
+            );
+            positionKnown = true;
         }
     }
+    if (!positionKnown) return true;
     MacroEditorPreviewSample sample{};
     if (!sampleMacroEditorPreview(
             model,
@@ -373,14 +329,39 @@ FLASHMEM bool MacroEditorOverlay::sampleMarker(
         )) {
         return false;
     }
-    const uint16_t valueQ16 =
-        context->focus == MacroEditorPreviewFocus::AUTOMATION
-        ? sample.automationQ16
-        : static_cast<uint16_t>(std::clamp<int32_t>(
+    uint16_t valueQ16 = sample.outQ16;
+    if (context->focus == MacroEditorPreviewFocus::AUTOMATION) {
+        valueQ16 = sample.automationQ16;
+    } else if (context->focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR ||
+               context->focus == MacroEditorPreviewFocus::ALL_MODULATION) {
+        valueQ16 = static_cast<uint16_t>(std::clamp<int32_t>(
             32768 + static_cast<int32_t>(sample.modulationQ15),
             0,
             65535
         ));
+    }
+    const auto quantizeLive = [](float value) {
+        return static_cast<uint16_t>(
+            std::clamp(value, 0.0f, 1.0f) * 65535.0f + 0.5f
+        );
+    };
+    if (context->live != nullptr && context->live->valid) {
+        if (context->focus == MacroEditorPreviewFocus::DESTINATION) {
+            valueQ16 = quantizeLive(context->live->out);
+        } else if (
+            context->focus == MacroEditorPreviewFocus::ALL_MODULATION ||
+            context->focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR
+        ) {
+            valueQ16 = quantizeLive(
+                (std::clamp(context->live->modulation, -1.0f, 1.0f) + 1.0f) *
+                0.5f
+            );
+        } else if (
+            model.activeTake != nullptr || model.automationPlayback
+        ) {
+            valueQ16 = quantizeLive(context->live->base);
+        }
+    }
     out = {
         .visible = true,
         .positionQ16 = positionQ16,
@@ -390,28 +371,18 @@ FLASHMEM bool MacroEditorOverlay::sampleMarker(
 }
 
 FLASHMEM void MacroEditorOverlay::renderGraph(
-    const MacroEditorOverlayProps& props
+    const MacroEditorPreviewModel& model,
+    int selected,
+    uint32_t previewRevision
 ) {
-    if (props.preview == nullptr || !curve_preview_) return;
-    const auto& model = *props.preview;
-    const int selected = std::clamp(props.selectedDomain, 0, 2);
-    const uint32_t traceContext =
-        static_cast<uint32_t>(model.address.track) |
-        (static_cast<uint32_t>(model.address.page) << 8U) |
-        (static_cast<uint32_t>(model.address.macro) << 16U);
-    if (model.live.valid) {
-        live_trace_.append(
-            traceContext,
-            model.live.timestampMs,
-            model.live
-        );
-    }
+    if (!curve_preview_) return;
+    selected = std::clamp(selected, 0, 2);
     const uint32_t baseColor = model.manualOverride
         ? theme::color::MACRO_AUTOMATION_MANUAL
         : (model.automationDrivingBase
             ? theme::color::MACRO_AUTOMATION
             : theme::color::TEXT_PRIMARY);
-    uint32_t curveColor = theme::color::TEXT_PRIMARY;
+    uint32_t curveColor = theme::color::MACRO_CC_COLOR;
     lv_opa_t curveOpacity = LV_OPA_COVER;
     if (selected == 1) {
         curveColor = model.automationStored
@@ -423,47 +394,37 @@ FLASHMEM void MacroEditorOverlay::renderGraph(
         curveOpacity = model.modulationStored ? LV_OPA_COVER : LV_OPA_TRANSP;
     }
     const lv_opa_t baseOpacity = static_cast<lv_opa_t>(
-        selected == 2 ? LV_OPA_60 : LV_OPA_COVER
+        selected == 0 ? LV_OPA_40 : LV_OPA_30
     );
     const lv_opa_t impactOpacity = static_cast<lv_opa_t>(
-        model.modulationStored
-            ? (selected == 2
-                ? LV_OPA_COVER
-                : (model.modulationPlayback ? LV_OPA_70 : LV_OPA_30))
-            : LV_OPA_TRANSP
+        selected == 0 ? LV_OPA_TRANSP : LV_OPA_30
     );
     const lv_opa_t bandOpacity = static_cast<lv_opa_t>(
         model.modulationStored ? LV_OPA_20 : LV_OPA_TRANSP
     );
     curve_sample_context_ = {
         .preview = &model,
-        .liveTrace = &live_trace_,
-        .liveCursor = {},
-        .liveNowMs = model.live.valid
-            ? model.live.timestampMs
-            : oc::time::millis(),
-        .focus = selected == 1
-            ? MacroEditorPreviewFocus::AUTOMATION
-            : (selected == 2
-                ? MacroEditorPreviewFocus::FOCUSED_MODULATOR
-                : MacroEditorPreviewFocus::DESTINATION),
+        .live = &latest_live_,
+        .focus = selected == 0
+            ? MacroEditorPreviewFocus::DESTINATION
+            : (selected == 1
+                ? MacroEditorPreviewFocus::AUTOMATION
+                : MacroEditorPreviewFocus::ALL_MODULATION),
         .previousPositionQ16 = 0U,
         .hasPrevious = false,
         .clippedLow = false,
         .clippedHigh = false,
     };
-    curve_preview_->render({
+    curve_props_ = {
         .visible = true,
         .sampleProvider = &MacroEditorOverlay::sampleCurve,
         .sampleContext = &curve_sample_context_,
-        .geometryRevision = selected == 0
-            ? live_trace_.revision()
-            : props.previewRevision * 3U + static_cast<uint32_t>(selected),
-        .markerProvider = selected == 0
-            ? nullptr
-            : &MacroEditorOverlay::sampleMarker,
+        .geometryRevision = previewRevision * 3U + static_cast<uint32_t>(selected),
+        .geometryUpdate = ms::ui::CurvePreviewGeometryUpdate::REBUILD,
+        .geometryAdvance = 0U,
+        .markerProvider = &MacroEditorOverlay::sampleMarker,
         .markerContext = &curve_sample_context_,
-        .showImpactBand = selected != 1 && model.modulationStored,
+        .showImpactBand = model.modulationStored,
         .showCenterGuide = selected == 2,
         .showRestGuide = false,
         .restValueQ16 = 0U,
@@ -471,7 +432,7 @@ FLASHMEM void MacroEditorOverlay::renderGraph(
         .paddingY = 5,
         .curveColor = curveColor,
         .baseColor = baseColor,
-        .impactColor = theme::color::MACRO_MODULATION,
+        .impactColor = theme::color::MACRO_CC_COLOR,
         .guideColor = theme::color::TEXT_SECONDARY,
         .markerColor = theme::color::PLAY_ACTIVE,
         .curveOpacity = curveOpacity,
@@ -481,18 +442,30 @@ FLASHMEM void MacroEditorOverlay::renderGraph(
         .guideOpacity = LV_OPA_30,
         .curveWidth = 2,
         .baseWidth = 1,
-        .impactWidth = 2,
+        .impactWidth = 1,
         .markerRadius = 2,
         .marker = {},
-    });
-    const bool clipped = selected == 0 && model.live.valid
-        ? (model.live.clippedLow || model.live.clippedHigh)
-        : (curve_sample_context_.clippedLow || curve_sample_context_.clippedHigh);
-    if (clipped) {
+    };
+    curve_preview_->render(curve_props_);
+    const bool clipped = curve_sample_context_.clippedLow ||
+        curve_sample_context_.clippedHigh;
+    setClippingVisible(clipped);
+}
+
+void MacroEditorOverlay::setClippingVisible(bool visible) {
+    if (visible == clipping_visible_) return;
+    if (visible) {
         lv_obj_clear_flag(clipping_, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(clipping_, LV_OBJ_FLAG_HIDDEN);
     }
+    clipping_visible_ = visible;
+}
+
+void MacroEditorOverlay::renderLive(const MacroEditorLiveValue& live) {
+    // The retained marker samples ProjectControl runtime directly. A live
+    // value update therefore needs no layout, tab refresh or curve rebuild.
+    latest_live_ = live;
 }
 
 FLASHMEM void MacroEditorOverlay::render(
@@ -518,6 +491,7 @@ FLASHMEM void MacroEditorOverlay::render(
         return;
     }
     if (props.preview == nullptr) return;
+    latest_live_ = props.live;
     renderedRevision_ = props.dataRevision;
     if (copyText(titleText_, props.title)) {
         lv_label_set_text_static(title_, titleText_.data());
@@ -537,10 +511,14 @@ FLASHMEM void MacroEditorOverlay::render(
         props.preview->modulationStored, props.preview->modulationPlayback,
         theme::color::MACRO_MODULATION
     );
-    renderGraph(props);
+    renderGraph(
+        *props.preview,
+        selected,
+        props.previewRevision
+    );
     renderedPreviewRevision_ = props.previewRevision;
     static constexpr std::array<const char*, 3> HINTS = {
-        "Destination MIDI · Press to edit",
+        "Base + modulation = output",
         "Absolute gesture · Press to edit",
         "Relative loop · Press to edit",
     };

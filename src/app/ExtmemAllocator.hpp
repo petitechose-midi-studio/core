@@ -8,6 +8,10 @@
 
 #include <config/PlatformCompat.hpp>
 
+#if OC_ENABLE_STATS
+#include "diagnostics/MemoryFootprintReporter.hpp"
+#endif
+
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 #include <wiring.h>
 #endif
@@ -20,6 +24,9 @@ struct ExtmemDeleter {
         if (!ptr) return;
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
         ptr->~T();
+#if OC_ENABLE_STATS
+        core::diagnostics::trackExtmemFree(ptr);
+#endif
         extmem_free(ptr);
 #else
         delete ptr;
@@ -35,6 +42,9 @@ struct ExtmemArrayDeleter {
     void operator()(T* ptr) const noexcept {
         if (!ptr) return;
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+#if OC_ENABLE_STATS
+        core::diagnostics::trackExtmemFree(ptr);
+#endif
         extmem_free(ptr);
 #else
         delete[] ptr;
@@ -50,6 +60,9 @@ ExtmemUniquePtr<T> makeExtmemUnique(Args&&... args) {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(T));
     if (!memory) return ExtmemUniquePtr<T>(nullptr);
+#if OC_ENABLE_STATS
+    core::diagnostics::trackExtmemAllocation(memory);
+#endif
     return ExtmemUniquePtr<T>(new(memory) T(std::forward<Args>(args)...));
 #else
     return ExtmemUniquePtr<T>(new T(std::forward<Args>(args)...));
@@ -70,6 +83,9 @@ ExtmemUniquePtr<T> makeExtmemUniqueForOverwrite() {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(T));
     if (!memory) return ExtmemUniquePtr<T>(nullptr);
+#if OC_ENABLE_STATS
+    core::diagnostics::trackExtmemAllocation(memory);
+#endif
     return ExtmemUniquePtr<T>(new(memory) T);
 #else
     return ExtmemUniquePtr<T>(new T);
@@ -91,6 +107,9 @@ ExtmemUniqueArray<T> makeExtmemUniqueArrayForOverwrite(std::size_t count) {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(T) * count);
     if (!memory) return ExtmemUniqueArray<T>(nullptr);
+#if OC_ENABLE_STATS
+    core::diagnostics::trackExtmemAllocation(memory);
+#endif
     auto* values = static_cast<T*>(memory);
     for (std::size_t index = 0; index < count; ++index) {
         new(values + index) T;

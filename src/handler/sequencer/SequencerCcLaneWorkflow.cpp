@@ -66,6 +66,7 @@ FLASHMEM SequencerCcLaneWorkflow::SequencerCcLaneWorkflow(
 )
     : editor_(state.editor)
     , tracks_(state.tracks)
+    , project_navigation_(state.projectNavigation)
     , history_(state.history)
     , status_bar_(state.statusBar)
     , midi_cc_coordinator_(state.midiCcCoordinator)
@@ -123,11 +124,6 @@ FLASHMEM bool SequencerCcLaneWorkflow::openLane(uint8_t lane) {
     return editor_.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID;
 }
 
-FLASHMEM bool SequencerCcLaneWorkflow::openAddDraft() {
-    openAddDraft_();
-    return editor_.ccLaneUi.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT;
-}
-
 FLASHMEM void SequencerCcLaneWorkflow::suspendGridForPropertySelector(
     uint32_t nowMs
 ) {
@@ -146,13 +142,11 @@ FLASHMEM void SequencerCcLaneWorkflow::closeOneLevel(uint32_t nowMs) {
     contextual::resetGuardedAction(guard);
     ui.actionGuard.set(guard);
     switch (ui.mode) {
-        case seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT:
-            ui.mode = seq::SequencerCcLaneUiMode::LANE_SELECTOR;
-            break;
         case seq::SequencerCcLaneUiMode::LANE_SETTINGS:
             ui.mode = seq::SequencerCcLaneUiMode::LANE_GRID;
             break;
         case seq::SequencerCcLaneUiMode::TRANSITION_PICKER:
+            ui.compactTransitionPicker = false;
             ui.mode = seq::SequencerCcLaneUiMode::LANE_GRID;
             break;
         case seq::SequencerCcLaneUiMode::LANE_GRID:
@@ -178,19 +172,76 @@ FLASHMEM void SequencerCcLaneWorkflow::moveSelector(float delta) {
     refreshProjection();
 }
 
-FLASHMEM void SequencerCcLaneWorkflow::openAddDraft_() {
+FLASHMEM bool SequencerCcLaneWorkflow::createDefaultLane(uint32_t nowMs) {
+    (void)commitEventEdit(nowMs);
     auto& ui = editor_.ccLaneUi;
     const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
     const int8_t freeLane = bank ? seq::firstFreeSequencerCcLane(*bank) : 0;
-    if (freeLane < 0) return;
+    if (freeLane < 0) {
+        block_(ActionId::CREATE, Reason::CAPACITY, nowMs);
+        return false;
+    }
     ui.focusedLane = static_cast<uint8_t>(freeLane);
-    ui.mode = seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT;
-    ui.focusedField = seq::SequencerCcLaneDraftField::CONTROLLER;
-    ui.advancedSettings = false;
-    ui.draft = {};
-    ui.draft.destination.pinnedChannel = editor_.pattern.midiChannel.get();
-    ui.draftDirty = false;
-    refreshProjection();
+    seq::SequencerCcLaneDraft draft{};
+    draft.destination.controller =
+        core::state::project::sanitizeProjectCcLaneDefault(
+            project_navigation_.ccLaneDefaultControllers[ui.focusedLane],
+            ui.focusedLane
+        );
+    draft.destination.minimum = 0U;
+    draft.destination.maximum = 127U;
+    draft.destination.routePolicy = seq::SequencerCcLaneRoutePolicy::INHERIT_TRACK;
+    draft.destination.pinnedPort = 0U;
+    draft.destination.pinnedChannel = services_.trackRoute(
+        tracks_.activeTrackIndex()
+    ).channel;
+    draft.initialValue = 64U;
+
+    const auto preflight = services_.preflight(
+        tracks_.activeTrackIndex(),
+        ui.focusedLane,
+        draft
+    );
+    if (preflight.laneConflict) {
+        block_(ActionId::CREATE, Reason::CONFLICT, nowMs);
+        return false;
+    }
+
+    LaneBankPtr staged;
+    if (!stageCurrentBank_(staged, true)) {
+        block_(ActionId::CREATE, Reason::ALLOCATION_UNAVAILABLE, nowMs);
+        return false;
+    }
+    // Creation stays a single musical gesture. A Macro collision is retained
+    // as explicit authored arbitration metadata instead of reopening a wizard.
+    draft.acceptedMacroConflict = preflight.macroConflict;
+    if (!seq::createSequencerCcLane(*staged, ui.focusedLane, draft).changed()) {
+        block_(ActionId::CREATE, Reason::INCOMPATIBLE, nowMs);
+        return false;
+    }
+
+    auto change = prepareChange_(
+        seq::SequencerHistoryActionKind::CcLaneCreate,
+        ui.focusedLane
+    );
+    if (!change || !installPreparedChange_(std::move(change), std::move(staged))) {
+        block_(ActionId::CREATE, Reason::HISTORY_UNAVAILABLE, nowMs);
+        return false;
+    }
+
+    ui.acceptedMacroConflict = draft.acceptedMacroConflict;
+    openGrid_(ui.focusedLane);
+    publishFeedback_(
+        ActionId::CREATE,
+        contextual::OperationFeedbackStatus::APPLIED,
+        preflight.macroConflict
+            ? Reason::CONFLICT
+            : (preflight.routeValid ? Reason::NONE : Reason::NO_ROUTE),
+        contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+        nowMs,
+        900
+    );
+    return true;
 }
 
 FLASHMEM void SequencerCcLaneWorkflow::openGrid_(uint8_t lane) {
@@ -198,6 +249,7 @@ FLASHMEM void SequencerCcLaneWorkflow::openGrid_(uint8_t lane) {
     const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
     if (bank == nullptr || lane >= bank->lanes.size() || !bank->lanes[lane].occupied) return;
     ui.focusedLane = lane;
+    ui.compactTransitionPicker = false;
     ui.focusedStep = std::min<uint8_t>(
         editor_.focusedStep.get(),
         static_cast<uint8_t>(std::max<uint8_t>(1, editor_.pattern.length.get()) - 1U)
@@ -206,7 +258,7 @@ FLASHMEM void SequencerCcLaneWorkflow::openGrid_(uint8_t lane) {
     refreshProjection();
 }
 
-FLASHMEM bool SequencerCcLaneWorkflow::activateSelector() {
+FLASHMEM bool SequencerCcLaneWorkflow::activateSelector(uint32_t nowMs) {
     if (editor_.ccLaneUi.mode != seq::SequencerCcLaneUiMode::LANE_SELECTOR) return false;
     const int8_t lane = selectorLane();
     if (lane >= 0) {
@@ -214,8 +266,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::activateSelector() {
         return true;
     }
     if (!selectorFocusesAdd()) return false;
-    openAddDraft_();
-    return editor_.ccLaneUi.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT;
+    return createDefaultLane(nowMs);
 }
 
 FLASHMEM void SequencerCcLaneWorkflow::loadSettingsDraft_() {
@@ -251,8 +302,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::openSettings() {
 
 FLASHMEM void SequencerCcLaneWorkflow::moveDraftField(float delta) {
     auto& ui = editor_.ccLaneUi;
-    if (ui.mode != seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT &&
-        ui.mode != seq::SequencerCcLaneUiMode::LANE_SETTINGS) return;
+    if (ui.mode != seq::SequencerCcLaneUiMode::LANE_SETTINGS) return;
     const int direction = direction_(delta);
     if (direction == 0) return;
     const auto layout = seq::buildSequencerCcLaneDraftLayout(
@@ -269,8 +319,7 @@ FLASHMEM void SequencerCcLaneWorkflow::moveDraftField(float delta) {
 
 FLASHMEM bool SequencerCcLaneWorkflow::activateDraftField() {
     auto& ui = editor_.ccLaneUi;
-    if ((ui.mode != seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT &&
-         ui.mode != seq::SequencerCcLaneUiMode::LANE_SETTINGS) ||
+    if (ui.mode != seq::SequencerCcLaneUiMode::LANE_SETTINGS ||
         ui.focusedField != seq::SequencerCcLaneDraftField::ADVANCED) {
         return false;
     }
@@ -281,8 +330,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::activateDraftField() {
 
 FLASHMEM void SequencerCcLaneWorkflow::editDraft(float delta) {
     auto& ui = editor_.ccLaneUi;
-    if (ui.mode != seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT &&
-        ui.mode != seq::SequencerCcLaneUiMode::LANE_SETTINGS) return;
+    if (ui.mode != seq::SequencerCcLaneUiMode::LANE_SETTINGS) return;
     const int direction = direction_(delta);
     if (direction == 0) return;
     auto& destination = ui.draft.destination;
@@ -297,7 +345,9 @@ FLASHMEM void SequencerCcLaneWorkflow::editDraft(float delta) {
                 : seq::SequencerCcLaneRoutePolicy::INHERIT_TRACK;
             if (destination.routePolicy == seq::SequencerCcLaneRoutePolicy::PINNED) {
                 destination.pinnedPort = 0;
-                destination.pinnedChannel = editor_.pattern.midiChannel.get();
+                destination.pinnedChannel = services_.trackRoute(
+                    tracks_.activeTrackIndex()
+                ).channel;
             }
             break;
         case seq::SequencerCcLaneDraftField::PINNED_CHANNEL:
@@ -448,58 +498,52 @@ FLASHMEM bool SequencerCcLaneWorkflow::installPreparedChange_(
     return true;
 }
 
-FLASHMEM bool SequencerCcLaneWorkflow::applyDraft_(
+FLASHMEM bool SequencerCcLaneWorkflow::applySettings_(
     bool macroConflictAuthorized,
     uint32_t nowMs
 ) {
     auto& ui = editor_.ccLaneUi;
-    const bool creating = ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT;
-    if (!creating && ui.mode != seq::SequencerCcLaneUiMode::LANE_SETTINGS) return false;
+    if (ui.mode != seq::SequencerCcLaneUiMode::LANE_SETTINGS) return false;
     const auto preflight = services_.preflight(
         tracks_.activeTrackIndex(),
         ui.focusedLane,
         ui.draft
     );
     if (preflight.laneConflict) {
-        block_(creating ? ActionId::CREATE : ActionId::APPLY, Reason::CONFLICT, nowMs);
+        block_(ActionId::APPLY, Reason::CONFLICT, nowMs);
         return false;
     }
     if (preflight.macroConflict && !macroConflictAuthorized) {
-        block_(creating ? ActionId::CREATE : ActionId::APPLY, Reason::CONFLICT, nowMs);
+        block_(ActionId::APPLY, Reason::CONFLICT, nowMs);
         return false;
     }
 
     LaneBankPtr staged;
     if (!stageCurrentBank_(staged, true)) {
-        block_(creating ? ActionId::CREATE : ActionId::APPLY,
-               Reason::ALLOCATION_UNAVAILABLE, nowMs);
+        block_(ActionId::APPLY, Reason::ALLOCATION_UNAVAILABLE, nowMs);
         return false;
     }
     auto draft = ui.draft;
     draft.acceptedMacroConflict = preflight.macroConflict && macroConflictAuthorized;
-    const auto mutation = creating
-        ? seq::createSequencerCcLane(*staged, ui.focusedLane, draft)
-        : seq::updateSequencerCcLaneSettings(*staged, ui.focusedLane, draft);
+    const auto mutation =
+        seq::updateSequencerCcLaneSettings(*staged, ui.focusedLane, draft);
     if (!mutation.changed()) {
-        block_(creating ? ActionId::CREATE : ActionId::APPLY,
-               Reason::INCOMPATIBLE, nowMs);
+        block_(ActionId::APPLY, Reason::INCOMPATIBLE, nowMs);
         return false;
     }
 
     auto change = prepareChange_(
-        creating ? seq::SequencerHistoryActionKind::CcLaneCreate
-                 : seq::SequencerHistoryActionKind::CcLaneSettings,
+        seq::SequencerHistoryActionKind::CcLaneSettings,
         ui.focusedLane
     );
     if (!change || !installPreparedChange_(std::move(change), std::move(staged))) {
-        block_(creating ? ActionId::CREATE : ActionId::APPLY,
-               Reason::HISTORY_UNAVAILABLE, nowMs);
+        block_(ActionId::APPLY, Reason::HISTORY_UNAVAILABLE, nowMs);
         return false;
     }
     ui.acceptedMacroConflict = draft.acceptedMacroConflict;
     openGrid_(ui.focusedLane);
     publishFeedback_(
-        creating ? ActionId::CREATE : ActionId::APPLY,
+        ActionId::APPLY,
         contextual::OperationFeedbackStatus::APPLIED,
         preflight.routeValid ? Reason::NONE : Reason::NO_ROUTE,
         contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
@@ -561,28 +605,19 @@ FLASHMEM bool SequencerCcLaneWorkflow::setFocusedEventValue_(
     );
     if (!mutation.changed()) return false;
 
-    if (!pending_event_change_) {
-        pending_event_change_ = prepareChange_(
-            seq::SequencerHistoryActionKind::CcLaneEventEdit,
+    if (!history_.beginCoalescedCcLaneEventEdit(
             ui.focusedLane,
-            ui.focusedStep
-        );
-        if (!pending_event_change_) {
-            block_(ActionId::EDIT, Reason::HISTORY_UNAVAILABLE, nowMs);
-            return false;
-        }
-        pending_event_change_->descriptor.hasValue = true;
-        pending_event_change_->descriptor.beforeValue = hadEvent ? beforeValue : -1;
-        if (!captureAfterFromBank_(*pending_event_change_, staged.get()) ||
-            !history_.canRecordPattern(*pending_event_change_)) {
-            pending_event_change_.reset();
-            block_(ActionId::EDIT, Reason::HISTORY_UNAVAILABLE, nowMs);
-            return false;
-        }
+            ui.focusedStep,
+            hadEvent ? static_cast<int32_t>(beforeValue) : -1,
+            static_cast<int32_t>(nextValue),
+            staged.get(),
+            nowMs
+        )) {
+        block_(ActionId::EDIT, Reason::HISTORY_UNAVAILABLE, nowMs);
+        refreshProjection();
+        return false;
     }
-    pending_event_change_->descriptor.afterValue = nextValue;
     seq::installSequencerCcLaneBank(editor_.pattern, std::move(staged));
-    last_event_edit_ms_ = nowMs;
     refreshProjection();
     return true;
 }
@@ -640,14 +675,29 @@ FLASHMEM bool SequencerCcLaneWorkflow::openTransitionPicker(
     uint32_t nowMs
 ) {
     if (!focusVisibleStep_(indexInWindow, nowMs)) return false;
-    (void)commitEventEdit(nowMs);
+    return openTransitionPickerForFocused_(false, nowMs);
+}
+
+FLASHMEM bool SequencerCcLaneWorkflow::openFocusedTransitionPicker(
+    uint32_t nowMs
+) {
+    return openTransitionPickerForFocused_(true, nowMs);
+}
+
+FLASHMEM bool SequencerCcLaneWorkflow::openTransitionPickerForFocused_(
+    bool compact,
+    uint32_t nowMs
+) {
     auto& ui = editor_.ccLaneUi;
+    if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID) return false;
+    (void)commitEventEdit(nowMs);
     const auto* bank = seq::sequencerCcLaneView(editor_.pattern);
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size()) return false;
     const auto& lane = bank->lanes[ui.focusedLane];
     if (!lane.activeMask.test(ui.focusedStep)) return false;
     ui.transitionStep = ui.focusedStep;
     ui.selectedTransition = seq::sequencerCcLaneTransition(lane, ui.focusedStep);
+    ui.compactTransitionPicker = compact;
     ui.mode = seq::SequencerCcLaneUiMode::TRANSITION_PICKER;
     refreshProjection();
     return true;
@@ -706,6 +756,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::applyTransition(uint32_t nowMs) {
     );
     if (mutation.status == seq::SequencerCcLaneMutationStatus::NO_CHANGE) {
         ui.mode = seq::SequencerCcLaneUiMode::LANE_GRID;
+        ui.compactTransitionPicker = false;
         ui.transitionAppliedFeedback = true;
         publishFeedback_(ActionId::EDIT,
                          contextual::OperationFeedbackStatus::APPLIED,
@@ -731,6 +782,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::applyTransition(uint32_t nowMs) {
         return false;
     }
     ui.mode = seq::SequencerCcLaneUiMode::LANE_GRID;
+    ui.compactTransitionPicker = false;
     ui.transitionAppliedFeedback = true;
     publishFeedback_(ActionId::EDIT,
                      contextual::OperationFeedbackStatus::APPLIED,
@@ -746,6 +798,7 @@ FLASHMEM void SequencerCcLaneWorkflow::cancelTransition() {
     auto& ui = editor_.ccLaneUi;
     if (ui.mode != seq::SequencerCcLaneUiMode::TRANSITION_PICKER) return;
     ui.mode = seq::SequencerCcLaneUiMode::LANE_GRID;
+    ui.compactTransitionPicker = false;
     refreshProjection();
 }
 
@@ -766,19 +819,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::toggleFocusedEvent(uint32_t nowMs) {
 }
 
 FLASHMEM bool SequencerCcLaneWorkflow::commitEventEdit(uint32_t nowMs) {
-    if (!pending_event_change_) return false;
-    auto change = std::move(pending_event_change_);
-    const bool admitted = captureAfterFromBank_(
-        *change,
-        seq::sequencerCcLaneView(editor_.pattern)
-    ) && history_.canRecordPattern(*change);
-    if (!admitted) {
-        (void)seq::applyHistorySnapshotToEditor(editor_, change->before);
-        block_(ActionId::EDIT, Reason::HISTORY_UNAVAILABLE, nowMs);
-        refreshProjection();
-        return false;
-    }
-    history_.recordPreparedPattern(std::move(change));
+    if (!history_.commitCoalescedPatternEdit()) return false;
     publishFeedback_(
         ActionId::EDIT,
         contextual::OperationFeedbackStatus::APPLIED,
@@ -870,7 +911,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::executeTap(
         case seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT:
             return editor_.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID
                 ? openSettings()
-                : applyDraft_(false, nowMs);
+                : applySettings_(false, nowMs);
         case seq::SequencerCcLaneActionSlot::COUNT:
             return false;
     }
@@ -958,7 +999,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::releaseGuard(
     const auto action = editor_.ccLaneUi.action(slot).hold.action;
     const bool applied = slot == seq::SequencerCcLaneActionSlot::BOTTOM_LEFT
         ? removeCurrentLane_(nowMs)
-        : applyDraft_(true, nowMs);
+        : applySettings_(true, nowMs);
     contextual::resetGuardedAction(guard);
     editor_.ccLaneUi.actionGuard.set(guard);
     if (!applied) block_(action, Reason::FAILED, nowMs);
@@ -1071,13 +1112,10 @@ FLASHMEM void SequencerCcLaneWorkflow::refreshActions_(
                             Icon::CLEAR,
                             Tone::NEUTRAL);
     }
-    if (ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT ||
-        ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS) {
-        const ActionId action = ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT
-            ? ActionId::CREATE : ActionId::APPLY;
+    if (ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS) {
+        const ActionId action = ActionId::APPLY;
         auto& apply = makeSpec(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT);
-        const bool dirtyEnough = ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT ||
-            ui.draftDirty;
+        const bool dirtyEnough = ui.draftDirty;
         const Reason routeReason = preflight.routeValid ? Reason::NONE : Reason::NO_ROUTE;
         if (preflight.laneConflict) {
             apply.tap = variant(action, ActionImpact::CONSTRUCTIVE,
@@ -1101,8 +1139,7 @@ FLASHMEM void SequencerCcLaneWorkflow::refreshActions_(
                                     ? Availability::AVAILABLE : Availability::WARNING)
                                     : Availability::DISABLED,
                                 dirtyEnough ? routeReason : Reason::NO_ACTION,
-                                ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT
-                                    ? Icon::CREATE : Icon::APPLY,
+                                Icon::APPLY,
                                 preflight.routeValid ? Tone::GREEN : Tone::AMBER);
         }
     }
@@ -1124,8 +1161,7 @@ FLASHMEM void SequencerCcLaneWorkflow::refreshActions_(
 FLASHMEM void SequencerCcLaneWorkflow::refreshProjection() {
     auto& ui = editor_.ccLaneUi;
     SequencerCcLanePreflight preflight{};
-    if (ui.mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT ||
-        ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS) {
+    if (ui.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS) {
         preflight = services_.preflight(
             tracks_.activeTrackIndex(),
             ui.focusedLane,
@@ -1160,10 +1196,6 @@ FLASHMEM void SequencerCcLaneWorkflow::update(uint32_t nowMs) {
     if (transportPlaying != last_transport_playing_) {
         last_transport_playing_ = transportPlaying;
         refreshProjection();
-    }
-    if (pending_event_change_ &&
-        static_cast<uint32_t>(nowMs - last_event_edit_ms_) >= EVENT_EDIT_IDLE_MS) {
-        (void)commitEventEdit(nowMs);
     }
     auto feedback = editor_.ccLaneUi.operationFeedback.get();
     if (contextual::updateOperationFeedback(feedback, nowMs)) {

@@ -8,18 +8,19 @@
 
 #include <utility>
 
-#include "config/Timing.hpp"
 #include "handler/common/NavigationUtils.hpp"
-#include "SequencerInteractionPolicyAdapter.hpp"
 #include "SequencerStepChordEditorWorkflow.hpp"
 #include "SequencerStepContextRowWorkflow.hpp"
+#include "SequencerStepContentDraftWorkflow.hpp"
 #include "SequencerStepEditSessionWorkflow.hpp"
 #include "SequencerStepValueRowWorkflow.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerChordUiOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
 
 namespace core::handler {
-namespace interaction_policy = core::handler::sequencer::interaction_policy;
 namespace step_chord_editor_workflow =
     core::handler::sequencer::step_chord_editor_workflow;
 namespace step_context_row_workflow =
@@ -38,28 +39,25 @@ FLASHMEM oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings(
 ) {
     return core::state::sequencer::resolveEffectiveScaleSettings(
         tracks.projectScaleSettings(),
-        sequencer.pattern.scalePolicy,
-        sequencer.pattern.scaleOverride
+        core::state::sequencer::authoringPattern(sequencer).scalePolicy,
+        core::state::sequencer::authoringPattern(sequencer).scaleOverride
     );
 }
 
-inline oc::type::IsActiveFn canOpenStepEdit(
-    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays,
-    core::state::sequencer::SequencerState& sequencer,
-    core::state::TrackNavigationState& trackUi,
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus
+FLASHMEM bool editedStepHasChordState(
+    const core::state::sequencer::SequencerState& sequencer,
+    uint8_t step
 ) {
-    return [&overlays, &sequencer, &trackUi, &navigationFocus]() {
-        const auto policy = interaction_policy::build(
-            sequencer,
-            trackUi,
-            navigationFocus.get(),
-            overlays.hasVisible()
-        );
-        return interaction_policy::canOpenStepEditor(policy);
-    };
+    const auto* graph = core::state::sequencer::graphView(
+        core::state::sequencer::authoringPattern(sequencer)
+    );
+    if (graph == nullptr) return false;
+    const auto* node = graph->stepNode(
+        core::state::sequencer::activeContentStepNodeId(sequencer, step)
+    );
+    return node != nullptr &&
+           (node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE) ||
+            node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL));
 }
 
 }  // namespace
@@ -94,206 +92,6 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
     setupBindings();
 }
 
-FLASHMEM void SequencerStepEditHandler::setupBindings() {
-    // ===== SEQUENCER VIEW SCOPE =====
-    // MACRO_i long press: open STEP EDIT for step i in the current page.
-    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        auto btn = static_cast<oc::type::ButtonID>(Config::MACRO_BUTTONS[i]);
-        buttons_.button(btn)
-            .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-            .scope(sequencer_view_scope_)
-            .when(canOpenStepEdit(overlay_state_, sequencer_, track_ui_, navigation_focus_))
-            .then([this, i]() { openForMacroInPage(i); });
-    }
-
-    // ===== OVERLAY SCOPE =====
-    // NAV encoder: focus row
-    encoders_.encoder(Config::EncoderID::NAV)
-        .turn()
-        .scope(overlay_scope_)
-        .then([this](float delta) { moveFocus(delta); });
-
-    // OPT encoder: edit focused value
-    encoders_.encoder(Config::EncoderID::OPT)
-        .turn()
-        .scope(overlay_scope_)
-        .then([this](float value) { setFocusedValue(value); });
-
-    // Pressing the currently edited step closes; value edits are already live.
-    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        auto btn = static_cast<oc::type::ButtonID>(Config::MACRO_BUTTONS[i]);
-        buttons_.button(btn)
-            .release()
-            .scope(overlay_scope_)
-            .then([this, i]() { maybeCloseFromMacro(i); });
-    }
-
-    // Close. Property edits are applied immediately while turning OPT.
-    buttons_.button(Config::ButtonID::NAV)
-        .release()
-        .scope(overlay_scope_)
-        .then([this]() { activateFocusedRowOrClose(); });
-
-    // Close without reverting live edits.
-    buttons_.button(Config::ButtonID::LEFT_TOP)
-        .release()
-        .scope(overlay_scope_)
-        .then([this]() { backFromStepEdit(); });
-
-    buttons_.button(Config::ButtonID::LEFT_CENTER)
-        .release()
-        .scope(overlay_scope_)
-        .then([this]() { backFromStepEdit(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
-        .release()
-        .scope(overlay_scope_)
-        .then([this]() { openStepPresetPicker(); });
-
-    buttons_.button(Config::ButtonID::LEFT_BOTTOM)
-        .press()
-        .scope(overlay_scope_)
-        .when([this]() { return focusedRowSupportsLocalVariation(); })
-        .then([this]() {
-            sequencer_.stepEdit.localVariationEditActive.set(true);
-            configureOptForFocusedRow();
-        });
-
-    buttons_.button(Config::ButtonID::LEFT_BOTTOM)
-        .release()
-        .scope(overlay_scope_)
-        .when([this]() { return sequencer_.stepEdit.localVariationEditActive.get(); })
-        .then([this]() {
-            sequencer_.stepEdit.localVariationEditActive.set(false);
-            configureOptForFocusedRow();
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(overlay_scope_)
-        .when([this]() { return focusedRowIsValueRow(); })
-        .then([this]() { resetFocusedValueRowToDefault(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .press()
-        .scope(overlay_scope_)
-        .when([this]() { return focusedRowIsContextRow(); })
-        .then([this]() {
-            if (focusedContextHasChild()) {
-                sequencer_.stepEdit.contextHold.begin(
-                    core::state::StructureHoldAction::REMOVE,
-                    oc::time::millis()
-                );
-            }
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(overlay_scope_)
-        .when([this]() { return focusedRowIsContextRow(); })
-        .then([this]() {
-            sequencer_.stepEdit.contextHold.clear();
-            if (context_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
-                return;
-            }
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(overlay_scope_)
-        .when([this]() { return focusedRowIsContextRow() && focusedContextHasChild(); })
-        .then([this]() {
-            sequencer_.stepEdit.contextHold.clear();
-            context_release_latch_.arm(Config::ButtonID::BOTTOM_LEFT);
-            clearFocusedContextChild();
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .press()
-        .scope(overlay_scope_)
-        .when([this]() { return focusedRowIsContextRow(); })
-        .then([this]() {
-            if (canPasteFocusedStepContent()) {
-                sequencer_.stepEdit.contextHold.begin(
-                    core::state::StructureHoldAction::PASTE,
-                    oc::time::millis()
-                );
-            }
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .release()
-        .scope(overlay_scope_)
-        .when([this]() { return focusedRowIsContextRow(); })
-        .then([this]() {
-            sequencer_.stepEdit.contextHold.clear();
-            if (context_release_latch_.consume(Config::ButtonID::BOTTOM_RIGHT)) {
-                return;
-            }
-            copyFocusedStepContent();
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(overlay_scope_)
-        .when([this]() { return focusedRowIsContextRow() && canPasteFocusedStepContent(); })
-        .then([this]() {
-            sequencer_.stepEdit.contextHold.clear();
-            context_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
-            pasteFocusedStepContent();
-        });
-
-    encoders_.encoder(Config::EncoderID::NAV)
-        .turn()
-        .scope(step_preset_overlay_scope_)
-        .then([this](float delta) { moveStepPresetItem(delta); });
-
-    encoders_.encoder(Config::EncoderID::OPT)
-        .turn()
-        .scope(step_preset_overlay_scope_)
-        .then([this](float delta) { moveStepPresetPreviewState(delta); });
-
-    buttons_.button(Config::ButtonID::NAV)
-        .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { toggleStepPresetDetail(); });
-
-    buttons_.button(Config::ButtonID::LEFT_TOP)
-        .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { closeStepPresetPicker(); });
-
-    buttons_.button(Config::ButtonID::LEFT_CENTER)
-        .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { closeStepPresetPicker(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { closeStepPresetPicker(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
-        .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { toggleStepPresetMode(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .press()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { beginStepPresetActionGuard(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { releaseStepPresetAction(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { commitStepPresetActionGuard(); });
-}
-
 void SequencerStepEditHandler::update(uint32_t nowMs) {
     const auto pickerOutcome = step_preset_picker_.update(nowMs);
     if (pickerOutcome == SequencerStepPresetPickerOutcome::APPLIED ||
@@ -319,6 +117,7 @@ FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) 
         )) {
         return;
     }
+    step_retarget_active_ = false;
     configureOptForFocusedRow();
 }
 
@@ -344,12 +143,33 @@ FLASHMEM bool SequencerStepEditHandler::openFocusedStepAtRow(uint8_t row) {
         )) {
         return false;
     }
-    // This entry path is completed by LEFT_BOTTOM, not a Macro button. No
-    // future Macro release belongs to the opening gesture.
+    // This direct entry owns no Macro long-press release.
     open_release_latch_.clear();
+    step_retarget_active_ = false;
     sequencer_.stepEdit.focusedRow.set(row);
     configureOptForFocusedRow();
     return true;
+}
+
+FLASHMEM bool SequencerStepEditHandler::openFocusedStepContentAtRow(
+    uint8_t row
+) {
+    if (!step_edit_rows::isChord(row) &&
+        !step_edit_rows::isContext(row)) {
+        return false;
+    }
+    if (!openFocusedStepAtRow(row)) return false;
+
+    if (step_edit_rows::isChord(row)) {
+        openChordEditor();
+        if (chordEditorActive()) return true;
+        closeStepEdit();
+        return false;
+    }
+
+    if (activateFocusedContextRow()) return true;
+    closeStepEdit();
+    return false;
 }
 
 FLASHMEM void SequencerStepEditHandler::commitStepEditHistory() {
@@ -362,8 +182,51 @@ FLASHMEM void SequencerStepEditHandler::commitStepEditHistory() {
 }
 
 FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
+    if (sequencer_.stepContentDraft.exitPromptVisible.get()) {
+        // Back from the explicit decision surface means Continue editing.
+        sequencer_.stepContentDraft.hideExitPrompt();
+        return;
+    }
+
+    if (chordEditorActive() && sequencer_.stepContentDraft.active.get()) {
+        // A Chord opened inside a new Micro/Cycle belongs to that outer draft;
+        // leaving the detail editor must not discard the owning content graph.
+        if (sequencer_.stepContentDraft.kind.get() !=
+            core::state::sequencer::SequencerStepContentDraftKind::CHORD) {
+            closeChordEditor();
+            return;
+        }
+        const auto result = sequencer::step_content_draft_workflow::requestBack(
+            sequencer_
+        );
+        if (result == sequencer::step_content_draft_workflow::BackResult::DISCARDED) {
+            closeChordEditor();
+        }
+        return;
+    }
+
     if (chordEditorActive()) {
         closeChordEditor();
+        return;
+    }
+
+    if (core::state::sequencer::isChildContentView(sequencer_) &&
+        sequencer_.stepContentDraft.active.get()) {
+        const auto result = sequencer::step_content_draft_workflow::requestBack(
+            sequencer_
+        );
+        if (result !=
+            sequencer::step_content_draft_workflow::BackResult::DISCARDED) {
+            return;
+        }
+        if (step_edit_session_workflow::backToParentContent(
+                sequencer_,
+                history_,
+                history_snapshot_,
+                history_snapshot_valid_
+            )) {
+            configureOptForFocusedRow();
+        }
         return;
     }
 
@@ -381,6 +244,11 @@ FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
 }
 
 FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
+    if (chordEditorActive() && sequencer_.stepContentDraft.active.get()) {
+        backFromStepEdit();
+        if (sequencer_.stepContentDraft.active.get()) return;
+    }
+    step_retarget_active_ = false;
     step_edit_session_workflow::close(
         sequencer_,
         history_,
@@ -394,6 +262,11 @@ FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
 
 FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
     if (!nav::hasTurnDelta(delta)) return;
+
+    if (sequencer_.stepContentDraft.exitPromptVisible.get()) {
+        sequencer::step_content_draft_workflow::moveExitChoice(sequencer_, delta);
+        return;
+    }
 
     if (chordEditorActive()) {
         moveChordEditorFocus(delta);
@@ -415,17 +288,37 @@ FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
     configureOptForFocusedRow();
 }
 
+FLASHMEM void SequencerStepEditHandler::retargetEditedStep(float delta) {
+    if (!nav::hasTurnDelta(delta) || chordEditorActive()) return;
+    if (step_edit_session_workflow::retargetRootStep(
+            sequencer_,
+            history_,
+            history_snapshot_,
+            history_snapshot_valid_,
+            nav::turnStep(delta)
+        )) {
+        configureOptForFocusedRow();
+    }
+}
+
 FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
+    if (sequencer_.stepContentDraft.exitPromptVisible.get()) {
+        confirmStepContentDraftExitChoice();
+        return;
+    }
+
     auto& edit = sequencer_.stepEdit;
     const uint8_t focusedRow = edit.focusedRow.get();
 
     if (chordEditorActive()) {
-        closeChordEditor();
+        backFromStepEdit();
         return;
     }
 
     if (step_edit_rows::isProperty(focusedRow)) {
-        closeStepEdit();
+        // Scalar rows are already edited live with OPT. NAV is deliberately a
+        // harmless confirmation so the same gesture never means "close" only
+        // for Note/Velocity/Gate/Nudge.
         return;
     }
 
@@ -444,22 +337,22 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
     }
 
     if (step_edit_rows::isContext(focusedRow)) {
-        activateFocusedContextRow();
+        (void)activateFocusedContextRow();
         return;
     }
 }
 
-FLASHMEM void SequencerStepEditHandler::activateFocusedContextRow() {
+FLASHMEM bool SequencerStepEditHandler::activateFocusedContextRow() {
     uint8_t step = 0;
-    if (!editedStepInRange(step)) return;
+    if (!editedStepInRange(step)) return false;
 
     const auto result = step_context_row_workflow::openOrCreateFocusedContextChild(
         sequencer_,
         step
     );
-    if (!result.opened) return;
+    if (!result.opened) return false;
 
-    if (history_snapshot_valid_) {
+    if (!result.draft && history_snapshot_valid_) {
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
         if (core::state::sequencer::captureHistorySnapshot(sequencer_, after) &&
             !core::state::sequencer::sameMusicalHistorySnapshot(history_snapshot_, after)) {
@@ -475,14 +368,22 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedContextRow() {
         }
         history_snapshot_valid_ = false;
     }
+    if (result.draft) {
+        history_snapshot_valid_ = false;
+    }
 
     overlays_.hide();
     sequencer_.stepEdit.reset();
+    return true;
 }
 
 FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
+    if (sequencer_.stepContentDraft.exitPromptVisible.get()) return;
     if (chordEditorActive()) {
         setFocusedChordFieldValue(normalized);
+        return;
+    }
+    if (step_edit_rows::isChord(sequencer_.stepEdit.focusedRow.get())) {
         return;
     }
 
@@ -501,6 +402,9 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
         configureOptForFocusedChordField();
         return;
     }
+    if (step_edit_rows::isChord(sequencer_.stepEdit.focusedRow.get())) {
+        return;
+    }
 
     uint8_t abs = 0;
     if (!editedStepInRange(abs)) return;
@@ -514,13 +418,121 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
 }
 
 FLASHMEM void SequencerStepEditHandler::openChordEditor() {
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+
+    const bool existed = editedStepHasChordState(sequencer_, step);
+    const auto nodeId =
+        core::state::sequencer::activeContentStepNodeId(sequencer_, step);
+    bool startedDraft = false;
+    if (!existed && !sequencer_.stepContentDraft.active.get()) {
+        startedDraft = core::state::sequencer::beginStepContentDraft(
+            sequencer_,
+            core::state::sequencer::SequencerStepContentDraftKind::CHORD,
+            step,
+            nodeId
+        );
+        if (!startedDraft) return;
+    }
+
     step_chord_editor_workflow::open(sequencer_);
+    if (!existed) {
+        // The seeded musical default is the pristine creation baseline: Back
+        // immediately after opening abandons it without a confirmation.
+        if (core::state::sequencer::isRootContentView(sequencer_)) {
+            step_chord_editor_workflow::setFocusedFieldValue(
+                sequencer_,
+                step,
+                effectiveScaleSettings(sequencer_, tracks_),
+                1.0f
+            );
+        } else {
+            const auto scale = effectiveScaleSettings(sequencer_, tracks_);
+            auto chord = core::state::sequencer::resolveStepChordUiState(
+                sequencer_,
+                step
+            );
+            const auto projection =
+                core::state::sequencer::resolveActiveContentStepProjection(
+                    sequencer_,
+                    step,
+                    scale
+                );
+            core::state::sequencer::resolveStepChordPreview(
+                chord,
+                projection,
+                scale
+            );
+            if (core::state::sequencer::setAuthoringNodeChordSpec(
+                    sequencer_,
+                    nodeId,
+                    chord.spec
+                )) {
+                core::state::sequencer::notifyStepContentDraftMutation(sequencer_);
+            }
+        }
+        if (startedDraft) {
+            core::state::sequencer::markStepContentDraftPristine(sequencer_);
+        }
+    }
     configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::closeChordEditor() {
     step_chord_editor_workflow::close(sequencer_);
     configureOptForFocusedRow();
+}
+
+FLASHMEM void SequencerStepEditHandler::applyStepContentDraft() {
+    history_.commitCoalescedPatternEdit();
+    if (!sequencer::step_content_draft_workflow::apply(
+            sequencer_,
+            tracks_,
+            history_
+        )) {
+        return;
+    }
+
+    // The draft owns its single Undo entry. Rebase the surrounding Step Edit
+    // session so closing the editor cannot record the same change twice.
+    history_snapshot_valid_ = core::state::sequencer::captureHistorySnapshot(
+        sequencer_,
+        history_snapshot_
+    );
+    configureOptForFocusedRow();
+}
+
+FLASHMEM void SequencerStepEditHandler::confirmStepContentDraftExitChoice() {
+    const bool wasChordEditor = chordEditorActive();
+    const bool wasChildContent = core::state::sequencer::isChildContentView(
+        sequencer_
+    );
+    const auto result = sequencer::step_content_draft_workflow::applyExitChoice(
+        sequencer_,
+        tracks_,
+        history_
+    );
+    using Result = sequencer::step_content_draft_workflow::BackResult;
+    if (result != Result::DISCARDED && result != Result::SAVED) return;
+
+    if (result == Result::SAVED) {
+        history_snapshot_valid_ = core::state::sequencer::captureHistorySnapshot(
+            sequencer_,
+            history_snapshot_
+        );
+    }
+    if (wasChordEditor) {
+        closeChordEditor();
+        return;
+    }
+    if (wasChildContent && step_edit_session_workflow::backToParentContent(
+            sequencer_,
+            history_,
+            history_snapshot_,
+            history_snapshot_valid_
+        )) {
+        configureOptForFocusedRow();
+    }
 }
 
 FLASHMEM void SequencerStepEditHandler::moveChordEditorFocus(float delta) {
@@ -574,6 +586,7 @@ FLASHMEM bool SequencerStepEditHandler::editedStepInRange(uint8_t& step) const {
 }
 
 FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage) {
+    if (sequencer_.stepContentDraft.exitPromptVisible.get()) return;
     if (step_edit_session_workflow::shouldCloseFromMacro(
             open_release_latch_,
             sequencer_,
@@ -585,7 +598,8 @@ FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage)
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowIsValueRow() const {
     if (chordEditorActive()) return true;
-    return step_value_row_workflow::focusedRowIsValue(sequencer_);
+    return !step_edit_rows::isChord(sequencer_.stepEdit.focusedRow.get()) &&
+           step_value_row_workflow::focusedRowIsValue(sequencer_);
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowIsContextRow() const {
@@ -619,6 +633,7 @@ FLASHMEM bool SequencerStepEditHandler::canPasteFocusedStepContent() const {
 }
 
 FLASHMEM void SequencerStepEditHandler::resetFocusedValueRowToDefault() {
+    if (sequencer_.stepContentDraft.exitPromptVisible.get()) return;
     if (!focusedRowIsValueRow()) return;
 
     if (chordEditorActive()) {
@@ -659,6 +674,7 @@ FLASHMEM void SequencerStepEditHandler::recordContextMutation(
 }
 
 FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
+    if (sequencer_.stepContentDraft.exitPromptVisible.get()) return;
     if (!focusedContextHasChild()) return;
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
@@ -690,6 +706,7 @@ FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
 }
 
 FLASHMEM void SequencerStepEditHandler::copyFocusedStepContent() {
+    if (sequencer_.stepContentDraft.exitPromptVisible.get()) return;
     if (!focusedContextHasChild()) return;
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
@@ -702,6 +719,7 @@ FLASHMEM void SequencerStepEditHandler::copyFocusedStepContent() {
 }
 
 FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
+    if (sequencer_.stepContentDraft.exitPromptVisible.get()) return;
     if (!canPasteFocusedStepContent()) return;
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
@@ -731,105 +749,6 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
         return;
     }
     recordContextMutation(std::move(before), beforeCaptured);
-}
-
-FLASHMEM void SequencerStepEditHandler::openStepPresetPicker() {
-    step_preset_auto_close_pending_ = false;
-    step_preset_auto_close_at_ms_ = 0;
-    step_preset_picker_.open();
-}
-
-FLASHMEM void SequencerStepEditHandler::closeStepPresetPicker() {
-    step_preset_action_press_active_ = false;
-    step_preset_auto_close_pending_ = false;
-    step_preset_auto_close_at_ms_ = 0;
-    step_preset_picker_.close();
-    configureOptForFocusedRow();
-}
-
-FLASHMEM void SequencerStepEditHandler::moveStepPresetItem(float delta) {
-    step_preset_auto_close_pending_ = false;
-    step_preset_picker_.move(delta);
-}
-
-FLASHMEM void SequencerStepEditHandler::moveStepPresetPreviewState(float delta) {
-    step_preset_auto_close_pending_ = false;
-    step_preset_picker_.movePreviewState(delta);
-}
-
-FLASHMEM void SequencerStepEditHandler::toggleStepPresetDetail() {
-    step_preset_auto_close_pending_ = false;
-    step_preset_picker_.toggleDetail();
-}
-
-FLASHMEM void SequencerStepEditHandler::toggleStepPresetMode() {
-    step_preset_auto_close_pending_ = false;
-    step_preset_picker_.toggleMode();
-}
-
-FLASHMEM void SequencerStepEditHandler::beginStepPresetActionGuard() {
-    step_preset_auto_close_pending_ = false;
-    step_preset_action_press_active_ =
-        step_preset_picker_.beginActionGuard(time_provider_());
-}
-
-FLASHMEM void SequencerStepEditHandler::releaseStepPresetAction() {
-    if (step_preset_action_press_active_) {
-        step_preset_action_press_active_ = false;
-        (void)step_preset_picker_.cancelActionGuard(time_provider_());
-        return;
-    }
-
-    if (step_preset_picker_.shouldCommitBeforeLoad()) {
-        commitStepEditHistory();
-        history_.commitCoalescedPatternEdit();
-    }
-
-    handleStepPresetOutcome(step_preset_picker_.executeTap(time_provider_()));
-}
-
-FLASHMEM void SequencerStepEditHandler::commitStepPresetActionGuard() {
-    if (!step_preset_action_press_active_) return;
-
-    if (step_preset_picker_.shouldCommitBeforeLoad()) {
-        commitStepEditHistory();
-        history_.commitCoalescedPatternEdit();
-    }
-
-    handleStepPresetOutcome(
-        step_preset_picker_.commitActionGuard(time_provider_())
-    );
-}
-
-FLASHMEM void SequencerStepEditHandler::handleStepPresetOutcome(
-    SequencerStepPresetPickerOutcome outcome
-) {
-    if (outcome == SequencerStepPresetPickerOutcome::SAVED) {
-        // Save confirmation and the new semantic asset row remain visible in
-        // the temporary picker until the user dismisses it.
-        return;
-    }
-    if (outcome != SequencerStepPresetPickerOutcome::APPLIED &&
-        outcome != SequencerStepPresetPickerOutcome::QUEUED &&
-        outcome != SequencerStepPresetPickerOutcome::CANCELLED) {
-        return;
-    }
-
-    sequencer_.invalidateVariationTelemetry();
-    history_snapshot_valid_ =
-        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
-    if (outcome == SequencerStepPresetPickerOutcome::QUEUED) return;
-
-    // Keep the result visible just long enough to be perceived, then return to
-    // the Step Editor automatically. Any deliberate picker navigation cancels
-    // this deadline so the user remains in control without an extra dismiss.
-    step_preset_auto_close_at_ms_ =
-        time_provider_() + (
-            outcome == SequencerStepPresetPickerOutcome::CANCELLED
-                ? Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS
-                : Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
-        );
-    step_preset_auto_close_pending_ = true;
 }
 
 }  // namespace core::handler

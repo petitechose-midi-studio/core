@@ -88,7 +88,7 @@ private:
     oc::type::ScopeID project_view_scope_ = 0;
     oc::type::ScopeID device_settings_view_scope_ = 0;
     oc::state::StaticWatchGroup<2> global_track_context_watcher_;
-    oc::state::StaticWatchGroup<9> global_track_structure_watcher_;
+    oc::state::StaticWatchGroup<5> global_track_structure_watcher_;
     oc::state::StaticWatchGroup<8> global_track_activity_low_watcher_;
     oc::state::StaticWatchGroup<8> global_track_activity_high_watcher_;
     oc::state::StaticWatchGroup<1> overlay_visibility_watcher_;

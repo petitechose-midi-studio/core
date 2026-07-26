@@ -16,28 +16,46 @@ enum class SourceDetailItem : uint8_t {
     TIMING,
     PHASE,
     RETRIGGER,
+    RECORD,
     LENGTH,
     SOURCE_DOMAIN,
     DESTINATIONS,
     OPTIONS,
     RENAME,
+    DELAY,
     ATTACK,
+    HOLD,
     DECAY,
     SUSTAIN,
     RELEASE,
     TRIGGER,
-    CURVE,
+    SMOOTH,
+    RESPONSE,
     DEPTH,
+    INVALID = 0xFFU,
 };
 
 enum class TriggerDetailItem : uint8_t {
     TRACK = 0,
-    CHANNEL,
-    NOTE,
+    NOTE_LOW,
+    NOTE_HIGH,
+    VELOCITY_LOW,
+    VELOCITY_HIGH,
 };
 
-inline constexpr uint8_t MODULATOR_SOURCE_KIND_COUNT = 2U;
-inline constexpr uint8_t MODULATOR_TRIGGER_DETAIL_COUNT = 3U;
+inline constexpr uint8_t MODULATOR_SOURCE_KIND_COUNT = 3U;
+inline constexpr uint8_t MODULATOR_TRIGGER_DETAIL_COUNT = 5U;
+
+struct SourceKindRowTarget {
+    core::state::modulation::ModulatorKind kind =
+        core::state::modulation::ModulatorKind::LFO;
+    bool valid = false;
+};
+
+/** Stable visual order used by every Project source-kind projection. */
+[[nodiscard]] SourceKindRowTarget sourceKindTargetAtRow(
+    uint8_t row
+);
 
 enum class DestinationPickerRowKind : uint8_t {
     TRACK = 0,
@@ -85,7 +103,7 @@ struct SourceDetailLayout {
     }
 
     [[nodiscard]] SourceDetailItem at(uint8_t index) const {
-        return items[index < count ? index : 0U];
+        return index < count ? items[index] : SourceDetailItem::INVALID;
     }
 };
 
@@ -110,6 +128,13 @@ SourceDetailLayout sourceAuditionLayout(
 
 SourceDetailLayout sourceAuditionOptionsLayout(
     core::state::modulation::ModulatorKind kind
+);
+
+/** Single authority selecting the retained Source workspace card order. */
+SourceDetailLayout sourceWorkspaceLayout(
+    core::state::modulation::ModulatorKind kind,
+    bool options,
+    bool audition
 );
 
 uint16_t sourceDestinationCount(

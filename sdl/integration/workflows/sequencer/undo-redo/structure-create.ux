@@ -1,63 +1,67 @@
-# UX workflow: create Track/Pattern structure and replay its complete history.
-# Purpose: validates explicit Structure creation, contiguous Patterns, and that
-# Undo/Redo restores both domain state and the visible active Track/Pattern.
+# UX workflow: create a Track directly, extend its Page structure, and replay history.
+# Purpose: validates frictionless Track creation, contiguous Pages, and that
+# Undo/Redo restores both domain state and the visible active Track/Page.
 # This subsumes the former isolated structure-track-redo-ui workflow.
-# Expect: capture_match:track_2_pattern_1=page_2_creation_undone, capture_changed:track_2_pattern_1=track_2_creation_undone, capture_match:track_2_pattern_1=track_2_creation_redone, capture_match:page_2_created=page_2_creation_redone
+# Expect: capture_match:page_2_creation_undone=track_2_creation_redone, capture_changed:page_2_creation_undone=track_2_creation_undone, capture_match:page_2_created=page_2_creation_redone
 
 0 scenario sequencer
 50 capture screen track_1_pattern_1
 
-# Open Structure, create Track 2 from the sole +Track slot, enter its Pattern 1,
-# then confirm Pattern 1 to return to the musical surface.
+# Open Structure and create Track 2 from the sole +Track slot. Confirmation is
+# atomic and returns directly to its musical grid (Page 1, eight steps).
 150 button NAV down
-1220 tick
+210 encoder NAV -1
+270 button NAV up
+330 tap LEFT_CENTER 60
 1280 capture screen structure_tracks_open
-1330 button NAV up
 1530 encoder NAV 1
 1730 capture screen track_2_add_preview
 1830 tap NAV 60
-2180 capture screen track_2_patterns_open
-2280 tap NAV 60
-2630 capture screen track_2_pattern_1
+2180 capture screen track_2_pattern_1
 
-# Reopen Structure on Track 2 and create the only legal +Next Pattern.
-2730 button NAV down
-3800 tick
-3860 button NAV up
-4060 tap NAV 60
-4310 capture screen track_2_patterns_reopened
-4410 encoder NAV 1
-4610 capture screen pattern_2_add_preview
-4710 tap NAV 60
-5060 capture screen page_2_created
+# Select Pattern with the common NAV hold-turn-release gesture, open its
+# retained editor with a NAV tap, then use the first-rank +Page action. Page
+# authoring no longer descends through the Track-only Structure workspace.
+2280 button NAV down
+2340 encoder NAV 1
+2400 button NAV up
+2580 tap NAV 60
+2880 capture screen track_2_pattern_editor
+3080 tap BOTTOM_RIGHT 60
+3300 tap LEFT_TOP 60
+4430 capture screen page_2_created
 
-# Undo Pattern 2: the visible surface must return to Track 2 / Pattern 1.
-5160 button LEFT_CENTER down
+# Undo Page 2: the visible surface must return to Track 2 / Page 1.
+5160 tap LEFT_TOP 60
 6230 tick
-6290 tap LEFT_TOP 60
-6470 capture screen undo_pattern_toast
-6520 button LEFT_CENTER up
+6290 capture screen selector_undo_pattern_ready
+6340 tap LEFT_CENTER 60
+6470 capture screen selector_undo_track_ready
+6520 tap LEFT_TOP 60
 7900 capture screen page_2_creation_undone
 
 # Undo Track 2: the active UI must return to Track 1.
-8000 button LEFT_CENTER down
+8000 tap LEFT_TOP 60
 9070 tick
-9130 tap LEFT_TOP 60
-9310 capture screen undo_track_toast
-9360 button LEFT_CENTER up
+9130 capture screen selector_undo_track_ready_again
+9180 tap LEFT_CENTER 60
+9310 capture screen selector_redo_track_ready
+9360 tap LEFT_TOP 60
 10740 capture screen track_2_creation_undone
 
-# Redo Track 2, then Pattern 2. Both domain and focused UI must be restored.
-10840 button LEFT_CENTER down
+# Redo Track 2, then Page 2. Both domain and focused UI must be restored.
+10840 tap LEFT_TOP 60
 11910 tick
-11970 tap LEFT_BOTTOM 60
-12150 capture screen redo_track_toast
-12200 button LEFT_CENTER up
+11970 capture screen selector_redo_track_ready_again
+12020 tap LEFT_BOTTOM 60
+12150 capture screen selector_redo_pattern_ready
+12200 tap LEFT_TOP 60
 13580 capture screen track_2_creation_redone
 
-13680 button LEFT_CENTER down
+13680 tap LEFT_TOP 60
 14750 tick
-14810 tap LEFT_BOTTOM 60
-14990 capture screen redo_pattern_toast
-15040 button LEFT_CENTER up
+14810 capture screen selector_redo_pattern_ready_again
+14860 tap LEFT_BOTTOM 60
+14990 capture screen selector_undo_pattern_ready_restored
+15040 tap LEFT_TOP 60
 16420 capture screen page_2_creation_redone

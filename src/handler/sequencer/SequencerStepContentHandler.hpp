@@ -7,13 +7,12 @@
 
 #include "app/OverlayTypes.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
-#include "handler/sequencer/SequencerStepHandler.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace core::handler {
 
-/** LEFT_BOTTOM hold grammar for semantic Step actions. */
+/** LEFT_BOTTOM press/turn/release selector for direct Step-content entry. */
 class SequencerStepContentHandler {
 public:
     struct StateRefs {
@@ -27,7 +26,6 @@ public:
 
     SequencerStepContentHandler(
         StateRefs state,
-        SequencerStepHandler& stepHandler,
         SequencerStepEditHandler& stepEditHandler,
         oc::api::EncoderAPI& encoders,
         oc::api::ButtonAPI& buttons,
@@ -47,7 +45,6 @@ private:
     oc::state::Signal<
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
-    SequencerStepHandler& step_handler_;
     SequencerStepEditHandler& step_edit_handler_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;

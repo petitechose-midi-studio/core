@@ -6,6 +6,7 @@
 #include "state/project/ProjectDomainRules.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::sequencer {
 
@@ -35,7 +36,8 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
     for (uint8_t i = 0;
          i < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
          ++i) {
-        const auto& source = (i == activeTrack) ? sequencer_.pattern : track_bank_.track(i);
+        const auto& source =
+            (i == activeTrack) ? sequencer_.pattern : track_bank_.track(i);
         if (core::state::sequencer::sequencerCcLaneView(source) != nullptr) {
             lanePresentMask = static_cast<uint16_t>(lanePresentMask | (1U << i));
         }
@@ -77,7 +79,6 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
 
     runtimeSnapshot.activeTrack = activeTrack;
     runtimeSnapshot.enabledMask = track_bank_.currentEnabledMask();
-    runtimeSnapshot.mutedMask = track_bank_.currentMutedMask();
     runtimeSnapshot.projectScaleRevision = track_bank_.projectScaleRevisionSignal().get();
     runtimeSnapshot.projectScaleSettings = track_bank_.projectScaleSettings();
     runtimeSnapshot.projectSwingPercent =
@@ -87,7 +88,9 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
     const ProjectTimingContext projectTiming{runtimeSnapshot.projectSwingPercent};
 
     for (uint8_t i = 0; i < runtimeSnapshot.tracks.size(); ++i) {
-        const auto& source = (i == activeTrack) ? sequencer_.pattern : track_bank_.track(i);
+        const auto& source = (i == activeTrack)
+            ? core::state::sequencer::authoringPattern(sequencer_)
+            : track_bank_.track(i);
         const auto signature =
             captureRuntimeStateSignature(
                 source,

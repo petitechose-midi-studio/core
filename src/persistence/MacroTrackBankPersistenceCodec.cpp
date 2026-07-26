@@ -16,10 +16,6 @@ FLASHMEM uint8_t sanitizeMidi7(uint8_t value) {
     return (value > 127U) ? 127U : value;
 }
 
-FLASHMEM uint8_t sanitizeMidiChannel(uint8_t value) {
-    return static_cast<uint8_t>(value % 16U);
-}
-
 FLASHMEM uint8_t sanitizeTrack(uint8_t value) {
     return macro::MacroPagesState::clampTrackIndex(value);
 }
@@ -77,8 +73,7 @@ FLASHMEM bool readPage(binary::Reader& reader, macro::MacroPageData& page) {
 }
 
 FLASHMEM bool writeTrack(binary::Writer& writer, const macro::MacroTrackData& track) {
-    if (!writer.writeU8(sanitizeMidiChannel(track.channel)) ||
-        !writer.writeU8(sanitizePage(track.activePage)) ||
+    if (!writer.writeU8(sanitizePage(track.activePage)) ||
         !writer.writeU16(sanitizePageMask(track.enabledPageMask))) {
         return false;
     }
@@ -89,16 +84,13 @@ FLASHMEM bool writeTrack(binary::Writer& writer, const macro::MacroTrackData& tr
 }
 
 FLASHMEM bool readTrack(binary::Reader& reader, macro::MacroTrackData& track) {
-    uint8_t channel = 0;
     uint8_t activePage = 0;
     uint16_t enabledPageMask = 0;
-    if (!reader.readU8(channel) ||
-        !reader.readU8(activePage) ||
+    if (!reader.readU8(activePage) ||
         !reader.readU16(enabledPageMask)) {
         return false;
     }
 
-    track.channel = sanitizeMidiChannel(channel);
     track.activePage = sanitizePage(activePage);
     track.enabledPageMask = sanitizePageMask(enabledPageMask);
     for (uint8_t i = 0; i < macro::PAGE_COUNT; ++i) {

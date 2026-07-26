@@ -10,10 +10,12 @@
 0 scenario macro-auto-mod
 80 capture screen source_grid
 
-# Create Macro 2 through the normal add-slot grammar so Destination paste has
-# a real, user-visible target and never creates a hidden Slot implicitly.
-120 tap NAV 60
-240 tap NAV 60
+# Select the Macro structure context, then create Macro 2 through the normal
+# add-slot grammar so Destination paste has a real, user-visible target and
+# never creates a hidden Slot implicitly.
+120 button NAV down
+180 encoder NAV 1
+240 button NAV up
 360 encoder NAV 1
 480 tap NAV 60
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -11,7 +12,7 @@
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/shared/MidiCcDestinationResolver.hpp"
+#include "state/sequencer/SequencerPatternRegionOps.hpp"
 
 namespace core::state::sequencer {
 
@@ -31,14 +32,23 @@ FLASHMEM uint8_t sanitizeStepsPerBeat(uint8_t spb) {
     return spb;
 }
 
-FLASHMEM uint8_t sanitizeMidiChannel(uint8_t channel) {
-    return channel <= 15U
-        ? channel
-        : core::state::shared::MidiCcDestinationIdentity::INVALID_CHANNEL;
-}
-
 FLASHMEM uint8_t sanitizeMidi7(uint8_t value) {
     return (value > 127U) ? 127U : value;
+}
+
+FLASHMEM SequencerPatternPlaybackRegion snapshotPlaybackRegion(
+    const SequencerPatternSnapshot& snapshot,
+    uint8_t contentLength
+) {
+    SequencerPatternPlaybackRegion region{
+        contentLength,
+        snapshot.playStart,
+        snapshot.loopStart,
+        snapshot.loopEnd,
+    };
+    return region.isValid()
+        ? region
+        : SequencerPatternPlaybackRegion::fullLength(contentLength);
 }
 
 FLASHMEM oc::note::sequencer::StepSequencerScaleSettings sanitizeScaleSettings(
@@ -167,23 +177,20 @@ FLASHMEM oc::note::sequencer::StepBitMask128 lengthMask(uint8_t length) {
 
 namespace {
 
-enum class MidiChannelApplyPolicy : uint8_t {
-    REPLACE_FROM_SNAPSHOT,
-    PRESERVE_DESTINATION,
-};
-
 FLASHMEM void applySnapshotImpl(
     SequencerPatternState& target,
-    const SequencerPatternSnapshot& snapshot,
-    MidiChannelApplyPolicy midiChannelPolicy
+    const SequencerPatternSnapshot& snapshot
 ) {
     const uint8_t length = sanitizeSequencerLength(snapshot.length);
 
-    target.length.set(length);
-    target.stepsPerBeat.set(sanitizeStepsPerBeat(snapshot.stepsPerBeat));
-    if (midiChannelPolicy == MidiChannelApplyPolicy::REPLACE_FROM_SNAPSHOT) {
-        target.midiChannel.set(sanitizeMidiChannel(snapshot.midiChannel));
+    const auto region = snapshotPlaybackRegion(snapshot, length);
+    if (!setPatternPlaybackRegion(target, region)) {
+        // A no-op is valid; malformed input was normalized above.
+        target.playStart = region.playStart;
+        target.loopStart = region.loopStart;
+        target.loopEnd = region.loopEnd;
     }
+    target.stepsPerBeat.set(sanitizeStepsPerBeat(snapshot.stepsPerBeat));
     target.enabledMask.set(snapshot.enabledMask & lengthMask(length));
     target.setPatternVariationRanges(snapshot.variationRanges);
     target.setPatternScalePolicy(snapshot.scalePolicy);
@@ -195,8 +202,9 @@ FLASHMEM void applySnapshotImpl(
     target.graph.reset();
     target.graphRevision.set(snapshot.graphRevision);
 
-    for (uint8_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
-        writeStep(target, i, readSanitizedStep(snapshot, i));
+    for (uint16_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
+        const auto step = static_cast<uint8_t>(i);
+        writeStep(target, step, readSanitizedStep(snapshot, step));
     }
 
     target.bumpStepDataRevision();
@@ -204,23 +212,21 @@ FLASHMEM void applySnapshotImpl(
 
 FLASHMEM void applySnapshotPreservingGraphImpl(
     SequencerPatternState& target,
-    const SequencerPatternSnapshot& snapshot,
-    MidiChannelApplyPolicy midiChannelPolicy
+    const SequencerPatternSnapshot& snapshot
 ) {
     auto graph = std::move(target.graph);
-    applySnapshotImpl(target, snapshot, midiChannelPolicy);
+    applySnapshotImpl(target, snapshot);
     target.graph = std::move(graph);
 }
 
 FLASHMEM void applySnapshotToEditorImpl(
     SequencerState& target,
-    const SequencerPatternSnapshot& snapshot,
-    MidiChannelApplyPolicy midiChannelPolicy
+    const SequencerPatternSnapshot& snapshot
 ) {
     const uint8_t length = sanitizeSequencerLength(snapshot.length);
     const uint8_t focusedBefore = target.focusedStep.get();
 
-    applySnapshotImpl(target.pattern, snapshot, midiChannelPolicy);
+    applySnapshotImpl(target.pattern, snapshot);
 
     const uint8_t focused =
         (focusedBefore >= length) ? static_cast<uint8_t>(length - 1U) : focusedBefore;
@@ -230,11 +236,10 @@ FLASHMEM void applySnapshotToEditorImpl(
 
 FLASHMEM void applySnapshotToEditorPreservingGraphImpl(
     SequencerState& target,
-    const SequencerPatternSnapshot& snapshot,
-    MidiChannelApplyPolicy midiChannelPolicy
+    const SequencerPatternSnapshot& snapshot
 ) {
     auto graph = std::move(target.pattern.graph);
-    applySnapshotToEditorImpl(target, snapshot, midiChannelPolicy);
+    applySnapshotToEditorImpl(target, snapshot);
     target.pattern.graph = std::move(graph);
 }
 
@@ -242,8 +247,18 @@ FLASHMEM void applySnapshotToEditorPreservingGraphImpl(
 
 FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatternSnapshot& out) {
     out.length = sanitizeSequencerLength(source.length.get());
+    const auto region = patternPlaybackRegion(source);
+    if (region.isValid()) {
+        out.playStart = region.playStart;
+        out.loopStart = region.loopStart;
+        out.loopEnd = region.loopEnd;
+    } else {
+        const auto fallback = SequencerPatternPlaybackRegion::fullLength(out.length);
+        out.playStart = fallback.playStart;
+        out.loopStart = fallback.loopStart;
+        out.loopEnd = fallback.loopEnd;
+    }
     out.stepsPerBeat = sanitizeStepsPerBeat(source.stepsPerBeat.get());
-    out.midiChannel = sanitizeMidiChannel(source.midiChannel.get());
     out.enabledMask = source.enabledMask.get();
     out.stepDataRevision = source.stepDataRevision.get();
     out.patternVariationRevision = source.patternVariationRevision.get();
@@ -266,28 +281,21 @@ FLASHMEM void captureSnapshot(const SequencerPatternState& source, SequencerPatt
         out.scaleOverride
     );
 
-    for (uint8_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
-        writeStep(out, i, readSanitizedStep(source, i));
+    for (uint16_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
+        const auto step = static_cast<uint8_t>(i);
+        writeStep(out, step, readSanitizedStep(source, step));
     }
 }
 
 FLASHMEM void applySnapshot(SequencerPatternState& target, const SequencerPatternSnapshot& snapshot) {
-    applySnapshotImpl(
-        target,
-        snapshot,
-        MidiChannelApplyPolicy::REPLACE_FROM_SNAPSHOT
-    );
+    applySnapshotImpl(target, snapshot);
 }
 
 FLASHMEM void applySnapshotPreservingGraph(
     SequencerPatternState& target,
     const SequencerPatternSnapshot& snapshot
 ) {
-    applySnapshotPreservingGraphImpl(
-        target,
-        snapshot,
-        MidiChannelApplyPolicy::REPLACE_FROM_SNAPSHOT
-    );
+    applySnapshotPreservingGraphImpl(target, snapshot);
 }
 
 FLASHMEM bool copyPatternState(
@@ -333,11 +341,7 @@ FLASHMEM bool applyTrackContentSnapshotWithGraph(
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
     if (!copyGraph(target, graph, snapshot.graphRevision)) return false;
-    applySnapshotPreservingGraphImpl(
-        target,
-        snapshot,
-        MidiChannelApplyPolicy::PRESERVE_DESTINATION
-    );
+    applySnapshotPreservingGraphImpl(target, snapshot);
     return true;
 }
 
@@ -346,11 +350,7 @@ FLASHMEM void installTrackContentSnapshotWithOwnedGraph(
     const SequencerPatternSnapshot& snapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 ) {
-    applySnapshotImpl(
-        target,
-        snapshot,
-        MidiChannelApplyPolicy::PRESERVE_DESTINATION
-    );
+    applySnapshotImpl(target, snapshot);
     target.graph = std::move(graph);
     target.graphRevision.set(snapshot.graphRevision);
 }
@@ -384,22 +384,14 @@ FLASHMEM bool copyPatternStatePreservingGraph(
 }
 
 FLASHMEM void applySnapshotToEditor(SequencerState& target, const SequencerPatternSnapshot& snapshot) {
-    applySnapshotToEditorImpl(
-        target,
-        snapshot,
-        MidiChannelApplyPolicy::REPLACE_FROM_SNAPSHOT
-    );
+    applySnapshotToEditorImpl(target, snapshot);
 }
 
 FLASHMEM void applySnapshotToEditorPreservingGraph(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot
 ) {
-    applySnapshotToEditorPreservingGraphImpl(
-        target,
-        snapshot,
-        MidiChannelApplyPolicy::REPLACE_FROM_SNAPSHOT
-    );
+    applySnapshotToEditorPreservingGraphImpl(target, snapshot);
 }
 
 FLASHMEM bool applySnapshotToEditorWithGraph(
@@ -418,11 +410,7 @@ FLASHMEM bool applyTrackContentSnapshotToEditorWithGraph(
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
     if (!copyGraph(target.pattern, graph, snapshot.graphRevision)) return false;
-    applySnapshotToEditorPreservingGraphImpl(
-        target,
-        snapshot,
-        MidiChannelApplyPolicy::PRESERVE_DESTINATION
-    );
+    applySnapshotToEditorPreservingGraphImpl(target, snapshot);
     return true;
 }
 
@@ -431,11 +419,7 @@ FLASHMEM void installTrackContentSnapshotToEditorWithOwnedGraph(
     const SequencerPatternSnapshot& snapshot,
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph
 ) {
-    applySnapshotToEditorImpl(
-        target,
-        snapshot,
-        MidiChannelApplyPolicy::PRESERVE_DESTINATION
-    );
+    applySnapshotToEditorImpl(target, snapshot);
     target.pattern.graph = std::move(graph);
     target.pattern.graphRevision.set(snapshot.graphRevision);
 }
@@ -491,16 +475,21 @@ FLASHMEM void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPa
     const uint8_t incomingLength = sanitizeSequencerLength(snapshot.length);
     const uint8_t mergedLength = std::max(currentLength, incomingLength);
 
-    target.pattern.length.set(mergedLength);
+    auto mergedRegion = snapshotPlaybackRegion(snapshot, incomingLength);
+    mergedRegion.contentLength = mergedLength;
+    if (!setPatternPlaybackRegion(target.pattern, mergedRegion)) {
+        // No-op is valid and keeps the existing canonical region.
+    }
 
     auto mergedMask = target.pattern.enabledMask.get() & lengthMask(mergedLength);
     const auto incomingMask = snapshot.enabledMask & lengthMask(incomingLength);
 
-    for (uint8_t i = 0; i < incomingLength; ++i) {
-        if (!incomingMask.test(i)) continue;
+    for (uint16_t i = 0; i < incomingLength; ++i) {
+        const auto step = static_cast<uint8_t>(i);
+        if (!incomingMask.test(step)) continue;
 
-        writeStep(target.pattern, i, readSanitizedStep(snapshot, i));
-        mergedMask.setBit(i, true);
+        writeStep(target.pattern, step, readSanitizedStep(snapshot, step));
+        mergedMask.setBit(step, true);
     }
 
     target.pattern.enabledMask.set(mergedMask);
@@ -557,8 +546,16 @@ FLASHMEM bool duplicatePatternForward(SequencerState& target) {
     target.pattern.enabledMask.set(mask);
 
     const uint8_t requiredLength = static_cast<uint8_t>(targetStart + copyCount);
+    if (target.pattern.ccLanes && duplicateSequencerCcLaneBankRange(
+            *target.pattern.ccLanes,
+            0,
+            targetStart,
+            copyCount
+        )) {
+        target.pattern.bumpCcLaneRevision();
+    }
     if (requiredLength > len) {
-        target.pattern.length.set(requiredLength);
+        target.pattern.setContentLength(requiredLength);
     }
 
     target.page.set(target.pageForStep(targetStart));
@@ -586,21 +583,30 @@ FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
     const auto sourceMask = target.pattern.enabledMask.get();
     auto nextMask = sourceMask & ~activeMask;
 
-    for (uint8_t i = 0; i < len; ++i) {
+    for (uint16_t i = 0; i < len; ++i) {
+        const auto sourceStep = static_cast<uint8_t>(i);
         const uint8_t dst = static_cast<uint8_t>((i + normalizedOffset) % len);
-        nextSteps[dst] = readStep(target.pattern, i);
+        nextSteps[dst] = readStep(target.pattern, sourceStep);
 
-        if (sourceMask.test(i)) {
+        if (sourceMask.test(sourceStep)) {
             nextMask.setBit(dst, true);
         }
     }
 
-    for (uint8_t i = 0; i < len; ++i) {
-        writeStep(target.pattern, i, nextSteps[i]);
+    for (uint16_t i = 0; i < len; ++i) {
+        const auto step = static_cast<uint8_t>(i);
+        writeStep(target.pattern, step, nextSteps[i]);
     }
 
     target.pattern.enabledMask.set(nextMask);
     rotateRootStepNodes(target.pattern, normalizedOffset);
+    if (target.pattern.ccLanes && rotateSequencerCcLaneBank(
+            *target.pattern.ccLanes,
+            len,
+            normalizedOffset
+        )) {
+        target.pattern.bumpCcLaneRevision();
+    }
     target.pattern.bumpStepDataRevision();
     return true;
 }
@@ -619,18 +625,19 @@ FLASHMEM bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t 
     bool maskChanged = false;
     bool graphChanged = false;
 
-    for (uint8_t step = start; step <= clampedEnd; ++step) {
-        if (mask.test(step)) {
-            mask.setBit(step, false);
+    for (uint16_t step = start; step <= clampedEnd; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
+        if (mask.test(stepIndex)) {
+            mask.setBit(stepIndex, false);
             maskChanged = true;
         }
 
-        if (!sameStep(readStep(target.pattern, step), defaultStep())) {
-            writeStep(target.pattern, step, defaultStep());
+        if (!sameStep(readStep(target.pattern, stepIndex), defaultStep())) {
+            writeStep(target.pattern, stepIndex, defaultStep());
             dataChanged = true;
         }
 
-        graphChanged = clearRootNode(target.pattern, step) || graphChanged;
+        graphChanged = clearRootNode(target.pattern, stepIndex) || graphChanged;
     }
 
     if (maskChanged) {
@@ -664,12 +671,15 @@ FLASHMEM bool appendPage(SequencerState& target) {
     if (newLength <= len) return false;
 
     auto mask = target.pattern.enabledMask.get();
-    for (uint8_t step = len; step < newLength; ++step) {
-        writeStep(target.pattern, step, defaultStep());
-        mask.setBit(step, false);
+    for (uint16_t step = len; step < newLength; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
+        writeStep(target.pattern, stepIndex, defaultStep());
+        mask.setBit(stepIndex, false);
     }
 
-    target.pattern.length.set(newLength);
+    const bool resized = target.pattern.setContentLength(newLength);
+    assert(resized);
+    if (!resized) return false;
     target.pattern.enabledMask.set(mask & lengthMask(newLength));
 
     const uint8_t newPage = pageCount;
@@ -724,13 +734,28 @@ FLASHMEM bool insertPage(SequencerState& target, uint8_t pageIndex) {
         SequencerState::MAX_STEPS - 1,
         static_cast<uint16_t>(insertStart + SequencerState::STEPS_PER_PAGE - 1)
     ));
-    for (uint8_t step = insertStart; step <= clearEnd; ++step) {
-        writeStep(target.pattern, step, defaultStep());
-        mask.setBit(step, false);
-        graphChanged = clearRootNode(target.pattern, step) || graphChanged;
+    for (uint16_t step = insertStart; step <= clearEnd; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
+        writeStep(target.pattern, stepIndex, defaultStep());
+        mask.setBit(stepIndex, false);
+        graphChanged = clearRootNode(target.pattern, stepIndex) || graphChanged;
     }
 
-    target.pattern.length.set(newLength);
+    if (target.pattern.ccLanes && insertSequencerCcLaneBankSpan(
+            *target.pattern.ccLanes,
+            len,
+            insertStart,
+            static_cast<uint8_t>(newLength - len)
+        )) {
+        target.pattern.bumpCcLaneRevision();
+    }
+    const bool regionInserted = insertPatternRegionSpan(
+        target.pattern,
+        insertStart,
+        static_cast<uint8_t>(newLength - len)
+    );
+    assert(regionInserted);
+    if (!regionInserted) return false;
     target.pattern.enabledMask.set(mask & lengthMask(newLength));
     target.focusedStep.set(insertStart);
     target.page.set(pageIndex);
@@ -757,12 +782,13 @@ FLASHMEM bool ensurePageExists(SequencerState& target, uint8_t pageIndex) {
     }
 
     auto mask = target.pattern.enabledMask.get();
-    for (uint8_t step = currentLength; step < requiredLength; ++step) {
-        writeStep(target.pattern, step, defaultStep());
-        mask.setBit(step, false);
+    for (uint16_t step = currentLength; step < requiredLength; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
+        writeStep(target.pattern, stepIndex, defaultStep());
+        mask.setBit(stepIndex, false);
     }
 
-    target.pattern.length.set(requiredLength);
+    target.pattern.setContentLength(requiredLength);
     target.pattern.enabledMask.set(mask & lengthMask(requiredLength));
     target.page.set(pageIndex);
     target.focusedStep.set(static_cast<uint8_t>(pageIndex * SequencerState::STEPS_PER_PAGE));
@@ -788,26 +814,42 @@ FLASHMEM bool removePage(SequencerState& target, uint8_t pageIndex) {
     auto mask = target.pattern.enabledMask.get();
     bool graphChanged = false;
 
-    for (uint8_t dst = pageStart; static_cast<uint16_t>(dst + deleteSpan) < len; ++dst) {
+    for (uint16_t dst = pageStart; dst + deleteSpan < len; ++dst) {
+        const auto dstIndex = static_cast<uint8_t>(dst);
         const uint8_t src = static_cast<uint8_t>(dst + deleteSpan);
-        writeStep(target.pattern, dst, readStep(target.pattern, src));
-        mask.setBit(dst, mask.test(src));
+        writeStep(target.pattern, dstIndex, readStep(target.pattern, src));
+        mask.setBit(dstIndex, mask.test(src));
         if (canEditRootNodes(target.pattern)) {
             graphChanged = assignRootNode(
                 target.pattern,
-                dst,
+                dstIndex,
                 target.pattern.graph->stepNodes[src]
             ) || graphChanged;
         }
     }
 
-    for (uint8_t step = newLength; step < SequencerState::MAX_STEPS; ++step) {
-        writeStep(target.pattern, step, defaultStep());
-        mask.setBit(step, false);
-        graphChanged = clearRootNode(target.pattern, step) || graphChanged;
+    for (uint16_t step = newLength; step < SequencerState::MAX_STEPS; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
+        writeStep(target.pattern, stepIndex, defaultStep());
+        mask.setBit(stepIndex, false);
+        graphChanged = clearRootNode(target.pattern, stepIndex) || graphChanged;
     }
 
-    target.pattern.length.set(newLength);
+    if (target.pattern.ccLanes && removeSequencerCcLaneBankSpan(
+            *target.pattern.ccLanes,
+            len,
+            pageStart,
+            deleteSpan
+        )) {
+        target.pattern.bumpCcLaneRevision();
+    }
+    const bool regionRemoved = removePatternRegionSpan(
+        target.pattern,
+        pageStart,
+        deleteSpan
+    );
+    assert(regionRemoved);
+    if (!regionRemoved) return false;
     target.pattern.enabledMask.set(mask & lengthMask(newLength));
 
     const uint8_t focused = static_cast<uint8_t>(std::min<uint16_t>(

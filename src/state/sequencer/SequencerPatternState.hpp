@@ -5,6 +5,7 @@
  * @brief Persisted musical state for one sequencer pattern.
  */
 
+#include <array>
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
@@ -17,6 +18,10 @@
 
 namespace core::state::sequencer {
 
+inline constexpr std::array<uint8_t, 6> PATTERN_STEPS_PER_BEAT_CHOICES = {
+    1, 2, 3, 4, 6, 8,
+};
+
 using oc::state::Signal;
 
 struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
@@ -27,8 +32,6 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
         oc::note::sequencer::StepSequencerState::DEFAULT_LENGTH;
     static constexpr uint8_t DEFAULT_STEPS_PER_BEAT =
         oc::note::sequencer::StepSequencerState::DEFAULT_STEPS_PER_BEAT;
-    static constexpr uint8_t DEFAULT_MIDI_CHANNEL_0BASED =
-        oc::note::sequencer::StepSequencerState::DEFAULT_MIDI_CHANNEL_0BASED;
     static constexpr uint16_t MAX_GATE_PERCENT =
         oc::note::sequencer::StepSequencerState::MAX_GATE_PERCENT;
     static constexpr uint8_t DEFAULT_PROBABILITY =
@@ -62,6 +65,13 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
 
     /// Bumps when pattern timing context changes.
     Signal<uint32_t> patternTimingRevision{0};
+
+    // Persistent half-open playback region. Content length remains owned by
+    // StepSequencerState::length; mutations go through SequencerPatternRegionOps
+    // so these three bytes cannot diverge from it.
+    uint8_t playStart = 0;
+    uint8_t loopStart = 0;
+    uint8_t loopEnd = DEFAULT_LENGTH;
 
     SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
     oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
@@ -148,6 +158,7 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     bool setPitchEditMode(SequencerPitchEditMode mode);
     bool setPatternSwingOffsetPercent(int value);
     bool setPatternNudgePercent(int value);
+    bool setContentLength(uint8_t newContentLength);
 
     bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
         if (step >= MAX_STEPS) return false;

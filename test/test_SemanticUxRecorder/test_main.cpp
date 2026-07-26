@@ -34,6 +34,8 @@ public:
         out.target = "step";
         out.targetIndex = calls == 1 ? 2 : 1;
         out.targetStep = calls == 1 ? 2 : 1;
+        out.targetCount = 16;
+        out.targetPage = calls == 1 ? 0 : 1;
         out.targetMask = calls == 1 ? 3 : 7;
         out.sourceMask = 5;
         out.createMask = calls == 1 ? 4 : 0;
@@ -68,6 +70,8 @@ public:
         out.authoredValue = calls == 1 ? 64 : 96;
         out.hasResolvedValue = true;
         out.resolvedValue = calls == 1 ? 80 : 96;
+        out.controller = 74;
+        out.defaultController = 71;
         out.hasStepOn = true;
         out.stepOn = calls > 1;
         out.hasResolvedStep = true;
@@ -77,6 +81,16 @@ public:
         out.resolvedNudge = calls == 1 ? -2 : 3;
         out.resolvedProbability = calls == 1 ? 90 : 100;
         out.resolvedVariationVisible = calls > 1;
+        out.draftKind = "micro_sequence";
+        out.hasDraftActive = true;
+        out.draftActive = calls == 1;
+        out.hasPublished = calls > 1;
+        out.published = calls > 1;
+        out.hasDraftDirty = true;
+        out.draftDirty = true;
+        out.exitChoice = "save";
+        out.draftFailure = calls == 1 ? nullptr : "publish_failed";
+        out.action = "save";
     }
 
     mutable int calls = 0;
@@ -98,6 +112,26 @@ public:
 private:
     const char* mode_ = nullptr;
     const char* effect_ = nullptr;
+};
+
+class TransitioningEffectProvider : public core::validation::ux::SemanticUxContextProvider {
+public:
+    void captureSemanticUxContext(
+        const oc::core::input::InputBindingTraceEvent&,
+        core::validation::ux::SemanticUxContext& out
+    ) const override {
+        ++calls;
+        const bool causalRead = calls == 1;
+        out.mode = causalRead ? "macro.structure" : "macro.structure.tracks";
+        out.effect = causalRead
+            ? "open_structure_workspace"
+            : "enter_selection";
+        out.outcome = causalRead ? "applied" : nullptr;
+        out.target = causalRead ? "macro" : "track";
+        out.property = causalRead ? "caller" : "live";
+    }
+
+    mutable int calls = 0;
 };
 
 oc::core::input::InputBindingTraceEvent dispatchedButton() {
@@ -279,6 +313,8 @@ void test_writes_native_context_provider_fields() {
     assert(contains(sink.lines[0], "\"target\":\"step\""));
     assert(contains(sink.lines[0], "\"target_index\":1"));
     assert(contains(sink.lines[0], "\"target_step\":1"));
+    assert(contains(sink.lines[0], "\"target_count\":16"));
+    assert(contains(sink.lines[0], "\"target_page\":1"));
     assert(contains(sink.lines[0], "\"pre_target_mask\":3"));
     assert(contains(sink.lines[0], "\"target_mask\":7"));
     assert(contains(sink.lines[0], "\"source_mask\":5"));
@@ -309,6 +345,8 @@ void test_writes_native_context_provider_fields() {
     assert(contains(sink.lines[0], "\"conflict\":0"));
     assert(contains(sink.lines[0], "\"authored_value\":96"));
     assert(contains(sink.lines[0], "\"resolved_value\":96"));
+    assert(contains(sink.lines[0], "\"controller\":74"));
+    assert(contains(sink.lines[0], "\"default_controller\":71"));
     assert(contains(sink.lines[0], "\"step_on\":1"));
     assert(contains(sink.lines[0], "\"resolved_note\":67"));
     assert(contains(sink.lines[0], "\"resolved_velocity\":85"));
@@ -316,6 +354,13 @@ void test_writes_native_context_provider_fields() {
     assert(contains(sink.lines[0], "\"resolved_nudge\":3"));
     assert(contains(sink.lines[0], "\"resolved_probability\":100"));
     assert(contains(sink.lines[0], "\"resolved_variation\":1"));
+    assert(contains(sink.lines[0], "\"draft_kind\":\"micro_sequence\""));
+    assert(contains(sink.lines[0], "\"draft_active\":0"));
+    assert(contains(sink.lines[0], "\"dirty\":1"));
+    assert(contains(sink.lines[0], "\"exit_choice\":\"save\""));
+    assert(contains(sink.lines[0], "\"draft_failure\":\"publish_failed\""));
+    assert(contains(sink.lines[0], "\"action\":\"save\""));
+    assert(contains(sink.lines[0], "\"published\":1"));
     assert(provider.calls == 2);
     std::cout << "[PASS] test_writes_native_context_provider_fields\n";
 }
@@ -347,6 +392,33 @@ void test_associates_capture_with_live_surface_context() {
     assert(contains(capture, "\"resolved_value\":96"));
     assert(provider.calls == 3);
     std::cout << "[PASS] test_associates_capture_with_live_surface_context\n";
+}
+
+void test_capture_keeps_causal_effect_with_live_surface_state() {
+    CapturingSink sink;
+    TransitioningEffectProvider provider;
+    core::validation::ux::setCurrentSemanticUxContextProvider(&provider);
+    core::validation::ux::SemanticUxRecorder recorder{{.sink = &sink, .enabled = true}};
+
+    recorder.onBindingTrace(dispatchedButton());
+    recorder.flush(2000, sequencerSnapshot());
+    recorder.capture(2100, "structure_open", sequencerSnapshot());
+    core::validation::ux::clearCurrentSemanticUxContextProvider(&provider);
+
+    assert(sink.lines.size() == 2);
+    const auto& event = sink.lines[0];
+    const auto& capture = sink.lines[1];
+    assert(contains(event, "\"effect\":\"open_structure_workspace\""));
+    assert(contains(event, "\"outcome\":\"applied\""));
+    assert(contains(capture, "\"surface_context\":true"));
+    assert(contains(capture, "\"source_seq\":1"));
+    assert(contains(capture, "\"mode\":\"macro.structure.tracks\""));
+    assert(contains(capture, "\"effect\":\"open_structure_workspace\""));
+    assert(contains(capture, "\"outcome\":\"applied\""));
+    assert(contains(capture, "\"property\":\"live\""));
+    assert(!contains(capture, "\"effect\":\"enter_selection\""));
+    assert(provider.calls == 3);
+    std::cout << "[PASS] test_capture_keeps_causal_effect_with_live_surface_state\n";
 }
 
 void test_capture_context_reset_prevents_cross_scenario_claims() {
@@ -467,6 +539,7 @@ int main() {
     test_non_finite_and_oversized_encoder_values_are_serialized_safely();
     test_writes_native_context_provider_fields();
     test_associates_capture_with_live_surface_context();
+    test_capture_keeps_causal_effect_with_live_surface_state();
     test_capture_context_reset_prevents_cross_scenario_claims();
     test_explicit_state_projection_capture_has_no_binding_source();
     test_reports_dropped_records();

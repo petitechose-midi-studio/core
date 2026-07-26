@@ -1,12 +1,33 @@
 #include "state/contextual/OperationFeedbackState.hpp"
 
+#include <config/PlatformCompat.hpp>
+
 namespace core::state::contextual {
 
-void clearOperationFeedback(OperationFeedbackState& state) {
+FLASHMEM bool operator==(
+    const OperationFeedbackState& lhs,
+    const OperationFeedbackState& rhs
+) {
+    return lhs.active == rhs.active && lhs.action == rhs.action &&
+           lhs.source == rhs.source && lhs.target == rhs.target &&
+           lhs.status == rhs.status && lhs.reason == rhs.reason &&
+           lhs.expiryPolicy == rhs.expiryPolicy &&
+           lhs.shownAtMs == rhs.shownAtMs &&
+           lhs.durationMs == rhs.durationMs;
+}
+
+FLASHMEM bool operator!=(
+    const OperationFeedbackState& lhs,
+    const OperationFeedbackState& rhs
+) {
+    return !(lhs == rhs);
+}
+
+FLASHMEM void clearOperationFeedback(OperationFeedbackState& state) {
     state = OperationFeedbackState{};
 }
 
-void setOperationFeedback(
+FLASHMEM void setOperationFeedback(
     OperationFeedbackState& state,
     ContextActionId action,
     ContextEntityRef source,
@@ -33,7 +54,7 @@ void setOperationFeedback(
     state.durationMs = durationMs;
 }
 
-bool updateOperationFeedback(OperationFeedbackState& state, uint32_t nowMs) {
+FLASHMEM bool updateOperationFeedback(OperationFeedbackState& state, uint32_t nowMs) {
     if (!state.active ||
         state.expiryPolicy != OperationFeedbackExpiryPolicy::AFTER_DURATION) {
         return false;
@@ -47,7 +68,7 @@ bool updateOperationFeedback(OperationFeedbackState& state, uint32_t nowMs) {
     return true;
 }
 
-bool dismissOperationFeedbackOnMeaningfulInput(OperationFeedbackState& state) {
+FLASHMEM bool dismissOperationFeedbackOnMeaningfulInput(OperationFeedbackState& state) {
     if (!state.active || state.expiryPolicy !=
         OperationFeedbackExpiryPolicy::ON_NEXT_MEANINGFUL_INPUT) {
         return false;
@@ -56,7 +77,7 @@ bool dismissOperationFeedbackOnMeaningfulInput(OperationFeedbackState& state) {
     return true;
 }
 
-bool resolveOperationFeedback(OperationFeedbackState& state) {
+FLASHMEM bool resolveOperationFeedback(OperationFeedbackState& state) {
     if (!state.active ||
         state.expiryPolicy != OperationFeedbackExpiryPolicy::WHEN_RESOLVED) {
         return false;
@@ -65,7 +86,7 @@ bool resolveOperationFeedback(OperationFeedbackState& state) {
     return true;
 }
 
-bool acknowledgeOperationFeedback(OperationFeedbackState& state) {
+FLASHMEM bool acknowledgeOperationFeedback(OperationFeedbackState& state) {
     if (!state.active || state.expiryPolicy !=
         OperationFeedbackExpiryPolicy::ON_ACKNOWLEDGEMENT) {
         return false;

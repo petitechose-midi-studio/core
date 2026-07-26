@@ -1,15 +1,15 @@
 #pragma once
 
-#include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
+#include <ms/ui/widget/KeyValueSparkline.hpp>
 
 #include "state/modulation/ProjectControlState.hpp"
 
 namespace core::ui::modulation::sparkline {
 
-/** Current source value from the compiled Project runtime, or zero if absent. */
-[[nodiscard]] float liveValue(
+/** Graphical authored signature; excludes name, routing, trigger and runtime. */
+[[nodiscard]] uint32_t sourceGeometryRevision(
     const core::state::modulation::ProjectControlState& control,
-    core::state::modulation::ModulatorId sourceId
+    const core::state::modulation::ModulatorSourceState& source
 );
 
 /**

@@ -29,7 +29,7 @@ void test_focused_property_row_edits_root_step_value() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[1] = 60;
     sequencer.stepEdit.focusedRow.set(step_edit_rows::PROPERTY_OFFSET);
 
@@ -44,7 +44,7 @@ void test_local_variation_edit_targets_focused_property_without_base_edit() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[2] = 64;
     sequencer.stepEdit.focusedRow.set(step_edit_rows::PROPERTY_OFFSET);
     sequencer.stepEdit.localVariationEditActive.set(true);
@@ -72,7 +72,7 @@ void test_chance_row_does_not_support_local_variation() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.stepEdit.focusedRow.set(
         static_cast<uint8_t>(step_edit_rows::PROPERTY_OFFSET + 4U)
     );
@@ -86,7 +86,7 @@ void test_chord_quick_row_sets_and_resets_root_chord() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.stepEdit.focusedRow.set(step_edit_rows::CHORD);
 
     step_value_row_workflow::setFocusedRowValue(sequencer, 3, {}, 1.0f);

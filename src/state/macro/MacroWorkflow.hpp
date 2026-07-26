@@ -4,7 +4,7 @@
 
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
-#include "state/macro/MacroAutomationState.hpp"
+#include "state/macro/MacroAutomationAddress.hpp"
 #include "state/macro/MacroPagesState.hpp"
 
 namespace core::state {

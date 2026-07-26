@@ -37,7 +37,6 @@ void test_cross_domain_copy_releases_inactive_owned_payloads() {
     assert(clipboard.storeMacroPage(macroPage, pages.control, 0, 0));
     assert(clipboard.hasMacroPage());
     assert(clipboard.sequencerGraph == nullptr);
-    assert(clipboard.sequencerTrackSelection == nullptr);
 
     std::cout << "[PASS] test_cross_domain_copy_releases_inactive_owned_payloads\n";
 }
@@ -64,7 +63,6 @@ void test_rejected_copy_clears_previous_clipboard() {
     assert(clipboard.kind.get() == core::state::StructureClipboardKind::NONE);
     assert(clipboard.macroAutomationSet == nullptr);
     assert(clipboard.sequencerGraph == nullptr);
-    assert(clipboard.sequencerTrackSelection == nullptr);
 
     std::cout << "[PASS] test_rejected_copy_clears_previous_clipboard\n";
 }
@@ -97,9 +95,18 @@ void test_macro_clipboards_store_only_the_selected_semantic_domain() {
         address,
         automation
     ));
-    macro::MacroModulationShape modulation;
-    assert(macro::macroModulationAppendPoint(modulation, 0.0f, -0.25f));
-    assert(macro::macroModulationAppendPoint(modulation, 1.0f, 0.25f));
+    assert(core::state::modulation::setProjectControlAutomationEnabled(
+        pages.control,
+        address,
+        false
+    ));
+    test_support::project_control::ModulationShape modulation;
+    assert(test_support::project_control::appendModulationPoint(
+        modulation, 0.0f, -0.25f
+    ));
+    assert(test_support::project_control::appendModulationPoint(
+        modulation, 1.0f, 0.25f
+    ));
     assert(test_support::project_control::assignModulation(
         pages.control,
         address,
@@ -112,19 +119,20 @@ void test_macro_clipboards_store_only_the_selected_semantic_domain() {
     assert(clipboard.macroAutomationSet->payloadKind ==
            core::state::MacroClipboardPayloadKind::AUTOMATION);
     const auto& automationPayload =
-        clipboard.macroAutomationSet->entries[0].state;
-    assert(macro::macroCurveStored(automationPayload.automation));
-    assert(!macro::macroCurveStored(automationPayload.modulation));
+        clipboard.macroAutomationSet->entries[0].control;
+    assert(automationPayload.automation.stored());
+    assert(!automationPayload.automation.enabled);
+    assert(!automationPayload.recordedShape.stored());
 
     assert(clipboard.storeMacroModulation(pages.control, address));
     assert(clipboard.hasMacroModulation());
     assert(clipboard.macroAutomationSet->payloadKind ==
            core::state::MacroClipboardPayloadKind::MODULATION);
     const auto& modulationPayload =
-        clipboard.macroAutomationSet->entries[0].state;
-    assert(!macro::macroCurveStored(modulationPayload.automation));
-    assert(macro::macroCurveStored(modulationPayload.modulation));
-    assert(std::fabs(modulationPayload.modulationDepth - 0.6f) < 0.0001f);
+        clipboard.macroAutomationSet->entries[0].control;
+    assert(!modulationPayload.automation.stored());
+    assert(modulationPayload.recordedShape.stored());
+    assert(std::fabs(modulationPayload.modulationAmount - 0.6f) < 0.0001f);
 
     assert(clipboard.storeMacroDestination(pages, address));
     assert(clipboard.hasMacroDestination());
@@ -132,9 +140,9 @@ void test_macro_clipboards_store_only_the_selected_semantic_domain() {
            core::state::MacroClipboardPayloadKind::DESTINATION);
     assert(clipboard.macroAutomationSet->sourceCc == 74);
     const auto& destinationPayload =
-        clipboard.macroAutomationSet->entries[0].state;
-    assert(!macro::macroCurveStored(destinationPayload.automation));
-    assert(!macro::macroCurveStored(destinationPayload.modulation));
+        clipboard.macroAutomationSet->entries[0].control;
+    assert(!destinationPayload.automation.stored());
+    assert(!destinationPayload.recordedShape.stored());
 
     std::cout
         << "[PASS] Macro clipboards contain only their selected domain\n";

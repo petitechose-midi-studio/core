@@ -20,14 +20,12 @@ ClipboardTransferPlan basePlan() {
     ClipboardTransferPlan plan{};
     plan.availability = ClipboardTransferAvailability::READY;
     plan.reason = ClipboardTransferReason::NONE;
-    plan.firstSource = 0;
-    plan.firstTarget = 4;
-    plan.lastTarget = 4;
     plan.sourceMask = 0x0001;
     plan.targetMask = 0x0010;
     plan.createMask = 0x0010;
-    plan.count = 1;
-    plan.sourceCount = 1;
+    plan.entry.sourceTrack = 0;
+    plan.entry.targetTrack = 4;
+    plan.hasEntry = true;
     return plan;
 }
 

@@ -194,7 +194,6 @@ void holdPatternQuickControls(SequencerInlineHarness& h) {
     h.press(Config::ButtonID::LEFT_CENTER);
     h.advance(1000);
     assert(h.state.sequencer.patternQuickControls.selecting.get());
-    assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
 }
 
 void test_property_selector_left_top_closes_without_reverting_selected_property() {
@@ -240,10 +239,14 @@ void test_property_selector_does_not_open_when_pattern_quick_controls_are_active
     std::cout << "[PASS] test_property_selector_does_not_open_when_pattern_quick_controls_are_active\n";
 }
 
-void test_track_focus_is_projected_as_pattern_outside_structure() {
+void test_track_focus_remains_distinct_from_pattern_outside_structure() {
     SequencerInlineHarness h;
 
     h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
     h.tap(Config::ButtonID::LEFT_BOTTOM);
@@ -256,13 +259,13 @@ void test_track_focus_is_projected_as_pattern_outside_structure() {
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
 
-    std::cout << "[PASS] test_track_focus_is_projected_as_pattern_outside_structure\n";
+    std::cout << "[PASS] test_track_focus_remains_distinct_from_pattern_outside_structure\n";
 }
 
 void test_state_is_a_direct_step_property() {
     SequencerInlineHarness h;
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.focusedStep.set(0);
 
     h.tap(Config::ButtonID::LEFT_CENTER);
@@ -363,7 +366,7 @@ void test_property_selector_left_top_commits_live_variation_edit() {
 
 void test_property_selector_left_top_commits_live_local_random_edit() {
     SequencerInlineHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     h.state.sequencer.pattern.velocity[2] = 64;
 
@@ -405,7 +408,7 @@ void test_property_selector_left_top_commits_live_local_random_edit() {
 void test_step_property_selector_left_bottom_is_secondary_random_layer() {
     SequencerInlineHarness h;
     h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     h.state.sequencer.pattern.velocity[2] = 64;
 
@@ -456,7 +459,7 @@ void test_step_property_selector_left_bottom_is_secondary_random_layer() {
 
 void test_property_selector_global_and_local_random_have_separate_undo() {
     SequencerInlineHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
     h.state.sequencer.pattern.velocity[2] = 64;
 
@@ -557,27 +560,25 @@ void test_pattern_pitch_settings_are_undoable() {
     std::cout << "[PASS] test_pattern_pitch_settings_are_undoable\n";
 }
 
-void test_pattern_quick_controls_short_tap_does_not_arm_history_layer() {
+void test_pattern_quick_controls_short_tap_opens_one_edit_layer() {
     SequencerInlineHarness h;
 
     h.tap(Config::ButtonID::LEFT_CENTER);
 
     assert(h.state.sequencer.patternQuickControls.selecting.get());
-    assert(!h.state.sequencer.patternQuickControls.physicalHoldActive.get());
 
-    std::cout << "[PASS] test_pattern_quick_controls_short_tap_does_not_arm_history_layer\n";
+    std::cout << "[PASS] test_pattern_quick_controls_short_tap_opens_one_edit_layer\n";
 }
 
-void test_pattern_quick_controls_hold_arms_history_layer() {
+void test_pattern_quick_controls_hold_keeps_one_edit_layer() {
     SequencerInlineHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
     h.advance(1000);
 
     assert(h.state.sequencer.patternQuickControls.selecting.get());
-    assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
 
-    std::cout << "[PASS] test_pattern_quick_controls_hold_arms_history_layer\n";
+    std::cout << "[PASS] test_pattern_quick_controls_hold_keeps_one_edit_layer\n";
 }
 
 void test_pattern_quick_controls_are_pattern_focus_only() {
@@ -597,17 +598,7 @@ void test_pattern_quick_controls_are_pattern_focus_only() {
 
     h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
     h.tap(Config::ButtonID::LEFT_CENTER);
-    assert(h.state.sequencer.patternQuickControls.selecting.get());
-    h.tap(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
-
-    h.state.sequencer.structureUi.workspace.active.set(true);
-    h.state.sequencer.structureUi.workspace.level.set(
-        core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
-    );
-    h.tap(Config::ButtonID::LEFT_CENTER);
-    assert(!h.state.sequencer.patternQuickControls.selecting.get());
-    h.state.sequencer.structureUi.workspace.active.set(false);
 
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     h.tap(Config::ButtonID::LEFT_CENTER);
@@ -664,30 +655,29 @@ void test_pattern_quick_controls_open_defaults_to_length_and_cycles_order() {
     std::cout << "[PASS] test_pattern_quick_controls_open_defaults_to_length_and_cycles_order\n";
 }
 
-void test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector() {
+void test_pattern_quick_controls_left_top_is_cancel_not_local_history() {
     SequencerInlineHarness h;
+    h.state.sequencer.pattern.setContentLength(8);
 
     holdPatternQuickControls(h);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.length.get() != 8);
 
     h.tap(Config::ButtonID::LEFT_TOP);
-    assert(h.state.sequencer.patternQuickControls.selecting.get());
-    assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
-
-    h.tap(Config::ButtonID::LEFT_BOTTOM);
-    assert(h.state.sequencer.patternQuickControls.selecting.get());
-    assert(h.state.sequencer.patternQuickControls.physicalHoldActive.get());
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencer.pattern.length.get() == 8);
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
 
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
-    assert(!h.state.sequencer.patternQuickControls.physicalHoldActive.get());
+    assert(h.state.sequencerHistory.undoCount() == 0U);
 
-    std::cout << "[PASS] test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector\n";
+    std::cout << "[PASS] test_pattern_quick_controls_left_top_is_cancel_not_local_history\n";
 }
 
 void test_pattern_quick_controls_length_undo_redo_workflow() {
     SequencerInlineHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
 
     holdPatternQuickControls(h);
     assert(
@@ -702,18 +692,14 @@ void test_pattern_quick_controls_length_undo_redo_workflow() {
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
     assert(h.state.sequencerHistory.undoCount() == 1);
 
-    holdPatternQuickControls(h);
-    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.undoProjectHistory());
     assert(h.state.sequencer.pattern.length.get() == 8);
-    h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(h.state.sequencerHistory.undoCount() == 0);
     assert(h.state.sequencerHistory.redoCount() == 1);
 
-    holdPatternQuickControls(h);
-    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.redoProjectHistory());
     assert(h.state.sequencer.pattern.length.get() == appliedLength);
-    h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(h.state.sequencerHistory.undoCount() == 1);
     assert(h.state.sequencerHistory.redoCount() == 0);
@@ -723,7 +709,7 @@ void test_pattern_quick_controls_length_undo_redo_workflow() {
 
 void test_pattern_quick_controls_offset_undo_redo_workflow() {
     SequencerInlineHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.pattern.note[0] = 60;
     h.state.sequencer.pattern.note[1] = 62;
     h.state.sequencer.pattern.note[7] = 67;
@@ -755,8 +741,7 @@ void test_pattern_quick_controls_offset_undo_redo_workflow() {
 
     assert(h.state.sequencerHistory.undoCount() == 1);
 
-    holdPatternQuickControls(h);
-    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.undoProjectHistory());
     assert(h.state.sequencer.pattern.isEnabled(0));
     assert(h.state.sequencer.pattern.isEnabled(1));
     assert(h.state.sequencer.pattern.isEnabled(7));
@@ -767,12 +752,9 @@ void test_pattern_quick_controls_offset_undo_redo_workflow() {
     assert(h.state.sequencer.pattern.velocity[0] == 80);
     assert(h.state.sequencer.pattern.velocity[1] == 91);
     assert(h.state.sequencer.pattern.velocity[7] == 103);
-    h.release(Config::ButtonID::LEFT_CENTER);
-
     assert(h.state.sequencerHistory.redoCount() == 1);
 
-    holdPatternQuickControls(h);
-    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.redoProjectHistory());
     assert(h.state.sequencer.pattern.isEnabled(0));
     assert(h.state.sequencer.pattern.isEnabled(6));
     assert(h.state.sequencer.pattern.isEnabled(7));
@@ -783,8 +765,6 @@ void test_pattern_quick_controls_offset_undo_redo_workflow() {
     assert(h.state.sequencer.pattern.velocity[0] == 91);
     assert(h.state.sequencer.pattern.velocity[6] == 103);
     assert(h.state.sequencer.pattern.velocity[7] == 80);
-    h.release(Config::ButtonID::LEFT_CENTER);
-
     std::cout << "[PASS] test_pattern_quick_controls_offset_undo_redo_workflow\n";
 }
 
@@ -805,17 +785,13 @@ void test_pattern_quick_controls_division_undo_redo_workflow() {
 
     assert(h.state.sequencerHistory.undoCount() == 1);
 
-    holdPatternQuickControls(h);
-    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.undoProjectHistory());
     assert(h.state.sequencer.pattern.stepsPerBeat.get() == initialDivision);
-    h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(h.state.sequencerHistory.redoCount() == 1);
 
-    holdPatternQuickControls(h);
-    h.tap(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.redoProjectHistory());
     assert(h.state.sequencer.pattern.stepsPerBeat.get() == appliedDivision);
-    h.release(Config::ButtonID::LEFT_CENTER);
 
     std::cout << "[PASS] test_pattern_quick_controls_division_undo_redo_workflow\n";
 }
@@ -887,16 +863,14 @@ void test_pattern_quick_controls_opt_edits_focused_pattern_prop_without_hold() {
 
 void test_pattern_quick_controls_undo_release_does_not_record_inverse_action() {
     SequencerInlineHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
 
     holdPatternQuickControls(h);
     h.turn(Config::EncoderID::OPT, 1.0f);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.sequencerHistory.undoCount() == 1);
 
-    holdPatternQuickControls(h);
-    h.tap(Config::ButtonID::LEFT_TOP);
-    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.undoProjectHistory());
 
     assert(h.state.sequencer.pattern.length.get() == 8);
     assert(h.state.sequencerHistory.undoCount() == 0);
@@ -918,11 +892,6 @@ void test_pattern_quick_controls_respect_blocking_states() {
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
 
     h.state.sequencer.stepPropertyInlineSelector.reset();
-    h.state.trackNavigation.selection.active.set(true);
-    h.tap(Config::ButtonID::LEFT_CENTER);
-    assert(!h.state.sequencer.patternQuickControls.selecting.get());
-
-    h.state.trackNavigation.selection.active.set(false);
     h.state.sequencer.structureUi.stepSelection.active.set(true);
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
@@ -936,7 +905,7 @@ int main() {
     test_property_selector_left_top_closes_without_reverting_selected_property();
     test_property_selector_apply_keeps_selected_property();
     test_property_selector_does_not_open_when_pattern_quick_controls_are_active();
-    test_track_focus_is_projected_as_pattern_outside_structure();
+    test_track_focus_remains_distinct_from_pattern_outside_structure();
     test_state_is_a_direct_step_property();
     test_property_selector_is_unavailable_during_step_selection();
     test_property_selector_edits_active_property_variation_range();
@@ -947,11 +916,11 @@ int main() {
     test_property_selector_does_not_edit_probability_variation();
     test_pattern_quick_controls_do_not_edit_variation_range();
     test_pattern_pitch_settings_are_undoable();
-    test_pattern_quick_controls_short_tap_does_not_arm_history_layer();
-    test_pattern_quick_controls_hold_arms_history_layer();
+    test_pattern_quick_controls_short_tap_opens_one_edit_layer();
+    test_pattern_quick_controls_hold_keeps_one_edit_layer();
     test_pattern_quick_controls_are_pattern_focus_only();
     test_pattern_quick_controls_open_defaults_to_length_and_cycles_order();
-    test_pattern_quick_controls_history_noops_do_not_cancel_or_open_property_selector();
+    test_pattern_quick_controls_left_top_is_cancel_not_local_history();
     test_pattern_quick_controls_length_undo_redo_workflow();
     test_pattern_quick_controls_offset_undo_redo_workflow();
     test_pattern_quick_controls_division_undo_redo_workflow();

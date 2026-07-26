@@ -2,11 +2,12 @@
 
 #include <oc/state/Signal.hpp>
 
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -28,6 +29,7 @@ namespace core::ui::sequencer {
 struct SequencerViewModelSource {
     const core::state::sequencer::SequencerState& sequencer;
     const core::state::sequencer::SequencerTrackBankState& tracks;
+    const core::state::project::ProjectTrackState& projectTracks;
     const core::state::TrackNavigationState& trackNavigation;
     const oc::state::Signal<
         core::state::StructureNavigationFocus,

@@ -4,6 +4,8 @@
 
 #include <oc/note/sequencer/StepSequencerScale.hpp>
 
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
+
 namespace core::state::sequencer::content_view_internal {
 FLASHMEM int normalizedToInclusiveInt(float normalized, int maxInclusive) {
     if (maxInclusive <= 0) return 0;
@@ -24,63 +26,6 @@ FLASHMEM float indexToNormalized(int index, int itemCount) {
     if (itemCount <= 1) return 0.0f;
     return static_cast<float>(std::clamp(index, 0, itemCount - 1)) /
            static_cast<float>(itemCount - 1);
-}
-
-FLASHMEM bool usesScaleDegreePitchEdit(
-    StepProperty property,
-    SequencerPitchEditMode mode,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-) {
-    scaleSettings.clamp();
-    return property == StepProperty::NOTE &&
-           (scaleSettings.isConstrained() || mode == SequencerPitchEditMode::SCALE_DEGREES) &&
-           scaleSettings.type != oc::note::sequencer::StepSequencerScaleType::Chromatic;
-}
-
-FLASHMEM int countScaleNotes(oc::note::sequencer::StepSequencerScaleSettings scaleSettings) {
-    scaleSettings.clamp();
-    int count = 0;
-    for (int note = 0; note <= 127; ++note) {
-        if (oc::note::sequencer::scaleContainsNote(scaleSettings, static_cast<uint8_t>(note))) {
-            ++count;
-        }
-    }
-    return std::max(count, 1);
-}
-
-FLASHMEM int scaleDegreeIndexForNote(
-    uint8_t note,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-) {
-    scaleSettings.clamp();
-    const uint8_t resolved =
-        oc::note::sequencer::resolveScaleNote(note, scaleSettings).outputNote;
-    int index = 0;
-    for (int candidate = 0; candidate <= 127; ++candidate) {
-        if (!oc::note::sequencer::scaleContainsNote(scaleSettings, static_cast<uint8_t>(candidate))) {
-            continue;
-        }
-        if (candidate >= resolved) return index;
-        ++index;
-    }
-    return std::max(0, index - 1);
-}
-
-FLASHMEM uint8_t scaleNoteForDegreeIndex(
-    int index,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-) {
-    scaleSettings.clamp();
-    const int clampedIndex = std::clamp(index, 0, countScaleNotes(scaleSettings) - 1);
-    int current = 0;
-    for (int note = 0; note <= 127; ++note) {
-        if (!oc::note::sequencer::scaleContainsNote(scaleSettings, static_cast<uint8_t>(note))) {
-            continue;
-        }
-        if (current == clampedIndex) return static_cast<uint8_t>(note);
-        ++current;
-    }
-    return 0;
 }
 
 FLASHMEM uint8_t normalizedToMidi7(float normalized) {
@@ -316,19 +261,21 @@ FLASHMEM ResolvedStep rootBase(const SequencerState& sequencer, uint8_t rootStep
     if (rootStep >= SequencerState::MAX_STEPS) return {};
     return {
         .valid = true,
-        .enabled = sequencer.pattern.enabledMask.get().test(rootStep),
-        .note = sequencer.pattern.note[rootStep],
-        .velocity = sequencer.pattern.velocity[rootStep],
-        .gate = sequencer.pattern.gate[rootStep],
-        .nudge = sequencer.pattern.nudge[rootStep],
-        .probability = SequencerState::clampProbability(sequencer.pattern.probability[rootStep]),
+        .enabled = authoringPattern(sequencer).enabledMask.get().test(rootStep),
+        .note = authoringPattern(sequencer).note[rootStep],
+        .velocity = authoringPattern(sequencer).velocity[rootStep],
+        .gate = authoringPattern(sequencer).gate[rootStep],
+        .nudge = authoringPattern(sequencer).nudge[rootStep],
+        .probability = SequencerState::clampProbability(
+            authoringPattern(sequencer).probability[rootStep]
+        ),
         .chordState = oc::note::sequencer::defaultRootChordState(),
         .inheritedChord = {},
     };
 }
 
 FLASHMEM const Node* graphNode(const SequencerState& sequencer, SequencerGraphNodeId nodeId) {
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     return graph ? graph->stepNode(nodeId) : nullptr;
 }
 
@@ -619,7 +566,6 @@ FLASHMEM bool pushFrame(
     sequencer.page.set(0);
     sequencer.focusedStep.set(0);
     sequencer.structureUi.previewAddPageSlot.set(false);
-    sequencer.structureUi.pageSelection.reset(core::state::StructureSelectionScope::PAGE);
     sequencer.structureUi.stepSelection.reset();
     view.bump();
     return true;
@@ -629,7 +575,7 @@ FLASHMEM bool validateFrame(
     const SequencerState& sequencer,
     SequencerContentViewFrame& frame
 ) {
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     if (graph == nullptr) return false;
 
     if (frame.kind == SequencerContentViewKind::MICRO_SEQUENCE) {
@@ -660,7 +606,7 @@ FLASHMEM ResolvedStep resolveOwnerStepAtDepth(
     if (view.stackDepth == 0 || view.stackDepth > view.frames.size()) return {};
     if (frameDepth == 0 || frameDepth > view.stackDepth) return {};
 
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     if (graph == nullptr) return {};
 
     const auto& first = view.frames[0];
@@ -699,7 +645,7 @@ FLASHMEM SequencerGraphNodeId stepNodeIdForFrame(
     const SequencerContentViewFrame& frame,
     uint8_t step
 ) {
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     if (graph == nullptr || step >= frame.length) return kInvalidId;
 
     if (frame.kind == SequencerContentViewKind::MICRO_SEQUENCE) {
@@ -758,7 +704,7 @@ FLASHMEM bool setNodeProperty(
                 scaleSettings
             );
             changed = setNodeNoteOffset(
-                sequencer.pattern,
+        authoringPattern(sequencer),
                 nodeId,
                 static_cast<int8_t>(std::clamp(offset, -128, 127))
             );
@@ -766,34 +712,37 @@ FLASHMEM bool setNodeProperty(
         }
         case StepProperty::VELOCITY:
             changed = setNodeVelocityOffset(
-                sequencer.pattern,
+        authoringPattern(sequencer),
                 nodeId,
                 static_cast<int16_t>(targetValue - baseValue)
             );
             break;
         case StepProperty::GATE:
             changed = setNodeGateOffset(
-                sequencer.pattern,
+        authoringPattern(sequencer),
                 nodeId,
                 static_cast<int16_t>(targetValue - baseValue)
             );
             break;
         case StepProperty::NUDGE:
             changed = setNodeNudgeOffset(
-                sequencer.pattern,
+        authoringPattern(sequencer),
                 nodeId,
                 static_cast<int8_t>(std::clamp(targetValue - baseValue, -128, 127))
             );
             break;
         case StepProperty::PROBABILITY:
             changed = setNodeProbabilityOffset(
-                sequencer.pattern,
+        authoringPattern(sequencer),
                 nodeId,
                 static_cast<int16_t>(targetValue - baseValue)
             );
             break;
     }
-    if (changed) sequencer.contentView.bump();
+    if (changed) {
+        sequencer.contentView.bump();
+        notifyStepContentDraftMutation(sequencer);
+    }
     return changed;
 }
 

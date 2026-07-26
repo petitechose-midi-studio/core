@@ -3,7 +3,7 @@
 # Purpose: validates the common grammar: LEFT_BOTTOM + Macro opens Edit,
 # NAV focuses Automation, LEFT_BOTTOM + NAV chooses Playback, OPT resumes Auto.
 # Expect: capture_changed:automation_recorded=manual_override_active, capture_changed:manual_override_active=macro_editor_open, capture_changed:automation_playback_shortcut=automation_restored_auto
-# Expect: semantic:automation_restored_auto:effect=edit_macro_context_property
+# Expect: semantic:automation_playback_shortcut:effect=select_macro_context_property, semantic:automation_restored_auto:effect=edit_macro_context_property
 
 0 scenario macro-automation-clean
 50 capture screen macro_ready
@@ -27,14 +27,15 @@
 2260 encoder NAV 1
 2400 capture screen automation_property_selected
 
-# Hold LEFT_BOTTOM to expose Automation properties. Playback is the default;
-# setting it On also releases the Manual override without deleting the lane.
+# Hold LEFT_BOTTOM to expose Automation properties. Record Macro is first, so
+# one NAV step selects Playback before OPT resumes Auto.
 2520 button LEFT_BOTTOM down
-2660 capture screen automation_playback_shortcut
-2800 encoder OPT 1.00
-2940 capture screen automation_restored_auto
-3040 button LEFT_BOTTOM up
+2620 encoder NAV 1
+2700 capture screen automation_playback_shortcut
+2840 encoder OPT 1.00
+2980 capture screen automation_restored_auto
+3080 button LEFT_BOTTOM up
 
 # Back closes Macro Edit only.
-3180 tap LEFT_TOP 60
-3340 capture screen macro_editor_closed
+3220 tap LEFT_TOP 60
+3380 capture screen macro_editor_closed

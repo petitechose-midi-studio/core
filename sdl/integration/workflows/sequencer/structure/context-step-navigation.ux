@@ -1,0 +1,57 @@
+# UX workflow: shared Sequencer context grammar and root Step retargeting.
+# Purpose: proves NAV hold+turn Track/Pattern/Step selection, short NAV opening
+# the focused Step editor, LEFT_CENTER+NAV retargeting over the real Pattern,
+# and direct Track Editor close without losing the musical caller.
+# Expect: semantic:pattern_context_preview:mode=sequencer.context_selector, semantic:pattern_context_preview:effect=show_context, semantic:pattern_context_preview:target=pattern, semantic:pattern_context_preview:projection=preview
+# Expect: semantic:step_context_applied:effect=apply_context, semantic:step_context_applied:target=step, semantic:step_context_applied:projection=applied
+# Expect: semantic:post_release_nav_turn:mode=sequencer.step, semantic:post_release_nav_turn:effect=move_step, semantic:post_release_nav_turn:target=step
+# Expect: semantic:step_1_editor:mode=sequencer.step_edit, semantic:step_1_editor:effect=open_step_editor, semantic:step_1_editor:target_step=0, semantic:step_1_editor:target_count=8, semantic:step_1_editor:target_page=0, semantic:step_1_editor:step_on=1
+# Expect: semantic:step_2_retargeted:mode=sequencer.step_edit, semantic:step_2_retargeted:effect=retarget_step, semantic:step_2_retargeted:target_step=1, semantic:step_2_retargeted:target_count=8, semantic:step_2_retargeted:target_page=0, semantic:step_2_retargeted:step_on=0
+# Expect: semantic:step_1_retargeted_back:effect=retarget_step, semantic:step_1_retargeted_back:target_step=0, semantic:step_1_retargeted_back:step_on=1
+# Expect: semantic:track_editor_open:mode=sequencer.track_editor, semantic:track_editor_open:target_track=0, semantic:track_editor_open:property=channel
+# Expect: capture_changed:track_context_preview=pattern_context_preview, capture_changed:step_1_editor=step_2_retargeted, capture_match:step_1_editor=step_1_retargeted_back
+
+0 scenario sequencer
+
+# The selector is visible only while NAV is held. Visit Track and return to
+# Pattern before selecting Step; release commits Step.
+100 button NAV down
+180 capture screen pattern_context_preview
+240 encoder NAV -1
+320 capture screen track_context_preview
+380 encoder NAV 1
+460 encoder NAV 1
+520 button NAV up
+1040 capture screen step_context_applied
+
+# The first ordinary NAV turn after the release must move the Step cursor. It
+# must never inherit the completed context-selector classification.
+1120 encoder NAV 1
+1240 capture screen post_release_nav_turn
+1320 encoder NAV -1
+
+# Toggle the focused Step On, then a short NAV tap opens its editor directly.
+1440 tap MACRO_1 60
+1640 tap NAV 60
+1880 capture screen step_1_editor
+
+# LEFT_CENTER modifies NAV locally: move to Step 2 (Off), then back to Step 1
+# (On). Position, Pattern length, page and state remain explicit in semantics.
+1980 button LEFT_CENTER down
+2060 encoder NAV 1
+2280 capture screen step_2_retargeted
+2380 encoder NAV -1
+2600 capture screen step_1_retargeted_back
+2700 button LEFT_CENTER up
+2900 tap LEFT_TOP 60
+
+# Step -> Track wraps in one held turn. A short NAV tap opens the retained
+# Track Editor; LEFT_TOP closes it directly to the musical caller.
+3100 button NAV down
+3160 encoder NAV 1
+3220 button NAV up
+3440 capture screen track_context_applied
+3540 tap NAV 60
+3780 capture screen track_editor_open
+4220 tap LEFT_TOP 60
+4460 capture screen musical_caller_restored

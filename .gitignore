@@ -26,9 +26,19 @@ Thumbs.db
 
 # Build artifacts
 *.o
+*.obj
 *.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
 *.elf
 *.hex
+*.map
+*.wasm
 *.bin
 
 # Logs
@@ -49,6 +59,7 @@ compile_commands_teensy.json
 build/
 
 # Desktop build artifacts
+/bin/
 sdl/build/
 sdl/bin/
 sdl/deps/

@@ -8,6 +8,9 @@
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/project/ProjectDomainRules.hpp"
+#include "state/project/ProjectMenuModel.hpp"
+#include "state/project/ProjectTrackDomainServices.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 
@@ -15,7 +18,10 @@ namespace core::state::project {
 
 namespace {
 
-FLASHMEM ProjectState projectStateFromRuntime(const core::state::CoreState& state) {
+FLASHMEM ProjectState projectStateFromRuntime(
+    const core::state::CoreState& state,
+    const ProjectTrackSnapshot&
+) {
     ProjectState project = state.project;
 
     project.transport.tempoBpm = sanitizeProjectTempoBpm(state.statusBar.tempo.get());
@@ -30,13 +36,12 @@ FLASHMEM ProjectState projectStateFromRuntime(const core::state::CoreState& stat
 
     project.editing.stepPasteMode =
         sanitizeProjectStepPasteMode(state.projectNavigation.stepPasteMode);
-
-    const uint8_t activeTrack = state.sequencerTracks.activeTrackIndex();
-    for (uint8_t i = 0; i < project.routing.outputMidiChannels.size(); ++i) {
-        const uint8_t channel = (i == activeTrack)
-            ? state.sequencer.pattern.midiChannel.get()
-            : state.sequencerTracks.track(i).midiChannel.get();
-        project.routing.outputMidiChannels[i] = sanitizeProjectMidiChannel(channel);
+    for (uint8_t lane = 0; lane < PROJECT_CC_LANE_DEFAULT_COUNT; ++lane) {
+        project.editing.ccLaneDefaultControllers[lane] =
+            sanitizeProjectCcLaneDefault(
+                state.projectNavigation.ccLaneDefaultControllers[lane],
+                lane
+            );
     }
 
     return project;
@@ -67,20 +72,13 @@ FLASHMEM void applyProjectEditing(core::state::CoreState& state,
                                   ProjectEditingState editing) {
     state.projectNavigation.stepPasteMode =
         sanitizeProjectStepPasteMode(editing.stepPasteMode);
-}
-
-FLASHMEM void applyProjectRouting(core::state::CoreState& state,
-                                  const ProjectRoutingState& routing) {
-    for (uint8_t i = 0; i < routing.outputMidiChannels.size(); ++i) {
-        state.sequencerTracks.track(i).midiChannel.set(
-            sanitizeProjectMidiChannel(routing.outputMidiChannels[i])
-        );
+    for (uint8_t lane = 0; lane < PROJECT_CC_LANE_DEFAULT_COUNT; ++lane) {
+        state.projectNavigation.ccLaneDefaultControllers[lane] =
+            sanitizeProjectCcLaneDefault(
+                editing.ccLaneDefaultControllers[lane],
+                lane
+            );
     }
-
-    const uint8_t activeTrack = state.sequencerTracks.activeTrackIndex();
-    state.sequencer.pattern.midiChannel.set(
-        sanitizeProjectMidiChannel(routing.outputMidiChannels[activeTrack])
-    );
 }
 
 }  // namespace
@@ -88,11 +86,17 @@ FLASHMEM void applyProjectRouting(core::state::CoreState& state,
 FLASHMEM bool ProjectSnapshotCapture::begin(const core::state::CoreState& state,
                                             ProjectSnapshot& snapshot) {
     cancel();
-    if (!snapshot.projectControl) return false;
+    if (!snapshot.projectControl ||
+        state.macroHistory.hasPendingModulatorAuditionTransaction(state.pages) ||
+        state.projectTrackHistory.hasPendingGesture()) {
+        return false;
+    }
 
     state_ = &state;
     snapshot_ = &snapshot;
     modified_counter_ = state.project.metadata.modifiedCounter;
+    authored_revision_ = state.pages.control.authoredRevision;
+    project_track_revision_ = state.projectTracks.revision.get();
     phase_ = Phase::PROJECT;
     return true;
 }
@@ -102,7 +106,11 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
         return {.status = Status::IDLE};
     }
 
-    if (state_->project.metadata.modifiedCounter != modified_counter_) {
+    if (state_->macroHistory.hasPendingModulatorAuditionTransaction(state_->pages) ||
+        state_->projectTrackHistory.hasPendingGesture() ||
+        state_->project.metadata.modifiedCounter != modified_counter_ ||
+        state_->pages.control.authoredRevision != authored_revision_ ||
+        state_->projectTracks.revision.get() != project_track_revision_) {
         const uint32_t modifiedCounter = modified_counter_;
         cancel();
         return {.status = Status::STALE, .modifiedCounter = modifiedCounter};
@@ -113,7 +121,8 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
 
     switch (phase_) {
         case Phase::PROJECT:
-            snapshot_->project = projectStateFromRuntime(*state_);
+            captureProjectTrackSnapshot(state_->projectTracks, snapshot_->projectTracks);
+            snapshot_->project = projectStateFromRuntime(*state_, snapshot_->projectTracks);
             phase_ = Phase::MACROS;
             break;
 
@@ -149,7 +158,10 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
             return {.status = Status::IDLE};
     }
 
-    if (state_->project.metadata.modifiedCounter != modified_counter_) {
+    if (state_->macroHistory.hasPendingModulatorAuditionTransaction(state_->pages) ||
+        state_->project.metadata.modifiedCounter != modified_counter_ ||
+        state_->pages.control.authoredRevision != authored_revision_ ||
+        state_->projectTracks.revision.get() != project_track_revision_) {
         const uint32_t modifiedCounter = modified_counter_;
         cancel();
         return {.status = Status::STALE, .modifiedCounter = modifiedCounter};
@@ -169,6 +181,8 @@ FLASHMEM void ProjectSnapshotCapture::cancel() {
     snapshot_ = nullptr;
     phase_ = Phase::IDLE;
     modified_counter_ = 0;
+    authored_revision_ = 0;
+    project_track_revision_ = 0;
 }
 
 FLASHMEM bool ProjectSnapshotCapture::active() const {
@@ -208,12 +222,24 @@ FLASHMEM bool captureProjectSnapshot(const core::state::CoreState& state, Projec
 
 FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
                                    const ProjectSnapshot& snapshot) {
-    if (!snapshot.projectControl ||
+    if (state.sequencer.stepContentDraft.active.get()) {
+        state.sequencer.stepContentDraft.noteBlockedTransition(
+            core::state::sequencer::
+                SequencerStepContentDraftBlockedTransition::PROJECT_LOAD
+        );
+        return false;
+    }
+    if (state.macroHistory.hasPendingModulatorAuditionTransaction(state.pages) ||
+        !snapshot.projectControl ||
+        !validProjectTrackSnapshot(snapshot.projectTracks) ||
         !core::state::modulation::validProjectModulationDomain(
             snapshot.projectControl->modulation,
             snapshot.projectControl->curves,
             &snapshot.projectControl->automation
         )) {
+        return false;
+    }
+    if (!state.macroHistory.abortPendingModulatorAudition(state.pages)) {
         return false;
     }
     if (!core::state::sequencer::applyHistorySnapshot(
@@ -228,7 +254,6 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     applyProjectTransport(state, state.project.transport);
     applyProjectMusicalContext(state, state.project.musical);
     applyProjectEditing(state, state.project.editing);
-    applyProjectRouting(state, state.project.routing);
 
     state.pages.restoreTracksWithSharedState(
         snapshot.macroTracks,
@@ -238,11 +263,19 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     state.pages.control.authored = *snapshot.projectControl;
     state.pages.control.plan = {};
     state.pages.control.runtime = {};
+    state.pages.control.timeTelemetry = {};
     state.pages.control.sourceScratch.fill(0.0f);
+    state.pages.control.triggerScratch = {};
+    state.pages.control.audition = {};
+    state.pages.control.focus = {};
     state.pages.control.compiledRevision = 0U;
     state.pages.control.runtimeContextHash = 0U;
     state.pages.control.reserved = 0U;
     state.pages.control.markAuthoredMutation();
+    if (applyProjectTrackSnapshot(state.projectTracks, snapshot.projectTracks).status ==
+        ProjectTrackMutationStatus::INVALID_SNAPSHOT) {
+        return false;
+    }
     state.pages.syncSharedTrackState(
         state.sequencerTracks.currentEnabledMask(),
         state.sequencerTracks.activeTrackIndex()
@@ -251,10 +284,13 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
 
     state.sharedTrackEnabledMask.set(state.sequencerTracks.currentEnabledMask());
     state.sharedTrackActive.set(state.sequencerTracks.activeTrackIndex());
-    state.projectNavigation.notifyContentChanged();
     state.clearPendingSequencerApply();
-    state.clearSequencerHistory();
-    state.macroHistory.clear();
+    if (!state.clearProjectHistory()) return false;
+    core::state::project::reconcileProjectModulatorNavigationAfterHistory(
+        state.projectNavigation,
+        state.pages.control.authored.modulation,
+        false
+    );
     state.statusBar.pageName.set(state.pages.activePageData().name);
     // Manual is Project-scoped runtime intent: it survives navigation and UI
     // teardown, but never crosses a load boundary or enters persistence.

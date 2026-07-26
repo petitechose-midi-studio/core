@@ -63,12 +63,13 @@ union ProjectModulationRuntimeSourceTraits {
 struct ProjectModulationRuntimeSource {
     ModulatorId id{};
     ProjectModulationRuntimeSourceParameters parameters{};
-    ModulationTriggerRef trigger{};
+    ModulationTriggerFilter trigger{};
     ModulatorKind kind = ModulatorKind::LFO;
     uint8_t flags = 0;
     ProjectModulationRuntimeSourceTraits traits{};
     uint8_t triggerFlags = 0;
-    uint16_t reserved = 0;
+    uint8_t triggerVelocityMin = 0U;
+    uint8_t triggerVelocityMax = 127U;
 };
 
 struct ProjectModulationRuntimeBinding {
@@ -88,25 +89,21 @@ inline constexpr uint8_t PROJECT_CONTROL_RUNTIME_DESTINATION_FLAG_AUTOMATION_ENA
 
 inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_KIND_COUNT =
     static_cast<uint8_t>(ModulationTriggerKind::TRACK_NOTE) + 1U;
-inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_CHANNEL_BUCKET_COUNT = 17U;
 inline constexpr uint16_t PROJECT_MODULATION_TRIGGER_BUCKET_COUNT =
-    static_cast<uint16_t>(PROJECT_MODULATION_TRACK_COUNT) *
-    PROJECT_MODULATION_TRIGGER_CHANNEL_BUCKET_COUNT;
+    static_cast<uint16_t>(PROJECT_MODULATION_TRACK_COUNT);
 inline constexpr uint16_t PROJECT_MODULATION_TRIGGER_BUCKET_OFFSET_COUNT =
     PROJECT_MODULATION_TRIGGER_BUCKET_COUNT + 1U;
 
 [[nodiscard]] constexpr uint16_t projectModulationTriggerBucketIndex(
+    const ModulationTriggerFilter& trigger
+) {
+    return trigger.track;
+}
+
+[[nodiscard]] constexpr uint16_t projectModulationTriggerBucketIndex(
     const ModulationTriggerRef& trigger
 ) {
-    const uint8_t channel =
-        trigger.channel == PROJECT_MODULATION_TRIGGER_ANY_CHANNEL
-        ? 16U
-        : trigger.channel;
-    return static_cast<uint16_t>(
-        static_cast<uint16_t>(trigger.track) *
-            PROJECT_MODULATION_TRIGGER_CHANNEL_BUCKET_COUNT +
-        channel
-    );
+    return trigger.track;
 }
 
 struct ProjectModulationRuntimeDestination {
@@ -135,14 +132,13 @@ struct ProjectModulationRuntimePlan {
     uint16_t automationCount = 0;
     uint16_t inactiveAutomationCount = 0;
     uint16_t triggerRouteCount = 0;
-    uint16_t triggerWildcardTrackMask = 0;
     uint32_t contextHash = 0;
     std::array<
         ProjectModulationRuntimeSource,
         PROJECT_MODULATOR_CAPACITY
     > sources{};
     /**
-     * Sparse trigger routing compiled by Track/channel. The evaluator visits
+     * Sparse trigger routing compiled by Track. The evaluator visits
      * only sources that can consume one incoming edge instead of rescanning
      * the complete 256-event frame for every source.
      */
@@ -221,18 +217,18 @@ ProjectModulationResolveResult resolveProjectModulationDestination(
     float baseValue
 );
 
-static_assert(sizeof(ProjectModulationRuntimeSource) == 28U);
+static_assert(sizeof(ProjectModulationRuntimeSource) == 32U);
 static_assert(sizeof(ProjectModulationRuntimeLfo) == 12U);
 static_assert(sizeof(ProjectModulationRuntimeCurve) == 12U);
-static_assert(sizeof(ProjectModulationRuntimeSourceParameters) == 12U);
+static_assert(sizeof(ProjectModulationRuntimeSourceParameters) == 16U);
 static_assert(sizeof(ProjectModulationRuntimeLfoTraits) == 3U);
 static_assert(sizeof(ProjectModulationRuntimeAdsrTraits) == 3U);
 static_assert(sizeof(ProjectModulationRuntimeSourceTraits) == 3U);
 static_assert(sizeof(ProjectModulationRuntimeBinding) == 16U);
 static_assert(sizeof(ProjectModulationRuntimeDestination) == 24U);
-static_assert(PROJECT_MODULATION_TRIGGER_BUCKET_COUNT == 272U);
-static_assert(PROJECT_MODULATION_TRIGGER_BUCKET_OFFSET_COUNT == 273U);
-static_assert(sizeof(ProjectModulationRuntimePlan) == 16296U);
+static_assert(PROJECT_MODULATION_TRIGGER_BUCKET_COUNT == 16U);
+static_assert(PROJECT_MODULATION_TRIGGER_BUCKET_OFFSET_COUNT == 17U);
+static_assert(sizeof(ProjectModulationRuntimePlan) == 16552U);
 static_assert(std::is_trivially_copyable_v<ProjectModulationRuntimePlan>);
 
 }  // namespace core::state::modulation

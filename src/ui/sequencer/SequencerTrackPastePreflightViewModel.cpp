@@ -1,6 +1,5 @@
 #include "ui/sequencer/SequencerTrackPastePreflightViewModel.hpp"
 
-#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
 
@@ -21,27 +20,6 @@ FLASHMEM void format(std::array<char, Size>& out, const char* pattern, ...) {
     va_start(args, pattern);
     std::vsnprintf(out.data(), out.size(), pattern, args);
     va_end(args);
-}
-
-template <size_t Size>
-FLASHMEM void append(
-    std::array<char, Size>& out,
-    size_t& used,
-    const char* pattern,
-    ...
-) {
-    if (used >= out.size() - 1U) return;
-    va_list args;
-    va_start(args, pattern);
-    const int written = std::vsnprintf(
-        out.data() + used,
-        out.size() - used,
-        pattern,
-        args
-    );
-    va_end(args);
-    if (written <= 0) return;
-    used = std::min(out.size() - 1U, used + static_cast<size_t>(written));
 }
 
 FLASHMEM const char* reasonLabel(Reason reason) {
@@ -67,53 +45,32 @@ FLASHMEM void formatSummaryMapping(
     const core::state::ClipboardTransferPlan& plan,
     uint8_t fallbackTarget
 ) {
-    size_t used = 0;
-    if (plan.count == 0) {
-        uint8_t ordinal = 0;
-        for (uint8_t source = 0;
-             source < core::state::ClipboardTransferPlan::MAX_ENTRIES;
-             ++source) {
-            if ((plan.sourceMask & static_cast<uint16_t>(1U << source)) == 0) {
-                continue;
-            }
-            if (ordinal > 0) append(out, used, "  ");
-            append(
-                out,
-                used,
-                "T%u>T%u",
-                static_cast<unsigned>(source + 1U),
-                static_cast<unsigned>(fallbackTarget + ordinal + 1U)
-            );
-            ++ordinal;
-        }
-        if (ordinal == 0) append(out, used, "Unavailable");
+    if (!plan.hasEntries()) {
+        format(
+            out,
+            "T%u>?",
+            static_cast<unsigned>(fallbackTarget + 1U)
+        );
         return;
     }
-
-    for (uint8_t i = 0; i < plan.count; ++i) {
-        const auto& entry = plan.entries[i];
-        if (i > 0) append(out, used, "  ");
-        if (entry.targetRouteValid) {
-            append(
-                out,
-                used,
-                "T%u>T%u/C%u",
-                static_cast<unsigned>(entry.sourceTrack + 1U),
-                static_cast<unsigned>(entry.targetTrack + 1U),
-                static_cast<unsigned>(entry.targetMidiChannel + 1U)
-            );
-        } else {
-            append(
-                out,
-                used,
-                "T%u>T%u/--",
-                static_cast<unsigned>(entry.sourceTrack + 1U),
-                static_cast<unsigned>(entry.targetTrack + 1U)
-            );
-        }
+    const auto& entry = plan.entry;
+    if (entry.targetRouteValid) {
+        format(
+            out,
+            "T%u>T%u/C%u",
+            static_cast<unsigned>(entry.sourceTrack + 1U),
+            static_cast<unsigned>(entry.targetTrack + 1U),
+            static_cast<unsigned>(entry.targetMidiChannel + 1U)
+        );
+    } else {
+        format(
+            out,
+            "T%u>T%u/--",
+            static_cast<unsigned>(entry.sourceTrack + 1U),
+            static_cast<unsigned>(entry.targetTrack + 1U)
+        );
     }
 }
-
 struct ActivationProjection {
     bool exact = false;
     bool queued = false;
@@ -133,35 +90,21 @@ FLASHMEM ActivationProjection activationProjection(
         return out;
     }
 
-    uint8_t applied = 0;
-    for (uint8_t i = 0; i < projection.plan.count; ++i) {
-        const uint8_t target = projection.plan.entries[i].targetTrack;
-        if (target >= telemetry.size()) return {};
-        const auto& entry = telemetry[target];
-        if (entry.generation != projection.activationGeneration ||
-            entry.origin != ActivationOrigin::TRACK_PASTE) {
-            return {};
-        }
-        switch (entry.status) {
-            case ActivationStatus::QUEUED:
-                out.queued = true;
-                break;
-            case ActivationStatus::APPLIED:
-                ++applied;
-                break;
-            case ActivationStatus::CANCELLED:
-                out.cancelled = true;
-                break;
-            case ActivationStatus::IDLE:
-            default:
-                return {};
-        }
+    const uint8_t target = projection.plan.entry.targetTrack;
+    if (target >= telemetry.size()) return out;
+    const auto& entry = telemetry[target];
+    if (entry.generation != projection.activationGeneration ||
+        entry.origin != ActivationOrigin::TRACK_PASTE) {
+        return out;
     }
+
     out.exact = true;
-    out.fullyApplied = applied == projection.plan.count;
+    out.queued = entry.status == ActivationStatus::QUEUED;
+    out.fullyApplied = entry.status == ActivationStatus::APPLIED;
+    out.cancelled = entry.status == ActivationStatus::CANCELLED;
+    if (!out.queued && !out.fullyApplied && !out.cancelled) return {};
     return out;
 }
-
 FLASHMEM void projectFocusedMapping(
     SequencerTrackPastePreflightViewModel& out,
     const SequencerTrackPasteProjection& projection,
@@ -170,13 +113,9 @@ FLASHMEM void projectFocusedMapping(
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>& telemetry
 ) {
     if (!projection.plan.hasEntries()) return;
-    const uint8_t index = std::min<uint8_t>(
-        projection.focusedIndex,
-        static_cast<uint8_t>(projection.plan.count - 1U)
-    );
-    const auto& entry = projection.plan.entries[index];
-    out.mappingIndex = index;
-    out.mappingCount = projection.plan.count;
+    const auto& entry = projection.plan.entry;
+    out.mappingIndex = 0;
+    out.mappingCount = 1;
     out.sourceTrack = entry.sourceTrack;
     out.targetTrack = entry.targetTrack;
     out.inheritedLaneCount = entry.inheritedLaneCount;
@@ -193,68 +132,39 @@ FLASHMEM void projectFocusedMapping(
         }
     }
 }
-
 FLASHMEM void formatSummary(
     SequencerTrackPastePreflightViewModel& out,
     const SequencerTrackPasteProjection& projection
 ) {
-    uint8_t freeCount = 0;
-    uint8_t overwriteCount = 0;
-    uint8_t missingRouteCount = 0;
-    for (uint8_t i = 0; i < projection.plan.count; ++i) {
-        const auto& entry = projection.plan.entries[i];
-        entry.targetKind == core::state::ClipboardTransferTargetKind::FREE
-            ? ++freeCount
-            : ++overwriteCount;
-        if (!entry.targetRouteValid) ++missingRouteCount;
-    }
-    format(
-        out.header,
-        "Track paste | %u Track%s",
-        static_cast<unsigned>(projection.plan.count),
-        projection.plan.count == 1 ? "" : "s"
-    );
+    const auto& entry = projection.plan.entry;
+    format(out.header, "Track paste | 1 Track");
     formatSummaryMapping(out.mapping, projection.plan, projection.targetTrack);
     format(
         out.footprint,
-        "%u Free | %u Overwrite | Mute kept",
-        static_cast<unsigned>(freeCount),
-        static_cast<unsigned>(overwriteCount)
+        "%s | Mute kept",
+        entry.targetKind == core::state::ClipboardTransferTargetKind::FREE
+            ? "Free"
+            : "Overwrite"
     );
-    if (missingRouteCount == 0) {
-        format(out.route, "Routes | target channels kept live");
+    if (entry.targetRouteValid) {
+        format(out.route, "Route | target channel kept live");
     } else {
-        format(
-            out.route,
-            "Routes | %u target%s silent",
-            static_cast<unsigned>(missingRouteCount),
-            missingRouteCount == 1 ? "" : "s"
-        );
+        format(out.route, "Route | target stays silent");
     }
     format(
         out.laneBindings,
         "CC | %u inherit target | %u pinned",
-        static_cast<unsigned>(projection.plan.inheritedLaneCount),
-        static_cast<unsigned>(projection.plan.pinnedLaneCount)
+        static_cast<unsigned>(entry.inheritedLaneCount),
+        static_cast<unsigned>(entry.pinnedLaneCount)
     );
 }
-
 FLASHMEM void formatDetail(
     SequencerTrackPastePreflightViewModel& out,
     const SequencerTrackPasteProjection& projection
 ) {
     if (!projection.plan.hasEntries()) return;
-    const uint8_t index = std::min<uint8_t>(
-        projection.focusedIndex,
-        static_cast<uint8_t>(projection.plan.count - 1U)
-    );
-    const auto& entry = projection.plan.entries[index];
-    format(
-        out.header,
-        "Track paste | %u/%u",
-        static_cast<unsigned>(index + 1U),
-        static_cast<unsigned>(projection.plan.count)
-    );
+    const auto& entry = projection.plan.entry;
+    format(out.header, "Track paste | 1/1");
     if (entry.targetRouteValid) {
         format(
             out.mapping,
@@ -291,7 +201,6 @@ FLASHMEM void formatDetail(
         static_cast<unsigned>(entry.pinnedLaneCount)
     );
 }
-
 }  // namespace
 
 FLASHMEM SequencerTrackPastePreflightViewModel

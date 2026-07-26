@@ -59,8 +59,7 @@ public:
         if (autosave_) {
             autosave_->update(
                 state_,
-                oc::time::millis(),
-                state_.hasPendingProjectMutationCoalescing()
+                oc::time::millis()
             );
         }
     }

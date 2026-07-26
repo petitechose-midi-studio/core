@@ -25,6 +25,11 @@ bool commitHistory(core::state::sequencer::SequencerState& sequencer,
                    SequencerHistoryDomainServices& history,
                    StepEditHistorySnapshot& historySnapshot,
                    bool& historySnapshotValid);
+bool retargetRootStep(core::state::sequencer::SequencerState& sequencer,
+                      SequencerHistoryDomainServices& history,
+                      StepEditHistorySnapshot& historySnapshot,
+                      bool& historySnapshotValid,
+                      int direction);
 bool backToParentContent(core::state::sequencer::SequencerState& sequencer,
                          SequencerHistoryDomainServices& history,
                          StepEditHistorySnapshot& historySnapshot,

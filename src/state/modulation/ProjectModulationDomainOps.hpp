@@ -77,7 +77,9 @@ struct ModulationBindingDraft {
 
 struct ModulationTriggerDraft {
     ModulatorId sourceId{};
-    ModulationTriggerRef trigger{};
+    ModulationTriggerFilter trigger{};
+    uint8_t velocityMin = 0U;
+    uint8_t velocityMax = 127U;
     bool enabled = true;
 };
 
@@ -276,8 +278,10 @@ ProjectModulationResult addProjectModulationTrigger(
 ProjectModulationResult setProjectModulationTrigger(
     ProjectModulationState& state,
     ModulatorId sourceId,
-    const ModulationTriggerRef& trigger,
-    bool enabled
+    const ModulationTriggerFilter& trigger,
+    bool enabled,
+    uint8_t velocityMin = 0U,
+    uint8_t velocityMax = 127U
 );
 ProjectModulationResult removeProjectModulationTrigger(
     ProjectModulationState& state,

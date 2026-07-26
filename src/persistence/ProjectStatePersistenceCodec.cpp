@@ -1,12 +1,10 @@
 #include "persistence/ProjectStatePersistenceCodec.hpp"
 
-#include <array>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/PersistenceBinaryCodec.hpp"
-#include "persistence/ProjectChunkMigration.hpp"
 #include "state/project/ProjectDomainRules.hpp"
 
 namespace core::persistence::project_state_codec {
@@ -14,7 +12,6 @@ namespace core::persistence::project_state_codec {
 namespace {
 
 namespace project_file = core::persistence::project_file;
-namespace migration = core::persistence::project_migration;
 namespace binary = core::persistence::binary_codec;
 
 constexpr uint8_t kMetaFlagDirty = 1U << 0U;
@@ -70,7 +67,8 @@ FLASHMEM bool readPayload(const project_file::DecodedChunkView* chunk,
                           bool (*decodePayload)(const uint8_t*, uint32_t, Payload&),
                           project_file::LoadReport* report) {
     if (chunk == nullptr) return false;
-    if (chunk->versionMajor > PROJECT_STATE_CHUNK_VERSION_MAJOR) {
+    if (chunk->versionMajor != PROJECT_STATE_CHUNK_VERSION_MAJOR ||
+        chunk->versionMinor != PROJECT_STATE_CHUNK_VERSION_MINOR) {
         addReport(report,
                   project_file::LoadSeverity::WARNING,
                   project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
@@ -78,48 +76,6 @@ FLASHMEM bool readPayload(const project_file::DecodedChunkView* chunk,
                   chunk->versionMajor,
                   chunk->versionMinor);
         return false;
-    }
-    const bool needsMigration =
-        chunk->versionMajor < PROJECT_STATE_CHUNK_VERSION_MAJOR ||
-        (chunk->versionMajor == PROJECT_STATE_CHUNK_VERSION_MAJOR &&
-         chunk->versionMinor < PROJECT_STATE_CHUNK_VERSION_MINOR);
-    if (needsMigration) {
-        std::array<uint8_t, PayloadSize> migratedBytes{};
-        const auto migrated = migration::migrateToCurrent(
-            *chunk,
-            migratedBytes.data(),
-            static_cast<uint32_t>(migratedBytes.size())
-        );
-        switch (migrated.status) {
-            case migration::Status::MIGRATED:
-                addReport(report,
-                          project_file::LoadSeverity::INFO,
-                          project_file::LoadCode::MIGRATED_CHUNK,
-                          chunk->id,
-                          chunk->versionMajor,
-                          chunk->versionMinor);
-                return migrated.bytesWritten == PayloadSize &&
-                       decodePayload(migratedBytes.data(), PayloadSize, out);
-            case migration::Status::INVALID_PAYLOAD:
-            case migration::Status::OUTPUT_TOO_SMALL:
-                addReport(report,
-                          project_file::LoadSeverity::ERROR,
-                          project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
-                          chunk->id,
-                          chunk->versionMajor,
-                          chunk->versionMinor);
-                return false;
-            case migration::Status::UNSUPPORTED:
-            case migration::Status::NOT_NEEDED:
-            default:
-                addReport(report,
-                          project_file::LoadSeverity::WARNING,
-                          project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
-                          chunk->id,
-                          chunk->versionMajor,
-                          chunk->versionMinor);
-                return false;
-        }
     }
     if (chunk->size != PayloadSize || chunk->data == nullptr) {
         addReport(report,
@@ -180,11 +136,6 @@ FLASHMEM void applyTransportToProject(const ProjectTransportPayload& payload,
 FLASHMEM void applyMusicalToProject(const ProjectMusicalContextPayload& payload,
                                     core::state::project::ProjectState& target) {
     applyMusicalContextPayload(payload, target.musical);
-}
-
-FLASHMEM void applyRoutingToProject(const ProjectRoutingPayload& payload,
-                                    core::state::project::ProjectState& target) {
-    applyRoutingPayload(payload, target.routing);
 }
 
 FLASHMEM void applyEditingToProject(const ProjectEditingPayload& payload,
@@ -336,59 +287,44 @@ FLASHMEM void applyMusicalContextPayload(const ProjectMusicalContextPayload& pay
     target.clipsInheritScale = (payload.flags & kMusicalFlagClipsInheritScale) != 0;
 }
 
-FLASHMEM void fillRoutingPayload(const core::state::project::ProjectRoutingState& source,
-                                 ProjectRoutingPayload& out) {
-    for (uint8_t i = 0; i < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
-        out.outputMidiChannels[i] =
-            core::state::project::sanitizeProjectMidiChannel(source.outputMidiChannels[i]);
-    }
-}
-
-FLASHMEM bool encodeRoutingPayload(const ProjectRoutingPayload& payload,
-                                   uint8_t* out,
-                                   uint32_t outCapacity) {
-    if (outCapacity != PROJECT_ROUTING_PAYLOAD_SIZE) return false;
-    binary::Writer writer(out, outCapacity);
-    return writer.writeBytes(payload.outputMidiChannels,
-                             PROJECT_ROUTING_PAYLOAD_SIZE) &&
-           writer.ok() &&
-           writer.offset() == PROJECT_ROUTING_PAYLOAD_SIZE;
-}
-
-FLASHMEM bool decodeRoutingPayload(const uint8_t* data,
-                                   uint32_t size,
-                                   ProjectRoutingPayload& out) {
-    if (size != PROJECT_ROUTING_PAYLOAD_SIZE) return false;
-    binary::Reader reader(data, size);
-    return reader.readBytes(out.outputMidiChannels, PROJECT_ROUTING_PAYLOAD_SIZE) &&
-           reader.ok() &&
-           reader.offset() == PROJECT_ROUTING_PAYLOAD_SIZE;
-}
-
-FLASHMEM void applyRoutingPayload(const ProjectRoutingPayload& payload,
-                                  core::state::project::ProjectRoutingState& target) {
-    for (uint8_t i = 0; i < target.outputMidiChannels.size(); ++i) {
-        target.outputMidiChannels[i] =
-            core::state::project::sanitizeProjectMidiChannel(payload.outputMidiChannels[i]);
-    }
-}
-
 FLASHMEM void fillEditingPayload(const core::state::project::ProjectEditingState& source,
                                  ProjectEditingPayload& out) {
     out.stepPasteMode = static_cast<uint8_t>(
         core::state::project::sanitizeProjectStepPasteMode(source.stepPasteMode)
     );
+    out.ccLaneDefaultsMarker = PROJECT_EDITING_CC_LANE_DEFAULTS_MARKER;
+    for (uint8_t lane = 0;
+         lane < core::state::project::PROJECT_CC_LANE_DEFAULT_COUNT;
+         ++lane) {
+        out.ccLaneDefaultControllers[lane] =
+            core::state::project::sanitizeProjectCcLaneDefault(
+                source.ccLaneDefaultControllers[lane],
+                lane
+            );
+    }
 }
 
 FLASHMEM bool encodeEditingPayload(const ProjectEditingPayload& payload,
                                    uint8_t* out,
                                    uint32_t outCapacity) {
-    if (outCapacity != PROJECT_EDITING_PAYLOAD_SIZE) return false;
+    if (out == nullptr || outCapacity != PROJECT_EDITING_PAYLOAD_SIZE ||
+        payload.stepPasteMode >=
+            core::state::project::PROJECT_STEP_PASTE_MODE_COUNT ||
+        payload.ccLaneDefaultsMarker !=
+            PROJECT_EDITING_CC_LANE_DEFAULTS_MARKER) {
+        return false;
+    }
+    for (const uint8_t controller : payload.ccLaneDefaultControllers) {
+        if (!core::state::project::validProjectMidiCc(controller)) return false;
+    }
     binary::Writer writer(out, outCapacity);
     return writer.writeU8(payload.stepPasteMode) &&
-           writer.writeU8(0) &&
+           writer.writeU8(payload.ccLaneDefaultsMarker) &&
+           writer.writeBytes(
+               payload.ccLaneDefaultControllers,
+               core::state::project::PROJECT_CC_LANE_DEFAULT_COUNT
+           ) &&
            writer.writeU16(0) &&
-           writer.writeU32(0) &&
            writer.ok() &&
            writer.offset() == PROJECT_EDITING_PAYLOAD_SIZE;
 }
@@ -396,18 +332,48 @@ FLASHMEM bool encodeEditingPayload(const ProjectEditingPayload& payload,
 FLASHMEM bool decodeEditingPayload(const uint8_t* data,
                                    uint32_t size,
                                    ProjectEditingPayload& out) {
-    if (size != PROJECT_EDITING_PAYLOAD_SIZE) return false;
+    if (data == nullptr || size != PROJECT_EDITING_PAYLOAD_SIZE) return false;
+    ProjectEditingPayload pending{};
+    uint16_t reserved = 0;
     binary::Reader reader(data, size);
-    return reader.readU8(out.stepPasteMode) &&
-           reader.skip(7) &&
-           reader.ok() &&
-           reader.offset() == PROJECT_EDITING_PAYLOAD_SIZE;
+    if (!reader.readU8(pending.stepPasteMode) ||
+        !reader.readU8(pending.ccLaneDefaultsMarker) ||
+        !reader.readBytes(
+            pending.ccLaneDefaultControllers,
+            core::state::project::PROJECT_CC_LANE_DEFAULT_COUNT
+        ) ||
+        !reader.readU16(reserved) || !reader.ok() ||
+        reader.offset() != PROJECT_EDITING_PAYLOAD_SIZE || reserved != 0U ||
+        pending.stepPasteMode >=
+            core::state::project::PROJECT_STEP_PASTE_MODE_COUNT) {
+        return false;
+    }
+
+    if (pending.ccLaneDefaultsMarker !=
+        PROJECT_EDITING_CC_LANE_DEFAULTS_MARKER) {
+        return false;
+    }
+    for (const uint8_t controller : pending.ccLaneDefaultControllers) {
+        if (!core::state::project::validProjectMidiCc(controller)) return false;
+    }
+
+    out = pending;
+    return true;
 }
 
 FLASHMEM void applyEditingPayload(const ProjectEditingPayload& payload,
                                   core::state::project::ProjectEditingState& target) {
     target.stepPasteMode =
         core::state::project::sanitizeProjectStepPasteMode(payload.stepPasteMode);
+    for (uint8_t lane = 0;
+         lane < core::state::project::PROJECT_CC_LANE_DEFAULT_COUNT;
+         ++lane) {
+        target.ccLaneDefaultControllers[lane] =
+            core::state::project::sanitizeProjectCcLaneDefault(
+                payload.ccLaneDefaultControllers[lane],
+                lane
+            );
+    }
 }
 
 FLASHMEM void applyProjectStateChunks(const project_file::DecodedChunkView* chunks,
@@ -439,15 +405,6 @@ FLASHMEM void applyProjectStateChunks(const project_file::DecodedChunkView* chun
         report,
         decodeMusicalContextPayload,
         applyMusicalToProject,
-        target
-    );
-    applyOptionalChunk<ProjectRoutingPayload, PROJECT_ROUTING_PAYLOAD_SIZE>(
-        chunks,
-        chunkCount,
-        project_file::ChunkId::ROUTING,
-        report,
-        decodeRoutingPayload,
-        applyRoutingToProject,
         target
     );
     applyOptionalChunk<ProjectEditingPayload, PROJECT_EDITING_PAYLOAD_SIZE>(

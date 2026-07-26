@@ -7,7 +7,7 @@
 
 #include "app/OverlayTypes.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
@@ -49,11 +49,6 @@ private:
     void open();
     void closeApply();
     void closeCancel();
-    void beginHistoryOnlyHold();
-    void endHistoryOnlyHold();
-    void enterPhysicalHoldLayer();
-    void consumeUndo();
-    void consumeRedo();
     void navigate(float delta);
     void setFocusedValue(float normalized);
     void setFocusedValueDirect(float normalized);
@@ -83,7 +78,6 @@ private:
     core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     SequencerHistoryDomainServices history_;
     bool history_snapshot_valid_ = false;
-    bool history_command_consumed_ = false;
 };
 
 }  // namespace core::handler

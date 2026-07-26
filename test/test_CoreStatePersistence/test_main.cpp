@@ -9,9 +9,11 @@
 #include "../../src/handler/macro/MacroPerformanceDomainServices.hpp"
 #include "../../src/handler/settings/DataManagerDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../../src/state/DataManagerWorkflow.hpp"
 #include "../../src/state/macro/MacroPersistenceWorkflow.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
+#include "../../src/state/modulation/ProjectControlMacroOps.hpp"
 #include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerPersistenceWorkflow.hpp"
@@ -21,6 +23,36 @@
 namespace {
 using test_support::CoreStorages;
 using test_support::drainNotifications;
+
+core::state::modulation::ProjectModulationResult beginLibraryBoundaryAudition(
+    core::state::CoreState& state,
+    uint8_t macro = 1U
+) {
+    namespace modulation = core::state::modulation;
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = macro,
+    };
+    modulation::ModulatorLfoDraft source{};
+    source.name = "Library guard";
+    source.parameters.periodTicks = modulation::PROJECT_CONTROL_TICKS_PER_BEAT;
+    source.parameters.shape = modulation::ModulatorLfoShape::SINE;
+    source.parameters.retrigger = modulation::ModulatorRetriggerPolicy::TRANSPORT;
+    source.parameters.timing = modulation::ModulatorTimingMode::SYNC;
+
+    modulation::ModulationBindingDraft binding{};
+    binding.destination = modulation::projectControlDestination(address);
+    binding.amountQ15 = 8192;
+    binding.application = modulation::ModulationApplication::NATURAL;
+    return state.macroHistory.beginLfoModulatorAudition(
+        state.pages,
+        address,
+        source,
+        binding,
+        true
+    );
+}
 
 void setManualMacroValue(core::state::CoreState& state, uint8_t index, float value) {
     core::handler::MacroPerformanceDomainServices::fromCoreState(state).setManualValue(
@@ -92,7 +124,7 @@ void recordLengthHistory(core::state::CoreState& state, uint8_t nextLength) {
     core::state::sequencer::SequencerHistoryPatternSnapshot before;
     assert(core::state::sequencer::captureHistorySnapshot(state.sequencer, before));
 
-    state.sequencer.pattern.length.set(nextLength);
+    state.sequencer.pattern.setContentLength(nextLength);
 
     core::state::sequencer::SequencerHistoryPatternSnapshot after;
     assert(core::state::sequencer::captureHistorySnapshot(state.sequencer, after));
@@ -158,7 +190,8 @@ void test_macro_library_roundtrip_and_erase() {
     const auto status = core::state::macro::MacroPersistenceWorkflow::loadLibrarySlot(state, 3);
     assert(status == core::persistence::SlotLoadStatus::OK);
     assert(state.pages.currentActivePage() == 2);
-    assert(core::state::macro::MacroWorkflow::activeConfig(state.pages, 0).channel == 4);
+    // A Macro library slot owns Macro content, not canonical Project Track routing.
+    assert(state.projectTracks.authored.midiChannels[state.pages.currentActiveTrack()] == 0);
     assert(core::state::macro::MacroWorkflow::activeConfig(state.pages, 0).cc == 88);
     assert(core::state::macro::MacroWorkflow::runtimeValue(state.macros, 0) == 0.64f);
 
@@ -206,6 +239,62 @@ void test_macro_library_save_uses_manual_base_without_flush() {
     std::cout << "[PASS] test_macro_library_save_uses_manual_base_without_flush\n";
 }
 
+void test_macro_library_boundary_never_persists_or_strands_an_audition() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    state.pages.activePageData().cc[0] = 41U;
+    state.pages.activePageData().setMacroActive(1U, false);
+    assert(core::state::macro::MacroPersistenceWorkflow::saveLibrarySlot(state, 7U));
+
+    state.pages.activePageData().cc[0] = 99U;
+    const auto begun = beginLibraryBoundaryAudition(state);
+    assert(begun.changed());
+    assert(state.pages.control.audition.active());
+    assert(state.pages.activePageData().isMacroActive(1U));
+    assert(!core::state::macro::MacroPersistenceWorkflow::saveLibrarySlot(state, 8U));
+
+    state.projectNavigation.activeTab.set(core::state::project::ProjectTab::MODULATORS);
+    state.projectNavigation.currentNode.set(
+        core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL
+    );
+    state.projectNavigation.depth.set(1U);
+    state.projectNavigation.pathStack[0] =
+        core::state::project::ProjectNodeId::MODULATORS_ROOT;
+    state.projectNavigation.selectedModulator = begun.sourceId;
+    state.projectNavigation.selectedModulationBinding = begun.bindingId;
+
+    const auto loaded =
+        core::state::macro::MacroPersistenceWorkflow::loadLibrarySlot(state, 7U);
+    assert(loaded == core::persistence::SlotLoadStatus::OK);
+    assert(!state.hasPendingProjectTransaction());
+    assert(!state.pages.control.audition.active());
+    assert(state.pages.control.authored.modulation.sourceCount == 0U);
+    assert(state.pages.control.authored.modulation.outputBindingCount == 0U);
+    assert(state.pages.activePageData().cc[0] == 41U);
+    assert(!state.pages.activePageData().isMacroActive(1U));
+    assert(!core::state::modulation::valid(
+        state.projectNavigation.selectedModulator
+    ));
+    assert(!core::state::modulation::valid(
+        state.projectNavigation.selectedModulationBinding
+    ));
+    assert(!state.macroHistory.canUndo());
+    assert(!state.projectHistory.canUndo());
+
+    const auto empty =
+        core::state::macro::MacroPersistenceWorkflow::loadLibrarySlot(state, 8U);
+    assert(empty == core::persistence::SlotLoadStatus::EMPTY);
+
+    drainNotifications();
+    std::cout
+        << "[PASS] Macro library boundary never persists or strands audition\n";
+}
+
 void test_macro_config_changes_mark_project_dirty_and_bump_revision() {
     CoreStorages storage;
     storage.initAll();
@@ -216,17 +305,19 @@ void test_macro_config_changes_mark_project_dirty_and_bump_revision() {
                                  storage.sequencerSetLibrary);
 
     const auto& initialConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
+    const uint8_t activeTrack = state.pages.currentActiveTrack();
+    const uint8_t initialChannel = state.projectTracks.authored.midiChannels[activeTrack];
     const uint32_t initialRevision = state.configRevision.get();
 
     assert(!core::state::macro::MacroWorkflow::setConfig(
         state,
         0,
-        initialConfig.channel,
+        initialChannel,
         initialConfig.cc
     ));
     assert(state.configRevision.get() == initialRevision);
 
-    const uint8_t updatedChannel = static_cast<uint8_t>((initialConfig.channel + 1U) % 16U);
+    const uint8_t updatedChannel = static_cast<uint8_t>((initialChannel + 1U) % 16U);
     const uint8_t updatedCc = static_cast<uint8_t>((initialConfig.cc < 127U) ? (initialConfig.cc + 1U)
                                                                             : (initialConfig.cc - 1U));
 
@@ -242,7 +333,7 @@ void test_macro_config_changes_mark_project_dirty_and_bump_revision() {
     assert(state.hasPendingProjectSessionSave());
 
     const auto& updatedConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
-    assert(updatedConfig.channel == updatedChannel);
+    assert(state.projectTracks.authored.midiChannels[activeTrack] == updatedChannel);
     assert(updatedConfig.cc == updatedCc);
 
     drainNotifications();
@@ -260,7 +351,9 @@ void test_macro_config_changes_do_not_require_macro_library_storage() {
                                  storage.sequencerSetLibrary);
 
     const auto& initialConfig = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
-    const uint8_t updatedChannel = static_cast<uint8_t>((initialConfig.channel + 2U) % 16U);
+    const uint8_t initialChannel =
+        state.projectTracks.authored.midiChannels[state.pages.currentActiveTrack()];
+    const uint8_t updatedChannel = static_cast<uint8_t>((initialChannel + 2U) % 16U);
     const uint8_t updatedCc = static_cast<uint8_t>((initialConfig.cc + 3U) % 128U);
 
     storage.macroLibrary.setAvailable(false);
@@ -314,7 +407,7 @@ void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data
                                      storage.sequencerSetLibrary);
 
         core::state::macro::MacroWorkflow::setConfig(state, 0, 1, 10);
-        state.sequencer.pattern.length.set(8);
+        state.sequencer.pattern.setContentLength(8);
         state.sequencer.setStepDataAt(0, 60, 80, 50);
         state.sequencer.pattern.toggle(0);
         drainNotifications();
@@ -334,7 +427,7 @@ void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data
 
         assert(state.setSharedTrackState(0x0003, 1));
         assert(core::state::macro::MacroWorkflow::setConfig(state, 0, 3, 88));
-        state.sequencer.pattern.length.set(16);
+        state.sequencer.pattern.setContentLength(16);
         state.sequencer.setStepDataAt(0, 72, 111, 75);
         if (!state.sequencer.pattern.isEnabled(0)) {
             state.sequencer.pattern.toggle(0);
@@ -362,7 +455,8 @@ void test_recovery_from_ram_after_storage_reopen_does_not_reload_stale_card_data
                                     storage.sequencerSetLibrary);
 
     const auto& restoredConfig = core::state::macro::MacroWorkflow::activeConfig(restored.pages, 0);
-    assert(restoredConfig.channel != 3 || restoredConfig.cc != 88);
+    assert(restored.projectTracks.authored.midiChannels[0] != 3 ||
+           restoredConfig.cc != 88);
     assert(restored.sequencer.pattern.note[0] != 72 ||
            restored.sequencer.pattern.velocity[0] != 111 ||
            restored.sequencer.pattern.gate[0] != 75 ||
@@ -516,9 +610,9 @@ void test_sequencer_library_roundtrip() {
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
-        state.sequencer.pattern.length.set(16);
+        state.sequencer.pattern.setContentLength(16);
         state.sequencer.pattern.stepsPerBeat.set(4);
-        state.sequencer.pattern.midiChannel.set(3);
+        state.projectTracks.authored.midiChannels[0] = 3;
         state.sequencer.pattern.toggle(0);
         state.sequencer.setStepDataAt(0, 64, 120, 70);
         state.sequencer.setStepProbabilityAt(0, 42);
@@ -529,9 +623,9 @@ void test_sequencer_library_roundtrip() {
         assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 4));
         assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 2));
 
-        state.sequencer.pattern.length.set(8);
+        state.sequencer.pattern.setContentLength(8);
         state.sequencer.pattern.stepsPerBeat.set(2);
-        state.sequencer.pattern.midiChannel.set(0);
+        state.projectTracks.authored.midiChannels[0] = 0;
         state.sequencer.pattern.enabledMask.set({});
         state.sequencer.setStepDataAt(0, 40, 40, 40);
         oc::state::NotificationQueue::instance().flush();
@@ -542,7 +636,7 @@ void test_sequencer_library_roundtrip() {
         assert(patternStatus == core::persistence::SlotLoadStatus::OK);
         assert(state.sequencer.pattern.length.get() == 16);
         assert(state.sequencer.pattern.stepsPerBeat.get() == 4);
-        assert(state.sequencer.pattern.midiChannel.get() == 3);
+        assert(state.projectTracks.authored.midiChannels[0] == 0);
         assert(state.sequencer.pattern.isEnabled(0));
         assert(state.sequencer.pattern.note[0] == 64);
         assert(state.sequencer.pattern.velocity[0] == 120);
@@ -559,7 +653,7 @@ void test_sequencer_library_roundtrip() {
         assert(setStatus == core::persistence::SlotLoadStatus::OK);
         assert(state.sequencer.pattern.length.get() == 16);
         assert(state.sequencer.pattern.stepsPerBeat.get() == 4);
-        assert(state.sequencer.pattern.midiChannel.get() == 3);
+        assert(state.projectTracks.authored.midiChannels[0] == 0);
 
         assert(core::state::sequencer::SequencerPersistenceWorkflow::eraseSetSlot(state, 2));
         const auto erasedSetStatus =
@@ -584,7 +678,7 @@ void test_sequencer_navigation_context_does_not_boot_restore_without_session() {
                                      storage.sequencerPatternLibrary,
                                      storage.sequencerSetLibrary);
 
-        state.sequencer.pattern.length.set(24);
+        state.sequencer.pattern.setContentLength(24);
         state.sequencer.focusedStep.set(10);
         state.sequencer.page.set(state.sequencer.pageForStep(10));
         state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::GATE);
@@ -617,9 +711,9 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
                                  storage.sequencerSetLibrary);
 
     // Pattern A (will be saved and reloaded)
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     state.sequencer.pattern.stepsPerBeat.set(2);
-    state.sequencer.pattern.midiChannel.set(1);
+    state.projectTracks.authored.midiChannels[0] = 1;
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.pattern.toggle(0);
@@ -628,9 +722,9 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 1));
 
     // Pattern B (current live state before queued load)
-    state.sequencer.pattern.length.set(16);
+    state.sequencer.pattern.setContentLength(16);
     state.sequencer.pattern.stepsPerBeat.set(4);
-    state.sequencer.pattern.midiChannel.set(6);
+    state.projectTracks.authored.midiChannels[0] = 6;
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 40, 55, 30);
     state.sequencer.pattern.toggle(0);
@@ -655,7 +749,7 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     state.update();
     assert(state.sequencer.pattern.length.get() == 8);
     assert(state.sequencer.pattern.stepsPerBeat.get() == 2);
-    assert(state.sequencer.pattern.midiChannel.get() == 1);
+    assert(state.projectTracks.authored.midiChannels[0] == 6);
     assert(state.sequencer.pattern.note[0] == 61);
     assert(state.sequencer.pattern.velocity[0] == 101);
     assert(state.sequencer.pattern.gate[0] == 80);
@@ -663,7 +757,7 @@ void test_sequencer_load_is_quantized_to_next_step_when_playing() {
     // Same behavior for set library loads.
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 2));
 
-    state.sequencer.pattern.length.set(12);
+    state.sequencer.pattern.setContentLength(12);
     state.sequencer.setStepDataAt(0, 77, 77, 77);
     state.sequencer.playheadStep.set(9);
 
@@ -692,7 +786,7 @@ void test_sequencer_queued_pattern_load_preserves_graph_content() {
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.pattern.toggle(0);
@@ -737,14 +831,14 @@ void test_direct_load_clears_stale_pending_quantized_apply() {
                                  storage.sequencerSetLibrary);
 
     // Slot 1: queued while playing.
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.pattern.toggle(0);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 1));
 
     // Slot 2: loaded explicitly after transport stops.
-    state.sequencer.pattern.length.set(12);
+    state.sequencer.pattern.setContentLength(12);
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 72, 88, 44);
     state.sequencer.pattern.toggle(0);
@@ -784,7 +878,7 @@ void test_sequencer_save_and_erase_keep_history() {
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     recordLengthHistory(state, 12);
     assert(state.sequencerHistory.undoCount() == 1);
 
@@ -812,7 +906,7 @@ void test_sequencer_load_clears_history_after_apply() {
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 11));
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 11));
 
@@ -849,7 +943,7 @@ void test_queued_sequencer_load_clears_history_when_applied() {
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     addCcLane(state.sequencer.pattern, 0, 74, 3, 92);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::savePatternSlot(state, 12));
 
@@ -942,8 +1036,10 @@ void test_new_project_boundary_publishes_runtime_reset_and_clears_activation() {
     core::state::sequencer::SequencerTrackActivationBatch activation;
     assert(state.sequencerTrackActivations.prepare(
         0x0001,
-        state.currentSharedTrackEnabledMask(),
-        state.sequencerTracks.currentMutedMask(),
+        core::state::project::audibleMask(
+            state.projectTracks,
+            state.currentSharedTrackEnabledMask()
+        ),
         true,
         activation
     ));
@@ -976,9 +1072,9 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
                                  storage.sequencerSetLibrary);
 
     // Incoming set snapshot: step 0 and step 3 enabled.
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     state.sequencer.pattern.stepsPerBeat.set(2);
-    state.sequencer.pattern.midiChannel.set(1);
+    state.projectTracks.authored.midiChannels[0] = 1;
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.pattern.toggle(0);
@@ -988,9 +1084,9 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 4));
 
     // Live pattern before merge: longer length + existing step 1 enabled.
-    state.sequencer.pattern.length.set(16);
+    state.sequencer.pattern.setContentLength(16);
     state.sequencer.pattern.stepsPerBeat.set(4);
-    state.sequencer.pattern.midiChannel.set(6);
+    state.projectTracks.authored.midiChannels[0] = 6;
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(1, 44, 55, 66);
     state.sequencer.pattern.toggle(1);
@@ -1003,7 +1099,7 @@ void test_sequencer_set_load_merge_preserves_existing_steps() {
     // Merge keeps current transport config and length, overlays incoming enabled steps only.
     assert(state.sequencer.pattern.length.get() == 16);
     assert(state.sequencer.pattern.stepsPerBeat.get() == 4);
-    assert(state.sequencer.pattern.midiChannel.get() == 6);
+    assert(state.projectTracks.authored.midiChannels[0] == 6);
 
     assert(state.sequencer.pattern.note[0] == 61);
     assert(state.sequencer.pattern.velocity[0] == 101);
@@ -1039,14 +1135,14 @@ void test_sequencer_set_load_merge_is_quantized_when_playing() {
                                  storage.sequencerSetLibrary);
 
     // Prepare incoming set with only step 2 enabled.
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(2, 72, 110, 45);
     state.sequencer.pattern.toggle(2);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 6));
 
     // Live state before queued merge.
-    state.sequencer.pattern.length.set(16);
+    state.sequencer.pattern.setContentLength(16);
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(1, 48, 64, 55);
     state.sequencer.pattern.toggle(1);
@@ -1087,6 +1183,7 @@ int main() {
     test_project_state_does_not_boot_restore_from_removed_domain_store();
     test_macro_library_roundtrip_and_erase();
     test_macro_library_save_uses_manual_base_without_flush();
+    test_macro_library_boundary_never_persists_or_strands_an_audition();
     test_macro_config_changes_mark_project_dirty_and_bump_revision();
     test_macro_config_changes_do_not_require_macro_library_storage();
     test_shared_track_pending_save_survives_settings_storage_unavailable();

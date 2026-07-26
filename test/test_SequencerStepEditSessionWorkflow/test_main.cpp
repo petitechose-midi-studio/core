@@ -57,7 +57,7 @@ struct SessionHarness {
 
 void test_open_session_resolves_page_step_and_latches_open_release() {
     SessionHarness h;
-    h.state.sequencer.pattern.length.set(16);
+    h.state.sequencer.pattern.setContentLength(16);
     h.state.sequencer.page.set(1);
 
     assert(session_workflow::openForMacroInPage(
@@ -84,7 +84,7 @@ void test_open_session_resolves_page_step_and_latches_open_release() {
 
 void test_close_commits_live_step_edit_history() {
     SessionHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.pattern.note[3] = 60;
 
     assert(session_workflow::openForMacroInPage(
@@ -118,7 +118,7 @@ void test_close_commits_live_step_edit_history() {
 
 void test_back_to_parent_content_restores_parent_context_row() {
     SessionHarness h;
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(2);
     const auto micro = core::state::sequencer::createMicroSequence(
@@ -159,12 +159,85 @@ void test_back_to_parent_content_restores_parent_context_row() {
     std::cout << "[PASS] test_back_to_parent_content_restores_parent_context_row\n";
 }
 
+void test_root_retarget_wraps_pages_and_separates_step_history() {
+    SessionHarness h;
+    h.state.sequencer.pattern.setContentLength(12);
+    h.state.sequencer.page.set(0);
+    oc::note::sequencer::StepBitMask128 enabled{};
+    enabled.setBit(7, true);
+    h.state.sequencer.pattern.enabledMask.set(enabled);
+
+    assert(session_workflow::openForMacroInPage(
+        h.state.sequencer,
+        h.history,
+        h.openReleaseLatch,
+        h.overlays,
+        h.snapshot,
+        h.snapshotValid,
+        7
+    ));
+    assert(h.state.sequencer.setStepNoteAt(7, 72));
+
+    assert(session_workflow::retargetRootStep(
+        h.state.sequencer,
+        h.history,
+        h.snapshot,
+        h.snapshotValid,
+        1
+    ));
+    assert(h.state.sequencer.stepEdit.stepIndex.get() == 8);
+    assert(h.state.sequencer.focusedStep.get() == 8);
+    assert(h.state.sequencer.page.get() == 1);
+    assert(!h.state.sequencer.pattern.enabledMask.get().test(8));
+    assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.snapshotValid);
+
+    assert(h.state.sequencer.setStepVelocityAt(8, 31));
+    assert(session_workflow::retargetRootStep(
+        h.state.sequencer,
+        h.history,
+        h.snapshot,
+        h.snapshotValid,
+        -1
+    ));
+    assert(h.state.sequencer.stepEdit.stepIndex.get() == 7);
+    assert(h.state.sequencer.page.get() == 0);
+    assert(h.state.sequencerHistory.undoCount() == 2);
+
+    assert(session_workflow::retargetRootStep(
+        h.state.sequencer,
+        h.history,
+        h.snapshot,
+        h.snapshotValid,
+        -1
+    ));
+    assert(h.state.sequencer.stepEdit.stepIndex.get() == 6);
+
+    // Reopen the first Step and prove reverse wrap uses the real length, not
+    // the visible eight-Step page.
+    h.state.sequencer.stepEdit.stepIndex.set(0);
+    h.state.sequencer.focusedStep.set(0);
+    h.state.sequencer.page.set(0);
+    assert(session_workflow::retargetRootStep(
+        h.state.sequencer,
+        h.history,
+        h.snapshot,
+        h.snapshotValid,
+        -1
+    ));
+    assert(h.state.sequencer.stepEdit.stepIndex.get() == 11);
+    assert(h.state.sequencer.page.get() == 1);
+
+    std::cout << "[PASS] test_root_retarget_wraps_pages_and_separates_step_history\n";
+}
+
 }  // namespace
 
 int main() {
     test_open_session_resolves_page_step_and_latches_open_release();
     test_close_commits_live_step_edit_history();
     test_back_to_parent_content_restores_parent_context_row();
+    test_root_retarget_wraps_pages_and_separates_step_history();
 
     std::cout << "\nAll SequencerStepEditSessionWorkflow tests passed.\n";
     return 0;

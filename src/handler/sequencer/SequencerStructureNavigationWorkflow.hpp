@@ -6,20 +6,29 @@
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/sequencer/SequencerStructureHistory.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::handler {
 
 /**
- * Owns sequencer page/track navigation and selection state.
+ * Owns sequencer page/track navigation and contextual selection state.
  *
- * It previews add slots, switches page/track focus, enters selection mode, and
- * creates previewed structures. Destructive edits live in
+ * It previews add slots, switches page/track focus, enters Track/Page/Step
+ * selection, and creates previewed structures. Destructive edits live in
  * SequencerStructureEditWorkflow.
  */
 class SequencerStructureNavigationWorkflow {
 public:
+    enum class CreationResult : uint8_t {
+        APPLIED = 0,
+        NO_CHANGE,
+        HISTORY_UNAVAILABLE,
+        MUTATION_FAILED,
+        ROLLBACK_FAILED,
+    };
+
     struct StateRefs {
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& tracks;
@@ -41,33 +50,27 @@ public:
     bool selectionActive() const;
     bool selectedItemsAvailable() const;
     bool stepFocusActive() const;
-    bool structureWorkspaceActive() const;
     bool previewingAddSlot() const;
 
     void moveByFocus(float delta);
-    void cycleNavigationFocus();
-    void openStructureWorkspace();
-    void confirmStructureWorkspace();
-    void backStructureWorkspace();
+    void setNavigationFocus(core::state::StructureNavigationFocus focus);
     void enterSelectionModeForCurrentFocus();
     void cancelSelectionMode();
     void toggleSelectionAtCursor();
     void toggleStepSelectionAtVisibleIndex(uint8_t indexInPage);
     void navigateSelection(float delta);
-    void createPreviewedStructure();
+    CreationResult createPreviewedStructure();
 
 private:
     void bindStateSync();
     void movePage(float delta);
     void moveTrack(float delta);
     void moveStep(float delta);
-    void moveWorkspacePage(float delta);
-    void moveWorkspaceTrack(float delta);
-    void enterWorkspacePatternLevel();
-    void closeStructureWorkspace(bool restoreCaller);
+    bool rollbackTrackCreation(
+        const core::state::sequencer::SequencerHistoryTrackStructureSnapshot& before
+    );
     void setPagePreview(uint8_t pageIndex, bool addSlot);
     void setTrackPreview(uint8_t trackIndex, bool addSlot);
-    uint8_t cursorForSelectionScope(core::state::StructureSelectionScope scope) const;
     uint8_t maxStepCursor() const;
     uint8_t maxStepPage() const;
     bool stepSelectable(uint8_t step) const;

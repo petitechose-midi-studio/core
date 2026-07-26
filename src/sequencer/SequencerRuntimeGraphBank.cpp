@@ -5,6 +5,7 @@
 #include <oc/log/Log.hpp>
 
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::sequencer {
 
@@ -25,25 +26,37 @@ bool SequencerRuntimeGraphBank::prepare(
             ? sequencer.pattern
             : trackBank.track(track);
         const auto* sourceGraph = core::state::sequencer::graphView(sourceState);
+        const bool draftActive = track == activeTrack &&
+            sequencer.stepContentDraft.active.get();
         const SourceSignature signature{
             .source = sourceGraph,
             .revision = sourceState.graphRevision.get(),
+            .draftRevision = draftActive
+                ? sequencer.stepContentDraft.revision.get()
+                : 0U,
         };
         if (source_signatures_[track].matches(signature)) continue;
 
         const uint16_t trackBit = static_cast<uint16_t>(1U << track);
         prepared_mask_ = static_cast<uint16_t>(prepared_mask_ | trackBit);
         prepared_signatures_[track] = signature;
-        if (!sourceGraph) continue;
+        if (!sourceGraph && !draftActive) continue;
 
         if (staging_graph_) {
             prepared_graphs_[track] = std::move(staging_graph_);
-            *prepared_graphs_[track] = *sourceGraph;
         } else {
-            prepared_graphs_[track] = core::app::makeExtmemUnique<Graph>(*sourceGraph);
+            prepared_graphs_[track] = core::app::makeExtmemUnique<Graph>();
         }
 
-        if (prepared_graphs_[track]) continue;
+        if (prepared_graphs_[track]) {
+            const bool captured = draftActive
+                ? core::state::sequencer::captureStepContentDraftRuntimeGraph(
+                      sequencer,
+                      *prepared_graphs_[track]
+                  )
+                : ((*prepared_graphs_[track] = *sourceGraph), true);
+            if (captured) continue;
+        }
 
         discardPrepared_();
         if (!allocation_failure_reported_) {

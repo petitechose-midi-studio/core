@@ -22,12 +22,14 @@
 #include "../../src/persistence/ProjectFileStore.hpp"
 #include "../../src/persistence/ProjectSnapshotPersistenceCodec.hpp"
 #include "../../src/persistence/ProjectStatePersistenceCodec.hpp"
+#include "../../src/persistence/ProjectTrackStatePersistenceCodec.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/modulation/ProjectControlMacroOps.hpp"
 #include "../../src/state/project/ProjectMenuModel.hpp"
 #include "../../src/state/project/ProjectModulatorMenuModel.hpp"
+#include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../../src/state/project/ProjectNameKeyboard.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../support/CoreStorages.hpp"
@@ -100,13 +102,19 @@ struct ProjectHandlerHarness {
                       state.projectNavigation,
                       state.sequencer,
                       state.sequencerTracks,
+                      state.projectTracks,
+                      core::state::project::ProjectTrackDomainServices::fromCoreState(
+                          state
+                      ),
                       state.statusBar,
                        state.midiSync,
                        state.pages,
+                       state.macroUi,
                        state.macros,
                        state.macroEdit,
                        state.configRevision,
                        state.macroHistory,
+                       state.projectSettingsHistory,
                        state.structureClipboard,
                        core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                       core::handler::ProjectLifecycleDomainServices::fromCoreState(
@@ -185,6 +193,7 @@ void writeFutureSequencerProjectFile(ProjectHandlerHarness& h, const char* id) {
     namespace project_file = core::persistence::project_file;
     namespace project_snapshot_codec = core::persistence::project_snapshot_codec;
     namespace project_state_codec = core::persistence::project_state_codec;
+    namespace project_track_codec = core::persistence::project_track_codec;
 
     core::state::project::ProjectMetadata metadata{};
     metadata.id.fill('\0');
@@ -202,6 +211,17 @@ void writeFutureSequencerProjectFile(ProjectHandlerHarness& h, const char* id) {
         metaBytes.data(),
         static_cast<uint32_t>(metaBytes.size())
     ));
+    std::array<
+        uint8_t,
+        project_track_codec::PROJECT_TRACK_STATE_PAYLOAD_SIZE
+    > projectTrackBytes{};
+    const auto projectTracksEncoded =
+        project_track_codec::encodeProjectTrackStatePayload(
+            core::state::project::defaultProjectTrackSnapshot(),
+            projectTrackBytes.data(),
+            static_cast<uint32_t>(projectTrackBytes.size())
+        );
+    assert(projectTracksEncoded.encoded());
     const uint8_t futureSequencerPayload[] = {1, 2, 3};
 
     const project_file::ChunkView chunks[] = {
@@ -212,6 +232,16 @@ void writeFutureSequencerProjectFile(ProjectHandlerHarness& h, const char* id) {
             .flags = 0,
             .data = metaBytes.data(),
             .size = project_state_codec::PROJECT_META_PAYLOAD_SIZE,
+        },
+        {
+            .id = project_file::chunkIdValue(project_file::ChunkId::TRACK_STATE),
+            .versionMajor =
+                project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MAJOR,
+            .versionMinor =
+                project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MINOR,
+            .flags = 0,
+            .data = projectTrackBytes.data(),
+            .size = project_track_codec::PROJECT_TRACK_STATE_PAYLOAD_SIZE,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::SEQUENCER_STATE),
@@ -368,13 +398,36 @@ void test_music_scale_root_is_wired_and_undoable() {
     assert(h.state.sequencerTracks.projectScaleSettings().root == 6);
     assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::FullBank) == 1);
 
-    h.press(Config::ButtonID::LEFT_CENTER);
-    h.advance(600);
-    h.tap(Config::ButtonID::LEFT_TOP);
-    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.undoProjectHistory());
     assert(h.state.sequencerTracks.projectScaleSettings().root == 5);
 
     std::cout << "[PASS] test_music_scale_root_is_wired_and_undoable\n";
+}
+
+void test_project_cc_lane_defaults_are_direct_editable_values() {
+    ProjectHandlerHarness h;
+    constexpr auto OPT_ID = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::MUSIC_ROOT);
+
+    h.turn(Config::EncoderID::NAV, 4.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 4U);
+    assert(h.encoderHw.getDiscreteSteps(OPT_ID) == 128);
+    assert(near(h.encoderHw.getPosition(OPT_ID), 1.0f / 127.0f));
+
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.projectNavigation.ccLaneDefaultControllers[0] == 0U);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 5U);
+    assert(h.state.projectNavigation.ccLaneDefaultControllers[1] == 11U);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.ccLaneDefaultControllers[1] == 12U);
+
+    std::cout << "[PASS] Project exposes four direct CC-lane default values\n";
 }
 
 void test_left_center_hold_switches_tabs() {
@@ -448,6 +501,37 @@ void test_transport_values_are_editable_from_project() {
     assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::MASTER);
 
     std::cout << "[PASS] test_transport_values_are_editable_from_project\n";
+}
+
+void test_project_setting_values_coalesce_and_use_global_history() {
+    ProjectHandlerHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::TRANSPORT_ROOT);
+
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.statusBar.tempo.get() == 20.0f);
+    assert(h.state.projectHistory.undoCount() == historyBefore + 1U);
+
+    assert(h.state.undoProjectHistory());
+    assert(h.state.statusBar.tempo.get() == 120.0f);
+    assert(h.state.redoProjectHistory());
+    assert(h.state.statusBar.tempo.get() == 20.0f);
+
+    h.advance(core::handler::ProjectHandler::ROUTING_GESTURE_IDLE_COMMIT_MS + 1U);
+    h.handler.update(g_now_ms);
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(h.state.statusBar.tempo.get() == 160.0f);
+    assert(h.state.projectHistory.undoCount() == historyBefore + 2U);
+    assert(h.state.undoProjectHistory());
+    assert(h.state.statusBar.tempo.get() == 20.0f);
+
+    std::cout << "[PASS] Project settings coalesce and use global history\n";
 }
 
 void test_storage_autosave_is_editable_with_opt() {
@@ -636,13 +720,12 @@ void test_overview_rename_name_editor_moves_project_file() {
 void test_new_project_resets_musical_project_state() {
     ProjectHandlerHarness h;
 
-    h.state.sequencer.pattern.length.set(16);
-    h.state.sequencer.pattern.midiChannel.set(8);
+    h.state.sequencer.pattern.setContentLength(16);
     h.state.sequencer.setStepNoteAt(0, 72);
     h.state.macros.slots[0].value.set(0.91f);
     h.state.pages.activePageData().cc[0] = 99;
     h.state.pages.activePageData().values[0] = 0.91f;
-    h.state.pages.setActiveTrackChannel(7);
+    h.state.projectTracks.authored.midiChannels[0] = 7U;
     h.state.configRevision.set(0x1200FF);
     h.state.statusBar.tempo.set(144.0f);
     h.state.statusBar.tempoDisplay.set(144.0f);
@@ -666,16 +749,14 @@ void test_new_project_resets_musical_project_state() {
     assert(h.state.projectNavigation.focusedRow.get() == 0);
     assert(h.state.projectNavigation.transportSwingPercent == 0);
     assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
-    assert(h.state.sequencer.pattern.midiChannel.get() == 0);
     assert(h.state.sequencer.pattern.note[0] == core::state::sequencer::SequencerState::DEFAULT_NOTE);
     assert(near(h.state.macros.slots[0].value.get(), 0.5f));
     assert(h.state.pages.activePageData().cc[0] == 0);
     assert(near(h.state.pages.activePageData().values[0], 0.5f));
-    assert(h.state.pages.activeConfigs[0].channel == 0);
+    assert(h.state.projectTracks.authored.midiChannels[0] == 0U);
     assert(h.state.configRevision.get() != 0x1200FF);
     assert(h.state.sequencerTracks.projectScaleSettings().root == 5);
-    assert(h.state.sequencerTracks.track(0).midiChannel.get() == 0);
-    assert(h.state.sequencerTracks.track(15).midiChannel.get() == 15);
+    assert(h.state.projectTracks.authored.midiChannels[15] == 15U);
     assert(h.state.statusBar.tempo.get() == 120.0f);
     assert(h.state.statusBar.tempoDisplay.get() == 120.0f);
     assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
@@ -687,7 +768,7 @@ void test_new_project_resets_musical_project_state() {
 void test_new_project_confirmation_cancel_preserves_state() {
     ProjectHandlerHarness h;
 
-    h.state.sequencer.pattern.length.set(24);
+    h.state.sequencer.pattern.setContentLength(24);
     h.state.macros.slots[0].value.set(0.77f);
     h.state.statusBar.tempo.set(132.0f);
 
@@ -714,7 +795,7 @@ void test_new_project_save_as_new_persists_then_resets() {
     h.state.statusBar.tempo.set(171.0f);
     h.state.statusBar.tempoDisplay.set(171.0f);
     h.state.projectNavigation.transportSwingPercent = 24;
-    h.state.sequencer.pattern.length.set(9);
+    h.state.sequencer.pattern.setContentLength(9);
     h.state.sequencer.setStepDataAt(2, 75, 99, 64);
     h.state.sequencer.pattern.toggle(2);
     h.state.pages.activePageData().cc[0] = 88;
@@ -772,7 +853,7 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
 
     h.state.statusBar.tempo.set(188.0f);
     h.state.statusBar.tempoDisplay.set(188.0f);
-    h.state.sequencer.pattern.length.set(13);
+    h.state.sequencer.pattern.setContentLength(13);
     h.state.sequencer.setStepDataAt(7, 82, 115, 71);
     h.state.sequencer.pattern.toggle(7);
     h.state.markProjectMutated();
@@ -809,7 +890,12 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
 
 void test_routing_output_channels_are_editable() {
     ProjectHandlerHarness h;
+    h.state.activeView.set(core::ui::ViewType::PROJECT);
     constexpr auto OPT_ID = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const uint32_t configRevisionBefore = h.state.configRevision.get();
+    const uint32_t runtimeRevisionBefore =
+        h.state.sequencerRuntimeProjectRevision.get();
 
     h.press(Config::ButtonID::LEFT_CENTER);
     h.turn(Config::EncoderID::NAV, 4.0f);
@@ -819,18 +905,63 @@ void test_routing_output_channels_are_editable() {
     assert(h.encoderHw.getDiscreteSteps(OPT_ID) == 16);
 
     h.tap(Config::ButtonID::NAV);
-    assert(h.state.sequencer.pattern.midiChannel.get() == 1);
-    assert(h.state.sequencerTracks.track(0).midiChannel.get() == 1);
+    assert(core::state::project::projectTrackMidiChannel(
+               h.state.projectTracks,
+               0U
+           ) == 1U);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.projectNavigation.focusedRow.get() == 1);
+    assert(h.state.projectTrackHistory.undoCount() == 1U);
 
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.pattern.midiChannel.get() == 1);
-    assert(h.state.sequencerTracks.track(1).midiChannel.get() == 15);
+    assert(core::state::project::projectTrackMidiChannel(
+               h.state.projectTracks,
+               1U
+           ) == 15U);
 
     h.turn(Config::EncoderID::OPT, 0.0f);
-    assert(h.state.sequencerTracks.track(1).midiChannel.get() == 0);
+    assert(core::state::project::projectTrackMidiChannel(
+               h.state.projectTracks,
+               1U
+           ) == 0U);
+
+    // One continuous OPT movement is one end-user command, not one entry per
+    // sampled value. The gesture commits only after its bounded idle window.
+    assert(h.state.projectTrackHistory.undoCount() == 1U);
+    assert(h.state.projectHistory.undoCount() == 1U);
+    h.advance(
+        core::handler::ProjectHandler::ROUTING_GESTURE_IDLE_COMMIT_MS - 1U
+    );
+    h.handler.update(g_now_ms);
+    assert(h.state.projectTrackHistory.undoCount() == 1U);
+    h.advance(1U);
+    h.handler.update(g_now_ms);
+    assert(h.state.projectTrackHistory.undoCount() == 2U);
+    assert(h.state.projectHistory.undoCount() == 2U);
+    const auto* entry = h.state.projectHistory.peekUndo();
+    assert(entry != nullptr);
+    assert(entry->domain == core::state::project::ProjectHistoryDomain::Track);
+    const auto* trackEntry = h.state.projectTrackHistory.peekUndo();
+    assert(trackEntry != nullptr);
+    assert(trackEntry->trackIndex == 1U);
+    assert(trackEntry->kind ==
+           core::state::project::ProjectTrackHistoryActionKind::MidiChannel);
+    assert(h.state.project.metadata.modifiedCounter > modifiedBefore);
+    assert(h.state.configRevision.get() != configRevisionBefore);
+    assert(h.state.sequencerRuntimeProjectRevision.get() !=
+           runtimeRevisionBefore);
+
+    assert(h.state.undoProjectHistory());
+    assert(core::state::project::projectTrackMidiChannel(
+               h.state.projectTracks,
+               1U
+           ) == 1U);
+    assert(h.state.redoProjectHistory());
+    assert(core::state::project::projectTrackMidiChannel(
+               h.state.projectTracks,
+               1U
+           ) == 0U);
 
     std::cout << "[PASS] test_routing_output_channels_are_editable\n";
 }
@@ -846,7 +977,7 @@ void test_overview_save_and_load_roundtrip_project_file() {
     h.state.statusBar.tempo.set(149.0f);
     h.state.statusBar.tempoDisplay.set(149.0f);
     h.state.projectNavigation.transportSwingPercent = 19;
-    h.state.sequencer.pattern.length.set(11);
+    h.state.sequencer.pattern.setContentLength(11);
     h.state.sequencer.setStepDataAt(2, 67, 101, 75);
     h.state.sequencer.pattern.toggle(2);
     h.state.pages.activePageData().cc[0] = 81;
@@ -863,7 +994,7 @@ void test_overview_save_and_load_roundtrip_project_file() {
     h.state.statusBar.tempo.set(88.0f);
     h.state.statusBar.tempoDisplay.set(88.0f);
     h.state.projectNavigation.transportSwingPercent = 0;
-    h.state.sequencer.pattern.length.set(4);
+    h.state.sequencer.pattern.setContentLength(4);
     h.state.sequencer.setStepDataAt(2, 40, 1, 1);
     if (h.state.sequencer.pattern.isEnabled(2)) {
         h.state.sequencer.pattern.toggle(2);
@@ -1058,7 +1189,7 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
 
     h.state.statusBar.tempo.set(121.0f);
     h.state.statusBar.tempoDisplay.set(121.0f);
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.setStepDataAt(4, 60, 90, 70);
     h.state.sequencer.pattern.toggle(4);
 
@@ -1271,19 +1402,15 @@ void enterModulatorsRoot(ProjectHandlerHarness& h) {
     navigation.depth.set(0);
     navigation.focusedRow.set(0);
     navigation.pathStack[0] = ProjectNodeId::MODULATORS_ROOT;
-    h.state.activeView.set(core::ui::ViewType::PROJECT);
+    h.state.activeView.set(core::ui::ViewType::MODULATORS);
 }
 
 void projectModulatorUndo(ProjectHandlerHarness& h) {
-    h.press(Config::ButtonID::LEFT_CENTER);
-    h.tap(Config::ButtonID::LEFT_TOP);
-    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.undoProjectHistory());
 }
 
 void projectModulatorRedo(ProjectHandlerHarness& h) {
-    h.press(Config::ButtonID::LEFT_CENTER);
-    h.tap(Config::ButtonID::LEFT_BOTTOM);
-    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.redoProjectHistory());
 }
 
 void enterCurrentDestinationMacroPicker(ProjectHandlerHarness& h) {
@@ -1316,7 +1443,7 @@ void test_project_modulator_creation_and_destination_workflow() {
     assert(h.state.projectNavigation.creatingModulatorSource);
     enterCurrentDestinationMacroPicker(h);
     h.tap(Config::ButtonID::NAV);
-    assert(h.state.pages.control.audition.active);
+    assert(h.state.pages.control.audition.active());
     assert(h.state.macroHistory.undoCount() == 0U);
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_SOURCE_DETAIL);
@@ -1324,24 +1451,20 @@ void test_project_modulator_creation_and_destination_workflow() {
         core::state::project::modulators::sourceAuditionLayout(
             ModulatorKind::LFO
         );
-    assert(auditionLayout.count == 6U);
+    assert(auditionLayout.count == 4U);
     assert(auditionLayout.at(0U) ==
            core::state::project::modulators::SourceDetailItem::SHAPE);
-    assert(auditionLayout.at(5U) ==
+    assert(auditionLayout.at(2U) ==
            core::state::project::modulators::SourceDetailItem::DEPTH);
+    assert(auditionLayout.at(3U) ==
+           core::state::project::modulators::SourceDetailItem::OPTIONS);
     h.turn(Config::EncoderID::OPT, 1.0f);   // Square
-    h.turn(Config::EncoderID::NAV, 2.0f);   // Rate
+    h.turn(Config::EncoderID::NAV, 1.0f);   // Rate
     h.turn(Config::EncoderID::OPT, 1.0f);   // 32 bars
     assert(h.state.pages.control.authored.modulation.sources[0]
                .parameters.lfo.periodTicks ==
            PROJECT_CONTROL_TICKS_PER_BEAT * 128U);
-    h.turn(Config::EncoderID::NAV, -1.0f);  // Timing
-    h.turn(Config::EncoderID::OPT, 1.0f);   // Free
-    h.turn(Config::EncoderID::NAV, 1.0f);   // Rate
-    h.turn(Config::EncoderID::OPT, 0.0f);   // 8 ms
-    assert(h.state.pages.control.authored.modulation.sources[0]
-               .parameters.lfo.freePeriodMs == 8U);
-    h.turn(Config::EncoderID::NAV, 3.0f);   // Depth
+    h.turn(Config::EncoderID::NAV, 1.0f);   // Depth
     h.turn(Config::EncoderID::OPT, 0.75f);  // +50%
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
 
@@ -1349,8 +1472,7 @@ void test_project_modulator_creation_and_destination_workflow() {
     assert(graph.sourceCount == 1U);
     assert(graph.outputBindingCount == 1U);
     assert(graph.sources[0].parameters.lfo.shape == ModulatorLfoShape::SQUARE);
-    assert(graph.sources[0].parameters.lfo.timing == ModulatorTimingMode::FREE);
-    assert(graph.sources[0].parameters.lfo.freePeriodMs == 8U);
+    assert(graph.sources[0].parameters.lfo.timing == ModulatorTimingMode::SYNC);
     assert(graph.outputBindings[0].amountQ15 == 16384);
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_DESTINATIONS);
@@ -1363,7 +1485,7 @@ void test_project_modulator_creation_and_destination_workflow() {
     enterCurrentDestinationMacroPicker(h);
     h.turn(Config::EncoderID::NAV, 1.0f);  // Macro 2
     h.tap(Config::ButtonID::NAV);
-    assert(h.state.pages.control.audition.active);
+    assert(h.state.pages.control.audition.active());
     assert(!h.state.pages.pageData(0, 0).isMacroActive(1));
     assert(h.state.macroHistory.undoCount() == 1U);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
@@ -1394,7 +1516,7 @@ void test_project_macro_destination_audition_cancel_is_exact_and_clean() {
     enterCurrentDestinationMacroPicker(h);
     h.turn(Config::EncoderID::NAV, 1.0f); // legal + Macro 2
     h.tap(Config::ButtonID::NAV);         // audible create-and-bind preview
-    assert(h.state.pages.control.audition.active);
+    assert(h.state.pages.control.audition.active());
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_SOURCE_DETAIL);
     assert(!h.state.pages.pageData(0, 0).isMacroActive(1));
@@ -1405,7 +1527,8 @@ void test_project_macro_destination_audition_cancel_is_exact_and_clean() {
     h.turn(Config::EncoderID::OPT, 1.0f);  // Source Shape, provisionally
     assert(h.state.pages.control.authored.modulation.sources[0]
                .parameters.lfo.shape == ModulatorLfoShape::SQUARE);
-    h.turn(Config::EncoderID::NAV, 5.0f);  // Implied destination Depth
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Rate
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Implied destination Depth
     h.turn(Config::EncoderID::OPT, 0.75f);
     assert(h.state.pages.control.authored.modulation
                .outputBindings[0].amountQ15 == 16384);
@@ -1414,7 +1537,7 @@ void test_project_macro_destination_audition_cancel_is_exact_and_clean() {
 
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_DESTINATION_PICKER);
-    assert(!h.state.pages.control.audition.active);
+    assert(!h.state.pages.control.audition.active());
     assert(h.state.macroHistory.undoCount() == 0U);
     assert(h.state.project.metadata.dirty == dirtyBefore);
     assert(std::memcmp(
@@ -1501,7 +1624,7 @@ void test_project_destination_creates_new_track_page_and_sparse_macro_atomically
            ModulatorDestinationPickerLevel::MACRO);
     h.turn(Config::EncoderID::NAV, 5.0f);  // Physical Macro 6
     h.tap(Config::ButtonID::NAV);          // Silent structural preview
-    assert(h.state.pages.control.audition.active);
+    assert(h.state.pages.control.audition.active());
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_SOURCE_DETAIL);
     assert(h.state.pages.currentTrackEnabledMask() == sharedMaskBefore);
@@ -1518,7 +1641,7 @@ void test_project_destination_creates_new_track_page_and_sparse_macro_atomically
     assert(h.state.projectNavigation.destinationPickerLevel ==
            ModulatorDestinationPickerLevel::MACRO);
     assert(h.state.projectNavigation.focusedRow.get() == 5U);
-    assert(!h.state.pages.control.audition.active);
+    assert(!h.state.pages.control.audition.active());
     assert(h.state.pages.control.authored.modulation.sourceCount == 0U);
     assert(h.state.pages.currentTrackEnabledMask() == sharedMaskBefore);
     assert(std::memcmp(
@@ -1570,20 +1693,31 @@ void test_project_adsr_creation_editing_and_trigger_route() {
     h.tap(Config::ButtonID::NAV);          // Macro 1 preview
 
     auto& graph = h.state.pages.control.authored.modulation;
-    assert(h.state.pages.control.audition.active);
+    assert(h.state.pages.control.audition.active());
     assert(graph.sourceCount == 1U);
     assert(graph.sources[0].kind == ModulatorKind::ADSR);
+    assert(graph.sources[0].schemaVersion ==
+           PROJECT_MODULATOR_ADSR_SCHEMA_VERSION);
     assert(graph.triggerBindingCount == 1U);
     assert(graph.triggerBindings[0].trigger.kind ==
            ModulationTriggerKind::TRACK_NOTE);
     assert(graph.triggerBindings[0].trigger.track == 0U);
-    assert(graph.triggerBindings[0].trigger.channel ==
-           PROJECT_MODULATION_TRIGGER_ANY_CHANNEL);
-    assert(graph.triggerBindings[0].trigger.data ==
-           PROJECT_MODULATION_TRIGGER_ANY_NOTE);
+    assert(graph.triggerBindings[0].trigger.noteMin == 0U);
+    assert(graph.triggerBindings[0].trigger.noteMax == 127U);
+    assert(graph.triggerBindings[0].velocityMin == 0U);
+    assert(graph.triggerBindings[0].velocityMax == 127U);
+    assert(graph.sources[0].parameters.adsr.delay == 0U);
     assert(graph.sources[0].parameters.adsr.attack == 16U);
+    assert(graph.sources[0].parameters.adsr.hold == 0U);
     assert(graph.sources[0].parameters.adsr.decay == 250U);
     assert(graph.sources[0].parameters.adsr.release == 500U);
+    assert(graph.sources[0].parameters.adsr.smooth == 0U);
+    assert(modulatorAdsrTiming(graph.sources[0].parameters.adsr.traits) ==
+           ModulatorTimingMode::FREE);
+    assert(modulatorAdsrRetrigger(graph.sources[0].parameters.adsr.traits) ==
+           ModulatorAdsrRetriggerMode::RETRIGGER);
+    assert(modulatorAdsrCurve(graph.sources[0].parameters.adsr.traits) ==
+           ModulatorAdsrCurve::EXPONENTIAL);
 
     h.tap(Config::ButtonID::BOTTOM_RIGHT); // Apply one transaction
     assert(graph.outputBindingCount == 1U);
@@ -1596,21 +1730,29 @@ void test_project_adsr_creation_editing_and_trigger_route() {
            ProjectNodeId::MODULATOR_SOURCE_DETAIL);
     assert(h.state.projectNavigation.focusedRow.get() == 0U);
     h.turn(Config::EncoderID::OPT, 4.0f / 15.0f);
-    assert(graph.sources[0].parameters.adsr.attack == 32U);
+    const auto attackBeforeTimingChange =
+        graph.sources[0].parameters.adsr.attack;
+    assert(attackBeforeTimingChange != 16U);
 
     h.turn(Config::EncoderID::NAV, 4.0f);  // Trigger
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_TRIGGER);
     h.turn(Config::EncoderID::OPT, 1.0f);  // Track 16
-    h.turn(Config::EncoderID::NAV, 1.0f);  // Channel
-    h.turn(Config::EncoderID::OPT, 3.0f / 16.0f); // Channel 3
-    h.turn(Config::EncoderID::NAV, 1.0f);  // Note
-    h.turn(Config::EncoderID::OPT, 61.0f / 128.0f); // C4 / MIDI 60
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Note low
+    h.turn(Config::EncoderID::OPT, 1.0f);  // MIDI 127
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Note high
+    h.turn(Config::EncoderID::OPT, 1.0f);  // MIDI 127
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Velocity low
+    h.turn(Config::EncoderID::OPT, 1.0f);  // Velocity 127
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Velocity high
+    h.turn(Config::EncoderID::OPT, 1.0f);  // Velocity 127
 
     assert(graph.triggerBindings[0].trigger.track == 15U);
-    assert(graph.triggerBindings[0].trigger.channel == 2U);
-    assert(graph.triggerBindings[0].trigger.data == 60U);
+    assert(graph.triggerBindings[0].trigger.noteMin == 127U);
+    assert(graph.triggerBindings[0].trigger.noteMax == 127U);
+    assert(graph.triggerBindings[0].velocityMin == 127U);
+    assert(graph.triggerBindings[0].velocityMax == 127U);
 
     h.tap(Config::ButtonID::LEFT_TOP);     // Trigger -> workspace, focus retained
     assert(h.state.projectNavigation.currentNode.get() ==
@@ -1621,20 +1763,52 @@ void test_project_adsr_creation_editing_and_trigger_route() {
     assert(h.state.projectNavigation.currentNode.get() ==
            ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
 
+    h.turn(Config::EncoderID::NAV, 2.0f);  // Timing
     h.turn(Config::EncoderID::OPT, 0.0f);  // Sync, preserving duration ordinals
-    assert(graph.sources[0].parameters.adsr.timing == ModulatorTimingMode::SYNC);
-    assert(graph.sources[0].parameters.adsr.attack == 24U);
-    assert(graph.sources[0].parameters.adsr.decay == 192U);
-    assert(graph.sources[0].parameters.adsr.release == 384U);
-    h.turn(Config::EncoderID::NAV, 1.0f);  // Curve
-    h.turn(Config::EncoderID::OPT, 0.5f);  // Smooth
-    assert(graph.sources[0].parameters.adsr.curve ==
+    assert(modulatorAdsrTiming(graph.sources[0].parameters.adsr.traits) ==
+           ModulatorTimingMode::SYNC);
+    assert(graph.sources[0].parameters.adsr.delay == 0U);
+    assert(graph.sources[0].parameters.adsr.hold == 0U);
+    assert(graph.sources[0].parameters.adsr.smooth == 0U);
+    assert(graph.sources[0].parameters.adsr.attack !=
+           attackBeforeTimingChange);
+
+    h.tap(Config::ButtonID::LEFT_TOP);     // Details -> Source, focus More
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    h.turn(Config::EncoderID::NAV, -5.0f); // Attack
+    h.tap(Config::ButtonID::NAV);          // Straight -> Triplet
+    assert(modulatorAdsrFeel(
+               graph.sources[0].parameters.adsr.traits,
+               ModulatorEnvelopeTimeParameter::ATTACK
+           ) == ModulatorEnvelopeFeel::TRIPLET);
+    assert(std::strstr(
+        h.state.projectNavigation.lifecycleFeedback.get(),
+        "Attack"
+    ) != nullptr);
+    h.tap(Config::ButtonID::NAV);          // Triplet -> Dotted
+    assert(modulatorAdsrFeel(
+               graph.sources[0].parameters.adsr.traits,
+               ModulatorEnvelopeTimeParameter::ATTACK
+           ) == ModulatorEnvelopeFeel::DOTTED);
+    h.tap(Config::ButtonID::NAV);          // Dotted -> Straight
+    assert(modulatorAdsrFeel(
+               graph.sources[0].parameters.adsr.traits,
+               ModulatorEnvelopeTimeParameter::ATTACK
+           ) == ModulatorEnvelopeFeel::STRAIGHT);
+    h.turn(Config::EncoderID::NAV, 5.0f);  // More
+    h.tap(Config::ButtonID::NAV);          // Details, focus starts on Delay
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    h.turn(Config::EncoderID::NAV, 4.0f);  // Response
+    h.turn(Config::EncoderID::OPT, 0.5f);  // Ease
+    assert(modulatorAdsrCurve(graph.sources[0].parameters.adsr.traits) ==
            ModulatorAdsrCurve::SMOOTH);
     h.turn(Config::EncoderID::NAV, 1.0f);  // Retrigger
     h.turn(Config::EncoderID::OPT, 1.0f);  // Legato
-    assert(graph.sources[0].parameters.adsr.retrigger ==
+    assert(modulatorAdsrRetrigger(graph.sources[0].parameters.adsr.traits) ==
            ModulatorAdsrRetriggerMode::LEGATO);
-    std::cout << "[PASS] ADSR source creation, direct edit and typed route are coherent\n";
+    std::cout << "[PASS] DAHDSR source creation, direct edit and typed route are coherent\n";
 }
 
 void test_project_modulator_source_copy_and_guarded_paste() {
@@ -1833,7 +2007,7 @@ void openMacroCreatedLfoWorkspace(ProjectHandlerHarness& h) {
     ).changed());
 
     h.state.macroEdit.openEditor(0, 0, 0, 0);
-    h.state.macroEdit.openNewModulatorAudition();
+    h.state.macroEdit.openModulatorCreate(0U);
     h.state.activeView.set(core::ui::ViewType::MACRO);
     assert(core::handler::modulator_navigation::openAuditionSourceFromMacro(
         {
@@ -1842,6 +2016,7 @@ void openMacroCreatedLfoWorkspace(ProjectHandlerHarness& h) {
             h.state.projectNavigation,
             h.state.macroEdit,
             h.state.pages,
+            h.state.projectTracks,
         },
         0
     ));
@@ -1856,14 +2031,19 @@ void test_macro_created_source_workspace_cancel_and_apply_are_atomic() {
         const auto graphBefore = h.state.pages.control.authored.modulation;
         const bool dirtyBefore = h.state.project.metadata.dirty;
         openMacroCreatedLfoWorkspace(h);
-        assert(h.state.activeView.get() == core::ui::ViewType::PROJECT);
+        assert(h.state.activeView.get() == core::ui::ViewType::MODULATORS);
         assert(h.state.projectNavigation.currentNode.get() ==
                ProjectNodeId::MODULATOR_SOURCE_DETAIL);
         assert(h.state.projectNavigation.modulatorReturn.caller ==
                core::state::project::ModulatorNavigationCaller::MACRO_AUDITION);
+        assert(h.state.projectNavigation.modulatorReturn.target ==
+               core::state::project::ModulatorMacroReturnTarget::
+                   MODULATOR_CREATE);
+        assert(h.state.projectNavigation.modulatorReturn.focusedRow == 0U);
 
         h.turn(Config::EncoderID::OPT, 1.0f);  // Shape = Square
-        h.turn(Config::EncoderID::NAV, 5.0f);  // Depth
+        h.turn(Config::EncoderID::NAV, 1.0f);  // Rate
+        h.turn(Config::EncoderID::NAV, 1.0f);  // Depth
         h.turn(Config::EncoderID::OPT, 0.75f); // +50%
         assert(h.state.macroHistory.undoCount() == 0U);
         assert(h.state.project.metadata.dirty == dirtyBefore);
@@ -1871,8 +2051,9 @@ void test_macro_created_source_workspace_cancel_and_apply_are_atomic() {
 
         assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
         assert(h.state.macroEdit.flowPhase.get() ==
-               core::state::MacroEditFlowPhase::MODULATION);
-        assert(!h.state.pages.control.audition.active);
+               core::state::MacroEditFlowPhase::MODULATOR_CREATE);
+        assert(h.state.macroEdit.modulationFocusedRow.get() == 0U);
+        assert(!h.state.pages.control.audition.active());
         assert(!h.state.projectNavigation.modulatorReturn.active());
         assert(h.state.macroHistory.undoCount() == 0U);
         assert(h.state.project.metadata.dirty == dirtyBefore);
@@ -1887,7 +2068,8 @@ void test_macro_created_source_workspace_cancel_and_apply_are_atomic() {
         ProjectHandlerHarness h;
         openMacroCreatedLfoWorkspace(h);
         h.turn(Config::EncoderID::OPT, 1.0f);
-        h.turn(Config::EncoderID::NAV, 5.0f);
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        h.turn(Config::EncoderID::NAV, 1.0f);
         h.turn(Config::EncoderID::OPT, 0.75f);
         const auto bindingId = h.state.pages.control.audition.bindingId;
         h.tap(Config::ButtonID::BOTTOM_RIGHT);
@@ -1896,7 +2078,7 @@ void test_macro_created_source_workspace_cancel_and_apply_are_atomic() {
         assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
         assert(h.state.macroEdit.flowPhase.get() ==
                core::state::MacroEditFlowPhase::MODULATION);
-        assert(!h.state.pages.control.audition.active);
+        assert(!h.state.pages.control.audition.active());
         assert(!h.state.projectNavigation.modulatorReturn.active());
         assert(h.state.macroHistory.undoCount() == 1U);
         assert(h.state.project.metadata.dirty);
@@ -1915,6 +2097,353 @@ void test_macro_created_source_workspace_cancel_and_apply_are_atomic() {
     }
     std::cout
         << "[PASS] Macro-created Source workspace keeps Cancel/Apply atomic\n";
+}
+
+void test_macro_created_adsr_cancel_restores_exact_create_row() {
+    using namespace core::state::modulation;
+    ProjectHandlerHarness h;
+    const core::state::macro::MacroAutomationSlotAddress address{0U, 0U, 0U};
+    h.state.pages.setMacroSlotActive(address.macro, true);
+    const auto graphBefore = h.state.pages.control.authored.modulation;
+
+    ModulatorAdsrDraft source{};
+    source.name = "ADSR 1";
+    ModulationTriggerDraft trigger{};
+    trigger.trigger.kind = ModulationTriggerKind::TRACK_NOTE;
+    trigger.trigger.track = address.track;
+    trigger.trigger.noteMin = 0U;
+    trigger.trigger.noteMax = 127U;
+    trigger.velocityMin = 0U;
+    trigger.velocityMax = 127U;
+    ModulationBindingDraft binding{};
+    binding.destination = projectControlDestination(address);
+    binding.amountQ15 = 8192;
+    binding.application = ModulationApplication::NATURAL;
+    assert(h.state.macroHistory.beginAdsrModulatorAudition(
+        h.state.pages,
+        address,
+        source,
+        trigger,
+        binding
+    ).changed());
+
+    h.state.macroEdit.openEditor(0U, 0U, 0U, 0U);
+    h.state.macroEdit.openModulatorCreate(1U);
+    h.state.activeView.set(core::ui::ViewType::MACRO);
+    assert(core::handler::modulator_navigation::openAuditionSourceFromMacro(
+        {
+            h.state.overlays,
+            h.state.activeView,
+            h.state.projectNavigation,
+            h.state.macroEdit,
+            h.state.pages,
+            h.state.projectTracks,
+        },
+        0U
+    ));
+    assert(h.state.projectNavigation.modulatorReturn.target ==
+           core::state::project::ModulatorMacroReturnTarget::MODULATOR_CREATE);
+    assert(h.state.projectNavigation.modulatorReturn.focusedRow == 1U);
+    h.handler.syncFocusedEncoder();
+    h.tap(Config::ButtonID::LEFT_TOP);
+
+    assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
+    assert(h.state.macroEdit.flowPhase.get() ==
+           core::state::MacroEditFlowPhase::MODULATOR_CREATE);
+    assert(h.state.macroEdit.modulationFocusedRow.get() == 1U);
+    assert(!h.state.pages.control.audition.active());
+    assert(!h.state.projectNavigation.modulatorReturn.active());
+    assert(h.state.macroHistory.undoCount() == 0U);
+    assert(std::memcmp(
+        &h.state.pages.control.authored.modulation,
+        &graphBefore,
+        sizeof(graphBefore)
+    ) == 0);
+    std::cout << "[PASS] Macro ADSR Cancel restores exact Create row\n";
+}
+
+core::state::modulation::ModulatorId openMacroExistingLfoWorkspace(
+    ProjectHandlerHarness& h
+) {
+    using namespace core::state::modulation;
+    const core::state::macro::MacroAutomationSlotAddress address{0U, 0U, 0U};
+    h.state.pages.setMacroSlotActive(address.macro, true);
+    ModulatorLfoDraft sourceDraft{};
+    sourceDraft.name = "Shared LFO";
+    sourceDraft.parameters.shape = ModulatorLfoShape::TRIANGLE;
+    const auto source = createLfoModulator(
+        h.state.pages.control.authored.modulation,
+        sourceDraft
+    );
+    assert(source.changed());
+    ModulationBindingDraft bindingDraft{};
+    bindingDraft.destination = projectControlDestination(address);
+    bindingDraft.amountQ15 = 8192;
+    assert(h.state.macroHistory.beginExistingModulatorAudition(
+        h.state.pages,
+        address,
+        source.sourceId,
+        bindingDraft
+    ).changed());
+
+    h.state.macroEdit.openEditor(0U, 0U, 0U, 0U);
+    h.state.macroEdit.openModulatorPicker(0);
+    h.state.activeView.set(core::ui::ViewType::MACRO);
+    assert(core::handler::modulator_navigation::openAuditionSourceFromMacro(
+        {
+            h.state.overlays,
+            h.state.activeView,
+            h.state.projectNavigation,
+            h.state.macroEdit,
+            h.state.pages,
+            h.state.projectTracks,
+        },
+        0U
+    ));
+    assert(h.state.projectNavigation.modulatorReturn.target ==
+           core::state::project::ModulatorMacroReturnTarget::MODULATOR_PICKER);
+    assert(h.state.projectNavigation.modulatorReturn.sourceId == source.sourceId);
+    h.handler.syncFocusedEncoder();
+    return source.sourceId;
+}
+
+void test_macro_existing_source_cancel_and_apply_restore_exact_context() {
+    using namespace core::state::modulation;
+    {
+        ProjectHandlerHarness h;
+        const auto sourceId = openMacroExistingLfoWorkspace(h);
+        const auto sourceBefore =
+            h.state.pages.control.authored.modulation.sources[0];
+        assert(h.state.macroHistory.undoCount() == 0U);
+        h.turn(Config::EncoderID::OPT, 0.75f);
+        h.tap(Config::ButtonID::LEFT_TOP);
+
+        const auto& graph = h.state.pages.control.authored.modulation;
+        assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
+        assert(h.state.macroEdit.flowPhase.get() ==
+               core::state::MacroEditFlowPhase::MODULATOR_PICKER);
+        assert(h.state.macroEdit.modulatorPickerIndex.get() == 0);
+        assert(!h.state.pages.control.audition.active());
+        assert(!h.state.projectNavigation.modulatorReturn.active());
+        assert(graph.sourceCount == 1U);
+        assert(graph.sources[0].id == sourceId);
+        assert(graph.outputBindingCount == 0U);
+        assert(h.state.macroHistory.undoCount() == 0U);
+        assert(std::memcmp(
+            &graph.sources[0],
+            &sourceBefore,
+            sizeof(sourceBefore)
+        ) == 0);
+    }
+
+    {
+        ProjectHandlerHarness h;
+        const auto sourceId = openMacroExistingLfoWorkspace(h);
+        const auto sourceBefore =
+            h.state.pages.control.authored.modulation.sources[0];
+        const auto bindingId = h.state.pages.control.audition.bindingId;
+        h.turn(Config::EncoderID::OPT, 0.75f);
+        h.tap(Config::ButtonID::BOTTOM_RIGHT);
+
+        const auto& graph = h.state.pages.control.authored.modulation;
+        assert(h.state.activeView.get() == core::ui::ViewType::MACRO);
+        assert(h.state.macroEdit.flowPhase.get() ==
+               core::state::MacroEditFlowPhase::MODULATION);
+        assert(!h.state.pages.control.audition.active());
+        assert(!h.state.projectNavigation.modulatorReturn.active());
+        assert(graph.sourceCount == 1U);
+        assert(graph.sources[0].id == sourceId);
+        assert(graph.outputBindingCount == 1U);
+        assert(graph.outputBindings[0].id == bindingId);
+        assert(graph.outputBindings[0].amountQ15 == 16384);
+        assert(projectControlFocusedModulationBinding(
+                   h.state.pages.control,
+                   {0U, 0U, 0U}
+               ) == bindingId);
+        assert(h.state.macroHistory.undoCount() == 1U);
+        assert(std::memcmp(
+            &graph.sources[0],
+            &sourceBefore,
+            sizeof(sourceBefore)
+        ) == 0);
+    }
+    std::cout
+        << "[PASS] Macro Existing Cancel/Apply restore exact typed context\n";
+}
+
+void test_existing_source_audition_workspace_is_depth_only() {
+    using namespace core::state::modulation;
+    using core::state::project::ProjectNodeId;
+
+    {
+        ProjectHandlerHarness h;
+        auto& graph = h.state.pages.control.authored.modulation;
+        h.state.pages.setMacroSlotActive(0U, true);
+        ModulatorLfoDraft sourceDraft{};
+        sourceDraft.name = "Shared LFO";
+        sourceDraft.parameters.shape = ModulatorLfoShape::SINE;
+        const auto source = createLfoModulator(graph, sourceDraft);
+        assert(source.changed());
+        const auto sourceBefore = graph.sources[0];
+        ModulationBindingDraft bindingDraft{};
+        bindingDraft.destination = projectControlDestination({0U, 0U, 0U});
+        bindingDraft.amountQ15 = 8192;
+        const auto audition = h.state.macroHistory.beginExistingModulatorAudition(
+            h.state.pages,
+            {0U, 0U, 0U},
+            source.sourceId,
+            bindingDraft
+        );
+        assert(audition.changed());
+        assert(h.state.pages.control.audition.existingSource());
+        assert(core::state::project::openProjectModulatorWorkspace(
+            h.state.projectNavigation,
+            source.sourceId
+        ));
+        h.state.activeView.set(core::ui::ViewType::PROJECT);
+        h.handler.syncFocusedEncoder();
+
+        h.turn(Config::EncoderID::OPT, 1.0f);  // Shared Shape is read-only.
+        assert(std::memcmp(
+            &graph.sources[0],
+            &sourceBefore,
+            sizeof(sourceBefore)
+        ) == 0);
+        assert(std::strstr(
+            h.state.projectNavigation.lifecycleFeedback.get(),
+            "Shared source"
+        ) != nullptr);
+
+        h.turn(Config::EncoderID::NAV, 1.0f);  // Rate
+        h.turn(Config::EncoderID::NAV, 1.0f);  // Implied edge Depth.
+        h.turn(Config::EncoderID::OPT, 0.75f);
+        assert(graph.outputBindings[0].amountQ15 == 16384);
+        assert(std::memcmp(
+            &graph.sources[0],
+            &sourceBefore,
+            sizeof(sourceBefore)
+        ) == 0);
+        h.tap(Config::ButtonID::LEFT_TOP);
+
+        assert(!h.state.pages.control.audition.active());
+        assert(graph.sourceCount == 1U);
+        assert(graph.outputBindingCount == 0U);
+        assert(h.state.macroHistory.undoCount() == 0U);
+        assert(std::memcmp(
+            &graph.sources[0],
+            &sourceBefore,
+            sizeof(sourceBefore)
+        ) == 0);
+    }
+
+    {
+        ProjectHandlerHarness h;
+        auto& graph = h.state.pages.control.authored.modulation;
+        h.state.pages.setMacroSlotActive(0U, true);
+        ModulatorLfoDraft sourceDraft{};
+        sourceDraft.name = "Shared LFO";
+        const auto source = createLfoModulator(graph, sourceDraft);
+        assert(source.changed());
+        ModulationBindingDraft bindingDraft{};
+        bindingDraft.destination = projectControlDestination({0U, 0U, 0U});
+        bindingDraft.amountQ15 = 8192;
+        assert(h.state.macroHistory.beginExistingModulatorAudition(
+            h.state.pages,
+            {0U, 0U, 0U},
+            source.sourceId,
+            bindingDraft
+        ).changed());
+        assert(core::state::project::openProjectModulatorWorkspace(
+            h.state.projectNavigation,
+            source.sourceId
+        ));
+        h.state.activeView.set(core::ui::ViewType::PROJECT);
+        h.handler.syncFocusedEncoder();
+
+        h.turn(Config::EncoderID::NAV, 1.0f);  // Rate
+        h.turn(Config::EncoderID::NAV, 1.0f);  // Depth
+        h.turn(Config::EncoderID::OPT, 0.25f);
+        h.tap(Config::ButtonID::BOTTOM_RIGHT);
+
+        assert(!h.state.pages.control.audition.active());
+        assert(graph.sourceCount == 1U);
+        assert(graph.outputBindingCount == 1U);
+        assert(graph.outputBindings[0].amountQ15 == -16384);
+        assert(h.state.macroHistory.undoCount() == 1U);
+        assert(h.state.projectNavigation.currentNode.get() ==
+               ProjectNodeId::MODULATORS_ROOT);
+    }
+
+    std::cout << "[PASS] Existing Source audition exposes Depth only\n";
+}
+
+void test_existing_adsr_trigger_is_inspectable_but_read_only() {
+    using namespace core::state::modulation;
+    using core::state::project::ProjectNodeId;
+    ProjectHandlerHarness h;
+    auto& graph = h.state.pages.control.authored.modulation;
+    h.state.pages.setMacroSlotActive(0U, true);
+
+    ModulatorAdsrDraft sourceDraft{};
+    sourceDraft.name = "Shared ADSR";
+    const auto source = createAdsrModulator(graph, sourceDraft);
+    assert(source.changed());
+    ModulationTriggerDraft triggerDraft{};
+    triggerDraft.sourceId = source.sourceId;
+    triggerDraft.trigger = {
+        .kind = ModulationTriggerKind::TRACK_NOTE,
+        .track = 2U,
+        .noteMin = 60U,
+        .noteMax = 72U,
+    };
+    triggerDraft.velocityMin = 32U;
+    triggerDraft.velocityMax = 112U;
+    assert(addProjectModulationTrigger(graph, triggerDraft).changed());
+    const auto triggerBefore = graph.triggerBindings[0];
+
+    ModulationBindingDraft bindingDraft{};
+    bindingDraft.destination = projectControlDestination({0U, 0U, 0U});
+    bindingDraft.amountQ15 = 8192;
+    assert(h.state.macroHistory.beginExistingModulatorAudition(
+        h.state.pages,
+        {0U, 0U, 0U},
+        source.sourceId,
+        bindingDraft
+    ).changed());
+    assert(core::state::project::openProjectModulatorWorkspace(
+        h.state.projectNavigation,
+        source.sourceId
+    ));
+    h.state.activeView.set(core::ui::ViewType::PROJECT);
+    h.handler.syncFocusedEncoder();
+
+    h.turn(Config::EncoderID::NAV, 4.0f);  // Trigger card.
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_TRIGGER);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(std::memcmp(
+        &graph.triggerBindings[0],
+        &triggerBefore,
+        sizeof(triggerBefore)
+    ) == 0);
+    assert(std::strstr(
+        h.state.projectNavigation.lifecycleFeedback.get(),
+        "Shared source"
+    ) != nullptr);
+
+    h.tap(Config::ButtonID::LEFT_TOP);  // Inspect -> Source workspace.
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    h.tap(Config::ButtonID::LEFT_TOP);  // Cancel the edge audition.
+    assert(!h.state.pages.control.audition.active());
+    assert(graph.outputBindingCount == 0U);
+    assert(std::memcmp(
+        &graph.triggerBindings[0],
+        &triggerBefore,
+        sizeof(triggerBefore)
+    ) == 0);
+    std::cout << "[PASS] Existing ADSR Trigger is shared read-only\n";
 }
 
 void test_macro_deep_link_back_restores_exact_assignment() {
@@ -1957,6 +2486,13 @@ void test_macro_deep_link_back_restores_exact_assignment() {
             ModulatorNavigationCaller::MACRO_ASSIGNMENT,
         .focusedRow = 2,
     };
+    assert(core::state::project::setProjectTrackMidiChannel(
+        h.state.projectTracks,
+        0U,
+        9U
+    ).changed());
+    // The return workflow must reopen Macro Edit from the canonical Project
+    // Track route.
     h.state.activeView.set(core::ui::ViewType::PROJECT);
 
     h.tap(Config::ButtonID::LEFT_TOP);
@@ -1969,6 +2505,7 @@ void test_macro_deep_link_back_restores_exact_assignment() {
     assert(h.state.macroEdit.flowPhase.get() ==
            core::state::MacroEditFlowPhase::MODULATION);
     assert(h.state.macroEdit.modulationFocusedRow.get() == 2U);
+    assert(h.state.macroEdit.tempChannel.get() == 9U);
     assert(projectControlFocusedModulationBinding(
                h.state.pages.control,
                {0, 0, 0}
@@ -2039,6 +2576,172 @@ void test_macro_deep_link_deleted_source_returns_with_explicit_fallback() {
     std::cout << "[PASS] Deleted source returns to a visible deterministic fallback\n";
 }
 
+void test_recorded_shape_depth_uses_full_two_hundred_percent_ui_scale() {
+    using namespace core::state::modulation;
+    ProjectHandlerHarness h;
+    auto& control = h.state.pages.control;
+    auto& graph = control.authored.modulation;
+    h.state.pages.setMacroSlotActive(0U, true);
+
+    const ProjectPackedCurvePoint points[]{
+        {0U, -32767},
+        {192U, 32767},
+    };
+    RecordedShapeDraft sourceDraft{};
+    sourceDraft.name = "Gesture";
+    sourceDraft.curve = {
+        .sourceDurationTicks = 192U,
+        .durationTicks = 192U,
+        .valueDomain = ProjectCurveValueDomain::BIPOLAR,
+    };
+    sourceDraft.points = points;
+    sourceDraft.pointCount = 2U;
+    const auto source = createRecordedShapeModulator(
+        graph,
+        control.authored.curves,
+        sourceDraft
+    );
+    assert(source.changed());
+
+    ModulationBindingDraft bindingDraft{};
+    bindingDraft.sourceId = source.sourceId;
+    bindingDraft.destination = projectControlDestination({0U, 0U, 0U});
+    bindingDraft.amountQ15 = 16384;
+    const auto assigned = addProjectModulationBinding(graph, bindingDraft);
+    assert(assigned.changed());
+    control.markAuthoredMutation();
+
+    auto& navigation = h.state.projectNavigation;
+    navigation.selectedModulator = source.sourceId;
+    navigation.currentNode.set(ProjectNodeId::MODULATOR_DESTINATIONS);
+    navigation.focusedRow.set(0U);
+    h.handler.syncFocusedEncoder();
+
+    constexpr auto OPT_ID =
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
+    assert(h.encoderHw.getDiscreteSteps(OPT_ID) == 0U);
+    assert(near(h.encoderHw.getPosition(OPT_ID), 0.75f));
+
+    h.turn(Config::EncoderID::OPT, 0.625f);
+    const auto* binding = findProjectModulationBinding(
+        graph,
+        assigned.bindingId
+    );
+    assert(binding != nullptr);
+    assert(binding->amountQ15 == 8192);
+
+    std::cout << "[PASS] Recorded Shape Depth exposes -200..+200 at 1%\n";
+}
+
+void test_project_recorded_shape_creation_is_direct_flat_and_undoable() {
+    using namespace core::state::modulation;
+    using core::state::project::ProjectNodeId;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+
+    h.tap(Config::ButtonID::NAV);          // + Source
+    h.turn(Config::EncoderID::NAV, 2.0f);  // Recorded Shape
+    h.tap(Config::ButtonID::NAV);          // Direct durable creation
+
+    const auto& control = h.state.pages.control;
+    const auto& graph = control.authored.modulation;
+    assert(graph.sourceCount == 1U);
+    assert(graph.outputBindingCount == 0U);
+    assert(graph.sources[0].kind == ModulatorKind::RECORDED_SHAPE);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    assert(h.state.projectNavigation.focusedRow.get() == 0U);
+    assert(!control.audition.active());
+    assert(h.state.macroHistory.undoCount() == 1U);
+
+    const auto* curve = findProjectCurve(
+        control.authored.curves,
+        graph.sources[0].parameters.recordedCurveId
+    );
+    assert(curve != nullptr);
+    assert(curve->sourceDurationTicks == 4U * PROJECT_CONTROL_TICKS_PER_BEAT);
+    assert(curve->durationTicks == 4U * PROJECT_CONTROL_TICKS_PER_BEAT);
+    assert(curve->valueDomain == ProjectCurveValueDomain::BIPOLAR);
+    assert(curve->pointCount == 2U);
+    assert(control.authored.curves.points[curve->pointOffset].value == 0);
+    assert(control.authored.curves.points[
+               curve->pointOffset + curve->pointCount - 1U
+           ].value == 0);
+
+    projectModulatorUndo(h);
+    assert(graph.sourceCount == 0U);
+    projectModulatorRedo(h);
+    assert(graph.sourceCount == 1U);
+    std::cout << "[PASS] Recorded Shape is direct, flat, detached and undoable\n";
+}
+
+void test_project_recorded_shape_hold_turn_commit_noop_cancel_and_length() {
+    using namespace core::state::modulation;
+    ProjectHandlerHarness h;
+    enterModulatorsRoot(h);
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    h.tap(Config::ButtonID::NAV);
+
+    auto& control = h.state.pages.control;
+    auto& graph = control.authored.modulation;
+    const auto sourceId = graph.sources[0].id;
+    const auto undoBeforeRecord = h.state.macroHistory.undoCount();
+    constexpr auto OPT_ID =
+        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.macroUi.recordedShapeCapture.active());
+    assert(h.encoderHw.getMode(OPT_ID) == oc::interface::EncoderMode::RAW);
+    h.turn(Config::EncoderID::OPT, 300.0f);
+    h.advance(250U);
+    h.handler.update(g_now_ms);
+    assert(h.state.macroUi.recordedShapeCapture.take->touched);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    assert(!h.state.macroUi.recordedShapeCapture.active());
+    assert(h.state.macroUi.recordedShapeCapture.status ==
+           ProjectRecordedShapeCaptureStatus::COMMITTED);
+    assert(h.encoderHw.getMode(OPT_ID) ==
+           oc::interface::EncoderMode::NORMALIZED);
+    assert(h.state.macroHistory.undoCount() == undoBeforeRecord + 1U);
+    assert(graph.sources[0].id == sourceId);
+    const auto committedCurveId = graph.sources[0].parameters.recordedCurveId;
+    assert(valid(committedCurveId));
+
+    const auto undoBeforeNoop = h.state.macroHistory.undoCount();
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.macroUi.recordedShapeCapture.status ==
+           ProjectRecordedShapeCaptureStatus::NO_CHANGE);
+    assert(h.state.macroHistory.undoCount() == undoBeforeNoop);
+    assert(graph.sources[0].parameters.recordedCurveId == committedCurveId);
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.turn(Config::EncoderID::OPT, -200.0f);
+    h.tap(Config::ButtonID::LEFT_TOP);  // Cancel only; stay in source editor.
+    assert(!h.state.macroUi.recordedShapeCapture.active());
+    assert(h.state.macroUi.recordedShapeCapture.status ==
+           ProjectRecordedShapeCaptureStatus::CANCELLED);
+    assert(h.state.macroHistory.undoCount() == undoBeforeNoop);
+    assert(graph.sources[0].parameters.recordedCurveId == committedCurveId);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);  // Length
+    h.turn(Config::EncoderID::OPT, 7.0f / 63.0f);  // 8 beats
+    const auto* resized = findProjectCurve(
+        control.authored.curves,
+        graph.sources[0].parameters.recordedCurveId
+    );
+    assert(resized != nullptr);
+    assert(resized->sourceDurationTicks ==
+           8U * PROJECT_CONTROL_TICKS_PER_BEAT);
+    assert(resized->durationTicks == 8U * PROJECT_CONTROL_TICKS_PER_BEAT);
+    assert(resized->windowOffsetTicks == 0U);
+    assert(h.state.macroHistory.undoCount() == undoBeforeNoop + 1U);
+    std::cout << "[PASS] Recorded Shape hold/turn is transactional and Length is exact\n";
+}
+
 }  // namespace
 
 int main() {
@@ -2047,9 +2750,11 @@ int main() {
     test_left_top_does_not_back_at_project_tab_root();
     test_nav_press_activates_storage_autosave_only();
     test_music_scale_root_is_wired_and_undoable();
+    test_project_cc_lane_defaults_are_direct_editable_values();
     test_left_center_hold_switches_tabs();
     test_left_center_hold_respects_fast_tab_delta();
     test_transport_values_are_editable_from_project();
+    test_project_setting_values_coalesce_and_use_global_history();
     test_storage_autosave_is_editable_with_opt();
     test_project_name_editor_uses_physical_action_buttons();
     test_overview_save_as_name_editor_persists_named_project();
@@ -2081,8 +2786,15 @@ int main() {
     test_project_modulator_options_expose_global_destinations_without_reach();
     test_project_destination_deep_link_opens_exact_macro_assignment();
     test_macro_created_source_workspace_cancel_and_apply_are_atomic();
+    test_macro_created_adsr_cancel_restores_exact_create_row();
+    test_macro_existing_source_cancel_and_apply_restore_exact_context();
+    test_existing_source_audition_workspace_is_depth_only();
+    test_existing_adsr_trigger_is_inspectable_but_read_only();
     test_macro_deep_link_back_restores_exact_assignment();
     test_macro_deep_link_deleted_source_returns_with_explicit_fallback();
+    test_recorded_shape_depth_uses_full_two_hundred_percent_ui_scale();
+    test_project_recorded_shape_creation_is_direct_flat_and_undoable();
+    test_project_recorded_shape_hold_turn_commit_noop_cancel_and_length();
 
     std::cout << "\nAll ProjectHandler tests passed.\n";
     return 0;

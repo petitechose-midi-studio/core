@@ -8,7 +8,7 @@
 
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/MacroState.hpp"
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -79,7 +79,7 @@ private:
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     oc::api::EncoderAPI& encoders_;
-    oc::state::StaticWatchGroup<27> watcher_;
+    oc::state::StaticWatchGroup<26> watcher_;
 
     uint8_t macro_steps_configured_ = 0;
     uint16_t macro_ticks_per_step_configured_ = 0;

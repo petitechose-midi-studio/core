@@ -33,7 +33,7 @@ constexpr lv_coord_t VERTICAL_SLOT_GAP = 2;
 constexpr lv_coord_t VERTICAL_SPREAD_OUTER_PAD = 4;
 constexpr uint32_t HOLD_TIMER_PERIOD_MS = 33;
 
-uint32_t toneColor(ContextActionStripTone tone) {
+FLASHMEM uint32_t toneColor(ContextActionStripTone tone) {
     switch (tone) {
         case ContextActionStripTone::CONSTRUCTIVE:
             return theme::color::MACRO_5;
@@ -49,7 +49,7 @@ uint32_t toneColor(ContextActionStripTone tone) {
     }
 }
 
-lv_opa_t contentOpacity(ContextActionStripVisualState state) {
+FLASHMEM lv_opa_t contentOpacity(ContextActionStripVisualState state) {
     switch (state) {
         case ContextActionStripVisualState::DISABLED:
             return LV_OPA_30;
@@ -67,11 +67,11 @@ lv_opa_t contentOpacity(ContextActionStripVisualState state) {
     }
 }
 
-lv_opa_t backgroundOpacity(ContextActionStripVisualState /*state*/) {
+FLASHMEM lv_opa_t backgroundOpacity(ContextActionStripVisualState /*state*/) {
     return LV_OPA_TRANSP;
 }
 
-lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
+FLASHMEM lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
     switch (state) {
         case ContextActionStripVisualState::ACTIVE:
             return LV_OPA_70;
@@ -86,24 +86,24 @@ lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
     }
 }
 
-const char* slotLabel(const ContextActionStripSlotProps& props) {
+FLASHMEM const char* slotLabel(const ContextActionStripSlotProps& props) {
     if (props.label) return props.label;
     return props.labelText[0] != '\0' ? props.labelText.data() : nullptr;
 }
 
-bool contentVisible(const ContextActionStripSlotProps& props) {
+FLASHMEM bool contentVisible(const ContextActionStripSlotProps& props) {
     return props.visualState != ContextActionStripVisualState::HIDDEN &&
            ((props.showIcon && props.icon) || (props.showLabel && slotLabel(props)));
 }
 
-bool sameText(const char* lhs, const char* rhs) {
+FLASHMEM bool sameText(const char* lhs, const char* rhs) {
     if (lhs == rhs) return true;
     if (!lhs || !rhs) return false;
     return std::strcmp(lhs, rhs) == 0;
 }
 
 template <size_t N>
-bool setCachedText(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
+FLASHMEM bool setCachedText(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
     if (!label) return false;
     const char* next = text ? text : "";
     if (std::strncmp(cache.data(), next, N) == 0) {
@@ -115,7 +115,7 @@ bool setCachedText(lv_obj_t* label, std::array<char, N>& cache, const char* text
     return true;
 }
 
-bool sameSlotProps(const ContextActionStripSlotProps& lhs, const ContextActionStripSlotProps& rhs) {
+FLASHMEM bool sameSlotProps(const ContextActionStripSlotProps& lhs, const ContextActionStripSlotProps& rhs) {
     return lhs.visualState == rhs.visualState &&
            lhs.tone == rhs.tone &&
            lhs.showIcon == rhs.showIcon &&
@@ -271,7 +271,7 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
     hold_timer_.emplace(HOLD_TIMER_PERIOD_MS, onHoldTimer, this);
 }
 
-void ContextActionStrip::render(const ContextActionStripProps& props) {
+FLASHMEM void ContextActionStrip::render(const ContextActionStripProps& props) {
     if (!container_) return;
 
     if (!props.visible) {
@@ -301,7 +301,7 @@ void ContextActionStrip::render(const ContextActionStripProps& props) {
     updateHoldTimer();
 }
 
-void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotProps& props) {
+FLASHMEM void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotProps& props) {
     if (index >= slots_.size()) return;
 
     auto& slot = slots_[index];
@@ -374,7 +374,7 @@ void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotPr
     }
 }
 
-void ContextActionStrip::refreshHoldIndicators() {
+FLASHMEM void ContextActionStrip::refreshHoldIndicators() {
     if (!container_ || !has_rendered_) return;
 
     const uint32_t nowMs = core::time_compat::millis();
@@ -488,7 +488,7 @@ void ContextActionStrip::refreshHoldIndicators() {
     }
 }
 
-void ContextActionStrip::updateHoldTimer() {
+FLASHMEM void ContextActionStrip::updateHoldTimer() {
     if (!hold_timer_) return;
 
     bool active = false;
@@ -506,7 +506,7 @@ void ContextActionStrip::updateHoldTimer() {
     }
 }
 
-void ContextActionStrip::onHoldTimer(lv_timer_t* timer) {
+FLASHMEM void ContextActionStrip::onHoldTimer(lv_timer_t* timer) {
     auto* self = static_cast<ContextActionStrip*>(lv_timer_get_user_data(timer));
     if (!self || !self->has_rendered_) return;
     self->refreshHoldIndicators();

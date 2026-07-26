@@ -25,6 +25,7 @@ public:
     PatternPitchSettingsOverlayPresenter(StateRefs stateRefs,
                                          ms::ui::VirtualListKeyValueOverlay& overlay,
                                          ms::ui::VirtualListSelectorOverlay& selectorOverlay);
+    ~PatternPitchSettingsOverlayPresenter();
 
     [[nodiscard]] bool bind();
 

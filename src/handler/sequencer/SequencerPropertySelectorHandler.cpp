@@ -614,8 +614,10 @@ FLASHMEM void SequencerPropertySelectorHandler::applySelectedCcLaneProperty(
     if (core::state::sequencer::sequencerPropertySelectionIsAdd(
             bank,
             selectedIndex
-        ) && cc_lane_workflow_->openAddDraft()) {
-        overlay_manager_->show(core::ui::OverlayType::SEQ_CC_LANE, false);
+        ) && cc_lane_workflow_->createDefaultLane(
+            now_provider_ ? now_provider_() : 0U
+        )) {
+        overlay_manager_->hide();
     }
 }
 

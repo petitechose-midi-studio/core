@@ -7,13 +7,16 @@
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
 
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
 #include "ui/font/StandaloneIcons.hpp"
-#include "ui/macro/MacroLfoAuditionModel.hpp"
+#include "ui/modulation/ModulationDepthUiModel.hpp"
+#include "ui/modulation/ModulatorLfoUiModel.hpp"
 #include "ui/modulation/ModulatorAdsrUiModel.hpp"
+#include "ui/modulation/ModulatorSparklineModel.hpp"
 #include "ui/project/ProjectModulatorUiModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -24,6 +27,7 @@ namespace theme = standalone::theme;
 using namespace core::state::modulation;
 using Item = core::state::project::modulators::SourceDetailItem;
 namespace adsr_ui = core::ui::modulation::adsr;
+namespace depth_ui = core::ui::modulation::depth;
 
 constexpr lv_coord_t HEADER_HEIGHT = 21;
 constexpr lv_coord_t CURVE_Y = 22;
@@ -37,10 +41,23 @@ constexpr lv_coord_t HORIZONTAL_PAD = 4;
 
 const char SOURCE_KIND_LFO[] PROGMEM = "LFO";
 const char SOURCE_KIND_MOTION[] PROGMEM = "MOTION";
-const char SOURCE_KIND_ADSR[] PROGMEM = "ADSR";
+const char SOURCE_KIND_ADSR[] PROGMEM = "DAHDSR";
 const char SOURCE_STATE_ON[] PROGMEM = "ON";
 const char SOURCE_STATE_OFF[] PROGMEM = "OFF";
 const char SOURCE_STATE_FORMAT[] PROGMEM = "%s · %s";
+
+FLASHMEM const char* sourceTimingLabel(const ModulatorSourceState& source) {
+    if (source.kind == ModulatorKind::LFO) {
+        return source.parameters.lfo.timing == ModulatorTimingMode::FREE
+            ? "FREE" : "SYNC";
+    }
+    if (source.kind == ModulatorKind::ADSR) {
+        return modulatorAdsrTiming(source.parameters.adsr.traits) ==
+                ModulatorTimingMode::FREE
+            ? "FREE" : "SYNC";
+    }
+    return nullptr;
+}
 
 FLASHMEM lv_obj_t* createLabel(
     lv_obj_t* parent,
@@ -106,42 +123,103 @@ FLASHMEM bool editableItem(Item item, ModulatorKind kind) {
                item == Item::RETRIGGER;
     }
     if (kind == ModulatorKind::ADSR) {
-        return item == Item::ATTACK || item == Item::DECAY ||
+        return item == Item::DELAY || item == Item::ATTACK ||
+               item == Item::HOLD || item == Item::DECAY ||
                item == Item::SUSTAIN || item == Item::RELEASE ||
-               item == Item::TIMING || item == Item::CURVE ||
+               item == Item::TIMING || item == Item::SMOOTH ||
+               item == Item::RESPONSE ||
                item == Item::RETRIGGER;
     }
-    return false;
+    return kind == ModulatorKind::RECORDED_SHAPE && item == Item::LENGTH;
 }
 
 FLASHMEM bool actionableItem(Item item) {
     return item == Item::OPTIONS || item == Item::RENAME ||
            item == Item::DESTINATIONS ||
-           item == Item::TRIGGER;
+           item == Item::TRIGGER || item == Item::RECORD;
 }
 
-FLASHMEM core::state::project::modulators::SourceDetailLayout layoutFor(
-    ModulatorKind kind,
-    bool options,
-    bool audition
+FLASHMEM bool captureMatches(
+    const ProjectModulatorWorkspaceProps& props
 ) {
-    if (audition) {
-        return options
-            ? core::state::project::modulators::sourceAuditionOptionsLayout(kind)
-            : core::state::project::modulators::sourceAuditionLayout(kind);
+    return props.capture != nullptr && props.capture->active() &&
+        props.capture->mode == ProjectRecordedShapeCaptureMode::REPLACE_EXISTING &&
+        props.source != nullptr && props.capture->sourceId == props.source->id &&
+        props.capture->take != nullptr;
+}
+
+FLASHMEM const char* captureStatusLabel(
+    ProjectRecordedShapeCaptureStatus status
+) {
+    switch (status) {
+        case ProjectRecordedShapeCaptureStatus::ARMED:
+            return "ARMED · TURN OPT";
+        case ProjectRecordedShapeCaptureStatus::RECORDING:
+            return "RECORDING";
+        case ProjectRecordedShapeCaptureStatus::REDUCED:
+            return "RECORDING · REDUCED";
+        default:
+            return "RECORDING";
     }
-    return options
-        ? core::state::project::modulators::sourceOptionsLayout(kind)
-        : core::state::project::modulators::sourceDetailLayout(kind);
+}
+
+FLASHMEM int itemOrdinal(
+    const core::state::project::modulators::SourceDetailLayout& layout,
+    Item item
+) {
+    for (uint8_t index = 0U; index < layout.count; ++index) {
+        if (layout.at(index) == item) return static_cast<int>(index);
+    }
+    return -1;
+}
+
+FLASHMEM void populateSourceItemRow(
+    const ProjectControlState& control,
+    const ModulatorSourceState& source,
+    Item item,
+    ms::ui::KeyValueRowBuffer& out
+) {
+    const auto detailLayout =
+        core::state::project::modulators::sourceDetailLayout(source.kind);
+    const int detailOrdinal = itemOrdinal(detailLayout, item);
+    if (detailOrdinal >= 0) {
+        core::ui::project::modulators::populateSourceDetailRow(
+            control,
+            source,
+            detailOrdinal,
+            out
+        );
+        return;
+    }
+
+    const auto optionsLayout =
+        core::state::project::modulators::sourceOptionsLayout(source.kind);
+    const int optionsOrdinal = itemOrdinal(optionsLayout, item);
+    if (optionsOrdinal >= 0) {
+        core::ui::project::modulators::populateSourceOptionsRow(
+            control,
+            source,
+            optionsOrdinal,
+            out
+        );
+    }
 }
 
 FLASHMEM void populateAuditionDepthRow(
+    const ProjectControlState* control,
     const ModulationBindingState* binding,
     ms::ui::KeyValueRowBuffer& out
 ) {
     std::snprintf(out.key.data(), out.key.size(), "Depth");
-    const int percent = binding
-        ? core::ui::macro::lfo_audition::depthQ15ToPercent(binding->amountQ15)
+    const int percent = control != nullptr && binding != nullptr
+        ? depth_ui::amountQ15ToPercent(
+              binding->amountQ15,
+              depth_ui::scaleFor(
+                  control->authored.modulation,
+                  control->authored.curves,
+                  *binding
+              )
+          )
         : 0;
     std::snprintf(out.value.data(), out.value.size(), "%+d%%", percent);
     std::snprintf(
@@ -349,8 +427,11 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     const ProjectModulatorWorkspaceProps& props
 ) {
     const auto& source = *props.source;
+    const bool audition = props.session.audition();
+    const bool existing = props.session.existingAudition();
     const bool enabled =
         (source.flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
+    const bool recording = captureMatches(props);
     if (copyText(titleText_, source.name.data())) {
         lv_label_set_text_static(title_, titleText_.data());
     }
@@ -372,52 +453,101 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
     );
     standalone::icons::set(
         state_icon_,
-        props.audition ? standalone::icons::ACTION_APPLY
+        recording ? standalone::icons::MACRO_AUTOMATION
+        : existing ? standalone::icons::LOCK
+                       : (audition ? standalone::icons::ACTION_APPLY
                        : (enabled ? standalone::icons::STATUS_RESUME
-                                  : standalone::icons::STATUS_PAUSED),
+                                  : standalone::icons::STATUS_PAUSED)),
         standalone::icons::Size::S
     );
     lv_obj_set_style_text_color(
         state_icon_,
         lv_color_hex(
-            props.audition || enabled
+            audition || enabled
                 ? theme::color::MACRO_MODULATION
                 : theme::color::INACTIVE
         ),
         0
     );
-    if (props.audition && props.auditionBinding) {
-        const auto& destination = props.auditionBinding->destination;
-        const int depth = core::ui::macro::lfo_audition::depthQ15ToPercent(
-            props.auditionBinding->amountQ15
-        );
+    if (recording) {
         std::snprintf(
             stateText_.data(),
             stateText_.size(),
-            "PREVIEW · T%u/P%u/M%u · %+d%%",
-            static_cast<unsigned>(destination.track + 1U),
-            static_cast<unsigned>(destination.page + 1U),
-            static_cast<unsigned>(destination.macro + 1U),
-            depth
+            "%s",
+            captureStatusLabel(props.capture->status)
         );
+    } else if (existing && props.transientFeedback &&
+        props.transientFeedback[0] != '\0') {
+        std::snprintf(
+            stateText_.data(),
+            stateText_.size(),
+            "%s",
+            props.transientFeedback
+        );
+    } else if (audition && props.auditionBinding) {
+        const int depth = depth_ui::amountQ15ToPercent(
+            props.auditionBinding->amountQ15,
+            depth_ui::scaleFor(
+                props.control->authored.modulation,
+                props.control->authored.curves,
+                *props.auditionBinding
+            )
+        );
+        if (existing) {
+            std::snprintf(
+                stateText_.data(),
+                stateText_.size(),
+                "%s · %s · SHARED %+d%%",
+                source.kind == ModulatorKind::ADSR ? SOURCE_KIND_ADSR
+                    : (source.kind == ModulatorKind::LFO
+                        ? SOURCE_KIND_LFO : SOURCE_KIND_MOTION),
+                sourceTimingLabel(source) != nullptr
+                    ? sourceTimingLabel(source) : "MOTION",
+                depth
+            );
+        } else {
+            std::snprintf(
+                stateText_.data(),
+                stateText_.size(),
+                "%s · %s · PREVIEW %+d%%",
+                source.kind == ModulatorKind::ADSR ? SOURCE_KIND_ADSR
+                    : (source.kind == ModulatorKind::LFO
+                        ? SOURCE_KIND_LFO : SOURCE_KIND_MOTION),
+                sourceTimingLabel(source) != nullptr
+                    ? sourceTimingLabel(source) : "MOTION",
+                depth
+            );
+        }
     } else {
-        std::snprintf(
-            stateText_.data(),
-            stateText_.size(),
-            SOURCE_STATE_FORMAT,
-            source.kind == ModulatorKind::LFO
-                ? SOURCE_KIND_LFO
-                : (source.kind == ModulatorKind::ADSR
-                    ? SOURCE_KIND_ADSR
-                    : SOURCE_KIND_MOTION),
-            enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF
-        );
+        const char* kind = source.kind == ModulatorKind::LFO
+            ? SOURCE_KIND_LFO
+            : (source.kind == ModulatorKind::ADSR
+                ? SOURCE_KIND_ADSR : SOURCE_KIND_MOTION);
+        const char* timing = sourceTimingLabel(source);
+        if (timing != nullptr) {
+            std::snprintf(
+                stateText_.data(),
+                stateText_.size(),
+                "%s · %s · %s",
+                kind,
+                timing,
+                enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF
+            );
+        } else {
+            std::snprintf(
+                stateText_.data(),
+                stateText_.size(),
+                SOURCE_STATE_FORMAT,
+                kind,
+                enabled ? SOURCE_STATE_ON : SOURCE_STATE_OFF
+            );
+        }
     }
     lv_label_set_text_static(state_text_, stateText_.data());
     lv_obj_set_style_text_color(
         state_text_,
         lv_color_hex(
-            props.audition || enabled
+            audition || enabled
                 ? theme::color::TEXT_SECONDARY
                 : theme::color::INACTIVE
         ),
@@ -428,27 +558,37 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
 FLASHMEM void ProjectModulatorWorkspace::renderCards(
     const ProjectModulatorWorkspaceProps& props
 ) {
-    const auto layout = layoutFor(
+    const auto layout = core::state::project::modulators::sourceWorkspaceLayout(
         props.source->kind,
         props.options,
-        props.audition
+        props.session.audition()
     );
+    const uint8_t itemCount = props.trigger
+        ? core::state::project::modulators::MODULATOR_TRIGGER_DETAIL_COUNT
+        : layout.count;
     const bool adsr = props.source->kind == ModulatorKind::ADSR;
-    const uint8_t bottomCount = adsr && layout.count >= 6U
+    const uint8_t bottomCount = adsr && itemCount >= 5U
         ? 3U
-        : static_cast<uint8_t>(std::min<uint8_t>(2U, layout.count));
-    const uint8_t topCount = static_cast<uint8_t>(layout.count - bottomCount);
+        : static_cast<uint8_t>(std::min<uint8_t>(2U, itemCount));
+    const uint8_t topCount = static_cast<uint8_t>(itemCount - bottomCount);
     const lv_coord_t availableWidth = static_cast<lv_coord_t>(
         lv_obj_get_width(root_) - 2 * HORIZONTAL_PAD
     );
+    const bool layoutChanged = availableWidth != rendered_layout_width_ ||
+        itemCount != rendered_layout_item_count_ ||
+        bottomCount != rendered_layout_bottom_count_;
 
     for (uint8_t index = 0U; index < cards_.size(); ++index) {
         auto& card = cards_[index];
-        if (index >= layout.count) {
-            lv_obj_add_flag(card.root, LV_OBJ_FLAG_HIDDEN);
+        if (index >= itemCount) {
+            if (layoutChanged) {
+                lv_obj_add_flag(card.root, LV_OBJ_FLAG_HIDDEN);
+            }
             continue;
         }
-        lv_obj_clear_flag(card.root, LV_OBJ_FLAG_HIDDEN);
+        if (layoutChanged) {
+            lv_obj_clear_flag(card.root, LV_OBJ_FLAG_HIDDEN);
+        }
         const bool bottom = index >= topCount;
         const uint8_t ordinal = bottom
             ? static_cast<uint8_t>(index - topCount)
@@ -457,38 +597,52 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
         const lv_coord_t width = static_cast<lv_coord_t>(
             (availableWidth - CARD_GAP * (count - 1U)) / count
         );
-        lv_obj_set_pos(
-            card.root,
-            static_cast<lv_coord_t>(
-                HORIZONTAL_PAD + ordinal * (width + CARD_GAP)
-            ),
-            bottom ? CARD_BOTTOM_Y : CARD_TOP_Y
-        );
-        lv_obj_set_size(
-            card.root,
-            width,
-            bottom ? CARD_BOTTOM_HEIGHT : CARD_TOP_HEIGHT
-        );
-        lv_obj_set_width(card.label, std::max<lv_coord_t>(1, width - 25));
-        lv_obj_set_width(card.value, std::max<lv_coord_t>(1, width - 25));
+        if (layoutChanged) {
+            lv_obj_set_pos(
+                card.root,
+                static_cast<lv_coord_t>(
+                    HORIZONTAL_PAD + ordinal * (width + CARD_GAP)
+                ),
+                bottom ? CARD_BOTTOM_Y : CARD_TOP_Y
+            );
+            lv_obj_set_size(
+                card.root,
+                width,
+                bottom ? CARD_BOTTOM_HEIGHT : CARD_TOP_HEIGHT
+            );
+            lv_obj_set_width(card.label, std::max<lv_coord_t>(1, width - 25));
+            lv_obj_set_width(card.value, std::max<lv_coord_t>(1, width - 25));
+        }
 
         ms::ui::KeyValueRowBuffer row{};
-        const Item item = layout.at(index);
-        if (item == Item::DEPTH) {
-            populateAuditionDepthRow(props.auditionBinding, row);
-        } else if (props.options) {
-            core::ui::project::modulators::populateSourceOptionsRow(
+        const Item item = props.trigger ? Item::INVALID : layout.at(index);
+        if (props.trigger) {
+            core::ui::project::modulators::populateTriggerRow(
                 *props.control,
-                *props.source,
+                props.source->id,
                 index,
                 row
             );
+        } else if (item == Item::DEPTH) {
+            populateAuditionDepthRow(
+                props.control,
+                props.auditionBinding,
+                row
+            );
         } else {
-            core::ui::project::modulators::populateSourceDetailRow(
+            populateSourceItemRow(
                 *props.control,
                 *props.source,
-                index,
+                item,
                 row
+            );
+        }
+        if (item == Item::RECORD && captureMatches(props)) {
+            std::snprintf(
+                row.value.data(),
+                row.value.size(),
+                "%s",
+                captureStatusLabel(props.capture->status)
             );
         }
         if (copyText(card.iconText, row.icon.data())) {
@@ -502,8 +656,26 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
         }
 
         const bool selected = index == props.selectedIndex;
-        const bool mutableValue = editableItem(item, props.source->kind);
-        const bool action = actionableItem(item);
+        const bool sourceValue = props.trigger ||
+            editableItem(item, props.source->kind);
+        const bool mutableValue = item == Item::DEPTH
+            ? props.session.allows(
+                  ProjectModulatorSourceSessionCapability::EDIT_DEPTH
+              )
+            : (sourceValue && props.session.allows(
+                  ProjectModulatorSourceSessionCapability::EDIT_SOURCE
+              ) && (!props.trigger || props.session.allows(
+                  ProjectModulatorSourceSessionCapability::EDIT_TRIGGER
+              )));
+        const bool action = actionableItem(item) &&
+            (item == Item::OPTIONS || item == Item::TRIGGER ||
+             item == Item::RECORD ||
+             (item == Item::DESTINATIONS && props.session.allows(
+                  ProjectModulatorSourceSessionCapability::MANAGE_ROUTING
+              )) ||
+             (item == Item::RENAME && props.session.allows(
+                  ProjectModulatorSourceSessionCapability::MANAGE_SOURCE
+              )));
         const uint32_t accent = mutableValue || action
             ? theme::color::MACRO_MODULATION
             : theme::color::TEXT_SECONDARY;
@@ -536,6 +708,9 @@ FLASHMEM void ProjectModulatorWorkspace::renderCards(
             0
         );
     }
+    rendered_layout_width_ = availableWidth;
+    rendered_layout_item_count_ = itemCount;
+    rendered_layout_bottom_count_ = bottomCount;
 }
 
 FLASHMEM bool ProjectModulatorWorkspace::sampleCurve(
@@ -549,41 +724,61 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleCurve(
     float value = 0.0f;
     bool positive = false;
     bool discontinuity = false;
-    if (source.kind == ModulatorKind::LFO) {
-        const float authoredPhase = static_cast<float>(
+    if (context->recordedTake != nullptr) {
+        int16_t captured = 0;
+        if (!context->recordedTake->samplePreviewValue(positionQ16, captured)) {
+            return false;
+        }
+        value = static_cast<float>(captured) / 32767.0f;
+    } else if (source.kind == ModulatorKind::LFO) {
+        const uint16_t phaseQ16 = projectLfoShapePositionQ16(
+            positionQ16,
             source.parameters.lfo.phaseQ15
-        ) / 32767.0f;
-        auto wrappedPhase = [authoredPhase](uint16_t position) {
-            float phase = static_cast<float>(position) / 65535.0f +
-                authoredPhase;
-            phase -= std::floor(phase);
-            return phase < 0.0f ? phase + 1.0f : phase;
-        };
-        const float phase = wrappedPhase(positionQ16);
+        );
         value = evaluateProjectLfoShape(
             source.parameters.lfo.shape,
-            phase
+            static_cast<float>(phaseQ16) / 65535.0f
         );
         if (context->hasPrevious &&
             source.parameters.lfo.shape == ModulatorLfoShape::SQUARE) {
-            const float previousPhase = wrappedPhase(
-                context->previousPositionQ16
+            const uint16_t previousPhaseQ16 = projectLfoShapePositionQ16(
+                context->previousPositionQ16,
+                source.parameters.lfo.phaseQ15
             );
-            discontinuity = phase < previousPhase ||
-                (previousPhase < 0.5f && phase >= 0.5f);
+            discontinuity = phaseQ16 < previousPhaseQ16 ||
+                (previousPhaseQ16 < 32768U && phaseQ16 >= 32768U);
         }
     } else if (source.kind == ModulatorKind::ADSR) {
         positive = true;
         const adsr_ui::PreviewBoundaries boundaries{
+            context->delayEndQ16,
             context->attackEndQ16,
+            context->holdEndQ16,
             context->decayEndQ16,
             context->sustainEndQ16,
         };
-        value = adsr_ui::previewValue(
+        const float rawValue = adsr_ui::previewValue(
             source.parameters.adsr,
             boundaries,
             positionQ16
         );
+        value = rawValue;
+        if (context->smoothDuration > 0U && context->hasPrevious) {
+            const uint32_t deltaPosition = static_cast<uint32_t>(
+                positionQ16 - context->previousPositionQ16
+            );
+            const uint32_t deltaTime = std::max<uint32_t>(
+                1U,
+                (deltaPosition * context->previewDuration + 32767U) / 65535U
+            );
+            const float alpha = static_cast<float>(deltaTime) /
+                static_cast<float>(context->smoothDuration + deltaTime);
+            const float previous = static_cast<float>(
+                context->previousValue
+            ) / 65535.0f;
+            value = previous + alpha * (rawValue - previous);
+        }
+        out.base = normalizedToQ16(rawValue);
     } else {
         const auto* curve = findProjectCurve(
             context->control->authored.curves,
@@ -610,7 +805,7 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleCurve(
     );
     out = {
         .curve = curveValue,
-        .base = curveValue,
+        .base = source.kind == ModulatorKind::ADSR ? out.base : curveValue,
         .impact = curveValue,
         .discontinuityBefore = discontinuity,
     };
@@ -629,6 +824,19 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleMarker(
     if (!context || !context->control || !context->source) return false;
     const auto& control = *context->control;
     const auto& source = *context->source;
+    if (context->recordedTake != nullptr) {
+        uint16_t positionQ16 = 0U;
+        if (!context->recordedTake->writePositionQ16(positionQ16)) return true;
+        out = {
+            .visible = true,
+            .positionQ16 = positionQ16,
+            .valueQ16 = normalizedToQ16(
+                static_cast<float>(context->recordedTake->currentValue) /
+                    65534.0f + 0.5f
+            ),
+        };
+        return true;
+    }
     const auto time = extrapolateProjectControlTime(
         control.timeTelemetry,
         oc::time::millis()
@@ -648,7 +856,9 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleMarker(
     if (source.kind == ModulatorKind::ADSR) {
         if (!adsr_ui::runtimeMarkerPosition(
                 {
+                    context->delayEndQ16,
                     context->attackEndQ16,
+                    context->holdEndQ16,
                     context->decayEndQ16,
                     context->sustainEndQ16,
                 },
@@ -658,6 +868,11 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleMarker(
             )) {
             return true;
         }
+    } else if (source.kind == ModulatorKind::LFO) {
+        positionQ16 = projectLfoPreviewPositionQ16(
+            positionQ16,
+            source.parameters.lfo.phaseQ15
+        );
     } else if (!projection.positionKnown) {
         return true;
     }
@@ -678,16 +893,46 @@ FLASHMEM bool ProjectModulatorWorkspace::sampleMarker(
 FLASHMEM void ProjectModulatorWorkspace::renderCurve(
     const ProjectModulatorWorkspaceProps& props
 ) {
-    lv_obj_set_width(
-        curve_preview_->getElement(),
-        std::max<lv_coord_t>(1, lv_obj_get_width(root_) - 2 * HORIZONTAL_PAD)
+    const lv_coord_t curveWidth = std::max<lv_coord_t>(
+        1,
+        lv_obj_get_width(root_) - 2 * HORIZONTAL_PAD
     );
+    if (lv_obj_get_width(curve_preview_->getElement()) != curveWidth) {
+        lv_obj_set_width(curve_preview_->getElement(), curveWidth);
+    }
     const bool enabled =
         (props.source->flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
     const bool positive = sourceUsesPositiveDomain(*props.control, *props.source);
+    const auto* recordedTake = captureMatches(props)
+        ? props.capture->take.get()
+        : nullptr;
+    const uint32_t captureRevision = recordedTake != nullptr &&
+            props.capture != nullptr
+        ? props.capture->revision
+        : 0U;
+    uint32_t geometryRevision =
+        core::ui::modulation::sparkline::sourceGeometryRevision(
+            *props.control,
+            *props.source
+        ) ^ (captureRevision * 2246822519U);
+    if (geometryRevision == 0U) geometryRevision = 1U;
     const auto adsrBoundaries = props.source->kind == ModulatorKind::ADSR
         ? adsr_ui::previewBoundaries(props.source->parameters.adsr)
         : adsr_ui::PreviewBoundaries{};
+    const auto adsrTiming = props.source->kind == ModulatorKind::ADSR
+        ? modulatorAdsrTiming(props.source->parameters.adsr.traits)
+        : ModulatorTimingMode::FREE;
+    const uint32_t adsrSmooth = props.source->kind == ModulatorKind::ADSR
+        ? (adsrTiming == ModulatorTimingMode::FREE
+            ? static_cast<uint32_t>(props.source->parameters.adsr.smooth)
+            : resolveModulatorEnvelopeSyncTicks(
+                  props.source->parameters.adsr.smooth,
+                  modulatorAdsrFeel(
+                      props.source->parameters.adsr.traits,
+                      ModulatorEnvelopeTimeParameter::SMOOTH
+                  )
+              ))
+        : 0U;
     uint16_t runtimeSourceIndex = 0U;
     while (runtimeSourceIndex < props.control->plan.sourceCount &&
            props.control->plan.sources[runtimeSourceIndex].id !=
@@ -697,10 +942,15 @@ FLASHMEM void ProjectModulatorWorkspace::renderCurve(
     curve_sample_context_ = {
         .control = props.control,
         .source = props.source,
+        .recordedTake = recordedTake,
         .runtimeSourceIndex = runtimeSourceIndex,
+        .delayEndQ16 = adsrBoundaries.delayEndQ16,
         .attackEndQ16 = adsrBoundaries.attackEndQ16,
+        .holdEndQ16 = adsrBoundaries.holdEndQ16,
         .decayEndQ16 = adsrBoundaries.decayEndQ16,
         .sustainEndQ16 = adsrBoundaries.sustainEndQ16,
+        .previewDuration = adsrBoundaries.totalDuration,
+        .smoothDuration = adsrSmooth,
         .previousPositionQ16 = 0U,
         .previousValue = 0U,
         .hasPrevious = false,
@@ -709,14 +959,15 @@ FLASHMEM void ProjectModulatorWorkspace::renderCurve(
         .visible = true,
         .sampleProvider = &ProjectModulatorWorkspace::sampleCurve,
         .sampleContext = &curve_sample_context_,
-        .geometryRevision = props.control->authoredRevision ^
-            (props.source->id.value * 16777619U),
+        .geometryRevision = geometryRevision,
         .markerProvider = &ProjectModulatorWorkspace::sampleMarker,
         .markerContext = &curve_sample_context_,
         .showImpactBand = false,
         .showCenterGuide = !positive,
         .showRestGuide = positive,
+        .showVerticalGuide = props.source->kind == ModulatorKind::ADSR,
         .restValueQ16 = 0U,
+        .verticalGuidePositionQ16 = adsrBoundaries.sustainEndQ16,
         .paddingX = 5,
         .paddingY = 5,
         .curveColor = enabled
@@ -729,7 +980,9 @@ FLASHMEM void ProjectModulatorWorkspace::renderCurve(
         .curveOpacity = static_cast<lv_opa_t>(
             enabled ? LV_OPA_COVER : LV_OPA_40
         ),
-        .baseOpacity = LV_OPA_TRANSP,
+        .baseOpacity = static_cast<lv_opa_t>(
+            adsrSmooth > 0U ? LV_OPA_40 : LV_OPA_TRANSP
+        ),
         .impactOpacity = LV_OPA_TRANSP,
         .bandOpacity = LV_OPA_TRANSP,
         .guideOpacity = LV_OPA_30,
@@ -753,15 +1006,47 @@ FLASHMEM void ProjectModulatorWorkspace::hideEditFeedback() {
     edit_feedback_deadline_ms_ = 0U;
 }
 
+FLASHMEM void ProjectModulatorWorkspace::presentFeedback(
+    const char* key,
+    const char* value
+) {
+    if (key == nullptr || value == nullptr) return;
+    copyText(editFeedbackKeyText_, key);
+    copyText(editFeedbackValueText_, value);
+    lv_label_set_text_static(edit_feedback_key_, editFeedbackKeyText_.data());
+    lv_label_set_text_static(edit_feedback_value_, editFeedbackValueText_.data());
+    lv_obj_clear_flag(edit_feedback_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_invalidate(root_);
+    if (edit_feedback_timer_) {
+        edit_feedback_deadline_ms_ = lv_tick_get() + EDIT_FEEDBACK_MS;
+        edit_feedback_timer_->resume();
+    }
+}
+
 FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
     const ProjectModulatorWorkspaceProps& props,
     bool sourceChanged
 ) {
     if (!sourceChanged || !has_rendered_source_) return;
-    const auto layout = layoutFor(
+    if (props.trigger) {
+        if (props.selectedIndex >= core::state::project::modulators::
+                MODULATOR_TRIGGER_DETAIL_COUNT) {
+            return;
+        }
+        ms::ui::KeyValueRowBuffer row{};
+        core::ui::project::modulators::populateTriggerRow(
+            *props.control,
+            props.source->id,
+            props.selectedIndex,
+            row
+        );
+        presentFeedback(row.key.data(), row.value.data());
+        return;
+    }
+    const auto layout = core::state::project::modulators::sourceWorkspaceLayout(
         props.source->kind,
         props.options,
-        props.audition
+        props.session.audition()
     );
     if (props.selectedIndex >= layout.count) return;
     const Item item = layout.at(props.selectedIndex);
@@ -769,7 +1054,11 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
 
     ms::ui::KeyValueRowBuffer row{};
     if (item == Item::DEPTH) {
-        populateAuditionDepthRow(props.auditionBinding, row);
+        populateAuditionDepthRow(
+            props.control,
+            props.auditionBinding,
+            row
+        );
     } else if (props.options) {
         core::ui::project::modulators::populateSourceOptionsRow(
             *props.control,
@@ -787,36 +1076,97 @@ FLASHMEM void ProjectModulatorWorkspace::showEditFeedback(
     }
     copyText(editFeedbackKeyText_, row.key.data());
     if (item == Item::ATTACK) copyText(editFeedbackKeyText_, "Attack");
+    if (item == Item::DELAY) copyText(editFeedbackKeyText_, "Delay");
+    if (item == Item::HOLD) copyText(editFeedbackKeyText_, "Hold");
     if (item == Item::DECAY) copyText(editFeedbackKeyText_, "Decay");
     if (item == Item::SUSTAIN) copyText(editFeedbackKeyText_, "Sustain");
     if (item == Item::RELEASE) copyText(editFeedbackKeyText_, "Release");
+    if (item == Item::SMOOTH) copyText(editFeedbackKeyText_, "Smooth");
     if (item == Item::DEPTH) copyText(editFeedbackKeyText_, "Depth");
     copyText(editFeedbackValueText_, row.value.data());
+    const bool temporal = item == Item::DELAY || item == Item::ATTACK ||
+        item == Item::HOLD || item == Item::DECAY ||
+        item == Item::RELEASE || item == Item::SMOOTH;
+    if (temporal && props.source->kind == ModulatorKind::ADSR &&
+        modulatorAdsrTiming(props.source->parameters.adsr.traits) ==
+            ModulatorTimingMode::SYNC) {
+        const auto parameter = item == Item::DELAY
+            ? ModulatorEnvelopeTimeParameter::DELAY
+            : (item == Item::ATTACK
+                ? ModulatorEnvelopeTimeParameter::ATTACK
+                : (item == Item::HOLD
+                    ? ModulatorEnvelopeTimeParameter::HOLD
+                    : (item == Item::DECAY
+                        ? ModulatorEnvelopeTimeParameter::DECAY
+                        : (item == Item::RELEASE
+                            ? ModulatorEnvelopeTimeParameter::RELEASE
+                            : ModulatorEnvelopeTimeParameter::SMOOTH))));
+        std::array<char, 32> exact{};
+        std::snprintf(
+            exact.data(),
+            exact.size(),
+            "%.18s · %s",
+            row.value.data(),
+            adsr_ui::feelLabel(modulatorAdsrFeel(
+                props.source->parameters.adsr.traits,
+                parameter
+            ))
+        );
+        copyText(editFeedbackValueText_, exact.data());
+    }
     if (item == Item::TIMING && props.source->kind == ModulatorKind::ADSR) {
         copyText(
             editFeedbackValueText_,
-            props.source->parameters.adsr.timing == ModulatorTimingMode::FREE
+            modulatorAdsrTiming(props.source->parameters.adsr.traits) ==
+                    ModulatorTimingMode::FREE
                 ? "Free" : "Tempo Sync"
         );
     }
-    if (item == Item::CURVE && props.source->kind == ModulatorKind::ADSR) {
+    if (item == Item::RESPONSE && props.source->kind == ModulatorKind::ADSR) {
         const char* curve = "Exponential";
-        if (props.source->parameters.adsr.curve == ModulatorAdsrCurve::LINEAR) {
+        const auto response = modulatorAdsrCurve(
+            props.source->parameters.adsr.traits
+        );
+        if (response == ModulatorAdsrCurve::LINEAR) {
             curve = "Linear";
-        } else if (props.source->parameters.adsr.curve ==
-                   ModulatorAdsrCurve::SMOOTH) {
-            curve = "Smooth";
+        } else if (response == ModulatorAdsrCurve::SMOOTH) {
+            curve = "Ease";
         }
         copyText(editFeedbackValueText_, curve);
     }
-    lv_label_set_text_static(edit_feedback_key_, editFeedbackKeyText_.data());
-    lv_label_set_text_static(edit_feedback_value_, editFeedbackValueText_.data());
-    lv_obj_clear_flag(edit_feedback_, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_invalidate(root_);
-    if (edit_feedback_timer_) {
-        edit_feedback_deadline_ms_ = lv_tick_get() + EDIT_FEEDBACK_MS;
-        edit_feedback_timer_->resume();
+    presentFeedback(
+        editFeedbackKeyText_.data(),
+        editFeedbackValueText_.data()
+    );
+}
+
+FLASHMEM void ProjectModulatorWorkspace::showCaptureFeedback(
+    const ProjectModulatorWorkspaceProps& props,
+    bool captureActive
+) {
+    if (!rendered_capture_active_ || captureActive || props.capture == nullptr) {
+        return;
     }
+    const char* value = nullptr;
+    switch (props.capture->status) {
+        case ProjectRecordedShapeCaptureStatus::COMMITTED:
+            value = "Recorded · Undo";
+            break;
+        case ProjectRecordedShapeCaptureStatus::NO_CHANGE:
+            value = "No movement · Kept";
+            break;
+        case ProjectRecordedShapeCaptureStatus::CANCELLED:
+            value = "Cancelled · Unchanged";
+            break;
+        case ProjectRecordedShapeCaptureStatus::INVALIDATED:
+        case ProjectRecordedShapeCaptureStatus::SCRATCH_UNAVAILABLE:
+        case ProjectRecordedShapeCaptureStatus::COMMIT_FAILED:
+            value = "Failed · Unchanged";
+            break;
+        default:
+            break;
+    }
+    if (value != nullptr) presentFeedback("Record", value);
 }
 
 FLASHMEM void ProjectModulatorWorkspace::onEditFeedbackTimeout(lv_timer_t* timer) {
@@ -837,6 +1187,12 @@ FLASHMEM void ProjectModulatorWorkspace::render(
     const ProjectModulatorWorkspaceProps& props
 ) {
     if (!valid()) return;
+    OC_PERF_SCOPE(perfMutation, "ui.project.modulator-workspace.mutation");
+    OC_PERF_UNITS(
+        perfMutation,
+        props.selectedIndex,
+        props.source ? static_cast<uint32_t>(props.source->kind) : 0U
+    );
     if (!props.visible || !props.control || !props.source) {
         if (visible_) {
             hideEditFeedback();
@@ -844,18 +1200,23 @@ FLASHMEM void ProjectModulatorWorkspace::render(
             lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
             visible_ = false;
         }
+        has_rendered_source_ = false;
+        rendered_capture_active_ = false;
         return;
     }
     if (!visible_) {
         lv_obj_clear_flag(root_, LV_OBJ_FLAG_HIDDEN);
         visible_ = true;
+        lv_obj_update_layout(root_);
+    } else if (!has_rendered_source_) {
+        lv_obj_update_layout(root_);
     }
-    lv_obj_update_layout(root_);
 
     const bool sameContext = has_rendered_source_ &&
         rendered_source_id_ == props.source->id &&
         rendered_options_ == props.options &&
-        rendered_audition_ == props.audition;
+        rendered_trigger_ == props.trigger &&
+        rendered_session_mode_ == props.session.mode;
     const bool selectionChanged = !sameContext ||
         rendered_selected_index_ != props.selectedIndex;
     const bool sourceChanged = sameContext &&
@@ -864,19 +1225,30 @@ FLASHMEM void ProjectModulatorWorkspace::render(
             props.source,
             sizeof(rendered_source_)
         ) != 0;
+    const bool authoredChanged = sameContext &&
+        rendered_authored_revision_ != props.control->authoredRevision;
     if (selectionChanged) hideEditFeedback();
 
+    const bool captureActive = captureMatches(props);
     renderHeader(props);
     renderCards(props);
     renderCurve(props);
-    showEditFeedback(props, sourceChanged && !selectionChanged);
+    showEditFeedback(
+        props,
+        (sourceChanged || (props.trigger && authoredChanged)) &&
+            !selectionChanged
+    );
+    showCaptureFeedback(props, captureActive);
 
     rendered_source_ = *props.source;
     rendered_source_id_ = props.source->id;
+    rendered_authored_revision_ = props.control->authoredRevision;
     rendered_selected_index_ = props.selectedIndex;
     rendered_options_ = props.options;
-    rendered_audition_ = props.audition;
+    rendered_trigger_ = props.trigger;
+    rendered_session_mode_ = props.session.mode;
     has_rendered_source_ = true;
+    rendered_capture_active_ = captureActive;
 }
 
 }  // namespace core::ui::project

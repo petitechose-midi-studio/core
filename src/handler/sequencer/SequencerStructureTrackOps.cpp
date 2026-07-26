@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/sequencer/SequencerTrackBankOps.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
 namespace core::handler {
@@ -34,9 +35,7 @@ FLASHMEM bool createSequencerStructureTrack(
 
     if (!core::state::sequencer::storeActiveTrack(tracks, sequencer)) return false;
     auto& destination = tracks.track(index);
-    const uint8_t destinationMidiChannel = destination.midiChannel.get();
     destination.reset();
-    destination.midiChannel.set(destinationMidiChannel);
     return sharedTracks.setState(
         static_cast<uint16_t>(enabledMask | structure_slots::slotBit(index)),
         index
@@ -44,13 +43,15 @@ FLASHMEM bool createSequencerStructureTrack(
 }
 
 FLASHMEM bool toggleSequencerStructureTrackMute(
-    core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::project::ProjectTrackState& tracks,
+    core::state::project::ProjectTrackDomainServices& trackDomain,
     uint8_t track
 ) {
-    const uint8_t index =
-        core::state::sequencer::SequencerTrackBankState::clampTrackIndex(track);
-    const bool nextMuted = !tracks.isTrackMuted(index);
-    return tracks.setTrackMuted(index, nextMuted);
+    if (!core::state::project::validProjectTrackIndex(track)) return false;
+    return trackDomain.setMuted(
+        track,
+        !core::state::project::projectTrackMuted(tracks, track)
+    );
 }
 
 }  // namespace core::handler

@@ -6,13 +6,9 @@
 # Expect: semantic:source_deleted:effect=delete_modulator, semantic:source_deleted:outcome=applied, semantic:source_deleted:operation_generation=1
 
 0 scenario project-modulators
-100 button LEFT_CENTER down
-700 encoder NAV 1
-780 encoder NAV 2
-860 encoder NAV 3
-940 encoder NAV 4
-1020 encoder NAV 5
-1100 button LEFT_CENTER up
+100 button LEFT_TOP down
+700 encoder NAV -1
+1100 button LEFT_TOP up
 1320 capture screen modulators_registry
 
 # First hold: the impact names Slow Tide and its two destinations; release

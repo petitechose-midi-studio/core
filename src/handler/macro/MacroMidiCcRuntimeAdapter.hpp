@@ -6,6 +6,7 @@
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "state/macro/MacroConstants.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 
 namespace core::handler {
 
@@ -20,6 +21,7 @@ class MacroMidiCcRuntimeAdapter final {
 public:
     struct StateRefs {
         core::state::macro::MacroPagesState& pages;
+        const core::state::project::ProjectTrackState& projectTracks;
     };
 
     MacroMidiCcRuntimeAdapter(
@@ -59,6 +61,7 @@ public:
 
 private:
     core::state::macro::MacroPagesState& pages_;
+    const core::state::project::ProjectTrackState& project_tracks_;
     MacroPerformanceDomainServices services_;
     MidiCcGlobalFrameCoordinator& coordinator_;
 };

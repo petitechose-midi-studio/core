@@ -106,8 +106,10 @@ FLASHMEM bool sameFlatPatternSnapshot(
     const SequencerPatternSnapshot& rhs
 ) {
     return lhs.length == rhs.length &&
+           lhs.playStart == rhs.playStart &&
+           lhs.loopStart == rhs.loopStart &&
+           lhs.loopEnd == rhs.loopEnd &&
            lhs.stepsPerBeat == rhs.stepsPerBeat &&
-           lhs.midiChannel == rhs.midiChannel &&
            lhs.enabledMask == rhs.enabledMask &&
            lhs.swingOffsetPercent == rhs.swingOffsetPercent &&
            lhs.patternNudgePercent == rhs.patternNudgePercent &&
@@ -253,7 +255,6 @@ FLASHMEM bool sameFlatTrackBankSnapshot(
 ) {
     if (lhs.activeTrack != rhs.activeTrack ||
         lhs.enabledMask != rhs.enabledMask ||
-        lhs.mutedMask != rhs.mutedMask ||
         !sameScaleSettings(lhs.projectScaleSettings, rhs.projectScaleSettings)) {
         return false;
     }
@@ -346,22 +347,46 @@ FLASHMEM size_t structureSnapshotRetainedBytes(
 FLASHMEM size_t structureChangeRetainedBytes(
     const SequencerHistoryTrackStructureChange& change
 ) {
-    return sizeof(SequencerHistoryTrackStructureChange) +
-           kExtmemAllocationOverheadEstimate +
-           structureSnapshotRetainedBytes(change.before) +
-           structureSnapshotRetainedBytes(change.after);
+    size_t bytes = sizeof(SequencerHistoryTrackStructureChange) +
+                   kExtmemAllocationOverheadEstimate +
+                   structureSnapshotRetainedBytes(change.before) +
+                   structureSnapshotRetainedBytes(change.after);
+    if (change.macroStructure != nullptr) {
+        bytes += sizeof(SequencerHistoryMacroTrackStructurePayload) +
+                 kExtmemAllocationOverheadEstimate;
+        if (change.macroStructure->beforeControl != nullptr) {
+            bytes += sizeof(core::state::modulation::ProjectControlDomainState) +
+                     kExtmemAllocationOverheadEstimate;
+        }
+        if (change.macroStructure->afterControl != nullptr) {
+            bytes += sizeof(core::state::modulation::ProjectControlDomainState) +
+                     kExtmemAllocationOverheadEstimate;
+        }
+    }
+    return bytes;
 }
 
 FLASHMEM size_t patternChangeRetainedBytes(
     const SequencerHistoryPatternChange& change
 ) {
-    size_t bytes = sizeof(SequencerHistoryPatternChange) +
-                   kExtmemAllocationOverheadEstimate;
-    if (change.storage == SequencerHistoryPatternStorage::FullGraph) {
-        bytes += patternSnapshotRetainedBytes(change.before) +
-                 patternSnapshotRetainedBytes(change.after);
+    return sizeof(SequencerHistoryPatternChange) +
+           kExtmemAllocationOverheadEstimate +
+           patternSnapshotRetainedBytes(change.before) +
+           patternSnapshotRetainedBytes(change.after);
+}
+
+FLASHMEM size_t patternChangeAdmissionBytes(
+    const SequencerHistoryPatternChange& change
+) {
+    // FlatOnly payload owners are discarded before the entry is retained. Its
+    // admission cost is therefore the normalized fixed-size change, while
+    // retainedBytes() deliberately measures every owner that actually remains
+    // so a broken normalization can never under-report the PSRAM budget.
+    if (change.storage == SequencerHistoryPatternStorage::FlatOnly) {
+        return sizeof(SequencerHistoryPatternChange) +
+               kExtmemAllocationOverheadEstimate;
     }
-    return bytes;
+    return patternChangeRetainedBytes(change);
 }
 
 FLASHMEM bool incomingEntryFitsRetainedBudget(size_t incomingBytes) {
@@ -400,12 +425,33 @@ FLASHMEM size_t entriesRetainedBytes(
     return bytes;
 }
 
+FLASHMEM uintptr_t projectHistoryIdentity(const SequencerHistoryEntry& entry) {
+    switch (entry.scope) {
+        case SequencerHistoryScope::PatternOnly:
+            return reinterpret_cast<uintptr_t>(entry.pattern.get());
+        case SequencerHistoryScope::Structure:
+            return reinterpret_cast<uintptr_t>(entry.structure.get());
+        case SequencerHistoryScope::FullBank:
+            return reinterpret_cast<uintptr_t>(entry.fullBank.get());
+        default:
+            return 0U;
+    }
+}
+
 FLASHMEM void removeEntryAt(
     std::array<SequencerHistoryEntry, SequencerHistoryService::ENTRY_LIMIT>& entries,
     uint8_t& count,
-    uint8_t index
+    uint8_t index,
+    const core::state::project::ProjectHistoryEventSink* sink
 ) {
     if (index >= count) return;
+
+    if (sink != nullptr) {
+        sink->notifyEvicted(
+            core::state::project::ProjectHistoryDomain::Sequencer,
+            projectHistoryIdentity(entries[index])
+        );
+    }
 
     for (uint8_t i = index; static_cast<uint8_t>(i + 1U) < count; ++i) {
         entries[i] = std::move(entries[i + 1U]);
@@ -418,7 +464,8 @@ FLASHMEM void removeEntryAt(
 FLASHMEM void pruneOldestScope(
     std::array<SequencerHistoryEntry, SequencerHistoryService::ENTRY_LIMIT>& entries,
     uint8_t& count,
-    SequencerHistoryScope scope
+    SequencerHistoryScope scope,
+    const core::state::project::ProjectHistoryEventSink* sink
 ) {
     if (countScope(entries, count, scope) < scopeLimit(scope)) {
         return;
@@ -426,7 +473,7 @@ FLASHMEM void pruneOldestScope(
 
     for (uint8_t i = 0; i < count; ++i) {
         if (entries[i].scope == scope) {
-            removeEntryAt(entries, count, i);
+            removeEntryAt(entries, count, i, sink);
             return;
         }
     }
@@ -435,15 +482,16 @@ FLASHMEM void pruneOldestScope(
 FLASHMEM bool pushEntry(
     std::array<SequencerHistoryEntry, SequencerHistoryService::ENTRY_LIMIT>& entries,
     uint8_t& count,
-    SequencerHistoryEntry entry
+    SequencerHistoryEntry entry,
+    const core::state::project::ProjectHistoryEventSink* sink
 ) {
     if (!entry.valid()) {
         return false;
     }
 
-    pruneOldestScope(entries, count, entry.scope);
+    pruneOldestScope(entries, count, entry.scope, sink);
     if (count >= SequencerHistoryService::ENTRY_LIMIT) {
-        removeEntryAt(entries, count, 0);
+        removeEntryAt(entries, count, 0, sink);
     }
 
     entries[count] = std::move(entry);
@@ -516,8 +564,7 @@ FLASHMEM bool applyEntrySnapshot(
         return applyHistoryStructureSnapshot(
             bank,
             active,
-            after ? entry.structure->after : entry.structure->before,
-            entry.structure->preserveDestinationBindingsMask
+            after ? entry.structure->after : entry.structure->before
         );
     }
 
@@ -946,7 +993,7 @@ FLASHMEM bool SequencerHistoryService::canRecordPattern(
         return false;
     }
 
-    return incomingEntryFitsRetainedBudget(patternChangeRetainedBytes(change));
+    return incomingEntryFitsRetainedBudget(patternChangeAdmissionBytes(change));
 }
 
 FLASHMEM void SequencerHistoryService::recordPreparedPattern(
@@ -958,6 +1005,10 @@ FLASHMEM void SequencerHistoryService::recordPreparedPattern(
     if (change->storage == SequencerHistoryPatternStorage::FlatOnly) {
         change->before.graph.reset();
         change->after.graph.reset();
+        change->before.ccLanes.reset();
+        change->after.ccLanes.reset();
+        change->before.ccLanesCaptured = false;
+        change->after.ccLanesCaptured = false;
     }
     change->trackIndex = SequencerTrackBankState::clampTrackIndex(change->trackIndex);
     if (change->descriptor.trackIndex == SequencerHistoryDescriptor::INVALID_INDEX) {
@@ -1055,7 +1106,8 @@ FLASHMEM void SequencerHistoryService::recordPreparedStructure(
 FLASHMEM bool SequencerHistoryService::canRecordStructure(
     const SequencerHistoryTrackStructureChange& change
 ) const {
-    if (sameMusicalHistoryStructureSnapshot(change.before, change.after)) {
+    if (sameMusicalHistoryStructureSnapshot(change.before, change.after) &&
+        !macroTrackStructureHistoryChanged(change)) {
         return false;
     }
 
@@ -1081,6 +1133,7 @@ FLASHMEM SequencerHistoryApplyResult SequencerHistoryService::undoWithResult(
     }
 
     SequencerHistoryEntry& entry = undo_[undo_count_ - 1U];
+    const uintptr_t projectHistoryEntryIdentity = projectHistoryIdentity(entry);
     result.descriptor = descriptorForEntry(entry);
     if (!applyEntrySnapshot(entry, false, bank, active)) {
         return result;
@@ -1088,6 +1141,13 @@ FLASHMEM SequencerHistoryApplyResult SequencerHistoryService::undoWithResult(
 
     auto moved = popBack(undo_, undo_count_);
     result.applied = pushRedo(std::move(moved));
+    if (result.applied && project_history_sink_ != nullptr) {
+        project_history_sink_->notifyApplied(
+            core::state::project::ProjectHistoryDomain::Sequencer,
+            projectHistoryEntryIdentity,
+            core::state::project::ProjectHistoryDirection::Undo
+        );
+    }
     return result;
 }
 
@@ -1110,6 +1170,7 @@ FLASHMEM SequencerHistoryApplyResult SequencerHistoryService::redoWithResult(
     }
 
     SequencerHistoryEntry& entry = redo_[redo_count_ - 1U];
+    const uintptr_t projectHistoryEntryIdentity = projectHistoryIdentity(entry);
     result.descriptor = descriptorForEntry(entry);
     if (!applyEntrySnapshot(entry, true, bank, active)) {
         return result;
@@ -1117,6 +1178,13 @@ FLASHMEM SequencerHistoryApplyResult SequencerHistoryService::redoWithResult(
 
     auto moved = popBack(redo_, redo_count_);
     result.applied = pushUndo(std::move(moved));
+    if (result.applied && project_history_sink_ != nullptr) {
+        project_history_sink_->notifyApplied(
+            core::state::project::ProjectHistoryDomain::Sequencer,
+            projectHistoryEntryIdentity,
+            core::state::project::ProjectHistoryDirection::Redo
+        );
+    }
     return result;
 }
 
@@ -1129,15 +1197,13 @@ FLASHMEM bool SequencerHistoryService::peekUndoTrackActivation(
     if (entry.scope == SequencerHistoryScope::PatternOnly && entry.pattern &&
         entry.pattern->activation.valid()) {
         out.reference = entry.pattern->activation;
-        out.targetEnabledMask = entry.pattern->activationTargetEnabledMask;
-        out.targetMutedMask = entry.pattern->activationTargetMutedMask;
+        out.targetAudibleMask = entry.pattern->activationTargetAudibleMask;
         return true;
     }
     if (entry.scope != SequencerHistoryScope::Structure || !entry.structure ||
         !entry.structure->activation.valid()) return false;
     out.reference = entry.structure->activation;
-    out.targetEnabledMask = entry.structure->before.enabledMask;
-    out.targetMutedMask = entry.structure->before.mutedMask;
+    out.targetAudibleMask = entry.structure->activationBeforeAudibleMask;
     return true;
 }
 
@@ -1150,19 +1216,42 @@ FLASHMEM bool SequencerHistoryService::peekRedoTrackActivation(
     if (entry.scope == SequencerHistoryScope::PatternOnly && entry.pattern &&
         entry.pattern->activation.valid()) {
         out.reference = entry.pattern->activation;
-        out.targetEnabledMask = entry.pattern->activationTargetEnabledMask;
-        out.targetMutedMask = entry.pattern->activationTargetMutedMask;
+        out.targetAudibleMask = entry.pattern->activationTargetAudibleMask;
         return true;
     }
     if (entry.scope != SequencerHistoryScope::Structure || !entry.structure ||
         !entry.structure->activation.valid()) return false;
     out.reference = entry.structure->activation;
-    out.targetEnabledMask = entry.structure->after.enabledMask;
-    out.targetMutedMask = entry.structure->after.mutedMask;
+    out.targetAudibleMask = entry.structure->activationAfterAudibleMask;
     return true;
 }
 
+FLASHMEM const SequencerHistoryMacroTrackStructurePayload*
+SequencerHistoryService::peekUndoMacroTrackStructure() const {
+    if (undo_count_ == 0U) return nullptr;
+    const auto& entry = undo_[undo_count_ - 1U];
+    if (entry.scope != SequencerHistoryScope::Structure || !entry.structure) {
+        return nullptr;
+    }
+    return entry.structure->macroStructure.get();
+}
+
+FLASHMEM const SequencerHistoryMacroTrackStructurePayload*
+SequencerHistoryService::peekRedoMacroTrackStructure() const {
+    if (redo_count_ == 0U) return nullptr;
+    const auto& entry = redo_[redo_count_ - 1U];
+    if (entry.scope != SequencerHistoryScope::Structure || !entry.structure) {
+        return nullptr;
+    }
+    return entry.structure->macroStructure.get();
+}
+
 FLASHMEM void SequencerHistoryService::clear() {
+    if (project_history_sink_ != nullptr) {
+        project_history_sink_->notifyCleared(
+            core::state::project::ProjectHistoryDomain::Sequencer
+        );
+    }
     undo_count_ = 0;
     redo_count_ = 0;
     for (auto& item : undo_) {
@@ -1173,6 +1262,19 @@ FLASHMEM void SequencerHistoryService::clear() {
     }
 }
 
+FLASHMEM void SequencerHistoryService::discardRedoBranch() {
+    for (uint8_t index = 0U; index < redo_count_; ++index) {
+        if (project_history_sink_ != nullptr) {
+            project_history_sink_->notifyEvicted(
+                core::state::project::ProjectHistoryDomain::Sequencer,
+                projectHistoryIdentity(redo_[index])
+            );
+        }
+        redo_[index] = SequencerHistoryEntry{};
+    }
+    redo_count_ = 0U;
+}
+
 FLASHMEM uint8_t SequencerHistoryService::undoCount(SequencerHistoryScope scope) const {
     return countScope(undo_, undo_count_, scope);
 }
@@ -1181,38 +1283,58 @@ FLASHMEM uint8_t SequencerHistoryService::redoCount(SequencerHistoryScope scope)
     return countScope(redo_, redo_count_, scope);
 }
 
+FLASHMEM uintptr_t SequencerHistoryService::projectHistoryUndoIdentity() const {
+    return undo_count_ == 0U
+        ? 0U
+        : projectHistoryIdentity(undo_[undo_count_ - 1U]);
+}
+
+FLASHMEM uintptr_t SequencerHistoryService::projectHistoryRedoIdentity() const {
+    return redo_count_ == 0U
+        ? 0U
+        : projectHistoryIdentity(redo_[redo_count_ - 1U]);
+}
+
 FLASHMEM size_t SequencerHistoryService::retainedBytes() const {
     return entriesRetainedBytes(undo_, undo_count_) +
            entriesRetainedBytes(redo_, redo_count_);
 }
 
 FLASHMEM bool SequencerHistoryService::pushUndo(SequencerHistoryEntry entry) {
-    return pushEntry(undo_, undo_count_, std::move(entry));
+    return pushEntry(undo_, undo_count_, std::move(entry), project_history_sink_);
 }
 
 FLASHMEM bool SequencerHistoryService::pushRedo(SequencerHistoryEntry entry) {
-    return pushEntry(redo_, redo_count_, std::move(entry));
+    return pushEntry(redo_, redo_count_, std::move(entry), project_history_sink_);
 }
 
 FLASHMEM void SequencerHistoryService::commitPreparedEntry(SequencerHistoryEntry entry) {
     assert(entry.valid());
     const size_t incomingBytes = entryRetainedBytes(entry);
     assert(incomingEntryFitsRetainedBudget(incomingBytes));
+    const uintptr_t identity = projectHistoryIdentity(entry);
+    const uint8_t actionKind = static_cast<uint8_t>(
+        descriptorForEntry(entry).kind
+    );
 
-    redo_count_ = 0;
-    for (auto& item : redo_) {
-        item = SequencerHistoryEntry{};
-    }
+    discardRedoBranch();
 
-    pruneOldestScope(undo_, undo_count_, entry.scope);
+    pruneOldestScope(undo_, undo_count_, entry.scope, project_history_sink_);
     while (undo_count_ > 0 && retainedBytes() + incomingBytes > RETAINED_BYTE_BUDGET) {
-        removeEntryAt(undo_, undo_count_, 0);
+        removeEntryAt(undo_, undo_count_, 0, project_history_sink_);
     }
     assert(retainedBytes() + incomingBytes <= RETAINED_BYTE_BUDGET);
 
     const bool pushed = pushUndo(std::move(entry));
     assert(pushed);
     (void)pushed;
+    if (project_history_sink_ != nullptr) {
+        project_history_sink_->notifyCommitted(
+            core::state::project::ProjectHistoryDomain::Sequencer,
+            identity,
+            actionKind
+        );
+    }
 }
 
 FLASHMEM bool SequencerHistoryService::recordEntry(SequencerHistoryEntry entry) {

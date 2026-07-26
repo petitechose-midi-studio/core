@@ -68,23 +68,154 @@ enum class ModulatorAdsrCurve : uint8_t {
     EXPONENTIAL,
 };
 
+/** Musical modifier applied independently to each synchronized duration. */
+enum class ModulatorEnvelopeFeel : uint8_t {
+    STRAIGHT = 0,
+    TRIPLET,
+    DOTTED,
+};
+
+enum class ModulatorEnvelopeTimeParameter : uint8_t {
+    DELAY = 0,
+    ATTACK,
+    HOLD,
+    DECAY,
+    RELEASE,
+    SMOOTH,
+};
+
+inline constexpr uint8_t PROJECT_MODULATOR_SOURCE_SCHEMA_VERSION = 1U;
+inline constexpr uint8_t PROJECT_MODULATOR_ADSR_SCHEMA_VERSION = 2U;
+
+inline constexpr uint16_t PROJECT_MODULATOR_ADSR_TIMING_MASK = 0x0001U;
+inline constexpr uint16_t PROJECT_MODULATOR_ADSR_RETRIGGER_MASK = 0x0002U;
+inline constexpr uint8_t PROJECT_MODULATOR_ADSR_CURVE_SHIFT = 2U;
+inline constexpr uint16_t PROJECT_MODULATOR_ADSR_CURVE_MASK = 0x000CU;
+inline constexpr uint8_t PROJECT_MODULATOR_ADSR_FEEL_SHIFT = 4U;
+inline constexpr uint16_t PROJECT_MODULATOR_ADSR_FEEL_MASK = 0x0003U;
+
+[[nodiscard]] constexpr uint8_t modulatorEnvelopeFeelShift(
+    ModulatorEnvelopeTimeParameter parameter
+) {
+    return static_cast<uint8_t>(
+        PROJECT_MODULATOR_ADSR_FEEL_SHIFT +
+        2U * static_cast<uint8_t>(parameter)
+    );
+}
+
+[[nodiscard]] constexpr uint16_t makeModulatorAdsrTraits(
+    ModulatorTimingMode timing,
+    ModulatorAdsrRetriggerMode retrigger,
+    ModulatorAdsrCurve curve
+) {
+    return static_cast<uint16_t>(
+        static_cast<uint16_t>(timing) |
+        (static_cast<uint16_t>(retrigger) << 1U) |
+        (static_cast<uint16_t>(curve) << PROJECT_MODULATOR_ADSR_CURVE_SHIFT)
+    );
+}
+
+[[nodiscard]] constexpr ModulatorTimingMode modulatorAdsrTiming(
+    uint16_t traits
+) {
+    return static_cast<ModulatorTimingMode>(
+        traits & PROJECT_MODULATOR_ADSR_TIMING_MASK
+    );
+}
+
+[[nodiscard]] constexpr ModulatorAdsrRetriggerMode modulatorAdsrRetrigger(
+    uint16_t traits
+) {
+    return static_cast<ModulatorAdsrRetriggerMode>(
+        (traits & PROJECT_MODULATOR_ADSR_RETRIGGER_MASK) >> 1U
+    );
+}
+
+[[nodiscard]] constexpr ModulatorAdsrCurve modulatorAdsrCurve(
+    uint16_t traits
+) {
+    return static_cast<ModulatorAdsrCurve>(
+        (traits & PROJECT_MODULATOR_ADSR_CURVE_MASK) >>
+        PROJECT_MODULATOR_ADSR_CURVE_SHIFT
+    );
+}
+
+[[nodiscard]] constexpr ModulatorEnvelopeFeel modulatorAdsrFeel(
+    uint16_t traits,
+    ModulatorEnvelopeTimeParameter parameter
+) {
+    const uint8_t shift = modulatorEnvelopeFeelShift(parameter);
+    return static_cast<ModulatorEnvelopeFeel>(
+        (traits >> shift) & PROJECT_MODULATOR_ADSR_FEEL_MASK
+    );
+}
+
+[[nodiscard]] constexpr uint16_t withModulatorAdsrTiming(
+    uint16_t traits,
+    ModulatorTimingMode timing
+) {
+    return static_cast<uint16_t>(
+        (traits & ~PROJECT_MODULATOR_ADSR_TIMING_MASK) |
+        static_cast<uint16_t>(timing)
+    );
+}
+
+[[nodiscard]] constexpr uint16_t withModulatorAdsrRetrigger(
+    uint16_t traits,
+    ModulatorAdsrRetriggerMode retrigger
+) {
+    return static_cast<uint16_t>(
+        (traits & ~PROJECT_MODULATOR_ADSR_RETRIGGER_MASK) |
+        (static_cast<uint16_t>(retrigger) << 1U)
+    );
+}
+
+[[nodiscard]] constexpr uint16_t withModulatorAdsrCurve(
+    uint16_t traits,
+    ModulatorAdsrCurve curve
+) {
+    return static_cast<uint16_t>(
+        (traits & ~PROJECT_MODULATOR_ADSR_CURVE_MASK) |
+        (static_cast<uint16_t>(curve) <<
+         PROJECT_MODULATOR_ADSR_CURVE_SHIFT)
+    );
+}
+
+[[nodiscard]] constexpr uint16_t withModulatorAdsrFeel(
+    uint16_t traits,
+    ModulatorEnvelopeTimeParameter parameter,
+    ModulatorEnvelopeFeel feel
+) {
+    const uint8_t shift = modulatorEnvelopeFeelShift(parameter);
+    const uint16_t mask = static_cast<uint16_t>(
+        PROJECT_MODULATOR_ADSR_FEEL_MASK << shift
+    );
+    return static_cast<uint16_t>(
+        (traits & ~mask) | (static_cast<uint16_t>(feel) << shift)
+    );
+}
+
 inline constexpr uint16_t PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15 = 32768U;
 inline constexpr uint16_t PROJECT_MODULATOR_ADSR_DEFAULT_SUSTAIN_Q15 = 22938U;
 
 /**
- * Compact positive-domain ADSR payload. Stage durations use milliseconds in
- * FREE mode and Project control ticks in SYNC mode.
+ * Compact positive-domain DAHDSR payload. Durations use milliseconds in FREE
+ * mode and Project control ticks in SYNC mode. `traits` deliberately uses
+ * explicit masks instead of implementation-defined C++ bitfields.
  */
 struct ModulatorAdsrParameters {
+    uint16_t delay = 0U;
     uint16_t attack = 16U;
+    uint16_t hold = 0U;
     uint16_t decay = 250U;
     uint16_t release = 500U;
     uint16_t sustainQ15 = PROJECT_MODULATOR_ADSR_DEFAULT_SUSTAIN_Q15;
-    ModulatorTimingMode timing = ModulatorTimingMode::FREE;
-    ModulatorAdsrRetriggerMode retrigger =
-        ModulatorAdsrRetriggerMode::RETRIGGER;
-    ModulatorAdsrCurve curve = ModulatorAdsrCurve::EXPONENTIAL;
-    uint8_t reserved = 0U;
+    uint16_t smooth = 0U;
+    uint16_t traits = makeModulatorAdsrTraits(
+        ModulatorTimingMode::FREE,
+        ModulatorAdsrRetriggerMode::RETRIGGER,
+        ModulatorAdsrCurve::EXPONENTIAL
+    );
 };
 
 /** Fixed-width active payload; persistence remains one 16-byte record. */
@@ -103,7 +234,7 @@ struct ModulatorSourceState {
     ModulatorKind kind = ModulatorKind::LFO;
     uint8_t flags = PROJECT_MODULATOR_FLAG_ENABLED;
     uint8_t accent = 0;
-    uint8_t schemaVersion = 1;
+    uint8_t schemaVersion = PROJECT_MODULATOR_SOURCE_SCHEMA_VERSION;
     ModulatorParameters parameters{};
 };
 
@@ -178,15 +309,35 @@ enum class ModulationTriggerKind : uint8_t {
     TRACK_NOTE,
 };
 
-inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_ANY_CHANNEL = 0xFFU;
-inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_ANY_NOTE = 0xFFU;
-
 struct ModulationTriggerRef {
     ModulationTriggerKind kind = ModulationTriggerKind::TRANSPORT_START;
     uint8_t track = 0;
     uint8_t channel = 0;
     uint8_t data = 0;
 };
+
+/** Authored Track-owned note filter; physical Channel belongs to the event. */
+struct ModulationTriggerFilter {
+    ModulationTriggerKind kind = ModulationTriggerKind::TRANSPORT_START;
+    uint8_t track = 0U;
+    uint8_t noteMin = 0U;
+    uint8_t noteMax = 127U;
+};
+
+constexpr bool operator==(
+    const ModulationTriggerFilter& lhs,
+    const ModulationTriggerFilter& rhs
+) {
+    return lhs.kind == rhs.kind && lhs.track == rhs.track &&
+           lhs.noteMin == rhs.noteMin && lhs.noteMax == rhs.noteMax;
+}
+
+constexpr bool operator!=(
+    const ModulationTriggerFilter& lhs,
+    const ModulationTriggerFilter& rhs
+) {
+    return !(lhs == rhs);
+}
 
 constexpr bool operator==(
     const ModulationTriggerRef& lhs,
@@ -209,9 +360,11 @@ inline constexpr uint8_t PROJECT_MODULATION_TRIGGER_FLAG_ENABLED = 0x01U;
 struct ModulationTriggerBindingState {
     ModulationBindingId id{};
     ModulatorId sourceId{};
-    ModulationTriggerRef trigger{};
+    ModulationTriggerFilter trigger{};
+    uint8_t velocityMin = 0U;
+    uint8_t velocityMax = 127U;
     uint8_t flags = PROJECT_MODULATION_TRIGGER_FLAG_ENABLED;
-    std::array<uint8_t, 3> reserved{};
+    uint8_t reserved = 0U;
 };
 
 /**
@@ -243,12 +396,13 @@ struct ProjectModulationState {
 };
 
 static_assert(sizeof(ModulatorLfoParameters) == 16U);
-static_assert(sizeof(ModulatorAdsrParameters) == 12U);
+static_assert(sizeof(ModulatorAdsrParameters) == 16U);
 static_assert(sizeof(ModulatorParameters) == 16U);
 static_assert(sizeof(ModulatorSourceState) == 40U);
 static_assert(sizeof(ModulationBindingState) == 20U);
 static_assert(sizeof(ModulationDestinationScaleState) == 6U);
 static_assert(sizeof(ModulationTriggerRef) == 4U);
+static_assert(sizeof(ModulationTriggerFilter) == 4U);
 static_assert(sizeof(ModulationTriggerBindingState) == 16U);
 static_assert(sizeof(ProjectModulationState) == 20496U);
 static_assert(

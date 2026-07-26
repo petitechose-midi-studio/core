@@ -8,14 +8,14 @@
 #include "state/macro/MacroAutomationTake.hpp"
 #include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroRuntimeState.hpp"
-#include "state/StructureSelectionState.hpp"
-#include "state/contextual/GuardedActionState.hpp"
-#include "state/contextual/OperationFeedbackState.hpp"
+#include "state/modulation/ProjectRecordedShapeCaptureState.hpp"
+#include "state/StructureNavigationState.hpp"
 
 namespace core::state::macro {
 
 constexpr uint8_t kMacroRuntimeProjectionDirtyAll = 0xFF;
 constexpr uint8_t kMacroRuntimeProjectionDirtyConfig = 0xFE;
+constexpr uint8_t kMacroAutomationRecordingDirtyAll = 0xFF;
 
 inline uint32_t nextMacroRuntimeProjectionRevision(
     uint32_t current,
@@ -41,12 +41,26 @@ inline int macroRuntimeProjectionRevisionDirtyIndex(uint32_t revision) {
     return dirtyIndex < MACRO_COUNT ? static_cast<int>(dirtyIndex) : -1;
 }
 
+inline uint32_t nextMacroAutomationRecordingRevision(
+    uint32_t current,
+    uint8_t dirtyIndex = kMacroAutomationRecordingDirtyAll
+) {
+    uint32_t generation = ((current >> 8) + 1U) & 0x00FFFFFFU;
+    if (generation == 0U) generation = 1U;
+    return (generation << 8) | dirtyIndex;
+}
+
+inline int macroAutomationRecordingRevisionDirtyIndex(uint32_t revision) {
+    const uint8_t dirtyIndex = static_cast<uint8_t>(revision & 0xFFU);
+    return dirtyIndex < MACRO_COUNT ? static_cast<int>(dirtyIndex) : -1;
+}
+
 /**
  * Session-only macro UI state.
  *
  * Runtime macro values and durable page data live in MacroState/MacroPagesState;
  * this struct tracks editor focus, slot property selection, recording state,
- * and structure selection UI.
+ * and direct structure navigation UI.
  */
 enum class MacroPerformanceProperty : uint8_t {
     VALUE = 0,
@@ -69,8 +83,38 @@ enum class MacroPerformanceOverlayMode : uint8_t {
     AUTOMATION_TAKE,
 };
 
+/** Temporary Macro root context selector; presentation is revision-driven. */
+struct MacroContextSelectorState {
+    bool visible = false;
+    core::state::StructureNavigationFocus previewFocus =
+        core::state::StructureNavigationFocus::PAGE;
+    oc::state::Signal<uint32_t, 2> revision{0U};
+
+    void show(core::state::StructureNavigationFocus focus) {
+        visible = true;
+        previewFocus = focus;
+        bump();
+    }
+    void preview(core::state::StructureNavigationFocus focus) {
+        previewFocus = focus;
+        bump();
+    }
+    void hide() {
+        if (!visible) return;
+        visible = false;
+        bump();
+    }
+    void reset() {
+        visible = false;
+        previewFocus = core::state::StructureNavigationFocus::PAGE;
+        bump();
+    }
+    void bump() { revision.set(revision.get() + 1U); }
+};
+
 struct MacroUiState {
     static constexpr uint8_t INVALID_RUNTIME_PROJECTION_CONTEXT = 0xFFU;
+    static constexpr uint32_t POST_TAKE_INPUT_GUARD_MS = 120U;
 
     struct RuntimeValueProjection {
         float base = 0.0f;
@@ -106,6 +150,8 @@ struct MacroUiState {
         MacroAutomationTakeTiming::HOLD
     };
     oc::state::Signal<uint32_t, 3> automationRecordingRevision{0};
+    /** Low-frequency authored Automation/Modulation mutation revision. */
+    oc::state::Signal<uint32_t, 3> automationEditRevision{0};
     oc::state::Signal<MacroAutomationRecordingStatus, 3> automationRecordingStatus{
         MacroAutomationRecordingStatus::IDLE
     };
@@ -118,16 +164,21 @@ struct MacroUiState {
     oc::state::Signal<bool, 2> previewAddPageSlot{false};
     oc::state::Signal<uint8_t, 2> previewPageIndex{0};
     core::state::StructureHoldState pageHold;
-    core::state::StructureSelectionState pageSelection;
-    oc::state::Signal<core::state::contextual::GuardedActionState, 4>
-        selectionDeleteGuard{};
-    oc::state::Signal<core::state::contextual::OperationFeedbackState, 4>
-        selectionDeleteFeedback{};
+    MacroContextSelectorState contextSelector;
     MacroAutomationTakeState automationTake;
+    uint32_t postTakeInputGuardStartedAtMs = 0U;
+    uint16_t postTakeInputGuardMask = 0U;
     MacroHistoryChangePtr automationTakeHistory{};
     core::app::ExtmemUniquePtr<
         core::state::modulation::ProjectControlDomainState
     > automationTakeDomain{};
+    core::state::modulation::ProjectRecordedShapeCaptureState
+        recordedShapeCapture{};
+    /**
+     * Observable mirror kept outside the compact capture transaction. Input
+     * handlers publish it only after meaningful capture-state changes.
+     */
+    oc::state::Signal<uint32_t, 2> recordedShapeCaptureRevision{0U};
 
     MacroUiState();
     ~MacroUiState();
@@ -143,6 +194,8 @@ struct MacroUiState {
     /** Backward-compatible full reset; project lifecycle integration owns use. */
     void reset();
     void refreshManualOverrideMask(uint8_t track, uint8_t page);
+    void armPostTakeInputGuard(uint16_t macroMask, uint32_t nowMs);
+    [[nodiscard]] bool blocksPostTakeInput(uint8_t macro, uint32_t nowMs);
     void setRuntimeProjection(uint8_t track,
                               uint8_t page,
                               uint8_t macro,

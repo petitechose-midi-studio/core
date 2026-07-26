@@ -11,7 +11,8 @@
 
 #include <oc/state/Signal.hpp>
 
-#include "state/macro/MacroAutomationState.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ModulationIds.hpp"
 #include "state/contextual/ContextualActionModels.hpp"
 
 namespace core::state {
@@ -23,17 +24,8 @@ enum class MacroEditFlowPhase : uint8_t {
     AUTOMATION = 3,
     MODULATION = 4,
     CONVERT_PREVIEW = 5,
-    NEW_MODULATOR_AUDITION = 6,
-    MODULATOR_PICKER = 7,
-    EXISTING_MODULATOR_AUDITION = 8,
-    MODULATOR_CREATE = 9,
-};
-
-enum class MacroSlotProperty : uint8_t {
-    DESTINATION = 0,
-    AUTOMATION,
-    MODULATION,
-    DEPTH,
+    MODULATOR_PICKER = 6,
+    MODULATOR_CREATE = 7,
 };
 
 enum class MacroContextButton : uint8_t {
@@ -99,18 +91,23 @@ struct MacroEditState {
     oc::state::Signal<uint8_t, 4> automationFocusedRow{0};
     /// Focused row in the modulation lifecycle overlay.
     oc::state::Signal<uint8_t, 4> modulationFocusedRow{0};
+    /** Stable edge identity captured while a contextual action is armed. */
+    core::state::modulation::ModulationBindingId guardedModulationBinding{};
+    /** Authored graph revision captured with the guarded edge/aggregate. */
+    uint32_t guardedModulationRevision = 0U;
     oc::state::Signal<MacroModulatorNavigationFeedback, 4>
         modulatorNavigationFeedback{MacroModulatorNavigationFeedback::NONE};
 
     struct ConversionPreviewState {
-        core::state::macro::MacroAutomationConversionPolicy policy =
-            core::state::macro::MacroAutomationConversionPolicy::MEAN;
-        core::state::macro::MacroAutomationConversionPlan plan{};
+        core::state::modulation::ProjectAutomationConversionPolicy policy =
+            core::state::modulation::ProjectAutomationConversionPolicy::MEAN;
+        core::state::modulation::ProjectAutomationConversionPlan plan{};
         oc::state::Signal<uint32_t, 4> revision{0};
 
         void reset();
         void setPlan(
-            const core::state::macro::MacroAutomationConversionPlan& next
+            const core::state::modulation::ProjectAutomationConversionPlan&
+                next
         );
     } conversionPreview;
 
@@ -161,26 +158,17 @@ struct MacroEditState {
 
     void closeModulation();
 
-    void openModulatorCreate();
+    void openModulatorCreate(uint8_t focusedRow = 0);
 
     void closeModulatorCreate(uint8_t focusedRow);
-
-    void openNewModulatorAudition();
-
-    void cancelNewModulatorAudition(uint8_t focusedRow = 0);
 
     void openModulatorPicker(int selectedIndex = 0);
 
     void closeModulatorPicker(uint8_t focusedRow = 1);
 
-    void openExistingModulatorAudition();
-
-    void cancelExistingModulatorAudition();
-
-    void applyModulatorAudition();
 
     void openConvertPreview(
-        const core::state::macro::MacroAutomationConversionPlan& plan
+        const core::state::modulation::ProjectAutomationConversionPlan& plan
     );
 
     void closeConvertPreview();

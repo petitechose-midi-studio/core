@@ -56,11 +56,10 @@ void test_inline_feedback_reset_clears_state() {
     std::cout << "[PASS] test_inline_feedback_reset_clears_state\n";
 }
 
-void test_pattern_quick_controls_reset_clears_physical_hold_layer() {
+void test_pattern_quick_controls_reset_clears_transient_state() {
     core::state::sequencer::SequencerPatternQuickControlsState state;
 
     state.selecting.set(true);
-    state.physicalHoldActive.set(true);
     state.feedbackVisible.set(true);
     state.hideAtMs = 1234;
     state.offsetSteps.set(3);
@@ -68,12 +67,11 @@ void test_pattern_quick_controls_reset_clears_physical_hold_layer() {
     state.reset();
 
     assert(!state.selecting.get());
-    assert(!state.physicalHoldActive.get());
     assert(!state.feedbackVisible.get());
     assert(state.hideAtMs == 0);
     assert(state.offsetSteps.get() == 0);
 
-    std::cout << "[PASS] test_pattern_quick_controls_reset_clears_physical_hold_layer\n";
+    std::cout << "[PASS] test_pattern_quick_controls_reset_clears_transient_state\n";
 }
 
 void test_pattern_quick_controls_feedback_shows_and_expires() {
@@ -94,6 +92,28 @@ void test_pattern_quick_controls_feedback_shows_and_expires() {
     assert(state.hideAtMs == 0);
 
     std::cout << "[PASS] test_pattern_quick_controls_feedback_shows_and_expires\n";
+}
+
+void test_context_selector_state_is_bounded_and_resettable() {
+    using State = core::state::sequencer::SequencerContextSelectorState;
+    static_assert(sizeof(State) <= 128U);
+    static_assert(decltype(State::revision)::maxSubscribers() == 2U);
+
+    State state;
+    state.visible = true;
+    state.previewFocus = core::state::StructureNavigationFocus::TRACK;
+    state.feedback =
+        core::state::sequencer::SequencerContextSelectorFeedback::EDITOR_UNAVAILABLE;
+    state.feedbackUntilMs = 123U;
+    state.reset();
+
+    assert(!state.visible);
+    assert(state.previewFocus == core::state::StructureNavigationFocus::PAGE);
+    assert(
+        state.feedback ==
+        core::state::sequencer::SequencerContextSelectorFeedback::NONE
+    );
+    assert(state.feedbackUntilMs == 0U);
 }
 
 void test_history_feedback_shows_and_expires() {
@@ -138,11 +158,11 @@ void test_track_paste_has_one_bounded_revision_subscription_surface() {
     oc::state::NotificationQueue::instance().flush();
     assert(notifications == 8);
 
-    state.plan.count = 1;
+    state.plan.hasEntry = true;
     state.detailVisible = true;
     state.reset();
     assert(state.revision.subscriberCount() == 8);
-    assert(state.plan.count == 0);
+    assert(!state.plan.hasEntry);
     assert(!state.detailVisible);
 }
 
@@ -151,8 +171,9 @@ void test_track_paste_has_one_bounded_revision_subscription_surface() {
 int main() {
     test_inline_feedback_expires_steps_independently();
     test_inline_feedback_reset_clears_state();
-    test_pattern_quick_controls_reset_clears_physical_hold_layer();
+    test_pattern_quick_controls_reset_clears_transient_state();
     test_pattern_quick_controls_feedback_shows_and_expires();
+    test_context_selector_state_is_bounded_and_resettable();
     test_history_feedback_shows_and_expires();
     test_track_paste_has_one_bounded_revision_subscription_surface();
 

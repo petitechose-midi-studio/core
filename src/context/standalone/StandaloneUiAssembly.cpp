@@ -326,6 +326,7 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
         core::ui::SequencerView::StateRefs{
             core_state_.sequencer,
             core_state_.sequencerTracks,
+            core_state_.projectTracks,
             core_state_.trackNavigation,
             core_state_.structureNavigationFocus,
             core_state_.sharedTrackActive,
@@ -351,6 +352,8 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
             core_state_.projectNavigation,
             core_state_.project,
             core_state_.pages,
+            core_state_.macroUi,
+            core_state_.projectTracks,
             core_state_.sequencerTracks,
             core_state_.statusBar,
             core_state_.midiSync,
@@ -424,13 +427,9 @@ FLASHMEM bool StandaloneUiAssembly::bindGlobalTrackStrip() {
     bound = global_track_structure_watcher_.watchAll(
         core_state_.sharedTrackActive,
         core_state_.sharedTrackEnabledMask,
-        core_state_.sequencerTracks.mutedMaskSignal(),
+        core_state_.projectTracks.revision,
         core_state_.trackNavigation.previewAddSlot,
-        core_state_.trackNavigation.previewTrackIndex,
-        core_state_.trackNavigation.selection.active,
-        core_state_.trackNavigation.selection.scope,
-        core_state_.trackNavigation.selection.cursorIndex,
-        core_state_.trackNavigation.selection.selectedMask
+        core_state_.trackNavigation.previewTrackIndex
     ) && bound;
 
     global_track_activity_low_watcher_.bind<
@@ -519,7 +518,7 @@ void StandaloneUiAssembly::renderGlobalTrackStrip() {
         return;
     }
 
-    if (core_state_.activeView.get() == core::ui::ViewType::PROJECT ||
+    if (core::ui::isProjectWorkspaceView(core_state_.activeView.get()) ||
         core_state_.activeView.get() == core::ui::ViewType::DEVICE_SETTINGS) {
         return;
     }
@@ -529,7 +528,7 @@ void StandaloneUiAssembly::renderGlobalTrackStrip() {
             core_state_.trackNavigation,
             core_state_.structureNavigationFocus.get(),
             core_state_.sharedTrackEnabledMask.get(),
-            core_state_.sequencerTracks.currentMutedMask(),
+            core_state_.projectTracks,
             core_state_.sharedTrackActive.get(),
             core_state_.statusBar,
         }

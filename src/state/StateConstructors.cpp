@@ -14,6 +14,8 @@ FLASHMEM MacroState::MacroState() {
     }
 }
 
+FLASHMEM MacroState::~MacroState() = default;
+
 FLASHMEM DataManagerState::DataManagerState() {
     feedback.set("");
 }

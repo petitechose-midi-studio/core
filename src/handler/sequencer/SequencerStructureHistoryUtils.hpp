@@ -47,20 +47,9 @@ inline core::state::sequencer::SequencerHistoryDescriptor makeSequencerPageStruc
     };
 }
 
-inline SequencerPageStructureHistoryChangePtr captureSequencerPageStructureHistoryBefore(
+SequencerPageStructureHistoryChangePtr captureSequencerPageStructureHistoryBefore(
     const core::state::sequencer::SequencerState& sequencer
-) {
-    auto change = core::app::makeExtmemUnique<
-        core::state::sequencer::SequencerHistoryPatternChange
-    >();
-    if (!change ||
-        !core::state::sequencer::captureHistorySnapshot(sequencer, change->before) ||
-        !core::state::sequencer::reserveHistorySnapshotGraphStorage(change->after)) {
-        return nullptr;
-    }
-    change->storage = core::state::sequencer::SequencerHistoryPatternStorage::FullGraph;
-    return change;
-}
+);
 
 inline bool recordSequencerPageStructureHistoryChange(
     SequencerHistoryDomainServices& history,
@@ -87,55 +76,19 @@ inline bool recordSequencerPageStructureHistoryChange(
     return history.recordPattern(std::move(change));
 }
 
-inline core::state::sequencer::SequencerHistoryTrackStructureChangePtr
+core::state::sequencer::SequencerHistoryTrackStructureChangePtr
 captureSequencerTrackStructureHistoryBefore(
     const core::state::sequencer::SequencerTrackBankState& tracks,
     const core::state::sequencer::SequencerState& sequencer,
     uint16_t trackMask
-) {
-    auto change = core::app::makeExtmemUnique<
-        core::state::sequencer::SequencerHistoryTrackStructureChange
-    >();
-    if (!change) return nullptr;
+);
 
-    if (!core::state::sequencer::captureHistoryStructureSnapshot(
-            tracks,
-            sequencer,
-            trackMask,
-            change->before
-        )) {
-        return nullptr;
-    }
-
-    for (uint8_t i = 0;
-         i < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-         ++i) {
-        if ((change->before.capturedTrackMask & sequencerStructureHistoryTrackBit(i)) == 0) {
-            continue;
-        }
-        if (!core::state::sequencer::reserveHistorySnapshotGraphStorage(
-                change->after.tracks[i]
-            )) {
-            return nullptr;
-        }
-    }
-
-    return change;
-}
-
-inline bool captureSequencerTrackStructureHistoryAfter(
+bool captureSequencerTrackStructureHistoryAfter(
     const core::state::sequencer::SequencerTrackBankState& tracks,
     const core::state::sequencer::SequencerState& sequencer,
     uint16_t trackMask,
     core::state::sequencer::SequencerHistoryTrackStructureChange& change
-) {
-    return core::state::sequencer::captureHistoryStructureSnapshotUsingReservedGraphs(
-        tracks,
-        sequencer,
-        trackMask,
-        change.after
-    );
-}
+);
 
 inline core::state::sequencer::SequencerHistoryDescriptor makeSequencerTrackStructureHistoryDescriptor(
     const core::state::sequencer::SequencerHistoryTrackStructureSnapshot& before,

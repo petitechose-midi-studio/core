@@ -10,6 +10,7 @@
 #include "../../src/handler/macro/MacroMidiHandler.hpp"
 #include "../../src/midi/MidiUtils.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/project/ProjectTrackDomainServices.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/ProjectControlTestUtils.hpp"
@@ -81,6 +82,19 @@ void test_mapped_cc_takes_manual_ownership_and_authors_absolute_base() {
     assert((harness.state.macroUi.automationManualOverrideMask.get() & 0x0001U) != 0);
     assert(harness.state.hasPendingProjectMutationCoalescing());
 
+    harness.handler.onCC(0, 74, 32);
+    const float updated = core::midi::fromCC(32);
+    float overrideValue = 0.0f;
+    assert(harness.state.macroUi.manualOverrides.valueFor(
+        {harness.state.pages.currentActiveTrack(),
+         harness.state.pages.currentActivePage(),
+         0},
+        overrideValue
+    ));
+    assert(std::fabs(overrideValue - updated) < 0.0001f);
+    assert(std::fabs(harness.state.macros[0].value.get() - updated) < 0.0001f);
+    assert(std::fabs(harness.state.pages.activePageData().values[0] - updated) < 0.0001f);
+
     std::cout
         << "[PASS] test_mapped_cc_takes_manual_ownership_and_authors_absolute_base\n";
 }
@@ -97,11 +111,30 @@ void test_inactive_macro_slot_does_not_accept_mapped_cc() {
     std::cout << "[PASS] test_inactive_macro_slot_does_not_accept_mapped_cc\n";
 }
 
+void test_incoming_cc_matches_canonical_track_channel_not_macro_mirror() {
+    Harness harness;
+    assert(core::state::project::ProjectTrackDomainServices::fromCoreState(
+               harness.state
+           ).setMidiChannel(0U, 5U));
+    const float before = harness.state.pages.activePageData().values[0];
+
+    harness.handler.onCC(0U, 74U, 100U);
+    assert(harness.state.pages.activePageData().values[0] == before);
+    harness.handler.onCC(5U, 74U, 100U);
+    assert(std::fabs(
+        harness.state.pages.activePageData().values[0] -
+        core::midi::fromCC(100U)
+    ) < 0.0001f);
+
+    std::cout << "[PASS] MIDI IN matches canonical Project Track Channel\n";
+}
+
 }  // namespace
 
 int main() {
     test_mapped_cc_takes_manual_ownership_and_authors_absolute_base();
     test_inactive_macro_slot_does_not_accept_mapped_cc();
+    test_incoming_cc_matches_canonical_track_channel_not_macro_mirror();
 
     std::cout << "\nAll MacroMidiHandler tests passed.\n";
     return 0;

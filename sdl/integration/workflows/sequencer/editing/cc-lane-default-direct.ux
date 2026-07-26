@@ -1,0 +1,37 @@
+# UX workflow: direct CC Lane creation from the musical property selector.
+# Purpose: proves the Track -> Pattern context gesture, one-release lane
+# creation with the project default, and immediate Step Grid authoring without
+# a redundant setup wizard.
+# Expect: semantic:context_pattern_preview:mode=sequencer.context_selector, semantic:context_pattern_preview:effect=preview_context, semantic:context_pattern_preview:target=pattern, semantic:context_pattern_preview:projection=preview
+# Expect: semantic:context_pattern_applied:effect=apply_context, semantic:context_pattern_applied:target=pattern, semantic:context_pattern_applied:projection=applied, semantic:context_pattern_applied:outcome=applied
+# Expect: semantic:cc_lane_default_grid:mode=sequencer.cc_lane.grid, semantic:cc_lane_default_grid:effect=create_cc_lane, semantic:cc_lane_default_grid:controller=1, semantic:cc_lane_default_grid:default_controller=1
+# Expect: semantic:cc_lane_step_authored:mode=sequencer.cc_lane.grid, semantic:cc_lane_step_authored:effect=edit_visible_cc_event, semantic:cc_lane_step_authored:target_step=0, semantic:cc_lane_step_authored:controller=1
+# Expect: capture_changed:context_track_preview=context_pattern_preview, capture_changed:cc_lane_default_grid=cc_lane_step_authored
+
+0 scenario sequencer
+
+# NAV press reveals Pattern. One turn visits Track, the next returns to Pattern;
+# release applies the context without changing musical position.
+100 button NAV down
+180 capture screen context_pattern_initial
+240 encoder NAV -1
+320 capture screen context_track_preview
+380 encoder NAV 1
+460 capture screen context_pattern_preview
+520 button NAV up
+600 capture screen context_pattern_applied
+
+# Hold the shared property selector, choose + CC lane, then simply release.
+# Lane 1 inherits the project default CC 1 and opens directly in the grid.
+700 button LEFT_BOTTOM down
+780 encoder NAV 1
+860 encoder NAV 1
+940 encoder NAV 1
+1020 encoder NAV 1
+1260 capture screen cc_lane_default_selected
+1340 button LEFT_BOTTOM up
+1580 capture screen cc_lane_default_grid
+
+# The eight Macro encoders are immediately the eight visible CC steps.
+1680 encoder MACRO_1 0.75
+1920 capture screen cc_lane_step_authored

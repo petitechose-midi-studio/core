@@ -35,9 +35,7 @@ struct SequencerGraphStepNodeRecord {
         oc::note::sequencer::StepSequencerChordMode::Single
     );
     uint8_t chordVoiceCount = 3;
-    // Same three persistent bytes for every supported version. Envelopes <= 6
-    // and presets <= 2 contain the legacy Color/Variant/Spread recipe. Newer
-    // formats use StepSequencerChordSpec's explicit semantic marker and values.
+    // Three stable bytes hold StepSequencerChordSpec's semantic values.
     uint8_t chordHarmonyData = 0;
     uint8_t chordVoicingData = 0;
     uint8_t chordInversionData = 0;
@@ -50,6 +48,44 @@ struct SequencerGraphCycleSetRecord {
     uint8_t length = 0;
     int8_t offset = 0;
 };
+
+inline oc::note::sequencer::StepSequencerChordMode
+sanitizeSequencerGraphChordMode(uint8_t mode) {
+    using oc::note::sequencer::StepSequencerChordMode;
+    if (mode > static_cast<uint8_t>(StepSequencerChordMode::Local)) {
+        return StepSequencerChordMode::Single;
+    }
+    return static_cast<StepSequencerChordMode>(mode);
+}
+
+inline bool sequencerGraphChordSpecBytesEqual(
+    const oc::note::sequencer::StepSequencerChordSpec& lhs,
+    const oc::note::sequencer::StepSequencerChordSpec& rhs
+) {
+    return lhs.voiceCount == rhs.voiceCount &&
+           lhs.harmonyData == rhs.harmonyData &&
+           lhs.voicingData == rhs.voicingData &&
+           lhs.inversionData == rhs.inversionData &&
+           lhs.strum == rhs.strum &&
+           lhs.velocityCurve == rhs.velocityCurve;
+}
+
+inline bool decodeSequencerGraphChordSpec(
+    const SequencerGraphStepNodeRecord& record,
+    oc::note::sequencer::StepSequencerChordSpec& out
+) {
+    const oc::note::sequencer::StepSequencerChordSpec raw{
+        .voiceCount = record.chordVoiceCount,
+        .harmonyData = record.chordHarmonyData,
+        .voicingData = record.chordVoicingData,
+        .inversionData = record.chordInversionData,
+        .strum = record.chordStrum,
+        .velocityCurve = record.chordVelocityCurve,
+    };
+    out = raw;
+    out.clamp();
+    return sequencerGraphChordSpecBytesEqual(raw, out);
+}
 
 namespace graph_record_codec {
 

@@ -16,7 +16,10 @@
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectTrackDomainServices.hpp"
+#include "state/project/ProjectSettingsHistory.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroUiState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
@@ -35,13 +38,17 @@ public:
         core::state::project::ProjectNavigationState& navigation;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
+        core::state::project::ProjectTrackState& projectTracks;
+        core::state::project::ProjectTrackDomainServices trackDomain;
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
         core::state::macro::MacroPagesState& pages;
+        core::state::macro::MacroUiState& macroUi;
         core::state::MacroState& macros;
         core::state::MacroEditState& macroEdit;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::macro::MacroHistoryService& macroHistory;
+        core::state::project::ProjectSettingsHistoryService& settingsHistory;
         core::state::StructureClipboardState& clipboard;
         core::handler::SequencerHistoryDomainServices history;
         core::handler::ProjectLifecycleDomainServices lifecycle;
@@ -73,8 +80,6 @@ private:
         modulators_ux_surface_;
 #endif
     core::app::ExtmemUniquePtr<core::handler::ProjectHandler> handler_;
-    core::state::project::ProjectNavigationState* navigation_ = nullptr;
-    uint32_t last_telemetry_refresh_ms_ = 0;
 };
 
 }  // namespace core::context::standalone

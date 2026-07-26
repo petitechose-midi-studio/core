@@ -9,8 +9,10 @@
 #include "handler/macro/MacroAutomationTiming.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "midi/MidiUtils.hpp"
+#include "state/macro/MacroWorkflow.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectModulationRuntimePlan.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 
 namespace core::handler {
 
@@ -22,18 +24,21 @@ struct MacroAutomationPlaybackService::FramePublicationContext {
     core::state::shared::MidiCcCandidate* candidates = nullptr;
     uint16_t capacity = 0;
     uint16_t count = 0;
+    uint16_t evaluationCount = 0;
+    uint16_t audibleTrackMask = 0;
+    bool candidateOverflow = false;
     std::array<uint16_t, core::state::macro::TRACK_COUNT> computedMasks{};
 };
 
 FLASHMEM MacroAutomationPlaybackService::MacroAutomationPlaybackService(
     StateRefs state,
-    MacroPerformanceDomainServices services,
     MacroMidiCcRuntimeAdapter& midiRuntime
 )
-    : pages_(state.pages)
+    : macros_(state.macros)
+    , pages_(state.pages)
     , macro_ui_(state.macroUi)
+    , project_tracks_(state.projectTracks)
     , runtime_owner_revision_(state.runtimeOwnerRevision)
-    , services_(services)
     , midi_runtime_(midiRuntime) {
     reset();
 }
@@ -43,6 +48,7 @@ void MacroAutomationPlaybackService::reset() {
     next_due_ms_ = 0;
     consumed_runtime_owner_revision_ =
         runtime_owner_revision_ != nullptr ? runtime_owner_revision_->get() : 0U;
+    consumed_project_track_revision_ = project_tracks_.revision.get();
     cached_track_ = 0xFF;
     cached_page_ = 0xFF;
     pages_.control.compiledRevision = 0;
@@ -105,17 +111,29 @@ bool MacroAutomationPlaybackService::ensureProjectRuntime_(
         control.compiledRevision != control.authoredRevision ||
         control.runtimeContextHash != contextHash;
     if (needsCompile) {
+        OC_PERF_SCOPE(perfPlanCompile, "project-control.plan-compile");
         const auto compiled =
             core::state::modulation::compileProjectControlRuntimePlan(
                 control.authored,
                 context,
                 control.plan
             );
+        OC_PERF_UNITS(
+            perfPlanCompile,
+            control.plan.sourceCount,
+            control.plan.bindingCount
+        );
         if (!compiled.compiled()) return false;
     }
     if (needsCompile || !control.runtime.initialized ||
         control.runtime.sourceCount != control.plan.sourceCount ||
         control.runtime.bindingCount != control.plan.bindingCount) {
+        OC_PERF_SCOPE(perfRuntimeSync, "project-control.runtime-sync");
+        OC_PERF_UNITS(
+            perfRuntimeSync,
+            control.plan.sourceCount,
+            control.plan.bindingCount
+        );
         if (core::state::modulation::synchronizeProjectControlRuntimeState(
                 control.runtime,
                 control.plan,
@@ -184,13 +202,13 @@ void MacroAutomationPlaybackService::stageVisibleProjection_(
         destination.page != pages_.currentActivePage()) {
         return;
     }
-    core::state::modulation::ProjectControlMacroSlotView authored{};
+    core::state::modulation::ProjectControlMacroDestinationView authored{};
     const core::state::macro::MacroAutomationSlotAddress address{
         destination.track,
         destination.page,
         destination.macro,
     };
-    (void)core::state::modulation::readProjectControlMacroSlot(
+    (void)core::state::modulation::readProjectControlMacroDestination(
         pages_.control,
         address,
         authored
@@ -201,7 +219,11 @@ void MacroAutomationPlaybackService::stageVisibleProjection_(
     const bool modulationActive =
         (value.flags & core::state::modulation::
             PROJECT_LOGICAL_MACRO_FLAG_MODULATION_ACTIVE) != 0U;
-    services_.setResolvedValue(destination.macro, value.value);
+    core::state::macro::MacroWorkflow::setRuntimeValue(
+        macros_,
+        destination.macro,
+        value.value
+    );
     macro_ui_.stageRuntimeProjection(
         context.projection,
         destination.macro,
@@ -209,18 +231,16 @@ void MacroAutomationPlaybackService::stageVisibleProjection_(
             .base = value.base,
             .modulation = value.modulation,
             .resolved = value.value,
-            .automationStored = authored.automationStored,
-            .modulationStored = authored.modulationStored,
+            .automationStored = authored.automation.stored(),
+            .modulationStored = authored.modulationCount > 0U,
             .automationActive = automationActive,
             .modulationActive = modulationActive,
-            .modulationPausedDepthZero = authored.modulationEnabled &&
-                std::abs(authored.compatibility.modulationDepth) <= 0.000001f,
-            .modulationSuspended = false,
+            .modulationPausedDepthZero =
+                authored.primaryModulation.enabled &&
+                std::abs(authored.primaryModulation.amount) <= 0.000001f,
         },
-        authored.modulationStored
-            ? core::state::macro::macroAutomationClamp01(
-                  authored.compatibility.modulationDepth
-              )
+        authored.primaryModulation.present()
+            ? std::clamp(authored.primaryModulation.amount, 0.0f, 1.0f)
             : 0.0f
     );
 }
@@ -232,48 +252,77 @@ void MacroAutomationPlaybackService::captureRuntimeDestination_(
 ) {
     auto* frame = static_cast<FramePublicationContext*>(context);
     if (frame == nullptr || frame->owner == nullptr ||
-        frame->candidates == nullptr || frame->count >= frame->capacity) {
+        frame->candidates == nullptr) {
         return;
     }
     const auto& logical = value.destination;
     if (!core::state::modulation::modulationDestinationValid(logical)) return;
     auto& owner = *frame->owner;
-    const auto& track = owner.pages_.tracks[logical.track];
-    const auto& page = track.pages[logical.page];
+    const auto& page = owner.pages_.tracks[logical.track].pages[logical.page];
     const bool live = (value.flags & core::state::modulation::
         PROJECT_LOGICAL_MACRO_FLAG_MANUAL_OVERRIDE) != 0U;
     const bool computed = (value.flags & static_cast<uint8_t>(
         core::state::modulation::PROJECT_LOGICAL_MACRO_FLAG_AUTOMATION_ACTIVE |
         core::state::modulation::PROJECT_LOGICAL_MACRO_FLAG_MODULATION_ACTIVE
     )) != 0U;
-    frame->candidates[frame->count++] = {
-        .destination = {
-            .identity = {
-                .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
-                .channel = track.channel,
-                .controller = page.cc[logical.macro],
-            },
-            .routeValidity = core::state::shared::MidiCcRouteValidity::VALID,
-        },
-        .author = {
-            .candidateClass = live
-                ? core::state::shared::MidiCcCandidateClass::LIVE_MANUAL
-                : (computed
-                    ? core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED
-                    : core::state::shared::MidiCcCandidateClass::MACRO_STATIC),
-            .stableAddress = MacroMidiCcRuntimeAdapter::stableAddress(
-                logical.track,
-                logical.page,
-                logical.macro
-            ),
-        },
-        .localValue = core::midi::toCC(value.value),
-    };
+    frame->evaluationCount = static_cast<uint16_t>(frame->evaluationCount + 1U);
     frame->computedMasks[logical.track] = static_cast<uint16_t>(
         frame->computedMasks[logical.track] |
         static_cast<uint16_t>(1U << logical.macro)
     );
     owner.stageVisibleProjection_(*frame, value);
+
+    const uint16_t trackBit = static_cast<uint16_t>(1U << logical.track);
+    if ((frame->audibleTrackMask & trackBit) == 0U) {
+        return;
+    }
+    const uint16_t required = static_cast<uint16_t>(live ? 2U : 1U);
+    if (frame->count > frame->capacity ||
+        required > static_cast<uint16_t>(frame->capacity - frame->count)) {
+        frame->candidateOverflow = true;
+        return;
+    }
+    const auto destination = core::state::shared::MidiCcDestination{
+        .identity = {
+            .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+            .channel = owner.project_tracks_.authored
+                .midiChannels[logical.track],
+            .controller = page.cc[logical.macro],
+        },
+        .routeValidity = core::state::shared::MidiCcRouteValidity::VALID,
+    };
+    const auto baseClass = computed
+        ? core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED
+        : core::state::shared::MidiCcCandidateClass::MACRO_STATIC;
+    const uint16_t stableAddress = MacroMidiCcRuntimeAdapter::stableAddress(
+        logical.track,
+        logical.page,
+        logical.macro
+    );
+    const float underlyingRaw = value.underlyingBase + value.modulation;
+    frame->candidates[frame->count++] = {
+        .destination = destination,
+        .author = {
+            .candidateClass = baseClass,
+            .stableAddress = stableAddress,
+        },
+        .localValue = core::midi::toCC(std::clamp(
+            underlyingRaw,
+            0.0f,
+            1.0f
+        )),
+    };
+    if (live) {
+        frame->candidates[frame->count++] = {
+            .destination = destination,
+            .author = {
+                .candidateClass =
+                    core::state::shared::MidiCcCandidateClass::LIVE_MANUAL,
+                .stableAddress = stableAddress,
+            },
+            .localValue = core::midi::toCC(value.value),
+        };
+    }
 }
 
 bool MacroAutomationPlaybackService::appendStaticAuthors_(
@@ -284,6 +333,10 @@ bool MacroAutomationPlaybackService::appendStaticAuthors_(
          trackIndex < core::state::macro::TRACK_COUNT;
          ++trackIndex) {
         if ((enabledTracks & static_cast<uint16_t>(1U << trackIndex)) == 0U) {
+            continue;
+        }
+        if ((frame.audibleTrackMask &
+             static_cast<uint16_t>(1U << trackIndex)) == 0U) {
             continue;
         }
         const auto& track = pages_.tracks[trackIndex];
@@ -317,28 +370,43 @@ bool MacroAutomationPlaybackService::appendStaticAuthors_(
                 live = true;
                 value = take.latestBase(address.macro);
             }
-            frame.candidates[frame.count++] = {
-                .destination = {
-                    .identity = {
-                        .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
-                        .channel = track.channel,
-                        .controller = page.cc[macroIndex],
-                    },
-                    .routeValidity =
-                        core::state::shared::MidiCcRouteValidity::VALID,
+            const auto destination = core::state::shared::MidiCcDestination{
+                .identity = {
+                    .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                    .channel = project_tracks_.authored
+                        .midiChannels[trackIndex],
+                    .controller = page.cc[macroIndex],
                 },
-                .author = {
-                    .candidateClass = live
-                        ? core::state::shared::MidiCcCandidateClass::LIVE_MANUAL
-                        : core::state::shared::MidiCcCandidateClass::MACRO_STATIC,
-                    .stableAddress = MacroMidiCcRuntimeAdapter::stableAddress(
-                        trackIndex,
-                        pageIndex,
-                        macroIndex
-                    ),
-                },
-                .localValue = core::midi::toCC(value),
+                .routeValidity =
+                    core::state::shared::MidiCcRouteValidity::VALID,
             };
+            const uint16_t stableAddress =
+                MacroMidiCcRuntimeAdapter::stableAddress(
+                    trackIndex,
+                    pageIndex,
+                    macroIndex
+                );
+            frame.candidates[frame.count++] = {
+                .destination = destination,
+                .author = {
+                    .candidateClass =
+                        core::state::shared::MidiCcCandidateClass::MACRO_STATIC,
+                    .stableAddress = stableAddress,
+                },
+                .localValue = core::midi::toCC(page.values[macroIndex]),
+            };
+            if (live) {
+                if (frame.count >= frame.capacity) return false;
+                frame.candidates[frame.count++] = {
+                    .destination = destination,
+                    .author = {
+                        .candidateClass = core::state::shared::
+                            MidiCcCandidateClass::LIVE_MANUAL,
+                        .stableAddress = stableAddress,
+                    },
+                    .localValue = core::midi::toCC(value),
+                };
+            }
         }
     }
     return true;
@@ -381,11 +449,27 @@ bool MacroAutomationPlaybackService::produceProjectFrame_(
     frame->candidates = destination;
     frame->capacity = capacity;
     frame->count = 0;
-    frame->computedMasks.fill(0);
+    frame->evaluationCount = 0;
     auto& owner = *frame->owner;
+    frame->audibleTrackMask = core::state::project::audibleMask(
+        owner.project_tracks_,
+        owner.pages_.currentTrackEnabledMask()
+    );
+    frame->candidateOverflow = false;
+    frame->computedMasks.fill(0);
     frame->projection = owner.macro_ui_.beginRuntimeProjectionFrame();
     auto& control = owner.pages_.control;
-    if (control.plan.destinationCount > 0U) {
+    const bool provisionalDestination =
+        control.runtime.recordedShapeAudition.mode ==
+        core::state::modulation::
+            ProjectRecordedShapeRuntimeAuditionMode::DESTINATION_ADD;
+    if (control.plan.destinationCount > 0U || provisionalDestination) {
+        OC_PERF_SCOPE(perfEvaluate, "project-control.evaluate");
+        OC_PERF_UNITS(
+            perfEvaluate,
+            control.plan.sourceCount,
+            control.plan.destinationCount
+        );
         const auto evaluated =
             core::state::modulation::evaluateProjectControlRuntimeWithBaseProvider(
                 control.plan,
@@ -399,9 +483,10 @@ bool MacroAutomationPlaybackService::produceProjectFrame_(
                 static_cast<uint16_t>(control.sourceScratch.size()),
                 captureRuntimeDestination_,
                 frame
-            );
+        );
         if (!evaluated.evaluated() ||
-            frame->count != evaluated.destinationEvaluationCount) {
+            frame->evaluationCount != evaluated.destinationEvaluationCount ||
+            frame->candidateOverflow) {
             owner.macro_ui_.cancelRuntimeProjectionFrame(frame->projection);
             return false;
         }
@@ -427,19 +512,22 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
         pages_.currentActivePage() != cached_page_;
     const bool triggerEventsPending =
         midi_runtime_.projectModulationTriggersPending();
+    const bool projectTrackChangePending =
+        project_tracks_.revision.get() != consumed_project_track_revision_;
     if (update_scheduled_ &&
         !oc::time::deadlineReachedMs(nowMs, next_due_ms_) &&
         !ownerActivationPending && !addressContextChanged &&
-        !triggerEventsPending) {
+        !triggerEventsPending && !projectTrackChangePending) {
         return;
     }
     update_scheduled_ = true;
-    // A failure remains bounded at the legacy-safe cadence. A successful
+    // A failure remains bounded at the safe fallback cadence. A successful
     // frame below tightens this deadline from the actual compiled workload.
     next_due_ms_ = nowMs + macro::MACRO_AUTOMATION_UPDATE_PERIOD_MS;
     OC_PERF_SCOPE(perfUpdate, "macro.automation-playback");
 
     consumeRuntimeOwnerActivation_();
+    consumed_project_track_revision_ = project_tracks_.revision.get();
     const uint8_t track = pages_.currentActiveTrack();
     const uint8_t page = pages_.currentActivePage();
     if (track != cached_track_ || page != cached_page_) {
@@ -457,7 +545,7 @@ void MacroAutomationPlaybackService::update(uint32_t nowMs) {
 
     auto& control = pages_.control;
     control.triggerScratch.count = 0U;
-    control.triggerScratch.reserved = 0U;
+    control.triggerScratch.droppedEventCount = 0U;
     (void)midi_runtime_.drainProjectModulationTriggers(
         control.triggerScratch
     );

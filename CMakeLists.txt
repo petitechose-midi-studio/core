@@ -126,6 +126,10 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
             PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/test"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        if(test_name STREQUAL test_ModulatorSparklineModel)
+            target_include_directories("${test_name}"
+                PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../ui/src")
+        endif()
         if(MSVC)
             target_compile_options("${test_name}" PRIVATE /UNDEBUG)
         else()

@@ -15,6 +15,7 @@ namespace core::context::standalone::macro_overlay_invalidation {
 inline constexpr uint32_t RENDER_EDIT = 1U << 0;
 inline constexpr uint32_t RENDER_AUTOMATION = 1U << 1;
 inline constexpr uint32_t RENDER_EDIT_SELECTOR = 1U << 2;
+inline constexpr uint32_t RENDER_EDIT_LIVE = 1U << 3;
 inline constexpr uint32_t PHASE_RENDER_MASK =
     RENDER_EDIT | RENDER_AUTOMATION | RENDER_EDIT_SELECTOR;
 
@@ -38,6 +39,9 @@ class Bindings {
 public:
     using InvalidateCallback = void (*)(void* context, uint32_t renderFlags);
 
+    Bindings();
+    ~Bindings();
+
     [[nodiscard]] bool bind(StateRefs stateRefs,
                             void* callbackContext,
                             InvalidateCallback callback);
@@ -50,6 +54,9 @@ public:
     [[nodiscard]] size_t subscriptionCount() const {
         return phase_watcher_.subscriptionCount() +
                clipboard_watcher_.subscriptionCount() +
+               capture_watcher_.subscriptionCount() +
+               content_watcher_.subscriptionCount() +
+               live_watcher_.subscriptionCount() +
                edit_watcher_.subscriptionCount() +
                automation_watcher_.subscriptionCount() +
                edit_selector_watcher_.subscriptionCount();
@@ -58,6 +65,9 @@ public:
 private:
     void requestPhaseRenders();
     void requestClipboardRenders();
+    void requestCaptureRenders();
+    void requestContentRenders();
+    void requestEditLiveRender();
     void requestEditRender();
     void requestAutomationRender();
     void requestEditSelectorRender();
@@ -67,7 +77,10 @@ private:
     InvalidateCallback callback_ = nullptr;
     oc::state::StaticWatchGroup<1> phase_watcher_;
     oc::state::StaticWatchGroup<1> clipboard_watcher_;
-    oc::state::StaticWatchGroup<15> edit_watcher_;
+    oc::state::StaticWatchGroup<1> capture_watcher_;
+    oc::state::StaticWatchGroup<1> content_watcher_;
+    oc::state::StaticWatchGroup<1> live_watcher_;
+    oc::state::StaticWatchGroup<14> edit_watcher_;
     oc::state::StaticWatchGroup<13> automation_watcher_;
     oc::state::StaticWatchGroup<2> edit_selector_watcher_;
 };

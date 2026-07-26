@@ -6,6 +6,7 @@
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "ui/sequencer/StepContentBadgeProjection.hpp"
 
 namespace core::ui::sequencer::grid {
@@ -140,7 +141,7 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
 
         applyResolvedStepToTile(resolved, tile);
         tile.contentBadges = buildStepContentBadgeProjectionForNode(
-            sequencer.pattern,
+            core::state::sequencer::authoringPattern(sequencer),
             resolved.nodeId
         );
         mergeExpandedTelemetryChordBadgeForNode(

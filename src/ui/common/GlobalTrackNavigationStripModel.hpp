@@ -1,8 +1,9 @@
 #pragma once
 
 #include "state/StatusBarState.hpp"
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "ui/common/TrackNavigationStripProps.hpp"
 
 namespace core::ui {
@@ -19,7 +20,7 @@ struct GlobalTrackNavigationStripSource {
     core::state::StructureNavigationFocus structureNavigationFocus =
         core::state::StructureNavigationFocus::PAGE;
     uint16_t sharedTrackEnabledMask = 0x0001;
-    uint16_t sharedTrackMutedMask = 0;
+    const core::state::project::ProjectTrackState& projectTracks;
     uint8_t sharedTrackActive = 0;
     const core::state::StatusBarState& statusBar;
 };

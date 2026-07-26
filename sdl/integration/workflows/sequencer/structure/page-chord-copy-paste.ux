@@ -9,9 +9,10 @@
 50 capture screen sequencer_ready
 
 # Enter Step focus, enable step 1, and create a local chord from the Step Editor.
-150 tap NAV 60
-350 capture screen pattern_focus
-450 tap NAV 60
+150 capture screen pattern_focus
+450 button NAV down
+510 encoder NAV 1
+570 button NAV up
 650 capture screen step_focus
 750 tap MACRO_1 60
 950 capture screen step_1_enabled
@@ -26,15 +27,19 @@
 2620 encoder NAV 1
 2700 encoder NAV 1
 2900 capture screen chord_row_single
-3000 encoder OPT 0.3
+3000 tap NAV 60
+3160 encoder OPT 1.0
 3300 capture screen chord_row_local
-3400 tap LEFT_TOP 60
+3320 tap BOTTOM_RIGHT 40
+3400 tap NAV 60
+3500 tap LEFT_TOP 60
 3700 capture screen source_page_chord_badge
 
-# Return to Pattern focus, copy page 1, then paste it into the page 2 add slot.
-3800 tap NAV 60
-4000 capture screen track_focus_after_editor
-4100 tap NAV 60
+# Return to Pattern focus with the same held selector, copy page 1, then paste
+# it into the page 2 add slot.
+3800 button NAV down
+3860 encoder NAV -1
+3920 button NAV up
 4300 capture screen page_focus_source
 4400 tap BOTTOM_RIGHT 60
 4650 capture screen page_1_chord_copied

@@ -140,13 +140,13 @@ bool near(float lhs, float rhs, float epsilon = 0.0001f) {
 
 void testExactMemoryContract() {
     assert(sizeof(mod::ModulationDestinationScaleState) == 6U);
-    assert(sizeof(mod::ModulatorAdsrParameters) == 12U);
+    assert(sizeof(mod::ModulatorAdsrParameters) == 16U);
     assert(sizeof(mod::ModulatorParameters) == 16U);
     assert(sizeof(mod::ModulatorSourceState) == 40U);
     assert(sizeof(mod::ProjectModulationState) == 20496U);
     assert(sizeof(mod::ProjectAutomationCurveDirectory) == 1540U);
     assert(sizeof(mod::ProjectCurveArena) == 137480U);
-    assert(sizeof(mod::ProjectModulationRuntimePlan) == 16296U);
+    assert(sizeof(mod::ProjectModulationRuntimePlan) == 16552U);
     assert(sizeof(mod::ProjectModulationState) +
                sizeof(mod::ProjectAutomationCurveDirectory) +
                sizeof(mod::ProjectCurveArena) ==
@@ -159,16 +159,31 @@ void testAdsrDomainIsPositiveCompactAndStrict() {
     const auto* source = mod::findProjectModulator(*fixture.state, sourceId);
     assert(source != nullptr);
     assert(source->kind == mod::ModulatorKind::ADSR);
+    assert(source->schemaVersion == mod::PROJECT_MODULATOR_ADSR_SCHEMA_VERSION);
+    assert(source->parameters.adsr.delay == 0U);
     assert(source->parameters.adsr.attack == 16U);
+    assert(source->parameters.adsr.hold == 0U);
     assert(source->parameters.adsr.decay == 250U);
     assert(source->parameters.adsr.release == 500U);
+    assert(source->parameters.adsr.smooth == 0U);
     assert(source->parameters.adsr.sustainQ15 ==
            mod::PROJECT_MODULATOR_ADSR_DEFAULT_SUSTAIN_Q15);
-    assert(source->parameters.adsr.timing == mod::ModulatorTimingMode::FREE);
-    assert(source->parameters.adsr.retrigger ==
+    assert(mod::modulatorAdsrTiming(source->parameters.adsr.traits) ==
+           mod::ModulatorTimingMode::FREE);
+    assert(mod::modulatorAdsrRetrigger(source->parameters.adsr.traits) ==
            mod::ModulatorAdsrRetriggerMode::RETRIGGER);
-    assert(source->parameters.adsr.curve ==
+    assert(mod::modulatorAdsrCurve(source->parameters.adsr.traits) ==
            mod::ModulatorAdsrCurve::EXPONENTIAL);
+    for (uint8_t parameter = 0U;
+         parameter <= static_cast<uint8_t>(
+             mod::ModulatorEnvelopeTimeParameter::SMOOTH
+         );
+         ++parameter) {
+        assert(mod::modulatorAdsrFeel(
+            source->parameters.adsr.traits,
+            static_cast<mod::ModulatorEnvelopeTimeParameter>(parameter)
+        ) == mod::ModulatorEnvelopeFeel::STRAIGHT);
+    }
 
     mod::ModulatorNaturalDomain domain{};
     assert(mod::projectModulatorNaturalDomain(
@@ -192,13 +207,28 @@ void testAdsrDomainIsPositiveCompactAndStrict() {
     assert(mapping == mod::ResolvedModulationMapping::POSITIVE_TO_CENTERED);
 
     auto parameters = source->parameters.adsr;
+    parameters.delay = 12U;
     parameters.attack = 0U;
+    parameters.hold = 96U;
     parameters.decay = 384U;
     parameters.release = 768U;
+    parameters.smooth = 24U;
     parameters.sustainQ15 = mod::PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15;
-    parameters.timing = mod::ModulatorTimingMode::SYNC;
-    parameters.retrigger = mod::ModulatorAdsrRetriggerMode::LEGATO;
-    parameters.curve = mod::ModulatorAdsrCurve::SMOOTH;
+    parameters.traits = mod::makeModulatorAdsrTraits(
+        mod::ModulatorTimingMode::SYNC,
+        mod::ModulatorAdsrRetriggerMode::LEGATO,
+        mod::ModulatorAdsrCurve::SMOOTH
+    );
+    parameters.traits = mod::withModulatorAdsrFeel(
+        parameters.traits,
+        mod::ModulatorEnvelopeTimeParameter::ATTACK,
+        mod::ModulatorEnvelopeFeel::TRIPLET
+    );
+    parameters.traits = mod::withModulatorAdsrFeel(
+        parameters.traits,
+        mod::ModulatorEnvelopeTimeParameter::SMOOTH,
+        mod::ModulatorEnvelopeFeel::DOTTED
+    );
     assert(mod::setProjectAdsrParameters(
         *fixture.state,
         sourceId,
@@ -222,14 +252,57 @@ void testAdsrDomainIsPositiveCompactAndStrict() {
     ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
     assert(std::memcmp(fixture.state.get(), &stable, sizeof(stable)) == 0);
 
+    parameters = stable.sources[0].parameters.adsr;
+    parameters.traits = mod::withModulatorAdsrCurve(
+        parameters.traits,
+        static_cast<mod::ModulatorAdsrCurve>(3U)
+    );
+    assert(!mod::validProjectModulatorAdsrParameters(parameters));
+    assert(mod::setProjectAdsrParameters(
+        *fixture.state,
+        sourceId,
+        parameters
+    ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(std::memcmp(fixture.state.get(), &stable, sizeof(stable)) == 0);
+
+    parameters = stable.sources[0].parameters.adsr;
+    parameters.traits = mod::withModulatorAdsrFeel(
+        parameters.traits,
+        mod::ModulatorEnvelopeTimeParameter::HOLD,
+        static_cast<mod::ModulatorEnvelopeFeel>(3U)
+    );
+    assert(!mod::validProjectModulatorAdsrParameters(parameters));
+    assert(mod::setProjectAdsrParameters(
+        *fixture.state,
+        sourceId,
+        parameters
+    ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(std::memcmp(fixture.state.get(), &stable, sizeof(stable)) == 0);
+
+    // Timing and retrigger each occupy one bit, so every stored bit pattern is
+    // a valid enum value. Exercise both ends explicitly; response and Feel are
+    // the multi-bit traits whose reserved value must be rejected above.
+    parameters = stable.sources[0].parameters.adsr;
+    parameters.traits = mod::withModulatorAdsrTiming(
+        parameters.traits,
+        mod::ModulatorTimingMode::FREE
+    );
+    parameters.traits = mod::withModulatorAdsrRetrigger(
+        parameters.traits,
+        mod::ModulatorAdsrRetriggerMode::RETRIGGER
+    );
+    assert(mod::validProjectModulatorAdsrParameters(parameters));
+
     mod::ModulationTriggerDraft trigger{};
     trigger.sourceId = sourceId;
     trigger.trigger = {
         mod::ModulationTriggerKind::TRACK_NOTE,
         3U,
-        mod::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
-        mod::PROJECT_MODULATION_TRIGGER_ANY_NOTE,
+        36U,
+        84U,
     };
+    trigger.velocityMin = 12U;
+    trigger.velocityMax = 111U;
     assert(mod::addProjectModulationTrigger(*fixture.state, trigger).changed());
     assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
     const auto* originalTrigger = mod::findProjectModulationTriggerForSource(
@@ -237,19 +310,25 @@ void testAdsrDomainIsPositiveCompactAndStrict() {
         sourceId
     );
     assert(originalTrigger != nullptr);
+    assert(originalTrigger->velocityMin == 12U);
+    assert(originalTrigger->velocityMax == 111U);
     auto editedTrigger = originalTrigger->trigger;
     editedTrigger.track = 4U;
     assert(mod::setProjectModulationTrigger(
         *fixture.state,
         sourceId,
         editedTrigger,
-        false
+        false,
+        24U,
+        96U
     ).changed());
     assert(mod::setProjectModulationTrigger(
         *fixture.state,
         sourceId,
         editedTrigger,
-        false
+        false,
+        24U,
+        96U
     ).status == mod::ProjectModulationStatus::NO_CHANGE);
     const auto triggerStable = *fixture.state;
     editedTrigger.track = mod::PROJECT_MODULATION_TRACK_COUNT;
@@ -257,7 +336,9 @@ void testAdsrDomainIsPositiveCompactAndStrict() {
         *fixture.state,
         sourceId,
         editedTrigger,
-        true
+        true,
+        24U,
+        96U
     ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
     assert(std::memcmp(
         fixture.state.get(),
@@ -292,13 +373,63 @@ void testAdsrDomainIsPositiveCompactAndStrict() {
            fixture.state->triggerBindings[0].id);
     assert(clonedTrigger->trigger ==
            fixture.state->triggerBindings[0].trigger);
+    assert(clonedTrigger->velocityMin ==
+           fixture.state->triggerBindings[0].velocityMin);
+    assert(clonedTrigger->velocityMax ==
+           fixture.state->triggerBindings[0].velocityMax);
     assert(clonedTrigger->flags == fixture.state->triggerBindings[0].flags);
 
-    auto* bytes = reinterpret_cast<uint8_t*>(
-        &fixture.state->sources[0].parameters
-    );
-    bytes[sizeof(mod::ModulatorAdsrParameters)] = 1U;
+    fixture.state->sources[0].schemaVersion =
+        mod::PROJECT_MODULATOR_SOURCE_SCHEMA_VERSION;
     assert(!mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
+}
+
+void testAdsrTriggerRangesAreStrictAndAtomic() {
+    Fixture fixture;
+    const auto sourceId = addAdsr(fixture);
+    mod::ModulationTriggerDraft draft{};
+    draft.sourceId = sourceId;
+    draft.trigger = {
+        mod::ModulationTriggerKind::TRACK_NOTE,
+        2U,
+        72U,
+        48U,
+    };
+    const auto stable = *fixture.state;
+    assert(mod::addProjectModulationTrigger(
+        *fixture.state,
+        draft
+    ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(std::memcmp(fixture.state.get(), &stable, sizeof(stable)) == 0);
+
+    draft.trigger.noteMin = 0U;
+    draft.trigger.noteMax = 128U;
+    assert(mod::addProjectModulationTrigger(
+        *fixture.state,
+        draft
+    ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(std::memcmp(fixture.state.get(), &stable, sizeof(stable)) == 0);
+
+    draft.trigger.noteMax = 127U;
+    draft.velocityMin = 100U;
+    draft.velocityMax = 99U;
+    assert(mod::addProjectModulationTrigger(
+        *fixture.state,
+        draft
+    ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(std::memcmp(fixture.state.get(), &stable, sizeof(stable)) == 0);
+
+    draft.velocityMin = 0U;
+    draft.velocityMax = 128U;
+    assert(mod::addProjectModulationTrigger(
+        *fixture.state,
+        draft
+    ).status == mod::ProjectModulationStatus::INVALID_ARGUMENT);
+    assert(std::memcmp(fixture.state.get(), &stable, sizeof(stable)) == 0);
+
+    draft.velocityMax = 127U;
+    assert(mod::addProjectModulationTrigger(*fixture.state, draft).changed());
+    assert(mod::validProjectModulationDomain(*fixture.state, *fixture.arena));
 }
 
 void testDestinationScaleIsSparseOrderedAndPrunedWithLastBinding() {
@@ -454,7 +585,7 @@ void testDestinationScaleCompilesAndAppliesOnceBeforeFinalClamp() {
     assert(fixture.state->outputBindings[1].amountQ15 == 8192);
 }
 
-void testCurveContractPreservesLegacyLoopWindowsAndSameTickPoints() {
+void testCurveContractPreservesLongLoopWindowsAndSameTickPoints() {
     const std::array<mod::ProjectPackedCurvePoint, 3> points{{
         {0U, -12000},
         {0U, -8000},
@@ -1252,10 +1383,11 @@ void testValidatorRejectsDanglingDuplicateAndBadReferenceCount() {
 int main() {
     testExactMemoryContract();
     testAdsrDomainIsPositiveCompactAndStrict();
+    testAdsrTriggerRangesAreStrictAndAtomic();
     testDestinationScaleIsSparseOrderedAndPrunedWithLastBinding();
     testDestinationScaleValidatorRejectsOrphanUnityAndUnsortedEntries();
     testDestinationScaleCompilesAndAppliesOnceBeforeFinalClamp();
-    testCurveContractPreservesLegacyLoopWindowsAndSameTickPoints();
+    testCurveContractPreservesLongLoopWindowsAndSameTickPoints();
     testStableIdsDuplicateAndDelete();
     testGlobalAvailabilityAndDuplicateBindingAreStrictAndAtomic();
     testAdvertised128SourcesAnd512BindingsCompileWithoutTruncation();

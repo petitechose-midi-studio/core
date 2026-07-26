@@ -52,9 +52,8 @@ void test_data_manager_reports_deferred_sequencer_pattern_load_while_playing() {
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
 
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     state.sequencer.pattern.stepsPerBeat.set(2);
-    state.sequencer.pattern.midiChannel.set(1);
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 61, 101, 80);
     state.sequencer.pattern.toggle(0);
@@ -67,9 +66,8 @@ void test_data_manager_reports_deferred_sequencer_pattern_load_while_playing() {
                core::state::DataManagerSetLoadMode::REPLACE
            ).success);
 
-    state.sequencer.pattern.length.set(16);
+    state.sequencer.pattern.setContentLength(16);
     state.sequencer.pattern.stepsPerBeat.set(4);
-    state.sequencer.pattern.midiChannel.set(6);
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(0, 40, 55, 30);
     state.sequencer.pattern.toggle(0);
@@ -101,7 +99,6 @@ void test_data_manager_reports_deferred_sequencer_pattern_load_while_playing() {
     state.update();
     assert(state.sequencer.pattern.length.get() == 8);
     assert(state.sequencer.pattern.stepsPerBeat.get() == 2);
-    assert(state.sequencer.pattern.midiChannel.get() == 1);
     assert(state.sequencer.pattern.note[0] == 61);
 
     std::cout << "[PASS] test_data_manager_reports_deferred_sequencer_pattern_load_while_playing\n";

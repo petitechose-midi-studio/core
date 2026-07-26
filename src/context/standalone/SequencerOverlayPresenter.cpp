@@ -8,6 +8,8 @@
 
 namespace core::context::standalone {
 
+FLASHMEM SequencerOverlayPresenter::~SequencerOverlayPresenter() {}
+
 FLASHMEM SequencerOverlayPresenter::SequencerOverlayPresenter(
     StateRefs stateRefs,
     core::ui::SequencerStepEditOverlay& stepEditOverlay,

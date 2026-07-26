@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <iostream>
 
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 
 namespace {
@@ -38,8 +39,7 @@ void test_pending_mask_generation_and_queued_applied_telemetry() {
     SequencerTrackActivationBatch batch;
     assert(queue.prepare(
         0x0003,
-        0x0003,
-        0x0002,
+        0x0001,
         true,
         batch,
         SequencerTrackActivationOrigin::TRACK_PASTE
@@ -59,7 +59,7 @@ void test_pending_mask_generation_and_queued_applied_telemetry() {
     assert(queue.telemetryRevision().get() == 1);
 
     SequencerTrackActivationBatch rejected;
-    assert(!queue.prepare(0x0001, 0x0003, 0, true, rejected));
+    assert(!queue.prepare(0x0001, 0x0003, true, rejected));
 
     publishRuntimeGeneration(queue);
     const auto track0 = queue.realtimeView(0);
@@ -78,13 +78,56 @@ void test_pending_mask_generation_and_queued_applied_telemetry() {
     std::cout << "[PASS] test_pending_mask_generation_and_queued_applied_telemetry\n";
 }
 
+void test_exclusive_solo_audibility_drives_every_activation_transition() {
+    core::state::project::ProjectTrackState projectTracks;
+    assert(core::state::project::setProjectTrackSoloed(
+        projectTracks,
+        1,
+        true
+    ).changed());
+    const uint16_t audible = core::state::project::audibleMask(
+        projectTracks,
+        0x0003
+    );
+    assert(audible == 0x0002);
+
+    SequencerTrackActivationQueue queue;
+    SequencerTrackActivationBatch paste;
+    assert(queue.prepare(0x0003, audible, true, paste));
+    assert(paste.localLoopBoundaryMask == 0x0002);
+    assert(queue.armPrepared(paste));
+    queue.publishPrepared(paste);
+    publishRuntimeGeneration(queue);
+    assert(!queue.realtimeView(0).requiresLocalLoopBoundary);
+    assert(queue.realtimeView(1).requiresLocalLoopBoundary);
+    assert(queue.markAppliedFromRealtime(0, paste.generation));
+    assert(queue.markAppliedFromRealtime(1, paste.generation));
+    queue.publishRealtimeTelemetry();
+
+    SequencerTrackActivationHistoryTransition undo;
+    assert(queue.prepareHistoryTransition(
+        activationHistoryRef(paste),
+        SequencerTrackActivationTarget::BEFORE,
+        audible,
+        true,
+        undo
+    ));
+    assert(undo.queuedMask == 0x0003);
+    queue.commitHistoryTransition(undo);
+    publishRuntimeGeneration(queue);
+    assert(!queue.realtimeView(0).requiresLocalLoopBoundary);
+    assert(queue.realtimeView(1).requiresLocalLoopBoundary);
+
+    std::cout
+        << "[PASS] test_exclusive_solo_audibility_drives_every_activation_transition\n";
+}
+
 void test_partial_undo_creates_inverse_generation_and_cancels_unapplied_track() {
     SequencerTrackActivationQueue queue;
     SequencerTrackActivationBatch paste;
     assert(queue.prepare(
         0x0003,
         0x0003,
-        0,
         true,
         paste,
         SequencerTrackActivationOrigin::TRACK_PASTE
@@ -100,7 +143,6 @@ void test_partial_undo_creates_inverse_generation_and_cancels_unapplied_track() 
         activationHistoryRef(paste),
         SequencerTrackActivationTarget::BEFORE,
         0x0003,
-        0,
         true,
         undo
     ));
@@ -131,7 +173,6 @@ void test_partial_undo_creates_inverse_generation_and_cancels_unapplied_track() 
         activationHistoryRef(paste),
         SequencerTrackActivationTarget::AFTER,
         0x0003,
-        0,
         true,
         redo
     ));
@@ -151,7 +192,7 @@ void test_partial_undo_creates_inverse_generation_and_cancels_unapplied_track() 
 void test_undo_before_activation_cancels_and_redo_requeues_new_generation() {
     SequencerTrackActivationQueue queue;
     SequencerTrackActivationBatch paste;
-    assert(queue.prepare(0x0004, 0x0005, 0, true, paste));
+    assert(queue.prepare(0x0004, 0x0005, true, paste));
     assert(queue.armPrepared(paste));
     queue.publishPrepared(paste);
 
@@ -160,7 +201,6 @@ void test_undo_before_activation_cancels_and_redo_requeues_new_generation() {
         activationHistoryRef(paste),
         SequencerTrackActivationTarget::BEFORE,
         0x0005,
-        0,
         true,
         undo
     ));
@@ -181,7 +221,6 @@ void test_undo_before_activation_cancels_and_redo_requeues_new_generation() {
         activationHistoryRef(paste),
         SequencerTrackActivationTarget::AFTER,
         0x0005,
-        0,
         true,
         redo
     ));
@@ -200,7 +239,6 @@ void test_failed_history_apply_rolls_activation_transition_back_exactly() {
     assert(queue.prepare(
         0x0001,
         0x0001,
-        0,
         true,
         paste,
         SequencerTrackActivationOrigin::TRACK_PASTE
@@ -214,7 +252,6 @@ void test_failed_history_apply_rolls_activation_transition_back_exactly() {
         activationHistoryRef(paste),
         SequencerTrackActivationTarget::BEFORE,
         0x0001,
-        0,
         true,
         undo
     ));
@@ -233,7 +270,7 @@ void test_failed_history_apply_rolls_activation_transition_back_exactly() {
 void test_history_boundary_policy_uses_target_snapshot_masks_for_free_slot() {
     SequencerTrackActivationQueue queue;
     SequencerTrackActivationBatch paste;
-    assert(queue.prepare(0x0004, 0x0001, 0, true, paste));
+    assert(queue.prepare(0x0004, 0x0001, true, paste));
     assert(paste.localLoopBoundaryMask == 0);
     assert(queue.armPrepared(paste));
     queue.publishPrepared(paste);
@@ -246,7 +283,6 @@ void test_history_boundary_policy_uses_target_snapshot_masks_for_free_slot() {
         activationHistoryRef(paste),
         SequencerTrackActivationTarget::BEFORE,
         0x0001,
-        0,
         true,
         undo
     ));
@@ -266,7 +302,6 @@ void test_history_boundary_policy_uses_target_snapshot_masks_for_free_slot() {
         activationHistoryRef(paste),
         SequencerTrackActivationTarget::AFTER,
         0x0005,
-        0,
         true,
         redo
     ));
@@ -285,13 +320,13 @@ void test_history_boundary_policy_uses_target_snapshot_masks_for_free_slot() {
 void test_stacked_operations_rebind_before_intermediate_boundaries() {
     SequencerTrackActivationQueue queue;
     SequencerTrackActivationBatch pasteA;
-    assert(queue.prepare(0x0001, 0x0001, 0, true, pasteA));
+    assert(queue.prepare(0x0001, 0x0001, true, pasteA));
     assert(queue.armPrepared(pasteA));
     queue.publishPrepared(pasteA);
     applyPendingGeneration(queue, 0);
 
     SequencerTrackActivationBatch pasteB;
-    assert(queue.prepare(0x0001, 0x0001, 0, true, pasteB));
+    assert(queue.prepare(0x0001, 0x0001, true, pasteB));
     assert(pasteB.operationId != pasteA.operationId);
     assert(queue.armPrepared(pasteB));
     queue.publishPrepared(pasteB);
@@ -302,7 +337,6 @@ void test_stacked_operations_rebind_before_intermediate_boundaries() {
         activationHistoryRef(pasteB),
         SequencerTrackActivationTarget::BEFORE,
         0x0001,
-        0,
         true,
         undoB
     ));
@@ -317,7 +351,6 @@ void test_stacked_operations_rebind_before_intermediate_boundaries() {
         activationHistoryRef(pasteA),
         SequencerTrackActivationTarget::BEFORE,
         0x0001,
-        0,
         true,
         undoA
     ));
@@ -331,7 +364,6 @@ void test_stacked_operations_rebind_before_intermediate_boundaries() {
         activationHistoryRef(pasteA),
         SequencerTrackActivationTarget::AFTER,
         0x0001,
-        0,
         true,
         redoA
     ));
@@ -344,7 +376,6 @@ void test_stacked_operations_rebind_before_intermediate_boundaries() {
         activationHistoryRef(pasteB),
         SequencerTrackActivationTarget::AFTER,
         0x0001,
-        0,
         true,
         redoB
     ));
@@ -360,13 +391,13 @@ void test_stacked_operations_rebind_before_intermediate_boundaries() {
 void test_stacked_operations_rebind_after_each_boundary() {
     SequencerTrackActivationQueue queue;
     SequencerTrackActivationBatch pasteA;
-    assert(queue.prepare(0x0001, 0x0001, 0, true, pasteA));
+    assert(queue.prepare(0x0001, 0x0001, true, pasteA));
     assert(queue.armPrepared(pasteA));
     queue.publishPrepared(pasteA);
     applyPendingGeneration(queue, 0);
 
     SequencerTrackActivationBatch pasteB;
-    assert(queue.prepare(0x0001, 0x0001, 0, true, pasteB));
+    assert(queue.prepare(0x0001, 0x0001, true, pasteB));
     assert(queue.armPrepared(pasteB));
     queue.publishPrepared(pasteB);
     applyPendingGeneration(queue, 0);
@@ -378,7 +409,6 @@ void test_stacked_operations_rebind_after_each_boundary() {
             activationHistoryRef(batch),
             target,
             0x0001,
-            0,
             true,
             transition
         ));
@@ -399,7 +429,7 @@ void test_stacked_operations_rebind_after_each_boundary() {
 void test_project_boundary_reset_clears_pending_and_realtime_disposition() {
     SequencerTrackActivationQueue queue;
     SequencerTrackActivationBatch batch;
-    assert(queue.prepare(0x0021, 0xFFFF, 0, true, batch));
+    assert(queue.prepare(0x0021, 0xFFFF, true, batch));
     assert(queue.armPrepared(batch));
     queue.publishPrepared(batch);
     const auto publication = queue.captureRuntimePublication();
@@ -426,6 +456,7 @@ void test_project_boundary_reset_clears_pending_and_realtime_disposition() {
 
 int main() {
     test_pending_mask_generation_and_queued_applied_telemetry();
+    test_exclusive_solo_audibility_drives_every_activation_transition();
     test_partial_undo_creates_inverse_generation_and_cancels_unapplied_track();
     test_undo_before_activation_cancels_and_redo_requeues_new_generation();
     test_failed_history_apply_rolls_activation_transition_back_exactly();

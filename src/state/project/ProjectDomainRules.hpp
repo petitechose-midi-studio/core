@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 
 namespace core::state::project {
@@ -28,6 +30,11 @@ inline constexpr ProjectStepPasteMode PROJECT_STEP_PASTE_MODE_DEFAULT =
     ProjectStepPasteMode::EXTEND;
 
 inline constexpr uint8_t PROJECT_MIDI_CHANNEL_COUNT = 16;
+
+inline constexpr uint8_t PROJECT_CC_LANE_DEFAULT_COUNT = 4;
+inline constexpr uint8_t PROJECT_MIDI_CC_COUNT = 128;
+inline constexpr std::array<uint8_t, PROJECT_CC_LANE_DEFAULT_COUNT>
+    PROJECT_CC_LANE_DEFAULT_CONTROLLERS{1U, 11U, 74U, 71U};
 
 constexpr float sanitizeProjectTempoBpm(float tempoBpm) {
     if (tempoBpm < PROJECT_TEMPO_MIN_BPM) return PROJECT_TEMPO_MIN_BPM;
@@ -74,6 +81,21 @@ constexpr ProjectStepPasteMode sanitizeProjectStepPasteMode(uint8_t mode) {
 
 constexpr uint8_t sanitizeProjectMidiChannel(uint8_t channel) {
     return static_cast<uint8_t>(channel % PROJECT_MIDI_CHANNEL_COUNT);
+}
+
+constexpr bool validProjectMidiCc(uint8_t controller) {
+    return controller < PROJECT_MIDI_CC_COUNT;
+}
+
+constexpr uint8_t sanitizeProjectCcLaneDefault(
+    uint8_t controller,
+    uint8_t lane
+) {
+    return validProjectMidiCc(controller)
+        ? controller
+        : PROJECT_CC_LANE_DEFAULT_CONTROLLERS[
+              static_cast<std::size_t>(lane % PROJECT_CC_LANE_DEFAULT_COUNT)
+          ];
 }
 
 }  // namespace core::state::project

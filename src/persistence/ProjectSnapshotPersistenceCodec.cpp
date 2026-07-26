@@ -7,15 +7,22 @@
 #include <oc/diagnostics/Performance.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "diagnostics/MemoryFootprintReporter.hpp"
 #include "persistence/MacroTrackBankPersistenceCodec.hpp"
 #include "persistence/ProjectControlPersistenceCodec.hpp"
 #include "persistence/ProjectStatePersistenceCodec.hpp"
+#include "persistence/ProjectTrackStatePersistenceCodec.hpp"
 #include "persistence/SequencerPersistenceEnvelope.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 
 namespace core::persistence::project_snapshot_codec {
 
 struct ProjectSnapshotCodecWorkspace::Storage {
+    std::array<
+        uint8_t,
+        core::persistence::project_track_codec::PROJECT_TRACK_STATE_PAYLOAD_SIZE
+    > projectTracks;
     std::array<uint8_t, PROJECT_MACRO_STATE_PAYLOAD_SIZE> macro;
     std::array<uint8_t, PROJECT_CONTROL_COMBINED_MAX_PAYLOAD_SIZE> projectControl;
     sequencer_codec::EnvelopeBuffer sequencerEnvelope;
@@ -41,6 +48,7 @@ namespace {
 
 namespace project_file = core::persistence::project_file;
 namespace project_state_codec = core::persistence::project_state_codec;
+namespace project_track_codec = core::persistence::project_track_codec;
 namespace macro_track_codec = core::persistence::macro_track_codec;
 namespace project_control_codec = core::persistence::project_control_codec;
 namespace sequencer_codec = core::persistence::sequencer_codec;
@@ -121,11 +129,17 @@ FLASHMEM void reportMissingOptional(project_file::LoadReport* report, project_fi
 FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
                              core::state::project::ProjectSnapshot& target,
                              project_file::LoadReport* report) {
+    OC_PERF_SCOPE(perfMacro, "persistence.project-codec.decode.macro");
+    OC_PERF_UNITS(perfMacro, chunk != nullptr ? chunk->size : 0U, 0U);
     if (chunk == nullptr) {
         reportMissingOptional(report, project_file::ChunkId::MACRO_STATE);
         return true;
     }
-    if (!chunkVersionSupported(*chunk, PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR, report)) {
+    if (!chunkVersionSupported(
+            *chunk,
+            PROJECT_MACRO_STATE_CHUNK_VERSION_MINOR,
+            report
+        )) {
         reportDefaulted(report, project_file::ChunkId::MACRO_STATE);
         return false;
     }
@@ -208,18 +222,6 @@ FLASHMEM void reportControlChunkStatus(
             );
             reportDefaulted(report, id);
             return;
-        case ChunkStatus::MIGRATED_LEGACY:
-            addReport(
-                report,
-                project_file::LoadSeverity::INFO,
-                project_file::LoadCode::MIGRATED_CHUNK,
-                chunkId,
-                sourceMajor,
-                sourceMinor,
-                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
-                targetMinor
-            );
-            return;
         case ChunkStatus::UNSUPPORTED_VERSION:
             addReport(
                 report,
@@ -238,19 +240,6 @@ FLASHMEM void reportControlChunkStatus(
                 report,
                 project_file::LoadSeverity::ERROR,
                 project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED,
-                chunkId,
-                sourceMajor,
-                sourceMinor,
-                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
-                targetMinor
-            );
-            reportDefaulted(report, id);
-            return;
-        case ChunkStatus::IGNORED_AMBIGUOUS:
-            addReport(
-                report,
-                project_file::LoadSeverity::WARNING,
-                project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
                 chunkId,
                 sourceMajor,
                 sourceMinor,
@@ -282,6 +271,16 @@ FLASHMEM bool readProjectControlChunks(
     core::state::project::ProjectSnapshot& target,
     project_file::LoadReport* report
 ) {
+    OC_PERF_SCOPE(
+        perfControl,
+        "persistence.project-codec.decode.project-control"
+    );
+    OC_PERF_UNITS(
+        perfControl,
+        (automation != nullptr ? automation->size : 0U) +
+            (modulation != nullptr ? modulation->size : 0U),
+        0U
+    );
     if (!target.projectControl) {
         addReport(
             report,
@@ -377,11 +376,24 @@ FLASHMEM bool buildSequencerEnvelope(
 FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
                                  core::state::project::ProjectSnapshot& target,
                                  project_file::LoadReport* report) {
+    OC_PERF_SCOPE(
+        perfSequencer,
+        "persistence.project-codec.decode.sequencer"
+    );
+    OC_PERF_UNITS(
+        perfSequencer,
+        chunk != nullptr ? chunk->size : 0U,
+        0U
+    );
     if (chunk == nullptr) {
         reportMissingOptional(report, project_file::ChunkId::SEQUENCER_STATE);
         return true;
     }
-    if (!chunkVersionSupported(*chunk, PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR, report)) {
+    if (!chunkVersionSupported(
+            *chunk,
+            PROJECT_SEQUENCER_STATE_CHUNK_VERSION_MINOR,
+            report
+        )) {
         reportDefaulted(report, project_file::ChunkId::SEQUENCER_STATE);
         return false;
     }
@@ -431,6 +443,59 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
     return true;
 }
 
+enum class ProjectTrackChunkStatus : uint8_t {
+    VALID = 0,
+    INVALID,
+};
+
+FLASHMEM ProjectTrackChunkStatus readProjectTrackChunk(
+    const project_file::DecodedChunkView* chunk,
+    core::state::project::ProjectTrackSnapshot& out,
+    project_file::LoadReport* report
+) {
+    OC_PERF_SCOPE(
+        perfTrack,
+        "persistence.project-codec.decode.track-state"
+    );
+    OC_PERF_UNITS(perfTrack, chunk != nullptr ? chunk->size : 0U, 0U);
+    if (chunk == nullptr) {
+        addReport(
+            report,
+            project_file::LoadSeverity::FATAL,
+            project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+            project_file::chunkIdValue(project_file::ChunkId::TRACK_STATE),
+            0U,
+            0U,
+            project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MAJOR,
+            project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MINOR
+        );
+        return ProjectTrackChunkStatus::INVALID;
+    }
+
+    const auto decoded = project_track_codec::decodeProjectTrackStatePayload(
+        chunk->data,
+        chunk->size,
+        chunk->versionMajor,
+        chunk->versionMinor,
+        out
+    );
+    if (decoded.decoded()) return ProjectTrackChunkStatus::VALID;
+
+    addReport(
+        report,
+        project_file::LoadSeverity::FATAL,
+        decoded.status == project_track_codec::Status::UNSUPPORTED_VERSION
+            ? project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION
+            : project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+        chunk->id,
+        chunk->versionMajor,
+        chunk->versionMinor,
+        project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MAJOR,
+        project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MINOR
+    );
+    return ProjectTrackChunkStatus::INVALID;
+}
+
 }  // namespace
 
 FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
@@ -442,6 +507,11 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     if (!snapshot.projectControl) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
+#if OC_ENABLE_STATS
+    core::diagnostics::recordDynamicMemorySample(
+        "memory.psram.persistence.project-encode-begin"
+    );
+#endif
     if (!workspace.prepare()) {
         return {.status = project_file::Status::SCRATCH_ALLOCATION_FAILED, .bytesWritten = 0};
     }
@@ -450,18 +520,15 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     project_state_codec::ProjectMetaPayload meta{};
     project_state_codec::ProjectTransportPayload transport{};
     project_state_codec::ProjectMusicalContextPayload musical{};
-    project_state_codec::ProjectRoutingPayload routing{};
     project_state_codec::ProjectEditingPayload editing{};
     project_state_codec::fillMetaPayload(snapshot.project.metadata, meta);
     project_state_codec::fillTransportPayload(snapshot.project.transport, transport);
     project_state_codec::fillMusicalContextPayload(snapshot.project.musical, musical);
-    project_state_codec::fillRoutingPayload(snapshot.project.routing, routing);
     project_state_codec::fillEditingPayload(snapshot.project.editing, editing);
 
     std::array<uint8_t, project_state_codec::PROJECT_META_PAYLOAD_SIZE> metaBytes{};
     std::array<uint8_t, project_state_codec::PROJECT_TRANSPORT_PAYLOAD_SIZE> transportBytes{};
     std::array<uint8_t, project_state_codec::PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE> musicalBytes{};
-    std::array<uint8_t, project_state_codec::PROJECT_ROUTING_PAYLOAD_SIZE> routingBytes{};
     std::array<uint8_t, project_state_codec::PROJECT_EDITING_PAYLOAD_SIZE> editingBytes{};
     if (!project_state_codec::encodeMetaPayload(
             meta,
@@ -478,11 +545,6 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             musicalBytes.data(),
             static_cast<uint32_t>(musicalBytes.size())
         ) ||
-        !project_state_codec::encodeRoutingPayload(
-            routing,
-            routingBytes.data(),
-            static_cast<uint32_t>(routingBytes.size())
-        ) ||
         !project_state_codec::encodeEditingPayload(
             editing,
             editingBytes.data(),
@@ -492,6 +554,16 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     }
 
     auto& scratch = *workspace.storage_;
+
+    const auto projectTracksEncoded =
+        project_track_codec::encodeProjectTrackStatePayload(
+            snapshot.projectTracks,
+            scratch.projectTracks.data(),
+            static_cast<uint32_t>(scratch.projectTracks.size())
+        );
+    if (!projectTracksEncoded.encoded()) {
+        return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
+    }
 
     if (!macro_track_codec::encodeTrackBankPayload(
             snapshot.macroTracks,
@@ -546,14 +618,6 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .size = project_state_codec::PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE,
         },
         {
-            .id = project_file::chunkIdValue(project_file::ChunkId::ROUTING),
-            .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-            .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
-            .flags = 0,
-            .data = routingBytes.data(),
-            .size = project_state_codec::PROJECT_ROUTING_PAYLOAD_SIZE,
-        },
-        {
             .id = project_file::chunkIdValue(project_file::ChunkId::EDITING),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
@@ -562,9 +626,17 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .size = project_state_codec::PROJECT_EDITING_PAYLOAD_SIZE,
         },
         {
+            .id = project_file::chunkIdValue(project_file::ChunkId::TRACK_STATE),
+            .versionMajor = project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MAJOR,
+            .versionMinor = project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MINOR,
+            .flags = 0,
+            .data = scratch.projectTracks.data(),
+            .size = project_track_codec::PROJECT_TRACK_STATE_PAYLOAD_SIZE,
+        },
+        {
             .id = project_file::chunkIdValue(project_file::ChunkId::MACRO_STATE),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-            .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
+            .versionMinor = PROJECT_MACRO_STATE_CHUNK_VERSION_MINOR,
             .flags = 0,
             .data = scratch.macro.data(),
             .size = PROJECT_MACRO_STATE_PAYLOAD_SIZE,
@@ -593,7 +665,7 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::SEQUENCER_STATE),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-            .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
+            .versionMinor = PROJECT_SEQUENCER_STATE_CHUNK_VERSION_MINOR,
             .flags = 0,
             .data = scratch.sequencerEnvelope.bytes.data(),
             .size = sequencerSize,
@@ -608,6 +680,11 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
         outCapacity
     );
     OC_PERF_UNITS(perfEncode, encoded.bytesWritten, sequencerSize);
+#if OC_ENABLE_STATS
+    core::diagnostics::recordDynamicMemorySample(
+        "memory.psram.persistence.project-encode-workspace"
+    );
+#endif
     return encoded;
 }
 
@@ -629,6 +706,13 @@ FLASHMEM DecodeResult decodeProjectSnapshot(
     core::state::project::ProjectSnapshot& out,
     project_file::LoadReport* report
 ) {
+    OC_PERF_SCOPE(perfDecode, "persistence.project-codec.decode");
+    OC_PERF_UNITS(perfDecode, size, 0U);
+#if OC_ENABLE_STATS
+    core::diagnostics::recordDynamicMemorySample(
+        "memory.psram.persistence.project-decode-begin"
+    );
+#endif
     project_file::LoadReport localReport{};
     auto* effectiveReport = report != nullptr ? report : &localReport;
     project_file::DecodedChunkView chunks[project_file::MAX_CHUNKS] = {};
@@ -657,15 +741,20 @@ FLASHMEM DecodeResult decodeProjectSnapshot(
             .overwriteSafe = false,
         };
     }
+#if OC_ENABLE_STATS
+    core::diagnostics::recordDynamicMemorySample(
+        "memory.psram.persistence.project-decode-snapshot"
+    );
+#endif
     project_state_codec::applyProjectStateChunks(
         chunks,
         decodeResult.chunkCount,
         next->project,
         effectiveReport
     );
-    readMacroChunk(findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_STATE),
-                   *next,
-                   effectiveReport);
+    const auto* macroChunk =
+        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_STATE);
+    readMacroChunk(macroChunk, *next, effectiveReport);
     if (!readProjectControlChunks(
             findChunk(
                 chunks,
@@ -687,15 +776,36 @@ FLASHMEM DecodeResult decodeProjectSnapshot(
             .overwriteSafe = false,
         };
     }
+    const auto* sequencerChunk =
+        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::SEQUENCER_STATE);
     readSequencerChunk(
-        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::SEQUENCER_STATE),
+        sequencerChunk,
         *next,
         effectiveReport
     );
 
+    const auto trackChunkStatus = readProjectTrackChunk(
+        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::TRACK_STATE),
+        next->projectTracks,
+        effectiveReport
+    );
+    if (trackChunkStatus == ProjectTrackChunkStatus::INVALID ||
+        effectiveReport->failed()) {
+        return {
+            .ok = false,
+            .containerStatus = decodeResult.status,
+            .loadStatus = effectiveReport->status,
+            .overwriteSafe = false,
+        };
+    }
     out = std::move(*next);
     const project_file::LoadStatus loadStatus = effectiveReport->status;
     const bool overwriteSafe = effectiveReport->overwriteSafe;
+#if OC_ENABLE_STATS
+    core::diagnostics::recordDynamicMemorySample(
+        "memory.psram.persistence.project-decode-end"
+    );
+#endif
     return {
         .ok = loadStatus != project_file::LoadStatus::FAILED,
         .containerStatus = decodeResult.status,

@@ -12,6 +12,7 @@
 #include "../../src/handler/macro/MacroStructureDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
+#include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
 #include "../support/ProjectControlTestUtils.hpp"
@@ -26,6 +27,16 @@ uint32_t mockTimeMs() {
 
 using test_support::CoreStorages;
 using test_support::drainNotifications;
+
+void assertProjectTrackSnapshotEquals(
+    const core::state::project::ProjectTrackSnapshot& actual,
+    const core::state::project::ProjectTrackSnapshot& expected
+) {
+    assert(actual.delayMs == expected.delayMs);
+    assert(actual.midiChannels == expected.midiChannels);
+    assert(actual.mutedMask == expected.mutedMask);
+    assert(actual.soloMask == expected.soloMask);
+}
 
 void fillAutomationPointPoolExcept(
     core::state::modulation::ProjectControlState& control,
@@ -71,7 +82,8 @@ void fillAutomationPointPoolExcept(
            core::state::modulation::PROJECT_CURVE_POINT_CAPACITY);
 }
 
-core::state::modulation::ProjectControlMacroSlotView configureAutomation(
+core::state::modulation::ProjectControlMacroDestinationView
+configureAutomation(
     core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address
 ) {
@@ -82,14 +94,19 @@ core::state::modulation::ProjectControlMacroSlotView configureAutomation(
     return test_support::project_control::readSlot(control, address);
 }
 
-core::state::modulation::ProjectControlMacroSlotView configureModulation(
+core::state::modulation::ProjectControlMacroDestinationView
+configureModulation(
     core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address,
     float depth
 ) {
-    core::state::macro::MacroModulationShape shape;
-    assert(core::state::macro::macroModulationAppendPoint(shape, 0.0f, -0.25f));
-    assert(core::state::macro::macroModulationAppendPoint(shape, 1.0f, 0.25f));
+    test_support::project_control::ModulationShape shape;
+    assert(test_support::project_control::appendModulationPoint(
+        shape, 0.0f, -0.25f
+    ));
+    assert(test_support::project_control::appendModulationPoint(
+        shape, 1.0f, 0.25f
+    ));
     assert(test_support::project_control::assignModulation(
         control,
         address,
@@ -97,6 +114,25 @@ core::state::modulation::ProjectControlMacroSlotView configureModulation(
         depth
     ));
     return test_support::project_control::readSlot(control, address);
+}
+
+void publishProjectTime(
+    core::state::CoreState& state,
+    uint32_t musicalTick,
+    uint32_t monotonicMs,
+    uint32_t generation = 1U
+) {
+    state.pages.control.runtime.initialized = true;
+    state.pages.control.runtime.activationMusicalTick = 0U;
+    core::state::modulation::publishProjectControlTimeTelemetry(
+        state.pages.control.timeTelemetry,
+        {
+            .musicalTick = musicalTick,
+            .monotonicMs = monotonicMs,
+            .transportGeneration = generation,
+            .playing = true,
+        }
+    );
 }
 
 bool recordHoldAutomationTake(
@@ -265,14 +301,15 @@ void test_config_changes_mark_project_dirty_and_bump_revision() {
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     const auto initialConfig = services.activeConfig(0);
+    const uint8_t initialChannel = services.activeTrackChannel();
     const uint32_t initialRevision = state.configRevision.get();
 
-    assert(!services.setConfig(0, initialConfig.channel, initialConfig.cc));
+    assert(!services.setConfig(0, initialChannel, initialConfig.cc));
     assert(state.configRevision.get() == initialRevision);
     assert(!state.project.metadata.dirty);
     assert(!state.hasPendingProjectSessionSave());
 
-    updatedChannel = static_cast<uint8_t>((initialConfig.channel + 1U) % 16U);
+    updatedChannel = static_cast<uint8_t>((initialChannel + 1U) % 16U);
     updatedCc = static_cast<uint8_t>((initialConfig.cc < 127U) ? (initialConfig.cc + 1U)
                                                                : (initialConfig.cc - 1U));
 
@@ -286,10 +323,22 @@ void test_config_changes_mark_project_dirty_and_bump_revision() {
     );
 
     const auto updatedConfig = services.activeConfig(0);
-    assert(updatedConfig.channel == updatedChannel);
+    assert(services.activeTrackChannel() == updatedChannel);
     assert(updatedConfig.cc == updatedCc);
+    const uint8_t track = state.pages.currentActiveTrack();
+    assert(state.projectTracks.authored.midiChannels[track] == updatedChannel);
     assert(state.project.metadata.dirty);
     assert(state.hasPendingProjectSessionSave());
+
+    // One API gesture changing Channel + CC is one cross-domain command.
+    assert(state.undoProjectHistory());
+    assert(state.projectTracks.authored.midiChannels[track] ==
+           initialChannel);
+    assert(services.activeTrackChannel() == initialChannel);
+    assert(services.activeConfig(0).cc == initialConfig.cc);
+    assert(state.redoProjectHistory());
+    assert(state.projectTracks.authored.midiChannels[track] == updatedChannel);
+    assert(services.activeConfig(0).cc == updatedCc);
 
     core::state::CoreState restored(storage.settings,
                                     storage.macroLibrary,
@@ -299,11 +348,38 @@ void test_config_changes_mark_project_dirty_and_bump_revision() {
         restored
     );
     const auto restoredConfig = restoredServices.activeConfig(0);
-    assert(restoredConfig.channel != updatedChannel || restoredConfig.cc != updatedCc);
+    assert(restoredServices.activeTrackChannel() != updatedChannel ||
+           restoredConfig.cc != updatedCc);
 
     drainNotifications();
 
     std::cout << "[PASS] test_config_changes_mark_project_dirty_and_bump_revision\n";
+}
+
+void test_macro_channel_gesture_coalesces_into_one_global_track_command() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto services =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    const uint8_t initial = services.activeTrackChannel();
+
+    assert(services.beginTrackChannelGesture());
+    assert(services.setTrackChannel(3U));
+    assert(services.setTrackChannel(7U));
+    assert(services.setTrackChannel(11U));
+    assert(services.endTrackChannelGesture());
+    assert(state.projectTrackHistory.undoCount() == 1U);
+    assert(services.activeTrackChannel() == 11U);
+    assert(state.undoProjectHistory());
+    assert(services.activeTrackChannel() == initial);
+    assert(state.redoProjectHistory());
+    assert(services.activeTrackChannel() == 11U);
+
+    drainNotifications();
+    std::cout << "[PASS] Macro Channel gesture is one global Track command\n";
 }
 
 void test_switch_to_page_updates_runtime_status_and_marks_project_dirty() {
@@ -337,67 +413,6 @@ void test_switch_to_page_updates_runtime_status_and_marks_project_dirty() {
     std::cout << "[PASS] test_switch_to_page_updates_runtime_status_and_marks_project_dirty\n";
 }
 
-void test_track_config_batch_requires_shared_channel_and_marks_project_dirty_when_valid() {
-    CoreStorages storage;
-
-    std::array<core::state::macro::MacroConfig, core::state::macro::MACRO_COUNT> updatedConfigs{};
-    uint8_t updatedChannel = 0;
-
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
-    const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
-    const uint32_t initialRevision = state.configRevision.get();
-
-    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
-        updatedConfigs[i] = services.activeConfig(i);
-    }
-
-    updatedConfigs[0].channel = 4;
-    updatedConfigs[1].channel = 5;
-    assert(!services.setTrackConfigs(updatedConfigs));
-    assert(state.configRevision.get() == initialRevision);
-    assert(!state.project.metadata.dirty);
-    assert(!state.hasPendingProjectSessionSave());
-
-    updatedChannel = 11;
-    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
-        updatedConfigs[i].channel = updatedChannel;
-        updatedConfigs[i].cc = static_cast<uint8_t>((32U + i) % 128U);
-    }
-
-    assert(services.setTrackConfigs(updatedConfigs));
-    assert(state.configRevision.get() ==
-           core::state::macro::nextMacroConfigRevision(initialRevision));
-    assert(state.pages.activeTrackChannel() == updatedChannel);
-    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
-        const auto config = services.activeConfig(i);
-        assert(config.channel == updatedChannel);
-        assert(config.cc == updatedConfigs[i].cc);
-    }
-    assert(state.project.metadata.dirty);
-    assert(state.hasPendingProjectSessionSave());
-
-    core::state::CoreState restored(storage.settings,
-                                    storage.macroLibrary,
-                                    storage.sequencerPatternLibrary,
-                                    storage.sequencerSetLibrary);
-    const auto restoredServices = core::handler::MacroPerformanceDomainServices::fromCoreState(
-        restored
-    );
-    bool restoredAnyUpdated = false;
-    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
-        const auto config = restoredServices.activeConfig(i);
-        restoredAnyUpdated =
-            restoredAnyUpdated ||
-            (config.channel == updatedChannel && config.cc == updatedConfigs[i].cc);
-    }
-    assert(!restoredAnyUpdated);
-
-    std::cout << "[PASS] test_track_config_batch_requires_shared_channel_and_marks_project_dirty_when_valid\n";
-}
-
 void test_status_bar_pulses_are_forwarded() {
     CoreStorages storage;
     storage.initAll();
@@ -409,11 +424,9 @@ void test_status_bar_pulses_are_forwarded() {
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     services.pulseCcIn();
-    services.pulseCcOut();
     services.pulseNoteIn();
 
     assert(state.statusBar.ccInActive.get());
-    assert(state.statusBar.ccOutActive.get());
     assert(state.statusBar.noteInActive.get());
 
     drainNotifications();
@@ -472,7 +485,6 @@ void test_addressed_macro_slot_activation_preserves_cold_page_cache() {
     assert(state.pages.pageData(0, 1).isMacroActive(1));
     assert(state.pages.pageData(0, 1).cc[1] == 9U);
     assert(state.pages.activeConfigs[1].cc == activeConfigBefore.cc);
-    assert(state.pages.activeConfigs[1].channel == activeConfigBefore.channel);
 
     const auto stale = plan;
     assert(!core::state::macro::MacroWorkflow::applyMacroSlotActivation(
@@ -576,21 +588,21 @@ void test_automation_take_commits_to_current_macro_slot() {
             .macro = 0,
         }
     );
-    assert(slot.automationEnabled);
+    assert(slot.automation.enabled);
     assert(core::state::macro::macroAutomationBeatsFromTicks(
-        slot.compatibility.automation.durationTicks
+        slot.automation.spec.durationTicks
     ) == 2.0f);
-    assert(slot.compatibility.automation.pointCount >= 2U);
+    assert(slot.automation.pointCount >= 2U);
     const auto firstPoint = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.automationCurveId,
+        slot.automation.id,
         0,
         false
     );
     const auto lastPoint = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.automationCurveId,
-        static_cast<uint16_t>(slot.compatibility.automation.pointCount - 1U),
+        slot.automation.id,
+        static_cast<uint16_t>(slot.automation.pointCount - 1U),
         false
     );
     assert(std::fabs(firstPoint.beat - 0.0f) < 0.0001f);
@@ -627,7 +639,7 @@ void test_automation_take_cancel_discards_session() {
             .macro = 0,
         }
     );
-    assert(!slot.present);
+    assert(!slot.present());
     assert(!state.project.metadata.dirty);
 
     std::cout << "[PASS] test_automation_take_cancel_discards_session\n";
@@ -661,9 +673,8 @@ void test_shared_automation_take_records_late_join_and_one_undo() {
     assert(services.automationTakeRecording());
     assert(services.recordAutomationTakeValue(1U, 1250U, 1.0f));
     assert(services.releaseAutomationTake(1300U));
-    assert(services.automationTakeRecording());
-    assert(services.updateAutomationTake(3000U));
     assert(!services.automationTakeRecording());
+    assert(!services.updateAutomationTake(3000U));
     assert(state.macroHistory.undoCount() == undoBefore + 1U);
     assert(std::memcmp(
         &state.pages.control.authored.modulation,
@@ -679,12 +690,12 @@ void test_shared_automation_take_records_late_join_and_one_undo() {
         state.pages.control,
         second
     );
-    assert(firstSlot.automationEnabled && secondSlot.automationEnabled);
-    assert(firstSlot.compatibility.automation.durationTicks == 768U);
-    assert(secondSlot.compatibility.automation.durationTicks == 768U);
+    assert(firstSlot.automation.enabled && secondSlot.automation.enabled);
+    assert(firstSlot.automation.spec.durationTicks == 768U);
+    assert(secondSlot.automation.spec.durationTicks == 768U);
     const auto secondStart = test_support::project_control::readCurvePoint(
         state.pages.control,
-        secondSlot.automationCurveId,
+        secondSlot.automation.id,
         0U,
         false
     );
@@ -693,19 +704,130 @@ void test_shared_automation_take_records_late_join_and_one_undo() {
     assert(state.macroHistory.undo(state.pages));
     firstSlot = test_support::project_control::readSlot(state.pages.control, first);
     secondSlot = test_support::project_control::readSlot(state.pages.control, second);
-    assert(!firstSlot.automationStored);
-    assert(!secondSlot.automationStored);
-    assert(firstSlot.modulationEnabled);
+    assert(!firstSlot.automation.stored());
+    assert(!secondSlot.automation.stored());
+    assert(firstSlot.primaryModulation.enabled);
     assert(state.macroHistory.redo(state.pages));
     assert(test_support::project_control::readSlot(
         state.pages.control,
         first
-    ).automationEnabled);
+    ).automation.enabled);
     assert(test_support::project_control::readSlot(
         state.pages.control,
         second
-    ).automationEnabled);
+    ).automation.enabled);
     std::cout << "[PASS] shared take has late join and one Undo\n";
+}
+
+void test_fixed_take_overdubs_multiple_wraps_until_explicit_release() {
+    using namespace core::state::macro;
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto services =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    state.statusBar.tempo.set(120.0f);
+    const uint8_t undoBefore = state.macroHistory.undoCount();
+
+    assert(services.setAutomationTakeTiming(MacroAutomationTakeTiming::NOTE_1_4));
+    assert(services.armAutomationTake());
+    publishProjectTime(state, 48U, 1000U);
+    assert(services.recordAutomationTakeValue(0U, 1000U, 0.2f));
+    assert(macroAutomationRecordingRevisionDirtyIndex(
+        state.macroUi.automationRecordingRevision.get()
+    ) == 0);
+
+    // Cross more than three complete loops. A duration boundary is never a
+    // terminal state while the physical modifier remains held. Sampling the
+    // unchanged take must not schedule a redundant UI value render.
+    const uint32_t recordingRevisionBeforeSample =
+        state.macroUi.automationRecordingRevision.get();
+    publishProjectTime(state, 672U, 2625U);
+    assert(services.updateAutomationTake(2625U));
+    assert(state.macroUi.automationRecordingRevision.get() ==
+           recordingRevisionBeforeSample);
+    assert(services.automationTakeRecording());
+    assert(state.macroHistory.undoCount() == undoBefore);
+
+    publishProjectTime(state, 720U, 2750U);
+    assert(services.recordAutomationTakeValue(0U, 2750U, 0.8f));
+    publishProjectTime(state, 768U, 2875U);
+    assert(services.releaseAutomationTake(2875U));
+    assert(!services.automationTakeRecording());
+    assert(state.macroHistory.undoCount() == undoBefore + 1U);
+
+    const auto slot = test_support::project_control::readSlot(
+        state.pages.control,
+        {0U, 0U, 0U}
+    );
+    assert(slot.automation.enabled);
+    assert(slot.automation.spec.durationTicks == 192U);
+    assert(slot.automation.spec.windowOffsetTicks == 0U);
+    const float latestPass =
+        core::state::modulation::evaluateProjectControlCurve(
+            state.pages.control,
+            slot.automation.id,
+            0.75f,
+            0.0f
+        );
+    assert(latestPass > 0.7f);
+    std::cout << "[PASS] fixed take wraps until explicit release\n";
+}
+
+void test_existing_lane_prefill_survives_outside_partial_overdub() {
+    using namespace core::state::macro;
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const MacroAutomationSlotAddress address{0U, 0U, 0U};
+    const auto before = configureAutomation(state.pages.control, address);
+    const float untouchedBefore =
+        core::state::modulation::evaluateProjectControlCurve(
+            state.pages.control,
+            before.automation.id,
+            0.5f,
+            0.0f
+        );
+    const auto services =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    assert(services.setAutomationTakeTiming(MacroAutomationTakeTiming::BAR_1));
+    assert(services.armAutomationTake());
+
+    // First movement begins at one quarter of the selected 4-beat loop.
+    publishProjectTime(state, 192U, 1000U);
+    assert(services.recordAutomationTakeValue(0U, 1000U, 0.95f));
+    publishProjectTime(state, 384U, 1500U);
+    assert(services.releaseAutomationTake(1500U));
+
+    const auto after = test_support::project_control::readSlot(
+        state.pages.control,
+        address
+    );
+    assert(after.automation.enabled);
+    assert(after.automation.spec.windowOffsetTicks == 0U);
+    const float untouchedAfter =
+        core::state::modulation::evaluateProjectControlCurve(
+            state.pages.control,
+            after.automation.id,
+            0.5f,
+            0.0f
+        );
+    const float overwritten =
+        core::state::modulation::evaluateProjectControlCurve(
+            state.pages.control,
+            after.automation.id,
+            1.5f,
+            0.0f
+        );
+    // The scratch is MIDI-7 by design: preservation is exact at the audible
+    // protocol resolution, not byte identity of an arbitrary source curve.
+    assert(std::fabs(untouchedAfter - untouchedBefore) <= (0.5f / 127.0f));
+    assert(overwritten > 0.9f);
+    std::cout << "[PASS] existing lane survives partial overdub\n";
 }
 
 void test_take_cancel_restores_manual_and_preflight_failure_is_clean() {
@@ -774,7 +896,7 @@ void test_armed_automation_take_without_motion_does_not_create_slot() {
             .macro = 0,
         }
     );
-    assert(!slot.present);
+    assert(!slot.present());
     assert(!state.project.metadata.dirty);
 
     std::cout << "[PASS] armed take without motion is a clean no-op\n";
@@ -824,16 +946,17 @@ void test_automation_take_preserves_active_modulation_without_resume() {
         .macro = 0,
     };
     auto slot = configureModulation(state.pages.control, address, 0.37f);
-    const auto modulationBefore = slot.compatibility.modulation;
+    const auto modulationBefore =
+        slot.primaryModulation.recordedShape;
     const auto firstBefore = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.modulationCurveId,
+        slot.primaryModulation.recordedShape.id,
         0,
         true
     );
     const auto secondBefore = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.modulationCurveId,
+        slot.primaryModulation.recordedShape.id,
         1,
         true
     );
@@ -844,22 +967,23 @@ void test_automation_take_preserves_active_modulation_without_resume() {
     ));
 
     slot = test_support::project_control::readSlot(state.pages.control, address);
-    assert(slot.automationEnabled);
-    assert(slot.modulationEnabled);
-    assert(std::fabs(slot.compatibility.modulationDepth - 0.37f) < 0.0001f);
-    assert(slot.compatibility.modulation.pointCount == modulationBefore.pointCount);
-    assert(slot.compatibility.modulation.durationTicks == modulationBefore.durationTicks);
-    assert(slot.compatibility.modulation.modulationOrigin ==
-           modulationBefore.modulationOrigin);
+    assert(slot.automation.enabled);
+    assert(slot.primaryModulation.enabled);
+    assert(std::fabs(slot.primaryModulation.amount - 0.37f) < 0.0001f);
+    assert(slot.primaryModulation.recordedShape.pointCount == modulationBefore.pointCount);
+    assert(slot.primaryModulation.recordedShape.spec.durationTicks ==
+           modulationBefore.spec.durationTicks);
+    assert(slot.primaryModulation.recordedShape.spec.origin ==
+           modulationBefore.spec.origin);
     const auto firstAfter = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.modulationCurveId,
+        slot.primaryModulation.recordedShape.id,
         0,
         true
     );
     const auto secondAfter = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.modulationCurveId,
+        slot.primaryModulation.recordedShape.id,
         1,
         true
     );
@@ -870,8 +994,8 @@ void test_automation_take_preserves_active_modulation_without_resume() {
     const uint32_t modifiedBeforeResume = state.project.metadata.modifiedCounter;
     assert(!services.resumeComputedSources(0));
     slot = test_support::project_control::readSlot(state.pages.control, address);
-    assert(slot.automationEnabled);
-    assert(slot.modulationEnabled);
+    assert(slot.automation.enabled);
+    assert(slot.primaryModulation.enabled);
     assert(state.project.metadata.modifiedCounter == modifiedBeforeResume);
     assert(state.project.metadata.dirty);
     assert(state.hasPendingProjectSessionSave());
@@ -932,13 +1056,13 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     services.setManualValue(0, 0.3f);
     const auto graphBefore = graph;
     const auto runtimeBefore = state.pages.control.runtime;
-    assert(state.macroHistory.undoCount() == 0U);
+    assert(state.macroHistory.undoCount() == 1U);
     assert(recordHoldAutomationTake(
         services, 0U, 1000U, 0.3f, 1500U, 0.8f, 2000U
     ));
     assert(state.macroUi.automationRecordingStatus.get() ==
            core::state::macro::MacroAutomationRecordingStatus::IDLE);
-    assert(state.macroHistory.undoCount() == 1U);
+    assert(state.macroHistory.undoCount() == 2U);
     assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
     assert(std::memcmp(
         &state.pages.control.runtime,
@@ -949,7 +1073,7 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
         state.pages.control,
         address
     );
-    assert(slot.automationEnabled);
+    assert(slot.automation.enabled);
     assert(graph.sourceCount == 2U);
     assert(graph.outputBindingCount == 3U);
 
@@ -961,8 +1085,8 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
         sizeof(runtimeBefore)
     ) == 0);
     slot = test_support::project_control::readSlot(state.pages.control, address);
-    assert(!slot.automationStored);
-    assert(slot.modulationStored);
+    assert(!slot.automation.stored());
+    assert(slot.modulationCount > 0U);
 
     assert(state.macroHistory.redo(state.pages));
     assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
@@ -972,18 +1096,18 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
         sizeof(runtimeBefore)
     ) == 0);
     slot = test_support::project_control::readSlot(state.pages.control, address);
-    assert(slot.automationEnabled);
-    assert(slot.compatibility.automation.pointCount >= 2U);
+    assert(slot.automation.enabled);
+    assert(slot.automation.pointCount >= 2U);
     const auto first = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.automationCurveId,
+        slot.automation.id,
         0,
         false
     );
     const auto second = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.automationCurveId,
-        static_cast<uint16_t>(slot.compatibility.automation.pointCount - 1U),
+        slot.automation.id,
+        static_cast<uint16_t>(slot.automation.pointCount - 1U),
         false
     );
     assert(std::fabs(first.value - 0.3f) < 0.005f);
@@ -993,19 +1117,19 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     assert(recordHoldAutomationTake(
         services, 0U, 3000U, 0.6f, 3500U, 0.1f, 4000U
     ));
-    assert(state.macroHistory.undoCount() == 2U);
+    assert(state.macroHistory.undoCount() == 4U);
     assert(std::memcmp(&graph, &graphBefore, sizeof(graph)) == 0);
     slot = test_support::project_control::readSlot(state.pages.control, address);
     auto replacementFirst = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.automationCurveId,
+        slot.automation.id,
         0,
         false
     );
     auto replacementSecond = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.automationCurveId,
-        static_cast<uint16_t>(slot.compatibility.automation.pointCount - 1U),
+        slot.automation.id,
+        static_cast<uint16_t>(slot.automation.pointCount - 1U),
         false
     );
     assert(std::fabs(replacementFirst.value - 0.6f) < 0.005f);
@@ -1016,14 +1140,14 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     slot = test_support::project_control::readSlot(state.pages.control, address);
     replacementFirst = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.automationCurveId,
+        slot.automation.id,
         0,
         false
     );
     replacementSecond = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.automationCurveId,
-        static_cast<uint16_t>(slot.compatibility.automation.pointCount - 1U),
+        slot.automation.id,
+        static_cast<uint16_t>(slot.automation.pointCount - 1U),
         false
     );
     assert(std::fabs(replacementFirst.value - first.value) < 0.0001f);
@@ -1034,14 +1158,14 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     slot = test_support::project_control::readSlot(state.pages.control, address);
     replacementFirst = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.automationCurveId,
+        slot.automation.id,
         0,
         false
     );
     replacementSecond = test_support::project_control::readCurvePoint(
         state.pages.control,
-        slot.automationCurveId,
-        static_cast<uint16_t>(slot.compatibility.automation.pointCount - 1U),
+        slot.automation.id,
+        static_cast<uint16_t>(slot.automation.pointCount - 1U),
         false
     );
     assert(std::fabs(replacementFirst.value - 0.6f) < 0.005f);
@@ -1076,7 +1200,7 @@ void test_failed_first_automation_take_does_not_leave_an_empty_slot() {
     assert(!test_support::project_control::readSlot(
         state.pages.control,
         address
-    ).present);
+    ).present());
     assert(state.pages.control.authored.automation.entryCount == entryCountBefore);
     assert(state.pages.control.authored.curves.pointCount ==
            core::state::modulation::PROJECT_CURVE_POINT_CAPACITY);
@@ -1099,25 +1223,29 @@ void test_macro_edit_automation_lifecycle_actions() {
         performance, 0U, 1000U, 0.25f, 1500U, 0.75f, 2000U
     ));
 
+    assert(edit.setAutomationPlayback(0, false));
     assert(edit.copyAutomation(0));
     assert(state.structureClipboard.hasMacroAutomation());
-    assert(edit.removeAutomation(0));
-    assert(edit.automationSlot(0) == nullptr);
+    assert(edit.clearAutomation(0));
+    assert(edit.controlDestination(0) == nullptr);
 
     assert(edit.pasteAutomation(0));
-    const auto* pasted = edit.automationSlot(0);
+    const auto* pasted = edit.controlDestination(0);
     assert(pasted != nullptr);
-    assert(pasted->automation.active);
+    assert(pasted->automation.stored());
+    assert(!pasted->automation.enabled);
     assert(pasted->automation.pointCount >= 2U);
+    assert(edit.setAutomationPlayback(0, true));
+    assert(edit.automationPlaybackActiveFor(0));
 
     assert(edit.clearAutomation(0));
-    const auto* cleared = edit.automationSlot(0);
+    const auto* cleared = edit.controlDestination(0);
     assert(cleared == nullptr);
     assert(state.pages.isMacroSlotActive(0));
     assert(!test_support::project_control::readSlot(
         state.pages.control,
         {state.pages.currentActiveTrack(), state.pages.currentActivePage(), 0}
-    ).automationStored);
+    ).automation.stored());
 
     std::cout << "[PASS] test_macro_edit_automation_lifecycle_actions\n";
 }
@@ -1160,7 +1288,7 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
     );
     auto* sourceCurve = test_support::project_control::mutableCurve(
         state.pages.control,
-        source.modulationCurveId
+        source.primaryModulation.recordedShape.id
     );
     assert(sourceCurve != nullptr);
     sourceCurve->origin =
@@ -1180,9 +1308,12 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
         distinctTargetAutomation
     ));
     target = configureModulation(state.pages.control, targetAddress, 0.82f);
-    const auto targetAutomationBefore = target.automationCurveId;
-    const auto targetModulationBefore = target.modulationCurveId;
-    std::array<core::state::macro::MacroCurvePoint, 2> targetAutomationPoints{};
+    const auto targetAutomationBefore = target.automation.id;
+    const auto targetModulationBefore = target.primaryModulation.recordedShape.id;
+    std::array<
+        core::state::modulation::ProjectControlCurvePoint,
+        2
+    > targetAutomationPoints{};
     for (uint16_t i = 0; i < targetAutomationPoints.size(); ++i) {
         targetAutomationPoints[i] = test_support::project_control::readCurvePoint(
             state.pages.control,
@@ -1229,16 +1360,16 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
         sizeof(targetBindingBefore)
     ) == 0);
     const auto& pastedBinding = graph.outputBindings[2];
-    assert(pastedBinding.sourceId == source.modulationSourceId);
+    assert(pastedBinding.sourceId == source.primaryModulation.sourceId);
     assert(pastedBinding.destination ==
            core::state::modulation::projectControlDestination(targetAddress));
     assert(pastedBinding.amountQ15 == sourceBindingBefore.amountQ15);
-    assert(target.automationCurveId == targetAutomationBefore);
-    assert(target.compatibility.automation.pointCount == targetAutomationPoints.size());
+    assert(target.automation.id == targetAutomationBefore);
+    assert(target.automation.pointCount == targetAutomationPoints.size());
     for (uint16_t i = 0; i < targetAutomationPoints.size(); ++i) {
         const auto actual = test_support::project_control::readCurvePoint(
             state.pages.control,
-            target.automationCurveId,
+            target.automation.id,
             i,
             false
         );
@@ -1246,8 +1377,8 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
         assert(std::fabs(actual.value - targetAutomationPoints[i].value) < 0.0001f);
     }
     assert(target.modulationCount == 2U);
-    assert(target.modulationCurveId == targetModulationBefore);
-    assert(std::fabs(target.compatibility.modulationDepth - 0.82f) < 0.0001f);
+    assert(target.primaryModulation.recordedShape.id == targetModulationBefore);
+    assert(std::fabs(target.primaryModulation.amount - 0.82f) < 0.0001f);
 
     std::cout
         << "[PASS] modulation assignment Paste preserves target and shares source\n";
@@ -1259,7 +1390,8 @@ void test_typed_slot_copy_paste_preserves_automation_and_modulation() {
                                  storage.macroLibrary,
                                  storage.sequencerPatternLibrary,
                                  storage.sequencerSetLibrary);
-    const auto edit = core::handler::MacroEditDomainServices::fromCoreState(state);
+    const auto structure =
+        core::handler::MacroStructureDomainServices::fromCoreState(state);
     auto& page = state.pages.activePageData();
     page.setMacroActive(0, true);
     page.setMacroActive(2, true);
@@ -1290,7 +1422,7 @@ void test_typed_slot_copy_paste_preserves_automation_and_modulation() {
     );
     auto* sourceModulationCurve = test_support::project_control::mutableCurve(
         state.pages.control,
-        source.modulationCurveId
+        source.primaryModulation.recordedShape.id
     );
     assert(sourceModulationCurve != nullptr);
     sourceModulationCurve->origin =
@@ -1298,11 +1430,8 @@ void test_typed_slot_copy_paste_preserves_automation_and_modulation() {
     configureAutomation(state.pages.control, targetAddress);
     configureModulation(state.pages.control, targetAddress, 0.9f);
 
-    assert(edit.copySlot(0));
-    const auto plan = edit.preflightSlotPaste(2);
-    assert(plan.actionable());
-    assert(plan.requiresOverwrite());
-    assert(edit.pasteSlot(2, true));
+    assert(structure.copyMacroAutomation(0, state.structureClipboard));
+    assert(structure.pasteMacroAutomation(2, state.structureClipboard));
 
     source = test_support::project_control::readSlot(
         state.pages.control,
@@ -1317,17 +1446,17 @@ void test_typed_slot_copy_paste_preserves_automation_and_modulation() {
     assert(std::fabs(page.values[2] - 0.42f) < 0.0001f);
     assertCurvePayloadEquals(
         state.pages.control,
-        source.automationCurveId,
-        target.automationCurveId,
+        source.automation.id,
+        target.automation.id,
         false
     );
     assertCurvePayloadEquals(
         state.pages.control,
-        source.modulationCurveId,
-        target.modulationCurveId,
+        source.primaryModulation.recordedShape.id,
+        target.primaryModulation.recordedShape.id,
         true
     );
-    assert(std::fabs(target.compatibility.modulationDepth - 0.43f) < 0.0001f);
+    assert(std::fabs(target.primaryModulation.amount - 0.43f) < 0.0001f);
 
     std::cout
         << "[PASS] test_typed_slot_copy_paste_preserves_automation_and_modulation\n";
@@ -1377,7 +1506,7 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
     );
     auto* sourceCurve = test_support::project_control::mutableCurve(
         state.pages.control,
-        sourceSlot.modulationCurveId
+        sourceSlot.primaryModulation.recordedShape.id
     );
     assert(sourceCurve != nullptr);
     sourceCurve->origin =
@@ -1404,17 +1533,17 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
     );
     assertCurvePayloadEquals(
         state.pages.control,
-        sourceSlot.automationCurveId,
-        targetSlot.automationCurveId,
+        sourceSlot.automation.id,
+        targetSlot.automation.id,
         false
     );
     assertCurvePayloadEquals(
         state.pages.control,
-        sourceSlot.modulationCurveId,
-        targetSlot.modulationCurveId,
+        sourceSlot.primaryModulation.recordedShape.id,
+        targetSlot.primaryModulation.recordedShape.id,
         true
     );
-    assert(std::fabs(targetSlot.compatibility.modulationDepth - 0.33f) < 0.0001f);
+    assert(std::fabs(targetSlot.primaryModulation.amount - 0.33f) < 0.0001f);
     assert(state.pages.pageData(0, 1).cc[0] == 74);
     assert(std::fabs(state.pages.pageData(0, 1).values[0] - 0.36f) < 0.0001f);
     assert(state.pages.pageData(0, 1).activeMacroMask == 0x29U);
@@ -1443,17 +1572,17 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
     );
     assertCurvePayloadEquals(
         state.pages.control,
-        sourceSlot.automationCurveId,
-        targetSlot.automationCurveId,
+        sourceSlot.automation.id,
+        targetSlot.automation.id,
         false
     );
     assertCurvePayloadEquals(
         state.pages.control,
-        sourceSlot.modulationCurveId,
-        targetSlot.modulationCurveId,
+        sourceSlot.primaryModulation.recordedShape.id,
+        targetSlot.primaryModulation.recordedShape.id,
         true
     );
-    assert(std::fabs(targetSlot.compatibility.modulationDepth - 0.33f) < 0.0001f);
+    assert(std::fabs(targetSlot.primaryModulation.amount - 0.33f) < 0.0001f);
     assert(state.pages.pageData(1, 0).cc[0] == 74);
     assert(std::fabs(state.pages.pageData(1, 0).values[0] - 0.36f) < 0.0001f);
     assert(state.pages.pageData(1, 0).activeMacroMask == 0x29U);
@@ -1464,6 +1593,93 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
 
     std::cout
         << "[PASS] test_page_and_track_copy_preserve_automation_and_modulation\n";
+}
+
+void test_macro_track_structure_mutations_preserve_project_track_identity() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto structure =
+        core::handler::MacroStructureDomainServices::fromCoreState(state);
+
+    // ProjectTrackState is the only owner of Track identity. Make each value
+    // deliberately different from Macro defaults and from the source Track so
+    // a whole-struct copy/reset cannot pass accidentally.
+    state.projectTracks.authored.midiChannels[0] = 9U;
+    state.projectTracks.authored.midiChannels[1] = 11U;
+    state.projectTracks.authored.midiChannels[2] = 13U;
+    state.projectTracks.authored.midiChannels[3] = 15U;
+    state.projectTracks.authored.delayMs[0] = -27;
+    state.projectTracks.authored.delayMs[1] = 18;
+    state.projectTracks.authored.delayMs[2] = 40;
+    state.projectTracks.authored.delayMs[3] = -50;
+    state.projectTracks.authored.mutedMask = 0x0002U;
+    state.projectTracks.authored.soloMask = 0x0009U;
+    const auto expectedIdentity = state.projectTracks.authored;
+
+    auto& sourceTrack = state.pages.tracks[0];
+    sourceTrack.activePage = 2U;
+    sourceTrack.enabledPageMask = 0x0005U;
+    auto& sourcePage = sourceTrack.pages[2];
+    sourcePage.setMacroActive(3U, true);
+    sourcePage.cc[3] = 91U;
+    sourcePage.values[3] = 0.73f;
+
+    // Direct Track paste copies musical Macro content into Track 2 (index 1), while
+    // destination identity remains the canonical destination identity.
+    const auto copiedTrack = sourceTrack;
+    assert(structure.pasteTrack(1U, copiedTrack));
+    assert(state.sharedTrackActive.get() == 1U);
+    assert(state.pages.tracks[1].activePage == 2U);
+    assert(state.pages.tracks[1].enabledPageMask == 0x0005U);
+    assert(state.pages.tracks[1].pages[2].isMacroActive(3U));
+    assert(state.pages.tracks[1].pages[2].cc[3] == 91U);
+    assert(std::fabs(state.pages.tracks[1].pages[2].values[3] - 0.73f) < 0.0001f);
+    assertProjectTrackSnapshotEquals(state.projectTracks.authored, expectedIdentity);
+
+    // Paste is content-only even when the destination Track did not exist
+    // structurally.
+    core::state::macro::MacroTrackData pastedTrack;
+    pastedTrack.initDefaults(7U);
+    pastedTrack.activePage = 4U;
+    pastedTrack.enabledPageMask = 0x0011U;
+    pastedTrack.pages[4].setMacroActive(6U, true);
+    pastedTrack.pages[4].cc[6] = 119U;
+    pastedTrack.pages[4].values[6] = 0.21f;
+    assert(structure.pasteTrack(2U, pastedTrack));
+    assert(state.sharedTrackActive.get() == 2U);
+    assert(state.pages.tracks[2].activePage == 4U);
+    assert(state.pages.tracks[2].enabledPageMask == 0x0011U);
+    assert(state.pages.tracks[2].pages[4].isMacroActive(6U));
+    assert(state.pages.tracks[2].pages[4].cc[6] == 119U);
+    assert(std::fabs(state.pages.tracks[2].pages[4].values[6] - 0.21f) < 0.0001f);
+    assertProjectTrackSnapshotEquals(state.projectTracks.authored, expectedIdentity);
+
+    // Create and erase reset only Macro content. Neither operation reverts the
+    // destination identity to the Track index/default Channel.
+    state.pages.tracks[3].pages[0].cc[0] = 127U;
+    assert(structure.createTrack(3U));
+    assert(state.sharedTrackActive.get() == 3U);
+    assert(state.pages.tracks[3].activePage == 0U);
+    assert(state.pages.tracks[3].enabledPageMask == 0x0001U);
+    assert(state.pages.tracks[3].pages[0].cc[0] ==
+           core::state::macro::defaultMacroCc(0U, 0U));
+    assertProjectTrackSnapshotEquals(state.projectTracks.authored, expectedIdentity);
+
+    state.pages.tracks[0].activePage = 5U;
+    state.pages.tracks[0].enabledPageMask = 0x0021U;
+    state.pages.tracks[0].pages[5].cc[1] = 126U;
+    assert(structure.eraseTrack(0U));
+    assert(state.pages.tracks[0].activePage == 0U);
+    assert(state.pages.tracks[0].enabledPageMask == 0x0001U);
+    assert(state.pages.tracks[0].pages[5].cc[1] ==
+           core::state::macro::defaultMacroCc(5U, 1U));
+    assertProjectTrackSnapshotEquals(state.projectTracks.authored, expectedIdentity);
+
+    std::cout
+        << "[PASS] test_macro_track_structure_mutations_preserve_project_track_identity\n";
 }
 
 void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entries() {
@@ -1558,12 +1774,83 @@ void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entrie
 
     configureAutomation(state.pages.control, source);
     assert(performance.takeManualControl(0, 0.7f));
-    assert(edit.removeAutomation(0));
+    assert(edit.removeSlot(0));
+    assert(!state.pages.isMacroSlotActive(0));
     assert(!state.macroUi.manualOverrides.activeFor(source));
     assert(state.macroUi.manualOverrides.activeFor(unrelated));
 
     std::cout
         << "[PASS] test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entries\n";
+}
+
+void test_destination_paste_preserves_canonical_track_channel() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    state.pages.setMacroSlotActive(0U, true);
+    state.pages.setMacroSlotActive(1U, true);
+    state.pages.activePageData().cc[0] = 74U;
+    state.pages.activePageData().cc[1] = 21U;
+    assert(core::state::project::setProjectTrackMidiChannel(
+        state.projectTracks,
+        0U,
+        9U
+    ).changed());
+
+    const auto edit =
+        core::handler::MacroEditDomainServices::fromCoreState(state);
+    assert(edit.copyDestination(0U));
+    assert(edit.pasteDestination(1U, true));
+    assert(state.pages.activePageData().cc[1] == 74U);
+    assert(state.projectTracks.authored.midiChannels[0] == 9U);
+
+    std::cout
+        << "[PASS] destination paste keeps canonical Track Channel\n";
+}
+
+void test_manual_takeover_is_one_global_value_and_authority_transaction() {
+    CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    const auto services =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = 0U,
+        .page = 0U,
+        .macro = 0U,
+    };
+    configureAutomation(state.pages.control, address);
+    state.pages.activePageData().values[0] = 0.25f;
+
+    assert(services.takeManualControl(0U, 0.60f));
+    assert(services.takeManualControl(0U, 0.70f));
+    state.flushMacroValueHistoryCoalescing();
+    assert(state.macroHistory.undoCount() == 1U);
+    assert(state.projectHistory.undoCount() == 1U);
+    assert(services.manualOverrideActiveFor(0U));
+    assert(std::fabs(state.pages.activePageData().values[0] - 0.70f) < 0.0001f);
+
+    assert(state.undoProjectHistory());
+    assert(!services.manualOverrideActiveFor(0U));
+    assert(std::fabs(state.pages.activePageData().values[0] - 0.25f) < 0.0001f);
+    assert(state.redoProjectHistory());
+    assert(services.manualOverrideActiveFor(0U));
+    assert(std::fabs(state.pages.activePageData().values[0] - 0.70f) < 0.0001f);
+
+    assert(services.resumeComputedSources(0U));
+    assert(!services.manualOverrideActiveFor(0U));
+    assert(state.projectHistory.undoCount() == 2U);
+    assert(state.undoProjectHistory());
+    assert(services.manualOverrideActiveFor(0U));
+    assert(state.redoProjectHistory());
+    assert(!services.manualOverrideActiveFor(0U));
+
+    std::cout
+        << "[PASS] manual takeover is one global value/authority transaction\n";
 }
 
 }  // namespace
@@ -1574,8 +1861,8 @@ int main() {
     test_manual_value_updates_base_and_stages_project_mutation();
     test_manual_override_persists_absolute_base_and_is_addressed_by_slot();
     test_config_changes_mark_project_dirty_and_bump_revision();
+    test_macro_channel_gesture_coalesces_into_one_global_track_command();
     test_switch_to_page_updates_runtime_status_and_marks_project_dirty();
-    test_track_config_batch_requires_shared_channel_and_marks_project_dirty_when_valid();
     test_status_bar_pulses_are_forwarded();
     test_macro_slot_activation_is_sparse_and_marks_project_dirty();
     test_addressed_macro_slot_activation_preserves_cold_page_cache();
@@ -1583,6 +1870,8 @@ int main() {
     test_automation_take_commits_to_current_macro_slot();
     test_automation_take_cancel_discards_session();
     test_shared_automation_take_records_late_join_and_one_undo();
+    test_fixed_take_overdubs_multiple_wraps_until_explicit_release();
+    test_existing_lane_prefill_survives_outside_partial_overdub();
     test_take_cancel_restores_manual_and_preflight_failure_is_clean();
     test_armed_automation_take_without_motion_does_not_create_slot();
     test_cancelled_automation_take_restores_previous_manual_state();
@@ -1593,7 +1882,10 @@ int main() {
     test_modulation_copy_paste_preserves_target_and_exact_payload();
     test_typed_slot_copy_paste_preserves_automation_and_modulation();
     test_page_and_track_copy_preserve_automation_and_modulation();
+    test_macro_track_structure_mutations_preserve_project_track_identity();
     test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entries();
+    test_destination_paste_preserves_canonical_track_channel();
+    test_manual_takeover_is_one_global_value_and_authority_transaction();
     std::cout << "\nAll MacroPerformanceDomainServices tests passed.\n";
     return 0;
 }

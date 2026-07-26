@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <config/PlatformCompat.hpp>
+
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::ui::sequencer::header_bar {
@@ -47,19 +49,24 @@ lv_area_t makeArea(lv_coord_t x, lv_coord_t y, lv_coord_t width, lv_coord_t heig
 
 }  // namespace
 
-TopRowVisualState buildTopRowVisualState(const SequencerHeaderBarProps& props) {
+FLASHMEM TopRowVisualState buildTopRowVisualState(
+    const SequencerHeaderBarProps& props
+) {
     TopRowVisualState state{};
     const uint32_t accentColor =
         isTrackEnabled(props.enabledMask, props.previewTrack)
             ? trackColor(props.previewTrack)
             : trackInactiveColor();
     const bool showBadge = props.badgeText[0] != '\0';
-    const bool selectionMode = props.selectingPage || props.selectingTrack || props.selectingStep;
+    const bool selectionMode =
+        props.selectingTrack || props.selectingPage || props.selectingStep;
 
     state.accentColor = accentColor;
-    state.accentOpa = props.selectingTrack ? LV_OPA_COVER : LV_OPA_80;
+    state.accentOpa = LV_OPA_80;
     state.backgroundColor = accentColor;
-    state.backgroundOpa = props.selectingTrack ? TRACK_BG_OPA_SELECTING : TRACK_BG_OPA_IDLE;
+    state.backgroundOpa = props.selectingTrack
+        ? TRACK_BG_OPA_SELECTING
+        : TRACK_BG_OPA_IDLE;
     state.badgeBgColor = selectionMode ? theme::color::TEXT_PRIMARY : accentColor;
     state.badgeBgOpa =
         showBadge ? (selectionMode ? LV_OPA_20 : static_cast<lv_opa_t>(24)) : LV_OPA_TRANSP;
@@ -70,7 +77,7 @@ TopRowVisualState buildTopRowVisualState(const SequencerHeaderBarProps& props) {
     return state;
 }
 
-StripState buildStripState(const SequencerHeaderBarProps& props) {
+FLASHMEM StripState buildStripState(const SequencerHeaderBarProps& props) {
     StripState state{};
     state.length = std::min<uint8_t>(props.length, static_cast<uint8_t>(PAGE_COUNT * STEPS_PER_PAGE));
     state.pageCount = static_cast<uint8_t>(
@@ -81,7 +88,7 @@ StripState buildStripState(const SequencerHeaderBarProps& props) {
     return state;
 }
 
-void buildStripSegmentGeometry(
+FLASHMEM void buildStripSegmentGeometry(
     lv_coord_t stripWidth,
     std::array<SequencerHeaderBarStripSegmentGeometry, PAGE_COUNT>& geometry
 ) {
@@ -107,11 +114,13 @@ void buildStripSegmentGeometry(
     }
 }
 
-StripSegmentVisual buildStripSegmentVisual(const SequencerHeaderBarProps& props,
-                                          const StripState& stripState,
-                                          const SequencerHeaderBarStripSegmentGeometry& geometry,
-                                          const lv_area_t& stripCoords,
-                                          uint8_t pageIndex) {
+FLASHMEM StripSegmentVisual buildStripSegmentVisual(
+    const SequencerHeaderBarProps& props,
+    const StripState& stripState,
+    const SequencerHeaderBarStripSegmentGeometry& geometry,
+    const lv_area_t& stripCoords,
+    uint8_t pageIndex
+) {
     StripSegmentVisual visual{};
     if (geometry.width <= 0) {
         return visual;
@@ -169,7 +178,7 @@ StripSegmentVisual buildStripSegmentVisual(const SequencerHeaderBarProps& props,
     return visual;
 }
 
-CursorLayout buildViewCursorLayout(
+FLASHMEM CursorLayout buildViewCursorLayout(
     const SequencerHeaderBarProps& props,
     const std::array<SequencerHeaderBarStripSegmentGeometry, PAGE_COUNT>& geometry
 ) {
@@ -192,7 +201,7 @@ CursorLayout buildViewCursorLayout(
     return layout;
 }
 
-CursorLayout buildStripCursorLayout(
+FLASHMEM CursorLayout buildStripCursorLayout(
     const SequencerHeaderBarProps& props,
     const std::array<SequencerHeaderBarStripSegmentGeometry, PAGE_COUNT>& geometry
 ) {
@@ -200,10 +209,6 @@ CursorLayout buildStripCursorLayout(
     if (props.activePage >= PAGE_COUNT) {
         return layout;
     }
-    if (props.selectingPage) {
-        return layout;
-    }
-
     const auto& segment = geometry[props.activePage];
     if (segment.width <= 0) {
         return layout;

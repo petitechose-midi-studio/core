@@ -38,20 +38,14 @@ void applySnapshotPreservingGraph(
     const oc::note::sequencer::StepSequencerGraph* graph
 );
 
-/**
- * Applies copied Track musical content and graph while retaining the MIDI
- * channel owned by the destination Track.
- */
+/** Applies copied Track musical content and graph. Routing is Project-owned. */
 [[nodiscard]] bool applyTrackContentSnapshotWithGraph(
     SequencerPatternState& target,
     const SequencerPatternSnapshot& snapshot,
     const oc::note::sequencer::StepSequencerGraph* graph
 );
 
-/**
- * Installs already-cloned Track content without allocating. The destination
- * MIDI channel remains authoritative.
- */
+/** Installs already-cloned Track content without allocating. */
 void installTrackContentSnapshotWithOwnedGraph(
     SequencerPatternState& target,
     const SequencerPatternSnapshot& snapshot,
@@ -85,10 +79,7 @@ void applySnapshotToEditorPreservingGraph(
     const oc::note::sequencer::StepSequencerGraph* graph
 );
 
-/**
- * Applies copied Track musical content and graph to the active editor while
- * retaining the MIDI channel owned by the destination Track.
- */
+/** Applies copied Track musical content and graph to the active editor. */
 [[nodiscard]] bool applyTrackContentSnapshotToEditorWithGraph(
     SequencerState& target,
     const SequencerPatternSnapshot& snapshot,

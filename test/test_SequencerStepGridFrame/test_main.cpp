@@ -74,7 +74,7 @@ void test_invalid_or_missing_graph_has_no_badges() {
 
 void test_projects_child_context_resolved_values_and_badges() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[1] = 60;
 
     const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(1), 2);
@@ -129,7 +129,7 @@ void test_projects_chord_badge_for_local_chord_step() {
 
 void test_child_grid_uses_runtime_chord_badge_for_inherited_chord() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
@@ -190,7 +190,7 @@ void test_child_grid_uses_runtime_chord_badge_for_inherited_chord() {
 
 void test_parent_grid_summarizes_final_child_pitch() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
 
     sequencer.pattern.note[1] = 60;
     const auto micro = createMicroSequence(sequencer.pattern, rootStepNodeId(1), 2);
@@ -283,7 +283,7 @@ void test_parent_grid_summarizes_final_child_pitch() {
 
 void test_parent_tile_displays_final_child_pitch_across_nested_cycles() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.setEnabled(0, true);
 
@@ -335,7 +335,7 @@ void test_parent_tile_displays_final_child_pitch_across_nested_cycles() {
 
 void test_child_grid_summarizes_intermediate_child_pitch() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
 
     const auto cycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(0), 2);
@@ -391,7 +391,7 @@ void test_child_grid_summarizes_intermediate_child_pitch() {
 
 void test_child_summary_reports_representative_local_variation() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.setEnabled(0, true);
 
@@ -453,7 +453,7 @@ void test_child_summary_reports_representative_local_variation() {
 
 void test_intermediate_cycle_summary_uses_owner_activation_count() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[2] = 60;
 
     const auto cycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(2), 4);
@@ -519,7 +519,7 @@ void test_intermediate_cycle_summary_uses_owner_activation_count() {
 
 void test_nested_child_playhead_follows_active_owner_path() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
@@ -572,7 +572,7 @@ void test_nested_child_playhead_follows_active_owner_path() {
 
 void test_child_disabled_state_is_reported_to_parent_summary() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.setEnabled(0, true);
 
@@ -611,7 +611,7 @@ void test_child_disabled_state_is_reported_to_parent_summary() {
 
 void test_child_playhead_remains_visible_when_selected_state_is_disabled() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
@@ -649,7 +649,7 @@ void test_child_playhead_remains_visible_when_selected_state_is_disabled() {
 
 void test_parent_summary_uses_current_micro_substep_runtime_note() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
@@ -701,7 +701,7 @@ void test_parent_summary_uses_current_micro_substep_runtime_note() {
 
 void test_resolved_projection_reports_current_child_runtime_note() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
@@ -771,9 +771,65 @@ void test_resolved_step_display_values_follow_visible_variation() {
     std::cout << "[PASS] test_resolved_step_display_values_follow_visible_variation\n";
 }
 
+void test_step_editor_projection_ignores_previous_cycle_runtime_values() {
+    SequencerState sequencer;
+    sequencer.pattern.setContentLength(1);
+    sequencer.pattern.setEnabled(0, true);
+    assert(sequencer.setStepNoteAt(0, 72));
+    assert(sequencer.setStepVelocityAt(0, 91));
+    assert(sequencer.setStepGateAt(0, 175));
+    assert(sequencer.setStepNudgeAt(0, 3));
+
+    // Playback can republish its previous projection before it consumes the
+    // authored revision. Grid playback may show that projection; Step Editor
+    // must show the new authoring values in the same frame.
+    auto& telemetry = sequencer.cycleVariationTelemetry;
+    telemetry.validMask.setBit(0, true);
+    telemetry.triggeredMask.setBit(0, true);
+    telemetry.ranges.pitchSemitones = 1;
+    telemetry.resolvedNote[0] = 48;
+    telemetry.resolvedVelocity[0] = 20;
+    telemetry.resolvedGate[0] = 10;
+    telemetry.resolvedNudge[0] = -4;
+
+    const auto context =
+        core::state::sequencer::makeSequencerResolvedDisplayProjectionContext(
+            sequencer,
+            {},
+            StepProperty::NOTE
+        );
+    const auto runtime =
+        core::state::sequencer::buildSequencerResolvedStepDisplayState(
+            context,
+            0,
+            false
+        );
+    const auto runtimeValues =
+        core::state::sequencer::sequencerResolvedStepDisplayValues(runtime);
+    assert(runtimeValues.note == 48);
+    assert(runtimeValues.velocity == 20);
+    assert(runtimeValues.gate == 10);
+    assert(runtimeValues.nudge == -4);
+
+    const auto editor =
+        core::state::sequencer::buildSequencerStepEditorDisplayState(
+            context,
+            0
+        );
+    const auto editorValues =
+        core::state::sequencer::sequencerResolvedStepDisplayValues(editor);
+    assert(editorValues.note == 72);
+    assert(editorValues.velocity == 91);
+    assert(editorValues.gate == 175);
+    assert(editorValues.nudge == 3);
+
+    std::cout
+        << "[PASS] test_step_editor_projection_ignores_previous_cycle_runtime_values\n";
+}
+
 void test_resolved_projection_reports_runtime_inherited_chord_badge() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.setEnabled(0, true);
     sequencer.probabilityCycleMask.setBit(0, true);
@@ -846,7 +902,7 @@ void test_resolved_projection_reports_runtime_inherited_chord_badge() {
 
 void test_resolved_projection_sums_pattern_and_local_random_preview() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[0] = 60;
     sequencer.pattern.setEnabled(0, true);
     sequencer.activeStepProperty.set(StepProperty::NOTE);
@@ -880,7 +936,7 @@ void test_resolved_projection_sums_pattern_and_local_random_preview() {
 
 void test_ui_allows_three_child_content_levels_when_engine_depth_is_four() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
 
     const auto rootCycle = createCycleStateSet(sequencer.pattern, rootStepNodeId(0), 2);
     assert(rootCycle.ok);
@@ -931,6 +987,7 @@ int main() {
     test_parent_summary_uses_current_micro_substep_runtime_note();
     test_resolved_projection_reports_current_child_runtime_note();
     test_resolved_step_display_values_follow_visible_variation();
+    test_step_editor_projection_ignores_previous_cycle_runtime_values();
     test_resolved_projection_reports_runtime_inherited_chord_badge();
     test_resolved_projection_sums_pattern_and_local_random_preview();
     test_ui_allows_three_child_content_levels_when_engine_depth_is_four();

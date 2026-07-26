@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <oc/state/FixedSubscriptionList.hpp>
 #include <oc/state/Signal.hpp>
 
@@ -15,8 +17,8 @@ namespace core::handler {
 /**
  * Owns macro page/track structure navigation and edit modes.
  *
- * The workflow manages preview, selection, hold, copy/paste, delete, and
- * duplicate intent; domain mutations are delegated to MacroStructureDomainServices.
+ * The workflow manages preview, hold, copy/paste, and direct delete intent;
+ * domain mutations are delegated to MacroStructureDomainServices.
  */
 class MacroStructureWorkflow {
 public:
@@ -36,7 +38,6 @@ public:
     MacroStructureWorkflow(const MacroStructureWorkflow&) = delete;
     MacroStructureWorkflow& operator=(const MacroStructureWorkflow&) = delete;
 
-    bool previewingAddSlot() const;
     core::state::macro::MacroInteractionContext interactionContext(
         bool blockingOverlay,
         bool slotPropertySelecting
@@ -44,31 +45,23 @@ public:
 
     bool commitPreviewedPageIfNeeded();
     void cycleNavigationFocus();
+    void setNavigationFocus(core::state::StructureNavigationFocus focus);
     void moveByFocus(float delta);
-    void enterSelectionModeForCurrentFocus();
-    void cancelSelectionMode();
-    void toggleSelectionAtCursor();
-    void navigateSelection(float delta);
-
     bool canRemoveCurrentStructure() const;
     bool canPasteCurrentStructure() const;
-    bool selectionDeleteGuardEngaged() const;
-    bool beginSelectionDeleteGuard(uint32_t nowMs);
-    void updateSelectionDeleteGuard(uint32_t nowMs);
-    bool commitSelectionDeleteGuard(uint32_t nowMs);
-    bool cancelSelectionDeleteGuard(uint32_t nowMs);
     void beginHoldAction(core::state::StructureHoldAction action);
     [[nodiscard]] bool hasHoldAction(core::state::StructureHoldAction action) const;
+    [[nodiscard]] bool commitHoldAction(core::state::StructureHoldAction action);
     void clearHoldAction();
     void eraseCurrentStructure();
     void removeCurrentStructure();
     void copyCurrentStructure();
     void pasteCurrentStructure();
-    void duplicateSelection();
     void createPreviewedStructure();
 
 private:
     void bindStateSync();
+    core::state::StructureNavigationFocus effectiveFocus() const;
     void movePage(float delta);
     void moveTrack(float delta);
     void moveMacroSlot(float delta);
@@ -78,9 +71,20 @@ private:
     ) const;
     void syncPreviewToCurrentContext();
     void clampFocusedMacroSlot();
-    bool applySelectionDelete(
-        const core::state::contextual::ContextActionSpec& action
-    );
+    void captureHoldTarget(core::state::StructureHoldAction action);
+    [[nodiscard]] bool holdTargetStillMatches(
+        core::state::StructureHoldAction action
+    ) const;
+
+    struct HoldTarget {
+        core::state::StructureHoldAction action = core::state::StructureHoldAction::NONE;
+        core::state::StructureNavigationFocus focus =
+            core::state::StructureNavigationFocus::PAGE;
+        uint8_t track = 0xFFU;
+        uint8_t page = 0xFFU;
+        uint8_t macro = 0xFFU;
+        bool addSlot = false;
+    };
 
     core::state::macro::MacroUiState& macro_ui_;
     core::state::macro::MacroPagesState& pages_;
@@ -91,6 +95,7 @@ private:
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     core::state::StructureClipboardState& structure_clipboard_;
     MacroStructureDomainServices services_;
+    HoldTarget hold_target_{};
     oc::state::FixedSubscriptionList<2> subscriptions_;
 };
 

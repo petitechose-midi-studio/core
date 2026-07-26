@@ -38,11 +38,9 @@ struct ChunkPayloadView {
 enum class ChunkStatus : uint8_t {
     MISSING = 0,
     CURRENT,
-    MIGRATED_LEGACY,
     UNSUPPORTED_VERSION,
     INVALID_PAYLOAD,
     CAPACITY_EXCEEDED,
-    IGNORED_AMBIGUOUS,
 };
 
 struct DecodeResult {
@@ -51,13 +49,12 @@ struct DecodeResult {
     ChunkStatus modulationStatus = ChunkStatus::MISSING;
     bool partial = false;
     bool overwriteSafe = true;
-    bool migratedLegacy = false;
 
     [[nodiscard]] bool decoded() const { return status == Status::OK; }
 };
 
 /**
- * Writes canonical MAUT 1.6 then MODG 1.3 into one caller-owned buffer.
+ * Writes canonical MAUT 1.6 then MODG 1.5 into one caller-owned buffer.
  * Capacity is preflighted before the first byte is changed.
  */
 [[nodiscard]] EncodeResult encodeProjectControlPayloads(
@@ -67,10 +64,8 @@ struct DecodeResult {
 );
 
 /**
- * Decodes current or legacy control payloads into one temporary EXTMEM domain,
- * then publishes once. Current chunks recover independently; legacy MAUT and
- * MODG 1.0 application semantics and pre-1.2 unity destination scale are
- * lifted deterministically.
+ * Decodes only the current control payloads into one temporary EXTMEM domain,
+ * then publishes once. The two current chunks recover independently.
  */
 [[nodiscard]] DecodeResult decodeProjectControlPayloads(
     const ChunkPayloadView& automation,

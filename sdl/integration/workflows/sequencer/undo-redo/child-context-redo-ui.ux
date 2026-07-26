@@ -1,6 +1,6 @@
-# UX workflow: child-content edit undo/redo keeps editor context readable.
+# UX workflow: child-content edit undo/redo keeps the published UI readable.
 # Purpose: validates that a micro-sequence edit can be undone and redone from
-# the normal global history path while the visible child context remains synced.
+# the normal global history path after its retained editor has been closed.
 # Expect: capture_changed:micro_note_offset_applied=micro_note_offset_undone_ui, capture_match:micro_note_offset_applied=micro_note_offset_redone_ui
 
 0 scenario sequencer
@@ -34,22 +34,32 @@
 4180 encoder OPT 0.72
 4360 capture screen micro_step_note_offset_visible
 4460 tap NAV 60
-4760 capture screen micro_note_offset_applied
+4760 capture screen micro_note_offset_preview
 
-# Undo the micro edit. The child grid should stay open and display the reverted
-# resolved child step.
-4860 button LEFT_CENTER down
-5860 tick
-5910 tap LEFT_TOP 60
-6090 capture screen undo_micro_note_toast
-6190 button LEFT_CENTER up
-7620 capture screen micro_note_offset_undone_ui
+# Publish the complete Micro draft before exercising project history. This is
+# one history entry; child edits are no longer leaked while authoring. Publish
+# first returns to the root Step Editor. A second Back closes that editor;
+# only the following LEFT_TOP opens global history.
+4820 tap BOTTOM_RIGHT 60
+5000 tap LEFT_TOP 60
+5240 capture screen micro_note_offset_root_editor
+5340 tap LEFT_TOP 60
+5580 capture screen micro_note_offset_applied
 
-# Redo the micro edit. The child grid should still be open and display the
-# restored offset/resolved note.
-7720 button LEFT_CENTER down
-8720 tick
-8770 tap LEFT_BOTTOM 60
-8950 capture screen redo_micro_note_toast
-9050 button LEFT_CENTER up
-10480 capture screen micro_note_offset_redone_ui
+# Undo the published micro edit from the root surface.
+5680 tap LEFT_TOP 60
+6680 tick
+6730 capture screen selector_undo_ready
+6780 tap LEFT_CENTER 60
+6910 capture screen selector_redo_ready
+7010 tap LEFT_TOP 60
+8440 capture screen micro_note_offset_undone_ui
+
+# Redo restores the exact published root surface.
+8540 tap LEFT_TOP 60
+9540 tick
+9590 capture screen selector_redo_ready_again
+9640 tap LEFT_BOTTOM 60
+9770 capture screen selector_undo_restored
+9870 tap LEFT_TOP 60
+11300 capture screen micro_note_offset_redone_ui

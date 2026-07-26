@@ -23,6 +23,7 @@ public:
     SequencerSettingsOverlayPresenter(StateRefs stateRefs,
                                       ms::ui::VirtualListKeyValueOverlay& overlay,
                                       ms::ui::VirtualListSelectorOverlay& selectorOverlay);
+    ~SequencerSettingsOverlayPresenter();
 
     [[nodiscard]] bool bind();
 

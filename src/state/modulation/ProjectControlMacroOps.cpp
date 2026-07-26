@@ -1,16 +1,19 @@
 #include "state/modulation/ProjectControlMacroOps.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
-#include <limits>
 
 #include <config/PlatformCompat.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "state/modulation/ProjectControlMacroOpsInternal.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 
 namespace core::state::modulation {
+
+using namespace project_control_macro_detail;
 
 namespace {
 
@@ -18,384 +21,6 @@ using PackedScratch = std::array<
     ProjectPackedCurvePoint,
     macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS
 >;
-
-static_assert(sizeof(ProjectPackedCurvePoint) == sizeof(macro::MacroPackedCurvePoint));
-static_assert(alignof(ProjectPackedCurvePoint) == alignof(macro::MacroPackedCurvePoint));
-
-bool validAddress(const macro::MacroAutomationSlotAddress& address) {
-    return macro::macroAutomationAddressValid(address);
-}
-
-macro::MacroCurvePlaybackState playbackState(bool enabled) {
-    return enabled
-        ? macro::MacroCurvePlaybackState::ACTIVE
-        : macro::MacroCurvePlaybackState::OFF;
-}
-
-macro::MacroModulationOrigin macroOrigin(ProjectCurveOrigin origin) {
-    switch (origin) {
-        case ProjectCurveOrigin::CONVERTED_MEAN:
-            return macro::MacroModulationOrigin::CONVERTED_MEAN;
-        case ProjectCurveOrigin::CONVERTED_FIRST:
-            return macro::MacroModulationOrigin::CONVERTED_FIRST;
-        case ProjectCurveOrigin::CONVERTED_MIN:
-            return macro::MacroModulationOrigin::CONVERTED_MIN;
-        case ProjectCurveOrigin::NATIVE:
-        default:
-            return macro::MacroModulationOrigin::NATIVE;
-    }
-}
-
-ProjectCurveOrigin projectOrigin(macro::MacroModulationOrigin origin) {
-    switch (origin) {
-        case macro::MacroModulationOrigin::CONVERTED_MEAN:
-            return ProjectCurveOrigin::CONVERTED_MEAN;
-        case macro::MacroModulationOrigin::CONVERTED_FIRST:
-            return ProjectCurveOrigin::CONVERTED_FIRST;
-        case macro::MacroModulationOrigin::CONVERTED_MIN:
-            return ProjectCurveOrigin::CONVERTED_MIN;
-        case macro::MacroModulationOrigin::NATIVE:
-        default:
-            return ProjectCurveOrigin::NATIVE;
-    }
-}
-
-void projectCompatibilityCurve(
-    const ProjectCurveRecord& record,
-    bool enabled,
-    macro::MacroAutomationCurveRef& out
-) {
-    out = {};
-    out.active = true;
-    out.playbackState = playbackState(enabled);
-    out.pointOffset = record.pointOffset;
-    out.pointCount = record.pointCount;
-    out.sourceDurationTicks = record.sourceDurationTicks;
-    out.durationTicks = record.durationTicks;
-    out.windowOffsetTicks = record.windowOffsetTicks;
-    out.interpolation = macro::MacroAutomationInterpolation::LINEAR;
-    out.modulationOrigin = macroOrigin(record.origin);
-}
-
-const ModulationBindingState* firstBindingForDestination(
-    const ProjectModulationState& state,
-    const ModulationDestination& destination,
-    uint16_t& count
-) {
-    const ModulationBindingState* first = nullptr;
-    count = 0;
-    for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
-        const auto& binding = state.outputBindings[index];
-        if (binding.destination != destination) continue;
-        ++count;
-        if (first == nullptr || binding.id.value < first->id.value) {
-            first = &binding;
-        }
-    }
-    return first;
-}
-
-ModulationBindingState* bindingById(
-    ProjectModulationState& state,
-    ModulationBindingId id
-) {
-    for (uint16_t index = 0; index < state.outputBindingCount; ++index) {
-        if (state.outputBindings[index].id == id) {
-            return &state.outputBindings[index];
-        }
-    }
-    return nullptr;
-}
-
-FLASHMEM ProjectModulationFocusEntry* focusEntryFor(
-    ProjectModulationFocusState& focus,
-    const ModulationDestination& destination
-) {
-    for (auto& entry : focus.entries) {
-        if (entry.active && entry.destination == destination) return &entry;
-    }
-    return nullptr;
-}
-
-FLASHMEM uint16_t nextFocusStamp(ProjectModulationFocusState& focus) {
-    ++focus.clock;
-    if (focus.clock == 0U) {
-        for (auto& entry : focus.entries) entry.stamp = 0;
-        focus.clock = 1U;
-    }
-    return focus.clock;
-}
-
-FLASHMEM ProjectModulationFocusEntry& allocateFocusEntry(
-    ProjectModulationFocusState& focus,
-    const ModulationDestination& destination
-) {
-    if (auto* current = focusEntryFor(focus, destination)) return *current;
-    ProjectModulationFocusEntry* selected = &focus.entries[0];
-    for (auto& entry : focus.entries) {
-        if (!entry.active) {
-            selected = &entry;
-            break;
-        }
-        if (entry.stamp < selected->stamp) selected = &entry;
-    }
-    *selected = {};
-    selected->destination = destination;
-    selected->active = true;
-    return *selected;
-}
-
-FLASHMEM bool removePrimaryModulation(
-    ProjectControlDomainState& domain,
-    const ProjectControlMacroSlotView& view
-) {
-    if (!view.modulationStored || view.compatibilityMutationAmbiguous) return false;
-    const auto removed = removeProjectModulationBinding(
-        domain.modulation,
-        view.modulationBindingId
-    );
-    return removed.changed();
-}
-
-ProjectCurveSpec curveSpec(
-    const macro::MacroAutomationCurveRef& source,
-    ProjectCurveValueDomain valueDomain
-) {
-    return {
-        .sourceDurationTicks = std::max<uint16_t>(source.sourceDurationTicks, 1U),
-        .durationTicks = std::max<uint16_t>(source.durationTicks, 1U),
-        .windowOffsetTicks = source.windowOffsetTicks,
-        .interpolation = ProjectCurveInterpolation::LINEAR,
-        .valueDomain = valueDomain,
-        .origin = valueDomain == ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
-            ? ProjectCurveOrigin::NATIVE
-            : projectOrigin(source.modulationOrigin),
-    };
-}
-
-FLASHMEM bool appendRecordedShape(
-    ProjectControlDomainState& domain,
-    const macro::MacroAutomationSlotAddress& address,
-    const macro::MacroAutomationCurveRef& curve,
-    float amount,
-    const ProjectPackedCurvePoint* points
-) {
-    if (!macro::macroCurveStored(curve) || points == nullptr) return true;
-    const ModulationDestination destination = projectControlDestination(address);
-    RecordedShapeDraft source{};
-    source.name = "Recorded Shape";
-    source.curve = curveSpec(curve, ProjectCurveValueDomain::BIPOLAR);
-    source.points = points;
-    source.pointCount = curve.pointCount;
-    source.enabled = macro::macroCurvePlaybackActive(curve);
-    const auto created = createRecordedShapeModulator(
-        domain.modulation,
-        domain.curves,
-        source
-    );
-    if (!created.changed()) return false;
-
-    const long packedAmount = std::lround(
-        std::clamp(amount, -1.0f, 1.0f) * 32767.0f
-    );
-    ModulationBindingDraft binding{};
-    binding.sourceId = created.sourceId;
-    binding.destination = destination;
-    binding.amountQ15 = static_cast<int16_t>(
-        std::clamp<long>(packedAmount, -32767L, 32767L)
-    );
-    binding.application = ModulationApplication::NATURAL;
-    binding.enabled = true;
-    const auto bound = addProjectModulationBinding(domain.modulation, binding);
-    if (bound.changed()) return true;
-    (void)deleteProjectModulator(domain.modulation, domain.curves, created.sourceId);
-    return false;
-}
-
-bool readDomainMacroSlot(
-    const ProjectControlDomainState& domain,
-    const macro::MacroAutomationSlotAddress& address,
-    ProjectControlMacroSlotView& out
-) {
-    out = {};
-    out.address = address;
-    if (!validAddress(address)) return false;
-    const auto destination = projectControlDestination(address);
-    const auto* automation = findProjectAutomationCurve(
-        domain.automation,
-        destination
-    );
-    if (automation != nullptr) {
-        const auto* curve = findProjectCurve(domain.curves, automation->curveId);
-        if (curve == nullptr) return false;
-        out.automationCurveId = curve->id;
-        out.automationStored = true;
-        out.automationEnabled =
-            (automation->flags & PROJECT_AUTOMATION_CURVE_FLAG_ENABLED) != 0U;
-        projectCompatibilityCurve(
-            *curve,
-            out.automationEnabled,
-            out.compatibility.automation
-        );
-    }
-
-    uint16_t bindingCount = 0;
-    const auto* binding = firstBindingForDestination(
-        domain.modulation,
-        destination,
-        bindingCount
-    );
-    out.modulationCount = bindingCount;
-    out.modulationStored = bindingCount > 0U;
-    out.compatibilityMutationAmbiguous = bindingCount > 1U;
-    for (uint16_t index = 0;
-         index < domain.modulation.outputBindingCount;
-         ++index) {
-        const auto& candidate = domain.modulation.outputBindings[index];
-        if (candidate.destination != destination ||
-            (candidate.flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) == 0U) {
-            continue;
-        }
-        const auto* candidateSource = findProjectModulator(
-            domain.modulation,
-            candidate.sourceId
-        );
-        if (candidateSource != nullptr &&
-            (candidateSource->flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U) {
-            ++out.activeModulationCount;
-        }
-    }
-    if (binding != nullptr) {
-        const auto* source = findProjectModulator(
-            domain.modulation,
-            binding->sourceId
-        );
-        if (source == nullptr) return false;
-        out.modulationSourceId = source->id;
-        out.modulationBindingId = binding->id;
-        out.modulationEnabled =
-            (binding->flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U &&
-            (source->flags & PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
-        out.compatibility.modulationDepth = std::clamp(
-            static_cast<float>(binding->amountQ15) / 32767.0f,
-            -1.0f,
-            1.0f
-        );
-        if (source->kind == ModulatorKind::RECORDED_SHAPE) {
-            const auto* curve = findProjectCurve(
-                domain.curves,
-                source->parameters.recordedCurveId
-            );
-            if (curve == nullptr) return false;
-            out.primaryRecordedShape = true;
-            out.modulationCurveId = curve->id;
-            projectCompatibilityCurve(
-                *curve,
-                out.modulationEnabled,
-                out.compatibility.modulation
-            );
-        }
-    }
-    out.present = out.automationStored || out.modulationStored;
-    return true;
-}
-
-FLASHMEM bool replaceSlotInDomain(
-    ProjectControlDomainState& domain,
-    const macro::MacroAutomationSlotAddress& address,
-    const macro::MacroAutomationSlotState& sourceState,
-    const macro::MacroPackedCurvePoint* sourcePoints,
-    uint16_t sourcePointCount
-) {
-    ProjectControlMacroSlotView current{};
-    if (!readDomainMacroSlot(domain, address, current) ||
-        current.compatibilityMutationAmbiguous) {
-        return false;
-    }
-    if (current.automationStored &&
-        !removeProjectAutomationCurve(
-            domain.automation,
-            domain.curves,
-            projectControlDestination(address)
-        ).changed()) {
-        return false;
-    }
-    if (current.modulationStored && !removePrimaryModulation(domain, current)) {
-        return false;
-    }
-
-    const uint32_t required = static_cast<uint32_t>(
-        sourceState.automation.pointCount
-    ) + sourceState.modulation.pointCount;
-    if (required > sourcePointCount ||
-        (required > 0U && sourcePoints == nullptr)) {
-        return false;
-    }
-    if (macro::macroCurveStored(sourceState.automation)) {
-        const auto set = setProjectAutomationCurve(
-            domain.automation,
-            domain.curves,
-            projectControlDestination(address),
-            curveSpec(
-                sourceState.automation,
-                ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
-            ),
-            reinterpret_cast<const ProjectPackedCurvePoint*>(sourcePoints),
-            sourceState.automation.pointCount,
-            macro::macroCurvePlaybackActive(sourceState.automation)
-        );
-        if (!set.changed()) return false;
-    }
-    if (macro::macroCurveStored(sourceState.modulation)) {
-        const auto* modulationPoints = reinterpret_cast<
-            const ProjectPackedCurvePoint*
-        >(sourcePoints + sourceState.automation.pointCount);
-        if (!appendRecordedShape(
-                domain,
-                address,
-                sourceState.modulation,
-                sourceState.modulationDepth,
-                modulationPoints
-            )) {
-            return false;
-        }
-    }
-    return true;
-}
-
-FLASHMEM bool buildCompatibilityConversionBank(
-    const ProjectControlState& control,
-    const macro::MacroAutomationSlotAddress& address,
-    macro::MacroAutomationBankState& out
-) {
-    out.clear();
-    macro::MacroAutomationSlotState slot{};
-    uint16_t automationCount = 0;
-    uint16_t modulationCount = 0;
-    if (!captureProjectControlMacroSlot(
-            control,
-            address,
-            slot,
-            out.pointPool.points.data(),
-            macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY,
-            automationCount,
-            modulationCount
-        )) {
-        return false;
-    }
-    const uint16_t total = static_cast<uint16_t>(
-        automationCount + modulationCount
-    );
-    out.pointPool.used = total;
-    if (!macro::macroAutomationSlotHasContent(slot)) return true;
-    out.entryCount = 1;
-    out.entries[0] = {
-        .active = true,
-        .address = address,
-        .state = slot,
-    };
-    return true;
-}
 
 }  // namespace
 
@@ -410,10 +35,10 @@ FLASHMEM ModulationDestination projectControlDestination(
     };
 }
 
-FLASHMEM bool readProjectControlMacroSlot(
+FLASHMEM bool readProjectControlMacroDestination(
     const ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,
-    ProjectControlMacroSlotView& out
+    ProjectControlMacroDestinationView& out
 ) {
     return readDomainMacroSlot(control.authored, address, out);
 }
@@ -460,11 +85,11 @@ FLASHMEM bool setProjectControlFocusedModulationBinding(
     return changed;
 }
 
-FLASHMEM bool replaceProjectControlMacroSlotInDomain(
+FLASHMEM bool replaceProjectControlMacroDestinationInDomain(
     ProjectControlDomainState& domain,
     const macro::MacroAutomationSlotAddress& address,
-    const macro::MacroAutomationSlotState& sourceState,
-    const macro::MacroPackedCurvePoint* sourcePoints,
+    const ProjectControlMacroDestinationPayload& sourceState,
+    const ProjectPackedCurvePoint* sourcePoints,
     uint16_t sourcePointCount
 ) {
     return validAddress(address) && replaceSlotInDomain(
@@ -497,18 +122,18 @@ FLASHMEM bool setProjectControlModulationEnabled(
     const macro::MacroAutomationSlotAddress& address,
     bool enabled
 ) {
-    ProjectControlMacroSlotView view{};
-    if (!readProjectControlMacroSlot(control, address, view) ||
-        !view.modulationStored || view.compatibilityMutationAmbiguous) {
+    ProjectControlMacroDestinationView view{};
+    if (!readProjectControlMacroDestination(control, address, view) ||
+        !view.primaryModulation.present() || view.mutationAmbiguous()) {
         return false;
     }
     auto* binding = bindingById(
         control.authored.modulation,
-        view.modulationBindingId
+        view.primaryModulation.bindingId
     );
     if (binding == nullptr || findProjectModulator(
             control.authored.modulation,
-            view.modulationSourceId
+            view.primaryModulation.sourceId
         ) == nullptr) return false;
     bool changed = false;
     const uint8_t bindingFlags = enabled
@@ -528,13 +153,16 @@ FLASHMEM bool setProjectControlModulationAmount(
     const macro::MacroAutomationSlotAddress& address,
     float amount
 ) {
-    ProjectControlMacroSlotView view{};
+    ProjectControlMacroDestinationView view{};
     if (!std::isfinite(amount) ||
-        !readProjectControlMacroSlot(control, address, view) ||
-        !view.modulationStored || view.compatibilityMutationAmbiguous) {
+        !readProjectControlMacroDestination(control, address, view) ||
+        !view.primaryModulation.present() || view.mutationAmbiguous()) {
         return false;
     }
-    auto* binding = bindingById(control.authored.modulation, view.modulationBindingId);
+    auto* binding = bindingById(
+        control.authored.modulation,
+        view.primaryModulation.bindingId
+    );
     if (binding == nullptr) return false;
     const long rounded = std::lround(std::clamp(amount, -1.0f, 1.0f) * 32767.0f);
     const int16_t packed = static_cast<int16_t>(
@@ -565,11 +193,115 @@ FLASHMEM bool clearProjectControlModulation(
     ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address
 ) {
-    ProjectControlMacroSlotView view{};
-    if (!readProjectControlMacroSlot(control, address, view) ||
+    ProjectControlMacroDestinationView view{};
+    if (!readProjectControlMacroDestination(control, address, view) ||
         !removePrimaryModulation(control.authored, view)) {
         return false;
     }
+    control.markAuthoredMutation();
+    return true;
+}
+
+FLASHMEM bool compactProjectControlPagesInDomain(
+    ProjectControlDomainState& domain,
+    uint8_t track,
+    uint16_t retainedPageMask
+) {
+    if (track >= macro::TRACK_COUNT || retainedPageMask == 0U) return false;
+
+    const auto removed = [track, retainedPageMask](
+        const ModulationDestination& destination
+    ) {
+        return destination.kind == ModulationDestinationKind::MACRO_SLOT &&
+            destination.track == track &&
+            (retainedPageMask & static_cast<uint16_t>(
+                1U << destination.page
+            )) == 0U;
+    };
+
+    for (uint16_t cursor = 0U; cursor < domain.automation.entryCount;) {
+        const auto destination = domain.automation.entries[cursor].destination;
+        if (!removed(destination)) {
+            ++cursor;
+            continue;
+        }
+        if (!removeProjectAutomationCurve(
+                domain.automation,
+                domain.curves,
+                destination
+            ).changed()) {
+            return false;
+        }
+    }
+    for (uint16_t cursor = 0U;
+         cursor < domain.modulation.outputBindingCount;) {
+        const auto binding = domain.modulation.outputBindings[cursor];
+        if (!removed(binding.destination)) {
+            ++cursor;
+            continue;
+        }
+        if (!removeProjectModulationBinding(
+                domain.modulation,
+                binding.id
+            ).changed()) {
+            return false;
+        }
+    }
+
+    const auto compactDestination = [track, retainedPageMask](
+        ModulationDestination& destination
+    ) {
+        if (destination.kind != ModulationDestinationKind::MACRO_SLOT ||
+            destination.track != track) {
+            return;
+        }
+        uint8_t compactedPage = 0U;
+        for (uint8_t page = 0U; page < destination.page; ++page) {
+            if ((retainedPageMask & static_cast<uint16_t>(1U << page)) != 0U) {
+                ++compactedPage;
+            }
+        }
+        destination.page = compactedPage;
+    };
+    for (uint16_t index = 0U; index < domain.automation.entryCount; ++index) {
+        compactDestination(domain.automation.entries[index].destination);
+    }
+    for (uint16_t index = 0U;
+         index < domain.modulation.outputBindingCount;
+         ++index) {
+        compactDestination(domain.modulation.outputBindings[index].destination);
+    }
+    for (uint16_t index = 0U;
+         index < domain.modulation.destinationScaleCount;
+         ++index) {
+        compactDestination(domain.modulation.destinationScales[index].destination);
+    }
+    return validProjectModulationDomain(
+        domain.modulation,
+        domain.curves,
+        &domain.automation
+    );
+}
+
+FLASHMEM bool compactProjectControlPages(
+    ProjectControlState& control,
+    uint8_t track,
+    uint16_t retainedPageMask
+) {
+    auto pending = core::app::makeExtmemUnique<ProjectControlDomainState>();
+    if (!pending) return false;
+    *pending = control.authored;
+    if (!compactProjectControlPagesInDomain(
+            *pending,
+            track,
+            retainedPageMask
+        )) {
+        return false;
+    }
+    if (std::memcmp(pending.get(), &control.authored, sizeof(*pending)) == 0) {
+        return true;
+    }
+    control.authored = *pending;
     control.markAuthoredMutation();
     return true;
 }
@@ -595,7 +327,7 @@ FLASHMEM bool assignProjectControlAutomation(
             : 0.0f;
         const uint16_t tick = static_cast<uint16_t>(std::clamp<long>(
             std::lround(
-                beat * static_cast<float>(macro::MACRO_AUTOMATION_TICKS_PER_BEAT)
+                beat * static_cast<float>(PROJECT_CONTROL_TICKS_PER_BEAT)
             ),
             0L,
             durationTicks
@@ -633,11 +365,11 @@ FLASHMEM bool assignProjectControlAutomation(
     return true;
 }
 
-FLASHMEM bool captureProjectControlMacroSlot(
+FLASHMEM bool captureProjectControlMacroDestination(
     const ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,
-    macro::MacroAutomationSlotState& outState,
-    macro::MacroPackedCurvePoint* outPoints,
+    ProjectControlMacroDestinationPayload& outState,
+    ProjectPackedCurvePoint* outPoints,
     uint16_t pointCapacity,
     uint16_t& automationPointCount,
     uint16_t& modulationPointCount
@@ -645,53 +377,58 @@ FLASHMEM bool captureProjectControlMacroSlot(
     outState = {};
     automationPointCount = 0;
     modulationPointCount = 0;
-    ProjectControlMacroSlotView view{};
-    if (!readProjectControlMacroSlot(control, address, view) ||
-        view.compatibilityMutationAmbiguous ||
-        (view.modulationStored && !view.primaryRecordedShape)) {
+    ProjectControlMacroDestinationView view{};
+    if (!readProjectControlMacroDestination(control, address, view) ||
+        view.mutationAmbiguous() ||
+        (view.primaryModulation.present() &&
+         !view.primaryModulation.isRecordedShape())) {
         return false;
     }
     const uint32_t required = static_cast<uint32_t>(
-        view.compatibility.automation.pointCount
-    ) + view.compatibility.modulation.pointCount;
+        view.automation.pointCount
+    ) + view.primaryModulation.recordedShape.pointCount;
     if (required > pointCapacity || (required > 0U && outPoints == nullptr)) {
         return false;
     }
-    outState = view.compatibility;
-    automationPointCount = view.compatibility.automation.pointCount;
-    modulationPointCount = view.compatibility.modulation.pointCount;
+    outState.automation = {
+        .spec = view.automation.spec,
+        .pointOffset = 0U,
+        .pointCount = view.automation.pointCount,
+        .enabled = view.automation.enabled,
+    };
+    outState.recordedShape = {
+        .spec = view.primaryModulation.recordedShape.spec,
+        .pointOffset = view.automation.pointCount,
+        .pointCount = view.primaryModulation.recordedShape.pointCount,
+        .enabled = view.primaryModulation.recordedShape.enabled,
+    };
+    outState.modulationAmount = view.primaryModulation.amount;
+    automationPointCount = view.automation.pointCount;
+    modulationPointCount = view.primaryModulation.recordedShape.pointCount;
     if (automationPointCount > 0U) {
         for (uint16_t index = 0; index < automationPointCount; ++index) {
             const auto& point = control.authored.curves.points[
-                view.compatibility.automation.pointOffset + index
+                view.automation.pointOffset + index
             ];
-            outPoints[index] = {
-                .tick = point.tick,
-                .value = point.value,
-            };
+            outPoints[index] = point;
         }
-        outState.automation.pointOffset = 0;
     }
     if (modulationPointCount > 0U) {
         for (uint16_t index = 0; index < modulationPointCount; ++index) {
             const auto& point = control.authored.curves.points[
-                view.compatibility.modulation.pointOffset + index
+                view.primaryModulation.recordedShape.pointOffset + index
             ];
-            outPoints[automationPointCount + index] = {
-                .tick = point.tick,
-                .value = point.value,
-            };
+            outPoints[automationPointCount + index] = point;
         }
-        outState.modulation.pointOffset = automationPointCount;
     }
     return true;
 }
 
-FLASHMEM bool replaceProjectControlMacroSlot(
+FLASHMEM bool replaceProjectControlMacroDestination(
     ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,
-    const macro::MacroAutomationSlotState& sourceState,
-    const macro::MacroPackedCurvePoint* sourcePoints,
+    const ProjectControlMacroDestinationPayload& sourceState,
+    const ProjectPackedCurvePoint* sourcePoints,
     uint16_t sourcePointCount
 ) {
     if (!validAddress(address)) return false;
@@ -719,32 +456,36 @@ FLASHMEM bool replaceProjectControlMacroSlot(
 FLASHMEM bool replaceProjectControlAutomation(
     ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,
-    const macro::MacroAutomationCurveRef& source,
-    const macro::MacroPackedCurvePoint* sourcePoints,
+    const ProjectControlCurvePayload& source,
+    const ProjectPackedCurvePoint* sourcePoints,
     uint16_t sourcePointCount
 ) {
-    if (!validAddress(address) ||
-        !macro::macroAutomationCurveLifecycleValid(source)) {
+    if (!validAddress(address)) {
         return false;
     }
-    if (!macro::macroCurveStored(source)) {
-        ProjectControlMacroSlotView current{};
-        if (!readProjectControlMacroSlot(control, address, current)) return false;
-        return !current.automationStored ||
+    if (!source.stored()) {
+        ProjectControlMacroDestinationView current{};
+        if (!readProjectControlMacroDestination(control, address, current)) {
+            return false;
+        }
+        return !current.automation.stored() ||
                clearProjectControlAutomation(control, address);
     }
     if (source.pointCount == 0U || source.pointCount > sourcePointCount ||
-        sourcePoints == nullptr) {
+        sourcePoints == nullptr ||
+        source.spec.valueDomain !=
+            ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR ||
+        !validProjectCurveSpec(source.spec, sourcePoints, source.pointCount)) {
         return false;
     }
     const auto result = setProjectAutomationCurve(
         control.authored.automation,
         control.authored.curves,
         projectControlDestination(address),
-        curveSpec(source, ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR),
-        reinterpret_cast<const ProjectPackedCurvePoint*>(sourcePoints),
+        source.spec,
+        sourcePoints,
         source.pointCount,
-        macro::macroCurvePlaybackActive(source)
+        source.enabled
     );
     if (result.status == ProjectModulationStatus::NO_CHANGE) return true;
     if (!result.changed()) return false;
@@ -755,16 +496,13 @@ FLASHMEM bool replaceProjectControlAutomation(
 FLASHMEM bool replaceProjectControlAutomationInDomain(
     ProjectControlDomainState& domain,
     const macro::MacroAutomationSlotAddress& address,
-    const macro::MacroAutomationCurveRef& source,
-    const macro::MacroPackedCurvePoint* sourcePoints,
+    const ProjectControlCurvePayload& source,
+    const ProjectPackedCurvePoint* sourcePoints,
     uint16_t sourcePointCount
 ) {
-    if (!validAddress(address) ||
-        !macro::macroAutomationCurveLifecycleValid(source)) {
-        return false;
-    }
+    if (!validAddress(address)) return false;
     const auto destination = projectControlDestination(address);
-    if (!macro::macroCurveStored(source)) {
+    if (!source.stored()) {
         const auto removed = removeProjectAutomationCurve(
             domain.automation,
             domain.curves,
@@ -774,44 +512,48 @@ FLASHMEM bool replaceProjectControlAutomationInDomain(
                findProjectAutomationCurve(domain.automation, destination) == nullptr;
     }
     if (source.pointCount == 0U || source.pointCount > sourcePointCount ||
-        sourcePoints == nullptr) {
+        sourcePoints == nullptr ||
+        source.spec.valueDomain !=
+            ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR ||
+        !validProjectCurveSpec(source.spec, sourcePoints, source.pointCount)) {
         return false;
     }
     const auto result = setProjectAutomationCurve(
         domain.automation,
         domain.curves,
         destination,
-        curveSpec(source, ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR),
-        reinterpret_cast<const ProjectPackedCurvePoint*>(sourcePoints),
+        source.spec,
+        sourcePoints,
         source.pointCount,
-        macro::macroCurvePlaybackActive(source)
+        source.enabled
     );
     return result.changed() || result.status == ProjectModulationStatus::NO_CHANGE;
 }
 
-FLASHMEM bool replaceProjectControlModulation(
+FLASHMEM bool replaceProjectControlRecordedShape(
     ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,
-    const macro::MacroAutomationCurveRef& source,
+    const ProjectControlCurvePayload& source,
     float amount,
-    const macro::MacroPackedCurvePoint* sourcePoints,
+    const ProjectPackedCurvePoint* sourcePoints,
     uint16_t sourcePointCount
 ) {
-    if (!validAddress(address) || !std::isfinite(amount) ||
-        !macro::macroModulationCurveLifecycleValid(source)) {
+    if (!validAddress(address) || !std::isfinite(amount)) {
         return false;
     }
-    ProjectControlMacroSlotView current{};
-    if (!readProjectControlMacroSlot(control, address, current) ||
-        current.compatibilityMutationAmbiguous) {
+    ProjectControlMacroDestinationView current{};
+    if (!readProjectControlMacroDestination(control, address, current) ||
+        current.mutationAmbiguous()) {
         return false;
     }
-    if (!macro::macroCurveStored(source)) {
-        return !current.modulationStored ||
+    if (!source.stored()) {
+        return !current.primaryModulation.present() ||
                clearProjectControlModulation(control, address);
     }
     if (source.pointCount == 0U || source.pointCount > sourcePointCount ||
-        sourcePoints == nullptr) {
+        sourcePoints == nullptr ||
+        source.spec.valueDomain != ProjectCurveValueDomain::BIPOLAR ||
+        !validProjectCurveSpec(source.spec, sourcePoints, source.pointCount)) {
         return false;
     }
 
@@ -820,12 +562,12 @@ FLASHMEM bool replaceProjectControlModulation(
     >();
     if (!pending) return false;
     *pending = control.authored;
-    ProjectControlMacroSlotView pendingView{};
+    ProjectControlMacroDestinationView pendingView{};
     if (!readDomainMacroSlot(*pending, address, pendingView) ||
-        pendingView.compatibilityMutationAmbiguous) {
+        pendingView.mutationAmbiguous()) {
         return false;
     }
-    if (pendingView.modulationStored &&
+    if (pendingView.primaryModulation.present() &&
         !removePrimaryModulation(*pending, pendingView)) {
         return false;
     }
@@ -834,7 +576,7 @@ FLASHMEM bool replaceProjectControlModulation(
             address,
             source,
             amount,
-            reinterpret_cast<const ProjectPackedCurvePoint*>(sourcePoints)
+            sourcePoints
         ) || !validProjectModulationDomain(
             pending->modulation,
             pending->curves,
@@ -845,304 +587,6 @@ FLASHMEM bool replaceProjectControlModulation(
     control.authored = *pending;
     control.markAuthoredMutation();
     return true;
-}
-
-FLASHMEM macro::MacroAutomationConversionPlan
-preflightProjectControlConversion(
-    const ProjectControlState& control,
-    const macro::MacroAutomationSlotAddress& address,
-    macro::MacroAutomationConversionPolicy policy,
-    float currentStaticBase
-) {
-    auto bank = core::app::makeExtmemUnique<
-        macro::MacroAutomationBankState
-    >();
-    if (!bank || !buildCompatibilityConversionBank(control, address, *bank)) {
-        macro::MacroAutomationConversionPlan rejected{};
-        rejected.address = address;
-        rejected.policy = policy;
-        rejected.status = macro::MacroAutomationConversionStatus::INVALID_BANK;
-        return rejected;
-    }
-    return macro::macroAutomationPreflightConversion(
-        *bank,
-        address,
-        policy,
-        currentStaticBase
-    );
-}
-
-FLASHMEM bool applyProjectControlConversion(
-    ProjectControlState& control,
-    float& staticBase,
-    const macro::MacroAutomationConversionPlan& plan,
-    bool overwriteConfirmed
-) {
-    auto bank = core::app::makeExtmemUnique<
-        macro::MacroAutomationBankState
-    >();
-    if (!bank || !buildCompatibilityConversionBank(control, plan.address, *bank)) {
-        return false;
-    }
-    float pendingBase = staticBase;
-    if (!macro::macroAutomationApplyConversion(
-            *bank,
-            pendingBase,
-            plan,
-            overwriteConfirmed
-        )) {
-        return false;
-    }
-    const auto* converted = macro::macroAutomationFindSlot(
-        *bank,
-        plan.address
-    );
-    if (converted == nullptr ||
-        !replaceProjectControlMacroSlot(
-            control,
-            plan.address,
-            *converted,
-            bank->pointPool.points.data(),
-            bank->pointPool.used
-        )) {
-        return false;
-    }
-    staticBase = pendingBase;
-    return true;
-}
-
-FLASHMEM bool setProjectControlAutomationDurationBeats(
-    ProjectControlState& control,
-    const macro::MacroAutomationSlotAddress& address,
-    float durationBeats
-) {
-    ProjectControlMacroSlotView view{};
-    if (!readProjectControlMacroSlot(control, address, view) ||
-        !view.automationStored) {
-        return false;
-    }
-    const auto* record = findProjectCurve(
-        control.authored.curves,
-        view.automationCurveId
-    );
-    if (record == nullptr ||
-        record->pointCount > macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS) {
-        return false;
-    }
-    const uint16_t targetTicks = macro::macroAutomationTicksFromBeats(
-        durationBeats
-    );
-    if (record->durationTicks == targetTicks) return false;
-    auto points = core::app::makeExtmemUnique<PackedScratch>();
-    if (!points) return false;
-    std::memcpy(
-        points->data(),
-        control.authored.curves.points.data() + record->pointOffset,
-        static_cast<size_t>(record->pointCount) * sizeof((*points)[0])
-    );
-    ProjectCurveSpec spec{
-        .sourceDurationTicks = record->sourceDurationTicks,
-        .durationTicks = targetTicks,
-        .windowOffsetTicks = static_cast<uint16_t>(
-            record->windowOffsetTicks %
-            std::max<uint16_t>(record->sourceDurationTicks, 1U)
-        ),
-        .interpolation = record->interpolation,
-        .valueDomain = record->valueDomain,
-        .origin = record->origin,
-    };
-    const auto result = setProjectAutomationCurve(
-        control.authored.automation,
-        control.authored.curves,
-        projectControlDestination(address),
-        spec,
-        points->data(),
-        record->pointCount,
-        view.automationEnabled
-    );
-    if (!result.changed()) return false;
-    control.markAuthoredMutation();
-    return true;
-}
-
-FLASHMEM bool setProjectControlAutomationWindowOffsetBeats(
-    ProjectControlState& control,
-    const macro::MacroAutomationSlotAddress& address,
-    float offsetBeats
-) {
-    ProjectControlMacroSlotView view{};
-    if (!readProjectControlMacroSlot(control, address, view) ||
-        !view.automationStored || !std::isfinite(offsetBeats)) {
-        return false;
-    }
-    const auto* record = findProjectCurve(
-        control.authored.curves,
-        view.automationCurveId
-    );
-    if (record == nullptr ||
-        record->pointCount > macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS) {
-        return false;
-    }
-    const float safeBeats = std::max(offsetBeats, 0.0f);
-    const uint32_t rawTicks = static_cast<uint32_t>(std::clamp<long long>(
-        std::llround(
-            safeBeats *
-            static_cast<float>(macro::MACRO_AUTOMATION_TICKS_PER_BEAT)
-        ),
-        0LL,
-        static_cast<long long>(UINT16_MAX)
-    ));
-    const uint16_t targetTicks = static_cast<uint16_t>(
-        rawTicks % std::max<uint16_t>(record->sourceDurationTicks, 1U)
-    );
-    if (record->windowOffsetTicks == targetTicks) return false;
-    auto points = core::app::makeExtmemUnique<PackedScratch>();
-    if (!points) return false;
-    std::memcpy(
-        points->data(),
-        control.authored.curves.points.data() + record->pointOffset,
-        static_cast<size_t>(record->pointCount) * sizeof((*points)[0])
-    );
-    ProjectCurveSpec spec{
-        .sourceDurationTicks = record->sourceDurationTicks,
-        .durationTicks = record->durationTicks,
-        .windowOffsetTicks = targetTicks,
-        .interpolation = record->interpolation,
-        .valueDomain = record->valueDomain,
-        .origin = record->origin,
-    };
-    const auto result = setProjectAutomationCurve(
-        control.authored.automation,
-        control.authored.curves,
-        projectControlDestination(address),
-        spec,
-        points->data(),
-        record->pointCount,
-        view.automationEnabled
-    );
-    if (!result.changed()) return false;
-    control.markAuthoredMutation();
-    return true;
-}
-
-FLASHMEM bool readProjectControlCurvePoint(
-    const ProjectControlState& control,
-    ProjectCurveId curveId,
-    uint16_t pointIndex,
-    bool signedOutput,
-    macro::MacroCurvePoint& out
-) {
-    const auto* record = findProjectCurve(control.authored.curves, curveId);
-    if (record == nullptr || pointIndex >= record->pointCount) return false;
-    const auto& point = control.authored.curves.points[
-        static_cast<uint16_t>(record->pointOffset + pointIndex)
-    ];
-    out.beat = static_cast<float>(point.tick) /
-        static_cast<float>(macro::MACRO_AUTOMATION_TICKS_PER_BEAT);
-    out.value = macro::macroAutomationUnpackValue(point.value, signedOutput);
-    return true;
-}
-
-FLASHMEM macro::MacroAutomationCurveWindowSummary
-projectControlCurveWindowSummary(
-    const ProjectControlState& control,
-    ProjectCurveId curveId
-) {
-    macro::MacroAutomationCurveWindowSummary summary{};
-    const auto* record = findProjectCurve(control.authored.curves, curveId);
-    if (record == nullptr || record->pointCount == 0U) return summary;
-    summary.active = true;
-    summary.sourceDurationTicks = record->sourceDurationTicks;
-    summary.durationTicks = record->durationTicks;
-    summary.windowOffsetTicks = record->windowOffsetTicks;
-    summary.firstPointTick = control.authored.curves.points[
-        record->pointOffset
-    ].tick;
-    summary.lastPointTick = control.authored.curves.points[
-        static_cast<uint16_t>(record->pointOffset + record->pointCount - 1U)
-    ].tick;
-    summary.pointCount = record->pointCount;
-    summary.wraps = static_cast<uint32_t>(record->windowOffsetTicks) +
-        record->durationTicks > record->sourceDurationTicks;
-    return summary;
-}
-
-FLASHMEM float evaluateProjectControlCurve(
-    const ProjectControlState& control,
-    ProjectCurveId curveId,
-    float elapsedBeat,
-    float fallback
-) {
-    const auto* record = findProjectCurve(control.authored.curves, curveId);
-    if (record == nullptr || record->pointCount == 0U ||
-        static_cast<uint32_t>(record->pointOffset) + record->pointCount >
-            control.authored.curves.pointCount) {
-        return fallback;
-    }
-
-    const float safeBeat = std::isfinite(elapsedBeat)
-        ? std::max(elapsedBeat, 0.0f)
-        : 0.0f;
-    const float elapsedTicks = safeBeat *
-        static_cast<float>(macro::MACRO_AUTOMATION_TICKS_PER_BEAT);
-    const uint32_t elapsedWhole = static_cast<uint32_t>(std::min<double>(
-        std::floor(elapsedTicks),
-        static_cast<double>(std::numeric_limits<uint32_t>::max())
-    ));
-    const float elapsedFraction = elapsedTicks - std::floor(elapsedTicks);
-    const uint16_t duration = std::max<uint16_t>(record->durationTicks, 1U);
-    const uint16_t sourceDuration = std::max<uint16_t>(
-        record->sourceDurationTicks,
-        1U
-    );
-    float sourceTick = static_cast<float>(
-        (static_cast<uint32_t>(record->windowOffsetTicks) +
-         (elapsedWhole % duration)) % sourceDuration
-    ) + elapsedFraction;
-    if (sourceTick >= sourceDuration) sourceTick -= sourceDuration;
-
-    const auto unpack = [record](int16_t packed) {
-        const float value = static_cast<float>(packed) / 32767.0f;
-        return record->valueDomain == ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR
-            ? std::clamp(value, 0.0f, 1.0f)
-            : std::clamp(value, -1.0f, 1.0f);
-    };
-    const auto& arena = control.authored.curves;
-    const uint16_t firstIndex = record->pointOffset;
-    const uint16_t lastIndex = static_cast<uint16_t>(
-        record->pointOffset + record->pointCount - 1U
-    );
-    const auto& first = arena.points[firstIndex];
-    if (record->pointCount == 1U || sourceTick <= first.tick) {
-        return unpack(first.value);
-    }
-    const auto& last = arena.points[lastIndex];
-    if (sourceTick >= last.tick) return unpack(last.value);
-
-    uint16_t low = 1U;
-    uint16_t high = record->pointCount;
-    while (low < high) {
-        const uint16_t middle = static_cast<uint16_t>(
-            low + (high - low) / 2U
-        );
-        if (arena.points[record->pointOffset + middle].tick < sourceTick) {
-            low = static_cast<uint16_t>(middle + 1U);
-        } else {
-            high = middle;
-        }
-    }
-    const auto& right = arena.points[record->pointOffset + low];
-    const auto& left = arena.points[record->pointOffset + low - 1U];
-    const float leftValue = unpack(left.value);
-    const float rightValue = unpack(right.value);
-    const uint16_t span = static_cast<uint16_t>(right.tick - left.tick);
-    if (span == 0U) return rightValue;
-    const float alpha = std::clamp(
-        (sourceTick - left.tick) / static_cast<float>(span),
-        0.0f,
-        1.0f
-    );
-    return leftValue + (rightValue - leftValue) * alpha;
 }
 
 }  // namespace core::state::modulation

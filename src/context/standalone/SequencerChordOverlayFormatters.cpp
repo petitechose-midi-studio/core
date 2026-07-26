@@ -426,7 +426,7 @@ FLASHMEM void formatChordFieldValue(
             return;
         case Field::HARMONY:
             if (!chord.spec.isSemantic()) {
-                copyText(out, outSize, "Legacy recipe");
+                copyText(out, outSize, "Recipe");
             } else {
                 copyText(
                     out,
@@ -451,7 +451,7 @@ FLASHMEM void formatChordFieldValue(
             return;
         case Field::INVERSION:
             if (!chord.spec.isSemantic()) {
-                copyText(out, outSize, "Legacy recipe");
+                copyText(out, outSize, "Recipe");
             } else {
                 formatInversion(
                     out,
@@ -468,7 +468,7 @@ FLASHMEM void formatChordFieldValue(
                 outSize,
                 chord.spec.isSemantic()
                     ? chordVoicingLabel(chord.spec.voicing())
-                    : "Legacy recipe"
+                    : "Recipe"
             );
             return;
         case Field::STRUM:
@@ -664,7 +664,7 @@ FLASHMEM void populateChordDetailOverlay(
 
     if (!chord.spec.isSemantic() &&
         chord.mode != oc::note::sequencer::StepSequencerChordMode::Single) {
-        copyText(data.meta.data(), data.meta.size(), "Legacy recipe");
+        copyText(data.meta.data(), data.meta.size(), "Recipe");
     } else if (chord.preview.droppedVoiceCount > 0) {
         const auto dropped = static_cast<unsigned>(chord.preview.droppedVoiceCount);
         std::snprintf(

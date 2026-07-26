@@ -52,6 +52,15 @@ public:
         uint32_t nowMs,
         bool stateProperty
     );
+    using BeginCoalescedCcLaneEventEditFn = bool (*)(
+        void* context,
+        uint8_t lane,
+        uint8_t step,
+        int32_t beforeValue,
+        int32_t afterValue,
+        const core::state::sequencer::SequencerCcLaneBank* afterBank,
+        uint32_t nowMs
+    );
 
     struct Operations {
         void* context = nullptr;
@@ -64,10 +73,8 @@ public:
         CanRecordStructureFn canRecordStructure = nullptr;
         RecordPreparedStructureFn recordPreparedStructure = nullptr;
         RecordFullBankFn recordFullBank = nullptr;
-        CommandFn undo = nullptr;
-        CommandFn redo = nullptr;
-        CommandFn clear = nullptr;
         BeginCoalescedPatternEditFn beginCoalescedPatternEdit = nullptr;
+        BeginCoalescedCcLaneEventEditFn beginCoalescedCcLaneEventEdit = nullptr;
         CommandFn commitCoalescedPatternEdit = nullptr;
     };
 
@@ -108,14 +115,19 @@ public:
     bool recordStructure(
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
     ) const;
-    bool undo() const;
-    bool redo() const;
-    bool clear() const;
     bool beginCoalescedPatternEdit(
         uint8_t step,
         core::state::sequencer::StepProperty property,
         uint32_t nowMs,
         bool stateProperty = false
+    ) const;
+    bool beginCoalescedCcLaneEventEdit(
+        uint8_t lane,
+        uint8_t step,
+        int32_t beforeValue,
+        int32_t afterValue,
+        const core::state::sequencer::SequencerCcLaneBank* afterBank,
+        uint32_t nowMs
     ) const;
     bool commitCoalescedPatternEdit() const;
 

@@ -1,15 +1,6 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
 
-#include <algorithm>
-#include <cstdio>
-#include <cstring>
-
 #include <config/PlatformCompat.hpp>
-
-#include "state/modulation/ProjectModulationDomainOps.hpp"
-#include "ui/macro/MacroLfoAuditionModel.hpp"
-#include "ui/modulation/ModulatorAdsrUiModel.hpp"
-#include "state/project/ProjectModulatorMenuModel.hpp"
 
 #include <cmath>
 #include <utility>
@@ -19,14 +10,49 @@
 namespace core::handler {
 
 using namespace project_handler_internal;
-namespace adsr_ui = core::ui::modulation::adsr;
 
-namespace {
+FLASHMEM bool ProjectHandler::recordProjectSettingsChange(
+    const core::state::project::ProjectSettingsHistorySnapshot& before,
+    core::state::project::ProjectSettingsHistoryActionKind kind,
+    uint8_t subject,
+    bool coalesce
+) {
+    const auto after =
+        core::state::project::captureProjectSettingsHistorySnapshot(
+            status_bar_,
+            navigation_,
+            midi_sync_
+        );
+    if (!settings_history_.record(
+            before,
+            after,
+            kind,
+            subject,
+            coalesce
+        )) {
+        (void)core::state::project::applyProjectSettingsHistorySnapshot(
+            status_bar_,
+            navigation_,
+            midi_sync_,
+            before
+        );
+        return false;
+    }
+    if (coalesce) {
+        const uint32_t nowMs = time_provider_ ? time_provider_() : 0U;
+        settings_gesture_commit_deadline_ms_ =
+            nowMs + ROUTING_GESTURE_IDLE_COMMIT_MS;
+    } else {
+        endProjectSettingsGesture();
+    }
+    lifecycle_.markProjectMutated();
+    return true;
+}
 
-const char FEEDBACK_DEPTH_PREVIEW_FORMAT[] PROGMEM =
-    "Depth %+d%% - Preview";
-
-}  // namespace
+FLASHMEM void ProjectHandler::endProjectSettingsGesture() {
+    settings_history_.endCoalescing();
+    settings_gesture_commit_deadline_ms_ = 0U;
+}
 
 FLASHMEM bool ProjectHandler::applyFocusedProjectStep(int steps) {
     if (steps == 0) return false;
@@ -47,17 +73,43 @@ FLASHMEM bool ProjectHandler::applyFocusedMusicRootStep(int steps) {
         return false;
     }
 
-    if (steps == 0 || navigation_.focusedRow.get() != 3) return false;
+    if (steps == 0) return false;
 
-    const int current = static_cast<int>(navigation_.stepPasteMode);
-    const int next = wrapIndex(current + steps, project::PROJECT_STEP_PASTE_MODE_COUNT);
-    if (next == current) return true;
-
-    navigation_.stepPasteMode =
-        project::sanitizeProjectStepPasteMode(static_cast<uint8_t>(next));
+    const uint8_t row = navigation_.focusedRow.get();
+    const auto before =
+        core::state::project::captureProjectSettingsHistorySnapshot(
+            status_bar_, navigation_, midi_sync_
+        );
+    auto kind = core::state::project::
+        ProjectSettingsHistoryActionKind::StepPasteMode;
+    uint8_t subject = 0U;
+    if (row == 3U) {
+        const int current = static_cast<int>(navigation_.stepPasteMode);
+        const int next = wrapIndex(
+            current + steps,
+            project::PROJECT_STEP_PASTE_MODE_COUNT
+        );
+        if (next == current) return true;
+        navigation_.stepPasteMode =
+            project::sanitizeProjectStepPasteMode(static_cast<uint8_t>(next));
+    } else if (row >= 4U &&
+               row < 4U + project::PROJECT_CC_LANE_DEFAULT_COUNT) {
+        const uint8_t lane = static_cast<uint8_t>(row - 4U);
+        kind = core::state::project::
+            ProjectSettingsHistoryActionKind::CcLaneDefault;
+        subject = lane;
+        const int current = navigation_.ccLaneDefaultControllers[lane];
+        const int next = wrapIndex(
+            current + steps,
+            project::PROJECT_MIDI_CC_COUNT
+        );
+        if (next == current) return true;
+        navigation_.ccLaneDefaultControllers[lane] = static_cast<uint8_t>(next);
+    } else {
+        return false;
+    }
     navigation_.notifyContentChanged();
-    lifecycle_.markProjectMutated();
-    return true;
+    return recordProjectSettingsChange(before, kind, subject, false);
 }
 
 FLASHMEM bool ProjectHandler::applyFocusedMusicScaleStep(int steps) {
@@ -66,7 +118,30 @@ FLASHMEM bool ProjectHandler::applyFocusedMusicScaleStep(int steps) {
     }
 
     const uint8_t row = navigation_.focusedRow.get();
-    if (row > 2) return false;
+    if (row == 3U || row == 4U) {
+        const auto before =
+            core::state::project::captureProjectSettingsHistorySnapshot(
+                status_bar_, navigation_, midi_sync_
+            );
+        if (row == 3U) {
+            navigation_.patternsInheritScale =
+                !navigation_.patternsInheritScale;
+        } else {
+            navigation_.clipsInheritScale = !navigation_.clipsInheritScale;
+        }
+        navigation_.notifyContentChanged();
+        return recordProjectSettingsChange(
+            before,
+            row == 3U
+                ? core::state::project::ProjectSettingsHistoryActionKind::
+                      PatternsInheritScale
+                : core::state::project::ProjectSettingsHistoryActionKind::
+                      ClipsInheritScale,
+            0U,
+            false
+        );
+    }
+    if (row > 2U) return false;
 
     const int count = sequencer_settings_.choiceCount(row);
     if (count <= 0) return false;
@@ -102,6 +177,10 @@ FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
     const uint8_t row = navigation_.focusedRow.get();
     switch (row) {
         case 0: {
+            const auto before =
+                core::state::project::captureProjectSettingsHistorySnapshot(
+                    status_bar_, navigation_, midi_sync_
+                );
             const int current = project::roundedProjectTempoBpm(status_bar_.tempo.get());
             const int next = clampInt(
                 current + steps,
@@ -114,31 +193,62 @@ FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
             if (!status_bar_.tempoLocked.get()) {
                 status_bar_.tempoDisplay.set(nextTempo);
             }
-            lifecycle_.markProjectMutated();
-            return true;
+            return recordProjectSettingsChange(
+                before,
+                core::state::project::ProjectSettingsHistoryActionKind::Tempo,
+                0U,
+                false
+            );
         }
         case 1: {
+            const auto before =
+                core::state::project::captureProjectSettingsHistorySnapshot(
+                    status_bar_, navigation_, midi_sync_
+                );
             const int current = navigation_.transportSwingPercent;
             const int next = clampInt(current + steps, 0, project::PROJECT_SWING_MAX_PERCENT);
             if (next == current) return true;
             navigation_.transportSwingPercent = static_cast<uint8_t>(next);
             navigation_.notifyContentChanged();
-            lifecycle_.markProjectMutated();
-            return true;
+            return recordProjectSettingsChange(
+                before,
+                core::state::project::ProjectSettingsHistoryActionKind::Swing,
+                0U,
+                false
+            );
         }
         case 2: {
+            const auto before =
+                core::state::project::captureProjectSettingsHistorySnapshot(
+                    status_bar_, navigation_, midi_sync_
+                );
             const int current = midiSyncModeIndex(midi_sync_.mode.get());
             const int next = wrapIndex(current + steps, 3);
+            if (next == current) return true;
             midi_sync_.mode.set(midiSyncModeAt(next));
-            return true;
+            return recordProjectSettingsChange(
+                before,
+                core::state::project::ProjectSettingsHistoryActionKind::SyncMode,
+                0U,
+                false
+            );
         }
         case 3: {
+            const auto before =
+                core::state::project::captureProjectSettingsHistorySnapshot(
+                    status_bar_, navigation_, midi_sync_
+                );
             const int current = navigation_.transportRunMode;
             const int next = wrapIndex(current + steps, project::PROJECT_RUN_MODE_COUNT);
+            if (next == current) return true;
             navigation_.transportRunMode = static_cast<uint8_t>(next);
             navigation_.notifyContentChanged();
-            lifecycle_.markProjectMutated();
-            return true;
+            return recordProjectSettingsChange(
+                before,
+                core::state::project::ProjectSettingsHistoryActionKind::RunMode,
+                0U,
+                false
+            );
         }
         default:
             return false;
@@ -155,9 +265,20 @@ FLASHMEM bool ProjectHandler::applyFocusedStorageStep(int steps) {
     const uint8_t row = navigation_.focusedRow.get();
     switch (row) {
         case 6:
+            {
+            const auto before =
+                core::state::project::captureProjectSettingsHistorySnapshot(
+                    status_bar_, navigation_, midi_sync_
+                );
             navigation_.autosaveEnabled = !navigation_.autosaveEnabled;
             navigation_.notifyContentChanged();
-            return true;
+            return recordProjectSettingsChange(
+                before,
+                core::state::project::ProjectSettingsHistoryActionKind::Autosave,
+                0U,
+                false
+            );
+            }
         default:
             return false;
     }
@@ -184,25 +305,21 @@ FLASHMEM bool ProjectHandler::applyFocusedRoutingStep(int steps) {
     if (steps == 0) return false;
 
     const uint8_t track = navigation_.focusedRow.get();
-    if (track >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
+    if (track >= core::state::project::PROJECT_TRACK_COUNT) {
         return false;
     }
 
-    const uint8_t activeTrack = sequencer_tracks_.activeTrackIndex();
-    const uint8_t current = (track == activeTrack)
-        ? sequencer_.pattern.midiChannel.get()
-        : sequencer_tracks_.track(track).midiChannel.get();
+    const uint8_t current = core::state::project::projectTrackMidiChannel(
+        project_tracks_,
+        track
+    );
     const auto next = static_cast<uint8_t>(
         wrapIndex(current + steps, project::PROJECT_MIDI_CHANNEL_COUNT)
     );
     if (next == current) return true;
 
-    sequencer_tracks_.track(track).midiChannel.set(next);
-    if (track == activeTrack) {
-        sequencer_.pattern.midiChannel.set(next);
-    }
+    if (!setRoutingMidiChannel(track, next)) return false;
     navigation_.notifyContentChanged();
-    lifecycle_.markProjectMutated();
     return true;
 }
 
@@ -215,332 +332,6 @@ FLASHMEM bool ProjectHandler::setFocusedProjectValue(float normalized) {
            setFocusedNameEditorValue(normalized);
 }
 
-FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
-    using namespace core::state::modulation;
-    using Item = core::state::project::modulators::SourceDetailItem;
-    core::state::macro::MacroAutomationSlotAddress auditionAddress{};
-    const bool auditioning = modulatorAuditionAddress(auditionAddress);
-    if (auditioning && navigation_.currentNode.get() ==
-            core::state::project::ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
-        auto* binding = findProjectModulationBinding(
-            pages_.control.authored.modulation,
-            pages_.control.audition.bindingId
-        );
-        if (!binding) return true;
-        const int16_t percent = static_cast<int16_t>(
-            clampNormalized(normalized) * 200.0f + 0.5f
-        ) - 100;
-        const int16_t amount =
-            core::ui::macro::lfo_audition::depthPercentToQ15(percent);
-        if (binding->amountQ15 != amount) {
-            binding->amountQ15 = amount;
-            pages_.control.markAuthoredMutation();
-            refreshModulatorPreview(false);
-        }
-        char feedback[48]{};
-        std::snprintf(
-            feedback,
-            sizeof(feedback),
-            FEEDBACK_DEPTH_PREVIEW_FORMAT,
-            static_cast<int>(percent)
-        );
-        navigation_.setLifecycleFeedback(feedback);
-        return true;
-    }
-    if (navigation_.currentNode.get() ==
-        core::state::project::ProjectNodeId::MODULATOR_DESTINATIONS) {
-        auto* binding = focusedModulationBinding();
-        if (!binding) return false;
-        const auto address = core::state::macro::MacroAutomationSlotAddress{
-            binding->destination.track,
-            binding->destination.page,
-            binding->destination.macro,
-        };
-        const float depth = clampNormalized(normalized) * 2.0f - 1.0f;
-        if (macro_history_.setModulationBindingDepthCoalesced(
-                pages_, address, binding->id, depth
-            )) {
-            publishModulatorMutation(false);
-        }
-        return true;
-    }
-    if (navigation_.currentNode.get() ==
-        core::state::project::ProjectNodeId::MODULATOR_TRIGGER) {
-        using core::state::project::modulators::TriggerDetailItem;
-        auto* source = focusedModulator();
-        if (!source || source->kind != ModulatorKind::ADSR) return false;
-        auto* binding = findProjectModulationTriggerForSource(
-            pages_.control.authored.modulation,
-            source->id
-        );
-        if (!binding || binding->trigger.kind !=
-                ModulationTriggerKind::TRACK_NOTE) {
-            return false;
-        }
-        auto trigger = binding->trigger;
-        const auto item = static_cast<TriggerDetailItem>(
-            navigation_.focusedRow.get()
-        );
-        const int choice = item == TriggerDetailItem::TRACK
-            ? normalizedToIndex(clampNormalized(normalized), 16)
-            : (item == TriggerDetailItem::CHANNEL
-                ? normalizedToIndex(clampNormalized(normalized), 17)
-                : normalizedToIndex(clampNormalized(normalized), 129));
-        if (item == TriggerDetailItem::TRACK) {
-            trigger.track = static_cast<uint8_t>(choice);
-        } else if (item == TriggerDetailItem::CHANNEL) {
-            trigger.channel = choice == 0
-                ? PROJECT_MODULATION_TRIGGER_ANY_CHANNEL
-                : static_cast<uint8_t>(choice - 1);
-        } else {
-            trigger.data = choice == 0
-                ? PROJECT_MODULATION_TRIGGER_ANY_NOTE
-                : static_cast<uint8_t>(choice - 1);
-        }
-        const bool provisional = auditioning &&
-            pages_.control.audition.sourceCreated &&
-            pages_.control.audition.sourceId == source->id;
-        if (provisional) {
-            if (binding->trigger != trigger) {
-                binding->trigger = trigger;
-                pages_.control.markAuthoredMutation();
-                refreshModulatorPreview(false);
-            }
-        } else if (macro_history_.setProjectModulationTriggerCoalesced(
-                       pages_,
-                       source->id,
-                       trigger,
-                       (binding->flags &
-                        PROJECT_MODULATION_TRIGGER_FLAG_ENABLED) != 0U
-                   )) {
-            publishModulatorMutation(false);
-        }
-        return true;
-    }
-    auto* source = focusedModulator();
-    if (!source) return false;
-
-    const auto node = navigation_.currentNode.get();
-    const bool provisional = auditioning &&
-        pages_.control.audition.sourceCreated &&
-        pages_.control.audition.sourceId == source->id;
-    Item item = Item::RATE;
-    if (node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
-        item = (provisional
-            ? core::state::project::modulators::sourceAuditionLayout(source->kind)
-            : core::state::project::modulators::sourceDetailLayout(source->kind)
-        ).at(navigation_.focusedRow.get());
-    } else if (node ==
-               core::state::project::ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
-        item = (provisional
-            ? core::state::project::modulators::sourceAuditionOptionsLayout(
-                  source->kind
-              )
-            : core::state::project::modulators::sourceOptionsLayout(source->kind)
-        ).at(navigation_.focusedRow.get());
-    } else if (node != core::state::project::ProjectNodeId::MODULATORS_ROOT) {
-        return false;
-    }
-
-    const float value = clampNormalized(normalized);
-    if (item == Item::DEPTH) {
-        auto* binding = findProjectModulationBinding(
-            pages_.control.authored.modulation,
-            pages_.control.audition.bindingId
-        );
-        if (!provisional || binding == nullptr) return false;
-        const int16_t percent = static_cast<int16_t>(value * 200.0f + 0.5f) -
-            100;
-        const int16_t amount =
-            core::ui::macro::lfo_audition::depthPercentToQ15(percent);
-        if (binding->amountQ15 != amount) {
-            binding->amountQ15 = amount;
-            pages_.control.markAuthoredMutation();
-            refreshModulatorPreview(false);
-        }
-        char feedback[48]{};
-        std::snprintf(
-            feedback,
-            sizeof(feedback),
-            FEEDBACK_DEPTH_PREVIEW_FORMAT,
-            static_cast<int>(percent)
-        );
-        navigation_.setLifecycleFeedback(feedback);
-        return true;
-    }
-    if (item == Item::ENABLED) {
-        const bool enabled = value >= 0.5f;
-        if (macro_history_.setProjectModulatorEnabled(
-                pages_, source->id, enabled
-            )) {
-            publishModulatorMutation(false);
-        }
-        return true;
-    }
-    if (source->kind == ModulatorKind::ADSR) {
-        auto parameters = source->parameters.adsr;
-        switch (item) {
-            case Item::ATTACK:
-                parameters.attack = adsr_ui::durationAt(
-                    static_cast<uint8_t>(normalizedToIndex(
-                        value,
-                        static_cast<int>(
-                            adsr_ui::DURATION_COUNT
-                        )
-                    )),
-                    parameters.timing
-                );
-                break;
-            case Item::DECAY:
-                parameters.decay = adsr_ui::durationAt(
-                    static_cast<uint8_t>(normalizedToIndex(
-                        value,
-                        static_cast<int>(
-                            adsr_ui::DURATION_COUNT
-                        )
-                    )),
-                    parameters.timing
-                );
-                break;
-            case Item::RELEASE:
-                parameters.release = adsr_ui::durationAt(
-                    static_cast<uint8_t>(normalizedToIndex(
-                        value,
-                        static_cast<int>(
-                            adsr_ui::DURATION_COUNT
-                        )
-                    )),
-                    parameters.timing
-                );
-                break;
-            case Item::SUSTAIN:
-                parameters.sustainQ15 = static_cast<uint16_t>(std::lround(
-                    value * static_cast<float>(
-                        PROJECT_MODULATOR_ADSR_SUSTAIN_ONE_Q15
-                    )
-                ));
-                break;
-            case Item::TIMING: {
-                const auto next = value >= 0.5f
-                    ? ModulatorTimingMode::FREE
-                    : ModulatorTimingMode::SYNC;
-                if (next == parameters.timing) return true;
-                const auto previous = parameters.timing;
-                parameters.attack = adsr_ui::durationAt(
-                    adsr_ui::durationIndex(parameters.attack, previous),
-                    next
-                );
-                parameters.decay = adsr_ui::durationAt(
-                    adsr_ui::durationIndex(parameters.decay, previous),
-                    next
-                );
-                parameters.release = adsr_ui::durationAt(
-                    adsr_ui::durationIndex(parameters.release, previous),
-                    next
-                );
-                parameters.timing = next;
-                break;
-            }
-            case Item::CURVE:
-                parameters.curve = static_cast<ModulatorAdsrCurve>(
-                    normalizedToIndex(value, 3)
-                );
-                break;
-            case Item::RETRIGGER:
-                parameters.retrigger = static_cast<ModulatorAdsrRetriggerMode>(
-                    normalizedToIndex(value, 2)
-                );
-                break;
-            default:
-                return false;
-        }
-        if (provisional && std::memcmp(
-                &source->parameters.adsr,
-                &parameters,
-                sizeof(parameters)
-            ) != 0) {
-            source->parameters.adsr = parameters;
-            pages_.control.markAuthoredMutation();
-            refreshModulatorPreview(false);
-        } else if (!provisional &&
-                   macro_history_.setProjectAdsrParametersCoalesced(
-                       pages_, source->id, parameters
-                   )) {
-            publishModulatorMutation(false);
-        }
-        return true;
-    }
-    if (source->kind != ModulatorKind::LFO) return false;
-
-    auto parameters = source->parameters.lfo;
-    switch (item) {
-        case Item::SHAPE:
-            parameters.shape = static_cast<ModulatorLfoShape>(
-                normalizedToIndex(
-                    value,
-                    core::ui::macro::lfo_audition::SHAPE_COUNT
-                )
-            );
-            break;
-        case Item::RATE:
-            if (parameters.timing == ModulatorTimingMode::FREE) {
-                parameters.freePeriodMs = PROJECT_MODULATOR_FREE_PERIODS_MS[
-                    static_cast<size_t>(normalizedToIndex(
-                        value,
-                        static_cast<int>(PROJECT_MODULATOR_FREE_PERIODS_MS.size())
-                    ))
-                ];
-            } else {
-                parameters.periodTicks =
-                    core::ui::macro::lfo_audition::ratePeriodTicks(
-                        static_cast<uint8_t>(normalizedToIndex(
-                            value,
-                            core::ui::macro::lfo_audition::RATE_COUNT
-                        ))
-                    );
-            }
-            break;
-        case Item::TIMING:
-            parameters.timing = value >= 0.5f
-                ? ModulatorTimingMode::FREE
-                : ModulatorTimingMode::SYNC;
-            break;
-        case Item::PHASE: {
-            const int32_t phase = static_cast<int32_t>(value * 65534.0f + 0.5f) -
-                32767;
-            parameters.phaseQ15 = static_cast<int16_t>(
-                std::clamp<int32_t>(phase, -32767, 32767)
-            );
-            break;
-        }
-        case Item::RETRIGGER:
-            if (parameters.retrigger ==
-                ModulatorRetriggerPolicy::EXPLICIT_TRIGGER) {
-                return false;
-            }
-            parameters.retrigger = static_cast<ModulatorRetriggerPolicy>(
-                normalizedToIndex(value, 2)
-            );
-            break;
-        default:
-            return false;
-    }
-    if (provisional && std::memcmp(
-            &source->parameters.lfo,
-            &parameters,
-            sizeof(parameters)
-        ) != 0) {
-        source->parameters.lfo = parameters;
-        pages_.control.markAuthoredMutation();
-        refreshModulatorPreview(false);
-    } else if (!provisional &&
-               macro_history_.setProjectLfoParametersCoalesced(
-                   pages_, source->id, parameters
-               )) {
-        publishModulatorMutation(false);
-    }
-    return true;
-}
 
 FLASHMEM bool ProjectHandler::setFocusedNameEditorValue(float normalized) {
     if (!isProjectNameEditorNode(navigation_.currentNode.get())) {
@@ -579,17 +370,41 @@ FLASHMEM bool ProjectHandler::setFocusedMusicRootValue(float normalized) {
         return false;
     }
 
-    if (navigation_.focusedRow.get() != 3) return false;
-
-    const int current = static_cast<int>(navigation_.stepPasteMode);
-    const int next = normalizedToIndex(normalized, project::PROJECT_STEP_PASTE_MODE_COUNT);
-    if (next == current) return true;
-
-    navigation_.stepPasteMode =
-        project::sanitizeProjectStepPasteMode(static_cast<uint8_t>(next));
+    const uint8_t row = navigation_.focusedRow.get();
+    const auto before =
+        core::state::project::captureProjectSettingsHistorySnapshot(
+            status_bar_, navigation_, midi_sync_
+        );
+    auto kind = core::state::project::
+        ProjectSettingsHistoryActionKind::StepPasteMode;
+    uint8_t subject = 0U;
+    if (row == 3U) {
+        const int current = static_cast<int>(navigation_.stepPasteMode);
+        const int next = normalizedToIndex(
+            normalized,
+            project::PROJECT_STEP_PASTE_MODE_COUNT
+        );
+        if (next == current) return true;
+        navigation_.stepPasteMode =
+            project::sanitizeProjectStepPasteMode(static_cast<uint8_t>(next));
+    } else if (row >= 4U &&
+               row < 4U + project::PROJECT_CC_LANE_DEFAULT_COUNT) {
+        const uint8_t lane = static_cast<uint8_t>(row - 4U);
+        kind = core::state::project::
+            ProjectSettingsHistoryActionKind::CcLaneDefault;
+        subject = lane;
+        const int current = navigation_.ccLaneDefaultControllers[lane];
+        const int next = normalizedToIndex(
+            normalized,
+            project::PROJECT_MIDI_CC_COUNT
+        );
+        if (next == current) return true;
+        navigation_.ccLaneDefaultControllers[lane] = static_cast<uint8_t>(next);
+    } else {
+        return false;
+    }
     navigation_.notifyContentChanged();
-    lifecycle_.markProjectMutated();
-    return true;
+    return recordProjectSettingsChange(before, kind, subject, true);
 }
 
 FLASHMEM bool ProjectHandler::setFocusedMusicScaleValue(float normalized) {
@@ -632,6 +447,10 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
     const uint8_t row = navigation_.focusedRow.get();
     switch (row) {
         case 0: {
+            const auto before =
+                core::state::project::captureProjectSettingsHistorySnapshot(
+                    status_bar_, navigation_, midi_sync_
+                );
             const int current = project::roundedProjectTempoBpm(status_bar_.tempo.get());
             const int next = tempoFromNormalized(normalized);
             if (next == current) return true;
@@ -640,33 +459,62 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
             if (!status_bar_.tempoLocked.get()) {
                 status_bar_.tempoDisplay.set(nextTempo);
             }
-            lifecycle_.markProjectMutated();
-            return true;
+            return recordProjectSettingsChange(
+                before,
+                core::state::project::ProjectSettingsHistoryActionKind::Tempo,
+                0U,
+                true
+            );
         }
         case 1: {
+            const auto before =
+                core::state::project::captureProjectSettingsHistorySnapshot(
+                    status_bar_, navigation_, midi_sync_
+                );
             const int current = navigation_.transportSwingPercent;
             const int next = normalizedToIndex(normalized, project::PROJECT_SWING_STEPS);
             if (next == current) return true;
             navigation_.transportSwingPercent = static_cast<uint8_t>(next);
             navigation_.notifyContentChanged();
-            lifecycle_.markProjectMutated();
-            return true;
+            return recordProjectSettingsChange(
+                before,
+                core::state::project::ProjectSettingsHistoryActionKind::Swing,
+                0U,
+                true
+            );
         }
         case 2: {
+            const auto before =
+                core::state::project::captureProjectSettingsHistorySnapshot(
+                    status_bar_, navigation_, midi_sync_
+                );
             const int current = midiSyncModeIndex(midi_sync_.mode.get());
             const int next = normalizedToIndex(normalized, 3);
             if (next == current) return true;
             midi_sync_.mode.set(midiSyncModeAt(next));
-            return true;
+            return recordProjectSettingsChange(
+                before,
+                core::state::project::ProjectSettingsHistoryActionKind::SyncMode,
+                0U,
+                true
+            );
         }
         case 3: {
+            const auto before =
+                core::state::project::captureProjectSettingsHistorySnapshot(
+                    status_bar_, navigation_, midi_sync_
+                );
             const int current = navigation_.transportRunMode;
             const int next = normalizedToIndex(normalized, project::PROJECT_RUN_MODE_COUNT);
             if (next == current) return true;
             navigation_.transportRunMode = static_cast<uint8_t>(next);
             navigation_.notifyContentChanged();
-            lifecycle_.markProjectMutated();
-            return true;
+            return recordProjectSettingsChange(
+                before,
+                core::state::project::ProjectSettingsHistoryActionKind::RunMode,
+                0U,
+                true
+            );
         }
         default:
             return false;
@@ -681,11 +529,20 @@ FLASHMEM bool ProjectHandler::setFocusedStorageValue(float normalized) {
     const uint8_t row = navigation_.focusedRow.get();
     switch (row) {
         case 6: {
+            const auto before =
+                core::state::project::captureProjectSettingsHistorySnapshot(
+                    status_bar_, navigation_, midi_sync_
+                );
             const bool next = normalized >= 0.5f;
             if (next == navigation_.autosaveEnabled) return true;
             navigation_.autosaveEnabled = next;
             navigation_.notifyContentChanged();
-            return true;
+            return recordProjectSettingsChange(
+                before,
+                core::state::project::ProjectSettingsHistoryActionKind::Autosave,
+                0U,
+                true
+            );
         }
         default:
             return false;
@@ -698,26 +555,81 @@ FLASHMEM bool ProjectHandler::setFocusedRoutingValue(float normalized) {
     }
 
     const uint8_t track = navigation_.focusedRow.get();
-    if (track >= core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
+    if (track >= core::state::project::PROJECT_TRACK_COUNT) {
         return false;
     }
 
-    const uint8_t activeTrack = sequencer_tracks_.activeTrackIndex();
-    const uint8_t current = (track == activeTrack)
-        ? sequencer_.pattern.midiChannel.get()
-        : sequencer_tracks_.track(track).midiChannel.get();
+    const uint8_t current = core::state::project::projectTrackMidiChannel(
+        project_tracks_,
+        track
+    );
     const auto next = static_cast<uint8_t>(
         normalizedToIndex(normalized, project::PROJECT_MIDI_CHANNEL_COUNT)
     );
     if (next == current) return true;
 
-    sequencer_tracks_.track(track).midiChannel.set(next);
-    if (track == activeTrack) {
-        sequencer_.pattern.midiChannel.set(next);
-    }
+    if (!setRoutingMidiChannel(track, next)) return false;
     navigation_.notifyContentChanged();
-    lifecycle_.markProjectMutated();
     return true;
+}
+
+FLASHMEM bool ProjectHandler::setRoutingMidiChannel(
+    uint8_t track,
+    uint8_t channel0Based
+) {
+    if (routing_gesture_track_ !=
+            core::state::project::PROJECT_TRACK_COUNT &&
+        routing_gesture_track_ != track) {
+        commitPendingRoutingGesture();
+    }
+
+    const bool began = routing_gesture_track_ ==
+        core::state::project::PROJECT_TRACK_COUNT;
+    if (began) {
+        // Do not join a gesture owned by another UI surface.
+        if (track_domain_.hasActiveGesture() ||
+            !track_domain_.beginGesture(
+                core::state::project::ProjectTrackHistoryActionKind::
+                    MidiChannel,
+                track
+            )) {
+            return false;
+        }
+        routing_gesture_track_ = track;
+    }
+
+    if (!track_domain_.setMidiChannel(track, channel0Based)) {
+        if (began) cancelPendingRoutingGesture();
+        return false;
+    }
+
+    routing_gesture_commit_deadline_ms_ =
+        time_provider_() + ROUTING_GESTURE_IDLE_COMMIT_MS;
+    return true;
+}
+
+FLASHMEM void ProjectHandler::commitPendingRoutingGesture() {
+    if (routing_gesture_track_ ==
+        core::state::project::PROJECT_TRACK_COUNT) {
+        return;
+    }
+    if (track_domain_.hasActiveGesture()) {
+        (void)track_domain_.endGesture();
+    }
+    routing_gesture_track_ = core::state::project::PROJECT_TRACK_COUNT;
+    routing_gesture_commit_deadline_ms_ = 0U;
+}
+
+FLASHMEM void ProjectHandler::cancelPendingRoutingGesture() {
+    if (routing_gesture_track_ ==
+        core::state::project::PROJECT_TRACK_COUNT) {
+        return;
+    }
+    if (track_domain_.hasActiveGesture()) {
+        (void)track_domain_.cancelGesture();
+    }
+    routing_gesture_track_ = core::state::project::PROJECT_TRACK_COUNT;
+    routing_gesture_commit_deadline_ms_ = 0U;
 }
 
 

@@ -1,0 +1,102 @@
+# UX workflow: transactional Step-content authoring from draft to history.
+# Purpose: proves that a new Micro-sequence stays private while edited, Back
+# exposes the safe Save decision, publication happens once, the reopened child
+# is ordinary published content, and one global Undo/Redo removes/restores the
+# whole authored child.
+# Expect: semantic:micro_draft_open:mode=sequencer.step_content_draft, semantic:micro_draft_open:draft_kind=micro_sequence, semantic:micro_draft_open:draft_active=1, semantic:micro_draft_open:dirty=0, semantic:micro_draft_open:action=apply
+# Expect: semantic:micro_draft_dirty:draft_kind=micro_sequence, semantic:micro_draft_dirty:draft_active=1, semantic:micro_draft_dirty:dirty=1, semantic:micro_draft_dirty:action=apply
+# Expect: semantic:save_draft_prompt:mode=sequencer.step_content_draft.exit, semantic:save_draft_prompt:exit_choice=save, semantic:save_draft_prompt:dirty=1, semantic:save_draft_prompt:action=save
+# Expect: semantic:micro_published:effect=resolve_draft_exit, semantic:micro_published:draft_kind=micro_sequence, semantic:micro_published:draft_active=0, semantic:micro_published:published=1, semantic:micro_published:action=save
+# Expect: semantic:published_micro_copied:effect=copy_step_editor_context, semantic:published_micro_copied:action=copy
+# Expect: semantic:micro_publish_undone:published=0, semantic:micro_publish_redone:published=1
+# Expect: capture_changed:micro_draft_open=micro_draft_dirty, capture_changed:micro_published=published_micro_reopened, capture_changed:micro_publish_undone=micro_publish_redone
+
+0 scenario sequencer
+
+# Pattern -> Step uses the shared held-NAV context selector. A short NAV tap
+# then opens the editor for the focused root Step.
+100 button NAV down
+180 encoder NAV 1
+240 button NAV up
+500 tap MACRO_1 60
+720 tap NAV 60
+980 capture screen root_step_editor
+
+# Focus Micro-sequence and create it. The child is visible and editable, but
+# the published Pattern still has no Micro child at this point.
+1080 encoder NAV 1
+1160 encoder NAV 1
+1240 encoder NAV 1
+1320 encoder NAV 1
+1400 encoder NAV 1
+1480 encoder NAV 1
+1560 encoder NAV 1
+1660 tap NAV 60
+1980 capture screen micro_draft_open
+
+# Make the draft dirty with one direct musical gesture.
+2080 tap MACRO_1 60
+2320 capture screen micro_draft_dirty
+
+# Back never silently commits: the explicit decision surface defaults to Save.
+2420 tap LEFT_TOP 60
+2700 capture screen save_draft_prompt
+2800 tap NAV 60
+3160 capture screen micro_published
+
+# Reopen the published row. Its bottom-right action is Copy again; Apply only
+# belonged to the unpublished draft.
+3260 tap NAV 60
+3460 encoder NAV 1
+3540 encoder NAV 1
+3620 encoder NAV 1
+3700 encoder NAV 1
+3780 encoder NAV 1
+3860 encoder NAV 1
+3940 encoder NAV 1
+4120 capture screen published_micro_row
+4220 tap BOTTOM_RIGHT 60
+4460 capture screen published_micro_copied
+4560 tap NAV 60
+4860 capture screen published_micro_reopened
+4960 tap LEFT_TOP 60
+5280 capture screen root_after_reopen
+
+# Publication owns exactly one history entry. Undo removes the complete child;
+# Redo restores the exact published state.
+5380 tap LEFT_TOP 60
+6460 tick
+6520 capture screen undo_publish_ready
+6620 tap LEFT_CENTER 60
+8120 tick
+8180 tap LEFT_TOP 60
+
+# Inspect the same Micro row: one Undo removed the whole published child.
+8420 tap NAV 60
+8680 encoder NAV 1
+8760 encoder NAV 1
+8840 encoder NAV 1
+8920 encoder NAV 1
+9000 encoder NAV 1
+9080 encoder NAV 1
+9160 encoder NAV 1
+9400 capture screen micro_publish_undone
+9500 tap LEFT_TOP 60
+
+9700 tap LEFT_TOP 60
+10780 tick
+10840 capture screen redo_publish_ready
+10940 tap LEFT_BOTTOM 60
+12440 tick
+12500 tap LEFT_TOP 60
+
+# Redo restores that same published child; the row is ordinary Edit content.
+12700 tap NAV 60
+12960 encoder NAV 1
+13040 encoder NAV 1
+13120 encoder NAV 1
+13200 encoder NAV 1
+13280 encoder NAV 1
+13360 encoder NAV 1
+13440 encoder NAV 1
+13680 capture screen micro_publish_redone

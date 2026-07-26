@@ -6,6 +6,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/PersistenceBinaryCodec.hpp"
+#include "persistence/PersistenceChecksum.hpp"
 
 namespace core::persistence::project_file {
 
@@ -177,10 +178,7 @@ FLASHMEM void LoadReport::add(LoadSeverity severity,
         };
     }
 
-    if (code == LoadCode::MIGRATED_CHUNK && status == LoadStatus::OK) {
-        status = LoadStatus::MIGRATED;
-    } else if (severity == LoadSeverity::WARNING &&
-               (status == LoadStatus::OK || status == LoadStatus::MIGRATED)) {
+    if (severity == LoadSeverity::WARNING && status == LoadStatus::OK) {
         status = LoadStatus::PARTIAL;
     } else if (severity == LoadSeverity::ERROR) {
         status = LoadStatus::PARTIAL;
@@ -206,8 +204,8 @@ FLASHMEM bool isKnownChunkId(uint32_t id) {
         case ChunkId::PROJECT_META:
         case ChunkId::TRANSPORT:
         case ChunkId::MUSICAL_CONTEXT:
-        case ChunkId::ROUTING:
         case ChunkId::EDITING:
+        case ChunkId::TRACK_STATE:
         case ChunkId::MACRO_STATE:
         case ChunkId::MACRO_AUTOMATION:
         case ChunkId::MODULATION_GRAPH:
@@ -220,15 +218,7 @@ FLASHMEM bool isKnownChunkId(uint32_t id) {
 }
 
 FLASHMEM uint32_t crc32(const uint8_t* data, size_t size) {
-    uint32_t crc = 0xFFFFFFFFu;
-    for (size_t i = 0; i < size; ++i) {
-        crc ^= static_cast<uint32_t>(data[i]);
-        for (uint8_t bit = 0; bit < 8; ++bit) {
-            const uint32_t mask = static_cast<uint32_t>(-(static_cast<int32_t>(crc & 1u)));
-            crc = (crc >> 1u) ^ (0xEDB88320u & mask);
-        }
-    }
-    return ~crc;
+    return checksum::crc32(data, size);
 }
 
 FLASHMEM uint32_t encodedSize(const ChunkView* chunks, uint16_t chunkCount) {

@@ -100,7 +100,6 @@ void populateDestinationPickerRow(
 
 [[nodiscard]] uint32_t registryRevision(
     const core::state::modulation::ProjectControlState& control,
-    uint8_t telemetryRevision,
     uint8_t focusedRow
 );
 

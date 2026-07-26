@@ -12,6 +12,7 @@
 #include "../../src/persistence/ProjectSessionStore.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
+#include "../../src/state/modulation/ProjectControlMacroOps.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../support/CoreStorages.hpp"
 
@@ -19,6 +20,7 @@ namespace {
 
 namespace project = core::state::project;
 namespace project_file = core::persistence::project_file;
+namespace modulation = core::state::modulation;
 
 uint32_t mockTimeMs() {
     return 0;
@@ -55,9 +57,37 @@ void configureProject(core::state::CoreState& state, const char* id, uint8_t not
     page.values[0] = 0.65f;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     state.sequencer.setStepDataAt(0, note, 100, 75);
     state.sequencer.pattern.toggle(0);
+}
+
+core::state::modulation::ProjectModulationResult beginLfoAudition(
+    core::state::CoreState& state,
+    uint8_t macro = 1U
+) {
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = macro,
+    };
+    modulation::ModulatorLfoDraft source{};
+    source.name = "Autosave guard";
+    source.parameters.periodTicks = modulation::PROJECT_CONTROL_TICKS_PER_BEAT;
+    source.parameters.shape = modulation::ModulatorLfoShape::SINE;
+    source.parameters.retrigger = modulation::ModulatorRetriggerPolicy::TRANSPORT;
+    source.parameters.timing = modulation::ModulatorTimingMode::SYNC;
+
+    modulation::ModulationBindingDraft binding{};
+    binding.destination = modulation::projectControlDestination(address);
+    binding.amountQ15 = 8192;
+    binding.application = modulation::ModulationApplication::NATURAL;
+    return state.macroHistory.beginLfoModulatorAudition(
+        state.pages,
+        address,
+        source,
+        binding
+    );
 }
 
 core::persistence::ProductFileService makeProductFiles(oc::impl::HostFileSystem& filesystem) {
@@ -408,6 +438,81 @@ void test_pending_live_edit_aborts_an_in_flight_write() {
     std::cout << "[PASS] test_pending_live_edit_aborts_an_in_flight_write\n";
 }
 
+void test_modulator_audition_blocks_and_aborts_an_in_flight_autosave() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto files = makeProductFiles(filesystem);
+    core::persistence::ProjectSessionStore store(files);
+    core::persistence::ProjectSessionAutosaveService autosave(store, 100);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "p011", 71);
+    state.markProjectMutated();
+
+    const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
+    const auto started = autosave.update(state, requestedAt + 100U);
+    assert(started.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+
+    const auto begun = beginLfoAudition(state);
+    assert(begun.changed());
+    assert(state.hasPendingProjectTransaction());
+
+    const auto blocked = autosave.update(state, requestedAt + 101U);
+    assert(blocked.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::BLOCKED);
+    assert(state.hasPendingProjectSessionSave());
+    assertNoCurrentSessionFile();
+    assert(!autosave.writeSessionActive());
+    assert(!files.writeSessionActive());
+
+    assert(state.macroHistory.abortPendingModulatorAudition(state.pages));
+    assert(!state.hasPendingProjectTransaction());
+    const auto saved = updateUntilSettled(autosave, state, requestedAt + 102U);
+    assert(saved.saved());
+    assertCurrentSessionNote(files, 71);
+
+    project::ProjectSnapshot loaded;
+    project_file::LoadReport report{};
+    assert(store.loadCurrent(loaded, &report));
+    assert(loaded.projectControl);
+    assert(loaded.projectControl->modulation.sourceCount == 0U);
+    assert(loaded.projectControl->modulation.outputBindingCount == 0U);
+
+    std::cout
+        << "[PASS] modulator audition blocks and aborts in-flight autosave\n";
+}
+
+void test_flush_refuses_an_active_modulator_audition() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto files = makeProductFiles(filesystem);
+    core::persistence::ProjectSessionStore store(files);
+    core::persistence::ProjectSessionAutosaveService autosave(store, 100);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "p012", 72);
+    state.markProjectMutated();
+    assert(beginLfoAudition(state).changed());
+
+    const auto blocked = autosave.flush(state);
+    assert(blocked.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::BLOCKED);
+    assert(state.hasPendingProjectSessionSave());
+    assertNoCurrentSessionFile();
+
+    assert(state.macroHistory.abortPendingModulatorAudition(state.pages));
+    const auto saved = autosave.flush(state);
+    assert(saved.saved());
+    assertCurrentSessionNote(files, 72);
+
+    std::cout << "[PASS] flush refuses an active modulator audition\n";
+}
+
 void test_flush_writes_without_waiting() {
     resetTestRoot();
 
@@ -479,6 +584,8 @@ int main() {
     test_write_block_pauses_an_in_flight_capture();
     test_mutation_after_tmp_write_discards_the_stale_transaction();
     test_pending_live_edit_aborts_an_in_flight_write();
+    test_modulator_audition_blocks_and_aborts_an_in_flight_autosave();
+    test_flush_refuses_an_active_modulator_audition();
     test_flush_writes_without_waiting();
     test_destruction_cancels_an_in_flight_write();
 

@@ -20,6 +20,9 @@ enum class OverlayType : uint8_t {
     PATTERN_PITCH_SETTINGS_SELECTOR,
     DATA_MANAGER,
     DATA_MANAGER_DIALOG,
+    // Appended to preserve the numeric identity of every existing overlay.
+    SEQ_PATTERN_EDIT,
+    SEQ_TRACK_EDIT,
     COUNT
 };
 

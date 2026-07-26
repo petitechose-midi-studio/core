@@ -19,7 +19,10 @@ from teensy_memory_budget import (  # noqa: E402
     parse_teensy_size,
     summary,
 )
-from teensy_diagnostics_placement import diagnostics_placement_violations  # noqa: E402
+from teensy_diagnostics_placement import (  # noqa: E402
+    diagnostics_placement_violations,
+    normal_build_diagnostics_violations,
+)
 from teensy_product_placement import product_placement_violations  # noqa: E402
 
 
@@ -59,6 +62,8 @@ def elf_placement_violations(action_env, elf_path: Path) -> tuple[str, ...]:
     violations = product_placement_violations(result.stdout)
     if str(action_env.get("PIOENV", "")) == "dev_diagnostics":
         violations += diagnostics_placement_violations(result.stdout)
+    else:
+        violations += normal_build_diagnostics_violations(result.stdout)
     return violations
 
 

@@ -191,6 +191,8 @@ FLASHMEM const char* projectLifecycleFailureLabel(
             return "List failed";
         case Status::UNSAFE_OVERWRITE:
             return "Save As required";
+        case Status::DRAFT_ACTIVE:
+            return "Finish Step draft";
         case Status::PARTIAL_LOAD:
         case Status::OK:
         default:
@@ -209,8 +211,6 @@ FLASHMEM const char* projectLoadFeedbackLabel(
         return "Loaded read-only";
     }
     switch (result.loadStatus) {
-        case project_file::LoadStatus::MIGRATED:
-            return "Loaded migrated";
         case project_file::LoadStatus::PARTIAL:
             return "Loaded partial";
         case project_file::LoadStatus::OK:

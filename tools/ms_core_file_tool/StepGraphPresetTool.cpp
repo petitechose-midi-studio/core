@@ -62,7 +62,6 @@ const char* compatibilityName(
         return "unsupported_version";
     }
     if (status != sequencer::SequencerGraphAssetStatus::OK) return "blocked_invalid";
-    if (preset.metadataDefaulted) return "warning_legacy_defaulted";
     return preset.mixedPitchPolicy ? "ready_mixed" : "ready";
 }
 
@@ -121,8 +120,6 @@ void printJsonReport(
     std::cout << ",\"semanticName\":";
     printJsonString(preset.semanticName);
     std::cout << ",";
-    std::cout << "\"metadataDefaulted\":"
-              << (preset.metadataDefaulted ? "true" : "false") << ",";
     std::cout << "\"mixedPitchPolicy\":"
               << (preset.mixedPitchPolicy ? "true" : "false") << ",";
     std::cout << "\"scalePolicy\":\"" << scalePolicyName(preset) << "\",";
@@ -180,7 +177,6 @@ void printTextReport(
               << " compatibility=" << compatibilityName(status, preset)
               << " scalePolicy=" << scalePolicyName(preset)
               << " defaultScalePolicy=" << defaultScalePolicyName(preset.scalePolicy)
-              << " metadataDefaulted=" << (preset.metadataDefaulted ? "true" : "false")
               << " mixedPitchPolicy=" << (preset.mixedPitchPolicy ? "true" : "false")
               << " rootValues=" << (preset.rootValuesValid ? "true" : "false")
               << " stepNodes=" << report.stepNodeCount
@@ -227,11 +223,9 @@ int runStepGraphPresetCommand(
     uint32_t bytesWritten = 0;
     if (status == sequencer::SequencerGraphAssetStatus::OK &&
         command == "rename-step-graph-preset") {
-        if (output == nullptr || preset.metadataDefaulted ||
+        if (output == nullptr ||
             !sequencer::validStepGraphPresetSemanticName(semanticName.c_str())) {
-            status = preset.metadataDefaulted
-                ? sequencer::SequencerGraphAssetStatus::UNSUPPORTED_VERSION
-                : sequencer::SequencerGraphAssetStatus::INVALID_ARGUMENT;
+            status = sequencer::SequencerGraphAssetStatus::INVALID_ARGUMENT;
             report.status = status;
         } else {
             sequencer::SequencerStepGraphPreset renamed = preset;
@@ -259,7 +253,7 @@ int runStepGraphPresetCommand(
                 if (encoded.ok()) {
                     output->resize(encoded.bytesWritten);
                     constexpr size_t semanticOffset =
-                        sequencer::STEP_GRAPH_PRESET_V1_HEADER_SIZE + 4U +
+                        sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
                         sequencer::SequencerStepGraphPreset::TECHNICAL_ID_SIZE;
                     constexpr size_t semanticEnd = semanticOffset +
                         sequencer::SequencerStepGraphPreset::SEMANTIC_NAME_SIZE;

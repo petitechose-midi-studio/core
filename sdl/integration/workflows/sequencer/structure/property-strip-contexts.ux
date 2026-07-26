@@ -1,8 +1,8 @@
 # UX workflow: verify the direct Pattern/Step control grammar.
 # Purpose: keeps Pattern quick controls intact, proves Step LEFT_CENTER owns
 # State/Chance/Note/Velocity/Gate/Nudge, and Step LEFT_BOTTOM exposes semantic
-# Variation/Chord/Micro/Cycle/Select actions without duplicating Step Editor.
-# Expect: capture_changed:step_state_on=step_state_off, capture_changed:step_content_chord_selected=step_editor_chord_open, capture_changed:root_pattern_initial=pattern_after_step_edit
+# Chord/Micro/Cycle entry without an intermediate generic Step Editor.
+# Expect: capture_changed:step_state_on=step_state_off, capture_changed:step_content_chord_selected=chord_editor_open, capture_changed:root_pattern_initial=pattern_after_step_edit
 
 0 scenario sequencer
 50 capture screen root_pattern_initial
@@ -20,7 +20,9 @@
 
 # Step LEFT_CENTER starts on Note. Move to State, switch the focused step Off,
 # and apply on release. The overlay must report the authored value immediately.
-1250 tap NAV 60
+1250 button NAV down
+1310 encoder NAV 1
+1370 button NAV up
 1450 tap MACRO_1 60
 1650 capture screen step_state_on
 1750 button LEFT_CENTER down
@@ -33,15 +35,15 @@
 2600 button LEFT_CENTER up
 2850 capture screen step_state_off
 
-# LEFT_BOTTOM is the semantic content selector. Chord delegates to the existing
-# Step Editor at its Chord row; closing it returns to the original Pattern view.
+# LEFT_BOTTOM is the semantic content selector and starts on Chord. Releasing
+# dives directly into the Chord editor; no generic Step Editor is interposed.
 2950 button LEFT_BOTTOM down
-3150 capture screen step_content_variation_selected
-3250 encoder NAV 1
-3450 capture screen step_content_chord_selected
+3150 capture screen step_content_chord_selected
 3500 button LEFT_BOTTOM up
-3800 capture screen step_editor_chord_open
+3800 capture screen chord_editor_open
 3900 tap LEFT_TOP 60
 4200 capture screen step_after_chord_editor
-4300 tap NAV 60
+4300 button NAV down
+4360 encoder NAV -1
+4420 button NAV up
 4550 capture screen pattern_after_step_edit

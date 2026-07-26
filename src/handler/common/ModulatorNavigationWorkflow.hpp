@@ -10,6 +10,7 @@
 #include "state/MacroEditState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 
 namespace core::handler::modulator_navigation {
 
@@ -19,6 +20,7 @@ struct StateRefs {
     core::state::project::ProjectNavigationState& projectNavigation;
     core::state::MacroEditState& macroEdit;
     core::state::macro::MacroPagesState& pages;
+    const core::state::project::ProjectTrackState& projectTracks;
 };
 
 /** Opens the source owning one exact Macro modulation assignment. */

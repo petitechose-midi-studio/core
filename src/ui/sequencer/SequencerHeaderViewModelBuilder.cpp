@@ -8,7 +8,7 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "state/StructureClipboardPastePlan.hpp"
+#include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 
@@ -19,10 +19,8 @@ namespace {
 const char* clipboardBadge(const core::state::StructureClipboardState& clipboard) {
     switch (clipboard.kind.get()) {
         case core::state::StructureClipboardKind::SEQUENCER_PAGE:
-        case core::state::StructureClipboardKind::SEQUENCER_PAGE_SELECTION:
-            return "Pattern";
+            return "Page";
         case core::state::StructureClipboardKind::SEQUENCER_TRACK:
-        case core::state::StructureClipboardKind::SEQUENCER_TRACK_SELECTION:
             return "Track";
         case core::state::StructureClipboardKind::SEQUENCER_STEP_CONTENT:
             return "Step";
@@ -45,17 +43,6 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
 ) {
     const auto& sequencer = source.sequencer;
     const uint8_t activeTrack = source.sharedTrackActive.get();
-    const bool structureWorkspace = sequencer.structureUi.workspace.active.get();
-    const bool focusingTrack =
-        structureWorkspace &&
-        !source.trackNavigation.selection.active.get() &&
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
-    const bool focusingStep =
-        !structureWorkspace &&
-        !source.trackNavigation.selection.active.get() &&
-        !sequencer.structureUi.pageSelection.active.get() &&
-        !sequencer.structureUi.stepSelection.active.get() &&
-        source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP;
     const bool selectingTrack =
         source.trackNavigation.selection.active.get() &&
         source.trackNavigation.selection.scope.get() ==
@@ -65,13 +52,18 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         sequencer.structureUi.pageSelection.scope.get() ==
             core::state::StructureSelectionScope::PAGE;
     const bool selectingStep = sequencer.structureUi.stepSelection.active.get();
-    const uint16_t pageSelectionMask = sequencer.structureUi.pageSelection.selectedMask.get();
+    const bool anySelection =
+        selectingTrack || selectingPage || selectingStep;
+    const bool focusingTrack =
+        !anySelection &&
+        source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
+    const bool focusingStep =
+        !anySelection &&
+        source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP;
     const bool previewAddTrackSlot =
-        !source.trackNavigation.selection.active.get() &&
-        source.trackNavigation.previewAddSlot.get();
+        !selectingTrack && source.trackNavigation.previewAddSlot.get();
     const bool previewAddPageSlot =
-        !sequencer.structureUi.pageSelection.active.get() &&
-        sequencer.structureUi.previewAddPageSlot.get();
+        !selectingPage && sequencer.structureUi.previewAddPageSlot.get();
     const uint8_t addTrackIndex =
         (previewAddTrackSlot &&
          source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK)
@@ -79,13 +71,14 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                   source.trackNavigation.previewTrackIndex.get()
               )
             : core::ui::SequencerHeaderBarProps::TRACK_COUNT;
-    const uint8_t previewTrack =
-        selectingTrack
-            ? source.trackNavigation.selection.cursorIndex.get()
-            : ((previewAddTrackSlot &&
-                addTrackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT)
-                   ? addTrackIndex
-                   : activeTrack);
+    const uint8_t previewTrack = selectingTrack
+        ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+              source.trackNavigation.selection.cursorIndex.get()
+          )
+        : ((previewAddTrackSlot &&
+         addTrackIndex < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT)
+            ? addTrackIndex
+            : activeTrack);
     const uint8_t addPageIndex =
         (previewAddPageSlot &&
          source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE)
@@ -100,26 +93,22 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                   )
               )
         : selectingPage
-            ? sequencer.structureUi.pageSelection.cursorIndex.get()
-            : ((previewAddPageSlot &&
-                addPageIndex < core::state::sequencer::SequencerState::PAGE_COUNT)
-                   ? addPageIndex
-                   : sequencer.visiblePage());
+            ? std::min<uint8_t>(
+                  sequencer.structureUi.pageSelection.cursorIndex.get(),
+                  static_cast<uint8_t>(
+                      core::state::sequencer::SequencerState::PAGE_COUNT - 1U
+                  )
+              )
+        : ((previewAddPageSlot &&
+            addPageIndex < core::state::sequencer::SequencerState::PAGE_COUNT)
+               ? addPageIndex
+               : sequencer.visiblePage());
     const bool previewPageAddSlotActive =
         previewAddPageSlot &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
         addPageIndex < core::state::sequencer::SequencerState::PAGE_COUNT;
-    const auto pageSelectionPastePlan =
-        (selectingPage && source.structureClipboard.hasSequencerPageSelection())
-            ? core::state::buildSequencerPageSelectionPastePlan(
-                  source.structureClipboard.sequencerPageSelection,
-                  viewedPage,
-                  sequencer.activePageCount()
-              )
-            : core::state::SequencerPageSelectionPastePlan{};
     const bool pageClipboardPreview =
-        !selectingPage &&
-        !selectingTrack &&
+        !anySelection &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE &&
         source.structureClipboard.hasSequencerPage();
     const uint16_t pageClipboardSourceMask = pageClipboardPreview
@@ -139,15 +128,15 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         core::state::sequencer::SequencerCcLaneUiMode::LANE_GRID;
     const char* leftText = ccLaneGrid
         ? "CC lane"
-        : structureWorkspace
-        ? "Struct"
         : microContext
         ? "Micro"
         : (cycleContext
                ? "Cycle"
                : ((selectingStep || focusingStep)
                       ? "Step"
-                      : ((selectingTrack || focusingTrack) ? "Track" : "Pattern")));
+                       : ((selectingTrack || focusingTrack)
+                              ? "Track"
+                              : "Pattern")));
     std::array<char, 12> badgeText{};
     if (ccLaneGrid) {
         const auto* bank =
@@ -164,19 +153,7 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 )
             );
         }
-    } else if (structureWorkspace) {
-        std::snprintf(
-            badgeText.data(),
-            badgeText.size(),
-            "%s",
-            sequencer.structureUi.workspace.level.get() ==
-                    core::state::sequencer::SequencerStructureWorkspaceLevel::TRACKS
-                ? "Tracks"
-                : "Patterns"
-        );
-    } else if (!source.trackNavigation.selection.active.get() &&
-        !sequencer.structureUi.pageSelection.active.get() &&
-        !sequencer.structureUi.stepSelection.active.get()) {
+    } else if (!anySelection) {
         const char* badge = clipboardBadge(source.structureClipboard);
         if (badge[0] != '\0' && std::strcmp(badge, leftText) == 0) {
             badge = "Copied";
@@ -201,19 +178,16 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         .selectingPage = selectingPage,
         .selectingStep = selectingStep,
         .previewPageAddSlot = previewPageAddSlotActive,
-        .pageSourceMarkerMask = static_cast<uint16_t>(
-            selectingPage ? pageSelectionMask : pageClipboardSourceMask
-        ),
-        .pageDestinationPreviewMask = static_cast<uint16_t>(
-            selectingPage
-                ? pageSelectionPastePlan.destinationMask
-                : (selectingPage ? 0U : pageClipboardDestinationMask)
-        ),
-        .pageDestinationOverwriteMask = static_cast<uint16_t>(
-            selectingPage
-                ? pageSelectionPastePlan.overwriteMask
-                : (selectingPage ? 0U : pageClipboardOverwriteMask)
-        ),
+        .pageSourceMarkerMask = selectingPage
+            ? static_cast<uint16_t>(
+                  sequencer.structureUi.pageSelection.selectedMask.get() &
+                  core::state::shared::prefixMask(
+                      core::state::sequencer::activeContentPageCount(sequencer)
+                  )
+              )
+            : pageClipboardSourceMask,
+        .pageDestinationPreviewMask = pageClipboardDestinationMask,
+        .pageDestinationOverwriteMask = pageClipboardOverwriteMask,
         .leftText = leftText,
         .badgeText = badgeText,
     };

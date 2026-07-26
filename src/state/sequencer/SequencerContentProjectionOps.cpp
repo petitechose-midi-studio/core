@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "state/sequencer/SequencerContentViewInternal.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::state::sequencer {
 using namespace content_view_internal;
@@ -17,7 +18,7 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
     out.localStep = step;
     out.rootContext = isRootContentView(sequencer);
 
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     if (graph == nullptr) {
         if (!out.rootContext) return out;
     }
@@ -109,7 +110,7 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentOwnerProjection(
 
     SequencerContentStepProjection out{};
     const auto* frame = sequencer.contentView.currentFrame();
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     if (frame == nullptr || graph == nullptr) return out;
 
     const ResolvedStep owner = resolveOwnerStep(sequencer, scaleSettings);
@@ -157,7 +158,7 @@ FLASHMEM SequencerContentStepProjection resolveContentFrameOwnerProjection(
 
     SequencerContentStepProjection out{};
     const auto& view = sequencer.contentView;
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     if (frameDepth == 0 ||
         frameDepth > view.stackDepth ||
         frameDepth > view.frames.size() ||
@@ -213,7 +214,7 @@ FLASHMEM SequencerContentPlaybackProjection resolveActiveContentPlaybackProjecti
     const auto* frame = view.currentFrame();
     if (frame == nullptr || frame->length == 0 || view.stackDepth == 0) return {};
 
-    const uint8_t rootLength = sequencer.pattern.length.get();
+    const uint8_t rootLength = authoringPattern(sequencer).length.get();
     if (rootLength == 0) return {};
 
     const uint8_t rootStep = static_cast<uint8_t>(sequencer.playheadStep.get());
@@ -409,7 +410,7 @@ FLASHMEM ChildContentRuntimeCursor childContentRuntimeCursorForProjection(
         return cursor;
     }
 
-    const uint8_t rootLength = sequencer.pattern.length.get();
+    const uint8_t rootLength = authoringPattern(sequencer).length.get();
     const auto& firstFrame = view.frames[0];
     if (rootLength > 0 &&
         firstFrame.ownerRootStep < rootLength &&
@@ -485,7 +486,7 @@ FLASHMEM bool resolveRepresentativeChildContentSummary(
         return false;
     }
 
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     const auto* node = graph ? graph->stepNode(projection.nodeId) : nullptr;
     if (graph == nullptr || node == nullptr) return false;
 

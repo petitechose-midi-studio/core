@@ -12,10 +12,13 @@
 #include "state/StructureClipboardState.hpp"
 #include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroUiState.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/modulation/ProjectModulatorSourceSession.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
 #include "state/project/ProjectNavigationState.hpp"
-#include "ui/macro/MacroLfoAuditionModel.hpp"
+#include "ui/modulation/ModulationDepthUiModel.hpp"
+#include "ui/modulation/ModulatorLfoUiModel.hpp"
 
 namespace core::context::standalone::ux {
 namespace {
@@ -53,6 +56,56 @@ FLASHMEM const char* sourceKind(const ModulatorSourceState& source) {
     return "recorded_shape";
 }
 
+FLASHMEM const char* recordedShapeOperationStatus(
+    core::state::modulation::ProjectRecordedShapeCaptureStatus status
+) {
+    using Status = core::state::modulation::
+        ProjectRecordedShapeCaptureStatus;
+    switch (status) {
+        case Status::ARMED: return "armed";
+        case Status::RECORDING:
+        case Status::REDUCED: return "recording";
+        case Status::COMMITTED: return "committed";
+        case Status::NO_CHANGE: return "no_change";
+        case Status::CANCELLED: return "cancelled";
+        case Status::INVALIDATED:
+        case Status::SCRATCH_UNAVAILABLE:
+        case Status::COMMIT_FAILED: return "invalidated";
+        case Status::IDLE:
+        default: return "idle";
+    }
+}
+
+FLASHMEM const char* recordedShapeOutcome(
+    core::state::modulation::ProjectRecordedShapeCaptureStatus status
+) {
+    using Status = core::state::modulation::
+        ProjectRecordedShapeCaptureStatus;
+    switch (status) {
+        case Status::RECORDING:
+        case Status::REDUCED:
+        case Status::COMMITTED: return "applied";
+        case Status::NO_CHANGE: return "no_change";
+        case Status::CANCELLED: return "cancelled";
+        case Status::INVALIDATED:
+        case Status::SCRATCH_UNAVAILABLE:
+        case Status::COMMIT_FAILED: return "invalidated";
+        default: return nullptr;
+    }
+}
+
+FLASHMEM const char* recordedShapeStatusFromFeedback(const char* feedback) {
+    if (!feedback) return nullptr;
+    if (std::strncmp(feedback, "Recorded ", 9U) == 0) return "committed";
+    if (std::strncmp(feedback, "No movement", 11U) == 0) return "no_change";
+    if (std::strstr(feedback, "cancelled") != nullptr) return "cancelled";
+    if (std::strstr(feedback, "failed") != nullptr ||
+        std::strstr(feedback, "unavailable") != nullptr) {
+        return "invalidated";
+    }
+    return nullptr;
+}
+
 FLASHMEM const char* detailProperty(SourceDetailItem item) {
     switch (item) {
         case SourceDetailItem::PREVIEW: return "source";
@@ -62,20 +115,35 @@ FLASHMEM const char* detailProperty(SourceDetailItem item) {
         case SourceDetailItem::TIMING: return "timing";
         case SourceDetailItem::PHASE: return "phase";
         case SourceDetailItem::RETRIGGER: return "retrigger";
+        case SourceDetailItem::RECORD: return "record";
         case SourceDetailItem::LENGTH: return "length";
         case SourceDetailItem::SOURCE_DOMAIN: return "domain";
         case SourceDetailItem::DESTINATIONS: return "destinations";
         case SourceDetailItem::OPTIONS: return "details";
         case SourceDetailItem::RENAME: return "rename";
+        case SourceDetailItem::DELAY: return "delay";
         case SourceDetailItem::ATTACK: return "attack";
+        case SourceDetailItem::HOLD: return "hold";
         case SourceDetailItem::DECAY: return "decay";
         case SourceDetailItem::SUSTAIN: return "sustain";
         case SourceDetailItem::RELEASE: return "release";
         case SourceDetailItem::TRIGGER: return "trigger";
-        case SourceDetailItem::CURVE: return "curve";
+        case SourceDetailItem::SMOOTH: return "smooth";
+        case SourceDetailItem::RESPONSE: return "response";
         case SourceDetailItem::DEPTH: return "depth";
+        case SourceDetailItem::INVALID: return "invalid";
     }
-    return "source";
+    return "invalid";
+}
+
+FLASHMEM bool isEnvelopeTimeProperty(const char* property) {
+    return property != nullptr &&
+        (std::strcmp(property, "delay") == 0 ||
+         std::strcmp(property, "attack") == 0 ||
+         std::strcmp(property, "hold") == 0 ||
+         std::strcmp(property, "decay") == 0 ||
+         std::strcmp(property, "release") == 0 ||
+         std::strcmp(property, "smooth") == 0);
 }
 
 FLASHMEM void formatSourcePrimary(
@@ -98,8 +166,8 @@ FLASHMEM void formatSourcePrimary(
                 out,
                 sizeof(out),
                 "%s",
-                core::ui::macro::lfo_audition::rateLabel(
-                    core::ui::macro::lfo_audition::rateIndex(lfo.periodTicks)
+                core::ui::modulation::lfo::rateLabel(
+                    core::ui::modulation::lfo::rateIndex(lfo.periodTicks)
                 )
             );
         }
@@ -133,10 +201,16 @@ FLASHMEM void formatSourcePrimary(
 
 FLASHMEM void formatBindingDepth(
     char (&out)[16],
+    const core::state::modulation::ProjectControlState& control,
     const ModulationBindingState& binding
 ) {
-    const int16_t percent = core::ui::macro::lfo_audition::depthQ15ToPercent(
-        binding.amountQ15
+    const int16_t percent = core::ui::modulation::depth::amountQ15ToPercent(
+        binding.amountQ15,
+        core::ui::modulation::depth::scaleFor(
+            control.authored.modulation,
+            control.authored.curves,
+            binding
+        )
     );
     std::snprintf(out, sizeof(out), "%+d%%", static_cast<int>(percent));
 }
@@ -173,6 +247,8 @@ FLASHMEM const char* feedbackOutcome(const char* feedback) {
     if (!feedback || feedback[0] == '\0') return nullptr;
     if (std::strstr(feedback, "cancelled") != nullptr) return "cancelled";
     if (std::strncmp(feedback, "Deleted ", 8U) == 0 ||
+        std::strncmp(feedback, "Ready ", 6U) == 0 ||
+        std::strncmp(feedback, "Recorded ", 9U) == 0 ||
         std::strcmp(feedback, "Destination removed") == 0 ||
         std::strcmp(feedback, "Destination applied") == 0 ||
         std::strcmp(feedback, "Applied - one Undo") == 0 ||
@@ -180,6 +256,9 @@ FLASHMEM const char* feedbackOutcome(const char* feedback) {
         std::strncmp(feedback, "Copied ", 7U) == 0 ||
         std::strncmp(feedback, "Independent", 11U) == 0) {
         return "applied";
+    }
+    if (std::strncmp(feedback, "No movement", 11U) == 0) {
+        return "no_change";
     }
     if (std::strstr(feedback, "failed") != nullptr ||
         std::strstr(feedback, "unavailable") != nullptr) {
@@ -194,12 +273,14 @@ FLASHMEM ProjectModulatorsUxSurface::ProjectModulatorsUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::project::ProjectNavigationState& navigation,
     core::state::macro::MacroPagesState& pages,
+    core::state::macro::MacroUiState& macroUi,
     core::state::StructureClipboardState& clipboard,
     core::state::macro::MacroHistoryService& history
 )
     : active_view_(activeView),
       navigation_(navigation),
       pages_(pages),
+      macro_ui_(macroUi),
       clipboard_(clipboard),
       history_(history) {}
 
@@ -207,7 +288,7 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    if (active_view_.get() != core::ui::ViewType::PROJECT ||
+    if (active_view_.get() != core::ui::ViewType::MODULATORS ||
         navigation_.activeTab.get() !=
             core::state::project::ProjectTab::MODULATORS) {
         return false;
@@ -229,9 +310,12 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     const auto& graph = control.authored.modulation;
     const auto* source = focusedSource(navigation_, graph);
     const auto* binding = focusedBinding(navigation_, graph);
-    const bool sourceAudition = source != nullptr && control.audition.active &&
-        control.audition.sourceCreated &&
-        control.audition.sourceId == source->id;
+    const auto sourceSession = core::state::modulation::
+        resolveProjectModulatorSourceSession(
+            control,
+            source != nullptr ? source->id : control.audition.sourceId
+        );
+    const bool sourceAudition = source != nullptr && sourceSession.audition();
     const auto* auditionBinding = sourceAudition
         ? core::state::modulation::findProjectModulationBinding(
               graph,
@@ -239,7 +323,7 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
           )
         : nullptr;
     const auto& auditionDestination = control.audition.destination;
-    const bool auditionDestinationExists = control.audition.active &&
+    const bool auditionDestinationExists = sourceSession.audition() &&
         auditionDestination.track < core::state::macro::TRACK_COUNT &&
         auditionDestination.page < core::state::macro::PAGE_COUNT &&
         auditionDestination.macro < core::state::macro::MACRO_COUNT &&
@@ -269,12 +353,22 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     }
 
     if (node == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) {
-        const bool adsr = navigation_.focusedRow.get() != 0U;
+        const auto target = core::state::project::modulators::
+            sourceKindTargetAtRow(navigation_.focusedRow.get());
+        if (!target.valid) return false;
+        const auto kind = target.kind;
         out.mode = "project.modulator_kind_picker";
         out.target = "source_kind";
         out.targetIndex = navigation_.focusedRow.get();
-        out.property = adsr ? "adsr" : "lfo";
-        out.valueLabel[0] = adsr ? 'A' : 'L';
+        out.property = kind == core::state::modulation::ModulatorKind::LFO
+            ? "lfo"
+            : (kind == core::state::modulation::ModulatorKind::ADSR
+                   ? "adsr"
+                   : "recorded_shape");
+        out.valueLabel[0] = kind ==
+                core::state::modulation::ModulatorKind::LFO
+            ? 'L'
+            : (kind == core::state::modulation::ModulatorKind::ADSR ? 'A' : 'M');
         out.valueLabel[1] = '\0';
         out.operationStatus = "explicit_selection";
         if (isEncoder(event, Config::EncoderID::NAV)) {
@@ -284,7 +378,10 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                        Config::ButtonID::NAV,
                        oc::core::input::ButtonBindingType::RELEASE
                    )) {
-            out.effect = "choose_source_kind";
+            out.effect = kind ==
+                    core::state::modulation::ModulatorKind::RECORDED_SHAPE
+                ? "create_project_recorded_shape"
+                : "choose_source_kind";
         } else if (isButton(
                        event,
                        Config::ButtonID::LEFT_TOP,
@@ -298,7 +395,7 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
     if (node == ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
         using PickerLevel =
             core::state::project::ModulatorDestinationPickerLevel;
-        const bool auditioning = control.audition.active;
+        const bool auditioning = sourceSession.audition();
         const auto level = navigation_.destinationPickerLevel;
         out.mode = level == PickerLevel::TRACK
             ? "project.modulator_destination.track"
@@ -317,9 +414,12 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         out.targetTrack = navigation_.destinationPickerTrack;
         out.property = navigation_.creatingModulatorSource
             ? (navigation_.creatingModulatorKind ==
-                       core::state::modulation::ModulatorKind::ADSR
-                   ? "new_adsr_destination"
-                   : "new_lfo_destination")
+                       core::state::modulation::ModulatorKind::LFO
+                   ? "new_lfo_destination"
+                   : (navigation_.creatingModulatorKind ==
+                              core::state::modulation::ModulatorKind::ADSR
+                          ? "new_adsr_destination"
+                          : "new_recorded_shape_destination"))
             : "destination";
         out.operationStatus = auditioning
             ? "audition"
@@ -348,12 +448,7 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                 ? "choose_track"
                 : (level == PickerLevel::PAGE
                        ? "choose_page"
-                       : (navigation_.creatingModulatorSource
-                              ? (navigation_.creatingModulatorKind ==
-                                         core::state::modulation::ModulatorKind::ADSR
-                                     ? "start_adsr_destination_audition"
-                                     : "start_lfo_destination_audition")
-                              : "start_destination_audition"));
+                       : "start_destination_audition");
         } else if (isEncoder(event, Config::EncoderID::OPT) && auditioning) {
             out.effect = "edit_destination_audition_depth";
         } else if (isButton(
@@ -426,7 +521,17 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         out.mode = "project.modulator_trigger";
         out.target = "trigger_route";
         out.targetIndex = row;
-        out.property = row == 0U ? "track" : (row == 1U ? "channel" : "note");
+        constexpr const char* properties[]{
+            "track",
+            "note_low",
+            "note_high",
+            "velocity_low",
+            "velocity_high",
+        };
+        out.property = row < 5U ? properties[row] : "invalid";
+        if (sourceSession.existingAudition()) {
+            out.operationStatus = "shared_read_only";
+        }
         if (route) {
             const auto& trigger = route->trigger;
             if (row == 0U) {
@@ -436,27 +541,19 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                     "%u",
                     static_cast<unsigned>(trigger.track + 1U)
                 );
-            } else if (row == 1U) {
-                if (trigger.channel == core::state::modulation::
-                        PROJECT_MODULATION_TRIGGER_ANY_CHANNEL) {
-                    std::snprintf(out.valueLabel, sizeof(out.valueLabel), "any");
-                } else {
-                    std::snprintf(
-                        out.valueLabel,
-                        sizeof(out.valueLabel),
-                        "%u",
-                        static_cast<unsigned>(trigger.channel + 1U)
-                    );
-                }
-            } else if (trigger.data == core::state::modulation::
-                    PROJECT_MODULATION_TRIGGER_ANY_NOTE) {
-                std::snprintf(out.valueLabel, sizeof(out.valueLabel), "any");
             } else {
+                const uint8_t value = row == 1U
+                    ? trigger.noteMin
+                    : (row == 2U
+                        ? trigger.noteMax
+                        : (row == 3U
+                            ? route->velocityMin
+                            : route->velocityMax));
                 std::snprintf(
                     out.valueLabel,
                     sizeof(out.valueLabel),
                     "%u",
-                    static_cast<unsigned>(trigger.data)
+                    static_cast<unsigned>(value)
                 );
             }
         }
@@ -473,7 +570,7 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
             out.targetTrack = binding->destination.track;
             out.targetKind = "macro";
             out.property = "depth";
-            formatBindingDepth(out.valueLabel, *binding);
+            formatBindingDepth(out.valueLabel, control, *binding);
             out.operationStatus =
                 (binding->flags & core::state::modulation::
                      PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U
@@ -488,24 +585,37 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                        : "project.modulator_detail");
         out.target = "modulator";
         out.targetIndex = navigation_.focusedRow.get();
-        const auto layout = sourceAudition
-            ? (options
-                ? core::state::project::modulators::sourceAuditionOptionsLayout(
-                      source->kind
-                  )
-                : core::state::project::modulators::sourceAuditionLayout(
-                      source->kind
-                  ))
-            : (options
-                ? core::state::project::modulators::sourceOptionsLayout(
-                      source->kind
-                  )
-                : core::state::project::modulators::sourceDetailLayout(
-                      source->kind
-                  ));
+        const auto layout = core::state::project::modulators::
+            sourceWorkspaceLayout(source->kind, options, sourceAudition);
         const auto item = layout.at(navigation_.focusedRow.get());
         out.property = rename ? "name" : detailProperty(item);
-        if (item == SourceDetailItem::DESTINATIONS) {
+        if (sourceSession.existingAudition() &&
+            item != SourceDetailItem::DEPTH) {
+            out.operationStatus = "shared_read_only";
+        }
+        if (item == SourceDetailItem::RECORD) {
+            const auto& capture = macro_ui_.recordedShapeCapture;
+            const bool matchingCapture = capture.active() &&
+                capture.mode == core::state::modulation::
+                    ProjectRecordedShapeCaptureMode::REPLACE_EXISTING &&
+                capture.sourceId == source->id;
+            const char* status = matchingCapture
+                ? recordedShapeOperationStatus(capture.status)
+                : recordedShapeStatusFromFeedback(feedback);
+            std::snprintf(out.valueLabel, sizeof(out.valueLabel), "%s",
+                          matchingCapture
+                              ? (capture.status == core::state::modulation::
+                                        ProjectRecordedShapeCaptureStatus::ARMED
+                                     ? "ARMED"
+                                     : "RECORDING")
+                              : "HOLD + OPT");
+            if (!sourceSession.existingAudition()) {
+                out.operationStatus = status ? status : "idle";
+            }
+            if (!matchingCapture && status != nullptr) {
+                out.outcome = feedbackOutcome(feedback);
+            }
+        } else if (item == SourceDetailItem::DESTINATIONS) {
             std::snprintf(
                 out.valueLabel,
                 sizeof(out.valueLabel),
@@ -513,13 +623,73 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
                 static_cast<unsigned>(destinationCount)
             );
         } else if (item == SourceDetailItem::DEPTH && auditionBinding != nullptr) {
-            formatBindingDepth(out.valueLabel, *auditionBinding);
+            formatBindingDepth(out.valueLabel, control, *auditionBinding);
         } else {
             formatSourcePrimary(out.valueLabel, control, *source);
         }
     }
 
-    if (isEncoder(event, Config::EncoderID::NAV)) {
+    const bool recordedShapeRecord = source->kind ==
+            core::state::modulation::ModulatorKind::RECORDED_SHAPE &&
+        out.property != nullptr && std::strcmp(out.property, "record") == 0;
+    const auto& recordedShapeCapture = macro_ui_.recordedShapeCapture;
+    const bool matchingRecordedShapeCapture = recordedShapeRecord &&
+        recordedShapeCapture.active() &&
+        recordedShapeCapture.mode == core::state::modulation::
+            ProjectRecordedShapeCaptureMode::REPLACE_EXISTING &&
+        recordedShapeCapture.sourceId == source->id;
+
+    if (recordedShapeRecord && isButton(
+            event,
+            Config::ButtonID::BOTTOM_LEFT,
+            oc::core::input::ButtonBindingType::PRESS
+        )) {
+        recorded_shape_capture_button_seen_ = true;
+        out.effect = "arm_project_recorded_shape";
+    } else if (recordedShapeRecord &&
+               isEncoder(event, Config::EncoderID::OPT)) {
+        if (recorded_shape_capture_button_seen_ ||
+            matchingRecordedShapeCapture) {
+            out.effect = "record_project_recorded_shape_value";
+            out.outcome = recordedShapeOutcome(recordedShapeCapture.status);
+        } else {
+            out.effect = "show_project_recorded_shape_record_hint";
+            out.outcome = "ignored";
+            out.reason = "hold_bottom_left";
+        }
+    } else if (recordedShapeRecord && isButton(
+                   event,
+                   Config::ButtonID::LEFT_TOP,
+                   oc::core::input::ButtonBindingType::RELEASE
+               ) && (recorded_shape_capture_button_seen_ ||
+                     matchingRecordedShapeCapture)) {
+        out.effect = "cancel_project_recorded_shape";
+        out.outcome = "cancelled";
+    } else if (recordedShapeRecord && isButton(
+                   event,
+                   Config::ButtonID::BOTTOM_LEFT,
+                   oc::core::input::ButtonBindingType::RELEASE
+               ) && recorded_shape_capture_button_seen_) {
+        const bool cancelled = recordedShapeCapture.status ==
+            core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::CANCELLED;
+        const bool touched = recordedShapeCapture.take != nullptr &&
+            recordedShapeCapture.take->touched;
+        const bool commitAttempted = touched ||
+            recordedShapeCapture.status == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::COMMITTED ||
+            recordedShapeCapture.status == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::INVALIDATED ||
+            recordedShapeCapture.status == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::COMMIT_FAILED;
+        out.effect = cancelled
+            ? "cancel_project_recorded_shape"
+            : (commitAttempted
+                   ? "commit_project_recorded_shape"
+                   : "discard_empty_project_recorded_shape");
+        if (cancelled) out.outcome = "cancelled";
+        recorded_shape_capture_button_seen_ = false;
+    } else if (isEncoder(event, Config::EncoderID::NAV)) {
         if (navigation_.physicalHoldActive.get()) {
             out.effect = "open_modulators_tab";
         } else if (node == ProjectNodeId::MODULATOR_TRIGGER) {
@@ -528,7 +698,18 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
             out.effect = "focus_modulator_item";
         }
     } else if (isEncoder(event, Config::EncoderID::OPT)) {
-        if (node == ProjectNodeId::MODULATOR_TRIGGER) {
+        if (sourceSession.audition() &&
+            ((node == ProjectNodeId::MODULATOR_TRIGGER &&
+              !sourceSession.allows(core::state::modulation::
+                  ProjectModulatorSourceSessionCapability::EDIT_TRIGGER)) ||
+             (node != ProjectNodeId::MODULATOR_TRIGGER &&
+              out.property != nullptr &&
+              std::strcmp(out.property, "depth") != 0 &&
+              !sourceSession.allows(core::state::modulation::
+                  ProjectModulatorSourceSessionCapability::EDIT_SOURCE)))) {
+            out.effect = "inspect_shared_source_read_only";
+            out.outcome = "blocked";
+        } else if (node == ProjectNodeId::MODULATOR_TRIGGER) {
             out.effect = "edit_trigger_route";
         } else {
             out.effect = (binding ||
@@ -548,8 +729,8 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
         } else if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
                    node == ProjectNodeId::MODULATOR_SOURCE_OPTIONS) {
             if (node == ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
-                navigation_.focusedRow.get() == 0U) {
-                out.effect = "open_modulator_detail";
+                out.property && std::strcmp(out.property, "record") == 0) {
+                out.effect = "show_project_recorded_shape_record_hint";
             } else if (out.property &&
                        std::strcmp(out.property, "details") == 0) {
                 out.effect = "open_modulator_options";
@@ -562,6 +743,20 @@ FLASHMEM bool ProjectModulatorsUxSurface::captureSemanticUxContext(
             } else if (out.property &&
                        std::strcmp(out.property, "rename") == 0) {
                 out.effect = "open_modulator_rename";
+            } else if (
+                source->kind == core::state::modulation::ModulatorKind::ADSR &&
+                isEnvelopeTimeProperty(out.property) &&
+                core::state::modulation::modulatorAdsrTiming(
+                    source->parameters.adsr.traits
+                ) == core::state::modulation::ModulatorTimingMode::SYNC
+            ) {
+                if (sourceSession.allows(core::state::modulation::
+                        ProjectModulatorSourceSessionCapability::EDIT_SOURCE)) {
+                    out.effect = "cycle_modulator_feel";
+                } else {
+                    out.effect = "inspect_shared_source_read_only";
+                    out.outcome = "blocked";
+                }
             } else {
                 out.effect = "inspect_modulator_property";
             }

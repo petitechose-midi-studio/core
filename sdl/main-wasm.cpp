@@ -98,6 +98,7 @@ int main(int argc, char** argv) {
             core::sequencer::SequencerRuntimeService::StateRefs{
                 coreState->sequencer,
                 coreState->sequencerTracks,
+                coreState->projectTracks,
                 coreState->projectNavigation,
                 coreState->statusBar,
                 coreState->midiSync,

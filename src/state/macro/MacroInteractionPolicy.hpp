@@ -2,17 +2,13 @@
 
 #include <cstdint>
 
-#include "state/StructureSelectionState.hpp"
-#include "state/contextual/ContextActionSpec.hpp"
+#include "state/StructureNavigationState.hpp"
 
 namespace core::state::macro {
 
 enum class MacroInteractionAction : uint8_t {
     NONE = 0,
     MOVE_STRUCTURE,
-    MOVE_SELECTION_CURSOR,
-    TOGGLE_SELECTION,
-    ENTER_SELECTION,
     COMMIT_OR_CYCLE_STRUCTURE,
     CREATE_PREVIEWED_STRUCTURE,
     OPEN_SLOT_PROPERTIES,
@@ -24,9 +20,6 @@ enum class MacroInteractionAction : uint8_t {
     REMOVE_STRUCTURE,
     COPY_STRUCTURE,
     PASTE_STRUCTURE,
-    DELETE_SELECTION,
-    DUPLICATE_SELECTION,
-    CANCEL_SELECTION,
 };
 
 enum class MacroInteractionVisibility : uint8_t {
@@ -41,11 +34,9 @@ struct MacroInteractionContext {
         core::state::StructureNavigationFocus::PAGE;
     bool blockingOverlay = false;
     bool slotPropertySelecting = false;
-    bool selectionActive = false;
     bool previewingAddSlot = false;
     bool compatibleClipboardAvailable = false;
     bool canRemoveStructure = false;
-    core::state::contextual::ContextActionSpec selectionDeleteAction{};
 };
 
 struct MacroActionStripPolicy {
@@ -59,9 +50,7 @@ class MacroInteractionPolicy {
 public:
     static bool performanceAvailable(const MacroInteractionContext& context);
     static MacroInteractionAction navTurn(const MacroInteractionContext& context);
-    static MacroInteractionAction navRelease(const MacroInteractionContext& context,
-                                             bool longPressConsumed);
-    static MacroInteractionAction navLongPress(const MacroInteractionContext& context);
+    static MacroInteractionAction navRelease(const MacroInteractionContext& context);
     static MacroInteractionAction optTurn(const MacroInteractionContext& context);
     static MacroInteractionAction leftTopRelease(const MacroInteractionContext& context);
     static MacroInteractionAction leftCenterPress(const MacroInteractionContext& context);

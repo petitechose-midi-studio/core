@@ -93,6 +93,49 @@ FLASHMEM SequencerCcLaneMutationResult result(
     };
 }
 
+FLASHMEM bool assignLaneStep(
+    SequencerCcLane& lane,
+    uint8_t step,
+    bool active,
+    uint8_t value,
+    SequencerCcLaneTransition transition
+) {
+    const bool currentActive = lane.activeMask.test(step);
+    const uint8_t canonicalValue = active ? value : 0U;
+    const auto canonicalTransition = active
+        ? transition
+        : SequencerCcLaneTransition::HOLD;
+    if (currentActive == active &&
+        lane.values[step] == canonicalValue &&
+        sequencerCcLaneTransition(lane, step) == canonicalTransition) {
+        return false;
+    }
+
+    lane.activeMask.setBit(step, active);
+    lane.values[step] = canonicalValue;
+    setPackedTransitionValue(
+        lane,
+        step,
+        static_cast<uint8_t>(canonicalTransition)
+    );
+    return true;
+}
+
+FLASHMEM bool assignLaneStepFrom(
+    SequencerCcLane& target,
+    uint8_t targetStep,
+    const SequencerCcLane& source,
+    uint8_t sourceStep
+) {
+    return assignLaneStep(
+        target,
+        targetStep,
+        source.activeMask.test(sourceStep),
+        source.values[sourceStep],
+        sequencerCcLaneTransition(source, sourceStep)
+    );
+}
+
 }  // namespace
 
 FLASHMEM bool validSequencerCcLaneRoutePolicy(
@@ -148,13 +191,14 @@ FLASHMEM bool validSequencerCcLane(const SequencerCcLane& lane) {
         return false;
     }
 
-    for (uint8_t step = 0; step < SequencerCcLaneBank::MAX_STEPS; ++step) {
+    for (uint16_t step = 0; step < SequencerCcLaneBank::MAX_STEPS; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
         if (!validTransition(static_cast<SequencerCcLaneTransition>(
-                packedTransitionValue(lane, step)
+                packedTransitionValue(lane, stepIndex)
             ))) {
             return false;
         }
-        if (!lane.activeMask.test(step)) continue;
+        if (!lane.activeMask.test(stepIndex)) continue;
         if (lane.values[step] < lane.destination.minimum ||
             lane.values[step] > lane.destination.maximum) {
             return false;
@@ -261,8 +305,9 @@ FLASHMEM SequencerCcLaneMutationResult updateSequencerCcLaneSettings(
     }
 
     // A narrowed range cannot silently clamp authored musical data.
-    for (uint8_t step = 0; step < SequencerCcLaneBank::MAX_STEPS; ++step) {
-        if (!lane.activeMask.test(step)) continue;
+    for (uint16_t step = 0; step < SequencerCcLaneBank::MAX_STEPS; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
+        if (!lane.activeMask.test(stepIndex)) continue;
         if (lane.values[step] < draft.destination.minimum ||
             lane.values[step] > draft.destination.maximum) {
             return result(
@@ -449,6 +494,171 @@ FLASHMEM SequencerCcLaneMutationResult removeSequencerCcLane(
     lane.lifecycleGeneration = generation;
     ++bank.revision;
     return result(SequencerCcLaneMutationStatus::OK, laneIndex);
+}
+
+FLASHMEM bool trimSequencerCcLaneBank(
+    SequencerCcLaneBank& bank,
+    uint8_t contentLength
+) {
+    if (contentLength == 0U || contentLength > SequencerCcLaneBank::MAX_STEPS) {
+        return false;
+    }
+
+    bool changed = false;
+    for (auto& lane : bank.lanes) {
+        if (!lane.occupied) continue;
+        for (uint16_t step = contentLength; step < SequencerCcLaneBank::MAX_STEPS; ++step) {
+            changed = assignLaneStep(
+                lane,
+                static_cast<uint8_t>(step),
+                false,
+                0,
+                SequencerCcLaneTransition::HOLD
+            ) || changed;
+        }
+    }
+    if (changed) ++bank.revision;
+    return changed;
+}
+
+FLASHMEM bool duplicateSequencerCcLaneBankRange(
+    SequencerCcLaneBank& bank,
+    uint8_t sourceStart,
+    uint8_t targetStart,
+    uint8_t count
+) {
+    if (count == 0U ||
+        static_cast<uint16_t>(sourceStart) + count > SequencerCcLaneBank::MAX_STEPS ||
+        static_cast<uint16_t>(targetStart) + count > SequencerCcLaneBank::MAX_STEPS) {
+        return false;
+    }
+
+    bool changed = false;
+    for (auto& lane : bank.lanes) {
+        if (!lane.occupied) continue;
+        const SequencerCcLane source = lane;
+        for (uint16_t offset = 0; offset < count; ++offset) {
+            changed = assignLaneStepFrom(
+                lane,
+                static_cast<uint8_t>(targetStart + offset),
+                source,
+                static_cast<uint8_t>(sourceStart + offset)
+            ) || changed;
+        }
+    }
+    if (changed) ++bank.revision;
+    return changed;
+}
+
+FLASHMEM bool rotateSequencerCcLaneBank(
+    SequencerCcLaneBank& bank,
+    uint8_t contentLength,
+    int offsetSteps
+) {
+    if (contentLength <= 1U || contentLength > SequencerCcLaneBank::MAX_STEPS) {
+        return false;
+    }
+    int normalized = offsetSteps % static_cast<int>(contentLength);
+    if (normalized < 0) normalized += contentLength;
+    if (normalized == 0) return false;
+
+    bool changed = false;
+    for (auto& lane : bank.lanes) {
+        if (!lane.occupied) continue;
+        const SequencerCcLane source = lane;
+        for (uint16_t sourceStep = 0; sourceStep < contentLength; ++sourceStep) {
+            const auto sourceIndex = static_cast<uint8_t>(sourceStep);
+            const uint8_t targetStep = static_cast<uint8_t>(
+                (sourceStep + normalized) % contentLength
+            );
+            changed = assignLaneStepFrom(
+                lane, targetStep, source, sourceIndex
+            ) || changed;
+        }
+    }
+    if (changed) ++bank.revision;
+    return changed;
+}
+
+FLASHMEM bool insertSequencerCcLaneBankSpan(
+    SequencerCcLaneBank& bank,
+    uint8_t oldContentLength,
+    uint8_t insertAt,
+    uint8_t insertedLength
+) {
+    const uint16_t newLength = static_cast<uint16_t>(oldContentLength) + insertedLength;
+    if (oldContentLength == 0U || insertedLength == 0U ||
+        insertAt > oldContentLength || newLength > SequencerCcLaneBank::MAX_STEPS) {
+        return false;
+    }
+
+    bool changed = false;
+    for (auto& lane : bank.lanes) {
+        if (!lane.occupied) continue;
+        const SequencerCcLane source = lane;
+        for (uint16_t step = insertAt; step < newLength; ++step) {
+            const uint8_t targetStep = static_cast<uint8_t>(step);
+            if (step < static_cast<uint16_t>(insertAt) + insertedLength) {
+                changed = assignLaneStep(
+                    lane,
+                    targetStep,
+                    false,
+                    0,
+                    SequencerCcLaneTransition::HOLD
+                ) || changed;
+                continue;
+            }
+            changed = assignLaneStepFrom(
+                lane,
+                targetStep,
+                source,
+                static_cast<uint8_t>(step - insertedLength)
+            ) || changed;
+        }
+    }
+    if (changed) ++bank.revision;
+    return changed;
+}
+
+FLASHMEM bool removeSequencerCcLaneBankSpan(
+    SequencerCcLaneBank& bank,
+    uint8_t oldContentLength,
+    uint8_t removeAt,
+    uint8_t removedLength
+) {
+    const uint16_t removeEnd = static_cast<uint16_t>(removeAt) + removedLength;
+    if (oldContentLength <= 1U || removedLength == 0U ||
+        removeAt >= oldContentLength || removeEnd > oldContentLength ||
+        removedLength >= oldContentLength) {
+        return false;
+    }
+
+    const uint8_t newLength = static_cast<uint8_t>(oldContentLength - removedLength);
+    bool changed = false;
+    for (auto& lane : bank.lanes) {
+        if (!lane.occupied) continue;
+        const SequencerCcLane source = lane;
+        for (uint16_t step = removeAt; step < newLength; ++step) {
+            const auto stepIndex = static_cast<uint8_t>(step);
+            changed = assignLaneStepFrom(
+                lane,
+                stepIndex,
+                source,
+                static_cast<uint8_t>(step + removedLength)
+            ) || changed;
+        }
+        for (uint16_t step = newLength; step < oldContentLength; ++step) {
+            changed = assignLaneStep(
+                lane,
+                static_cast<uint8_t>(step),
+                false,
+                0,
+                SequencerCcLaneTransition::HOLD
+            ) || changed;
+        }
+    }
+    if (changed) ++bank.revision;
+    return changed;
 }
 
 FLASHMEM uint8_t proposedSequencerCcLaneEventValue(

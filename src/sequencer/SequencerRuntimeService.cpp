@@ -30,6 +30,9 @@ public:
                           core::state::sequencer::SequencerTrackActivationQueue&
                               trackActivations)
         : ccLaneRuntime(core::app::makeExtmemUnique<SequencerCcLaneRuntime>())
+        , ccPredictiveLaneRuntime(
+              core::app::makeExtmemUnique<SequencerCcLaneRuntime>()
+          )
         , ccCoordinator(
               core::app::makeExtmemUnique<
                   core::handler::MidiCcGlobalFrameCoordinator>(midiQueue)
@@ -40,11 +43,21 @@ public:
                    graphBank,
                    &trackActivations,
                    ccLaneRuntime.get(),
-                   ccCoordinator.get())
-        , timer(midi, midiQueue, snapshotBank, playback) {}
+                   ccCoordinator.get(),
+                   ccPredictiveLaneRuntime.get())
+        , timer(
+              midi,
+              midiQueue,
+              snapshotBank,
+              projectTrackSnapshots,
+              playback
+          ) {}
 
     [[nodiscard]] bool valid() const {
-        return ccLaneRuntime != nullptr && ccCoordinator != nullptr;
+        return ccLaneRuntime != nullptr &&
+               ccPredictiveLaneRuntime != nullptr &&
+               ccCoordinator != nullptr &&
+               playback.ccTemporalScratchValid();
     }
 
     core::handler::MidiCcGlobalFrameCoordinator* coordinator() const {
@@ -52,7 +65,10 @@ public:
     }
 
     RealtimeMidiQueue midiQueue{};
+    ProjectTrackRuntimeSnapshotBank projectTrackSnapshots{};
     core::app::ExtmemUniquePtr<SequencerCcLaneRuntime> ccLaneRuntime;
+    core::app::ExtmemUniquePtr<SequencerCcLaneRuntime>
+        ccPredictiveLaneRuntime;
     core::app::ExtmemUniquePtr<core::handler::MidiCcGlobalFrameCoordinator>
         ccCoordinator;
     SequencerPlaybackService playback;
@@ -107,6 +123,7 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
     , midi_(midi)
     , sequencer_state_(state.sequencer)
     , track_bank_state_(state.trackBank)
+    , project_track_state_(state.projectTracks)
     , status_bar_state_(state.statusBar)
     , midi_sync_state_(state.midiSync)
     , track_activations_(state.trackActivations)
@@ -138,6 +155,11 @@ FLASHMEM SequencerRuntimeService::SequencerRuntimeService(StateRefs state,
     (void)runtime_graph_bank_.prepare(sequencer_state_, track_bank_state_);
     const uint8_t initialSnapshotIndex = snapshot_bank_.refresh();
     if (snapshot_bank_.lastRefreshSucceeded()) {
+        (void)realtime_lane_->projectTrackSnapshots.publish(
+            initialSnapshotIndex,
+            project_track_state_,
+            snapshot_bank_.snapshot(initialSnapshotIndex).enabledMask
+        );
         runtime_graph_bank_.publishPrepared([this, initialSnapshotIndex]() {
             snapshot_bank_.commit(initialSnapshotIndex);
         });
@@ -178,6 +200,13 @@ void SequencerRuntimeService::update() {
         snapshotIndex = snapshot_bank_.activeIndex();
     }
     const auto& runtimeSnapshot = snapshot_bank_.snapshot(snapshotIndex);
+    if (graphGenerationReady) {
+        (void)realtime_lane_->projectTrackSnapshots.publish(
+            snapshotIndex,
+            project_track_state_,
+            runtimeSnapshot.enabledMask
+        );
+    }
 
     bool timerOwnsTransport = false;
     {
@@ -242,13 +271,21 @@ void SequencerRuntimeService::update() {
             stopPlayback_();
         }
 
-        realtime_lane_->playback.update(runtimeSnapshot,
-                                        midi_clock_sync_.tick(),
-                                        midi_clock_sync_.playing(),
-                                        nowUs,
-                                        tickPeriodUs,
-                                        true,
-                                        snapshot_bank_.laneSnapshot(snapshotIndex));
+        // snapshotIndex is the committed 0/1 runtime-bank index used by both
+        // publications, so the canonical Track projection is guaranteed.
+        const auto& projectTracks =
+            *realtime_lane_->projectTrackSnapshots.snapshot(snapshotIndex);
+        realtime_lane_->playback.update(
+            runtimeSnapshot,
+            midi_clock_sync_.tick(),
+            midi_clock_sync_.playing(),
+            nowUs,
+            tickPeriodUs,
+            projectTracks,
+            true,
+            snapshot_bank_.laneSnapshot(snapshotIndex),
+            !midi_clock_sync_.usingExternalSource()
+        );
         track_activations_.publishRealtimeTelemetry();
         drainRealtimeMidiQueue_(core::time_compat::micros());
         realtime_lane_->playback.publishUiState(nowMs);

@@ -29,7 +29,31 @@ FLASHMEM uint8_t enabledOrdinal(uint16_t mask, uint8_t target) {
     return ordinal;
 }
 
+FLASHMEM void appendAdsrSourceItems(SourceDetailLayout& out) {
+    out.append(SourceDetailItem::ATTACK);
+    out.append(SourceDetailItem::DECAY);
+    out.append(SourceDetailItem::SUSTAIN);
+    out.append(SourceDetailItem::RELEASE);
+    out.append(SourceDetailItem::TRIGGER);
+}
+
+FLASHMEM void appendAdsrOptionItems(SourceDetailLayout& out) {
+    out.append(SourceDetailItem::DELAY);
+    out.append(SourceDetailItem::HOLD);
+    out.append(SourceDetailItem::TIMING);
+    out.append(SourceDetailItem::SMOOTH);
+    out.append(SourceDetailItem::RESPONSE);
+    out.append(SourceDetailItem::RETRIGGER);
+}
+
 }  // namespace
+
+FLASHMEM SourceKindRowTarget sourceKindTargetAtRow(uint8_t row) {
+    if (row == 0U) return {ModulatorKind::LFO, true};
+    if (row == 1U) return {ModulatorKind::ADSR, true};
+    if (row == 2U) return {ModulatorKind::RECORDED_SHAPE, true};
+    return {};
+}
 
 FLASHMEM uint16_t destinationPickerRowCount(
     const core::state::macro::MacroPagesState& pages,
@@ -197,14 +221,10 @@ FLASHMEM SourceDetailLayout sourceDetailLayout(ModulatorKind kind) {
         out.append(SourceDetailItem::TIMING);
         out.append(SourceDetailItem::RATE);
     } else if (kind == ModulatorKind::ADSR) {
-        out.append(SourceDetailItem::ATTACK);
-        out.append(SourceDetailItem::DECAY);
-        out.append(SourceDetailItem::SUSTAIN);
-        out.append(SourceDetailItem::RELEASE);
-        out.append(SourceDetailItem::TRIGGER);
+        appendAdsrSourceItems(out);
     } else {
+        out.append(SourceDetailItem::RECORD);
         out.append(SourceDetailItem::LENGTH);
-        out.append(SourceDetailItem::SOURCE_DOMAIN);
     }
     out.append(SourceDetailItem::OPTIONS);
     out.append(SourceDetailItem::DESTINATIONS);
@@ -217,9 +237,9 @@ FLASHMEM SourceDetailLayout sourceOptionsLayout(ModulatorKind kind) {
         out.append(SourceDetailItem::PHASE);
         out.append(SourceDetailItem::RETRIGGER);
     } else if (kind == ModulatorKind::ADSR) {
-        out.append(SourceDetailItem::TIMING);
-        out.append(SourceDetailItem::CURVE);
-        out.append(SourceDetailItem::RETRIGGER);
+        appendAdsrOptionItems(out);
+        out.append(SourceDetailItem::RENAME);
+        return out;
     }
     out.append(SourceDetailItem::RENAME);
     out.append(SourceDetailItem::DESTINATIONS);
@@ -230,36 +250,43 @@ FLASHMEM SourceDetailLayout sourceAuditionLayout(ModulatorKind kind) {
     SourceDetailLayout out{};
     if (kind == ModulatorKind::LFO) {
         out.append(SourceDetailItem::SHAPE);
-        out.append(SourceDetailItem::TIMING);
         out.append(SourceDetailItem::RATE);
-        out.append(SourceDetailItem::PHASE);
-        out.append(SourceDetailItem::RETRIGGER);
+        out.append(SourceDetailItem::DEPTH);
+        out.append(SourceDetailItem::OPTIONS);
     } else if (kind == ModulatorKind::ADSR) {
-        out.append(SourceDetailItem::ATTACK);
-        out.append(SourceDetailItem::DECAY);
-        out.append(SourceDetailItem::SUSTAIN);
-        out.append(SourceDetailItem::RELEASE);
-        out.append(SourceDetailItem::TRIGGER);
+        appendAdsrSourceItems(out);
         out.append(SourceDetailItem::OPTIONS);
     } else {
+        out.append(SourceDetailItem::RECORD);
         out.append(SourceDetailItem::LENGTH);
-        out.append(SourceDetailItem::SOURCE_DOMAIN);
     }
-    out.append(SourceDetailItem::DEPTH);
+    if (kind != ModulatorKind::LFO) out.append(SourceDetailItem::DEPTH);
     return out;
 }
 
 FLASHMEM SourceDetailLayout sourceAuditionOptionsLayout(ModulatorKind kind) {
     SourceDetailLayout out{};
     if (kind == ModulatorKind::LFO) {
+        out.append(SourceDetailItem::TIMING);
         out.append(SourceDetailItem::PHASE);
         out.append(SourceDetailItem::RETRIGGER);
     } else if (kind == ModulatorKind::ADSR) {
-        out.append(SourceDetailItem::TIMING);
-        out.append(SourceDetailItem::CURVE);
-        out.append(SourceDetailItem::RETRIGGER);
+        appendAdsrOptionItems(out);
     }
     return out;
+}
+
+FLASHMEM SourceDetailLayout sourceWorkspaceLayout(
+    ModulatorKind kind,
+    bool options,
+    bool audition
+) {
+    if (audition) {
+        return options
+            ? sourceAuditionOptionsLayout(kind)
+            : sourceAuditionLayout(kind);
+    }
+    return options ? sourceOptionsLayout(kind) : sourceDetailLayout(kind);
 }
 
 FLASHMEM uint16_t sourceDestinationCount(

@@ -3,6 +3,7 @@
 
 #include "state/CoreState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "support/CoreStorages.hpp"
 
 namespace {
@@ -20,7 +21,7 @@ void test_reset_root_property_to_default_also_resets_local_variation() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
     sequencer.pattern.note[2] = 74;
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(2);
@@ -54,7 +55,7 @@ void test_reset_child_property_to_default_preserves_existing_revision_behavior()
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
     const auto micro = core::state::sequencer::createMicroSequence(
@@ -118,7 +119,7 @@ void test_open_or_create_child_context_opens_existing_without_graph_mutation() {
     test_support::CoreStorages storage;
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
 
     const auto createdMicro = core::state::sequencer::openOrCreateActiveContentChild(
         sequencer,
@@ -128,8 +129,10 @@ void test_open_or_create_child_context_opens_existing_without_graph_mutation() {
     );
     assert(createdMicro.opened);
     assert(createdMicro.created);
+    assert(createdMicro.draft);
     assert(core::state::sequencer::isMicroSequenceContentView(sequencer));
 
+    assert(core::state::sequencer::publishStepContentDraft(sequencer));
     assert(core::state::sequencer::leaveContentView(sequencer));
     const uint32_t graphRevisionBeforeReopen = sequencer.pattern.graphRevision.get();
     const auto reopenedMicro = core::state::sequencer::openOrCreateActiveContentChild(
@@ -152,7 +155,9 @@ void test_open_or_create_child_context_opens_existing_without_graph_mutation() {
     );
     assert(createdCycle.opened);
     assert(createdCycle.created);
+    assert(createdCycle.draft);
     assert(core::state::sequencer::isCycleStatesContentView(sequencer));
+    assert(core::state::sequencer::publishStepContentDraft(sequencer));
 
     std::cout << "[PASS] test_open_or_create_child_context_opens_existing_without_graph_mutation\n";
 }
@@ -162,7 +167,7 @@ void test_copy_paste_and_clear_active_child_content() {
     auto state = makeState(storage);
     auto& sequencer = state.sequencer;
     auto& clipboard = state.structureClipboard;
-    sequencer.pattern.length.set(8);
+    sequencer.pattern.setContentLength(8);
 
     const auto createdMicro = core::state::sequencer::openOrCreateActiveContentChild(
         sequencer,
@@ -173,7 +178,13 @@ void test_copy_paste_and_clear_active_child_content() {
     assert(createdMicro.opened);
     assert(createdMicro.created);
     const auto sourceChildNode = core::state::sequencer::activeContentStepNodeId(sequencer, 0);
-    assert(core::state::sequencer::setNodeNoteOffset(sequencer.pattern, sourceChildNode, 5));
+    assert(core::state::sequencer::setNodeNoteOffset(
+        core::state::sequencer::authoringPattern(sequencer),
+        sourceChildNode,
+        5
+    ));
+    core::state::sequencer::notifyStepContentDraftMutation(sequencer);
+    assert(core::state::sequencer::publishStepContentDraft(sequencer));
     assert(core::state::sequencer::leaveContentView(sequencer));
 
     assert(core::state::sequencer::activeContentStepHasChildContent(

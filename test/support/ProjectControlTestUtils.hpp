@@ -14,12 +14,46 @@ namespace test_support::project_control {
 namespace macro = core::state::macro;
 namespace modulation = core::state::modulation;
 
-inline modulation::ProjectControlMacroSlotView readSlot(
+struct ModulationShape {
+    bool active = false;
+    float durationBeats = 1.0f;
+    uint16_t pointCount = 0U;
+    std::array<
+        macro::MacroCurvePoint,
+        macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS
+    > points{};
+};
+
+inline bool appendModulationPoint(
+    ModulationShape& shape,
+    float beat,
+    float value
+) {
+    if (shape.pointCount >= shape.points.size() ||
+        !std::isfinite(beat) ||
+        beat < 0.0f ||
+        (shape.pointCount > 0U &&
+         beat < shape.points[shape.pointCount - 1U].beat)) {
+        return false;
+    }
+    shape.points[shape.pointCount++] = {
+        beat,
+        macro::macroAutomationClampSigned(value),
+    };
+    shape.active = true;
+    return true;
+}
+
+inline modulation::ProjectControlMacroDestinationView readSlot(
     const modulation::ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address
 ) {
-    modulation::ProjectControlMacroSlotView out{};
-    assert(modulation::readProjectControlMacroSlot(control, address, out));
+    modulation::ProjectControlMacroDestinationView out{};
+    assert(modulation::readProjectControlMacroDestination(
+        control,
+        address,
+        out
+    ));
     return out;
 }
 
@@ -47,17 +81,17 @@ inline bool assignAutomation(
 inline bool assignModulation(
     modulation::ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address,
-    const macro::MacroModulationShape& shape,
+    const ModulationShape& shape,
     float amount = 1.0f
 ) {
     if (!shape.active || shape.pointCount == 0U) {
         const auto current = readSlot(control, address);
-        return !current.modulationStored ||
+        return current.modulationCount == 0U ||
                modulation::clearProjectControlModulation(control, address);
     }
 
     std::array<
-        macro::MacroPackedCurvePoint,
+        modulation::ProjectPackedCurvePoint,
         macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS> points{};
     const uint16_t durationTicks = macro::macroAutomationTicksFromBeats(
         shape.durationBeats
@@ -82,18 +116,21 @@ inline bool assignModulation(
             ),
         };
     }
-    const macro::MacroAutomationCurveRef curve{
-        .active = true,
-        .playbackState = macro::MacroCurvePlaybackState::ACTIVE,
+    const modulation::ProjectControlCurvePayload curve{
+        .spec = {
+            .sourceDurationTicks = durationTicks,
+            .durationTicks = durationTicks,
+            .windowOffsetTicks = 0U,
+            .interpolation =
+                modulation::ProjectCurveInterpolation::LINEAR,
+            .valueDomain = modulation::ProjectCurveValueDomain::BIPOLAR,
+            .origin = modulation::ProjectCurveOrigin::NATIVE,
+        },
         .pointOffset = 0,
         .pointCount = shape.pointCount,
-        .sourceDurationTicks = durationTicks,
-        .durationTicks = durationTicks,
-        .windowOffsetTicks = 0,
-        .interpolation = shape.interpolation,
-        .modulationOrigin = macro::MacroModulationOrigin::NATIVE,
+        .enabled = true,
     };
-    return modulation::replaceProjectControlModulation(
+    return modulation::replaceProjectControlRecordedShape(
         control,
         address,
         curve,
@@ -103,13 +140,13 @@ inline bool assignModulation(
     );
 }
 
-inline macro::MacroCurvePoint readCurvePoint(
+inline modulation::ProjectControlCurvePoint readCurvePoint(
     const modulation::ProjectControlState& control,
     modulation::ProjectCurveId curveId,
     uint16_t pointIndex,
     bool signedOutput
 ) {
-    macro::MacroCurvePoint out{};
+    modulation::ProjectControlCurvePoint out{};
     assert(modulation::readProjectControlCurvePoint(
         control,
         curveId,

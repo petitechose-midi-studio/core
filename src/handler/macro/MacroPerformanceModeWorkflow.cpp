@@ -27,8 +27,6 @@ FLASHMEM MacroPerformanceModeWorkflow::MacroPerformanceModeWorkflow(
 FLASHMEM bool MacroPerformanceModeWorkflow::performanceOverlayActive() const {
     return macro_ui_.performanceOverlayMode.get() !=
                core::state::macro::MacroPerformanceOverlayMode::NONE &&
-           !macro_ui_.pageSelection.active.get() &&
-           !track_ui_.selection.active.get() &&
            !overlays_.hasVisible();
 }
 

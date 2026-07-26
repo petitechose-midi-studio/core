@@ -89,6 +89,64 @@ void test_hot_invalidation_targets_only_changed_trajectories() {
     std::cout << "[PASS] hot invalidation is limited to changed trajectories\n";
 }
 
+void test_damage_plan_covers_every_changed_endpoint_and_color_transition() {
+    constexpr uint16_t angles[] = {
+        START_ANGLE,
+        static_cast<uint16_t>(START_ANGLE + 1U),
+        static_cast<uint16_t>(START_ANGLE + SWEEP_DEGREES / 2U),
+        static_cast<uint16_t>(END_ANGLE - 1U),
+        END_ANGLE,
+    };
+
+    for (const auto previousBase : angles) {
+        for (const auto previousOutput : angles) {
+            for (const auto nextBase : angles) {
+                for (const auto nextOutput : angles) {
+                    for (const bool previousClipped : {false, true}) {
+                        for (const bool nextClipped : {false, true}) {
+                            const auto plan = resolvedInvalidationPlan(
+                                true,
+                                previousBase,
+                                previousOutput,
+                                previousClipped,
+                                nextBase,
+                                nextOutput,
+                                nextClipped
+                            );
+                            assert(
+                                plan.mainArcChanged ==
+                                (previousBase != nextBase)
+                            );
+
+                            const bool expectedRailChange =
+                                previousBase != nextBase ||
+                                previousOutput != nextOutput ||
+                                previousClipped != nextClipped;
+                            assert(plan.railChanged == expectedRailChange);
+
+                            const auto previousSpan = modulationSpan(
+                                previousBase,
+                                previousOutput
+                            );
+                            const auto nextSpan = modulationSpan(
+                                nextBase,
+                                nextOutput
+                            );
+                            assert(plan.previousRail.start == previousSpan.start);
+                            assert(plan.previousRail.end == previousSpan.end);
+                            assert(plan.nextRail.start == nextSpan.start);
+                            assert(plan.nextRail.end == nextSpan.end);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout
+        << "[PASS] damage covers all endpoint and clipping transitions\n";
+}
+
 }  // namespace
 
 int main() {
@@ -96,6 +154,7 @@ int main() {
     test_zero_delta_mark_stays_inside_the_knob_sweep();
     test_three_pixel_rail_has_no_visual_gutter();
     test_hot_invalidation_targets_only_changed_trajectories();
+    test_damage_plan_covers_every_changed_endpoint_and_color_transition();
     std::cout << "\nAll MacroKnobVisualPolicy tests passed.\n";
     return 0;
 }

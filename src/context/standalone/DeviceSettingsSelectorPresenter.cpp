@@ -91,6 +91,8 @@ FLASHMEM DeviceSettingsSelectorPresenter::DeviceSettingsSelectorPresenter(
           this
       ) {}
 
+FLASHMEM DeviceSettingsSelectorPresenter::~DeviceSettingsSelectorPresenter() = default;
+
 FLASHMEM bool DeviceSettingsSelectorPresenter::bind() {
     selector_watcher_.bind<&DeviceSettingsSelectorPresenter::requestSelectorRender>(
         *this, 0, "DeviceSettings.selector"

@@ -5,6 +5,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
 
 #include "ui/font/StandaloneFonts.hpp"
@@ -48,10 +49,10 @@ constexpr size_t CHANCE_INDEX = 4;
 constexpr size_t TRIGGER_STATE_INDEX = 0;
 constexpr size_t TRIGGER_CHANCE_INDEX = 1;
 
-lv_obj_t* createLabel(lv_obj_t* parent,
-                      const lv_font_t* font,
-                      uint32_t color,
-                      lv_opa_t opa = LV_OPA_COVER) {
+FLASHMEM lv_obj_t* createLabel(lv_obj_t* parent,
+                               const lv_font_t* font,
+                               uint32_t color,
+                               lv_opa_t opa = LV_OPA_COVER) {
     lv_obj_t* label = lv_label_create(parent);
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
     lv_obj_set_style_text_opa(label, opa, 0);
@@ -631,6 +632,16 @@ FLASHMEM void SequencerStepEditOverlay::render(
     const SequencerStepEditOverlayProps& props
 ) {
     if (!overlay_) return;
+    OC_PERF_SCOPE(perfMutation, "ui.sequencer.step-editor.mutation");
+    OC_PERF_UNITS(
+        perfMutation,
+        props.dataRevision,
+        static_cast<uint32_t>(std::count_if(
+            props.chordPreview.voices.begin(),
+            props.chordPreview.voices.end(),
+            [](const auto& voice) { return voice.active; }
+        ))
+    );
 
     if (!props.visible) {
         if (visible_cache_) {

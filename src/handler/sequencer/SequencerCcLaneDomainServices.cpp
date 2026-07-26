@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 
 namespace core::handler {
@@ -12,6 +13,7 @@ namespace shared = core::state::shared;
 FLASHMEM SequencerCcLaneDomainServices::SequencerCcLaneDomainServices(StateRefs state)
     : editor_(state.editor)
     , tracks_(state.tracks)
+    , project_tracks_(state.projectTracks)
     , macro_pages_(state.macroPages) {}
 
 FLASHMEM const seq::SequencerPatternState& SequencerCcLaneDomainServices::pattern_(
@@ -28,7 +30,7 @@ FLASHMEM seq::SequencerCcTrackRoute SequencerCcLaneDomainServices::trackRoute(
 ) const {
     return seq::makeSequencerCcTrackRoute(
         0,
-        pattern_(track).midiChannel.get()
+        core::state::project::projectTrackMidiChannel(project_tracks_, track)
     );
 }
 
@@ -53,7 +55,10 @@ FLASHMEM bool SequencerCcLaneDomainServices::conflictsWithActiveMacro_(
         return false;
     }
     const auto& page = macro_pages_->activePageData();
-    const uint8_t channel = macro_pages_->activeTrackData().channel;
+    const uint8_t channel = core::state::project::projectTrackMidiChannel(
+        project_tracks_,
+        macro_pages_->currentActiveTrack()
+    );
     for (uint8_t slot = 0; slot < core::state::macro::MACRO_COUNT; ++slot) {
         if (!page.isMacroActive(slot)) continue;
         const auto identity = shared::MidiCcDestinationIdentity{

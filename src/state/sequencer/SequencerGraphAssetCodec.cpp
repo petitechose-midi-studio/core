@@ -5,10 +5,11 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/PersistenceBinaryCodec.hpp"
+#include "state/project/ProjectSlug.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphAssetRecords.hpp"
 #include "state/sequencer/SequencerGraphOpsInternal.hpp"
-#include "state/project/ProjectSlug.hpp"
 
 namespace core::state::sequencer {
 
@@ -16,7 +17,6 @@ namespace {
 
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
-using oc::note::sequencer::StepSequencerChordMode;
 using oc::note::sequencer::StepSequencerChordSpec;
 using oc::note::sequencer::StepSequencerCycleStateSet;
 using oc::note::sequencer::StepSequencerGraph;
@@ -25,10 +25,9 @@ using oc::note::sequencer::StepSequencerSequence;
 using oc::note::sequencer::StepSequencerSequenceKind;
 using oc::note::sequencer::StepSequencerStepNode;
 using namespace graph_ops_internal;
+namespace binary = core::persistence::binary_codec;
 
 constexpr uint32_t kStepGraphPresetMagic = 0x31504753;  // "SGP1"
-constexpr uint8_t kStepGraphPresetV1 = 1;
-constexpr uint8_t kStepGraphPresetV2 = 2;
 constexpr uint8_t kStepGraphPresetVersion =
     SequencerStepGraphPreset::CURRENT_FORMAT_VERSION;
 constexpr uint8_t kStepGraphPresetKind = 1;
@@ -92,41 +91,6 @@ FLASHMEM void fillReportCounts(
     report->cycleSetCount = graph.cycleSetCount;
 }
 
-FLASHMEM StepSequencerChordMode sanitizeChordMode(uint8_t mode) {
-    if (mode > static_cast<uint8_t>(StepSequencerChordMode::Local)) {
-        return StepSequencerChordMode::Single;
-    }
-    return static_cast<StepSequencerChordMode>(mode);
-}
-
-FLASHMEM bool chordSpecBytesEqual(const StepSequencerChordSpec& lhs,
-                                  const StepSequencerChordSpec& rhs) {
-    return lhs.voiceCount == rhs.voiceCount &&
-           lhs.harmonyData == rhs.harmonyData &&
-           lhs.voicingData == rhs.voicingData &&
-           lhs.inversionData == rhs.inversionData &&
-           lhs.strum == rhs.strum &&
-           lhs.velocityCurve == rhs.velocityCurve;
-}
-
-FLASHMEM bool decodeChordSpec(const SequencerGraphStepNodeRecord& record,
-                              uint8_t formatVersion,
-                              StepSequencerChordSpec& out) {
-    const StepSequencerChordSpec raw{
-        .voiceCount = record.chordVoiceCount,
-        .harmonyData = record.chordHarmonyData,
-        .voicingData = record.chordVoicingData,
-        .inversionData = record.chordInversionData,
-        .strum = record.chordStrum,
-        .velocityCurve = record.chordVelocityCurve,
-    };
-    if (formatVersion < kStepGraphPresetVersion && raw.isSemantic()) return false;
-
-    out = raw;
-    out.clamp();
-    return formatVersion < kStepGraphPresetVersion || chordSpecBytesEqual(raw, out);
-}
-
 FLASHMEM SequencerGraphSequenceRecord sequenceRecord(
     const StepSequencerSequence& source
 ) {
@@ -174,98 +138,7 @@ FLASHMEM SequencerGraphCycleSetRecord cycleSetRecord(
     };
 }
 
-class PresetWriter {
-public:
-    PresetWriter(uint8_t* out, uint16_t capacity)
-        : out_(out), capacity_(capacity) {}
-
-    bool writeU8(uint8_t value) {
-        return append(&value, 1);
-    }
-
-    bool writeI8(int8_t value) {
-        return writeU8(static_cast<uint8_t>(value));
-    }
-
-    bool writeU16(uint16_t value) {
-        return writeU8(static_cast<uint8_t>(value & 0xFFU)) &&
-               writeU8(static_cast<uint8_t>((value >> 8U) & 0xFFU));
-    }
-
-    bool writeU32(uint32_t value) {
-        return writeU8(static_cast<uint8_t>(value & 0xFFU)) &&
-               writeU8(static_cast<uint8_t>((value >> 8U) & 0xFFU)) &&
-               writeU8(static_cast<uint8_t>((value >> 16U) & 0xFFU)) &&
-               writeU8(static_cast<uint8_t>((value >> 24U) & 0xFFU));
-    }
-
-    bool append(const void* data, uint16_t size) {
-        if (!ok_) return false;
-        if (data == nullptr && size > 0) {
-            ok_ = false;
-            return false;
-        }
-        if (offset_ > capacity_ || size > static_cast<uint16_t>(capacity_ - offset_)) {
-            ok_ = false;
-            return false;
-        }
-        if (size > 0) {
-            std::memcpy(out_ + offset_, data, size);
-            offset_ = static_cast<uint16_t>(offset_ + size);
-        }
-        return true;
-    }
-
-    bool ok() const { return ok_; }
-    uint16_t size() const { return offset_; }
-
-private:
-    uint8_t* out_ = nullptr;
-    uint16_t capacity_ = 0;
-    uint16_t offset_ = 0;
-    bool ok_ = true;
-};
-
-FLASHMEM bool readU8(const uint8_t* data, uint16_t size, uint16_t& offset, uint8_t& out) {
-    if (data == nullptr || offset >= size) return false;
-    out = data[offset++];
-    return true;
-}
-
-FLASHMEM bool readI8(const uint8_t* data, uint16_t size, uint16_t& offset, int8_t& out) {
-    uint8_t raw = 0;
-    if (!readU8(data, size, offset, raw)) return false;
-    out = static_cast<int8_t>(raw);
-    return true;
-}
-
-FLASHMEM bool readU16(const uint8_t* data, uint16_t size, uint16_t& offset, uint16_t& out) {
-    uint8_t lo = 0;
-    uint8_t hi = 0;
-    if (!readU8(data, size, offset, lo) || !readU8(data, size, offset, hi)) return false;
-    out = static_cast<uint16_t>(lo | static_cast<uint16_t>(hi << 8U));
-    return true;
-}
-
-FLASHMEM bool readU32(const uint8_t* data, uint16_t size, uint16_t& offset, uint32_t& out) {
-    uint8_t b0 = 0;
-    uint8_t b1 = 0;
-    uint8_t b2 = 0;
-    uint8_t b3 = 0;
-    if (!readU8(data, size, offset, b0) ||
-        !readU8(data, size, offset, b1) ||
-        !readU8(data, size, offset, b2) ||
-        !readU8(data, size, offset, b3)) {
-        return false;
-    }
-    out = static_cast<uint32_t>(b0) |
-          (static_cast<uint32_t>(b1) << 8U) |
-          (static_cast<uint32_t>(b2) << 16U) |
-          (static_cast<uint32_t>(b3) << 24U);
-    return true;
-}
-
-FLASHMEM bool writeBaseHeader(PresetWriter& writer, const StepGraphPresetHeader& header) {
+FLASHMEM bool writeBaseHeader(binary::Writer& writer, const StepGraphPresetHeader& header) {
     return writer.writeU32(header.magic) &&
            writer.writeU8(header.version) &&
            writer.writeU8(header.kind) &&
@@ -283,64 +156,49 @@ FLASHMEM bool writeBaseHeader(PresetWriter& writer, const StepGraphPresetHeader&
            writer.writeU16(header.reserved0);
 }
 
-FLASHMEM bool readBaseHeader(const uint8_t* data,
-                             uint16_t size,
-                             uint16_t& offset,
-                             StepGraphPresetHeader& header) {
-    return readU32(data, size, offset, header.magic) &&
-           readU8(data, size, offset, header.version) &&
-           readU8(data, size, offset, header.kind) &&
-           readU8(data, size, offset, header.headerSize) &&
-           readU8(data, size, offset, header.flags) &&
-           readU8(data, size, offset, header.enabled) &&
-           readU8(data, size, offset, header.note) &&
-           readU8(data, size, offset, header.velocity) &&
-           readU16(data, size, offset, header.gate) &&
-           readI8(data, size, offset, header.nudge) &&
-           readU8(data, size, offset, header.probability) &&
-           readU16(data, size, offset, header.stepNodeCount) &&
-           readU8(data, size, offset, header.sequenceCount) &&
-           readU8(data, size, offset, header.cycleSetCount) &&
-           readU16(data, size, offset, header.reserved0);
+FLASHMEM bool readBaseHeader(
+    binary::Reader& reader,
+    StepGraphPresetHeader& header
+) {
+    return reader.readU32(header.magic) &&
+           reader.readU8(header.version) &&
+           reader.readU8(header.kind) &&
+           reader.readU8(header.headerSize) &&
+           reader.readU8(header.flags) &&
+           reader.readU8(header.enabled) &&
+           reader.readU8(header.note) &&
+           reader.readU8(header.velocity) &&
+           reader.readU16(header.gate) &&
+           reader.readI8(header.nudge) &&
+           reader.readU8(header.probability) &&
+           reader.readU16(header.stepNodeCount) &&
+           reader.readU8(header.sequenceCount) &&
+           reader.readU8(header.cycleSetCount) &&
+           reader.readU16(header.reserved0);
 }
 
 FLASHMEM bool writeMetadata(
-    PresetWriter& writer,
+    binary::Writer& writer,
     const StepGraphPresetMetadata& metadata
 ) {
     return writer.writeU8(metadata.scalePolicy) &&
            writer.writeU8(metadata.sourceScaleRoot) &&
            writer.writeU8(metadata.sourceScaleType) &&
            writer.writeU8(metadata.sourceScaleMode) &&
-           writer.append(metadata.technicalId, sizeof(metadata.technicalId)) &&
-           writer.append(metadata.semanticName, sizeof(metadata.semanticName));
+           writer.writeBytes(metadata.technicalId, sizeof(metadata.technicalId)) &&
+           writer.writeBytes(metadata.semanticName, sizeof(metadata.semanticName));
 }
 
 FLASHMEM bool readMetadata(
-    const uint8_t* data,
-    uint16_t size,
-    uint16_t& offset,
+    binary::Reader& reader,
     StepGraphPresetMetadata& metadata
 ) {
-    if (!readU8(data, size, offset, metadata.scalePolicy) ||
-        !readU8(data, size, offset, metadata.sourceScaleRoot) ||
-        !readU8(data, size, offset, metadata.sourceScaleType) ||
-        !readU8(data, size, offset, metadata.sourceScaleMode)) {
-        return false;
-    }
-    constexpr uint16_t technicalSize =
-        static_cast<uint16_t>(sizeof(metadata.technicalId));
-    constexpr uint16_t semanticSize =
-        static_cast<uint16_t>(sizeof(metadata.semanticName));
-    if (offset > size || technicalSize > static_cast<uint16_t>(size - offset)) {
-        return false;
-    }
-    std::memcpy(metadata.technicalId, data + offset, technicalSize);
-    offset = static_cast<uint16_t>(offset + technicalSize);
-    if (semanticSize > static_cast<uint16_t>(size - offset)) return false;
-    std::memcpy(metadata.semanticName, data + offset, semanticSize);
-    offset = static_cast<uint16_t>(offset + semanticSize);
-    return true;
+    return reader.readU8(metadata.scalePolicy) &&
+           reader.readU8(metadata.sourceScaleRoot) &&
+           reader.readU8(metadata.sourceScaleType) &&
+           reader.readU8(metadata.sourceScaleMode) &&
+           reader.readBytes(metadata.technicalId, sizeof(metadata.technicalId)) &&
+           reader.readBytes(metadata.semanticName, sizeof(metadata.semanticName));
 }
 
 template <size_t N>
@@ -483,19 +341,7 @@ FLASHMEM bool graphHasMixedPitchPolicy(
     return false;
 }
 
-FLASHMEM void materializeLegacyPitchPolicy(SequencerStepGraphPreset& preset) {
-    // v1 carried no policy. Its documented compatibility default is
-    // chromatic, so the in-memory payload must carry that exact behavior into
-    // preview and runtime Apply instead of merely displaying a warning label.
-    for (uint16_t i = 0; i < preset.graph.stepNodeCount; ++i) {
-        preset.graph.stepNodes[i].flags = static_cast<uint16_t>(
-            preset.graph.stepNodes[i].flags |
-            oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC
-        );
-    }
-}
-
-FLASHMEM bool appendSequenceRecord(PresetWriter& writer,
+FLASHMEM bool appendSequenceRecord(binary::Writer& writer,
                                    const SequencerGraphSequenceRecord& record) {
     uint8_t bytes[SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE] = {};
     return encodeSequencerGraphSequenceRecord(
@@ -503,10 +349,10 @@ FLASHMEM bool appendSequenceRecord(PresetWriter& writer,
                bytes,
                SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE
            ) &&
-           writer.append(bytes, SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE);
+           writer.writeBytes(bytes, SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE);
 }
 
-FLASHMEM bool appendStepNodeRecord(PresetWriter& writer,
+FLASHMEM bool appendStepNodeRecord(binary::Writer& writer,
                                    const SequencerGraphStepNodeRecord& record) {
     uint8_t bytes[SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE] = {};
     return encodeSequencerGraphStepNodeRecord(
@@ -514,10 +360,10 @@ FLASHMEM bool appendStepNodeRecord(PresetWriter& writer,
                bytes,
                SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE
            ) &&
-           writer.append(bytes, SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE);
+           writer.writeBytes(bytes, SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE);
 }
 
-FLASHMEM bool appendCycleSetRecord(PresetWriter& writer,
+FLASHMEM bool appendCycleSetRecord(binary::Writer& writer,
                                    const SequencerGraphCycleSetRecord& record) {
     uint8_t bytes[SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE] = {};
     return encodeSequencerGraphCycleSetRecord(
@@ -525,7 +371,7 @@ FLASHMEM bool appendCycleSetRecord(PresetWriter& writer,
                bytes,
                SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE
            ) &&
-           writer.append(bytes, SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE);
+           writer.writeBytes(bytes, SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE);
 }
 
 FLASHMEM bool linksValid(const StepSequencerGraph& graph) {
@@ -631,7 +477,7 @@ FLASHMEM bool decodeGraph(
         }
         offset = static_cast<uint16_t>(offset + SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE);
         StepSequencerChordSpec chordSpec{};
-        if (!decodeChordSpec(record, header.version, chordSpec)) return false;
+        if (!decodeSequencerGraphChordSpec(record, chordSpec)) return false;
         graph.stepNodes[i] = StepSequencerStepNode{
             .flags = record.flags,
             .noteOffset = record.noteOffset,
@@ -645,7 +491,7 @@ FLASHMEM bool decodeGraph(
                 .gatePercent = record.localVariationGatePercent,
                 .nudge = record.localVariationNudge,
             },
-            .chordMode = sanitizeChordMode(record.chordMode),
+            .chordMode = sanitizeSequencerGraphChordMode(record.chordMode),
             .chordSpec = chordSpec,
             .childSequenceId = record.childSequenceId,
             .cycleSetId = record.cycleSetId,
@@ -688,7 +534,6 @@ FLASHMEM void SequencerGraphAssetReport::reset() {
 FLASHMEM void SequencerStepGraphPreset::reset() {
     valid = false;
     formatVersion = CURRENT_FORMAT_VERSION;
-    metadataDefaulted = false;
     mixedPitchPolicy = false;
     technicalId[0] = '\0';
     semanticName[0] = '\0';
@@ -918,7 +763,7 @@ FLASHMEM SequencerGraphAssetEncodeResult encodeStepGraphPreset(
         sizeof(metadata.semanticName)
     );
 
-    PresetWriter writer(out, capacity);
+    binary::Writer writer(out, capacity);
     if (!writeBaseHeader(writer, header) || !writeMetadata(writer, metadata)) {
         return {.status = SequencerGraphAssetStatus::BUFFER_TOO_SMALL, .bytesWritten = 0};
     }
@@ -945,7 +790,7 @@ FLASHMEM SequencerGraphAssetEncodeResult encodeStepGraphPreset(
     return writer.ok()
         ? SequencerGraphAssetEncodeResult{
               .status = SequencerGraphAssetStatus::OK,
-              .bytesWritten = writer.size(),
+              .bytesWritten = static_cast<uint16_t>(writer.offset()),
           }
         : SequencerGraphAssetEncodeResult{
               .status = SequencerGraphAssetStatus::BUFFER_TOO_SMALL,
@@ -961,36 +806,24 @@ FLASHMEM bool decodeStepGraphPresetMetadata(
 ) {
     out = {};
     if (report != nullptr) report->reset();
-    if (data == nullptr || size < STEP_GRAPH_PRESET_V1_HEADER_SIZE) {
+    if (data == nullptr || size < STEP_GRAPH_PRESET_HEADER_SIZE) {
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_ARGUMENT);
         return false;
     }
 
-    uint16_t offset = 0;
+    binary::Reader reader(data, size);
     StepGraphPresetHeader header{};
-    if (!readBaseHeader(data, size, offset, header) ||
-        offset != STEP_GRAPH_PRESET_V1_HEADER_SIZE ||
+    if (!readBaseHeader(reader, header) ||
+        reader.offset() != STEP_GRAPH_PRESET_BASE_HEADER_SIZE ||
         header.magic != kStepGraphPresetMagic ||
         header.kind != kStepGraphPresetKind) {
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
         return false;
     }
-    if (header.version != kStepGraphPresetV1 &&
-        header.version != kStepGraphPresetV2 &&
-        header.version != kStepGraphPresetVersion) {
+    if (header.version != kStepGraphPresetVersion) {
         setReportStatus(report, SequencerGraphAssetStatus::UNSUPPORTED_VERSION);
         return false;
     }
-    if (header.version == kStepGraphPresetV1) {
-        if (header.headerSize != STEP_GRAPH_PRESET_V1_HEADER_SIZE) {
-            setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
-            return false;
-        }
-        out.formatVersion = kStepGraphPresetV1;
-        out.metadataDefaulted = true;
-        return true;
-    }
-
     if (header.headerSize != STEP_GRAPH_PRESET_HEADER_SIZE ||
         size < STEP_GRAPH_PRESET_HEADER_SIZE) {
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
@@ -1000,8 +833,8 @@ FLASHMEM bool decodeStepGraphPresetMetadata(
     const uint8_t allowedPolicyBits = static_cast<uint8_t>(
         kStepGraphPresetScalePolicyMask | kStepGraphPresetScalePolicyMixed
     );
-    if (!readMetadata(data, size, offset, metadata) ||
-        offset != STEP_GRAPH_PRESET_HEADER_SIZE ||
+    if (!readMetadata(reader, metadata) ||
+        reader.offset() != STEP_GRAPH_PRESET_HEADER_SIZE ||
         (metadata.scalePolicy & static_cast<uint8_t>(~allowedPolicyBits)) != 0 ||
         !fixedTextValid(metadata.technicalId, false) ||
         !fixedTextValid(metadata.semanticName, false) ||
@@ -1048,15 +881,15 @@ FLASHMEM bool decodeStepGraphPreset(
 ) {
     if (report != nullptr) report->reset();
     out.reset();
-    if (data == nullptr || size < STEP_GRAPH_PRESET_V1_HEADER_SIZE) {
+    if (data == nullptr || size < STEP_GRAPH_PRESET_HEADER_SIZE) {
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_ARGUMENT);
         return false;
     }
 
-    uint16_t offset = 0;
+    binary::Reader reader(data, size);
     StepGraphPresetHeader header{};
-    if (!readBaseHeader(data, size, offset, header) ||
-        offset != STEP_GRAPH_PRESET_V1_HEADER_SIZE) {
+    if (!readBaseHeader(reader, header) ||
+        reader.offset() != STEP_GRAPH_PRESET_BASE_HEADER_SIZE) {
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
         return false;
     }
@@ -1065,79 +898,56 @@ FLASHMEM bool decodeStepGraphPreset(
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
         return false;
     }
-    if (header.version != kStepGraphPresetV1 &&
-        header.version != kStepGraphPresetV2 &&
-        header.version != kStepGraphPresetVersion) {
+    if (header.version != kStepGraphPresetVersion) {
         setReportStatus(report, SequencerGraphAssetStatus::UNSUPPORTED_VERSION);
         return false;
     }
 
-    if (header.version == kStepGraphPresetV1) {
-        if (header.headerSize != STEP_GRAPH_PRESET_V1_HEADER_SIZE) {
-            setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
-            return false;
-        }
-        out.formatVersion = kStepGraphPresetV1;
-        out.metadataDefaulted = true;
-        out.scalePolicy = SequencerStepGraphPreset::ScalePolicy::CHROMATIC;
-        out.sourceScale = {};
-    } else {
-        if (header.headerSize != STEP_GRAPH_PRESET_HEADER_SIZE ||
-            size < STEP_GRAPH_PRESET_HEADER_SIZE) {
-            setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
-            return false;
-        }
-        StepGraphPresetMetadata metadata{};
-        const uint8_t allowedPolicyBits = static_cast<uint8_t>(
-            kStepGraphPresetScalePolicyMask | kStepGraphPresetScalePolicyMixed
-        );
-        if (!readMetadata(data, size, offset, metadata) ||
-            offset != STEP_GRAPH_PRESET_HEADER_SIZE ||
-            (metadata.scalePolicy & static_cast<uint8_t>(~allowedPolicyBits)) != 0 ||
-            !fixedTextValid(metadata.technicalId, false) ||
-            !fixedTextValid(metadata.semanticName, false) ||
-            !validStepGraphPresetTechnicalId(metadata.technicalId) ||
-            !validStepGraphPresetSemanticName(metadata.semanticName)) {
-            setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
-            return false;
-        }
-        out.formatVersion = header.version;
-        out.metadataDefaulted = false;
-        out.mixedPitchPolicy =
-            (metadata.scalePolicy & kStepGraphPresetScalePolicyMixed) != 0;
-        out.scalePolicy = static_cast<SequencerStepGraphPreset::ScalePolicy>(
-            metadata.scalePolicy & kStepGraphPresetScalePolicyMask
-        );
-        out.sourceScale = {
-            .root = metadata.sourceScaleRoot,
-            .type = static_cast<oc::note::sequencer::StepSequencerScaleType>(
-                metadata.sourceScaleType
-            ),
-            .mode = static_cast<oc::note::sequencer::StepSequencerScaleConstraintMode>(
-                metadata.sourceScaleMode
-            ),
-        };
-        const auto rawRoot = out.sourceScale.root;
-        const auto rawType = out.sourceScale.type;
-        const auto rawMode = out.sourceScale.mode;
-        out.sourceScale.clamp();
-        if (out.sourceScale.root != rawRoot || out.sourceScale.type != rawType ||
-            out.sourceScale.mode != rawMode) {
-            out.reset();
-            setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
-            return false;
-        }
-        std::memcpy(
-            out.technicalId,
-            metadata.technicalId,
-            sizeof(out.technicalId)
-        );
-        std::memcpy(
-            out.semanticName,
-            metadata.semanticName,
-            sizeof(out.semanticName)
-        );
+    if (header.headerSize != STEP_GRAPH_PRESET_HEADER_SIZE) {
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+        return false;
     }
+    StepGraphPresetMetadata metadata{};
+    const uint8_t allowedPolicyBits = static_cast<uint8_t>(
+        kStepGraphPresetScalePolicyMask | kStepGraphPresetScalePolicyMixed
+    );
+    if (!readMetadata(reader, metadata) ||
+        reader.offset() != STEP_GRAPH_PRESET_HEADER_SIZE ||
+        (metadata.scalePolicy & static_cast<uint8_t>(~allowedPolicyBits)) != 0 ||
+        !fixedTextValid(metadata.technicalId, false) ||
+        !fixedTextValid(metadata.semanticName, false) ||
+        !validStepGraphPresetTechnicalId(metadata.technicalId) ||
+        !validStepGraphPresetSemanticName(metadata.semanticName)) {
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+        return false;
+    }
+    out.formatVersion = header.version;
+    out.mixedPitchPolicy =
+        (metadata.scalePolicy & kStepGraphPresetScalePolicyMixed) != 0;
+    out.scalePolicy = static_cast<SequencerStepGraphPreset::ScalePolicy>(
+        metadata.scalePolicy & kStepGraphPresetScalePolicyMask
+    );
+    out.sourceScale = {
+        .root = metadata.sourceScaleRoot,
+        .type = static_cast<oc::note::sequencer::StepSequencerScaleType>(
+            metadata.sourceScaleType
+        ),
+        .mode = static_cast<oc::note::sequencer::StepSequencerScaleConstraintMode>(
+            metadata.sourceScaleMode
+        ),
+    };
+    const auto rawRoot = out.sourceScale.root;
+    const auto rawType = out.sourceScale.type;
+    const auto rawMode = out.sourceScale.mode;
+    out.sourceScale.clamp();
+    if (out.sourceScale.root != rawRoot || out.sourceScale.type != rawType ||
+        out.sourceScale.mode != rawMode) {
+        out.reset();
+        setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
+        return false;
+    }
+    std::memcpy(out.technicalId, metadata.technicalId, sizeof(out.technicalId));
+    std::memcpy(out.semanticName, metadata.semanticName, sizeof(out.semanticName));
 
     out.rootContext = (header.flags & kStepGraphPresetFlagRootContext) != 0;
     out.rootValuesValid = (header.flags & kStepGraphPresetFlagRootValues) != 0;
@@ -1153,17 +963,15 @@ FLASHMEM bool decodeStepGraphPreset(
     out.nudge = header.nudge;
     out.probability = SequencerState::clampProbability(header.probability);
 
+    uint16_t offset = static_cast<uint16_t>(reader.offset());
     if (!decodeGraph(data, size, offset, header, out.graph) || offset != size) {
         out.reset();
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
         return false;
     }
 
-    if (out.metadataDefaulted) {
-        materializeLegacyPitchPolicy(out);
-        out.mixedPitchPolicy = false;
-    } else if (graphHasMixedPitchPolicy(out, out.scalePolicy) !=
-               out.mixedPitchPolicy) {
+    if (graphHasMixedPitchPolicy(out, out.scalePolicy) !=
+        out.mixedPitchPolicy) {
         out.reset();
         setReportStatus(report, SequencerGraphAssetStatus::INVALID_FORMAT);
         return false;
@@ -1241,7 +1049,6 @@ FLASHMEM bool setStepGraphPresetMetadata(
         sizeof(preset.semanticName) - 1U
     );
     preset.formatVersion = SequencerStepGraphPreset::CURRENT_FORMAT_VERSION;
-    preset.metadataDefaulted = false;
     preset.scalePolicy = scalePolicy;
     preset.sourceScale = sourceScale;
     preset.mixedPitchPolicy = graphHasMixedPitchPolicy(preset, scalePolicy);

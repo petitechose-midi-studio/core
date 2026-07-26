@@ -140,8 +140,9 @@ private:
         global_handler_assembly_;
     core::app::ExtmemUniquePtr<core::protocol::filesystem::FileSystemRpcEndpoint>
         filesystem_rpc_endpoint_;
-    oc::state::StaticWatchGroup<2> view_selector_watcher_;
+    oc::state::StaticWatchGroup<3> view_selector_watcher_;
     oc::state::StaticWatchGroup<1> active_view_watcher_;
+    bool view_selector_was_visible_ = false;
 };
 
 }  // namespace core::context

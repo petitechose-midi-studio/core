@@ -54,19 +54,27 @@ int main() {
     assert(bindings.bind(stateRefs, &probe, &Probe::invalidate));
     assert(bindings.phaseSubscriptionCount() == 1);
     assert(macroEdit.flowPhase.subscriberCount() == 1);
-    assert(bindings.subscriptionCount() == 32);
+    assert(bindings.subscriptionCount() == 34);
     assert(macroUi.runtimeProjectionRevision.subscriberCount() == 1);
     assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 1);
     assert(clipboard.revision.subscriberCount() == 1);
+    assert(macroUi.recordedShapeCaptureRevision.subscriberCount() == 1);
+    assert(macroUi.automationRecordingRevision.subscriberCount() == 0);
+    assert(macroUi.automationEditRevision.subscriberCount() == 1);
+    assert(macroUi.automationRecordingStatus.subscriberCount() == 2);
 
     // Rebinding replaces every RAII subscription instead of accumulating them.
     assert(bindings.bind(stateRefs, &probe, &Probe::invalidate));
     assert(bindings.phaseSubscriptionCount() == 1);
     assert(macroEdit.flowPhase.subscriberCount() == 1);
-    assert(bindings.subscriptionCount() == 32);
+    assert(bindings.subscriptionCount() == 34);
     assert(macroUi.runtimeProjectionRevision.subscriberCount() == 1);
     assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 1);
     assert(clipboard.revision.subscriberCount() == 1);
+    assert(macroUi.recordedShapeCaptureRevision.subscriberCount() == 1);
+    assert(macroUi.automationRecordingRevision.subscriberCount() == 0);
+    assert(macroUi.automationEditRevision.subscriberCount() == 1);
+    assert(macroUi.automationRecordingStatus.subscriberCount() == 2);
 
     macroEdit.flowPhase.set(core::state::MacroEditFlowPhase::EDIT);
     test_support::drainNotifications();
@@ -91,17 +99,64 @@ int main() {
            (invalidation::RENDER_EDIT | invalidation::RENDER_AUTOMATION));
 
     probe.reset();
+    macroUi.recordedShapeCaptureRevision.set(
+        macroUi.recordedShapeCaptureRevision.get() + 1U
+    );
+    test_support::drainNotifications();
+    assert(probe.calls == 1);
+    assert(probe.flags ==
+           (invalidation::RENDER_EDIT | invalidation::RENDER_AUTOMATION));
+
+    // Per-sample Automation updates are read directly by the retained curve
+    // marker. They must not schedule a full editor/curve render.
+    probe.reset();
+    macroUi.automationRecordingRevision.set(
+        macroUi.automationRecordingRevision.get() + 1U
+    );
+    test_support::drainNotifications();
+    assert(probe.calls == 0);
+
+    probe.reset();
+    macroUi.automationEditRevision.set(
+        macroUi.automationEditRevision.get() + 1U
+    );
+    test_support::drainNotifications();
+    assert(probe.calls == 1);
+    assert(probe.flags ==
+           (invalidation::RENDER_EDIT | invalidation::RENDER_AUTOMATION));
+
+    probe.reset();
+    macroUi.automationRecordingStatus.set(
+        core::state::macro::MacroAutomationRecordingStatus::RECORDING
+    );
+    test_support::drainNotifications();
+    assert(probe.calls == 2);
+    assert(probe.flags ==
+           (invalidation::RENDER_EDIT | invalidation::RENDER_AUTOMATION));
+
+    probe.reset();
     macroEdit.contextSelectorActive.set(true);
     test_support::drainNotifications();
     assert(probe.calls == 1);
     assert(probe.flags == invalidation::RENDER_EDIT);
+
+    probe.reset();
+    macroUi.runtimeProjectionRevision.set(
+        macroUi.runtimeProjectionRevision.get() + 1U
+    );
+    test_support::drainNotifications();
+    assert(probe.calls == 1);
+    assert(probe.flags == invalidation::RENDER_EDIT_LIVE);
 
     bindings.clear();
     assert(bindings.subscriptionCount() == 0);
     assert(macroEdit.flowPhase.subscriberCount() == 0);
     assert(macroEdit.modulatorNavigationFeedback.subscriberCount() == 0);
     assert(macroUi.runtimeProjectionRevision.subscriberCount() == 0);
+    assert(macroUi.automationEditRevision.subscriberCount() == 0);
     assert(clipboard.revision.subscriberCount() == 0);
+    assert(macroUi.recordedShapeCaptureRevision.subscriberCount() == 0);
+    assert(macroUi.automationRecordingStatus.subscriberCount() == 0);
 
     std::cout << "Macro overlay invalidation binding tests passed\n";
     return 0;

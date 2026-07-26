@@ -4,10 +4,15 @@
 #include <cstdio>
 
 #include <config/PlatformCompat.hpp>
+#include <config/Timing.hpp>
 
+#include "state/contextual/OperationFeedbackState.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/modulation/ProjectModulatorSourceSession.hpp"
 #include "state/project/ProjectMenuModel.hpp"
+#include "state/project/ProjectModulatorMenuModel.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 
 namespace core::handler::modulator_navigation {
 
@@ -67,6 +72,37 @@ FLASHMEM void restoreMacroOverlayStack(StateRefs state) {
     state.overlays.show(core::ui::OverlayType::MACRO_AUTOMATION, false);
 }
 
+FLASHMEM void publishMacroAuditionFeedback(
+    core::state::MacroEditState& macroEdit,
+    const core::state::project::ModulatorReturnContext& returnContext,
+    bool committed,
+    uint32_t nowMs
+) {
+    namespace contextual = core::state::contextual;
+    const contextual::ContextEntityRef modulation{
+        .kind = contextual::ContextEntityKind::MODULATION_LANE,
+        .track = returnContext.macroAddress.track,
+        .page = returnContext.macroAddress.page,
+        .item = returnContext.macroAddress.macro,
+    };
+    auto feedback = macroEdit.contextFeedback.get();
+    contextual::setOperationFeedback(
+        feedback,
+        committed ? contextual::ContextActionId::APPLY
+                  : contextual::ContextActionId::CANCEL,
+        modulation,
+        modulation,
+        committed ? contextual::OperationFeedbackStatus::APPLIED
+                  : contextual::OperationFeedbackStatus::CANCELLED,
+        contextual::ContextActionReason::NONE,
+        contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+        nowMs,
+        committed ? Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS
+                  : Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS
+    );
+    macroEdit.contextFeedback.set(feedback);
+}
+
 }  // namespace
 
 FLASHMEM bool openSourceFromMacro(
@@ -109,6 +145,8 @@ FLASHMEM bool openSourceFromMacro(
         .macroAddress = address,
         .caller = core::state::project::
             ModulatorNavigationCaller::MACRO_ASSIGNMENT,
+        .target = core::state::project::
+            ModulatorMacroReturnTarget::MODULATION_ASSIGNMENT,
         .focusedRow = focusedRow,
     };
 
@@ -125,15 +163,13 @@ FLASHMEM bool openSourceFromMacro(
         0U
     );
     state.overlays.hideAll();
-    state.activeView.set(core::ui::ViewType::PROJECT);
+    state.activeView.set(core::ui::ViewType::MODULATORS);
     return true;
 }
 
 FLASHMEM bool openAuditionSourceFromMacro(StateRefs state, uint8_t macroIndex) {
     using namespace core::state::modulation;
     if (state.activeView.get() != core::ui::ViewType::MACRO ||
-        state.macroEdit.flowPhase.get() !=
-            core::state::MacroEditFlowPhase::NEW_MODULATOR_AUDITION ||
         macroIndex >= core::state::macro::MACRO_COUNT ||
         state.macroEdit.editingIndex.get() != macroIndex) {
         return false;
@@ -147,20 +183,57 @@ FLASHMEM bool openAuditionSourceFromMacro(StateRefs state, uint8_t macroIndex) {
     const auto& audition = state.pages.control.audition;
     const auto destination = projectControlDestination(address);
     const auto& graph = state.pages.control.authored.modulation;
+    const auto session = resolveProjectModulatorSourceSession(
+        state.pages.control,
+        audition.sourceId
+    );
     const auto* source = findProjectModulator(graph, audition.sourceId);
     const auto* binding = findProjectModulationBinding(
         graph,
         audition.bindingId
     );
-    if (!audition.active || !audition.sourceCreated ||
+    const auto phase = state.macroEdit.flowPhase.get();
+    const bool newSession = session.mode ==
+        ProjectModulatorSourceSessionMode::AUDITION_NEW;
+    const bool existingSession = session.mode ==
+        ProjectModulatorSourceSessionMode::AUDITION_EXISTING;
+    const bool validNewOrigin = newSession &&
+        phase == core::state::MacroEditFlowPhase::MODULATOR_CREATE &&
+        state.macroEdit.modulationFocusedRow.get() <= 1U &&
+        ((state.macroEdit.modulationFocusedRow.get() == 0U &&
+          source != nullptr && source->kind == ModulatorKind::LFO) ||
+         (state.macroEdit.modulationFocusedRow.get() == 1U &&
+          source != nullptr && source->kind == ModulatorKind::ADSR));
+    const int pickerIndex = state.macroEdit.modulatorPickerIndex.get();
+    const bool validExistingOrigin = existingSession &&
+        phase == core::state::MacroEditFlowPhase::MODULATOR_PICKER &&
+        pickerIndex >= 0 && pickerIndex < static_cast<int>(graph.sourceCount) &&
+        graph.sources[static_cast<uint16_t>(pickerIndex)].id ==
+            audition.sourceId;
+    if (!session.audition() || (!validNewOrigin && !validExistingOrigin) ||
         audition.destination != destination || source == nullptr ||
         binding == nullptr || binding->sourceId != source->id ||
-        binding->destination != destination ||
-        !core::state::project::openProjectModulatorWorkspace(
+        binding->destination != destination) {
+        return false;
+    }
+    if (!core::state::project::openProjectModulatorWorkspace(
             state.projectNavigation,
             source->id
         )) {
         return false;
+    }
+    if (existingSession) {
+        const auto layout = core::state::project::modulators::
+            sourceAuditionLayout(source->kind);
+        for (uint8_t row = 0U; row < layout.count; ++row) {
+            if (layout.at(row) != core::state::project::modulators::
+                    SourceDetailItem::DEPTH) {
+                continue;
+            }
+            state.projectNavigation.focusedRow.set(row);
+            state.projectNavigation.notifyContentChanged();
+            break;
+        }
     }
 
     state.projectNavigation.modulatorReturn = {
@@ -169,11 +242,24 @@ FLASHMEM bool openAuditionSourceFromMacro(StateRefs state, uint8_t macroIndex) {
         .macroAddress = address,
         .caller = core::state::project::
             ModulatorNavigationCaller::MACRO_AUDITION,
-        .focusedRow = 0U,
+        .target = validNewOrigin
+            ? core::state::project::
+                  ModulatorMacroReturnTarget::MODULATOR_CREATE
+            : core::state::project::
+                  ModulatorMacroReturnTarget::MODULATOR_PICKER,
+        .focusedRow = static_cast<uint8_t>(
+            validNewOrigin
+                ? state.macroEdit.modulationFocusedRow.get()
+                : 0U
+        ),
     };
-    state.projectNavigation.setLifecycleFeedback("Preview · Apply or Back");
+    state.projectNavigation.setLifecycleFeedback(
+        validNewOrigin
+            ? "Preview - Apply or Back"
+            : "Shared source - Depth preview"
+    );
     state.overlays.hideAll();
-    state.activeView.set(core::ui::ViewType::PROJECT);
+    state.activeView.set(core::ui::ViewType::MODULATORS);
     return true;
 }
 
@@ -277,7 +363,10 @@ FLASHMEM bool returnToMacro(StateRefs state, uint32_t nowMs) {
     state.overlays.hideAll();
     state.macroEdit.loadActiveConfig(
         currentAddress.macro,
-        state.pages.activeConfigs[currentAddress.macro].channel,
+        core::state::project::projectTrackMidiChannel(
+            state.projectTracks,
+            currentAddress.track
+        ),
         state.pages.activeConfigs[currentAddress.macro].cc
     );
     state.macroEdit.openModulation(focusedRow);
@@ -292,15 +381,91 @@ FLASHMEM bool returnToMacroFromAudition(
     uint32_t nowMs
 ) {
     if (!macroAuditionReturnPending(state.projectNavigation)) return false;
-    state.projectNavigation.modulatorReturn.caller = core::state::project::
-        ModulatorNavigationCaller::MACRO_ASSIGNMENT;
-    if (!returnToMacro(state, nowMs)) return false;
+    const auto returnContext = state.projectNavigation.modulatorReturn;
     if (!committed) {
-        state.macroEdit.setModulatorNavigationFeedback(
-            core::state::MacroModulatorNavigationFeedback::NONE,
+        state.projectNavigation.modulatorReturn = {};
+        state.projectNavigation.clearLifecycleFeedback();
+
+        const MacroAutomationSlotAddress currentAddress{
+            .track = state.pages.currentActiveTrack(),
+            .page = state.pages.currentActivePage(),
+            .macro = std::min<uint8_t>(
+                returnContext.macroAddress.macro,
+                static_cast<uint8_t>(
+                    core::state::macro::MACRO_COUNT - 1U
+                )
+            ),
+        };
+        const bool contextUnchanged = sameAddress(
+            currentAddress,
+            returnContext.macroAddress
+        );
+        state.overlays.hideAll();
+        state.macroEdit.loadActiveConfig(
+            currentAddress.macro,
+            core::state::project::projectTrackMidiChannel(
+                state.projectTracks,
+                currentAddress.track
+            ),
+            state.pages.activeConfigs[currentAddress.macro].cc
+        );
+        if (contextUnchanged && returnContext.target ==
+                core::state::project::
+                    ModulatorMacroReturnTarget::MODULATOR_CREATE) {
+            state.macroEdit.openModulatorCreate(
+                std::min<uint8_t>(returnContext.focusedRow, 1U)
+            );
+        } else if (contextUnchanged && returnContext.target ==
+                       core::state::project::
+                           ModulatorMacroReturnTarget::MODULATOR_PICKER) {
+            const auto& graph = state.pages.control.authored.modulation;
+            int selected = -1;
+            for (uint16_t index = 0U; index < graph.sourceCount; ++index) {
+                if (graph.sources[index].id == returnContext.sourceId) {
+                    selected = static_cast<int>(index);
+                    break;
+                }
+            }
+            if (selected >= 0) {
+                state.macroEdit.openModulatorPicker(selected);
+            } else {
+                state.macroEdit.openModulation(0U);
+                state.macroEdit.setModulatorNavigationFeedback(
+                    core::state::MacroModulatorNavigationFeedback::
+                        SOURCE_UNAVAILABLE,
+                    nowMs
+                );
+            }
+        } else {
+            state.macroEdit.openModulation(0U);
+            if (!contextUnchanged) {
+                state.macroEdit.setModulatorNavigationFeedback(
+                    core::state::MacroModulatorNavigationFeedback::
+                        CONTEXT_CHANGED,
+                    nowMs
+                );
+            }
+        }
+        publishMacroAuditionFeedback(
+            state.macroEdit,
+            returnContext,
+            false,
             nowMs
         );
+        restoreMacroOverlayStack(state);
+        return true;
     }
+    state.projectNavigation.modulatorReturn.caller = core::state::project::
+        ModulatorNavigationCaller::MACRO_ASSIGNMENT;
+    state.projectNavigation.modulatorReturn.target = core::state::project::
+        ModulatorMacroReturnTarget::MODULATION_ASSIGNMENT;
+    if (!returnToMacro(state, nowMs)) return false;
+    publishMacroAuditionFeedback(
+        state.macroEdit,
+        returnContext,
+        true,
+        nowMs
+    );
     return true;
 }
 

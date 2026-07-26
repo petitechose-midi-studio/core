@@ -12,6 +12,7 @@
 #include "persistence/ProductFileService.hpp"
 #include "state/CoreState.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerGraphPresetWorkflow.hpp"
@@ -162,7 +163,7 @@ FLASHMEM bool samePresetBytesOutsideSemanticName(
     uint16_t afterSize
 ) {
     constexpr uint16_t semanticOffset = static_cast<uint16_t>(
-        core::state::sequencer::STEP_GRAPH_PRESET_V1_HEADER_SIZE + 4U +
+        core::state::sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
         SequencerStepGraphPreset::TECHNICAL_ID_SIZE
     );
     constexpr uint16_t semanticEnd = static_cast<uint16_t>(
@@ -474,18 +475,6 @@ SequencerStepPresetDomainServices::fromCoreState(
     return SequencerStepPresetDomainServices{state, files};
 }
 
-FLASHMEM SequencerStepPresetListResult SequencerStepPresetDomainServices::listPresets(
-    Entry* entries,
-    uint8_t capacity
-) const {
-    return listPresetsPage(
-        entries,
-        capacity,
-        nullptr,
-        core::persistence::StepPresetFilePageDirection::FORWARD
-    );
-}
-
 FLASHMEM SequencerStepPresetListResult
 SequencerStepPresetDomainServices::listPresetsPage(
     Entry* entries,
@@ -700,26 +689,24 @@ SequencerStepPresetDomainServices::inspectPreset(
         return result;
     }
 
-    if (!preset->metadataDefaulted) {
-        if (!core::state::sequencer::validStepGraphPresetTechnicalId(
-                preset->technicalId
-            ) ||
-            std::strcmp(preset->technicalId, presetId) != 0 ||
-            !core::state::sequencer::validStepGraphPresetSemanticName(
-                preset->semanticName
-            )) {
-            result.status = SequencerStepPresetStatus::CORRUPT;
-            result.assetStatus = SequencerGraphAssetStatus::INVALID_FORMAT;
-            descriptor.compatibility = SequencerStepPresetCompatibility::CORRUPT;
-            setCompatibilityReason(descriptor);
-            return result;
-        }
-        copyText(
-            descriptor.semanticName,
-            sizeof(descriptor.semanticName),
+    if (!core::state::sequencer::validStepGraphPresetTechnicalId(
+            preset->technicalId
+        ) ||
+        std::strcmp(preset->technicalId, presetId) != 0 ||
+        !core::state::sequencer::validStepGraphPresetSemanticName(
             preset->semanticName
-        );
+        )) {
+        result.status = SequencerStepPresetStatus::CORRUPT;
+        result.assetStatus = SequencerGraphAssetStatus::INVALID_FORMAT;
+        descriptor.compatibility = SequencerStepPresetCompatibility::CORRUPT;
+        setCompatibilityReason(descriptor);
+        return result;
     }
+    copyText(
+        descriptor.semanticName,
+        sizeof(descriptor.semanticName),
+        preset->semanticName
+    );
 
     descriptor.stepNodeCount = report.stepNodeCount;
     descriptor.sequenceCount = report.sequenceCount;
@@ -749,15 +736,7 @@ SequencerStepPresetDomainServices::inspectPreset(
         setCompatibilityReason(descriptor);
         return result;
     }
-    if (preset->metadataDefaulted) {
-        descriptor.adaptation =
-            core::state::sequencer::SequencerStepPresetAdaptation::DEFAULTED;
-        copyText(
-            descriptor.adaptationSummary,
-            sizeof(descriptor.adaptationSummary),
-            "Legacy: chromatic default"
-        );
-    } else if (scaleRelative) {
+    if (scaleRelative) {
         char sourceLabel[20]{};
         char destinationLabel[20]{};
         formatScale(sourceScale, sourceLabel, sizeof(sourceLabel));
@@ -805,10 +784,7 @@ SequencerStepPresetDomainServices::inspectPreset(
         descriptor.compatibility = SequencerStepPresetCompatibility::BLOCKED_CAPACITY;
     } else {
         result.status = SequencerStepPresetStatus::OK;
-        if (preset->metadataDefaulted) {
-            descriptor.compatibility =
-                SequencerStepPresetCompatibility::WARNING_DEFAULTED;
-        } else if (scaleRelative && !sameScale(sourceScale, destinationScale)) {
+        if (scaleRelative && !sameScale(sourceScale, destinationScale)) {
             descriptor.compatibility =
                 SequencerStepPresetCompatibility::WARNING_ADAPTED;
         } else {
@@ -878,7 +854,6 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::save
                 *preset,
                 &existingReport
             ) &&
-            !preset->metadataDefaulted &&
             std::strcmp(preset->technicalId, presetId) == 0 &&
             core::state::sequencer::validStepGraphPresetSemanticName(
                 preset->semanticName
@@ -1018,11 +993,10 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
             *preset,
             &decodeReport
         ) ||
-        (!preset->metadataDefaulted &&
-         (std::strcmp(preset->technicalId, presetId) != 0 ||
-          !core::state::sequencer::validStepGraphPresetSemanticName(
-              preset->semanticName
-          ))) ||
+        (std::strcmp(preset->technicalId, presetId) != 0 ||
+         !core::state::sequencer::validStepGraphPresetSemanticName(
+             preset->semanticName
+         )) ||
         !core::state::sequencer::adaptStepGraphPresetPitchToDestination(
             *preset,
             effectiveScale(*state_)
@@ -1110,12 +1084,14 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
 
     const uint16_t targetTrackBit = static_cast<uint16_t>(1U << target.trackIndex);
     const uint16_t enabledMask = state_->sequencerTracks.currentEnabledMask();
-    const uint16_t mutedMask = state_->sequencerTracks.currentMutedMask();
+    const uint16_t targetAudibleMask = core::state::project::audibleMask(
+        state_->projectTracks,
+        enabledMask
+    );
     core::state::sequencer::SequencerTrackActivationBatch activationBatch{};
     if (!state_->sequencerTrackActivations.prepare(
             targetTrackBit,
-            enabledMask,
-            mutedMask,
+            targetAudibleMask,
             state_->statusBar.playing.get(),
             activationBatch,
             core::state::sequencer::SequencerTrackActivationOrigin::STEP_PRESET
@@ -1125,8 +1101,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     }
     change->activation =
         core::state::sequencer::activationHistoryRef(activationBatch);
-    change->activationTargetEnabledMask = enabledMask;
-    change->activationTargetMutedMask = mutedMask;
+    change->activationTargetAudibleMask = targetAudibleMask;
     if (!state_->sequencerHistory.canRecordPattern(*change)) {
         result.status = SequencerStepPresetStatus::FAILED;
         return result;
@@ -1136,7 +1111,10 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     // before arming runtime and before the first live editor/bank write.
     if (!targetMatches(target) || projectRevision() != target.projectRevision ||
         state_->sequencerTracks.currentEnabledMask() != enabledMask ||
-        state_->sequencerTracks.currentMutedMask() != mutedMask) {
+        core::state::project::audibleMask(
+            state_->projectTracks,
+            enabledMask
+        ) != targetAudibleMask) {
         result.status = SequencerStepPresetStatus::STALE_TARGET;
         return result;
     }
@@ -1254,11 +1232,6 @@ SequencerStepPresetDomainServices::renamePreset(
         result.assetStatus = report.status;
         return result;
     }
-    if (preset->metadataDefaulted) {
-        result.status = SequencerStepPresetStatus::UNSUPPORTED_VERSION;
-        result.assetStatus = SequencerGraphAssetStatus::UNSUPPORTED_VERSION;
-        return result;
-    }
     if (std::strcmp(preset->technicalId, presetId) != 0) {
         result.status = SequencerStepPresetStatus::CORRUPT;
         result.assetStatus = SequencerGraphAssetStatus::INVALID_FORMAT;
@@ -1309,7 +1282,6 @@ SequencerStepPresetDomainServices::renamePreset(
             *preset,
             &verification
         ) ||
-        preset->metadataDefaulted ||
         std::strcmp(preset->technicalId, presetId) != 0 ||
         std::strcmp(preset->semanticName, newSemanticName) != 0) {
         result.status = SequencerStepPresetStatus::CORRUPT;
@@ -1389,11 +1361,6 @@ SequencerStepPresetDomainServices::deletePreset(
         result.assetStatus = report.status;
         return result;
     }
-    if (preset->metadataDefaulted) {
-        result.status = SequencerStepPresetStatus::UNSUPPORTED_VERSION;
-        result.assetStatus = SequencerGraphAssetStatus::UNSUPPORTED_VERSION;
-        return result;
-    }
     if (std::strcmp(preset->technicalId, presetId) != 0) {
         result.status = SequencerStepPresetStatus::CORRUPT;
         result.assetStatus = SequencerGraphAssetStatus::INVALID_FORMAT;
@@ -1412,37 +1379,6 @@ SequencerStepPresetDomainServices::deletePreset(
     }
     result.activation = SequencerStepPresetActivation::APPLIED;
     return result;
-}
-
-FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::savePreset(
-    const char* presetId
-) const {
-    return savePreset(presetId, captureTarget(), true);
-}
-
-FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::loadPreset(
-    const char* presetId
-) const {
-    auto target = captureTarget();
-    const auto inspected = inspectPreset(presetId, target, 0, 1);
-    return applyPreset(presetId, target, inspected.descriptor.previewKey);
-}
-
-FLASHMEM const char* sequencerStepPresetStatusLabel(SequencerStepPresetStatus status) {
-    switch (status) {
-        case SequencerStepPresetStatus::OK: return "OK";
-        case SequencerStepPresetStatus::STORAGE_UNAVAILABLE: return "STORAGE_UNAVAILABLE";
-        case SequencerStepPresetStatus::EMPTY: return "EMPTY";
-        case SequencerStepPresetStatus::INCOMPATIBLE: return "INCOMPATIBLE";
-        case SequencerStepPresetStatus::CAPACITY: return "CAPACITY";
-        case SequencerStepPresetStatus::CORRUPT: return "CORRUPT";
-        case SequencerStepPresetStatus::UNSUPPORTED_VERSION: return "UNSUPPORTED_VERSION";
-        case SequencerStepPresetStatus::STALE_TARGET: return "STALE_TARGET";
-        case SequencerStepPresetStatus::COLLISION: return "COLLISION";
-        case SequencerStepPresetStatus::QUEUED: return "QUEUED";
-        case SequencerStepPresetStatus::FAILED:
-        default: return "FAILED";
-    }
 }
 
 }  // namespace core::handler

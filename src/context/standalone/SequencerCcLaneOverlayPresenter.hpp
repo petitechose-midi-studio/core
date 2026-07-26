@@ -6,6 +6,8 @@
 #include <oc/state/StaticSignalWatcher.hpp>
 
 #include "state/StatusBarState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/common/CoalescedLvglRenderScheduler.hpp"
@@ -36,6 +38,8 @@ public:
     struct StateRefs {
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& tracks;
+        const core::state::project::ProjectNavigationState& projectNavigation;
+        core::state::project::ProjectTrackState& projectTracks;
         core::state::StatusBarState& statusBar;
         const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
     };
@@ -45,6 +49,7 @@ public:
         ms::ui::VirtualListKeyValueOverlay& overlay,
         core::ui::ContextActionStrip& actionStrip
     );
+    ~SequencerCcLaneOverlayPresenter();
 
     [[nodiscard]] bool bind();
 
@@ -65,7 +70,7 @@ private:
     core::ui::ContextActionStrip& action_strip_;
     core::ui::SequencerCcLaneGrid grid_;
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
-    oc::state::StaticWatchGroup<5> watcher_;
+    oc::state::StaticWatchGroup<6> watcher_;
     std::array<Text, ROW_CAPACITY> keys_{};
     std::array<Text, ROW_CAPACITY> values_{};
     std::array<char, TEXT_CAPACITY> title_{};

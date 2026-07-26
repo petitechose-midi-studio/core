@@ -50,10 +50,14 @@ void assignShape(
     macro::MacroAutomationSlotAddress address,
     uint16_t scaleQ15
 ) {
-    macro::MacroModulationShape shape{};
+    test_support::project_control::ModulationShape shape{};
     shape.durationBeats = 2.0f;
-    assert(macro::macroModulationAppendPoint(shape, 0.0f, -0.5f));
-    assert(macro::macroModulationAppendPoint(shape, 1.0f, 0.5f));
+    assert(test_support::project_control::appendModulationPoint(
+        shape, 0.0f, -0.5f
+    ));
+    assert(test_support::project_control::appendModulationPoint(
+        shape, 1.0f, 0.5f
+    ));
     assert(test_support::project_control::assignModulation(
         control,
         address,
@@ -65,96 +69,6 @@ void assignShape(
         modulation::projectControlDestination(address),
         scaleQ15
     ).changed());
-}
-
-void test_track_duplication_preserves_automation_from_every_page() {
-    modulation::ProjectControlState control;
-    assignLane(control, {.track = 0, .page = 0, .macro = 1}, 2);
-    assignLane(control, {.track = 0, .page = 7, .macro = 5}, 3);
-    assignShape(control, {.track = 0, .page = 7, .macro = 5}, 49152U);
-
-    const ops::ProjectControlTrackCopy copy{
-        .sourceTrack = 0,
-        .destTrack = 3,
-    };
-    assert(ops::duplicateTracks(control, &copy, 1));
-
-    const auto first = test_support::project_control::readSlot(
-        control,
-        {.track = 3, .page = 0, .macro = 1}
-    );
-    const auto second = test_support::project_control::readSlot(
-        control,
-        {.track = 3, .page = 7, .macro = 5}
-    );
-    assert(first.automationStored && first.compatibility.automation.pointCount == 2);
-    assert(second.automationStored && second.compatibility.automation.pointCount == 3);
-    assert(second.modulationStored);
-    assert(modulation::projectModulationDestinationScaleQ15(
-        control.authored.modulation,
-        modulation::projectControlDestination({.track = 3, .page = 7, .macro = 5})
-    ) == 49152U);
-
-    std::cout
-        << "[PASS] Project track duplication preserves every page automation\n";
-}
-
-void test_track_duplication_shares_project_adsr_and_keeps_its_note_route() {
-    modulation::ProjectControlState control;
-    const macro::MacroAutomationSlotAddress sourceAddress{
-        .track = 0,
-        .page = 1,
-        .macro = 2,
-    };
-    modulation::ModulatorAdsrDraft source{};
-    source.name = "Local ADSR";
-    const auto created = modulation::createAdsrModulator(
-        control.authored.modulation,
-        source
-    );
-    assert(created.changed());
-    modulation::ModulationBindingDraft binding{};
-    binding.sourceId = created.sourceId;
-    binding.destination = modulation::projectControlDestination(sourceAddress);
-    binding.amountQ15 = 8192;
-    assert(modulation::addProjectModulationBinding(
-        control.authored.modulation,
-        binding
-    ).changed());
-    modulation::ModulationTriggerDraft trigger{};
-    trigger.sourceId = created.sourceId;
-    trigger.trigger = {
-        modulation::ModulationTriggerKind::TRACK_NOTE,
-        sourceAddress.track,
-        modulation::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
-        modulation::PROJECT_MODULATION_TRIGGER_ANY_NOTE,
-    };
-    assert(modulation::addProjectModulationTrigger(
-        control.authored.modulation,
-        trigger
-    ).changed());
-
-    const ops::ProjectControlTrackCopy copy{
-        .sourceTrack = sourceAddress.track,
-        .destTrack = 3U,
-    };
-    assert(ops::duplicateTracks(control, &copy, 1U));
-    const auto& graph = control.authored.modulation;
-    assert(graph.sourceCount == 1U);
-    assert(graph.outputBindingCount == 2U);
-    assert(graph.triggerBindingCount == 1U);
-    assert(graph.outputBindings[1].destination.track == 3U);
-    assert(graph.outputBindings[1].sourceId == graph.sources[0].id);
-    assert(graph.triggerBindings[0].sourceId == graph.sources[0].id);
-    assert(graph.triggerBindings[0].trigger.track == sourceAddress.track);
-    assert(graph.triggerBindings[0].trigger.channel ==
-           modulation::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL);
-    assert(modulation::validProjectModulationDomain(
-        graph,
-        control.authored.curves,
-        &control.authored.automation
-    ));
-    std::cout << "[PASS] Track copy shares the Project ADSR and keeps its route\n";
 }
 
 void test_track_clear_removes_note_route_without_deleting_root_source() {
@@ -169,10 +83,10 @@ void test_track_clear_removes_note_route_without_deleting_root_source() {
     modulation::ModulationTriggerDraft trigger{};
     trigger.sourceId = created.sourceId;
     trigger.trigger = {
-        modulation::ModulationTriggerKind::TRACK_NOTE,
-        2U,
-        modulation::PROJECT_MODULATION_TRIGGER_ANY_CHANNEL,
-        modulation::PROJECT_MODULATION_TRIGGER_ANY_NOTE,
+        .kind = modulation::ModulationTriggerKind::TRACK_NOTE,
+        .track = 2U,
+        .noteMin = 0U,
+        .noteMax = 127U,
     };
     assert(modulation::addProjectModulationTrigger(
         control.authored.modulation,
@@ -186,33 +100,69 @@ void test_track_clear_removes_note_route_without_deleting_root_source() {
     std::cout << "[PASS] Track clear removes its route and keeps root ADSR\n";
 }
 
-void test_batch_duplication_rejects_invalid_copy_atomically() {
+void test_page_compaction_remaps_complete_project_destinations() {
     modulation::ProjectControlState control;
-    assignLane(control, {.track = 0, .page = 0, .macro = 0}, 2);
-    const auto before = control;
-    const std::array<ops::ProjectControlPageCopy, 2> copies{{
-        {
-            .sourceTrack = 0,
-            .sourcePage = 0,
-            .destTrack = 0,
-            .destPage = 1,
-        },
-        {
-            .sourceTrack = 0,
-            .sourcePage = 0,
-            .destTrack = 0,
-            .destPage = macro::PAGE_COUNT,
-        },
-    }};
+    const macro::MacroAutomationSlotAddress removed{
+        .track = 0,
+        .page = 1,
+        .macro = 0,
+    };
+    const macro::MacroAutomationSlotAddress shifted{
+        .track = 0,
+        .page = 2,
+        .macro = 5,
+    };
+    const macro::MacroAutomationSlotAddress unrelated{
+        .track = 4,
+        .page = 2,
+        .macro = 5,
+    };
+    assignLane(control, removed, 2U);
+    assignLane(control, shifted, 3U);
+    assignShape(control, shifted, 49152U);
+    assignLane(control, unrelated, 2U);
 
-    assert(!ops::duplicatePages(
+    const auto shiftedBefore = test_support::project_control::readSlot(
         control,
-        copies.data(),
-        static_cast<uint8_t>(copies.size())
-    ));
-    assert(std::memcmp(&control, &before, sizeof(control)) == 0);
+        shifted
+    );
+    assert(shiftedBefore.automation.stored());
+    const auto bindingId = control.authored.modulation.outputBindings[0].id;
+    const auto sourceId = control.authored.modulation.outputBindings[0].sourceId;
 
-    std::cout << "[PASS] Project batch duplication failure is atomic\n";
+    // Old Pages 0 and 2 survive. Page 2 becomes Page 1.
+    assert(ops::compactPages(control, 0U, 0x0005U));
+
+    const macro::MacroAutomationSlotAddress compacted{
+        .track = 0,
+        .page = 1,
+        .macro = 5,
+    };
+    const auto shiftedAfter = test_support::project_control::readSlot(
+        control,
+        compacted
+    );
+    assert(shiftedAfter.automation.stored());
+    assert(shiftedAfter.automation.id == shiftedBefore.automation.id);
+    assert(shiftedAfter.modulationCount > 0U);
+    assert(!test_support::project_control::readSlot(control, removed).present());
+    assert(!test_support::project_control::readSlot(control, shifted).present());
+    assert(test_support::project_control::readSlot(control, unrelated).present());
+    assert(control.authored.modulation.outputBindings[0].id == bindingId);
+    assert(control.authored.modulation.outputBindings[0].sourceId == sourceId);
+    assert(control.authored.modulation.outputBindings[0].destination ==
+           modulation::projectControlDestination(compacted));
+    assert(modulation::projectModulationDestinationScaleQ15(
+        control.authored.modulation,
+        modulation::projectControlDestination(compacted)
+    ) == 49152U);
+    assert(modulation::validProjectModulationDomain(
+        control.authored.modulation,
+        control.authored.curves,
+        &control.authored.automation
+    ));
+
+    std::cout << "[PASS] Page compaction remaps complete Project destinations\n";
 }
 
 void test_empty_page_clipboard_replaces_existing_control_with_empty_scope() {
@@ -236,7 +186,7 @@ void test_empty_page_clipboard_replaces_existing_control_with_empty_scope() {
         control,
         destAddress
     );
-    assert(!result.present);
+    assert(!result.present());
     assert(control.authored.curves.recordCount == 0);
     assert(control.authored.curves.pointCount == 0);
 
@@ -268,7 +218,7 @@ void test_empty_structure_copy_does_not_allocate_control_clipboard() {
     assert(!test_support::project_control::readSlot(
         destControl,
         destAddress
-    ).present);
+    ).present());
 
     std::cout << "[PASS] Empty structure copy allocates no control payload\n";
 }
@@ -320,10 +270,12 @@ void test_malformed_clipboard_is_rejected_before_destination_mutation() {
     auto& entry = clipboard.entries[0];
     entry.valid = true;
     entry.sourceMacro = 1;
-    entry.state.automation.active = true;
-    entry.state.automation.pointOffset =
-        macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY;
-    entry.state.automation.pointCount = 1;
+    entry.control.automation.spec.valueDomain =
+        modulation::ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR;
+    entry.control.automation.pointOffset =
+        modulation::PROJECT_CURVE_POINT_CAPACITY;
+    entry.control.automation.pointCount = 1U;
+    entry.control.automation.enabled = true;
 
     assert(!ops::replacePageFromClipboard(
         control,
@@ -360,10 +312,8 @@ void test_malformed_clipboard_is_rejected_before_destination_mutation() {
 }  // namespace
 
 int main() {
-    test_track_duplication_preserves_automation_from_every_page();
-    test_track_duplication_shares_project_adsr_and_keeps_its_note_route();
     test_track_clear_removes_note_route_without_deleting_root_source();
-    test_batch_duplication_rejects_invalid_copy_atomically();
+    test_page_compaction_remaps_complete_project_destinations();
     test_empty_page_clipboard_replaces_existing_control_with_empty_scope();
     test_empty_structure_copy_does_not_allocate_control_clipboard();
     test_track_structure_copy_captures_all_page_automation();

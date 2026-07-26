@@ -4,6 +4,8 @@
 
 namespace core::state {
 
+FLASHMEM MidiSyncState::~MidiSyncState() = default;
+
 FLASHMEM void MidiSyncState::reset() {
     mode.set(MidiSyncMode::AUTO);
     followTransport.set(true);

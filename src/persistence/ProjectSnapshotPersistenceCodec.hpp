@@ -23,7 +23,7 @@ struct DecodeResult {
  *
  * File stores retain one instance so autosave never allocates large payload or
  * envelope buffers in the interaction path. The convenience encoder still
- * creates a temporary workspace for cold host-tool and migration calls.
+ * creates a temporary workspace for cold host-tool calls.
  */
 class ProjectSnapshotCodecWorkspace {
 public:

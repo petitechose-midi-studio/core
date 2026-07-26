@@ -6,6 +6,8 @@
 
 namespace core::state::project {
 
+FLASHMEM ProjectNavigationState::~ProjectNavigationState() = default;
+
 FLASHMEM void ProjectBrowserState::clear() {
     entries = {};
     count = 0;
@@ -37,7 +39,6 @@ FLASHMEM void ProjectNavigationState::reset() {
     focusedRow.set(0);
     physicalHoldActive.set(false);
     contentRevision.set(0);
-    telemetryRevision.set(0);
     lifecycleFeedback.set("");
     selectedModulator = {};
     selectedModulationBinding = {};
@@ -58,6 +59,7 @@ FLASHMEM void ProjectNavigationState::reset() {
     patternsInheritScale = true;
     clipsInheritScale = true;
     stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
+    ccLaneDefaultControllers = PROJECT_CC_LANE_DEFAULT_CONTROLLERS;
     transportSwingPercent = 0;
     transportRunMode = 0;
     pendingLoadProjectId = {};
@@ -79,10 +81,6 @@ FLASHMEM void ProjectNavigationState::reset() {
 
 FLASHMEM void ProjectNavigationState::notifyContentChanged() {
     contentRevision.set(static_cast<uint8_t>(contentRevision.get() + 1));
-}
-
-FLASHMEM void ProjectNavigationState::notifyTelemetryChanged() {
-    telemetryRevision.set(static_cast<uint8_t>(telemetryRevision.get() + 1));
 }
 
 FLASHMEM void ProjectNavigationState::setLifecycleFeedback(const char* message) {

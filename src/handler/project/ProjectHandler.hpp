@@ -7,6 +7,7 @@
 
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
+#include "handler/common/ProjectRecordedShapeCaptureWorkflow.hpp"
 #include "handler/project/ProjectLifecycleDomainServices.hpp"
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
@@ -15,8 +16,11 @@
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectTrackDomainServices.hpp"
+#include "state/project/ProjectSettingsHistory.hpp"
 #include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/macro/MacroUiState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -27,19 +31,25 @@ namespace core::handler {
 
 class ProjectHandler {
 public:
+    static constexpr uint32_t ROUTING_GESTURE_IDLE_COMMIT_MS = 250U;
+
     struct StateRefs {
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::project::ProjectNavigationState& navigation;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
+        core::state::project::ProjectTrackState& projectTracks;
+        core::state::project::ProjectTrackDomainServices trackDomain;
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
         core::state::macro::MacroPagesState& pages;
+        core::state::macro::MacroUiState& macroUi;
         core::state::MacroState& macros;
         core::state::MacroEditState& macroEdit;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::macro::MacroHistoryService& macroHistory;
+        core::state::project::ProjectSettingsHistoryService& settingsHistory;
         core::state::StructureClipboardState& clipboard;
         SequencerHistoryDomainServices history;
         ProjectLifecycleDomainServices lifecycle;
@@ -80,12 +90,25 @@ private:
     bool applyFocusedStorageStep(int steps);
     bool applyFocusedRoutingStep(int steps);
     bool applyFocusedNameEditorStep(int steps);
+    bool recordProjectSettingsChange(
+        const core::state::project::ProjectSettingsHistorySnapshot& before,
+        core::state::project::ProjectSettingsHistoryActionKind kind,
+        uint8_t subject,
+        bool coalesce
+    );
+    void endProjectSettingsGesture();
     bool setFocusedProjectValue(float normalized);
     bool setFocusedMusicRootValue(float normalized);
     bool setFocusedMusicScaleValue(float normalized);
     bool setFocusedTransportValue(float normalized);
     bool setFocusedStorageValue(float normalized);
     bool setFocusedRoutingValue(float normalized);
+    [[nodiscard]] bool setRoutingMidiChannel(
+        uint8_t track,
+        uint8_t channel0Based
+    );
+    void commitPendingRoutingGesture();
+    void cancelPendingRoutingGesture();
     bool setFocusedNameEditorValue(float normalized);
     bool setFocusedModulatorValue(float normalized);
     void enterFocusedModulator();
@@ -100,9 +123,22 @@ private:
         bool syncMacroRuntime,
         uint8_t dirtyMacro = core::state::macro::kMacroConfigDirtyAll
     );
-    void reconcileModulatorNavigationAfterHistory();
     void beginModulatorBottomLeft();
     void releaseModulatorBottomLeft();
+    [[nodiscard]] bool focusedRecordedShapeRecord() const;
+    [[nodiscard]] bool beginRecordedShapeCapture();
+    void releaseRecordedShapeCapture();
+    [[nodiscard]] bool cancelRecordedShapeCapture(const char* feedback = nullptr);
+    void syncRecordedShapeCaptureRevision();
+    [[nodiscard]] bool createDefaultRecordedShape();
+    [[nodiscard]] bool resizeFocusedRecordedShape(uint8_t beats);
+    static void markRecordedShapeMutation(void* context);
+    static void publishRecordedShapeAudition(
+        void* context,
+        const core::state::modulation::ProjectRecordedShapeAuditionDescriptor&
+            descriptor
+    );
+    static void clearRecordedShapeAudition(void* context);
     void beginModulatorBottomRight();
     void releaseModulatorBottomRight();
     void copyFocusedModulator();
@@ -128,21 +164,23 @@ private:
     bool commitProjectNameEditor();
     void resetProject();
     void back();
-    void consumeUndo();
-    void consumeRedo();
-
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::project::ProjectNavigationState& navigation_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& sequencer_tracks_;
+    core::state::project::ProjectTrackState& project_tracks_;
+    core::state::project::ProjectTrackDomainServices track_domain_;
     core::state::StatusBarState& status_bar_;
     core::state::MidiSyncState& midi_sync_;
     core::state::macro::MacroPagesState& pages_;
+    core::state::macro::MacroUiState& macro_ui_;
     core::state::MacroState& macros_;
     core::state::MacroEditState& macro_edit_;
     oc::state::Signal<uint32_t>& config_revision_;
     core::state::macro::MacroHistoryService& macro_history_;
+    core::state::project::ProjectSettingsHistoryService& settings_history_;
+    ProjectRecordedShapeCaptureWorkflow recorded_shape_capture_;
     core::state::StructureClipboardState& clipboard_;
     SequencerHistoryDomainServices history_;
     ProjectLifecycleDomainServices lifecycle_;
@@ -152,8 +190,13 @@ private:
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID project_view_scope_ = 0;
     uint32_t (*time_provider_)() = nullptr;
+    uint32_t routing_gesture_commit_deadline_ms_ = 0U;
+    uint32_t settings_gesture_commit_deadline_ms_ = 0U;
+    uint8_t routing_gesture_track_ =
+        core::state::project::PROJECT_TRACK_COUNT;
     bool modulator_bottom_left_was_pressed_ = false;
     bool modulator_bottom_right_was_pressed_ = false;
+    bool recorded_shape_capture_button_active_ = false;
 };
 
 }  // namespace core::handler
