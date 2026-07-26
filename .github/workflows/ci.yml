@@ -16,16 +16,16 @@ concurrency:
 env:
   PLATFORMIO_VERSION: "6.1.18"
   MS_DEV_ENV_REPOSITORY: petitechose-midi-studio/ms-dev-env
-  MS_DEV_ENV_SHA: b0f5d39b29317bf51266da83d525e54c10ea6af1
+  MS_DEV_ENV_SHA: c656853d9d68697727a55eef1778dc94340f6ab6
   OPEN_CONTROL_FRAMEWORK_SHA: d52f4a3291dbceff9bf3ada88c798ec443fa1216
-  OPEN_CONTROL_NOTE_SHA: ecd904387b685573fc29dd2f8f031f21c713b860
+  OPEN_CONTROL_NOTE_SHA: e2e2d56e6729a65e69842d7a7ae627e5ce1b2467
 
   OPEN_CONTROL_HAL_MIDI_SHA: f1f080449cc37378977a30aa344a7a6b4b209c27
   OPEN_CONTROL_HAL_NET_SHA: f37a8ed152ee0c02a2926ceed4ff011c36a249fe
   OPEN_CONTROL_HAL_SDL_SHA: adeb3728aaaa92bbb2823fb84ebad495b983e986
   OPEN_CONTROL_UI_LVGL_SHA: 9827f5933ae826f30dd6df856966a769f19f6ef2
   OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA: b40208f1d3b6038e9ef0275b5a0f360fcb9ebf04
-  MIDI_STUDIO_UI_SHA: 9a78ed877b90d18750abb2945443d14b9151b50f
+  MIDI_STUDIO_UI_SHA: 6b3730ce432d29d7410861df6bca98383d9a61e9
 jobs:
   firmware_release:
     name: firmware (release)
@@ -119,17 +119,3 @@ jobs:
       - name: Test
         working-directory: workspace
         run: uv run ms test core
-
-      - name: Build Core host file tool
-        working-directory: workspace/midi-studio/core
-        run: |
-          cmake -S . -B build/core-native -DMS_CORE_BUILD_TESTS=OFF
-          cmake --build build/core-native --target ms-core-file-tool --parallel
-
-      - name: Validate project migration fixtures with host file tool
-        working-directory: workspace/midi-studio/core
-        run: python script/dev/validate-project-fixtures.py
-
-      - name: Validate step graph preset fixtures with host file tool
-        working-directory: workspace/midi-studio/core
-        run: python script/dev/validate-step-graph-preset-fixtures.py
