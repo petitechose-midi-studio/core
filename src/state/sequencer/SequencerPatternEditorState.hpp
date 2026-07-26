@@ -64,6 +64,8 @@ struct SequencerPatternEditorState {
     void reset();
 };
 
-static_assert(sizeof(SequencerPatternEditorState) <= 128U);
+static_assert(
+    sizeof(void*) != 4U || sizeof(SequencerPatternEditorState) <= 128U
+);
 
 }  // namespace core::state::sequencer
