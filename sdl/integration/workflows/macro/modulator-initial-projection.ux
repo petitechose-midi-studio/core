@@ -1,0 +1,37 @@
+# UX workflow: first-frame Base/Modulation projection across navigation.
+# Purpose: proves cold entry, page change, and Track change each render their
+# own resolved tuple without a second navigation gesture used as refresh.
+# Expect: capture_changed:cold_projection=page_2_projection, capture_changed:page_2_projection=track_2_projection, capture_match:track_2_projection=macro_reentered
+
+0 scenario macro-initial-projection
+300 capture screen cold_projection
+
+# Page is the canonical hot focus. Preview then commit Page 2; its first frame
+# must already show the distinct Base plus modulation rail.
+440 encoder NAV 1
+580 tap NAV 60
+800 capture screen page_2_projection
+
+# Track is reachable only through Structure. Select Track 2, descend to Page,
+# apply the context, and verify its first hot frame without a refresh gesture.
+940 button NAV down
+2010 tick
+2070 button NAV up
+2210 encoder NAV 1
+2350 tap NAV 60
+2490 tap NAV 60
+2730 capture screen track_2_projection
+
+# Leave Macro for Project, then return through the same global selector. View
+# entry must reuse/publish the coherent Track 2 tuple, not repaint Out as Base.
+2870 button LEFT_TOP down
+2990 encoder NAV 1
+3110 encoder NAV 1
+3230 button LEFT_TOP up
+3450 capture screen project_view
+
+3590 button LEFT_TOP down
+3710 encoder NAV -1
+3830 encoder NAV -1
+3950 button LEFT_TOP up
+4230 capture screen macro_reentered

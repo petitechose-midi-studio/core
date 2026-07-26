@@ -3,8 +3,10 @@
 #include <algorithm>
 
 #include <config/PlatformCompat.hpp>
+#include <oc/diagnostics/Performance.hpp>
 
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerPatternRegionOps.hpp"
 #include "ui/sequencer/SequencerCcLaneGridProjection.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -13,6 +15,7 @@ namespace core::ui::sequencer {
 FLASHMEM SequencerCcLaneGridProps buildSequencerCcLaneGridProps(
     const SequencerViewModelSource& source
 ) {
+    OC_PERF_SCOPE(perfProjection, "ui.sequencer.projection.cc-lane");
     namespace seq = core::state::sequencer;
     const auto& ui = source.sequencer.ccLaneUi;
     if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID) return {};
@@ -38,6 +41,7 @@ FLASHMEM SequencerCcLaneGridProps buildSequencerCcLaneGridProps(
         1U,
         source.sequencer.pattern.length.get()
     );
+    const auto region = seq::patternPlaybackRegion(source.sequencer.pattern);
     const uint8_t start = static_cast<uint8_t>(
         (ui.focusedStep / seq::SequencerPatternState::STEPS_PER_PAGE) *
         seq::SequencerPatternState::STEPS_PER_PAGE
@@ -63,7 +67,7 @@ FLASHMEM SequencerCcLaneGridProps buildSequencerCcLaneGridProps(
             props.segments[cell] = projectSequencerCcLaneGridSegment(
                 lane,
                 step,
-                length
+                region
             );
         }
     }
@@ -72,7 +76,7 @@ FLASHMEM SequencerCcLaneGridProps buildSequencerCcLaneGridProps(
         const auto span = sequencerCcLaneProjectionSpanAtStep(
             lane,
             ui.focusedStep,
-            length
+            region
         );
         if (span.valid) {
             props.contextualHint = true;

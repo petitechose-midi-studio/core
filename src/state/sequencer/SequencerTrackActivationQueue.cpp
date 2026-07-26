@@ -68,8 +68,7 @@ FLASHMEM void SequencerTrackActivationQueue::bumpTelemetryRevision_() {
 
 FLASHMEM bool SequencerTrackActivationQueue::prepare(
     uint16_t trackMask,
-    uint16_t enabledMask,
-    uint16_t mutedMask,
+    uint16_t targetAudibleMask,
     bool transportPlaying,
     SequencerTrackActivationBatch& out,
     SequencerTrackActivationOrigin origin
@@ -89,9 +88,7 @@ FLASHMEM bool SequencerTrackActivationQueue::prepare(
     if (next_generation_ == 0) ++next_generation_;
     ++next_operation_id_;
     if (next_operation_id_ == 0) ++next_operation_id_;
-    const uint16_t audibleMask = static_cast<uint16_t>(
-        enabledMask & static_cast<uint16_t>(~mutedMask) & ALL_TRACKS_MASK
-    );
+    const uint16_t audibleMask = sanitizeMask_(targetAudibleMask);
     out.trackMask = sanitized;
     out.localLoopBoundaryMask = transportPlaying
         ? static_cast<uint16_t>(sanitized & audibleMask)
@@ -262,8 +259,7 @@ FLASHMEM bool SequencerTrackActivationQueue::publishRealtimeTelemetry() {
 FLASHMEM bool SequencerTrackActivationQueue::prepareHistoryTransition(
     const SequencerTrackActivationHistoryRef& reference,
     SequencerTrackActivationTarget desiredTarget,
-    uint16_t enabledMask,
-    uint16_t mutedMask,
+    uint16_t targetAudibleMask,
     bool transportPlaying,
     SequencerTrackActivationHistoryTransition& out
 ) {
@@ -316,9 +312,7 @@ FLASHMEM bool SequencerTrackActivationQueue::prepareHistoryTransition(
         }
     }
 
-    const uint16_t audibleMask = static_cast<uint16_t>(
-        enabledMask & static_cast<uint16_t>(~mutedMask) & ALL_TRACKS_MASK
-    );
+    const uint16_t audibleMask = sanitizeMask_(targetAudibleMask);
     uint32_t transitionGeneration = 0;
     if (queuedMask != 0) {
         ++next_generation_;

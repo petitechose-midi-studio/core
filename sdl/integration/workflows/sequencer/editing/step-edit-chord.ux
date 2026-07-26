@@ -1,14 +1,16 @@
-# UX workflow: edit a root step chord from the Step Editor.
-# Purpose: captures the Chord row, live OPT feedback, and the resulting grid badge.
-# Expect: capture_changed:chord_row_single=chord_row_local, capture_changed:step_1_enabled=chord_badge_on_grid
+# UX workflow: author one named chord, invert and voice it, then inherit it.
+# Purpose: prove that the musician edits semantic intent while the preview shows
+# the exact sounding name/notes and the child reuses the same resolved result.
+# Expect: capture_changed:harmony_major=harmony_minor7, capture_changed:inversion_root=inversion_first, capture_changed:voicing_close=voicing_wide, capture_changed:step_1_enabled=chord_badge_on_grid
 
 0 scenario sequencer
 50 capture screen sequencer_ready
 
 # Move to Step focus, enable step 1, and open the Step Editor.
-150 tap NAV 60
-350 capture screen pattern_focus
-450 tap NAV 60
+150 capture screen pattern_focus
+450 button NAV down
+510 encoder NAV 1
+570 button NAV up
 650 capture screen step_focus
 750 tap MACRO_1 60
 950 capture screen step_1_enabled
@@ -17,7 +19,7 @@
 2150 capture screen step_editor_open
 2200 button MACRO_1 up
 
-# Focus Chord and turn OPT to create a local chord.
+# Focus Chord and create a readable three-voice local chord.
 2300 encoder NAV 1
 2380 encoder NAV 1
 2460 encoder NAV 1
@@ -25,51 +27,61 @@
 2620 encoder NAV 1
 2700 encoder NAV 1
 2900 capture screen chord_row_single
-3000 encoder OPT 1.0
-3300 capture screen chord_row_local
-
-# NAV opens the detailed chord editor; NAV turns select chord fields.
-3400 tap NAV 60
-3650 capture screen chord_detail_mode
-3750 encoder NAV 1
-3900 capture screen chord_detail_voices
-4000 encoder NAV 1
-4150 capture screen chord_detail_color
-4250 encoder OPT 1.0
-4450 capture screen chord_detail_color_adjusted
+# NAV opens the transactional semantic editor. Change the named Harmony, then
+# make the resulting four-voice Minor 7 explicitly first-inversion and Wide.
+3000 tap NAV 60
+3300 capture screen chord_detail_mode
+3400 encoder NAV 1
+3650 capture screen harmony_major
+3750 encoder OPT 2.0
+4100 capture screen harmony_minor7
+4300 encoder NAV 1
+4450 capture screen voices_four
+4550 encoder NAV 1
+4700 capture screen inversion_root
+4800 encoder OPT 0.34
+5000 capture screen inversion_first
+5100 encoder NAV 1
+5250 capture screen voicing_close
+5350 encoder OPT 2.0
+5550 capture screen voicing_wide
 
 # Close the detail, then close the editor and reveal the chord badge on the step tile.
-4550 tap NAV 60
-4750 capture screen chord_row_after_detail
-4850 tap LEFT_TOP 60
-5150 capture screen chord_badge_on_grid
+5650 tap NAV 60
+5850 capture screen chord_row_after_detail
+5880 tap BOTTOM_RIGHT 40
+5950 tap LEFT_TOP 60
+6250 capture screen chord_badge_on_grid
 
 # Reopen the root editor, create a micro-sequence, and verify that a child step
 # in Inherit mode previews the parent chord.
-5250 button MACRO_1 down
-6300 tick
-6350 capture screen root_chord_editor_reopened
-6400 button MACRO_1 up
-6500 encoder NAV 1
-6580 encoder NAV 1
-6660 encoder NAV 1
-6740 encoder NAV 1
-6820 encoder NAV 1
-6900 encoder NAV 1
-6980 encoder NAV 1
-7100 capture screen root_micro_row_for_inherit
-7200 tap NAV 60
-7500 capture screen child_context_after_chord_parent
-7600 button MACRO_1 down
-8650 tick
-8700 capture screen child_step_editor_open
-8750 button MACRO_1 up
-8850 encoder NAV 1
-8930 encoder NAV 1
-9010 encoder NAV 1
-9090 encoder NAV 1
-9170 encoder NAV 1
-9250 encoder NAV 1
-9450 capture screen child_chord_row_inherit
-9550 tap NAV 60
-9850 capture screen child_chord_detail_inherit
+6350 button MACRO_1 down
+7400 tick
+7450 capture screen root_chord_editor_reopened
+7500 button MACRO_1 up
+7600 encoder NAV 1
+7680 encoder NAV 1
+7760 encoder NAV 1
+7840 encoder NAV 1
+7920 encoder NAV 1
+8000 encoder NAV 1
+8080 encoder NAV 1
+8200 capture screen root_micro_row_for_inherit
+8300 tap NAV 60
+8600 capture screen child_context_after_chord_parent
+8620 tap BOTTOM_RIGHT 40
+8700 button MACRO_1 down
+9750 tick
+9800 capture screen child_step_editor_open
+9850 button MACRO_1 up
+9950 encoder NAV 1
+10030 encoder NAV 1
+10110 encoder NAV 1
+10190 encoder NAV 1
+10270 encoder NAV 1
+10350 encoder NAV 1
+10550 capture screen child_chord_row_inherit
+10650 tap NAV 60
+10950 capture screen child_chord_detail_inherit
+11050 tap BOTTOM_RIGHT 60
+11300 capture screen child_chord_published

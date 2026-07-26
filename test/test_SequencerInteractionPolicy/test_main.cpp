@@ -25,9 +25,12 @@ void expectsRootFocusMatrix() {
     auto track = buildSequencerInteractionPolicy(baseContext(Focus::TRACK));
     assert(track.scope == Scope::TRACK);
     assert(track.navTurn == Action::MOVE_TRACK);
+    assert(track.navTap == Action::OPEN_TRACK_EDITOR);
+    assert(track.navLongPress == Action::ENTER_SELECTION);
     assert(track.optTurn == Action::NONE);
+    assert(track.leftCenterPress == Action::NONE);
     assert(track.macroLongPress == Action::OPEN_STEP_EDITOR);
-    assert(track.bottomLeftTap == Action::MUTE_CURRENT_TRACK);
+    assert(track.bottomLeftTap == Action::CLEAR_CURRENT_STRUCTURE);
     assert(track.bottomLeftHold == Action::REMOVE_CURRENT_STRUCTURE);
     assert(track.leftCenterVisibility == Visibility::HIDDEN);
     assert(track.leftBottomVisibility == Visibility::HIDDEN);
@@ -39,6 +42,9 @@ void expectsRootFocusMatrix() {
     assert(pattern.macroLongPress == Action::OPEN_STEP_EDITOR);
     assert(pattern.leftCenterPress == Action::OPEN_PATTERN_DIMENSION_SELECTOR);
     assert(pattern.leftBottomPress == Action::OPEN_MUSICAL_PROPERTY_SELECTOR);
+    assert(pattern.navTap == Action::OPEN_PATTERN_EDITOR);
+    assert(pattern.navLongPress == Action::ENTER_SELECTION);
+    assert(pattern.leftTopTap == Action::NONE);
     assert(pattern.leftCenterVisibility == Visibility::ACTIVE);
     assert(pattern.leftBottomVisibility == Visibility::ACTIVE);
 
@@ -48,9 +54,22 @@ void expectsRootFocusMatrix() {
     assert(step.optTurn == Action::EDIT_STEP_PROPERTY);
     assert(step.macroLongPress == Action::OPEN_STEP_EDITOR);
     assert(step.leftCenterPress == Action::OPEN_MUSICAL_PROPERTY_SELECTOR);
-    assert(step.leftBottomPress == Action::NONE);
+    assert(step.leftBottomPress == Action::OPEN_STEP_CONTENT_SELECTOR);
+    assert(step.navTap == Action::OPEN_STEP_EDITOR);
+    assert(step.navLongPress == Action::ENTER_SELECTION);
+    assert(step.leftTopTap == Action::NONE);
     assert(step.leftCenterVisibility == Visibility::ACTIVE);
-    assert(step.leftBottomVisibility == Visibility::HIDDEN);
+    assert(step.leftBottomVisibility == Visibility::ACTIVE);
+}
+
+void expectsStepContentPolicy() {
+    auto selector = baseContext(Focus::STEP);
+    selector.stepContentSelectorActive = true;
+    auto policy = buildSequencerInteractionPolicy(selector);
+    assert(policy.scope == Scope::STEP_CONTENT_SELECTOR);
+    assert(policy.navTurn == Action::SELECT_STEP_CONTENT_ACTION);
+    assert(policy.leftBottomPress == Action::APPLY_STEP_CONTENT_SELECTOR);
+    assert(policy.leftTopTap == Action::CANCEL_TRANSIENT_CONTEXT);
 }
 
 void expectsChildContentBottomActions() {
@@ -61,6 +80,8 @@ void expectsChildContentBottomActions() {
 
     auto policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::CHILD_PATTERN);
+    assert(policy.navLongPress == Action::ENTER_SELECTION);
+    assert(policy.leftTopTap == Action::CANCEL_TRANSIENT_CONTEXT);
     assert(policy.macroLongPress == Action::OPEN_STEP_EDITOR);
     assert(policy.bottomLeftTap == Action::CLEAR_STEP_CONTENT);
     assert(policy.bottomRightTap == Action::COPY_STEP_CONTENT);
@@ -71,6 +92,8 @@ void expectsChildContentBottomActions() {
     context.navigationFocus = Focus::STEP;
     policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::STEP);
+    assert(policy.navLongPress == Action::ENTER_SELECTION);
+    assert(policy.leftTopTap == Action::CANCEL_TRANSIENT_CONTEXT);
     assert(policy.optTurn == Action::EDIT_STEP_PROPERTY);
     assert(policy.macroLongPress == Action::OPEN_STEP_EDITOR);
     assert(policy.bottomLeftTap == Action::RESET_CURRENT_STEP_SHALLOW);
@@ -156,19 +179,23 @@ void expectsSelectionOverrides() {
     context.trackSelectionActive = true;
     policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::TRACK_SELECTION);
+    assert(policy.navLongPress == Action::NONE);
     assert(policy.bottomLeftTap == Action::MUTE_TRACK_SELECTION);
     assert(policy.bottomLeftHold == Action::DELETE_SELECTION);
-    assert(policy.bottomRightTap == Action::COPY_SELECTION);
-    assert(policy.bottomRightHold == Action::PASTE_SELECTION);
+    assert(policy.bottomRightTap == Action::NONE);
+    assert(policy.bottomRightHold == Action::NONE);
+    assert(policy.bottomRightVisibility == Visibility::HIDDEN);
 
     context.trackSelectionActive = false;
     context.pageSelectionActive = true;
     policy = buildSequencerInteractionPolicy(context);
     assert(policy.scope == Scope::PATTERN_SELECTION);
+    assert(policy.navLongPress == Action::NONE);
     assert(policy.bottomLeftTap == Action::CLEAR_SELECTION);
     assert(policy.bottomLeftHold == Action::DELETE_SELECTION);
-    assert(policy.bottomRightTap == Action::COPY_SELECTION);
-    assert(policy.bottomRightHold == Action::PASTE_SELECTION);
+    assert(policy.bottomRightTap == Action::NONE);
+    assert(policy.bottomRightHold == Action::NONE);
+    assert(policy.bottomRightVisibility == Visibility::HIDDEN);
 }
 
 void expectsStepEditorOverridesEverything() {
@@ -185,7 +212,8 @@ void expectsStepEditorOverridesEverything() {
     assert(policy.optTurn == Action::EDIT_STEP_EDITOR_ROW);
     assert(policy.macroLongPress == Action::NONE);
     assert(policy.leftBottomPress == Action::EDIT_STEP_LOCAL_RANDOM);
-    assert(policy.leftCenterVisibility == Visibility::HIDDEN);
+    assert(policy.leftCenterPress == Action::RETARGET_STEP_EDITOR);
+    assert(policy.leftCenterVisibility == Visibility::ACTIVE);
     assert(policy.leftBottomVisibility == Visibility::ACTIVE);
     assert(policy.bottomLeftVisibility == Visibility::HIDDEN);
     assert(policy.bottomRightVisibility == Visibility::HIDDEN);
@@ -210,6 +238,17 @@ void expectsStepEditorOverridesEverything() {
     assert(policy.bottomRightHold == Action::PASTE_STEP_EDITOR_CONTEXT);
     assert(policy.bottomLeftVisibility == Visibility::ACTIVE);
     assert(policy.bottomRightVisibility == Visibility::ACTIVE);
+
+    context.childContentView = true;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.leftCenterPress == Action::NONE);
+    assert(policy.leftCenterVisibility == Visibility::HIDDEN);
+
+    context.childContentView = false;
+    context.overlayVisible = true;
+    policy = buildSequencerInteractionPolicy(context);
+    assert(policy.leftCenterPress == Action::NONE);
+    assert(policy.leftCenterVisibility == Visibility::HIDDEN);
 }
 
 void expectsAvailabilityHelpers() {
@@ -228,7 +267,7 @@ void expectsAvailabilityHelpers() {
     assert(!sequencerInteractionMainSurfaceAvailable(context));
 
     context.propertySelectorActive = false;
-    context.historyShortcutHoldActive = true;
+    context.stepContentSelectorActive = true;
     assert(sequencerInteractionTransientActive(context));
     assert(!sequencerInteractionMainSurfaceAvailable(context));
 }
@@ -267,6 +306,7 @@ void expectsDestructiveAndMuteIconsToRemainSemanticallyDistinct() {
 
 int main() {
     expectsRootFocusMatrix();
+    expectsStepContentPolicy();
     expectsChildContentBottomActions();
     expectsStructureCopyVisibleWithoutClipboard();
     expectsSelectorOverrides();

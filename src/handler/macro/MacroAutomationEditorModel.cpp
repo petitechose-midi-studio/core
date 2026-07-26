@@ -14,11 +14,11 @@ FLASHMEM uint8_t sanitizedBeatStep(uint8_t beatStep) {
 }
 
 FLASHMEM uint8_t sourceDurationBeatCount(
-    const core::state::macro::MacroAutomationSlotState* slot
+    const core::state::modulation::ProjectControlCurveView* automation
 ) {
-    if (slot == nullptr || !slot->automation.active) return 1;
+    if (automation == nullptr || !automation->stored()) return 1;
     const uint16_t sourceTicks = std::max<uint16_t>(
-        slot->automation.sourceDurationTicks,
+        automation->spec.sourceDurationTicks,
         core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
     );
     const uint16_t sourceBeats = static_cast<uint16_t>(
@@ -66,11 +66,11 @@ FLASHMEM MacroAutomationEditRange macroAutomationLengthEditRange(bool coarse) {
 }
 
 FLASHMEM MacroAutomationEditRange macroAutomationOffsetEditRange(
-    const core::state::macro::MacroAutomationSlotState* slot,
+    const core::state::modulation::ProjectControlCurveView* automation,
     bool coarse
 ) {
     const uint8_t step = coarse ? MACRO_AUTOMATION_EDITOR_COARSE_BEAT_STEP : 1;
-    const uint8_t sourceBeats = sourceDurationBeatCount(slot);
+    const uint8_t sourceBeats = sourceDurationBeatCount(automation);
     return MacroAutomationEditRange{
         .minBeat = 0,
         .beatStep = step,

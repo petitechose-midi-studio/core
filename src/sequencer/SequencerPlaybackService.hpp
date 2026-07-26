@@ -5,6 +5,7 @@
 #include <optional>
 
 #include <oc/note/sequencer/StepSequencerEngine.hpp>
+#include "app/ExtmemAllocator.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerMidiEventSink.hpp"
 #include "sequencer/SequencerCcLaneRuntime.hpp"
@@ -18,6 +19,18 @@
 namespace core::sequencer {
 
 struct SequencerCcLaneRuntimeProjectSnapshot;
+struct ProjectTrackRuntimeSnapshot;
+
+/** Fixed tick scratch; production ownership is one PSRAM allocation. */
+struct SequencerCcTemporalRuntimeScratch {
+    SequencerCcLaneRuntime::Inputs currentInputs{};
+    SequencerCcLaneRuntime::Inputs predictiveInputs{};
+    SequencerCcLaneRuntimeFrame currentFrame{};
+    SequencerCcLaneRuntimeFrame temporalFrame{};
+    SequencerCcLaneRuntimeFrame projectedFrame{};
+};
+
+static_assert(sizeof(SequencerCcTemporalRuntimeScratch) < 8U * 1024U);
 }
 
 namespace core::handler {
@@ -52,15 +65,25 @@ public:
                                  trackActivations = nullptr,
                              SequencerCcLaneRuntime* ccLaneRuntime = nullptr,
                              core::handler::MidiCcGlobalFrameCoordinator*
-                                 ccCoordinator = nullptr);
+                                 ccCoordinator = nullptr,
+                             SequencerCcLaneRuntime* ccPredictiveLaneRuntime = nullptr);
 
+    /**
+     * Advances playback against one coherent publication generation.
+     *
+     * `projectTracks` is the mandatory Project-owned routing/mix/timing
+     * authority paired with `snapshot`; production has no Sequencer-mirror
+     * fallback.
+     */
     void update(const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
                 uint32_t tick,
                 bool playing,
                 uint32_t nowUs,
                 uint32_t tickPeriodUs,
+                const ProjectTrackRuntimeSnapshot& projectTracks,
                 bool publishRuntimeState = true,
-                const SequencerCcLaneRuntimeProjectSnapshot* ccLaneSnapshot = nullptr);
+                const SequencerCcLaneRuntimeProjectSnapshot* ccLaneSnapshot = nullptr,
+                bool allowPredictiveLookahead = false);
     void stopTrack(uint8_t trackIndex);
     void completeStop();
     void markCcTransportStopped();
@@ -69,6 +92,9 @@ public:
     UiProjectionSnapshot takeUiProjectionSnapshot();
     SequencerRuntimeTelemetrySnapshot copyActiveRuntimeTelemetry() const;
     void publishUiState(uint32_t nowMs);
+    [[nodiscard]] bool ccTemporalScratchValid() const {
+        return cc_temporal_scratch_ != nullptr;
+    }
 
 private:
     const oc::note::sequencer::StepSequencerRuntimeState& activeRuntimeState_() const;
@@ -96,16 +122,26 @@ private:
     void handleActiveTrackSwitch_();
     void syncRuntimeStates_(
         const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        const ProjectTrackRuntimeSnapshot& projectTracks,
         uint32_t tick,
         bool playing
     );
+    void reconcileProjectTracks_(
+        const ProjectTrackRuntimeSnapshot& projectTracks,
+        uint32_t tick,
+        bool playing,
+        uint32_t nowUs,
+        uint32_t tickPeriodUs,
+        bool allowPredictiveLookahead
+    );
     bool isLocalLoopBoundary_(uint8_t trackIndex, uint32_t tick) const;
     void syncRuntimeMasksForTrack_(
-        const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        const ProjectTrackRuntimeSnapshot& projectTracks,
         uint8_t trackIndex
     );
     void applyStagedTrack_(
         const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
+        const ProjectTrackRuntimeSnapshot& projectTracks,
         uint8_t trackIndex,
         uint32_t generation,
         uint32_t tick,
@@ -114,9 +150,12 @@ private:
     void processCcRuntime_(
         const core::state::sequencer::SequencerTrackBankSnapshot& snapshot,
         const SequencerCcLaneRuntimeProjectSnapshot* laneSnapshot,
+        const ProjectTrackRuntimeSnapshot& projectTracks,
         uint32_t tick,
         bool playing,
-        uint32_t nowUs
+        uint32_t nowUs,
+        uint32_t tickPeriodUs,
+        bool allowPredictiveLookahead
     );
     static uint8_t ccTicksPerStep_(
         const core::state::sequencer::SequencerPatternSnapshot& pattern
@@ -128,7 +167,10 @@ private:
     const SequencerRuntimeGraphBank& runtime_graph_bank_;
     core::state::sequencer::SequencerTrackActivationQueue* track_activations_ = nullptr;
     SequencerCcLaneRuntime* cc_lane_runtime_ = nullptr;
+    SequencerCcLaneRuntime* cc_predictive_lane_runtime_ = nullptr;
     core::handler::MidiCcGlobalFrameCoordinator* cc_coordinator_ = nullptr;
+    core::app::ExtmemUniquePtr<SequencerCcTemporalRuntimeScratch>
+        cc_temporal_scratch_;
     PendingUiProjection pending_ui_projection_{};
     PendingNoteActivityObserver note_activity_observer_{pending_ui_projection_};
     // SequencerRealtimeLane owns this service in one RAM2 allocation. Keeping
@@ -143,7 +185,13 @@ private:
         TRACK_COUNT> track_engines_{};
     uint8_t runtime_active_track_ = 0;
     uint16_t runtime_enabled_mask_ = 0x0001;
-    uint16_t runtime_muted_mask_ = 0;
+    uint16_t runtime_audible_mask_ = 0x0001;
+    std::array<uint8_t, TRACK_COUNT> runtime_track_channels_{};
+    std::array<int16_t, TRACK_COUNT> runtime_track_delays_ms_{};
+    uint16_t runtime_resync_mask_ = 0U;
+    bool runtime_project_tracks_initialized_ = false;
+    uint32_t runtime_tick_period_us_ = 0U;
+    bool runtime_predictive_lookahead_ = false;
 
     int16_t last_playhead_ = -1;
     uint8_t last_active_track_ = 0;

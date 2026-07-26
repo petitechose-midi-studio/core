@@ -15,6 +15,9 @@ namespace {
 
 namespace scale_catalog = core::state::sequencer::scale_catalog;
 
+const char MODULATOR_DETAILS_META[] PROGMEM = "MODULATORS > DETAILS";
+const char MODULATOR_RENAME_META[] PROGMEM = "MODULATORS > RENAME";
+
 constexpr ProjectMenuRow row(const char* label,
                              const char* value,
                              ProjectMenuRowKind kind,
@@ -31,7 +34,7 @@ constexpr ProjectMenuRow row(const char* label,
     };
 }
 
-constexpr const char* const ROUTING_TRACK_LABELS[] = {
+constexpr const char* const ROUTING_TRACK_LABELS[] PROGMEM = {
     "Track 1",
     "Track 2",
     "Track 3",
@@ -107,6 +110,20 @@ FLASHMEM void setMidiChannelValue(ProjectMenuRow& target, uint8_t channel0Based)
         size,
         pos,
         static_cast<unsigned>(sanitizeProjectMidiChannel(channel0Based) + 1U)
+    );
+    oc::type::text::terminate(buffer, size, pos);
+    target.value = buffer;
+}
+
+FLASHMEM void setMidiCcValue(ProjectMenuRow& target, uint8_t controller) {
+    auto* buffer = target.valueText.data();
+    const auto size = target.valueText.size();
+    size_t pos = oc::type::text::appendString(buffer, size, 0, "CC ");
+    pos = oc::type::text::appendUnsigned(
+        buffer,
+        size,
+        pos,
+        static_cast<unsigned>(controller)
     );
     oc::type::text::terminate(buffer, size, pos);
     target.value = buffer;
@@ -283,6 +300,10 @@ FLASHMEM void buildMusicRootRows(ProjectMenuPage& page, ProjectMenuContext conte
     addRow(page, row("Pattern Default", "Inherit", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
     addRow(page, row("Clip Default", "Inherit", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
     addRow(page, row("Step Paste", "Extend", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row("Lane 1 Default", "CC 1", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row("Lane 2 Default", "CC 11", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row("Lane 3 Default", "CC 74", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
+    addRow(page, row("Lane 4 Default", "CC 71", ProjectMenuRowKind::Value, ProjectNodeId::MUSIC_ROOT));
 }
 
 FLASHMEM void buildMusicScaleRows(ProjectMenuPage& page, ProjectMenuContext context) {
@@ -406,6 +427,30 @@ FLASHMEM void applyPageMeta(ProjectMenuPage& page,
         case ProjectNodeId::ROUTING_ROOT:
             page.meta = "ROUTING";
             return;
+        case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
+            page.meta = "MODULATORS > SOURCE";
+            return;
+        case ProjectNodeId::MODULATOR_SOURCE_OPTIONS:
+            page.meta = MODULATOR_DETAILS_META;
+            return;
+        case ProjectNodeId::MODULATOR_SOURCE_RENAME:
+            page.meta = MODULATOR_RENAME_META;
+            return;
+        case ProjectNodeId::MODULATOR_DESTINATIONS:
+            page.meta = "MODULATORS > DESTINATIONS";
+            return;
+        case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
+            page.meta = "MODULATORS > ADD DESTINATION";
+            return;
+        case ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER:
+            page.meta = "MODULATORS > ADD SOURCE";
+            return;
+        case ProjectNodeId::MODULATOR_TRIGGER:
+            page.meta = "MODULATORS > TRIGGER";
+            return;
+        case ProjectNodeId::MODULATORS_ROOT:
+            page.meta = "MODULATORS";
+            return;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
             page.meta = "NEW PROJECT?";
             return;
@@ -446,6 +491,10 @@ FLASHMEM uint32_t revisionFor(const ProjectNavigationState& navigation,
     revision ^= static_cast<uint32_t>(navigation.loadProjects.count) << 16;
     revision = (revision * 16777619u) ^
                static_cast<uint32_t>(navigation.stepPasteMode);
+    for (uint8_t lane = 0; lane < PROJECT_CC_LANE_DEFAULT_COUNT; ++lane) {
+        revision = (revision * 16777619u) ^
+            static_cast<uint32_t>(navigation.ccLaneDefaultControllers[lane]);
+    }
     revision ^= navigation.loadProjects.truncated ? 0x40000000u : 0u;
     for (uint8_t i = 0; i < context.projectId.size() && context.projectId[i] != '\0'; ++i) {
         revision = (revision * 16777619u) ^ static_cast<uint8_t>(context.projectId[i]);
@@ -487,6 +536,14 @@ FLASHMEM void applyDynamicValues(ProjectMenuPage& page,
         case ProjectNodeId::MUSIC_ROOT:
             if (page.rowCount > 3) {
                 setRowValue(page.rows[3], stepPasteModeValue(navigation.stepPasteMode));
+            }
+            for (uint8_t lane = 0;
+                 lane < PROJECT_CC_LANE_DEFAULT_COUNT && 4U + lane < page.rowCount;
+                 ++lane) {
+                setMidiCcValue(
+                    page.rows[static_cast<uint8_t>(4U + lane)],
+                    navigation.ccLaneDefaultControllers[lane]
+                );
             }
             break;
         case ProjectNodeId::MUSIC_SCALE:
@@ -538,6 +595,16 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
         case ProjectNodeId::ROUTING_ROOT:
             buildRoutingRows(page, context);
             break;
+        case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
+        case ProjectNodeId::MODULATOR_SOURCE_OPTIONS:
+        case ProjectNodeId::MODULATOR_SOURCE_RENAME:
+        case ProjectNodeId::MODULATOR_DESTINATIONS:
+        case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
+        case ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER:
+        case ProjectNodeId::MODULATOR_TRIGGER:
+        case ProjectNodeId::MODULATORS_ROOT:
+            // Dedicated retained Project surfaces render these nodes.
+            break;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
             buildNewProjectConfirmRows(page, context);
             break;
@@ -569,7 +636,21 @@ FLASHMEM ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navi
     return page;
 }
 
-FLASHMEM uint8_t projectCurrentRowCount(const ProjectNavigationState& navigation) {
+FLASHMEM uint16_t projectCurrentRowCount(const ProjectNavigationState& navigation,
+                                         uint16_t modulatorSourceCount,
+                                         uint16_t modulatorDetailRowCount) {
+    if (navigation.currentNode.get() == ProjectNodeId::MODULATORS_ROOT) {
+        return static_cast<uint16_t>(modulatorSourceCount + 1U);
+    }
+    if (navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_DETAIL ||
+        navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS ||
+        navigation.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS ||
+        navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER ||
+        navigation.currentNode.get() == ProjectNodeId::MODULATOR_TRIGGER ||
+        navigation.currentNode.get() ==
+            ProjectNodeId::MODULATOR_DESTINATION_PICKER) {
+        return modulatorDetailRowCount;
+    }
     return buildProjectMenuPage(navigation).rowCount;
 }
 

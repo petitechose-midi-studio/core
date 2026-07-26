@@ -63,6 +63,7 @@
 9100 capture screen nested_state_2_pitch_offset
 9200 tap NAV 60
 9500 capture screen nested_state_2_pitch_applied
+9520 tap BOTTOM_RIGHT 40
 
 # Return to the intermediate parent and root so the parent display can be
 # compared with the deepest resolved pitch.

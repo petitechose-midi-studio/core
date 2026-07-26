@@ -9,6 +9,10 @@
 #include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
+namespace core::state::modulation {
+struct ProjectModulationState;
+}
+
 namespace core::state::project {
 
 enum class ProjectMenuRowKind : uint8_t {
@@ -70,7 +74,10 @@ ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navigation);
 ProjectMenuPage buildProjectMenuPage(const ProjectNavigationState& navigation,
                                      ProjectMenuContext context);
 
-void navigateProjectRows(ProjectNavigationState& navigation, float delta);
+void navigateProjectRows(ProjectNavigationState& navigation,
+                         float delta,
+                         uint16_t modulatorSourceCount = 0,
+                         uint16_t modulatorDetailRowCount = 0);
 bool enterFocusedProjectRow(ProjectNavigationState& navigation);
 bool backProjectNavigation(ProjectNavigationState& navigation);
 bool openNewProjectConfirmation(ProjectNavigationState& navigation);
@@ -84,7 +91,33 @@ bool openProjectNameEditor(ProjectNavigationState& navigation,
 bool projectNavigationInNewProjectConfirmation(const ProjectNavigationState& navigation);
 bool projectNavigationInProjectConfirmation(const ProjectNavigationState& navigation);
 void switchProjectTab(ProjectNavigationState& navigation, int delta);
+void openProjectRootTab(ProjectNavigationState& navigation, ProjectTab tab);
 bool projectNavigationAtRoot(const ProjectNavigationState& navigation);
-uint8_t projectCurrentRowCount(const ProjectNavigationState& navigation);
+void reconcileProjectModulatorNavigationAfterHistory(
+    ProjectNavigationState& navigation,
+    const core::state::modulation::ProjectModulationState& graph,
+    bool preserveMissingSelection = true
+);
+uint16_t projectCurrentRowCount(const ProjectNavigationState& navigation,
+                                uint16_t modulatorSourceCount = 0,
+                                uint16_t modulatorDetailRowCount = 0);
+bool openProjectModulatorDetail(
+    ProjectNavigationState& navigation,
+    core::state::modulation::ModulatorId sourceId
+);
+bool openProjectModulatorKindPicker(ProjectNavigationState& navigation);
+bool openProjectModulatorWorkspace(
+    ProjectNavigationState& navigation,
+    core::state::modulation::ModulatorId sourceId
+);
+bool openProjectModulatorOptions(ProjectNavigationState& navigation);
+bool openProjectModulatorDestinations(ProjectNavigationState& navigation);
+bool openProjectModulatorTrigger(ProjectNavigationState& navigation);
+bool openProjectModulatorDestinationPicker(
+    ProjectNavigationState& navigation,
+    uint8_t track,
+    uint8_t page,
+    bool creatingSource
+);
 
 }  // namespace core::state::project

@@ -9,7 +9,10 @@
 
 # Enter Pattern, then hold the normal musical-property control for one second.
 # The selector must remain where the user put it until release.
-160 tap NAV 60
+160 button NAV down
+200 encoder NAV -1
+240 encoder NAV 1
+280 button NAV up
 300 button LEFT_BOTTOM down
 1340 tick
 1420 capture screen property_selector_hold_stable

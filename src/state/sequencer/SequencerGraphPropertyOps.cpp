@@ -182,9 +182,9 @@ FLASHMEM bool setNodeChordSpec(SequencerPatternState& pattern,
         changed = true;
     }
     if (node.chordSpec.voiceCount != spec.voiceCount ||
-        node.chordSpec.color != spec.color ||
-        node.chordSpec.variant != spec.variant ||
-        node.chordSpec.spread != spec.spread ||
+        node.chordSpec.harmonyData != spec.harmonyData ||
+        node.chordSpec.voicingData != spec.voicingData ||
+        node.chordSpec.inversionData != spec.inversionData ||
         node.chordSpec.strum != spec.strum ||
         node.chordSpec.velocityCurve != spec.velocityCurve) {
         node.chordSpec = spec;
@@ -209,9 +209,9 @@ FLASHMEM bool clearNodeChordState(SequencerPatternState& pattern, SequencerGraph
     }
     const oc::note::sequencer::StepSequencerChordSpec defaultSpec{};
     if (node.chordSpec.voiceCount != defaultSpec.voiceCount ||
-        node.chordSpec.color != defaultSpec.color ||
-        node.chordSpec.variant != defaultSpec.variant ||
-        node.chordSpec.spread != defaultSpec.spread ||
+        node.chordSpec.harmonyData != defaultSpec.harmonyData ||
+        node.chordSpec.voicingData != defaultSpec.voicingData ||
+        node.chordSpec.inversionData != defaultSpec.inversionData ||
         node.chordSpec.strum != defaultSpec.strum ||
         node.chordSpec.velocityCurve != defaultSpec.velocityCurve) {
         node.chordSpec = defaultSpec;

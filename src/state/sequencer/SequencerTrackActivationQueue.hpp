@@ -53,8 +53,9 @@ struct SequencerTrackActivationHistoryRef {
 
 struct SequencerTrackActivationHistoryPlan {
     SequencerTrackActivationHistoryRef reference{};
-    uint16_t targetEnabledMask = 0;
-    uint16_t targetMutedMask = 0;
+    // Canonical Project Track audibility at the history target. This already
+    // includes structural enablement, Mute and the exclusive Solo selection.
+    uint16_t targetAudibleMask = 0;
 
     bool valid() const { return reference.valid(); }
 };
@@ -120,9 +121,13 @@ public:
     /** Clears every editor/runtime hand-off at a Project generation boundary. */
     void reset();
 
+    /**
+     * Plans activation against canonical Project Track audibility. The caller
+     * resolves structure, Mute and exclusive Solo before crossing this fixed
+     * realtime hand-off; the queue never consults compatibility mirrors.
+     */
     bool prepare(uint16_t trackMask,
-                 uint16_t enabledMask,
-                 uint16_t mutedMask,
+                 uint16_t targetAudibleMask,
                  bool transportPlaying,
                  SequencerTrackActivationBatch& out,
                  SequencerTrackActivationOrigin origin =
@@ -150,11 +155,11 @@ public:
     // Main-loop telemetry bridge for APPLIED transitions produced by the ISR.
     bool publishRealtimeTelemetry();
 
+    /** Replans Undo/Redo against the canonical audible mask of its target. */
     bool prepareHistoryTransition(
         const SequencerTrackActivationHistoryRef& reference,
         SequencerTrackActivationTarget desiredTarget,
-        uint16_t enabledMask,
-        uint16_t mutedMask,
+        uint16_t targetAudibleMask,
         bool transportPlaying,
         SequencerTrackActivationHistoryTransition& out
     );

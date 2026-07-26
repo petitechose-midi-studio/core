@@ -58,7 +58,7 @@ void configureSession(core::state::CoreState& state,
     page.values[0] = macroValue;
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
-    state.sequencer.pattern.length.set(12);
+    state.sequencer.pattern.setContentLength(12);
     state.sequencer.setStepDataAt(0, sequencerNote, 110, 75);
     state.sequencer.pattern.toggle(0);
     state.sequencer.focusedStep.set(0);

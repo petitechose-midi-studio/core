@@ -113,35 +113,6 @@ FLASHMEM MaskMutation removeIndex(uint16_t enabledMask, uint8_t current, uint8_t
     };
 }
 
-FLASHMEM MaskMutation removeSelected(
-    uint16_t enabledMask,
-    uint16_t selectedMask,
-    uint8_t current,
-    uint8_t count
-) {
-    const uint16_t deleteMask = enabledMask & selectedMask;
-    if (deleteMask == 0) {
-        return {.nextMask = enabledMask, .nextActive = current, .changed = false};
-    }
-
-    const uint8_t enabledCount = countEnabled(enabledMask, count);
-    const uint8_t deleteCount = countEnabled(deleteMask, count);
-    if (deleteCount >= enabledCount) {
-        return {.nextMask = enabledMask, .nextActive = current, .changed = false};
-    }
-
-    const uint16_t nextMask = enabledMask & static_cast<uint16_t>(~deleteMask);
-    uint8_t nextActive = current;
-    if (!isEnabled(nextMask, nextActive)) {
-        nextActive = nextEnabledIndex(nextMask, current, count);
-    }
-    return {
-        .nextMask = nextMask,
-        .nextActive = nextActive,
-        .changed = true,
-    };
-}
-
 FLASHMEM NavigationTarget nextNavigationTarget(
     uint16_t enabledMask,
     uint8_t current,

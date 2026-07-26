@@ -1,0 +1,37 @@
+# UX workflow: shared Macro context selector and focalized editors.
+# Purpose: proves the same held-NAV grammar as Sequencer: preview while held,
+# apply on release, short NAV opens the focused object, LEFT_TOP returns.
+
+0 scenario macro-automation-clean
+80 capture screen macro_page_hot_surface
+
+# Page -> Macro: the temporary overlay is visible only while NAV is held.
+180 button NAV down
+260 encoder NAV 1
+340 capture screen macro_context_preview
+420 button NAV up
+560 capture screen macro_context_applied
+
+# A short NAV opens the focused physical Macro; Back returns to performance.
+660 tap NAV 60
+900 capture screen macro_editor_open
+1000 tap LEFT_TOP 60
+1240 capture screen macro_back_to_surface
+
+# Macro -> Page -> Track with the same gesture; Track tap opens Track Editor.
+1340 button NAV down
+1420 encoder NAV -1
+1500 encoder NAV -1
+1580 capture screen track_context_preview
+1660 button NAV up
+1800 tap NAV 60
+2040 capture screen track_editor_open
+2140 tap LEFT_TOP 60
+2380 capture screen track_back_to_macro
+
+# A hold without rotation is inspection-only and never opens legacy Structure.
+2480 button NAV down
+3560 tick
+3640 capture screen held_context_inspection
+3720 button NAV up
+3960 capture screen held_context_released

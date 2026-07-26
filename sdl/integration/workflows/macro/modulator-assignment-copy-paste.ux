@@ -1,0 +1,45 @@
+# UX workflow: copy one shared-source assignment to another Macro.
+# Purpose: proves typed Copy, explicit Paste on an empty destination, guarded
+# commit, shared source identity, and unchanged Macro navigation grammar.
+# Expect: capture_changed:source_assignment=empty_target_paste_ready, capture_changed:empty_target_paste_ready=paste_armed, capture_changed:paste_armed=assignment_pasted
+# Expect: semantic:source_copied:effect=copy_modulation_assignment
+# Expect: semantic:paste_armed:effect=arm_paste_modulation_assignment
+# Expect: semantic:assignment_pasted:effect=paste_modulation_assignment
+
+0 scenario macro-modulation-assignment-copy
+80 capture screen macro_ready
+
+# Open Macro 1 > Modulation using the same learned path.
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1240 tick
+1300 button LEFT_BOTTOM up
+1450 encoder NAV 1
+1570 encoder NAV 1
+1690 tap NAV 60
+1910 capture screen source_assignment
+
+# A short contextual action copies exactly the focused assignment.
+2030 tap BOTTOM_RIGHT 60
+2250 capture screen source_copied
+
+# Back remains local: assignment list -> Macro editor -> performance.
+2370 tap LEFT_TOP 60
+2590 tap LEFT_TOP 60
+
+# Open the empty Modulation destination on Macro 2.
+2710 button LEFT_BOTTOM down
+2790 tap MACRO_2 60
+3770 tick
+3830 button LEFT_BOTTOM up
+3950 encoder NAV 1
+4070 encoder NAV 1
+4190 tap NAV 60
+4410 capture screen empty_target_paste_ready
+
+# The empty state exposes Paste directly; mutation occurs only on guarded release.
+4530 button BOTTOM_RIGHT down
+5630 tick
+5690 capture screen paste_armed
+5750 button BOTTOM_RIGHT up
+5970 capture screen assignment_pasted

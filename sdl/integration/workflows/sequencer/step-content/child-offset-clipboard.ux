@@ -37,10 +37,8 @@
 4460 tap NAV 60
 4700 capture screen micro_pitch_offset_applied
 
-# Return from Step focus to the child Pattern focus. Quick controls in a child
-# context must then expose Length and Offset, with no Division.
-4740 tap NAV 20
-4780 tap NAV 20
+# The child retained Pattern focus while its Step Editor was open. Quick
+# controls here expose Length and Offset, with no Division.
 4840 capture screen child_pattern_focus
 4900 button LEFT_CENTER down
 5160 capture screen child_quick_length
@@ -50,6 +48,7 @@
 5780 capture screen child_offset_shifted
 5880 button LEFT_CENTER up
 6100 capture screen micro_offset_applied
+6120 tap BOTTOM_RIGHT 30
 
 # Copy only the micro-sequence row from step 1.
 6160 tap LEFT_TOP 60

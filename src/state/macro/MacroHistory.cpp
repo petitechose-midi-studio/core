@@ -1,310 +1,22 @@
-#include "state/macro/MacroHistory.hpp"
+#include "state/macro/MacroHistoryInternals.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/macro/MacroWorkflow.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 namespace core::state::macro {
 
-namespace {
+using namespace history_detail;
 
-FLASHMEM bool curveRangeValid(
-    const MacroAutomationCurveRef& curve,
-    const MacroAutomationPointPool& pool
-) {
-    if (!curve.active) return curve.pointCount == 0;
-    if (curve.pointCount == 0 || curve.pointOffset >= pool.used) return false;
-    const uint32_t end = static_cast<uint32_t>(curve.pointOffset) + curve.pointCount;
-    return end <= pool.used && end <= MACRO_AUTOMATION_POINT_POOL_CAPACITY;
-}
-
-FLASHMEM bool sameCurveMetadata(
-    const MacroAutomationCurveRef& lhs,
-    const MacroAutomationCurveRef& rhs
-) {
-    return lhs.active == rhs.active &&
-           lhs.playbackState == rhs.playbackState &&
-           lhs.pointCount == rhs.pointCount &&
-           lhs.sourceDurationTicks == rhs.sourceDurationTicks &&
-           lhs.durationTicks == rhs.durationTicks &&
-           lhs.windowOffsetTicks == rhs.windowOffsetTicks &&
-           lhs.interpolation == rhs.interpolation &&
-           lhs.modulationOrigin == rhs.modulationOrigin;
-}
-
-FLASHMEM bool sameFloatBits(float lhs, float rhs) {
-    return std::memcmp(&lhs, &rhs, sizeof(float)) == 0;
-}
-
-FLASHMEM bool samePoint(
-    const MacroPackedCurvePoint& lhs,
-    const MacroPackedCurvePoint& rhs
-) {
-    return lhs.tick == rhs.tick && lhs.value == rhs.value;
-}
-
-FLASHMEM uint16_t snapshotPointCount(const MacroSlotHistorySnapshot& snapshot) {
-    return static_cast<uint16_t>(
-        snapshot.automationPointCount + snapshot.modulationPointCount
-    );
-}
-
-FLASHMEM bool snapshotConsistent(const MacroSlotHistorySnapshot& snapshot) {
-    if (!macroAutomationAddressValid(snapshot.address)) return false;
-    const uint32_t total = static_cast<uint32_t>(snapshot.automationPointCount) +
-                           snapshot.modulationPointCount;
-    if (total > MACRO_HISTORY_POINT_CAPACITY) return false;
-    if (!snapshot.slotPresent) {
-        return snapshot.automationPointCount == 0 &&
-               snapshot.modulationPointCount == 0;
-    }
-    if (snapshot.slot.automation.active != (snapshot.automationPointCount > 0) ||
-        snapshot.slot.modulation.active != (snapshot.modulationPointCount > 0) ||
-        snapshot.slot.automation.pointCount != snapshot.automationPointCount ||
-        snapshot.slot.modulation.pointCount != snapshot.modulationPointCount) {
-        return false;
-    }
-    if (snapshot.slot.automation.active && snapshot.slot.automation.pointOffset != 0) {
-        return false;
-    }
-    return !snapshot.slot.modulation.active ||
-           snapshot.slot.modulation.pointOffset == snapshot.automationPointCount;
-}
-
-FLASHMEM void normalizeCurveOffsets(MacroSlotHistorySnapshot& snapshot) {
-    snapshot.slot.automation.pointOffset = 0;
-    snapshot.slot.modulation.pointOffset = snapshot.automationPointCount;
-}
-
-FLASHMEM bool appendLiveCurvePoints(
-    const MacroAutomationCurveRef& curve,
-    const MacroAutomationPointPool& pool,
-    MacroSlotHistorySnapshot& out,
-    uint16_t& cursor
-) {
-    if (!curveRangeValid(curve, pool)) return !curve.active;
-    if (!curve.active) return true;
-    if (static_cast<uint32_t>(cursor) + curve.pointCount > out.points.size()) {
-        return false;
-    }
-    for (uint16_t i = 0; i < curve.pointCount; ++i) {
-        out.points[static_cast<uint16_t>(cursor + i)] =
-            pool.points[static_cast<uint16_t>(curve.pointOffset + i)];
-    }
-    cursor = static_cast<uint16_t>(cursor + curve.pointCount);
-    return true;
-}
-
-FLASHMEM bool liveCurveMatches(
-    const MacroAutomationCurveRef& live,
-    const MacroAutomationPointPool& pool,
-    const MacroAutomationCurveRef& expected,
-    const MacroSlotHistorySnapshot& snapshot,
-    uint16_t snapshotOffset
-) {
-    if (!sameCurveMetadata(live, expected)) return false;
-    if (!live.active) return true;
-    if (!curveRangeValid(live, pool) ||
-        static_cast<uint32_t>(snapshotOffset) + live.pointCount > snapshot.points.size()) {
-        return false;
-    }
-    for (uint16_t i = 0; i < live.pointCount; ++i) {
-        if (!samePoint(
-                pool.points[static_cast<uint16_t>(live.pointOffset + i)],
-                snapshot.points[static_cast<uint16_t>(snapshotOffset + i)]
-            )) {
-            return false;
-        }
-    }
-    return true;
-}
-
-FLASHMEM bool sameAddress(
-    const MacroAutomationSlotAddress& lhs,
-    const MacroAutomationSlotAddress& rhs
-) {
-    return macroAutomationAddressEquals(lhs, rhs);
-}
-
-}  // namespace
-
-FLASHMEM bool captureMacroSlotHistorySnapshot(
-    const MacroPagesState& pages,
-    const MacroAutomationSlotAddress& address,
-    MacroSlotHistorySnapshot& out
-) {
-    if (!macroAutomationAddressValid(address)) return false;
-    out = {};
-    out.address = address;
-    const auto& page = pages.pageData(address.track, address.page);
-    out.macroActive = page.isMacroActive(address.macro);
-    out.cc = page.cc[address.macro];
-    out.staticValue = page.values[address.macro];
-
-    const auto* slot = macroAutomationFindSlot(pages.automation, address);
-    if (slot == nullptr) return true;
-    if (!curveRangeValid(slot->automation, pages.automation.pointPool) ||
-        !curveRangeValid(slot->modulation, pages.automation.pointPool)) {
-        return false;
-    }
-    const uint32_t total = static_cast<uint32_t>(slot->automation.pointCount) +
-                           slot->modulation.pointCount;
-    if (total > MACRO_HISTORY_POINT_CAPACITY) return false;
-
-    out.slotPresent = true;
-    out.slot = *slot;
-    out.automationPointCount = slot->automation.active
-        ? slot->automation.pointCount
-        : 0;
-    out.modulationPointCount = slot->modulation.active
-        ? slot->modulation.pointCount
-        : 0;
-    uint16_t cursor = 0;
-    if (!appendLiveCurvePoints(
-            slot->automation,
-            pages.automation.pointPool,
-            out,
-            cursor
-        ) ||
-        !appendLiveCurvePoints(
-            slot->modulation,
-            pages.automation.pointPool,
-            out,
-            cursor
-        )) {
-        return false;
-    }
-    normalizeCurveOffsets(out);
-    return snapshotConsistent(out);
-}
-
-FLASHMEM bool sameMacroSlotHistorySnapshot(
-    const MacroSlotHistorySnapshot& lhs,
-    const MacroSlotHistorySnapshot& rhs
-) {
-    if (!sameAddress(lhs.address, rhs.address) ||
-        lhs.macroActive != rhs.macroActive ||
-        lhs.cc != rhs.cc ||
-        !sameFloatBits(lhs.staticValue, rhs.staticValue) ||
-        lhs.slotPresent != rhs.slotPresent ||
-        lhs.automationPointCount != rhs.automationPointCount ||
-        lhs.modulationPointCount != rhs.modulationPointCount) {
-        return false;
-    }
-    if (!lhs.slotPresent) return true;
-    if (!sameCurveMetadata(lhs.slot.automation, rhs.slot.automation) ||
-        !sameCurveMetadata(lhs.slot.modulation, rhs.slot.modulation) ||
-        !sameFloatBits(lhs.slot.modulationDepth, rhs.slot.modulationDepth)) {
-        return false;
-    }
-    const uint16_t count = snapshotPointCount(lhs);
-    for (uint16_t i = 0; i < count; ++i) {
-        if (!samePoint(lhs.points[i], rhs.points[i])) return false;
-    }
-    return true;
-}
-
-FLASHMEM bool liveMacroSlotMatchesHistorySnapshot(
-    const MacroPagesState& pages,
-    const MacroSlotHistorySnapshot& snapshot
-) {
-    if (!snapshotConsistent(snapshot)) return false;
-    const auto& address = snapshot.address;
-    const auto& page = pages.pageData(address.track, address.page);
-    if (page.isMacroActive(address.macro) != snapshot.macroActive ||
-        page.cc[address.macro] != snapshot.cc ||
-        !sameFloatBits(page.values[address.macro], snapshot.staticValue)) {
-        return false;
-    }
-
-    const auto* live = macroAutomationFindSlot(pages.automation, address);
-    if ((live != nullptr) != snapshot.slotPresent) return false;
-    if (live == nullptr) return true;
-    return sameFloatBits(live->modulationDepth, snapshot.slot.modulationDepth) &&
-           liveCurveMatches(
-               live->automation,
-               pages.automation.pointPool,
-               snapshot.slot.automation,
-               snapshot,
-               0
-           ) &&
-           liveCurveMatches(
-               live->modulation,
-               pages.automation.pointPool,
-               snapshot.slot.modulation,
-               snapshot,
-               snapshot.automationPointCount
-           );
-}
-
-FLASHMEM bool applyMacroSlotHistorySnapshot(
-    MacroPagesState& pages,
-    const MacroSlotHistorySnapshot& snapshot
-) {
-    if (!snapshotConsistent(snapshot)) return false;
-    const auto& address = snapshot.address;
-    auto* current = macroAutomationFindMutableSlot(pages.automation, address);
-    const uint16_t reclaimable = current != nullptr
-        ? macroAutomationStoredPointCount(*current, pages.automation.pointPool)
-        : 0;
-    const uint16_t free = static_cast<uint16_t>(
-        MACRO_AUTOMATION_POINT_POOL_CAPACITY - pages.automation.pointPool.used
-    );
-    const uint16_t required = snapshotPointCount(snapshot);
-    if (static_cast<uint32_t>(required) >
-        static_cast<uint32_t>(free) + reclaimable) {
-        return false;
-    }
-    if (snapshot.slotPresent && current == nullptr &&
-        pages.automation.entryCount >= MACRO_AUTOMATION_SLOT_CAPACITY) {
-        return false;
-    }
-
-    if (!snapshot.slotPresent) {
-        if (current != nullptr) {
-            (void)macroAutomationClearSlot(pages.automation, address);
-        }
-    } else {
-        if (current != nullptr) {
-            current->automation = {};
-            current->modulation = {};
-            current->modulationDepth = 0.0f;
-            macroAutomationCompactPool(pages.automation);
-        } else {
-            current = macroAutomationGetOrCreateSlot(pages.automation, address);
-            if (current == nullptr) return false;
-        }
-
-        const uint16_t start = pages.automation.pointPool.used;
-        for (uint16_t i = 0; i < required; ++i) {
-            pages.automation.pointPool.points[static_cast<uint16_t>(start + i)] =
-                snapshot.points[i];
-        }
-        pages.automation.pointPool.used = static_cast<uint16_t>(start + required);
-        *current = snapshot.slot;
-        if (current->automation.active) {
-            current->automation.pointOffset = start;
-        }
-        if (current->modulation.active) {
-            current->modulation.pointOffset = static_cast<uint16_t>(
-                start + snapshot.automationPointCount
-            );
-        }
-    }
-
-    auto& page = pages.pageData(address.track, address.page);
-    page.setMacroActive(address.macro, snapshot.macroActive);
-    page.cc[address.macro] = snapshot.cc;
-    page.values[address.macro] = snapshot.staticValue;
-    if (pages.currentActiveTrack() == address.track &&
-        pages.currentActivePage() == address.page) {
-        pages.updateActiveConfigs();
-    }
-    return true;
-}
+FLASHMEM MacroHistoryChange::~MacroHistoryChange() = default;
 
 FLASHMEM MacroHistoryService::MacroHistoryService() = default;
 FLASHMEM MacroHistoryService::~MacroHistoryService() = default;
@@ -314,133 +26,266 @@ FLASHMEM MacroHistoryChangePtr MacroHistoryService::prepare(
     const MacroAutomationSlotAddress& address,
     MacroHistoryActionKind kind
 ) const {
+    if (pendingModulatorSlot_() != nullptr) return {};
     auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
     if (!change) return {};
+    change->slot = core::app::makeExtmemUnique<MacroSlotHistoryChangePayload>();
+    if (!change->slot) return {};
     change->kind = kind;
     change->address = address;
-    if (!captureMacroSlotHistorySnapshot(pages, address, change->before)) {
+    if (!captureMacroSlotHistorySnapshot(
+            pages,
+            address,
+            change->slot->before
+        )) {
         return {};
     }
     return change;
 }
 
-FLASHMEM bool MacroHistoryService::commitPrepared(
+FLASHMEM bool MacroHistoryService::compactPages(
     MacroPagesState& pages,
-    MacroHistoryChangePtr change,
-    bool coalesce
+    uint8_t track,
+    uint16_t retainedPageMask
 ) {
-    if (!change || !sameAddress(change->address, change->before.address)) {
+    if (pendingModulatorSlot_() != nullptr || track >= TRACK_COUNT) {
         return false;
     }
-    if (!captureMacroSlotHistorySnapshot(pages, change->address, change->after)) {
-        (void)applyMacroSlotHistorySnapshot(pages, change->before);
+    retainedPageMask = static_cast<uint16_t>(
+        retainedPageMask & pages.tracks[track].enabledPageMask
+    );
+    if (retainedPageMask == 0U ||
+        retainedPageMask == pages.tracks[track].enabledPageMask) {
         return false;
     }
-    if (sameMacroSlotHistorySnapshot(change->before, change->after)) {
-        return false;
-    }
 
-    if (coalesce && coalescing_ && undo_count_ > 0 &&
-        coalesced_kind_ == change->kind &&
-        sameAddress(coalesced_address_, change->address)) {
-        auto& previous = undo_[undo_count_ - 1U];
-        if (previous &&
-            sameMacroSlotHistorySnapshot(previous->after, change->before)) {
-            previous->after = change->after;
-            clearRedo_();
-            return true;
-        }
-    }
-
-    push_(undo_, undo_count_, std::move(change));
-    clearRedo_();
-    coalescing_ = coalesce;
-    if (coalescing_) {
-        coalesced_kind_ = undo_[undo_count_ - 1U]->kind;
-        coalesced_address_ = undo_[undo_count_ - 1U]->address;
-    }
-    return true;
-}
-
-FLASHMEM bool MacroHistoryService::setModulationDepthCoalesced(
-    MacroPagesState& pages,
-    const MacroAutomationSlotAddress& address,
-    float depth
-) {
-    if (!macroAutomationAddressValid(address) || !std::isfinite(depth)) return false;
-    auto* slot = macroAutomationFindMutableSlot(pages.automation, address);
-    if (slot == nullptr || !macroCurveStored(slot->modulation)) return false;
-    const float next = std::clamp(depth, 0.0f, 1.0f);
-    if (sameFloatBits(next, slot->modulationDepth)) return false;
-
-    if (coalescing_ && undo_count_ > 0 &&
-        coalesced_kind_ == MacroHistoryActionKind::DEPTH_EDIT &&
-        sameAddress(coalesced_address_, address)) {
-        auto& previous = undo_[undo_count_ - 1U];
-        if (previous && liveMacroSlotMatchesHistorySnapshot(pages, previous->after)) {
-            const float previousDepth = slot->modulationDepth;
-            MacroSlotHistorySnapshot nextAfter{};
-            slot->modulationDepth = next;
-            if (!captureMacroSlotHistorySnapshot(pages, address, nextAfter)) {
-                // Capture clears its output before validating. Never capture
-                // directly into the committed endpoint or a failed coalesced
-                // turn would destroy the only exact rollback snapshot.
-                slot->modulationDepth = previousDepth;
-                return false;
-            }
-            previous->after = nextAfter;
-            clearRedo_();
-            return true;
-        }
-    }
-
-    auto change = prepare(pages, address, MacroHistoryActionKind::DEPTH_EDIT);
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
     if (!change) return false;
-    slot->modulationDepth = next;
-    return commitPrepared(pages, std::move(change), true);
-}
+    change->pageStructure =
+        core::app::makeExtmemUnique<MacroPageStructureHistoryPayload>();
+    if (!change->pageStructure) return false;
+    auto& payload = *change->pageStructure;
+    payload.beforeControl = core::app::makeExtmemUnique<
+        core::state::modulation::ProjectControlDomainState
+    >();
+    if (!payload.beforeControl) return false;
 
-FLASHMEM void MacroHistoryService::endCoalescing() {
-    coalescing_ = false;
-}
+    change->kind = MacroHistoryActionKind::PAGE_STRUCTURE;
+    payload.operation = MacroPageStructureHistoryOperation::COMPACT;
+    payload.track = track;
+    payload.retainedPageMask = retainedPageMask;
+    payload.beforeTrack = pages.tracks[track];
+    *payload.beforeControl = pages.control.authored;
 
-FLASHMEM bool MacroHistoryService::undo(
-    MacroPagesState& pages,
-    MacroAutomationSlotAddress* appliedAddress
-) {
-    endCoalescing();
-    if (undo_count_ == 0) return false;
-    auto& change = undo_[undo_count_ - 1U];
-    if (!change || !liveMacroSlotMatchesHistorySnapshot(pages, change->after) ||
-        !applyMacroSlotHistorySnapshot(pages, change->before)) {
+    if (!core::state::modulation::compactProjectControlPages(
+            pages.control,
+            track,
+            retainedPageMask
+        ) || !pages.tracks[track].compactPages(retainedPageMask)) {
+        pages.control.authored = *payload.beforeControl;
+        pages.control.markAuthoredMutation();
+        pages.tracks[track] = payload.beforeTrack;
+        syncPageStructureTrack(pages, track);
         return false;
     }
-    auto applied = std::move(change);
-    if (appliedAddress != nullptr) *appliedAddress = applied->address;
-    --undo_count_;
-    push_(redo_, redo_count_, std::move(applied));
+    syncPageStructureTrack(pages, track);
+    payload.afterTrack = pages.tracks[track];
+    payload.afterControlHash = pageStructureControlHash(
+        pages.control.authored
+    );
+    if (!pageStructureAfterMatches(pages, payload)) {
+        pages.control.authored = *payload.beforeControl;
+        pages.control.markAuthoredMutation();
+        pages.tracks[track] = payload.beforeTrack;
+        syncPageStructureTrack(pages, track);
+        return false;
+    }
+
+    change->address = {
+        .track = track,
+        .page = pages.tracks[track].activePage,
+        .macro = 0U,
+    };
+    endCoalescing();
+    recordNewEntry_(std::move(change));
     return true;
 }
 
-FLASHMEM bool MacroHistoryService::redo(
+FLASHMEM MacroHistoryChangePtr
+MacroHistoryService::preparePageStructureSnapshot(
+    const MacroPagesState& pages,
+    uint8_t track
+) const {
+    if (pendingModulatorSlot_() != nullptr || track >= TRACK_COUNT) return {};
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return {};
+    change->pageStructure =
+        core::app::makeExtmemUnique<MacroPageStructureHistoryPayload>();
+    if (!change->pageStructure) return {};
+    auto& payload = *change->pageStructure;
+    payload.beforeControl = core::app::makeExtmemUnique<
+        core::state::modulation::ProjectControlDomainState
+    >();
+    payload.afterControl = core::app::makeExtmemUnique<
+        core::state::modulation::ProjectControlDomainState
+    >();
+    if (!payload.beforeControl || !payload.afterControl) return {};
+
+    change->kind = MacroHistoryActionKind::PAGE_STRUCTURE;
+    change->address = {
+        .track = track,
+        .page = pages.tracks[track].activePage,
+        .macro = 0U,
+    };
+    payload.operation = MacroPageStructureHistoryOperation::SNAPSHOT;
+    payload.track = track;
+    payload.beforeTrack = pages.tracks[track];
+    *payload.beforeControl = pages.control.authored;
+    return change;
+}
+
+FLASHMEM bool MacroHistoryService::commitPreparedPageStructureSnapshot(
     MacroPagesState& pages,
-    MacroAutomationSlotAddress* appliedAddress
+    MacroHistoryChangePtr change
 ) {
-    endCoalescing();
-    if (redo_count_ == 0) return false;
-    auto& change = redo_[redo_count_ - 1U];
-    if (!change || !liveMacroSlotMatchesHistorySnapshot(pages, change->before) ||
-        !applyMacroSlotHistorySnapshot(pages, change->after)) {
+    if (!change || change->kind != MacroHistoryActionKind::PAGE_STRUCTURE ||
+        !change->pageStructure ||
+        change->pageStructure->operation !=
+            MacroPageStructureHistoryOperation::SNAPSHOT ||
+        !change->pageStructure->beforeControl ||
+        !change->pageStructure->afterControl) {
         return false;
     }
-    auto applied = std::move(change);
-    if (appliedAddress != nullptr) *appliedAddress = applied->address;
-    --redo_count_;
-    push_(undo_, undo_count_, std::move(applied));
+    auto& payload = *change->pageStructure;
+    if (payload.track >= TRACK_COUNT) return false;
+    payload.afterTrack = pages.tracks[payload.track];
+    *payload.afterControl = pages.control.authored;
+    payload.afterControlHash = pageStructureControlHash(
+        pages.control.authored
+    );
+    const bool sameControl = std::memcmp(
+        payload.beforeControl.get(),
+        payload.afterControl.get(),
+        sizeof(core::state::modulation::ProjectControlDomainState)
+    ) == 0;
+    if (sameMacroTrackData(payload.beforeTrack, payload.afterTrack) &&
+        sameControl) {
+        return false;
+    }
+    if (sameControl) payload.afterControl.reset();
+    change->address.page = payload.afterTrack.activePage;
+    endCoalescing();
+    recordNewEntry_(std::move(change));
+    return true;
+}
+
+FLASHMEM MacroHistoryChangePtr
+MacroHistoryService::prepareAutomationRecording(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address
+) const {
+    if (pendingModulatorSlot_() != nullptr) return {};
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return {};
+    change->automation = core::app::makeExtmemUnique<
+        MacroAutomationHistoryPayload
+    >();
+    if (!change->automation) return {};
+    change->kind = MacroHistoryActionKind::RECORD_AUTOMATION;
+    change->address = address;
+    if (!captureMacroAutomationHistorySnapshot(
+            pages,
+            address,
+            change->automation->before
+        )) {
+        return {};
+    }
+    return change;
+}
+
+FLASHMEM MacroHistoryChangePtr MacroHistoryService::prepareAutomationTake(
+    const MacroPagesState& pages,
+    uint8_t track,
+    uint8_t page,
+    uint16_t candidateMask
+) const {
+    candidateMask = static_cast<uint16_t>(candidateMask & 0x00FFU);
+    if (pendingModulatorSlot_() != nullptr || candidateMask == 0U ||
+        track >= TRACK_COUNT || page >= PAGE_COUNT) {
+        return {};
+    }
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return {};
+    change->automationTake = core::app::makeExtmemUnique<
+        MacroAutomationTakeHistoryPayload
+    >();
+    if (!change->automationTake) return {};
+    change->kind = MacroHistoryActionKind::RECORD_AUTOMATION;
+    change->address = {.track = track, .page = page, .macro = 0U};
+    auto& payload = *change->automationTake;
+    payload.candidateMask = candidateMask;
+    payload.track = track;
+    payload.page = page;
+    for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+        const uint16_t bit = static_cast<uint16_t>(1U << macro);
+        if ((candidateMask & bit) == 0U) continue;
+        const MacroAutomationSlotAddress address{
+            .track = track,
+            .page = page,
+            .macro = macro,
+        };
+        if (!captureMacroAutomationHistorySnapshot(
+                pages,
+                address,
+                payload.before[macro]
+            )) {
+            return {};
+        }
+        auto& after = payload.after[macro];
+        after.address = address;
+        after.points = core::app::makeExtmemUniqueArrayForOverwrite<
+            core::state::modulation::ProjectPackedCurvePoint
+        >(MACRO_AUTOMATION_RECORDING_MAX_POINTS);
+        if (!after.points) return {};
+    }
+    if (!automationTakePayloadConsistent(payload, false)) return {};
+    return change;
+}
+
+FLASHMEM bool MacroHistoryService::commitPreparedAutomationTake(
+    MacroPagesState& pages,
+    MacroHistoryChangePtr& change
+) {
+    if (!change || change->kind != MacroHistoryActionKind::RECORD_AUTOMATION ||
+        !change->automationTake ||
+        !automationTakePayloadConsistent(*change->automationTake, true) ||
+        !liveAutomationTakeMatches(pages, *change->automationTake, true)) {
+        return false;
+    }
+    bool changed = false;
+    for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+        const uint16_t bit = static_cast<uint16_t>(1U << macro);
+        if ((change->automationTake->touchedMask & bit) == 0U) continue;
+        if (!sameMacroAutomationHistorySnapshot(
+                change->automationTake->before[macro],
+                change->automationTake->after[macro]
+            )) {
+            changed = true;
+            break;
+        }
+    }
+    if (!changed) return false;
+    endCoalescing();
+    recordNewEntry_(std::move(change));
     return true;
 }
 
 FLASHMEM void MacroHistoryService::clear() {
+    if (project_history_sink_ != nullptr) {
+        project_history_sink_->notifyCleared(
+            core::state::project::ProjectHistoryDomain::Macro
+        );
+    }
     for (auto& entry : undo_) entry.reset();
     for (auto& entry : redo_) entry.reset();
     undo_count_ = 0;
@@ -448,13 +293,61 @@ FLASHMEM void MacroHistoryService::clear() {
     endCoalescing();
 }
 
+FLASHMEM MacroHistoryChangePtr* MacroHistoryService::pendingModulatorSlot_() {
+    for (uint8_t i = undo_count_; i < ENTRY_LIMIT; ++i) {
+        if (undo_[i] && undo_[i]->modulator.pending) return &undo_[i];
+    }
+    for (uint8_t i = redo_count_; i < ENTRY_LIMIT; ++i) {
+        if (redo_[i] && redo_[i]->modulator.pending) return &redo_[i];
+    }
+    return nullptr;
+}
+
+FLASHMEM const MacroHistoryChangePtr*
+MacroHistoryService::pendingModulatorSlot_() const {
+    for (uint8_t i = undo_count_; i < ENTRY_LIMIT; ++i) {
+        if (undo_[i] && undo_[i]->modulator.pending) return &undo_[i];
+    }
+    for (uint8_t i = redo_count_; i < ENTRY_LIMIT; ++i) {
+        if (redo_[i] && redo_[i]->modulator.pending) return &redo_[i];
+    }
+    return nullptr;
+}
+
+FLASHMEM bool MacroHistoryService::parkPending_(
+    MacroHistoryChangePtr change
+) {
+    if (!change || pendingModulatorSlot_() != nullptr) return false;
+    if (undo_count_ < ENTRY_LIMIT && !undo_[ENTRY_LIMIT - 1U]) {
+        undo_[ENTRY_LIMIT - 1U] = std::move(change);
+        return true;
+    }
+    if (redo_count_ < ENTRY_LIMIT && !redo_[ENTRY_LIMIT - 1U]) {
+        redo_[ENTRY_LIMIT - 1U] = std::move(change);
+        return true;
+    }
+    return false;
+}
+
+FLASHMEM MacroHistoryChangePtr MacroHistoryService::takePending_() {
+    auto* slot = pendingModulatorSlot_();
+    return slot != nullptr ? std::move(*slot) : MacroHistoryChangePtr{};
+}
+
 FLASHMEM void MacroHistoryService::push_(
     std::array<MacroHistoryChangePtr, ENTRY_LIMIT>& stack,
     uint8_t& count,
-    MacroHistoryChangePtr change
+    MacroHistoryChangePtr change,
+    const core::state::project::ProjectHistoryEventSink* sink
 ) {
     if (!change) return;
     if (count >= ENTRY_LIMIT) {
+        if (sink != nullptr && stack[0]) {
+            sink->notifyEvicted(
+                core::state::project::ProjectHistoryDomain::Macro,
+                reinterpret_cast<uintptr_t>(stack[0].get())
+            );
+        }
         for (uint8_t i = 1; i < ENTRY_LIMIT; ++i) {
             stack[i - 1U] = std::move(stack[i]);
         }
@@ -464,9 +357,36 @@ FLASHMEM void MacroHistoryService::push_(
     stack[count++] = std::move(change);
 }
 
+FLASHMEM void MacroHistoryService::recordNewEntry_(MacroHistoryChangePtr change) {
+    if (!change) return;
+    const uintptr_t identity = reinterpret_cast<uintptr_t>(change.get());
+    const auto kind = change->kind;
+    push_(undo_, undo_count_, std::move(change), project_history_sink_);
+    clearRedo_();
+    if (project_history_sink_ != nullptr) {
+        project_history_sink_->notifyCommitted(
+            core::state::project::ProjectHistoryDomain::Macro,
+            identity,
+            static_cast<uint8_t>(kind)
+        );
+    }
+}
+
 FLASHMEM void MacroHistoryService::clearRedo_() {
-    for (auto& entry : redo_) entry.reset();
+    for (uint8_t index = 0U; index < redo_count_; ++index) {
+        if (project_history_sink_ != nullptr && redo_[index]) {
+            project_history_sink_->notifyEvicted(
+                core::state::project::ProjectHistoryDomain::Macro,
+                reinterpret_cast<uintptr_t>(redo_[index].get())
+            );
+        }
+        redo_[index].reset();
+    }
     redo_count_ = 0;
+}
+
+FLASHMEM void MacroHistoryService::discardRedoBranch() {
+    clearRedo_();
 }
 
 }  // namespace core::state::macro

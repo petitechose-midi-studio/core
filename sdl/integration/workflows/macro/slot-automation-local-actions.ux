@@ -1,7 +1,7 @@
 # UX workflow: manage a focused typed Macro Slot from the macro grid.
-# Purpose: validates tap Copy, early-release Remove cancellation, hold Paste,
+# Purpose: validates tap Copy, visible early-release Remove cancellation, hold Paste,
 # and guarded whole-Slot Remove without entering Macro Edit.
-# Expect: capture_match:macro_2_slot_copied=macro_2_remove_cancelled, capture_match:macro_2_slot_copied=macro_2_slot_pasted
+# Expect: capture_changed:macro_2_slot_copied=macro_2_remove_cancelled, capture_match:macro_2_slot_copied=macro_2_slot_pasted
 # Expect: capture_match:macro_2_slot_pasted=macro_2_paste_settled, capture_changed:macro_2_slot_copied=macro_2_slot_removed
 # Expect: capture_match:macro_2_slot_removed=macro_2_remove_settled
 # Expect: semantic:macro_2_remove_cancelled:effect=cancel_remove_macro_slot, semantic:macro_2_remove_cancelled:outcome=cancelled
@@ -11,9 +11,11 @@
 0 scenario macro-track-multipage-automation
 80 capture screen source_macro_grid
 
-# Enter Macro slot focus and focus Macro 2, which owns an automation lane.
-180 tap NAV 60
-320 tap NAV 60
+# Hold NAV and turn the shared context selector Page -> Macro, then select
+# Macro 2, which owns an automation lane.
+180 button NAV down
+240 encoder NAV 1
+320 button NAV up
 460 encoder NAV 1
 620 capture screen macro_2_focused
 
@@ -21,7 +23,8 @@
 760 tap BOTTOM_RIGHT 60
 920 capture screen macro_2_slot_copied
 
-# A short Remove press is explicitly cancelled and leaves the Slot unchanged.
+# A short Remove press is explicitly cancelled, leaves the Slot unchanged, and
+# provides visible cancellation feedback.
 1060 tap BOTTOM_LEFT 60
 1220 capture screen macro_2_remove_cancelled
 

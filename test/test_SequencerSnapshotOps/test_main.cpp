@@ -1,3 +1,7 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
 #include <cassert>
 #include <cstdint>
 #include <iostream>
@@ -74,7 +78,7 @@ void createRootMicroSequence(SequencerState& sequencer, uint8_t step, uint8_t le
 
 void test_clear_step_range_resets_payload_and_mask() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(16);
+    sequencer.pattern.setContentLength(16);
     setStep(sequencer, 2, 62, 90, 70, -3, 55, true);
     setStep(sequencer, 3, 63, 91, 71, 4, 56, true);
 
@@ -92,7 +96,7 @@ void test_clear_step_range_resets_payload_and_mask() {
 
 void test_clear_step_range_clears_child_content() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(16);
+    sequencer.pattern.setContentLength(16);
     createRootMicroSequence(sequencer, 2, 2);
     assert(rootStepHasMicroSequence(sequencer, 2));
 
@@ -105,7 +109,7 @@ void test_clear_step_range_clears_child_content() {
 
 void test_insert_page_shifts_payloads_and_clears_inserted_page() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(16);
+    sequencer.pattern.setContentLength(16);
     setStep(sequencer, 8, 70, 110, 90, 5, 60, true);
 
     assert(core::state::sequencer::insertPage(sequencer, 1));
@@ -121,7 +125,7 @@ void test_insert_page_shifts_payloads_and_clears_inserted_page() {
 
 void test_insert_page_shifts_child_content() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(16);
+    sequencer.pattern.setContentLength(16);
     createRootMicroSequence(sequencer, 8, 2);
 
     assert(core::state::sequencer::insertPage(sequencer, 1));
@@ -134,7 +138,7 @@ void test_insert_page_shifts_child_content() {
 
 void test_remove_page_shifts_following_payloads() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(24);
+    sequencer.pattern.setContentLength(24);
     setStep(sequencer, 16, 72, 111, 91, -4, 61, true);
 
     assert(core::state::sequencer::removePage(sequencer, 1));
@@ -150,7 +154,7 @@ void test_remove_page_shifts_following_payloads() {
 
 void test_remove_page_shifts_child_content() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(24);
+    sequencer.pattern.setContentLength(24);
     createRootMicroSequence(sequencer, 16, 2);
 
     assert(core::state::sequencer::removePage(sequencer, 1));
@@ -163,7 +167,7 @@ void test_remove_page_shifts_child_content() {
 
 void test_rotate_pattern_moves_payload_and_mask() {
     SequencerState sequencer;
-    sequencer.pattern.length.set(4);
+    sequencer.pattern.setContentLength(4);
     sequencer.pattern.enabledMask.set(StepBitMask128{});
     setStep(sequencer, 0, 60, 90, 50, 0, 100, true);
     setStep(sequencer, 1, 61, 91, 51, 1, 80, false);
@@ -204,7 +208,6 @@ void test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision() {
 
 void test_track_content_snapshot_preserves_destination_midi_channel() {
     SequencerState source;
-    source.pattern.midiChannel.set(3);
     setStep(source, 0, 74, 103, 88, -2, 79, true);
     createRootMicroSequence(source, 0, 2);
 
@@ -214,38 +217,56 @@ void test_track_content_snapshot_preserves_destination_midi_channel() {
     assert(sourceGraph != nullptr);
 
     SequencerState bankTarget;
-    bankTarget.pattern.midiChannel.set(10);
     assert(core::state::sequencer::applyTrackContentSnapshotWithGraph(
         bankTarget.pattern,
         snapshot,
         sourceGraph
     ));
-    assert(bankTarget.pattern.midiChannel.get() == 10);
     assertStep(bankTarget, 0, 74, 103, 88, -2, 79, true);
     assert(rootStepHasMicroSequence(bankTarget, 0));
 
     SequencerState editorTarget;
-    editorTarget.pattern.midiChannel.set(12);
     assert(core::state::sequencer::applyTrackContentSnapshotToEditorWithGraph(
         editorTarget,
         snapshot,
         sourceGraph
     ));
-    assert(editorTarget.pattern.midiChannel.get() == 12);
     assertStep(editorTarget, 0, 74, 103, 88, -2, 79, true);
     assert(rootStepHasMicroSequence(editorTarget, 0));
 
     SequencerState genericTarget;
-    genericTarget.pattern.midiChannel.set(14);
     assert(core::state::sequencer::applySnapshotToEditorWithGraph(
         genericTarget,
         snapshot,
         sourceGraph
     ));
-    assert(genericTarget.pattern.midiChannel.get() == 3);
 
     std::cout
         << "[PASS] test_track_content_snapshot_preserves_destination_midi_channel\n";
+}
+
+void test_full_128_step_snapshot_and_rotation_contract() {
+    SequencerState source;
+    const bool resized = source.pattern.setContentLength(
+        SequencerState::MAX_STEPS
+    );
+    assert(resized);
+    setStep(source, 127U, 96U, 123U, 175U, 11, 42U, true);
+
+    core::state::sequencer::SequencerPatternSnapshot snapshot{};
+    core::state::sequencer::captureSnapshot(source.pattern, snapshot);
+    assert(snapshot.length == SequencerState::MAX_STEPS);
+    assert(snapshot.enabledMask.test(127U));
+    assert(snapshot.note[127] == 96U);
+
+    SequencerState restored;
+    core::state::sequencer::applySnapshot(restored.pattern, snapshot);
+    assert(restored.pattern.length.get() == SequencerState::MAX_STEPS);
+    assertStep(restored, 127U, 96U, 123U, 175U, 11, 42U, true);
+
+    const bool rotated = core::state::sequencer::rotatePattern(restored, 1);
+    assert(rotated);
+    assertStep(restored, 0U, 96U, 123U, 175U, 11, 42U, true);
 }
 
 }  // namespace
@@ -260,6 +281,7 @@ int main() {
     test_rotate_pattern_moves_payload_and_mask();
     test_snapshot_apply_and_merge_clear_graph_payload_but_keep_revision();
     test_track_content_snapshot_preserves_destination_midi_channel();
+    test_full_128_step_snapshot_and_rotation_contract();
 
     std::cout << "All SequencerSnapshotOps tests passed\n";
     return 0;

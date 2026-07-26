@@ -30,8 +30,12 @@
 #include "state/StatusBarState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "support/InputTestHardware.hpp"
+#include "support/ProjectControlTestUtils.hpp"
+#include "support/ProjectTrackRuntimeSnapshotTestFixture.hpp"
 
 namespace {
 
@@ -84,6 +88,7 @@ struct Harness {
     core::state::MacroState macros;
     core::state::macro::MacroPagesState pages;
     core::state::macro::MacroUiState macroUi;
+    core::state::project::ProjectTrackState projectTracks;
     core::state::MacroEditState macroEdit;
     core::state::StatusBarState statusBar;
     oc::state::Signal<core::ui::ViewType, 8> activeView{core::ui::ViewType::MACRO};
@@ -104,6 +109,9 @@ struct Harness {
     core::handler::MacroMidiCcRuntimeAdapter adapter;
     core::handler::MacroValueHandler valueHandler;
     core::handler::MacroAutomationPlaybackService playback;
+    core::sequencer::ProjectTrackRuntimeSnapshot runtimeTracks{
+        test_support::makeAllAudibleProjectTrackRuntimeSnapshot()
+    };
 
     Harness()
         : inputBinding(eventBus, mockTimeMs)
@@ -118,6 +126,7 @@ struct Harness {
                   macroUi,
                   configRevision,
                   statusBar,
+                  projectTracks,
               },
               core::handler::MacroPerformanceDomainServices::Operations{}
           )
@@ -125,7 +134,7 @@ struct Harness {
         , adapter(
               core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
                   pages,
-                  macroUi,
+                  projectTracks,
               },
               services,
               coordinator
@@ -145,11 +154,11 @@ struct Harness {
           )
         , playback(
               core::handler::MacroAutomationPlaybackService::StateRefs{
+                  macros,
                   pages,
                   macroUi,
-                  statusBar,
+                  projectTracks,
               },
-              services,
               adapter
           ) {
         pages.setMacroSlotActive(0, true);
@@ -166,27 +175,23 @@ struct Harness {
     core::handler::MidiCcGlobalFrameResult resolveAndDrain(
         uint32_t deadlineUs
     ) {
-        const auto result = coordinator.resolveLive(deadlineUs);
+        const auto result = coordinator.resolveLive(deadlineUs, runtimeTracks);
         queue.drainDue(midi, deadlineUs, UINT32_MAX);
         return result;
     }
 
     void configureAutomation(uint8_t macroIndex) {
-        auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-            pages.automation,
-            core::state::macro::MacroAutomationSlotAddress{
-                .track = pages.currentActiveTrack(),
-                .page = pages.currentActivePage(),
-                .macro = macroIndex,
-            }
-        );
-        assert(slot != nullptr);
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            .track = pages.currentActiveTrack(),
+            .page = pages.currentActivePage(),
+            .macro = macroIndex,
+        };
         core::state::macro::MacroAutomationLane lane;
         assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
         assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
-        assert(core::state::macro::macroAutomationAssignAutomation(
-            pages.automation,
-            *slot,
+        assert(test_support::project_control::assignAutomation(
+            pages.control,
+            address,
             lane
         ));
     }
@@ -203,6 +208,7 @@ struct Harness {
 void test_manual_and_playback_share_one_resolved_destination_cache() {
     Harness h;
 
+    h.coordinator.publishProjectControlClock(0, true, 1000000, 41667);
     h.playback.update(1000);
     assert(h.resolveAndDrain(1000).ok());
     assert(h.transport.count == 1);
@@ -227,28 +233,46 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
         assert(telemetry->destinations[0].conflict);
     }
 
-    // Playback evaluates both lanes at the next 16 ms frame. The manual lane
-    // stays a single Live author carrying its resolved Base + Modulation Out,
-    // and the shared cache prevents a second send.
+    // Playback evaluates both lanes at the next frame. The underlying
+    // Automation author continues advancing beside the winning Live author.
+    h.coordinator.publishProjectControlClock(12, true, 1500000, 41667);
     h.playback.update(1500);
     assert(h.resolveAndDrain(1500).ok());
     assert(h.transport.count == 2);
     {
         auto telemetry = h.coordinator.readTelemetry();
         assert(telemetry);
-        assert(telemetry->candidateCount == 2);
+        assert(telemetry->candidateCount == 3);
         assert(telemetry->destinations[0].winner.author.candidateClass ==
                core::state::shared::MidiCcCandidateClass::LIVE_MANUAL);
         assert(telemetry->destinations[0].finalValue == 127);
+        bool advancingBaseFound = false;
+        const auto& destination = telemetry->destinations[0];
+        for (uint16_t relative = 0U;
+             relative < destination.loserCount;
+             ++relative) {
+            const auto& candidate = telemetry->losers[
+                static_cast<uint16_t>(destination.firstLoser + relative)
+            ];
+            if (candidate.author.candidateClass ==
+                    core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED &&
+                candidate.author.stableAddress == 1U) {
+                advancingBaseFound = candidate.localValue > 0U &&
+                    candidate.localValue < 127U;
+            }
+        }
+        assert(advancingBaseFound);
     }
 
     h.statusBar.playing.set(false);
+    h.coordinator.publishProjectControlClock(12, false, 2000000, 41667);
     h.playback.update(2000);
     assert(h.resolveAndDrain(2000).ok());
     assert(h.transport.count == 2);
     assert(h.services.manualOverrideActiveFor(1));
 
     h.statusBar.playing.set(true);
+    h.coordinator.publishProjectControlClock(12, true, 2200000, 41667);
     h.playback.update(2200);
     assert(h.resolveAndDrain(2200).ok());
     assert(h.transport.count == 2);
@@ -261,11 +285,13 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
     }
 
     assert(h.services.resumeComputedSources(1));
+    h.coordinator.publishProjectControlClock(60, true, 4200000, 41667);
     h.playback.update(4200);
     assert(h.resolveAndDrain(4200).ok());
     assert(h.transport.count == 3);
-    // Stop/start preserves the automation phase. The 500 ms accumulated
-    // before the stop therefore resumes at the middle of this one-beat ramp.
+    // Stop/start preserves the 500 ms phase accumulated before the stop; the
+    // authoritative clock then advances two full beats while Manual owns the
+    // destination, so Automation resumes at the same midpoint.
     assert(h.transport.messages[2].value == 64);
     {
         auto telemetry = h.coordinator.readTelemetry();
@@ -279,11 +305,124 @@ void test_manual_and_playback_share_one_resolved_destination_cache() {
     std::cout << "[PASS] test_manual_and_playback_share_one_resolved_destination_cache\n";
 }
 
+void test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr() {
+    namespace mod = core::state::modulation;
+    Harness h;
+    h.pages.control.clear();
+    h.pages.setMacroSlotActive(1U, false);
+    h.pages.activePageData().values[0] = 0.5f;
+
+    mod::ModulatorAdsrDraft source{};
+    source.name = "Gate";
+    source.parameters.attack = 0U;
+    source.parameters.decay = 0U;
+    source.parameters.sustainQ15 = 8192U;
+    source.parameters.release = 0U;
+    source.parameters.traits = mod::withModulatorAdsrCurve(
+        source.parameters.traits,
+        mod::ModulatorAdsrCurve::LINEAR
+    );
+    const auto created = mod::createAdsrModulator(
+        h.pages.control.authored.modulation,
+        source
+    );
+    assert(created.changed());
+
+    mod::ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination = {
+        mod::ModulationDestinationKind::MACRO_SLOT,
+        0U,
+        0U,
+        0U,
+    };
+    binding.amountQ15 = 32767;
+    binding.application = mod::ModulationApplication::NATURAL;
+    assert(mod::addProjectModulationBinding(
+        h.pages.control.authored.modulation,
+        binding
+    ).changed());
+
+    mod::ModulationTriggerDraft trigger{};
+    trigger.sourceId = created.sourceId;
+    trigger.trigger = {
+        .kind = mod::ModulationTriggerKind::TRACK_NOTE,
+        .track = 0U,
+        .noteMin = 0U,
+        .noteMax = 127U,
+    };
+    trigger.velocityMin = 0U;
+    trigger.velocityMax = 127U;
+    assert(mod::addProjectModulationTrigger(
+        h.pages.control.authored.modulation,
+        trigger
+    ).changed());
+    h.pages.control.markAuthoredMutation();
+
+    g_now_ms = 1000U;
+    h.coordinator.publishProjectControlClock(0U, true, 1000000U, 41667U);
+    h.playback.update(g_now_ms);
+    assert(h.resolveAndDrain(1000000U).ok());
+    assert(h.transport.count == 1U);
+    assert(h.transport.messages[0].value == 64U);
+
+    const core::sequencer::RealtimeMidiEvent noteOn{
+        .deadlineUs = 1001000U,
+        .type = core::sequencer::RealtimeMidiEventType::NoteOn,
+        .trackIndex = 0U,
+        .channel = 9U,
+        .note = 67U,
+        .velocity = 111U,
+    };
+    assert(h.queue.push(noteOn));
+    g_now_ms = 1001U;
+    h.queue.drainDue(h.midi, noteOn.deadlineUs, UINT32_MAX);
+    assert(h.coordinator.hasPendingProjectModulationTriggers());
+    h.coordinator.publishProjectControlClock(
+        0U,
+        true,
+        noteOn.deadlineUs,
+        41667U
+    );
+    h.playback.update(g_now_ms);
+    assert(!h.coordinator.hasPendingProjectModulationTriggers());
+    assert(h.resolveAndDrain(noteOn.deadlineUs).ok());
+    assert(h.transport.count == 2U);
+    assert(h.transport.messages[1].value == 95U);
+    assert(h.pages.control.runtime.sources[0].payload.adsr.heldNoteCount == 1U);
+
+    const core::sequencer::RealtimeMidiEvent noteOff{
+        .deadlineUs = 1002000U,
+        .type = core::sequencer::RealtimeMidiEventType::NoteOff,
+        .trackIndex = 0U,
+        .channel = 9U,
+        .note = 67U,
+        .velocity = 0U,
+    };
+    assert(h.queue.push(noteOff));
+    g_now_ms = 1002U;
+    h.queue.drainDue(h.midi, noteOff.deadlineUs, UINT32_MAX);
+    h.coordinator.publishProjectControlClock(
+        0U,
+        true,
+        noteOff.deadlineUs,
+        41667U
+    );
+    h.playback.update(g_now_ms);
+    assert(h.resolveAndDrain(noteOff.deadlineUs).ok());
+    assert(h.transport.count == 3U);
+    assert(h.transport.messages[2].value == 64U);
+    assert(h.pages.control.runtime.sources[0].payload.adsr.heldNoteCount == 0U);
+
+    std::cout << "[PASS] dispatched Note edges drive ADSR without 16 ms latency\n";
+}
+
 }  // namespace
 
 int main() {
     oc::time::setProvider(mockTimeMs);
     test_manual_and_playback_share_one_resolved_destination_cache();
+    test_dispatched_note_edges_bypass_frame_throttle_and_drive_adsr();
     std::cout << "\nAll MacroMidiCcRuntimeIntegration tests passed.\n";
     return 0;
 }

@@ -25,7 +25,7 @@ void test_picker_list_uses_semantic_names_and_disambiguates_duplicates() {
     picker.open(SequencerStepPresetPickerMode::SAVE);
     picker.setEntry(0, "preset-a", "Pulse", true);
     picker.setEntry(1, "preset-b", "Pulse", true);
-    picker.setEntry(2, "legacy-id", "", false);
+    picker.setEntry(2, "unnamed-id", "", false);
     picker.entryCount.set(3);
     picker.totalEntryCount.set(3);
 
@@ -38,7 +38,7 @@ void test_picker_list_uses_semantic_names_and_disambiguates_duplicates() {
     assert(std::strcmp(data.items[0], "+  New Step Preset") == 0);
     assert(std::strcmp(data.items[1], "Pulse  [preset-a]") == 0);
     assert(std::strcmp(data.items[2], "Pulse  [preset-b]") == 0);
-    assert(std::strcmp(data.items[3], "legacy-id") == 0);
+    assert(std::strcmp(data.items[3], "unnamed-id") == 0);
 
     picker.hasPreviousPage.set(true);
     data = presenter::buildSequencerStepPresetPickerPresentation(sequencer);

@@ -67,6 +67,7 @@ private:
     core::app::ExtmemUniquePtr<oc::context::OverlayManager<core::ui::OverlayType>> overlay_controller_;
     core::app::ExtmemUniquePtr<ms::ui::MenuListView> view_selector_;
     std::array<ms::ui::MenuRow, core::state::VIEW_SELECTOR_ITEM_COUNT> view_selector_rows_{};
+    uint32_t view_selector_history_revision_ = 0;
     oc::type::ScopeID view_selector_scope_ = 0;
     bool valid_ = false;
 };

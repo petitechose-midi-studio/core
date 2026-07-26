@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
-from teensy_diagnostics_placement import diagnostics_placement_violations
+from teensy_diagnostics_placement import (
+    diagnostics_placement_violations,
+    normal_build_diagnostics_violations,
+)
 
 
 def main() -> int:
@@ -11,8 +14,19 @@ def main() -> int:
 1610855692 1040 T core::state::diagnostics::configureDebugLabels(core::state::CoreState&)
 1611042776 496 T oc::state::NotificationQueue::reportOverflow_(std::pair<void*, unsigned int>, char const*) const
 539198464 6688 b core::diagnostics::(anonymous namespace)::reporterStorage
+539205152 10264 b core::diagnostics::(anonymous namespace)::memoryHighWaterStorage
 """
     assert diagnostics_placement_violations(valid) == ()
+    assert normal_build_diagnostics_violations("") == ()
+    normal_violations = normal_build_diagnostics_violations(valid)
+    assert any(
+        "PerformanceReporter" in violation
+        for violation in normal_violations
+    )
+    assert any(
+        "memoryHighWaterStorage" in violation
+        for violation in normal_violations
+    )
 
     invalid = valid.replace(
         "1611218610 46 T core::diagnostics::PerformanceReporter::update",
@@ -20,6 +34,9 @@ def main() -> int:
     ).replace(
         "539198464 6688 b core::diagnostics::(anonymous namespace)::reporterStorage",
         "536946316 6688 b core::diagnostics::(anonymous namespace)::reporterStorage",
+    ).replace(
+        "539205152 10264 b core::diagnostics::(anonymous namespace)::memoryHighWaterStorage",
+        "536953004 10264 b core::diagnostics::(anonymous namespace)::memoryHighWaterStorage",
     )
     violations = diagnostics_placement_violations(invalid)
     assert "diagnostics reporter methods must execute from Flash" in violations

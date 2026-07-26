@@ -1,6 +1,9 @@
 #include "handler/macro/MacroPerformanceHandler.hpp"
 
 #include <config/PlatformCompat.hpp>
+#include "handler/common/NavigationUtils.hpp"
+#include "handler/macro/MacroEditHandler.hpp"
+#include "handler/sequencer/ProjectTrackEditorHandler.hpp"
 
 #if defined(MS_UX_RECORDER)
 #include "validation/ux/SemanticUxTraceState.hpp"
@@ -29,7 +32,8 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
     core::validation::ux::StructureUxTraceState* uxTraceState
 #endif
 )
-    : structure_workflow_(
+    : macro_ui_(state.macroUi)
+    , structure_workflow_(
           MacroStructureWorkflow::StateRefs{
               state.macroUi,
               state.pages,
@@ -40,6 +44,7 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
           },
           structureServices
       )
+    , performance_services_(performanceServices)
     , performance_workflow_(
           MacroPerformanceModeWorkflow::StateRefs{
               state.macroUi,
@@ -50,7 +55,6 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
           overlays,
           encoders
       )
-    , navigation_focus_(state.navigationFocus)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
@@ -64,70 +68,84 @@ FLASHMEM MacroPerformanceHandler::MacroPerformanceHandler(
 }
 
 FLASHMEM void MacroPerformanceHandler::setupBindings() {
+    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
+        buttons_.button(Config::MACRO_BUTTONS[i])
+            .press()
+            .scope(scope_id_)
+            .then([this, i]() { beginMacroButtonGesture(i); });
+
+        buttons_.button(Config::MACRO_BUTTONS[i])
+            .release()
+            .scope(scope_id_)
+            .then([this, i]() { releaseMacroButtonGesture(i); });
+    }
+
     buttons_.button(Config::ButtonID::LEFT_BOTTOM)
         .press()
-        .latch()
         .scope(scope_id_)
         .when([this]() {
-            left_bottom_held_ = true;
             return policyAllows(MacroAction::OPEN_SLOT_PROPERTIES);
         })
-        .then([this]() { performance_workflow_.activateClutch(); });
+        .then([this]() { performance_workflow_.openEditPrompt(); });
+
+    buttons_.button(Config::ButtonID::LEFT_CENTER)
+        .press()
+        .scope(scope_id_)
+        .when([this]() {
+            return MacroPolicy::performanceAvailable(interactionContext());
+        })
+        .then([this]() { (void)performance_services_.armAutomationTake(); });
+
+    buttons_.button(Config::ButtonID::LEFT_CENTER)
+        .release()
+        .scope(scope_id_)
+        .then([this]() {
+            (void)performance_services_.releaseAutomationTake(time_provider_());
+        });
+
+    buttons_.button(Config::ButtonID::NAV)
+        .press()
+        .scope(scope_id_)
+        .when([this]() {
+            return MacroPolicy::performanceAvailable(interactionContext());
+        })
+        .then([this]() { beginContextSelector(); });
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::MOVE_SELECTION_CURSOR); })
-        .then([this](float delta) { structure_workflow_.navigateSelection(delta); });
+        .when([this]() { return context_selector_gesture_.active(); })
+        .then([this](float delta) { moveContextSelector(delta); });
 
     buttons_.button(Config::ButtonID::NAV)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::ENTER_SELECTION); })
-        .then([this]() {
-            nav_long_press_used_ = true;
-            structure_workflow_.enterSelectionModeForCurrentFocus();
-        });
-
-    buttons_.button(Config::ButtonID::NAV)
-        .release()
-        .scope(scope_id_)
-        .when([this]() { return nav_long_press_used_ || policyAllows(MacroAction::TOGGLE_SELECTION); })
-        .then([this]() {
-            if (nav_long_press_used_) {
-                nav_long_press_used_ = false;
-                return;
-            }
-            structure_workflow_.toggleSelectionAtCursor();
-        });
-
-    buttons_.button(Config::ButtonID::LEFT_BOTTOM)
-        .release()
-        .scope(scope_id_)
-        .then([this]() {
-            left_bottom_held_ = false;
-            if (policyAllows(MacroAction::APPLY_SLOT_PROPERTIES)) {
-                performance_workflow_.deactivateClutch();
-            }
-        });
+        .when([this]() { return context_selector_gesture_.active(); })
+        .then([this]() { context_selector_gesture_.hold(); });
 
     buttons_.button(Config::ButtonID::NAV)
         .release()
         .scope(scope_id_)
         .when([this]() {
-            return policyAllows(MacroAction::COMMIT_OR_CYCLE_STRUCTURE) ||
+            return context_selector_gesture_.active() ||
+                   policyAllows(MacroAction::COMMIT_OR_CYCLE_STRUCTURE) ||
                    policyAllows(MacroAction::CREATE_PREVIEWED_STRUCTURE);
         })
         .then([this]() {
-            if (nav_long_press_used_) {
-                nav_long_press_used_ = false;
+            if (context_selector_gesture_.active()) {
+                releaseContextSelector();
+#if defined(MS_UX_RECORDER)
+                if (ux_trace_state_) ux_trace_state_->ignoreNextNavRelease = false;
+#endif
                 return;
             }
-            if (structure_workflow_.previewingAddSlot()) {
+            const auto action = MacroPolicy::navRelease(interactionContext());
+            if (action == MacroAction::CREATE_PREVIEWED_STRUCTURE) {
                 structure_workflow_.createPreviewedStructure();
                 performance_workflow_.refreshEncoders();
                 return;
             }
+            if (action != MacroAction::COMMIT_OR_CYCLE_STRUCTURE) return;
             if (structure_workflow_.commitPreviewedPageIfNeeded()) {
                 performance_workflow_.refreshEncoders();
                 return;
@@ -135,62 +153,52 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             structure_workflow_.cycleNavigationFocus();
         });
 
+    buttons_.button(Config::ButtonID::LEFT_BOTTOM)
+        .release()
+        .scope(scope_id_)
+        .then([this]() {
+            if (policyAllows(MacroAction::APPLY_SLOT_PROPERTIES)) {
+                performance_workflow_.closePerformanceOverlay();
+            }
+        });
+
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
         .when([this]() { return policyAllows(MacroAction::MOVE_SLOT_PROPERTY); })
-        .then([this](float delta) { performance_workflow_.navigateProperty(delta); });
+        .then([this](float delta) {
+            if (performance_services_.automationTakeArmed()) {
+                performance_workflow_.navigateTakeTiming(delta);
+            }
+        });
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::MOVE_STRUCTURE); })
+        .when([this]() {
+            return !context_selector_gesture_.active() &&
+                   policyAllows(MacroAction::MOVE_STRUCTURE);
+        })
         .then([this](float delta) {
             structure_workflow_.moveByFocus(delta);
             performance_workflow_.refreshEncoders();
         });
-
-    buttons_.button(Config::ButtonID::LEFT_TOP)
-        .release()
-        .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::CANCEL_SELECTION); })
-        .then([this]() { structure_workflow_.cancelSelectionMode(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .press()
         .scope(scope_id_)
         .when([this]() {
             return policyAllows(MacroAction::CLEAR_STRUCTURE) ||
-                   policyAllows(MacroAction::REMOVE_STRUCTURE) ||
-                   policyAllows(MacroAction::DELETE_SELECTION);
+                   policyAllows(MacroAction::REMOVE_STRUCTURE);
         })
         .then([this]() {
             ignore_next_bottom_left_release_ = false;
-            selection_delete_press_active_ = false;
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
 #endif
-            if (policyAllows(MacroAction::DELETE_SELECTION)) {
-                selection_delete_press_active_ =
-                    structure_workflow_.beginSelectionDeleteGuard(time_provider_());
-                return;
-            }
             if (structure_workflow_.canRemoveCurrentStructure()) {
                 structure_workflow_.beginHoldAction(core::state::StructureHoldAction::REMOVE);
             }
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(scope_id_)
-        .when([this]() { return selection_delete_press_active_; })
-        .then([this]() {
-            selection_delete_press_active_ = false;
-            structure_workflow_.cancelSelectionDeleteGuard(time_provider_());
-            // The gesture began as selection deletion. Consume this physical
-            // release even if another input changed the interaction context
-            // while the button was held.
-            ignore_next_bottom_left_release_ = true;
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
@@ -225,32 +233,18 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
         .when([this]() {
-            return policyAllows(MacroAction::REMOVE_STRUCTURE) ||
-                   policyAllows(MacroAction::DELETE_SELECTION);
+            return policyAllows(MacroAction::REMOVE_STRUCTURE);
         })
         .then([this]() {
-            if (policyAllows(MacroAction::DELETE_SELECTION)) {
-                const bool applied = structure_workflow_.commitSelectionDeleteGuard(
-                    time_provider_()
-                );
-                if (applied) {
-                    ignore_next_bottom_left_release_ = true;
-#if defined(MS_UX_RECORDER)
-                    if (ux_trace_state_) {
-                        ux_trace_state_->ignoreNextBottomLeftRelease = true;
-                    }
-#endif
-                    performance_workflow_.refreshEncoders();
-                }
-                return;
-            }
-            structure_workflow_.clearHoldAction();
             ignore_next_bottom_left_release_ = true;
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = true;
 #endif
-            structure_workflow_.removeCurrentStructure();
-            performance_workflow_.refreshEncoders();
+            if (structure_workflow_.commitHoldAction(
+                    core::state::StructureHoldAction::REMOVE
+                )) {
+                performance_workflow_.refreshEncoders();
+            }
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
@@ -264,7 +258,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
 #endif
+            paste_only_press_active_ = false;
             if (structure_workflow_.canPasteCurrentStructure()) {
+                paste_only_press_active_ =
+                    !policyAllows(MacroAction::COPY_STRUCTURE);
                 structure_workflow_.beginHoldAction(core::state::StructureHoldAction::PASTE);
             }
         });
@@ -272,17 +269,17 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::DUPLICATE_SELECTION); })
+        .when([this]() {
+            return ignore_next_bottom_right_release_ ||
+                   structure_workflow_.hasHoldAction(
+                       core::state::StructureHoldAction::PASTE
+                   ) ||
+                   policyAllows(MacroAction::COPY_STRUCTURE);
+        })
         .then([this]() {
-            structure_workflow_.duplicateSelection();
-            performance_workflow_.refreshEncoders();
-        });
-
-    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
-        .release()
-        .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::COPY_STRUCTURE); })
-        .then([this]() {
+            const bool copyAllowed = policyAllows(MacroAction::COPY_STRUCTURE);
+            const bool pasteOnlyPress = paste_only_press_active_;
+            paste_only_press_active_ = false;
             structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_right_release_) {
                 ignore_next_bottom_right_release_ = false;
@@ -291,6 +288,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
 #endif
                 return;
             }
+            // An early release while Paste is armed only cancels the guarded
+            // hold. It must never fall through to Copy after focus changes.
+            if (pasteOnlyPress || !copyAllowed) return;
             structure_workflow_.copyCurrentStructure();
         });
 
@@ -299,58 +299,185 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return policyAllows(MacroAction::PASTE_STRUCTURE); })
         .then([this]() {
-            structure_workflow_.clearHoldAction();
             ignore_next_bottom_right_release_ = true;
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = true;
 #endif
-            structure_workflow_.pasteCurrentStructure();
-            performance_workflow_.refreshEncoders();
+            if (structure_workflow_.commitHoldAction(
+                    core::state::StructureHoldAction::PASTE
+                )) {
+                performance_workflow_.refreshEncoders();
+            }
         });
 
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(scope_id_)
         .when([this]() { return policyAllows(MacroAction::CANCEL_SLOT_PROPERTIES); })
-        .then([this]() { performance_workflow_.cancelClutch(); });
+        .then([this]() {
+            if (!performance_services_.cancelAutomationTake()) {
+                performance_workflow_.closePerformanceOverlay();
+            }
+        });
 }
 
-void MacroPerformanceHandler::update(uint32_t nowMs) {
-    structure_workflow_.updateSelectionDeleteGuard(nowMs);
+FLASHMEM void MacroPerformanceHandler::update(uint32_t nowMs) {
+    (void)nowMs;
+}
+
+FLASHMEM void MacroPerformanceHandler::attachEditors(
+    MacroEditHandler& macroEditor,
+    ProjectTrackEditorHandler& trackEditor
+) {
+    macro_editor_ = &macroEditor;
+    track_editor_ = &trackEditor;
+}
+
+FLASHMEM void MacroPerformanceHandler::beginContextSelector() {
+    context_selector_gesture_.press();
+    // The shared navigation focus is already the applied authority.
+    auto focus = interactionContext().navigationFocus;
+    macro_ui_.contextSelector.show(focus);
+}
+
+FLASHMEM void MacroPerformanceHandler::moveContextSelector(float delta) {
+    if (!context_selector_gesture_.turn(nav::hasTurnDelta(delta))) return;
+    constexpr core::state::StructureNavigationFocus order[] = {
+        core::state::StructureNavigationFocus::TRACK,
+        core::state::StructureNavigationFocus::PAGE,
+        core::state::StructureNavigationFocus::STEP,
+    };
+    int current = 1;
+    for (int i = 0; i < 3; ++i) {
+        if (order[i] == macro_ui_.contextSelector.previewFocus) current = i;
+    }
+    const int next = (current + (delta > 0.0f ? 1 : 2)) % 3;
+    macro_ui_.contextSelector.preview(order[next]);
+}
+
+FLASHMEM void MacroPerformanceHandler::releaseContextSelector() {
+    const auto selected = macro_ui_.contextSelector.previewFocus;
+    const auto release = context_selector_gesture_.release();
+    macro_ui_.contextSelector.hide();
+    if (release == PressHoldTurnReleaseGesture::Release::TURN) {
+        structure_workflow_.setNavigationFocus(selected);
+        performance_workflow_.refreshEncoders();
+        return;
+    }
+    if (release != PressHoldTurnReleaseGesture::Release::TAP) return;
+    if (selected == core::state::StructureNavigationFocus::STEP) {
+        if (structure_workflow_.interactionContext(false, false).previewingAddSlot) {
+            structure_workflow_.createPreviewedStructure();
+            performance_workflow_.refreshEncoders();
+            return;
+        }
+        if (macro_editor_ != nullptr) {
+            macro_editor_->openFocusedMacro(
+                macro_ui_.focusedMacroSlot.get()
+            );
+        }
+        return;
+    }
+    if (selected == core::state::StructureNavigationFocus::PAGE) {
+        if (structure_workflow_.interactionContext(false, false).previewingAddSlot) {
+            structure_workflow_.createPreviewedStructure();
+            performance_workflow_.refreshEncoders();
+        }
+        return;
+    }
+    if (selected == core::state::StructureNavigationFocus::TRACK) {
+        if (structure_workflow_.interactionContext(false, false).previewingAddSlot) {
+            structure_workflow_.createPreviewedStructure();
+            performance_workflow_.refreshEncoders();
+        } else if (track_editor_ != nullptr) {
+            (void)track_editor_->openActiveTrack();
+        }
+    }
+}
+
+FLASHMEM void MacroPerformanceHandler::beginMacroButtonGesture(uint8_t index) {
+    if (index >= core::state::macro::MACRO_COUNT) return;
+    const uint16_t bit = static_cast<uint16_t>(1U << index);
+    owned_macro_button_mask_ = static_cast<uint16_t>(owned_macro_button_mask_ & ~bit);
+    edit_chord_macro_mask_ = static_cast<uint16_t>(edit_chord_macro_mask_ & ~bit);
+
+    const bool editChord =
+        buttons_.isPressed(Config::ButtonID::LEFT_BOTTOM) ||
+        macro_ui_.performanceOverlayMode.get() ==
+            core::state::macro::MacroPerformanceOverlayMode::EDIT;
+    if (editChord) {
+        edit_chord_macro_mask_ = static_cast<uint16_t>(edit_chord_macro_mask_ | bit);
+        macro_ui_.focusedMacroSlot.set(index);
+        if (performance_services_.isMacroSlotActive(index) &&
+            macro_editor_ != nullptr &&
+            !overlays_.hasVisible()) {
+            macro_editor_->openFocusedMacro(index);
+        }
+        return;
+    }
+
+    if (!MacroPolicy::performanceAvailable(interactionContext())) {
+        return;
+    }
+    owned_macro_button_mask_ = static_cast<uint16_t>(owned_macro_button_mask_ | bit);
+}
+
+FLASHMEM void MacroPerformanceHandler::releaseMacroButtonGesture(uint8_t index) {
+    if (index >= core::state::macro::MACRO_COUNT) return;
+    const uint16_t bit = static_cast<uint16_t>(1U << index);
+    const bool editChord = (edit_chord_macro_mask_ & bit) != 0U;
+    edit_chord_macro_mask_ = static_cast<uint16_t>(edit_chord_macro_mask_ & ~bit);
+    if (editChord) return;
+
+    const bool owned = (owned_macro_button_mask_ & bit) != 0U;
+    owned_macro_button_mask_ = static_cast<uint16_t>(owned_macro_button_mask_ & ~bit);
+    if (!owned) return;
+
+    macro_ui_.focusedMacroSlot.set(index);
+    macro_ui_.armPostTakeInputGuard(bit, time_provider_());
+    if (!performance_services_.isMacroSlotActive(index)) {
+        if (performance_services_.activateMacroSlot(index)) {
+            performance_workflow_.refreshEncoders();
+        }
+        return;
+    }
+    if (performance_services_.manualOverrideActiveFor(index)) {
+        (void)performance_services_.resumeComputedSources(index);
+        return;
+    }
+    if (performance_services_.automationPlaybackActiveFor(index)) {
+        (void)performance_services_.takeManualControl(
+            index,
+            performance_services_.currentPlaybackBaseValue(index),
+            false
+        );
+    }
 }
 
 core::state::macro::MacroInteractionContext
-MacroPerformanceHandler::interactionContext() const {
+FLASHMEM MacroPerformanceHandler::interactionContext() const {
     return structure_workflow_.interactionContext(
         overlays_.hasVisible(),
-        performance_workflow_.clutchActive()
+        performance_workflow_.performanceOverlayActive()
     );
 }
 
-bool MacroPerformanceHandler::policyAllows(
+FLASHMEM bool MacroPerformanceHandler::policyAllows(
     core::state::macro::MacroInteractionAction action
 ) const {
     const auto context = interactionContext();
     switch (action) {
         case MacroAction::MOVE_STRUCTURE:
             return MacroPolicy::navTurn(context) == action;
-        case MacroAction::MOVE_SELECTION_CURSOR:
-            return MacroPolicy::navTurn(context) == action;
         case MacroAction::MOVE_SLOT_PROPERTY:
             return MacroPolicy::navTurn(context) == action;
         case MacroAction::COMMIT_OR_CYCLE_STRUCTURE:
-            return MacroPolicy::navRelease(context, nav_long_press_used_) == action;
+            return MacroPolicy::navRelease(context) == action;
         case MacroAction::CREATE_PREVIEWED_STRUCTURE:
-            return MacroPolicy::navRelease(context, nav_long_press_used_) == action;
-        case MacroAction::TOGGLE_SELECTION:
-            return MacroPolicy::navRelease(context, nav_long_press_used_) == action;
-        case MacroAction::ENTER_SELECTION:
-            return MacroPolicy::navLongPress(context) == action;
+            return MacroPolicy::navRelease(context) == action;
         case MacroAction::EDIT_SLOT_PROPERTY:
             return MacroPolicy::optTurn(context) == action;
         case MacroAction::CANCEL_SLOT_PROPERTIES:
-            return MacroPolicy::leftTopRelease(context) == action;
-        case MacroAction::CANCEL_SELECTION:
             return MacroPolicy::leftTopRelease(context) == action;
         case MacroAction::OPEN_SLOT_PROPERTIES:
             return MacroPolicy::leftBottomPress(context) == action;
@@ -364,10 +491,6 @@ bool MacroPerformanceHandler::policyAllows(
             return MacroPolicy::bottomRightRelease(context) == action;
         case MacroAction::PASTE_STRUCTURE:
             return MacroPolicy::bottomRightLongPress(context) == action;
-        case MacroAction::DELETE_SELECTION:
-            return MacroPolicy::bottomLeftLongPress(context) == action;
-        case MacroAction::DUPLICATE_SELECTION:
-            return MacroPolicy::bottomRightRelease(context) == action;
         case MacroAction::NONE:
         default:
             return false;

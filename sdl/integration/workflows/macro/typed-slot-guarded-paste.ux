@@ -10,28 +10,31 @@
 0 scenario macro-auto-mod
 80 capture screen source_grid
 
-# Create Macro 2 through the normal add-slot grammar so Destination paste has
-# a real, user-visible target and never creates a hidden Slot implicitly.
-120 tap NAV 60
-240 tap NAV 60
+# Select the Macro structure context, then create Macro 2 through the normal
+# add-slot grammar so Destination paste has a real, user-visible target and
+# never creates a hidden Slot implicitly.
+120 button NAV down
+180 encoder NAV 1
+240 button NAV up
 360 encoder NAV 1
 480 tap NAV 60
 
 # Open Macro 1 on its Destination row. Automation and Modulation are visible
 # but deliberately outside this clipboard payload.
-700 button MACRO_1 down
+700 button LEFT_BOTTOM down
+780 tap MACRO_1 60
 1760 tick
-1820 button MACRO_1 up
+1820 button LEFT_BOTTOM up
 2020 capture screen source_destination
 
 # A tap copies. The resting strip deliberately remains Copy after the tap.
 2170 tap BOTTOM_RIGHT 60
 2370 capture screen source_after_copy
 
-# Select Macro 2 as the exact Destination target.
-2520 tap LEFT_BOTTOM 60
+# Select Macro 2 as the exact Destination target with the active-Macro cycle.
+2520 button LEFT_CENTER down
 2680 encoder NAV 1
-2840 tap LEFT_BOTTOM 60
+2840 button LEFT_CENTER up
 3040 capture screen target_destination
 
 # Press exposes Paste. Release after arming but before completion: no mutation.

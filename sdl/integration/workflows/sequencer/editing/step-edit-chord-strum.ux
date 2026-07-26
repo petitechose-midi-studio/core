@@ -1,15 +1,16 @@
 # UX workflow: verify chord strum preview uses step-relative timing.
 # Purpose: Strum 0 should show simultaneous voices; increasing Strum should
 # spread voice markers across the step proportionally to the edited value.
-# Expect: capture_changed:strum_zero=strum_adjusted, capture_changed:velocity_curve_zero=velocity_curve_adjusted
+# Expect: capture_changed:strum_zero=strum_adjusted, capture_changed:velocity_contour_zero=velocity_contour_adjusted
 
 0 scenario sequencer
 50 capture screen sequencer_ready
 
 # Move to Step focus, enable step 1, and open the Step Editor.
-150 tap NAV 60
-350 capture screen pattern_focus
-450 tap NAV 60
+150 capture screen pattern_focus
+450 button NAV down
+510 encoder NAV 1
+570 button NAV up
 650 capture screen step_focus
 750 tap MACRO_1 60
 950 capture screen step_1_enabled
@@ -25,10 +26,10 @@
 2540 encoder NAV 1
 2620 encoder NAV 1
 2700 encoder NAV 1
-2850 encoder OPT 1.0
+2850 encoder OPT 0.3
 3050 tap NAV 60
 
-# Move to Strum field: Mode -> Voices -> Color -> Shape -> Spread -> Strum.
+# Move to Strum: Mode -> Harmony -> Voices -> Inversion -> Voicing -> Strum.
 3150 encoder NAV 1
 3230 encoder NAV 1
 3310 encoder NAV 1
@@ -38,9 +39,11 @@
 3750 encoder OPT 1.0
 3950 capture screen strum_adjusted
 
-# Move to Velocity curve and verify it has distinct top-title feedback while
+# Move to Velocity contour and verify it has distinct top-title feedback while
 # the chord map remains readable.
 4050 encoder NAV 1
-4250 capture screen velocity_curve_zero
+4250 capture screen velocity_contour_zero
 4350 encoder OPT 1.0
-4550 capture screen velocity_curve_adjusted
+4550 capture screen velocity_contour_adjusted
+4650 tap BOTTOM_RIGHT 60
+4900 capture screen chord_published

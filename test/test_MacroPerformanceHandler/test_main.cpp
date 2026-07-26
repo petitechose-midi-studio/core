@@ -17,6 +17,7 @@
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/NotificationTestUtils.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -119,27 +120,23 @@ void configureMacroAutomation(core::state::CoreState& state,
                               uint8_t page,
                               uint8_t macro,
                               float value) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = track,
-            .page = page,
-            .macro = macro,
-        }
-    );
-    assert(slot != nullptr);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = track,
+        .page = page,
+        .macro = macro,
+    };
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = 1.0f;
     assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, value));
     assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, value));
-    assert(core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *slot,
+    assert(test_support::project_control::assignAutomation(
+        state.pages.control,
+        address,
         lane
     ));
 }
 
-void test_nav_turn_previews_macro_page_until_nav_commit() {
+void test_nav_turn_switches_enabled_macro_page_directly() {
     MacroPerformanceHarness h;
 
     h.state.pages.activeTrackData().enabledPageMask = 0x0003;
@@ -152,19 +149,14 @@ void test_nav_turn_previews_macro_page_until_nav_commit() {
     h.turn(Config::EncoderID::NAV, 1.0f);
 
     assert(h.state.macroUi.previewPageIndex.get() == 1);
-    assert(h.state.pages.currentActivePage() == 0);
-    assert(!h.state.macroUi.previewAddPageSlot.get());
-
-    h.press(Config::ButtonID::NAV);
-    h.release(Config::ButtonID::NAV);
-
     assert(h.state.pages.currentActivePage() == 1);
+    assert(!h.state.macroUi.previewAddPageSlot.get());
     assert(std::strcmp(h.state.statusBar.pageName.get(), "Page 2") == 0);
     assert(!h.state.macroUi.clutchActive.get());
 
     drainNotifications();
 
-    std::cout << "[PASS] test_nav_turn_previews_macro_page_until_nav_commit\n";
+    std::cout << "[PASS] test_nav_turn_switches_enabled_macro_page_directly\n";
 }
 
 void test_nav_focus_track_turn_switches_context_to_highlighted_macro_track() {
@@ -172,7 +164,7 @@ void test_nav_focus_track_turn_switches_context_to_highlighted_macro_track() {
 
     h.state.setSharedTrackState(0x0003, h.state.currentSharedActiveTrack());
     h.state.pages.tracks[1].activePage = 3;
-    h.state.pages.tracks[1].channel = 9;
+    h.state.projectTracks.authored.midiChannels[1] = 9;
     h.state.pages.tracks[1].pages[3].cc[0] = 91;
     std::strncpy(h.state.pages.tracks[1].pages[3].name,
                  "Track 2 Page 4",
@@ -185,7 +177,7 @@ void test_nav_focus_track_turn_switches_context_to_highlighted_macro_track() {
     assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
     assert(h.state.pages.currentActiveTrack() == 1);
     assert(h.state.pages.currentActivePage() == 3);
-    assert(h.performanceServices.activeConfig(0).channel == 9);
+    assert(h.performanceServices.activeTrackChannel() == 9);
     assert(h.performanceServices.activeConfig(0).cc == 91);
     assert(std::strcmp(h.state.statusBar.pageName.get(), "Track 2 Page 4") == 0);
 
@@ -215,7 +207,7 @@ void test_macro_track_cursor_can_cross_gaps_and_reach_any_track() {
     std::cout << "[PASS] test_macro_track_cursor_can_cross_gaps_and_reach_any_track\n";
 }
 
-void test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse() {
+void test_macro_page_hot_surface_exposes_terminal_add_and_creates() {
     MacroPerformanceHarness h;
 
     h.state.pages.activeTrackData().enabledPageMask = 0x0001;
@@ -223,24 +215,85 @@ void test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse() {
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.macroUi.previewAddPageSlot.get());
+    assert(h.state.macroUi.previewPageIndex.get() == 1U);
     assert(h.state.pages.currentActivePage() == 0);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.previewAddPageSlot.get());
-    assert(h.state.pages.currentActivePage() == 0);
-
-    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
     assert(!h.state.macroUi.previewAddPageSlot.get());
-    assert(h.state.pages.currentActivePage() == 0);
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
+    assert(h.state.pages.currentActivePage() == 1U);
+    assert(h.state.undoProjectHistory());
+    assert(h.state.pages.currentEnabledPageMask() == 0x0001U);
+    assert(h.state.pages.currentActivePage() == 0U);
+    assert(h.state.redoProjectHistory());
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
+    assert(h.state.pages.currentActivePage() == 1U);
 
-    h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(!h.state.macroUi.previewAddPageSlot.get());
-    assert(h.state.pages.currentActivePage() == 0);
-
-    std::cout << "[PASS] test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse\n";
+    std::cout << "[PASS] Macro Page hot create has exact Undo/Redo\n";
 }
 
-void test_macro_slot_focus_creates_add_slot_only_on_nav_confirm() {
+void test_macro_track_hot_surface_crosses_sparse_free_slots_and_creates_exactly() {
+    MacroPerformanceHarness h;
+
+    assert(h.state.setSharedTrackState(0x0005U, 0U));
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
+    assert(h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.pages.currentActiveTrack() == 0U);
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.pages.currentTrackEnabledMask() == 0x0007U);
+    assert(h.state.pages.currentActiveTrack() == 1U);
+    assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
+    assert(!h.state.trackNavigation.previewAddSlot.get());
+    assert(h.state.undoProjectHistory());
+    assert(h.state.pages.currentTrackEnabledMask() == 0x0005U);
+    assert(h.state.pages.currentActiveTrack() == 0U);
+    assert(h.state.redoProjectHistory());
+    assert(h.state.pages.currentTrackEnabledMask() == 0x0007U);
+    assert(h.state.pages.currentActiveTrack() == 1U);
+
+    std::cout << "[PASS] Macro Track sparse create has shared Undo/Redo\n";
+}
+
+void test_track_focus_outside_structure_targets_the_active_track() {
+    MacroPerformanceHarness h;
+
+    auto& track = h.state.pages.activeTrackData();
+    h.state.projectTracks.authored.midiChannels[0] = 12;
+    track.enabledPageMask = 0x0003;
+    track.pages[0].setMacroActive(0, true);
+    std::strncpy(
+        track.pages[0].name,
+        "Page Must Clear",
+        core::state::macro::PAGE_NAME_SIZE - 1
+    );
+    track.pages[0].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
+    h.state.pages.syncActiveTrackCache();
+
+    // TRACK is a legal hot-surface context selected by the shared selector.
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!h.clipboard.hasMacroPage());
+    assert(h.clipboard.hasMacroTrack());
+
+    assert(h.state.projectTracks.authored.midiChannels[0] == 12);
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
+    assert(std::strcmp(h.state.pages.activePageData().name, "Page Must Clear") == 0);
+
+    drainNotifications();
+
+    std::cout
+        << "[PASS] Track focus outside Structure targets the active Track\n";
+}
+
+void test_macro_context_nav_tap_creates_focused_empty_slot() {
     MacroPerformanceHarness h;
 
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
@@ -248,6 +301,10 @@ void test_macro_slot_focus_creates_add_slot_only_on_nav_confirm() {
     assert(!h.state.pages.isMacroSlotActive(1));
 
     h.press(Config::ButtonID::NAV);
+    assert(h.state.macroUi.contextSelector.visible);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroUi.contextSelector.previewFocus ==
+           core::state::StructureNavigationFocus::STEP);
     h.release(Config::ButtonID::NAV);
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
     assert(h.state.macroUi.focusedMacroSlot.get() == 0);
@@ -262,260 +319,82 @@ void test_macro_slot_focus_creates_add_slot_only_on_nav_confirm() {
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::STEP);
     assert(h.state.macroUi.focusedMacroSlot.get() == 1);
     assert(h.state.pages.isMacroSlotActive(1));
-    assert(h.state.pages.activeConfigs[1].cc == 1);
 
     h.press(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    h.release(Config::ButtonID::NAV);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+
+    drainNotifications();
+
+    std::cout << "[PASS] Macro context NAV tap creates focused empty slot\n";
+}
+
+void test_macro_buttons_create_empty_slots_and_toggle_manual_resume() {
+    MacroPerformanceHarness h;
+
+    assert(!h.state.pages.isMacroSlotActive(1U));
+    h.press(Config::ButtonID::MACRO_2);
+    h.release(Config::ButtonID::MACRO_2);
+    assert(h.state.pages.isMacroSlotActive(1U));
+    assert(h.state.macroUi.focusedMacroSlot.get() == 1U);
+
+    configureMacroAutomation(h.state, 0U, 0U, 0U, 0.42f);
+    assert(!h.performanceServices.manualOverrideActiveFor(0U));
+    h.press(Config::ButtonID::MACRO_1);
+    h.release(Config::ButtonID::MACRO_1);
+    assert(h.performanceServices.manualOverrideActiveFor(0U));
+    h.press(Config::ButtonID::MACRO_1);
+    h.release(Config::ButtonID::MACRO_1);
+    assert(!h.performanceServices.manualOverrideActiveFor(0U));
+
+    std::cout << "[PASS] Macro buttons create and toggle Manual/Resume\n";
+}
+
+void test_macro_context_selector_and_hot_navigation_are_direct() {
+    MacroPerformanceHarness h;
+
+    h.state.pages.tracks[0].enabledPageMask = 0x0003;
+    h.state.pages.tracks[0].activePage = 1;
+    h.state.pages.tracks[0].pages[1].setMacroActive(2, true);
+    h.state.pages.tracks[1].enabledPageMask = 0x0003;
+    h.state.pages.tracks[1].activePage = 0;
+    assert(h.state.setSharedTrackState(0x0003, 0));
+    h.structureServices.switchToPage(1);
+    h.state.macroUi.syncPreviewPage(1);
+    h.state.macroUi.focusedMacroSlot.set(2);
+
+    // PAGE -> TRACK is one held preview and one release.
+    h.press(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, -1.0f);
     h.release(Config::ButtonID::NAV);
     assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK);
 
-    drainNotifications();
-
-    std::cout << "[PASS] test_macro_slot_focus_creates_add_slot_only_on_nav_confirm\n";
-}
-
-void test_macro_page_selection_delete_guard_cancels_early_and_applies_at_threshold() {
-    MacroPerformanceHarness h;
-
-    h.state.pages.activeTrackData().enabledPageMask = 0x0003;
-    h.state.pages.syncActiveTrackCache();
-    h.structureServices.switchToPage(1);
-    drainNotifications();
-
-    h.press(Config::ButtonID::NAV);
-    h.tick(0);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
-    assert(h.state.pages.currentActivePage() == 1);
-    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
-    assert(!h.state.macroUi.pageSelection.active.get());
-
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    assert(h.state.macroUi.pageSelection.active.get());
-    assert(h.state.macroUi.pageSelection.scope.get() ==
-           core::state::StructureSelectionScope::PAGE);
-    assert(h.state.macroUi.pageSelection.cursorIndex.get() == 1);
-
-    h.release(Config::ButtonID::NAV);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
-
-    h.state.macroUi.pageSelection.selectedMask.set(0x0002);
-    assert(h.state.macroUi.pageSelection.selectedMask.get() == 0x0002);
-
-    const uint32_t mutationBeforeCancel = h.state.project.metadata.modifiedCounter;
-    const uint8_t historyBeforeCancel = h.state.sequencerHistory.undoCount();
-    constexpr uint32_t earlyStart = 2000;
-    h.tick(earlyStart);
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
-           core::state::contextual::GuardedActionPhase::PRESSED);
-    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
-           core::state::contextual::OperationFeedbackStatus::PRESSED);
-
-    h.tick(earlyStart + Config::Timing::LATCH_THRESHOLD_MS - 1U);
-    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
-           core::state::contextual::GuardedActionPhase::PRESSED);
-    h.release(Config::ButtonID::BOTTOM_LEFT);
-    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
-    assert(h.state.pages.currentActivePage() == 1);
-    assert(h.state.macroUi.pageSelection.active.get());
-    assert(h.state.macroUi.pageSelection.selectedMask.get() == 0x0002);
-    assert(h.state.project.metadata.modifiedCounter == mutationBeforeCancel);
-    assert(h.state.sequencerHistory.undoCount() == historyBeforeCancel);
-    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
-           core::state::contextual::GuardedActionPhase::CANCELLED);
-    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
-           core::state::contextual::OperationFeedbackStatus::CANCELLED);
-
-    h.tick(
-        earlyStart + Config::Timing::LATCH_THRESHOLD_MS - 1U +
-        Config::Timing::CONTEXT_CANCELLED_FEEDBACK_MS
-    );
-    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
-           core::state::contextual::GuardedActionPhase::IDLE);
-    assert(!h.state.macroUi.selectionDeleteFeedback.get().active);
-
-    constexpr uint32_t applyStart = 4000;
-    h.tick(applyStart);
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    h.tick(applyStart + Config::Timing::LATCH_THRESHOLD_MS);
-    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
-           core::state::contextual::GuardedActionPhase::ARMED);
-    assert(h.state.macroUi.selectionDeleteGuard.get().progressPermille ==
-           Config::Timing::LATCH_THRESHOLD_MS);
-    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
-           core::state::contextual::OperationFeedbackStatus::ARMED);
-    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
-    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
-    assert(h.state.macroUi.pageSelection.active.get());
-
-    // Exercise the scheduler boundary where the shared guard reaches its
-    // terminal threshold immediately before the input long-press callback.
-    auto boundaryGuard = h.state.macroUi.selectionDeleteGuard.get();
-    assert(core::state::contextual::updateGuardedAction(
-        boundaryGuard,
-        applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS
-    ));
-    assert(boundaryGuard.phase ==
-           core::state::contextual::GuardedActionPhase::COMMITTED);
-    h.state.macroUi.selectionDeleteGuard.set(boundaryGuard);
-
-    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    assert(h.state.pages.currentEnabledPageMask() == 0x0001);
-    assert(h.state.pages.currentActivePage() == 0);
-    assert(!h.state.macroUi.pageSelection.active.get());
-    assert(h.state.project.metadata.modifiedCounter == mutationBeforeCancel + 1U);
-    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
-           core::state::contextual::GuardedActionPhase::IDLE);
-    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
-           core::state::contextual::OperationFeedbackStatus::APPLIED);
-
-    const uint32_t mutationAfterApply = h.state.project.metadata.modifiedCounter;
-    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
-    assert(h.state.project.metadata.modifiedCounter == mutationAfterApply);
-    h.release(Config::ButtonID::BOTTOM_LEFT);
-    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 2U);
-    assert(h.state.project.metadata.modifiedCounter == mutationAfterApply);
-    assert(h.state.pages.currentEnabledPageMask() == 0x0001);
-
-    drainNotifications();
-
-    std::cout
-        << "[PASS] test_macro_page_selection_delete_guard_cancels_early_and_applies_at_threshold\n";
-}
-
-void test_macro_track_selection_delete_applies_only_after_guard_threshold() {
-    MacroPerformanceHarness h;
-
-    h.state.setSharedTrackState(0x0003, h.state.currentSharedActiveTrack());
-    h.state.pages.tracks[1].enabledPageMask = 0x0001;
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
-    std::strncpy(h.state.pages.tracks[1].pages[0].name,
-                 "Track 2 Page 1",
-                 core::state::macro::PAGE_NAME_SIZE - 1);
-    h.state.pages.tracks[1].pages[0].name[core::state::macro::PAGE_NAME_SIZE - 1] = '\0';
-
+    // Ordinary NAV only visits enabled Tracks and applies immediately.
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.trackNavigation.previewTrackIndex.get() == 1);
     assert(h.state.pages.currentActiveTrack() == 1);
 
     h.press(Config::ButtonID::NAV);
-    h.tick(0);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    assert(h.state.trackNavigation.selection.active.get());
-    assert(h.state.trackNavigation.selection.scope.get() ==
-           core::state::StructureSelectionScope::TRACK);
-    assert(h.state.trackNavigation.selection.cursorIndex.get() == 1);
-
+    h.turn(Config::EncoderID::NAV, 1.0f);
     h.release(Config::ButtonID::NAV);
-    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS + 1U);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.pages.currentActivePage() == 1);
 
-    h.state.trackNavigation.selection.selectedMask.set(0x0002);
-    assert(h.state.trackNavigation.selection.selectedMask.get() == 0x0002);
-
-    constexpr uint32_t applyStart = 3000;
-    h.tick(applyStart);
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    h.tick(applyStart + Config::Timing::LATCH_THRESHOLD_MS);
-    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
-           core::state::contextual::GuardedActionPhase::ARMED);
-    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
-    assert(h.state.pages.currentTrackEnabledMask() == 0x0003);
-    assert(h.state.trackNavigation.selection.active.get());
-
-    h.tick(applyStart + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-    assert(h.state.pages.currentTrackEnabledMask() == 0x0001);
-    assert(h.state.pages.currentActiveTrack() == 0);
-    assert(!h.state.trackNavigation.selection.active.get());
-    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
-           core::state::contextual::OperationFeedbackStatus::APPLIED);
-
-    h.release(Config::ButtonID::BOTTOM_LEFT);
-    assert(h.state.pages.currentTrackEnabledMask() == 0x0001);
-    assert(h.state.pages.currentActiveTrack() == 0);
-    assert(!h.state.trackNavigation.selection.active.get());
+    // A hold without rotation is inspection-only and never opens Structure.
+    constexpr uint32_t inspectAt = 3000;
+    h.tick(inspectAt);
+    h.press(Config::ButtonID::NAV);
+    h.tick(inspectAt + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(h.state.macroUi.contextSelector.visible);
+    h.release(Config::ButtonID::NAV);
+    assert(!h.state.macroUi.contextSelector.visible);
+    assert(h.navigationFocus.get() == core::state::StructureNavigationFocus::PAGE);
 
     drainNotifications();
 
     std::cout
-        << "[PASS] test_macro_track_selection_delete_applies_only_after_guard_threshold\n";
-}
-
-void test_macro_selection_delete_release_cannot_fall_through_after_context_cancel() {
-    MacroPerformanceHarness h;
-
-    h.state.pages.activeTrackData().enabledPageMask = 0x0003;
-    h.state.pages.syncActiveTrackCache();
-    h.state.macroUi.pageSelection.active.set(true);
-    h.state.macroUi.pageSelection.scope.set(
-        core::state::StructureSelectionScope::PAGE
-    );
-    h.state.macroUi.pageSelection.cursorIndex.set(1);
-    h.state.macroUi.pageSelection.selectedMask.set(0x0002);
-
-    const uint32_t mutationBefore = h.state.project.metadata.modifiedCounter;
-    h.tick(2000);
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
-           core::state::contextual::GuardedActionPhase::PRESSED);
-
-    // Cancel selection through another control while delete is still held.
-    h.release(Config::ButtonID::LEFT_TOP);
-    assert(!h.state.macroUi.pageSelection.active.get());
-    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
-
-    // The release belongs to the old guarded gesture and must not be
-    // reinterpreted as CLEAR_STRUCTURE in the newly active context.
-    h.release(Config::ButtonID::BOTTOM_LEFT);
-    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
-    assert(h.state.project.metadata.modifiedCounter == mutationBefore);
-
-    drainNotifications();
-
-    std::cout
-        << "[PASS] test_macro_selection_delete_release_cannot_fall_through_after_context_cancel\n";
-}
-
-void test_macro_selection_delete_release_cancels_committed_guard_without_mutation() {
-    MacroPerformanceHarness h;
-
-    h.state.pages.activeTrackData().enabledPageMask = 0x0003;
-    h.state.pages.syncActiveTrackCache();
-    h.state.macroUi.pageSelection.active.set(true);
-    h.state.macroUi.pageSelection.scope.set(
-        core::state::StructureSelectionScope::PAGE
-    );
-    h.state.macroUi.pageSelection.cursorIndex.set(1);
-    h.state.macroUi.pageSelection.selectedMask.set(0x0002);
-
-    constexpr uint32_t start = 6000;
-    h.tick(start);
-    h.press(Config::ButtonID::BOTTOM_LEFT);
-    h.tick(start + Config::Timing::LATCH_THRESHOLD_MS);
-
-    auto boundaryGuard = h.state.macroUi.selectionDeleteGuard.get();
-    assert(core::state::contextual::updateGuardedAction(
-        boundaryGuard,
-        start + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS
-    ));
-    assert(boundaryGuard.phase ==
-           core::state::contextual::GuardedActionPhase::COMMITTED);
-    h.state.macroUi.selectionDeleteGuard.set(boundaryGuard);
-
-    const uint32_t mutationBefore = h.state.project.metadata.modifiedCounter;
-    g_now_ms = start + Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS;
-    h.release(Config::ButtonID::BOTTOM_LEFT);
-
-    assert(h.state.pages.currentEnabledPageMask() == 0x0003);
-    assert(h.state.macroUi.pageSelection.active.get());
-    assert(h.state.project.metadata.modifiedCounter == mutationBefore);
-    assert(h.state.macroUi.selectionDeleteGuard.get().phase ==
-           core::state::contextual::GuardedActionPhase::CANCELLED);
-    assert(h.state.macroUi.selectionDeleteFeedback.get().status ==
-           core::state::contextual::OperationFeedbackStatus::CANCELLED);
-
-    drainNotifications();
-
-    std::cout
-        << "[PASS] test_macro_selection_delete_release_cancels_committed_guard_without_mutation\n";
+        << "[PASS] test_macro_context_selector_and_hot_navigation_are_direct\n";
 }
 
 void test_macro_page_copy_and_long_press_paste() {
@@ -540,10 +419,6 @@ void test_macro_page_copy_and_long_press_paste() {
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.macroUi.previewPageIndex.get() == 1);
-    assert(h.state.pages.currentActivePage() == 0);
-
-    h.press(Config::ButtonID::NAV);
-    h.release(Config::ButtonID::NAV);
     assert(h.state.pages.currentActivePage() == 1);
 
     h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -553,92 +428,28 @@ void test_macro_page_copy_and_long_press_paste() {
 
     assert(std::strcmp(h.state.pages.activePageData().name, "Copied Page") == 0);
     assert(h.state.pages.activePageData().cc[0] == 55);
-    const auto* pastedAutomation = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = h.state.pages.currentActiveTrack(),
-            .page = 1,
-            .macro = 0,
-        }
+    const auto pastedAutomation = test_support::project_control::readSlot(
+        h.state.pages.control,
+        {h.state.pages.currentActiveTrack(), 1, 0}
     );
-    assert(pastedAutomation != nullptr);
-    assert(pastedAutomation->automation.active);
-    core::state::macro::MacroCurvePoint pastedPoint{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        pastedAutomation->automation,
-        h.state.pages.automation.pointPool,
+    assert(pastedAutomation.automation.enabled);
+    const auto pastedPoint = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        pastedAutomation.automation.id,
         0,
-        false,
-        pastedPoint
-    ));
+        false
+    );
     assert(std::fabs(pastedPoint.value - 0.75f) < 0.0001f);
 
     std::cout << "[PASS] test_macro_page_copy_and_long_press_paste\n";
-}
-
-void test_macro_selection_duplicate_copies_page_into_first_free_slot() {
-    MacroPerformanceHarness h;
-
-    h.state.pages.activeTrackData().enabledPageMask = 0x0003;
-    h.state.pages.syncActiveTrackCache();
-    h.state.pages.activeTrackData().pages[1].cc[0] = 77;
-    std::strncpy(
-        h.state.pages.activeTrackData().pages[1].name,
-        "Dupe Page",
-        core::state::macro::PAGE_NAME_SIZE - 1
-    );
-
-    h.state.macroUi.pageSelection.active.set(true);
-    h.state.macroUi.pageSelection.scope.set(core::state::StructureSelectionScope::PAGE);
-    h.state.macroUi.pageSelection.cursorIndex.set(1);
-    h.state.macroUi.pageSelection.selectedMask.set(0x0002);
-
-    h.press(Config::ButtonID::BOTTOM_RIGHT);
-    h.release(Config::ButtonID::BOTTOM_RIGHT);
-
-    assert(h.state.pages.currentEnabledPageMask() == 0x0007);
-    assert(h.state.pages.currentActivePage() == 2);
-    assert(h.state.pages.activePageData().cc[0] == 77);
-    assert(std::strcmp(h.state.pages.activePageData().name, "Dupe Page") == 0);
-    assert(!h.state.macroUi.pageSelection.active.get());
-
-    drainNotifications();
-
-    std::cout << "[PASS] test_macro_selection_duplicate_copies_page_into_first_free_slot\n";
-}
-
-void test_macro_selection_duplicate_copies_track_into_first_free_slot() {
-    MacroPerformanceHarness h;
-
-    h.state.setSharedTrackState(0x0003, 0);
-    h.state.pages.tracks[1].channel = 12;
-    h.state.pages.tracks[1].activePage = 0;
-    h.state.pages.tracks[1].pages[0].cc[0] = 88;
-    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
-    h.state.trackNavigation.selection.active.set(true);
-    h.state.trackNavigation.selection.scope.set(core::state::StructureSelectionScope::TRACK);
-    h.state.trackNavigation.selection.cursorIndex.set(1);
-    h.state.trackNavigation.selection.selectedMask.set(0x0002);
-
-    h.press(Config::ButtonID::BOTTOM_RIGHT);
-    h.release(Config::ButtonID::BOTTOM_RIGHT);
-
-    assert(h.state.pages.currentTrackEnabledMask() == 0x0007);
-    assert(h.state.pages.currentActiveTrack() == 2);
-    assert(h.state.pages.activeTrackData().channel == 12);
-    assert(h.state.pages.activeTrackData().pages[0].cc[0] == 88);
-    assert(!h.state.trackNavigation.selection.active.get());
-
-    drainNotifications();
-
-    std::cout << "[PASS] test_macro_selection_duplicate_copies_track_into_first_free_slot\n";
 }
 
 void test_macro_track_copy_and_long_press_paste_to_add_slot() {
     MacroPerformanceHarness h;
 
     h.state.setSharedTrackState(0x0001, 0);
-    h.state.pages.tracks[0].channel = 10;
+    h.state.projectTracks.authored.midiChannels[0] = 10U;
+    h.state.projectTracks.authored.midiChannels[1] = 14U;
     h.state.pages.tracks[0].pages[0].cc[0] = 64;
     configureMacroAutomation(h.state, 0, 0, 0, 0.33f);
     std::strncpy(
@@ -663,27 +474,20 @@ void test_macro_track_copy_and_long_press_paste_to_add_slot() {
 
     assert(h.state.pages.currentTrackEnabledMask() == 0x0003);
     assert(h.state.pages.currentActiveTrack() == 1);
-    assert(h.state.pages.activeTrackData().channel == 10);
+    assert(h.state.projectTracks.authored.midiChannels[1] == 14U);
     assert(h.state.pages.activeTrackData().pages[0].cc[0] == 64);
     assert(std::strcmp(h.state.pages.activeTrackData().pages[0].name, "Copied Track") == 0);
-    const auto* pastedAutomation = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = 1,
-            .page = 0,
-            .macro = 0,
-        }
+    const auto pastedAutomation = test_support::project_control::readSlot(
+        h.state.pages.control,
+        {1, 0, 0}
     );
-    assert(pastedAutomation != nullptr);
-    assert(pastedAutomation->automation.active);
-    core::state::macro::MacroCurvePoint pastedPoint{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        pastedAutomation->automation,
-        h.state.pages.automation.pointPool,
+    assert(pastedAutomation.automation.enabled);
+    const auto pastedPoint = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        pastedAutomation.automation.id,
         0,
-        false,
-        pastedPoint
-    ));
+        false
+    );
     assert(std::fabs(pastedPoint.value - 0.33f) < 0.0001f);
 
     drainNotifications();
@@ -691,12 +495,253 @@ void test_macro_track_copy_and_long_press_paste_to_add_slot() {
     std::cout << "[PASS] test_macro_track_copy_and_long_press_paste_to_add_slot\n";
 }
 
+void test_early_paste_release_only_cancels_the_hold_for_page_and_track() {
+    {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        const uint16_t enabledBefore = h.state.pages.currentEnabledPageMask();
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.clipboard.hasMacroPage());
+
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        assert(!h.state.pages.isPageEnabled(
+            h.state.macroUi.previewPageIndex.get()
+        ));
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.state.macroUi.pageHold.action.get() ==
+               core::state::StructureHoldAction::PASTE);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+        assert(h.state.pages.currentEnabledPageMask() == enabledBefore);
+        assert(!h.state.pages.isPageEnabled(
+            h.state.macroUi.previewPageIndex.get()
+        ));
+        assert(h.clipboard.hasMacroPage());
+        assert(h.state.macroUi.pageHold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+    }
+
+    drainNotifications();
+
+    {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+        const uint16_t enabledBefore = h.state.pages.currentTrackEnabledMask();
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.clipboard.hasMacroTrack());
+
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        assert(h.state.trackNavigation.previewAddSlot.get());
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::PASTE);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+        assert(h.state.pages.currentTrackEnabledMask() == enabledBefore);
+        assert(h.state.trackNavigation.previewAddSlot.get());
+        assert(h.clipboard.hasMacroTrack());
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+    }
+
+    drainNotifications();
+
+    std::cout
+        << "[PASS] early Paste release cancels Page and Track holds only\n";
+}
+
+void test_paste_only_press_cannot_turn_into_copy_after_navigation() {
+    MacroPerformanceHarness h;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    auto& track = h.state.pages.activeTrackData();
+    track.enabledPageMask = 0x0003;
+    track.pages[0].cc[0] = 41;
+    track.pages[1].cc[0] = 99;
+    h.state.pages.syncActiveTrackCache();
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.clipboard.hasMacroPage());
+    assert(h.clipboard.macroPage.cc[0] == 41);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.macroUi.previewPageIndex.get() == 2U);
+    assert(!h.state.pages.isPageEnabled(2U));
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.macroUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::PASTE);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.macroUi.previewPageIndex.get() == 1U);
+    assert(h.state.pages.isPageEnabled(1U));
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.macroUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::NONE);
+    assert(h.clipboard.hasMacroPage());
+    assert(h.clipboard.macroPage.cc[0] == 41);
+
+    drainNotifications();
+    std::cout
+        << "[PASS] Paste-only press cannot become Copy after navigation\n";
+}
+
+void test_guarded_page_and_track_actions_cancel_when_target_moves() {
+    {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        auto& track = h.state.pages.activeTrackData();
+        track.enabledPageMask = 0x0003;
+        track.pages[0].cc[0] = 41U;
+        track.pages[1].cc[0] = 99U;
+        h.state.pages.syncActiveTrackCache();
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        h.tick(0U);
+        h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+
+        assert(h.state.pages.currentEnabledPageMask() == 0x0003);
+        assert(h.state.pages.pageData(0U, 0U).cc[0] == 41U);
+        assert(h.state.pages.pageData(0U, 1U).cc[0] == 99U);
+    }
+
+    drainNotifications();
+
+    {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        auto& track = h.state.pages.activeTrackData();
+        track.enabledPageMask = 0x0003;
+        track.pages[0].cc[0] = 41U;
+        track.pages[1].cc[0] = 99U;
+        h.state.pages.syncActiveTrackCache();
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.turn(Config::EncoderID::NAV, -1.0f);
+        h.tick(0U);
+        h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+        assert(h.state.pages.pageData(0U, 0U).cc[0] == 41U);
+        assert(h.state.pages.pageData(0U, 1U).cc[0] == 99U);
+    }
+
+    drainNotifications();
+
+    {
+        MacroPerformanceHarness h;
+        h.state.setSharedTrackState(0x0003, 0U);
+        h.state.projectTracks.authored.midiChannels[0] = 10U;
+        h.state.projectTracks.authored.midiChannels[1] = 11U;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        h.tick(0U);
+        h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+
+        assert(h.state.pages.currentTrackEnabledMask() == 0x0003);
+        assert(h.state.projectTracks.authored.midiChannels[0] == 10U);
+        assert(h.state.projectTracks.authored.midiChannels[1] == 11U);
+    }
+
+    drainNotifications();
+
+    {
+        MacroPerformanceHarness h;
+        h.state.setSharedTrackState(0x0003, 0U);
+        h.state.projectTracks.authored.midiChannels[0] = 10U;
+        h.state.projectTracks.authored.midiChannels[1] = 11U;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.turn(Config::EncoderID::NAV, -1.0f);
+        h.tick(0U);
+        h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+        assert(h.state.pages.currentTrackEnabledMask() == 0x0003);
+        assert(h.state.projectTracks.authored.midiChannels[0] == 10U);
+        assert(h.state.projectTracks.authored.midiChannels[1] == 11U);
+    }
+
+    drainNotifications();
+    std::cout
+        << "[PASS] guarded Page/Track actions cancel when their target moves\n";
+}
+
+void test_page_navigation_applies_live_and_actions_follow_visible_page() {
+    MacroPerformanceHarness h;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    auto& track = h.state.pages.activeTrackData();
+    track.enabledPageMask = 0x0007;
+    track.pages[0].cc[0] = 41U;
+    track.pages[1].cc[0] = 99U;
+    track.pages[2].cc[0] = 77U;
+    h.state.pages.syncActiveTrackCache();
+    assert(h.state.pages.currentActivePage() == 0U);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroUi.previewPageIndex.get() == 1U);
+    assert(h.state.pages.currentActivePage() == 1U);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.clipboard.hasMacroPage());
+    assert(h.clipboard.macroPage.cc[0] == 99U);
+    assert(h.state.pages.currentActivePage() == 1U);
+
+    track.pages[1].cc[0] = 12U;
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.tick(0U);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.pages.currentActivePage() == 1U);
+    assert(h.state.pages.activePageData().cc[0] == 99U);
+    assert(h.state.pages.pageData(0U, 0U).cc[0] == 41U);
+
+    h.state.pages.setActivePage(0U);
+    h.state.macroUi.syncPreviewPage(2U);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.tick(0U);
+    h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(!h.state.pages.isPageEnabled(2U));
+    assert(h.state.pages.isPageEnabled(0U));
+    assert(h.state.pages.currentActivePage() == 0U);
+    assert(h.state.pages.pageData(0U, 0U).cc[0] == 41U);
+
+    h.state.macroUi.syncPreviewPage(1U);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.pages.pageData(0U, 1U).cc[0] ==
+           core::state::macro::defaultMacroCc(1U, 0U));
+    assert(h.state.pages.pageData(0U, 0U).cc[0] == 41U);
+
+    drainNotifications();
+    std::cout << "[PASS] Page navigation applies live and actions follow it\n";
+}
+
 void test_macro_track_copy_preserves_multiple_pages_and_automations() {
     MacroPerformanceHarness h;
 
     h.state.setSharedTrackState(0x0001, 0);
+    h.state.projectTracks.authored.midiChannels[0] = 6U;
+    h.state.projectTracks.authored.midiChannels[1] = 9U;
     auto& sourceTrack = h.state.pages.tracks[0];
-    sourceTrack.channel = 6;
     sourceTrack.activePage = 2;
     sourceTrack.enabledPageMask = 0x0005;
     sourceTrack.pages[0].cc[0] = 21;
@@ -735,7 +780,7 @@ void test_macro_track_copy_preserves_multiple_pages_and_automations() {
 
     assert(h.state.pages.currentTrackEnabledMask() == 0x0003);
     assert(h.state.pages.currentActiveTrack() == 1);
-    assert(h.state.pages.activeTrackData().channel == 6);
+    assert(h.state.projectTracks.authored.midiChannels[1] == 9U);
     assert(h.state.pages.activeTrackData().activePage == 2);
     assert(h.state.pages.activeTrackData().enabledPageMask == 0x0005);
     assert(h.state.pages.activeTrackData().pages[0].cc[0] == 21);
@@ -745,27 +790,23 @@ void test_macro_track_copy_preserves_multiple_pages_and_automations() {
     assert(std::strcmp(h.state.pages.activeTrackData().pages[0].name, "Source P1") == 0);
     assert(std::strcmp(h.state.pages.activeTrackData().pages[2].name, "Source P3") == 0);
 
-    const auto* pastedPage0Automation = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto pastedPage0Automation = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{.track = 1, .page = 0, .macro = 0}
     );
-    const auto* pastedPage2Automation = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto pastedPage2Automation = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{.track = 1, .page = 2, .macro = 1}
     );
-    assert(pastedPage0Automation != nullptr);
-    assert(pastedPage0Automation->automation.active);
-    assert(pastedPage2Automation != nullptr);
-    assert(pastedPage2Automation->automation.active);
+    assert(pastedPage0Automation.automation.enabled);
+    assert(pastedPage2Automation.automation.enabled);
 
-    core::state::macro::MacroCurvePoint page2Point{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        pastedPage2Automation->automation,
-        h.state.pages.automation.pointPool,
+    const auto page2Point = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        pastedPage2Automation.automation.id,
         0,
-        false,
-        page2Point
-    ));
+        false
+    );
     assert(std::fabs(page2Point.value - 0.80f) < 0.0001f);
 
     drainNotifications();
@@ -795,34 +836,47 @@ void test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove() {
     assert(std::fabs(h.clipboard.macroAutomationSet->sourceStaticValue - 0.37f) <
            0.0001f);
 
-    // A short release cancels the destructive hold. It must neither clear the
-    // Automation source nor leave the visual hold state armed.
+    // A short release clears only Automation. The Macro destination remains.
+    const uint8_t undoCountBeforeReset = h.state.macroHistory.undoCount();
     h.press(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.macroUi.pageHold.action.get() ==
            core::state::StructureHoldAction::REMOVE);
     h.release(Config::ButtonID::BOTTOM_LEFT);
-    const auto* unchanged = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto cleared = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
     );
-    assert(unchanged != nullptr);
-    assert(unchanged->automation.active);
+    assert(!cleared.automation.stored());
+    assert(h.state.pages.activePageData().isMacroActive(0));
+    assert(h.state.macroHistory.undoCount() ==
+           static_cast<uint8_t>(undoCountBeforeReset + 1U));
     assert(h.state.macroUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
+    assert(h.state.macroHistory.undo(h.state.pages));
+    assert(test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 0U, .macro = 0U}
+    ).automation.stored());
+    assert(h.state.macroHistory.redo(h.state.pages));
+    assert(!test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 0U, .macro = 0U}
+    ).automation.stored());
 
+    configureMacroAutomation(h.state, 0, 0, 0, 0.42f);
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.tick(0);
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(!h.state.pages.activePageData().isMacroActive(0));
-    assert(core::state::macro::macroAutomationFindSlot(
-               h.state.pages.automation,
-               core::state::macro::MacroAutomationSlotAddress{
-                   .track = 0,
-                   .page = 0,
-                   .macro = 0,
-               }
-           ) == nullptr);
+    assert(!test_support::project_control::readSlot(
+        h.state.pages.control,
+        core::state::macro::MacroAutomationSlotAddress{
+            .track = 0,
+            .page = 0,
+            .macro = 0,
+        }
+    ).present());
     assert(h.state.macroUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
 
@@ -830,20 +884,17 @@ void test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove() {
     h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.tick(2 * Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     h.release(Config::ButtonID::BOTTOM_RIGHT);
-    const auto* restored = core::state::macro::macroAutomationFindSlot(
-        h.state.pages.automation,
+    const auto restored = test_support::project_control::readSlot(
+        h.state.pages.control,
         core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
     );
-    assert(restored != nullptr);
-    assert(restored->automation.active);
-    core::state::macro::MacroCurvePoint restoredPoint{};
-    assert(core::state::macro::macroAutomationReadPoint(
-        restored->automation,
-        h.state.pages.automation.pointPool,
+    assert(restored.automation.enabled);
+    const auto restoredPoint = test_support::project_control::readCurvePoint(
+        h.state.pages.control,
+        restored.automation.id,
         0,
-        false,
-        restoredPoint
-    ));
+        false
+    );
     assert(std::fabs(restoredPoint.value - 0.42f) < 0.0001f);
     assert(h.state.pages.activePageData().isMacroActive(0));
     assert(h.state.pages.activePageData().cc[0] == 74);
@@ -854,107 +905,232 @@ void test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove() {
     std::cout << "[PASS] test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove\n";
 }
 
-void test_left_bottom_toggles_macro_slot_property_selector() {
+void test_delete_intermediate_macro_page_compacts_complete_page_state() {
+    MacroPerformanceHarness h;
+    auto& track = h.state.pages.activeTrackData();
+    track.enabledPageMask = 0x0007U;
+    std::strncpy(track.pages[1].name,
+                 "Deleted",
+                 core::state::macro::PAGE_NAME_SIZE - 1U);
+    std::strncpy(track.pages[2].name,
+                 "Shifted Page",
+                 core::state::macro::PAGE_NAME_SIZE - 1U);
+    track.pages[2].name[core::state::macro::PAGE_NAME_SIZE - 1U] = '\0';
+    track.pages[2].cc[3] = 93U;
+    track.pages[2].values[3] = 0.81f;
+    track.pages[2].setMacroActive(3U, true);
+    h.state.pages.syncActiveTrackCache();
+    h.state.pages.setActivePage(1U);
+
+    configureMacroAutomation(h.state, 0U, 1U, 0U, 0.21f);
+    configureMacroAutomation(h.state, 0U, 2U, 3U, 0.81f);
+    const auto shiftedBefore = test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 2U, .macro = 3U}
+    );
+    assert(h.state.macroUi.manualOverrides.activate(
+        {.track = 0U, .page = 1U, .macro = 0U},
+        0.21f
+    ) == core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
+    assert(h.state.macroUi.manualOverrides.activate(
+        {.track = 0U, .page = 2U, .macro = 3U},
+        0.81f
+    ) == core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
+
+    assert(h.structureServices.deletePage(1U));
+
+    assert(track.enabledPageMask == 0x0003U);
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
+    assert(h.state.pages.currentActivePage() == 1U);
+    assert(std::strcmp(track.pages[1].name, "Shifted Page") == 0);
+    assert(track.pages[1].cc[3] == 93U);
+    assert(std::fabs(track.pages[1].values[3] - 0.81f) < 0.0001f);
+    assert(track.pages[1].isMacroActive(3U));
+
+    const auto compacted = test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 1U, .macro = 3U}
+    );
+    assert(compacted.automation.stored());
+    assert(compacted.automation.id == shiftedBefore.automation.id);
+    assert(!test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 1U, .macro = 0U}
+    ).present());
+    assert(!test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 2U, .macro = 3U}
+    ).present());
+    float manual = 0.0f;
+    assert(!h.state.macroUi.manualOverrides.activeFor(
+        {.track = 0U, .page = 1U, .macro = 0U}
+    ));
+    assert(h.state.macroUi.manualOverrides.valueFor(
+        {.track = 0U, .page = 1U, .macro = 3U},
+        manual
+    ));
+    assert(std::fabs(manual - 0.81f) < 0.0001f);
+    assert(std::strcmp(h.state.statusBar.pageName.get(), "Shifted Page") == 0);
+
+    assert(h.state.projectHistory.undoCount() == 1U);
+    assert(h.state.undoProjectHistory());
+    assert(track.enabledPageMask == 0x0007U);
+    assert(h.state.pages.currentActivePage() == 1U);
+    assert(std::strcmp(track.pages[1].name, "Deleted") == 0);
+    assert(std::strcmp(track.pages[2].name, "Shifted Page") == 0);
+    assert(test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 1U, .macro = 0U}
+    ).automation.stored());
+    assert(test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 2U, .macro = 3U}
+    ).automation.stored());
+    assert(std::strcmp(h.state.statusBar.pageName.get(), "Deleted") == 0);
+    assert(h.state.redoProjectHistory());
+    assert(track.enabledPageMask == 0x0003U);
+    assert(h.state.pages.currentActivePage() == 1U);
+    assert(std::strcmp(track.pages[1].name, "Shifted Page") == 0);
+    assert(compacted.automation.id == test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 1U, .macro = 3U}
+    ).automation.id);
+    assert(std::strcmp(h.state.statusBar.pageName.get(), "Shifted Page") == 0);
+
+    // Removing the last Page returns focus to the previous surviving Page.
+    assert(h.structureServices.deletePage(1U));
+    assert(track.enabledPageMask == 0x0001U);
+    assert(h.state.pages.currentActivePage() == 0U);
+    assert(!test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 1U, .macro = 3U}
+    ).present());
+
+    drainNotifications();
+    std::cout << "[PASS] test_delete_intermediate_macro_page_compacts_complete_page_state\n";
+}
+
+void test_left_bottom_shows_temporary_edit_prompt() {
     MacroPerformanceHarness h;
 
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::VALUE);
-    assert(!h.state.macroUi.clutchActive.get());
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::NONE);
 
     h.press(Config::ButtonID::LEFT_BOTTOM);
     h.tick(1);
-    assert(h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::CC);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::EDIT);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::AUTOMATION);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::CC);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::EDIT);
 
     h.release(Config::ButtonID::LEFT_BOTTOM);
     h.tick(2);
-    assert(h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::CC);
-
-    h.press(Config::ButtonID::LEFT_BOTTOM);
-    h.tick(3);
-    h.release(Config::ButtonID::LEFT_BOTTOM);
-    h.tick(4);
-    assert(!h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::VALUE);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::NONE);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_left_bottom_toggles_macro_slot_property_selector\n";
+    std::cout << "[PASS] LEFT_BOTTOM shows temporary Edit prompt\n";
 }
 
-void test_left_top_cancels_macro_slot_property_selector_without_committing_preview() {
+void test_left_bottom_macro_chord_cannot_fall_through_to_performance_action() {
+    MacroPerformanceHarness h;
+
+    configureMacroAutomation(h.state, 0U, 0U, 0U, 0.42f);
+    assert(!h.performanceServices.manualOverrideActiveFor(0U));
+
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    h.press(Config::ButtonID::MACRO_1);
+    h.release(Config::ButtonID::MACRO_1);
+
+    assert(h.state.macroUi.focusedMacroSlot.get() == 0U);
+    assert(!h.performanceServices.manualOverrideActiveFor(0U));
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::EDIT);
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+
+    assert(!h.state.pages.isMacroSlotActive(1U));
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    h.press(Config::ButtonID::MACRO_2);
+    h.release(Config::ButtonID::MACRO_2);
+
+    assert(h.state.macroUi.focusedMacroSlot.get() == 1U);
+    assert(!h.state.pages.isMacroSlotActive(1U));
+    h.release(Config::ButtonID::LEFT_BOTTOM);
+
+    drainNotifications();
+    std::cout << "[PASS] LEFT_BOTTOM + Macro owns release without performance fallthrough\n";
+}
+
+void test_left_top_cancels_edit_prompt() {
     MacroPerformanceHarness h;
 
     h.press(Config::ButtonID::LEFT_BOTTOM);
     h.tick(1);
-    assert(h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::CC);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::AUTOMATION);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::EDIT);
 
     h.release(Config::ButtonID::LEFT_TOP);
     h.tick(2);
-    assert(!h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::VALUE);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::NONE);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_left_top_cancels_macro_slot_property_selector_without_committing_preview\n";
+    std::cout << "[PASS] LEFT_TOP cancels Edit prompt\n";
 }
 
-void test_left_center_is_reserved_and_does_not_open_macro_set_controls() {
+void test_left_center_arms_take_and_nav_selects_timing() {
     MacroPerformanceHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
     h.tick(1);
+    assert(h.state.macroUi.automationTake.phase ==
+           core::state::macro::MacroAutomationTakePhase::ARMED);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::AUTOMATION_TAKE);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.macroUi.automationTakeTiming.get() ==
+           core::state::macro::MacroAutomationTakeTiming::NOTE_1_16);
     h.release(Config::ButtonID::LEFT_CENTER);
     h.tick(2);
-    assert(!h.state.macroUi.clutchActive.get());
-    assert(h.state.macroUi.activeProperty.get() ==
-           core::state::macro::MacroPerformanceProperty::VALUE);
+    assert(h.state.macroUi.automationTake.phase ==
+           core::state::macro::MacroAutomationTakePhase::IDLE);
+    assert(h.state.macroUi.performanceOverlayMode.get() ==
+           core::state::macro::MacroPerformanceOverlayMode::NONE);
 
     drainNotifications();
 
-    std::cout << "[PASS] test_left_center_is_reserved_and_does_not_open_macro_set_controls\n";
+    std::cout << "[PASS] LEFT_CENTER arms take and NAV selects timing\n";
 }
 
 }  // namespace
 
 int main() {
-    test_nav_turn_previews_macro_page_until_nav_commit();
+    test_nav_turn_switches_enabled_macro_page_directly();
     test_nav_focus_track_turn_switches_context_to_highlighted_macro_track();
     test_macro_track_cursor_can_cross_gaps_and_reach_any_track();
-    test_macro_page_add_slot_is_terminal_and_does_not_wrap_on_reverse();
-    test_macro_slot_focus_creates_add_slot_only_on_nav_confirm();
-    test_macro_page_selection_delete_guard_cancels_early_and_applies_at_threshold();
-    test_macro_track_selection_delete_applies_only_after_guard_threshold();
-    test_macro_selection_delete_release_cannot_fall_through_after_context_cancel();
-    test_macro_selection_delete_release_cancels_committed_guard_without_mutation();
+    test_macro_page_hot_surface_exposes_terminal_add_and_creates();
+    test_macro_track_hot_surface_crosses_sparse_free_slots_and_creates_exactly();
+    test_track_focus_outside_structure_targets_the_active_track();
+    test_macro_context_nav_tap_creates_focused_empty_slot();
+    test_macro_buttons_create_empty_slots_and_toggle_manual_resume();
+    test_macro_context_selector_and_hot_navigation_are_direct();
     test_macro_page_copy_and_long_press_paste();
-    test_macro_selection_duplicate_copies_page_into_first_free_slot();
-    test_macro_selection_duplicate_copies_track_into_first_free_slot();
     test_macro_track_copy_and_long_press_paste_to_add_slot();
+    test_early_paste_release_only_cancels_the_hold_for_page_and_track();
+    test_paste_only_press_cannot_turn_into_copy_after_navigation();
+    test_guarded_page_and_track_actions_cancel_when_target_moves();
+    test_page_navigation_applies_live_and_actions_follow_visible_page();
     test_macro_track_copy_preserves_multiple_pages_and_automations();
     test_macro_slot_focus_uses_typed_clipboard_and_guarded_remove();
-    test_left_bottom_toggles_macro_slot_property_selector();
-    test_left_top_cancels_macro_slot_property_selector_without_committing_preview();
-    test_left_center_is_reserved_and_does_not_open_macro_set_controls();
+    test_delete_intermediate_macro_page_compacts_complete_page_state();
+    test_left_bottom_shows_temporary_edit_prompt();
+    test_left_bottom_macro_chord_cannot_fall_through_to_performance_action();
+    test_left_top_cancels_edit_prompt();
+    test_left_center_arms_take_and_nav_selects_timing();
     std::cout << "\nAll MacroPerformanceHandler tests passed.\n";
     return 0;
 }

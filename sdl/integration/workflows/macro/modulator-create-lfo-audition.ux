@@ -1,0 +1,47 @@
+# UX workflow: cancel, recreate, and apply a destination-first LFO.
+# Purpose: proves explicit selection before sound, one common Source workspace,
+# exact Cancel, native curve feedback, signed Depth, and one atomic Apply.
+# Expect: capture_changed:modulation_empty=lfo_audition_default, capture_changed:lfo_audition_default=lfo_cancel_edit, capture_changed:lfo_cancel_edit=lfo_creation_restored, capture_changed:lfo_audition_reentered=lfo_audition_edited, capture_changed:lfo_audition_edited=lfo_applied
+# Expect: semantic:lfo_audition_default:mode=project.modulator_detail, semantic:lfo_audition_default:projection=audible_audition, semantic:lfo_audition_default:source=lfo
+# Expect: semantic:lfo_cancel_edit:effect=edit_modulator_property, semantic:lfo_creation_restored:effect=cancel_destination_audition
+# Expect: semantic:lfo_audition_edited:effect=edit_modulator_depth, semantic:lfo_audition_edited:property=depth, semantic:lfo_audition_edited:projection=audible_audition
+# Expect: semantic:lfo_applied:effect=apply_destination_audition
+
+0 scenario macro
+80 capture screen macro_ready
+
+# Existing learned path: Edit chord, focus Modulation, NAV opens it.
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1240 tick
+1300 button LEFT_BOTTOM up
+1450 encoder NAV 1
+1570 encoder NAV 1
+1690 tap NAV 60
+1900 capture screen modulation_empty
+
+# Selecting New LFO starts an audible transaction in the real Source workspace.
+2020 tap NAV 60
+2240 capture screen lfo_audition_default
+
+# First pass proves exact local Cancel and restores the same New LFO choice.
+2360 encoder OPT 1.00
+2580 capture screen lfo_cancel_edit
+2700 tap LEFT_TOP 60
+2920 capture screen lfo_creation_restored
+
+# Re-entering starts a fresh transaction with the same musical defaults.
+3040 tap NAV 60
+3260 capture screen lfo_audition_reentered
+
+# Shape, fastest Sync Rate, then signed destination Depth use NAV + OPT.
+3380 encoder OPT 1.00
+3500 encoder NAV 1
+3680 encoder OPT 0.00
+3800 encoder NAV 1
+4040 encoder OPT 0.75
+4260 capture screen lfo_audition_edited
+
+# Apply returns to the exact Macro assignment and creates one history action.
+4380 tap BOTTOM_RIGHT 60
+4600 capture screen lfo_applied

@@ -49,6 +49,7 @@
 5680 capture screen micro_offset_adjusted
 5780 button LEFT_CENTER up
 6060 capture screen micro_offset_applied
+6080 tap BOTTOM_RIGHT 40
 
 # Back to the root grid. Child contexts use LEFT_TOP as back-to-owner-grid, not
 # back-to-parent-editor, so the parent step editor must be opened again before
@@ -89,6 +90,7 @@
 11040 capture screen cycle_state_gate_offset_visible
 11140 tap NAV 60
 11440 capture screen cycle_state_offsets_applied
+11460 tap BOTTOM_RIGHT 40
 
 # Back to root and verify compact badges plus currently resolved parent state.
 11540 tap LEFT_TOP 60

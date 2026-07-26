@@ -1,31 +1,51 @@
-# UX workflow: record a live automation lane from one macro encoder.
-# Purpose: validates the controller-facing automation gesture:
-# hold a macro button, turn the same macro, release to commit.
-# Expect: capture_changed:macro_ready=macro_record_active, capture_changed:macro_record_active=macro_record_committed
+# UX workflow: circular, phase-coherent Automation overdub through both entry points.
+# Purpose: one musical path proves multi-Macro joining, more than two fixed
+# loops while held, commit on release, empty-take safety, and contextual Record Macro.
+# Expect: capture_changed:first_recorded_movement=overdub_second_pass, capture_changed:overdub_second_pass=overdub_committed
+# Expect: capture_changed:context_record_ready=context_recording, capture_changed:context_recording=context_committed
+# Expect: semantic:take_armed:effect=select_macro_automation_take_duration, semantic:overdub_second_pass:effect=record_macro_automation_take_value, semantic:overdub_committed:effect=commit_macro_automation_take
+# Expect: semantic:empty_take_discarded:effect=discard_empty_macro_automation_take, semantic:context_record_ready:effect=show_macro_context_properties, semantic:context_recording:effect=record_macro_automation_take_value, semantic:context_committed:effect=commit_macro_automation_take
 
-0 scenario macro-automation-clean
-50 capture screen macro_ready
+0 scenario macro-automation-two-macros
+50 capture screen two_macros_ready
 
-# Hold Macro 1. Holding alone keeps the existing long-press edit path available;
-# recording starts only once the held macro moves.
-150 button MACRO_1 down
-220 capture screen macro_button_held
+# LEFT_CENTER arms a shared 1/4-note take.
+650 button LEFT_CENTER down
+700 encoder NAV 1
+740 encoder NAV 1
+780 encoder NAV 1
+840 capture screen take_armed
 
-# Move the held macro: this arms recording, changes the live CC value, and records a point.
-500 encoder MACRO_1 1.00
-650 capture screen macro_record_active
+# Macro 2 joins later. Keep the modifier held across more than two loops, then
+# overwrite both positions on the later pass.
+980 encoder MACRO_1 0.85
+1080 capture screen first_recorded_movement
+1160 encoder MACRO_2 0.25
+1540 encoder MACRO_1 0.30
+2120 encoder MACRO_2 0.75
+2200 capture screen overdub_second_pass
 
-# Release commits the automation lane for the current track/page/macro slot.
-1100 button MACRO_1 up
-1250 capture screen macro_record_committed
+# Release is the sole fixed-take commit boundary.
+2280 button LEFT_CENTER up
+2400 capture screen overdub_committed
 
-# Start transport: the committed automation should now drive the macro value.
-1350 tap BOTTOM_CENTER 60
-1650 capture screen macro_playback_running
-1750 tap BOTTOM_CENTER 60
+# Arm/release without moving any Macro remains non-destructive.
+2540 button LEFT_CENTER down
+2660 capture screen empty_take_armed
+2760 button LEFT_CENTER up
+2880 capture screen empty_take_discarded
 
-# A hold without movement should be non-destructive and create no lane.
-2050 button MACRO_2 down
-2200 capture screen macro_record_no_motion_held
-2400 button MACRO_2 up
-2550 capture screen macro_record_no_motion_discarded
+# Open Macro Edit, focus Automation, and use the same recorder through the
+# first typed contextual action: Record Macro.
+3020 button LEFT_BOTTOM down
+3120 tap MACRO_1 60
+3220 button LEFT_BOTTOM up
+3340 encoder NAV 1
+3460 button LEFT_BOTTOM down
+3540 capture screen context_record_ready
+3660 encoder OPT -32.00
+3880 encoder OPT 64.00
+3980 capture screen context_recording
+4080 button LEFT_BOTTOM up
+4200 capture screen context_committed
+4340 tap LEFT_TOP 60

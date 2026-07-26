@@ -11,6 +11,8 @@
 #include <oc/note/sequencer/StepSequencerRuntimeState.hpp>
 
 #include "SequencerPatternState.hpp"
+#include "SequencerPatternEditorState.hpp"
+#include "SequencerStepContentDraftSession.hpp"
 #include "SequencerUiState.hpp"
 
 namespace core::state::sequencer {
@@ -51,17 +53,25 @@ struct SequencerState {
 
     /// Active property edited by the 8 macro encoders in Sequencer view
     Signal<StepProperty, 6> activeStepProperty{StepProperty::NOTE};
+    /// State is a direct Step property without polluting the musical-value enum.
+    Signal<bool, 6> stepStatePropertyActive{false};
 
     // UI state
     SequencerStepEditOverlayState stepEdit;
+    SequencerContextSelectorState contextSelector;
     SequencerStepPresetPickerState stepPresetPicker;
     SequencerCcLaneUiState ccLaneUi;
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
+    SequencerStepContentSelectorState stepContentSelector;
     SequencerStepInlineFeedbackState stepInlineFeedback;
     SequencerPatternVariationFeedbackState patternVariationFeedback;
     SequencerHistoryFeedbackState historyFeedback;
     SequencerPatternQuickControlsState patternQuickControls;
+    SequencerPatternEditorState patternEditor;
     SequencerContentViewState contentView;
+    // One cold PSRAM scratch shared by Chord/Micro/Cycle creation sessions.
+    // Published Pattern data remains untouched until explicit Apply/Save.
+    SequencerStepContentDraftSession stepContentDraft;
     SequencerStructureUiState structureUi;
 
     SequencerState();
@@ -106,47 +116,22 @@ struct SequencerState {
     bool setPatternSwingOffsetPercent(int value);
     bool setPatternNudgePercent(int value);
 
-    bool setStepNoteAt(uint8_t step, uint8_t noteValue) {
-        if (!pattern.setStepNoteAt(step, noteValue)) return false;
-        invalidateStepVariationTelemetry(step);
-        return true;
-    }
+    bool setStepNoteAt(uint8_t step, uint8_t noteValue);
 
-    bool setStepVelocityAt(uint8_t step, uint8_t velocityValue) {
-        if (!pattern.setStepVelocityAt(step, velocityValue)) return false;
-        invalidateStepVariationTelemetry(step);
-        return true;
-    }
+    bool setStepVelocityAt(uint8_t step, uint8_t velocityValue);
 
-    bool setStepGateAt(uint8_t step, uint16_t gatePercent) {
-        if (!pattern.setStepGateAt(step, gatePercent)) return false;
-        invalidateStepVariationTelemetry(step);
-        return true;
-    }
+    bool setStepGateAt(uint8_t step, uint16_t gatePercent);
 
-    bool setStepNudgeAt(uint8_t step, int8_t nudgeValue) {
-        if (!pattern.setStepNudgeAt(step, nudgeValue)) return false;
-        invalidateStepVariationTelemetry(step);
-        return true;
-    }
+    bool setStepNudgeAt(uint8_t step, int8_t nudgeValue);
 
-    bool setStepProbabilityAt(uint8_t step, uint8_t probabilityValue) {
-        if (!pattern.setStepProbabilityAt(step, probabilityValue)) return false;
-        invalidateStepVariationTelemetry(step);
-        return true;
-    }
+    bool setStepProbabilityAt(uint8_t step, uint8_t probabilityValue);
 
-    bool setStepDataAt(uint8_t step, uint8_t noteValue, uint8_t velocityValue, uint16_t gatePercent) {
-        if (step >= MAX_STEPS) return false;
-        return setStepDataAt(
-            step,
-            noteValue,
-            velocityValue,
-            gatePercent,
-            pattern.nudge[step],
-            pattern.probability[step]
-        );
-    }
+    bool setStepDataAt(
+        uint8_t step,
+        uint8_t noteValue,
+        uint8_t velocityValue,
+        uint16_t gatePercent
+    );
 
     bool setStepDataAt(
         uint8_t step,
@@ -154,17 +139,7 @@ struct SequencerState {
         uint8_t velocityValue,
         uint16_t gatePercent,
         int8_t nudgeValue
-    ) {
-        if (step >= MAX_STEPS) return false;
-        return setStepDataAt(
-            step,
-            noteValue,
-            velocityValue,
-            gatePercent,
-            nudgeValue,
-            pattern.probability[step]
-        );
-    }
+    );
 
     bool setStepDataAt(
         uint8_t step,
@@ -173,21 +148,7 @@ struct SequencerState {
         uint16_t gatePercent,
         int8_t nudgeValue,
         uint8_t probabilityValue
-    ) {
-        if (step >= MAX_STEPS) return false;
-        if (!pattern.setStepDataAt(
-                step,
-                noteValue,
-                velocityValue,
-                gatePercent,
-                nudgeValue,
-                probabilityValue
-            )) {
-            return false;
-        }
-        invalidateStepVariationTelemetry(step);
-        return true;
-    }
+    );
 
     void reset();
 

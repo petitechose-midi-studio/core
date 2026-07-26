@@ -8,7 +8,7 @@
 
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "state/MacroState.hpp"
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -63,6 +63,7 @@ private:
         uint8_t page,
         core::state::sequencer::StepProperty property
     );
+    void syncMacroStateValues(uint8_t page);
     void invalidateOptEncoderCache();
     void syncOptPosition(float normalized);
     void syncFocusedStepOptValue(core::state::sequencer::StepProperty property);

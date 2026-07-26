@@ -29,7 +29,8 @@ inline constexpr int SWING_OFFSET_MIN =
     core::state::sequencer::SequencerPatternState::MIN_PATTERN_SWING_OFFSET_PERCENT;
 inline constexpr int SWING_OFFSET_MAX =
     core::state::sequencer::SequencerPatternState::MAX_PATTERN_SWING_OFFSET_PERCENT;
-inline constexpr std::array<uint8_t, 6> STEPS_PER_BEAT_CHOICES = {1, 2, 3, 4, 6, 8};
+inline constexpr const auto& STEPS_PER_BEAT_CHOICES =
+    core::state::sequencer::PATTERN_STEPS_PER_BEAT_CHOICES;
 
 struct StepPropertyEncoderConfig {
     uint8_t discreteSteps = 128;
@@ -37,29 +38,13 @@ struct StepPropertyEncoderConfig {
     float normalizedTurns = DEFAULT_NORMALIZED_TURNS;
 };
 
-inline float clampNormalized(float value) {
-    return std::clamp(value, 0.0f, 1.0f);
-}
+float clampNormalized(float value);
 
-inline int normalizedToInclusiveInt(float normalized, int maxInclusive) {
-    if (maxInclusive <= 0) return 0;
+int normalizedToInclusiveInt(float normalized, int maxInclusive);
 
-    const float value = clampNormalized(normalized);
-    const int rounded = static_cast<int>(value * static_cast<float>(maxInclusive) + 0.5f);
-    return std::clamp(rounded, 0, maxInclusive);
-}
+int normalizedToIndex(float normalized, int itemCount);
 
-inline int normalizedToIndex(float normalized, int itemCount) {
-    if (itemCount <= 1) return 0;
-    return normalizedToInclusiveInt(normalized, itemCount - 1);
-}
-
-inline float indexToNormalized(int index, int itemCount) {
-    if (itemCount <= 1) return 0.0f;
-
-    const int clamped = std::clamp(index, 0, itemCount - 1);
-    return static_cast<float>(clamped) / static_cast<float>(itemCount - 1);
-}
+float indexToNormalized(int index, int itemCount);
 
 inline uint8_t normalizedToMidi7(float normalized) {
     return static_cast<uint8_t>(normalizedToInclusiveInt(normalized, 127));
@@ -224,19 +209,11 @@ inline uint8_t scaleNoteForDegreeIndex(
     return 0;
 }
 
-inline StepPropertyEncoderConfig encoderConfigForProperty(
+StepPropertyEncoderConfig encoderConfigForProperty(
     StepProperty property,
     core::state::sequencer::SequencerPitchEditMode pitchEditMode,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-) {
-    auto config = encoderConfigForProperty(property);
-    if (usesScaleDegreePitchEdit(property, pitchEditMode, scaleSettings)) {
-        config.discreteSteps = static_cast<uint8_t>(
-            std::min(countScaleNotes(scaleSettings), 255)
-        );
-    }
-    return config;
-}
+);
 
 inline uint8_t findStepsPerBeatChoiceIndex(uint8_t stepsPerBeat) {
     for (uint8_t i = 0; i < static_cast<uint8_t>(STEPS_PER_BEAT_CHOICES.size()); ++i) {
@@ -245,30 +222,10 @@ inline uint8_t findStepsPerBeatChoiceIndex(uint8_t stepsPerBeat) {
     return 1;
 }
 
-inline float quickControlToNormalized(
+float quickControlToNormalized(
     const SequencerState& state,
     core::state::sequencer::PatternQuickControlItem item
-) {
-    switch (item) {
-        case core::state::sequencer::PatternQuickControlItem::OFFSET:
-            return 0.5f;
-        case core::state::sequencer::PatternQuickControlItem::SWING:
-            return swingOffsetToNormalized(state.pattern.swingOffsetPercent.get());
-        case core::state::sequencer::PatternQuickControlItem::NUDGE:
-            return nudgeToNormalized(state.pattern.patternNudgePercent.get());
-        case core::state::sequencer::PatternQuickControlItem::DIVISION:
-            return indexToNormalized(
-                findStepsPerBeatChoiceIndex(state.pattern.stepsPerBeat.get()),
-                static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
-            );
-        case core::state::sequencer::PatternQuickControlItem::LENGTH:
-        default: {
-            const uint8_t len = state.pattern.length.get();
-            const uint8_t idx = (len > 0) ? static_cast<uint8_t>(len - 1) : 0;
-            return indexToNormalized(idx, static_cast<int>(SequencerState::MAX_STEPS));
-        }
-    }
-}
+);
 
 inline StepPropertyEncoderConfig encoderConfigForQuickControl(
     core::state::sequencer::PatternQuickControlItem item
@@ -291,35 +248,11 @@ inline StepPropertyEncoderConfig encoderConfigForQuickControl(
     }
 }
 
-inline void applyNormalizedToQuickControl(
+void applyNormalizedToQuickControl(
     SequencerState& state,
     core::state::sequencer::PatternQuickControlItem item,
     float normalized
-) {
-    const float value = clampNormalized(normalized);
-    switch (item) {
-        case core::state::sequencer::PatternQuickControlItem::DIVISION: {
-            const int idx = normalizedToIndex(
-                value,
-                static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
-            );
-            state.pattern.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
-            return;
-        }
-        case core::state::sequencer::PatternQuickControlItem::SWING:
-            state.setPatternSwingOffsetPercent(normalizedToSwingOffset(value));
-            return;
-        case core::state::sequencer::PatternQuickControlItem::NUDGE:
-            state.setPatternNudgePercent(normalizedToNudge(value));
-            return;
-        case core::state::sequencer::PatternQuickControlItem::LENGTH:
-        default: {
-            const int idx = normalizedToIndex(value, static_cast<int>(SequencerState::MAX_STEPS));
-            state.pattern.length.set(static_cast<uint8_t>(idx + 1));
-            return;
-        }
-    }
-}
+);
 
 inline uint8_t variationRangeMaxForProperty(StepProperty property) {
     using Ranges = oc::note::sequencer::StepSequencerVariationRanges;

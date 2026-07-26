@@ -14,14 +14,15 @@
 80 capture screen cc_conflict_ready
 
 # Enter Pattern, open the shared property selector, and reach CC Lanes.
-160 tap NAV 60
+160 button NAV down
+200 encoder NAV -1
+240 encoder NAV 1
+300 button NAV up
 340 button LEFT_BOTTOM down
 420 encoder NAV 1
 500 encoder NAV 1
 580 encoder NAV 1
 660 encoder NAV 1
-740 encoder NAV 1
-840 tap NAV 60
 940 button LEFT_BOTTOM up
 1260 capture screen cc_conflict_preview
 

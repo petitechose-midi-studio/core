@@ -181,6 +181,38 @@ void test_scope_clear_removes_only_replaced_addresses() {
     std::cout << "[PASS] test_scope_clear_removes_only_replaced_addresses\n";
 }
 
+void test_page_compaction_remaps_manual_overrides_and_drops_deleted_pages() {
+    macro::MacroManualOverrideState state;
+    const auto removed =
+        macro::MacroAutomationSlotAddress{.track = 1, .page = 1, .macro = 2};
+    const auto shifted =
+        macro::MacroAutomationSlotAddress{.track = 1, .page = 3, .macro = 4};
+    const auto unrelated =
+        macro::MacroAutomationSlotAddress{.track = 2, .page = 3, .macro = 4};
+    assert(state.activate(removed, 0.2f) ==
+           macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
+    assert(state.activate(shifted, 0.8f) ==
+           macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
+    assert(state.activate(unrelated, 0.6f) ==
+           macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
+    const uint32_t revision = state.revision;
+
+    // Retain old Pages 0 and 3. Old Page 3 becomes Page 1.
+    assert(state.compactPages(1U, 0x0009U) == 2U);
+    const auto compacted =
+        macro::MacroAutomationSlotAddress{.track = 1, .page = 1, .macro = 4};
+    float value = 0.0f;
+    assert(!state.activeFor(removed));
+    assert(!state.activeFor(shifted));
+    assert(state.valueFor(compacted, value));
+    assert(near(value, 0.8f));
+    assert(state.activeFor(unrelated));
+    assert(state.entryCount == 2U);
+    assert(state.revision == revision + 1U);
+
+    std::cout << "[PASS] test_page_compaction_remaps_manual_overrides\n";
+}
+
 }  // namespace
 
 int main() {
@@ -189,6 +221,7 @@ int main() {
     test_project_boundary_clear_preserves_diagnostic_counter();
     test_snapshot_is_bounded_and_stable_after_capture();
     test_scope_clear_removes_only_replaced_addresses();
+    test_page_compaction_remaps_manual_overrides_and_drops_deleted_pages();
     std::cout << "\nAll MacroRuntimeState tests passed.\n";
     return 0;
 }

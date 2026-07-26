@@ -8,14 +8,9 @@
 
 namespace core::state::settings {
 
-enum class DeviceSettingsRowKind : uint8_t {
-    Value = 0,
-};
-
 struct DeviceSettingsMenuRow {
     const char* label = "";
     const char* value = "";
-    DeviceSettingsRowKind kind = DeviceSettingsRowKind::Value;
     bool enabled = true;
 };
 

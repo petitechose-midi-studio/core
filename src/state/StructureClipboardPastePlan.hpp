@@ -1,14 +1,10 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 
 #include "state/StructureClipboardState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
-
-namespace core::state::sequencer {
-struct SequencerState;
-}
 
 namespace core::state {
 
@@ -46,7 +42,6 @@ enum ClipboardTransferBinding : uint8_t {
 };
 
 struct ClipboardTransferPlanEntry {
-    uint8_t clipboardIndex = 0;
     uint8_t sourceTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     uint8_t targetTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     uint8_t targetMidiChannel = 0;
@@ -59,46 +54,35 @@ struct ClipboardTransferPlanEntry {
 
 /**
  * Non-mutating Track transfer preflight shared by handlers, presenters and UX
- * traces. Source selections are projected densely onto contiguous destination
- * Tracks; no entry is ever silently clipped or skipped.
+ * traces. The current direct Track workflow transfers one source Track to the
+ * focused destination without retaining an inaccessible multi-selection path.
  */
 struct ClipboardTransferPlan {
-    static constexpr uint8_t MAX_ENTRIES =
-        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-
     StructureClipboardKind payloadKind = StructureClipboardKind::NONE;
     uint32_t clipboardRevision = 0;
     uint16_t sourceMask = 0;
     uint16_t targetMask = 0;
     uint16_t createMask = 0;
     uint16_t overwriteMask = 0;
-    uint16_t targetEndExclusive = 0;
-    uint8_t sourceCount = 0;
-    uint8_t count = 0;
-    uint8_t firstSource = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-    uint8_t lastSource = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-    uint8_t firstTarget = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
-    uint8_t lastTarget = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     uint8_t bindingPolicy = 0;
-    uint8_t inheritedLaneCount = 0;
-    uint8_t pinnedLaneCount = 0;
     ClipboardTransferAvailability availability = ClipboardTransferAvailability::DISABLED;
     ClipboardTransferReason reason = ClipboardTransferReason::EMPTY_CLIPBOARD;
-    std::array<ClipboardTransferPlanEntry, MAX_ENTRIES> entries{};
+    ClipboardTransferPlanEntry entry{};
+    bool hasEntry = false;
 
-    bool hasEntries() const { return count > 0; }
+    bool hasEntries() const { return hasEntry; }
     bool canCommit() const {
         return availability != ClipboardTransferAvailability::DISABLED &&
-               sourceCount > 0 && count == sourceCount;
+               hasEntry;
     }
 };
 
 ClipboardTransferPlan buildSequencerTrackClipboardTransferPlan(
     const StructureClipboardState& clipboard,
     const core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::project::ProjectTrackState& projectTracks,
     uint8_t targetTrack,
-    uint16_t pendingTrackMask = 0,
-    const core::state::sequencer::SequencerState* activeEditor = nullptr
+    uint16_t pendingTrackMask = 0
 );
 
 /**
@@ -114,31 +98,6 @@ bool sameSequencerTrackClipboardTransferIdentity(
 bool sameSequencerTrackClipboardTransferPlan(
     const ClipboardTransferPlan& lhs,
     const ClipboardTransferPlan& rhs
-);
-
-struct SequencerPageSelectionPastePlanEntry {
-    uint8_t clipboardIndex = 0;
-    uint8_t destinationPage = core::state::sequencer::SequencerPatternState::PAGE_COUNT;
-};
-
-struct SequencerPageSelectionPastePlan {
-    static constexpr uint8_t MAX_ENTRIES =
-        core::state::sequencer::SequencerPatternState::PAGE_COUNT;
-
-    uint16_t destinationMask = 0;
-    uint16_t overwriteMask = 0;
-    uint8_t firstDestinationPage =
-        core::state::sequencer::SequencerPatternState::PAGE_COUNT;
-    uint8_t count = 0;
-    std::array<SequencerPageSelectionPastePlanEntry, MAX_ENTRIES> entries{};
-
-    bool hasEntries() const { return count > 0; }
-};
-
-SequencerPageSelectionPastePlan buildSequencerPageSelectionPastePlan(
-    const SequencerPageSelectionClipboard& clipboard,
-    uint8_t cursorPage,
-    uint8_t activePageCount
 );
 
 }  // namespace core::state

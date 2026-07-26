@@ -12,7 +12,6 @@
 #include <array>
 
 #include <oc/api/EncoderAPI.hpp>
-#include <oc/api/MidiAPI.hpp>
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
 
@@ -51,19 +50,6 @@ public:
                       MacroMidiCcRuntimeAdapter& midiRuntime,
                       oc::type::ScopeID scopeId);
 
-    /**
-     * Compatibility-only direct-output path for isolated legacy tests.
-     * Standalone production assembly must inject MacroMidiCcRuntimeAdapter.
-     */
-    [[deprecated("Inject MacroMidiCcRuntimeAdapter in production")]]
-    MacroValueHandler(StateRefs state,
-                      MacroPerformanceDomainServices services,
-                      oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-                      oc::api::EncoderAPI& encoders,
-                      oc::api::ButtonAPI& buttons,
-                      oc::api::MidiAPI& midi,
-                      oc::type::ScopeID scopeId);
-
     ~MacroValueHandler() = default;
 
     MacroValueHandler(const MacroValueHandler&) = delete;
@@ -76,13 +62,7 @@ private:
     void setupBindings();
     void handleValueChange(uint8_t index, float value);
     bool shouldHandleTurns() const;
-    bool shouldHandleAutomationRecordPress() const;
-    bool shouldHandleAutomationRestorePress() const;
-    bool shouldIgnorePostRecordTurn(uint8_t index, uint32_t nowMs);
-    bool shouldStartAutomationRecording(uint8_t index) const;
     bool ensureActiveSlot(uint8_t index);
-    void restoreAutomation(uint8_t index);
-    void handleConfigChange(uint8_t index, float value);
 
     core::state::macro::MacroUiState& macro_ui_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
@@ -91,14 +71,13 @@ private:
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
-    MacroMidiCcRuntimeAdapter* midi_runtime_ = nullptr;
-    oc::api::MidiAPI* direct_midi_fallback_ = nullptr;
+    MacroMidiCcRuntimeAdapter& midi_runtime_;
     oc::type::ScopeID scope_id_ = 0;
-    std::array<bool, core::state::macro::MACRO_COUNT> macro_button_held_{};
-    std::array<bool, core::state::macro::MACRO_COUNT> post_record_guard_active_{};
-    std::array<uint32_t, core::state::macro::MACRO_COUNT> post_record_guard_until_ms_{};
     uint32_t last_record_sample_ms_ = 0;
     bool record_sample_clock_active_ = false;
 };
+
+// Hot input handler: retain RAM2 locality while preventing silent footprint growth.
+static_assert(sizeof(void*) != 4U || sizeof(MacroValueHandler) <= 96U);
 
 }  // namespace core::handler

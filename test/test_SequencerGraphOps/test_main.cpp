@@ -82,7 +82,7 @@ void test_pattern_without_graph_stays_unallocated_through_snapshot_copy() {
 
 void test_micro_sequence_exports_to_open_control_graph() {
     SequencerState state;
-    state.pattern.length.set(4);
+    state.pattern.setContentLength(4);
     state.pattern.note[0] = 60;
     enableStep(state, 0);
 
@@ -347,7 +347,7 @@ void test_cycle_state_rotation_wraps_state_nodes() {
 
 void test_root_pattern_rotation_wraps_graph_step_nodes() {
     SequencerState state;
-    state.pattern.length.set(4);
+    state.pattern.setContentLength(4);
     const auto sequence = core::state::sequencer::createMicroSequence(
         state.pattern,
         core::state::sequencer::rootStepNodeId(0),
@@ -654,9 +654,9 @@ void test_chord_state_is_explicit_and_resettable_per_node() {
 
     StepSequencerChordSpec spec{};
     spec.voiceCount = 99;
-    spec.color = 99;
-    spec.variant = 2;
-    spec.spread = 99;
+    spec.harmonyData = 99;
+    spec.voicingData = 2;
+    spec.inversionData = 99;
     spec.strum = 120;
     spec.velocityCurve = -80;
     assert(core::state::sequencer::setNodeChordSpec(state.pattern, rootNode, spec));
@@ -669,9 +669,10 @@ void test_chord_state_is_explicit_and_resettable_per_node() {
     assert(node->has(STEP_NODE_CHORD_LOCAL));
     assert(node->chordMode == StepSequencerChordMode::Local);
     assert(node->chordSpec.voiceCount == StepSequencerChordSpec::MAX_VOICES);
-    assert(node->chordSpec.color == StepSequencerChordSpec::MAX_COLOR);
-    assert(node->chordSpec.variant == 2);
-    assert(node->chordSpec.spread == StepSequencerChordSpec::MAX_SPREAD);
+    const auto recipe = node->chordSpec.legacyRecipe();
+    assert(recipe.color == StepSequencerChordSpec::MAX_COLOR);
+    assert(recipe.variant == 2);
+    assert(recipe.spread == StepSequencerChordSpec::MAX_SPREAD);
     assert(node->chordSpec.strum == StepSequencerChordSpec::MAX_STRUM);
     assert(node->chordSpec.velocityCurve == StepSequencerChordSpec::MIN_VELOCITY_CURVE);
 

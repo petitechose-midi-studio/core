@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/PersistenceBinaryCodec.hpp"
+#include "persistence/PersistenceChecksum.hpp"
 
 namespace core::persistence {
 
@@ -20,18 +21,78 @@ FLASHMEM PersistenceSlotFileStore::PersistenceSlotFileStore(
     , config_(config) {}
 
 FLASHMEM bool PersistenceSlotFileStore::init(bool formatIfInvalid) {
-    if (!isConfigValid_()) return false;
-    if (!storage_.available()) return false;
+    const SlotFileLayoutProbeResult result = probe();
+    if (result.status == SlotFileLayoutProbeStatus::VALID) return true;
+    return formatIfInvalid ? format() : false;
+}
 
-    std::array<uint8_t, FILE_HEADER_SIZE> bytes{};
-    FileHeader header{};
-    const bool ok = readBytes_(0, bytes.data(), bytes.size()) &&
-                    decodeFileHeader_(bytes.data(), bytes.size(), header);
-    if (!ok || !isHeaderValid_(header)) {
-        return formatIfInvalid ? format() : false;
+FLASHMEM SlotFileLayoutProbeResult PersistenceSlotFileStore::probeLayout(
+    oc::interface::IStorage& storage,
+    uint32_t baseAddress
+) {
+    SlotFileLayoutProbeResult result{};
+    if (!storage.available()) {
+        result.status = SlotFileLayoutProbeStatus::IO;
+        return result;
+    }
+    const uint64_t header_end = static_cast<uint64_t>(baseAddress) + FILE_HEADER_SIZE;
+    if (header_end > static_cast<uint64_t>(storage.capacity())) {
+        result.status = SlotFileLayoutProbeStatus::CAPACITY;
+        return result;
     }
 
-    return true;
+    std::array<uint8_t, FILE_HEADER_SIZE> bytes{};
+    if (storage.read(baseAddress, bytes.data(), bytes.size()) != bytes.size()) {
+        result.status = SlotFileLayoutProbeStatus::IO;
+        return result;
+    }
+    if (isAllFF_(bytes.data(), bytes.size())) {
+        result.status = SlotFileLayoutProbeStatus::EMPTY;
+        return result;
+    }
+
+    FileHeader header{};
+    if (!decodeFileHeader_(bytes.data(), bytes.size(), header) ||
+        fileHeaderLayoutCrc_(header) != header.layoutCrc32) {
+        result.status = SlotFileLayoutProbeStatus::MISMATCH;
+        return result;
+    }
+
+    result.config.baseAddress = baseAddress;
+    result.config.fileMagic = header.magic;
+    result.config.domainVersion = header.domainVersion;
+    result.config.slotCount = header.slotCount;
+    result.config.slotPayloadSize = header.slotPayloadSize;
+
+    if (header.magic == 0 || header.formatVersion != FILE_FORMAT_VERSION ||
+        header.slotCount == 0 || header.slotCount > MAX_SLOT_COUNT ||
+        header.slotPayloadSize == 0) {
+        result.status = SlotFileLayoutProbeStatus::MISMATCH;
+        return result;
+    }
+    const size_t required = requiredCapacity(header.slotCount, header.slotPayloadSize);
+    const uint64_t bank_end = static_cast<uint64_t>(baseAddress) + required;
+    if (required == std::numeric_limits<size_t>::max() ||
+        bank_end > static_cast<uint64_t>(storage.capacity()) ||
+        bank_end > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()) + 1ULL) {
+        result.status = SlotFileLayoutProbeStatus::CAPACITY;
+        return result;
+    }
+
+    result.status = SlotFileLayoutProbeStatus::VALID;
+    return result;
+}
+
+FLASHMEM SlotFileLayoutProbeResult PersistenceSlotFileStore::probe() const {
+    SlotFileLayoutProbeResult result = probeLayout(storage_, config_.baseAddress);
+    if (result.status != SlotFileLayoutProbeStatus::VALID) return result;
+    if (result.config.fileMagic != config_.fileMagic ||
+        result.config.domainVersion != config_.domainVersion ||
+        result.config.slotCount != config_.slotCount ||
+        result.config.slotPayloadSize != config_.slotPayloadSize) {
+        result.status = SlotFileLayoutProbeStatus::MISMATCH;
+    }
+    return result;
 }
 
 FLASHMEM bool PersistenceSlotFileStore::format() {
@@ -39,22 +100,31 @@ FLASHMEM bool PersistenceSlotFileStore::format() {
 }
 
 FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::formatStatus() {
+    const PersistenceWriteStatus erase_status = eraseUnpublishedBankStatus();
+    if (erase_status != PersistenceWriteStatus::OK) return erase_status;
+    return publishHeaderStatus();
+}
+
+FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::eraseUnpublishedBankStatus() {
+    if (!isConfigValid_()) return PersistenceWriteStatus::INVALID_CONFIG;
+    if (!storage_.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
+
+    if (!storage_.erase(config_.baseAddress, bankCapacity())) {
+        return PersistenceWriteStatus::ERASE_FAILED;
+    }
+    return storage_.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
+}
+
+FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::publishHeaderStatus() {
     if (!isConfigValid_()) return PersistenceWriteStatus::INVALID_CONFIG;
     if (!storage_.available()) return PersistenceWriteStatus::STORAGE_UNAVAILABLE;
 
     const FileHeader header = buildHeader_();
     std::array<uint8_t, FILE_HEADER_SIZE> bytes{};
     if (!encodeFileHeader_(header, bytes.data(), bytes.size()) ||
-        !writeBytes_(0, bytes.data(), bytes.size())) {
+        !writeBytes_(config_.baseAddress, bytes.data(), bytes.size())) {
         return PersistenceWriteStatus::IO_ERROR;
     }
-
-    const uint32_t slots_region_address = FILE_HEADER_SIZE;
-    const size_t slots_region_size = static_cast<size_t>(config_.slotCount) * slotSize_();
-    if (!storage_.erase(slots_region_address, slots_region_size)) {
-        return PersistenceWriteStatus::ERASE_FAILED;
-    }
-
     return storage_.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
 }
 
@@ -250,13 +320,22 @@ FLASHMEM PersistenceWriteStatus PersistenceSlotFileStore::eraseSlotStatus(uint16
 }
 
 FLASHMEM uint32_t PersistenceSlotFileStore::slotHeaderAddress(uint16_t slotIndex) const {
-    return static_cast<uint32_t>(
-        FILE_HEADER_SIZE + static_cast<size_t>(slotIndex) * slotSize_()
-    );
+    const uint64_t address = static_cast<uint64_t>(config_.baseAddress) +
+                             FILE_HEADER_SIZE +
+                             static_cast<uint64_t>(slotIndex) * slotSize_();
+    return address <= std::numeric_limits<uint32_t>::max()
+               ? static_cast<uint32_t>(address)
+               : std::numeric_limits<uint32_t>::max();
 }
 
 FLASHMEM uint32_t PersistenceSlotFileStore::slotPayloadAddress(uint16_t slotIndex) const {
-    return slotHeaderAddress(slotIndex) + static_cast<uint32_t>(SLOT_HEADER_SIZE);
+    const uint64_t address = static_cast<uint64_t>(config_.baseAddress) +
+                             FILE_HEADER_SIZE +
+                             static_cast<uint64_t>(slotIndex) * slotSize_() +
+                             SLOT_HEADER_SIZE;
+    return address <= std::numeric_limits<uint32_t>::max()
+               ? static_cast<uint32_t>(address)
+               : std::numeric_limits<uint32_t>::max();
 }
 
 FLASHMEM uint32_t PersistenceSlotFileStore::slotPayloadSize() const {
@@ -267,14 +346,34 @@ FLASHMEM uint16_t PersistenceSlotFileStore::slotCount() const {
     return config_.slotCount;
 }
 
+FLASHMEM uint32_t PersistenceSlotFileStore::baseAddress() const {
+    return config_.baseAddress;
+}
+
+FLASHMEM size_t PersistenceSlotFileStore::bankCapacity() const {
+    return requiredCapacity(config_.slotCount, config_.slotPayloadSize);
+}
+
 FLASHMEM bool PersistenceSlotFileStore::isConfigValid_() const {
+    return isConfigLayoutValid_() && hasStorageCapacity_();
+}
+
+FLASHMEM bool PersistenceSlotFileStore::isConfigLayoutValid_() const {
     if (config_.fileMagic == 0) return false;
     if (config_.slotCount == 0 || config_.slotCount > MAX_SLOT_COUNT) return false;
     if (config_.slotPayloadSize == 0) return false;
 
-    const size_t total_size =
-        FILE_HEADER_SIZE + static_cast<size_t>(config_.slotCount) * slotSize_();
-    return total_size <= storage_.capacity();
+    const size_t required = bankCapacity();
+    if (required == std::numeric_limits<size_t>::max()) return false;
+    const uint64_t end_exclusive = static_cast<uint64_t>(config_.baseAddress) + required;
+    return end_exclusive <= static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()) + 1ULL;
+}
+
+FLASHMEM bool PersistenceSlotFileStore::hasStorageCapacity_() const {
+    const size_t required = bankCapacity();
+    if (required == std::numeric_limits<size_t>::max()) return false;
+    const uint64_t end_exclusive = static_cast<uint64_t>(config_.baseAddress) + required;
+    return end_exclusive <= static_cast<uint64_t>(storage_.capacity());
 }
 
 FLASHMEM bool PersistenceSlotFileStore::isSlotIndexValid_(uint16_t slotIndex) const {
@@ -366,15 +465,7 @@ FLASHMEM bool PersistenceSlotFileStore::isCounterNewer_(uint32_t a, uint32_t b) 
 }
 
 FLASHMEM uint32_t PersistenceSlotFileStore::crc32_(const uint8_t* data, size_t size) {
-    uint32_t crc = 0xFFFFFFFFu;
-    for (size_t i = 0; i < size; ++i) {
-        crc ^= static_cast<uint32_t>(data[i]);
-        for (uint8_t bit = 0; bit < 8; ++bit) {
-            const uint32_t mask = static_cast<uint32_t>(-(static_cast<int32_t>(crc & 1u)));
-            crc = (crc >> 1u) ^ (0xEDB88320u & mask);
-        }
-    }
-    return ~crc;
+    return checksum::crc32(data, size);
 }
 
 FLASHMEM bool PersistenceSlotFileStore::encodeFileHeader_(const FileHeader& header,

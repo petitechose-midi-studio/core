@@ -15,6 +15,7 @@
 #include "../../src/persistence/SequencerPersistence.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerHistory.hpp"
+#include "../../src/state/sequencer/SequencerPatternRegionOps.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/MemoryStorage.hpp"
 #include "../support/ProjectSequencerEnvelopeTestSupport.hpp"
@@ -60,6 +61,7 @@ struct EnvelopeSectionHeaderRaw {
 constexpr uint16_t kEnvelopeHeaderSize = 12;
 constexpr uint16_t kEnvelopeSectionHeaderSize = 10;
 constexpr uint16_t kEnvelopeSectionGraphStepNodes = 17;
+constexpr uint16_t kEnvelopeSectionPatternRegion = 20;
 constexpr uint16_t kEnvelopeSectionUnknownFuture = 0x7F00;
 constexpr uint16_t kStepNodeRecordSize = 25;
 constexpr uint16_t kStepNodeChildSequenceOffset = 10;
@@ -68,13 +70,11 @@ constexpr uint16_t kStepNodeCycleSetOffset = 12;
 void configurePattern(core::state::sequencer::SequencerState& sequencer,
                       uint8_t length,
                       uint8_t stepsPerBeat,
-                      uint8_t midiChannel,
                       uint8_t focusedStep,
                       core::state::sequencer::StepProperty property) {
     sequencer.reset();
-    sequencer.pattern.length.set(length);
+    sequencer.pattern.setContentLength(length);
     sequencer.pattern.stepsPerBeat.set(stepsPerBeat);
-    sequencer.pattern.midiChannel.set(midiChannel);
     sequencer.pattern.enabledMask.set({});
 
     sequencer.setStepDataAt(0, 60, 110, 95);
@@ -107,11 +107,9 @@ void prepareTrackBank(core::state::sequencer::SequencerTrackBankState& trackBank
 
 void assertPatternEquals(const core::state::sequencer::SequencerState& sequencer,
                          uint8_t expectedLength,
-                         uint8_t expectedSpb,
-                         uint8_t expectedChannel) {
+                         uint8_t expectedSpb) {
     assert(sequencer.pattern.length.get() == expectedLength);
     assert(sequencer.pattern.stepsPerBeat.get() == expectedSpb);
-    assert(sequencer.pattern.midiChannel.get() == expectedChannel);
 
     assert(sequencer.pattern.isEnabled(0));
     assert(sequencer.pattern.isEnabled(3));
@@ -410,8 +408,12 @@ bool findEnvelopeSection(const uint8_t* data,
 }
 
 void test_pattern_library_save_load_erase() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     patternStorage.init();
     setStorage.init();
 
@@ -419,14 +421,14 @@ void test_pattern_library_save_load_erase() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
-    configurePattern(source, 104, 4, 5, 95, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 104, 4, 95, core::state::sequencer::StepProperty::NOTE);
     assert(persistence.savePatternSlot(5, source));
 
     core::state::sequencer::SequencerState loaded;
     loaded.reset();
     const auto status = persistence.loadPatternSlot(5, loaded);
     assert(status == core::persistence::SlotLoadStatus::OK);
-    assertPatternEquals(loaded, 104, 4, 5);
+    assertPatternEquals(loaded, 104, 4);
 
     assert(persistence.erasePatternSlot(5));
     const auto emptyStatus = persistence.loadPatternSlot(5, loaded);
@@ -436,8 +438,12 @@ void test_pattern_library_save_load_erase() {
 }
 
 void test_pattern_library_graph_roundtrip() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     patternStorage.init();
     setStorage.init();
 
@@ -445,22 +451,26 @@ void test_pattern_library_graph_roundtrip() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
     addGraphContent(source.pattern);
     assert(persistence.savePatternSlot(7, source));
 
     core::state::sequencer::SequencerState loaded;
     loaded.reset();
     assert(persistence.loadPatternSlot(7, loaded) == core::persistence::SlotLoadStatus::OK);
-    assertPatternEquals(loaded, 16, 4, 1);
+    assertPatternEquals(loaded, 16, 4);
     assertGraphContent(loaded.pattern);
 
     std::cout << "[PASS] test_pattern_library_graph_roundtrip\n";
 }
 
 void test_pattern_library_flat_pattern_does_not_allocate_graph() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     patternStorage.init();
     setStorage.init();
 
@@ -468,22 +478,26 @@ void test_pattern_library_flat_pattern_does_not_allocate_graph() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
     assert(core::state::sequencer::graphView(source.pattern) == nullptr);
     assert(persistence.savePatternSlot(11, source));
 
     core::state::sequencer::SequencerState loaded;
     loaded.reset();
     assert(persistence.loadPatternSlot(11, loaded) == core::persistence::SlotLoadStatus::OK);
-    assertPatternEquals(loaded, 16, 4, 1);
+    assertPatternEquals(loaded, 16, 4);
     assert(core::state::sequencer::graphView(loaded.pattern) == nullptr);
 
     std::cout << "[PASS] test_pattern_library_flat_pattern_does_not_allocate_graph\n";
 }
 
 void test_pattern_library_local_variation_only_allocates_graph() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     patternStorage.init();
     setStorage.init();
 
@@ -491,7 +505,7 @@ void test_pattern_library_local_variation_only_allocates_graph() {
     assert(persistence.init());
 
     core::state::sequencer::SequencerState source;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
     assert(core::state::sequencer::setNodeLocalVariationRange(
         source.pattern,
         core::state::sequencer::rootStepNodeId(1),
@@ -504,7 +518,7 @@ void test_pattern_library_local_variation_only_allocates_graph() {
     core::state::sequencer::SequencerState loaded;
     loaded.reset();
     assert(persistence.loadPatternSlot(12, loaded) == core::persistence::SlotLoadStatus::OK);
-    assertPatternEquals(loaded, 16, 4, 1);
+    assertPatternEquals(loaded, 16, 4);
 
     const auto* graph = core::state::sequencer::graphView(loaded.pattern);
     assert(graph != nullptr);
@@ -520,7 +534,7 @@ void test_pattern_library_local_variation_only_allocates_graph() {
 
 void test_pattern_envelope_rejects_incompatible_header() {
     core::state::sequencer::SequencerState source;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
 
     core::persistence::sequencer_codec::PatternEnvelopeBuffer buffer{};
     const auto encoded = core::persistence::sequencer_codec::fillPatternEnvelope(
@@ -544,7 +558,7 @@ void test_pattern_envelope_rejects_incompatible_header() {
     buffer.bytes[0] = originalMagic;
     const uint8_t originalVersion = buffer.bytes[4];
     buffer.bytes[4] = static_cast<uint8_t>(
-        core::persistence::sequencer_codec::CC_LANE_ENVELOPE_VERSION + 1U
+        core::persistence::sequencer_codec::ENVELOPE_VERSION + 1U
     );
     assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
         buffer.bytes.data(),
@@ -570,13 +584,129 @@ void test_pattern_envelope_rejects_incompatible_header() {
     std::cout << "[PASS] test_pattern_envelope_rejects_incompatible_header\n";
 }
 
-void test_pitch_policy_feature_selects_version_and_rejects_downgrade() {
+void test_pattern_region_roundtrip_and_atomic_rejection() {
+    namespace codec = core::persistence::sequencer_codec;
+    namespace seq = core::state::sequencer;
+
+    seq::SequencerState source;
+    configurePattern(source, 16, 4, 0, seq::StepProperty::NOTE);
+    assert(seq::setPatternPlaybackRegion(source.pattern, {16, 2, 5, 13}));
+
+    codec::PatternEnvelopeBuffer canonical{};
+    const auto encoded = codec::fillPatternEnvelope(
+        source.pattern,
+        canonical.bytes.data(),
+        canonical.bytes.size()
+    );
+    assert(encoded.ok);
+    assert(canonical.bytes[4] == codec::ENVELOPE_VERSION);
+
+    EnvelopeSectionHeaderRaw regionHeader{};
+    uint16_t regionOffset = 0;
+    assert(findEnvelopeSection(
+        canonical.bytes.data(),
+        static_cast<uint16_t>(encoded.size),
+        kEnvelopeSectionPatternRegion,
+        regionHeader,
+        regionOffset
+    ));
+    assert(regionHeader.track == 0U);
+    assert(regionHeader.recordSize == codec::PATTERN_REGION_RECORD_SIZE);
+    assert(regionHeader.count == 1U);
+    assert(regionHeader.byteSize == codec::PATTERN_REGION_RECORD_SIZE);
+    assert(static_cast<uint32_t>(regionOffset) + kEnvelopeSectionHeaderSize +
+               regionHeader.byteSize == encoded.size);
+
+    seq::SequencerState loaded;
+    loaded.reset();
+    assert(codec::applyPatternEnvelope(
+        canonical.bytes.data(),
+        encoded.size,
+        loaded.pattern
+    ));
+    const auto restored = seq::patternPlaybackRegion(loaded.pattern);
+    assert(restored.contentLength == 16U);
+    assert(restored.playStart == 2U);
+    assert(restored.loopStart == 5U);
+    assert(restored.loopEnd == 13U);
+
+    const auto assertRejectedWithoutMutation = [&](const uint8_t* bytes, uint32_t size) {
+        seq::SequencerState sentinel;
+        sentinel.reset();
+        sentinel.pattern.setContentLength(8);
+        assert(seq::setPatternPlaybackRegion(sentinel.pattern, {8, 1, 2, 7}));
+        sentinel.pattern.note[0] = 33;
+
+        assert(!codec::applyPatternEnvelope(bytes, size, sentinel.pattern));
+        const auto region = seq::patternPlaybackRegion(sentinel.pattern);
+        assert(region.contentLength == 8U);
+        assert(region.playStart == 1U);
+        assert(region.loopStart == 2U);
+        assert(region.loopEnd == 7U);
+        assert(sentinel.pattern.note[0] == 33U);
+    };
+
+    EnvelopeHeaderRaw header{};
+    assert(readEnvelopeHeaderRaw(
+        canonical.bytes.data(),
+        static_cast<uint16_t>(encoded.size),
+        header
+    ));
+
+    auto malformed = canonical;
+    assert(patchEnvelopeSectionCount(
+        malformed.bytes.data(),
+        static_cast<uint16_t>(encoded.size),
+        static_cast<uint16_t>(header.sectionCount - 1U)
+    ));
+    assertRejectedWithoutMutation(malformed.bytes.data(), regionOffset);
+
+    malformed = canonical;
+    std::memcpy(
+        malformed.bytes.data() + encoded.size,
+        malformed.bytes.data() + regionOffset,
+        codec::MAX_PATTERN_REGION_ENVELOPE_SIZE
+    );
+    assert(patchEnvelopeSectionCount(
+        malformed.bytes.data(),
+        static_cast<uint16_t>(malformed.bytes.size()),
+        static_cast<uint16_t>(header.sectionCount + 1U)
+    ));
+    assertRejectedWithoutMutation(
+        malformed.bytes.data(),
+        encoded.size + codec::MAX_PATTERN_REGION_ENVELOPE_SIZE
+    );
+
+    malformed = canonical;
+    malformed.bytes[regionOffset + 2U] = 1U;
+    assertRejectedWithoutMutation(malformed.bytes.data(), encoded.size);
+
+    assertRejectedWithoutMutation(canonical.bytes.data(), encoded.size - 1U);
+
+    malformed = canonical;
+    malformed.bytes[regionOffset + 4U] = 2U;
+    malformed.bytes[regionOffset + 5U] = 0U;
+    assertRejectedWithoutMutation(malformed.bytes.data(), encoded.size);
+
+    malformed = canonical;
+    malformed.bytes[regionOffset + kEnvelopeSectionHeaderSize] = 6U;
+    malformed.bytes[regionOffset + kEnvelopeSectionHeaderSize + 1U] = 5U;
+    assertRejectedWithoutMutation(malformed.bytes.data(), encoded.size);
+
+    malformed = canonical;
+    malformed.bytes[regionOffset + kEnvelopeSectionHeaderSize + 2U] = 17U;
+    assertRejectedWithoutMutation(malformed.bytes.data(), encoded.size);
+
+    std::cout
+        << "[PASS] Pattern region round-trip and atomic rejection\n";
+}
+
+void test_pitch_policy_roundtrips_in_current_envelope() {
     core::state::sequencer::SequencerState relativeSource;
     configurePattern(
         relativeSource,
         16,
         4,
-        1,
         0,
         core::state::sequencer::StepProperty::NOTE
     );
@@ -593,14 +723,13 @@ void test_pitch_policy_feature_selects_version_and_rejects_downgrade() {
     );
     assert(relativeEncoded.ok);
     assert(relativeBuffer.bytes[4] ==
-           core::persistence::sequencer_codec::LEGACY_ENVELOPE_VERSION);
+           core::persistence::sequencer_codec::ENVELOPE_VERSION);
 
     core::state::sequencer::SequencerState chromaticSource;
     configurePattern(
         chromaticSource,
         16,
         4,
-        1,
         0,
         core::state::sequencer::StepProperty::NOTE
     );
@@ -619,7 +748,7 @@ void test_pitch_policy_feature_selects_version_and_rejects_downgrade() {
     );
     assert(chromaticEncoded.ok);
     assert(chromaticBuffer.bytes[4] ==
-           core::persistence::sequencer_codec::PITCH_POLICY_ENVELOPE_VERSION);
+           core::persistence::sequencer_codec::ENVELOPE_VERSION);
 
     core::state::sequencer::SequencerState loaded;
     loaded.reset();
@@ -634,21 +763,63 @@ void test_pitch_policy_feature_selects_version_and_rejects_downgrade() {
         oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC
     ));
 
-    chromaticBuffer.bytes[4] =
-        core::persistence::sequencer_codec::LEGACY_ENVELOPE_VERSION;
-    loaded.reset();
-    assert(!core::persistence::sequencer_codec::applyPatternEnvelope(
-        chromaticBuffer.bytes.data(),
-        chromaticEncoded.size,
-        loaded.pattern
+    std::cout << "[PASS] Pitch policy round-trips in current envelope\n";
+}
+
+void test_semantic_chord_roundtrips_in_current_envelope() {
+    core::state::sequencer::SequencerState source;
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
+
+    auto spec = oc::note::sequencer::StepSequencerChordSpec::semantic(
+        oc::note::sequencer::StepSequencerChordHarmony::Minor7,
+        4,
+        oc::note::sequencer::StepSequencerChordVoicing::Wide,
+        1
+    );
+    spec.strum = -18;
+    spec.velocityCurve = 9;
+    assert(core::state::sequencer::setNodeChordSpec(
+        source.pattern,
+        core::state::sequencer::rootStepNodeId(0),
+        spec
     ));
 
-    std::cout << "[PASS] test_pitch_policy_feature_selects_version_and_rejects_downgrade\n";
+    core::persistence::sequencer_codec::PatternEnvelopeBuffer buffer{};
+    const auto encoded = core::persistence::sequencer_codec::fillPatternEnvelope(
+        source.pattern,
+        buffer.bytes.data(),
+        buffer.bytes.size()
+    );
+    assert(encoded.ok);
+    assert(
+        buffer.bytes[4] ==
+        core::persistence::sequencer_codec::ENVELOPE_VERSION
+    );
+
+    core::state::sequencer::SequencerState loaded;
+    loaded.reset();
+    assert(core::persistence::sequencer_codec::applyPatternEnvelope(
+        buffer.bytes.data(),
+        encoded.size,
+        loaded.pattern
+    ));
+    const auto* graph = core::state::sequencer::graphView(loaded.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(0));
+    assert(node != nullptr);
+    assert(node->chordSpec.isSemantic());
+    assert(node->chordSpec.harmony() == oc::note::sequencer::StepSequencerChordHarmony::Minor7);
+    assert(node->chordSpec.voicing() == oc::note::sequencer::StepSequencerChordVoicing::Wide);
+    assert(node->chordSpec.inversion() == 1);
+    assert(node->chordSpec.strum == -18);
+    assert(node->chordSpec.velocityCurve == 9);
+
+    std::cout << "[PASS] Semantic chord round-trips in current envelope\n";
 }
 
 void test_pattern_envelope_rejects_unknown_future_section() {
     core::state::sequencer::SequencerState source;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
     addGraphContent(source.pattern);
 
     core::persistence::sequencer_codec::PatternEnvelopeBuffer buffer{};
@@ -695,7 +866,7 @@ void test_pattern_envelope_rejects_unknown_future_section() {
 
 void test_pattern_envelope_rejects_invalid_graph_section() {
     core::state::sequencer::SequencerState source;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
     addGraphContent(source.pattern);
 
     core::persistence::sequencer_codec::PatternEnvelopeBuffer buffer{};
@@ -733,7 +904,7 @@ void test_pattern_envelope_rejects_invalid_graph_section() {
 
 void test_pattern_envelope_rejects_broken_graph_links() {
     core::state::sequencer::SequencerState source;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
     addGraphContent(source.pattern);
 
     core::persistence::sequencer_codec::PatternEnvelopeBuffer buffer{};
@@ -784,8 +955,12 @@ void test_pattern_envelope_rejects_broken_graph_links() {
 }
 
 void test_pattern_library_masks_enabled_bits_outside_length() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     patternStorage.init();
     setStorage.init();
 
@@ -794,7 +969,7 @@ void test_pattern_library_masks_enabled_bits_outside_length() {
 
     core::state::sequencer::SequencerState source;
     source.reset();
-    source.pattern.length.set(16);
+    source.pattern.setContentLength(16);
     source.pattern.enabledMask.set(StepBitMask128::fromLower64(
         (1ULL << 0) | (1ULL << 5) | (1ULL << 20) | (1ULL << 63)
     ));
@@ -814,8 +989,12 @@ void test_pattern_library_masks_enabled_bits_outside_length() {
 }
 
 void test_set_library_save_load_erase() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     patternStorage.init();
     setStorage.init();
 
@@ -824,7 +1003,7 @@ void test_set_library_save_load_erase() {
 
     core::state::sequencer::SequencerState source;
     core::state::sequencer::SequencerTrackBankState sourceTrackBank;
-    configurePattern(source, 88, 2, 9, 65, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 88, 2, 65, core::state::sequencer::StepProperty::NOTE);
     prepareTrackBank(sourceTrackBank, source);
     assert(persistence.saveSetSlot(3, sourceTrackBank, source));
 
@@ -834,7 +1013,7 @@ void test_set_library_save_load_erase() {
     loadedTrackBank.reset();
     const auto status = persistence.loadSetSlot(3, loadedTrackBank, loaded);
     assert(status == core::persistence::SlotLoadStatus::OK);
-    assertPatternEquals(loaded, 88, 2, 9);
+    assertPatternEquals(loaded, 88, 2);
 
     assert(persistence.eraseSetSlot(3));
     const auto emptyStatus = persistence.loadSetSlot(3, loadedTrackBank, loaded);
@@ -844,8 +1023,12 @@ void test_set_library_save_load_erase() {
 }
 
 void test_set_library_graph_roundtrip_for_active_and_bank_tracks() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     patternStorage.init();
     setStorage.init();
 
@@ -854,7 +1037,7 @@ void test_set_library_graph_roundtrip_for_active_and_bank_tracks() {
 
     core::state::sequencer::SequencerState source;
     core::state::sequencer::SequencerTrackBankState sourceTrackBank;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
     prepareTrackBank(sourceTrackBank, source);
     sourceTrackBank.syncSharedTrackState(0x0003, 1);
     addGraphContent(source.pattern);
@@ -875,46 +1058,12 @@ void test_set_library_graph_roundtrip_for_active_and_bank_tracks() {
     std::cout << "[PASS] test_set_library_graph_roundtrip_for_active_and_bank_tracks\n";
 }
 
-void test_set_library_roundtrips_track_mute_mask() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
-    patternStorage.init();
-    setStorage.init();
-
-    core::persistence::SequencerPersistence persistence(patternStorage, setStorage);
-    assert(persistence.init());
-
+void test_project_sequencer_envelope_roundtrips_track_topology() {
     core::state::sequencer::SequencerState source;
     core::state::sequencer::SequencerTrackBankState sourceTrackBank;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
-    prepareTrackBank(sourceTrackBank, source);
-    sourceTrackBank.syncSharedTrackState(0x0007, 2);
-    assert(sourceTrackBank.setTrackMuted(1, true));
-
-    assert(persistence.saveSetSlot(4, sourceTrackBank, source));
-
-    core::state::sequencer::SequencerState loaded;
-    core::state::sequencer::SequencerTrackBankState loadedTrackBank;
-    loaded.reset();
-    loadedTrackBank.reset();
-    assert(persistence.loadSetSlot(4, loadedTrackBank, loaded) ==
-           core::persistence::SlotLoadStatus::OK);
-
-    assert(loadedTrackBank.currentEnabledMask() == 0x0007);
-    assert(loadedTrackBank.currentMutedMask() == 0x0002);
-    assert(loadedTrackBank.activeTrackIndex() == 2);
-
-    std::cout << "[PASS] test_set_library_roundtrips_track_mute_mask\n";
-}
-
-void test_project_sequencer_envelope_roundtrips_track_masks() {
-    core::state::sequencer::SequencerState source;
-    core::state::sequencer::SequencerTrackBankState sourceTrackBank;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
     prepareTrackBank(sourceTrackBank, source);
     sourceTrackBank.syncSharedTrackState(0x000B, 3);
-    assert(sourceTrackBank.setTrackMuted(1, true));
-    assert(sourceTrackBank.setTrackMuted(3, true));
 
     std::vector<uint8_t> buffer(
         core::persistence::sequencer_codec::MAX_ENVELOPE_PAYLOAD_SIZE
@@ -944,10 +1093,10 @@ void test_project_sequencer_envelope_roundtrips_track_masks() {
     ));
 
     assert(loadedTrackBank.currentEnabledMask() == 0x000B);
-    assert(loadedTrackBank.currentMutedMask() == 0x000A);
     assert(loadedTrackBank.activeTrackIndex() == 3);
 
-    std::cout << "[PASS] test_project_sequencer_envelope_roundtrips_track_masks\n";
+    std::cout
+        << "[PASS] test_project_sequencer_envelope_roundtrips_track_topology\n";
 }
 
 void test_set_library_roundtrips_max_density_graphs() {
@@ -1014,8 +1163,12 @@ void test_set_library_roundtrips_max_density_graphs() {
 }
 
 void test_library_bounds() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     patternStorage.init();
     setStorage.init();
 
@@ -1047,8 +1200,12 @@ void test_library_bounds() {
 }
 
 void test_scale_settings_roundtrip_across_pattern_and_set() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     patternStorage.init();
     setStorage.init();
 
@@ -1068,7 +1225,7 @@ void test_scale_settings_roundtrip_across_pattern_and_set() {
 
     core::state::sequencer::SequencerState source;
     core::state::sequencer::SequencerTrackBankState sourceTrackBank;
-    configurePattern(source, 16, 4, 1, 0, core::state::sequencer::StepProperty::NOTE);
+    configurePattern(source, 16, 4, 0, core::state::sequencer::StepProperty::NOTE);
     assert(source.setPatternScalePolicy(
         core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE
     ));
@@ -1104,8 +1261,12 @@ void test_scale_settings_roundtrip_across_pattern_and_set() {
 }
 
 void test_write_status_reports_commit_failure_and_out_of_range() {
-    MemoryStorage patternStorage;
-    MemoryStorage setStorage;
+    MemoryStorage patternStorage(
+        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
+    );
+    MemoryStorage setStorage(
+        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
+    );
     patternStorage.init();
     setStorage.init();
 
@@ -1141,15 +1302,16 @@ int main() {
     test_pattern_library_flat_pattern_does_not_allocate_graph();
     test_pattern_library_local_variation_only_allocates_graph();
     test_pattern_envelope_rejects_incompatible_header();
-    test_pitch_policy_feature_selects_version_and_rejects_downgrade();
+    test_pattern_region_roundtrip_and_atomic_rejection();
+    test_pitch_policy_roundtrips_in_current_envelope();
+    test_semantic_chord_roundtrips_in_current_envelope();
     test_pattern_envelope_rejects_unknown_future_section();
     test_pattern_envelope_rejects_invalid_graph_section();
     test_pattern_envelope_rejects_broken_graph_links();
     test_pattern_library_masks_enabled_bits_outside_length();
     test_set_library_save_load_erase();
     test_set_library_graph_roundtrip_for_active_and_bank_tracks();
-    test_set_library_roundtrips_track_mute_mask();
-    test_project_sequencer_envelope_roundtrips_track_masks();
+    test_project_sequencer_envelope_roundtrips_track_topology();
     test_set_library_roundtrips_max_density_graphs();
     test_library_bounds();
     test_scale_settings_roundtrip_across_pattern_and_set();

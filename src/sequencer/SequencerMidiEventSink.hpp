@@ -41,14 +41,27 @@ public:
                                     SequencerMidiEventSinkObserver* observer = nullptr);
     ~SequencerMidiEventSink() override;
 
-    void setTimeline(uint32_t currentTick, uint32_t nowUs, uint32_t tickPeriodUs);
+    /**
+     * Sets the musical-to-physical deadline projection for subsequently
+     * emitted scheduled events. `deadlineOffsetUs` is signed: positive values
+     * defer, negative values are valid only when the caller has already
+     * advanced the engine through a causal look-ahead horizon.
+     *
+     * Panic/AllNotesOff deliberately ignores this offset and remains immediate.
+     */
+    void setTimeline(
+        uint32_t currentTick,
+        uint32_t nowUs,
+        uint32_t tickPeriodUs,
+        int32_t deadlineOffsetUs = 0
+    );
     bool emitSequencerEvent(const oc::note::sequencer::SequencerEvent& event) override;
 
 private:
     bool enqueueNoteOn_(const oc::note::sequencer::SequencerEvent& event);
     bool enqueueNoteOff_(const oc::note::sequencer::SequencerEvent& event);
     bool enqueueAllNotesOff_();
-    uint32_t deadlineForTick_(uint32_t tick) const;
+    bool projectedDeadlineForTick_(uint32_t tick, uint32_t& out) const;
     void markNoteActive_(uint8_t channel, uint8_t note);
     void markNoteInactive_(uint8_t channel, uint8_t note);
     void onRealtimeMidiEventDispatched(const RealtimeMidiEvent& event) override;
@@ -59,6 +72,7 @@ private:
     uint32_t current_tick_ = 0;
     uint32_t current_time_us_ = 0;
     uint32_t tick_period_us_ = 0;
+    int32_t deadline_offset_us_ = 0;
     std::array<oc::note::sequencer::StepBitMask128, MIDI_CHANNEL_COUNT>
         active_notes_by_channel_{};
 };

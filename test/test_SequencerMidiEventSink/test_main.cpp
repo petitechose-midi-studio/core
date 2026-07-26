@@ -294,14 +294,14 @@ void test_all_notes_off_rejects_one_over_queue_capacity_without_partial_panic() 
     assert(transport.messages.size() == activeNoteCount);
 
     // An unrelated queued event proves failed preflight mutates no queue data.
-    assert(queue.push(core::sequencer::RealtimeMidiEvent{
-        .deadlineUs = 5000,
-        .type = RealtimeMidiEventType::NoteOff,
-        .channel = 2,
-        .note = 10,
-        .velocity = 0,
-        .trackIndex = 1,
-    }));
+    core::sequencer::RealtimeMidiEvent unrelated{};
+    unrelated.deadlineUs = 5000;
+    unrelated.type = RealtimeMidiEventType::NoteOff;
+    unrelated.trackIndex = 1;
+    unrelated.channel = 2;
+    unrelated.note = 10;
+    unrelated.velocity = 0;
+    assert(queue.push(unrelated));
     assert(!sink.emitSequencerEvent({
         .tick = 4,
         .type = SequencerEventType::AllNotesOff,
@@ -478,6 +478,106 @@ void test_past_tick_deadline_is_due_immediately() {
     std::cout << "[PASS] test_past_tick_deadline_is_due_immediately\n";
 }
 
+void test_signed_deadline_offset_applies_to_scheduled_edges_only() {
+    core::sequencer::RealtimeMidiQueue queue;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    sink.setTimeline(10U, 1000U, 50U, 100);
+    assert(sink.emitSequencerEvent(
+        noteEvent(SequencerEventType::NoteOn, 10U, 1U, 60U, 80U)
+    ));
+    drainDue(queue, midi, 1099U);
+    assert(transport.messages.empty());
+    drainDue(queue, midi, 1100U);
+    assert(transport.messages.size() == 1U);
+
+    sink.setTimeline(12U, 1200U, 50U, -100);
+    assert(sink.emitSequencerEvent(
+        noteEvent(SequencerEventType::NoteOn, 14U, 1U, 61U, 81U)
+    ));
+    drainDue(queue, midi, 1199U);
+    assert(transport.messages.size() == 1U);
+    drainDue(queue, midi, 1200U);
+    assert(transport.messages.size() == 2U);
+    assert(transport.messages.back().note == 61U);
+
+    // A route/audibility panic must never inherit Track Delay.
+    assert(sink.emitSequencerEvent({
+        .tick = 12U,
+        .type = SequencerEventType::AllNotesOff,
+    }));
+    drainDue(queue, midi, 1200U);
+    assert(transport.messages.size() == 4U);
+    assert(transport.messages[2].type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages.back().type == RealtimeMidiEventType::NoteOff);
+    assert(transport.messages.back().note == 61U);
+
+    std::cout
+        << "[PASS] signed deadline offset delays scheduled edges but not panic\n";
+}
+
+void test_negative_launch_clamps_current_edge_without_late_catchup_burst() {
+    core::sequencer::RealtimeMidiQueue queue;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    sink.setTimeline(0U, 1000U, 100U, -1000);
+    assert(sink.emitSequencerEvent(
+        noteEvent(SequencerEventType::NoteOn, 0U, 0U, 60U, 100U)
+    ));
+    assert(sink.emitSequencerEvent(
+        noteEvent(SequencerEventType::NoteOn, 1U, 0U, 61U, 100U)
+    ));
+    assert(queue.size() == 1U);
+    drainDue(queue, midi, 1000U);
+    assert(transport.messages.size() == 1U);
+    assert(transport.messages[0].note == 60U);
+
+    std::cout
+        << "[PASS] negative launch clamps first edge and skips impossible catchup\n";
+}
+
+void test_track_delay_limits_remain_causal_across_micros_wrap() {
+    core::sequencer::RealtimeMidiQueue queue;
+    core::sequencer::SequencerMidiEventSink sink(queue, 0);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+
+    constexpr int32_t maxTrackDelayUs = 100000;
+    constexpr uint32_t beforeWrapUs = UINT32_MAX - 50000U;
+    constexpr uint32_t wrappedDeadlineUs = beforeWrapUs + 100000U;
+
+    sink.setTimeline(10U, beforeWrapUs, 1000U, maxTrackDelayUs);
+    assert(sink.emitSequencerEvent(
+        noteEvent(SequencerEventType::NoteOn, 10U, 0U, 62U, 100U)
+    ));
+    drainDue(queue, midi, beforeWrapUs);
+    assert(transport.messages.empty());
+    drainDue(queue, midi, wrappedDeadlineUs - 1U);
+    assert(transport.messages.empty());
+    drainDue(queue, midi, wrappedDeadlineUs);
+    assert(transport.messages.size() == 1U);
+    assert(transport.messages[0].note == 62U);
+
+    // The negative limit is emitted only from its causal look-ahead horizon:
+    // 100 future 1 ms ticks projected by -100 ms are due exactly now.
+    sink.setTimeline(200U, 1000000U, 1000U, -maxTrackDelayUs);
+    assert(sink.emitSequencerEvent(
+        noteEvent(SequencerEventType::NoteOn, 300U, 0U, 63U, 100U)
+    ));
+    drainDue(queue, midi, 999999U);
+    assert(transport.messages.size() == 1U);
+    drainDue(queue, midi, 1000000U);
+    assert(transport.messages.size() == 2U);
+    assert(transport.messages[1].note == 63U);
+
+    std::cout
+        << "[PASS] +/-100 ms Track delay remains causal across micros wrap\n";
+}
+
 }  // namespace
 
 int main() {
@@ -495,6 +595,9 @@ int main() {
     test_all_notes_off_replaces_a_future_note_off_with_an_immediate_release();
     test_all_notes_off_cancels_only_own_track();
     test_past_tick_deadline_is_due_immediately();
+    test_signed_deadline_offset_applies_to_scheduled_edges_only();
+    test_negative_launch_clamps_current_edge_without_late_catchup_burst();
+    test_track_delay_limits_remain_causal_across_micros_wrap();
 
     std::cout << "All SequencerMidiEventSink tests passed\n";
     return 0;

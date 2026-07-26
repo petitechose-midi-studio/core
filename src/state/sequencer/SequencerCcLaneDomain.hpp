@@ -84,7 +84,7 @@ struct SequencerCcLaneBank {
     std::array<SequencerCcLane, MAX_LANES> lanes{};
 };
 
-/** Non-persisted draft used by Add Lane and Lane Settings. */
+/** Non-persisted draft used only by transactional Lane Settings. */
 struct SequencerCcLaneDraft {
     SequencerCcLaneDestination destination{};
     uint8_t initialValue = 64;
@@ -204,6 +204,32 @@ SequencerCcLaneMutationResult setSequencerCcLaneTransition(
 SequencerCcLaneMutationResult removeSequencerCcLane(
     SequencerCcLaneBank& bank,
     uint8_t laneIndex
+);
+
+/** Bulk Pattern transformations. Each operation bumps bank.revision at most once. */
+bool trimSequencerCcLaneBank(SequencerCcLaneBank& bank, uint8_t contentLength);
+bool duplicateSequencerCcLaneBankRange(
+    SequencerCcLaneBank& bank,
+    uint8_t sourceStart,
+    uint8_t targetStart,
+    uint8_t count
+);
+bool rotateSequencerCcLaneBank(
+    SequencerCcLaneBank& bank,
+    uint8_t contentLength,
+    int offsetSteps
+);
+bool insertSequencerCcLaneBankSpan(
+    SequencerCcLaneBank& bank,
+    uint8_t oldContentLength,
+    uint8_t insertAt,
+    uint8_t insertedLength
+);
+bool removeSequencerCcLaneBankSpan(
+    SequencerCcLaneBank& bank,
+    uint8_t oldContentLength,
+    uint8_t removeAt,
+    uint8_t removedLength
 );
 
 /**

@@ -4,9 +4,10 @@
 #include <cstdint>
 
 #include "app/ExtmemAllocator.hpp"
-#include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
+#include "state/modulation/ProjectControlDomainState.hpp"
 #include "state/project/ProjectState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 
 namespace core::state {
@@ -17,11 +18,14 @@ namespace core::state::project {
 
 struct ProjectSnapshot {
     ProjectState project{};
+    ProjectTrackSnapshot projectTracks = defaultProjectTrackSnapshot();
     std::array<core::state::macro::MacroTrackData, core::state::macro::TRACK_COUNT>
         macroTracks{};
     uint16_t sharedTrackEnabledMask = core::state::macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK;
     uint8_t sharedTrackActive = 0;
-    core::app::ExtmemUniquePtr<core::state::macro::MacroAutomationBankState> macroAutomation;
+    core::app::ExtmemUniquePtr<
+        core::state::modulation::ProjectControlDomainState
+    > projectControl;
     core::state::sequencer::SequencerHistoryTrackBankSnapshot sequencer{};
 
     ProjectSnapshot();
@@ -69,10 +73,13 @@ private:
     ProjectSnapshot* snapshot_ = nullptr;
     Phase phase_ = Phase::IDLE;
     uint32_t modified_counter_ = 0;
+    uint32_t authored_revision_ = 0;
+    uint32_t project_track_revision_ = 0;
 
 };
 
 ProjectSnapshotPtr makeProjectSnapshot();
+
 ProjectSnapshotPtr captureProjectSnapshotOwned(const core::state::CoreState& state);
 bool captureProjectSnapshot(const core::state::CoreState& state, ProjectSnapshot& out);
 bool applyProjectSnapshot(core::state::CoreState& state, const ProjectSnapshot& snapshot);

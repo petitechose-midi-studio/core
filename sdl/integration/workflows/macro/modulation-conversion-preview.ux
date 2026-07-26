@@ -3,16 +3,17 @@
 # preview, tap Apply on an empty target, guarded overwrite, and Modulation clear.
 # Expect: capture_changed:preview_mean_empty=modulation_applied, capture_changed:overwrite_preview=modulation_overwritten, capture_changed:modulation_detail=modulation_cleared
 # Expect: semantic:overwrite_pressed:outcome=pressed, semantic:overwrite_armed:outcome=armed, semantic:modulation_overwritten:outcome=applied
-# Expect: semantic:modulation_clear_armed:effect=arm_clear_modulation, semantic:modulation_clear_armed:outcome=armed, semantic:modulation_cleared:effect=clear_modulation, semantic:modulation_cleared:outcome=applied
+# Expect: semantic:modulation_clear_armed:effect=arm_remove_modulation_assignment, semantic:modulation_clear_armed:outcome=armed, semantic:modulation_cleared:effect=clear_modulation, semantic:modulation_cleared:outcome=applied
 # Expect: semantic:overwrite_pressed:projection=non_audible_preview, semantic:modulation_overwritten:route_policy=live_manual>cc_lane>macro_computed>macro_static
 
 0 scenario macro-automation-curve-shape
 80 capture screen automation_source
 
 # Open Macro Edit, focus Automation, and enter its source detail.
-180 button MACRO_1 down
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
 1240 tick
-1300 button MACRO_1 up
+1300 button LEFT_BOTTOM up
 1450 encoder NAV 1
 1580 tap NAV 60
 1780 capture screen automation_detail

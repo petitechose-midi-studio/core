@@ -15,13 +15,13 @@ inline constexpr uint16_t MACRO_PAGE_PAYLOAD_SIZE =
     1U +
     MACRO_PAGE_RESERVED_SIZE;
 inline constexpr uint16_t MACRO_TRACK_PAYLOAD_SIZE =
-    4U + static_cast<uint16_t>(core::state::macro::PAGE_COUNT * MACRO_PAGE_PAYLOAD_SIZE);
+    3U + static_cast<uint16_t>(core::state::macro::PAGE_COUNT * MACRO_PAGE_PAYLOAD_SIZE);
 inline constexpr uint16_t MACRO_TRACK_BANK_PAYLOAD_SIZE =
     4U + static_cast<uint16_t>(core::state::macro::TRACK_COUNT * MACRO_TRACK_PAYLOAD_SIZE);
 
 static_assert(MACRO_PAGE_PAYLOAD_SIZE == 60, "Unexpected macro page payload size");
-static_assert(MACRO_TRACK_PAYLOAD_SIZE == 964, "Unexpected macro track payload size");
-static_assert(MACRO_TRACK_BANK_PAYLOAD_SIZE == 15428, "Unexpected macro track bank payload size");
+static_assert(MACRO_TRACK_PAYLOAD_SIZE == 963, "Unexpected macro track payload size");
+static_assert(MACRO_TRACK_BANK_PAYLOAD_SIZE == 15412, "Unexpected macro track bank payload size");
 
 bool encodeTrackBankPayload(
     const std::array<core::state::macro::MacroTrackData, core::state::macro::TRACK_COUNT>& tracks,

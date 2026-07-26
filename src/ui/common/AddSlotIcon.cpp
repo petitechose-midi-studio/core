@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <config/PlatformCompat.hpp>
+
 namespace core::ui::add_slot_icon {
 
 namespace {
@@ -25,7 +27,12 @@ lv_area_t centeredArea(const lv_area_t& area, lv_coord_t width, lv_coord_t heigh
     };
 }
 
-lv_obj_t* createBar(lv_obj_t* parent, lv_coord_t width, lv_coord_t height, uint32_t colorHex) {
+FLASHMEM lv_obj_t* createBar(
+    lv_obj_t* parent,
+    lv_coord_t width,
+    lv_coord_t height,
+    uint32_t colorHex
+) {
     lv_obj_t* bar = lv_obj_create(parent);
     lv_obj_remove_style_all(bar);
     lv_obj_add_flag(bar, LV_OBJ_FLAG_IGNORE_LAYOUT);
@@ -40,7 +47,7 @@ lv_obj_t* createBar(lv_obj_t* parent, lv_coord_t width, lv_coord_t height, uint3
 
 }  // namespace
 
-ObjectPair createCentered(lv_obj_t* parent, uint32_t colorHex) {
+FLASHMEM ObjectPair createCentered(lv_obj_t* parent, uint32_t colorHex) {
     return {
         .horizontal = createBar(parent, LONG_AXIS, SHORT_AXIS, colorHex),
         .vertical = createBar(parent, SHORT_AXIS, LONG_AXIS, colorHex),

@@ -5,7 +5,6 @@
  * @brief Multi-page macro configuration with persistence support
  *
  * Manages a bank of macro tracks. Each track stores:
- * - Track MIDI channel
  * - Active page index
  * - Page enabled mask
  * - 16 pages of macro configuration
@@ -26,17 +25,19 @@
 #include <oc/state/Signal.hpp>
 #include <oc/type/TextFormat.hpp>
 
-#include "state/macro/MacroAutomationState.hpp"
 #include "state/macro/MacroConstants.hpp"
+#include "state/modulation/ProjectControlState.hpp"
 
 namespace core::state::macro {
 
 /**
- * @brief Single macro configuration (CC + track channel)
+ * @brief Single Macro destination configuration.
+ *
+ * Track routing is deliberately absent: ProjectTrackState is the sole
+ * authored MIDI-channel authority.
  */
 struct MacroConfig {
-    uint8_t cc = 0;       ///< MIDI CC number (0-127)
-    uint8_t channel = 0;  ///< MIDI channel (0-15)
+    uint8_t cc = 0;  ///< MIDI CC number (0-127)
 };
 
 /**
@@ -55,11 +56,6 @@ struct MacroPageData {
     /// Initialize with page number
     void initDefault(uint8_t pageIndex);
 
-    /// Get config for a macro
-    MacroConfig getConfig(uint8_t macroIndex, uint8_t trackChannel) const {
-        return {cc[macroIndex], trackChannel};
-    }
-
     bool isMacroActive(uint8_t macroIndex) const {
         if (macroIndex >= MACRO_COUNT) return false;
         return (activeMacroMask & static_cast<uint8_t>(1U << macroIndex)) != 0;
@@ -72,27 +68,17 @@ struct MacroPageData {
         else activeMacroMask = static_cast<uint8_t>(activeMacroMask & ~bit);
     }
 
-    uint8_t nextAddMacroIndex() const;
-    uint8_t activeMacroCount() const;
 };
 
 static_assert(sizeof(MacroPageData) == 60, "MacroPageData must be exactly 60 bytes");
 
 /**
- * @brief State for page selector overlay
- */
-struct PageSelectorState {
-    oc::state::Signal<uint8_t, 4> selectedIndex{0};  ///< Currently highlighted page
-    oc::state::Signal<bool, 4> visible{false};       ///< Overlay visibility
-};
-
-/**
  * @brief Persisted data for one macro track
  *
- * One track carries a single MIDI channel and up to 16 macro pages.
+ * One Track carries up to 16 Macro Pages. Track route identity lives only in
+ * ProjectTrackState.
  */
 struct MacroTrackData {
-    uint8_t channel = 0;          ///< Track MIDI channel (0-15)
     uint8_t activePage = 0;       ///< Active page within this track
     uint16_t enabledPageMask = 0x0001;  ///< Enabled macro pages for this track
     std::array<MacroPageData, PAGE_COUNT> pages{};
@@ -115,6 +101,9 @@ struct MacroTrackData {
         if (enabled) enabledPageMask |= bit;
         else enabledPageMask &= static_cast<uint16_t>(~bit);
     }
+
+    /** Retains selected Pages, compacts them in order, and remaps activePage. */
+    bool compactPages(uint16_t retainedPageMask);
 };
 
 /**
@@ -130,14 +119,11 @@ private:
 public:
     static constexpr uint16_t DEFAULT_TRACK_ENABLED_MASK = 0x0001;
 
-    /// Page selector overlay state
-    PageSelectorState selector;
-
     /// All track data (persisted)
     std::array<MacroTrackData, TRACK_COUNT> tracks;
 
-    /// Sparse project-level automation/modulation data keyed by track/page/macro.
-    MacroAutomationBankState automation;
+    /// Singular Project-owned Automation and Modulation authority plus runtime.
+    core::state::modulation::ProjectControlState control;
 
     /// Quick access to active page's configs (updated on page switch)
     std::array<MacroConfig, MACRO_COUNT> activeConfigs;
@@ -152,9 +138,6 @@ public:
     void initDefaults();
     void syncSharedTrackState(uint16_t enabledTrackMask, uint8_t trackIndex);
     void captureSharedTrackState(uint16_t& enabledTrackMaskOut, uint8_t& activeTrackOut) const;
-    void restoreTracksPreservingSharedState(
-        const std::array<MacroTrackData, TRACK_COUNT>& persistedTracks
-    );
     void restoreTracksWithSharedState(
         const std::array<MacroTrackData, TRACK_COUNT>& persistedTracks,
         uint16_t enabledTrackMaskIn,
@@ -187,15 +170,11 @@ public:
     }
 
     bool isMacroAddSlot(uint8_t index) const {
-        return activePageData().nextAddMacroIndex() == index;
+        return index < MACRO_COUNT && !activePageData().isMacroActive(index);
     }
 
     void setMacroSlotActive(uint8_t index, bool active) {
         activePageData().setMacroActive(index, active);
-    }
-
-    uint8_t nextAddMacroIndex() const {
-        return activePageData().nextAddMacroIndex();
     }
 
     MacroPageData& pageData(uint8_t trackIndex, uint8_t pageIndex) {
@@ -205,12 +184,6 @@ public:
     const MacroPageData& pageData(uint8_t trackIndex, uint8_t pageIndex) const {
         return tracks[trackIndex].pages[pageIndex];
     }
-
-    uint8_t activeTrackChannel() const {
-        return activeTrackData().channel;
-    }
-
-    void setActiveTrackChannel(uint8_t channel);
 
     /// Get page name
     const char* pageName(uint8_t index) const {

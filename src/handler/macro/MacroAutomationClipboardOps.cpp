@@ -1,52 +1,106 @@
 #include "handler/macro/MacroAutomationClipboardOps.hpp"
 
+#include <cmath>
+#include <limits>
+
 #include <config/PlatformCompat.hpp>
+
+#include "state/modulation/ProjectControlMacroOps.hpp"
 
 namespace core::handler::macro::automation_clipboard_ops {
 
 namespace {
 
-bool curvePayloadValid(
-    const core::state::macro::MacroAutomationCurveRef& curve,
-    const core::state::macro::MacroAutomationPointPool& pool
+FLASHMEM bool curvePayloadValid(
+    const core::state::modulation::ProjectControlCurvePayload& curve,
+    const core::state::MacroControlClipboardPointPool& pool
 ) {
-    if (!curve.active) return curve.pointCount == 0;
-    if (curve.pointCount == 0 || curve.pointOffset >= pool.used) return false;
-    return static_cast<uint32_t>(curve.pointOffset) + curve.pointCount <= pool.used;
+    if (!curve.stored()) return curve.pointCount == 0U;
+    if (curve.pointOffset >= pool.used ||
+        static_cast<uint32_t>(curve.pointOffset) + curve.pointCount >
+            pool.used) {
+        return false;
+    }
+    return core::state::modulation::validProjectCurveSpec(
+        curve.spec,
+        pool.points.data() + curve.pointOffset,
+        curve.pointCount
+    );
 }
 
-bool slotPayloadValid(const core::state::MacroAutomationClipboard& payload) {
+FLASHMEM bool slotPayloadValid(
+    const core::state::MacroAutomationClipboard& payload
+) {
     if (!payload.valid || payload.count != 1 || !payload.entries[0].valid) {
         return false;
     }
-    const auto& state = payload.entries[0].state;
-    return curvePayloadValid(state.automation, payload.pointPool) &&
-           curvePayloadValid(state.modulation, payload.pointPool) &&
-           core::state::macro::macroAutomationSlotStateValidForMutation(
-               state,
-               payload.pointPool
-           );
+    const auto& entry = payload.entries[0];
+    const auto& control = entry.control;
+    return (!control.automation.stored() ||
+            control.automation.spec.valueDomain ==
+                core::state::modulation::ProjectCurveValueDomain::
+                    ABSOLUTE_UNIPOLAR) &&
+           (!control.recordedShape.stored() ||
+            (control.recordedShape.spec.valueDomain ==
+                 core::state::modulation::ProjectCurveValueDomain::BIPOLAR &&
+             std::isfinite(control.modulationAmount))) &&
+           curvePayloadValid(control.automation, payload.pointPool) &&
+           curvePayloadValid(control.recordedShape, payload.pointPool) &&
+           (entry.destinationScaleQ15 ==
+                 core::state::modulation::
+                     PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15 ||
+            control.recordedShape.stored());
 }
 
-MacroTypedPastePreflight preflightCapacity(
-    const core::state::macro::MacroPagesState& pages,
+FLASHMEM bool applyDestinationScale(
+    core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address,
+    uint16_t scaleQ15
+) {
+    using namespace core::state::modulation;
+    if (scaleQ15 == PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15) return true;
+    const auto destination = projectControlDestination(address);
+    const auto applied = setProjectModulationDestinationScale(
+        control.authored.modulation,
+        destination,
+        scaleQ15
+    );
+    return applied.changed() ||
+           projectModulationDestinationScaleQ15(
+               control.authored.modulation,
+               destination
+           ) == scaleQ15;
+}
+
+FLASHMEM MacroTypedPastePreflight preflightCapacity(
+    const core::state::macro::MacroPagesState& pages,
     uint16_t required,
     uint16_t reclaimable,
-    bool needsSlotEntry,
+    uint16_t addedAutomationEntries,
+    uint16_t addedModulationSources,
+    uint16_t addedModulationBindings,
+    uint16_t addedCurveRecords,
     bool overwrite
 ) {
     MacroTypedPastePreflight plan{};
     plan.requiredPointCount = required;
     plan.reclaimablePointCount = reclaimable;
     plan.freePointCount = static_cast<uint16_t>(
-        core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY -
-        pages.automation.pointPool.used
+        core::state::modulation::PROJECT_CURVE_POINT_CAPACITY -
+        pages.control.authored.curves.pointCount
     );
-    if (needsSlotEntry &&
-        core::state::macro::macroAutomationFindSlot(pages.automation, address) == nullptr &&
-        pages.automation.entryCount >=
-            core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY) {
+    const auto& authored = pages.control.authored;
+    if (static_cast<uint32_t>(authored.automation.entryCount) +
+            addedAutomationEntries >
+            core::state::modulation::PROJECT_AUTOMATION_ENTRY_CAPACITY ||
+        static_cast<uint32_t>(authored.modulation.sourceCount) +
+            addedModulationSources >
+            core::state::modulation::PROJECT_MODULATOR_CAPACITY ||
+        static_cast<uint32_t>(authored.modulation.outputBindingCount) +
+            addedModulationBindings >
+            core::state::modulation::PROJECT_MODULATION_BINDING_CAPACITY ||
+        static_cast<uint32_t>(authored.curves.recordCount) + addedCurveRecords >
+            core::state::modulation::PROJECT_CURVE_LIVE_CAPACITY) {
         plan.status = MacroTypedPasteStatus::SLOT_CAPACITY_EXHAUSTED;
         return plan;
     }
@@ -73,20 +127,24 @@ FLASHMEM bool hasFirstClipboardAutomation(
     }
 
     const auto& entry = clipboard.macroAutomationSet->entries[0];
-    return entry.valid && entry.state.automation.active;
+    return entry.valid && entry.control.automation.stored();
 }
 
 FLASHMEM bool copySlotAutomationToClipboard(
-    const core::state::macro::MacroAutomationBankState& bank,
+    const core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address,
     core::state::StructureClipboardState& clipboard
 ) {
-    const auto* slot = core::state::macro::macroAutomationFindSlot(bank, address);
-    if (slot == nullptr || !core::state::macro::macroCurveStored(slot->automation)) {
+    core::state::modulation::ProjectControlMacroDestinationView slot{};
+    if (!core::state::modulation::readProjectControlMacroDestination(
+            control,
+            address,
+            slot
+        ) || !slot.automation.stored()) {
         return false;
     }
 
-    if (!clipboard.storeMacroAutomation(bank, *slot) ||
+    if (!clipboard.storeMacroAutomation(control, address) ||
         !clipboard.macroAutomationSet) {
         return false;
     }
@@ -99,31 +157,22 @@ FLASHMEM bool copySlotAutomationToClipboard(
 }
 
 FLASHMEM bool pasteFirstClipboardAutomationToSlot(
-    core::state::macro::MacroAutomationBankState& bank,
+    core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address,
     const core::state::StructureClipboardState& clipboard
 ) {
     if (!hasFirstClipboardAutomation(clipboard)) return false;
 
     const auto& entry = clipboard.macroAutomationSet->entries[0];
-    const bool hadSlot =
-        core::state::macro::macroAutomationFindSlot(bank, address) != nullptr;
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(bank, address);
-    if (slot == nullptr) return false;
-
-    if (!core::state::macro::macroAutomationCopyAutomationState(
-            bank,
-            *slot,
-            clipboard.macroAutomationSet->pointPool,
-            entry.state
-        )) {
-        if (!hadSlot) {
-            core::state::macro::macroAutomationClearSlot(bank, address);
-        }
-        return false;
-    }
-
-    return true;
+    const auto& curve = entry.control.automation;
+    return core::state::modulation::replaceProjectControlAutomation(
+        control,
+        address,
+        curve,
+        clipboard.macroAutomationSet->pointPool.points.data() +
+            curve.pointOffset,
+        curve.pointCount
+    );
 }
 
 FLASHMEM MacroTypedPastePreflight preflightAutomationPaste(
@@ -143,29 +192,33 @@ FLASHMEM MacroTypedPastePreflight preflightAutomationPaste(
     }
     const auto& payload = *clipboard.macroAutomationSet;
     if (!slotPayloadValid(payload) ||
-        !core::state::macro::macroCurveStored(payload.entries[0].state.automation)) {
+        !payload.entries[0].control.automation.stored()) {
         rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
         return rejected;
     }
-    const auto* target = core::state::macro::macroAutomationFindSlot(
-        pages.automation,
-        address
-    );
-    const uint16_t required = payload.entries[0].state.automation.pointCount;
-    const uint16_t reclaimable = target != nullptr
-        ? core::state::macro::macroAutomationStoredPointCount(
-              target->automation,
-              pages.automation.pointPool
-          )
-        : 0;
-    const bool populated = target != nullptr &&
-        core::state::macro::macroCurveStored(target->automation);
+    core::state::modulation::ProjectControlMacroDestinationView target{};
+    if (!core::state::modulation::readProjectControlMacroDestination(
+            pages.control,
+            address,
+            target
+        )) {
+        rejected.status = MacroTypedPasteStatus::INVALID_TARGET;
+        return rejected;
+    }
+    const uint16_t required =
+        payload.entries[0].control.automation.pointCount;
+    const uint16_t reclaimable = target.automation.stored()
+        ? target.automation.pointCount
+        : 0U;
+    const bool populated = target.automation.stored();
     return preflightCapacity(
         pages,
-        address,
         required,
         reclaimable,
-        true,
+        target.automation.stored() ? 0U : 1U,
+        0,
+        0,
+        target.automation.stored() ? 0U : 1U,
         populated
     );
 }
@@ -180,17 +233,14 @@ FLASHMEM bool pasteAutomationFromClipboard(
     if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
         return false;
     }
-    auto* target = core::state::macro::macroAutomationGetOrCreateSlot(
-        pages.automation,
-        address
-    );
-    if (target == nullptr) return false;
     const auto& payload = *clipboard.macroAutomationSet;
-    return core::state::macro::macroAutomationCopyAutomationState(
-        pages.automation,
-        *target,
-        payload.pointPool,
-        payload.entries[0].state
+    const auto& curve = payload.entries[0].control.automation;
+    return core::state::modulation::replaceProjectControlAutomation(
+        pages.control,
+        address,
+        curve,
+        payload.pointPool.points.data() + curve.pointOffset,
+        curve.pointCount
     );
 }
 
@@ -277,30 +327,44 @@ FLASHMEM MacroTypedPastePreflight preflightSlotPaste(
         rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
         return rejected;
     }
-    const auto* target = core::state::macro::macroAutomationFindSlot(
-        pages.automation,
-        address
-    );
+    core::state::modulation::ProjectControlMacroDestinationView target{};
+    if (!core::state::modulation::readProjectControlMacroDestination(
+            pages.control,
+            address,
+            target
+        ) || target.mutationAmbiguous() ||
+        (target.primaryModulation.present() &&
+         !target.primaryModulation.isRecordedShape())) {
+        rejected.status = MacroTypedPasteStatus::INVALID_TARGET;
+        return rejected;
+    }
+    const auto& source = payload.entries[0].control;
     const uint16_t required = payload.sourceSlotPresent
-        ? core::state::macro::macroAutomationStoredPointCount(
-              payload.entries[0].state,
-              payload.pointPool
+        ? static_cast<uint16_t>(
+              source.automation.pointCount + source.recordedShape.pointCount
           )
         : 0;
-    const uint16_t reclaimable = target != nullptr
-        ? core::state::macro::macroAutomationStoredPointCount(
-              *target,
-              pages.automation.pointPool
-          )
-        : 0;
+    // Replacing Automation releases its owned curve. A Project Modulator
+    // source remains in the registry when its destination edge is removed.
+    const uint16_t reclaimable = target.automation.pointCount;
     const auto& targetPage = pages.pageData(address.track, address.page);
-    const bool populated = targetPage.isMacroActive(address.macro) || target != nullptr;
+    const bool populated =
+        targetPage.isMacroActive(address.macro) || target.present();
+    const bool wantsAutomation = payload.sourceSlotPresent &&
+        source.automation.stored();
+    const bool wantsModulation = payload.sourceSlotPresent &&
+        source.recordedShape.stored();
     return preflightCapacity(
         pages,
-        address,
         required,
         reclaimable,
-        payload.sourceSlotPresent,
+        wantsAutomation && !target.automation.stored() ? 1U : 0U,
+        wantsModulation ? 1U : 0U,
+        wantsModulation && !target.primaryModulation.present() ? 1U : 0U,
+        static_cast<uint16_t>(
+            (wantsAutomation && !target.automation.stored() ? 1U : 0U) +
+            (wantsModulation ? 1U : 0U)
+        ),
         populated
     );
 }
@@ -316,24 +380,30 @@ FLASHMEM bool pasteSlotFromClipboard(
         return false;
     }
     const auto& payload = *clipboard.macroAutomationSet;
-    if (payload.sourceSlotPresent) {
-        auto* target = core::state::macro::macroAutomationGetOrCreateSlot(
-            pages.automation,
-            address
-        );
-        if (target == nullptr || !core::state::macro::macroAutomationCopySlotState(
-                pages.automation,
-                *target,
-                payload.pointPool,
-                payload.entries[0].state
-            )) {
-            return false;
-        }
-    } else {
-        (void)core::state::macro::macroAutomationClearSlot(
-            pages.automation,
-            address
-        );
+    const core::state::modulation::ProjectControlMacroDestinationPayload empty{};
+    const auto& source = payload.sourceSlotPresent
+        ? payload.entries[0].control
+        : empty;
+    const uint16_t pointCount = payload.sourceSlotPresent
+        ? static_cast<uint16_t>(
+              source.automation.pointCount + source.recordedShape.pointCount
+          )
+        : 0U;
+    if (!core::state::modulation::replaceProjectControlMacroDestination(
+            pages.control,
+            address,
+            source,
+            pointCount > 0U ? payload.pointPool.points.data() : nullptr,
+            pointCount
+        )) {
+        return false;
+    }
+    if (!applyDestinationScale(
+            pages.control,
+            address,
+            payload.entries[0].destinationScaleQ15
+        )) {
+        return false;
     }
 
     auto& page = pages.pageData(address.track, address.page);
@@ -350,11 +420,57 @@ FLASHMEM bool pasteSlotFromClipboard(
 }
 
 FLASHMEM bool copyModulationToClipboard(
-    const core::state::macro::MacroAutomationBankState& bank,
+    const core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address,
     core::state::StructureClipboardState& clipboard
 ) {
-    return clipboard.storeMacroModulation(bank, address);
+    return clipboard.storeMacroModulation(control, address);
+}
+
+FLASHMEM bool copyModulationAssignmentToClipboard(
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    core::state::modulation::ModulationBindingId bindingId,
+    core::state::StructureClipboardState& clipboard
+) {
+    return clipboard.storeMacroModulationAssignment(
+        control,
+        address,
+        bindingId
+    );
+}
+
+FLASHMEM bool modulationAssignmentDraftFromClipboard(
+    const core::state::StructureClipboardState& clipboard,
+    const core::state::modulation::ModulationDestination& destination,
+    core::state::modulation::ModulationBindingDraft& out
+) {
+    using namespace core::state::modulation;
+    if (!clipboard.hasMacroModulationAssignment() ||
+        !clipboard.macroModulationAssignment ||
+        !modulationDestinationValid(destination)) {
+        return false;
+    }
+    const auto& payload = *clipboard.macroModulationAssignment;
+    const auto& binding = payload.binding;
+    if (!payload.valid || binding.sourceId != payload.sourceId ||
+        binding.amountQ15 == std::numeric_limits<int16_t>::min() ||
+        static_cast<uint8_t>(binding.application) >
+            static_cast<uint8_t>(ModulationApplication::FROM_BASE) ||
+        binding.transfer != ModulationTransfer::LINEAR) {
+        return false;
+    }
+    out = {
+        .sourceId = payload.sourceId,
+        .destination = destination,
+        .amountQ15 = binding.amountQ15,
+        .application = binding.application,
+        .transfer = binding.transfer,
+        .slewMs = binding.slewMs,
+        .enabled = (binding.flags &
+                    PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U,
+    };
+    return true;
 }
 
 FLASHMEM MacroTypedPastePreflight preflightModulationPaste(
@@ -368,35 +484,75 @@ FLASHMEM MacroTypedPastePreflight preflightModulationPaste(
         rejected.status = MacroTypedPasteStatus::INVALID_TARGET;
         return rejected;
     }
+    if (clipboard.hasMacroModulationAssignment()) {
+        using namespace core::state::modulation;
+        ModulationBindingDraft draft{};
+        if (!modulationAssignmentDraftFromClipboard(
+                clipboard,
+                projectControlDestination(address),
+                draft
+            )) {
+            rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
+            return rejected;
+        }
+        const auto& graph = pages.control.authored.modulation;
+        const auto* source = findProjectModulator(graph, draft.sourceId);
+        if (source == nullptr) {
+            rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
+            return rejected;
+        }
+        bool duplicate = false;
+        for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+            const auto& existing = graph.outputBindings[index];
+            if (existing.sourceId == draft.sourceId &&
+                existing.destination == draft.destination) {
+                duplicate = true;
+                break;
+            }
+        }
+        return preflightCapacity(
+            pages,
+            0U,
+            0U,
+            0U,
+            0U,
+            duplicate ? 0U : 1U,
+            0U,
+            duplicate
+        );
+    }
     if (!clipboard.hasMacroModulation() || !clipboard.macroAutomationSet) {
         rejected.status = MacroTypedPasteStatus::EMPTY_CLIPBOARD;
         return rejected;
     }
     const auto& payload = *clipboard.macroAutomationSet;
     if (!slotPayloadValid(payload) ||
-        !core::state::macro::macroCurveStored(payload.entries[0].state.modulation)) {
+        !payload.entries[0].control.recordedShape.stored()) {
         rejected.status = MacroTypedPasteStatus::INVALID_PAYLOAD;
         return rejected;
     }
-    const auto* target = core::state::macro::macroAutomationFindSlot(
-        pages.automation,
-        address
-    );
-    const uint16_t required = payload.entries[0].state.modulation.pointCount;
-    const uint16_t reclaimable = target != nullptr
-        ? core::state::macro::macroAutomationStoredPointCount(
-              target->modulation,
-              pages.automation.pointPool
-          )
-        : 0;
-    const bool populated = target != nullptr &&
-        core::state::macro::macroCurveStored(target->modulation);
+    core::state::modulation::ProjectControlMacroDestinationView target{};
+    if (!core::state::modulation::readProjectControlMacroDestination(
+            pages.control,
+            address,
+            target
+        ) || target.mutationAmbiguous() ||
+        (target.primaryModulation.present() &&
+         !target.primaryModulation.isRecordedShape())) {
+        rejected.status = MacroTypedPasteStatus::INVALID_TARGET;
+        return rejected;
+    }
+    const uint16_t required =
+        payload.entries[0].control.recordedShape.pointCount;
+    const bool populated = target.primaryModulation.present();
     return preflightCapacity(
         pages,
-        address,
         required,
-        reclaimable,
-        true,
+        0U,
+        0,
+        1U,
+        target.primaryModulation.present() ? 0U : 1U,
+        1U,
         populated
     );
 }
@@ -411,17 +567,61 @@ FLASHMEM bool pasteModulationFromClipboard(
     if (!plan.actionable() || (plan.requiresOverwrite() && !overwriteConfirmed)) {
         return false;
     }
-    auto* target = core::state::macro::macroAutomationGetOrCreateSlot(
-        pages.automation,
-        address
-    );
-    if (target == nullptr) return false;
+    if (clipboard.hasMacroModulationAssignment()) {
+        using namespace core::state::modulation;
+        ModulationBindingDraft draft{};
+        if (!modulationAssignmentDraftFromClipboard(
+                clipboard,
+                projectControlDestination(address),
+                draft
+            )) {
+            return false;
+        }
+        auto& graph = pages.control.authored.modulation;
+        for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+            auto& existing = graph.outputBindings[index];
+            if (existing.sourceId != draft.sourceId ||
+                existing.destination != draft.destination) {
+                continue;
+            }
+            if (!overwriteConfirmed ||
+                !updateProjectModulationBinding(
+                    graph,
+                    existing.id,
+                    draft.amountQ15,
+                    draft.application,
+                    draft.transfer,
+                    draft.enabled,
+                    draft.slewMs
+                ).changed()) {
+                return false;
+            }
+            pages.control.markAuthoredMutation();
+            return true;
+        }
+        if (overwriteConfirmed || !addProjectModulationBinding(graph, draft).changed()) {
+            return false;
+        }
+        pages.control.markAuthoredMutation();
+        return true;
+    }
     const auto& payload = *clipboard.macroAutomationSet;
-    return core::state::macro::macroAutomationCopyModulationState(
-        pages.automation,
-        *target,
-        payload.pointPool,
-        payload.entries[0].state
+    const auto& control = payload.entries[0].control;
+    const auto& curve = control.recordedShape;
+    if (!core::state::modulation::replaceProjectControlRecordedShape(
+        pages.control,
+        address,
+        curve,
+        control.modulationAmount,
+        payload.pointPool.points.data() + curve.pointOffset,
+        curve.pointCount
+    )) {
+        return false;
+    }
+    return applyDestinationScale(
+        pages.control,
+        address,
+        payload.entries[0].destinationScaleQ15
     );
 }
 

@@ -186,9 +186,9 @@ void test_macro_shortcut_save_then_confirm_cancel_flow() {
 void test_sequencer_command_palette_load_set_flow_uses_mode_selector() {
     DataManagerHarness h;
 
-    h.state.sequencer.pattern.length.set(8);
+    h.state.sequencer.pattern.setContentLength(8);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(h.state, 0));
-    h.state.sequencer.pattern.length.set(16);
+    h.state.sequencer.pattern.setContentLength(16);
 
     openManagerWithLongPress(h, core::ui::ViewType::SEQUENCER);
     h.release(Config::ButtonID::NAV);

@@ -26,7 +26,18 @@ struct SequencerChordPreview {
     bool valid = false;
     oc::note::sequencer::StepSequencerChordSource source =
         oc::note::sequencer::StepSequencerChordSource::Single;
+    bool semanticRecipe = false;
+    bool harmonyAdjustedForPitchMode = false;
+    bool inversionClamped = false;
+    bool rangeLimited = false;
     uint8_t voiceCount = 0;
+    uint8_t requestedVoiceCount = 1;
+    uint8_t effectiveInversion = 0;
+    uint8_t droppedVoiceCount = 0;
+    oc::note::sequencer::StepSequencerChordHarmony harmony =
+        oc::note::sequencer::StepSequencerChordHarmony::DiatonicTriad;
+    oc::note::sequencer::StepSequencerChordVoicing voicing =
+        oc::note::sequencer::StepSequencerChordVoicing::Close;
     uint16_t spanTicks = 1;
     std::array<SequencerChordVoicePreview, MAX_VOICES> voices{};
     oc::note::sequencer::StepSequencerChordAnalysis analysis{};
@@ -35,6 +46,8 @@ struct SequencerChordPreview {
 struct SequencerStepChordUiState {
     bool valid = false;
     bool rootContext = true;
+    bool pitchUsesScaleDegrees = true;
+    bool scaleConstrained = false;
     oc::note::sequencer::StepSequencerChordMode mode =
         oc::note::sequencer::StepSequencerChordMode::Single;
     oc::note::sequencer::StepSequencerChordSpec spec{};

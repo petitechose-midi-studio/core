@@ -4,7 +4,9 @@
 #include <config/InputIDs.hpp>
 #include "handler/common/NavigationUtils.hpp"
 #include "state/project/ProjectMenuModel.hpp"
+#include "state/CoreState.hpp"
 #include "state/ViewSelectorItems.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
 
 namespace core::handler {
 
@@ -17,17 +19,14 @@ FLASHMEM ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
                                                   oc::api::ButtonAPI& buttons,
                                                   ViewSwitcherHandler::ViewScopes viewScopes,
                                                   oc::type::ScopeID viewSelectorScope)
-    : overlays_state_(state.overlays)
+    : core_state_(state.coreState)
+    , overlays_state_(state.overlays)
     , active_view_(state.activeView)
     , view_selector_(state.viewSelector)
-    , sequencer_settings_(state.sequencerSettings)
-    , sequencer_content_view_(state.sequencerContentView)
     , pattern_quick_controls_(state.patternQuickControls)
     , step_property_inline_selector_(state.stepPropertyInlineSelector)
     , cc_lane_ui_(state.ccLaneUi)
-    , track_structure_selection_(state.trackStructureSelection)
-    , macro_page_selection_(state.macroPageSelection)
-    , sequencer_page_selection_(state.sequencerPageSelection)
+    , sequencer_step_selection_(state.sequencerStepSelection)
     , project_navigation_(state.projectNavigation)
     , overlays_(overlays)
     , encoders_(encoders)
@@ -38,20 +37,56 @@ FLASHMEM ViewSwitcherHandler::ViewSwitcherHandler(StateRefs state,
 }
 
 FLASHMEM void ViewSwitcherHandler::setupBindings() {
-    // Open selector from any active top-level view scope (latch behavior for toggle)
-    oc::type::ScopeID lastBoundScope = 0;
+    const auto projectScope =
+        view_scopes_[static_cast<std::size_t>(core::ui::ViewType::PROJECT)];
+    std::array<oc::type::ScopeID, VIEW_SCOPE_COUNT> boundScopes{};
+    std::size_t boundScopeCount = 0;
     for (oc::type::ScopeID viewScope : view_scopes_) {
-        if (!viewScope || viewScope == lastBoundScope) continue;
+        if (!viewScope) continue;
+        bool alreadyBound = false;
+        for (std::size_t i = 0; i < boundScopeCount; ++i) {
+            if (boundScopes[i] == viewScope) {
+                alreadyBound = true;
+                break;
+            }
+        }
+        if (alreadyBound) continue;
 
-        buttons_.button(ButtonID::LEFT_TOP)
-            .press()
-            .latch()
-            .scope(viewScope)
-            .when([this]() { return canOpenSelector(); })
-            .then([this]() { openSelector(); });
+        if (viewScope == projectScope) {
+            // Project children own LEFT_TOP exclusively for Back/Cancel. Once
+            // back at a root, the same short gesture opens the global selector.
+            buttons_.button(ButtonID::LEFT_TOP)
+                .press()
+                .latch()
+                .scope(viewScope)
+                .when([this]() {
+                    return canOpenSelector() &&
+                           core::state::project::projectNavigationAtRoot(
+                               project_navigation_
+                           );
+                })
+                .then([this]() { (void)beginSelectorPress(); });
+        } else {
+            buttons_.button(ButtonID::LEFT_TOP)
+                .press()
+                .latch()
+                .scope(viewScope)
+                .when([this]() { return canOpenSelector(); })
+                .then([this]() { (void)beginSelectorPress(); });
+        }
 
-        lastBoundScope = viewScope;
+        boundScopes[boundScopeCount++] = viewScope;
     }
+
+    // The opening press transfers ownership to this scope. A short release
+    // activates this latch and keeps the selector visible; the next tap
+    // releases it. A physical hold exceeds the configured latch threshold, so
+    // its first release is dispatched immediately to close/apply below.
+    buttons_.button(ButtonID::LEFT_TOP)
+        .press()
+        .latch()
+        .scope(view_selector_scope_)
+        .then([]() {});
 
     // Close and confirm on release
     buttons_.button(ButtonID::LEFT_TOP)
@@ -71,59 +106,68 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
         .scope(view_selector_scope_)
         .then([this]() { closeSelector(); });
 
-    buttons_.button(ButtonID::BOTTOM_LEFT)
+    buttons_.button(ButtonID::LEFT_CENTER)
         .release()
         .scope(view_selector_scope_)
-        .when([this]() {
-            return core::state::viewSelectorItemHasSettingsAction(
-                core::state::viewSelectorItemAt(view_selector_.selectedIndex.get())
-            );
-        })
-        .then([this]() { openSelectedItemSettings(); });
+        .when([this]() { return core_state_.projectHistory.canUndo(); })
+        .then([this]() { undoProjectHistory(); });
+
+    buttons_.button(ButtonID::LEFT_BOTTOM)
+        .release()
+        .scope(view_selector_scope_)
+        .when([this]() { return core_state_.projectHistory.canRedo(); })
+        .then([this]() { redoProjectHistory(); });
 }
 
 FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
     if (overlays_state_.hasVisible()) return false;
-    if (track_structure_selection_.active.get()) return false;
-
-    if (active_view_.get() == core::ui::ViewType::MACRO &&
-        macro_page_selection_.active.get()) {
-        return false;
-    }
-
-    if (active_view_.get() == core::ui::ViewType::SEQUENCER &&
-        sequencer_page_selection_.active.get()) {
-        return false;
-    }
-
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
-        if (active_view_.get() == core::ui::ViewType::PROJECT) {
-            return core::state::project::projectNavigationAtRoot(project_navigation_) &&
-                   !project_navigation_.physicalHoldActive.get();
+        if (core::ui::isProjectWorkspaceView(active_view_.get())) {
+            const auto node = project_navigation_.currentNode.get();
+            return !project_navigation_.physicalHoldActive.get() &&
+                   !core_state_.pages.control.audition.active() &&
+                   !project_navigation_.creatingModulatorSource &&
+                   !core::state::project::projectNavigationInProjectConfirmation(
+                       project_navigation_
+                   ) &&
+                   node != core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME;
         }
         return true;
     }
 
-    if (sequencer_content_view_.isChildContent()) {
-        return false;
-    }
-
-    return !pattern_quick_controls_.selecting.get() &&
-           !pattern_quick_controls_.physicalHoldActive.get() &&
+    return core::state::sequencer::isRootContentView(core_state_.sequencer) &&
+           !core_state_.trackNavigation.selection.active.get() &&
+           !core_state_.sequencer.structureUi.pageSelection.active.get() &&
+           !sequencer_step_selection_.active.get() &&
+           !pattern_quick_controls_.selecting.get() &&
            !step_property_inline_selector_.selecting.get() &&
+           !core_state_.sequencer.stepContentSelector.selecting.get() &&
            !cc_lane_ui_.visible();
 }
 
-FLASHMEM void ViewSwitcherHandler::openSelector() {
-    view_selector_.selectedIndex.set(
-        static_cast<int>(core::state::viewSelectorItemForView(active_view_.get()))
-    );
+FLASHMEM bool ViewSwitcherHandler::beginSelectorPress() {
+    if (!openSelector()) return false;
+    buttons_.setPressOwner(ButtonID::LEFT_TOP, view_selector_scope_);
+    return true;
+}
+
+FLASHMEM bool ViewSwitcherHandler::openSelector() {
+    if (core_state_.sequencer.stepContentDraft.active.get()) {
+        core_state_.sequencer.stepContentDraft.noteBlockedTransition(
+            core::state::sequencer::
+                SequencerStepContentDraftBlockedTransition::VIEW
+        );
+        return false;
+    }
+    if (!core_state_.prepareProjectHistoryInteraction()) return false;
+    const auto selected = core::state::viewSelectorItemForView(active_view_.get());
+    view_selector_.selectedIndex.set(static_cast<int>(selected));
 
     if (!view_selector_.visible.get()) {
         overlays_.show(core::ui::OverlayType::VIEW_SELECTOR, false);
     }
-
     encoders_.setMode(EncoderID::NAV, oc::interface::EncoderMode::RELATIVE);
+    return true;
 }
 
 FLASHMEM void ViewSwitcherHandler::navigate(float delta) {
@@ -135,6 +179,13 @@ FLASHMEM void ViewSwitcherHandler::navigate(float delta) {
 }
 
 FLASHMEM void ViewSwitcherHandler::confirmSelection() {
+    if (core_state_.sequencer.stepContentDraft.active.get()) {
+        core_state_.sequencer.stepContentDraft.noteBlockedTransition(
+            core::state::sequencer::
+                SequencerStepContentDraftBlockedTransition::VIEW
+        );
+        return;
+    }
     int index = view_selector_.selectedIndex.get();
     if (index < 0 || index >= core::state::VIEW_SELECTOR_ITEM_COUNT) return;
 
@@ -142,6 +193,33 @@ FLASHMEM void ViewSwitcherHandler::confirmSelection() {
     if (!core::state::viewSelectorItemHasView(item)) return;
 
     auto type = core::state::viewForSelectorItem(item);
+    if (item == core::state::ViewSelectorItem::MODULATORS) {
+        if (active_view_.get() != core::ui::ViewType::MODULATORS ||
+            project_navigation_.activeTab.get() !=
+                core::state::project::ProjectTab::MODULATORS) {
+            core::state::project::openProjectRootTab(
+                project_navigation_,
+                core::state::project::ProjectTab::MODULATORS
+            );
+            encoders_.setMode(
+                EncoderID::OPT,
+                oc::interface::EncoderMode::RELATIVE
+            );
+        }
+    } else if (item == core::state::ViewSelectorItem::PROJECT_SETTINGS) {
+        if (active_view_.get() != core::ui::ViewType::PROJECT ||
+            project_navigation_.activeTab.get() ==
+            core::state::project::ProjectTab::MODULATORS) {
+            core::state::project::openProjectRootTab(
+                project_navigation_,
+                core::state::project::ProjectTab::OVERVIEW
+            );
+            encoders_.setMode(
+                EncoderID::OPT,
+                oc::interface::EncoderMode::RELATIVE
+            );
+        }
+    }
     if (active_view_.get() == type) return;
     active_view_.set(type);
 }
@@ -151,15 +229,12 @@ FLASHMEM void ViewSwitcherHandler::closeSelector() {
     confirmSelection();
 }
 
-FLASHMEM void ViewSwitcherHandler::openSelectedItemSettings() {
-    const auto item = core::state::viewSelectorItemAt(view_selector_.selectedIndex.get());
-    if (item != core::state::ViewSelectorItem::SEQUENCER) return;
+FLASHMEM void ViewSwitcherHandler::undoProjectHistory() {
+    (void)core_state_.undoProjectHistory();
+}
 
-    overlays_.hide();
-    view_selector_.visible.set(false);
-    active_view_.set(core::ui::ViewType::SEQUENCER);
-    sequencer_settings_.openOverlay();
-    overlays_.show(core::ui::OverlayType::SEQUENCER_SETTINGS, false);
+FLASHMEM void ViewSwitcherHandler::redoProjectHistory() {
+    (void)core_state_.redoProjectHistory();
 }
 
 }  // namespace core::handler

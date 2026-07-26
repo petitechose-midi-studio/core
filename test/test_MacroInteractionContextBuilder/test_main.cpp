@@ -7,6 +7,7 @@
 #include "../../src/state/macro/MacroInteractionContextBuilder.hpp"
 #include "../../src/state/macro/MacroPagesState.hpp"
 #include "../../src/state/macro/MacroUiState.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 
@@ -40,15 +41,11 @@ struct Harness {
 };
 
 void assignMinimalAutomation(core::state::macro::MacroPagesState& pages, uint8_t macroIndex) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = pages.currentActiveTrack(),
-            .page = pages.currentActivePage(),
-            .macro = macroIndex,
-        }
-    );
-    assert(slot != nullptr);
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = pages.currentActiveTrack(),
+        .page = pages.currentActivePage(),
+        .macro = macroIndex,
+    };
 
     core::state::macro::MacroAutomationLane lane{};
     lane.active = true;
@@ -56,71 +53,19 @@ void assignMinimalAutomation(core::state::macro::MacroPagesState& pages, uint8_t
     lane.pointCount = 2;
     lane.points[0] = core::state::macro::MacroCurvePoint{0.0f, 0.25f};
     lane.points[1] = core::state::macro::MacroCurvePoint{1.0f, 0.75f};
-    assert(core::state::macro::macroAutomationAssignAutomation(
-        pages.automation,
-        *slot,
+    assert(test_support::project_control::assignAutomation(
+        pages.control,
+        address,
         lane
     ));
 }
 
-void test_page_focus_projects_selection_preview_and_remove() {
-    Harness h;
-    h.pages.setPageEnabled(1, true);
-    h.macroUi.pageSelection.active.set(true);
-    h.macroUi.pageSelection.selectedMask.set(0x0002);
 
-    const auto context = core::state::macro::buildMacroInteractionContext(h.source());
-    assert(context.navigationFocus == StructureNavigationFocus::PAGE);
-    assert(context.selectionActive);
-    assert(!context.previewingAddSlot);
-    assert(context.canRemoveStructure);
-    assert(context.selectionDeleteAction.hold.action ==
-           core::state::contextual::ContextActionId::REMOVE);
-    assert(context.selectionDeleteAction.hold.availability ==
-           core::state::contextual::ContextActionAvailability::AVAILABLE);
-    assert(context.selectionDeleteAction.hold.reason ==
-           core::state::contextual::ContextActionReason::NONE);
-    assert(context.selectionDeleteAction.source.item == 0x0002);
-    assert(context.selectionDeleteAction.guard.durationMs ==
-           Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
-
-    const auto blocked = core::state::macro::buildMacroInteractionContext(
-        h.source(StructureNavigationFocus::PAGE, true)
-    );
-    assert(blocked.blockingOverlay);
-    assert(!blocked.selectionActive);
-    assert(blocked.selectionDeleteAction.hold.availability ==
-           core::state::contextual::ContextActionAvailability::DISABLED);
-
-    std::cout << "[PASS] test_page_focus_projects_selection_preview_and_remove\n";
-}
-
-void test_selection_delete_preflight_disables_empty_and_delete_all() {
-    Harness h;
-    h.pages.setPageEnabled(1, true);
-    h.macroUi.pageSelection.active.set(true);
-
-    const auto empty = core::state::macro::buildMacroInteractionContext(h.source());
-    assert(empty.selectionDeleteAction.hold.availability ==
-           core::state::contextual::ContextActionAvailability::DISABLED);
-    assert(empty.selectionDeleteAction.hold.reason ==
-           core::state::contextual::ContextActionReason::EMPTY_SELECTION);
-
-    h.macroUi.pageSelection.selectedMask.set(0x0003);
-    const auto all = core::state::macro::buildMacroInteractionContext(h.source());
-    assert(all.selectionDeleteAction.hold.availability ==
-           core::state::contextual::ContextActionAvailability::DISABLED);
-    assert(all.selectionDeleteAction.hold.reason ==
-           core::state::contextual::ContextActionReason::MINIMUM_CARDINALITY);
-
-    std::cout << "[PASS] test_selection_delete_preflight_disables_empty_and_delete_all\n";
-}
 
 void test_track_focus_uses_shared_track_mask_and_clipboard() {
     Harness h;
     h.enabledTrackMask = 0x0003;
     h.clipboard.kind.set(core::state::StructureClipboardKind::MACRO_TRACK);
-
     const auto context = core::state::macro::buildMacroInteractionContext(
         h.source(StructureNavigationFocus::TRACK)
     );
@@ -137,6 +82,23 @@ void test_track_focus_uses_shared_track_mask_and_clipboard() {
     std::cout << "[PASS] test_track_focus_uses_shared_track_mask_and_clipboard\n";
 }
 
+void test_track_focus_remains_first_class_on_hot_surface() {
+    Harness h;
+    h.enabledTrackMask = 0x0003;
+    h.pages.setPageEnabled(1, true);
+    h.clipboard.kind.set(core::state::StructureClipboardKind::MACRO_PAGE);
+
+    const auto context = core::state::macro::buildMacroInteractionContext(
+        h.source(StructureNavigationFocus::TRACK)
+    );
+    assert(context.navigationFocus == StructureNavigationFocus::TRACK);
+    assert(!context.compatibleClipboardAvailable);
+    assert(context.canRemoveStructure);
+
+    std::cout
+        << "[PASS] test_track_focus_remains_first_class_on_hot_surface\n";
+}
+
 void test_step_focus_requires_typed_slot_clipboard() {
     Harness h;
     h.macroUi.focusedMacroSlot.set(1);
@@ -151,23 +113,19 @@ void test_step_focus_requires_typed_slot_clipboard() {
     h.pages.setMacroSlotActive(1, true);
     h.macroUi.focusedMacroSlot.set(1);
     assignMinimalAutomation(h.pages, 1);
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        h.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = h.pages.currentActiveTrack(),
-            .page = h.pages.currentActivePage(),
-            .macro = 1,
-        }
-    );
-    assert(slot != nullptr);
-    assert(h.clipboard.storeMacroAutomation(h.pages.automation, *slot));
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = h.pages.currentActiveTrack(),
+        .page = h.pages.currentActivePage(),
+        .macro = 1,
+    };
+    assert(h.clipboard.storeMacroAutomation(h.pages.control, address));
 
-    const auto legacyAutomation = core::state::macro::buildMacroInteractionContext(
+    const auto storedAutomation = core::state::macro::buildMacroInteractionContext(
         h.source(StructureNavigationFocus::STEP)
     );
-    assert(!legacyAutomation.previewingAddSlot);
-    assert(!legacyAutomation.compatibleClipboardAvailable);
-    assert(legacyAutomation.canRemoveStructure);
+    assert(!storedAutomation.previewingAddSlot);
+    assert(!storedAutomation.compatibleClipboardAvailable);
+    assert(storedAutomation.canRemoveStructure);
 
     assert(h.clipboard.storeMacroSlot(
         h.pages,
@@ -192,9 +150,8 @@ void test_step_focus_requires_typed_slot_clipboard() {
 }  // namespace
 
 int main() {
-    test_page_focus_projects_selection_preview_and_remove();
-    test_selection_delete_preflight_disables_empty_and_delete_all();
     test_track_focus_uses_shared_track_mask_and_clipboard();
+    test_track_focus_remains_first_class_on_hot_surface();
     test_step_focus_requires_typed_slot_clipboard();
     std::cout << "\nAll MacroInteractionContextBuilder tests passed.\n";
     return 0;

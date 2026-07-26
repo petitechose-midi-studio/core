@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "persistence/MacroPersistence.hpp"
 #include "state/CoreState.hpp"
 #include "state/macro/MacroPersistenceWorkflow.hpp"
 #include "state/sequencer/SequencerPersistenceWorkflow.hpp"
@@ -16,9 +17,10 @@ FLASHMEM bool slotOccupied(CoreState& state, DataManagerCommand command, uint8_t
         case DataManagerSlotDomain::MACRO_LIBRARY: {
             if (!state.isMacroPersistenceReady()) return false;
 
-            auto probe = core::app::makeExtmemUnique<macro::MacroPagesState>();
+            auto probe = core::app::makeExtmemUnique<
+                core::persistence::MacroPersistence::LibrarySlotData
+            >();
             if (!probe) return false;
-            probe->initDefaults();
             return state.macroPersistence.loadLibrarySlot(slotIndex, *probe) == SlotLoadStatus::OK;
         }
 

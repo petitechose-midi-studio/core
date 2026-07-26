@@ -76,7 +76,6 @@ Supported capture scenarios:
 |---|---|
 | `macro` | default macro page |
 | `macro-edit` | macro edit overlay |
-| `macro-page-selector` | macro page selector overlay |
 | `sequencer` | default sequencer page |
 | `seq-step-edit` | sequencer step edit overlay |
 | `seq-property-selector` | sequencer property inline selector |
@@ -113,7 +112,7 @@ plain `.ux` scripts with comments documenting intent, grouped by feature area:
 
 | Workflow group | User path covered |
 |---|---|
-| `smoke/` | Global view selector and overlay exclusivity smoke checks. |
+| `smoke/` | Global view selector, project-wide history, and overlay exclusivity smoke checks. |
 | `overlays/` | Overlay authority and recovery. |
 | `macro/` | Macro performance and edit gestures. |
 | `data-manager/` | Data Manager dialogs and command palette flows. |
@@ -121,7 +120,7 @@ plain `.ux` scripts with comments documenting intent, grouped by feature area:
 | `sequencer/runtime/` | Playhead progression and runtime sequencer feedback. |
 | `sequencer/settings/` | Project/scale settings workflows. |
 | `sequencer/structure/` | Page structure and copy/paste flows. |
-| `sequencer/undo-redo/` | Sequencer undo/redo scenarios. |
+| `sequencer/undo-redo/` | End-to-end history scenarios reached through the global View Selector. |
 
 The canonical runner is the workspace `ms` CLI. List the workflow tree:
 
@@ -145,7 +144,7 @@ ms ux run core --select sequencer/undo-redo
 Run one workflow:
 
 ```bash
-ms ux run core --select sequencer/undo-redo/step-toggle.ux
+ms ux run core --select smoke/view-selector-project-history.ux
 ```
 
 Regenerate the report from existing workflow outputs without replaying:
@@ -245,6 +244,12 @@ Example:
 1500 tap NAV 60
 1700 capture screen after_confirm
 ```
+
+Project-wide history uses that same overlay everywhere: keep `LEFT_TOP` held,
+tap `LEFT_CENTER` for Undo or `LEFT_BOTTOM` for Redo, inspect the next action in
+the still-visible selector, then release `LEFT_TOP` to return to the unchanged
+musical context. A short `LEFT_TOP` tap remains available to local editors as
+their Back action.
 
 ## Structure
 

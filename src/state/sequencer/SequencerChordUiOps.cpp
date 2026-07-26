@@ -3,6 +3,7 @@
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::state::sequencer {
 
@@ -12,23 +13,44 @@ FLASHMEM SequencerStepChordUiState resolveStepChordUiState(
 ) {
     SequencerStepChordUiState state{};
     state.rootContext = isRootContentView(sequencer);
+    state.pitchUsesScaleDegrees =
+        authoringPattern(sequencer).pitchEditMode ==
+            SequencerPitchEditMode::SCALE_DEGREES;
     state.mode = defaultChordModeForContentContext(state.rootContext);
 
     if (step >= activeContentLength(sequencer)) return state;
     state.valid = true;
 
-    const auto* graph = graphView(sequencer.pattern);
-    if (graph == nullptr) return state;
-
     const auto nodeId = activeContentStepNodeId(sequencer, step);
-    const auto* node = graph->stepNode(nodeId);
-    if (node == nullptr) return state;
-
-    if (node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE)) {
-        state.mode = node->chordMode;
+    const auto* graph = graphView(authoringPattern(sequencer));
+    const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
+    bool modePresent = false;
+    bool localPresent = false;
+    if (node != nullptr) {
+        state.pitchUsesScaleDegrees =
+            !node->has(oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC);
+        modePresent = node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE);
+        localPresent = node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL);
+        if (modePresent) state.mode = node->chordMode;
+        if (localPresent) state.spec = node->chordSpec;
     }
-    if (node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL)) {
-        state.spec = node->chordSpec;
+
+    oc::note::sequencer::StepSequencerChordMode draftMode = state.mode;
+    auto draftSpec = state.spec;
+    if (resolveStepContentDraftChord(
+            sequencer,
+            nodeId,
+            modePresent,
+            localPresent,
+            draftMode,
+            draftSpec
+        )) {
+        state.mode = modePresent
+            ? draftMode
+            : defaultChordModeForContentContext(state.rootContext);
+        state.spec = localPresent
+            ? draftSpec
+            : oc::note::sequencer::StepSequencerChordSpec{};
     }
     state.spec.clamp();
     state.effectiveVoiceCount =
@@ -61,14 +83,27 @@ FLASHMEM void resolveStepChordPreview(
         scaleSettings,
         chordState,
         projection.inheritedChord,
-        spanTicks
+        spanTicks,
+        chord.pitchUsesScaleDegrees
     );
     if (resolution.count == 0) return;
 
     chord.preview.valid = true;
     chord.preview.source = resolution.source;
+    chord.preview.semanticRecipe = resolution.semanticRecipe;
+    chord.preview.harmonyAdjustedForPitchMode =
+        resolution.harmonyAdjustedForPitchMode;
+    chord.preview.inversionClamped = resolution.inversionClamped;
+    chord.preview.rangeLimited = resolution.rangeLimited;
     chord.preview.voiceCount = resolution.count;
+    chord.preview.requestedVoiceCount = resolution.requestedVoiceCount;
+    chord.preview.effectiveInversion = resolution.effectiveInversion;
+    chord.preview.droppedVoiceCount = resolution.droppedVoiceCount;
+    chord.preview.harmony = resolution.harmony;
+    chord.preview.voicing = resolution.voicing;
     chord.preview.spanTicks = spanTicks;
+    chord.scaleConstrained =
+        chord.pitchUsesScaleDegrees && scaleSettings.isConstrained();
     chord.effectiveVoiceCount = resolution.count;
     if (resolution.activeForChildren.valid) {
         chord.spec = resolution.activeForChildren.spec;

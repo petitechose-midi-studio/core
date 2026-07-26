@@ -18,8 +18,8 @@ inline const char* interactionActionIcon(
         case Action::CLEAR_SELECTION:
             return standalone::icons::ACTION_CLEAR;
         case Action::REMOVE_CURRENT_STRUCTURE:
-        case Action::DELETE_SELECTION:
         case Action::REMOVE_STEP_EDITOR_CONTEXT:
+        case Action::DELETE_SELECTION:
             return standalone::icons::ACTION_REMOVE;
         case Action::RESET_CURRENT_STEP_SHALLOW:
         case Action::RESET_CURRENT_STEP_DEEP:
@@ -31,14 +31,12 @@ inline const char* interactionActionIcon(
         case Action::COPY_CURRENT_STRUCTURE:
         case Action::COPY_STEP_CONTENT:
         case Action::COPY_STEP_SELECTION:
-        case Action::COPY_SELECTION:
         case Action::COPY_STEP_EDITOR_CONTEXT:
             return standalone::icons::ACTION_COPY;
         case Action::PASTE_CURRENT_STEP:
         case Action::PASTE_CURRENT_STRUCTURE:
         case Action::PASTE_STEP_CONTENT:
         case Action::PASTE_STEP_SELECTION:
-        case Action::PASTE_SELECTION:
         case Action::PASTE_STEP_EDITOR_CONTEXT:
             return standalone::icons::ACTION_PASTE;
         case Action::NONE:

@@ -24,40 +24,47 @@
 2360 tap NAV 60
 2660 capture screen child_pattern_focus
 
+# Selection Copy owns BOTTOM_RIGHT only after the new child has been published;
+# while it is a draft that same slot is deliberately Apply.
+2680 tap BOTTOM_RIGHT 40
+
 # Move to child Step context and enable two child steps.
-2760 tap NAV 60
+2760 button NAV down
+2820 encoder NAV 1
+2880 button NAV up
 2960 capture screen child_step_focus
 3060 tap MACRO_1 60
 3310 capture screen child_step_1_enabled
 3410 tap MACRO_3 60
 3660 capture screen child_steps_1_3_enabled
 
-# Enter child step selection, select steps 1 and 3, copy, then clear via hold.
+# Enter child Step selection through the same stationary NAV hold as root.
+# LEFT_TOP remains exclusively Back in the child context.
 3760 button NAV down
-4860 tick
-4910 capture screen child_step_selection_entered
-4960 button NAV up
-5060 tap MACRO_1 60
-5310 capture screen child_step_1_selected
-5410 encoder NAV 2
-5610 capture screen child_selection_cursor_3
-5710 tap MACRO_3 60
-5960 capture screen child_steps_1_3_selected
-6060 tap BOTTOM_RIGHT 60
-6310 capture screen child_step_selection_copied
-6410 tap BOTTOM_LEFT 60
-6660 capture screen child_selection_tap_shallow_reset
-6760 button BOTTOM_LEFT down
-7810 tick
-7860 capture screen child_selection_deep_reset_hold_applied
-7910 button BOTTOM_LEFT up
-8160 capture screen child_selection_deep_reset_released
+4820 tick
+4880 button NAV up
+5130 capture screen child_step_selection_entered
+5230 tap MACRO_1 60
+5480 capture screen child_step_1_selected
+5580 encoder NAV 2
+5780 capture screen child_selection_cursor_3
+5880 tap MACRO_3 60
+6130 capture screen child_steps_1_3_selected
+6230 tap BOTTOM_RIGHT 60
+6480 capture screen child_step_selection_copied
+6580 tap BOTTOM_LEFT 60
+6830 capture screen child_selection_tap_shallow_reset
+6930 button BOTTOM_LEFT down
+7980 tick
+8030 capture screen child_selection_deep_reset_hold_applied
+8080 button BOTTOM_LEFT up
+8330 capture screen child_selection_deep_reset_released
 
 # Paste the copied footprint back from cursor step 2.
-8260 encoder NAV -1
-8460 capture screen child_paste_preview_cursor_2
-8560 button BOTTOM_RIGHT down
-9610 tick
-9660 capture screen child_paste_hold_applied
-9710 button BOTTOM_RIGHT up
-9960 capture screen child_selection_pasted
+8430 encoder NAV -1
+8630 capture screen child_paste_preview_cursor_2
+8730 button BOTTOM_RIGHT down
+9780 tick
+9830 capture screen child_paste_hold_applied
+9880 button BOTTOM_RIGHT up
+10130 capture screen child_selection_pasted

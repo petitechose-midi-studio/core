@@ -1,0 +1,17 @@
+# UX workflow: record absolute Automation while several shared LFOs keep running.
+# Purpose: proves the normal hardware gesture no longer reports REC ERR when
+# the destination already has several shared LFO assignments. Exact Undo/Redo
+# isolation is covered by the native history test because Macro performance
+# does not expose a local history shortcut.
+# Expect: capture_changed:modulated_ready=modulated_record_active, capture_changed:modulated_record_active=modulated_record_committed
+
+0 scenario macro-multi-modulation
+80 capture screen modulated_ready
+
+# The explicit take gesture records Base while Modulation remains present on
+# the performance ring and in the resolved output.
+180 button LEFT_CENTER down
+500 encoder MACRO_1 0.90
+680 capture screen modulated_record_active
+1100 button LEFT_CENTER up
+1320 capture screen modulated_record_committed

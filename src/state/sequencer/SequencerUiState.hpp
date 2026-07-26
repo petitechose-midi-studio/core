@@ -9,7 +9,7 @@
 #include <oc/state/Signal.hpp>
 #include <oc/time/Time.hpp>
 
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/StructureClipboardPastePlan.hpp"
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/contextual/OperationFeedbackState.hpp"
@@ -40,12 +40,12 @@ enum class PatternQuickControlItem : uint8_t {
 
 enum class SequencerChordEditField : uint8_t {
     MODE = 0,
+    HARMONY,
     VOICES,
-    COLOR,
-    VARIANT,
-    SPREAD,
+    INVERSION,
+    VOICING,
     STRUM,
-    VELOCITY_CURVE,
+    VELOCITY_CONTOUR,
     COUNT,
 };
 
@@ -88,6 +88,9 @@ struct SequencerContentViewState {
     uint8_t stackDepth = 0;
     std::array<SequencerContentViewFrame, MAX_CHILD_DEPTH> frames{};
 
+    SequencerContentViewState();
+    ~SequencerContentViewState();
+
     bool isMicroSequence() const {
         return kind.get() == SequencerContentViewKind::MICRO_SEQUENCE &&
                sequenceId.get() != GraphLimits::INVALID_ID;
@@ -128,6 +131,34 @@ struct SequencerStepEditOverlayState {
 
     core::state::StructureHoldState contextHold;
 
+    SequencerStepEditOverlayState();
+    ~SequencerStepEditOverlayState();
+
+    void reset();
+};
+
+enum class SequencerContextSelectorFeedback : uint8_t {
+    NONE = 0,
+    EDITOR_UNAVAILABLE,
+};
+
+/**
+ * Temporary presentation state for the Sequencer NAV context selector.
+ *
+ * Gesture ownership (press/hold/turn/release) deliberately remains in the
+ * bounded workflow.  The retained UI observes one compact revision surface;
+ * the plain presentation fields and feedback deadline stay allocation-free.
+ */
+struct SequencerContextSelectorState {
+    bool visible = false;
+    core::state::StructureNavigationFocus previewFocus =
+        core::state::StructureNavigationFocus::PAGE;
+    SequencerContextSelectorFeedback feedback =
+        SequencerContextSelectorFeedback::NONE;
+    uint32_t feedbackUntilMs = 0;
+    Signal<uint32_t, 2> revision{0};
+
+    void bump();
     void reset();
 };
 
@@ -184,6 +215,9 @@ struct SequencerStepPresetPickerState {
     // state. Retained until the picker resets or another operation begins.
     uint32_t operationActivationGeneration = 0;
 
+    SequencerStepPresetPickerState();
+    ~SequencerStepPresetPickerState();
+
     void open(SequencerStepPresetPickerMode nextMode);
     void reset();
     void setFeedback(SequencerStepPresetFeedback nextFeedback);
@@ -207,7 +241,6 @@ struct SequencerStepPresetPickerState {
 enum class SequencerCcLaneUiMode : uint8_t {
     CLOSED = 0,
     LANE_SELECTOR,
-    ADD_LANE_DRAFT,
     LANE_GRID,
     TRANSITION_PICKER,
     LANE_SETTINGS,
@@ -234,7 +267,7 @@ enum class SequencerCcLaneActionSlot : uint8_t {
 /**
  * Session-only projection for the complete route-aware CC-lane workflow.
  *
- * Draft fields never write Pattern data. Preview facts are explicit so LVGL
+ * Settings fields never write Pattern data before Apply. Preview facts are explicit so LVGL
  * and the semantic UX recorder render the same Authored/Resolved/Source/
  * Route/Conflict truth without reconstructing it independently.
  */
@@ -252,6 +285,9 @@ struct SequencerCcLaneUiState {
     uint8_t transitionStep = 0;
     SequencerCcLaneTransition selectedTransition =
         SequencerCcLaneTransition::HOLD;
+    // NAV-hold uses one discreet current-choice card instead of the complete
+    // transition selector used by the explicit Macro-button workflow.
+    bool compactTransitionPicker = false;
     // Short-lived confirmation only; cleared with OperationFeedback expiry or
     // the next CC-grid interaction. It never enters project persistence.
     bool transitionAppliedFeedback = false;
@@ -310,6 +346,29 @@ struct SequencerStepPropertyInlineSelectorState {
     void reset();
 };
 
+enum class SequencerStepContentAction : uint8_t {
+    CHORD = 0,
+    MICRO_SEQUENCE,
+    CYCLE_STATES,
+    COUNT,
+};
+
+/**
+ * Temporary LEFT_BOTTOM semantic action selector for Step focus.
+ *
+ * It does not own musical data. Applying Chord opens its editor directly;
+ * applying Micro-sequence or Cycle states creates/opens the matching child
+ * context through SequencerStepEditHandler, the single editing authority.
+ */
+struct SequencerStepContentSelectorState {
+    Signal<bool, 6> selecting{false};
+    Signal<SequencerStepContentAction, 6> focusedAction{
+        SequencerStepContentAction::CHORD
+    };
+
+    void reset();
+};
+
 struct SequencerStepInlineFeedbackState {
     static constexpr uint32_t DISPLAY_HOLD_MS = 700;
     static constexpr uint8_t MAX_STEPS = SequencerPatternState::MAX_STEPS;
@@ -331,10 +390,11 @@ struct SequencerStepInlineFeedbackState {
             return;
         }
 
-        for (uint8_t step = 0; step < MAX_STEPS; ++step) {
-            if (!nextMask.test(step)) continue;
+        for (uint16_t step = 0; step < MAX_STEPS; ++step) {
+            const auto stepIndex = static_cast<uint8_t>(step);
+            if (!nextMask.test(stepIndex)) continue;
             if (!oc::time::deadlineReachedMs(nowMs, hideAtMs[step])) continue;
-            nextMask.setBit(step, false);
+            nextMask.setBit(stepIndex, false);
             hideAtMs[step] = 0;
         }
 
@@ -397,7 +457,6 @@ struct SequencerPatternQuickControlsState {
     static constexpr uint32_t DISPLAY_HOLD_MS = 700;
 
     Signal<bool, 6> selecting{false};
-    Signal<bool, 6> physicalHoldActive{false};
     Signal<bool, 6> feedbackVisible{false};
     Signal<PatternQuickControlItem, 6> focusedItem{
         PatternQuickControlItem::LENGTH
@@ -406,6 +465,7 @@ struct SequencerPatternQuickControlsState {
     uint32_t hideAtMs = 0;
 
     SequencerPatternQuickControlsState();
+    ~SequencerPatternQuickControlsState();
 
     void showFeedback(uint32_t nowMs);
 
@@ -435,6 +495,9 @@ struct SequencerStepSelectionState {
     Signal<bool, 8> pastePreviewActive{false};
     Signal<SequencerStepPastePreview, 8> pastePreview{SequencerStepPastePreview::NONE};
 
+    SequencerStepSelectionState();
+    ~SequencerStepSelectionState();
+
     void reset(uint8_t cursor = 0);
 
     void setSelected(uint8_t step, bool selected);
@@ -447,7 +510,7 @@ struct SequencerStepSelectionState {
 /**
  * One bounded Track-paste interaction snapshot.
  *
- * Only revision is observable: the guard, feedback and exact 16-entry plan
+ * Only revision is observable: the guard, feedback and exact single-Track plan
  * change together, preventing presenters from observing a mixed generation.
  * The clipboard payload itself is synchronously materialized by the transfer
  * transaction; kind/revision and the complete mapping snapshot retain its
@@ -464,11 +527,9 @@ struct SequencerTrackPasteUiState {
     uint32_t interactionGeneration = 0;
     uint32_t operationGeneration = 0;
     uint32_t activationGeneration = 0;
-    uint8_t focusedIndex = 0;
     bool detailVisible = false;
     bool buttonOwned = false;
     bool commitConsumed = false;
-    bool selectionContext = false;
 
     [[nodiscard]] bool gestureActive() const {
         return guard.phase ==

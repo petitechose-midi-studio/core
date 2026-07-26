@@ -10,6 +10,8 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "state/project/ProjectTrackHistory.hpp"
+#include "state/project/ProjectTrackState.hpp"
 
 namespace core::state {
 struct CoreState;
@@ -29,9 +31,18 @@ class MacroPerformanceDomainServices {
 public:
     using MarkProjectMutatedFn = void (*)(void* context);
     using MarkMacroValueEditedFn = void (*)(void* context, uint8_t index);
+    using SetMacroValueFn = bool (*)(void* context, uint8_t index, float value);
     using SetConfigFn = bool (*)(void* context, uint8_t index, uint8_t channel, uint8_t cc);
     using SetTrackChannelFn = bool (*)(void* context, uint8_t channel);
+    using SetTrackChannelGestureActiveFn = bool (*)(void* context, bool active);
     using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
+    using SetManualOverrideFn = bool (*)(
+        void* context,
+        uint8_t index,
+        float value,
+        bool coalesceValue
+    );
+    using ResumeComputedSourcesFn = bool (*)(void* context, uint8_t index);
 
     struct StateRefs {
         core::state::MacroState& macros;
@@ -39,16 +50,25 @@ public:
         core::state::macro::MacroUiState& macroUi;
         oc::state::Signal<uint32_t>& configRevision;
         core::state::StatusBarState& statusBar;
+        core::state::project::ProjectTrackState& projectTracks;
         core::state::macro::MacroHistoryService* history = nullptr;
     };
 
-    struct Operations {
-        void* context = nullptr;
+    struct OperationTable {
         MarkProjectMutatedFn markProjectMutated = nullptr;
         MarkMacroValueEditedFn markMacroValueEdited = nullptr;
         SetConfigFn setConfig = nullptr;
         SetTrackChannelFn setTrackChannel = nullptr;
+        SetTrackChannelGestureActiveFn setTrackChannelGestureActive = nullptr;
         SwitchToPageFn switchToPage = nullptr;
+        SetMacroValueFn setMacroValue = nullptr;
+        SetManualOverrideFn setManualOverride = nullptr;
+        ResumeComputedSourcesFn resumeComputedSources = nullptr;
+    };
+
+    struct Operations {
+        void* context = nullptr;
+        const OperationTable* table = nullptr;
     };
 
     MacroPerformanceDomainServices(StateRefs state, Operations operations);
@@ -57,6 +77,8 @@ public:
     float runtimeValue(uint8_t index) const;
     /// Current physical/absolute base, independent from audible Modulation.
     float absoluteBaseValue(uint8_t index) const;
+    /// Latest published Automation base, falling back to the authored base.
+    float currentPlaybackBaseValue(uint8_t index) const;
     /// Apply user/MIDI input to both runtime feedback and persisted base intent.
     void setManualValue(uint8_t index, float value) const;
     /// Apply computed playback feedback without changing persisted base intent.
@@ -67,11 +89,28 @@ public:
     /// Resolve a physical absolute value with the currently-running modulation.
     core::state::macro::MacroResolvedValue resolveManualValue(uint8_t index,
                                                                float value) const;
-    bool beginAutomationRecording(uint8_t index, uint32_t nowMs) const;
-    bool recordAutomationPoint(uint8_t index, uint32_t nowMs, float value) const;
-    bool commitAutomationRecording(uint32_t nowMs) const;
-    bool cancelAutomationRecording() const;
-    bool automationRecordingActiveFor(uint8_t index) const;
+    /** Arms one shared multi-Macro Automation take without mutating music. */
+    bool armAutomationTake() const;
+    /** Arms the same recorder for one Macro and an explicit editor length. */
+    bool armAutomationTakeForMacro(uint8_t index, uint16_t durationTicks) const;
+    bool setAutomationTakeTiming(
+        core::state::macro::MacroAutomationTakeTiming timing
+    ) const;
+    bool navigateAutomationTakeTiming(int delta) const;
+    /** Starts on first movement, joins late Macros, and stores Base only. */
+    bool recordAutomationTakeValue(
+        uint8_t index,
+        uint32_t nowMs,
+        float value
+    ) const;
+    /** Samples every joined column; fixed takes keep wrapping until release. */
+    bool updateAutomationTake(uint32_t nowMs) const;
+    /** Commits HOLD or fixed overdub at the explicit modifier release. */
+    bool releaseAutomationTake(uint32_t nowMs) const;
+    bool cancelAutomationTake() const;
+    bool automationTakeArmed() const;
+    bool automationTakeRecording() const;
+    bool automationTakeActiveFor(uint8_t index) const;
     /// True when Automation or Modulation is stored and enabled for playback.
     bool computedSourcePlaybackActiveFor(uint8_t index) const;
     bool automationActiveFor(uint8_t index) const;
@@ -79,7 +118,11 @@ public:
     bool manualOverrideActiveFor(uint8_t index) const;
     bool manualOverrideValueFor(uint8_t index, float& outValue) const;
     /// Disengages Automation only; Modulation remains active around this base.
-    bool takeManualControl(uint8_t index, float value) const;
+    bool takeManualControl(
+        uint8_t index,
+        float value,
+        bool coalesceValue = true
+    ) const;
     /// Releases the Automation takeover. Modulation never needs resuming.
     bool resumeComputedSources(uint8_t index) const;
     bool isMacroSlotActive(uint8_t index) const;
@@ -87,22 +130,26 @@ public:
     bool activateMacroSlot(uint8_t index) const;
     const core::state::macro::MacroConfig& activeConfig(uint8_t index) const;
     bool setConfig(uint8_t index, uint8_t channel, uint8_t cc) const;
-    bool setTrackConfigs(
-        const std::array<core::state::macro::MacroConfig, core::state::macro::MACRO_COUNT>& configs
-    ) const;
     uint8_t activeTrackChannel() const;
     bool setTrackChannel(uint8_t channel) const;
+    bool beginTrackChannelGesture() const;
+    bool endTrackChannelGesture() const;
     bool isActivePageEnabled() const;
     void switchToPage(uint8_t pageIndex) const;
     void pulseCcIn() const;
-    void pulseCcOut() const;
     void pulseNoteIn() const;
 
 private:
     core::state::macro::MacroAutomationSlotAddress activeAddress_(uint8_t index) const;
     void refreshManualProjection_() const;
-    void restoreManualAfterFailedRecording_(
-        const core::state::macro::MacroUiState::AutomationRecordingState& recording
+    bool armAutomationTake_(uint16_t candidates, uint16_t durationOverride) const;
+    bool beginAutomationTake_(uint32_t nowMs) const;
+    bool seedAutomationTakeColumn_(uint8_t index) const;
+    bool commitAutomationTake_(uint32_t nowMs) const;
+    uint32_t automationTakeElapsedTicks_(uint32_t nowMs) const;
+    void restoreAutomationTakeManual_() const;
+    void clearAutomationTake_(
+        core::state::macro::MacroAutomationRecordingStatus status
     ) const;
 
     core::state::MacroState* macros_ = nullptr;
@@ -110,8 +157,15 @@ private:
     core::state::macro::MacroUiState* macro_ui_ = nullptr;
     oc::state::Signal<uint32_t>* config_revision_ = nullptr;
     core::state::StatusBarState* status_bar_ = nullptr;
+    core::state::project::ProjectTrackState* project_tracks_ = nullptr;
     core::state::macro::MacroHistoryService* history_ = nullptr;
     Operations operations_{};
 };
+
+// This service is copied into several hot handlers. Keep its 32-bit footprint
+// bounded so adding a cold operation cannot silently multiply RAM2 usage.
+static_assert(
+    sizeof(void*) != 4U || sizeof(MacroPerformanceDomainServices) <= 56U
+);
 
 }  // namespace core::handler

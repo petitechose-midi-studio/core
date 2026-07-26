@@ -65,7 +65,12 @@ SequencerResolvedDisplayProjectionContext makeSequencerResolvedDisplayProjection
 SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayState(
     const SequencerResolvedDisplayProjectionContext& context,
     uint8_t absoluteStep,
-    bool stepInlineEditActive
+    bool authoringProjectionActive
+);
+
+SequencerResolvedStepDisplayState buildSequencerStepEditorDisplayState(
+    const SequencerResolvedDisplayProjectionContext& context,
+    uint8_t absoluteStep
 );
 
 oc::note::sequencer::StepSequencerStepValues sequencerResolvedStepDisplayValues(

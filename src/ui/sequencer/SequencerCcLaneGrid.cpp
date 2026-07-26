@@ -252,6 +252,8 @@ FLASHMEM bool SequencerCcLaneGrid::staticVisualChanged(
         : props.accentColor;
     if (!rendered_ || accentColor_ != accent ||
         rendered_props_.transitionPicker != props.transitionPicker ||
+        rendered_props_.compactTransitionPicker !=
+            props.compactTransitionPicker ||
         rendered_props_.pickerSelection != props.pickerSelection) {
         return true;
     }
@@ -269,6 +271,92 @@ FLASHMEM bool SequencerCcLaneGrid::staticVisualChanged(
         }
     }
     return false;
+}
+
+FLASHMEM void SequencerCcLaneGrid::drawTransitionChoice(
+    lv_layer_t* layer,
+    const lv_area_t& area,
+    core::state::sequencer::SequencerCcLaneTransition transition,
+    bool selected
+) {
+    using Transition = core::state::sequencer::SequencerCcLaneTransition;
+    if (selected) {
+        drawRect(layer, area, accentColor_, LV_OPA_10, 1, LV_OPA_COVER, 2);
+    }
+
+    constexpr lv_coord_t curveWidth = 46;
+    constexpr lv_coord_t curveHeight = 16;
+    const lv_coord_t height = static_cast<lv_coord_t>(area.y2 - area.y1 + 1);
+    const lv_coord_t curveX = static_cast<lv_coord_t>(area.x1 + 8);
+    const lv_coord_t curveYTop = static_cast<lv_coord_t>(
+        area.y1 + std::max<lv_coord_t>(2, (height - curveHeight) / 2)
+    );
+    uint8_t pointCount = 0;
+    if (transition == Transition::HOLD) {
+        draw_points_[0] = {
+            static_cast<lv_value_precise_t>(curveX),
+            static_cast<lv_value_precise_t>(curveYTop + curveHeight - 1),
+        };
+        draw_points_[1] = {
+            static_cast<lv_value_precise_t>(curveX + curveWidth - 1),
+            static_cast<lv_value_precise_t>(curveYTop + curveHeight - 1),
+        };
+        draw_points_[2] = {
+            static_cast<lv_value_precise_t>(curveX + curveWidth - 1),
+            static_cast<lv_value_precise_t>(curveYTop),
+        };
+        pointCount = 3;
+    } else {
+        pointCount = static_cast<uint8_t>(draw_points_.size());
+        for (uint8_t point = 0; point < pointCount; ++point) {
+            const float progress = static_cast<float>(point) /
+                static_cast<float>(pointCount - 1U);
+            const uint8_t value =
+                core::state::sequencer::interpolateSequencerCcLaneValue(
+                    0, 127, transition, progress
+                );
+            draw_points_[point] = {
+                static_cast<lv_value_precise_t>(
+                    curveX + (static_cast<uint16_t>(point) *
+                              (curveWidth - 1)) / (pointCount - 1U)
+                ),
+                static_cast<lv_value_precise_t>(
+                    curveYTop + curveHeight - 1 -
+                    (static_cast<uint16_t>(value) * (curveHeight - 1)) / 127U
+                ),
+            };
+        }
+    }
+    lv_draw_line_dsc_t lineDsc;
+    lv_draw_line_dsc_init(&lineDsc);
+    lineDsc.base.layer = layer;
+    lineDsc.points = draw_points_.data();
+    lineDsc.point_cnt = pointCount;
+    lineDsc.width = 2;
+    lineDsc.color = lv_color_hex(accentColor_);
+    lineDsc.opa = selected ? LV_OPA_COVER : LV_OPA_60;
+    lv_draw_line(layer, &lineDsc);
+
+    const lv_area_t nameArea{
+        .x1 = static_cast<lv_coord_t>(area.x1 + 66),
+        .y1 = static_cast<lv_coord_t>(area.y1 + 2),
+        .x2 = static_cast<lv_coord_t>(area.x1 + 150),
+        .y2 = static_cast<lv_coord_t>(area.y2 - 2),
+    };
+    drawLabel(layer, nameArea, transitionName(transition),
+              theme::color::TEXT_PRIMARY,
+              selected ? LV_OPA_COVER : LV_OPA_70,
+              LV_TEXT_ALIGN_LEFT);
+    const lv_area_t descriptionArea{
+        .x1 = static_cast<lv_coord_t>(area.x1 + 154),
+        .y1 = static_cast<lv_coord_t>(area.y1 + 2),
+        .x2 = static_cast<lv_coord_t>(area.x2 - 5),
+        .y2 = static_cast<lv_coord_t>(area.y2 - 2),
+    };
+    drawLabel(layer, descriptionArea, transitionDescription(transition),
+              theme::color::TEXT_SECONDARY,
+              selected ? LV_OPA_COVER : LV_OPA_60,
+              LV_TEXT_ALIGN_LEFT);
 }
 
 FLASHMEM void SequencerCcLaneGrid::invalidatePlayheadCell(size_t index) {
@@ -347,6 +435,24 @@ FLASHMEM void SequencerCcLaneGrid::drawSurface(lv_layer_t* layer) {
         };
         constexpr lv_coord_t rowHeight = 24;
         constexpr lv_coord_t rowGap = 2;
+        if (rendered_props_.compactTransitionPicker) {
+            constexpr lv_coord_t compactHeight = 40;
+            const lv_coord_t compactY = static_cast<lv_coord_t>(
+                surfaceArea.y1 + (GRID_HEIGHT - compactHeight) / 2
+            );
+            drawTransitionChoice(
+                layer,
+                {
+                    .x1 = surfaceArea.x1,
+                    .y1 = compactY,
+                    .x2 = surfaceArea.x2,
+                    .y2 = static_cast<lv_coord_t>(compactY + compactHeight - 1),
+                },
+                rendered_props_.pickerSelection,
+                true
+            );
+            return;
+        }
         for (size_t index = 0; index < transitions.size(); ++index) {
             const auto transition = transitions[index];
             const bool selected = transition ==
@@ -361,105 +467,7 @@ FLASHMEM void SequencerCcLaneGrid::drawSurface(lv_layer_t* layer) {
                 .x2 = surfaceArea.x2,
                 .y2 = static_cast<lv_coord_t>(rowY + rowHeight - 1),
             };
-            if (selected) {
-                drawRect(
-                    layer,
-                    rowArea,
-                    accentColor_,
-                    LV_OPA_10,
-                    1,
-                    LV_OPA_COVER,
-                    2
-                );
-            }
-
-            const lv_coord_t curveX = static_cast<lv_coord_t>(
-                surfaceArea.x1 + 8
-            );
-            const lv_coord_t curveYTop = static_cast<lv_coord_t>(rowY + 4);
-            constexpr lv_coord_t curveWidth = 46;
-            constexpr lv_coord_t curveHeight = 16;
-            uint8_t pointCount = 0;
-            if (transition == Transition::HOLD) {
-                draw_points_[0] = {
-                    static_cast<lv_value_precise_t>(curveX),
-                    static_cast<lv_value_precise_t>(curveYTop + curveHeight - 1),
-                };
-                draw_points_[1] = {
-                    static_cast<lv_value_precise_t>(curveX + curveWidth - 1),
-                    static_cast<lv_value_precise_t>(curveYTop + curveHeight - 1),
-                };
-                draw_points_[2] = {
-                    static_cast<lv_value_precise_t>(curveX + curveWidth - 1),
-                    static_cast<lv_value_precise_t>(curveYTop),
-                };
-                pointCount = 3;
-            } else {
-                pointCount = static_cast<uint8_t>(draw_points_.size());
-                for (uint8_t point = 0; point < pointCount; ++point) {
-                    const float progress = static_cast<float>(point) /
-                        static_cast<float>(pointCount - 1U);
-                    const uint8_t value =
-                        core::state::sequencer::interpolateSequencerCcLaneValue(
-                            0,
-                            127,
-                            transition,
-                            progress
-                        );
-                    draw_points_[point] = {
-                        static_cast<lv_value_precise_t>(
-                            curveX +
-                            (static_cast<uint16_t>(point) *
-                             (curveWidth - 1)) /
-                                (pointCount - 1U)
-                        ),
-                        static_cast<lv_value_precise_t>(
-                            curveYTop + curveHeight - 1 -
-                            (static_cast<uint16_t>(value) *
-                             (curveHeight - 1)) /
-                                127U
-                        ),
-                    };
-                }
-            }
-            lv_draw_line_dsc_t lineDsc;
-            lv_draw_line_dsc_init(&lineDsc);
-            lineDsc.base.layer = layer;
-            lineDsc.points = draw_points_.data();
-            lineDsc.point_cnt = pointCount;
-            lineDsc.width = 2;
-            lineDsc.color = lv_color_hex(accentColor_);
-            lineDsc.opa = selected ? LV_OPA_COVER : LV_OPA_60;
-            lv_draw_line(layer, &lineDsc);
-
-            const lv_area_t nameArea{
-                .x1 = static_cast<lv_coord_t>(surfaceArea.x1 + 66),
-                .y1 = static_cast<lv_coord_t>(rowY + 4),
-                .x2 = static_cast<lv_coord_t>(surfaceArea.x1 + 150),
-                .y2 = static_cast<lv_coord_t>(rowY + rowHeight - 3),
-            };
-            drawLabel(
-                layer,
-                nameArea,
-                transitionName(transition),
-                theme::color::TEXT_PRIMARY,
-                selected ? LV_OPA_COVER : LV_OPA_70,
-                LV_TEXT_ALIGN_LEFT
-            );
-            const lv_area_t descriptionArea{
-                .x1 = static_cast<lv_coord_t>(surfaceArea.x1 + 154),
-                .y1 = static_cast<lv_coord_t>(rowY + 4),
-                .x2 = static_cast<lv_coord_t>(surfaceArea.x2 - 5),
-                .y2 = static_cast<lv_coord_t>(rowY + rowHeight - 3),
-            };
-            drawLabel(
-                layer,
-                descriptionArea,
-                transitionDescription(transition),
-                theme::color::TEXT_SECONDARY,
-                selected ? LV_OPA_COVER : LV_OPA_60,
-                LV_TEXT_ALIGN_LEFT
-            );
+            drawTransitionChoice(layer, rowArea, transition, selected);
         }
         return;
     }

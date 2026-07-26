@@ -14,12 +14,24 @@ FLASHMEM TransportHandler::TransportHandler(StateRefs state,
 }
 
 FLASHMEM void TransportHandler::setupBindings() {
+    std::array<oc::type::ScopeID, VIEW_SCOPE_COUNT> boundScopes{};
+    std::size_t boundScopeCount = 0;
     for (const auto scope : play_toggle_scopes_) {
+        if (!scope) continue;
+        bool alreadyBound = false;
+        for (std::size_t i = 0; i < boundScopeCount; ++i) {
+            if (boundScopes[i] == scope) {
+                alreadyBound = true;
+                break;
+            }
+        }
+        if (alreadyBound) continue;
         buttons_.button(Config::ButtonID::BOTTOM_CENTER)
             .release()
             .scope(scope)
             .when([this]() { return !status_bar_.transportLocked.get(); })
             .then([this]() { handlePlayToggle(); });
+        boundScopes[boundScopeCount++] = scope;
     }
 }
 

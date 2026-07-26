@@ -20,7 +20,7 @@ namespace {
 // mutation notification is coalesced so encoder-rate input does not
 // continuously enqueue session saves.
 constexpr uint32_t MACRO_VALUE_PROJECT_SAVE_DELAY_MS = 5000;
-constexpr size_t SEQUENCER_COALESCER_SUBSCRIPTION_COUNT = 17;
+constexpr size_t SEQUENCER_COALESCER_SUBSCRIPTION_COUNT = 15;
 
 [[noreturn]] FLASHMEM void failSequencerCoalescerSetup() {
     OC_LOG_ERROR("{}", "[CoreState] Sequencer mutation coalescer setup failed");
@@ -65,7 +65,6 @@ FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreStat
     auto& coalescer = *state.sequencerDomain_.mutationCoalescer;
     coalescer.watch(state.sequencer.pattern.length);
     coalescer.watch(state.sequencer.pattern.stepsPerBeat);
-    coalescer.watch(state.sequencer.pattern.midiChannel);
     coalescer.watch(state.sequencer.pattern.enabledMask);
     coalescer.watch(state.sequencer.pattern.stepDataRevision);
     coalescer.watch(state.sequencer.page);
@@ -79,7 +78,9 @@ FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreStat
     coalescer.watch(state.sequencer.pattern.patternTimingRevision);
     coalescer.watch(state.sequencer.pattern.swingOffsetPercent);
     coalescer.watch(state.sequencer.pattern.patternNudgePercent);
-    coalescer.watch(state.sequencerTracks.mutedMaskSignal());
+    // Project Track channel/mute mirrors are intentionally absent: their
+    // canonical service already publishes dirty and runtime revisions once at
+    // gesture commit. Watching the projected mirrors would duplicate it.
 
     if (!coalescer.valid() ||
         coalescer.subscriptionCount() != SEQUENCER_COALESCER_SUBSCRIPTION_COUNT) {
@@ -88,14 +89,20 @@ FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreStat
 }
 
 FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
-    state.overlays.registerItem(core::ui::OverlayType::PAGE_SELECTOR, state.pages.selector.visible);
     state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT, state.macroEdit.visible);
     state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_SELECTOR, state.macroEdit.selector.visible);
-    state.overlays.registerItem(core::ui::OverlayType::MACRO_EDIT_MACRO_SELECTOR, state.macroEdit.macroSelector.visible);
     state.overlays.registerItem(core::ui::OverlayType::MACRO_AUTOMATION, state.macroEdit.automationVisible);
     state.overlays.registerItem(core::ui::OverlayType::VIEW_SELECTOR, state.viewSelector.visible);
 
     state.overlays.registerItem(core::ui::OverlayType::SEQ_STEP_EDIT, state.sequencer.stepEdit.visible);
+    state.overlays.registerItem(
+        core::ui::OverlayType::SEQ_PATTERN_EDIT,
+        state.sequencer.patternEditor.active
+    );
+    state.overlays.registerItem(
+        core::ui::OverlayType::SEQ_TRACK_EDIT,
+        state.projectTrackEditor
+    );
     state.overlays.registerItem(
         core::ui::OverlayType::SEQ_STEP_PRESET,
         state.sequencer.stepPresetPicker.visible

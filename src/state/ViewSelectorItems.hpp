@@ -10,6 +10,7 @@ namespace core::state {
 enum class ViewSelectorItem : uint8_t {
     MACROS = 0,
     SEQUENCER,
+    MODULATORS,
     PROJECT_SETTINGS,
     DEVICE_SETTINGS,
     COUNT
@@ -21,6 +22,7 @@ inline constexpr int VIEW_SELECTOR_ITEM_COUNT =
 inline constexpr std::array<const char*, VIEW_SELECTOR_ITEM_COUNT> VIEW_SELECTOR_ITEM_LABELS = {
     "Macros",
     "Sequencer",
+    "Modulators",
     "Project Settings",
     "Device Settings",
 };
@@ -29,6 +31,7 @@ inline constexpr std::array<const char*, VIEW_SELECTOR_ITEM_COUNT>
     VIEW_SELECTOR_ITEM_DESCRIPTIONS = {
         "Macro performance and mapping",
         "Pattern and note sequencing",
+        "Project modulation sources",
         "Project scale, transport, routing",
         "Hardware and MIDI sync",
 };
@@ -54,6 +57,8 @@ inline ViewSelectorItem viewSelectorItemForView(core::ui::ViewType view) {
     switch (view) {
         case core::ui::ViewType::SEQUENCER:
             return ViewSelectorItem::SEQUENCER;
+        case core::ui::ViewType::MODULATORS:
+            return ViewSelectorItem::MODULATORS;
         case core::ui::ViewType::PROJECT:
             return ViewSelectorItem::PROJECT_SETTINGS;
         case core::ui::ViewType::DEVICE_SETTINGS:
@@ -67,6 +72,7 @@ inline ViewSelectorItem viewSelectorItemForView(core::ui::ViewType view) {
 inline bool viewSelectorItemHasView(ViewSelectorItem item) {
     return item == ViewSelectorItem::MACROS ||
            item == ViewSelectorItem::SEQUENCER ||
+           item == ViewSelectorItem::MODULATORS ||
            item == ViewSelectorItem::PROJECT_SETTINGS ||
            item == ViewSelectorItem::DEVICE_SETTINGS;
 }
@@ -75,6 +81,8 @@ inline core::ui::ViewType viewForSelectorItem(ViewSelectorItem item) {
     switch (item) {
         case ViewSelectorItem::SEQUENCER:
             return core::ui::ViewType::SEQUENCER;
+        case ViewSelectorItem::MODULATORS:
+            return core::ui::ViewType::MODULATORS;
         case ViewSelectorItem::PROJECT_SETTINGS:
             return core::ui::ViewType::PROJECT;
         case ViewSelectorItem::DEVICE_SETTINGS:
@@ -83,11 +91,6 @@ inline core::ui::ViewType viewForSelectorItem(ViewSelectorItem item) {
         default:
             return core::ui::ViewType::MACRO;
     }
-}
-
-inline bool viewSelectorItemHasSettingsAction(ViewSelectorItem item) {
-    (void)item;
-    return false;
 }
 
 }  // namespace core::state

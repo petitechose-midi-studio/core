@@ -1,0 +1,58 @@
+# UX workflow: author a Project-owned Recorded Shape from an empty registry.
+# Purpose: proves direct flat creation, explicit hold-to-record, live capture,
+# one atomic commit, empty-take discard, cancellation, and exact beat length.
+# Expect: capture_changed:empty_registry=recorded_shape_picker, capture_changed:recorded_shape_picker=shape_ready, capture_changed:shape_ready=shape_armed
+# Expect: capture_changed:shape_armed=shape_recording, capture_changed:shape_recording=shape_committed, capture_changed:shape_committed=empty_take_discarded
+# Expect: capture_changed:empty_take_discarded=shape_cancelled, capture_changed:shape_cancelled=shape_length_6_beats
+# Expect: semantic:shape_ready:effect=create_project_recorded_shape, semantic:shape_ready:outcome=applied, semantic:shape_ready:source=recorded_shape
+# Expect: semantic:shape_armed:effect=arm_project_recorded_shape, semantic:shape_armed:operation_status=armed
+# Expect: semantic:shape_recording:effect=record_project_recorded_shape_value, semantic:shape_recording:operation_status=recording
+# Expect: semantic:shape_committed:effect=commit_project_recorded_shape, semantic:shape_committed:outcome=applied, semantic:shape_committed:operation_status=committed
+# Expect: semantic:empty_take_discarded:effect=discard_empty_project_recorded_shape, semantic:empty_take_discarded:outcome=no_change
+# Expect: semantic:shape_cancelled:effect=cancel_project_recorded_shape, semantic:shape_cancelled:outcome=cancelled
+# Expect: semantic:shape_length_6_beats:property=length, semantic:shape_length_6_beats:value_label=6.0b
+
+0 scenario project-modulator-destination
+
+# Enter the empty first-rank Modulators view from Project Settings.
+100 button LEFT_TOP down
+700 encoder NAV -1
+1100 button LEFT_TOP up
+1320 capture screen empty_registry
+
+# Add Source > Recorded Shape creates one durable, unassigned source and opens
+# its complete editor directly on Record.
+1440 tap NAV 60
+1660 encoder NAV 1
+1740 encoder NAV 1
+1880 capture screen recorded_shape_picker
+2000 tap NAV 60
+2240 capture screen shape_ready
+
+# Holding the learned bottom-left action only arms. RAW OPT motion writes and
+# auditions the signed movement until the modifier is released.
+2360 button BOTTOM_LEFT down
+2620 capture screen shape_armed
+2740 encoder OPT 64.00
+3040 tick
+3260 capture screen shape_recording
+3380 button BOTTOM_LEFT up
+3660 capture screen shape_committed
+
+# A take without motion is explicitly discarded and consumes no history entry.
+3780 tap BOTTOM_LEFT 60
+4060 capture screen empty_take_discarded
+
+# Back while the modifier remains held cancels the provisional curve only and
+# keeps the same source editor/focus. The physical release is then inert.
+4180 button BOTTOM_LEFT down
+4400 encoder OPT -48.00
+4620 tap LEFT_TOP 60
+4900 capture screen shape_cancelled
+5020 button BOTTOM_LEFT up
+
+# Length remains the next direct card; six beats time-stretches the same
+# Project source through one history action.
+5240 encoder NAV 1
+5360 encoder OPT 0.111111
+5640 capture screen shape_length_6_beats

@@ -1,6 +1,7 @@
 #include "state/MacroEditState.hpp"
 
 #include <config/PlatformCompat.hpp>
+#include <oc/time/Time.hpp>
 
 namespace core::state {
 
@@ -10,19 +11,15 @@ FLASHMEM void MacroEditState::ValueSelectorState::reset() {
     selectedIndex.set(0);
 }
 
-FLASHMEM void MacroEditState::MacroSelectorState::reset() {
-    visible.set(false);
-    selectedIndex.set(0);
-}
-
 FLASHMEM void MacroEditState::ConversionPreviewState::reset() {
-    policy = core::state::macro::MacroAutomationConversionPolicy::MEAN;
+    policy =
+        core::state::modulation::ProjectAutomationConversionPolicy::MEAN;
     plan = {};
     revision.set(revision.get() + 1U);
 }
 
 FLASHMEM void MacroEditState::ConversionPreviewState::setPlan(
-    const core::state::macro::MacroAutomationConversionPlan& next
+    const core::state::modulation::ProjectAutomationConversionPlan& next
 ) {
     policy = next.policy;
     plan = next;
@@ -37,10 +34,16 @@ FLASHMEM void MacroEditState::reset() {
     tempChannel.set(0);
     tempCC.set(0);
     focusedRow.set(0);
+    contextSelectorActive.set(false);
+    contextPropertyIndex.set(0);
+    macroCycleActive.set(false);
     selector.reset();
-    macroSelector.reset();
+    modulatorPickerIndex.set(0);
     automationFocusedRow.set(0);
     modulationFocusedRow.set(0);
+    guardedModulationBinding = {};
+    guardedModulationRevision = 0U;
+    modulatorNavigationFeedback.set(MacroModulatorNavigationFeedback::NONE);
     conversionPreview.reset();
     contextGuard.set({});
     contextFeedback.set({});
@@ -48,6 +51,7 @@ FLASHMEM void MacroEditState::reset() {
     openedByMacroIndex = 0;
     openedAtMs = 0;
     pendingOpenReleaseDecision = false;
+    modulatorNavigationFeedbackUntilMs = 0;
 }
 
 FLASHMEM void MacroEditState::openEditor(
@@ -86,29 +90,6 @@ FLASHMEM void MacroEditState::closeValueSelector() {
                                 : MacroEditFlowPhase::CLOSED);
 }
 
-FLASHMEM void MacroEditState::openPageSelector() {
-    visible.set(true);
-    flowPhase.set(MacroEditFlowPhase::PAGE_SELECTOR);
-}
-
-FLASHMEM void MacroEditState::closePageSelector() {
-    flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
-                                : MacroEditFlowPhase::CLOSED);
-}
-
-FLASHMEM void MacroEditState::openTargetSelector(int selectedIndex) {
-    visible.set(true);
-    macroSelector.visible.set(true);
-    macroSelector.selectedIndex.set(selectedIndex);
-    flowPhase.set(MacroEditFlowPhase::TARGET_SELECTOR);
-}
-
-FLASHMEM void MacroEditState::closeTargetSelector() {
-    macroSelector.reset();
-    flowPhase.set(visible.get() ? MacroEditFlowPhase::EDIT
-                                : MacroEditFlowPhase::CLOSED);
-}
-
 FLASHMEM void MacroEditState::openAutomation() {
     visible.set(true);
     automationVisible.set(true);
@@ -137,8 +118,34 @@ FLASHMEM void MacroEditState::closeModulation() {
                                 : MacroEditFlowPhase::CLOSED);
 }
 
+FLASHMEM void MacroEditState::openModulatorCreate(uint8_t focusedRow) {
+    visible.set(true);
+    automationVisible.set(true);
+    modulationFocusedRow.set(focusedRow);
+    flowPhase.set(MacroEditFlowPhase::MODULATOR_CREATE);
+}
+
+FLASHMEM void MacroEditState::closeModulatorCreate(uint8_t focusedRow) {
+    modulationFocusedRow.set(focusedRow);
+    flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATION
+                                : MacroEditFlowPhase::CLOSED);
+}
+
+FLASHMEM void MacroEditState::openModulatorPicker(int selectedIndex) {
+    visible.set(true);
+    automationVisible.set(true);
+    modulatorPickerIndex.set(selectedIndex);
+    flowPhase.set(MacroEditFlowPhase::MODULATOR_PICKER);
+}
+
+FLASHMEM void MacroEditState::closeModulatorPicker(uint8_t focusedRow) {
+    modulationFocusedRow.set(focusedRow);
+    flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATION
+                                : MacroEditFlowPhase::CLOSED);
+}
+
 FLASHMEM void MacroEditState::openConvertPreview(
-    const core::state::macro::MacroAutomationConversionPlan& plan
+    const core::state::modulation::ProjectAutomationConversionPlan& plan
 ) {
     visible.set(true);
     automationVisible.set(true);
@@ -149,6 +156,31 @@ FLASHMEM void MacroEditState::openConvertPreview(
 FLASHMEM void MacroEditState::closeConvertPreview() {
     flowPhase.set(visible.get() ? MacroEditFlowPhase::MODULATION
                                 : MacroEditFlowPhase::CLOSED);
+}
+
+FLASHMEM void MacroEditState::setModulatorNavigationFeedback(
+    MacroModulatorNavigationFeedback feedback,
+    uint32_t nowMs,
+    uint32_t durationMs
+) {
+    modulatorNavigationFeedbackUntilMs = feedback ==
+            MacroModulatorNavigationFeedback::NONE
+        ? 0U
+        : nowMs + durationMs;
+    modulatorNavigationFeedback.set(feedback);
+}
+
+FLASHMEM void MacroEditState::updateModulatorNavigationFeedback(uint32_t nowMs) {
+    if (modulatorNavigationFeedback.get() ==
+            MacroModulatorNavigationFeedback::NONE ||
+        !oc::time::deadlineReachedMs(
+            nowMs,
+            modulatorNavigationFeedbackUntilMs
+        )) {
+        return;
+    }
+    modulatorNavigationFeedbackUntilMs = 0U;
+    modulatorNavigationFeedback.set(MacroModulatorNavigationFeedback::NONE);
 }
 
 FLASHMEM void MacroEditState::loadActiveConfig(uint8_t index, uint8_t channel, uint8_t cc) {

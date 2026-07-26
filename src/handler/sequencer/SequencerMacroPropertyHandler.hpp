@@ -13,7 +13,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"

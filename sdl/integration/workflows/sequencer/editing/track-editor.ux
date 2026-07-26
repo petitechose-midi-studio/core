@@ -1,0 +1,60 @@
+# UX workflow: retained Track Editor, direct musical routing/mix controls.
+# Purpose: validates the complete end-user path: open from Track context,
+# edit Channel and Delay, toggle Mute/Solo, hot-switch enabled Tracks, then
+# close and reopen the editor without an intermediate Structure screen.
+# Expect: semantic:track_2_editor:mode=sequencer.track_editor, semantic:track_2_editor:effect=open_track_editor, semantic:track_2_editor:target_track=1, semantic:track_2_editor:property=channel, semantic:track_2_editor:authored_value=1
+# Expect: semantic:channel_edited:effect=edit_track_property, semantic:channel_edited:property=channel, semantic:channel_edited:authored_value=4
+# Expect: semantic:delay_selected:effect=select_track_property, semantic:delay_selected:property=delay
+# Expect: semantic:delay_edited:effect=edit_track_property, semantic:delay_edited:property=delay, semantic:delay_edited:value_label=+37 ms
+# Expect: semantic:track_muted:effect=toggle_track_mute, semantic:track_muted:property=mute, semantic:track_muted:authored_value=1
+# Expect: semantic:track_soloed:effect=toggle_track_solo, semantic:track_soloed:property=solo, semantic:track_soloed:authored_value=1
+# Expect: semantic:track_1_hot_switch:effect=switch_track, semantic:track_1_hot_switch:target_track=0
+# Expect: semantic:track_2_values_restored:mode=sequencer.track_editor, semantic:track_2_values_restored:target_track=1, semantic:track_2_values_restored:property=delay, semantic:track_2_values_restored:value_label=+37 ms
+# Expect: capture_changed:track_2_editor=delay_edited, capture_changed:track_2_editor=track_1_hot_switch
+
+0 scenario sequencer
+
+# Create sparse Track 2 directly from the shared Track strip. Confirmation
+# keeps the musical Track context with Track 2 active.
+100 button NAV down
+160 encoder NAV -1
+220 button NAV up
+300 tap LEFT_CENTER 60
+1450 encoder NAV 1
+1630 tap NAV 60
+1980 capture screen track_2_created
+
+# A short NAV tap in Track context opens the retained editor.
+2080 tap NAV 60
+2320 capture screen track_2_editor
+
+# OUTPUT is focused by default. OPT changes only the canonical Track Channel.
+2900 encoder OPT 0.60
+3060 capture screen channel_edited
+
+# NAV focuses Delay directly; OPT edits its signed millisecond value without
+# opening another screen or requiring a secondary modifier.
+3240 encoder NAV 1
+3320 capture screen delay_selected
+3500 encoder OPT 0.75
+3660 capture screen delay_edited
+
+# The visible action strip maps directly to Mute and Solo.
+3760 tap BOTTOM_LEFT 60
+3920 capture screen track_muted
+4020 tap BOTTOM_CENTER 60
+4180 capture screen track_soloed
+
+# LEFT_CENTER+NAV wraps only through enabled Tracks and retargets in place.
+4280 button LEFT_CENTER down
+4360 encoder NAV -1
+4520 capture screen track_1_hot_switch
+4600 encoder NAV 1
+4760 capture screen track_2_hot_switch_back
+4820 button LEFT_CENTER up
+
+# Close directly. Reopening the editor proves the Track identity retained its
+# authored values without routing through a Structure workspace.
+4940 tap LEFT_TOP 60
+5520 tap NAV 60
+5760 capture screen track_2_values_restored

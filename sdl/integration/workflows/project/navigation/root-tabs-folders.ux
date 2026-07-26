@@ -11,8 +11,9 @@
 220 capture screen selector_open
 300 encoder NAV 1
 380 encoder NAV 1
-460 capture screen project_item_selected
-540 button LEFT_TOP up
+460 encoder NAV 1
+520 capture screen project_item_selected
+580 button LEFT_TOP up
 720 capture screen project_overview_tab
 
 # Switch to Music, then enter the Scale folder.

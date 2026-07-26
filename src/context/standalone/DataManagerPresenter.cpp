@@ -9,6 +9,8 @@
 
 namespace core::context::standalone {
 
+FLASHMEM DataManagerPresenter::~DataManagerPresenter() {}
+
 FLASHMEM DataManagerPresenter::DataManagerPresenter(
     StateRefs stateRefs,
     ms::ui::VirtualListKeyValueOverlay& overlay,

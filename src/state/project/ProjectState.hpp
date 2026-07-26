@@ -7,7 +7,6 @@
 
 #include "state/project/ProjectDomainRules.hpp"
 #include "state/sequencer/SequencerScaleState.hpp"
-#include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::state::project {
 
@@ -46,15 +45,10 @@ struct ProjectMusicalContext {
     void reset();
 };
 
-struct ProjectRoutingState {
-    std::array<uint8_t, core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>
-        outputMidiChannels{};
-
-    void reset();
-};
-
 struct ProjectEditingState {
     ProjectStepPasteMode stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
+    std::array<uint8_t, PROJECT_CC_LANE_DEFAULT_COUNT>
+        ccLaneDefaultControllers = PROJECT_CC_LANE_DEFAULT_CONTROLLERS;
 
     void reset();
 };
@@ -63,7 +57,6 @@ struct ProjectState {
     ProjectMetadata metadata{};
     ProjectTransportState transport{};
     ProjectMusicalContext musical{};
-    ProjectRoutingState routing{};
     ProjectEditingState editing{};
 
     ProjectState();

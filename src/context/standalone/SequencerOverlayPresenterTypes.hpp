@@ -53,7 +53,7 @@ struct StepEditRenderData {
     std::array<char, 16> focusLabel{};
     core::ui::SequencerStepEditOverlayProps overlayProps{};
     std::array<char, 16> title{};
-    std::array<char, 16> meta{};
+    std::array<char, 40> meta{};
     uint32_t dataRevision = 0;
     uint8_t stepIndex = 0;
     int selectedIndex = 0;

@@ -39,8 +39,10 @@ FLASHMEM bool SequencerPersistence::init() {
 }
 
 FLASHMEM PersistenceWriteStatus SequencerPersistence::initStatus() {
-    if (!pattern_library_store_.init(true)) return PersistenceWriteStatus::INVALID_CONFIG;
-    if (!set_library_store_.init(true)) return PersistenceWriteStatus::INVALID_CONFIG;
+    if (!pattern_library_store_.init(true) ||
+        !set_library_store_.init(true)) {
+        return PersistenceWriteStatus::INVALID_CONFIG;
+    }
     return PersistenceWriteStatus::OK;
 }
 

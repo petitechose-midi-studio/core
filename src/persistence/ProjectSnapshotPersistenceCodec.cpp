@@ -1,24 +1,30 @@
 #include "persistence/ProjectSnapshotPersistenceCodec.hpp"
 
 #include <array>
-#include <cmath>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "diagnostics/MemoryFootprintReporter.hpp"
 #include "persistence/MacroTrackBankPersistenceCodec.hpp"
-#include "persistence/PersistenceBinaryCodec.hpp"
+#include "persistence/ProjectControlPersistenceCodec.hpp"
 #include "persistence/ProjectStatePersistenceCodec.hpp"
+#include "persistence/ProjectTrackStatePersistenceCodec.hpp"
 #include "persistence/SequencerPersistenceEnvelope.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 
 namespace core::persistence::project_snapshot_codec {
 
 struct ProjectSnapshotCodecWorkspace::Storage {
+    std::array<
+        uint8_t,
+        core::persistence::project_track_codec::PROJECT_TRACK_STATE_PAYLOAD_SIZE
+    > projectTracks;
     std::array<uint8_t, PROJECT_MACRO_STATE_PAYLOAD_SIZE> macro;
-    std::array<uint8_t, PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE> macroAutomation;
+    std::array<uint8_t, PROJECT_CONTROL_COMBINED_MAX_PAYLOAD_SIZE> projectControl;
     sequencer_codec::EnvelopeBuffer sequencerEnvelope;
 };
 
@@ -42,14 +48,11 @@ namespace {
 
 namespace project_file = core::persistence::project_file;
 namespace project_state_codec = core::persistence::project_state_codec;
+namespace project_track_codec = core::persistence::project_track_codec;
 namespace macro_track_codec = core::persistence::macro_track_codec;
+namespace project_control_codec = core::persistence::project_control_codec;
 namespace sequencer_codec = core::persistence::sequencer_codec;
-namespace binary = core::persistence::binary_codec;
 namespace macro = core::state::macro;
-
-FLASHMEM bool validateMacroAutomationBank(
-    const core::state::macro::MacroAutomationBankState& bank
-);
 
 FLASHMEM void resetMacroTracks(core::state::project::ProjectSnapshot& target) {
     for (uint8_t i = 0; i < target.macroTracks.size(); ++i) {
@@ -123,142 +126,20 @@ FLASHMEM void reportMissingOptional(project_file::LoadReport* report, project_fi
     reportDefaulted(report, id);
 }
 
-FLASHMEM uint32_t macroAutomationPayloadSize(uint8_t entryCount, uint16_t pointCount) {
-    return PROJECT_MACRO_AUTOMATION_HEADER_SIZE +
-           static_cast<uint32_t>(entryCount) * PROJECT_MACRO_AUTOMATION_ENTRY_SIZE +
-           static_cast<uint32_t>(pointCount) * PROJECT_MACRO_AUTOMATION_POINT_SIZE;
-}
-
-FLASHMEM bool writeMacroAutomationCurveRef(binary::Writer& writer,
-                                           const macro::MacroAutomationCurveRef& curve) {
-    return writer.writeU8(curve.active ? 1U : 0U) &&
-           writer.writeU8(static_cast<uint8_t>(curve.playbackState)) &&
-           writer.writeU16(curve.pointOffset) &&
-           writer.writeU16(curve.pointCount) &&
-           writer.writeU16(curve.sourceDurationTicks) &&
-           writer.writeU16(curve.durationTicks) &&
-           writer.writeU16(curve.windowOffsetTicks) &&
-           writer.writeU8(static_cast<uint8_t>(curve.interpolation)) &&
-           writer.writeU8(static_cast<uint8_t>(curve.modulationOrigin));
-}
-
-FLASHMEM bool readMacroAutomationCurveRef(binary::Reader& reader,
-                                          macro::MacroAutomationCurveRef& curve,
-                                          bool legacyV14) {
-    uint8_t active = 0;
-    uint8_t playbackState = 0;
-    uint8_t interpolation = 0;
-    uint8_t modulationOrigin = 0;
-    if (!reader.readU8(active) ||
-        !reader.readU8(playbackState) ||
-        !reader.readU16(curve.pointOffset) ||
-        !reader.readU16(curve.pointCount) ||
-        !reader.readU16(curve.sourceDurationTicks) ||
-        !reader.readU16(curve.durationTicks) ||
-        !reader.readU16(curve.windowOffsetTicks) ||
-        !reader.readU8(interpolation) ||
-        !reader.readU8(modulationOrigin)) {
-        return false;
-    }
-    if (interpolation != static_cast<uint8_t>(macro::MacroAutomationInterpolation::LINEAR)) {
-        return false;
-    }
-    if (legacyV14 && (playbackState != 0U || modulationOrigin != 0U)) {
-        return false;
-    }
-    curve.active = active != 0;
-    curve.interpolation = static_cast<macro::MacroAutomationInterpolation>(interpolation);
-    curve.playbackState = legacyV14
-        ? macro::MacroCurvePlaybackState::ACTIVE
-        : static_cast<macro::MacroCurvePlaybackState>(playbackState);
-    curve.modulationOrigin = legacyV14
-        ? macro::MacroModulationOrigin::NATIVE
-        : static_cast<macro::MacroModulationOrigin>(modulationOrigin);
-    if (!macro::macroCurvePlaybackStateValid(curve.playbackState) ||
-        !macro::macroModulationOriginValid(curve.modulationOrigin)) {
-        return false;
-    }
-    return true;
-}
-
-FLASHMEM bool writeMacroAutomationSlotState(binary::Writer& writer,
-                                            const macro::MacroAutomationSlotState& state) {
-    return writeMacroAutomationCurveRef(writer, state.automation) &&
-           writeMacroAutomationCurveRef(writer, state.modulation) &&
-           writer.writeFloat32(state.modulationDepth);
-}
-
-FLASHMEM bool readMacroAutomationSlotState(binary::Reader& reader,
-                                           macro::MacroAutomationSlotState& state,
-                                           bool legacyV14) {
-    if (!readMacroAutomationCurveRef(reader, state.automation, legacyV14) ||
-        !readMacroAutomationCurveRef(reader, state.modulation, legacyV14) ||
-        !reader.readFloat32(state.modulationDepth)) {
-        return false;
-    }
-    macro::macroAutomationNormalizeLegacyPlayback(state);
-    return true;
-}
-
-FLASHMEM bool fillMacroAutomationPayload(
-    const core::state::project::ProjectSnapshot& snapshot,
-    uint8_t* out,
-    uint32_t outCapacity,
-    uint32_t& outSize
-) {
-    outSize = 0;
-    if (out == nullptr) return false;
-
-    if (!snapshot.macroAutomation) return false;
-    const auto& bank = *snapshot.macroAutomation;
-    if (!validateMacroAutomationBank(bank)) return false;
-
-    const uint8_t entryCount = bank.entryCount;
-    const uint16_t pointCount = bank.pointPool.used;
-    const uint32_t required = macroAutomationPayloadSize(entryCount, pointCount);
-    if (required > outCapacity || required > PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE) {
-        return false;
-    }
-
-    binary::Writer writer(out, outCapacity);
-    if (!writer.writeU8(entryCount) ||
-        !writer.writeU8(0) ||
-        !writer.writeU16(pointCount) ||
-        !writer.writeU32(0)) {
-        return false;
-    }
-
-    for (uint8_t i = 0; i < entryCount; ++i) {
-        const auto& source = bank.entries[i];
-        if (!writer.writeU8(source.address.track) ||
-            !writer.writeU8(source.address.page) ||
-            !writer.writeU8(source.address.macro) ||
-            !writer.writeU8(0) ||
-            !writeMacroAutomationSlotState(writer, source.state)) {
-            return false;
-        }
-    }
-
-    for (uint16_t i = 0; i < pointCount; ++i) {
-        const auto& point = bank.pointPool.points[i];
-        if (!writer.writeU16(point.tick) || !writer.writeI16(point.value)) {
-            return false;
-        }
-    }
-
-    if (!writer.ok() || writer.offset() != required) return false;
-    outSize = writer.offset();
-    return true;
-}
-
 FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
                              core::state::project::ProjectSnapshot& target,
                              project_file::LoadReport* report) {
+    OC_PERF_SCOPE(perfMacro, "persistence.project-codec.decode.macro");
+    OC_PERF_UNITS(perfMacro, chunk != nullptr ? chunk->size : 0U, 0U);
     if (chunk == nullptr) {
         reportMissingOptional(report, project_file::ChunkId::MACRO_STATE);
         return true;
     }
-    if (!chunkVersionSupported(*chunk, PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR, report)) {
+    if (!chunkVersionSupported(
+            *chunk,
+            PROJECT_MACRO_STATE_CHUNK_VERSION_MINOR,
+            report
+        )) {
         reportDefaulted(report, project_file::ChunkId::MACRO_STATE);
         return false;
     }
@@ -298,262 +179,161 @@ FLASHMEM bool readMacroChunk(const project_file::DecodedChunkView* chunk,
     return true;
 }
 
-FLASHMEM bool validateMacroAutomationCurve(
-    const core::state::macro::MacroAutomationCurveRef& curve,
-    const core::state::macro::MacroAutomationPointPool& pool
+FLASHMEM project_control_codec::ChunkPayloadView controlChunkView(
+    const project_file::DecodedChunkView* chunk
 ) {
-    if (!core::state::macro::macroCurvePlaybackStateValid(curve.playbackState) ||
-        !core::state::macro::macroModulationOriginValid(curve.modulationOrigin)) {
-        return false;
-    }
-    if (!curve.active) return curve.pointCount == 0;
-    if (curve.durationTicks == 0 || curve.sourceDurationTicks == 0 || curve.pointCount == 0) {
-        return false;
-    }
-    if (curve.windowOffsetTicks > curve.sourceDurationTicks) return false;
-    if (curve.pointOffset >= pool.used) return false;
-    const uint32_t end =
-        static_cast<uint32_t>(curve.pointOffset) + static_cast<uint32_t>(curve.pointCount);
-    if (end > pool.used || end > core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
-        return false;
-    }
-    uint16_t previousTick = 0;
-    for (uint16_t i = 0; i < curve.pointCount; ++i) {
-        const auto& point = pool.points[static_cast<uint16_t>(curve.pointOffset + i)];
-        if (point.tick > curve.sourceDurationTicks) return false;
-        if (i > 0 && point.tick < previousTick) return false;
-        previousTick = point.tick;
-    }
-    return true;
-}
-
-struct MacroAutomationCurveRange {
-    uint16_t start = 0;
-    uint16_t end = 0;
-};
-
-FLASHMEM bool appendMacroAutomationCurveRange(
-    const core::state::macro::MacroAutomationCurveRef& curve,
-    std::array<MacroAutomationCurveRange, core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2>& ranges,
-    uint8_t& count
-) {
-    if (!curve.active) return true;
-    if (count >= ranges.size()) return false;
-    ranges[count++] = MacroAutomationCurveRange{
-        .start = curve.pointOffset,
-        .end = static_cast<uint16_t>(curve.pointOffset + curve.pointCount),
+    if (chunk == nullptr) return {};
+    return {
+        .present = true,
+        .versionMajor = chunk->versionMajor,
+        .versionMinor = chunk->versionMinor,
+        .flags = chunk->flags,
+        .data = chunk->data,
+        .size = chunk->size,
     };
-    return true;
 }
 
-FLASHMEM void sortMacroAutomationRanges(
-    std::array<MacroAutomationCurveRange, core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2>& ranges,
-    uint8_t count
+FLASHMEM void reportControlChunkStatus(
+    project_file::LoadReport* report,
+    project_file::ChunkId id,
+    const project_file::DecodedChunkView* chunk,
+    project_control_codec::ChunkStatus status,
+    uint8_t targetMinor,
+    bool peerPresent
 ) {
-    for (uint8_t i = 1; i < count; ++i) {
-        const auto current = ranges[i];
-        uint8_t j = i;
-        while (j > 0 && ranges[j - 1U].start > current.start) {
-            ranges[j] = ranges[j - 1U];
-            --j;
-        }
-        ranges[j] = current;
+    using ChunkStatus = project_control_codec::ChunkStatus;
+    const uint32_t chunkId = project_file::chunkIdValue(id);
+    const uint8_t sourceMajor = chunk != nullptr ? chunk->versionMajor : 0U;
+    const uint8_t sourceMinor = chunk != nullptr ? chunk->versionMinor : 0U;
+    switch (status) {
+        case ChunkStatus::CURRENT:
+            return;
+        case ChunkStatus::MISSING:
+            addReport(
+                report,
+                peerPresent ? project_file::LoadSeverity::WARNING
+                            : project_file::LoadSeverity::INFO,
+                project_file::LoadCode::MISSING_OPTIONAL_CHUNK,
+                chunkId,
+                sourceMajor,
+                sourceMinor,
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                targetMinor
+            );
+            reportDefaulted(report, id);
+            return;
+        case ChunkStatus::UNSUPPORTED_VERSION:
+            addReport(
+                report,
+                project_file::LoadSeverity::WARNING,
+                project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
+                chunkId,
+                sourceMajor,
+                sourceMinor,
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                targetMinor
+            );
+            reportDefaulted(report, id);
+            return;
+        case ChunkStatus::CAPACITY_EXCEEDED:
+            addReport(
+                report,
+                project_file::LoadSeverity::ERROR,
+                project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED,
+                chunkId,
+                sourceMajor,
+                sourceMinor,
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                targetMinor
+            );
+            reportDefaulted(report, id);
+            return;
+        case ChunkStatus::INVALID_PAYLOAD:
+        default:
+            addReport(
+                report,
+                project_file::LoadSeverity::ERROR,
+                project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+                chunkId,
+                sourceMajor,
+                sourceMinor,
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+                targetMinor
+            );
+            reportDefaulted(report, id);
+            return;
     }
 }
 
-FLASHMEM bool macroAutomationPoolIsFullyCovered(
-    const std::array<MacroAutomationCurveRange, core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2>& ranges,
-    uint8_t count,
-    uint16_t poolUsed
+FLASHMEM bool readProjectControlChunks(
+    const project_file::DecodedChunkView* automation,
+    const project_file::DecodedChunkView* modulation,
+    core::state::project::ProjectSnapshot& target,
+    project_file::LoadReport* report
 ) {
-    if (poolUsed == 0) return count == 0;
-    if (count == 0 || ranges[0].start != 0) return false;
-    uint16_t cursor = 0;
-    for (uint8_t i = 0; i < count; ++i) {
-        if (ranges[i].start != cursor || ranges[i].end <= ranges[i].start) return false;
-        cursor = ranges[i].end;
-    }
-    return cursor == poolUsed;
-}
-
-FLASHMEM bool validateMacroAutomationBank(
-    const core::state::macro::MacroAutomationBankState& bank
-) {
-    if (bank.entryCount > core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY) return false;
-    if (bank.pointPool.used > core::state::macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
-        return false;
-    }
-    std::array<
-        MacroAutomationCurveRange,
-        core::state::macro::MACRO_AUTOMATION_SLOT_CAPACITY * 2> ranges{};
-    uint8_t rangeCount = 0;
-    const uint8_t count = bank.entryCount;
-    for (uint8_t i = 0; i < count; ++i) {
-        const auto& entry = bank.entries[i];
-        if (!entry.active) return false;
-        if (!core::state::macro::macroAutomationAddressValid(entry.address)) return false;
-        for (uint8_t j = static_cast<uint8_t>(i + 1U); j < count; ++j) {
-            if (bank.entries[j].active &&
-                core::state::macro::macroAutomationAddressEquals(
-                    entry.address,
-                    bank.entries[j].address
-                )) {
-                return false;
-            }
-        }
-        if (!core::state::macro::macroAutomationCurveLifecycleValid(
-                entry.state.automation
-            ) ||
-            !core::state::macro::macroModulationCurveLifecycleValid(
-                entry.state.modulation
-            )) {
-            return false;
-        }
-        if (!validateMacroAutomationCurve(entry.state.automation, bank.pointPool)) return false;
-        if (!validateMacroAutomationCurve(entry.state.modulation, bank.pointPool)) return false;
-        if (!std::isfinite(entry.state.modulationDepth) ||
-            entry.state.modulationDepth < 0.0f ||
-            entry.state.modulationDepth > 1.0f) {
-            return false;
-        }
-        if (!appendMacroAutomationCurveRange(entry.state.automation, ranges, rangeCount)) {
-            return false;
-        }
-        if (!appendMacroAutomationCurveRange(entry.state.modulation, ranges, rangeCount)) {
-            return false;
-        }
-    }
-    sortMacroAutomationRanges(ranges, rangeCount);
-    return macroAutomationPoolIsFullyCovered(ranges, rangeCount, bank.pointPool.used);
-}
-
-FLASHMEM bool readMacroAutomationPayload(const uint8_t* data,
-                                          uint32_t size,
-                                          macro::MacroAutomationBankState& out,
-                                          bool legacyV14) {
-    out.clear();
-    if (data == nullptr || size < PROJECT_MACRO_AUTOMATION_HEADER_SIZE) return false;
-
-    binary::Reader reader(data, size);
-    uint8_t entryCount = 0;
-    uint8_t reserved0 = 0;
-    uint16_t pointCount = 0;
-    uint32_t reserved1 = 0;
-    if (!reader.readU8(entryCount) ||
-        !reader.readU8(reserved0) ||
-        !reader.readU16(pointCount) ||
-        !reader.readU32(reserved1)) {
-        return false;
-    }
-    (void)reserved0;
-    (void)reserved1;
-
-    if (entryCount > macro::MACRO_AUTOMATION_SLOT_CAPACITY) return false;
-    if (pointCount > macro::MACRO_AUTOMATION_POINT_POOL_CAPACITY) {
-        return false;
-    }
-
-    const uint32_t required = macroAutomationPayloadSize(
-        entryCount,
-        pointCount
+    OC_PERF_SCOPE(
+        perfControl,
+        "persistence.project-codec.decode.project-control"
     );
-    if (required != size || required > PROJECT_MACRO_AUTOMATION_MAX_PAYLOAD_SIZE) {
+    OC_PERF_UNITS(
+        perfControl,
+        (automation != nullptr ? automation->size : 0U) +
+            (modulation != nullptr ? modulation->size : 0U),
+        0U
+    );
+    if (!target.projectControl) {
+        addReport(
+            report,
+            project_file::LoadSeverity::FATAL,
+            project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED,
+            0U
+        );
+        return false;
+    }
+    const auto decoded = project_control_codec::decodeProjectControlPayloads(
+        controlChunkView(automation),
+        controlChunkView(modulation),
+        *target.projectControl
+    );
+    if (decoded.status == project_control_codec::Status::SCRATCH_ALLOCATION_FAILED) {
+        addReport(
+            report,
+            project_file::LoadSeverity::FATAL,
+            project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED,
+            0U
+        );
+        return false;
+    }
+    if (!decoded.decoded()) {
+        addReport(
+            report,
+            project_file::LoadSeverity::ERROR,
+            project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+            0U
+        );
+        target.projectControl->clear();
         return false;
     }
 
-    out.entryCount = entryCount;
-    for (uint8_t i = 0; i < entryCount; ++i) {
-        macro::MacroAutomationSlotAddress address{};
-        macro::MacroAutomationSlotState state{};
-        uint8_t reservedEntry = 0;
-        if (!reader.readU8(address.track) ||
-            !reader.readU8(address.page) ||
-            !reader.readU8(address.macro) ||
-            !reader.readU8(reservedEntry) ||
-            !readMacroAutomationSlotState(reader, state, legacyV14)) {
-            return false;
-        }
-        (void)reservedEntry;
-
-        out.entries[i] = macro::MacroAutomationSlotEntry{
-            .active = true,
-            .address = address,
-            .state = state,
-        };
+    reportControlChunkStatus(
+        report,
+        project_file::ChunkId::MACRO_AUTOMATION,
+        automation,
+        decoded.automationStatus,
+        project_control_codec::PROJECT_AUTOMATION_CHUNK_VERSION_MINOR,
+        modulation != nullptr
+    );
+    reportControlChunkStatus(
+        report,
+        project_file::ChunkId::MODULATION_GRAPH,
+        modulation,
+        decoded.modulationStatus,
+        project_control_codec::PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR,
+        automation != nullptr
+    );
+    if (report != nullptr && !decoded.overwriteSafe) {
+        report->overwriteSafe = false;
     }
-
-    out.pointPool.used = pointCount;
-    for (uint16_t i = 0; i < pointCount; ++i) {
-        uint16_t tick = 0;
-        int16_t value = 0;
-        if (!reader.readU16(tick) || !reader.readI16(value)) return false;
-        out.pointPool.points[i] = macro::MacroPackedCurvePoint{
-            .tick = tick,
-            .value = value,
-        };
-    }
-
-    return reader.ok() && reader.offset() == size && validateMacroAutomationBank(out);
-}
-
-FLASHMEM bool readMacroAutomationChunk(const project_file::DecodedChunkView* chunk,
-                                       core::state::project::ProjectSnapshot& target,
-                                       project_file::LoadReport* report) {
-    if (!target.macroAutomation) {
-        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
-        return false;
-    }
-    if (chunk == nullptr) {
-        reportMissingOptional(report, project_file::ChunkId::MACRO_AUTOMATION);
-        target.macroAutomation->clear();
-        return true;
-    }
-    const bool currentVersion =
-        chunk->versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
-        chunk->versionMinor == PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR;
-    const bool legacyV14 =
-        chunk->versionMajor == PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR &&
-        chunk->versionMinor == PROJECT_MACRO_AUTOMATION_LEGACY_CHUNK_VERSION_MINOR;
-    if (!currentVersion && !legacyV14) {
-        addReport(report,
-                  project_file::LoadSeverity::WARNING,
-                  project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION,
-                  chunk->id,
-                  chunk->versionMajor,
-                  chunk->versionMinor,
-                  PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-                  PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR);
-        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
-        target.macroAutomation->clear();
-        return false;
-    }
-    if (!readMacroAutomationPayload(
-            chunk->data,
-            chunk->size,
-            *target.macroAutomation,
-            legacyV14
-        )) {
-        addReport(report,
-                  project_file::LoadSeverity::ERROR,
-                  project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
-                  chunk->id,
-                  chunk->versionMajor,
-                  chunk->versionMinor);
-        reportDefaulted(report, project_file::ChunkId::MACRO_AUTOMATION);
-        target.macroAutomation->clear();
-        return false;
-    }
-    if (legacyV14) {
-        addReport(report,
-                  project_file::LoadSeverity::INFO,
-                  project_file::LoadCode::MIGRATED_CHUNK,
-                  chunk->id,
-                  chunk->versionMajor,
-                  chunk->versionMinor,
-                  PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-                  PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR);
-    }
-    core::state::macro::macroAutomationCompactPool(*target.macroAutomation);
     return true;
 }
 
@@ -596,11 +376,24 @@ FLASHMEM bool buildSequencerEnvelope(
 FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
                                  core::state::project::ProjectSnapshot& target,
                                  project_file::LoadReport* report) {
+    OC_PERF_SCOPE(
+        perfSequencer,
+        "persistence.project-codec.decode.sequencer"
+    );
+    OC_PERF_UNITS(
+        perfSequencer,
+        chunk != nullptr ? chunk->size : 0U,
+        0U
+    );
     if (chunk == nullptr) {
         reportMissingOptional(report, project_file::ChunkId::SEQUENCER_STATE);
         return true;
     }
-    if (!chunkVersionSupported(*chunk, PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR, report)) {
+    if (!chunkVersionSupported(
+            *chunk,
+            PROJECT_SEQUENCER_STATE_CHUNK_VERSION_MINOR,
+            report
+        )) {
         reportDefaulted(report, project_file::ChunkId::SEQUENCER_STATE);
         return false;
     }
@@ -650,6 +443,59 @@ FLASHMEM bool readSequencerChunk(const project_file::DecodedChunkView* chunk,
     return true;
 }
 
+enum class ProjectTrackChunkStatus : uint8_t {
+    VALID = 0,
+    INVALID,
+};
+
+FLASHMEM ProjectTrackChunkStatus readProjectTrackChunk(
+    const project_file::DecodedChunkView* chunk,
+    core::state::project::ProjectTrackSnapshot& out,
+    project_file::LoadReport* report
+) {
+    OC_PERF_SCOPE(
+        perfTrack,
+        "persistence.project-codec.decode.track-state"
+    );
+    OC_PERF_UNITS(perfTrack, chunk != nullptr ? chunk->size : 0U, 0U);
+    if (chunk == nullptr) {
+        addReport(
+            report,
+            project_file::LoadSeverity::FATAL,
+            project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+            project_file::chunkIdValue(project_file::ChunkId::TRACK_STATE),
+            0U,
+            0U,
+            project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MAJOR,
+            project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MINOR
+        );
+        return ProjectTrackChunkStatus::INVALID;
+    }
+
+    const auto decoded = project_track_codec::decodeProjectTrackStatePayload(
+        chunk->data,
+        chunk->size,
+        chunk->versionMajor,
+        chunk->versionMinor,
+        out
+    );
+    if (decoded.decoded()) return ProjectTrackChunkStatus::VALID;
+
+    addReport(
+        report,
+        project_file::LoadSeverity::FATAL,
+        decoded.status == project_track_codec::Status::UNSUPPORTED_VERSION
+            ? project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION
+            : project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+        chunk->id,
+        chunk->versionMajor,
+        chunk->versionMinor,
+        project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MAJOR,
+        project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MINOR
+    );
+    return ProjectTrackChunkStatus::INVALID;
+}
+
 }  // namespace
 
 FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
@@ -658,9 +504,14 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     uint32_t outCapacity,
     ProjectSnapshotCodecWorkspace& workspace
 ) {
-    if (!snapshot.macroAutomation) {
+    if (!snapshot.projectControl) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
+#if OC_ENABLE_STATS
+    core::diagnostics::recordDynamicMemorySample(
+        "memory.psram.persistence.project-encode-begin"
+    );
+#endif
     if (!workspace.prepare()) {
         return {.status = project_file::Status::SCRATCH_ALLOCATION_FAILED, .bytesWritten = 0};
     }
@@ -669,18 +520,15 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
     project_state_codec::ProjectMetaPayload meta{};
     project_state_codec::ProjectTransportPayload transport{};
     project_state_codec::ProjectMusicalContextPayload musical{};
-    project_state_codec::ProjectRoutingPayload routing{};
     project_state_codec::ProjectEditingPayload editing{};
     project_state_codec::fillMetaPayload(snapshot.project.metadata, meta);
     project_state_codec::fillTransportPayload(snapshot.project.transport, transport);
     project_state_codec::fillMusicalContextPayload(snapshot.project.musical, musical);
-    project_state_codec::fillRoutingPayload(snapshot.project.routing, routing);
     project_state_codec::fillEditingPayload(snapshot.project.editing, editing);
 
     std::array<uint8_t, project_state_codec::PROJECT_META_PAYLOAD_SIZE> metaBytes{};
     std::array<uint8_t, project_state_codec::PROJECT_TRANSPORT_PAYLOAD_SIZE> transportBytes{};
     std::array<uint8_t, project_state_codec::PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE> musicalBytes{};
-    std::array<uint8_t, project_state_codec::PROJECT_ROUTING_PAYLOAD_SIZE> routingBytes{};
     std::array<uint8_t, project_state_codec::PROJECT_EDITING_PAYLOAD_SIZE> editingBytes{};
     if (!project_state_codec::encodeMetaPayload(
             meta,
@@ -697,11 +545,6 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             musicalBytes.data(),
             static_cast<uint32_t>(musicalBytes.size())
         ) ||
-        !project_state_codec::encodeRoutingPayload(
-            routing,
-            routingBytes.data(),
-            static_cast<uint32_t>(routingBytes.size())
-        ) ||
         !project_state_codec::encodeEditingPayload(
             editing,
             editingBytes.data(),
@@ -712,6 +555,16 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
 
     auto& scratch = *workspace.storage_;
 
+    const auto projectTracksEncoded =
+        project_track_codec::encodeProjectTrackStatePayload(
+            snapshot.projectTracks,
+            scratch.projectTracks.data(),
+            static_cast<uint32_t>(scratch.projectTracks.size())
+        );
+    if (!projectTracksEncoded.encoded()) {
+        return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
+    }
+
     if (!macro_track_codec::encodeTrackBankPayload(
             snapshot.macroTracks,
             snapshot.sharedTrackEnabledMask,
@@ -721,13 +574,13 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
         )) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
-    uint32_t macroAutomationSize = 0;
-    if (!fillMacroAutomationPayload(
-            snapshot,
-            scratch.macroAutomation.data(),
-            static_cast<uint32_t>(scratch.macroAutomation.size()),
-            macroAutomationSize
-        )) {
+    const auto controlPayloads =
+        project_control_codec::encodeProjectControlPayloads(
+            *snapshot.projectControl,
+            scratch.projectControl.data(),
+            static_cast<uint32_t>(scratch.projectControl.size())
+        );
+    if (!controlPayloads.encoded()) {
         return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
     }
     uint32_t sequencerSize = 0;
@@ -765,14 +618,6 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .size = project_state_codec::PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE,
         },
         {
-            .id = project_file::chunkIdValue(project_file::ChunkId::ROUTING),
-            .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-            .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
-            .flags = 0,
-            .data = routingBytes.data(),
-            .size = project_state_codec::PROJECT_ROUTING_PAYLOAD_SIZE,
-        },
-        {
             .id = project_file::chunkIdValue(project_file::ChunkId::EDITING),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
@@ -781,9 +626,17 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .size = project_state_codec::PROJECT_EDITING_PAYLOAD_SIZE,
         },
         {
+            .id = project_file::chunkIdValue(project_file::ChunkId::TRACK_STATE),
+            .versionMajor = project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MAJOR,
+            .versionMinor = project_track_codec::PROJECT_TRACK_CHUNK_VERSION_MINOR,
+            .flags = 0,
+            .data = scratch.projectTracks.data(),
+            .size = project_track_codec::PROJECT_TRACK_STATE_PAYLOAD_SIZE,
+        },
+        {
             .id = project_file::chunkIdValue(project_file::ChunkId::MACRO_STATE),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-            .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
+            .versionMinor = PROJECT_MACRO_STATE_CHUNK_VERSION_MINOR,
             .flags = 0,
             .data = scratch.macro.data(),
             .size = PROJECT_MACRO_STATE_PAYLOAD_SIZE,
@@ -793,13 +646,26 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
             .versionMinor = PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR,
             .flags = 0,
-            .data = scratch.macroAutomation.data(),
-            .size = macroAutomationSize,
+            .data = scratch.projectControl.data() +
+                controlPayloads.automationOffset,
+            .size = controlPayloads.automationSize,
+        },
+        {
+            .id = project_file::chunkIdValue(
+                project_file::ChunkId::MODULATION_GRAPH
+            ),
+            .versionMajor =
+                project_control_codec::PROJECT_CONTROL_CHUNK_VERSION_MAJOR,
+            .versionMinor = PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR,
+            .flags = 0,
+            .data = scratch.projectControl.data() +
+                controlPayloads.modulationOffset,
+            .size = controlPayloads.modulationSize,
         },
         {
             .id = project_file::chunkIdValue(project_file::ChunkId::SEQUENCER_STATE),
             .versionMajor = PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR,
-            .versionMinor = PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR,
+            .versionMinor = PROJECT_SEQUENCER_STATE_CHUNK_VERSION_MINOR,
             .flags = 0,
             .data = scratch.sequencerEnvelope.bytes.data(),
             .size = sequencerSize,
@@ -814,6 +680,11 @@ FLASHMEM project_file::EncodeResult encodeProjectSnapshot(
         outCapacity
     );
     OC_PERF_UNITS(perfEncode, encoded.bytesWritten, sequencerSize);
+#if OC_ENABLE_STATS
+    core::diagnostics::recordDynamicMemorySample(
+        "memory.psram.persistence.project-encode-workspace"
+    );
+#endif
     return encoded;
 }
 
@@ -835,6 +706,13 @@ FLASHMEM DecodeResult decodeProjectSnapshot(
     core::state::project::ProjectSnapshot& out,
     project_file::LoadReport* report
 ) {
+    OC_PERF_SCOPE(perfDecode, "persistence.project-codec.decode");
+    OC_PERF_UNITS(perfDecode, size, 0U);
+#if OC_ENABLE_STATS
+    core::diagnostics::recordDynamicMemorySample(
+        "memory.psram.persistence.project-decode-begin"
+    );
+#endif
     project_file::LoadReport localReport{};
     auto* effectiveReport = report != nullptr ? report : &localReport;
     project_file::DecodedChunkView chunks[project_file::MAX_CHUNKS] = {};
@@ -863,29 +741,71 @@ FLASHMEM DecodeResult decodeProjectSnapshot(
             .overwriteSafe = false,
         };
     }
+#if OC_ENABLE_STATS
+    core::diagnostics::recordDynamicMemorySample(
+        "memory.psram.persistence.project-decode-snapshot"
+    );
+#endif
     project_state_codec::applyProjectStateChunks(
         chunks,
         decodeResult.chunkCount,
         next->project,
         effectiveReport
     );
-    readMacroChunk(findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_STATE),
-                   *next,
-                   effectiveReport);
-    readMacroAutomationChunk(
-        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_AUTOMATION),
-        *next,
-        effectiveReport
-    );
+    const auto* macroChunk =
+        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::MACRO_STATE);
+    readMacroChunk(macroChunk, *next, effectiveReport);
+    if (!readProjectControlChunks(
+            findChunk(
+                chunks,
+                decodeResult.chunkCount,
+                project_file::ChunkId::MACRO_AUTOMATION
+            ),
+            findChunk(
+                chunks,
+                decodeResult.chunkCount,
+                project_file::ChunkId::MODULATION_GRAPH
+            ),
+            *next,
+            effectiveReport
+        ) && effectiveReport->failed()) {
+        return {
+            .ok = false,
+            .containerStatus = project_file::Status::SCRATCH_ALLOCATION_FAILED,
+            .loadStatus = effectiveReport->status,
+            .overwriteSafe = false,
+        };
+    }
+    const auto* sequencerChunk =
+        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::SEQUENCER_STATE);
     readSequencerChunk(
-        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::SEQUENCER_STATE),
+        sequencerChunk,
         *next,
         effectiveReport
     );
 
+    const auto trackChunkStatus = readProjectTrackChunk(
+        findChunk(chunks, decodeResult.chunkCount, project_file::ChunkId::TRACK_STATE),
+        next->projectTracks,
+        effectiveReport
+    );
+    if (trackChunkStatus == ProjectTrackChunkStatus::INVALID ||
+        effectiveReport->failed()) {
+        return {
+            .ok = false,
+            .containerStatus = decodeResult.status,
+            .loadStatus = effectiveReport->status,
+            .overwriteSafe = false,
+        };
+    }
     out = std::move(*next);
     const project_file::LoadStatus loadStatus = effectiveReport->status;
     const bool overwriteSafe = effectiveReport->overwriteSafe;
+#if OC_ENABLE_STATS
+    core::diagnostics::recordDynamicMemorySample(
+        "memory.psram.persistence.project-decode-end"
+    );
+#endif
     return {
         .ok = loadStatus != project_file::LoadStatus::FAILED,
         .containerStatus = decodeResult.status,

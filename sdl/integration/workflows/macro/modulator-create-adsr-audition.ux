@@ -1,0 +1,88 @@
+# UX workflow: cancel, recreate, audition and apply a destination-first DAHDSR.
+# Purpose: proves silent source choice, exact Cancel, the same DAHDSR workspace
+# used by Project, local Details/Sync Feel, destination Depth as the last item,
+# and one atomic Apply back to the Macro assignment.
+# Expect: capture_changed:modulation_empty=dahdsr_choice, capture_changed:dahdsr_choice=dahdsr_audition_default, capture_changed:dahdsr_audition_default=dahdsr_cancel_edit
+# Expect: capture_changed:dahdsr_cancel_edit=dahdsr_creation_restored, capture_changed:dahdsr_audition_reentered=dahdsr_details, capture_changed:dahdsr_details=dahdsr_sync
+# Expect: capture_changed:dahdsr_sync=dahdsr_hold_triplet, capture_changed:dahdsr_hold_triplet=dahdsr_audition_edited, capture_changed:dahdsr_audition_edited=dahdsr_applied
+# Expect: capture_changed:dahdsr_applied=dahdsr_source_workspace, capture_changed:dahdsr_source_workspace=dahdsr_assignment_restored
+# Expect: semantic:dahdsr_choice:effect=focus_modulation_creation, semantic:dahdsr_choice:projection=silent_selection
+# Expect: semantic:dahdsr_audition_default:mode=project.modulator_detail, semantic:dahdsr_audition_default:projection=audible_audition, semantic:dahdsr_audition_default:source=adsr
+# Expect: semantic:dahdsr_cancel_edit:effect=edit_modulator_property, semantic:dahdsr_creation_restored:effect=cancel_destination_audition
+# Expect: semantic:dahdsr_details:mode=project.modulator_options, semantic:dahdsr_details:property=delay
+# Expect: semantic:dahdsr_sync:mode=project.modulator_options, semantic:dahdsr_sync:property=timing
+# Expect: semantic:dahdsr_hold_triplet:effect=cycle_modulator_feel, semantic:dahdsr_hold_triplet:property=hold
+# Expect: semantic:dahdsr_audition_edited:effect=edit_modulator_depth, semantic:dahdsr_audition_edited:property=depth, semantic:dahdsr_audition_edited:projection=audible_audition
+# Expect: semantic:dahdsr_applied:effect=apply_destination_audition
+# Expect: semantic:dahdsr_source_workspace:mode=project.modulator_detail, semantic:dahdsr_source_workspace:source=adsr
+
+0 scenario macro
+80 capture screen macro_ready
+
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1240 tick
+1300 button LEFT_BOTTOM up
+1450 encoder NAV 1
+1570 encoder NAV 1
+1690 tap NAV 60
+1910 capture screen modulation_empty
+
+# New DAHDSR is adjacent to New LFO; browsing remains silent until selection.
+2030 encoder NAV 1
+2250 capture screen dahdsr_choice
+2370 tap NAV 60
+2590 capture screen dahdsr_audition_default
+
+# Cancel removes provisional Source, Trigger and destination atomically and
+# restores the same New DAHDSR choice.
+2710 encoder OPT 0.80
+2930 capture screen dahdsr_cancel_edit
+3050 tap LEFT_TOP 60
+3270 capture screen dahdsr_creation_restored
+
+# Re-entry starts from fresh deterministic defaults.
+3390 tap NAV 60
+3610 capture screen dahdsr_audition_reentered
+
+# The destination-first editor shares the durable source grammar. Details is
+# adjacent to Trigger and keeps the curve visible.
+3730 encoder NAV 1
+3810 encoder NAV 1
+3890 encoder NAV 1
+3970 encoder NAV 1
+4050 encoder NAV 1
+4170 tap NAV 60
+4390 capture screen dahdsr_details
+4510 encoder OPT 0.10
+4630 encoder NAV 1
+4750 encoder OPT 0.20
+4870 encoder NAV 1
+4990 encoder OPT -1.00
+5110 encoder OPT -1.00
+5230 encoder OPT -1.00
+5350 encoder OPT -1.00
+5570 capture screen dahdsr_sync
+
+# Feel belongs to each temporal parameter and cycles by tapping NAV in Sync.
+5690 encoder NAV -1
+5810 tap NAV 60
+6030 capture screen dahdsr_hold_triplet
+
+# Back restores Details focus. Depth is deliberately the final audition item,
+# so it is one NAV step away and affects only this implied destination.
+6150 tap LEFT_TOP 60
+6270 encoder NAV 1
+6390 encoder OPT 0.75
+6610 capture screen dahdsr_audition_edited
+
+6730 tap BOTTOM_RIGHT 60
+6950 capture screen dahdsr_applied
+
+# The committed assignment opens the same source in one tap.
+7070 tap NAV 60
+7290 capture screen dahdsr_source_workspace
+
+# Back restores the exact Macro assignment by stable source/binding IDs.
+7410 tap LEFT_TOP 60
+7630 capture screen dahdsr_assignment_restored

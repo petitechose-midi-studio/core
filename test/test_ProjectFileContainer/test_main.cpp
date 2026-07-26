@@ -184,7 +184,7 @@ void test_future_container_major_decodes_best_effort_but_blocks_overwrite() {
     uint8_t encoded[128] = {};
     const uint8_t payload[] = {7, 8};
     const ChunkView chunks[] = {{
-        .id = chunkIdValue(ChunkId::ROUTING),
+        .id = chunkIdValue(ChunkId::EDITING),
         .versionMajor = 1,
         .versionMinor = 0,
         .flags = 0,
@@ -209,7 +209,7 @@ void test_future_container_major_decodes_best_effort_but_blocks_overwrite() {
     assert(report.status == LoadStatus::PARTIAL);
     assert(report.hasUnknownUnsupportedData);
     assert(reportHas(report, LoadCode::UNSUPPORTED_CONTAINER_VERSION));
-    assert(decoded[0].id == chunkIdValue(ChunkId::ROUTING));
+    assert(decoded[0].id == chunkIdValue(ChunkId::EDITING));
 
     std::cout << "[PASS] test_future_container_major_decodes_best_effort_but_blocks_overwrite\n";
 }

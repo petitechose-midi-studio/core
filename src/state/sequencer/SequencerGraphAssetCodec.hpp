@@ -56,7 +56,7 @@ struct SequencerGraphAssetReport {
 
 struct SequencerStepGraphPreset {
     static constexpr uint16_t ASSET_ROOT_NODE_ID = 0;
-    static constexpr uint8_t CURRENT_FORMAT_VERSION = 2;
+    static constexpr uint8_t CURRENT_FORMAT_VERSION = 3;
     static constexpr size_t TECHNICAL_ID_SIZE = 55;
     static constexpr size_t SEMANTIC_NAME_SIZE = 32;
 
@@ -67,7 +67,6 @@ struct SequencerStepGraphPreset {
 
     bool valid = false;
     uint8_t formatVersion = CURRENT_FORMAT_VERSION;
-    bool metadataDefaulted = false;
     bool mixedPitchPolicy = false;
     char technicalId[TECHNICAL_ID_SIZE] = {};
     char semanticName[SEMANTIC_NAME_SIZE] = {};
@@ -95,7 +94,6 @@ struct SequencerGraphAssetEncodeResult {
 
 struct SequencerStepGraphPresetMetadataView {
     uint8_t formatVersion = 0;
-    bool metadataDefaulted = false;
     bool mixedPitchPolicy = false;
     char technicalId[SequencerStepGraphPreset::TECHNICAL_ID_SIZE] = {};
     char semanticName[SequencerStepGraphPreset::SEMANTIC_NAME_SIZE] = {};
@@ -104,12 +102,12 @@ struct SequencerStepGraphPresetMetadataView {
     oc::note::sequencer::StepSequencerScaleSettings sourceScale{};
 };
 
-inline constexpr uint32_t STEP_GRAPH_PRESET_V1_HEADER_SIZE = 21;
+inline constexpr uint32_t STEP_GRAPH_PRESET_BASE_HEADER_SIZE = 21;
 inline constexpr uint32_t STEP_GRAPH_PRESET_METADATA_SIZE =
     4U + SequencerStepGraphPreset::TECHNICAL_ID_SIZE +
     SequencerStepGraphPreset::SEMANTIC_NAME_SIZE;
 inline constexpr uint32_t STEP_GRAPH_PRESET_HEADER_SIZE =
-    STEP_GRAPH_PRESET_V1_HEADER_SIZE + STEP_GRAPH_PRESET_METADATA_SIZE;
+    STEP_GRAPH_PRESET_BASE_HEADER_SIZE + STEP_GRAPH_PRESET_METADATA_SIZE;
 inline constexpr uint32_t STEP_GRAPH_PRESET_MAX_ENCODED_SIZE_U32 =
     STEP_GRAPH_PRESET_HEADER_SIZE +
     oc::note::sequencer::StepSequencerGraphLimits::MAX_SEQUENCES *

@@ -20,8 +20,8 @@ namespace core::handler {
 /**
  * Macro structure domain service boundary.
  *
- * It applies page/track mask changes, duplication, paste, erase, active
- * selection, project mutation, and presentation refresh through focused state
+ * It applies page/track mask changes, paste, erase, active navigation,
+ * project mutation, and presentation refresh through focused state
  * refs and typed operations.
  */
 class MacroStructureDomainServices {
@@ -41,6 +41,7 @@ public:
         oc::state::Signal<uint8_t, 8>& sharedTrackActive;
         oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
         core::state::macro::MacroHistoryService* history = nullptr;
+        core::state::CoreState* coreState = nullptr;
     };
 
     struct Operations {
@@ -60,12 +61,8 @@ public:
     uint8_t activeTrack() const;
     uint16_t pageEnabledMask() const;
     uint16_t trackEnabledMask() const;
-    bool deleteActivePage() const;
+    bool deletePage(uint8_t pageIndex) const;
     bool deleteActiveTrack() const;
-    bool deleteSelectedPages(uint16_t selectedMask) const;
-    bool deleteSelectedTracks(uint16_t selectedMask) const;
-    bool duplicateSelectedPages(uint16_t selectedMask) const;
-    bool duplicateSelectedTracks(uint16_t selectedMask) const;
     bool erasePage(uint8_t pageIndex) const;
     bool eraseTrack(uint8_t trackIndex) const;
     bool pastePage(uint8_t pageIndex,
@@ -77,7 +74,6 @@ public:
     bool createNextPage() const;
     bool createTrack(uint8_t trackIndex) const;
     bool activateMacroSlot(uint8_t index) const;
-    bool macroAutomationActive(uint8_t index) const;
     bool clearMacroAutomation(uint8_t index) const;
     bool removeMacroAutomation(uint8_t index) const;
     bool copyMacroAutomation(uint8_t index, core::state::StructureClipboardState& clipboard) const;
@@ -94,6 +90,7 @@ private:
     oc::state::Signal<uint8_t, 8>* shared_track_active_ = nullptr;
     oc::state::Signal<uint16_t, 16>* shared_track_enabled_mask_ = nullptr;
     core::state::macro::MacroHistoryService* history_ = nullptr;
+    core::state::CoreState* core_state_ = nullptr;
     Operations operations_{};
 };
 

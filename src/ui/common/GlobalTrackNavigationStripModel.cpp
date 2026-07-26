@@ -2,6 +2,10 @@
 
 #include <algorithm>
 
+#include <config/PlatformCompat.hpp>
+
+#include "state/project/ProjectTrackDomainOps.hpp"
+
 namespace core::ui {
 
 namespace {
@@ -17,13 +21,28 @@ TrackNavigationStripProps buildTrackNavigationStripProps(
     const auto& trackNavigation = source.trackNavigation;
     const bool selectingTrack =
         trackNavigation.selection.active.get() &&
-        trackNavigation.selection.scope.get() == core::state::StructureSelectionScope::TRACK;
+        trackNavigation.selection.scope.get() ==
+            core::state::StructureSelectionScope::TRACK;
     const bool previewAddSlot =
-        !trackNavigation.selection.active.get() && trackNavigation.previewAddSlot.get();
-    const bool focusingTrack = !trackNavigation.selection.active.get() &&
-        source.structureNavigationFocus == core::state::StructureNavigationFocus::TRACK;
+        !selectingTrack && trackNavigation.previewAddSlot.get();
+    const bool focusingTrack =
+        !selectingTrack &&
+        source.structureNavigationFocus ==
+            core::state::StructureNavigationFocus::TRACK;
     const uint16_t enabledMask = source.sharedTrackEnabledMask;
-    const uint16_t mutedMask = static_cast<uint16_t>(source.sharedTrackMutedMask & enabledMask);
+    const uint16_t audible = core::state::project::audibleMask(
+        source.projectTracks,
+        enabledMask
+    );
+    const uint16_t inaudibleMask = static_cast<uint16_t>(
+        enabledMask & static_cast<uint16_t>(~audible)
+    );
+    const uint16_t explicitMutedMask = static_cast<uint16_t>(
+        enabledMask & source.projectTracks.authored.mutedMask
+    );
+    const uint16_t soloMask = static_cast<uint16_t>(
+        enabledMask & source.projectTracks.authored.soloMask
+    );
     const uint8_t activeTrack = source.sharedTrackActive;
     const uint8_t previewAddIndex =
         previewAddSlot && focusingTrack
@@ -31,15 +50,21 @@ TrackNavigationStripProps buildTrackNavigationStripProps(
             : TrackNavigationStripProps::TRACK_COUNT;
 
     props.activeTrack = activeTrack;
-    props.previewTrack =
-        selectingTrack
-            ? trackNavigation.selection.cursorIndex.get()
-            : (focusingTrack ? clampTrackIndex(trackNavigation.previewTrackIndex.get())
-                             : activeTrack);
+    props.previewTrack = selectingTrack
+        ? clampTrackIndex(trackNavigation.selection.cursorIndex.get())
+        : (focusingTrack
+            ? clampTrackIndex(trackNavigation.previewTrackIndex.get())
+            : activeTrack);
     props.addTrackIndex = previewAddIndex;
     props.enabledMask = enabledMask;
-    props.mutedMask = mutedMask;
-    props.selectedMask = selectingTrack ? trackNavigation.selection.selectedMask.get() : 0;
+    props.explicitMutedMask = explicitMutedMask;
+    props.soloMask = soloMask;
+    props.inaudibleMask = inaudibleMask;
+    props.selectedMask = selectingTrack
+        ? static_cast<uint16_t>(
+            trackNavigation.selection.selectedMask.get() & enabledMask
+        )
+        : 0U;
     props.focusingTrack = focusingTrack;
     props.selectingTrack = selectingTrack;
     for (uint8_t i = 0; i < TrackNavigationStripProps::TRACK_COUNT; ++i) {
@@ -50,13 +75,13 @@ TrackNavigationStripProps buildTrackNavigationStripProps(
 
 }  // namespace
 
-TrackNavigationStripProps buildGlobalTrackNavigationStripProps(
+FLASHMEM TrackNavigationStripProps buildGlobalTrackNavigationStripProps(
     const GlobalTrackNavigationStripSource& source
 ) {
     return buildTrackNavigationStripProps(source);
 }
 
-bool globalTrackNavigationStripPropsEqual(
+FLASHMEM bool globalTrackNavigationStripPropsEqual(
     const TrackNavigationStripProps& lhs,
     const TrackNavigationStripProps& rhs
 ) {
@@ -64,7 +89,9 @@ bool globalTrackNavigationStripPropsEqual(
            lhs.previewTrack == rhs.previewTrack &&
            lhs.addTrackIndex == rhs.addTrackIndex &&
            lhs.enabledMask == rhs.enabledMask &&
-           lhs.mutedMask == rhs.mutedMask &&
+           lhs.explicitMutedMask == rhs.explicitMutedMask &&
+           lhs.soloMask == rhs.soloMask &&
+           lhs.inaudibleMask == rhs.inaudibleMask &&
            lhs.selectedMask == rhs.selectedMask &&
            lhs.focusingTrack == rhs.focusingTrack &&
            lhs.selectingTrack == rhs.selectingTrack &&

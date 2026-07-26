@@ -72,16 +72,13 @@ FLASHMEM void configureDebugLabels(CoreState& state) {
 
     state.viewSelector.selectedIndex.setDebugLabel("core.viewSelector.selectedIndex");
     state.viewSelector.visible.setDebugLabel("core.viewSelector.visible");
-
-    state.pages.selector.selectedIndex.setDebugLabel("core.macroPages.selector.selectedIndex");
-    state.pages.selector.visible.setDebugLabel("core.macroPages.selector.visible");
+    state.projectHistory.revision.setDebugLabel("core.projectHistory.revision");
 
     state.macroEdit.flowPhase.setDebugLabel("core.macroEdit.flowPhase");
     state.macroEdit.selector.visible.setDebugLabel("core.macroEdit.selector.visible");
     state.macroEdit.selector.editingRow.setDebugLabel("core.macroEdit.selector.editingRow");
     state.macroEdit.selector.selectedIndex.setDebugLabel("core.macroEdit.selector.selectedIndex");
-    state.macroEdit.macroSelector.visible.setDebugLabel("core.macroEdit.macroSelector.visible");
-    state.macroEdit.macroSelector.selectedIndex.setDebugLabel("core.macroEdit.macroSelector.selectedIndex");
+    state.macroEdit.modulatorPickerIndex.setDebugLabel("core.macroEdit.modulatorPickerIndex");
     state.macroEdit.contextGuard.setDebugLabel("core.macroEdit.contextGuard");
     state.macroEdit.contextFeedback.setDebugLabel("core.macroEdit.contextFeedback");
     state.macroEdit.contextButton.setDebugLabel("core.macroEdit.contextButton");
@@ -127,9 +124,11 @@ FLASHMEM void configureDebugLabels(CoreState& state) {
     state.sequencer.stepPresetPicker.entryCount.setDebugLabel("core.sequencer.stepPresetPicker.entryCount");
     state.sequencer.stepPresetPicker.truncated.setDebugLabel("core.sequencer.stepPresetPicker.truncated");
     state.sequencer.patternQuickControls.selecting.setDebugLabel("core.sequencer.patternQuickControls.selecting");
-    state.sequencer.patternQuickControls.physicalHoldActive.setDebugLabel("core.sequencer.patternQuickControls.physicalHoldActive");
     state.sequencer.patternQuickControls.focusedItem.setDebugLabel("core.sequencer.patternQuickControls.focusedItem");
     state.sequencer.patternQuickControls.offsetSteps.setDebugLabel("core.sequencer.patternQuickControls.offsetSteps");
+    state.sequencer.patternEditor.active.setDebugLabel(
+        "core.sequencer.patternEditor.active"
+    );
     state.sequencer.pattern.patternVariationRevision.setDebugLabel("core.sequencer.pattern.patternVariationRevision");
     state.sequencer.pattern.patternScaleRevision.setDebugLabel("core.sequencer.pattern.patternScaleRevision");
     state.sequencer.pattern.patternTimingRevision.setDebugLabel("core.sequencer.pattern.patternTimingRevision");
@@ -138,7 +137,6 @@ FLASHMEM void configureDebugLabels(CoreState& state) {
     state.sequencer.contentView.revision.setDebugLabel("core.sequencer.contentView.revision");
     state.sequencer.variationTelemetryRevision.setDebugLabel("core.sequencer.variationTelemetryRevision");
     state.sequencerTracks.projectScaleRevisionSignal().setDebugLabel("core.sequencerTracks.projectScaleRevision");
-    state.sequencerTracks.mutedMaskSignal().setDebugLabel("core.sequencerTracks.mutedMask");
 
     state.projectNavigation.activeTab.setDebugLabel("core.projectNavigation.activeTab");
     state.projectNavigation.currentNode.setDebugLabel("core.projectNavigation.currentNode");

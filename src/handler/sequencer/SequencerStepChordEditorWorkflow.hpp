@@ -24,6 +24,7 @@ void configureFocusedFieldEncoder(oc::api::EncoderAPI& encoders,
                                   uint8_t step,
                                   oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
 bool resetFocusedFieldToDefault(core::state::sequencer::SequencerState& sequencer,
-                                uint8_t step);
+                                uint8_t step,
+                                oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
 
 }  // namespace core::handler::sequencer::step_chord_editor_workflow

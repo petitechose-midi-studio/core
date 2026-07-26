@@ -8,52 +8,33 @@ namespace core::handler::sequencer::interaction_policy {
 using Action = core::state::sequencer::SequencerInteractionAction;
 using Policy = core::state::sequencer::SequencerInteractionPolicy;
 
-inline core::state::sequencer::SequencerInteractionContext makeContext(
+core::state::sequencer::SequencerInteractionContext makeContext(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::TrackNavigationState& trackUi,
     core::state::StructureNavigationFocus navigationFocus,
     bool overlayVisible = false
-) {
-    return core::state::sequencer::makeSequencerInteractionContext(
-        sequencer,
-        trackUi,
-        navigationFocus,
-        overlayVisible
-    );
-}
+);
 
-inline core::state::sequencer::SequencerInteractionPolicy build(
+core::state::sequencer::SequencerInteractionPolicy build(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::TrackNavigationState& trackUi,
     core::state::StructureNavigationFocus navigationFocus,
     bool overlayVisible = false
-) {
-    return core::state::sequencer::buildSequencerInteractionPolicy(
-        makeContext(sequencer, trackUi, navigationFocus, overlayVisible)
-    );
-}
+);
 
-inline bool allowsMainSurface(
+bool allowsMainSurface(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::TrackNavigationState& trackUi,
     core::state::StructureNavigationFocus navigationFocus,
     bool overlayVisible = false
-) {
-    return core::state::sequencer::sequencerInteractionMainSurfaceAvailable(
-        makeContext(sequencer, trackUi, navigationFocus, overlayVisible)
-    );
-}
+);
 
-inline bool selectionActive(
+bool selectionActive(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::TrackNavigationState& trackUi,
     core::state::StructureNavigationFocus navigationFocus,
     bool overlayVisible = false
-) {
-    return core::state::sequencer::sequencerInteractionSelectionActive(
-        makeContext(sequencer, trackUi, navigationFocus, overlayVisible)
-    );
-}
+);
 
 inline bool canOpenPatternDimensionSelector(const Policy& policy) {
     return policy.leftCenterPress == Action::OPEN_PATTERN_DIMENSION_SELECTOR;

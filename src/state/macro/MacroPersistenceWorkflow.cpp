@@ -3,13 +3,17 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
+#include "app/ExtmemAllocator.hpp"
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 
 namespace core::state::macro {
 
 FLASHMEM bool MacroPersistenceWorkflow::saveLibrarySlot(CoreState& state, uint8_t slotIndex) {
-    if (!state.isMacroPersistenceReady()) return false;
+    if (!state.isMacroPersistenceReady() ||
+        state.macroHistory.hasPendingModulatorAuditionTransaction(state.pages)) {
+        return false;
+    }
 
     const auto status = state.macroPersistence.saveLibrarySlotStatus(slotIndex, state.pages);
     if (status != persistence::PersistenceWriteStatus::OK) {
@@ -24,10 +28,24 @@ FLASHMEM persistence::SlotLoadStatus MacroPersistenceWorkflow::loadLibrarySlot(C
                                                                       uint8_t slotIndex) {
     if (!state.isMacroPersistenceReady()) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
 
+    auto staged = core::app::makeExtmemUnique<
+        core::persistence::MacroPersistence::LibrarySlotData
+    >();
+    if (!staged) return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+
     const persistence::SlotLoadStatus status =
-        state.macroPersistence.loadLibrarySlot(slotIndex, state.pages);
+        state.macroPersistence.loadLibrarySlot(slotIndex, *staged);
     if (status == persistence::SlotLoadStatus::OK) {
-        state.macroHistory.clear();
+        // Decode is complete before touching live state. This preserves the
+        // exact audition rollback facts until the boundary is known safe.
+        if (!state.clearProjectHistory()) {
+            return persistence::SlotLoadStatus::STORAGE_UNAVAILABLE;
+        }
+        state.pages.restoreTracksWithSharedState(
+            staged->tracks,
+            staged->enabledTrackMask,
+            staged->activeTrack
+        );
         state.refreshSharedTrackStateFromMacroPages();
         state.statusBar.pageName.set(state.pages.activePageData().name);
         MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);

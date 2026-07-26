@@ -4,6 +4,7 @@
 #include <string>
 
 #include "../../src/state/project/ProjectMenuModel.hpp"
+#include "../../src/state/project/ProjectModulatorMenuModel.hpp"
 #include "../../src/state/sequencer/SequencerScaleCatalog.hpp"
 
 namespace {
@@ -97,6 +98,27 @@ void test_switch_tab_resets_to_target_tab_root() {
     assert(navigation.depth.get() == 0);
 
     std::cout << "[PASS] test_switch_tab_resets_to_target_tab_root\n";
+}
+
+void test_project_settings_tab_cycle_excludes_first_rank_modulators() {
+    core::state::project::ProjectNavigationState navigation;
+
+    core::state::project::switchProjectTab(navigation, -1);
+    assert(navigation.activeTab.get() == ProjectTab::ROUTING);
+    assert(navigation.currentNode.get() == ProjectNodeId::ROUTING_ROOT);
+
+    core::state::project::switchProjectTab(navigation, 1);
+    assert(navigation.activeTab.get() == ProjectTab::OVERVIEW);
+    assert(navigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
+
+    core::state::project::openProjectRootTab(
+        navigation,
+        ProjectTab::MODULATORS
+    );
+    core::state::project::switchProjectTab(navigation, 1);
+    assert(navigation.activeTab.get() == ProjectTab::MODULATORS);
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATORS_ROOT);
+    std::cout << "[PASS] Project Settings tab cycle excludes Modulators\n";
 }
 
 void test_root_section_is_a_navigation_root() {
@@ -208,7 +230,7 @@ void test_music_root_scale_row_summarizes_key_and_folder_target() {
     context.projectScale.type = scale_catalog::StepSequencerScaleType::HarmonicMinor;
 
     const auto page = core::state::project::buildProjectMenuPage(navigation, context);
-    assert(page.rowCount == 4);
+    assert(page.rowCount == 8);
     assert(std::string(page.rows[0].label) == "Scale");
     assert(page.rows[0].kind == core::state::project::ProjectMenuRowKind::Folder);
     assert(page.rows[0].hasTarget);
@@ -217,6 +239,14 @@ void test_music_root_scale_row_summarizes_key_and_folder_target() {
     assert(std::string(page.rows[3].label) == "Step Paste");
     assert(page.rows[3].kind == core::state::project::ProjectMenuRowKind::Value);
     assert(std::string(rowValue(page.rows[3])) == "Extend");
+    assert(std::string(page.rows[4].label) == "Lane 1 Default");
+    assert(std::string(rowValue(page.rows[4])) == "CC 1");
+    assert(std::string(page.rows[5].label) == "Lane 2 Default");
+    assert(std::string(rowValue(page.rows[5])) == "CC 11");
+    assert(std::string(page.rows[6].label) == "Lane 3 Default");
+    assert(std::string(rowValue(page.rows[6])) == "CC 74");
+    assert(std::string(page.rows[7].label) == "Lane 4 Default");
+    assert(std::string(rowValue(page.rows[7])) == "CC 71");
 
     std::cout << "[PASS] test_music_root_scale_row_summarizes_key_and_folder_target\n";
 }
@@ -447,12 +477,276 @@ void test_focus_changes_selection_without_content_revision_change() {
     std::cout << "[PASS] test_focus_changes_selection_without_content_revision_change\n";
 }
 
+void test_modulator_workspace_layouts_are_semantic_and_bounded() {
+    namespace modulators = core::state::project::modulators;
+    using core::state::modulation::ModulatorKind;
+    using Item = modulators::SourceDetailItem;
+
+    assert(modulators::MODULATOR_SOURCE_KIND_COUNT == 3U);
+    const auto lfoTarget = modulators::sourceKindTargetAtRow(0U);
+    const auto adsrTarget = modulators::sourceKindTargetAtRow(1U);
+    const auto recordedTarget = modulators::sourceKindTargetAtRow(2U);
+    assert(lfoTarget.valid && lfoTarget.kind == ModulatorKind::LFO);
+    assert(adsrTarget.valid && adsrTarget.kind == ModulatorKind::ADSR);
+    assert(
+        recordedTarget.valid &&
+        recordedTarget.kind == ModulatorKind::RECORDED_SHAPE
+    );
+    assert(!modulators::sourceKindTargetAtRow(
+        modulators::MODULATOR_SOURCE_KIND_COUNT
+    ).valid);
+
+    const auto lfo = modulators::sourceWorkspaceLayout(
+        ModulatorKind::LFO,
+        false,
+        false
+    );
+    assert(lfo.count == 5U);
+    assert(lfo.at(0) == Item::SHAPE);
+    assert(lfo.at(1) == Item::TIMING);
+    assert(lfo.at(2) == Item::RATE);
+    assert(lfo.at(3) == Item::OPTIONS);
+    assert(lfo.at(4) == Item::DESTINATIONS);
+
+    const auto recorded = modulators::sourceWorkspaceLayout(
+        ModulatorKind::RECORDED_SHAPE,
+        false,
+        false
+    );
+    assert(recorded.count == 4U);
+    assert(recorded.at(0) == Item::RECORD);
+    assert(recorded.at(1) == Item::LENGTH);
+    assert(recorded.at(2) == Item::OPTIONS);
+    assert(recorded.at(3) == Item::DESTINATIONS);
+
+    const auto adsr = modulators::sourceWorkspaceLayout(
+        ModulatorKind::ADSR,
+        false,
+        false
+    );
+    assert(adsr.count == 7U);
+    assert(adsr.at(0) == Item::ATTACK);
+    assert(adsr.at(1) == Item::DECAY);
+    assert(adsr.at(2) == Item::SUSTAIN);
+    assert(adsr.at(3) == Item::RELEASE);
+    assert(adsr.at(4) == Item::TRIGGER);
+    assert(adsr.at(5) == Item::OPTIONS);
+    assert(adsr.at(6) == Item::DESTINATIONS);
+
+    const auto lfoOptions = modulators::sourceWorkspaceLayout(
+        ModulatorKind::LFO,
+        true,
+        false
+    );
+    assert(lfoOptions.count == 4U);
+    assert(lfoOptions.at(0) == Item::PHASE);
+    assert(lfoOptions.at(1) == Item::RETRIGGER);
+    assert(lfoOptions.at(2) == Item::RENAME);
+    assert(lfoOptions.at(3) == Item::DESTINATIONS);
+
+    const auto recordedOptions = modulators::sourceWorkspaceLayout(
+        ModulatorKind::RECORDED_SHAPE,
+        true,
+        false
+    );
+    assert(recordedOptions.count == 2U);
+    assert(recordedOptions.at(0) == Item::RENAME);
+    assert(recordedOptions.at(1) == Item::DESTINATIONS);
+
+    const auto adsrOptions = modulators::sourceWorkspaceLayout(
+        ModulatorKind::ADSR,
+        true,
+        false
+    );
+    assert(adsrOptions.count == 7U);
+    assert(adsrOptions.at(0) == Item::DELAY);
+    assert(adsrOptions.at(1) == Item::HOLD);
+    assert(adsrOptions.at(2) == Item::TIMING);
+    assert(adsrOptions.at(3) == Item::SMOOTH);
+    assert(adsrOptions.at(4) == Item::RESPONSE);
+    assert(adsrOptions.at(5) == Item::RETRIGGER);
+    assert(adsrOptions.at(6) == Item::RENAME);
+
+    const auto lfoAudition = modulators::sourceWorkspaceLayout(
+        ModulatorKind::LFO,
+        false,
+        true
+    );
+    assert(lfoAudition.count == 4U);
+    assert(lfoAudition.at(0) == Item::SHAPE);
+    assert(lfoAudition.at(1) == Item::RATE);
+    assert(lfoAudition.at(2) == Item::DEPTH);
+    assert(lfoAudition.at(3) == Item::OPTIONS);
+
+    const auto lfoAuditionOptions = modulators::sourceWorkspaceLayout(
+        ModulatorKind::LFO,
+        true,
+        true
+    );
+    assert(lfoAuditionOptions.count == 3U);
+    assert(lfoAuditionOptions.at(0) == Item::TIMING);
+    assert(lfoAuditionOptions.at(1) == Item::PHASE);
+    assert(lfoAuditionOptions.at(2) == Item::RETRIGGER);
+
+    const auto adsrAudition = modulators::sourceWorkspaceLayout(
+        ModulatorKind::ADSR,
+        false,
+        true
+    );
+    assert(adsrAudition.count == 7U);
+    assert(adsrAudition.at(4) == Item::TRIGGER);
+    assert(adsrAudition.at(5) == Item::OPTIONS);
+    assert(adsrAudition.at(6) == Item::DEPTH);
+    const auto recordedAudition = modulators::sourceWorkspaceLayout(
+        ModulatorKind::RECORDED_SHAPE,
+        false,
+        true
+    );
+    assert(recordedAudition.count == 3U);
+    assert(recordedAudition.at(0) == Item::RECORD);
+    assert(recordedAudition.at(1) == Item::LENGTH);
+    assert(recordedAudition.at(2) == Item::DEPTH);
+    const auto adsrAuditionOptions = modulators::sourceWorkspaceLayout(
+        ModulatorKind::ADSR,
+        true,
+        true
+    );
+    assert(adsrAuditionOptions.count == 6U);
+    assert(adsrAuditionOptions.at(0) == Item::DELAY);
+    assert(adsrAuditionOptions.at(1) == Item::HOLD);
+    assert(adsrAuditionOptions.at(2) == Item::TIMING);
+    assert(adsrAuditionOptions.at(3) == Item::SMOOTH);
+    assert(adsrAuditionOptions.at(4) == Item::RESPONSE);
+    assert(adsrAuditionOptions.at(5) == Item::RETRIGGER);
+    std::cout << "[PASS] test_modulator_workspace_layouts_are_semantic_and_bounded\n";
+}
+
+void test_modulator_workspace_navigation_restores_local_focus() {
+    core::state::project::ProjectNavigationState navigation;
+    core::state::project::openProjectRootTab(
+        navigation,
+        ProjectTab::MODULATORS
+    );
+    const core::state::modulation::ModulatorId sourceId{42U};
+    assert(core::state::project::openProjectModulatorDetail(
+        navigation,
+        sourceId
+    ));
+    navigation.focusedRow.set(3U);
+    assert(core::state::project::openProjectModulatorOptions(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    assert(navigation.activeTab.get() == ProjectTab::MODULATORS);
+
+    navigation.focusedRow.set(3U);
+    assert(core::state::project::openProjectModulatorDestinations(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_DESTINATIONS);
+    assert(core::state::project::backProjectNavigation(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    assert(navigation.focusedRow.get() == 3U);
+
+    navigation.focusedRow.set(2U);
+    assert(core::state::project::openProjectNameEditor(
+        navigation,
+        ProjectNodeId::MODULATOR_SOURCE_RENAME,
+        "Shared LFO"
+    ));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_RENAME);
+    assert(navigation.activeTab.get() == ProjectTab::MODULATORS);
+    assert(std::string(navigation.editingProjectSlug.data()) == "Shared LFO");
+    assert(core::state::project::backProjectNavigation(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    assert(navigation.focusedRow.get() == 2U);
+    std::cout << "[PASS] test_modulator_workspace_navigation_restores_local_focus\n";
+}
+
+void test_modulator_kind_and_trigger_navigation_are_reversible() {
+    core::state::project::ProjectNavigationState navigation;
+    core::state::project::openProjectRootTab(
+        navigation,
+        ProjectTab::MODULATORS
+    );
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATORS_ROOT);
+    assert(core::state::project::openProjectModulatorKindPicker(navigation));
+    assert(navigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER);
+    assert(navigation.depth.get() == 1U);
+    navigation.focusedRow.set(1U);
+    navigation.creatingModulatorKind =
+        core::state::modulation::ModulatorKind::ADSR;
+    assert(core::state::project::openProjectModulatorDestinationPicker(
+        navigation,
+        2U,
+        1U,
+        true
+    ));
+    assert(navigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_DESTINATION_PICKER);
+    assert(navigation.depth.get() == 2U);
+    assert(core::state::project::backProjectNavigation(navigation));
+    assert(navigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER);
+    assert(navigation.focusedRow.get() == 1U);
+    assert(core::state::project::backProjectNavigation(navigation));
+
+    const core::state::modulation::ModulatorId sourceId{7U};
+    assert(core::state::project::openProjectModulatorDetail(
+        navigation,
+        sourceId
+    ));
+    navigation.focusedRow.set(4U);
+    assert(core::state::project::openProjectModulatorTrigger(navigation));
+    assert(navigation.currentNode.get() == ProjectNodeId::MODULATOR_TRIGGER);
+    assert(navigation.depth.get() == 2U);
+    assert(core::state::project::backProjectNavigation(navigation));
+    assert(navigation.currentNode.get() ==
+           ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    assert(navigation.focusedRow.get() == 4U);
+    std::cout << "[PASS] kind and Trigger journeys preserve local context\n";
+}
+
+void test_destination_picker_exposes_hierarchy_and_sparse_macro_positions() {
+    using namespace core::state::project;
+    using namespace core::state::project::modulators;
+    core::state::macro::MacroPagesState pages;
+    ProjectNavigationState navigation;
+    navigation.creatingModulatorSource = true;
+    navigation.destinationPickerLevel = ModulatorDestinationPickerLevel::TRACK;
+
+    assert(destinationPickerRowCount(pages, navigation) == 3U);
+    auto row = destinationPickerTargetAtRow(pages, navigation, 0U);
+    assert(row.valid && row.kind == DestinationPickerRowKind::TRACK &&
+           row.index == 0U && !row.create);
+    row = destinationPickerTargetAtRow(pages, navigation, 1U);
+    assert(row.valid && row.kind == DestinationPickerRowKind::TRACK &&
+           row.index == 1U && row.create);
+    row = destinationPickerTargetAtRow(pages, navigation, 2U);
+    assert(row.valid && row.kind == DestinationPickerRowKind::KEEP_UNASSIGNED);
+
+    navigation.destinationPickerTrack = 0U;
+    navigation.destinationPickerLevel = ModulatorDestinationPickerLevel::PAGE;
+    assert(destinationPickerRowCount(pages, navigation) == 2U);
+    row = destinationPickerTargetAtRow(pages, navigation, 1U);
+    assert(row.valid && row.kind == DestinationPickerRowKind::PAGE &&
+           row.index == 1U && row.create);
+
+    navigation.destinationPickerPage = 0U;
+    navigation.destinationPickerLevel = ModulatorDestinationPickerLevel::MACRO;
+    assert(destinationPickerRowCount(pages, navigation) ==
+           core::state::macro::MACRO_COUNT);
+    row = destinationPickerTargetAtRow(pages, navigation, 3U);
+    assert(row.valid && row.kind == DestinationPickerRowKind::MACRO &&
+           row.index == 3U && row.create);
+    assert(core::state::macro::defaultMacroCc(0U, 3U) == 3U);
+    std::cout << "[PASS] destination picker is hierarchical and sparse\n";
+}
+
 }  // namespace
 
 int main() {
     test_overview_root_exposes_project_actions();
     test_enter_music_then_scale_and_back();
     test_switch_tab_resets_to_target_tab_root();
+    test_project_settings_tab_cycle_excludes_first_rank_modulators();
     test_root_section_is_a_navigation_root();
     test_new_project_confirmation_page_defaults_to_save_choice();
     test_new_project_confirmation_uses_current_project_identity();
@@ -469,6 +763,10 @@ int main() {
     test_load_project_picker_empty_state_is_disabled();
     test_navigation_wraps_rows();
     test_focus_changes_selection_without_content_revision_change();
+    test_modulator_workspace_layouts_are_semantic_and_bounded();
+    test_modulator_workspace_navigation_restores_local_focus();
+    test_modulator_kind_and_trigger_navigation_are_reversible();
+    test_destination_picker_exposes_hierarchy_and_sparse_macro_positions();
 
     std::cout << "\nAll ProjectMenuModel tests passed.\n";
     return 0;

@@ -18,6 +18,7 @@
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/persistence/StepPresetFileStore.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphAssetCodec.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerHistory.hpp"
@@ -90,7 +91,7 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
         if (result && mutateAfterNextPresetRead && !mutationDone && path != nullptr &&
             std::strstr(path, mutationPathFragment.c_str()) != nullptr) {
             constexpr uint32_t semanticOffset =
-                core::state::sequencer::STEP_GRAPH_PRESET_V1_HEADER_SIZE + 4U +
+                core::state::sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
                 SequencerStepGraphPreset::TECHNICAL_ID_SIZE;
             const uint8_t replacement = 'T';
             const auto changed = delegate.write(
@@ -178,7 +179,7 @@ std::vector<uint8_t> encodePreset(
     uint8_t note = 67
 ) {
     SequencerState source;
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     source.pattern.setEnabled(2, true);
     assert(source.setStepDataAt(2, note, 96, 155, -3, 84));
     const auto sequence = core::state::sequencer::createMicroSequence(
@@ -222,7 +223,7 @@ std::vector<uint8_t> encodeRandomCyclePreset(
     const char* semanticName
 ) {
     SequencerState source;
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     source.pattern.setEnabled(2, true);
     assert(source.setStepDataAt(2, 67, 96, 155, -3, 84));
     const auto root = core::state::sequencer::rootStepNodeId(2);
@@ -293,19 +294,11 @@ std::vector<uint8_t> encodeRandomCyclePreset(
     return bytes;
 }
 
-std::vector<uint8_t> asV1(const std::vector<uint8_t>& v2) {
-    constexpr size_t v1Header =
-        core::state::sequencer::STEP_GRAPH_PRESET_V1_HEADER_SIZE;
-    constexpr size_t v2Header =
-        core::state::sequencer::STEP_GRAPH_PRESET_HEADER_SIZE;
-    assert(v2.size() > v2Header);
-    std::vector<uint8_t> v1;
-    v1.reserve(v2.size() - (v2Header - v1Header));
-    v1.insert(v1.end(), v2.begin(), v2.begin() + v1Header);
-    v1.insert(v1.end(), v2.begin() + v2Header, v2.end());
-    v1[4] = 1;
-    v1[6] = static_cast<uint8_t>(v1Header);
-    return v1;
+std::vector<uint8_t> asPreviousVersion(std::vector<uint8_t> bytes) {
+    bytes[4] = static_cast<uint8_t>(
+        SequencerStepGraphPreset::CURRENT_FORMAT_VERSION - 1U
+    );
+    return bytes;
 }
 
 void saveBytes(
@@ -336,8 +329,15 @@ std::vector<uint8_t> loadBytes(ProductFileService& files, const char* id) {
 }
 
 void prepareTarget(Harness& h, uint8_t step = 5) {
-    h.state.sequencer.pattern.length.set(8);
-    h.state.sequencer.pattern.midiChannel.set(9);
+    h.state.sequencer.pattern.setContentLength(8);
+    assert(core::state::project::setProjectTrackMidiChannel(
+        h.state.projectTracks,
+        0,
+        9
+    ).changed());
+    h.state.projectTracks.authored.midiChannels[
+        h.state.currentSharedActiveTrack()
+    ] = 9;
     h.state.sequencer.pattern.setEnabled(step, false);
     assert(h.state.sequencer.setStepDataAt(step, 41, 12, 40, 4, 100));
     h.state.sequencer.stepEdit.stepIndex.set(step);
@@ -510,7 +510,12 @@ void test_manager_rename_reorders_and_delete_is_guarded() {
     saveBytes(h.files, "preset-b", encodePreset("preset-b", "Bravo"));
 
     StepPresetFileListEntry entries[4]{};
-    auto listed = h.presets.listPresets(entries, 4);
+    auto listed = h.presets.listPresetsPage(
+        entries,
+        4,
+        nullptr,
+        core::persistence::StepPresetFilePageDirection::FORWARD
+    );
     assert(listed.ok() && listed.count == 3);
     assert(std::strcmp(entries[0].id, "preset-a") == 0);
     assert(std::strcmp(entries[1].id, "preset-b") == 0);
@@ -527,7 +532,12 @@ void test_manager_rename_reorders_and_delete_is_guarded() {
 
     const auto renamed = h.presets.renamePreset("preset-z", "Zulu", "Able");
     assert(renamed.ok());
-    listed = h.presets.listPresets(entries, 4);
+    listed = h.presets.listPresetsPage(
+        entries,
+        4,
+        nullptr,
+        core::persistence::StepPresetFilePageDirection::FORWARD
+    );
     assert(listed.ok() && listed.count == 3);
     assert(std::strcmp(entries[0].id, "preset-z") == 0);
     assert(std::strcmp(entries[0].semanticName, "Able") == 0);
@@ -537,7 +547,7 @@ void test_manager_rename_reorders_and_delete_is_guarded() {
     const auto renamedBytes = loadBytes(h.files, "preset-z");
     assert(renamedBytes.size() == before.size());
     constexpr size_t semanticOffset =
-        core::state::sequencer::STEP_GRAPH_PRESET_V1_HEADER_SIZE + 4U +
+        core::state::sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
         SequencerStepGraphPreset::TECHNICAL_ID_SIZE;
     constexpr size_t semanticEnd =
         semanticOffset + SequencerStepGraphPreset::SEMANTIC_NAME_SIZE;
@@ -558,15 +568,15 @@ void test_manager_rename_reorders_and_delete_is_guarded() {
     std::cout << "[PASS] test_manager_rename_reorders_and_delete_is_guarded\n";
 }
 
-void test_manager_refuses_legacy_future_and_partial_without_mutation() {
+void test_manager_refuses_previous_future_and_partial_without_mutation() {
     Harness h;
 
-    auto legacy = asV1(encodePreset("legacy", "Legacy"));
-    saveBytes(h.files, "legacy", legacy);
+    auto previous = asPreviousVersion(encodePreset("previous", "Previous"));
+    saveBytes(h.files, "previous", previous);
     assertManagerRefusalLeavesAssetUnchanged(
         h,
-        "legacy",
-        "Legacy",
+        "previous",
+        "Previous",
         SequencerStepPresetStatus::UNSUPPORTED_VERSION
     );
 
@@ -592,7 +602,7 @@ void test_manager_refuses_legacy_future_and_partial_without_mutation() {
         SequencerStepPresetStatus::CORRUPT
     );
 
-    std::cout << "[PASS] test_manager_refuses_legacy_future_and_partial_without_mutation\n";
+    std::cout << "[PASS] test_manager_refuses_previous_future_and_partial_without_mutation\n";
 }
 
 void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
@@ -765,8 +775,10 @@ void test_apply_activation_conflict_leaves_preexisting_queue_and_state_unchanged
     core::state::sequencer::SequencerTrackActivationBatch occupied{};
     assert(h.state.sequencerTrackActivations.prepare(
         targetBit,
-        h.state.sequencerTracks.currentEnabledMask(),
-        h.state.sequencerTracks.currentMutedMask(),
+        core::state::project::audibleMask(
+            h.state.projectTracks,
+            h.state.sequencerTracks.currentEnabledMask()
+        ),
         false,
         occupied
     ));
@@ -844,11 +856,13 @@ void test_apply_stopped_preserves_destination_route_and_undoes_exactly() {
     assert(result.activation == SequencerStepPresetActivation::APPLIED);
     assert(h.state.sequencer.pattern.note[target.stepIndex] == 67);
     assert(h.state.sequencer.pattern.velocity[target.stepIndex] == 96);
-    assert(h.state.sequencer.pattern.midiChannel.get() == 9);
+    assert(h.state.projectTracks.authored.midiChannels[
+        h.state.currentSharedActiveTrack()
+    ] == 9);
     const auto& bankTrack = h.state.sequencerTracks.track(target.trackIndex);
     assert(bankTrack.note[target.stepIndex] == 67);
     assert(bankTrack.velocity[target.stepIndex] == 96);
-    assert(bankTrack.midiChannel.get() == 9);
+    assert(h.state.projectTracks.authored.midiChannels[target.trackIndex] == 9);
     assert(h.state.project.metadata.modifiedCounter == 43);
     assert(h.state.project.metadata.dirty);
     assert(h.state.sequencerHistory.undoCount() == before.undoCount + 1U);
@@ -871,10 +885,7 @@ void test_apply_stopped_preserves_destination_route_and_undoes_exactly() {
         *before.musical,
         *restored
     ));
-    assert(h.state.sequencer.pattern.midiChannel.get() == 9);
-    assert(
-        h.state.sequencerTracks.track(target.trackIndex).midiChannel.get() == 9
-    );
+    assert(h.state.projectTracks.authored.midiChannels[target.trackIndex] == 9);
     assert(h.state.sequencerHistory.undoCount() == before.undoCount);
     assert(h.state.sequencerHistory.redoCount() == 1);
     assert(h.state.project.metadata.modifiedCounter == 44);
@@ -916,10 +927,7 @@ void test_apply_playing_is_queued_and_undo_before_boundary_cancels_it() {
         core::state::sequencer::SequencerTrackActivationStatus::QUEUED
     );
     assert(h.state.sequencer.pattern.note[target.stepIndex] == 72);
-    assert(h.state.sequencer.pattern.midiChannel.get() == 9);
-    assert(
-        h.state.sequencerTracks.track(target.trackIndex).midiChannel.get() == 9
-    );
+    assert(h.state.projectTracks.authored.midiChannels[target.trackIndex] == 9);
     const uint16_t targetBit = static_cast<uint16_t>(1U << target.trackIndex);
     assert(h.state.sequencerTrackActivations.pendingTrackMask() == targetBit);
 
@@ -955,7 +963,7 @@ void test_apply_playing_is_queued_and_undo_before_boundary_cancels_it() {
 
 int main() {
     test_manager_rename_reorders_and_delete_is_guarded();
-    test_manager_refuses_legacy_future_and_partial_without_mutation();
+    test_manager_refuses_previous_future_and_partial_without_mutation();
     test_apply_preflight_failures_leave_every_live_domain_unchanged();
     test_random_cycle_preview_is_stable_and_generation_admission_is_exact();
     test_apply_second_read_payload_change_is_stale_and_non_mutating();

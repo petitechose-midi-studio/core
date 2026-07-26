@@ -8,7 +8,7 @@ int main() {
     assert(state.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
     assert(!state.visible.get());
     assert(!state.selector.visible.get());
-    assert(!state.macroSelector.visible.get());
+    assert(state.modulatorPickerIndex.get() == 0);
 
     state.openEditor(2, 4, 74, 1000);
     assert(state.visible.get());
@@ -28,25 +28,17 @@ int main() {
     assert(!state.selector.visible.get());
     assert(state.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
 
-    state.openPageSelector();
-    assert(state.flowPhase.get() == core::state::MacroEditFlowPhase::PAGE_SELECTOR);
-
-    state.closePageSelector();
-    assert(state.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
-
-    state.openTargetSelector(5);
-    assert(state.macroSelector.visible.get());
-    assert(state.macroSelector.selectedIndex.get() == 5);
-    assert(state.flowPhase.get() == core::state::MacroEditFlowPhase::TARGET_SELECTOR);
+    state.openModulatorPicker(5);
+    assert(state.modulatorPickerIndex.get() == 5);
+    assert(state.flowPhase.get() == core::state::MacroEditFlowPhase::MODULATOR_PICKER);
 
     state.loadActiveConfig(5, 9, 12);
     assert(state.editingIndex.get() == 5);
     assert(state.tempChannel.get() == 9);
     assert(state.tempCC.get() == 12);
 
-    state.closeTargetSelector();
-    assert(!state.macroSelector.visible.get());
-    assert(state.flowPhase.get() == core::state::MacroEditFlowPhase::EDIT);
+    state.closeModulatorPicker();
+    assert(state.flowPhase.get() == core::state::MacroEditFlowPhase::MODULATION);
 
     assert(!state.consumeOpeningReleaseDecision(1, 1600, 450));
     assert(state.pendingOpenReleaseDecision);
@@ -62,7 +54,7 @@ int main() {
     assert(state.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
     assert(!state.visible.get());
     assert(!state.selector.visible.get());
-    assert(!state.macroSelector.visible.get());
+    assert(state.modulatorPickerIndex.get() == 0);
 
     return 0;
 }

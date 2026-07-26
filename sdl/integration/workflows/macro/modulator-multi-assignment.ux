@@ -1,0 +1,60 @@
+# UX workflow: manage several Project modulation assignments on one Macro.
+# Purpose: proves stable focused assignment, signed Depth, edge-only toggle and
+# removal, aggregate bypass, contextual + Source, and unchanged Macro grammar.
+# Expect: capture_changed:assignments_focused=assignment_depth_edited, capture_changed:assignment_depth_edited=assignment_edge_off, capture_changed:all_modulation_mixed=all_modulation_off, capture_changed:all_modulation_off=all_modulation_on, capture_changed:remove_assignment_armed=assignment_removed, capture_changed:add_source_focused=add_source_choices
+# Expect: semantic:assignment_depth_edited:effect=edit_modulation_depth, semantic:assignment_edge_off:effect=toggle_modulation_assignment
+# Expect: semantic:all_modulation_mixed:effect=edit_global_modulation_depth, semantic:all_modulation_off:effect=toggle_all_modulation, semantic:all_modulation_on:effect=toggle_all_modulation
+# Expect: semantic:assignment_removed:effect=remove_modulation_assignment, semantic:add_source_choices:effect=open_modulator_creation, semantic:add_source_choices:projection=silent_selection
+
+0 scenario macro-multi-modulation
+80 capture screen macro_ready
+
+180 button LEFT_BOTTOM down
+260 tap MACRO_1 60
+1240 tick
+1300 button LEFT_BOTTOM up
+1450 encoder NAV 1
+1570 encoder NAV 1
+1690 tap NAV 60
+1910 capture screen assignments_focused
+
+# Stable focus opens on Pulse Lift (2/3); OPT edits only its signed edge Depth.
+2030 encoder OPT 0.75
+2250 capture screen assignment_depth_edited
+2370 tap BOTTOM_LEFT 60
+2590 capture screen assignment_edge_off
+
+# All is the permanent destination summary: OPT scales every source while tap
+# keeps the independent aggregate bypass learned elsewhere.
+2710 encoder NAV -1
+2830 encoder NAV -1
+2950 encoder OPT 0.75
+3050 capture screen all_modulation_mixed
+3170 tap BOTTOM_LEFT 60
+3390 capture screen all_modulation_off
+3510 tap BOTTOM_LEFT 60
+3730 capture screen all_modulation_on
+
+# Guarded removal affects one edge and preserves every root source.
+3850 encoder NAV 1
+3970 button BOTTOM_LEFT down
+5070 tick
+5130 capture screen remove_assignment_armed
+5190 button BOTTOM_LEFT up
+5410 capture screen assignment_removed
+
+# + Source opens the same concise creation grammar used by an empty Macro.
+5530 encoder NAV 1
+5650 encoder NAV 1
+5870 capture screen add_source_focused
+5990 tap NAV 60
+6210 capture screen add_source_choices
+
+# Back is local and returns to the same list position; performance remains one
+# more Back away, so no new navigation model is introduced.
+6330 tap LEFT_TOP 60
+6550 capture screen assignments_restored
+6670 tap LEFT_TOP 60
+6790 tap LEFT_TOP 60
+6910 encoder MACRO_1 0.85
+7130 capture screen manual_base_sources_running

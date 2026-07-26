@@ -1,5 +1,6 @@
 #include "MacroView.hpp"
 
+#include <algorithm>
 #include <cstddef>
 
 #include <oc/ui/lvgl/style/StyleBuilder.hpp>
@@ -25,7 +26,11 @@ uint8_t sourceStateBits(const MacroWidgetProps& props) {
         (props.automationActive ? 1U << 1U : 0U) |
         (props.modulationStored ? 1U << 2U : 0U) |
         (props.modulationActive ? 1U << 3U : 0U) |
-        (props.modulationPaused ? 1U << 4U : 0U)
+        (props.modulationPaused ? 1U << 4U : 0U) |
+        (static_cast<uint8_t>(std::min<uint8_t>(
+             props.modulationSourceCount,
+             7U
+         )) << 5U)
     );
 }
 
@@ -148,24 +153,49 @@ FLASHMEM bool MacroView::bindToState() {
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.activeProperty.subscribe(
-            [this](core::state::macro::MacroPerformanceProperty) {
+        state_refs_.macroUi.performanceOverlayMode.subscribe(
+            [this](core::state::macro::MacroPerformanceOverlayMode) {
+                requestHeaderRender();
+                requestLeftActionStripRender();
                 requestSlotPropertyOverlayRender();
             }
         )
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.clutchActive.subscribe([this](bool) {
-            requestHeaderRender();
-            requestLeftActionStripRender();
+        state_refs_.macroUi.contextSelector.revision.subscribe([this](uint32_t) {
             requestSlotPropertyOverlayRender();
+            requestHeaderRender();
         })
     );
 
     subscriptions_.push_back(
-        state_refs_.macroUi.automationRecordingRevision.subscribe([this](uint32_t) {
-            markAutomationRecordingDirtyIfChanged();
+        state_refs_.macroUi.automationTakeTiming.subscribe(
+            [this](core::state::macro::MacroAutomationTakeTiming) {
+                requestHeaderRender();
+                requestSlotPropertyOverlayRender();
+            }
+        )
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.automationRecordingRevision.subscribe([this](
+            uint32_t revision
+        ) {
+            const int dirtyIndex =
+                core::state::macro::macroAutomationRecordingRevisionDirtyIndex(
+                    revision
+                );
+            if (markAutomationRecordingDirtyIfChanged(dirtyIndex)) {
+                requestSlotPropertyOverlayRender();
+            }
+        })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.automationEditRevision.subscribe([this](uint32_t) {
+            markConfigDirtyIfChanged();
+            requestSlotPropertyOverlayRender();
         })
     );
 
@@ -185,6 +215,12 @@ FLASHMEM bool MacroView::bindToState() {
 
     subscriptions_.push_back(
         state_refs_.macroUi.runtimeProjectionRevision.subscribe([this](uint32_t revision) {
+            if (core::state::macro::macroRuntimeProjectionRevisionTargetsConfig(
+                    revision
+                )) {
+                markConfigDirtyIfChanged();
+                return;
+            }
             if (core::state::macro::macroRuntimeProjectionRevisionTargetsAll(
                     revision
                 )) {
@@ -260,35 +296,6 @@ FLASHMEM bool MacroView::bindToState() {
     );
 
     subscriptions_.push_back(
-        state_refs_.trackNavigation.selection.active.subscribe([this](bool) {
-            requestHeaderRender();
-            requestLeftActionStripRender();
-            requestBottomActionStripRender();
-        })
-    );
-
-    subscriptions_.push_back(
-        state_refs_.trackNavigation.selection.scope.subscribe([this](core::state::StructureSelectionScope) {
-            requestHeaderRender();
-            requestLeftActionStripRender();
-            requestBottomActionStripRender();
-        })
-    );
-
-    subscriptions_.push_back(
-        state_refs_.trackNavigation.selection.cursorIndex.subscribe([this](uint8_t) {
-            requestHeaderRender();
-        })
-    );
-
-    subscriptions_.push_back(
-        state_refs_.trackNavigation.selection.selectedMask.subscribe([this](uint16_t) {
-            requestHeaderRender();
-            requestBottomActionStripRender();
-        })
-    );
-
-    subscriptions_.push_back(
         state_refs_.macroUi.previewAddPageSlot.subscribe([this](bool) {
             requestHeaderRender();
             requestBottomActionStripRender();
@@ -305,51 +312,6 @@ FLASHMEM bool MacroView::bindToState() {
         state_refs_.macroUi.pageHold.startedAtMs.subscribe([this](uint32_t) {
             requestBottomActionStripRender();
         })
-    );
-
-    subscriptions_.push_back(
-        state_refs_.macroUi.pageSelection.active.subscribe([this](bool) {
-            requestHeaderRender();
-            requestLeftActionStripRender();
-            requestBottomActionStripRender();
-        })
-    );
-
-    subscriptions_.push_back(
-        state_refs_.macroUi.pageSelection.scope.subscribe([this](core::state::StructureSelectionScope) {
-            requestHeaderRender();
-            requestLeftActionStripRender();
-            requestBottomActionStripRender();
-        })
-    );
-
-    subscriptions_.push_back(
-        state_refs_.macroUi.pageSelection.cursorIndex.subscribe([this](uint8_t) {
-            requestHeaderRender();
-        })
-    );
-
-    subscriptions_.push_back(
-        state_refs_.macroUi.pageSelection.selectedMask.subscribe([this](uint16_t) {
-            requestHeaderRender();
-            requestBottomActionStripRender();
-        })
-    );
-
-    subscriptions_.push_back(
-        state_refs_.macroUi.selectionDeleteGuard.subscribe(
-            [this](const core::state::contextual::GuardedActionState&) {
-                requestBottomActionStripRender();
-            }
-        )
-    );
-
-    subscriptions_.push_back(
-        state_refs_.macroUi.selectionDeleteFeedback.subscribe(
-            [this](const core::state::contextual::OperationFeedbackState&) {
-                requestBottomActionStripRender();
-            }
-        )
     );
 
     subscriptions_.push_back(
@@ -559,24 +521,41 @@ void MacroView::markAllConfigDirty() {
     requestRender(RENDER_CONFIG_MASK);
 }
 
-void MacroView::markAutomationRecordingDirtyIfChanged() {
-    const auto& recording = state_refs_.macroUi.automationRecording;
+bool MacroView::markAutomationRecordingDirtyIfChanged(int dirtyIndex) {
+    const auto& recording = state_refs_.macroUi.automationTake;
     const uint8_t activeTrack = state_refs_.pages.currentActiveTrack();
     const uint8_t activePage = state_refs_.pages.currentActivePage();
     uint32_t flags = 0;
+    bool recordingMembershipChanged = false;
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
         const bool recordingThisSlot =
             state_refs_.pages.isMacroSlotActive(i) &&
-            recording.active &&
-            recording.address.track == activeTrack &&
-            recording.address.page == activePage &&
-            recording.address.macro == i;
+            recording.phase == core::state::macro::MacroAutomationTakePhase::RECORDING &&
+            recording.track == activeTrack &&
+            recording.page == activePage &&
+            recording.activeFor(i);
+        // The take scratch is the newest Base authority during Record. Its
+        // current byte may change even when the resolved runtime Signal is
+        // temporarily unchanged (for example when a modulation contribution
+        // compensates the gesture). Redraw only the touched ring so the
+        // physical movement remains visible at the recording cadence.
+        if (recordingThisSlot &&
+            (dirtyIndex < 0 || dirtyIndex == static_cast<int>(i))) {
+            flags |= valueRenderFlag(i);
+        }
         if (rendered_automation_recording_[i] != recordingThisSlot) {
             flags |= configRenderFlag(i);
+            recordingMembershipChanged = true;
         }
     }
-    if (flags == 0) return;
-    requestRender(flags | RENDER_HEADER);
+    if (flags == 0) return recordingMembershipChanged;
+    // The header shows recording membership/count, not every sampled value.
+    // Redrawing it on each sample would create a structural invalidation batch
+    // at the hot input cadence. Only membership transitions need the header.
+    requestRender(
+        flags | (recordingMembershipChanged ? RENDER_HEADER : 0U)
+    );
+    return recordingMembershipChanged;
 }
 
 void MacroView::markConfigDirtyIfChanged() {
@@ -637,34 +616,38 @@ void MacroView::processRenderFlags(uint32_t flags) {
     );
 
     if (headerDirty && header_bar_) {
+        const auto props = buildMacroHeaderBarProps(source);
+        OC_PERF_SCOPE(perfMutation, "ui.macro.mutation.header");
         invalidation.include(header_bar_->getElement());
-        header_bar_->render(buildMacroHeaderBarProps(source));
+        header_bar_->render(props);
     }
 
     if (leftActionStripDirty && left_action_strip_) {
+        const auto props = buildMacroLeftActionStripProps(source);
+        OC_PERF_SCOPE(perfMutation, "ui.macro.mutation.left-actions");
         invalidation.include(left_action_strip_->getElement());
-        left_action_strip_->render(buildMacroLeftActionStripProps(source));
+        left_action_strip_->render(props);
     }
 
     if (slotPropertyOverlayDirty && slot_property_overlay_) {
+        const auto props = buildMacroSlotPropertyOverlayProps(source);
+        OC_PERF_SCOPE(perfMutation, "ui.macro.mutation.slot-overlay");
         invalidation.include(slot_property_overlay_->getElement());
-        slot_property_overlay_->render(buildMacroSlotPropertyOverlayProps(source));
+        slot_property_overlay_->render(props);
         invalidation.include(slot_property_overlay_->getElement());
     }
 
     if (bottomActionStripDirty && bottom_action_strip_) {
+        const auto props = buildMacroBottomActionStripProps(source);
+        OC_PERF_SCOPE(perfMutation, "ui.macro.mutation.bottom-actions");
         invalidation.include(bottom_action_strip_->getElement());
-        bottom_action_strip_->render(buildMacroBottomActionStripProps(source));
+        bottom_action_strip_->render(props);
     }
 
     if (!hasValueDirty && !hasConfigDirty) {
+        OC_PERF_SCOPE(perfInvalidation, "ui.macro.mutation.invalidate");
         invalidation.flush();
         return;
-    }
-
-    MacroViewFrameState frame{};
-    if (hasConfigDirty || hasValueDirty) {
-        frame = buildMacroViewFrameState(source);
     }
 
     for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
@@ -672,14 +655,28 @@ void MacroView::processRenderFlags(uint32_t flags) {
         const bool configDirty = (flags & configRenderFlag(i)) != 0;
         if (valueDirty || configDirty) {
             if (macros_[i]) {
+                const auto props = buildMacroWidgetProps(source, i);
+                OC_PERF_SCOPE(perfMutation, "ui.macro.mutation.knob");
+                OC_PERF_UNITS(
+                    perfMutation,
+                    i,
+                    (valueDirty ? 1U : 0U) | (configDirty ? 2U : 0U)
+                );
                 // Hot value changes perform their own exact arc invalidation.
                 // Structural batching is only required when retained labels,
                 // visibility, focus, or source styling can change.
-                if (configDirty) {
+                // A structural flag elsewhere pauses display invalidation for
+                // the whole batch. In that mixed case the widget's exact arc
+                // invalidation is intentionally suppressed by LVGL, so retain
+                // the complete widget region in the batch as a correctness
+                // fallback. Pure value frames keep the exact damage path.
+                const bool valueNeedsBatchFallback =
+                    needsStructuralInvalidationBatch && valueDirty &&
+                    !configDirty;
+                if (configDirty || valueNeedsBatchFallback) {
                     invalidation.include(macros_[i]->getElement());
                 }
                 if (valueDirty) {
-                    const auto& props = frame.macros[i];
                     macros_[i]->setResolvedComponents(
                         props.baseValue,
                         props.modulationDelta,
@@ -690,7 +687,6 @@ void MacroView::processRenderFlags(uint32_t flags) {
                     );
                 }
                 if (configDirty) {
-                    const auto& props = frame.macros[i];
                     if (rendered_active_[i] != props.active ||
                         rendered_add_slot_[i] != props.addSlot) {
                         macros_[i]->setSlotState(props.active, props.addSlot);
@@ -708,7 +704,8 @@ void MacroView::processRenderFlags(uint32_t flags) {
                             props.automationActive,
                             props.modulationStored,
                             props.modulationActive,
-                            props.modulationPaused
+                            props.modulationPaused,
+                            props.modulationSourceCount
                         );
                         rendered_source_state_[i] = nextSourceState;
                         rendered_automation_active_[i] = props.automationActive;
@@ -731,6 +728,7 @@ void MacroView::processRenderFlags(uint32_t flags) {
         }
     }
 
+    OC_PERF_SCOPE(perfInvalidation, "ui.macro.mutation.invalidate");
     invalidation.flush();
 }
 

@@ -6,11 +6,11 @@
 0 scenario sequencer
 50 capture screen sequencer_ready
 
-# Create and edit root step 1, then open Step Editor.
-150 tap NAV 60
-350 capture screen pattern_focus
-450 tap NAV 60
-650 capture screen step_focus
+# Move Pattern -> Step, create and edit root step 1, then open Step Editor.
+150 button NAV down
+210 encoder NAV 1
+270 button NAV up
+350 capture screen step_focus
 750 tap MACRO_1 60
 950 capture screen step_1_enabled
 1050 encoder OPT 0.62
@@ -36,6 +36,7 @@
 3770 capture screen micro_row_focused_empty
 3870 tap NAV 60
 4170 capture screen entered_micro_context
+4190 tap BOTTOM_RIGHT 40
 4270 tap LEFT_TOP 60
 4570 capture screen returned_root_context
 

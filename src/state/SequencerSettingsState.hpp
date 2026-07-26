@@ -17,11 +17,7 @@ struct SequencerSettingsValueSelectorState {
     oc::state::Signal<uint8_t> editingRow{0};
     oc::state::Signal<int> selectedIndex{0};
 
-    void reset() {
-        visible.set(false);
-        editingRow.set(0);
-        selectedIndex.set(0);
-    }
+    void reset();
 };
 
 struct SequencerSettingsState {
@@ -32,35 +28,11 @@ struct SequencerSettingsState {
     };
     SequencerSettingsValueSelectorState selector;
 
-    void reset() {
-        visible.set(false);
-        focusedRow.set(0);
-        flowPhase.set(SequencerSettingsFlowPhase::CLOSED);
-        selector.reset();
-    }
-
-    void openOverlay() {
-        reset();
-        visible.set(true);
-        flowPhase.set(SequencerSettingsFlowPhase::OVERLAY);
-    }
-
-    void closeOverlay() {
-        reset();
-    }
-
-    void openSelector(uint8_t row, int selected) {
-        selector.editingRow.set(row);
-        selector.selectedIndex.set(selected);
-        selector.visible.set(true);
-        flowPhase.set(SequencerSettingsFlowPhase::VALUE_SELECTOR);
-    }
-
-    void closeSelector() {
-        selector.reset();
-        flowPhase.set(visible.get() ? SequencerSettingsFlowPhase::OVERLAY
-                                    : SequencerSettingsFlowPhase::CLOSED);
-    }
+    void reset();
+    void openOverlay();
+    void closeOverlay();
+    void openSelector(uint8_t row, int selected);
+    void closeSelector();
 };
 
 }  // namespace core::state

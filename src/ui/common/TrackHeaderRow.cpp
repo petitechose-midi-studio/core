@@ -276,17 +276,12 @@ FLASHMEM void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
             item_color_cache_[i] = props.itemColors[i];
         }
         const bool cursorItem = props.showCursor && props.cursorIndex == i;
-        const bool selected = (props.selectedMask & static_cast<uint16_t>(1U << i)) != 0;
         const bool active = props.itemActive[i];
         if (props.itemAddSlot[i]) {
             const lv_opa_t addOpa = cursorItem ? LV_OPA_20 : static_cast<lv_opa_t>(6);
             if (!surface_cache_initialized_ || item_opa_cache_[i] != addOpa) {
                 lv_obj_set_style_bg_opa(items_[i], addOpa, 0);
                 item_opa_cache_[i] = addOpa;
-            }
-            if (item_border_width_cache_[i] != 0) {
-                lv_obj_set_style_border_width(items_[i], 0, 0);
-                item_border_width_cache_[i] = 0;
             }
             if (cursorItem && !item_add_visible_cache_[i]) {
                 add_slot_icon_ns::setVisible(item_add_icons_[i], true);
@@ -308,25 +303,6 @@ FLASHMEM void TrackHeaderRow::render(const TrackHeaderRowProps& props) {
                 lv_obj_set_style_bg_opa(items_[i], emphasizedOpa, 0);
                 item_opa_cache_[i] = emphasizedOpa;
             }
-            const lv_coord_t borderWidth = selected ? 1 : 0;
-            if (item_border_width_cache_[i] != borderWidth) {
-                lv_obj_set_style_border_width(items_[i], borderWidth, 0);
-                item_border_width_cache_[i] = borderWidth;
-            }
-        }
-        if (selected) {
-            const uint32_t borderColor = props.cursorColor != 0 ? props.cursorColor : props.accentColor;
-            if (item_border_color_cache_[i] != borderColor) {
-                lv_obj_set_style_border_color(items_[i], lv_color_hex(borderColor), 0);
-                item_border_color_cache_[i] = borderColor;
-            }
-            if (item_border_opa_cache_[i] != LV_OPA_70) {
-                lv_obj_set_style_border_opa(items_[i], LV_OPA_70, 0);
-                item_border_opa_cache_[i] = LV_OPA_70;
-            }
-        } else if (item_border_opa_cache_[i] != LV_OPA_TRANSP) {
-            lv_obj_set_style_border_opa(items_[i], LV_OPA_TRANSP, 0);
-            item_border_opa_cache_[i] = LV_OPA_TRANSP;
         }
     }
 

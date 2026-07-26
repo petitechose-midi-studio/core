@@ -10,6 +10,8 @@
 #include "state/TrackNavigationState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectTrackDomainServices.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -34,6 +36,8 @@ public:
             core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         core::state::TrackNavigationState& trackNavigation;
         core::state::project::ProjectNavigationState& projectNavigation;
+        core::state::project::ProjectTrackState& projectTracks;
+        core::state::project::ProjectTrackDomainServices projectTrackDomain;
         core::state::StructureClipboardState& structureClipboard;
         SharedTrackDomainServices sharedTracks;
         SequencerHistoryDomainServices history;
@@ -56,28 +60,23 @@ public:
         uint32_t nowMs
     );
     bool cancelTrackPasteAction(uint32_t nowMs);
-    bool trackPasteGestureActive() const;
     bool trackPasteNavigationBlocked() const;
     bool trackPastePlanInspectable() const;
     bool trackPasteDetailsVisible() const;
     void toggleTrackPasteDetails();
-    void navigateTrackPasteDetails(float delta);
     void applyBottomLeftTapCurrentStructure();
-    void toggleTrackSelectionMute();
+    bool selectionHoldActionAvailable() const;
+    void applySelectionBottomLeftTap();
+    void applySelectionBottomLeftHold();
     void removeCurrentStructure();
     void copyCurrentStructure();
     void pasteCurrentStructure();
-    bool canPasteSelection() const;
-    void clearSelection();
-    void copySelection();
     void copyStepSelection();
     void resetStepSelectionShallow();
     void resetStepSelectionDeep();
     void beginStepPastePreview();
     void clearStepPastePreview();
     void pasteStepSelection();
-    void pasteSelection();
-    void deleteSelection();
 
 private:
     using HistoryPatternChangePtr =
@@ -90,7 +89,6 @@ private:
     HistoryTrackStructureChangePtr captureTrackHistoryBefore(uint16_t trackMask) const;
     bool recordTrackHistoryAfter(HistoryTrackStructureChangePtr change, uint16_t trackMask);
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
-    void cancelSelectionMode();
     bool canPasteFocusedStep() const;
     void copyFocusedStep();
     void pasteFocusedStep();
@@ -100,12 +98,9 @@ private:
     uint16_t currentTrackEnabledMask() const;
     uint8_t currentActiveTrack() const;
     bool applyTrackState(uint16_t enabledMask, uint8_t activeTrack);
-    bool trackPasteSelectionContext() const;
-    uint8_t trackPasteTarget(bool selectionContext) const;
-    core::state::ClipboardTransferPlan buildTrackPastePlan(
-        bool selectionContext
-    ) const;
-    bool beginTrackPasteAction(bool selectionContext, uint32_t nowMs);
+    uint8_t trackPasteTarget() const;
+    core::state::ClipboardTransferPlan buildTrackPastePlan() const;
+    bool beginTrackPasteAction(uint32_t nowMs);
     void refreshTrackPastePreview(uint32_t nowMs);
     void updateTrackPasteActivation(uint32_t nowMs);
     void setTrackPasteFeedback(
@@ -124,6 +119,8 @@ private:
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     core::state::TrackNavigationState& track_ui_;
     core::state::project::ProjectNavigationState& project_navigation_;
+    core::state::project::ProjectTrackState& project_tracks_;
+    core::state::project::ProjectTrackDomainServices project_track_domain_;
     core::state::StructureClipboardState& structure_clipboard_;
     SharedTrackDomainServices shared_tracks_;
     SequencerHistoryDomainServices history_;

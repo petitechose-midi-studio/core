@@ -5,8 +5,10 @@
 namespace core::state::project {
 
 FLASHMEM ProjectSnapshot::ProjectSnapshot()
-    : macroAutomation(
-          core::app::makeExtmemUnique<core::state::macro::MacroAutomationBankState>()
+    : projectControl(
+          core::app::makeExtmemUnique<
+              core::state::modulation::ProjectControlDomainState
+          >()
       ) {
     for (uint8_t i = 0; i < macroTracks.size(); ++i) {
         macroTracks[i].initDefaults(i);
@@ -18,7 +20,7 @@ FLASHMEM ProjectSnapshot& ProjectSnapshot::operator=(ProjectSnapshot&&) noexcept
 
 FLASHMEM ProjectSnapshotPtr makeProjectSnapshot() {
     auto snapshot = core::app::makeExtmemUnique<ProjectSnapshot>();
-    if (!snapshot || !snapshot->macroAutomation) return {};
+    if (!snapshot || !snapshot->projectControl) return {};
     return snapshot;
 }
 

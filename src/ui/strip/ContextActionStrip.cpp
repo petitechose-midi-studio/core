@@ -33,7 +33,7 @@ constexpr lv_coord_t VERTICAL_SLOT_GAP = 2;
 constexpr lv_coord_t VERTICAL_SPREAD_OUTER_PAD = 4;
 constexpr uint32_t HOLD_TIMER_PERIOD_MS = 33;
 
-uint32_t toneColor(ContextActionStripTone tone) {
+FLASHMEM uint32_t toneColor(ContextActionStripTone tone) {
     switch (tone) {
         case ContextActionStripTone::CONSTRUCTIVE:
             return theme::color::MACRO_5;
@@ -49,7 +49,7 @@ uint32_t toneColor(ContextActionStripTone tone) {
     }
 }
 
-lv_opa_t contentOpacity(ContextActionStripVisualState state) {
+FLASHMEM lv_opa_t contentOpacity(ContextActionStripVisualState state) {
     switch (state) {
         case ContextActionStripVisualState::DISABLED:
             return LV_OPA_30;
@@ -67,11 +67,11 @@ lv_opa_t contentOpacity(ContextActionStripVisualState state) {
     }
 }
 
-lv_opa_t backgroundOpacity(ContextActionStripVisualState /*state*/) {
+FLASHMEM lv_opa_t backgroundOpacity(ContextActionStripVisualState /*state*/) {
     return LV_OPA_TRANSP;
 }
 
-lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
+FLASHMEM lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
     switch (state) {
         case ContextActionStripVisualState::ACTIVE:
             return LV_OPA_70;
@@ -86,24 +86,24 @@ lv_opa_t indicatorOpacity(ContextActionStripVisualState state) {
     }
 }
 
-const char* slotLabel(const ContextActionStripSlotProps& props) {
+FLASHMEM const char* slotLabel(const ContextActionStripSlotProps& props) {
     if (props.label) return props.label;
     return props.labelText[0] != '\0' ? props.labelText.data() : nullptr;
 }
 
-bool contentVisible(const ContextActionStripSlotProps& props) {
+FLASHMEM bool contentVisible(const ContextActionStripSlotProps& props) {
     return props.visualState != ContextActionStripVisualState::HIDDEN &&
            ((props.showIcon && props.icon) || (props.showLabel && slotLabel(props)));
 }
 
-bool sameText(const char* lhs, const char* rhs) {
+FLASHMEM bool sameText(const char* lhs, const char* rhs) {
     if (lhs == rhs) return true;
     if (!lhs || !rhs) return false;
     return std::strcmp(lhs, rhs) == 0;
 }
 
 template <size_t N>
-bool setCachedText(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
+FLASHMEM bool setCachedText(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
     if (!label) return false;
     const char* next = text ? text : "";
     if (std::strncmp(cache.data(), next, N) == 0) {
@@ -115,7 +115,7 @@ bool setCachedText(lv_obj_t* label, std::array<char, N>& cache, const char* text
     return true;
 }
 
-bool sameSlotProps(const ContextActionStripSlotProps& lhs, const ContextActionStripSlotProps& rhs) {
+FLASHMEM bool sameSlotProps(const ContextActionStripSlotProps& lhs, const ContextActionStripSlotProps& rhs) {
     return lhs.visualState == rhs.visualState &&
            lhs.tone == rhs.tone &&
            lhs.showIcon == rhs.showIcon &&
@@ -213,12 +213,20 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
             lv_obj_set_height(slot.container, 18);
         }
 
-        slot.indicator = lv_obj_create(slot.container);
+        slot.indicator = lv_bar_create(slot.container);
         lv_obj_remove_style_all(slot.indicator);
         lv_obj_add_flag(slot.indicator, LV_OBJ_FLAG_IGNORE_LAYOUT);
         lv_obj_clear_flag(slot.indicator, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_radius(slot.indicator, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_radius(slot.indicator, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
         lv_obj_set_style_border_width(slot.indicator, 0, 0);
+        lv_obj_set_style_bg_opa(
+            slot.indicator,
+            LV_OPA_TRANSP,
+            LV_PART_INDICATOR
+        );
+        lv_bar_set_range(slot.indicator, 0, 1000);
+        lv_bar_set_value(slot.indicator, 0, LV_ANIM_OFF);
 
         if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
             lv_obj_set_size(slot.indicator, INDICATOR_LONG, INDICATOR_THICKNESS);
@@ -263,7 +271,7 @@ FLASHMEM void ContextActionStrip::createUI(lv_obj_t* parent) {
     hold_timer_.emplace(HOLD_TIMER_PERIOD_MS, onHoldTimer, this);
 }
 
-void ContextActionStrip::render(const ContextActionStripProps& props) {
+FLASHMEM void ContextActionStrip::render(const ContextActionStripProps& props) {
     if (!container_) return;
 
     if (!props.visible) {
@@ -293,7 +301,7 @@ void ContextActionStrip::render(const ContextActionStripProps& props) {
     updateHoldTimer();
 }
 
-void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotProps& props) {
+FLASHMEM void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotProps& props) {
     if (index >= slots_.size()) return;
 
     auto& slot = slots_[index];
@@ -309,7 +317,17 @@ void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotPr
     lv_obj_set_style_bg_color(slot.container, color, 0);
     lv_obj_set_style_bg_opa(slot.container, bgOpa, 0);
     lv_obj_set_style_bg_color(slot.indicator, color, 0);
-    lv_obj_set_style_bg_opa(slot.indicator, accentOpa, 0);
+    lv_obj_set_style_bg_color(slot.indicator, color, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(
+        slot.indicator,
+        props.holdActive ? LV_OPA_TRANSP : accentOpa,
+        0
+    );
+    lv_obj_set_style_bg_opa(
+        slot.indicator,
+        props.holdActive ? LV_OPA_COVER : LV_OPA_TRANSP,
+        LV_PART_INDICATOR
+    );
 
     if (!showContent) {
         lv_obj_add_flag(slot.icon, LV_OBJ_FLAG_HIDDEN);
@@ -356,7 +374,7 @@ void ContextActionStrip::renderSlot(size_t index, const ContextActionStripSlotPr
     }
 }
 
-void ContextActionStrip::refreshHoldIndicators() {
+FLASHMEM void ContextActionStrip::refreshHoldIndicators() {
     if (!container_ || !has_rendered_) return;
 
     const uint32_t nowMs = core::time_compat::millis();
@@ -383,10 +401,16 @@ void ContextActionStrip::refreshHoldIndicators() {
                 slot.indicator_long = INDICATOR_LONG;
                 slot.indicator_fill_mode = false;
                 slot.hold_geometry_initialized = true;
+                lv_bar_set_value(slot.indicator, 0, LV_ANIM_OFF);
             }
             const lv_opa_t baseIndicatorOpa = indicatorOpacity(props.visualState);
             if (slot.indicator_opa != baseIndicatorOpa) {
                 lv_obj_set_style_bg_opa(slot.indicator, baseIndicatorOpa, 0);
+                lv_obj_set_style_bg_opa(
+                    slot.indicator,
+                    LV_OPA_TRANSP,
+                    LV_PART_INDICATOR
+                );
                 slot.indicator_opa = baseIndicatorOpa;
             }
             continue;
@@ -424,41 +448,47 @@ void ContextActionStrip::refreshHoldIndicators() {
         }
         lv_obj_clear_flag(slot.label, LV_OBJ_FLAG_HIDDEN);
 
-        const lv_coord_t slotWidth = lv_obj_get_width(slot.container);
-        const lv_coord_t slotHeight = lv_obj_get_height(slot.container);
-        const lv_coord_t fillLong = (orientation_ == ContextActionStripOrientation::HORIZONTAL)
-            ? static_cast<lv_coord_t>(
-                  (static_cast<int32_t>(std::max<lv_coord_t>(slotWidth, 1)) * clampedElapsed) /
-                  static_cast<int32_t>(props.holdDurationMs)
-              )
-            : static_cast<lv_coord_t>(
-                  (static_cast<int32_t>(std::max<lv_coord_t>(slotHeight, 1)) * clampedElapsed) /
-                  static_cast<int32_t>(props.holdDurationMs)
-              );
-
-        const lv_coord_t clampedFill = std::max<lv_coord_t>(1, fillLong);
-        if (!slot.hold_geometry_initialized ||
-            !slot.indicator_fill_mode ||
-            slot.indicator_long != clampedFill) {
+        if (!slot.hold_geometry_initialized || !slot.indicator_fill_mode) {
             if (orientation_ == ContextActionStripOrientation::HORIZONTAL) {
-                lv_obj_set_size(slot.indicator, clampedFill, INDICATOR_THICKNESS);
+                lv_obj_set_size(
+                    slot.indicator,
+                    LV_PCT(100),
+                    INDICATOR_THICKNESS
+                );
                 lv_obj_align(slot.indicator, LV_ALIGN_TOP_LEFT, 0, 0);
             } else {
-                lv_obj_set_size(slot.indicator, INDICATOR_THICKNESS, clampedFill);
+                lv_obj_set_size(
+                    slot.indicator,
+                    INDICATOR_THICKNESS,
+                    LV_PCT(100)
+                );
                 lv_obj_align(slot.indicator, LV_ALIGN_BOTTOM_LEFT, 0, 0);
             }
-            slot.indicator_long = clampedFill;
+            slot.indicator_long = -1;
             slot.indicator_fill_mode = true;
             slot.hold_geometry_initialized = true;
         }
+        const int32_t progress = static_cast<int32_t>(
+            (static_cast<uint64_t>(clampedElapsed) * 1000U) /
+            props.holdDurationMs
+        );
+        if (slot.indicator_long != progress) {
+            lv_bar_set_value(slot.indicator, progress, LV_ANIM_OFF);
+            slot.indicator_long = static_cast<lv_coord_t>(progress);
+        }
         if (slot.indicator_opa != LV_OPA_COVER) {
-            lv_obj_set_style_bg_opa(slot.indicator, LV_OPA_COVER, 0);
+            lv_obj_set_style_bg_opa(slot.indicator, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_bg_opa(
+                slot.indicator,
+                LV_OPA_COVER,
+                LV_PART_INDICATOR
+            );
             slot.indicator_opa = LV_OPA_COVER;
         }
     }
 }
 
-void ContextActionStrip::updateHoldTimer() {
+FLASHMEM void ContextActionStrip::updateHoldTimer() {
     if (!hold_timer_) return;
 
     bool active = false;
@@ -476,7 +506,7 @@ void ContextActionStrip::updateHoldTimer() {
     }
 }
 
-void ContextActionStrip::onHoldTimer(lv_timer_t* timer) {
+FLASHMEM void ContextActionStrip::onHoldTimer(lv_timer_t* timer) {
     auto* self = static_cast<ContextActionStrip*>(lv_timer_get_user_data(timer));
     if (!self || !self->has_rendered_) return;
     self->refreshHoldIndicators();

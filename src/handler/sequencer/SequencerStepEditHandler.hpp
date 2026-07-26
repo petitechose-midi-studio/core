@@ -18,7 +18,7 @@
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetPickerWorkflow.hpp"
 #include "state/StructureClipboardState.hpp"
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -63,6 +63,14 @@ public:
 
     void update(uint32_t nowMs);
 
+    /** Open the existing Step Editor on the focused Step and semantic row. */
+    bool openFocusedStepAtRow(uint8_t row);
+    /**
+     * Open Chord detail or dive directly into a Micro/Cycle child from the
+     * focused Step, without leaving the generic Step Editor in-between.
+     */
+    bool openFocusedStepContentAtRow(uint8_t row);
+
 private:
     void setupBindings();
 
@@ -72,18 +80,21 @@ private:
     void closeStepEdit();
 
     void moveFocus(float delta);
+    void retargetEditedStep(float delta);
     void activateFocusedRowOrClose();
     void setFocusedValue(float normalized);
     void configureOptForFocusedRow();
     void openChordEditor();
     void closeChordEditor();
+    void applyStepContentDraft();
+    void confirmStepContentDraftExitChoice();
     void moveChordEditorFocus(float delta);
     void setFocusedChordFieldValue(float normalized);
     void configureOptForFocusedChordField();
     void resetFocusedChordFieldToDefault();
     bool chordEditorActive() const;
     bool editedStepInRange(uint8_t& step) const;
-    void activateFocusedContextRow();
+    bool activateFocusedContextRow();
     void maybeCloseFromMacro(uint8_t indexInPage);
     bool focusedRowIsValueRow() const;
     bool focusedRowIsContextRow() const;
@@ -135,6 +146,7 @@ private:
     TimeProviderFn time_provider_ = core::time_compat::millis;
     bool step_preset_action_press_active_ = false;
     bool step_preset_auto_close_pending_ = false;
+    bool step_retarget_active_ = false;
     uint32_t step_preset_auto_close_at_ms_ = 0;
 };
 

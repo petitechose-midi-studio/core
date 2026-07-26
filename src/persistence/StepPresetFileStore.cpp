@@ -167,11 +167,6 @@ FLASHMEM bool StepPresetFileStore::buildListEntry_(
         )) {
         return true;
     }
-    out.metadataDefaulted = metadata.metadataDefaulted;
-    if (metadata.metadataDefaulted) {
-        out.metadataReadable = true;
-        return true;
-    }
     if (std::strcmp(metadata.technicalId, presetId) != 0 ||
         !state::sequencer::validStepGraphPresetSemanticName(
             metadata.semanticName

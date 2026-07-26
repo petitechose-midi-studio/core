@@ -2,6 +2,8 @@
 
 #if defined(MS_UX_RECORDER)
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -16,9 +18,12 @@
 #include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "state/macro/MacroEditMenuModel.hpp"
 #include "state/macro/MacroInteractionContextBuilder.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "ui/macro/MacroSourceDetailLayout.hpp"
+#include "ui/modulation/ModulationDepthUiModel.hpp"
 #include "validation/ux/SemanticUxTraceState.hpp"
 
 namespace core::context::standalone::ux {
@@ -26,20 +31,66 @@ namespace {
 
 namespace detail_ui = core::ui::macro;
 
+FLASHMEM const char* recordedShapeOperationStatus(
+    core::state::modulation::ProjectRecordedShapeCaptureStatus status
+) {
+    using Status = core::state::modulation::
+        ProjectRecordedShapeCaptureStatus;
+    switch (status) {
+        case Status::ARMED: return "armed";
+        case Status::RECORDING:
+        case Status::REDUCED: return "recording";
+        case Status::COMMITTED: return "committed";
+        case Status::NO_CHANGE: return "no_change";
+        case Status::CANCELLED: return "cancelled";
+        case Status::INVALIDATED:
+        case Status::SCRATCH_UNAVAILABLE:
+        case Status::COMMIT_FAILED: return "invalidated";
+        case Status::IDLE:
+        default: return "idle";
+    }
+}
+
+FLASHMEM const char* recordedShapeOutcome(
+    core::state::modulation::ProjectRecordedShapeCaptureStatus status
+) {
+    using Status = core::state::modulation::
+        ProjectRecordedShapeCaptureStatus;
+    switch (status) {
+        case Status::RECORDING:
+        case Status::REDUCED:
+        case Status::COMMITTED: return "applied";
+        case Status::NO_CHANGE: return "no_change";
+        case Status::CANCELLED: return "cancelled";
+        case Status::INVALIDATED:
+        case Status::SCRATCH_UNAVAILABLE:
+        case Status::COMMIT_FAILED: return "invalidated";
+        default: return nullptr;
+    }
+}
+
+FLASHMEM const char* modulatorSourceLabel(
+    core::state::modulation::ModulatorKind kind
+) {
+    using Kind = core::state::modulation::ModulatorKind;
+    switch (kind) {
+        case Kind::LFO: return "lfo";
+        case Kind::ADSR: return "adsr";
+        case Kind::RECORDED_SHAPE:
+        default: return "recorded_shape";
+    }
+}
+
 FLASHMEM detail_ui::MacroSourceDetailContext macroSourceDetailContext(
-    const core::state::macro::MacroAutomationSlotState* slot,
+    const core::state::modulation::ProjectControlMacroDestinationView& slot,
     bool manualOverride
 ) {
-    if (slot == nullptr) return {};
     return {
-        .automationStored =
-            core::state::macro::macroCurveStored(slot->automation),
-        .modulationStored =
-            core::state::macro::macroCurveStored(slot->modulation),
+        .automationStored = slot.automation.stored(),
+        .modulationStored = slot.modulationCount > 0U,
         .automationPlayback =
-            core::state::macro::macroCurvePlaybackActive(slot->automation),
-        .modulationPlayback =
-            core::state::macro::macroCurvePlaybackActive(slot->modulation),
+            slot.automation.stored() && slot.automation.enabled,
+        .modulationPlayback = slot.activeModulationCount > 0U,
         .manualOverride = manualOverride,
     };
 }
@@ -76,21 +127,9 @@ FLASHMEM bool isMacroEncoderTurn(const oc::core::input::InputBindingTraceEvent& 
            Config::macroEncoderIndex(event.encoderId, index);
 }
 
-FLASHMEM bool isMacroButtonLongPress(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
-           event.buttonType == oc::core::input::ButtonBindingType::LONG_PRESS &&
-           Config::macroButtonIndex(event.buttonId, index);
-}
-
 FLASHMEM bool isMacroButtonPress(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
     return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
            event.buttonType == oc::core::input::ButtonBindingType::PRESS &&
-           Config::macroButtonIndex(event.buttonId, index);
-}
-
-FLASHMEM bool isMacroButtonRelease(const oc::core::input::InputBindingTraceEvent& event, uint8_t& index) {
-    return event.domain == oc::core::input::InputBindingTraceDomain::Button &&
-           event.buttonType == oc::core::input::ButtonBindingType::RELEASE &&
            Config::macroButtonIndex(event.buttonId, index);
 }
 
@@ -116,34 +155,6 @@ FLASHMEM void copyIndexLabel(char (&out)[16], unsigned value) {
     std::snprintf(out, sizeof(out), "%u", value + 1U);
 }
 
-FLASHMEM void copyPointCountLabel(char (&out)[16], unsigned value) {
-    std::snprintf(out, sizeof(out), "%u pts", value);
-}
-
-FLASHMEM const char* macroPerformancePropertyName(core::state::macro::MacroPerformanceProperty property) {
-    switch (property) {
-        case core::state::macro::MacroPerformanceProperty::CC:
-            return "CC";
-        case core::state::macro::MacroPerformanceProperty::AUTOMATION:
-            return "Automation";
-        case core::state::macro::MacroPerformanceProperty::VALUE:
-        default:
-            return "Value";
-    }
-}
-
-FLASHMEM const char* macroPerformanceEffect(core::state::macro::MacroPerformanceProperty property) {
-    switch (property) {
-        case core::state::macro::MacroPerformanceProperty::CC:
-            return "edit_macro_cc";
-        case core::state::macro::MacroPerformanceProperty::AUTOMATION:
-            return "restore_macro_automation";
-        case core::state::macro::MacroPerformanceProperty::VALUE:
-        default:
-            return "edit_macro_value";
-    }
-}
-
 FLASHMEM const char* structureTarget(core::state::StructureNavigationFocus focus) {
     switch (focus) {
         case core::state::StructureNavigationFocus::TRACK:
@@ -151,16 +162,6 @@ FLASHMEM const char* structureTarget(core::state::StructureNavigationFocus focus
         case core::state::StructureNavigationFocus::STEP:
             return "macro";
         case core::state::StructureNavigationFocus::PAGE:
-        default:
-            return "page";
-    }
-}
-
-FLASHMEM const char* structureTarget(core::state::StructureSelectionScope scope) {
-    switch (scope) {
-        case core::state::StructureSelectionScope::TRACK:
-            return "track";
-        case core::state::StructureSelectionScope::PAGE:
         default:
             return "page";
     }
@@ -353,7 +354,12 @@ FLASHMEM void fillMacroResolutionFacts(
                 candidate.author.stableAddress == address;
         }
         if (!local) continue;
-        out.projection = "resolved_classic_cc";
+        // Keep an explicit interaction projection (silent selection, audition,
+        // preview) authoritative. Runtime resolution facts complement that UX
+        // state; they must not relabel it as a classic-CC projection.
+        if (out.projection == nullptr) {
+            out.projection = "resolved_classic_cc";
+        }
         out.winner = candidateClassName(destination.winner.author.candidateClass);
         out.hasConflict = true;
         out.conflict = destination.conflict;
@@ -409,106 +415,39 @@ FLASHMEM bool MacroValueUxSurface::captureSemanticUxContext(
     }
 
     uint8_t index = 0;
-    if (isMacroButtonPress(event, index) && index < Config::MACRO_COUNT &&
-        macro_ui_.clutchActive.get() &&
-        macro_ui_.activeProperty.get() ==
-            core::state::macro::MacroPerformanceProperty::AUTOMATION) {
-        out.mode = "macro.performance";
-        out.target = "macro";
-        out.targetIndex = static_cast<int16_t>(index);
-        out.property = "Automation";
-        out.effect = "restore_macro_automation";
-        copyValueLabel(out.valueLabel, "Auto");
-        return true;
-    }
-
-    if (isMacroButtonPress(event, index) && index < Config::MACRO_COUNT) {
-        out.mode = "macro.automation";
-        out.target = "macro";
-        out.targetIndex = static_cast<int16_t>(index);
-        out.property = "Automation";
-        out.effect = "arm_macro_automation";
-        copyValueLabel(out.valueLabel, macro_ui_.automationRecording.active ? "REC" : "Arm");
-        return true;
-    }
-
-    if (isMacroButtonRelease(event, index) && index < Config::MACRO_COUNT) {
-        out.mode = "macro.automation";
-        out.target = "macro";
-        out.targetIndex = static_cast<int16_t>(index);
-        out.property = "Automation";
-        out.effect = "commit_macro_automation";
-        if (macro_ui_.automationRecording.active) {
-            copyPointCountLabel(out.valueLabel, macro_ui_.automationRecording.lane.pointCount);
-        } else {
-            copyValueLabel(out.valueLabel, "Done");
-        }
-        return true;
-    }
-
     if (!isMacroEncoderTurn(event, index) || index >= Config::MACRO_COUNT) {
         return false;
     }
 
-    if (macro_ui_.automationRecording.active &&
-        macro_ui_.automationRecording.address.macro == index) {
-        out.mode = "macro.automation";
+    const auto& take = macro_ui_.automationTake;
+    if (take.phase != core::state::macro::MacroAutomationTakePhase::IDLE &&
+        take.track == pages_.currentActiveTrack() &&
+        take.page == pages_.currentActivePage() &&
+        (take.candidateMask & static_cast<uint16_t>(1U << index)) != 0U) {
+        out.mode = "macro.automation_take";
         out.target = "macro";
         out.targetIndex = static_cast<int16_t>(index);
         out.property = "Automation";
-        out.effect = "record_macro_automation_point";
+        out.effect = "record_macro_automation_take_value";
         copyValueLabel(out.valueLabel, macros_.slots[index].displayValue.get());
-        return true;
-    }
-
-    const auto property = macro_ui_.clutchActive.get()
-        ? macro_ui_.activeProperty.get()
-        : core::state::macro::MacroPerformanceProperty::VALUE;
-    out.mode = "macro";
-    out.target = "macro";
-    out.targetIndex = static_cast<int16_t>(index);
-    out.property = macroPerformancePropertyName(property);
-    out.effect = macroPerformanceEffect(property);
-
-    switch (property) {
-        case core::state::macro::MacroPerformanceProperty::CC:
-            std::snprintf(
-                out.valueLabel,
-                sizeof(out.valueLabel),
-                "%u",
-                static_cast<unsigned>(pages_.activeConfigs[index].cc)
-            );
-            break;
-        case core::state::macro::MacroPerformanceProperty::AUTOMATION: {
-            const auto address = core::state::macro::MacroAutomationSlotAddress{
-                .track = pages_.currentActiveTrack(),
-                .page = pages_.currentActivePage(),
-                .macro = index,
-            };
-            const auto* slot = core::state::macro::macroAutomationFindSlot(
-                pages_.automation,
-                address
-            );
-            const bool active = slot != nullptr && slot->automation.active;
-            const bool manual =
-                (macro_ui_.automationManualOverrideMask.get() &
-                 static_cast<uint16_t>(1U << index)) != 0;
-            copyValueLabel(out.valueLabel, !active ? "Off" : (manual ? "Manual" : "Auto"));
-            break;
-        }
-        case core::state::macro::MacroPerformanceProperty::VALUE:
-        default:
-            copyValueLabel(out.valueLabel, macros_.slots[index].displayValue.get());
-            break;
+    } else {
+        out.mode = "macro";
+        out.target = "macro";
+        out.targetIndex = static_cast<int16_t>(index);
+        out.property = "Base";
+        out.effect = "edit_macro_base";
+        copyValueLabel(out.valueLabel, macros_.slots[index].displayValue.get());
     }
     const auto sourceAddress = core::state::macro::MacroAutomationSlotAddress{
         .track = pages_.currentActiveTrack(),
         .page = pages_.currentActivePage(),
         .macro = index,
     };
-    const auto* sourceSlot = core::state::macro::macroAutomationFindSlot(
-        pages_.automation,
-        sourceAddress
+    core::state::modulation::ProjectControlMacroDestinationView sourceSlot{};
+    (void)core::state::modulation::readProjectControlMacroDestination(
+        pages_.control,
+        sourceAddress,
+        sourceSlot
     );
     const bool manualOverride =
         (macro_ui_.automationManualOverrideMask.get() &
@@ -533,26 +472,73 @@ FLASHMEM bool MacroPerformanceUxSurface::captureSemanticUxContext(
         return false;
     }
 
-    const bool opening =
-        isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::PRESS);
-    if (!opening && !macro_ui_.clutchActive.get()) {
+    const bool editPress = isButton(
+        event,
+        Config::ButtonID::LEFT_BOTTOM,
+        oc::core::input::ButtonBindingType::PRESS
+    );
+    const bool editRelease = isButton(
+        event,
+        Config::ButtonID::LEFT_BOTTOM,
+        oc::core::input::ButtonBindingType::RELEASE
+    );
+    const bool takePress = isButton(
+        event,
+        Config::ButtonID::LEFT_CENTER,
+        oc::core::input::ButtonBindingType::PRESS
+    );
+    const bool takeRelease = isButton(
+        event,
+        Config::ButtonID::LEFT_CENTER,
+        oc::core::input::ButtonBindingType::RELEASE
+    );
+    const bool cancel = isButton(
+        event,
+        Config::ButtonID::LEFT_TOP,
+        oc::core::input::ButtonBindingType::RELEASE
+    );
+    const bool timing = isEncoder(event, Config::EncoderID::NAV) &&
+        macro_ui_.performanceOverlayMode.get() ==
+            core::state::macro::MacroPerformanceOverlayMode::AUTOMATION_TAKE;
+    if (!editPress && !editRelease && !takePress && !takeRelease &&
+        !cancel && !timing) {
         return false;
     }
 
-    const auto property = macro_ui_.activeProperty.get();
     out.mode = "macro.performance";
-    out.target = "macro_property";
-    out.targetIndex = static_cast<int16_t>(core::state::macro::performancePropertyIndex(property));
-    out.property = macroPerformancePropertyName(property);
-
-    if (opening) {
-        out.effect = "open_macro_slot_property_selector";
-    } else if (isEncoder(event, Config::EncoderID::NAV)) {
-        out.effect = "select_macro_property";
-    } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "apply_macro_slot_property_selector";
-    } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-        out.effect = "cancel_macro_slot_property_selector";
+    out.targetIndex = -1;
+    if (editPress || editRelease) {
+        out.target = "macro_editor";
+        out.property = "Edit";
+        out.effect = editPress
+            ? "show_macro_edit_prompt"
+            : "close_macro_edit_prompt";
+        copyValueLabel(out.valueLabel, editPress ? "Press Macro" : "Closed");
+    } else {
+        out.target = "automation_take";
+        out.property = timing ? "Duration" : "Automation";
+        if (takePress) {
+            out.effect = "arm_macro_automation_take";
+        } else if (timing) {
+            out.effect = "select_macro_automation_take_duration";
+        } else if (takeRelease) {
+            const auto phase = macro_ui_.automationTake.phase;
+            out.effect = phase ==
+                    core::state::macro::MacroAutomationTakePhase::RECORDING
+                ? "commit_macro_automation_take"
+                : (phase ==
+                       core::state::macro::MacroAutomationTakePhase::ARMED
+                    ? "discard_empty_macro_automation_take"
+                    : "release_macro_automation_take");
+        } else {
+            out.effect = "cancel_macro_performance_action";
+        }
+        copyValueLabel(
+            out.valueLabel,
+            core::state::macro::macroAutomationTakeTimingLabel(
+                macro_ui_.automationTakeTiming.get()
+            )
+        );
     }
     return true;
 }
@@ -582,17 +568,14 @@ FLASHMEM bool MacroStructureUxSurface::captureSemanticUxContext(
     core::validation::ux::SemanticUxContext& out
 ) const {
     if (active_view_.get() != core::ui::ViewType::MACRO || macro_edit_.visible.get() ||
-        macro_ui_.clutchActive.get()) {
+        macro_ui_.performanceOverlayMode.get() !=
+            core::state::macro::MacroPerformanceOverlayMode::NONE) {
         return false;
     }
 
-    const bool leftTopRelease =
-        isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE);
     const bool structureEvent =
         isEncoder(event, Config::EncoderID::NAV) ||
         isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE) ||
-        isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::LONG_PRESS) ||
-        leftTopRelease ||
         isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS) ||
         isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE) ||
         isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::LONG_PRESS) ||
@@ -603,32 +586,18 @@ FLASHMEM bool MacroStructureUxSurface::captureSemanticUxContext(
         return false;
     }
 
-    const bool selectionActive =
-        track_navigation_.selection.active.get() || macro_ui_.pageSelection.active.get();
-    if (leftTopRelease && !selectionActive) {
-        return false;
-    }
-
-    const auto focus = navigation_focus_.get();
-    auto scope = core::state::selectionScopeForFocus(focus);
-    if (track_navigation_.selection.active.get()) {
-        scope = track_navigation_.selection.scope.get();
-    } else if (macro_ui_.pageSelection.active.get()) {
-        scope = macro_ui_.pageSelection.scope.get();
-    }
-
-    out.mode = selectionActive ? "macro.structure_selection" : "macro.structure";
-    out.target = selectionActive ? structureTarget(scope) : structureTarget(focus);
+    const auto focus = core::state::macro::effectiveMacroNavigationFocus(
+        navigation_focus_.get()
+    );
+    out.mode = "macro.structure";
+    out.target = structureTarget(focus);
 
     uint8_t index = 0;
-    const bool targetMacro =
-        !selectionActive && focus == core::state::StructureNavigationFocus::STEP;
+    const bool targetMacro = focus == core::state::StructureNavigationFocus::STEP;
     if (targetMacro) {
         index = macro_ui_.focusedMacroSlot.get();
     }
-    const bool targetTrack =
-        selectionActive ? scope == core::state::StructureSelectionScope::TRACK
-                        : focus == core::state::StructureNavigationFocus::TRACK;
+    const bool targetTrack = focus == core::state::StructureNavigationFocus::TRACK;
     const uint16_t targetMask =
         targetMacro ? pages_.activePageData().activeMacroMask
                     : (targetTrack ? pages_.currentTrackEnabledMask()
@@ -642,94 +611,35 @@ FLASHMEM bool MacroStructureUxSurface::captureSemanticUxContext(
     if (targetMacro) {
         out.property = pages_.isMacroAddSlot(index) ? "add_slot" : "existing";
     } else if (targetTrack) {
-        index = track_navigation_.selection.active.get()
-            ? track_navigation_.selection.cursorIndex.get()
-            : track_navigation_.previewTrackIndex.get();
-        out.property = track_navigation_.previewAddSlot.get() && !selectionActive
+        index = track_navigation_.previewTrackIndex.get();
+        out.property = track_navigation_.previewAddSlot.get()
             ? "add_slot"
-            : (selectionActive ? "selection" : "existing");
+            : "existing";
     } else {
-        index = macro_ui_.pageSelection.active.get()
-            ? macro_ui_.pageSelection.cursorIndex.get()
-            : macro_ui_.previewPageIndex.get();
-        out.property = macro_ui_.previewAddPageSlot.get() && !selectionActive
+        index = macro_ui_.previewPageIndex.get();
+        out.property = macro_ui_.previewAddPageSlot.get()
             ? "add_slot"
-            : (selectionActive ? "selection" : "existing");
+            : "existing";
     }
     out.targetIndex = static_cast<int16_t>(index);
     copyIndexLabel(out.valueLabel, index);
 
-    if (selectionActive) {
-        const auto interaction = core::state::macro::buildMacroInteractionContext(
-            core::state::macro::MacroInteractionContextSource{
-                .pages = pages_,
-                .macroUi = macro_ui_,
-                .trackNavigation = track_navigation_,
-                .structureClipboard = structure_clipboard_,
-                .navigationFocus = focus,
-                .enabledTrackMask = pages_.currentTrackEnabledMask(),
-                .blockingOverlay = false,
-                .slotPropertySelecting = false,
-            }
-        );
-        const auto& deleteAction = interaction.selectionDeleteAction;
-        const bool deleteAvailable =
-            core::state::contextual::canExecute(deleteAction.hold);
-        if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "navigate_selection";
-        } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "toggle_selection";
-        } else if (leftTopRelease) {
-            out.effect = "cancel_selection";
-        } else if (isButton(
-                       event,
-                       Config::ButtonID::BOTTOM_LEFT,
-                       oc::core::input::ButtonBindingType::PRESS
-                   )) {
-            out.effect = "guard_delete_selection";
-            out.outcome = deleteAvailable ? "pressed" : "blocked";
-            out.reason = deleteAvailable
-                ? nullptr
-                : contextualReasonName(deleteAction.hold.reason);
-            copyValueLabel(out.valueLabel, deleteAvailable ? "Pressed" : "Disabled");
-            out.targetMask = deleteAction.source.item;
-        } else if (isButton(
-                       event,
-                       Config::ButtonID::BOTTOM_LEFT,
-                       oc::core::input::ButtonBindingType::LONG_PRESS
-                   )) {
-            out.effect = "delete_selection";
-            out.outcome = deleteAvailable ? "applied" : "blocked";
-            out.reason = deleteAvailable
-                ? nullptr
-                : contextualReasonName(deleteAction.hold.reason);
-            copyValueLabel(out.valueLabel, deleteAvailable ? "Applied" : "Disabled");
-            out.targetMask = deleteAction.source.item;
-        } else if (isButton(
-                       event,
-                       Config::ButtonID::BOTTOM_LEFT,
-                       oc::core::input::ButtonBindingType::RELEASE
-                   )) {
-            out.effect = "delete_selection";
-            out.outcome = "cancelled";
-            out.reason = "early_release";
-            copyValueLabel(out.valueLabel, "Cancelled");
-            out.targetMask = deleteAction.source.item;
-        } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "duplicate_selection";
-        }
+    if (isButton(
+        event,
+        Config::ButtonID::NAV,
+        oc::core::input::ButtonBindingType::RELEASE
+    ) && trace_state_ && trace_state_->ignoreNextNavRelease) {
+        markIgnored(out, "after_long_press");
         return true;
     }
 
     if (isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = "preview_structure";
-    } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::LONG_PRESS)) {
-        out.effect = "enter_selection";
     } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
         out.effect = (focus == core::state::StructureNavigationFocus::PAGE &&
                       macro_ui_.previewAddPageSlot.get()) ||
-                             (focus == core::state::StructureNavigationFocus::TRACK &&
-                              track_navigation_.previewAddSlot.get())
+                             (focus == core::state::StructureNavigationFocus::STEP &&
+                              pages_.isMacroAddSlot(index))
                          ? "create_structure"
                          : "switch_structure_focus";
     } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
@@ -787,6 +697,7 @@ FLASHMEM MacroEditUxSurface::MacroEditUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     core::state::MacroEditState& macroEdit,
     core::state::macro::MacroPagesState& pages,
+    const core::state::project::ProjectTrackState& projectTracks,
     core::state::macro::MacroUiState& macroUi,
     oc::state::Signal<uint32_t>& configRevision,
     core::state::StructureClipboardState& structureClipboard,
@@ -794,6 +705,7 @@ FLASHMEM MacroEditUxSurface::MacroEditUxSurface(
 ) : active_view_(activeView),
     macro_edit_(macroEdit),
     pages_(pages),
+    project_tracks_(projectTracks),
     macro_ui_(macroUi),
     config_revision_(configRevision),
     structure_clipboard_(structureClipboard),
@@ -806,20 +718,10 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
     core::validation::ux::SemanticUxContext& out
 ) const {
     uint8_t openingIndex = 0;
-    uint8_t closingIndex = 0;
-    const bool canonicalOpening =
-        active_view_.get() == core::ui::ViewType::MACRO &&
-        isButton(
-            event,
-            Config::ButtonID::LEFT_BOTTOM,
-            oc::core::input::ButtonBindingType::LONG_PRESS
-        );
     const bool opening = active_view_.get() == core::ui::ViewType::MACRO &&
-        (isMacroButtonLongPress(event, openingIndex) || canonicalOpening);
-    if (canonicalOpening) openingIndex = macro_ui_.focusedMacroSlot.get();
-    const bool macroButtonClose = macro_edit_.visible.get() &&
-                                  isMacroButtonRelease(event, closingIndex) &&
-                                  closingIndex == macro_edit_.editingIndex.get();
+        isMacroButtonPress(event, openingIndex) &&
+        macro_edit_.visible.get() &&
+        macro_edit_.editingIndex.get() == openingIndex;
     if (!opening && !macro_edit_.visible.get()) {
         return false;
     }
@@ -827,6 +729,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
     core::context::standalone::macro_overlay_presenter::Source source{
         macro_edit_,
         pages_,
+        project_tracks_,
         macro_ui_,
         config_revision_,
         &structure_clipboard_,
@@ -849,6 +752,49 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         const bool destinationRow = row == 0;
         const bool automationRow = row == 1;
         const bool modulationRow = row == 2;
+        const auto destination =
+            core::state::modulation::projectControlDestination({
+                .track = pages_.currentActiveTrack(),
+                .page = pages_.currentActivePage(),
+                .macro = macro_edit_.editingIndex.get(),
+            });
+        const auto modulationRows =
+            core::state::macro::buildMacroModulationRows(
+                pages_.control.authored.modulation,
+                destination
+            );
+        const auto contextAction =
+            core::state::macro::macroContextActionAt(
+                pages_.control.authored.modulation,
+                modulationRows,
+                core::state::macro::macroRootItemAt(
+                    macro_edit_.focusedRow.get()
+                ),
+                macro_edit_.contextPropertyIndex.get()
+            );
+        const bool contextualAutomationRecord =
+            macro_edit_.contextSelectorActive.get() && automationRow &&
+            contextAction.action ==
+                core::state::macro::MacroContextAction::AUTOMATION_RECORD;
+        const bool contextualRecordedShapeRecord =
+            macro_edit_.contextSelectorActive.get() && modulationRow &&
+            contextAction.action == core::state::macro::MacroContextAction::
+                MODULATION_RECORD_NEW_SHAPE;
+        const auto recordedShapeStatus =
+            macro_ui_.recordedShapeCapture.status;
+        const bool recordedShapeTerminal =
+            recordedShapeStatus == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::COMMITTED ||
+            recordedShapeStatus == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::NO_CHANGE ||
+            recordedShapeStatus == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::CANCELLED ||
+            recordedShapeStatus == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::INVALIDATED ||
+            recordedShapeStatus == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::SCRATCH_UNAVAILABLE ||
+            recordedShapeStatus == core::state::modulation::
+                ProjectRecordedShapeCaptureStatus::COMMIT_FAILED;
         out.mode = "macro.edit";
         out.target = destinationRow
             ? "macro_destination"
@@ -858,23 +804,106 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             out.property = data.rows[row].key;
             copyValueLabel(out.valueLabel, data.rows[row].value);
         }
+        if (contextualRecordedShapeRecord) {
+            out.operationStatus = recordedShapeOperationStatus(
+                recordedShapeStatus
+            );
+        } else if (modulationRow && recordedShapeTerminal) {
+            // A capture snapshot is taken after the release callback has
+            // closed the selector. Preserve the terminal result in that
+            // stable root context instead of exposing the pre-release
+            // RECORDING state from the input trace event.
+            out.operationStatus = recordedShapeOperationStatus(
+                recordedShapeStatus
+            );
+            out.outcome = recordedShapeOutcome(recordedShapeStatus);
+        }
         if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "focus_macro_domain";
+            out.effect = macro_edit_.contextSelectorActive.get()
+                ? "select_macro_context_property"
+                : (macro_edit_.macroCycleActive.get()
+                    ? "cycle_active_macro"
+                    : "focus_macro_domain");
+            if (data.interactionOverlayVisible) {
+                out.property = data.interactionLabel.data();
+                copyValueLabel(out.valueLabel, data.interactionValue.data());
+            }
         } else if (isEncoder(event, Config::EncoderID::OPT)) {
-            out.effect = destinationRow
-                ? "edit_macro_cc"
-                : (automationRow ? "edit_automation_playback"
-                                 : "edit_modulation_depth");
-        } else if (macroButtonClose) {
-            out.effect = "apply_macro_edit";
+            if (contextualAutomationRecord) {
+                contextual_automation_record_seen_ = true;
+            }
+            if (contextualRecordedShapeRecord) {
+                contextual_recorded_shape_armed_ = true;
+            }
+            out.effect = contextualAutomationRecord
+                ? "record_macro_automation_take_value"
+                : (contextualRecordedShapeRecord
+                    ? "record_macro_recorded_shape_value"
+                    : (macro_edit_.contextSelectorActive.get()
+                        ? "edit_macro_context_property"
+                        : (destinationRow
+                            ? "edit_macro_cc"
+                            : (automationRow ? "edit_automation_playback"
+                                             : "edit_modulation_depth"))));
+            if (contextualRecordedShapeRecord) {
+                out.outcome = recordedShapeOutcome(
+                    macro_ui_.recordedShapeCapture.status
+                );
+            }
+            if (data.interactionOverlayVisible) {
+                out.property = data.interactionLabel.data();
+                copyValueLabel(out.valueLabel, data.interactionValue.data());
+            }
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "open_macro_config_value";
         } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "close_macro_edit";
+            contextual_automation_record_seen_ = false;
+            contextual_recorded_shape_armed_ = false;
+        } else if (isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::PRESS)) {
+            out.effect = "show_active_macro_cycle";
         } else if (isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "open_macro_page_selector";
+            out.effect = "close_active_macro_cycle";
+        } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::PRESS)) {
+            out.effect = "show_macro_context_properties";
+            if (contextualRecordedShapeRecord) {
+                contextual_recorded_shape_armed_ = true;
+            }
+            if (data.interactionOverlayVisible) {
+                out.property = data.interactionLabel.data();
+                copyValueLabel(out.valueLabel, data.interactionValue.data());
+            }
         } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "open_macro_target_selector";
+            if (contextual_recorded_shape_armed_ ||
+                contextualRecordedShapeRecord) {
+                const auto& capture = macro_ui_.recordedShapeCapture;
+                const bool touched = capture.take != nullptr &&
+                    capture.take->touched;
+                const bool committed = capture.status == core::state::
+                    modulation::ProjectRecordedShapeCaptureStatus::COMMITTED;
+                const bool commitAttempted = committed ||
+                    capture.status == core::state::modulation::
+                        ProjectRecordedShapeCaptureStatus::INVALIDATED ||
+                    capture.status == core::state::modulation::
+                        ProjectRecordedShapeCaptureStatus::COMMIT_FAILED;
+                out.effect = touched || commitAttempted
+                    ? "commit_macro_recorded_shape"
+                    : "discard_empty_macro_recorded_shape";
+                out.operationStatus = recordedShapeOperationStatus(
+                    capture.status
+                );
+                out.outcome = recordedShapeOutcome(capture.status);
+                contextual_recorded_shape_armed_ = false;
+            } else if (contextual_automation_record_seen_) {
+                out.effect = "commit_macro_automation_take";
+                contextual_automation_record_seen_ = false;
+            } else if (contextualAutomationRecord &&
+                       macro_ui_.automationTake.phase ==
+                           core::state::macro::MacroAutomationTakePhase::ARMED) {
+                out.effect = "discard_empty_macro_automation_take";
+            } else {
+                out.effect = "close_macro_context_properties";
+            }
         } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
             out.effect = destinationRow
                 ? "arm_remove_macro_slot"
@@ -883,8 +912,10 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
             const auto feedback = macro_edit_.contextFeedback.get();
             const bool applied = feedback.active &&
-                feedback.status ==
-                    core::state::contextual::OperationFeedbackStatus::APPLIED;
+                (feedback.status ==
+                     core::state::contextual::OperationFeedbackStatus::ARMED ||
+                 feedback.status ==
+                     core::state::contextual::OperationFeedbackStatus::APPLIED);
             out.effect = applied
                 ? (destinationRow ? "remove_macro_slot"
                                   : (automationRow ? "clear_automation"
@@ -898,7 +929,8 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                 ? structure_clipboard_.hasMacroDestination()
                 : (automationRow
                        ? structure_clipboard_.hasMacroAutomation()
-                       : structure_clipboard_.hasMacroModulation());
+                       : (structure_clipboard_.hasMacroModulation() ||
+                          structure_clipboard_.hasMacroModulationAssignment()));
             out.effect = canPaste
                 ? (destinationRow ? "arm_paste_macro_destination"
                                   : (automationRow ? "arm_paste_automation"
@@ -908,16 +940,23 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                                                    : "press_copy_modulation"));
         } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
             const auto feedback = macro_edit_.contextFeedback.get();
+            const bool appliedModulator = modulationRow && feedback.active &&
+                feedback.action ==
+                    core::state::contextual::ContextActionId::APPLY &&
+                feedback.status ==
+                    core::state::contextual::OperationFeedbackStatus::APPLIED;
             const bool pasted = feedback.active &&
                 (feedback.action == core::state::contextual::ContextActionId::PASTE ||
                  feedback.action == core::state::contextual::ContextActionId::OVERWRITE);
-            out.effect = pasted
+            out.effect = appliedModulator
+                ? "apply_destination_audition"
+                : (pasted
                 ? (destinationRow ? "paste_macro_destination"
                                   : (automationRow ? "paste_automation"
                                                    : "paste_modulation"))
                 : (destinationRow ? "copy_macro_destination"
                                   : (automationRow ? "copy_automation"
-                                                   : "copy_modulation"));
+                                                   : "copy_modulation")));
         }
         if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS) ||
             isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE) ||
@@ -949,46 +988,12 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         return true;
     }
 
-    if (phase == core::state::MacroEditFlowPhase::PAGE_SELECTOR) {
-        const auto data =
-            core::context::standalone::macro_overlay_presenter::buildPageSelectorRenderData(source);
-        if (!data.visible) return false;
-        out.mode = "macro.page_selector";
-        out.target = "page";
-        fillSelectedItem(out, data);
-        if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "select_macro_page";
-        } else if (isButton(event, Config::ButtonID::LEFT_CENTER, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "apply_macro_page";
-        } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "cancel_macro_page";
-        }
-        return true;
-    }
-
-    if (phase == core::state::MacroEditFlowPhase::TARGET_SELECTOR) {
-        const auto data =
-            core::context::standalone::macro_overlay_presenter::buildTargetSelectorRenderData(
-                source,
-                static_items_
-            );
-        if (!data.visible) return false;
-        out.mode = "macro.target_selector";
-        out.target = "macro";
-        fillSelectedItem(out, data);
-        if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "select_macro_target";
-        } else if (isButton(event, Config::ButtonID::LEFT_BOTTOM, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "apply_macro_target";
-        } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "cancel_macro_target";
-        }
-        return true;
-    }
-
     if (phase == core::state::MacroEditFlowPhase::AUTOMATION) {
-        const auto data =
-            core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(source);
+        core::context::standalone::macro_overlay_presenter::AutomationRenderData data{};
+        core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(
+            source,
+            data
+        );
         if (!data.visible) return false;
         const int row = data.selectedIndex;
         const uint8_t macroIndex = macro_edit_.editingIndex.get();
@@ -997,9 +1002,11 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             .page = pages_.currentActivePage(),
             .macro = macroIndex,
         };
-        const auto* slot = core::state::macro::macroAutomationFindSlot(
-            pages_.automation,
-            address
+        core::state::modulation::ProjectControlMacroDestinationView slot{};
+        (void)core::state::modulation::readProjectControlMacroDestination(
+            pages_.control,
+            address,
+            slot
         );
         const bool manual =
             (macro_ui_.automationManualOverrideMask.get() &
@@ -1027,6 +1034,7 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                 case detail_ui::AutomationDetailItem::OFFSET:
                     out.effect = "edit_automation_offset";
                     break;
+                case detail_ui::AutomationDetailItem::INVALID:
                 default:
                     out.effect = "noop_read_only";
                     break;
@@ -1039,6 +1047,9 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
                 case detail_ui::AutomationDetailItem::CONVERT_TO_MODULATION:
                     out.effect = "preview_conversion";
                     break;
+                case detail_ui::AutomationDetailItem::INVALID:
+                    out.effect = "noop_read_only";
+                    break;
                 default:
                     out.effect = "activate_automation_property";
                     break;
@@ -1050,8 +1061,10 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
             const auto feedback = macro_edit_.contextFeedback.get();
             out.effect = feedback.active &&
-                    feedback.status ==
-                        core::state::contextual::OperationFeedbackStatus::APPLIED
+                    (feedback.status ==
+                         core::state::contextual::OperationFeedbackStatus::ARMED ||
+                     feedback.status ==
+                         core::state::contextual::OperationFeedbackStatus::APPLIED)
                 ? "clear_automation"
                 : "toggle_automation_playback";
         } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
@@ -1084,71 +1097,254 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
     }
 
     if (phase == core::state::MacroEditFlowPhase::MODULATION) {
-        const auto data =
-            core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(source);
+        core::context::standalone::macro_overlay_presenter::AutomationRenderData data{};
+        core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(
+            source,
+            data
+        );
         if (!data.visible) return false;
         const int row = data.selectedIndex;
         out.mode = "macro.modulation_editor";
         out.target = "modulation";
         out.targetIndex = static_cast<int16_t>(macro_edit_.editingIndex.get());
-        if (row >= 0 && row < data.rowCount) {
-            out.property = data.rows[row].key;
-            copyValueLabel(out.valueLabel, data.rows[row].value);
-        }
         const auto address = core::state::macro::MacroAutomationSlotAddress{
             .track = pages_.currentActiveTrack(),
             .page = pages_.currentActivePage(),
             .macro = macro_edit_.editingIndex.get(),
         };
-        const auto* slot = core::state::macro::macroAutomationFindSlot(
-            pages_.automation,
-            address
+        core::state::modulation::ProjectControlMacroDestinationView slot{};
+        (void)core::state::modulation::readProjectControlMacroDestination(
+            pages_.control,
+            address,
+            slot
         );
         const bool manual =
             (macro_ui_.automationManualOverrideMask.get() &
              static_cast<uint16_t>(1U << address.macro)) != 0;
         const auto context = macroSourceDetailContext(slot, manual);
-        const auto layout = detail_ui::buildModulationDetailLayout(context);
-        const auto item = layout.at(static_cast<uint8_t>(row));
-        out.source = macroSourceLabel(context);
-        if (isEncoder(event, Config::EncoderID::NAV)) {
-            out.effect = "focus_macro_modulation";
-        } else if (isEncoder(event, Config::EncoderID::OPT)) {
-            switch (item) {
-                case detail_ui::ModulationDetailItem::PLAYBACK:
-                    out.effect = "edit_modulation_playback";
-                    break;
-                case detail_ui::ModulationDetailItem::DEPTH:
-                    out.effect = "edit_modulation_depth";
-                    break;
-                default:
-                    out.effect = "noop_read_only";
-                    break;
+        if (slot.modulationCount == 0U) {
+            if (row >= 0 && row < data.rowCount) {
+                out.property = data.rows[row].key;
+                copyValueLabel(out.valueLabel, data.rows[row].value);
             }
+            out.source = "none";
+            out.projection = "silent_selection";
+            if (isEncoder(event, Config::EncoderID::NAV)) {
+                out.effect = "focus_modulation_creation";
+            } else if (isButton(
+                           event,
+                           Config::ButtonID::NAV,
+                           oc::core::input::ButtonBindingType::RELEASE
+                       )) {
+                out.effect = row <= 1
+                    ? "start_destination_audition"
+                    : "open_existing_modulator_picker";
+            } else if (isButton(
+                           event,
+                           Config::ButtonID::LEFT_TOP,
+                           oc::core::input::ButtonBindingType::RELEASE
+                       )) {
+                const auto feedback = macro_edit_.contextFeedback.get();
+                const bool cancelledNew = feedback.active &&
+                    feedback.action ==
+                        core::state::contextual::ContextActionId::CANCEL &&
+                    feedback.status == core::state::contextual::
+                        OperationFeedbackStatus::CANCELLED;
+                out.effect = cancelledNew
+                    ? "cancel_destination_audition"
+                    : "back_macro_modulation";
+                if (cancelledNew) {
+                    fillGuardedMacroFeedback(out, macro_edit_);
+                }
+            } else if (isButton(
+                           event,
+                           Config::ButtonID::BOTTOM_LEFT,
+                           oc::core::input::ButtonBindingType::RELEASE
+                       )) {
+                const auto feedback = macro_edit_.contextFeedback.get();
+                out.effect = feedback.active &&
+                        (feedback.status == core::state::contextual::
+                             OperationFeedbackStatus::ARMED ||
+                         feedback.status == core::state::contextual::
+                             OperationFeedbackStatus::APPLIED)
+                    ? "clear_modulation"
+                    : "noop_empty_modulation";
+                fillGuardedMacroFeedback(out, macro_edit_);
+            } else if (isButton(
+                           event,
+                           Config::ButtonID::BOTTOM_RIGHT,
+                           oc::core::input::ButtonBindingType::PRESS
+                       )) {
+                out.effect = structure_clipboard_.hasMacroModulationAssignment()
+                    ? "arm_paste_modulation_assignment"
+                    : "noop_empty_modulation_copy";
+                fillGuardedMacroFeedback(out, macro_edit_);
+            } else if (isButton(
+                           event,
+                           Config::ButtonID::BOTTOM_RIGHT,
+                           oc::core::input::ButtonBindingType::RELEASE
+                       )) {
+                const auto feedback = macro_edit_.contextFeedback.get();
+                const bool pasted = feedback.active &&
+                    (feedback.action ==
+                         core::state::contextual::ContextActionId::PASTE ||
+                     feedback.action ==
+                         core::state::contextual::ContextActionId::OVERWRITE) &&
+                    (feedback.status == core::state::contextual::
+                         OperationFeedbackStatus::ARMED ||
+                     feedback.status == core::state::contextual::
+                         OperationFeedbackStatus::APPLIED);
+                out.effect = pasted ? "paste_modulation_assignment"
+                                    : "noop_empty_modulation_copy";
+                fillGuardedMacroFeedback(out, macro_edit_);
+            } else {
+                out.effect = "noop_empty_modulation";
+            }
+            fillMacroResolutionFacts(
+                out,
+                midi_cc_coordinator_,
+                pages_,
+                address.macro,
+                macroCandidateClass(context)
+            );
+            return true;
+        }
+        const auto destination =
+            core::state::modulation::projectControlDestination(address);
+        const uint16_t assignmentCount = slot.modulationCount;
+        const int firstAssignmentRow = 1;
+        const int addSourceRow = firstAssignmentRow + assignmentCount;
+        const bool allRow = row == 0;
+        const bool addRow = row == addSourceRow;
+        const int targetOrdinal = row - firstAssignmentRow;
+        const auto& graph = pages_.control.authored.modulation;
+        const core::state::modulation::ModulationBindingState* binding = nullptr;
+        int ordinal = 0;
+        if (!allRow && !addRow && targetOrdinal >= 0) {
+            for (uint16_t index = 0; index < graph.outputBindingCount; ++index) {
+                const auto& candidate = graph.outputBindings[index];
+                if (candidate.destination != destination) continue;
+                if (ordinal++ == targetOrdinal) {
+                    binding = &candidate;
+                    break;
+                }
+            }
+        }
+        const auto* modulator = binding != nullptr
+            ? core::state::modulation::findProjectModulator(
+                  graph,
+                  binding->sourceId
+              )
+            : nullptr;
+        if (allRow) {
+            out.property = "all_modulation";
+            out.source = "aggregate";
+            const uint16_t scaleQ15 =
+                core::state::modulation::projectModulationDestinationScaleQ15(
+                    graph,
+                    destination
+                );
+            const unsigned percent = static_cast<unsigned>(std::lround(
+                static_cast<float>(scaleQ15) * 100.0f /
+                static_cast<float>(core::state::modulation::
+                    PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15)
+            ));
+            std::snprintf(
+                out.valueLabel,
+                sizeof(out.valueLabel),
+                "%u%% %s",
+                percent,
+                slot.activeModulationCount > 0U ? "On" : "Off"
+            );
+        } else if (addRow) {
+            out.property = "add_source";
+            out.source = "none";
+            copyValueLabel(out.valueLabel, "Add");
+        } else if (binding != nullptr && modulator != nullptr) {
+            out.property = modulator->name.data();
+            out.source = modulatorSourceLabel(modulator->kind);
+            out.mappingIndex = static_cast<int16_t>(binding->id.value);
+            out.mappingCount = static_cast<int16_t>(assignmentCount);
+            const int depth = core::ui::modulation::depth::amountQ15ToPercent(
+                binding->amountQ15,
+                core::ui::modulation::depth::scaleFor(
+                    pages_.control.authored.modulation,
+                    pages_.control.authored.curves,
+                    *binding
+                )
+            );
+            std::snprintf(
+                out.valueLabel,
+                sizeof(out.valueLabel),
+                "%+d%%",
+                depth
+            );
+        }
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = allRow ? "focus_all_modulation"
+                : (addRow ? "focus_add_modulation_source"
+                          : "focus_modulation_assignment");
+            out.projection = "silent_selection";
+        } else if (isEncoder(event, Config::EncoderID::OPT)) {
+            out.effect = allRow ? "edit_global_modulation_depth"
+                : (binding != nullptr ? "edit_modulation_depth"
+                                      : "noop_read_only");
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
-            out.effect = "activate_modulation_property";
+            out.effect = addRow ? "open_modulator_creation"
+                : (binding != nullptr ? "open_modulator_source"
+                                      : "noop_all_modulation");
         } else if (isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::RELEASE)) {
             out.effect = "back_macro_modulation";
         } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS)) {
-            out.effect = "arm_clear_modulation";
+            out.effect = allRow ? "arm_clear_all_modulation"
+                : (binding != nullptr ? "arm_remove_modulation_assignment"
+                                      : "noop_add_source");
         } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE)) {
             const auto feedback = macro_edit_.contextFeedback.get();
-            out.effect = feedback.active &&
-                    feedback.status ==
-                        core::state::contextual::OperationFeedbackStatus::APPLIED
-                ? "clear_modulation"
-                : "toggle_modulation_playback";
+            const bool applied = feedback.active &&
+                (feedback.status == core::state::contextual::
+                     OperationFeedbackStatus::ARMED ||
+                 feedback.status == core::state::contextual::
+                     OperationFeedbackStatus::APPLIED);
+            out.effect = applied
+                ? (allRow ? "clear_all_modulation"
+                          : (assignmentCount == 1U
+                                 ? "clear_modulation"
+                                 : "remove_modulation_assignment"))
+                : (allRow ? "toggle_all_modulation"
+                          : (binding != nullptr
+                                 ? "toggle_modulation_assignment"
+                                 : "noop_add_source"));
         } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::PRESS)) {
-            out.effect = structure_clipboard_.hasMacroModulation()
-                ? "arm_paste_modulation"
-                : "press_copy_modulation";
+            out.effect = binding == nullptr
+                ? "noop_modulation_assignment_copy"
+                : (structure_clipboard_.hasMacroModulationAssignment()
+                       ? "arm_paste_modulation_assignment"
+                       : "press_copy_modulation_assignment");
         } else if (isButton(event, Config::ButtonID::BOTTOM_RIGHT, oc::core::input::ButtonBindingType::RELEASE)) {
             const auto feedback = macro_edit_.contextFeedback.get();
-            out.effect = feedback.active &&
-                    (feedback.action == core::state::contextual::ContextActionId::PASTE ||
-                     feedback.action == core::state::contextual::ContextActionId::OVERWRITE)
-                ? "paste_modulation"
-                : "copy_modulation";
+            const bool appliedAudition = feedback.active &&
+                feedback.action ==
+                    core::state::contextual::ContextActionId::APPLY &&
+                (feedback.status == core::state::contextual::
+                     OperationFeedbackStatus::ARMED ||
+                 feedback.status == core::state::contextual::
+                     OperationFeedbackStatus::APPLIED);
+            const bool pasted = feedback.active &&
+                (feedback.action ==
+                     core::state::contextual::ContextActionId::PASTE ||
+                 feedback.action ==
+                     core::state::contextual::ContextActionId::OVERWRITE) &&
+                (feedback.status == core::state::contextual::
+                     OperationFeedbackStatus::ARMED ||
+                 feedback.status == core::state::contextual::
+                     OperationFeedbackStatus::APPLIED);
+            out.effect = appliedAudition
+                ? "apply_destination_audition"
+                : (binding == nullptr
+                       ? "noop_modulation_assignment_copy"
+                       : (pasted ? "paste_modulation_assignment"
+                                 : "copy_modulation_assignment"));
         }
         if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::PRESS) ||
             isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE) ||
@@ -1166,9 +1362,116 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
         return true;
     }
 
+    if (phase == core::state::MacroEditFlowPhase::MODULATOR_CREATE) {
+        const int row = std::min<int>(
+            macro_edit_.modulationFocusedRow.get(),
+            2
+        );
+        out.mode = "macro.modulator_creation";
+        out.target = "modulation";
+        out.targetIndex = static_cast<int16_t>(
+            macro_edit_.editingIndex.get()
+        );
+        out.property = row == 0
+            ? "new_lfo"
+            : (row == 1 ? "new_adsr" : "use_existing");
+        out.source = "none";
+        out.projection = "silent_selection";
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "focus_modulation_creation";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::NAV,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "open_modulator_creation";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::LEFT_TOP,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            const auto feedback = macro_edit_.contextFeedback.get();
+            const bool cancelled = feedback.active &&
+                feedback.action ==
+                    core::state::contextual::ContextActionId::CANCEL &&
+                feedback.status == core::state::contextual::
+                    OperationFeedbackStatus::CANCELLED;
+            out.effect = cancelled
+                ? "cancel_destination_audition"
+                : "back_modulation_assignments";
+            if (cancelled) fillGuardedMacroFeedback(out, macro_edit_);
+        } else {
+            out.effect = "browse_modulation_creation";
+        }
+        return true;
+    }
+
+    if (phase == core::state::MacroEditFlowPhase::MODULATOR_PICKER) {
+        const auto& graph = pages_.control.authored.modulation;
+        if (graph.sourceCount == 0U) return false;
+        const int selected = std::clamp(
+            macro_edit_.modulatorPickerIndex.get(),
+            0,
+            static_cast<int>(graph.sourceCount) - 1
+        );
+        const auto& modulator = graph.sources[static_cast<uint16_t>(selected)];
+        const auto address = core::state::macro::MacroAutomationSlotAddress{
+            .track = pages_.currentActiveTrack(),
+            .page = pages_.currentActivePage(),
+            .macro = macro_edit_.editingIndex.get(),
+        };
+        out.mode = "macro.modulator_picker";
+        out.target = "modulator";
+        out.targetIndex = static_cast<int16_t>(selected);
+        out.source = modulatorSourceLabel(modulator.kind);
+        out.projection = "silent_selection";
+        out.mappingIndex = static_cast<int16_t>(modulator.id.value);
+        out.mappingCount = static_cast<int16_t>(graph.sourceCount);
+        out.property = modulator.name.data();
+        copyValueLabel(out.valueLabel, modulator.name.data());
+        if (isEncoder(event, Config::EncoderID::NAV)) {
+            out.effect = "focus_existing_modulator";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::NAV,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            out.effect = "start_destination_audition";
+        } else if (isButton(
+                       event,
+                       Config::ButtonID::LEFT_TOP,
+                       oc::core::input::ButtonBindingType::RELEASE
+                   )) {
+            const auto feedback = macro_edit_.contextFeedback.get();
+            const bool cancelled = feedback.active &&
+                feedback.action ==
+                    core::state::contextual::ContextActionId::CANCEL &&
+                feedback.status == core::state::contextual::
+                    OperationFeedbackStatus::CANCELLED;
+            out.effect = cancelled
+                ? "cancel_destination_audition"
+                : "back_modulation_creation";
+            if (cancelled) fillGuardedMacroFeedback(out, macro_edit_);
+        } else {
+            out.effect = "browse_existing_modulator";
+        }
+        fillMacroResolutionFacts(
+            out,
+            midi_cc_coordinator_,
+            pages_,
+            address.macro,
+            core::state::shared::MidiCcCandidateClass::MACRO_STATIC
+        );
+        out.projection = "silent_selection";
+        return true;
+    }
+
     if (phase == core::state::MacroEditFlowPhase::CONVERT_PREVIEW) {
-        const auto data =
-            core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(source);
+        core::context::standalone::macro_overlay_presenter::AutomationRenderData data{};
+        core::context::standalone::macro_overlay_presenter::buildAutomationRenderData(
+            source,
+            data
+        );
         if (!data.visible) return false;
         out.mode = "macro.modulation_conversion_preview";
         out.target = "modulation";

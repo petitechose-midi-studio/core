@@ -13,7 +13,7 @@ namespace core::ui::sequencer {
 
 namespace {
 
-void applyStepPasteFootprint(
+FLASHMEM void applyStepPasteFootprint(
     grid::StepGridFrameState& frame,
     const SequencerViewModelSource& source
 ) {

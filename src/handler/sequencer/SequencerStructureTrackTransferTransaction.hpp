@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
@@ -9,6 +8,7 @@
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/StructureClipboardPastePlan.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerStructureHistory.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
@@ -51,24 +51,24 @@ struct PreparedSequencerTrackTransfer {
     core::state::ClipboardTransferPlan plan{};
     uint16_t pendingTrackMask = 0;
     uint16_t initialEnabledMask = 0;
-    uint16_t initialMutedMask = 0;
+    uint16_t initialProjectMutedMask = 0;
+    uint16_t initialAudibleMask = 0;
+    uint16_t nextAudibleMask = 0;
     uint16_t nextEnabledMask = 0;
     uint16_t historyMask = 0;
     uint8_t previousActiveTrack = 0;
-    uint8_t previousActiveMidiChannel = 0;
     core::state::sequencer::SequencerTrackActivationQueue* activationQueue = nullptr;
     core::state::sequencer::SequencerTrackActivationBatch activationBatch{};
     core::state::sequencer::SequencerHistoryTrackStructureChangePtr history;
-    std::array<GraphPtr, core::state::ClipboardTransferPlan::MAX_ENTRIES> bankGraphs{};
-    std::array<CcLanePtr, core::state::ClipboardTransferPlan::MAX_ENTRIES>
-        bankCcLanes{};
+    GraphPtr bankGraph;
+    CcLanePtr bankCcLanes;
     GraphPtr editorGraph;
     CcLanePtr editorCcLanes;
     GraphPtr outgoingActiveGraph;
     CcLanePtr outgoingActiveCcLanes;
 
     PreparedSequencerTrackTransfer() = default;
-    ~PreparedSequencerTrackTransfer() = default;
+    ~PreparedSequencerTrackTransfer();
     PreparedSequencerTrackTransfer(const PreparedSequencerTrackTransfer&) = delete;
     PreparedSequencerTrackTransfer& operator=(const PreparedSequencerTrackTransfer&) = delete;
     PreparedSequencerTrackTransfer(PreparedSequencerTrackTransfer&&) noexcept = default;
@@ -81,6 +81,7 @@ struct PreparedSequencerTrackTransfer {
 
 PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     const core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::project::ProjectTrackState& projectTracks,
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,
@@ -93,6 +94,7 @@ PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
 
 SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
     core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::project::ProjectTrackState& projectTracks,
     core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,
@@ -102,6 +104,7 @@ SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
 
 SequencerTrackTransferResult executeSequencerTrackTransfer(
     core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::project::ProjectTrackState& projectTracks,
     core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,

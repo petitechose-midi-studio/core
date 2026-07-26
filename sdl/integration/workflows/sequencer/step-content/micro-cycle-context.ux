@@ -63,6 +63,7 @@
 7880 capture screen cycle_context_open
 
 # LEFT_TOP must go back to the micro parent, not open the global view selector.
+7900 tap BOTTOM_RIGHT 40
 7980 tap LEFT_TOP 60
 8300 capture screen returned_to_micro_parent
 

@@ -1,0 +1,57 @@
+# UX workflow: global shared source, bidirectional deep links, and independence.
+# Purpose: proves global reuse, Source-to-Macro and Macro-to-Source navigation,
+# and one destination becoming independent through one Undoable action.
+# Expect: capture_changed:source_workspace=shared_destinations, capture_changed:shared_destinations=macro_destination, capture_changed:macro_destination=source_from_macro, capture_changed:source_from_macro=destinations_from_macro
+# Expect: capture_changed:destinations_from_macro=destination_independent, capture_changed:destination_independent=independence_undone, capture_changed:independence_undone=macro_assignment_restored
+# Expect: semantic:shared_destinations:mode=project.modulator_destinations, semantic:shared_destinations:mapping_count=2
+# Expect: semantic:macro_destination:mode=macro.modulation_editor, semantic:source_from_macro:mode=project.modulator_detail
+# Expect: semantic:destinations_from_macro:mode=project.modulator_destinations, semantic:destination_independent:outcome=applied
+
+0 scenario project-modulators
+
+100 button LEFT_TOP down
+700 encoder NAV -1
+1100 button LEFT_TOP up
+1320 tap NAV 60
+1540 capture screen source_workspace
+
+# Slow Tide serves T1 and T2; Destinations is the last direct card.
+1660 encoder NAV 1
+1720 encoder NAV 1
+1780 encoder NAV 1
+1840 encoder NAV 1
+1960 tap NAV 60
+2180 capture screen shared_destinations
+
+# A destination row opens the exact Macro assignment.
+2300 tap NAV 60
+2520 capture screen macro_destination
+
+# That assignment opens the same Project source.
+2640 tap NAV 60
+2860 capture screen source_from_macro
+
+# Reopen Destinations while retaining the Macro return address.
+2980 encoder NAV 1
+3040 encoder NAV 1
+3100 encoder NAV 1
+3160 encoder NAV 1
+3280 tap NAV 60
+3500 capture screen destinations_from_macro
+
+# Split only this edge, then Undo the complete operation from the global View
+# Selector while retaining the deep-link return address.
+3620 tap BOTTOM_RIGHT 60
+3860 capture screen destination_independent
+3980 button LEFT_TOP down
+5050 tick
+5110 capture screen selector_undo_independence_ready
+5210 tap LEFT_CENTER 60
+5430 capture screen selector_redo_independence_ready
+5530 button LEFT_TOP up
+6930 capture screen independence_undone
+
+# Back to Source, then Back restores the exact Macro assignment.
+7050 tap LEFT_TOP 60
+7170 tap LEFT_TOP 60
+7390 capture screen macro_assignment_restored

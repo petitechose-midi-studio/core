@@ -4,6 +4,8 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
+
 namespace core::state::sequencer {
 
 namespace {
@@ -400,13 +402,14 @@ FLASHMEM SequencerResolvedDisplayProjectionContext makeSequencerResolvedDisplayP
     StepProperty activeProperty
 ) {
     projectScaleSettings.clamp();
+    const auto& pattern = authoringPattern(sequencer);
     const auto effectiveScaleSettings = resolveEffectiveScaleSettings(
         projectScaleSettings,
-        sequencer.pattern.scalePolicy,
-        sequencer.pattern.scaleOverride
+        pattern.scalePolicy,
+        pattern.scaleOverride
     );
     const auto& telemetry = sequencer.cycleVariationTelemetry;
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(pattern);
 
     SequencerResolvedDisplayProjectionContext context{};
     context.sequencer = &sequencer;
@@ -430,7 +433,7 @@ FLASHMEM SequencerResolvedDisplayProjectionContext makeSequencerResolvedDisplayP
 FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayState(
     const SequencerResolvedDisplayProjectionContext& context,
     uint8_t absoluteStep,
-    bool stepInlineEditActive
+    bool authoringProjectionActive
 ) {
     SequencerResolvedStepDisplayState step{};
     if (context.sequencer == nullptr) return step;
@@ -487,7 +490,7 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
         localVariationForNode(context.graph, projection.nodeId)
     );
     const auto effectiveVariationRanges = combineVariationRanges(
-        sequencer.pattern.variationRanges,
+        authoringPattern(sequencer).variationRanges,
         localVariation
     );
     const bool effectiveHasVariationRanges =
@@ -567,7 +570,7 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
         (effectiveHasVariationRanges || context.effectiveScaleFeedbackRelevant);
 
     step.variation.rangeProperty = context.activeProperty;
-    if (hasExpandedRuntimeVariation && !stepInlineEditActive) {
+    if (hasExpandedRuntimeVariation && !authoringProjectionActive) {
         if (step.playheadVisible) {
             step.probabilityCycleActive = true;
             step.playing = step.enabled;
@@ -632,7 +635,7 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
         step.variation.visible = true;
         step.variation.rangeVisible = step.enabled && activeRangeVisible;
         step.variation.deltaVisible = hasRuntimeVariation || hasPreviewFeedback;
-        if (hasRuntimeVariation && !stepInlineEditActive) {
+        if (hasRuntimeVariation && !authoringProjectionActive) {
             step.variation.resolved = buildTelemetryVariation(telemetry, absoluteStep, step);
         } else if (hasPreviewFeedback) {
             step.variation.resolved = buildPreviewVariation(
@@ -653,6 +656,17 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
     }
 
     return step;
+}
+
+FLASHMEM SequencerResolvedStepDisplayState buildSequencerStepEditorDisplayState(
+    const SequencerResolvedDisplayProjectionContext& context,
+    uint8_t absoluteStep
+) {
+    return buildSequencerResolvedStepDisplayState(
+        context,
+        absoluteStep,
+        true
+    );
 }
 
 FLASHMEM oc::note::sequencer::StepSequencerStepValues sequencerResolvedStepDisplayValues(

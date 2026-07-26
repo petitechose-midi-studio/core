@@ -53,17 +53,21 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
 ) {
     macro_feature_ = core::app::makeExtmemUnique<core::context::standalone::MacroFeatureModule>(
         core::context::standalone::MacroFeatureModule::StateRefs{
+            state.overlays,
             state.activeView,
+            state.projectNavigation,
             state.macros,
             state.macroEdit,
             state.pages,
             state.macroUi,
+            state.projectTracks,
             state.trackNavigation,
             state.sharedTrackActive,
             state.structureNavigationFocus,
             state.structureClipboard,
             state.configRevision,
             state.statusBar,
+            state.macroHistory,
             &state.macroRuntimeOwnerRevision,
             state.midiCcCoordinator,
         },
@@ -92,6 +96,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.structureNavigationFocus,
             state.trackNavigation,
             state.projectNavigation,
+            state.projectTrackEditor,
+            state.projectTracks,
+            state.sharedTrackActive,
+            state.sharedTrackEnabledMask,
             state.structureClipboard,
             state.patternPitchSettings,
             state.sequencer,
@@ -103,6 +111,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.midiCcCoordinator,
         },
         core::handler::SharedTrackDomainServices::fromCoreState(state),
+        core::state::project::ProjectTrackDomainServices::fromCoreState(state),
         core::handler::SequencerStepPresetDomainServices::fromCoreState(state, productFiles),
         overlays,
         overlayPresentations,
@@ -116,6 +125,9 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
 #endif
     );
     if (!sequencer_feature_ || !sequencer_feature_->valid()) return;
+    if (auto* trackEditor = sequencer_feature_->trackEditorHandler()) {
+        macro_feature_->attachTrackEditor(*trackEditor);
+    }
 #if OC_ENABLE_STATS
     core::diagnostics::logMemoryFootprint("standalone-feature-sequencer");
 #endif
@@ -123,11 +135,24 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         core::app::makeExtmemUnique<core::context::standalone::ProjectFeatureModule>(
             core::context::standalone::ProjectFeatureModule::StateRefs{
                 state.overlays,
+                state.activeView,
                 state.projectNavigation,
                 state.sequencer,
                 state.sequencerTracks,
+                state.projectTracks,
+                core::state::project::ProjectTrackDomainServices::fromCoreState(
+                    state
+                ),
                 state.statusBar,
                 state.midiSync,
+                state.pages,
+                state.macroUi,
+                state.macros,
+                state.macroEdit,
+                state.configRevision,
+                state.macroHistory,
+                state.projectSettingsHistory,
+                state.structureClipboard,
                 core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                 core::handler::ProjectLifecycleDomainServices::fromCoreState(
                     state,
@@ -140,9 +165,14 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                     state.sequencerTracks,
                 }
             },
+            core::handler::MacroEditDomainServices::fromCoreState(state),
             encoders,
             buttons,
             projectViewElement
+#if defined(MS_UX_RECORDER)
+            ,
+            uxRegistry
+#endif
         );
     if (!project_feature_ || !project_feature_->valid()) return;
 #if OC_ENABLE_STATS
@@ -218,6 +248,9 @@ void StandaloneFeatureAssembly::update(uint32_t nowMs) const {
     }
     if (sequencer_feature_) {
         sequencer_feature_->update(nowMs);
+    }
+    if (project_feature_) {
+        project_feature_->update(nowMs);
     }
 }
 

@@ -30,22 +30,17 @@ public:
                           ms::ui::VirtualListKeyValueOverlay& macroAutomationOverlay,
                           core::ui::ContextActionStrip& macroEditActionStrip,
                           core::ui::ContextActionStrip& macroAutomationActionStrip,
-                          ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay,
-                          ms::ui::VirtualListSelectorOverlay& pageSelectorOverlay,
-                          ms::ui::VirtualListSelectorOverlay& macroTargetSelectorOverlay);
+                          ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay);
 
     [[nodiscard]] bool bind();
-    void refreshRuntimeTelemetry();
-
 private:
     static void requestRenderFlags(void* context, uint32_t flags);
     static void drainRenderQueue(void* context, uint32_t flags);
     void renderPending(uint32_t flags);
     void renderEdit();
+    void renderEditLive();
     void renderAutomation();
     void renderEditSelector();
-    void renderPageSelector();
-    void renderTargetSelector();
     void initializeStaticItems_();
 
     StateRefs state_refs_;
@@ -54,13 +49,14 @@ private:
     core::ui::ContextActionStrip& macro_edit_action_strip_;
     core::ui::ContextActionStrip& macro_automation_action_strip_;
     ms::ui::VirtualListSelectorOverlay& macro_edit_selector_overlay_;
-    ms::ui::VirtualListSelectorOverlay& page_selector_overlay_;
-    ms::ui::VirtualListSelectorOverlay& macro_target_selector_overlay_;
     core::ui::CoalescedLvglRenderScheduler render_scheduler_;
     macro_overlay_invalidation::Bindings invalidation_bindings_;
     // Presenter instances live in EXTMEM; keeping the sizeable preview here
     // avoids rebuilding it through multiple RAM1 stack copies per render.
     macro_overlay_presenter::EditRenderData edit_render_data_{};
+    // The visible list retains sampler descriptors between renders. Its
+    // preview context therefore shares the same PSRAM-owned lifetime.
+    macro_overlay_presenter::AutomationRenderData automation_render_data_{};
     bool static_items_initialized_ = false;
     macro_overlay_presenter::StaticItems static_items_{};
 };

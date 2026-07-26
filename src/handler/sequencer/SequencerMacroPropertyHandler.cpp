@@ -140,6 +140,10 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
         }
 
         history_.beginCoalescedPatternEdit(abs, property, now);
+        // Arm the authored-value projection before the graph revision is
+        // published. The first redraw must not reuse previous runtime
+        // variation telemetry for this direct edit.
+        sequencer_.stepInlineFeedback.show(abs, property, now);
         if (core::state::sequencer::setNodeLocalVariationRange(
                 sequencer_.pattern,
                 nodeId,
@@ -150,7 +154,6 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
             selector.macroLocalVariationEditActive.set(true);
             selector.localVariationStepIndex = abs;
             sequencer_.invalidateVariationTelemetry();
-            sequencer_.stepInlineFeedback.show(abs, property, now);
         }
         return;
     }
@@ -159,7 +162,23 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
         return;
     }
 
+    if (sequencer_.stepStatePropertyActive.get()) {
+        history_.beginCoalescedPatternEdit(
+            abs,
+            core::state::sequencer::StepProperty::NOTE,
+            now,
+            true
+        );
+        (void)core::state::sequencer::setActiveContentStepEnabled(
+            sequencer_,
+            abs,
+            normalized >= 0.5f
+        );
+        return;
+    }
+
     history_.beginCoalescedPatternEdit(abs, property, now);
+    sequencer_.stepInlineFeedback.show(abs, property, now);
 
     core::state::sequencer::setActiveContentStepFromNormalized(
         sequencer_,
@@ -173,7 +192,6 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
             sequencer_.pattern.scaleOverride
         )
     );
-    sequencer_.stepInlineFeedback.show(abs, property, now);
 }
 
 FLASHMEM void SequencerMacroPropertyHandler::handleFocusedStepTurn(float normalized) {
@@ -187,7 +205,23 @@ FLASHMEM void SequencerMacroPropertyHandler::handleFocusedStepTurn(float normali
     const auto property = sequencer_.activeStepProperty.get();
     const uint32_t now = now_provider_ ? now_provider_() : 0;
 
+    if (sequencer_.stepStatePropertyActive.get()) {
+        history_.beginCoalescedPatternEdit(
+            abs,
+            core::state::sequencer::StepProperty::NOTE,
+            now,
+            true
+        );
+        (void)core::state::sequencer::setActiveContentStepEnabled(
+            sequencer_,
+            abs,
+            normalized >= 0.5f
+        );
+        return;
+    }
+
     history_.beginCoalescedPatternEdit(abs, property, now);
+    sequencer_.stepInlineFeedback.show(abs, property, now);
 
     core::state::sequencer::setActiveContentStepFromNormalized(
         sequencer_,
@@ -201,7 +235,6 @@ FLASHMEM void SequencerMacroPropertyHandler::handleFocusedStepTurn(float normali
             sequencer_.pattern.scaleOverride
         )
     );
-    sequencer_.stepInlineFeedback.show(abs, property, now);
 }
 
 }  // namespace core::handler

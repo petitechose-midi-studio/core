@@ -33,9 +33,10 @@
 4140 encoder NAV 1
 4220 encoder OPT 0.65
 4360 capture screen child_step_note_edited
-4460 tap LEFT_CENTER 60
-4760 capture screen returned_to_parent_step_edit
+4420 tap BOTTOM_RIGHT 60
+4540 tap LEFT_CENTER 60
+4840 capture screen returned_to_parent_step_edit
 
 # At the parent Step Editor root, LEFT_TOP closes back to the step grid.
-4860 tap LEFT_TOP 60
-5100 capture screen parent_step_edit_closed
+4940 tap LEFT_TOP 60
+5180 capture screen parent_step_edit_closed

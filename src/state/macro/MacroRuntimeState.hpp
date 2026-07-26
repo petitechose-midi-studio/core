@@ -4,19 +4,19 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "state/macro/MacroAutomationState.hpp"
+#include "state/macro/MacroAutomationAddress.hpp"
 
 namespace core::state::macro {
 
 /**
- * Runtime-only Manual overrides keyed by the durable V1 Slot address.
+ * Runtime-only Manual overrides keyed by logical Macro destination.
  *
- * Capacity is exactly the maximum number of sparse Macro source entries. A
- * Slot without a stored computed source never needs a Manual entry. Overflow
- * is reported and counted; it never evicts another audible override.
+ * The cache is intentionally bounded independently from durable Project graph
+ * capacity. Overflow is reported and counted; it never evicts another audible
+ * override.
  */
 struct MacroManualOverrideState {
-    static constexpr uint8_t CAPACITY = MACRO_AUTOMATION_SLOT_CAPACITY;
+    static constexpr uint8_t CAPACITY = 64U;
 
     enum class ActivateStatus : uint8_t {
         ACTIVATED = 0,
@@ -54,6 +54,8 @@ struct MacroManualOverrideState {
     bool resume(const MacroAutomationSlotAddress& address);
     bool clearAddress(const MacroAutomationSlotAddress& address);
     uint8_t clearPage(uint8_t track, uint8_t page);
+    /** Clears non-retained Pages and compacts retained Page addresses. */
+    uint8_t compactPages(uint8_t track, uint16_t retainedPageMask);
     uint8_t clearTrack(uint8_t track);
 
     /** Project load/create/reset boundary. Telemetry remains cumulative. */
@@ -65,7 +67,6 @@ private:
     void noteRejectedActivation();
 };
 
-static_assert(MacroManualOverrideState::CAPACITY == MACRO_AUTOMATION_SLOT_CAPACITY);
 static_assert(std::is_trivially_copyable_v<MacroManualOverrideState::Entry>);
 static_assert(std::is_trivially_copyable_v<MacroManualOverrideState::Snapshot>);
 static_assert(sizeof(MacroManualOverrideState) <= 1024U);

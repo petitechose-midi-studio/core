@@ -1,8 +1,12 @@
 #include "state/project/ProjectMenuModel.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
+
+#include "state/macro/MacroConstants.hpp"
+#include "state/project/ProjectModulatorMenuModel.hpp"
 
 namespace core::state::project {
 
@@ -30,6 +34,7 @@ constexpr bool isRootNode(ProjectNodeId node) {
         case ProjectNodeId::TRANSPORT_ROOT:
         case ProjectNodeId::STORAGE_ROOT:
         case ProjectNodeId::ROUTING_ROOT:
+        case ProjectNodeId::MODULATORS_ROOT:
             return true;
         case ProjectNodeId::MUSIC_SCALE:
         case ProjectNodeId::SAVE_AS_PROJECT_NAME:
@@ -72,6 +77,17 @@ FLASHMEM bool activateValueRow(ProjectNavigationState& navigation,
                 navigation.stepPasteMode = sanitizeProjectStepPasteMode(
                     static_cast<uint8_t>(navigation.stepPasteMode) + 1U
                 );
+                navigation.notifyContentChanged();
+                return true;
+            }
+            if (rowIndex >= 4U &&
+                rowIndex < 4U + PROJECT_CC_LANE_DEFAULT_COUNT) {
+                const uint8_t lane = static_cast<uint8_t>(rowIndex - 4U);
+                navigation.ccLaneDefaultControllers[lane] =
+                    static_cast<uint8_t>(
+                        (navigation.ccLaneDefaultControllers[lane] + 1U) %
+                        PROJECT_MIDI_CC_COUNT
+                    );
                 navigation.notifyContentChanged();
                 return true;
             }
@@ -118,10 +134,17 @@ FLASHMEM bool activateValueRow(ProjectNavigationState& navigation,
 
 }  // namespace
 
-FLASHMEM void navigateProjectRows(ProjectNavigationState& navigation, float delta) {
+FLASHMEM void navigateProjectRows(ProjectNavigationState& navigation,
+                                  float delta,
+                                  uint16_t modulatorSourceCount,
+                                  uint16_t modulatorDetailRowCount) {
     if (delta == 0.0f) return;
 
-    const uint8_t rowCount = projectCurrentRowCount(navigation);
+    const uint16_t rowCount = projectCurrentRowCount(
+        navigation,
+        modulatorSourceCount,
+        modulatorDetailRowCount
+    );
     if (rowCount == 0) {
         navigation.focusedRow.set(0);
         return;
@@ -130,6 +153,149 @@ FLASHMEM void navigateProjectRows(ProjectNavigationState& navigation, float delt
     const int current = navigation.focusedRow.get();
     const int next = wrapIndex(current + signedStepCount(delta), rowCount);
     navigation.focusedRow.set(static_cast<uint8_t>(next));
+}
+
+FLASHMEM bool openProjectModulatorDetail(
+    ProjectNavigationState& navigation,
+    core::state::modulation::ModulatorId sourceId
+) {
+    if (!core::state::modulation::valid(sourceId) ||
+        navigation.currentNode.get() != ProjectNodeId::MODULATORS_ROOT) {
+        return false;
+    }
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1U) return false;
+
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1U);
+    navigation.pathStack[nextDepth] = ProjectNodeId::MODULATOR_SOURCE_DETAIL;
+    navigation.focusedRowByDepth[nextDepth] = 0;
+    navigation.selectedModulator = sourceId;
+    navigation.selectedModulationBinding = {};
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(ProjectNodeId::MODULATOR_SOURCE_DETAIL);
+    navigation.activeTab.set(ProjectTab::MODULATORS);
+    navigation.focusedRow.set(0);
+    navigation.notifyContentChanged();
+    return true;
+}
+
+FLASHMEM bool openProjectModulatorKindPicker(
+    ProjectNavigationState& navigation
+) {
+    if (navigation.currentNode.get() != ProjectNodeId::MODULATORS_ROOT) {
+        return false;
+    }
+    const uint8_t depth = navigation.depth.get();
+    pushNode(navigation, ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER);
+    if (navigation.depth.get() == depth) return false;
+    navigation.creatingModulatorKind =
+        core::state::modulation::ModulatorKind::LFO;
+    navigation.notifyContentChanged();
+    return true;
+}
+
+FLASHMEM bool openProjectModulatorWorkspace(
+    ProjectNavigationState& navigation,
+    core::state::modulation::ModulatorId sourceId
+) {
+    if (!core::state::modulation::valid(sourceId)) return false;
+    setNodeRoot(navigation, ProjectTab::MODULATORS);
+    navigation.physicalHoldActive.set(false);
+    navigation.projectNameShiftActive = false;
+    navigation.clearLifecycleFeedback();
+    return openProjectModulatorDetail(navigation, sourceId);
+}
+
+FLASHMEM bool openProjectModulatorOptions(
+    ProjectNavigationState& navigation
+) {
+    if (!core::state::modulation::valid(navigation.selectedModulator) ||
+        navigation.currentNode.get() !=
+            ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
+        return false;
+    }
+    const uint8_t depth = navigation.depth.get();
+    pushNode(navigation, ProjectNodeId::MODULATOR_SOURCE_OPTIONS);
+    if (navigation.depth.get() == depth) return false;
+    navigation.notifyContentChanged();
+    return true;
+}
+
+FLASHMEM bool openProjectModulatorDestinations(
+    ProjectNavigationState& navigation
+) {
+    const auto node = navigation.currentNode.get();
+    if (!core::state::modulation::valid(navigation.selectedModulator) ||
+        (node != ProjectNodeId::MODULATOR_SOURCE_DETAIL &&
+         node != ProjectNodeId::MODULATOR_SOURCE_OPTIONS)) {
+        return false;
+    }
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1U) return false;
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1U);
+    navigation.pathStack[nextDepth] = ProjectNodeId::MODULATOR_DESTINATIONS;
+    navigation.focusedRowByDepth[nextDepth] = 0;
+    navigation.selectedModulationBinding = {};
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(ProjectNodeId::MODULATOR_DESTINATIONS);
+    navigation.activeTab.set(ProjectTab::MODULATORS);
+    navigation.focusedRow.set(0);
+    navigation.notifyContentChanged();
+    return true;
+}
+
+FLASHMEM bool openProjectModulatorTrigger(
+    ProjectNavigationState& navigation
+) {
+    if (!core::state::modulation::valid(navigation.selectedModulator) ||
+        navigation.currentNode.get() !=
+            ProjectNodeId::MODULATOR_SOURCE_DETAIL) {
+        return false;
+    }
+    const uint8_t depth = navigation.depth.get();
+    pushNode(navigation, ProjectNodeId::MODULATOR_TRIGGER);
+    if (navigation.depth.get() == depth) return false;
+    navigation.notifyContentChanged();
+    return true;
+}
+
+FLASHMEM bool openProjectModulatorDestinationPicker(
+    ProjectNavigationState& navigation,
+    uint8_t track,
+    uint8_t page,
+    bool creatingSource
+) {
+    if (track >= core::state::macro::TRACK_COUNT ||
+        page >= core::state::macro::PAGE_COUNT) {
+        return false;
+    }
+    const auto node = navigation.currentNode.get();
+    if ((creatingSource &&
+         node != ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER) ||
+        (!creatingSource &&
+         (node != ProjectNodeId::MODULATOR_DESTINATIONS ||
+          !core::state::modulation::valid(navigation.selectedModulator)))) {
+        return false;
+    }
+    const uint8_t currentDepth = navigation.depth.get();
+    if (currentDepth >= ProjectNavigationState::MAX_DEPTH - 1U) return false;
+    navigation.focusedRowByDepth[currentDepth] = navigation.focusedRow.get();
+    const uint8_t nextDepth = static_cast<uint8_t>(currentDepth + 1U);
+    navigation.pathStack[nextDepth] =
+        ProjectNodeId::MODULATOR_DESTINATION_PICKER;
+    navigation.focusedRowByDepth[nextDepth] = 0;
+    navigation.creatingModulatorSource = creatingSource;
+    navigation.destinationPickerTrack = track;
+    navigation.destinationPickerPage = page;
+    navigation.destinationPickerLevel = ModulatorDestinationPickerLevel::TRACK;
+    navigation.depth.set(nextDepth);
+    navigation.currentNode.set(ProjectNodeId::MODULATOR_DESTINATION_PICKER);
+    navigation.activeTab.set(ProjectTab::MODULATORS);
+    navigation.focusedRow.set(0);
+    navigation.notifyContentChanged();
+    return true;
 }
 
 FLASHMEM bool enterFocusedProjectRow(ProjectNavigationState& navigation) {
@@ -159,6 +325,8 @@ FLASHMEM bool backProjectNavigation(ProjectNavigationState& navigation) {
         return false;
     }
 
+    const bool leavingDestinationPicker = navigation.currentNode.get() ==
+        ProjectNodeId::MODULATOR_DESTINATION_PICKER;
     const uint8_t nextDepth = static_cast<uint8_t>(currentDepth - 1);
     const ProjectNodeId nextNode = navigation.pathStack[nextDepth];
     navigation.depth.set(nextDepth);
@@ -166,6 +334,9 @@ FLASHMEM bool backProjectNavigation(ProjectNavigationState& navigation) {
     navigation.activeTab.set(tabForRootNode(nextNode));
     navigation.focusedRow.set(navigation.focusedRowByDepth[nextDepth]);
     navigation.projectNameShiftActive = false;
+    if (leavingDestinationPicker) {
+        navigation.creatingModulatorSource = false;
+    }
     return true;
 }
 
@@ -235,7 +406,8 @@ FLASHMEM bool openProjectNameEditor(ProjectNavigationState& navigation,
                                     ProjectNodeId editorNode,
                                     const char* initialSlug) {
     if (editorNode != ProjectNodeId::SAVE_AS_PROJECT_NAME &&
-        editorNode != ProjectNodeId::RENAME_PROJECT_NAME) {
+        editorNode != ProjectNodeId::RENAME_PROJECT_NAME &&
+        editorNode != ProjectNodeId::MODULATOR_SOURCE_RENAME) {
         return false;
     }
 
@@ -264,7 +436,7 @@ FLASHMEM bool openProjectNameEditor(ProjectNavigationState& navigation,
     navigation.focusedRowByDepth[nextDepth] = 1;
     navigation.depth.set(nextDepth);
     navigation.currentNode.set(editorNode);
-    navigation.activeTab.set(ProjectTab::STORAGE);
+    navigation.activeTab.set(tabForRootNode(editorNode));
     navigation.focusedRow.set(1);
     navigation.notifyContentChanged();
     return true;
@@ -284,14 +456,128 @@ FLASHMEM bool projectNavigationInProjectConfirmation(const ProjectNavigationStat
 FLASHMEM void switchProjectTab(ProjectNavigationState& navigation, int delta) {
     if (delta == 0) return;
 
-    const int count = static_cast<int>(projectTabCount());
+    // Modulators is a first-rank musical destination, not a Settings tab.
+    // Its workspace never leaks into the internal Settings carousel.
+    if (navigation.activeTab.get() == ProjectTab::MODULATORS) return;
+
+    const int count = static_cast<int>(ProjectTab::MODULATORS);
     const int current = static_cast<int>(navigation.activeTab.get());
     const int next = wrapIndex(current + delta, count);
     setNodeRoot(navigation, static_cast<ProjectTab>(next));
 }
 
+FLASHMEM void openProjectRootTab(
+    ProjectNavigationState& navigation,
+    ProjectTab tab
+) {
+    setNodeRoot(navigation, tab);
+    navigation.physicalHoldActive.set(false);
+    navigation.projectNameShiftActive = false;
+    navigation.clearLifecycleFeedback();
+    navigation.notifyContentChanged();
+}
+
 FLASHMEM bool projectNavigationAtRoot(const ProjectNavigationState& navigation) {
     return navigation.depth.get() == 0;
+}
+
+FLASHMEM void reconcileProjectModulatorNavigationAfterHistory(
+    ProjectNavigationState& navigation,
+    const core::state::modulation::ProjectModulationState& graph,
+    bool preserveMissingSelection
+) {
+    const bool ownsModulatorContext =
+        navigation.activeTab.get() == ProjectTab::MODULATORS ||
+        core::state::modulation::valid(navigation.selectedModulator) ||
+        core::state::modulation::valid(navigation.selectedModulationBinding) ||
+        navigation.modulatorReturn.active() ||
+        navigation.creatingModulatorSource;
+    if (!ownsModulatorContext) {
+        // A Project load can occur inside Storage navigation. Reconciliation
+        // must refresh content without stealing that unrelated caller path.
+        navigation.notifyContentChanged();
+        return;
+    }
+
+    const bool destinations = navigation.currentNode.get() ==
+        ProjectNodeId::MODULATOR_DESTINATIONS;
+    auto* selected = core::state::modulation::findProjectModulator(
+        graph,
+        navigation.selectedModulator
+    );
+
+    if ((selected == nullptr || destinations) &&
+        core::state::modulation::valid(navigation.selectedModulationBinding)) {
+        const auto* binding =
+            core::state::modulation::findProjectModulationBinding(
+                graph,
+                navigation.selectedModulationBinding
+            );
+        selected = binding
+            ? core::state::modulation::findProjectModulator(
+                  graph,
+                  binding->sourceId
+              )
+            : nullptr;
+        if (selected != nullptr) navigation.selectedModulator = selected->id;
+    }
+
+    if (selected == nullptr) {
+        while (navigation.depth.get() > 0U) {
+            (void)backProjectNavigation(navigation);
+        }
+        navigation.focusedRow.set(static_cast<uint8_t>(graph.sourceCount));
+        navigation.selectedModulationBinding = {};
+        if (!preserveMissingSelection) {
+            navigation.selectedModulator = {};
+            navigation.modulatorReturn = {};
+            navigation.guardedModulator = {};
+            navigation.guardedModulationBinding = {};
+            navigation.creatingModulatorSource = false;
+        }
+        navigation.notifyContentChanged();
+        return;
+    }
+
+    if (navigation.currentNode.get() == ProjectNodeId::MODULATORS_ROOT) {
+        for (uint16_t index = 0U; index < graph.sourceCount; ++index) {
+            if (graph.sources[index].id != selected->id) continue;
+            navigation.focusedRow.set(static_cast<uint8_t>(index));
+            navigation.notifyContentChanged();
+            return;
+        }
+    }
+
+    if (destinations) {
+        const uint16_t count = modulators::sourceDestinationCount(
+            graph,
+            selected->id
+        );
+        uint16_t row = std::min<uint16_t>(navigation.focusedRow.get(), count);
+        if (core::state::modulation::valid(
+                navigation.selectedModulationBinding
+            )) {
+            uint16_t ordinal = 0U;
+            for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
+                const auto& binding = graph.outputBindings[index];
+                if (binding.sourceId != selected->id) continue;
+                if (binding.id == navigation.selectedModulationBinding) {
+                    row = ordinal;
+                    break;
+                }
+                ++ordinal;
+            }
+        }
+        navigation.focusedRow.set(static_cast<uint8_t>(row));
+        const auto* binding = row < count
+            ? modulators::sourceBindingAtOrdinal(graph, selected->id, row)
+            : nullptr;
+        navigation.selectedModulationBinding = binding
+            ? binding->id
+            : core::state::modulation::ModulationBindingId{};
+    }
+
+    navigation.notifyContentChanged();
 }
 
 }  // namespace core::state::project

@@ -2,6 +2,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerInteractionContextOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "ui/font/StandaloneIcons.hpp"
@@ -58,12 +59,19 @@ const char* iconForLeftAction(
             return propertyIcon;
         case InteractionAction::EDIT_STEP_LOCAL_RANDOM:
             return standalone::icons::NOTE_PROP_RANDOM;
+        case InteractionAction::OPEN_STEP_CONTENT_SELECTOR:
+        case InteractionAction::APPLY_STEP_CONTENT_SELECTOR:
+            return standalone::icons::NOTE_PROP_RANDOM;
+        case InteractionAction::RETARGET_STEP_EDITOR:
+            return standalone::icons::ACTION_PLACE_TARGET;
+        case InteractionAction::ENTER_SELECTION:
+            return standalone::icons::ACTION_PLACE_TARGET;
         default:
             return nullptr;
     }
 }
 
-void setStripIconFromAction(
+FLASHMEM void setStripIconFromAction(
     SlotProps& slot,
     InteractionAction action,
     InteractionVisibility visibility,
@@ -83,17 +91,15 @@ void setStripIconFromAction(
 FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
     const SequencerViewModelSource& source
 ) {
-    const bool selectingTrack =
-        source.trackNavigation.selection.active.get() &&
-        source.trackNavigation.selection.scope.get() ==
-            core::state::StructureSelectionScope::TRACK;
-    const bool physicalQuickControlHold =
-        source.sequencer.patternQuickControls.physicalHoldActive.get();
     const bool selectingPattern = source.sequencer.patternQuickControls.selecting.get();
     const bool selectingProperty = source.sequencer.stepPropertyInlineSelector.selecting.get();
-    const bool selectingPage = source.sequencer.structureUi.pageSelection.active.get();
+    const bool selectingStepContent = source.sequencer.stepContentSelector.selecting.get();
+    const bool selectingTrack = source.trackNavigation.selection.active.get();
+    const bool selectingPage =
+        source.sequencer.structureUi.pageSelection.active.get();
     const bool selectingStep = source.sequencer.structureUi.stepSelection.active.get();
-    const bool selectingStructure = selectingTrack || selectingPage || selectingStep;
+    const bool selectingStructure =
+        selectingTrack || selectingPage || selectingStep;
     const auto interaction = core::state::sequencer::buildSequencerInteractionPolicy(
         core::state::sequencer::makeSequencerInteractionContext(
             source.sequencer,
@@ -101,8 +107,9 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
             source.navigationFocus.get()
         )
     );
-    const char* propertyIcon =
-        visual::propertyIconGlyph(source.sequencer.activeStepProperty.get());
+    const char* propertyIcon = source.sequencer.stepStatePropertyActive.get()
+        ? standalone::icons::ACTION_VALIDATE
+        : visual::propertyIconGlyph(source.sequencer.activeStepProperty.get());
     const char* patternIcon = visual::quickControlIconGlyph(
         source.sequencer.patternQuickControls.focusedItem.get()
     );
@@ -131,22 +138,6 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
         );
         props.slots[1].visualState = Visual::HIDDEN;
         props.slots[2].visualState = Visual::HIDDEN;
-        return props;
-    }
-
-    if (physicalQuickControlHold) {
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_UNDO,
-            Visual::DIM
-        );
-        props.slots[1] = core::ui::makeStandaloneIconStripSlot(
-            patternIcon,
-            Visual::ACTIVE
-        );
-        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_REDO,
-            Visual::DIM
-        );
         return props;
     }
 
@@ -194,7 +185,33 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
         return props;
     }
 
-    props.slots[0].visualState = Visual::HIDDEN;
+    if (selectingStepContent) {
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_CANCEL,
+            Visual::ACTIVE
+        );
+        props.slots[1].visualState = Visual::HIDDEN;
+        setStripIconFromAction(
+            props.slots[2],
+            interaction.leftBottomPress,
+            interaction.leftBottomVisibility,
+            patternIcon,
+            propertyIcon
+        );
+        return props;
+    }
+
+    if (core::state::sequencer::isChildContentView(source.sequencer)) {
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_BACKWARD,
+            Visual::ACTIVE
+        );
+    } else {
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_PLACE_TARGET,
+            Visual::ACTIVE
+        );
+    }
     setStripIconFromAction(
         props.slots[1],
         interaction.leftCenterPress,

@@ -11,6 +11,7 @@
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/sequencer/SequencerCcLaneWorkflow.hpp"
 #include "state/sequencer/SequencerCcLanePropertySelection.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
 
 namespace core::handler {
 using ButtonID = Config::ButtonID;
@@ -144,12 +145,51 @@ FLASHMEM core::state::sequencer::SequencerHistoryDescriptor makeVariationHistory
     return descriptor;
 }
 
+FLASHMEM core::state::sequencer::SequencerHistoryDescriptor makeSelectorHistoryDescriptor(
+    const core::state::sequencer::SequencerHistoryPatternSnapshot& before,
+    const core::state::sequencer::SequencerHistoryPatternSnapshot& after,
+    const Ranges& beforeRanges,
+    const Ranges& afterRanges,
+    StepProperty fallbackProperty,
+    bool stateEditSeen
+) {
+    const bool variationChanged = !sameVariationRanges(beforeRanges, afterRanges);
+    if (!stateEditSeen) {
+        return makeVariationHistoryDescriptor(
+            beforeRanges,
+            afterRanges,
+            fallbackProperty
+        );
+    }
+
+    const uint8_t step = before.focusedStep;
+    if (variationChanged) {
+        return core::state::sequencer::SequencerHistoryDescriptor{
+            .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+            .stepIndex = step,
+            .property = fallbackProperty,
+        };
+    }
+
+    const bool beforeEnabled = before.flat.enabledMask.test(step);
+    const bool afterEnabled = after.flat.enabledMask.test(step);
+    return core::state::sequencer::SequencerHistoryDescriptor{
+        .kind = core::state::sequencer::SequencerHistoryActionKind::StepToggle,
+        .stepIndex = step,
+        .property = StepProperty::NOTE,
+        .hasValue = beforeEnabled != afterEnabled,
+        .beforeValue = beforeEnabled ? 1 : 0,
+        .afterValue = afterEnabled ? 1 : 0,
+    };
+}
+
 FLASHMEM void recordSelectorVariationHistoryIfChanged(
     core::handler::SequencerHistoryDomainServices& history,
     core::state::sequencer::SequencerState& sequencer,
     bool& snapshotValid,
     core::state::sequencer::SequencerHistoryPatternSnapshot& beforeSnapshot,
-    const Ranges& beforeRanges
+    const Ranges& beforeRanges,
+    bool stateEditSeen
 ) {
     if (!snapshotValid) {
         return;
@@ -157,14 +197,18 @@ FLASHMEM void recordSelectorVariationHistoryIfChanged(
 
     core::state::sequencer::SequencerHistoryPatternSnapshot after;
     if (core::state::sequencer::captureHistorySnapshot(sequencer, after)) {
+        const auto descriptor = makeSelectorHistoryDescriptor(
+            beforeSnapshot,
+            after,
+            beforeRanges,
+            sequencer.pattern.variationRanges,
+            sequencer.activeStepProperty.get(),
+            stateEditSeen
+        );
         history.recordPattern(
             std::move(beforeSnapshot),
             std::move(after),
-            makeVariationHistoryDescriptor(
-                beforeRanges,
-                sequencer.pattern.variationRanges,
-                sequencer.activeStepProperty.get()
-            )
+            descriptor
         );
     }
 
@@ -301,7 +345,11 @@ FLASHMEM void SequencerPropertySelectorHandler::open() {
     o.reset();
     o.selecting.set(true);
 
-    const int active = static_cast<int>(sequencer_.activeStepProperty.get());
+    const int active = sequencer_.stepStatePropertyActive.get()
+        ? core::state::sequencer::SEQUENCER_STEP_STATE_SELECTION_INDEX
+        : core::state::sequencer::sequencerPropertySelectionIndexForProperty(
+              sequencer_.activeStepProperty.get()
+          );
     o.snapshotIndex = active;
     o.snapshotValid = true;
     o.selectedIndex.set(active);
@@ -309,10 +357,13 @@ FLASHMEM void SequencerPropertySelectorHandler::open() {
     snapshot_variation_ranges_ = sequencer_.pattern.variationRanges;
     history_snapshot_valid_ =
         core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
-    sequencer_.patternVariationFeedback.show(
-        sequencer_.activeStepProperty.get(),
-        now_provider_ ? now_provider_() : 0
-    );
+    state_edit_seen_ = false;
+    if (!sequencer_.stepStatePropertyActive.get()) {
+        sequencer_.patternVariationFeedback.show(
+            sequencer_.activeStepProperty.get(),
+            now_provider_ ? now_provider_() : 0
+        );
+    }
     configureOptForSelectedProperty();
 }
 
@@ -342,12 +393,17 @@ FLASHMEM void SequencerPropertySelectorHandler::openCcLaneShortcut() {
     selector.reset();
     selector.selecting.set(true);
     selector.selectedIndex.set(selected);
-    selector.snapshotIndex = static_cast<int>(sequencer_.activeStepProperty.get());
+    selector.snapshotIndex = sequencer_.stepStatePropertyActive.get()
+        ? core::state::sequencer::SEQUENCER_STEP_STATE_SELECTION_INDEX
+        : core::state::sequencer::sequencerPropertySelectionIndexForProperty(
+              sequencer_.activeStepProperty.get()
+          );
     selector.snapshotValid = true;
     selector.suppressOpeningRelease = false;
     snapshot_variation_ranges_ = sequencer_.pattern.variationRanges;
     history_snapshot_valid_ =
         core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
+    state_edit_seen_ = false;
 }
 
 FLASHMEM void SequencerPropertySelectorHandler::navigate(float delta) {
@@ -365,13 +421,22 @@ FLASHMEM void SequencerPropertySelectorHandler::navigate(float delta) {
     if (next >= core::state::sequencer::SEQUENCER_BASE_STEP_PROPERTY_COUNT) {
         return;
     }
+    const bool stateItem =
+        core::state::sequencer::sequencerPropertySelectionIsState(next);
+    sequencer_.stepStatePropertyActive.set(stateItem);
+    if (stateItem) {
+        configureOptForSelectedProperty();
+        return;
+    }
     sequencer_.activeStepProperty.set(
-        static_cast<core::state::sequencer::StepProperty>(next)
+        core::state::sequencer::sequencerPropertySelectionPropertyAt(next)
     );
-    sequencer_.patternVariationFeedback.show(
-        sequencer_.activeStepProperty.get(),
-        now_provider_ ? now_provider_() : 0
-    );
+    if (!sequencer_.stepStatePropertyActive.get()) {
+        sequencer_.patternVariationFeedback.show(
+            sequencer_.activeStepProperty.get(),
+            now_provider_ ? now_provider_() : 0
+        );
+    }
     configureOptForSelectedProperty();
 }
 
@@ -400,16 +465,18 @@ FLASHMEM void SequencerPropertySelectorHandler::closeApply() {
             sequencer_,
             history_snapshot_valid_,
             history_snapshot_,
-            snapshot_variation_ranges_
+            snapshot_variation_ranges_,
+            state_edit_seen_
         );
     }
-    if (!selectedCcLane) {
+    if (!selectedCcLane && !sequencer_.stepStatePropertyActive.get()) {
         sequencer_.patternVariationFeedback.show(
             sequencer_.activeStepProperty.get(),
             now_provider_ ? now_provider_() : 0
         );
     }
     history_snapshot_valid_ = false;
+    state_edit_seen_ = false;
     sequencer_.stepPropertyInlineSelector.reset();
     restore_cc_lane_on_cancel_ = false;
     if (selectedCcLane) applySelectedCcLaneProperty(selectedIndex);
@@ -431,10 +498,12 @@ FLASHMEM void SequencerPropertySelectorHandler::closeCancel() {
             sequencer_,
             history_snapshot_valid_,
             history_snapshot_,
-            snapshot_variation_ranges_
+            snapshot_variation_ranges_,
+            state_edit_seen_
         );
     }
     history_snapshot_valid_ = false;
+    state_edit_seen_ = false;
     sequencer_.patternVariationFeedback.show(
         sequencer_.activeStepProperty.get(),
         now_provider_ ? now_provider_() : 0
@@ -448,6 +517,24 @@ FLASHMEM void SequencerPropertySelectorHandler::closeCancel() {
 
 FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float normalized) {
     if (!sequencer_.stepPropertyInlineSelector.selecting.get()) return;
+    if (core::state::sequencer::sequencerPropertySelectionIsState(
+            sequencer_.stepPropertyInlineSelector.selectedIndex.get()
+        )) {
+        const uint8_t length = core::state::sequencer::activeContentLength(sequencer_);
+        if (length == 0) return;
+        const uint8_t step = std::min<uint8_t>(
+            sequencer_.focusedStep.get(),
+            static_cast<uint8_t>(length - 1U)
+        );
+        if (core::state::sequencer::setActiveContentStepEnabled(
+            sequencer_,
+            step,
+            normalized >= 0.5f
+        )) {
+            state_edit_seen_ = true;
+        }
+        return;
+    }
     if (sequencer_.stepPropertyInlineSelector.selectedIndex.get() >=
         core::state::sequencer::SEQUENCER_BASE_STEP_PROPERTY_COUNT) {
         return;
@@ -461,6 +548,34 @@ FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float no
 }
 
 FLASHMEM void SequencerPropertySelectorHandler::configureOptForSelectedProperty() {
+    if (core::state::sequencer::sequencerPropertySelectionIsState(
+            sequencer_.stepPropertyInlineSelector.selectedIndex.get()
+        )) {
+        encoders_.setDiscreteTicksPerStep(
+            Config::EncoderID::OPT,
+            input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
+        );
+        encoders_.setNormalizedTurns(
+            Config::EncoderID::OPT,
+            input_utils::DEFAULT_NORMALIZED_TURNS
+        );
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT, 2);
+        const uint8_t length = core::state::sequencer::activeContentLength(sequencer_);
+        const uint8_t step = length == 0
+            ? 0
+            : std::min<uint8_t>(
+                  sequencer_.focusedStep.get(),
+                  static_cast<uint8_t>(length - 1U)
+              );
+        encoders_.setPosition(
+            Config::EncoderID::OPT,
+            length > 0 && core::state::sequencer::activeContentStepEnabled(
+                sequencer_,
+                step
+            ) ? 1.0f : 0.0f
+        );
+        return;
+    }
     if (sequencer_.stepPropertyInlineSelector.selectedIndex.get() >=
         core::state::sequencer::SEQUENCER_BASE_STEP_PROPERTY_COUNT) {
         return;
@@ -499,8 +614,10 @@ FLASHMEM void SequencerPropertySelectorHandler::applySelectedCcLaneProperty(
     if (core::state::sequencer::sequencerPropertySelectionIsAdd(
             bank,
             selectedIndex
-        ) && cc_lane_workflow_->openAddDraft()) {
-        overlay_manager_->show(core::ui::OverlayType::SEQ_CC_LANE, false);
+        ) && cc_lane_workflow_->createDefaultLane(
+            now_provider_ ? now_provider_() : 0U
+        )) {
+        overlay_manager_->hide();
     }
 }
 

@@ -1,20 +1,22 @@
 #include "state/contextual/GuardedActionState.hpp"
 
+#include <config/PlatformCompat.hpp>
+
 namespace core::state::contextual {
 
 namespace {
 
-uint32_t elapsedSince(uint32_t nowMs, uint32_t startedAtMs) {
+FLASHMEM uint32_t elapsedSince(uint32_t nowMs, uint32_t startedAtMs) {
     return nowMs - startedAtMs;
 }
 
 }  // namespace
 
-void resetGuardedAction(GuardedActionState& state) {
+FLASHMEM void resetGuardedAction(GuardedActionState& state) {
     state = GuardedActionState{};
 }
 
-bool beginGuardedActionPress(
+FLASHMEM bool beginGuardedActionPress(
     GuardedActionState& state,
     uint32_t nowMs,
     uint16_t guardDurationMs
@@ -31,7 +33,7 @@ bool beginGuardedActionPress(
     return true;
 }
 
-bool armGuardedAction(GuardedActionState& state, uint32_t nowMs) {
+FLASHMEM bool armGuardedAction(GuardedActionState& state, uint32_t nowMs) {
     if (state.phase != GuardedActionPhase::PRESSED) {
         return false;
     }
@@ -47,7 +49,7 @@ bool armGuardedAction(GuardedActionState& state, uint32_t nowMs) {
     return true;
 }
 
-bool updateGuardedAction(GuardedActionState& state, uint32_t nowMs) {
+FLASHMEM bool updateGuardedAction(GuardedActionState& state, uint32_t nowMs) {
     if (state.phase != GuardedActionPhase::ARMED) {
         return false;
     }
@@ -68,7 +70,7 @@ bool updateGuardedAction(GuardedActionState& state, uint32_t nowMs) {
     return state.progressPermille != previousProgress;
 }
 
-GuardedActionRelease releaseGuardedAction(
+FLASHMEM GuardedActionRelease releaseGuardedAction(
     GuardedActionState& state,
     uint32_t nowMs
 ) {
@@ -93,7 +95,7 @@ GuardedActionRelease releaseGuardedAction(
     return GuardedActionRelease::NONE;
 }
 
-bool cancelGuardedAction(GuardedActionState& state) {
+FLASHMEM bool cancelGuardedAction(GuardedActionState& state) {
     if (state.phase != GuardedActionPhase::PRESSED &&
         state.phase != GuardedActionPhase::ARMED) {
         return false;
@@ -103,7 +105,7 @@ bool cancelGuardedAction(GuardedActionState& state) {
     return true;
 }
 
-bool guardedActionTerminal(const GuardedActionState& state) {
+FLASHMEM bool guardedActionTerminal(const GuardedActionState& state) {
     return state.phase == GuardedActionPhase::COMMITTED ||
            state.phase == GuardedActionPhase::CANCELLED;
 }

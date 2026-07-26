@@ -5,13 +5,13 @@
 # Expect: capture_changed:step_3_enabled=step_3_reset_by_tap, capture_changed:step_3_reenabled=selection_deep_reset_applied_by_hold
 
 0 scenario sequencer
-50 capture screen track_focus
+50 capture screen pattern_focus
 
-# Move from Track to Pattern to Step focus.
-150 tap NAV 60
-350 capture screen pattern_focus
-450 tap NAV 60
-650 capture screen step_focus
+# Move directly from Pattern to Step focus.
+150 button NAV down
+210 encoder NAV 1
+270 button NAV up
+350 capture screen step_focus
 
 # Enable a visible step, then reset only that focused step with a tap.
 750 tap MACRO_3 60
@@ -19,13 +19,14 @@
 1050 tap BOTTOM_LEFT 60
 1250 capture screen step_3_reset_by_tap
 
-# Enable the same step again, enter step selection, and select it.
+# Enable the same step again, enter root Step selection with a long NAV hold
+# without rotation, and select it. The paired release is consumed locally.
 1350 tap MACRO_3 60
 1550 capture screen step_3_reenabled
 1650 button NAV down
-2750 tick
-2800 capture screen step_selection_entered
-2850 button NAV up
+2720 tick
+2780 button NAV up
+2900 capture screen step_selection_entered
 3000 tap MACRO_3 60
 3200 capture screen step_3_selected
 

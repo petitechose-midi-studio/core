@@ -70,7 +70,7 @@ FLASHMEM void SequencerCcLaneHandler::setupBindings() {
         .release()
         .scope(view_scope_)
         .when([this]() { return mainGridOwnsInput(); })
-        .then([this]() { onNavTap(); });
+        .then([this]() { onNavRelease(); });
 
     buttons_.button(ButtonID::LEFT_TOP)
         .release()
@@ -127,7 +127,7 @@ FLASHMEM void SequencerCcLaneHandler::setupBindings() {
     buttons_.button(ButtonID::NAV)
         .release()
         .scope(overlay_scope_)
-        .then([this]() { onNavTap(); });
+        .then([this]() { onNavRelease(); });
 
     buttons_.button(ButtonID::BOTTOM_LEFT)
         .press()
@@ -203,10 +203,40 @@ FLASHMEM void SequencerCcLaneHandler::syncOverlayVisibility() {
 
 void SequencerCcLaneHandler::update(uint32_t nowMs) {
     syncOverlayVisibility();
+    updateNavButtonGesture(nowMs);
     syncOptEncoderContract();
     syncMacroEncoderContract();
     updateMacroButtonGestures(nowMs);
     workflow_.update(nowMs);
+}
+
+FLASHMEM void SequencerCcLaneHandler::beginNavButtonTracking(uint32_t nowMs) {
+    if (nav_button_tracked_) return;
+    nav_button_tracked_ = true;
+    nav_button_long_ = false;
+    nav_button_turned_ = false;
+    nav_press_started_at_ms_ = nowMs;
+}
+
+FLASHMEM void SequencerCcLaneHandler::resetNavButtonTracking() {
+    nav_button_tracked_ = false;
+    nav_button_long_ = false;
+    nav_button_turned_ = false;
+    nav_press_started_at_ms_ = 0;
+}
+
+FLASHMEM void SequencerCcLaneHandler::updateNavButtonGesture(uint32_t nowMs) {
+    const bool ownsInput = mainGridOwnsInput() || ccOverlayOwnsInput();
+    if (!ownsInput) {
+        if (!buttons_.isPressed(ButtonID::NAV)) resetNavButtonTracking();
+        return;
+    }
+    if (!buttons_.isPressed(ButtonID::NAV)) return;
+    beginNavButtonTracking(nowMs);
+    if (static_cast<uint32_t>(nowMs - nav_press_started_at_ms_) >=
+        Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS) {
+        nav_button_long_ = true;
+    }
 }
 
 FLASHMEM void SequencerCcLaneHandler::beginMacroButtonTracking(
@@ -428,6 +458,16 @@ FLASHMEM uint32_t SequencerCcLaneHandler::now() const {
 }
 
 FLASHMEM void SequencerCcLaneHandler::onNavTurn(float delta) {
+    if (sequencer_.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID &&
+        buttons_.isPressed(ButtonID::NAV)) {
+        beginNavButtonTracking(now());
+        nav_button_turned_ = true;
+        if (workflow_.openFocusedTransitionPicker(now())) {
+            overlays_.show(core::ui::OverlayType::SEQ_CC_LANE, false);
+            workflow_.moveTransition(delta);
+        }
+        return;
+    }
     switch (sequencer_.ccLaneUi.mode) {
         case seq::SequencerCcLaneUiMode::LANE_SELECTOR:
             workflow_.moveSelector(delta);
@@ -438,7 +478,6 @@ FLASHMEM void SequencerCcLaneHandler::onNavTurn(float delta) {
         case seq::SequencerCcLaneUiMode::TRANSITION_PICKER:
             workflow_.moveTransition(delta);
             break;
-        case seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT:
         case seq::SequencerCcLaneUiMode::LANE_SETTINGS:
             workflow_.moveDraftField(delta);
             break;
@@ -459,7 +498,6 @@ FLASHMEM void SequencerCcLaneHandler::onOptTurn(float normalized) {
         case seq::SequencerCcLaneUiMode::TRANSITION_PICKER:
             workflow_.moveTransition(delta);
             break;
-        case seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT:
         case seq::SequencerCcLaneUiMode::LANE_SETTINGS:
             workflow_.editDraft(delta);
             break;
@@ -469,10 +507,41 @@ FLASHMEM void SequencerCcLaneHandler::onOptTurn(float normalized) {
     }
 }
 
-FLASHMEM void SequencerCcLaneHandler::onNavTap() {
+FLASHMEM void SequencerCcLaneHandler::onNavRelease() {
+    const bool wasLong = nav_button_long_;
+    const bool wasTurned = nav_button_turned_;
+    resetNavButtonTracking();
+
+    if (sequencer_.ccLaneUi.mode ==
+            seq::SequencerCcLaneUiMode::TRANSITION_PICKER &&
+        sequencer_.ccLaneUi.compactTransitionPicker) {
+        if (wasTurned) {
+            (void)workflow_.applyTransition(now());
+        } else {
+            workflow_.cancelTransition();
+        }
+        if (ccOverlayOwnsInput() && sequencer_.ccLaneUi.mode ==
+                seq::SequencerCcLaneUiMode::LANE_GRID) {
+            overlays_.hide();
+        }
+        return;
+    }
+    if ((wasLong || wasTurned) && sequencer_.ccLaneUi.mode ==
+            seq::SequencerCcLaneUiMode::LANE_GRID) {
+        return;
+    }
+    executeNavTap();
+}
+
+FLASHMEM void SequencerCcLaneHandler::executeNavTap() {
     switch (sequencer_.ccLaneUi.mode) {
         case seq::SequencerCcLaneUiMode::LANE_SELECTOR:
-            (void)workflow_.activateSelector();
+            if (workflow_.activateSelector(now()) &&
+                sequencer_.ccLaneUi.mode ==
+                    seq::SequencerCcLaneUiMode::LANE_GRID &&
+                ccOverlayOwnsInput()) {
+                overlays_.hide();
+            }
             break;
         case seq::SequencerCcLaneUiMode::LANE_GRID:
             (void)workflow_.toggleFocusedEvent(now());
@@ -480,7 +549,6 @@ FLASHMEM void SequencerCcLaneHandler::onNavTap() {
         case seq::SequencerCcLaneUiMode::TRANSITION_PICKER:
             (void)workflow_.applyTransition(now());
             break;
-        case seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT:
         case seq::SequencerCcLaneUiMode::LANE_SETTINGS:
             (void)workflow_.activateDraftField();
             break;
@@ -548,8 +616,7 @@ FLASHMEM void SequencerCcLaneHandler::onActionRelease(
 ) {
     (void)workflow_.releaseGuard(slot, now());
     const auto mode = sequencer_.ccLaneUi.mode;
-    if (mode == seq::SequencerCcLaneUiMode::ADD_LANE_DRAFT ||
-        mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS ||
+    if (mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS ||
         mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER ||
         mode == seq::SequencerCcLaneUiMode::LANE_SELECTOR) {
         overlays_.show(core::ui::OverlayType::SEQ_CC_LANE, false);

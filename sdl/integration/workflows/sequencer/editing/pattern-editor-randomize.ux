@@ -1,0 +1,66 @@
+# UX workflow: retained Pattern Editor, deterministic Randomize, exact history.
+# Purpose: validates one musical path from root Pattern overview through a
+# non-published Velocity preview, reroll, materialized Apply, Undo and Redo.
+# Expect: semantic:velocity_preview:mode=sequencer.pattern_editor.randomize, semantic:velocity_preview:effect=preview_pattern_randomize, semantic:velocity_preview:source=velocity, semantic:velocity_preview:projection=preview
+# Expect: semantic:randomize_rerolled:effect=reroll_pattern_randomize, semantic:randomize_rerolled:outcome=preview
+# Expect: semantic:randomize_applied:effect=apply_pattern_randomize, semantic:randomize_applied:outcome=applied
+# Expect: capture_changed:applied_pattern=undone_pattern, capture_match:applied_pattern=redone_pattern
+
+0 scenario sequencer
+
+# Author four notes in Step context, then return to the root Pattern context.
+100 button NAV down
+160 encoder NAV 1
+220 button NAV up
+340 tap MACRO_1 60
+440 tap MACRO_2 60
+540 tap MACRO_3 60
+640 tap MACRO_4 60
+760 button NAV down
+820 encoder NAV -1
+880 button NAV up
+
+# Open the retained Pattern Editor, extend to 16 steps and visit its second
+# eight-step viewport without remounting the surface.
+1040 tap NAV 60
+1260 encoder OPT 0.21
+1400 button LEFT_CENTER down
+1480 encoder NAV 1
+1620 capture screen second_window
+1700 encoder NAV -1
+1780 button LEFT_CENTER up
+
+# Randomize is an advanced action, not a permanent scalar field. Open its
+# four-control draft directly from the action strip. Velocity changes remain a
+# preview until Apply; reroll changes only the deterministic seed.
+2340 tap BOTTOM_LEFT 60
+2480 encoder OPT 0.50
+2620 capture screen velocity_preview
+2700 encoder NAV 1
+2780 encoder OPT -0.50
+2920 capture screen amount_preview
+3020 tap BOTTOM_LEFT 60
+3160 capture screen randomize_rerolled
+3260 tap BOTTOM_RIGHT 60
+3380 capture screen randomize_applied
+
+# The retained editor returns to its previous Length focus after Apply.
+3600 capture screen applied_pattern
+3700 tap LEFT_TOP 60
+
+# Global Undo, reopen Pattern Editor and observe the exact base Pattern.
+3820 tap LEFT_TOP 60
+4860 tick
+4920 tap LEFT_CENTER 60
+5040 tap LEFT_TOP 60
+5320 tap NAV 60
+5480 capture screen undone_pattern
+5580 tap LEFT_TOP 60
+
+# Global Redo restores the already materialized target; no RNG runs again.
+5700 tap LEFT_TOP 60
+6740 tick
+6800 tap LEFT_BOTTOM 60
+6920 tap LEFT_TOP 60
+7200 tap NAV 60
+7360 capture screen redone_pattern

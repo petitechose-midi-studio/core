@@ -11,6 +11,8 @@
 #include <oc/log/Log.hpp>
 #include <oc/realtime/InterruptGuard.hpp>
 
+#include "diagnostics/MemoryFootprintReporter.hpp"
+
 namespace core::diagnostics {
 
 namespace {
@@ -40,10 +42,22 @@ void PerformanceReporter::update(uint32_t nowMs) {
     drain_();
     if (windowStartedAtMs_ == 0) {
         windowStartedAtMs_ = nowMs;
-        return;
-    }
-    if (static_cast<uint32_t>(nowMs - windowStartedAtMs_) >= REPORT_INTERVAL_MS) {
+    } else if (
+        static_cast<uint32_t>(nowMs - windowStartedAtMs_) >=
+        REPORT_INTERVAL_MS
+    ) {
         report_(nowMs);
+    }
+    if (lastMemoryReportAtMs_ == 0U) {
+        lastMemoryReportAtMs_ = nowMs;
+    } else if (
+        static_cast<uint32_t>(nowMs - lastMemoryReportAtMs_) >=
+        MEMORY_REPORT_INTERVAL_MS
+    ) {
+        // This deliberately slow snapshot is kept outside measured scopes and
+        // infrequent enough not to dominate interaction profiling.
+        logMemoryFootprint("runtime-window");
+        lastMemoryReportAtMs_ = nowMs;
     }
 }
 
@@ -91,11 +105,24 @@ void PerformanceReporter::drain_() {
         auto* metric = findOrCreateMetric_(sample.label);
         if (metric == nullptr) continue;
 
+        const bool first = metric->samples == 0U;
         ++metric->samples;
         metric->totalUs += sample.elapsedUs;
         metric->maxUs = std::max(metric->maxUs, sample.elapsedUs);
         metric->totalUnitA += sample.unitA;
         metric->totalUnitB += sample.unitB;
+        if (first) {
+            metric->minUnitA = sample.unitA;
+            metric->maxUnitA = sample.unitA;
+            metric->minUnitB = sample.unitB;
+            metric->maxUnitB = sample.unitB;
+        } else {
+            metric->minUnitA = std::min(metric->minUnitA, sample.unitA);
+            metric->maxUnitA = std::max(metric->maxUnitA, sample.unitA);
+            metric->minUnitB = std::min(metric->minUnitB, sample.unitB);
+            metric->maxUnitB = std::max(metric->maxUnitB, sample.unitB);
+        }
+        ++metric->durationBuckets[durationBucket_(sample.elapsedUs)];
     }
 }
 
@@ -121,6 +148,86 @@ PerformanceReporter::MetricWindow* PerformanceReporter::findOrCreateMetric_(
     return &metric;
 }
 
+size_t PerformanceReporter::durationBucket_(uint32_t elapsedUs) {
+    if (elapsedUs == 0U) return 0U;
+    const uint32_t exponent = 31U - static_cast<uint32_t>(
+        __builtin_clz(elapsedUs)
+    );
+    const uint32_t base = UINT32_C(1) << exponent;
+    const uint32_t upperHalf =
+        exponent > 0U && elapsedUs - base >= base / 2U ? 1U : 0U;
+    return std::min<size_t>(
+        1U + static_cast<size_t>(exponent) * 2U + upperHalf,
+        DURATION_BUCKET_CAPACITY - 1U
+    );
+}
+
+uint32_t PerformanceReporter::durationBucketUpperBound_(size_t bucket) {
+    if (bucket == 0U) return 0U;
+    const size_t encoded = bucket - 1U;
+    const uint32_t exponent = static_cast<uint32_t>(encoded / 2U);
+    const bool upperHalf = (encoded & 1U) != 0U;
+    const uint64_t base = UINT64_C(1) << exponent;
+    const uint64_t exclusive = upperHalf
+        ? base * 2U
+        : base + (exponent > 0U ? base / 2U : 1U);
+    return static_cast<uint32_t>(std::min<uint64_t>(
+        exclusive - 1U,
+        UINT32_MAX
+    ));
+}
+
+uint32_t PerformanceReporter::percentileUs_(
+    const MetricWindow& metric,
+    uint32_t percentile
+) {
+    if (metric.samples == 0U) return 0U;
+    const uint64_t target = std::max<uint64_t>(
+        1U,
+        (static_cast<uint64_t>(metric.samples) * percentile + 99U) / 100U
+    );
+    uint64_t cumulative = 0U;
+    for (size_t bucket = 0U;
+         bucket < metric.durationBuckets.size();
+         ++bucket) {
+        cumulative += metric.durationBuckets[bucket];
+        if (cumulative >= target) {
+            return durationBucketUpperBound_(bucket);
+        }
+    }
+    return metric.maxUs;
+}
+
+bool PerformanceReporter::alwaysReport_(const char* label) {
+    if (label == nullptr) return false;
+    return std::strncmp(label, "memory.", 7U) == 0 ||
+        std::strncmp(label, "midi.cc.global", 14U) == 0 ||
+        std::strncmp(label, "macro.take.commit.", 18U) == 0 ||
+        std::strncmp(label, "persistence.project-codec.", 26U) == 0 ||
+        std::strncmp(label, "persistence.project-control.", 28U) == 0 ||
+        std::strstr(label, "reject") != nullptr ||
+        std::strstr(label, "overflow") != nullptr;
+}
+
+void PerformanceReporter::reportMetric_(const MetricWindow& metric) {
+    OC_LOG_INFO(
+        "[Perf] {} samples={} avg={}us p50<={}us p95<={}us p99<={}us max={}us unitA(avg/min/max)={}/{}/{} unitB(avg/min/max)={}/{}/{}",
+        metric.label,
+        metric.samples,
+        static_cast<uint32_t>(metric.totalUs / metric.samples),
+        percentileUs_(metric, 50U),
+        percentileUs_(metric, 95U),
+        percentileUs_(metric, 99U),
+        metric.maxUs,
+        static_cast<uint32_t>(metric.totalUnitA / metric.samples),
+        metric.minUnitA,
+        metric.maxUnitA,
+        static_cast<uint32_t>(metric.totalUnitB / metric.samples),
+        metric.minUnitB,
+        metric.maxUnitB
+    );
+}
+
 void PerformanceReporter::report_(uint32_t nowMs) {
     const uint32_t droppedSamples = takeDroppedSamples_();
     std::array<size_t, METRIC_CAPACITY> indices{};
@@ -135,16 +242,11 @@ void PerformanceReporter::report_(uint32_t nowMs) {
 
     const size_t reportCount = std::min(activeCount, MAX_REPORTED_METRICS);
     for (size_t order = 0; order < reportCount; ++order) {
+        reportMetric_(metrics_[indices[order]]);
+    }
+    for (size_t order = reportCount; order < activeCount; ++order) {
         const auto& metric = metrics_[indices[order]];
-        OC_LOG_INFO(
-            "[Perf] {} samples={} avg={}us max={}us unitAAvg={} unitBAvg={}",
-            metric.label,
-            metric.samples,
-            static_cast<uint32_t>(metric.totalUs / metric.samples),
-            metric.maxUs,
-            static_cast<uint32_t>(metric.totalUnitA / metric.samples),
-            static_cast<uint32_t>(metric.totalUnitB / metric.samples)
-        );
+        if (alwaysReport_(metric.label)) reportMetric_(metric);
     }
 
     if (droppedSamples > 0 || droppedMetrics_ > 0) {
@@ -169,6 +271,7 @@ void PerformanceReporter::resetAll_() {
     droppedSamples_ = 0;
     resetMetrics_();
     windowStartedAtMs_ = 0;
+    lastMemoryReportAtMs_ = 0;
 }
 
 void PerformanceReporter::resetMetrics_() {

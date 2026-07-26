@@ -1,0 +1,39 @@
+# UX workflow: project-wide Undo/Redo through the global View Selector.
+# Purpose: validates the single global history grammar from a musical surface.
+# Expect: capture_match:sequencer_ready=step_state_undone
+# Expect: capture_match:step_state_applied=step_state_redone
+# Expect: capture_changed:selector_undo_ready=selector_redo_ready
+# Expect: capture_changed:selector_redo_open=selector_undo_restored
+# Expect: semantic:selector_redo_ready:mode=view_selector
+# Expect: semantic:selector_redo_ready:target=project_history
+# Expect: semantic:selector_redo_ready:effect=undo_project_action
+# Expect: semantic:selector_undo_restored:mode=view_selector
+# Expect: semantic:selector_undo_restored:target=project_history
+# Expect: semantic:selector_undo_restored:effect=redo_project_action
+
+0 scenario sequencer
+1000 tick
+1050 capture screen sequencer_ready
+1150 tap MACRO_1 60
+1350 capture screen step_state_applied
+
+# A short LEFT_TOP tap opens the global selector without leaving the current
+# musical context; retained editors consume their own local Back first.
+1450 tap LEFT_TOP 60
+2520 tick
+2580 capture screen selector_undo_ready
+2680 tap LEFT_CENTER 60
+2900 capture screen selector_redo_ready
+3000 tap LEFT_TOP 60
+4400 tick
+4500 capture screen step_state_undone
+
+# Redo uses the same global surface and the symmetric LEFT_BOTTOM action.
+4600 tap LEFT_TOP 60
+5670 tick
+5730 capture screen selector_redo_open
+5830 tap LEFT_BOTTOM 60
+6050 capture screen selector_undo_restored
+6150 tap LEFT_TOP 60
+7550 tick
+7650 capture screen step_state_redone

@@ -1,34 +1,41 @@
-# UX workflow: restore an automated macro from Manual to Auto through the
-# Macro Slot property selector.
-# Purpose: validates the Sequencer-like Macro grammar:
-# Left Bottom opens slot properties, NAV selects Automation, and the macro
-# macro button restores Auto without clearing the automation lane.
-# Expect: capture_changed:automation_recorded=manual_override_active, capture_changed:manual_override_active=automation_restored_auto
+# UX workflow: restore an automated Macro from Manual to Auto through the
+# contextual Automation shortcut in Macro Edit.
+# Purpose: validates the common grammar: LEFT_BOTTOM + Macro opens Edit,
+# NAV focuses Automation, LEFT_BOTTOM + NAV chooses Playback, OPT resumes Auto.
+# Expect: capture_changed:automation_recorded=manual_override_active, capture_changed:manual_override_active=macro_editor_open, capture_changed:automation_playback_shortcut=automation_restored_auto
+# Expect: semantic:automation_playback_shortcut:effect=select_macro_context_property, semantic:automation_restored_auto:effect=edit_macro_context_property
 
 0 scenario macro-automation-clean
 50 capture screen macro_ready
 
 # Record automation on Macro 1.
-150 button MACRO_1 down
+150 button LEFT_CENTER down
 500 encoder MACRO_1 1.00
-1100 button MACRO_1 up
+1100 button LEFT_CENTER up
 1250 capture screen automation_recorded
 
 # User takes manual control over the automated macro.
 1400 encoder MACRO_1 0.20
 1550 capture screen manual_override_active
 
-# Open Macro Slot property selector and focus Automation.
+# Open Macro Edit with the explicit chord, then focus Automation.
 1700 button LEFT_BOTTOM down
-1820 button LEFT_BOTTOM up
-1950 encoder NAV 1
-2350 capture screen automation_property_selected
+1800 capture screen macro_edit_prompt
+1900 tap MACRO_1 60
+2020 capture screen macro_editor_open
+2120 button LEFT_BOTTOM up
+2260 encoder NAV 1
+2400 capture screen automation_property_selected
 
-# Restore Auto without deleting the automation.
-2500 tap MACRO_1 60
-2650 capture screen automation_restored_auto
+# Hold LEFT_BOTTOM to expose Automation properties. Record Macro is first, so
+# one NAV step selects Playback before OPT resumes Auto.
+2520 button LEFT_BOTTOM down
+2620 encoder NAV 1
+2700 capture screen automation_playback_shortcut
+2840 encoder OPT 1.00
+2980 capture screen automation_restored_auto
+3080 button LEFT_BOTTOM up
 
-# Close the latched property selector.
-2800 button LEFT_BOTTOM down
-2920 button LEFT_BOTTOM up
-3050 capture screen property_selector_closed
+# Back closes Macro Edit only.
+3220 tap LEFT_TOP 60
+3380 capture screen macro_editor_closed

@@ -3,6 +3,7 @@
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
+#include <oc/diagnostics/Performance.hpp>
 
 #include "ui/macro/MacroEditorOverlay.hpp"
 
@@ -14,9 +15,7 @@ FLASHMEM MacroOverlayPresenter::MacroOverlayPresenter(
     ms::ui::VirtualListKeyValueOverlay& macroAutomationOverlay,
     core::ui::ContextActionStrip& macroEditActionStrip,
     core::ui::ContextActionStrip& macroAutomationActionStrip,
-    ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay,
-    ms::ui::VirtualListSelectorOverlay& pageSelectorOverlay,
-    ms::ui::VirtualListSelectorOverlay& macroTargetSelectorOverlay
+    ms::ui::VirtualListSelectorOverlay& macroEditSelectorOverlay
 )
     : state_refs_(stateRefs)
     , macro_edit_overlay_(macroEditOverlay)
@@ -24,8 +23,6 @@ FLASHMEM MacroOverlayPresenter::MacroOverlayPresenter(
     , macro_edit_action_strip_(macroEditActionStrip)
     , macro_automation_action_strip_(macroAutomationActionStrip)
     , macro_edit_selector_overlay_(macroEditSelectorOverlay)
-    , page_selector_overlay_(pageSelectorOverlay)
-    , macro_target_selector_overlay_(macroTargetSelectorOverlay)
     , render_scheduler_(
           core::ui::renderSchedulerDebugLabel("MacroOverlay"),
           &MacroOverlayPresenter::drainRenderQueue,
@@ -47,14 +44,6 @@ FLASHMEM bool MacroOverlayPresenter::bind() {
     );
 }
 
-void MacroOverlayPresenter::refreshRuntimeTelemetry() {
-    if (state_refs_.macroEdit.automationVisible.get() &&
-        state_refs_.macroEdit.flowPhase.get() ==
-            core::state::MacroEditFlowPhase::MODULATION) {
-        render_scheduler_.request(macro_overlay_invalidation::RENDER_AUTOMATION);
-    }
-}
-
 FLASHMEM void MacroOverlayPresenter::requestRenderFlags(void* context, uint32_t flags) {
     auto* self = static_cast<MacroOverlayPresenter*>(context);
     if (self) self->render_scheduler_.request(flags);
@@ -67,17 +56,14 @@ FLASHMEM void MacroOverlayPresenter::drainRenderQueue(void* context, uint32_t fl
 
 FLASHMEM void MacroOverlayPresenter::renderPending(uint32_t flags) {
     if ((flags & macro_overlay_invalidation::RENDER_EDIT) != 0) renderEdit();
+    if ((flags & macro_overlay_invalidation::RENDER_EDIT_LIVE) != 0) {
+        renderEditLive();
+    }
     if ((flags & macro_overlay_invalidation::RENDER_AUTOMATION) != 0) {
         renderAutomation();
     }
     if ((flags & macro_overlay_invalidation::RENDER_EDIT_SELECTOR) != 0) {
         renderEditSelector();
-    }
-    if ((flags & macro_overlay_invalidation::RENDER_PAGE_SELECTOR) != 0) {
-        renderPageSelector();
-    }
-    if ((flags & macro_overlay_invalidation::RENDER_TARGET_SELECTOR) != 0) {
-        renderTargetSelector();
     }
 }
 
@@ -86,14 +72,29 @@ FLASHMEM void MacroOverlayPresenter::renderEdit() {
                          state_refs_.macroEdit.flowPhase.get() ==
                              core::state::MacroEditFlowPhase::EDIT;
     if (!visible) {
+        OC_PERF_SCOPE(perfMutation, "ui.macro-overlay.mutation.edit");
         macro_edit_overlay_.render({.visible = false});
         macro_edit_action_strip_.render({.visible = false});
         return;
     }
 
-    macro_overlay_presenter::buildEditRenderData(state_refs_, edit_render_data_);
+    {
+        OC_PERF_SCOPE(perfProjection, "ui.macro-overlay.projection.edit");
+        macro_overlay_presenter::buildEditRenderData(
+            state_refs_,
+            edit_render_data_
+        );
+    }
     const auto& data = edit_render_data_;
+    const auto actionProps = [&]() {
+        OC_PERF_SCOPE(
+            perfProjection,
+            "ui.macro-overlay.projection.edit-actions"
+        );
+        return macro_overlay_presenter::buildEditActionStripProps(state_refs_);
+    }();
 
+    OC_PERF_SCOPE(perfMutation, "ui.macro-overlay.mutation.edit");
     macro_edit_overlay_.render({
         .visible = true,
         .title = data.title.data(),
@@ -102,86 +103,99 @@ FLASHMEM void MacroOverlayPresenter::renderEdit() {
         .automation = data.valueBuffers[1].data(),
         .modulation = data.valueBuffers[2].data(),
         .selectedDomain = data.selectedIndex,
+        .interactionOverlayVisible = data.interactionOverlayVisible,
+        .interactionIcon = data.interactionIcon,
+        .interactionLabel = data.interactionLabel.data(),
+        .interactionValue = data.interactionValue.data(),
+        .interactionColor = data.interactionColor,
         .preview = &data.preview,
+        .live = data.live,
         .previewRevision = data.previewRevision,
         .dataRevision = data.dataRevision,
     });
-    macro_edit_action_strip_.render(
-        macro_overlay_presenter::buildEditActionStripProps(state_refs_)
-    );
+    macro_edit_action_strip_.render(actionProps);
+}
+
+void MacroOverlayPresenter::renderEditLive() {
+    if (!state_refs_.macroEdit.visible.get() ||
+        state_refs_.macroEdit.flowPhase.get() !=
+            core::state::MacroEditFlowPhase::EDIT) {
+        return;
+    }
+    {
+        OC_PERF_SCOPE(
+            perfProjection,
+            "ui.macro-overlay.projection.edit-live"
+        );
+        edit_render_data_.live =
+            macro_overlay_presenter::buildEditLiveValue(state_refs_);
+    }
+    OC_PERF_SCOPE(perfMutation, "ui.macro-overlay.mutation.edit-live");
+    macro_edit_overlay_.renderLive(edit_render_data_.live);
 }
 
 FLASHMEM void MacroOverlayPresenter::renderAutomation() {
-    const auto data = macro_overlay_presenter::buildAutomationRenderData(state_refs_);
+    {
+        OC_PERF_SCOPE(
+            perfProjection,
+            "ui.macro-overlay.projection.detail"
+        );
+        macro_overlay_presenter::buildAutomationRenderData(
+            state_refs_,
+            automation_render_data_
+        );
+    }
+    const auto& data = automation_render_data_;
     if (!data.visible) {
+        OC_PERF_SCOPE(perfMutation, "ui.macro-overlay.mutation.detail");
         macro_automation_overlay_.render({.visible = false});
         macro_automation_action_strip_.render({.visible = false});
         return;
     }
 
+    const auto actionProps = [&]() {
+        OC_PERF_SCOPE(
+            perfProjection,
+            "ui.macro-overlay.projection.detail-actions"
+        );
+        return macro_overlay_presenter::buildDetailActionStripProps(state_refs_);
+    }();
+    OC_PERF_SCOPE(perfMutation, "ui.macro-overlay.mutation.detail");
     macro_automation_overlay_.render({
         .title = data.title.data(),
         .meta = data.meta.data(),
         .rows = data.rows.data(),
+        .rowProvider = data.rowProvider,
+        .rowProviderContext = data.rowProviderContext,
         .rowCount = data.rowCount,
         .selectedIndex = data.selectedIndex,
         .dimUnselected = false,
         .visible = true,
         .dataRevision = data.dataRevision,
     });
-    macro_automation_action_strip_.render(
-        macro_overlay_presenter::buildDetailActionStripProps(state_refs_)
-    );
+    macro_automation_action_strip_.render(actionProps);
 }
 
 FLASHMEM void MacroOverlayPresenter::renderEditSelector() {
     initializeStaticItems_();
-    const auto data = macro_overlay_presenter::buildEditSelectorRenderData(state_refs_, static_items_);
+    const auto data = [&]() {
+        OC_PERF_SCOPE(
+            perfProjection,
+            "ui.macro-overlay.projection.selector"
+        );
+        return macro_overlay_presenter::buildEditSelectorRenderData(
+            state_refs_,
+            static_items_
+        );
+    }();
     if (!data.visible) {
+        OC_PERF_SCOPE(perfMutation, "ui.macro-overlay.mutation.selector");
         macro_edit_selector_overlay_.render({.visible = false});
         return;
     }
 
+    OC_PERF_SCOPE(perfMutation, "ui.macro-overlay.mutation.selector");
     macro_edit_selector_overlay_.render({
-        .title = data.title,
-        .meta = data.meta,
-        .items = data.items,
-        .itemCount = data.itemCount,
-        .selectedIndex = data.selectedIndex,
-        .showIndexColumn = false,
-        .visible = true,
-        .dataRevision = data.dataRevision,
-    });
-}
-
-FLASHMEM void MacroOverlayPresenter::renderPageSelector() {
-    const auto data = macro_overlay_presenter::buildPageSelectorRenderData(state_refs_);
-    if (!data.visible) {
-        page_selector_overlay_.render({.visible = false});
-        return;
-    }
-
-    page_selector_overlay_.render({
-        .title = data.title,
-        .meta = data.meta,
-        .items = data.items,
-        .itemCount = data.itemCount,
-        .selectedIndex = data.selectedIndex,
-        .showIndexColumn = false,
-        .visible = true,
-        .dataRevision = data.dataRevision,
-    });
-}
-
-FLASHMEM void MacroOverlayPresenter::renderTargetSelector() {
-    initializeStaticItems_();
-    const auto data = macro_overlay_presenter::buildTargetSelectorRenderData(state_refs_, static_items_);
-    if (!data.visible) {
-        macro_target_selector_overlay_.render({.visible = false});
-        return;
-    }
-
-    macro_target_selector_overlay_.render({
         .title = data.title,
         .meta = data.meta,
         .items = data.items,

@@ -89,16 +89,16 @@ struct RealtimeMidiQueueDiagnostics {
  */
 class RealtimeMidiQueue {
 public:
-    // Worst-case same-timestamp frame. Keep the source-specific bounds named:
-    // changing a producer must make the queue budget and its assertions fail
-    // visibly instead of silently stealing capacity from NoteOns.
+    // Worst-case same-timestamp frame. The CC coordinator may resolve all 320
+    // bounded candidates to distinct physical destinations; the queue must be
+    // able to retain that complete atomic batch between the Note Off and Note
+    // On phases. A smaller producer-specific estimate can reject valid notes
+    // after accepting CCs and violate the documented Off < CC < On ordering.
     static constexpr size_t MAX_NOTE_EVENTS_PER_PHASE = 128;
-    static constexpr size_t MAX_SEQUENCER_CC_EVENTS_PER_FRAME = 16U * 4U;
-    static constexpr size_t MAX_MACRO_CC_EVENTS_PER_FRAME = 8;
+    static constexpr size_t MAX_RESOLVED_CC_EVENTS_PER_FRAME = 320U;
     static constexpr size_t MAX_QUEUE_DEPTH =
         2U * MAX_NOTE_EVENTS_PER_PHASE +
-        MAX_SEQUENCER_CC_EVENTS_PER_FRAME +
-        MAX_MACRO_CC_EVENTS_PER_FRAME;
+        MAX_RESOLVED_CC_EVENTS_PER_FRAME;
     static constexpr uint32_t LATE_SEND_THRESHOLD_US = 2000;
     static constexpr uint32_t DROP_THRESHOLD_US = 20000;
     static constexpr uint32_t MAX_DRAIN_BUDGET_US = 500;
@@ -114,20 +114,6 @@ public:
         const RealtimeMidiEvent* events,
         size_t count
     );
-    /** Atomic cancellation of one Track generation plus batch insertion. */
-    RealtimeMidiQueueBatchResult replaceTrackEventsWithBatch(
-        uint8_t trackIndex,
-        const RealtimeMidiEvent* events,
-        size_t count
-    );
-    /**
-     * Atomically replaces every pending resolver-owned CC while preserving all
-     * note events. Every input event must be ControlChange.
-     */
-    RealtimeMidiQueueBatchResult replaceControlChangeEventsWithBatch(
-        const RealtimeMidiEvent* events,
-        size_t count
-    );
     /**
      * Allocation-free panic batch used by SequencerMidiEventSink. The complete
      * active-note set is counted and capacity-preflighted before cancellation
@@ -140,6 +126,10 @@ public:
         size_t channelCount
     );
     uint32_t cancelPendingEvents(uint8_t trackIndex);
+    /** Remove only pending Note On/Off edges for one Track; preserve CC. */
+    uint32_t cancelPendingNoteEvents(uint8_t trackIndex);
+    /** Cold reset boundary; removes CC without publishing a replacement set. */
+    uint32_t cancelControlChangeEvents();
     void clear();
     void attachTrackObserver(uint8_t trackIndex, RealtimeMidiQueueDispatchObserver& observer);
     void detachTrackObserver(uint8_t trackIndex, RealtimeMidiQueueDispatchObserver& observer);
@@ -150,7 +140,6 @@ public:
     const RealtimeMidiQueueDiagnostics& diagnostics() const {
         return diagnostics_;
     }
-    void resetDiagnostics() { diagnostics_ = {}; }
 
     void drainDue(oc::api::MidiAPI& midi,
                   uint32_t nowUs,
@@ -164,10 +153,7 @@ private:
 
     RealtimeMidiQueueBatchResult pushBatchImpl_(
         const RealtimeMidiEvent* events,
-        size_t count,
-        bool cancelTrack,
-        uint8_t trackIndex,
-        bool cancelControlChanges = false
+        size_t count
     );
     void insertNoFail_(const RealtimeMidiEvent& event);
     void erase_(size_t index);

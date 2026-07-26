@@ -29,3 +29,44 @@
  * project and preset reads/writes retain their existing placement. */
 *FatFormatter.cpp.o(.text* .rodata*)
 *ExFatFormatter.cpp.o(.text* .rodata*)
+
+/* Compressed font assets are decoded only while UI resources are loaded. */
+*lz4.c.o(.text* .rodata*)
+
+/* FAT/exFAT path resolution and handle opening happen only at storage session
+ * boundaries. Keep streaming read/write primitives in ITCM, but move every
+ * open traversal helper out of the realtime code budget. */
+*(.text._ZN9ExFatFile4open*)
+*(.text._ZN9ExFatFile8openRoot*)
+*(.text._ZN9ExFatFile8openNext*)
+*(.text._ZN9ExFatFile11openPrivate*)
+*(.text._ZN7FatFile4open*)
+*(.text._ZN7FatFile8openRoot*)
+*(.text._ZN7FatFile8openNext*)
+*(.text._ZN7FatFile11openCluster*)
+*(.text._ZN7FatFile15openCachedEntry*)
+
+/* Macro overlay projection is rebuilt only after authored/UI state changes.
+ * Its top-level formatters already use FLASHMEM, but out-of-line text helpers
+ * emitted by the compiler otherwise leak into ITCM. Keep every formatter
+ * partition and its labels together in memory-mapped Flash. */
+*MacroOverlayPresenter*Formatters.cpp.o(.text* .rodata*)
+
+/* Project handlers serve modal navigation and authored edits. They are never
+ * entered by the control evaluator, MIDI publication, sequencer tick, or LVGL
+ * draw loop; compiler-generated dispatch thunks therefore belong in Flash. */
+*ProjectHandler*.cpp.o(.text* .rodata*)
+
+/* Macro history is entered only by authored edit, undo, and redo commands.
+ * It is never part of macro playback, modulation evaluation, MIDI dispatch,
+ * or retained-view rendering.  Keep compiler-emitted smart-pointer helpers
+ * beside the already-FLASHMEM history transactions instead of leaking those
+ * cold templates into scarce ITCM. */
+*MacroHistory.cpp.o(.text* .rodata*)
+
+/* Domain codecs run only at explicit project/session save or restore
+ * boundaries. Keep low-level filesystem streaming in ITCM, but execute
+ * encode/decode logic from cached Flash so persistence does not consume the
+ * realtime code budget. */
+*PersistenceCodec.cpp.o(.text* .rodata*)
+*PersistenceEnvelope.cpp.o(.text* .rodata*)

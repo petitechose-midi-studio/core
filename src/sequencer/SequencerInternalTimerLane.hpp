@@ -8,6 +8,7 @@
 
 #include "sequencer/InternalTransportClock.hpp"
 #include "sequencer/MidiClockSyncService.hpp"
+#include "sequencer/ProjectTrackRuntimeSnapshotBank.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerPlaybackService.hpp"
 #include "sequencer/SequencerRuntimeSnapshotBank.hpp"
@@ -27,6 +28,7 @@ public:
     SequencerInternalTimerLane(oc::api::MidiAPI& midi,
                                RealtimeMidiQueue& midiQueue,
                                SequencerRuntimeSnapshotBank& snapshotBank,
+                               const ProjectTrackRuntimeSnapshotBank& projectTrackSnapshots,
                                SequencerPlaybackService& playback);
 
     bool start();
@@ -42,6 +44,7 @@ private:
     oc::api::MidiAPI& midi_;
     RealtimeMidiQueue& midi_queue_;
     SequencerRuntimeSnapshotBank& snapshot_bank_;
+    const ProjectTrackRuntimeSnapshotBank& project_track_snapshots_;
     SequencerPlaybackService& playback_;
     oc::realtime::PeriodicTimer timer_{};
     InternalTransportClock clock_{};

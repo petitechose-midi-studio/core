@@ -4,6 +4,7 @@
 
 #include "../../src/sequencer/SequencerRuntimeGraphBank.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
+#include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace {
 
@@ -83,11 +84,94 @@ void test_publication_commits_simultaneous_track_changes_together() {
     std::cout << "[PASS] test_publication_commits_simultaneous_track_changes_together\n";
 }
 
+void test_micro_sequence_draft_is_runtime_only_until_apply_or_cancel() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerState sequencer;
+    seq::SequencerTrackBankState trackBank;
+    core::sequencer::SequencerRuntimeGraphBank runtimeGraphs;
+
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    runtimeGraphs.publishPrepared();
+    assert(runtimeGraphs.graphForTrack(0) == nullptr);
+
+    assert(seq::beginStepContentDraft(
+        sequencer,
+        seq::SequencerStepContentDraftKind::MICRO_SEQUENCE,
+        0
+    ));
+    const auto created = seq::createMicroSequence(
+        seq::authoringPattern(sequencer),
+        seq::rootStepNodeId(0),
+        3
+    );
+    assert(created.ok);
+    seq::notifyStepContentDraftMutation(sequencer);
+    assert(seq::graphView(sequencer.pattern) == nullptr);
+
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    runtimeGraphs.publishPrepared();
+    const auto* draftRuntime = runtimeGraphs.graphForTrack(0);
+    assert(draftRuntime != nullptr);
+    assert(draftRuntime->sequence(created.id) != nullptr);
+    assert(draftRuntime != seq::graphView(seq::authoringPattern(sequencer)));
+
+    seq::abandonStepContentDraft(sequencer);
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    runtimeGraphs.publishPrepared();
+    assert(runtimeGraphs.graphForTrack(0) == nullptr);
+
+    std::cout
+        << "[PASS] test_micro_sequence_draft_is_runtime_only_until_apply_or_cancel\n";
+}
+
+void test_chord_draft_projects_without_mutating_the_published_graph() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerState sequencer;
+    seq::SequencerTrackBankState trackBank;
+    core::sequencer::SequencerRuntimeGraphBank runtimeGraphs;
+    constexpr uint16_t ownerNode = 0;
+
+    assert(seq::beginStepContentDraft(
+        sequencer,
+        seq::SequencerStepContentDraftKind::CHORD,
+        0,
+        ownerNode
+    ));
+    oc::note::sequencer::StepSequencerChordSpec chord{};
+    chord.voiceCount = 4;
+    assert(seq::setAuthoringNodeChordSpec(sequencer, ownerNode, chord));
+    seq::notifyStepContentDraftMutation(sequencer);
+    assert(seq::graphView(sequencer.pattern) == nullptr);
+
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    runtimeGraphs.publishPrepared();
+    const auto* runtime = runtimeGraphs.graphForTrack(0);
+    assert(runtime != nullptr);
+    const auto* runtimeNode = runtime->stepNode(ownerNode);
+    assert(runtimeNode != nullptr);
+    assert(runtimeNode->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
+    assert(runtimeNode->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL));
+    assert(runtimeNode->chordSpec.voiceCount == 4);
+
+    assert(seq::publishStepContentDraft(sequencer));
+    const auto* published = seq::graphView(sequencer.pattern);
+    assert(published != nullptr);
+    assert(published->stepNode(ownerNode)->chordSpec.voiceCount == 4);
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    runtimeGraphs.publishPrepared();
+    assert(runtimeGraphs.graphForTrack(0)->stepNode(ownerNode)->chordSpec.voiceCount == 4);
+
+    std::cout
+        << "[PASS] test_chord_draft_projects_without_mutating_the_published_graph\n";
+}
+
 }  // namespace
 
 int main() {
     test_prepare_keeps_the_active_graph_until_publication();
     test_publication_commits_simultaneous_track_changes_together();
+    test_micro_sequence_draft_is_runtime_only_until_apply_or_cancel();
+    test_chord_draft_projects_without_mutating_the_published_graph();
     std::cout << "All SequencerRuntimeGraphBank tests passed\n";
     return 0;
 }

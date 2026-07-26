@@ -2,6 +2,8 @@
 
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/project/ProjectTrackDomainServices.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -27,7 +29,8 @@ bool createSequencerStructureTrack(
 );
 
 bool toggleSequencerStructureTrackMute(
-    core::state::sequencer::SequencerTrackBankState& tracks,
+    const core::state::project::ProjectTrackState& tracks,
+    core::state::project::ProjectTrackDomainServices& trackDomain,
     uint8_t track
 );
 

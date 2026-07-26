@@ -27,6 +27,7 @@ public:
         LIST_FAILED,
         PARTIAL_LOAD,
         UNSAFE_OVERWRITE,
+        DRAFT_ACTIVE,
     };
 
     struct Result {

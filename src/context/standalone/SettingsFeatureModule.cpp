@@ -42,16 +42,15 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
 #endif
 {
 #if defined(MS_UX_RECORDER)
-    if (uxRegistry) {
-        uxRegistry->add(
+    if (uxRegistry &&
+        (!uxRegistry->add(
             device_settings_ux_surface_,
             core::context::standalone::ux::priority::DEVICE_SETTINGS
-        );
-        uxRegistry->add(
+        ) ||
+         !uxRegistry->add(
             data_manager_ux_surface_,
             core::context::standalone::ux::priority::DATA_MANAGER
-        );
-    }
+        ))) return;
 #endif
 
     if (!mainZone || deviceSettingsViewScope == 0) return;

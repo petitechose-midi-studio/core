@@ -107,7 +107,7 @@ FLASHMEM void pastePageClipboard(
         static_cast<uint16_t>(targetStart + std::max<uint8_t>(clipboard.count, 1))
     ));
     if (sequencer.pattern.length.get() < requiredLength) {
-        sequencer.pattern.length.set(requiredLength);
+        sequencer.pattern.setContentLength(requiredLength);
     }
 
     for (uint8_t i = 0; i < clipboard.count; ++i) {

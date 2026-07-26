@@ -12,11 +12,13 @@ FLASHMEM SequencerInternalTimerLane::SequencerInternalTimerLane(
     oc::api::MidiAPI& midi,
     RealtimeMidiQueue& midiQueue,
     SequencerRuntimeSnapshotBank& snapshotBank,
+    const ProjectTrackRuntimeSnapshotBank& projectTrackSnapshots,
     SequencerPlaybackService& playback
 )
     : midi_(midi)
     , midi_queue_(midiQueue)
     , snapshot_bank_(snapshotBank)
+    , project_track_snapshots_(projectTrackSnapshots)
     , playback_(playback) {}
 
 bool SequencerInternalTimerLane::start() {
@@ -90,13 +92,19 @@ void SequencerInternalTimerLane::onTimer_() {
     }
 
     const uint32_t playbackStartUs = core::time_compat::micros();
-    playback_.update(snapshot,
-                     tick,
-                     playing,
-                     playbackStartUs,
-                     tickPeriodUsForTempo(config.tempo),
-                     false,
-                     snapshot_bank_.laneSnapshot(inputIndex));
+    // inputIndex is the already-validated 0/1 shared publication slot.
+    const auto& projectTracks = *project_track_snapshots_.snapshot(inputIndex);
+    playback_.update(
+        snapshot,
+        tick,
+        playing,
+        playbackStartUs,
+        tickPeriodUsForTempo(config.tempo),
+        projectTracks,
+        false,
+        snapshot_bank_.laneSnapshot(inputIndex),
+        true
+    );
     drainRealtimeMidiQueue_(core::time_compat::micros());
     OC_PERF_UNITS(perfTimer, pendingClockCount, playing ? 1U : 0U);
 }

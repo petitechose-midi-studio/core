@@ -58,8 +58,10 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
 ) {
     return {
         .length = source.length.get(),
+        .playStart = source.playStart,
+        .loopStart = source.loopStart,
+        .loopEnd = source.loopEnd,
         .stepsPerBeat = source.stepsPerBeat.get(),
-        .midiChannel = source.midiChannel.get(),
         .enabledMask = source.enabledMask.get(),
         .stepDataRevision = source.stepDataRevision.get(),
         .patternVariationRevision = source.patternVariationRevision.get(),
@@ -81,8 +83,10 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
 ) {
     return {
         .length = source.length,
+        .playStart = source.playStart,
+        .loopStart = source.loopStart,
+        .loopEnd = source.loopEnd,
         .stepsPerBeat = source.stepsPerBeat,
-        .midiChannel = source.midiChannel,
         .enabledMask = source.enabledMask,
         .stepDataRevision = source.stepDataRevision,
         .patternVariationRevision = source.patternVariationRevision,
@@ -95,11 +99,29 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
     };
 }
 
+oc::note::sequencer::StepSequencerPlaybackRegion runtimePlaybackRegion(
+    const core::state::sequencer::SequencerPatternSnapshot& source
+) {
+    const uint8_t length = std::clamp<uint8_t>(
+        source.length,
+        oc::note::sequencer::StepSequencerPlaybackRegion::MIN_CONTENT_LENGTH,
+        oc::note::sequencer::StepSequencerPlaybackRegion::MAX_CONTENT_LENGTH
+    );
+    const oc::note::sequencer::StepSequencerPlaybackRegion region{
+        length,
+        source.playStart,
+        source.loopStart,
+        source.loopEnd,
+    };
+    return region.isValid()
+        ? region
+        : oc::note::sequencer::StepSequencerPlaybackRegion::fullLength(length);
+}
+
 void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
                       const core::state::sequencer::SequencerPatternSnapshot& source) {
     target.length = source.length;
     target.stepsPerBeat = source.stepsPerBeat;
-    target.midiChannel = source.midiChannel;
     target.effectiveSwingPercent = source.effectiveSwingPercent;
     target.patternNudgePercent = source.patternNudgePercent;
     target.enabledMask = source.enabledMask;

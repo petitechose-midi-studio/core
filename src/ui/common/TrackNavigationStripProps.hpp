@@ -20,7 +20,13 @@ struct TrackNavigationStripProps {
     uint8_t previewTrack = 0;
     uint8_t addTrackIndex = TRACK_COUNT;
     uint16_t enabledMask = 0x0001;
-    uint16_t mutedMask = 0;
+    /** Authored Mute state only; never includes Tracks excluded by Solo. */
+    uint16_t explicitMutedMask = 0;
+    /** Authored Solo state, clipped to structurally enabled Tracks. */
+    uint16_t soloMask = 0;
+    /** Effective runtime inaudibility after applying both Solo and Mute. */
+    uint16_t inaudibleMask = 0;
+    /** Session-only Track selection, clipped to structurally enabled Tracks. */
     uint16_t selectedMask = 0;
     bool focusingTrack = false;
     bool selectingTrack = false;

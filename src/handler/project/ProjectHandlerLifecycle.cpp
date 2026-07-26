@@ -1,9 +1,18 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
+#include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
 namespace core::handler {
 
 using namespace project_handler_internal;
+
+namespace {
+
+const char SOURCE_NAME_UNCHANGED[] PROGMEM = "Name unchanged";
+const char SOURCE_RENAMED_FORMAT[] PROGMEM = "Renamed · %s";
+const char SOURCE_FALLBACK_NAME[] PROGMEM = "Source";
+
+}  // namespace
 
 FLASHMEM bool ProjectHandler::loadProjectWithFeedback(const char* projectId) {
     const auto result = lifecycle_.loadProject(projectId);
@@ -97,6 +106,33 @@ FLASHMEM bool ProjectHandler::commitProjectNameEditor() {
     if (!isProjectNameEditorNode(node)) return false;
 
     const char* slug = navigation_.editingProjectSlug.data();
+    if (node ==
+        core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME) {
+        if (slug[0] == '\0') {
+            navigation_.setLifecycleFeedback("Invalid name");
+            return true;
+        }
+        const auto sourceId = navigation_.selectedModulator;
+        if (!macro_history_.setProjectModulatorName(pages_, sourceId, slug)) {
+            navigation_.setLifecycleFeedback(SOURCE_NAME_UNCHANGED);
+            return true;
+        }
+        publishModulatorMutation(false);
+        const auto* source = core::state::modulation::findProjectModulator(
+            pages_.control.authored.modulation,
+            sourceId
+        );
+        char feedback[32]{};
+        std::snprintf(
+            feedback,
+            sizeof(feedback),
+            SOURCE_RENAMED_FORMAT,
+            source ? source->name.data() : SOURCE_FALLBACK_NAME
+        );
+        back();
+        navigation_.setLifecycleFeedback(feedback);
+        return true;
+    }
     if (!core::state::project::validProjectSlug(slug)) {
         navigation_.setLifecycleFeedback("Invalid name");
         return true;

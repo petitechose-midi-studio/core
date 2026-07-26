@@ -21,14 +21,15 @@ enum class AutomationDetailItem : uint8_t {
     CONVERT_TO_MODULATION,
     LENGTH,
     OFFSET,
-    CURVE,
+    INVALID = 0xFFU,
 };
 
 enum class ModulationDetailItem : uint8_t {
     PLAYBACK = 0,
     DEPTH,
-    CURVE,
+    SHAPE,
     ORIGIN,
+    INVALID = 0xFFU,
 };
 
 template <typename Item, size_t Capacity>
@@ -41,12 +42,12 @@ struct MacroSourceDetailLayout {
     }
 
     [[nodiscard]] Item at(uint8_t visibleIndex) const {
-        return items[visibleIndex < count ? visibleIndex : 0U];
+        return visibleIndex < count ? items[visibleIndex] : Item::INVALID;
     }
 };
 
 using AutomationDetailLayout =
-    MacroSourceDetailLayout<AutomationDetailItem, 6>;
+    MacroSourceDetailLayout<AutomationDetailItem, 5>;
 using ModulationDetailLayout =
     MacroSourceDetailLayout<ModulationDetailItem, 4>;
 
@@ -66,7 +67,6 @@ inline AutomationDetailLayout buildAutomationDetailLayout(
         out.append(AutomationDetailItem::CONVERT_TO_MODULATION);
         out.append(AutomationDetailItem::LENGTH);
         out.append(AutomationDetailItem::OFFSET);
-        out.append(AutomationDetailItem::CURVE);
     }
     return out;
 }
@@ -78,7 +78,7 @@ inline ModulationDetailLayout buildModulationDetailLayout(
     out.append(ModulationDetailItem::PLAYBACK);
     if (context.modulationStored) {
         out.append(ModulationDetailItem::DEPTH);
-        out.append(ModulationDetailItem::CURVE);
+        out.append(ModulationDetailItem::SHAPE);
         out.append(ModulationDetailItem::ORIGIN);
     }
     return out;

@@ -380,112 +380,125 @@ struct GraphCompactor {
     StepSequencerGraph& target;
     SequencerGraphCompactionRemap& remap;
 
-    bool copyNode(uint16_t sourceNodeId, uint16_t targetNodeId) {
-        if (!hasStepNode(source, sourceNodeId) || !hasStepNode(target, targetNodeId)) {
-            return false;
-        }
-
-        remap.stepNodes[sourceNodeId] = targetNodeId;
-        auto& targetNode = target.stepNodes[targetNodeId];
-        const auto& sourceNode = source.stepNodes[sourceNodeId];
-        copyStepNodeValuesWithoutChildren(targetNode, sourceNode);
-
-        if (sourceNode.has(STEP_NODE_CHILD_SEQUENCE)) {
-            const uint16_t targetSequenceId = copySequence(sourceNode.childSequenceId);
-            if (targetSequenceId == kInvalidId) return false;
-            targetNode.childSequenceId = targetSequenceId;
-            targetNode.flags = static_cast<uint16_t>(targetNode.flags | STEP_NODE_CHILD_SEQUENCE);
-        }
-
-        if (sourceNode.has(STEP_NODE_CYCLE_SET)) {
-            const uint16_t targetCycleSetId = copyCycleSet(sourceNode.cycleSetId);
-            if (targetCycleSetId == kInvalidId) return false;
-            targetNode.cycleSetId = targetCycleSetId;
-            targetNode.flags = static_cast<uint16_t>(targetNode.flags | STEP_NODE_CYCLE_SET);
-        }
-
-        return true;
-    }
-
-    uint16_t copySequence(uint16_t sourceSequenceId) {
-        const auto* sourceSequence = source.sequence(sourceSequenceId);
-        if (sourceSequence == nullptr ||
-            sourceSequence->kind != StepSequencerSequenceKind::MicroSequence) {
-            return kInvalidId;
-        }
-
-        const uint16_t targetSequenceId = allocateSequence(
-            target,
-            StepSequencerSequenceKind::MicroSequence,
-            sourceSequence->length,
-            StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP
-        );
-        if (targetSequenceId == kInvalidId) return kInvalidId;
-
-        remap.sequences[sourceSequenceId] = targetSequenceId;
-        auto& targetSequence = target.sequences[targetSequenceId];
-        targetSequence.offset = sourceSequence->offset;
-
-        for (uint8_t i = 0; i < sourceSequence->length; ++i) {
-            const uint16_t sourceNodeId =
-                static_cast<uint16_t>(sourceSequence->firstStepNode + i);
-            const uint16_t targetNodeId =
-                static_cast<uint16_t>(targetSequence.firstStepNode + i);
-            if (!copyNode(sourceNodeId, targetNodeId)) return kInvalidId;
-        }
-
-        return targetSequenceId;
-    }
-
-    uint16_t copyCycleSet(uint16_t sourceCycleSetId) {
-        const auto* sourceSet = source.cycleSet(sourceCycleSetId);
-        if (sourceSet == nullptr) return kInvalidId;
-
-        const uint16_t targetCycleSetId = allocateCycleSet(target, sourceSet->length);
-        if (targetCycleSetId == kInvalidId) return kInvalidId;
-
-        remap.cycleSets[sourceCycleSetId] = targetCycleSetId;
-        auto& targetSet = target.cycleSets[targetCycleSetId];
-        targetSet.offset = sourceSet->offset;
-
-        for (uint8_t i = 0; i < sourceSet->length; ++i) {
-            const uint16_t sourceNodeId =
-                static_cast<uint16_t>(sourceSet->firstStateNode + i);
-            const uint16_t targetNodeId =
-                static_cast<uint16_t>(targetSet.firstStateNode + i);
-            if (!copyNode(sourceNodeId, targetNodeId)) return kInvalidId;
-        }
-
-        return targetCycleSetId;
-    }
-
-    bool copyRoot() {
-        const auto* root = source.sequence(source.rootSequenceId);
-        if (root == nullptr ||
-            root->kind != StepSequencerSequenceKind::RootPattern ||
-            root->firstStepNode != 0 ||
-            root->length > SequencerPatternState::MAX_STEPS) {
-            return false;
-        }
-
-        target.enabled = true;
-        target.rootSequenceId = 0;
-        target.sequenceCount = 1;
-        target.stepNodeCount = SequencerPatternState::MAX_STEPS;
-        target.sequences[0] = StepSequencerSequence{
-            .kind = StepSequencerSequenceKind::RootPattern,
-            .firstStepNode = 0,
-            .length = SequencerPatternState::MAX_STEPS,
-            .offset = root->offset,
-        };
-        remap.sequences[source.rootSequenceId] = 0;
-
-        for (uint16_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
-            if (!copyNode(i, i)) return false;
-        }
-        return true;
-    }
+    bool copyNode(uint16_t sourceNodeId, uint16_t targetNodeId);
+    uint16_t copySequence(uint16_t sourceSequenceId);
+    uint16_t copyCycleSet(uint16_t sourceCycleSetId);
+    bool copyRoot();
 };
+
+FLASHMEM bool GraphCompactor::copyNode(
+    uint16_t sourceNodeId,
+    uint16_t targetNodeId
+) {
+    if (!hasStepNode(source, sourceNodeId) ||
+        !hasStepNode(target, targetNodeId)) {
+        return false;
+    }
+
+    remap.stepNodes[sourceNodeId] = targetNodeId;
+    auto& targetNode = target.stepNodes[targetNodeId];
+    const auto& sourceNode = source.stepNodes[sourceNodeId];
+    copyStepNodeValuesWithoutChildren(targetNode, sourceNode);
+
+    if (sourceNode.has(STEP_NODE_CHILD_SEQUENCE)) {
+        const uint16_t targetSequenceId = copySequence(sourceNode.childSequenceId);
+        if (targetSequenceId == kInvalidId) return false;
+        targetNode.childSequenceId = targetSequenceId;
+        targetNode.flags = static_cast<uint16_t>(
+            targetNode.flags | STEP_NODE_CHILD_SEQUENCE
+        );
+    }
+
+    if (sourceNode.has(STEP_NODE_CYCLE_SET)) {
+        const uint16_t targetCycleSetId = copyCycleSet(sourceNode.cycleSetId);
+        if (targetCycleSetId == kInvalidId) return false;
+        targetNode.cycleSetId = targetCycleSetId;
+        targetNode.flags = static_cast<uint16_t>(
+            targetNode.flags | STEP_NODE_CYCLE_SET
+        );
+    }
+
+    return true;
+}
+
+FLASHMEM uint16_t GraphCompactor::copySequence(uint16_t sourceSequenceId) {
+    const auto* sourceSequence = source.sequence(sourceSequenceId);
+    if (sourceSequence == nullptr ||
+        sourceSequence->kind != StepSequencerSequenceKind::MicroSequence) {
+        return kInvalidId;
+    }
+
+    const uint16_t targetSequenceId = allocateSequence(
+        target,
+        StepSequencerSequenceKind::MicroSequence,
+        sourceSequence->length,
+        StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP
+    );
+    if (targetSequenceId == kInvalidId) return kInvalidId;
+
+    remap.sequences[sourceSequenceId] = targetSequenceId;
+    auto& targetSequence = target.sequences[targetSequenceId];
+    targetSequence.offset = sourceSequence->offset;
+
+    for (uint8_t i = 0; i < sourceSequence->length; ++i) {
+        const uint16_t sourceNodeId =
+            static_cast<uint16_t>(sourceSequence->firstStepNode + i);
+        const uint16_t targetNodeId =
+            static_cast<uint16_t>(targetSequence.firstStepNode + i);
+        if (!copyNode(sourceNodeId, targetNodeId)) return kInvalidId;
+    }
+
+    return targetSequenceId;
+}
+
+FLASHMEM uint16_t GraphCompactor::copyCycleSet(uint16_t sourceCycleSetId) {
+    const auto* sourceSet = source.cycleSet(sourceCycleSetId);
+    if (sourceSet == nullptr) return kInvalidId;
+
+    const uint16_t targetCycleSetId = allocateCycleSet(target, sourceSet->length);
+    if (targetCycleSetId == kInvalidId) return kInvalidId;
+
+    remap.cycleSets[sourceCycleSetId] = targetCycleSetId;
+    auto& targetSet = target.cycleSets[targetCycleSetId];
+    targetSet.offset = sourceSet->offset;
+
+    for (uint8_t i = 0; i < sourceSet->length; ++i) {
+        const uint16_t sourceNodeId =
+            static_cast<uint16_t>(sourceSet->firstStateNode + i);
+        const uint16_t targetNodeId =
+            static_cast<uint16_t>(targetSet.firstStateNode + i);
+        if (!copyNode(sourceNodeId, targetNodeId)) return kInvalidId;
+    }
+
+    return targetCycleSetId;
+}
+
+FLASHMEM bool GraphCompactor::copyRoot() {
+    const auto* root = source.sequence(source.rootSequenceId);
+    if (root == nullptr ||
+        root->kind != StepSequencerSequenceKind::RootPattern ||
+        root->firstStepNode != 0 ||
+        root->length > SequencerPatternState::MAX_STEPS) {
+        return false;
+    }
+
+    target.enabled = true;
+    target.rootSequenceId = 0;
+    target.sequenceCount = 1;
+    target.stepNodeCount = SequencerPatternState::MAX_STEPS;
+    target.sequences[0] = StepSequencerSequence{
+        .kind = StepSequencerSequenceKind::RootPattern,
+        .firstStepNode = 0,
+        .length = SequencerPatternState::MAX_STEPS,
+        .offset = root->offset,
+    };
+    remap.sequences[source.rootSequenceId] = 0;
+
+    for (uint16_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
+        if (!copyNode(i, i)) return false;
+    }
+    return true;
+}
 
 FLASHMEM bool remapChanged(const StepSequencerGraph& source,
                            const StepSequencerGraph& target,
@@ -597,15 +610,16 @@ FLASHMEM bool rotateStepNodeSegment(
         "step-content rotation scratch must fit every child content kind"
     );
 
-    for (uint8_t i = 0; i < length; ++i) {
+    for (uint16_t i = 0; i < length; ++i) {
+        const auto stepIndex = static_cast<uint8_t>(i);
         const uint8_t source =
-            sourceIndexForLogicalOffset(i, normalizedLogicalOffset, length);
+            sourceIndexForLogicalOffset(stepIndex, normalizedLogicalOffset, length);
         const uint8_t destination =
             static_cast<uint8_t>((static_cast<int>(i) + normalizedOffset) % length);
         rotated[destination] = graph.stepNodes[static_cast<uint16_t>(firstNode + source)];
     }
 
-    for (uint8_t i = 0; i < length; ++i) {
+    for (uint16_t i = 0; i < length; ++i) {
         graph.stepNodes[static_cast<uint16_t>(firstNode + i)] = rotated[i];
     }
     return true;

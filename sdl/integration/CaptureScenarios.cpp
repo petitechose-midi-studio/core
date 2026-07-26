@@ -1,5 +1,8 @@
 #include "integration/CaptureScenarios.hpp"
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -10,6 +13,10 @@
 #include "state/DataManagerCatalog.hpp"
 #include "state/macro/MacroAutomationDomain.hpp"
 #include "state/macro/MacroWorkflow.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/project/ProjectTrackDomainServices.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -19,6 +26,19 @@
 namespace sdl::integration {
 
 namespace {
+
+uint16_t curvePointTick(float beat, uint16_t durationTicks) {
+    const float finiteBeat = std::isfinite(beat) ? std::max(beat, 0.0f) : 0.0f;
+    return static_cast<uint16_t>(std::clamp<long>(
+        std::lround(
+            finiteBeat * static_cast<float>(
+                core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT
+            )
+        ),
+        0L,
+        durationTicks
+    ));
+}
 
 void publishVariationTelemetry(
     core::state::CoreState& state,
@@ -145,14 +165,458 @@ void prepareMacroAutomationCleanScenario(core::state::CoreState& state) {
     state.activeView.set(core::ui::ViewType::MACRO);
     state.overlays.hideAll();
     state.pages.initDefaults();
-    state.pages.automation.clear();
+    state.pages.control.clear();
     state.macroUi.reset();
     state.macroEdit.reset();
     state.trackNavigation.reset();
     state.structureClipboard.clear();
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
+}
+
+void prepareMacroAutomationTwoMacrosScenario(core::state::CoreState& state) {
+    prepareMacroAutomationCleanScenario(state);
+    auto& page = state.pages.activePageData();
+    page.cc[1] = 71;
+    page.values[1] = 0.50f;
+    page.setMacroActive(1, true);
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
+}
+
+core::state::modulation::ModulatorId addReusableLfo(
+    core::state::CoreState& state,
+    const char* name,
+    core::state::modulation::ModulatorLfoShape shape,
+    uint32_t periodTicks,
+    uint8_t accent
+) {
+    using namespace core::state::modulation;
+    ModulatorLfoDraft draft{};
+    draft.name = name;
+    draft.parameters.periodTicks = periodTicks;
+    draft.parameters.shape = shape;
+    draft.parameters.retrigger = ModulatorRetriggerPolicy::TRANSPORT;
+    draft.parameters.timing = ModulatorTimingMode::SYNC;
+    draft.accent = accent;
+    return createLfoModulator(
+        state.pages.control.authored.modulation,
+        draft
+    ).sourceId;
+}
+
+void prepareMacroReusableModulatorsScenario(core::state::CoreState& state) {
+    using namespace core::state::modulation;
+    prepareMacroAutomationCleanScenario(state);
+    state.setSharedTrackState(0x0003, 0);
+
+    auto& track = state.pages.tracks[0];
+    (void)core::state::project::setProjectTrackMidiChannel(
+        state.projectTracks,
+        0U,
+        5U
+    );
+    track.activePage = 0;
+    track.enabledPageMask = 0x0001;
+    auto& page = track.pages[0];
+    page.cc[0] = 74;
+    page.values[0] = 0.42f;
+    page.setMacroActive(0, true);
+    std::snprintf(page.name, sizeof(page.name), "%s", "Reusable LFOs");
+
+    auto& remoteTrack = state.pages.tracks[1];
+    (void)core::state::project::setProjectTrackMidiChannel(
+        state.projectTracks,
+        1U,
+        6U
+    );
+    remoteTrack.activePage = 0;
+    remoteTrack.enabledPageMask = 0x0001;
+    auto& remotePage = remoteTrack.pages[0];
+    remotePage.cc[0] = 71;
+    remotePage.values[0] = 0.5f;
+    remotePage.setMacroActive(0, true);
+    std::snprintf(remotePage.name, sizeof(remotePage.name), "%s", "Remote use");
+
+    state.pages.syncSharedTrackState(0x0003, 0);
+    state.pages.setActivePage(0);
+    state.macroUi.syncPreviewPage(0);
+    state.trackNavigation.syncPreviewTrack(0);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+
+    const auto slowTide = addReusableLfo(
+        state,
+        "Slow Tide",
+        core::state::modulation::ModulatorLfoShape::SINE,
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT * 4U,
+        0
+    );
+    const auto pulseLift = addReusableLfo(
+        state,
+        "Pulse Lift",
+        core::state::modulation::ModulatorLfoShape::TRIANGLE,
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT,
+        1
+    );
+    if (core::state::modulation::valid(slowTide) ||
+        core::state::modulation::valid(pulseLift)) {
+        state.pages.control.markAuthoredMutation();
+    }
+    if (valid(slowTide)) {
+        ModulationBindingDraft remote{};
+        remote.sourceId = slowTide;
+        remote.destination = projectControlDestination({1U, 0U, 0U});
+        remote.amountQ15 = 4096;
+        remote.application = ModulationApplication::NATURAL;
+        (void)addProjectModulationBinding(
+            state.pages.control.authored.modulation,
+            remote
+        );
+        state.pages.control.markAuthoredMutation();
+    }
+
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
+}
+
+core::state::modulation::ModulationBindingId bindReusableModulator(
+    core::state::CoreState& state,
+    core::state::modulation::ModulatorId sourceId,
+    int16_t amountQ15,
+    uint8_t track = 0,
+    uint8_t page = 0,
+    uint8_t macro = 0
+) {
+    using namespace core::state::modulation;
+    ModulationBindingDraft draft{};
+    draft.sourceId = sourceId;
+    draft.destination = projectControlDestination({
+        .track = track,
+        .page = page,
+        .macro = macro,
+    });
+    draft.amountQ15 = amountQ15;
+    draft.application = ModulationApplication::NATURAL;
+    draft.enabled = true;
+    return addProjectModulationBinding(
+        state.pages.control.authored.modulation,
+        draft
+    ).bindingId;
+}
+
+void prepareMacroMultiModulationScenario(core::state::CoreState& state) {
+    prepareMacroReusableModulatorsScenario(state);
+    auto& graph = state.pages.control.authored.modulation;
+    if (graph.sourceCount < 2U) return;
+    const auto drift = addReusableLfo(
+        state,
+        "Drift",
+        core::state::modulation::ModulatorLfoShape::SAW_DOWN,
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT * 2U,
+        2
+    );
+    const auto slowBinding = bindReusableModulator(
+        state,
+        graph.sources[0].id,
+        8192
+    );
+    const auto pulseBinding = bindReusableModulator(
+        state,
+        graph.sources[1].id,
+        -13107
+    );
+    (void)slowBinding;
+    if (core::state::modulation::valid(drift)) {
+        (void)bindReusableModulator(state, drift, 4915);
+    }
+    state.pages.control.markAuthoredMutation();
+    if (core::state::modulation::valid(pulseBinding)) {
+        (void)core::state::modulation::setProjectControlFocusedModulationBinding(
+            state.pages.control,
+            {.track = 0, .page = 0, .macro = 0},
+            pulseBinding
+        );
+    }
+}
+
+void prepareMacroPerformanceRailScenario(core::state::CoreState& state) {
+    prepareMacroAutomationCleanScenario(state);
+    state.setSharedTrackState(0x0001, 0);
+
+    auto& track = state.pages.tracks[0];
+    (void)core::state::project::setProjectTrackMidiChannel(
+        state.projectTracks,
+        0U,
+        5U
+    );
+    track.activePage = 0;
+    track.enabledPageMask = 0x0001;
+    auto& page = track.pages[0];
+    page.cc[0] = 74;
+    page.values[0] = 0.35f;
+    page.setMacroActive(0, true);
+    std::snprintf(page.name, sizeof(page.name), "%s", "Mod Rail");
+
+    state.pages.syncSharedTrackState(0x0001, 0);
+    state.pages.setActivePage(0);
+    state.macroUi.syncPreviewPage(0);
+    state.trackNavigation.syncPreviewTrack(0);
+    state.structureNavigationFocus.set(
+        core::state::StructureNavigationFocus::PAGE
+    );
+
+    const auto source = addReusableLfo(
+        state,
+        "Bound Probe",
+        core::state::modulation::ModulatorLfoShape::SQUARE,
+        core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT * 32U,
+        0
+    );
+    if (core::state::modulation::valid(source)) {
+        // Leave enough headroom for the hardware-equivalent encoder mapper to
+        // recover inside both bounds for either square-wave polarity.
+        (void)bindReusableModulator(state, source, 12000);
+        state.pages.control.markAuthoredMutation();
+    }
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(
+        state.configRevision.get()
+    ));
+}
+
+void prepareMacroInitialProjectionScenario(core::state::CoreState& state) {
+    prepareMacroMultiModulationScenario(state);
+    auto& graph = state.pages.control.authored.modulation;
+    if (graph.sourceCount < 2U) return;
+
+    auto& track0 = state.pages.tracks[0];
+    track0.setPageEnabled(1, true);
+    track0.pages[1].values[0] = 0.68f;
+    track0.pages[1].cc[0] = 71;
+    track0.pages[1].setMacroActive(0, true);
+    std::snprintf(
+        track0.pages[1].name,
+        sizeof(track0.pages[1].name),
+        "%s",
+        "Projection P2"
+    );
+
+    auto& track1 = state.pages.tracks[1];
+    (void)core::state::project::setProjectTrackMidiChannel(
+        state.projectTracks,
+        1U,
+        6U
+    );
+    track1.activePage = 0;
+    track1.setPageEnabled(0, true);
+    track1.pages[0].values[0] = 0.24f;
+    track1.pages[0].cc[0] = 10;
+    track1.pages[0].setMacroActive(0, true);
+    std::snprintf(
+        track1.pages[0].name,
+        sizeof(track1.pages[0].name),
+        "%s",
+        "Projection T2"
+    );
+
+    (void)bindReusableModulator(
+        state,
+        graph.sources[0].id,
+        9830,
+        0,
+        1,
+        0
+    );
+    (void)bindReusableModulator(
+        state,
+        graph.sources[1].id,
+        -6553,
+        1,
+        0,
+        0
+    );
+    state.pages.control.markAuthoredMutation();
+    state.setSharedTrackState(0x0003U, 0);
+    state.pages.setActivePage(0);
+    state.macroUi.syncPreviewPage(0);
+    state.trackNavigation.syncPreviewTrack(0);
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.configRevision.set(
+        core::state::macro::nextMacroConfigRevision(
+            state.configRevision.get()
+        )
+    );
+}
+
+void prepareProjectModulatorsScenario(core::state::CoreState& state) {
+    using namespace core::state::modulation;
+    prepareMacroReusableModulatorsScenario(state);
+    auto& page = state.pages.tracks[0].pages[0];
+    auto& track2Page = state.pages.tracks[1].pages[0];
+    page.cc[1] = 71;
+    page.cc[2] = 10;
+    page.values[1] = 0.58f;
+    page.values[2] = 0.33f;
+    page.setMacroActive(1, true);
+    page.setMacroActive(2, true);
+    track2Page.cc[1] = 74;
+    track2Page.values[1] = 0.46f;
+    track2Page.setMacroActive(1, true);
+
+    auto& graph = state.pages.control.authored.modulation;
+    if (graph.sourceCount >= 2U) {
+        // The reusable-Macro scenario seeds one remote use. This Project
+        // scenario authors its own exact two-destination shared graph.
+        for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
+            const auto& candidate = graph.outputBindings[index];
+            if (candidate.sourceId == graph.sources[0].id &&
+                candidate.destination == projectControlDestination(
+                    {1U, 0U, 0U}
+                )) {
+                (void)removeProjectModulationBinding(graph, candidate.id);
+                break;
+            }
+        }
+        const auto addBinding = [&](ModulatorId sourceId,
+                                    uint8_t track,
+                                    uint8_t macro,
+                                    int16_t depthQ15) {
+            ModulationBindingDraft draft{};
+            draft.sourceId = sourceId;
+            draft.destination = projectControlDestination({
+                .track = track,
+                .page = 0,
+                .macro = macro,
+            });
+            draft.amountQ15 = depthQ15;
+            draft.application = ModulationApplication::NATURAL;
+            draft.enabled = true;
+            return addProjectModulationBinding(graph, draft).changed();
+        };
+        (void)addBinding(graph.sources[0].id, 0, 0, 8192);
+        (void)addBinding(graph.sources[0].id, 1, 1, -4096);
+        (void)addBinding(graph.sources[1].id, 0, 2, 2621);
+        state.pages.control.markAuthoredMutation();
+    }
+
+    state.macroHistory.clear();
+    state.structureClipboard.clear();
+    state.projectNavigation.reset();
+    state.activeView.set(core::ui::ViewType::PROJECT);
+    state.overlays.hideAll();
+    (void)state.setSharedTrackState(0x0003U, 0U);
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(
+        state.configRevision.get()
+    ));
+}
+
+void prepareProjectModulatorDestinationScenario(core::state::CoreState& state) {
+    state.pages.initDefaults();
+    state.pages.control.clear();
+    auto& page = state.pages.pageData(0, 0);
+    page.cc[0] = 74;
+    page.values[0] = 0.42f;
+    page.setMacroActive(0, true);
+    state.pages.updateActiveConfigs();
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.macroHistory.clear();
+    state.structureClipboard.clear();
+    state.projectNavigation.reset();
+    state.activeView.set(core::ui::ViewType::PROJECT);
+    state.overlays.hideAll();
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(
+        state.configRevision.get()
+    ));
+}
+
+void prepareProjectModulatorWorkspaceScenario(core::state::CoreState& state) {
+    using namespace core::state::modulation;
+    prepareProjectModulatorsScenario(state);
+    constexpr std::array<ProjectPackedCurvePoint, 5> points{{
+        {0U, -24576},
+        {96U, 8192},
+        {192U, 28672},
+        {288U, -4096},
+        {384U, -24576},
+    }};
+    RecordedShapeDraft draft{};
+    draft.name = "Breath Arc";
+    draft.curve = {
+        .sourceDurationTicks = 384U,
+        .durationTicks = 384U,
+        .valueDomain = ProjectCurveValueDomain::BIPOLAR,
+    };
+    draft.points = points.data();
+    draft.pointCount = static_cast<uint16_t>(points.size());
+    auto& control = state.pages.control;
+    const auto created = createRecordedShapeModulator(
+        control.authored.modulation,
+        control.authored.curves,
+        draft
+    );
+    if (created.changed()) {
+        ModulationBindingDraft binding{};
+        binding.sourceId = created.sourceId;
+        binding.destination = projectControlDestination({0U, 0U, 1U});
+        binding.amountQ15 = 6553;
+        binding.application = ModulationApplication::NATURAL;
+        (void)addProjectModulationBinding(
+            control.authored.modulation,
+            binding
+        );
+        control.markAuthoredMutation();
+    }
+    state.projectNavigation.notifyContentChanged();
+    state.configRevision.set(core::state::macro::nextMacroConfigRevision(
+        state.configRevision.get()
+    ));
+}
+
+void prepareMacroModulationAssignmentCopyScenario(
+    core::state::CoreState& state
+) {
+    prepareMacroReusableModulatorsScenario(state);
+    auto& page = state.pages.tracks[0].pages[0];
+    page.cc[1] = 71;
+    page.values[1] = 0.58f;
+    page.setMacroActive(1, true);
+    auto& graph = state.pages.control.authored.modulation;
+    if (graph.sourceCount == 0U) return;
+    const auto binding = bindReusableModulator(
+        state,
+        graph.sources[0].id,
+        -13107
+    );
+    state.pages.control.markAuthoredMutation();
+    if (core::state::modulation::valid(binding)) {
+        (void)core::state::modulation::setProjectControlFocusedModulationBinding(
+            state.pages.control,
+            {.track = 0, .page = 0, .macro = 0},
+            binding
+        );
+    }
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.configRevision.set(
+        core::state::macro::nextMacroConfigRevision(
+            state.configRevision.get()
+        )
+    );
 }
 
 void configureMacroAutomation(core::state::CoreState& state,
@@ -161,23 +625,13 @@ void configureMacroAutomation(core::state::CoreState& state,
                               uint8_t macro,
                               float value,
                               float durationBeats = 2.0f) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = track,
-            .page = page,
-            .macro = macro,
-        }
-    );
-    if (slot == nullptr) return;
-
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = durationBeats;
     if (!core::state::macro::macroAutomationAppendPoint(lane, 0.0f, value)) return;
     if (!core::state::macro::macroAutomationAppendPoint(lane, durationBeats, value)) return;
-    core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *slot,
+    (void)core::state::modulation::assignProjectControlAutomation(
+        state.pages.control,
+        {.track = track, .page = page, .macro = macro},
         lane
     );
 }
@@ -187,29 +641,57 @@ void configureMacroModulation(core::state::CoreState& state,
                               uint8_t page,
                               uint8_t macro,
                               float depth = 0.65f) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = track,
-            .page = page,
-            .macro = macro,
-        }
+    constexpr float durationBeats = 4.0f;
+    const uint16_t durationTicks =
+        core::state::macro::macroAutomationTicksFromBeats(durationBeats);
+    const std::array<core::state::modulation::ProjectPackedCurvePoint, 3>
+        points{{
+            {
+                .tick = curvePointTick(0.0f, durationTicks),
+                .value = core::state::macro::macroAutomationPackValue(
+                    -0.25f,
+                    true
+                ),
+            },
+            {
+                .tick = curvePointTick(2.0f, durationTicks),
+                .value = core::state::macro::macroAutomationPackValue(
+                    0.35f,
+                    true
+                ),
+            },
+            {
+                .tick = curvePointTick(4.0f, durationTicks),
+                .value = core::state::macro::macroAutomationPackValue(
+                    -0.25f,
+                    true
+                ),
+            },
+        }};
+    const core::state::modulation::ProjectControlCurvePayload curve{
+        .spec = {
+            .sourceDurationTicks = durationTicks,
+            .durationTicks = durationTicks,
+            .windowOffsetTicks = 0U,
+            .interpolation = core::state::modulation::
+                ProjectCurveInterpolation::LINEAR,
+            .valueDomain = core::state::modulation::
+                ProjectCurveValueDomain::BIPOLAR,
+            .origin =
+                core::state::modulation::ProjectCurveOrigin::NATIVE,
+        },
+        .pointOffset = 0,
+        .pointCount = static_cast<uint16_t>(points.size()),
+        .enabled = true,
+    };
+    (void)core::state::modulation::replaceProjectControlRecordedShape(
+        state.pages.control,
+        {.track = track, .page = page, .macro = macro},
+        curve,
+        core::state::macro::macroAutomationClamp01(depth),
+        points.data(),
+        static_cast<uint16_t>(points.size())
     );
-    if (slot == nullptr) return;
-
-    core::state::macro::MacroModulationShape shape;
-    shape.durationBeats = 4.0f;
-    if (!core::state::macro::macroModulationAppendPoint(shape, 0.0f, -0.25f)) return;
-    if (!core::state::macro::macroModulationAppendPoint(shape, 2.0f, 0.35f)) return;
-    if (!core::state::macro::macroModulationAppendPoint(shape, 4.0f, -0.25f)) return;
-    if (!core::state::macro::macroAutomationAssignModulation(
-            state.pages.automation,
-            *slot,
-            shape
-        )) {
-        return;
-    }
-    slot->modulationDepth = core::state::macro::macroAutomationClamp01(depth);
 }
 
 void prepareMacroAutoModScenario(core::state::CoreState& state) {
@@ -217,7 +699,11 @@ void prepareMacroAutoModScenario(core::state::CoreState& state) {
     state.setSharedTrackState(0x0001, 0);
 
     auto& track = state.pages.tracks[0];
-    track.channel = 5;
+    (void)core::state::project::setProjectTrackMidiChannel(
+        state.projectTracks,
+        0U,
+        5U
+    );
     track.activePage = 0;
     track.enabledPageMask = 0x0001;
     auto& page = track.pages[0];
@@ -230,7 +716,7 @@ void prepareMacroAutoModScenario(core::state::CoreState& state) {
     state.pages.setActivePage(0);
     state.macroUi.syncPreviewPage(0);
     state.trackNavigation.syncPreviewTrack(0);
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     configureMacroAutomation(state, 0, 0, 0, 0.42f, 4.0f);
     configureMacroModulation(state, 0, 0, 0, 0.65f);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
@@ -238,29 +724,94 @@ void prepareMacroAutoModScenario(core::state::CoreState& state) {
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
 }
 
+void prepareMacroCurvePreviewShapesScenario(core::state::CoreState& state) {
+    using namespace core::state::modulation;
+    prepareMacroAutomationCleanScenario(state);
+    state.setSharedTrackState(0x0001, 0);
+
+    auto& track = state.pages.tracks[0];
+    (void)core::state::project::setProjectTrackMidiChannel(
+        state.projectTracks,
+        0U,
+        5U
+    );
+    track.activePage = 0;
+    track.enabledPageMask = 0x0001;
+    auto& page = track.pages[0];
+    std::snprintf(page.name, sizeof(page.name), "%s", "Curve Preview");
+
+    constexpr std::array<ModulatorLfoShape, 4> SHAPES = {
+        ModulatorLfoShape::SINE,
+        ModulatorLfoShape::TRIANGLE,
+        ModulatorLfoShape::SAW_UP,
+        ModulatorLfoShape::SQUARE,
+    };
+    constexpr std::array<const char*, 4> NAMES = {
+        "Sine",
+        "Triangle",
+        "Saw",
+        "Square",
+    };
+    for (uint8_t index = 0U; index < SHAPES.size(); ++index) {
+        page.cc[index] = static_cast<uint8_t>(70U + index);
+        page.values[index] = 0.5f;
+        page.setMacroActive(index, true);
+        const auto sourceId = addReusableLfo(
+            state,
+            NAMES[index],
+            SHAPES[index],
+            PROJECT_CONTROL_TICKS_PER_BEAT * 2U,
+            static_cast<uint8_t>(index % 3U)
+        );
+        if (valid(sourceId)) {
+            (void)bindReusableModulator(
+                state,
+                sourceId,
+                24576,
+                0,
+                0,
+                index
+            );
+        }
+    }
+    page.cc[4] = 74U;
+    page.values[4] = 0.5f;
+    page.setMacroActive(4, true);
+    configureMacroModulation(state, 0, 0, 4, 0.75f);
+
+    state.pages.control.markAuthoredMutation();
+    state.pages.syncSharedTrackState(0x0001, 0);
+    state.pages.setActivePage(0);
+    state.macroUi.syncPreviewPage(0);
+    state.trackNavigation.syncPreviewTrack(0);
+    state.structureNavigationFocus.set(
+        core::state::StructureNavigationFocus::PAGE
+    );
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
+        state.macros,
+        state.pages
+    );
+    state.statusBar.pageName.set(state.pages.activePageData().name);
+    state.configRevision.set(
+        core::state::macro::nextMacroConfigRevision(
+            state.configRevision.get()
+        )
+    );
+}
+
 void configureMacroAutomationShape(core::state::CoreState& state,
                                    uint8_t track,
                                    uint8_t page,
                                    uint8_t macro) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = track,
-            .page = page,
-            .macro = macro,
-        }
-    );
-    if (slot == nullptr) return;
-
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = 8.0f;
     if (!core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.15f)) return;
     if (!core::state::macro::macroAutomationAppendPoint(lane, 2.0f, 0.90f)) return;
     if (!core::state::macro::macroAutomationAppendPoint(lane, 5.0f, 0.25f)) return;
     if (!core::state::macro::macroAutomationAppendPoint(lane, 8.0f, 0.70f)) return;
-    core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *slot,
+    (void)core::state::modulation::assignProjectControlAutomation(
+        state.pages.control,
+        {.track = track, .page = page, .macro = macro},
         lane
     );
 }
@@ -270,7 +821,11 @@ void prepareMacroAutomationCurveShapeScenario(core::state::CoreState& state) {
     state.setSharedTrackState(0x0001, 0);
 
     auto& track = state.pages.tracks[0];
-    track.channel = 5;
+    (void)core::state::project::setProjectTrackMidiChannel(
+        state.projectTracks,
+        0U,
+        5U
+    );
     track.activePage = 0;
     track.enabledPageMask = 0x0001;
     track.pages[0].cc[0] = 21;
@@ -281,7 +836,7 @@ void prepareMacroAutomationCurveShapeScenario(core::state::CoreState& state) {
     state.pages.setActivePage(0);
     state.macroUi.syncPreviewPage(0);
     state.trackNavigation.syncPreviewTrack(0);
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     configureMacroAutomationShape(state, 0, 0, 0);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     state.statusBar.pageName.set(state.pages.activePageData().name);
@@ -293,7 +848,11 @@ void prepareMacroTrackMultipageAutomationScenario(core::state::CoreState& state)
     state.setSharedTrackState(0x0001, 0);
 
     auto& sourceTrack = state.pages.tracks[0];
-    sourceTrack.channel = 5;
+    (void)core::state::project::setProjectTrackMidiChannel(
+        state.projectTracks,
+        0U,
+        5U
+    );
     sourceTrack.activePage = 2;
     sourceTrack.enabledPageMask = 0x0005;
     sourceTrack.pages[0].cc[0] = 21;
@@ -307,7 +866,7 @@ void prepareMacroTrackMultipageAutomationScenario(core::state::CoreState& state)
     state.pages.setActivePage(2);
     state.macroUi.syncPreviewPage(2);
     state.trackNavigation.syncPreviewTrack(0);
-    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     configureMacroAutomation(state, 0, 0, 0, 0.25f, 4.0f);
     configureMacroAutomation(state, 0, 2, 1, 0.80f, 8.0f);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
@@ -716,7 +1275,7 @@ void prepareStepPresetCaptureBase(
     picker.setEntry(0, "orbit-a", "Orbit", true);
     picker.setEntry(1, "orbit-b", "Orbit", true);
     picker.setEntry(2, "pulse-grid", "Pulse Grid", true);
-    picker.setEntry(3, "legacy-shape", nullptr, false);
+    picker.setEntry(3, "incompatible-shape", nullptr, false);
     picker.setEntry(4, "glass-cycle", "Glass Cycle", true);
     picker.setEntry(5, "human-hat", "Human Hat", true);
     picker.entryCount.set(6);
@@ -854,7 +1413,6 @@ bool prepareStepPresetActivationScenario(
     if (!queue.prepare(
             0x0001,
             0x0001,
-            0,
             true,
             batch,
             SequencerTrackActivationOrigin::STEP_PRESET
@@ -884,7 +1442,6 @@ bool prepareStepPresetActivationScenario(
                 reference,
                 SequencerTrackActivationTarget::BEFORE,
                 0x0001,
-                0,
                 true,
                 transition
             )) {
@@ -937,10 +1494,16 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
     // The fresh scenario already owns T1; synchronizing the same state is a
     // valid no-op, not a preparation failure.
     (void)state.setSharedTrackState(0x0001, 0);
-    state.structureNavigationFocus.set(StructureNavigationFocus::TRACK);
+    state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
 
     state.sequencer.pattern.length.set(1);
-    state.sequencer.pattern.midiChannel.set(4);  // Ch5.
+    if (!core::state::project::setProjectTrackMidiChannel(
+            state.projectTracks,
+            0U,
+            4U
+        ).changed()) {
+        return false;
+    }
     state.sequencer.setStepDataAt(0, 60, 100, 75, 0);
     enableSequencerStep(state.sequencer, 0);
     if (!addSequencerCaptureLane(
@@ -959,7 +1522,6 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
     state.sequencer.pattern.bumpCcLaneRevision();
 
     auto& macroTrack = state.pages.tracks[0];
-    macroTrack.channel = 4;
     macroTrack.activePage = 0;
     macroTrack.enabledPageMask = 0x0001;
     auto& page = macroTrack.pages[0];
@@ -990,14 +1552,32 @@ bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
     state.sequencerTracks.reset();
     state.trackNavigation.reset();
 
-    // Sources T1/T3, overwrite destination T5, and free destination T6.
-    // This makes the compact and per-mapping projections prove both target
-    // kinds without relying on persisted user state.
-    if (!state.setSharedTrackState(0x0015, 0)) return false;
+    // Source T1 and overwrite destination T5. This deterministic fixture
+    // exercises the current direct one-Track clipboard contract.
+    if (!state.setSharedTrackState(0x0011, 0)) return false;
     state.structureNavigationFocus.set(StructureNavigationFocus::TRACK);
     state.trackNavigation.syncPreviewTrack(0);
 
-    state.sequencer.pattern.midiChannel.set(1);
+    core::state::project::ProjectTrackSnapshot trackIdentity{};
+    core::state::project::captureProjectTrackSnapshot(
+        state.projectTracks,
+        trackIdentity
+    );
+    trackIdentity.midiChannels[0] = 1;   // T1 -> Ch2 (source).
+    trackIdentity.midiChannels[4] = 8;   // T5 -> Ch9 (overwrite).
+    trackIdentity.mutedMask |= 0x0010U;
+    const auto trackIdentityResult =
+        core::state::project::applyProjectTrackSnapshot(
+            state.projectTracks,
+            trackIdentity
+        );
+    if (trackIdentityResult.status !=
+            core::state::project::ProjectTrackMutationStatus::OK &&
+        trackIdentityResult.status !=
+            core::state::project::ProjectTrackMutationStatus::NO_CHANGE) {
+        return false;
+    }
+
     state.sequencer.setStepDataAt(0, 60, 104, 75, 0);
     enableSequencerStep(state.sequencer, 0);
     if (!addSequencerCaptureLane(
@@ -1016,30 +1596,6 @@ bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
         return false;
     }
 
-    auto& sourceThree = state.sequencerTracks.track(2);
-    sourceThree.midiChannel.set(4);
-    sourceThree.note[0] = 67;
-    sourceThree.velocity[0] = 88;
-    sourceThree.gate[0] = 75;
-    sourceThree.setEnabled(0, true);
-    if (!addSequencerCaptureLane(
-            sourceThree,
-            0,
-            1,
-            SequencerCcLaneRoutePolicy::INHERIT_TRACK
-        )) {
-        return false;
-    }
-
-    state.sequencerTracks.track(4).midiChannel.set(8);   // T5 -> Ch9.
-    state.sequencerTracks.track(5).midiChannel.set(10);  // T6 -> Ch11.
-    state.sequencerTracks.setTrackMuted(4, true);
-
-    auto& selection = state.trackNavigation.selection;
-    selection.active.set(true);
-    selection.scope.set(StructureSelectionScope::TRACK);
-    selection.cursorIndex.set(0);
-    selection.selectedMask.set(0x0005);
     return true;
 }
 
@@ -1071,12 +1627,12 @@ bool projectSequencerTrackPasteActivationScenario(
         contextual::ContextActionId::PASTE,
         {
             .kind = contextual::ContextEntityKind::TRACK,
-            .track = paste.plan.firstSource,
+            .track = paste.plan.entry.sourceTrack,
             .item = paste.plan.sourceMask,
         },
         {
             .kind = contextual::ContextEntityKind::TRACK,
-            .track = paste.plan.firstTarget,
+            .track = paste.plan.entry.targetTrack,
             .item = paste.plan.targetMask,
         },
         status,
@@ -1103,6 +1659,11 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         return true;
     }
 
+    if (std::strcmp(scenario, "macro-automation-two-macros") == 0) {
+        prepareMacroAutomationTwoMacrosScenario(state);
+        return true;
+    }
+
     if (std::strcmp(scenario, "macro-track-multipage-automation") == 0) {
         prepareMacroTrackMultipageAutomationScenario(state);
         return true;
@@ -1118,16 +1679,63 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         return true;
     }
 
-    if (std::strcmp(scenario, "macro-edit") == 0) {
-        const auto& config = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
-        state.overlays.show(core::ui::OverlayType::MACRO_EDIT, false);
-        state.macroEdit.openEditor(0, config.channel, config.cc, SDL_GetTicks());
+    if (std::strcmp(scenario, "macro-curve-preview-shapes") == 0) {
+        prepareMacroCurvePreviewShapesScenario(state);
         return true;
     }
 
-    if (std::strcmp(scenario, "macro-page-selector") == 0) {
-        state.overlays.show(core::ui::OverlayType::PAGE_SELECTOR, false);
-        state.pages.selector.selectedIndex.set(state.pages.currentActivePage());
+    if (std::strcmp(scenario, "macro-reusable-modulators") == 0) {
+        prepareMacroReusableModulatorsScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-multi-modulation") == 0) {
+        prepareMacroMultiModulationScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-performance-rail") == 0) {
+        prepareMacroPerformanceRailScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-initial-projection") == 0) {
+        prepareMacroInitialProjectionScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-modulation-assignment-copy") == 0) {
+        prepareMacroModulationAssignmentCopyScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "project-modulators") == 0) {
+        prepareProjectModulatorsScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "project-modulator-destination") == 0) {
+        prepareProjectModulatorDestinationScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "project-modulator-workspace") == 0) {
+        prepareProjectModulatorWorkspaceScenario(state);
+        return true;
+    }
+
+    if (std::strcmp(scenario, "macro-edit") == 0) {
+        const auto& config = core::state::macro::MacroWorkflow::activeConfig(state.pages, 0);
+        state.overlays.show(core::ui::OverlayType::MACRO_EDIT, false);
+        state.macroEdit.openEditor(
+            0,
+            core::state::project::projectTrackMidiChannel(
+                state.projectTracks,
+                state.pages.currentActiveTrack()
+            ),
+            config.cc,
+            SDL_GetTicks()
+        );
         return true;
     }
 
@@ -1142,7 +1750,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         return true;
     }
 
-    if (std::strcmp(scenario, "seq-track-paste-multi") == 0) {
+    if (std::strcmp(scenario, "seq-track-paste-single") == 0) {
         return prepareSequencerTrackPasteCaptureScenario(state);
     }
 

@@ -1,9 +1,11 @@
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 
 #include "../../src/persistence/MacroPersistence.hpp"
 #include "../support/MemoryStorage.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
 using test_support::MemoryStorage;
@@ -89,24 +91,79 @@ void test_library_load_preserves_project_macro_automation_bank() {
 
     core::state::macro::MacroPagesState loaded;
     loaded.initDefaults();
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        loaded.automation,
-        core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
-    );
-    assert(slot != nullptr);
-    slot->modulationDepth = 0.75f;
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = 0,
+        .page = 0,
+        .macro = 0,
+    };
+    test_support::project_control::ModulationShape modulation{};
+    assert(test_support::project_control::appendModulationPoint(
+        modulation,
+        0.0f,
+        -0.25f
+    ));
+    assert(test_support::project_control::appendModulationPoint(
+        modulation,
+        1.0f,
+        0.25f
+    ));
+    assert(test_support::project_control::assignModulation(
+        loaded.control,
+        address,
+        modulation,
+        0.75f
+    ));
 
     const auto status = persistence.loadLibrarySlot(4, loaded);
     assert(status == core::persistence::SlotLoadStatus::OK);
 
-    const auto* preserved = core::state::macro::macroAutomationFindSlot(
-        loaded.automation,
-        core::state::macro::MacroAutomationSlotAddress{.track = 0, .page = 0, .macro = 0}
+    const auto preserved = test_support::project_control::readSlot(
+        loaded.control,
+        address
     );
-    assert(preserved != nullptr);
-    assert(preserved->modulationDepth == 0.75f);
+    assert(preserved.modulationCount > 0U);
+    assert(std::fabs(preserved.primaryModulation.amount - 0.75f) < 0.0001f);
 
-    std::cout << "[PASS] test_library_load_preserves_project_macro_automation_bank\n";
+    std::cout << "[PASS] library load preserves Project Control authority\n";
+}
+
+void test_library_roundtrip_preserves_sparse_physical_macro_positions() {
+    MemoryStorage libraryStorage;
+    libraryStorage.init();
+    core::persistence::MacroPersistence persistence(libraryStorage);
+    assert(persistence.init());
+
+    core::state::macro::MacroPagesState source;
+    source.initDefaults();
+    auto& page = source.pageData(0U, 0U);
+    page.activeMacroMask = 0x29U;  // Physical Macros 1, 4, and 6 only.
+    for (uint8_t macro = 0U;
+         macro < core::state::macro::MACRO_COUNT;
+         ++macro) {
+        page.cc[macro] = core::state::macro::defaultMacroCc(0U, macro);
+    }
+    page.values[0U] = 0.1f;
+    page.values[3U] = 0.4f;
+    page.values[5U] = 0.6f;
+    source.updateActiveConfigs();
+    assert(persistence.saveLibrarySlot(7U, source));
+
+    core::state::macro::MacroPagesState restored;
+    restored.initDefaults();
+    assert(persistence.loadLibrarySlot(7U, restored) ==
+           core::persistence::SlotLoadStatus::OK);
+    const auto& loaded = restored.pageData(0U, 0U);
+    assert(loaded.activeMacroMask == 0x29U);
+    for (uint8_t macro = 0U;
+         macro < core::state::macro::MACRO_COUNT;
+         ++macro) {
+        assert(loaded.cc[macro] ==
+               core::state::macro::defaultMacroCc(0U, macro));
+    }
+    assert(std::fabs(loaded.values[0U] - 0.1f) < 0.0001f);
+    assert(std::fabs(loaded.values[3U] - 0.4f) < 0.0001f);
+    assert(std::fabs(loaded.values[5U] - 0.6f) < 0.0001f);
+    std::cout << "[PASS] sparse physical Macro positions survive persistence\n";
 }
 
 }  // namespace
@@ -119,6 +176,7 @@ int main() {
     test_library_save_load_erase_slot();
     test_library_slot_bounds();
     test_library_load_preserves_project_macro_automation_bank();
+    test_library_roundtrip_preserves_sparse_physical_macro_positions();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

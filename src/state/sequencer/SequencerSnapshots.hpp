@@ -14,8 +14,10 @@ namespace core::state::sequencer {
 
 struct SequencerPatternSnapshot {
     uint8_t length = SequencerPatternState::DEFAULT_LENGTH;
+    uint8_t playStart = 0;
+    uint8_t loopStart = 0;
+    uint8_t loopEnd = SequencerPatternState::DEFAULT_LENGTH;
     uint8_t stepsPerBeat = SequencerPatternState::DEFAULT_STEPS_PER_BEAT;
-    uint8_t midiChannel = SequencerPatternState::DEFAULT_MIDI_CHANNEL_0BASED;
     oc::note::sequencer::StepBitMask128 enabledMask{};
     uint32_t stepDataRevision = 0;
     uint32_t patternVariationRevision = 0;
@@ -40,7 +42,6 @@ struct SequencerPatternSnapshot {
 struct SequencerTrackBankSnapshot {
     uint8_t activeTrack = 0;
     uint16_t enabledMask = 0x0001;
-    uint16_t mutedMask = 0;
     uint32_t projectScaleRevision = 0;
     uint8_t projectSwingPercent = 0;
     oc::note::sequencer::StepSequencerScaleSettings projectScaleSettings{};

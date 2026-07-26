@@ -35,22 +35,25 @@ public:
 #endif
     )
 #if defined(MS_UX_RECORDER)
-        : view_selector_ux_surface_(state.activeView, state.viewSelector),
+        : view_selector_ux_surface_(
+              state.activeView,
+              state.viewSelector,
+              state.projectHistory
+          ),
           transport_ux_surface_(state.statusBar, state.overlays)
 #endif
     {
         if (!viewSelectorElement) return;
 #if defined(MS_UX_RECORDER)
-        if (uxRegistry) {
-            uxRegistry->add(
+        if (uxRegistry &&
+            (!uxRegistry->add(
                 view_selector_ux_surface_,
                 core::context::standalone::ux::priority::VIEW_SELECTOR
-            );
-            uxRegistry->add(
+            ) ||
+             !uxRegistry->add(
                 transport_ux_surface_,
                 core::context::standalone::ux::priority::TRANSPORT
-            );
-        }
+            ))) return;
 #endif
 
         transport_handler_ = core::app::makeExtmemUnique<core::handler::TransportHandler>(
@@ -61,6 +64,7 @@ public:
                 sequencerViewScope,
                 projectViewScope,
                 deviceSettingsViewScope,
+                projectViewScope,
             }
         );
         if (!transport_handler_) return;
@@ -69,17 +73,14 @@ public:
         if (viewSelectorScope == 0) return;
         view_switcher_handler_ = core::app::makeExtmemUnique<core::handler::ViewSwitcherHandler>(
             core::handler::ViewSwitcherHandler::StateRefs{
+                state,
                 state.overlays,
                 state.activeView,
                 state.viewSelector,
-                state.sequencerSettings,
-                state.sequencer.contentView,
                 state.sequencer.patternQuickControls,
                 state.sequencer.stepPropertyInlineSelector,
                 state.sequencer.ccLaneUi,
-                state.trackNavigation.selection,
-                state.macroUi.pageSelection,
-                state.sequencer.structureUi.pageSelection,
+                state.sequencer.structureUi.stepSelection,
                 state.projectNavigation,
             },
             overlays,
@@ -90,6 +91,7 @@ public:
                 sequencerViewScope,
                 projectViewScope,
                 deviceSettingsViewScope,
+                projectViewScope,
             },
             viewSelectorScope
         );

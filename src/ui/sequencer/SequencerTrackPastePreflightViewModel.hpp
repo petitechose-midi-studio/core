@@ -25,7 +25,6 @@ struct SequencerTrackPasteProjection {
     core::state::contextual::OperationFeedbackState feedback{};
     uint32_t operationGeneration = 0;
     uint32_t activationGeneration = 0;
-    uint8_t focusedIndex = 0;
     bool detailVisible = false;
 };
 

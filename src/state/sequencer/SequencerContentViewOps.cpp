@@ -4,6 +4,7 @@
 
 #include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerContentViewInternal.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::state::sequencer {
 using namespace content_view_internal;
@@ -75,7 +76,7 @@ FLASHMEM StepContentCreationAvailability activeContentChildCreationAvailability(
     }
 
     const auto nodeId = activeContentStepNodeId(sequencer, step);
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
     if (nodeId == kInvalidId) {
         return {
@@ -169,11 +170,25 @@ FLASHMEM StepContentOpenResult openOrCreateActiveContentChild(
         return result;
     }
 
-    const uint32_t graphRevisionBefore = sequencer.pattern.graphRevision.get();
+    bool startedDraft = false;
+    if (!availability.opensExisting && !sequencer.stepContentDraft.active.get()) {
+        const auto draftKind = childKind == StepContentChildKind::MICRO_SEQUENCE
+            ? SequencerStepContentDraftKind::MICRO_SEQUENCE
+            : SequencerStepContentDraftKind::CYCLE_STATES;
+        if (!beginStepContentDraft(sequencer, draftKind, step, ownerNodeId)) {
+            result.blockedReason = StepContentCreationBlockReason::GRAPH_LIMIT_REACHED;
+            return result;
+        }
+        startedDraft = true;
+    }
+
+    auto& pattern = authoringPattern(sequencer);
+    const uint32_t graphRevisionBefore = pattern.graphRevision.get();
     const auto created = childKind == StepContentChildKind::MICRO_SEQUENCE
-        ? createMicroSequence(sequencer.pattern, ownerNodeId, length)
-        : createCycleStateSet(sequencer.pattern, ownerNodeId, length);
+        ? createMicroSequence(pattern, ownerNodeId, length)
+        : createCycleStateSet(pattern, ownerNodeId, length);
     if (!created.ok) {
+        if (startedDraft) abandonStepContentDraft(sequencer);
         result.blockedReason = created.limitReached
             ? StepContentCreationBlockReason::GRAPH_LIMIT_REACHED
             : StepContentCreationBlockReason::INACTIVE_CONTEXT;
@@ -184,12 +199,15 @@ FLASHMEM StepContentOpenResult openOrCreateActiveContentChild(
         ? enterMicroSequenceContentView(sequencer, ownerNodeId, created.id)
         : enterCycleStatesContentView(sequencer, ownerNodeId, created.id);
     if (!opened) {
+        if (startedDraft) abandonStepContentDraft(sequencer);
         result.blockedReason = StepContentCreationBlockReason::INVALID_FOCUSED_STEP;
         return result;
     }
 
     result.opened = true;
-    result.created = sequencer.pattern.graphRevision.get() != graphRevisionBefore;
+    result.created = pattern.graphRevision.get() != graphRevisionBefore;
+    result.draft = sequencer.stepContentDraft.active.get();
+    if (startedDraft) markStepContentDraftPristine(sequencer);
     result.blockedReason = StepContentCreationBlockReason::NONE;
     result.ownerNodeId = ownerNodeId;
     result.contentId = created.id;
@@ -214,9 +232,10 @@ FLASHMEM bool activeContentStepHasChildContent(
     const auto nodeId = activeContentStepNodeId(sequencer, step);
     if (nodeId == kInvalidId) return false;
 
+    const auto& pattern = authoringPattern(sequencer);
     return childKind == StepContentChildKind::MICRO_SEQUENCE
-        ? stepNodeHasMicroSequence(sequencer.pattern, nodeId)
-        : stepNodeHasCycleStateSet(sequencer.pattern, nodeId);
+        ? stepNodeHasMicroSequence(pattern, nodeId)
+        : stepNodeHasCycleStateSet(pattern, nodeId);
 }
 
 FLASHMEM bool clipboardCanPasteActiveContentChild(
@@ -234,7 +253,7 @@ FLASHMEM bool copyActiveContentChildToClipboard(
 ) {
     if (!activeContentStepHasChildContent(sequencer, step, childKind)) return false;
 
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     if (graph == nullptr) return false;
 
     const auto nodeId = activeContentStepNodeId(sequencer, step);
@@ -253,6 +272,7 @@ FLASHMEM void settleGraphMutation(SequencerState& sequencer) {
     if (compactSequencerGraph(sequencer)) return;
     refreshContentView(sequencer);
     sequencer.contentView.bump();
+    notifyStepContentDraftMutation(sequencer);
 }
 
 }  // namespace
@@ -267,9 +287,10 @@ FLASHMEM bool clearActiveContentChild(
     const auto nodeId = activeContentStepNodeId(sequencer, step);
     if (nodeId == kInvalidId) return false;
 
+    auto& pattern = authoringPattern(sequencer);
     const bool changed = childKind == StepContentChildKind::MICRO_SEQUENCE
-        ? clearNodeChildSequence(sequencer.pattern, nodeId)
-        : clearNodeCycleStateSet(sequencer.pattern, nodeId);
+        ? clearNodeChildSequence(pattern, nodeId)
+        : clearNodeCycleStateSet(pattern, nodeId);
     if (!changed) return false;
 
     settleGraphMutation(sequencer);
@@ -289,15 +310,16 @@ FLASHMEM bool pasteActiveContentChildFromClipboard(
     const auto nodeId = activeContentStepNodeId(sequencer, step);
     if (nodeId == kInvalidId) return false;
 
+    auto& pattern = authoringPattern(sequencer);
     const bool changed = childKind == StepContentChildKind::MICRO_SEQUENCE
         ? copyNodeChildSequenceFromGraph(
-              sequencer.pattern,
+              pattern,
               nodeId,
               *clipboard.sequencerGraph,
               clipboard.sequencerStepContentNodeId
           )
         : copyNodeCycleStateSetFromGraph(
-              sequencer.pattern,
+              pattern,
               nodeId,
               *clipboard.sequencerGraph,
               clipboard.sequencerStepContentNodeId
@@ -313,11 +335,12 @@ FLASHMEM bool copyActiveContentChildrenToClipboard(
     uint8_t step,
     core::state::StructureClipboardState& clipboard
 ) {
-    const auto* graph = graphView(sequencer.pattern);
+    const auto& pattern = authoringPattern(sequencer);
+    const auto* graph = graphView(pattern);
     const auto nodeId = activeContentStepNodeId(sequencer, step);
     if (graph == nullptr ||
         nodeId == kInvalidId ||
-        !stepNodeHasAnyChildContent(sequencer.pattern, nodeId)) {
+        !stepNodeHasAnyChildContent(pattern, nodeId)) {
         return false;
     }
     return clipboard.storeSequencerStepContent(
@@ -329,9 +352,10 @@ FLASHMEM bool copyActiveContentChildrenToClipboard(
 
 FLASHMEM bool clearActiveContentChildren(SequencerState& sequencer, uint8_t step) {
     const auto nodeId = activeContentStepNodeId(sequencer, step);
+    auto& pattern = authoringPattern(sequencer);
     if (nodeId == kInvalidId ||
-        !stepNodeHasAnyChildContent(sequencer.pattern, nodeId) ||
-        !clearNodeChildren(sequencer.pattern, nodeId)) {
+        !stepNodeHasAnyChildContent(pattern, nodeId) ||
+        !clearNodeChildren(pattern, nodeId)) {
         return false;
     }
 
@@ -353,9 +377,10 @@ FLASHMEM bool pasteActiveContentChildrenFromClipboard(
     }
 
     const auto nodeId = activeContentStepNodeId(sequencer, step);
+    auto& pattern = authoringPattern(sequencer);
     if (nodeId == kInvalidId ||
         !copyNodeChildrenFromGraph(
-            sequencer.pattern,
+            pattern,
             nodeId,
             *clipboard.sequencerGraph,
             clipboard.sequencerStepContentNodeId
@@ -380,7 +405,7 @@ FLASHMEM bool enterMicroSequenceContentView(
     SequencerGraphNodeId ownerNodeId,
     SequencerGraphSequenceId sequenceId
 ) {
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     const auto* sequence = graph ? graph->sequence(sequenceId) : nullptr;
     if (graph == nullptr ||
         sequence == nullptr ||
@@ -404,7 +429,7 @@ FLASHMEM bool enterCycleStatesContentView(
     SequencerGraphNodeId ownerNodeId,
     SequencerGraphCycleSetId cycleSetId
 ) {
-    const auto* graph = graphView(sequencer.pattern);
+    const auto* graph = graphView(authoringPattern(sequencer));
     const auto* cycleSet = graph ? graph->cycleSet(cycleSetId) : nullptr;
     if (graph == nullptr ||
         cycleSet == nullptr ||
@@ -471,7 +496,7 @@ FLASHMEM void refreshContentView(SequencerState& sequencer) {
 
 FLASHMEM bool compactSequencerGraph(SequencerState& sequencer) {
     SequencerGraphCompactionRemap remap;
-    const auto result = compactGraph(sequencer.pattern, &remap);
+    const auto result = compactGraph(authoringPattern(sequencer), &remap);
     if (!result.ok || !result.compacted) {
         return false;
     }
@@ -518,12 +543,13 @@ FLASHMEM bool compactSequencerGraph(SequencerState& sequencer) {
     view.stackDepth = validDepth;
     refreshContentView(sequencer);
     view.bump();
+    notifyStepContentDraftMutation(sequencer);
     return true;
 }
 
 FLASHMEM uint8_t activeContentLength(const SequencerState& sequencer) {
     if (isRootContentView(sequencer)) {
-        return sequencer.pattern.length.get();
+        return authoringPattern(sequencer).length.get();
     }
     return sequencer.contentView.length.get();
 }

@@ -72,28 +72,28 @@ public:
 core::sequencer::RealtimeMidiEvent event(core::sequencer::RealtimeMidiEventType type,
                                          uint32_t deadlineUs,
                                          uint8_t note) {
-    return {
-        .deadlineUs = deadlineUs,
-        .type = type,
-        .channel = 1,
-        .note = note,
-        .velocity = 100,
-        .trackIndex = 0,
-    };
+    core::sequencer::RealtimeMidiEvent midiEvent{};
+    midiEvent.deadlineUs = deadlineUs;
+    midiEvent.type = type;
+    midiEvent.trackIndex = 0U;
+    midiEvent.channel = 1U;
+    midiEvent.note = note;
+    midiEvent.velocity = 100U;
+    return midiEvent;
 }
 
 core::sequencer::RealtimeMidiEvent ccEvent(uint32_t deadlineUs,
                                            uint8_t controller,
                                            uint8_t value = 64,
                                            uint8_t trackIndex = 0) {
-    return {
-        .deadlineUs = deadlineUs,
-        .type = core::sequencer::RealtimeMidiEventType::ControlChange,
-        .channel = 1,
-        .controller = controller,
-        .value = value,
-        .trackIndex = trackIndex,
-    };
+    core::sequencer::RealtimeMidiEvent midiEvent{};
+    midiEvent.deadlineUs = deadlineUs;
+    midiEvent.type = core::sequencer::RealtimeMidiEventType::ControlChange;
+    midiEvent.trackIndex = trackIndex;
+    midiEvent.channel = 1U;
+    midiEvent.controller = controller;
+    midiEvent.value = value;
+    return midiEvent;
 }
 
 core::sequencer::RealtimeMidiEvent event(core::sequencer::RealtimeMidiEventType type,
@@ -176,9 +176,13 @@ void test_wrap_aware_deadline_keeps_cc_before_note_on() {
            core::sequencer::RealtimeMidiEventType::NoteOn);
 }
 
-void test_worst_case_sequencer_and_macro_cc_batch_is_atomic_with_notes() {
+void test_full_resolver_cc_envelope_is_atomic_between_note_phases() {
     core::sequencer::RealtimeMidiQueue queue;
-    std::array<core::sequencer::RealtimeMidiEvent, 72> ccBatch{};
+    static_assert(core::sequencer::RealtimeMidiQueue::MAX_QUEUE_DEPTH == 576U);
+    std::array<
+        core::sequencer::RealtimeMidiEvent,
+        core::sequencer::RealtimeMidiQueue::MAX_RESOLVED_CC_EVENTS_PER_FRAME
+    > ccBatch{};
     for (uint8_t i = 0; i < 128; ++i) {
         assert(queue.push(event(
             core::sequencer::RealtimeMidiEventType::NoteOff,
@@ -191,11 +195,12 @@ void test_worst_case_sequencer_and_macro_cc_batch_is_atomic_with_notes() {
             i
         )));
     }
-    for (uint8_t i = 0; i < ccBatch.size(); ++i) {
+    for (size_t i = 0; i < ccBatch.size(); ++i) {
         ccBatch[i] = ccEvent(
             1000,
-            static_cast<uint8_t>(i + 32U),
-            i
+            static_cast<uint8_t>(i % 128U),
+            static_cast<uint8_t>(i % 128U),
+            static_cast<uint8_t>(i % 16U)
         );
     }
     const auto accepted = queue.pushBatch(ccBatch.data(), ccBatch.size());
@@ -218,14 +223,18 @@ void test_worst_case_sequencer_and_macro_cc_batch_is_atomic_with_notes() {
         assert(transport.messages[i].type ==
                core::sequencer::RealtimeMidiEventType::NoteOff);
     }
-    for (size_t i = 128; i < 200; ++i) {
+    constexpr size_t ccEnd = 128U +
+        core::sequencer::RealtimeMidiQueue::MAX_RESOLVED_CC_EVENTS_PER_FRAME;
+    for (size_t i = 128; i < ccEnd; ++i) {
         assert(transport.messages[i].type ==
                core::sequencer::RealtimeMidiEventType::ControlChange);
     }
-    for (size_t i = 200; i < queue.capacity(); ++i) {
+    for (size_t i = ccEnd; i < queue.capacity(); ++i) {
         assert(transport.messages[i].type ==
                core::sequencer::RealtimeMidiEventType::NoteOn);
     }
+
+    std::cout << "[PASS] exact 128 Off + 320 CC + 128 On envelope\n";
 }
 
 void test_note_off_batch_displaces_note_on_then_cc_never_note_off() {
@@ -237,12 +246,18 @@ void test_note_off_batch_displaces_note_on_then_cc_never_note_off() {
             i
         )));
     }
-    for (uint8_t i = 0; i < 100; ++i) {
-        assert(queue.push(ccEvent(5000, i)));
+    constexpr size_t lowerPriorityCount = 224U;
+    for (size_t i = 0; i < lowerPriorityCount; ++i) {
+        assert(queue.push(ccEvent(
+            5000,
+            static_cast<uint8_t>(i % 128U),
+            64U,
+            static_cast<uint8_t>(i % 16U)
+        )));
         assert(queue.push(event(
             core::sequencer::RealtimeMidiEventType::NoteOn,
             5000,
-            i
+            static_cast<uint8_t>(i % 128U)
         )));
     }
     assert(queue.size() == queue.capacity());
@@ -256,8 +271,8 @@ void test_note_off_batch_displaces_note_on_then_cc_never_note_off() {
     assert(first.displacedNoteOnCount == 2);
     assert(first.displacedControlChangeCount == 0);
 
-    std::array<core::sequencer::RealtimeMidiEvent, 98> morePanic{};
-    for (uint8_t i = 0; i < morePanic.size(); ++i) {
+    std::array<core::sequencer::RealtimeMidiEvent, 222> morePanic{};
+    for (size_t i = 0; i < morePanic.size(); ++i) {
         morePanic[i] = event(
             core::sequencer::RealtimeMidiEventType::NoteOff,
             4000,
@@ -275,12 +290,12 @@ void test_note_off_batch_displaces_note_on_then_cc_never_note_off() {
 
     // Fill the remaining lower-priority slots with NoteOffs. Once only
     // NoteOffs remain, another panic cannot sacrifice any of them.
-    std::array<core::sequencer::RealtimeMidiEvent, 98> finalPanic{};
-    for (uint8_t i = 0; i < finalPanic.size(); ++i) {
+    std::array<core::sequencer::RealtimeMidiEvent, 222> finalPanic{};
+    for (size_t i = 0; i < finalPanic.size(); ++i) {
         finalPanic[i] = event(
             core::sequencer::RealtimeMidiEventType::NoteOff,
             4000,
-            static_cast<uint8_t>(i)
+            static_cast<uint8_t>(i % 128U)
         );
     }
     const auto fourth = queue.pushBatch(finalPanic.data(), finalPanic.size());
@@ -292,7 +307,7 @@ void test_note_off_batch_displaces_note_on_then_cc_never_note_off() {
     assert(queue.diagnostics().criticalNoteOffOverflowCount == 1);
 }
 
-void test_replace_track_batch_is_atomic_on_failure() {
+void test_note_off_replacement_is_atomic_on_failure() {
     core::sequencer::RealtimeMidiQueue queue;
     for (size_t i = 0; i < queue.capacity(); ++i) {
         assert(queue.push(event(
@@ -302,14 +317,14 @@ void test_replace_track_batch_is_atomic_on_failure() {
             i == 0 ? 3 : 2
         )));
     }
-    const std::array replacement{
-        event(core::sequencer::RealtimeMidiEventType::NoteOff, 900, 10, 3),
-        event(core::sequencer::RealtimeMidiEventType::NoteOff, 900, 11, 3),
-    };
-    const auto rejected = queue.replaceTrackEventsWithBatch(
+    std::array<oc::note::sequencer::StepBitMask128, 2> activeNotesByChannel{};
+    activeNotesByChannel[1].setBit(10);
+    activeNotesByChannel[1].setBit(11);
+    const auto rejected = queue.replaceTrackEventsWithNoteOffBatch(
         3,
-        replacement.data(),
-        replacement.size()
+        900,
+        activeNotesByChannel.data(),
+        activeNotesByChannel.size()
     );
     assert(!rejected.ok());
     assert(queue.size() == queue.capacity());
@@ -396,45 +411,6 @@ void test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal() {
     assert(observer.dispatched[0].type ==
            core::sequencer::RealtimeMidiEventType::ControlChange);
     queue.detachLifecycleObserver(observer);
-}
-
-void test_control_change_generation_replace_is_atomic() {
-    core::sequencer::RealtimeMidiQueue queue;
-    LifecycleObserver observer;
-    queue.attachLifecycleObserver(observer);
-    assert(queue.push(ccEvent(5000, 74, 10, 4)));
-    const std::array nextGeneration{
-        ccEvent(5000, 74, 11, 4),
-        ccEvent(5000, 71, 12, 4),
-    };
-    auto replaced = queue.replaceControlChangeEventsWithBatch(
-        nextGeneration.data(),
-        nextGeneration.size()
-    );
-    assert(replaced.ok());
-    assert(replaced.cancelledCount == 1);
-    assert(observer.removed.back().reason ==
-           core::sequencer::RealtimeMidiQueueLifecycleReason::SOURCE_REPLACED);
-    queue.clear();
-
-    // Old generation survives a rejected replacement byte-for-byte.
-    assert(queue.push(ccEvent(5000, 74, 10, 4)));
-    for (size_t i = 1; i < queue.capacity(); ++i) {
-        assert(queue.push(event(
-            core::sequencer::RealtimeMidiEventType::NoteOff,
-            5000,
-            static_cast<uint8_t>(i % 128U),
-            2
-        )));
-    }
-    replaced = queue.replaceControlChangeEventsWithBatch(
-        nextGeneration.data(),
-        nextGeneration.size()
-    );
-    assert(replaced.status ==
-           core::sequencer::RealtimeMidiQueueBatchStatus::CAPACITY_EXCEEDED);
-    assert(queue.size() == queue.capacity());
-    assert(queue.cancelPendingEvents(4) == 1);
 }
 
 void test_saturating_diagnostic_counter() {
@@ -549,6 +525,61 @@ void test_cancel_pending_events_for_track_keeps_other_tracks() {
     std::cout << "[PASS] test_cancel_pending_events_for_track_keeps_other_tracks\n";
 }
 
+void test_cancel_pending_note_events_preserves_same_track_cc() {
+    core::sequencer::RealtimeMidiQueue queue;
+    assert(queue.push(event(
+        core::sequencer::RealtimeMidiEventType::NoteOn, 1000U, 60U, 3U
+    )));
+    assert(queue.push(event(
+        core::sequencer::RealtimeMidiEventType::NoteOff, 1000U, 60U, 3U
+    )));
+    assert(queue.push(ccEvent(1000U, 74U, 91U, 3U)));
+    assert(queue.push(event(
+        core::sequencer::RealtimeMidiEventType::NoteOn, 1000U, 61U, 4U
+    )));
+
+    assert(queue.cancelPendingNoteEvents(3U) == 2U);
+    assert(queue.size() == 2U);
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    fakeMicros = 1000U;
+    queue.drainDue(midi, fakeMicros, 10000U);
+    assert(transport.messages.size() == 2U);
+    assert(transport.messages[0].type ==
+           core::sequencer::RealtimeMidiEventType::ControlChange);
+    assert(transport.messages[0].note == 74U);
+    assert(transport.messages[0].velocity == 91U);
+    assert(transport.messages[1].type ==
+           core::sequencer::RealtimeMidiEventType::NoteOn);
+    assert(transport.messages[1].note == 61U);
+
+    std::cout
+        << "[PASS] Note-plan cancellation preserves same-Track predictive CC\n";
+}
+
+void test_packed_event_preserves_invalid_metadata_for_validation() {
+    static_assert(sizeof(core::sequencer::RealtimeMidiEvent) == 8U);
+    core::sequencer::RealtimeMidiQueue queue;
+    auto invalidTrack = event(
+        core::sequencer::RealtimeMidiEventType::NoteOn,
+        1000U,
+        60U
+    );
+    invalidTrack.trackIndex = 16U;
+    assert(invalidTrack.trackIndex == 16U);
+    assert(!queue.push(invalidTrack));
+    assert(queue.size() == 0U);
+
+    auto invalidType = invalidTrack;
+    invalidType.trackIndex = 15U;
+    invalidType.type = static_cast<core::sequencer::RealtimeMidiEventType>(7U);
+    assert(static_cast<uint8_t>(invalidType.type) == 7U);
+    assert(!queue.push(invalidType));
+    assert(queue.size() == 0U);
+
+    std::cout << "[PASS] packed metadata keeps invalid values rejectable\n";
+}
+
 }  // namespace
 
 int main() {
@@ -560,13 +591,14 @@ int main() {
     test_note_on_is_rejected_when_full();
     test_note_off_replaces_note_on_when_full();
     test_cancel_pending_events_for_track_keeps_other_tracks();
+    test_cancel_pending_note_events_preserves_same_track_cc();
+    test_packed_event_preserves_invalid_metadata_for_validation();
     test_late_cc_is_never_dropped();
     test_wrap_aware_deadline_keeps_cc_before_note_on();
-    test_worst_case_sequencer_and_macro_cc_batch_is_atomic_with_notes();
+    test_full_resolver_cc_envelope_is_atomic_between_note_phases();
     test_note_off_batch_displaces_note_on_then_cc_never_note_off();
-    test_replace_track_batch_is_atomic_on_failure();
+    test_note_off_replacement_is_atomic_on_failure();
     test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal();
-    test_control_change_generation_replace_is_atomic();
     test_saturating_diagnostic_counter();
     std::cout << "All RealtimeMidiQueue tests passed\n";
     return 0;

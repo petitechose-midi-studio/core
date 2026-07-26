@@ -1,16 +1,8 @@
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 
-#include "midi/MidiUtils.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 
 namespace core::handler {
-
-namespace {
-
-constexpr uint16_t macroBit(uint8_t index) {
-    return static_cast<uint16_t>(1U << index);
-}
-
-}  // namespace
 
 MacroMidiCcRuntimeAdapter::MacroMidiCcRuntimeAdapter(
     StateRefs state,
@@ -18,33 +10,9 @@ MacroMidiCcRuntimeAdapter::MacroMidiCcRuntimeAdapter(
     MidiCcGlobalFrameCoordinator& coordinator
 )
     : pages_(state.pages)
-    , macro_ui_(state.macroUi)
+    , project_tracks_(state.projectTracks)
     , services_(services)
     , coordinator_(coordinator) {}
-
-void MacroMidiCcRuntimeAdapter::beginComputedFrame() {
-    computed_valid_mask_ = 0;
-}
-
-bool MacroMidiCcRuntimeAdapter::setComputedValue(uint8_t macroIndex, uint8_t value) {
-    if (macroIndex >= computed_values_.size() || value > 127U) return false;
-    computed_values_[macroIndex] = value;
-    computed_valid_mask_ = static_cast<uint16_t>(
-        computed_valid_mask_ | macroBit(macroIndex)
-    );
-    return true;
-}
-
-void MacroMidiCcRuntimeAdapter::clearComputedValues() {
-    computed_valid_mask_ = 0;
-}
-
-MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishComputedFrame() {
-    return publishFrame_(
-        NO_TRANSIENT_LIVE_MACRO,
-        0
-    );
-}
 
 MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishLiveManual(
     uint8_t macroIndex,
@@ -53,100 +21,46 @@ MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishLiveManual(
     if (macroIndex >= core::state::macro::MACRO_COUNT || value > 127U) {
         return MidiCcGlobalFrameResult{};
     }
-    return publishFrame_(macroIndex, value);
-}
-
-MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishFrame_(
-    uint8_t transientLiveMacro,
-    uint8_t transientLiveValue
-) {
-    uint16_t candidateCount = 0;
-    const auto appendCandidate = [this, &candidateCount](
-        core::state::shared::MidiCcCandidateClass candidateClass,
-        const core::state::shared::MidiCcDestination& destination,
-        uint16_t address,
-        uint8_t value
-    ) {
-        if (candidateCount >= candidates_.size()) return false;
-        candidates_[candidateCount++] = core::state::shared::MidiCcCandidate{
-            .destination = destination,
-            .author = core::state::shared::MidiCcAuthor{
-                .candidateClass = candidateClass,
-                .stableAddress = address,
-            },
-            .localValue = value,
-        };
-        return true;
-    };
-
-    if (services_.isActivePageEnabled()) {
-        const uint8_t track = pages_.currentActiveTrack();
-        const uint8_t page = pages_.currentActivePage();
-        for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
-            if (!services_.isMacroSlotActive(i)) continue;
-
-            const auto& config = services_.activeConfig(i);
-            const auto destination = core::state::shared::MidiCcDestination{
-                .identity = core::state::shared::MidiCcDestinationIdentity{
-                    .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
-                    .channel = config.channel,
-                    .controller = config.cc,
-                },
-                .routeValidity = core::state::shared::MidiCcRouteValidity::VALID,
-            };
-            const uint16_t address = stableAddress(track, page, i);
-            const bool transientLive = i == transientLiveMacro;
-            const bool recording = services_.automationRecordingActiveFor(i);
-            const bool manualOverride = services_.manualOverrideActiveFor(i);
-            const bool computedSource = services_.computedSourcePlaybackActiveFor(i);
-            const bool computedValid =
-                (computed_valid_mask_ & macroBit(i)) != 0;
-
-            if (transientLive) {
-                if (!appendCandidate(
-                        core::state::shared::MidiCcCandidateClass::LIVE_MANUAL,
-                        destination,
-                        address,
-                        transientLiveValue
-                    )) return MidiCcGlobalFrameResult{};
-                continue;
-            }
-
-            if ((recording || manualOverride) && computedValid) {
-                // Manual/recording keeps Live priority for duplicate MIDI
-                // destinations, but the value is the canonical resolved
-                // Base + Modulation result staged by playback.
-                if (!appendCandidate(
-                        core::state::shared::MidiCcCandidateClass::LIVE_MANUAL,
-                        destination,
-                        address,
-                        computed_values_[i]
-                    )) return MidiCcGlobalFrameResult{};
-                continue;
-            }
-
-            if (computedSource || recording || manualOverride) {
-                if (computedValid) {
-                    if (!appendCandidate(
-                        core::state::shared::MidiCcCandidateClass::MACRO_COMPUTED,
-                        destination,
-                        address,
-                        computed_values_[i]
-                    )) return MidiCcGlobalFrameResult{};
-                }
-                continue;
-            }
-
-            if (!appendCandidate(
-                core::state::shared::MidiCcCandidateClass::MACRO_STATIC,
-                destination,
-                address,
-                core::midi::toCC(pages_.activePageData().values[i])
-            )) return MidiCcGlobalFrameResult{};
-        }
+    if (!services_.isActivePageEnabled() ||
+        !services_.isMacroSlotActive(macroIndex)) {
+        return MidiCcGlobalFrameResult{};
     }
-
-    if (!coordinator_.publishPersistentAuthors(candidates_.data(), candidateCount)) {
+    const uint8_t activeTrack = pages_.currentActiveTrack();
+    const uint16_t audible = core::state::project::audibleMask(
+        project_tracks_,
+        pages_.currentTrackEnabledMask()
+    );
+    if ((audible & static_cast<uint16_t>(1U << activeTrack)) == 0U) {
+        // Manual input remains authored by the Macro workflow, but an
+        // inaudible Track must not replace or emit a physical MIDI author.
+        return MidiCcGlobalFrameResult{};
+    }
+    const auto& config = services_.activeConfig(macroIndex);
+    const uint8_t channel = core::state::project::projectTrackMidiChannel(
+        project_tracks_, activeTrack
+    );
+    const auto candidate = core::state::shared::MidiCcCandidate{
+        .destination = core::state::shared::MidiCcDestination{
+            .identity = core::state::shared::MidiCcDestinationIdentity{
+                .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                .channel = channel,
+                .controller = config.cc,
+            },
+            .routeValidity = core::state::shared::MidiCcRouteValidity::VALID,
+        },
+        .author = core::state::shared::MidiCcAuthor{
+            .candidateClass =
+                core::state::shared::MidiCcCandidateClass::LIVE_MANUAL,
+            .stableAddress = stableAddress(
+                activeTrack,
+                pages_.currentActivePage(),
+                macroIndex
+            ),
+        },
+        .localValue = value,
+    };
+    uint16_t candidateCount = 0;
+    if (!coordinator_.upsertPersistentAuthor(candidate, candidateCount)) {
         return MidiCcGlobalFrameResult{};
     }
     return {
@@ -154,6 +68,28 @@ MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishFrame_(
         .resolveStatus = core::state::shared::MidiCcResolveStatus::OK,
         .candidateCount = candidateCount,
     };
+}
+
+bool MacroMidiCcRuntimeAdapter::publishProjectFrame(
+    MidiCcGlobalFrameCoordinator::PersistentAuthorProducer producer,
+    void* context
+) {
+    return coordinator_.publishPersistentAuthorsGenerated(producer, context);
+}
+
+core::state::modulation::ProjectControlTimeSnapshot
+MacroMidiCcRuntimeAdapter::projectControlTimeSnapshot() const {
+    return coordinator_.projectControlTimeSnapshot();
+}
+
+bool MacroMidiCcRuntimeAdapter::projectModulationTriggersPending() const {
+    return coordinator_.hasPendingProjectModulationTriggers();
+}
+
+uint16_t MacroMidiCcRuntimeAdapter::drainProjectModulationTriggers(
+    core::state::modulation::ProjectModulationTriggerFrame& out
+) {
+    return coordinator_.drainProjectModulationTriggers(out);
 }
 
 }  // namespace core::handler

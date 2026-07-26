@@ -1,5 +1,7 @@
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 
+#include <config/PlatformCompat.hpp>
+
 namespace core::state::sequencer {
 namespace {
 
@@ -12,9 +14,11 @@ Visibility visibleIf(bool active) {
     return active ? Visibility::ACTIVE : Visibility::DISABLED;
 }
 
-Action cycleOrCreatePreview(const SequencerInteractionContext& context) {
-    return context.previewingAddSlot ? Action::CREATE_PREVIEW_STRUCTURE : Action::CYCLE_SCOPE;
-}
+void hideLeftSelectors(SequencerInteractionPolicy& policy);
+void applyStructureBottomActions(
+    SequencerInteractionPolicy& policy,
+    const SequencerInteractionContext& context
+);
 
 void hideLeftSelectors(SequencerInteractionPolicy& policy) {
     policy.leftCenterVisibility = Visibility::HIDDEN;
@@ -48,12 +52,6 @@ void applyStructureBottomActions(SequencerInteractionPolicy& policy,
         visibleIf(context.currentStructureCanClear || context.currentStructureCanRemove);
     policy.bottomRightVisibility =
         visibleIf(context.currentStructureCanCopy || context.compatibleClipboardAvailable);
-}
-
-void applyTrackBottomActions(SequencerInteractionPolicy& policy,
-                             const SequencerInteractionContext& context) {
-    applyStructureBottomActions(policy, context);
-    policy.bottomLeftTap = Action::MUTE_CURRENT_TRACK;
 }
 
 void applyStepContentBottomActions(SequencerInteractionPolicy& policy,
@@ -113,6 +111,30 @@ SequencerInteractionPolicy buildSelectorPolicy(const SequencerInteractionContext
     return policy;
 }
 
+SequencerInteractionPolicy buildStepContentSelectorPolicy() {
+    SequencerInteractionPolicy policy{};
+    policy.scope = Scope::STEP_CONTENT_SELECTOR;
+    policy.navTurn = Action::SELECT_STEP_CONTENT_ACTION;
+    policy.navTap = Action::APPLY_STEP_CONTENT_SELECTOR;
+    policy.navLongPress = Action::NONE;
+    policy.optTurn = Action::NONE;
+    policy.leftTopTap = Action::CANCEL_TRANSIENT_CONTEXT;
+    policy.leftCenterPress = Action::NONE;
+    policy.leftBottomPress = Action::APPLY_STEP_CONTENT_SELECTOR;
+    policy.macroTap = Action::NONE;
+    policy.macroLongPress = Action::NONE;
+    policy.macroTurn = Action::NONE;
+    policy.bottomLeftTap = Action::NONE;
+    policy.bottomLeftHold = Action::NONE;
+    policy.bottomRightTap = Action::NONE;
+    policy.bottomRightHold = Action::NONE;
+    policy.leftCenterVisibility = Visibility::HIDDEN;
+    policy.leftBottomVisibility = Visibility::ACTIVE;
+    policy.bottomLeftVisibility = Visibility::HIDDEN;
+    policy.bottomRightVisibility = Visibility::HIDDEN;
+    return policy;
+}
+
 SequencerInteractionPolicy buildSelectionPolicy(const SequencerInteractionContext& context) {
     SequencerInteractionPolicy policy{};
     if (context.stepSelectionActive) {
@@ -125,44 +147,47 @@ SequencerInteractionPolicy buildSelectionPolicy(const SequencerInteractionContex
         policy.scope = Scope::TRACK_SELECTION;
         policy.bottomLeftTap = Action::MUTE_TRACK_SELECTION;
         policy.bottomLeftHold = Action::DELETE_SELECTION;
-        policy.bottomRightTap = Action::COPY_SELECTION;
-        policy.bottomRightHold = context.compatibleClipboardAvailable
-            ? Action::PASTE_SELECTION
-            : Action::NONE;
+        policy.bottomRightTap = Action::NONE;
+        policy.bottomRightHold = Action::NONE;
     } else {
         policy.scope = Scope::PATTERN_SELECTION;
         policy.bottomLeftTap = Action::CLEAR_SELECTION;
         policy.bottomLeftHold = Action::DELETE_SELECTION;
-        policy.bottomRightTap = Action::COPY_SELECTION;
-        policy.bottomRightHold = context.compatibleClipboardAvailable
-            ? Action::PASTE_SELECTION
-            : Action::NONE;
+        policy.bottomRightTap = Action::NONE;
+        policy.bottomRightHold = Action::NONE;
     }
 
     policy.navTurn = Action::MOVE_SELECTION_CURSOR;
     policy.navTap = Action::TOGGLE_SELECTION;
-    policy.navLongPress = Action::CANCEL_TRANSIENT_CONTEXT;
+    policy.navLongPress = Action::NONE;
     policy.optTurn = Action::NONE;
     policy.leftTopTap = Action::CANCEL_TRANSIENT_CONTEXT;
     policy.macroTap = Action::TOGGLE_SELECTION;
     policy.macroLongPress = Action::NONE;
     policy.macroTurn = Action::NONE;
     policy.bottomLeftVisibility = visibleIf(context.selectedItemsAvailable);
-    policy.bottomRightVisibility =
-        visibleIf(context.selectedItemsAvailable || context.compatibleClipboardAvailable);
+    policy.bottomRightVisibility = context.stepSelectionActive
+        ? visibleIf(
+              context.selectedItemsAvailable ||
+              context.compatibleClipboardAvailable
+          )
+        : Visibility::HIDDEN;
     hideLeftSelectors(policy);
     return policy;
 }
 
 SequencerInteractionPolicy buildStepEditorPolicy(const SequencerInteractionContext& context) {
     SequencerInteractionPolicy policy{};
+    const bool canRetargetStep = !context.childContentView && !context.overlayVisible;
     policy.scope = Scope::STEP_EDITOR;
     policy.navTurn = Action::SELECT_STEP_EDITOR_ROW;
     policy.navTap = Action::APPLY_STEP_EDITOR;
     policy.navLongPress = Action::NONE;
     policy.optTurn = Action::EDIT_STEP_EDITOR_ROW;
     policy.leftTopTap = Action::CANCEL_TRANSIENT_CONTEXT;
-    policy.leftCenterPress = Action::NONE;
+    policy.leftCenterPress = canRetargetStep
+        ? Action::RETARGET_STEP_EDITOR
+        : Action::NONE;
     policy.leftBottomPress = Action::EDIT_STEP_LOCAL_RANDOM;
     policy.macroTap = Action::NONE;
     policy.macroLongPress = Action::NONE;
@@ -186,7 +211,9 @@ SequencerInteractionPolicy buildStepEditorPolicy(const SequencerInteractionConte
             visibleIf(context.stepEditorContextHasChild || context.compatibleClipboardAvailable);
     }
 
-    policy.leftCenterVisibility = Visibility::HIDDEN;
+    policy.leftCenterVisibility = canRetargetStep
+        ? Visibility::ACTIVE
+        : Visibility::HIDDEN;
     policy.leftBottomVisibility = Visibility::ACTIVE;
     return policy;
 }
@@ -196,38 +223,48 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
     const bool childContentView = context.childContentView;
 
     switch (context.navigationFocus) {
-        case Focus::TRACK:
-            policy.scope = Scope::TRACK;
-            policy.navTurn = Action::MOVE_TRACK;
-            policy.navTap = cycleOrCreatePreview(context);
-            policy.navLongPress = Action::ENTER_SELECTION;
-            policy.optTurn = Action::NONE;
-            policy.macroTap = Action::NONE;
-            policy.macroTurn = Action::NONE;
-            hideLeftSelectors(policy);
-            applyTrackBottomActions(policy, context);
-            break;
-
         case Focus::STEP:
             policy.scope = Scope::STEP;
             policy.navTurn = Action::MOVE_STEP;
-            policy.navTap = cycleOrCreatePreview(context);
+            policy.navTap = Action::OPEN_STEP_EDITOR;
             policy.navLongPress = Action::ENTER_SELECTION;
             policy.optTurn = Action::EDIT_STEP_PROPERTY;
+            policy.leftTopTap = childContentView
+                ? Action::CANCEL_TRANSIENT_CONTEXT
+                : Action::NONE;
             policy.leftCenterPress = Action::OPEN_MUSICAL_PROPERTY_SELECTOR;
             policy.leftCenterVisibility = Visibility::ACTIVE;
+            policy.leftBottomPress = Action::OPEN_STEP_CONTENT_SELECTOR;
+            policy.leftBottomVisibility = Visibility::ACTIVE;
+            applyStepBottomActions(policy, context);
+            break;
+
+        case Focus::TRACK:
+            policy.scope = Scope::TRACK;
+            policy.navTurn = Action::MOVE_TRACK;
+            policy.navTap = Action::OPEN_TRACK_EDITOR;
+            policy.navLongPress = Action::ENTER_SELECTION;
+            policy.optTurn = Action::NONE;
+            policy.leftTopTap = Action::NONE;
+            policy.leftCenterPress = Action::NONE;
+            policy.leftCenterVisibility = Visibility::HIDDEN;
             policy.leftBottomPress = Action::NONE;
             policy.leftBottomVisibility = Visibility::HIDDEN;
-            applyStepBottomActions(policy, context);
+            applyStructureBottomActions(policy, context);
             break;
 
         case Focus::PAGE:
         default:
             policy.scope = childContentView ? Scope::CHILD_PATTERN : Scope::PATTERN;
             policy.navTurn = Action::MOVE_PATTERN;
-            policy.navTap = cycleOrCreatePreview(context);
+            policy.navTap = childContentView
+                ? Action::NONE
+                : Action::OPEN_PATTERN_EDITOR;
             policy.navLongPress = Action::ENTER_SELECTION;
             policy.optTurn = Action::EDIT_PATTERN_DIMENSION;
+            policy.leftTopTap = childContentView
+                ? Action::CANCEL_TRANSIENT_CONTEXT
+                : Action::NONE;
             policy.leftCenterPress = Action::OPEN_PATTERN_DIMENSION_SELECTOR;
             policy.leftBottomPress = Action::OPEN_MUSICAL_PROPERTY_SELECTOR;
             policy.leftCenterVisibility = Visibility::ACTIVE;
@@ -250,21 +287,25 @@ SequencerInteractionPolicy buildMainSurfacePolicy(const SequencerInteractionCont
 
 }  // namespace
 
-bool sequencerInteractionSelectionActive(const SequencerInteractionContext& context) {
-    return context.pageSelectionActive || context.trackSelectionActive || context.stepSelectionActive;
+FLASHMEM bool sequencerInteractionSelectionActive(const SequencerInteractionContext& context) {
+    return context.trackSelectionActive ||
+           context.pageSelectionActive ||
+           context.stepSelectionActive;
 }
 
-bool sequencerInteractionTransientActive(const SequencerInteractionContext& context) {
+FLASHMEM bool sequencerInteractionTransientActive(const SequencerInteractionContext& context) {
     return context.overlayVisible || context.patternQuickControlsActive ||
-           context.historyShortcutHoldActive || context.propertySelectorActive ||
+           context.propertySelectorActive || context.stepContentSelectorActive ||
            context.stepEditorVisible;
 }
 
-bool sequencerInteractionMainSurfaceAvailable(const SequencerInteractionContext& context) {
+FLASHMEM bool sequencerInteractionMainSurfaceAvailable(const SequencerInteractionContext& context) {
     return !sequencerInteractionSelectionActive(context) && !sequencerInteractionTransientActive(context);
 }
 
-SequencerInteractionPolicy buildSequencerInteractionPolicy(const SequencerInteractionContext& context) {
+FLASHMEM SequencerInteractionPolicy buildSequencerInteractionPolicy(
+    const SequencerInteractionContext& context
+) {
     if (context.stepEditorVisible) {
         return buildStepEditorPolicy(context);
     }
@@ -273,6 +314,9 @@ SequencerInteractionPolicy buildSequencerInteractionPolicy(const SequencerIntera
     }
     if (context.propertySelectorActive) {
         return buildSelectorPolicy(context, false);
+    }
+    if (context.stepContentSelectorActive) {
+        return buildStepContentSelectorPolicy();
     }
     if (sequencerInteractionSelectionActive(context)) {
         return buildSelectionPolicy(context);

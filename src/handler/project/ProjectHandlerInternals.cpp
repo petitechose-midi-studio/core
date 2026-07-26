@@ -12,6 +12,22 @@
 
 namespace core::handler::project_handler_internal {
 
+FLASHMEM uint8_t projectModulatorFreePeriodIndex(uint32_t periodMs) {
+    uint8_t best = 0;
+    uint32_t bestDistance = UINT32_MAX;
+    for (uint8_t index = 0; index < PROJECT_MODULATOR_FREE_PERIODS_MS.size(); ++index) {
+        const uint32_t candidate = PROJECT_MODULATOR_FREE_PERIODS_MS[index];
+        const uint32_t distance = candidate > periodMs
+            ? candidate - periodMs
+            : periodMs - candidate;
+        if (distance < bestDistance) {
+            best = index;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
 FLASHMEM int signedStepCount(float delta) {
     if (delta == 0.0f) return 0;
     const float absolute = delta > 0.0f ? delta : -delta;
@@ -55,7 +71,8 @@ FLASHMEM float indexToNormalized(int index, int count) {
 
 FLASHMEM bool isProjectNameEditorNode(core::state::project::ProjectNodeId node) {
     return node == core::state::project::ProjectNodeId::SAVE_AS_PROJECT_NAME ||
-           node == core::state::project::ProjectNodeId::RENAME_PROJECT_NAME;
+           node == core::state::project::ProjectNodeId::RENAME_PROJECT_NAME ||
+           node == core::state::project::ProjectNodeId::MODULATOR_SOURCE_RENAME;
 }
 
 FLASHMEM char selectedProjectNameKey(
@@ -174,6 +191,8 @@ FLASHMEM const char* projectLifecycleFailureLabel(
             return "List failed";
         case Status::UNSAFE_OVERWRITE:
             return "Save As required";
+        case Status::DRAFT_ACTIVE:
+            return "Finish Step draft";
         case Status::PARTIAL_LOAD:
         case Status::OK:
         default:
@@ -192,8 +211,6 @@ FLASHMEM const char* projectLoadFeedbackLabel(
         return "Loaded read-only";
     }
     switch (result.loadStatus) {
-        case project_file::LoadStatus::MIGRATED:
-            return "Loaded migrated";
         case project_file::LoadStatus::PARTIAL:
             return "Loaded partial";
         case project_file::LoadStatus::OK:

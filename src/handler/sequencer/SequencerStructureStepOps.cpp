@@ -19,13 +19,14 @@ FLASHMEM bool selectedStepRange(
     bool found = false;
     outFirst = 0;
     outLast = 0;
-    for (uint8_t step = 0; step < activeLength; ++step) {
-        if (!mask.test(step)) continue;
+    for (uint16_t step = 0; step < activeLength; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
+        if (!mask.test(stepIndex)) continue;
         if (!found) {
-            outFirst = step;
+            outFirst = stepIndex;
             found = true;
         }
-        outLast = step;
+        outLast = stepIndex;
     }
     return found;
 }

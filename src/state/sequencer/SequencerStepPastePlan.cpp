@@ -166,7 +166,7 @@ FLASHMEM bool resizeActiveContentForStepPaste(
     if (current >= required) return true;
 
     if (isRootContentView(sequencer)) {
-        sequencer.pattern.length.set(required);
+        sequencer.pattern.setContentLength(required);
         return true;
     }
     if (isMicroSequenceContentView(sequencer)) {

@@ -3,7 +3,7 @@
 #include <cstdint>
 
 #include "state/StructureClipboardState.hpp"
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroInteractionPolicy.hpp"
 #include "state/macro/MacroPagesState.hpp"
@@ -23,7 +23,9 @@ struct MacroInteractionContextSource {
     bool slotPropertySelecting = false;
 };
 
-bool macroInteractionSelectionActive(const MacroInteractionContextSource& source);
+core::state::StructureNavigationFocus effectiveMacroNavigationFocus(
+    core::state::StructureNavigationFocus requestedFocus
+);
 bool macroInteractionPreviewingAddSlot(const MacroInteractionContextSource& source);
 bool macroInteractionCanPasteStructure(const MacroInteractionContextSource& source);
 bool macroInteractionCanRemoveStructure(const MacroInteractionContextSource& source);

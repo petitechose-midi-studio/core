@@ -11,7 +11,8 @@
 
 #include <oc/state/Signal.hpp>
 
-#include "state/macro/MacroAutomationState.hpp"
+#include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ModulationIds.hpp"
 #include "state/contextual/ContextualActionModels.hpp"
 
 namespace core::state {
@@ -20,24 +21,24 @@ enum class MacroEditFlowPhase : uint8_t {
     CLOSED = 0,
     EDIT = 1,
     VALUE_SELECTOR = 2,
-    PAGE_SELECTOR = 3,
-    TARGET_SELECTOR = 4,
-    AUTOMATION = 5,
-    MODULATION = 6,
-    CONVERT_PREVIEW = 7,
-};
-
-enum class MacroSlotProperty : uint8_t {
-    DESTINATION = 0,
-    AUTOMATION,
-    MODULATION,
-    DEPTH,
+    AUTOMATION = 3,
+    MODULATION = 4,
+    CONVERT_PREVIEW = 5,
+    MODULATOR_PICKER = 6,
+    MODULATOR_CREATE = 7,
 };
 
 enum class MacroContextButton : uint8_t {
     NONE = 0,
     BOTTOM_LEFT,
     BOTTOM_RIGHT,
+};
+
+enum class MacroModulatorNavigationFeedback : uint8_t {
+    NONE = 0,
+    SOURCE_UNAVAILABLE,
+    ASSIGNMENT_UNAVAILABLE,
+    CONTEXT_CHANGED,
 };
 
 /**
@@ -66,6 +67,11 @@ struct MacroEditState {
 
     /// Focused Slot property (Destination, Automation, Modulation, Depth).
     oc::state::Signal<uint8_t> focusedRow{0};
+    /** Temporary LEFT_BOTTOM contextual-property selector. */
+    oc::state::Signal<bool, 4> contextSelectorActive{false};
+    oc::state::Signal<uint8_t, 4> contextPropertyIndex{0};
+    /** Temporary LEFT_CENTER active-Macro cycle. */
+    oc::state::Signal<bool, 4> macroCycleActive{false};
 
     struct ValueSelectorState {
         oc::state::Signal<bool, 4> visible{false};
@@ -75,33 +81,33 @@ struct MacroEditState {
         void reset();
     };
 
-    struct MacroSelectorState {
-        oc::state::Signal<bool, 4> visible{false};
-        oc::state::Signal<int, 4> selectedIndex{0};
-
-        void reset();
-    };
-
     /// Value selector sub-state (CH/CC choices)
     ValueSelectorState selector;
 
-    /// Macro selector sub-state (macro target while editing)
-    MacroSelectorState macroSelector;
+    /// Focused source in the live "Use Existing" Modulator picker.
+    oc::state::Signal<int, 4> modulatorPickerIndex{0};
 
     /// Focused row in the automation lifecycle overlay.
     oc::state::Signal<uint8_t, 4> automationFocusedRow{0};
     /// Focused row in the modulation lifecycle overlay.
     oc::state::Signal<uint8_t, 4> modulationFocusedRow{0};
+    /** Stable edge identity captured while a contextual action is armed. */
+    core::state::modulation::ModulationBindingId guardedModulationBinding{};
+    /** Authored graph revision captured with the guarded edge/aggregate. */
+    uint32_t guardedModulationRevision = 0U;
+    oc::state::Signal<MacroModulatorNavigationFeedback, 4>
+        modulatorNavigationFeedback{MacroModulatorNavigationFeedback::NONE};
 
     struct ConversionPreviewState {
-        core::state::macro::MacroAutomationConversionPolicy policy =
-            core::state::macro::MacroAutomationConversionPolicy::MEAN;
-        core::state::macro::MacroAutomationConversionPlan plan{};
+        core::state::modulation::ProjectAutomationConversionPolicy policy =
+            core::state::modulation::ProjectAutomationConversionPolicy::MEAN;
+        core::state::modulation::ProjectAutomationConversionPlan plan{};
         oc::state::Signal<uint32_t, 4> revision{0};
 
         void reset();
         void setPlan(
-            const core::state::macro::MacroAutomationConversionPlan& next
+            const core::state::modulation::ProjectAutomationConversionPlan&
+                next
         );
     } conversionPreview;
 
@@ -118,6 +124,7 @@ struct MacroEditState {
     uint8_t openedByMacroIndex = 0;
     uint32_t openedAtMs = 0;
     bool pendingOpenReleaseDecision = false;
+    uint32_t modulatorNavigationFeedbackUntilMs = 0;
 
     ~MacroEditState();
 
@@ -143,14 +150,6 @@ struct MacroEditState {
 
     void closeValueSelector();
 
-    void openPageSelector();
-
-    void closePageSelector();
-
-    void openTargetSelector(int selectedIndex);
-
-    void closeTargetSelector();
-
     void openAutomation();
 
     void closeAutomation();
@@ -159,11 +158,28 @@ struct MacroEditState {
 
     void closeModulation();
 
+    void openModulatorCreate(uint8_t focusedRow = 0);
+
+    void closeModulatorCreate(uint8_t focusedRow);
+
+    void openModulatorPicker(int selectedIndex = 0);
+
+    void closeModulatorPicker(uint8_t focusedRow = 1);
+
+
     void openConvertPreview(
-        const core::state::macro::MacroAutomationConversionPlan& plan
+        const core::state::modulation::ProjectAutomationConversionPlan& plan
     );
 
     void closeConvertPreview();
+
+    void setModulatorNavigationFeedback(
+        MacroModulatorNavigationFeedback feedback,
+        uint32_t nowMs,
+        uint32_t durationMs = 1500U
+    );
+
+    void updateModulatorNavigationFeedback(uint32_t nowMs);
 
     void loadActiveConfig(uint8_t index, uint8_t channel, uint8_t cc);
 

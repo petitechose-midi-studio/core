@@ -6,6 +6,8 @@
 
 namespace core::state::project {
 
+FLASHMEM ProjectNavigationState::~ProjectNavigationState() = default;
+
 FLASHMEM void ProjectBrowserState::clear() {
     entries = {};
     count = 0;
@@ -38,11 +40,26 @@ FLASHMEM void ProjectNavigationState::reset() {
     physicalHoldActive.set(false);
     contentRevision.set(0);
     lifecycleFeedback.set("");
+    selectedModulator = {};
+    selectedModulationBinding = {};
+    modulatorReturn = {};
+    guardedModulator = {};
+    guardedModulationBinding = {};
+    guardedClipboardModulator = {};
+    modulatorClipboardGuard.set({});
+    modulatorClipboardPasteAvailable = false;
+    creatingModulatorSource = false;
+    creatingModulatorKind = core::state::modulation::ModulatorKind::LFO;
+    destinationPickerTrack = 0;
+    destinationPickerPage = 0;
+    destinationPickerLevel = ModulatorDestinationPickerLevel::TRACK;
+    modulatorGuard.set({});
     autosaveEnabled = true;
     scaleConstrainEnabled = true;
     patternsInheritScale = true;
     clipsInheritScale = true;
     stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
+    ccLaneDefaultControllers = PROJECT_CC_LANE_DEFAULT_CONTROLLERS;
     transportSwingPercent = 0;
     transportRunMode = 0;
     pendingLoadProjectId = {};
@@ -87,6 +104,8 @@ FLASHMEM ProjectNodeId rootNodeForTab(ProjectTab tab) {
             return ProjectNodeId::STORAGE_ROOT;
         case ProjectTab::ROUTING:
             return ProjectNodeId::ROUTING_ROOT;
+        case ProjectTab::MODULATORS:
+            return ProjectNodeId::MODULATORS_ROOT;
         case ProjectTab::OVERVIEW:
         default:
             return ProjectNodeId::OVERVIEW_ROOT;
@@ -108,6 +127,15 @@ FLASHMEM ProjectTab tabForRootNode(ProjectNodeId node) {
             return ProjectTab::STORAGE;
         case ProjectNodeId::ROUTING_ROOT:
             return ProjectTab::ROUTING;
+        case ProjectNodeId::MODULATOR_SOURCE_DETAIL:
+        case ProjectNodeId::MODULATOR_SOURCE_OPTIONS:
+        case ProjectNodeId::MODULATOR_SOURCE_RENAME:
+        case ProjectNodeId::MODULATOR_DESTINATIONS:
+        case ProjectNodeId::MODULATOR_DESTINATION_PICKER:
+        case ProjectNodeId::MODULATOR_SOURCE_KIND_PICKER:
+        case ProjectNodeId::MODULATOR_TRIGGER:
+        case ProjectNodeId::MODULATORS_ROOT:
+            return ProjectTab::MODULATORS;
         case ProjectNodeId::NEW_PROJECT_CONFIRM:
         case ProjectNodeId::OVERVIEW_ROOT:
         default:
@@ -125,6 +153,8 @@ FLASHMEM const char* projectTabLabel(ProjectTab tab) {
             return "Storage";
         case ProjectTab::ROUTING:
             return "Routing";
+        case ProjectTab::MODULATORS:
+            return "Modulators";
         case ProjectTab::OVERVIEW:
         default:
             return "Overview";

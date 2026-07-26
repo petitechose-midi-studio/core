@@ -41,6 +41,9 @@ private:
     void syncOptEncoderContract();
     void syncMacroEncoderContract();
     void updateMacroButtonGestures(uint32_t nowMs);
+    void updateNavButtonGesture(uint32_t nowMs);
+    void beginNavButtonTracking(uint32_t nowMs);
+    void resetNavButtonTracking();
     void beginMacroButtonTracking(uint8_t indexInWindow, uint32_t nowMs);
     bool configureTransitionEncoder(uint8_t indexInWindow);
     void invalidateMacroEncoderContract();
@@ -48,7 +51,8 @@ private:
     void recenterDirectionalOpt();
     void onNavTurn(float delta);
     void onOptTurn(float normalized);
-    void onNavTap();
+    void onNavRelease();
+    void executeNavTap();
     void onMacroTurn(uint8_t indexInWindow, float normalized);
     void onMacroRelease(uint8_t indexInWindow);
     void onMacroLongPress(uint8_t indexInWindow);
@@ -76,6 +80,10 @@ private:
     uint8_t macro_button_long_mask_ = 0;
     uint8_t macro_button_turn_mask_ = 0;
     uint8_t transition_encoder_mask_ = 0;
+    uint32_t nav_press_started_at_ms_ = 0;
+    bool nav_button_tracked_ = false;
+    bool nav_button_long_ = false;
+    bool nav_button_turned_ = false;
 };
 
 }  // namespace core::handler

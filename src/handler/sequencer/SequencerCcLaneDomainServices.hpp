@@ -1,6 +1,7 @@
 #pragma once
 
 #include "state/macro/MacroPagesState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerCcLaneRouting.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
@@ -18,12 +19,13 @@ struct SequencerCcLanePreflight {
     [[nodiscard]] bool warning() const { return !laneConflict && macroConflict; }
 };
 
-/** Read-only, allocation-free project preflight shared by Add and Settings. */
+/** Read-only, allocation-free project preflight shared by Create and Settings. */
 class SequencerCcLaneDomainServices {
 public:
     struct StateRefs {
         core::state::sequencer::SequencerState& editor;
         core::state::sequencer::SequencerTrackBankState& tracks;
+        const core::state::project::ProjectTrackState& projectTracks;
         const core::state::macro::MacroPagesState* macroPages = nullptr;
     };
 
@@ -50,6 +52,7 @@ private:
 
     core::state::sequencer::SequencerState& editor_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
+    const core::state::project::ProjectTrackState& project_tracks_;
     const core::state::macro::MacroPagesState* macro_pages_ = nullptr;
 };
 

@@ -156,13 +156,13 @@ void test_sequencer_set_load_reports_deferred_apply() {
                                  storage.sequencerSetLibrary);
     const auto services = core::handler::DataManagerDomainServices::fromCoreState(state);
 
-    state.sequencer.pattern.length.set(8);
+    state.sequencer.pattern.setContentLength(8);
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(2, 72, 110, 45);
     state.sequencer.pattern.toggle(2);
     assert(core::state::sequencer::SequencerPersistenceWorkflow::saveSetSlot(state, 6));
 
-    state.sequencer.pattern.length.set(16);
+    state.sequencer.pattern.setContentLength(16);
     state.sequencer.pattern.enabledMask.set({});
     state.sequencer.setStepDataAt(1, 48, 64, 55);
     state.sequencer.pattern.toggle(1);

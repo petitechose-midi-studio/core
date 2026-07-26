@@ -9,6 +9,8 @@
 
 namespace core::context::standalone {
 
+FLASHMEM SequencerSettingsOverlayPresenter::~SequencerSettingsOverlayPresenter() {}
+
 FLASHMEM SequencerSettingsOverlayPresenter::SequencerSettingsOverlayPresenter(
     StateRefs stateRefs,
     ms::ui::VirtualListKeyValueOverlay& overlay,

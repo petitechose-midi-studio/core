@@ -2,25 +2,36 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "state/macro/MacroSelectionDeleteAction.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
 namespace core::state::macro {
 
 namespace structure_slots = core::state::shared;
 
-FLASHMEM bool macroInteractionSelectionActive(
+FLASHMEM core::state::StructureNavigationFocus effectiveMacroNavigationFocus(
+    core::state::StructureNavigationFocus requestedFocus
+) {
+    // Track, Page and Macro are first-class hot-surface contexts selected by
+    // the shared press/hold/turn/release gesture.
+    return requestedFocus;
+}
+
+namespace {
+
+FLASHMEM core::state::StructureNavigationFocus effectiveNavigationFocus(
     const MacroInteractionContextSource& source
 ) {
-    return !source.blockingOverlay &&
-           (source.trackNavigation.selection.active.get() ||
-            source.macroUi.pageSelection.active.get());
+    return effectiveMacroNavigationFocus(
+        source.navigationFocus
+    );
 }
+
+}  // namespace
 
 FLASHMEM bool macroInteractionPreviewingAddSlot(
     const MacroInteractionContextSource& source
 ) {
-    switch (source.navigationFocus) {
+    switch (effectiveNavigationFocus(source)) {
         case core::state::StructureNavigationFocus::TRACK:
             return source.trackNavigation.previewAddSlot.get();
         case core::state::StructureNavigationFocus::STEP:
@@ -34,7 +45,7 @@ FLASHMEM bool macroInteractionPreviewingAddSlot(
 FLASHMEM bool macroInteractionCanPasteStructure(
     const MacroInteractionContextSource& source
 ) {
-    switch (source.navigationFocus) {
+    switch (effectiveNavigationFocus(source)) {
         case core::state::StructureNavigationFocus::TRACK:
             return source.structureClipboard.hasMacroTrack();
         case core::state::StructureNavigationFocus::STEP:
@@ -49,7 +60,7 @@ FLASHMEM bool macroInteractionCanPasteStructure(
 FLASHMEM bool macroInteractionCanRemoveStructure(
     const MacroInteractionContextSource& source
 ) {
-    switch (source.navigationFocus) {
+    switch (effectiveNavigationFocus(source)) {
         case core::state::StructureNavigationFocus::TRACK:
             return !source.trackNavigation.previewAddSlot.get() &&
                    structure_slots::countEnabled(source.enabledTrackMask, TRACK_COUNT) > 1U;
@@ -71,35 +82,13 @@ FLASHMEM bool macroInteractionCanRemoveStructure(
 FLASHMEM MacroInteractionContext buildMacroInteractionContext(
     const MacroInteractionContextSource& source
 ) {
-    const bool trackSelection = source.trackNavigation.selection.active.get();
-    const auto& selection = trackSelection
-        ? source.trackNavigation.selection
-        : source.macroUi.pageSelection;
-    const auto selectionScope = trackSelection
-        ? core::state::StructureSelectionScope::TRACK
-        : core::state::StructureSelectionScope::PAGE;
-    const uint16_t selectionEnabledMask = trackSelection
-        ? source.enabledTrackMask
-        : source.pages.currentEnabledPageMask();
-    const auto selectionDeleteAction = buildMacroSelectionDeleteActionSpec({
-        .active = macroInteractionSelectionActive(source),
-        .scope = selectionScope,
-        .selectedMask = selection.selectedMask.get(),
-        .enabledMask = selectionEnabledMask,
-        .currentIndex = selection.cursorIndex.get(),
-        .activeTrack = source.pages.currentActiveTrack(),
-        .activePage = source.pages.currentActivePage(),
-    });
-
     return MacroInteractionContext{
-        .navigationFocus = source.navigationFocus,
+        .navigationFocus = effectiveNavigationFocus(source),
         .blockingOverlay = source.blockingOverlay,
         .slotPropertySelecting = source.slotPropertySelecting,
-        .selectionActive = macroInteractionSelectionActive(source),
         .previewingAddSlot = macroInteractionPreviewingAddSlot(source),
         .compatibleClipboardAvailable = macroInteractionCanPasteStructure(source),
         .canRemoveStructure = macroInteractionCanRemoveStructure(source),
-        .selectionDeleteAction = selectionDeleteAction,
     };
 }
 

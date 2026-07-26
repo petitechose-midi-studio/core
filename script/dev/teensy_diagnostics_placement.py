@@ -50,17 +50,45 @@ def diagnostics_placement_violations(nm_output: str) -> tuple[str, ...]:
         elif any(address < FLASH_START for address in matches):
             violations.append(f"diagnostics symbol must execute from Flash: {marker}")
 
-    reporter_storage = tuple(
-        address
-        for address, symbol_type, name in symbols
-        if symbol_type in "BbDd" and "reporterStorage" in name
-    )
-    if not reporter_storage:
-        violations.append("diagnostics reporter storage is missing from the ELF")
-    elif any(
-        address < RAM2_START or address >= RAM2_END
-        for address in reporter_storage
-    ):
-        violations.append("diagnostics reporter samples and counters must stay in RAM2")
+    for storage_marker in ("reporterStorage", "memoryHighWaterStorage"):
+        storage = tuple(
+            address
+            for address, symbol_type, name in symbols
+            if symbol_type in "BbDd" and storage_marker in name
+        )
+        if not storage:
+            violations.append(
+                f"diagnostics storage is missing from the ELF: {storage_marker}"
+            )
+        elif any(
+            address < RAM2_START or address >= RAM2_END
+            for address in storage
+        ):
+            violations.append(
+                "diagnostics reporter samples and counters must stay in RAM2"
+            )
 
+    return tuple(violations)
+
+
+def normal_build_diagnostics_violations(nm_output: str) -> tuple[str, ...]:
+    """Reject opt-in diagnostics state or code from a normal firmware ELF."""
+    symbols = _symbols(nm_output)
+    forbidden_markers = (
+        "core::diagnostics::PerformanceReporter",
+        "core::diagnostics::performanceReporter()",
+        "core::diagnostics::beginMemoryFootprintTracking()",
+        "core::diagnostics::trackExtmemAllocation(",
+        "core::diagnostics::trackExtmemFree(",
+        "core::diagnostics::recordDynamicMemorySample(",
+        "core::diagnostics::logMemoryFootprint(",
+        "reporterStorage",
+        "memoryHighWaterStorage",
+    )
+    violations: list[str] = []
+    for marker in forbidden_markers:
+        if any(marker in name for _address, _symbol_type, name in symbols):
+            violations.append(
+                f"normal firmware contains opt-in diagnostics symbol: {marker}"
+            )
     return tuple(violations)

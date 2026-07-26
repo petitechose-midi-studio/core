@@ -44,7 +44,7 @@ void resetTestRoot() {
 }
 
 void prepareSource(SequencerState& source) {
-    source.pattern.length.set(8);
+    source.pattern.setContentLength(8);
     source.focusedStep.set(3);
     source.pattern.setEnabled(3, true);
     assert(source.setStepDataAt(3, 66, 93, 144, -4, 82));
@@ -136,7 +136,7 @@ void test_step_preset_file_store_roundtrip_and_lists_files() {
     assert(loadedSize == encoded.bytesWritten);
 
     SequencerState target;
-    target.pattern.length.set(8);
+    target.pattern.setContentLength(8);
     target.focusedStep.set(6);
     target.pattern.setEnabled(6, false);
     assert(target.setStepDataAt(6, 41, 11, 32, 5, 100));

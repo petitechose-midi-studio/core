@@ -112,7 +112,7 @@ private:
     void requestSlotPropertyOverlayRender();
     void markAllDirty();
     void markAllConfigDirty();
-    void markAutomationRecordingDirtyIfChanged();
+    bool markAutomationRecordingDirtyIfChanged(int dirtyIndex);
     void markConfigDirtyIfChanged();
     void markDirty(uint8_t index);
     static bool canDrainRender(void* context);

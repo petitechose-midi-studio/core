@@ -11,6 +11,7 @@
 #include "state/MidiSyncState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/ViewSelectorItems.hpp"
+#include "state/project/ProjectHistoryCoordinator.hpp"
 #include "state/ViewSelectorState.hpp"
 #include "state/settings/DeviceSettingsMenuModel.hpp"
 #include "validation/ux/SemanticUxNames.hpp"
@@ -70,14 +71,25 @@ FLASHMEM void selectorItemsForRow(uint8_t row, const char* const*& items, int& i
 
 FLASHMEM ViewSelectorUxSurface::ViewSelectorUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
-    core::state::ViewSelectorState& viewSelector
-) : active_view_(activeView), view_selector_(viewSelector) {}
+    core::state::ViewSelectorState& viewSelector,
+    core::state::project::ProjectHistoryCoordinator& history
+) : active_view_(activeView), view_selector_(viewSelector), history_(history) {}
 
 FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    const bool opening = isButton(event, Config::ButtonID::LEFT_TOP, oc::core::input::ButtonBindingType::PRESS);
+    const bool opening =
+        isButton(
+            event,
+            Config::ButtonID::LEFT_TOP,
+            oc::core::input::ButtonBindingType::PRESS
+        ) ||
+        isButton(
+            event,
+            Config::ButtonID::LEFT_TOP,
+            oc::core::input::ButtonBindingType::LONG_PRESS
+        );
     const bool visible = view_selector_.visible.get();
     if (!opening && !visible) {
         return false;
@@ -89,6 +101,34 @@ FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
         selected = static_cast<int>(core::state::viewSelectorItemForView(active_view_.get()));
     }
 
+    const bool undo = isButton(
+        event,
+        Config::ButtonID::LEFT_CENTER,
+        oc::core::input::ButtonBindingType::RELEASE
+    );
+    const bool redo = isButton(
+        event,
+        Config::ButtonID::LEFT_BOTTOM,
+        oc::core::input::ButtonBindingType::RELEASE
+    );
+    if (visible && (undo || redo)) {
+        const auto* entry = undo ? history_.peekUndo() : history_.peekRedo();
+        // The recorder asks once before and once after dispatch. After an Undo
+        // the applied action is now the Redo top (and symmetrically for Redo),
+        // so keep the semantic label stable across both snapshots.
+        if (entry == nullptr) {
+            entry = undo ? history_.peekRedo() : history_.peekUndo();
+        }
+        out.mode = "view_selector";
+        out.target = "project_history";
+        out.property = entry != nullptr
+            ? core::state::project::ProjectHistoryCoordinator::actionLabel(*entry)
+            : "Empty";
+        copyValueLabel(out.valueLabel, out.property);
+        out.effect = undo ? "undo_project_action" : "redo_project_action";
+        return true;
+    }
+
     const auto selectedItem = core::state::viewSelectorItemAt(selected);
     out.mode = "view_selector";
     out.target = "view";
@@ -98,9 +138,6 @@ FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
 
     if (opening) {
         out.effect = "open_view_selector";
-    } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, oc::core::input::ButtonBindingType::RELEASE) &&
-               core::state::viewSelectorItemHasSettingsAction(selectedItem)) {
-        out.effect = "open_view_settings";
     } else if (isEncoder(event, Config::EncoderID::NAV)) {
         out.effect = "select_view";
     } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE) ||

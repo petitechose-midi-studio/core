@@ -2,13 +2,13 @@
 
 #include <stdint.h>
 
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 
 namespace core::state::sequencer {
 
 enum class SequencerInteractionScope : uint8_t {
-    TRACK,
     PATTERN,
+    TRACK,
     STEP,
     CHILD_PATTERN,
     PATTERN_DIMENSION_SELECTOR,
@@ -16,6 +16,7 @@ enum class SequencerInteractionScope : uint8_t {
     TRACK_SELECTION,
     PATTERN_SELECTION,
     STEP_SELECTION,
+    STEP_CONTENT_SELECTOR,
     STEP_EDITOR,
 };
 
@@ -28,14 +29,15 @@ enum class SequencerInteractionAction : uint8_t {
     SELECT_PATTERN_DIMENSION,
     SELECT_MUSICAL_PROPERTY,
     SELECT_STEP_EDITOR_ROW,
-    CYCLE_SCOPE,
-    CREATE_PREVIEW_STRUCTURE,
+    SELECT_STEP_CONTENT_ACTION,
     ENTER_SELECTION,
     TOGGLE_SELECTION,
     OPEN_PATTERN_DIMENSION_SELECTOR,
     OPEN_MUSICAL_PROPERTY_SELECTOR,
+    OPEN_STEP_CONTENT_SELECTOR,
     APPLY_PATTERN_DIMENSION_SELECTOR,
     APPLY_MUSICAL_PROPERTY_SELECTOR,
+    APPLY_STEP_CONTENT_SELECTOR,
     APPLY_STEP_EDITOR,
     CANCEL_TRANSIENT_CONTEXT,
     EDIT_PATTERN_DIMENSION,
@@ -43,6 +45,9 @@ enum class SequencerInteractionAction : uint8_t {
     EDIT_STEP_PROPERTY,
     EDIT_STEP_LOCAL_RANDOM,
     EDIT_STEP_EDITOR_ROW,
+    RETARGET_STEP_EDITOR,
+    OPEN_TRACK_EDITOR,
+    OPEN_PATTERN_EDITOR,
     OPEN_STEP_EDITOR,
     TOGGLE_VISIBLE_STEP,
     EDIT_VISIBLE_STEP_PROPERTY,
@@ -67,8 +72,6 @@ enum class SequencerInteractionAction : uint8_t {
     DELETE_SELECTION,
     RESET_STEP_SELECTION_SHALLOW,
     RESET_STEP_SELECTION_DEEP,
-    COPY_SELECTION,
-    PASTE_SELECTION,
     COPY_STEP_SELECTION,
     PASTE_STEP_SELECTION,
 };
@@ -84,12 +87,12 @@ struct SequencerInteractionContext {
     bool childContentView = false;
     bool overlayVisible = false;
     bool previewingAddSlot = false;
-    bool pageSelectionActive = false;
     bool trackSelectionActive = false;
+    bool pageSelectionActive = false;
     bool stepSelectionActive = false;
     bool patternQuickControlsActive = false;
-    bool historyShortcutHoldActive = false;
     bool propertySelectorActive = false;
+    bool stepContentSelectorActive = false;
     bool stepEditorVisible = false;
     bool compatibleClipboardAvailable = false;
     bool currentStructureCanClear = true;
@@ -105,7 +108,7 @@ struct SequencerInteractionContext {
 struct SequencerInteractionPolicy {
     SequencerInteractionScope scope = SequencerInteractionScope::PATTERN;
     SequencerInteractionAction navTurn = SequencerInteractionAction::MOVE_PATTERN;
-    SequencerInteractionAction navTap = SequencerInteractionAction::CYCLE_SCOPE;
+    SequencerInteractionAction navTap = SequencerInteractionAction::NONE;
     SequencerInteractionAction navLongPress = SequencerInteractionAction::ENTER_SELECTION;
     SequencerInteractionAction optTurn = SequencerInteractionAction::EDIT_PATTERN_DIMENSION;
     SequencerInteractionAction leftTopTap = SequencerInteractionAction::NONE;

@@ -12,9 +12,9 @@ namespace core::sequencer {
  * the exact same deadline without a second physical MIDI path.
  */
 enum class RealtimeMidiEventType : uint8_t {
-    NoteOn,
-    NoteOff,
-    ControlChange,
+    NoteOff = 0,
+    NoteOn = 1,
+    ControlChange = 2,
 };
 
 /**
@@ -26,7 +26,14 @@ enum class RealtimeMidiEventType : uint8_t {
  */
 struct RealtimeMidiEvent {
     uint32_t deadlineUs = 0;
-    RealtimeMidiEventType type = RealtimeMidiEventType::NoteOff;
+    // Three type bits deliberately preserve invalid values 3..7 until queue
+    // validation, while the fixed Track domain needs four valid bits. Sharing
+    // one byte removes the former three-byte tail padding from every queue slot
+    // while keeping direct field access on the hot path.
+    RealtimeMidiEventType type : 3;
+    // Five bits deliberately preserve invalid values 16..31 until queue
+    // validation; a four-bit field would silently alias Track 16 to Track 0.
+    uint8_t trackIndex : 5;
     uint8_t channel = 0;
     union {
         uint8_t note = 0;
@@ -36,7 +43,8 @@ struct RealtimeMidiEvent {
         uint8_t velocity = 0;
         uint8_t value;
     };
-    uint8_t trackIndex = 0;
 };
+
+static_assert(sizeof(RealtimeMidiEvent) == 8U);
 
 }  // namespace core::sequencer

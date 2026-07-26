@@ -8,10 +8,12 @@
 #include <ms/ui/widget/VirtualListKeyValueOverlay.hpp>
 
 #include "handler/sequencer/SequencerCcLaneLiveProjection.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/contextual/ContextActionSpec.hpp"
 #include "context/standalone/SequencerCcLaneOverlayVisuals.hpp"
 #include "state/sequencer/SequencerCcLaneDraftLayout.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerPatternRegionOps.hpp"
 #include "state/sequencer/SequencerCcLaneRouting.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerCcLaneGridProjection.hpp"
@@ -19,6 +21,9 @@
 #include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone {
+
+FLASHMEM SequencerCcLaneOverlayPresenter::~SequencerCcLaneOverlayPresenter() {}
+
 namespace {
 
 namespace contextual = core::state::contextual;
@@ -41,8 +46,8 @@ const char* routePolicyValue(seq::SequencerCcLaneRoutePolicy policy) {
 
 uint8_t eventCount(const oc::note::sequencer::StepBitMask128& mask) {
     uint8_t count = 0;
-    for (uint8_t step = 0; step < seq::SequencerCcLaneBank::MAX_STEPS; ++step) {
-        if (mask.test(step)) ++count;
+    for (uint16_t step = 0; step < seq::SequencerCcLaneBank::MAX_STEPS; ++step) {
+        if (mask.test(static_cast<uint8_t>(step))) ++count;
     }
     return count;
 }
@@ -171,7 +176,8 @@ FLASHMEM bool SequencerCcLaneOverlayPresenter::bind() {
         state_.sequencer.ccLaneUi.actionGuard,
         state_.sequencer.ccLaneUi.operationFeedback,
         state_.statusBar.playing,
-        state_.sequencer.playheadStep
+        state_.sequencer.playheadStep,
+        state_.projectTracks.revision
     );
 }
 
@@ -211,6 +217,11 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
     int selectedIndex = 0;
     const auto* bank = seq::sequencerCcLaneView(state_.sequencer.pattern);
     const auto activeTrack = state_.tracks.activeTrackIndex();
+    const uint8_t inheritedChannel =
+        core::state::project::projectTrackMidiChannel(
+            state_.projectTracks,
+            activeTrack
+        );
     const auto feedback = ui.operationFeedback.get();
     const char* feedbackText = feedbackLabel(feedback);
 
@@ -252,7 +263,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
                                   static_cast<unsigned>(eventCount(lane.activeMask)));
                 } else {
                     std::snprintf(value, sizeof(value), "Track Ch%u · %u events",
-                                  static_cast<unsigned>(state_.sequencer.pattern.midiChannel.get() + 1U),
+                                  static_cast<unsigned>(inheritedChannel + 1U),
                                   static_cast<unsigned>(eventCount(lane.activeMask)));
                 }
                 addRow(key, value,
@@ -263,7 +274,29 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
                 ++item;
             }
         }
-        addRow("+ Control lane", "CC + route", ::standalone::icons::ACTION_APPLY);
+        const int8_t freeLane = bank
+            ? seq::firstFreeSequencerCcLane(*bank)
+            : 0;
+        if (freeLane >= 0) {
+            char key[24] = {};
+            char value[48] = {};
+            const uint8_t slot = static_cast<uint8_t>(freeLane);
+            std::snprintf(
+                key,
+                sizeof(key),
+                "+ Lane %u",
+                static_cast<unsigned>(slot + 1U)
+            );
+            std::snprintf(
+                value,
+                sizeof(value),
+                "CC%u · Track",
+                static_cast<unsigned>(
+                    state_.projectNavigation.ccLaneDefaultControllers[slot]
+                )
+            );
+            addRow(key, value, ::standalone::icons::ACTION_APPLY);
+        }
         selectedIndex = std::min<int>(ui.selectorIndex, std::max(0, rowCount - 1));
         std::snprintf(meta_.data(), meta_.size(), "%u/4 lanes%s%s",
                       static_cast<unsigned>(item),
@@ -289,9 +322,14 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
             return;
         }
 
-        std::snprintf(title_.data(), title_.size(), "CC%u · Lane %u",
-                      static_cast<unsigned>(lane->destination.controller),
-                      static_cast<unsigned>(ui.focusedLane + 1U));
+        std::snprintf(
+            title_.data(),
+            title_.size(),
+            "Lane %u · CC%u · %s",
+            static_cast<unsigned>(ui.focusedLane + 1U),
+            static_cast<unsigned>(lane->destination.controller),
+            routePolicyLabel(lane->destination.routePolicy)
+        );
         const uint8_t length = std::max<uint8_t>(
             1U,
             state_.sequencer.pattern.length.get()
@@ -306,12 +344,12 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
         const uint8_t channel = lane->destination.routePolicy ==
                 seq::SequencerCcLaneRoutePolicy::PINNED
             ? lane->destination.pinnedChannel
-            : state_.sequencer.pattern.midiChannel.get();
+            : inheritedChannel;
         const auto live = core::handler::projectSequencerCcLaneLive(
             state_.midiCcCoordinator,
             {activeTrack, ui.focusedLane},
             *lane,
-            seq::makeSequencerCcTrackRoute(0, state_.sequencer.pattern.midiChannel.get())
+            seq::makeSequencerCcTrackRoute(0, inheritedChannel)
         );
 
         uint32_t statusColor = ::standalone::theme::color::TEXT_SECONDARY;
@@ -361,6 +399,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
             .statusColor = statusColor,
         };
         const int16_t playhead = state_.sequencer.playheadStep.get();
+        const auto region = seq::patternPlaybackRegion(state_.sequencer.pattern);
         for (uint8_t cell = 0; cell < GRID_WINDOW; ++cell) {
             const uint8_t step = static_cast<uint8_t>(start + cell);
             const bool visible = step < length;
@@ -384,7 +423,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
                         core::ui::sequencer::projectSequencerCcLaneGridSegment(
                             *lane,
                             step,
-                            length
+                            region
                         );
                 }
             }
@@ -395,7 +434,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
                 core::ui::sequencer::sequencerCcLaneProjectionSpanAtStep(
                     *lane,
                     ui.focusedStep,
-                    length
+                    region
                 );
             if (span.valid) {
                 gridProps.contextualHint = true;
@@ -413,11 +452,10 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
         std::snprintf(title_.data(), title_.size(), "Step %u · Transition",
                       static_cast<unsigned>(ui.transitionStep + 1U));
         std::snprintf(meta_.data(), meta_.size(), "To next authored event");
-        std::snprintf(
-            hint_.data(),
-            hint_.size(),
-            "Held knob/NAV choose · release/press apply"
-        );
+        std::snprintf(hint_.data(), hint_.size(), "%s",
+                      ui.compactTransitionPicker
+                          ? "NAV hold + turn · release apply"
+                          : "Held knob/NAV choose · release/press apply");
         overlay_.render({
             .title = "",
             .meta = "",
@@ -435,17 +473,14 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
             .accentColor = ::standalone::theme::color::MACRO_CC_COLOR,
             .statusColor = ::standalone::theme::color::MACRO_CC_COLOR,
             .transitionPicker = true,
+            .compactTransitionPicker = ui.compactTransitionPicker,
             .pickerSelection = ui.selectedTransition,
         });
         return;
     } else {
         const auto& draft = ui.draft;
-        if (ui.mode == Mode::ADD_LANE_DRAFT) {
-            std::snprintf(title_.data(), title_.size(), "New CC lane");
-        } else {
-            std::snprintf(title_.data(), title_.size(), "Lane %u settings",
-                          static_cast<unsigned>(ui.focusedLane + 1U));
-        }
+        std::snprintf(title_.data(), title_.size(), "Lane %u settings",
+                      static_cast<unsigned>(ui.focusedLane + 1U));
         const auto layout = seq::buildSequencerCcLaneDraftLayout(
             draft.destination.routePolicy,
             ui.advancedSettings
@@ -501,7 +536,7 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderOverlay() {
         const uint8_t channel = draft.destination.routePolicy ==
                 seq::SequencerCcLaneRoutePolicy::PINNED
             ? draft.destination.pinnedChannel
-            : state_.sequencer.pattern.midiChannel.get();
+            : inheritedChannel;
         if (ui.laneConflict) {
             std::snprintf(meta_.data(), meta_.size(), "Duplicate destination · Blocked");
         } else if (ui.macroConflict) {

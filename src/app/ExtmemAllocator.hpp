@@ -2,10 +2,15 @@
 
 #include <memory>
 #include <new>
+#include <limits>
 #include <type_traits>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
+
+#if OC_ENABLE_STATS
+#include "diagnostics/MemoryFootprintReporter.hpp"
+#endif
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 #include <wiring.h>
@@ -19,6 +24,9 @@ struct ExtmemDeleter {
         if (!ptr) return;
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
         ptr->~T();
+#if OC_ENABLE_STATS
+        core::diagnostics::trackExtmemFree(ptr);
+#endif
         extmem_free(ptr);
 #else
         delete ptr;
@@ -29,11 +37,32 @@ struct ExtmemDeleter {
 template <typename T>
 using ExtmemUniquePtr = std::unique_ptr<T, ExtmemDeleter<T>>;
 
+template <typename T>
+struct ExtmemArrayDeleter {
+    void operator()(T* ptr) const noexcept {
+        if (!ptr) return;
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+#if OC_ENABLE_STATS
+        core::diagnostics::trackExtmemFree(ptr);
+#endif
+        extmem_free(ptr);
+#else
+        delete[] ptr;
+#endif
+    }
+};
+
+template <typename T>
+using ExtmemUniqueArray = std::unique_ptr<T[], ExtmemArrayDeleter<T>>;
+
 template <typename T, typename... Args>
 ExtmemUniquePtr<T> makeExtmemUnique(Args&&... args) {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(T));
     if (!memory) return ExtmemUniquePtr<T>(nullptr);
+#if OC_ENABLE_STATS
+    core::diagnostics::trackExtmemAllocation(memory);
+#endif
     return ExtmemUniquePtr<T>(new(memory) T(std::forward<Args>(args)...));
 #else
     return ExtmemUniquePtr<T>(new T(std::forward<Args>(args)...));
@@ -54,9 +83,40 @@ ExtmemUniquePtr<T> makeExtmemUniqueForOverwrite() {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(T));
     if (!memory) return ExtmemUniquePtr<T>(nullptr);
+#if OC_ENABLE_STATS
+    core::diagnostics::trackExtmemAllocation(memory);
+#endif
     return ExtmemUniquePtr<T>(new(memory) T);
 #else
     return ExtmemUniquePtr<T>(new T);
+#endif
+}
+
+/**
+ * Allocates an exact-length trivial array in PSRAM for a cold transaction.
+ * Every element must be overwritten before read; no maximum-capacity buffer
+ * is retained when the live payload contains only a handful of entries.
+ */
+template <typename T>
+ExtmemUniqueArray<T> makeExtmemUniqueArrayForOverwrite(std::size_t count) {
+    static_assert(std::is_default_constructible_v<T>);
+    static_assert(std::is_trivially_destructible_v<T>);
+    if (count == 0U || count > std::numeric_limits<std::size_t>::max() / sizeof(T)) {
+        return ExtmemUniqueArray<T>(nullptr);
+    }
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+    void* memory = extmem_malloc(sizeof(T) * count);
+    if (!memory) return ExtmemUniqueArray<T>(nullptr);
+#if OC_ENABLE_STATS
+    core::diagnostics::trackExtmemAllocation(memory);
+#endif
+    auto* values = static_cast<T*>(memory);
+    for (std::size_t index = 0; index < count; ++index) {
+        new(values + index) T;
+    }
+    return ExtmemUniqueArray<T>(values);
+#else
+    return ExtmemUniqueArray<T>(new T[count]);
 #endif
 }
 

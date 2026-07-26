@@ -1,0 +1,32 @@
+# UX workflow: Modulators as a first-rank musical destination.
+# Purpose: proves the global route reuses Project/Modulators, then preserves
+# bidirectional Source <-> Macro navigation without a parallel workspace.
+
+0 scenario macro-reusable-modulators
+80 capture screen macro_ready
+
+# Global selector: Macros -> Sequencer -> Modulators.
+180 button LEFT_TOP down
+260 encoder NAV 1
+340 encoder NAV 1
+420 capture screen modulators_global_target
+500 button LEFT_TOP up
+760 capture screen modulators_root
+
+# Open the first shared Source, then its Destinations card.
+860 tap NAV 60
+1100 capture screen source_workspace
+1200 encoder NAV 1
+1260 encoder NAV 1
+1320 encoder NAV 1
+1380 encoder NAV 1
+1480 tap NAV 60
+1720 capture screen source_destinations
+
+# Destination -> Macro assignment -> the exact same Source -> Back to Macro.
+1820 tap NAV 60
+2060 capture screen macro_destination
+2160 tap NAV 60
+2400 capture screen source_from_destination
+2500 tap LEFT_TOP 60
+2740 capture screen macro_return

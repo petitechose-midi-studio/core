@@ -24,16 +24,17 @@ struct MacroHeaderBarProps {
     uint8_t addTrackIndex = core::state::macro::TRACK_COUNT;
     uint16_t enabledMask = 0x0001;
     uint16_t trackEnabledMask = 0x0001;
-    uint16_t selectedPageMask = 0;
-    bool clutchActive = false;
+    core::state::macro::MacroPerformanceOverlayMode performanceOverlayMode =
+        core::state::macro::MacroPerformanceOverlayMode::NONE;
+    core::state::macro::MacroAutomationTakePhase automationTakePhase =
+        core::state::macro::MacroAutomationTakePhase::IDLE;
+    core::state::macro::MacroAutomationTakeTiming automationTakeTiming =
+        core::state::macro::MacroAutomationTakeTiming::HOLD;
+    uint16_t automationTakeTouchedMask = 0;
     bool focusingPage = false;
     bool focusingTrack = false;
-    bool selectingPage = false;
-    bool selectingTrack = false;
     bool previewPageAddSlot = false;
     bool previewTrackAddSlot = false;
-    bool automationRecording = false;
-    uint8_t automationRecordingMacro = 0;
     core::state::macro::MacroAutomationRecordingStatus automationRecordingStatus =
         core::state::macro::MacroAutomationRecordingStatus::IDLE;
     std::array<uint8_t, ACTIVITY_COUNT> pageOutputActivity{};

@@ -1,6 +1,6 @@
 /**
  * @file main.cpp
- * @brief MIDI Studio Core - Open Control Migration
+ * @brief MIDI Studio Core firmware entry point
  *
  * Uses oc::hal::teensy::AppBuilder for simplified Teensy 4.1 setup.
  * Pattern follows open-control/example-teensy41-lvgl.
@@ -369,10 +369,11 @@ static FLASHMEM void initApp() {
 
     standaloneSequencerRuntime =
         core::app::makeExtmemUnique<core::sequencer::SequencerRuntimeService>(
-        core::sequencer::SequencerRuntimeService::StateRefs{
-            coreState->sequencer,
-            coreState->sequencerTracks,
-            coreState->projectNavigation,
+            core::sequencer::SequencerRuntimeService::StateRefs{
+                coreState->sequencer,
+                coreState->sequencerTracks,
+                coreState->projectTracks,
+                coreState->projectNavigation,
             coreState->statusBar,
             coreState->midiSync,
             coreState->sequencerTrackActivations,
@@ -446,6 +447,7 @@ FLASHMEM void setup() {
     return;
 #else
 #if OC_ENABLE_STATS
+    core::diagnostics::beginMemoryFootprintTracking();
     core::diagnostics::performanceReporter().begin();
 #endif
     initDisplay();
@@ -524,8 +526,7 @@ void loop() {
                 OC_PERF_SCOPE(perfAutosave, "main.autosave");
                 projectSessionAutosaveService->update(
                     *coreState,
-                    millis(),
-                    coreState->hasPendingProjectMutationCoalescing()
+                    millis()
                 );
             }
         }

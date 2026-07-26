@@ -122,46 +122,45 @@ FLASHMEM void recordPreparedStructureFromCoreState(
     state->recordPreparedSequencerStructureHistory(std::move(change));
 }
 
-FLASHMEM bool undoFromCoreState(void* context) {
-    if (context == nullptr) {
-        return false;
-    }
-
-    auto* state = static_cast<core::state::CoreState*>(context);
-    return state->undoSequencerHistory();
-}
-
-FLASHMEM bool redoFromCoreState(void* context) {
-    if (context == nullptr) {
-        return false;
-    }
-
-    auto* state = static_cast<core::state::CoreState*>(context);
-    return state->redoSequencerHistory();
-}
-
-FLASHMEM bool clearFromCoreState(void* context) {
-    if (context == nullptr) {
-        return false;
-    }
-
-    auto* state = static_cast<core::state::CoreState*>(context);
-    state->clearSequencerHistory();
-    return true;
-}
-
 FLASHMEM bool beginCoalescedPatternEditFromCoreState(
     void* context,
     uint8_t step,
     core::state::sequencer::StepProperty property,
-    uint32_t nowMs
+    uint32_t nowMs,
+    bool stateProperty
 ) {
     if (context == nullptr) {
         return false;
     }
 
     auto* state = static_cast<core::state::CoreState*>(context);
-    return state->beginOrContinueSequencerPatternHistoryCoalescing(step, property, nowMs);
+    return state->beginOrContinueSequencerPatternHistoryCoalescing(
+        step,
+        property,
+        nowMs,
+        stateProperty
+    );
+}
+
+FLASHMEM bool beginCoalescedCcLaneEventEditFromCoreState(
+    void* context,
+    uint8_t lane,
+    uint8_t step,
+    int32_t beforeValue,
+    int32_t afterValue,
+    const core::state::sequencer::SequencerCcLaneBank* afterBank,
+    uint32_t nowMs
+) {
+    if (context == nullptr) return false;
+    return static_cast<core::state::CoreState*>(context)
+        ->beginOrContinueSequencerCcLaneEventHistoryCoalescing(
+            lane,
+            step,
+            beforeValue,
+            afterValue,
+            afterBank,
+            nowMs
+        );
 }
 
 FLASHMEM bool commitCoalescedPatternEditFromCoreState(void* context) {
@@ -193,10 +192,9 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
             .canRecordStructure = canRecordStructureFromCoreState,
             .recordPreparedStructure = recordPreparedStructureFromCoreState,
             .recordFullBank = recordFullBankFromCoreState,
-            .undo = undoFromCoreState,
-            .redo = redoFromCoreState,
-            .clear = clearFromCoreState,
             .beginCoalescedPatternEdit = beginCoalescedPatternEditFromCoreState,
+            .beginCoalescedCcLaneEventEdit =
+                beginCoalescedCcLaneEventEditFromCoreState,
             .commitCoalescedPatternEdit = commitCoalescedPatternEditFromCoreState,
         }
     };
@@ -287,28 +285,38 @@ FLASHMEM bool SequencerHistoryDomainServices::recordFullBank(
            );
 }
 
-FLASHMEM bool SequencerHistoryDomainServices::undo() const {
-    return operations_.undo != nullptr && operations_.undo(operations_.context);
-}
-
-FLASHMEM bool SequencerHistoryDomainServices::redo() const {
-    return operations_.redo != nullptr && operations_.redo(operations_.context);
-}
-
-FLASHMEM bool SequencerHistoryDomainServices::clear() const {
-    return operations_.clear != nullptr && operations_.clear(operations_.context);
-}
-
 FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedPatternEdit(
     uint8_t step,
     core::state::sequencer::StepProperty property,
-    uint32_t nowMs
+    uint32_t nowMs,
+    bool stateProperty
 ) const {
     return operations_.beginCoalescedPatternEdit != nullptr &&
            operations_.beginCoalescedPatternEdit(
                operations_.context,
                step,
                property,
+               nowMs,
+               stateProperty
+           );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedCcLaneEventEdit(
+    uint8_t lane,
+    uint8_t step,
+    int32_t beforeValue,
+    int32_t afterValue,
+    const core::state::sequencer::SequencerCcLaneBank* afterBank,
+    uint32_t nowMs
+) const {
+    return operations_.beginCoalescedCcLaneEventEdit != nullptr &&
+           operations_.beginCoalescedCcLaneEventEdit(
+               operations_.context,
+               lane,
+               step,
+               beforeValue,
+               afterValue,
+               afterBank,
                nowMs
            );
 }

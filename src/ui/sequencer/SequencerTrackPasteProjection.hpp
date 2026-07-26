@@ -8,8 +8,7 @@ struct SequencerViewModelSource;
 
 /** Builds the canonical live Track transfer plan/action for the focused target. */
 SequencerTrackPasteProjection projectSequencerTrackPaste(
-    const SequencerViewModelSource& source,
-    bool selectionActive
+    const SequencerViewModelSource& source
 );
 
 /** Adapts the real Sequencer state to the LVGL-free preflight formatter. */

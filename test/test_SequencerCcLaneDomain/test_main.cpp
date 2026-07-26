@@ -69,6 +69,402 @@ void createWithEvent(
     assert(seq::setSequencerCcLaneEvent(bank, lane, step, value).changed());
 }
 
+void testBulkPatternTransformsPreserveCcValuesAndTransitions() {
+    seq::SequencerCcLaneBank bank{};
+    createWithEvent(bank, 0, 74, 0, 20);
+    assert(seq::setSequencerCcLaneTransition(
+        bank,
+        0,
+        0,
+        seq::SequencerCcLaneTransition::EASE_IN_OUT
+    ).changed());
+    const uint32_t beforeDuplicate = bank.revision;
+    assert(seq::duplicateSequencerCcLaneBankRange(bank, 0, 8, 8));
+    assert(bank.revision == beforeDuplicate + 1U);
+    assert(bank.lanes[0].activeMask.test(8));
+    assert(bank.lanes[0].values[8] == 20);
+    assert(seq::sequencerCcLaneTransition(bank.lanes[0], 8) ==
+           seq::SequencerCcLaneTransition::EASE_IN_OUT);
+
+    const uint32_t beforeRotate = bank.revision;
+    assert(seq::rotateSequencerCcLaneBank(bank, 16, 1));
+    assert(bank.revision == beforeRotate + 1U);
+    assert(bank.lanes[0].activeMask.test(1));
+    assert(bank.lanes[0].activeMask.test(9));
+    assert(!bank.lanes[0].activeMask.test(0));
+
+    seq::SequencerCcLaneBank structural{};
+    createWithEvent(structural, 0, 71, 2, 30);
+    assert(seq::setSequencerCcLaneEvent(structural, 0, 10, 100).changed());
+    assert(seq::setSequencerCcLaneTransition(
+        structural,
+        0,
+        10,
+        seq::SequencerCcLaneTransition::LINEAR
+    ).changed());
+
+    const uint32_t beforeInsert = structural.revision;
+    assert(seq::insertSequencerCcLaneBankSpan(structural, 16, 8, 8));
+    assert(structural.revision == beforeInsert + 1U);
+    assert(structural.lanes[0].activeMask.test(2));
+    assert(structural.lanes[0].activeMask.test(18));
+    assert(structural.lanes[0].values[18] == 100);
+    assert(seq::sequencerCcLaneTransition(structural.lanes[0], 18) ==
+           seq::SequencerCcLaneTransition::LINEAR);
+    assert(!structural.lanes[0].activeMask.test(10));
+
+    const uint32_t beforeRemove = structural.revision;
+    assert(seq::removeSequencerCcLaneBankSpan(structural, 24, 0, 8));
+    assert(structural.revision == beforeRemove + 1U);
+    assert(!structural.lanes[0].activeMask.test(2));
+    assert(structural.lanes[0].activeMask.test(10));
+    assert(structural.lanes[0].values[10] == 100);
+    assert(seq::sequencerCcLaneTransition(structural.lanes[0], 10) ==
+           seq::SequencerCcLaneTransition::LINEAR);
+
+    const uint32_t beforeTrim = structural.revision;
+    assert(seq::trimSequencerCcLaneBank(structural, 8));
+    assert(structural.revision == beforeTrim + 1U);
+    assert(!structural.lanes[0].activeMask.test(10));
+}
+
+void testRuntimeProjectionUsesRegionAndResetsTransactionally() {
+    seq::SequencerCcLaneBank bank{};
+    createWithEvent(bank, 0, 74, 1, 10);
+    assert(seq::setSequencerCcLaneTransition(
+        bank,
+        0,
+        1,
+        seq::SequencerCcLaneTransition::LINEAR
+    ).changed());
+    assert(seq::setSequencerCcLaneEvent(bank, 0, 4, 40).changed());
+
+    core::sequencer::SequencerCcLaneRuntime runtime;
+    core::sequencer::SequencerCcLaneRuntime::Inputs inputs{};
+    const oc::note::sequencer::StepSequencerPlaybackRegion region{8, 1, 3, 6};
+    inputs[0] = {
+        .lanes = &bank,
+        .route = route(0),
+        .step = 1,
+        .patternLength = 8,
+        .tickInStep = 0,
+        .ticksPerStep = 1,
+        .playbackOrdinal = 0,
+        .playbackRegion = region,
+        .enabled = true,
+        .stepTriggered = true,
+    };
+
+    core::sequencer::SequencerCcLaneRuntimeFrame frame{};
+    for (uint32_t ordinal = 0; ordinal <= 3; ++ordinal) {
+        oc::note::sequencer::StepSequencerPlaybackPosition position{};
+        assert(oc::note::sequencer::tryResolvePlaybackOrdinal(
+            region,
+            ordinal,
+            position
+        ));
+        inputs[0].playbackOrdinal = ordinal;
+        inputs[0].step = position.stepIndex;
+        inputs[0].stepTriggered = true;
+        assert(runtime.buildMusicalTickFrame(inputs, true, frame) ==
+               core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+        assert(frame.candidateCount == 1);
+        assert(frame.candidates[0].localValue ==
+               static_cast<uint8_t>(10U + ordinal * 10U));
+    }
+    assert(runtime.hasHeldValue(0, 0));
+    assert(runtime.heldValue(0, 0) == 40);
+
+    // A malformed later Track must not publish the pending region reset of T1.
+    seq::SequencerCcLaneBank malformed{};
+    malformed.formatVersion = 99;
+    inputs[0].playbackRegion = {8, 6, 6, 8};
+    inputs[0].playbackOrdinal = 0;
+    inputs[0].step = 6;
+    inputs[1] = {
+        .lanes = &malformed,
+        .route = route(1),
+        .step = 0,
+        .patternLength = 8,
+        .ticksPerStep = 1,
+        .playbackOrdinal = 0,
+        .playbackRegion = {8, 0, 0, 8},
+        .enabled = true,
+        .stepTriggered = true,
+    };
+    assert(runtime.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::INVALID_INPUT);
+    assert(runtime.hasHeldValue(0, 0));
+    assert(runtime.heldValue(0, 0) == 40);
+
+    inputs[1].lanes = nullptr;
+    assert(runtime.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 0);
+    assert(!runtime.hasHeldValue(0, 0));
+}
+
+void setRuntimePosition(
+    core::sequencer::SequencerCcLaneTrackRuntimeInput& input,
+    const seq::SequencerCcLaneBank& bank,
+    const oc::note::sequencer::StepSequencerPlaybackRegion& region,
+    uint32_t ordinal,
+    bool stepTriggered = false,
+    uint8_t tickInStep = 0,
+    uint8_t ticksPerStep = 1
+) {
+    oc::note::sequencer::StepSequencerPlaybackPosition position{};
+    assert(oc::note::sequencer::tryResolvePlaybackOrdinal(
+        region,
+        ordinal,
+        position
+    ));
+    input.lanes = &bank;
+    input.route = route(0);
+    input.step = position.stepIndex;
+    input.patternLength = region.contentLength;
+    input.tickInStep = tickInStep;
+    input.ticksPerStep = ticksPerStep;
+    input.playbackOrdinal = ordinal;
+    input.playbackRegion = region;
+    input.enabled = true;
+    input.stepTriggered = stepTriggered;
+}
+
+void testPredictiveScratchCapturesFirstEventWithoutAdvancingAudibleState() {
+    seq::SequencerCcLaneBank bank{};
+    createWithEvent(bank, 0, 74, 2, 42);
+    const auto region =
+        oc::note::sequencer::StepSequencerPlaybackRegion::fullLength(8);
+
+    core::sequencer::SequencerCcLaneRuntime audible{};
+    core::sequencer::SequencerCcLaneRuntime::Inputs currentInputs{};
+    setRuntimePosition(currentInputs[0], bank, region, 0, true);
+    core::sequencer::SequencerCcLaneRuntimeFrame frame{};
+    assert(audible.buildMusicalTickFrame(currentInputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 0);
+    assert(!audible.hasHeldValue(0, 0));
+
+    const auto audibleBefore = audible;
+    core::sequencer::SequencerCcLaneRuntime scratch{};
+    assert(scratch.seedFrom(audible));
+    auto lookaheadInputs = currentInputs;
+    setRuntimePosition(lookaheadInputs[0], bank, region, 3, false);
+    lookaheadInputs[0].emissionMode =
+        core::sequencer::SequencerCcLaneEmissionMode::PREDICTIVE_LOOKAHEAD;
+    lookaheadInputs[0].lookaheadStartOrdinal = 0;
+    assert(scratch.buildMusicalTickFrame(lookaheadInputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 1);
+    assert(frame.authoredEventCount == 1);
+    assert(frame.candidates[0].localValue == 42);
+    assert(scratch.hasHeldValue(0, 0));
+    assert(!audible.hasHeldValue(0, 0));
+    assert(std::memcmp(&audible, &audibleBefore, sizeof(audible)) == 0);
+}
+
+void testScratchSeedCopiesCompleteAudibleState() {
+    std::array<seq::SequencerCcLaneBank, 2> banks{};
+    for (uint8_t lane = 0; lane < 4; ++lane) {
+        createWithEvent(
+            banks[0],
+            lane,
+            static_cast<uint8_t>(70U + lane),
+            0,
+            static_cast<uint8_t>(20U + lane)
+        );
+    }
+    createWithEvent(banks[1], 0, 90, 0, 99);
+    const auto region =
+        oc::note::sequencer::StepSequencerPlaybackRegion::fullLength(8);
+    core::sequencer::SequencerCcLaneRuntime source{};
+    core::sequencer::SequencerCcLaneRuntime::Inputs inputs{};
+    setRuntimePosition(inputs[0], banks[0], region, 0, true);
+    setRuntimePosition(inputs[1], banks[1], region, 0, true);
+    inputs[1].route = route(1);
+    core::sequencer::SequencerCcLaneRuntimeFrame frame{};
+    assert(source.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 5);
+
+    core::sequencer::SequencerCcLaneRuntime scratch{};
+    assert(scratch.seedFrom(source));
+    for (uint8_t lane = 0; lane < 4; ++lane) {
+        assert(scratch.hasHeldValue(0, lane));
+        assert(scratch.heldValue(0, lane) == static_cast<uint8_t>(20U + lane));
+    }
+    assert(scratch.hasHeldValue(1, 0));
+    assert(scratch.heldValue(1, 0) == 99U);
+}
+
+void testPredictiveScratchDoesNotResurrectPreWindowLifecycleEvent() {
+    seq::SequencerCcLaneBank bank{};
+    createWithEvent(bank, 0, 74, 1, 55);
+    const auto region =
+        oc::note::sequencer::StepSequencerPlaybackRegion::fullLength(8);
+
+    core::sequencer::SequencerCcLaneRuntime audible{};
+    core::sequencer::SequencerCcLaneRuntime::Inputs inputs{};
+    setRuntimePosition(inputs[0], bank, region, 1, true);
+    core::sequencer::SequencerCcLaneRuntimeFrame frame{};
+    assert(audible.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(audible.heldValue(0, 0) == 55);
+
+    // Replacing the lane creates a new lifecycle. Its only event is before the
+    // predictive observation boundary and therefore must remain silent.
+    assert(seq::removeSequencerCcLane(bank, 0).changed());
+    createWithEvent(bank, 0, 74, 0, 99);
+    core::sequencer::SequencerCcLaneRuntime scratch{};
+    assert(scratch.seedFrom(audible));
+    setRuntimePosition(inputs[0], bank, region, 3, false);
+    inputs[0].emissionMode =
+        core::sequencer::SequencerCcLaneEmissionMode::PREDICTIVE_LOOKAHEAD;
+    inputs[0].lookaheadStartOrdinal = 2;
+    assert(scratch.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 0);
+    assert(!scratch.hasHeldValue(0, 0));
+    assert(audible.heldValue(0, 0) == 55);
+}
+
+void testPredictiveScratchFindsEventAcrossLoopWrap() {
+    seq::SequencerCcLaneBank bank{};
+    createWithEvent(bank, 0, 74, 2, 91);
+    const oc::note::sequencer::StepSequencerPlaybackRegion region{8, 0, 2, 6};
+
+    core::sequencer::SequencerCcLaneRuntime audible{};
+    core::sequencer::SequencerCcLaneRuntime::Inputs inputs{};
+    setRuntimePosition(inputs[0], bank, region, 5, false);
+    core::sequencer::SequencerCcLaneRuntimeFrame frame{};
+    assert(audible.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 0);
+
+    core::sequencer::SequencerCcLaneRuntime scratch{};
+    assert(scratch.seedFrom(audible));
+    setRuntimePosition(inputs[0], bank, region, 6, false);
+    inputs[0].emissionMode =
+        core::sequencer::SequencerCcLaneEmissionMode::PREDICTIVE_LOOKAHEAD;
+    inputs[0].lookaheadStartOrdinal = 5;
+    assert(scratch.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 1);
+    assert(frame.authoredEventCount == 1);
+    assert(frame.candidates[0].localValue == 91);
+}
+
+void testPredictiveScratchAcceptsBoundedOrdinalAcrossUint32Wrap() {
+    seq::SequencerCcLaneBank bank{};
+    createWithEvent(bank, 0, 74, 0, 87);
+    const auto region =
+        oc::note::sequencer::StepSequencerPlaybackRegion::fullLength(8);
+
+    constexpr uint32_t startOrdinal = UINT32_MAX - 2U;
+    constexpr uint32_t futureOrdinal = 1U;
+    core::sequencer::SequencerCcLaneRuntime audible{};
+    core::sequencer::SequencerCcLaneRuntime::Inputs inputs{};
+    setRuntimePosition(inputs[0], bank, region, startOrdinal, false);
+    core::sequencer::SequencerCcLaneRuntimeFrame frame{};
+    assert(audible.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 0U);
+
+    core::sequencer::SequencerCcLaneRuntime scratch{};
+    assert(scratch.seedFrom(audible));
+    setRuntimePosition(inputs[0], bank, region, futureOrdinal, false);
+    inputs[0].emissionMode =
+        core::sequencer::SequencerCcLaneEmissionMode::PREDICTIVE_LOOKAHEAD;
+    inputs[0].lookaheadStartOrdinal = startOrdinal;
+    assert(static_cast<uint32_t>(futureOrdinal - startOrdinal) == 4U);
+    assert(scratch.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 1U);
+    assert(frame.authoredEventCount == 1U);
+    assert(frame.candidates[0].localValue == 87U);
+    assert(!audible.hasHeldValue(0U, 0U));
+}
+
+void testPredictiveScratchRejectsInvalidDeltaTransactionally() {
+    seq::SequencerCcLaneBank bank{};
+    createWithEvent(bank, 0, 74, 0, 64);
+    const auto region =
+        oc::note::sequencer::StepSequencerPlaybackRegion::fullLength(8);
+    core::sequencer::SequencerCcLaneRuntime audible{};
+    core::sequencer::SequencerCcLaneRuntime::Inputs inputs{};
+    setRuntimePosition(inputs[0], bank, region, 0, true);
+    core::sequencer::SequencerCcLaneRuntimeFrame frame{};
+    assert(audible.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+
+    core::sequencer::SequencerCcLaneRuntime scratch{};
+    assert(scratch.seedFrom(audible));
+    setRuntimePosition(
+        inputs[0],
+        bank,
+        region,
+        core::sequencer::SequencerCcLaneRuntime::MAX_LOOKAHEAD_ORDINAL_DELTA + 1U,
+        false
+    );
+    inputs[0].emissionMode =
+        core::sequencer::SequencerCcLaneEmissionMode::PREDICTIVE_LOOKAHEAD;
+    inputs[0].lookaheadStartOrdinal = 0;
+    assert(scratch.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::INVALID_INPUT);
+    assert(frame.candidateCount == 0);
+    assert(scratch.hasHeldValue(0, 0));
+    assert(scratch.heldValue(0, 0) == 64);
+
+    setRuntimePosition(inputs[0], bank, region, 4, false);
+    inputs[0].emissionMode =
+        core::sequencer::SequencerCcLaneEmissionMode::PREDICTIVE_LOOKAHEAD;
+    inputs[0].lookaheadStartOrdinal = 5;
+    assert(scratch.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::INVALID_INPUT);
+    assert(frame.candidateCount == 0);
+    assert(scratch.hasHeldValue(0, 0));
+    assert(scratch.heldValue(0, 0) == 64);
+}
+
+void testPredictiveHeldValueInterpolatesAtFutureFractionAndRetargetsRoute() {
+    seq::SequencerCcLaneBank bank{};
+    createWithEvent(bank, 0, 74, 0, 0);
+    assert(seq::setSequencerCcLaneEvent(bank, 0, 4, 100).changed());
+    assert(seq::setSequencerCcLaneTransition(
+        bank,
+        0,
+        0,
+        seq::SequencerCcLaneTransition::LINEAR
+    ).changed());
+    const auto region =
+        oc::note::sequencer::StepSequencerPlaybackRegion::fullLength(8);
+
+    core::sequencer::SequencerCcLaneRuntime audible{};
+    core::sequencer::SequencerCcLaneRuntime::Inputs inputs{};
+    setRuntimePosition(inputs[0], bank, region, 0, true, 0, 4);
+    core::sequencer::SequencerCcLaneRuntimeFrame frame{};
+    assert(audible.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidates[0].localValue == 0);
+
+    const auto audibleBefore = audible;
+    core::sequencer::SequencerCcLaneRuntime scratch{};
+    assert(scratch.seedFrom(audible));
+    setRuntimePosition(inputs[0], bank, region, 2, false, 2, 4);
+    inputs[0].route = route(7);
+    inputs[0].emissionMode =
+        core::sequencer::SequencerCcLaneEmissionMode::PREDICTIVE_LOOKAHEAD;
+    inputs[0].lookaheadStartOrdinal = 0;
+    assert(scratch.buildMusicalTickFrame(inputs, true, frame) ==
+           core::sequencer::SequencerCcLaneRuntimeStatus::OK);
+    assert(frame.candidateCount == 1);
+    assert(frame.candidates[0].localValue == 63);
+    assert(frame.candidates[0].destination.identity.channel == 7);
+    assert(frame.contributions[0].routeRetargetedThisTick);
+    assert(std::memcmp(&audible, &audibleBefore, sizeof(audible)) == 0);
+}
+
 struct RuntimeFixture {
     std::array<seq::SequencerCcLaneBank, 16> banks{};
     core::sequencer::SequencerCcLaneRuntime::Inputs inputs{};
@@ -341,7 +737,7 @@ void testCollisionAppearsAfterInterTrackRouteChange() {
     assert(conflicts.conflicts[0].loser.lane == 1);
 }
 
-void testRuntimeEmptyHoldMigrationMuteStopAndPin() {
+void testRuntimeEmptyHoldRetargetMuteStopAndPin() {
     RuntimeFixture h;
     assert(h.tick().candidateCount == 0);  // empty banks are silent
 
@@ -357,12 +753,12 @@ void testRuntimeEmptyHoldMigrationMuteStopAndPin() {
     frame = h.tick();
     assert(frame.candidateCount == 1);  // stepped hold
     assert(frame.authoredEventCount == 0);
-    assert(frame.routeMigrationCount == 0);
+    assert(frame.routeRetargetCount == 0);
 
     h.inputs[3].route = route(8);
     frame = h.tick();
     assert(frame.candidateCount == 1);
-    assert(frame.routeMigrationCount == 1);
+    assert(frame.routeRetargetCount == 1);
     assert(frame.candidates[0].destination.identity.channel == 8);
     // Exactly one new-route candidate: no reset is synthesized for Ch4.
 
@@ -373,7 +769,7 @@ void testRuntimeEmptyHoldMigrationMuteStopAndPin() {
     assert(h.runtime.hasHeldValue(3, 0));
     h.inputs[3].muted = false;
     frame = h.tick();
-    assert(frame.candidateCount == 1 && frame.routeMigrationCount == 1);
+    assert(frame.candidateCount == 1 && frame.routeRetargetCount == 1);
     assert(frame.candidates[0].destination.identity.channel == 10);
 
     frame = h.tick(false);
@@ -381,7 +777,7 @@ void testRuntimeEmptyHoldMigrationMuteStopAndPin() {
     assert(h.runtime.hasHeldValue(3, 0));
     frame = h.tick(true);
     assert(frame.candidateCount == 1);
-    assert(frame.routeMigrationCount == 0);
+    assert(frame.routeRetargetCount == 0);
 
     createWithEvent(
         h.banks[4],
@@ -402,7 +798,7 @@ void testRuntimeEmptyHoldMigrationMuteStopAndPin() {
         if (frame.contributions[i].address.track != 4) continue;
         sawPinned = true;
         assert(frame.candidates[i].destination.identity.channel == 6);
-        assert(!frame.contributions[i].routeMigratedThisTick);
+        assert(!frame.contributions[i].routeRetargetedThisTick);
     }
     assert(sawPinned);
 }
@@ -460,11 +856,21 @@ void testFrozenTrackKeepsPreviousAudibleGenerationUntilActivationBoundary() {
     createWithEvent(h.banks[6], 0, 74, 0, 45);
     h.inputs[6].route = route(6);
     auto frame = h.tick();
+    constexpr uint8_t lifecycleIndex =
+        6U * seq::SequencerCcLaneBank::MAX_LANES;
+    const uint16_t audibleGeneration =
+        frame.lifecycleGenerations[lifecycleIndex];
+    assert(audibleGeneration != 0U);
     assert(frame.candidateCount == 1);
     assert(frame.candidates[0].localValue == 45);
     assert(frame.candidates[0].destination.identity.channel == 6);
 
     assert(seq::setSequencerCcLaneEvent(h.banks[6], 0, 0, 99).changed());
+    h.banks[6].lanes[0].lifecycleGeneration =
+        seq::nextSequencerCcLaneLifecycleGeneration(audibleGeneration);
+    const uint16_t stagedGeneration =
+        h.banks[6].lanes[0].lifecycleGeneration;
+    assert(stagedGeneration != audibleGeneration);
     h.inputs[6].route = route(12);
     h.inputs[6].frozen = true;
     frame = h.tick();
@@ -473,7 +879,13 @@ void testFrozenTrackKeepsPreviousAudibleGenerationUntilActivationBoundary() {
     assert(frame.candidates[0].localValue == 45);
     assert(frame.candidates[0].destination.identity.channel == 6);
     assert(frame.authoredEventCount == 0);
-    assert(frame.routeMigrationCount == 0);
+    assert(frame.routeRetargetCount == 0);
+    assert(frame.lifecycleGenerations[lifecycleIndex] == audibleGeneration);
+
+    // More than one frozen scheduler pass must retain the same audible
+    // generation; the staged payload is still not observable.
+    frame = h.tick();
+    assert(frame.lifecycleGenerations[lifecycleIndex] == audibleGeneration);
 
     h.inputs[6].frozen = false;
     frame = h.tick();
@@ -481,7 +893,10 @@ void testFrozenTrackKeepsPreviousAudibleGenerationUntilActivationBoundary() {
     assert(frame.candidates[0].localValue == 99);
     assert(frame.candidates[0].destination.identity.channel == 12);
     assert(frame.authoredEventCount == 1);
-    assert(frame.routeMigrationCount == 1);
+    // A new lifecycle is a content replacement, not a retarget of the old
+    // Lane's route. It becomes audible atomically at this boundary.
+    assert(frame.routeRetargetCount == 0);
+    assert(frame.lifecycleGenerations[lifecycleIndex] == stagedGeneration);
 }
 
 void testWorstCase64LanesAndResolverPriority() {
@@ -549,9 +964,36 @@ void testWorstCase64LanesAndResolverPriority() {
     assert(sizeof(seq::SequencerCcLaneBank) <= 848U);
 }
 
+void testFull128StepLaneValidationAndRotation() {
+    seq::SequencerCcLaneBank bank{};
+    createWithEvent(bank, 0U, 74U, 127U, 99U);
+
+    const bool valid = seq::validSequencerCcLaneBank(bank);
+    assert(valid);
+    const auto settingsResult = seq::updateSequencerCcLaneSettings(
+        bank, 0U, draft(74U)
+    );
+    assert(settingsResult.status == seq::SequencerCcLaneMutationStatus::NO_CHANGE);
+
+    const bool rotated = seq::rotateSequencerCcLaneBank(bank, 128U, 1);
+    assert(rotated);
+    assert(bank.lanes[0].activeMask.test(0U));
+    assert(bank.lanes[0].values[0] == 99U);
+    assert(!bank.lanes[0].activeMask.test(127U));
+}
+
 }  // namespace
 
 int main() {
+    testBulkPatternTransformsPreserveCcValuesAndTransitions();
+    testRuntimeProjectionUsesRegionAndResetsTransactionally();
+    testPredictiveScratchCapturesFirstEventWithoutAdvancingAudibleState();
+    testScratchSeedCopiesCompleteAudibleState();
+    testPredictiveScratchDoesNotResurrectPreWindowLifecycleEvent();
+    testPredictiveScratchFindsEventAcrossLoopWrap();
+    testPredictiveScratchAcceptsBoundedOrdinalAcrossUint32Wrap();
+    testPredictiveScratchRejectsInvalidDeltaTransactionally();
+    testPredictiveHeldValueInterpolatesAtFutureFractionAndRetargetsRoute();
     testCreateIsSilentAndInitialIsEditProposal();
     testMutationsAreStrictAndAtomic();
     testTransitionsAreOwnedByEventsAndInterpolateAtMusicalTicks();
@@ -559,11 +1001,12 @@ int main() {
     testInheritedPinnedAndNoRouteResolution();
     testGlobalDuplicatePreflightAcrossAllPatterns();
     testCollisionAppearsAfterInterTrackRouteChange();
-    testRuntimeEmptyHoldMigrationMuteStopAndPin();
+    testRuntimeEmptyHoldRetargetMuteStopAndPin();
     testRuntimeNoRouteAndMissingBankAreSilentSafeInputs();
     testRuntimeFrameIsTransactionalOnMalformedInput();
     testFrozenTrackKeepsPreviousAudibleGenerationUntilActivationBoundary();
     testWorstCase64LanesAndResolverPriority();
+    testFull128StepLaneValidationAndRotation();
     std::cout << "All Sequencer CC lane domain/runtime tests passed.\n";
     return 0;
 }

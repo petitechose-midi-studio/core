@@ -51,7 +51,12 @@
 #include "sequencer/SequencerTrackActivationQueue.hpp"
 #include "sequencer/SequencerTrackBankState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectHistoryCoordinator.hpp"
 #include "state/project/ProjectState.hpp"
+#include "state/project/ProjectSettingsHistory.hpp"
+#include "state/project/ProjectTrackHistory.hpp"
+#include "state/project/ProjectTrackEditorState.hpp"
+#include "state/project/ProjectTrackState.hpp"
 
 namespace core::handler {
 class MidiCcGlobalFrameCoordinator;
@@ -69,6 +74,20 @@ struct CoreStateLifecycle;
  * domain struct remains the ownership boundary for allocation and persistence.
  */
 struct MacroDomainState {
+    static constexpr uint32_t COALESCED_VALUE_HISTORY_IDLE_MS = 500U;
+
+    struct CoalescedValueHistory {
+        bool pending = false;
+        macro::MacroAutomationSlotAddress address{};
+        uint32_t lastTouchedMs = 0U;
+
+        void clear() {
+            pending = false;
+            address = {};
+            lastTouchedMs = 0U;
+        }
+    };
+
     core::app::ExtmemUniquePtr<MacroState> runtime;
     core::app::ExtmemUniquePtr<macro::MacroPagesState> pages;
     macro::MacroHistoryService history;
@@ -77,6 +96,7 @@ struct MacroDomainState {
     persistence::MacroPersistence persistence;
     bool persistenceReady = false;
     std::unique_ptr<oc::state::ChangeCoalescer<>> mutationCoalescer;
+    CoalescedValueHistory coalescedValueHistory{};
 
     explicit MacroDomainState(oc::interface::IStorage& libraryStorage);
     ~MacroDomainState();
@@ -91,6 +111,7 @@ struct MacroDomainState {
  */
 struct SequencerDomainState {
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_IDLE_MS = 500;
+    static constexpr uint32_t COALESCED_CC_LANE_HISTORY_IDLE_MS = 320;
 
     struct PendingApply {
         bool valid = false;
@@ -123,42 +144,72 @@ struct SequencerDomainState {
     using PendingApplyPtr = std::unique_ptr<PendingApply, PendingApplyDeleter>;
 
     struct CoalescedPatternHistory {
+        enum class Kind : uint8_t {
+            StepProperty = 0,
+            CcLaneEvent,
+        };
+
         bool pending = false;
+        Kind kind = Kind::StepProperty;
         uint8_t activeTrack = 0;
         uint8_t step = 0;
         sequencer::StepProperty property = sequencer::StepProperty::NOTE;
+        bool stateProperty = false;
+        uint8_t lane = sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
         uint32_t lastTouchedMs = 0;
         sequencer::SequencerHistoryPatternSnapshot before{};
+        sequencer::SequencerHistoryPatternChangePtr preparedCcLaneChange;
 
-        bool matches(uint8_t nextActiveTrack,
-                     uint8_t nextStep,
-                     sequencer::StepProperty nextProperty) const {
+        bool matchesStepProperty(
+            uint8_t nextActiveTrack,
+            uint8_t nextStep,
+            sequencer::StepProperty nextProperty,
+            bool nextStateProperty
+        ) const {
             return pending &&
+                   kind == Kind::StepProperty &&
                    activeTrack == nextActiveTrack &&
                    step == nextStep &&
-                   property == nextProperty;
+                   property == nextProperty &&
+                   stateProperty == nextStateProperty;
+        }
+
+        bool matchesCcLaneEvent(
+            uint8_t nextActiveTrack,
+            uint8_t nextLane,
+            uint8_t nextStep
+        ) const {
+            return pending &&
+                   kind == Kind::CcLaneEvent &&
+                   activeTrack == nextActiveTrack &&
+                   lane == nextLane &&
+                   step == nextStep;
         }
 
         void clear() {
             pending = false;
+            kind = Kind::StepProperty;
             activeTrack = 0;
             step = 0;
             property = sequencer::StepProperty::NOTE;
+            stateProperty = false;
+            lane = sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
             lastTouchedMs = 0;
             before.reset();
+            preparedCcLaneChange.reset();
         }
     };
 
     core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
     core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> tracks;
-    sequencer::SequencerHistoryService history;
+    core::app::ExtmemUniquePtr<sequencer::SequencerHistoryService> history;
     sequencer::SequencerTrackActivationQueue trackActivations;
     oc::state::Signal<uint32_t> runtimeProjectRevision{1};
     persistence::SequencerPersistence persistence;
     bool persistenceReady = false;
     PendingApplyPtr pendingApply;
     CoalescedPatternHistory coalescedPatternHistory;
-    std::unique_ptr<oc::state::ChangeCoalescer<17>> mutationCoalescer;
+    std::unique_ptr<oc::state::ChangeCoalescer<15>> mutationCoalescer;
 
     SequencerDomainState(oc::interface::IStorage& patternLibraryStorage,
                          oc::interface::IStorage& setLibraryStorage);
@@ -184,7 +235,7 @@ struct UiSystemState {
     oc::state::Signal<core::ui::ViewType, 8> activeView{core::ui::ViewType::MACRO};
     oc::state::Signal<core::state::StructureNavigationFocus, kStructureNavigationFocusMaxSubscribers>
         structureNavigationFocus{
-        core::state::StructureNavigationFocus::TRACK
+        core::state::StructureNavigationFocus::PAGE
     };
     SharedTrackState sharedTracks;
     TrackNavigationState trackNavigation;
@@ -199,6 +250,7 @@ struct UiSystemState {
     MacroEditState macroEdit;
     macro::MacroUiState macroUi;
     project::ProjectNavigationState projectNavigation;
+    project::ProjectTrackEditorState projectTrackEditor;
 
     UiSystemState();
     ~UiSystemState();
@@ -222,6 +274,11 @@ private:
     MacroDomainState macroDomain_;
     SequencerDomainState sequencerDomain_;
     project::ProjectState project_;
+    core::app::ExtmemUniquePtr<project::ProjectTrackState> projectTracks_;
+    core::app::ExtmemUniquePtr<project::ProjectTrackHistoryService> projectTrackHistory_;
+    core::app::ExtmemUniquePtr<project::ProjectSettingsHistoryService>
+        projectSettingsHistory_;
+    core::app::ExtmemUniquePtr<project::ProjectHistoryCoordinator> projectHistory_;
     core::app::ExtmemUniquePtr<UiSystemState> systemUi_;
     bool projectSessionTrackingEnabled_ = false;
     bool projectSessionSavePending_ = false;
@@ -256,6 +313,10 @@ public:
 
     /// Shared UI/system domain aliases
     project::ProjectState& project;
+    project::ProjectTrackState& projectTracks;
+    project::ProjectTrackHistoryService& projectTrackHistory;
+    project::ProjectSettingsHistoryService& projectSettingsHistory;
+    project::ProjectHistoryCoordinator& projectHistory;
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
     oc::state::Signal<core::ui::ViewType, 8>& activeView;
     oc::state::Signal<core::state::StructureNavigationFocus, kStructureNavigationFocusMaxSubscribers>&
@@ -274,6 +335,7 @@ public:
     MacroEditState& macroEdit;
     macro::MacroUiState& macroUi;
     project::ProjectNavigationState& projectNavigation;
+    project::ProjectTrackEditorState& projectTrackEditor;
 
     /**
      * @brief Construct with storage backend
@@ -286,6 +348,7 @@ public:
                        oc::interface::IStorage& macroLibraryStorage,
                        oc::interface::IStorage& sequencerPatternLibraryStorage,
                        oc::interface::IStorage& sequencerSetLibraryStorage);
+    ~CoreState();
 
     // Non-copyable, non-movable
     CoreState(const CoreState&) = delete;
@@ -317,12 +380,22 @@ public:
     void requestMacroRuntimeOwnerActivation();
     void requestSequencerRuntimeProjectReset();
     void markMacroValueEdited(uint8_t index);
+    [[nodiscard]] bool setMacroValueWithHistory(uint8_t index, float value);
+    [[nodiscard]] bool takeMacroManualControlWithHistory(
+        uint8_t index,
+        float value,
+        bool coalesceValue
+    );
+    [[nodiscard]] bool resumeMacroComputedSourcesWithHistory(uint8_t index);
+    void updateMacroValueHistoryCoalescing(uint32_t nowMs);
+    void flushMacroValueHistoryCoalescing();
     void markProjectMutated();
     void requestProjectSessionSave();
     void acknowledgeProjectSessionSave(uint32_t savedModifiedCounter);
     bool hasPendingProjectSessionSave() const;
     uint32_t projectSessionSaveTimestampMs() const;
     bool hasPendingProjectMutationCoalescing() const;
+    bool hasPendingProjectTransaction() const;
 
     bool isMacroPersistenceReady() const;
     bool isSequencerPersistenceReady() const;
@@ -346,13 +419,26 @@ public:
     bool recordSequencerStructureHistory(sequencer::SequencerHistoryTrackStructureChangePtr change);
     bool beginOrContinueSequencerPatternHistoryCoalescing(uint8_t step,
                                                           sequencer::StepProperty property,
-                                                          uint32_t nowMs);
+                                                          uint32_t nowMs,
+                                                          bool stateProperty = false);
+    bool beginOrContinueSequencerCcLaneEventHistoryCoalescing(
+        uint8_t lane,
+        uint8_t step,
+        int32_t beforeValue,
+        int32_t afterValue,
+        const sequencer::SequencerCcLaneBank* afterBank,
+        uint32_t nowMs
+    );
     bool commitSequencerPatternHistoryCoalescing();
     bool updateSequencerPatternHistoryCoalescing(uint32_t nowMs);
     bool hasPendingSequencerPatternHistoryCoalescing() const;
     bool undoSequencerHistory();
     bool redoSequencerHistory();
-    void clearSequencerHistory();
+    [[nodiscard]] bool clearSequencerHistory();
+    [[nodiscard]] bool prepareProjectHistoryInteraction();
+    bool undoProjectHistory();
+    bool redoProjectHistory();
+    [[nodiscard]] bool clearProjectHistory();
     [[nodiscard]] bool queuePendingSequencerApply(
         sequencer::SequencerState& staged,
         bool merge = false

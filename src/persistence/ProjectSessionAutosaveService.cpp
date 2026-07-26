@@ -35,25 +35,30 @@ ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::update(
     uint32_t nowMs,
     bool mutationPending
 ) {
-    if (inProgress_() && mutationPending) {
-        cancelInFlight_();
-        return Result{.status = Status::BLOCKED};
-    }
+    const bool inProgress = inProgress_();
+    if (inProgress) {
+        const bool transactionPending =
+            mutationPending || state.hasPendingProjectTransaction();
+        if (transactionPending) {
+            cancelInFlight_();
+            return Result{.status = Status::BLOCKED};
+        }
 
-    if (store_.saveCurrentInProgress() &&
-        state.project.metadata.modifiedCounter != captured_modified_counter_) {
-        cancelInFlight_();
-    }
+        if (store_.saveCurrentInProgress() &&
+            state.project.metadata.modifiedCounter != captured_modified_counter_) {
+            cancelInFlight_();
+        }
 
-    if (inProgress_()) {
-        return capture_.active() ? advanceCapture_(state) : advanceSave_(state);
+        if (inProgress_()) {
+            return capture_.active() ? advanceCapture_(state) : advanceSave_(state);
+        }
     }
 
     if (!state.hasPendingProjectSessionSave()) {
         return Result{.status = Status::IDLE};
     }
 
-    if (mutationPending) {
+    if (mutationPending || state.hasPendingProjectTransaction()) {
         return Result{.status = Status::BLOCKED};
     }
 
@@ -68,6 +73,10 @@ ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::update(
 FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::flush(
     core::state::CoreState& state
 ) {
+    if (state.hasPendingProjectTransaction()) {
+        if (inProgress_()) cancelInFlight_();
+        return Result{.status = Status::BLOCKED};
+    }
     if (capture_.active()) {
         cancelInFlight_();
     } else if (store_.saveCurrentInProgress() &&

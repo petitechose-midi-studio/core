@@ -1,5 +1,5 @@
 # UX workflow: adjust a macro, open its edit overlay, edit one field, and close.
-# Purpose: validates macro performance input, macro long-press overlay opening,
+# Purpose: validates macro performance input, explicit Edit-chord opening,
 # overlay-local NAV/OPT routing, and commit/close behavior.
 # Expect: capture_changed:edit_open=edit_adjusted
 
@@ -10,11 +10,13 @@
 150 encoder MACRO_1 0.75
 250 capture screen macro_value_changed
 
-# Long-press MACRO_1 to open the edit overlay for that macro.
-350 button MACRO_1 down
+# Hold LEFT_BOTTOM: the prompt explains that pressing a Macro opens Edit.
+350 button LEFT_BOTTOM down
+430 capture screen edit_prompt
+520 tap MACRO_1 60
 1400 tick
 1450 capture screen edit_open
-1500 button MACRO_1 up
+1500 button LEFT_BOTTOM up
 
 # Move focus and edit the focused property with OPT.
 1600 encoder NAV 1

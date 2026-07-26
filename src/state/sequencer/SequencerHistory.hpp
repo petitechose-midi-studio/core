@@ -12,6 +12,7 @@
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#include "state/project/ProjectHistoryEventSink.hpp"
 
 namespace core::state::sequencer {
 
@@ -55,6 +56,7 @@ struct SequencerHistoryTrackBankSnapshot {
 };
 
 struct SequencerHistoryTrackStructureChange;
+struct SequencerHistoryMacroTrackStructurePayload;
 
 enum class SequencerHistoryScope : uint8_t {
     PatternOnly = 0,
@@ -92,6 +94,8 @@ enum class SequencerHistoryActionKind : uint8_t {
     CcLaneRemove,
     CcLaneTransitionEdit,
     FullBank,
+    // Appended so persisted/diagnostic identities of existing actions remain stable.
+    PatternRandomize,
 };
 
 struct SequencerHistoryDescriptor {
@@ -118,11 +122,11 @@ struct SequencerHistoryPatternChange {
     SequencerHistoryPatternStorage storage = SequencerHistoryPatternStorage::FullGraph;
     SequencerHistoryDescriptor descriptor{};
     // Deferred runtime activation owned by this exact history operation. Pattern
-    // snapshots do not carry Track enabled/muted state, so the unchanged target
-    // masks are retained explicitly for safe Undo/Redo boundary planning.
+    // snapshots do not carry canonical Project Track audibility, so the
+    // unchanged target mask is retained explicitly for safe Undo/Redo boundary
+    // planning (including exclusive Solo selection).
     SequencerTrackActivationHistoryRef activation{};
-    uint16_t activationTargetEnabledMask = 0;
-    uint16_t activationTargetMutedMask = 0;
+    uint16_t activationTargetAudibleMask = 0;
     SequencerHistoryPatternSnapshot before;
     SequencerHistoryPatternSnapshot after;
 
@@ -261,6 +265,12 @@ public:
     SequencerHistoryService();
     ~SequencerHistoryService();
 
+    void setProjectHistoryEventSink(
+        const core::state::project::ProjectHistoryEventSink* sink
+    ) {
+        project_history_sink_ = sink;
+    }
+
     bool recordPattern(
         uint8_t trackIndex,
         SequencerHistoryPatternSnapshot before,
@@ -318,11 +328,18 @@ public:
                                                SequencerState& active);
     bool peekUndoTrackActivation(SequencerTrackActivationHistoryPlan& out) const;
     bool peekRedoTrackActivation(SequencerTrackActivationHistoryPlan& out) const;
+    const SequencerHistoryMacroTrackStructurePayload*
+        peekUndoMacroTrackStructure() const;
+    const SequencerHistoryMacroTrackStructurePayload*
+        peekRedoMacroTrackStructure() const;
 
     void clear();
+    void discardRedoBranch();
 
     uint8_t undoCount() const { return undo_count_; }
     uint8_t redoCount() const { return redo_count_; }
+    uintptr_t projectHistoryUndoIdentity() const;
+    uintptr_t projectHistoryRedoIdentity() const;
     uint8_t undoCount(SequencerHistoryScope scope) const;
     uint8_t redoCount(SequencerHistoryScope scope) const;
     size_t retainedBytes() const;
@@ -332,6 +349,7 @@ private:
     std::array<SequencerHistoryEntry, ENTRY_LIMIT> redo_{};
     uint8_t undo_count_ = 0;
     uint8_t redo_count_ = 0;
+    const core::state::project::ProjectHistoryEventSink* project_history_sink_ = nullptr;
 
     bool pushUndo(SequencerHistoryEntry entry);
     bool pushRedo(SequencerHistoryEntry entry);

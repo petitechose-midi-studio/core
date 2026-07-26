@@ -16,7 +16,7 @@ namespace {
 namespace catalog = core::state::sequencer::scale_catalog;
 
 constexpr const char* PITCH_CONTEXT_LABEL = "Pitch";
-constexpr const char* const ROW_KEYS[] = {"Scale", "Root", "Type", "Pitch Edit"};
+constexpr const char* const ROW_KEYS[] PROGMEM = {"Scale", "Root", "Type", "Pitch Edit"};
 
 }  // namespace
 
@@ -33,6 +33,8 @@ FLASHMEM PatternPitchSettingsOverlayPresenter::PatternPitchSettingsOverlayPresen
           &PatternPitchSettingsOverlayPresenter::drainRenderQueue,
           this
       ) {}
+
+FLASHMEM PatternPitchSettingsOverlayPresenter::~PatternPitchSettingsOverlayPresenter() = default;
 
 FLASHMEM bool PatternPitchSettingsOverlayPresenter::bind() {
     bool bound = render_scheduler_.valid();

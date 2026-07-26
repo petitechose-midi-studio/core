@@ -12,7 +12,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
-#include "state/StructureSelectionState.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -80,6 +80,7 @@ private:
     oc::note::sequencer::StepSequencerVariationRanges snapshot_variation_ranges_{};
     core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     bool history_snapshot_valid_ = false;
+    bool state_edit_seen_ = false;
     bool restore_cc_lane_on_cancel_ = false;
 };
 

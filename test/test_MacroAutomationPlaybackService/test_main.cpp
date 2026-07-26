@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -6,11 +7,19 @@
 
 #include <oc/api/MidiAPI.hpp>
 #include <oc/interface/IMidi.hpp>
+#include <oc/time/Time.hpp>
 #include <oc/type/Result.hpp>
 
+#include "../../src/handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "../../src/handler/macro/MacroAutomationPlaybackService.hpp"
+#include "../../src/handler/macro/MacroAutomationTiming.hpp"
+#include "../../src/handler/macro/MacroMidiCcRuntimeAdapter.hpp"
+#include "../../src/sequencer/RealtimeMidiQueue.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/ProjectControlTestUtils.hpp"
+#include "../support/ProjectTrackRuntimeSnapshotTestFixture.hpp"
+#include "../../src/state/project/ProjectTrackDomainOps.hpp"
 
 namespace {
 
@@ -49,47 +58,305 @@ public:
     uint8_t lastValue = 0;
 };
 
-void configureAutomation(core::state::CoreState& state) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = state.pages.currentActiveTrack(),
-            .page = state.pages.currentActivePage(),
-            .macro = 0,
+uint32_t g_now_ms = 0U;
+
+uint32_t mockTimeMs() {
+    return g_now_ms;
+}
+
+/** Drives the playback service through the same clock/frame/queue path as Core. */
+class PlaybackHarness {
+public:
+    PlaybackHarness(
+        core::state::CoreState& state,
+        core::handler::MacroPerformanceDomainServices services,
+        oc::api::MidiAPI& midi,
+        const oc::state::Signal<uint32_t>* runtimeOwnerRevision = nullptr
+    )
+        : state_(state)
+        , midi_(midi)
+        , coordinator_(queue_)
+        , adapter_(
+              core::handler::MacroMidiCcRuntimeAdapter::StateRefs{
+                  state.pages,
+                  state.projectTracks,
+              },
+              services,
+              coordinator_
+          )
+        , playback_(
+              core::handler::MacroAutomationPlaybackService::StateRefs{
+                  state.macros,
+                  state.pages,
+                  state.macroUi,
+                  state.projectTracks,
+                  runtimeOwnerRevision,
+              },
+              adapter_
+          ) {}
+
+    void update(uint32_t nowMs) {
+        const bool playing = state_.statusBar.playing.get();
+        if (clock_initialized_) {
+            if (playing && was_playing_) {
+                elapsed_playing_ms_ += nowMs - last_now_ms_;
+            }
+        } else {
+            clock_initialized_ = true;
         }
-    );
-    assert(slot != nullptr);
+        last_now_ms_ = nowMs;
+        was_playing_ = playing;
+        g_now_ms = nowMs;
+
+        const float tempo = std::max(1.0f, state_.statusBar.tempo.get());
+        const uint32_t sequencerTick = static_cast<uint32_t>(
+            static_cast<double>(elapsed_playing_ms_) * tempo * 24.0 /
+            60000.0
+        );
+        const uint32_t tickPeriodUs = static_cast<uint32_t>(
+            60000000.0 / (static_cast<double>(tempo) * 24.0) + 0.5
+        );
+        coordinator_.publishProjectControlClock(
+            sequencerTick,
+            playing,
+            elapsed_playing_ms_ * 1000U,
+            tickPeriodUs
+        );
+        playback_.update(nowMs);
+
+        deadline_us_ += 1000U;
+        assert(coordinator_.resolveLive(deadline_us_, runtime_tracks_).ok());
+        queue_.drainDue(midi_, deadline_us_, UINT32_MAX);
+    }
+
+    void reset() {
+        playback_.reset();
+        clock_initialized_ = false;
+        was_playing_ = false;
+        last_now_ms_ = 0U;
+        elapsed_playing_ms_ = 0U;
+    }
+
+private:
+    core::state::CoreState& state_;
+    oc::api::MidiAPI& midi_;
+    core::sequencer::RealtimeMidiQueue queue_{};
+    core::handler::MidiCcGlobalFrameCoordinator coordinator_;
+    core::handler::MacroMidiCcRuntimeAdapter adapter_;
+    core::handler::MacroAutomationPlaybackService playback_;
+    core::sequencer::ProjectTrackRuntimeSnapshot runtime_tracks_{
+        test_support::makeAllAudibleProjectTrackRuntimeSnapshot()
+    };
+    bool clock_initialized_ = false;
+    bool was_playing_ = false;
+    uint32_t last_now_ms_ = 0U;
+    uint32_t elapsed_playing_ms_ = 0U;
+    uint32_t deadline_us_ = 0U;
+};
+
+void configureAutomation(core::state::CoreState& state) {
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = state.pages.currentActiveTrack(),
+        .page = state.pages.currentActivePage(),
+        .macro = 0,
+    };
     core::state::macro::MacroAutomationLane lane;
     lane.durationBeats = 2.0f;
     assert(core::state::macro::macroAutomationAppendPoint(lane, 0.0f, 0.0f));
     assert(core::state::macro::macroAutomationAppendPoint(lane, 1.0f, 1.0f));
-    assert(core::state::macro::macroAutomationAssignAutomation(
-        state.pages.automation,
-        *slot,
+    assert(test_support::project_control::assignAutomation(
+        state.pages.control,
+        address,
         lane
     ));
 }
 
-void configureModulation(core::state::CoreState& state, float depth) {
-    auto* slot = core::state::macro::macroAutomationGetOrCreateSlot(
-        state.pages.automation,
-        core::state::macro::MacroAutomationSlotAddress{
-            .track = state.pages.currentActiveTrack(),
-            .page = state.pages.currentActivePage(),
-            .macro = 0,
-        }
-    );
-    assert(slot != nullptr);
-    core::state::macro::MacroModulationShape shape;
+void configureModulationAt(core::state::CoreState& state,
+                           uint8_t track,
+                           uint8_t page,
+                           uint8_t macro,
+                           float depth) {
+    const auto address = core::state::macro::MacroAutomationSlotAddress{
+        .track = track,
+        .page = page,
+        .macro = macro,
+    };
+    test_support::project_control::ModulationShape shape;
     shape.durationBeats = 2.0f;
-    assert(core::state::macro::macroModulationAppendPoint(shape, 0.0f, 0.25f));
-    assert(core::state::macro::macroModulationAppendPoint(shape, 1.0f, -0.25f));
-    assert(core::state::macro::macroAutomationAssignModulation(
-        state.pages.automation,
-        *slot,
-        shape
+    assert(test_support::project_control::appendModulationPoint(
+        shape, 0.0f, 0.25f
     ));
-    slot->modulationDepth = depth;
+    assert(test_support::project_control::appendModulationPoint(
+        shape, 1.0f, -0.25f
+    ));
+    assert(test_support::project_control::assignModulation(
+        state.pages.control,
+        address,
+        shape,
+        depth
+    ));
+}
+
+void configureModulation(core::state::CoreState& state, float depth) {
+    configureModulationAt(
+        state,
+        state.pages.currentActiveTrack(),
+        state.pages.currentActivePage(),
+        0,
+        depth
+    );
+}
+
+void test_runtime_projection_publication_is_atomic() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    auto configurePage = [&](uint8_t track,
+                             uint8_t page,
+                             float first,
+                             float second) {
+        auto& target = state.pages.tracks[track].pages[page];
+        target.values[0] = first;
+        target.values[1] = second;
+        target.setMacroActive(0, true);
+        target.setMacroActive(1, true);
+        state.pages.tracks[track].setPageEnabled(page, true);
+        configureModulationAt(state, track, page, 0, 0.4f);
+        configureModulationAt(state, track, page, 1, 0.3f);
+    };
+    configurePage(0, 0, 0.35f, 0.65f);
+    configurePage(0, 1, 0.2f, 0.8f);
+    configurePage(1, 0, 0.45f, 0.55f);
+    state.pages.syncSharedTrackState(0x0003U, 0);
+    state.pages.updateActiveConfigs();
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    PlaybackHarness playback(
+        state,
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        midi,
+        &state.macroRuntimeOwnerRevision
+    );
+
+    const uint32_t revisionBefore =
+        state.macroUi.runtimeProjectionRevision.get();
+    playback.update(1000);
+    const uint32_t revisionAfter =
+        state.macroUi.runtimeProjectionRevision.get();
+    assert((revisionAfter >> 8U) == (revisionBefore >> 8U) + 1U);
+    assert(core::state::macro::macroRuntimeProjectionRevisionTargetsAll(
+        revisionAfter
+    ));
+    assert(state.macroUi.runtimeProjections[0].valid);
+    assert(state.macroUi.runtimeProjections[1].valid);
+    assert(state.macroUi.runtimeProjectionValidFor(0, 0, 0));
+    assert(state.macroUi.runtimeProjectionValidFor(0, 0, 1));
+
+    // A Project activation is a hard runtime boundary and must bypass the
+    // 16 ms cadence guard rather than leaving a cleared/intermediate frame.
+    state.requestMacroRuntimeOwnerActivation();
+    playback.update(1001);
+    assert(state.pages.control.runtime.lastEvaluationMs == 1001U);
+    assert(state.macroUi.runtimeProjectionValidFor(0, 0, 0));
+    assert(state.macroUi.runtimeProjectionValidFor(0, 0, 1));
+
+    // Page and Track navigation inside the same cadence window also publish
+    // their target tuple immediately; navigation is never a refresh gesture.
+    state.pages.setActivePage(1);
+    playback.update(1002);
+    assert(state.macroUi.runtimeProjectionValidFor(0, 1, 0));
+    assert(state.macroUi.runtimeProjectionValidFor(0, 1, 1));
+    assert(!state.macroUi.runtimeProjectionValidFor(0, 0, 0));
+
+    state.pages.syncSharedTrackState(0x0003U, 1);
+    playback.update(1003);
+    assert(state.macroUi.runtimeProjectionValidFor(1, 0, 0));
+    assert(state.macroUi.runtimeProjectionValidFor(1, 0, 1));
+    assert(!state.macroUi.runtimeProjectionValidFor(0, 1, 0));
+
+    std::cout << "[PASS] runtime projection publishes complete frames only\n";
+}
+
+void test_project_control_cadence_tracks_motion_without_unbounded_work() {
+    namespace modulation = core::state::modulation;
+    namespace timing = core::handler::macro;
+
+    modulation::ProjectModulationRuntimePlan plan{};
+    modulation::ProjectCurveArena curves{};
+    modulation::ProjectControlTimeTelemetry telemetry{};
+
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        0U
+    ) == timing::MACRO_AUTOMATION_UPDATE_PERIOD_MS);
+
+    auto& source = plan.sources[0];
+    plan.sourceCount = 1U;
+    source.kind = modulation::ModulatorKind::LFO;
+    source.flags = modulation::PROJECT_MODULATOR_FLAG_ENABLED;
+    source.traits.lfo.timing = modulation::ModulatorTimingMode::FREE;
+    source.parameters.lfo.freePeriodMs = 8U;
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        1U
+    ) == timing::MACRO_AUTOMATION_MIN_UPDATE_PERIOD_MS);
+
+    source.traits.lfo.timing = modulation::ModulatorTimingMode::SYNC;
+    source.parameters.lfo.periodTicks = 12U;  // 1/64.
+    modulation::publishProjectControlTimeTelemetry(
+        telemetry,
+        {.musicalTick = 0U, .monotonicMs = 0U, .playing = true}
+    );
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        1U
+    ) == 2U);  // Safe first-frame estimate at the supported 300 BPM ceiling.
+
+    modulation::publishProjectControlTimeTelemetry(
+        telemetry,
+        {.musicalTick = 384U, .monotonicMs = 1000U, .playing = true}
+    );
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        1U
+    ) == 4U);  // 1/64 at the observed 120 BPM clock.
+
+    // Dense Projects trade visual/control oversampling for a strict bounded
+    // evaluation budget; the analytic generator remains time-correct.
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        128U
+    ) == timing::MACRO_AUTOMATION_UPDATE_PERIOD_MS);
+
+    source.kind = modulation::ModulatorKind::ADSR;
+    source.parameters.adsr = {};
+    source.parameters.adsr.delay = 0U;
+    source.parameters.adsr.attack = 0U;
+    source.parameters.adsr.hold = 0U;
+    source.parameters.adsr.decay = 0U;
+    source.parameters.adsr.release = 0U;
+    source.parameters.adsr.smooth = 0U;
+    assert(timing::projectControlUpdatePeriodMilliseconds(
+        plan,
+        curves,
+        telemetry,
+        1U
+    ) == timing::MACRO_AUTOMATION_UPDATE_PERIOD_MS);
+
+    std::cout << "[PASS] adaptive cadence follows motion and bounds workload\n";
 }
 
 void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
@@ -106,12 +373,8 @@ void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
         midi
     );
@@ -135,7 +398,192 @@ void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
     std::cout << "[PASS] test_playback_updates_runtime_and_sends_cc_when_value_changes\n";
 }
 
-void test_playback_stops_when_transport_is_stopped() {
+void test_canonical_track_channel_routes_computed_and_static_authors() {
+    test_support::CoreStorages computedStorage;
+    core::state::CoreState computedState(
+        computedStorage.settings,
+        computedStorage.macroLibrary,
+        computedStorage.sequencerPatternLibrary,
+        computedStorage.sequencerSetLibrary
+    );
+    configureAutomation(computedState);
+    computedState.pages.activePageData().cc[0] = 74U;
+    computedState.pages.updateActiveConfigs();
+    assert(core::state::project::setProjectTrackMidiChannel(
+        computedState.projectTracks,
+        0U,
+        11U
+    ).changed());
+    computedState.statusBar.playing.set(true);
+
+    MockMidiTransport computedTransport;
+    oc::api::MidiAPI computedMidi(computedTransport);
+    PlaybackHarness computedPlayback(
+        computedState,
+        core::handler::MacroPerformanceDomainServices::fromCoreState(
+            computedState
+        ),
+        computedMidi
+    );
+    computedPlayback.update(1000U);
+    assert(computedTransport.ccCount == 1);
+    assert(computedTransport.lastChannel == 11U);
+
+    test_support::CoreStorages staticStorage;
+    core::state::CoreState staticState(
+        staticStorage.settings,
+        staticStorage.macroLibrary,
+        staticStorage.sequencerPatternLibrary,
+        staticStorage.sequencerSetLibrary
+    );
+    staticState.pages.setMacroSlotActive(0U, true);
+    staticState.pages.activePageData().cc[0] = 71U;
+    staticState.pages.activePageData().values[0] = 0.25f;
+    staticState.pages.updateActiveConfigs();
+    assert(core::state::project::setProjectTrackMidiChannel(
+        staticState.projectTracks,
+        0U,
+        13U
+    ).changed());
+
+    MockMidiTransport staticTransport;
+    oc::api::MidiAPI staticMidi(staticTransport);
+    PlaybackHarness staticPlayback(
+        staticState,
+        core::handler::MacroPerformanceDomainServices::fromCoreState(
+            staticState
+        ),
+        staticMidi
+    );
+    staticPlayback.update(1000U);
+    assert(staticTransport.ccCount == 1);
+    assert(staticTransport.lastChannel == 13U);
+    assert(staticTransport.lastCc == 71U);
+
+    std::cout
+        << "[PASS] canonical Track channel owns computed and Static routing\n";
+}
+
+void test_muted_automation_keeps_ui_and_phase_then_resumes_current_value() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(
+        storage.settings,
+        storage.macroLibrary,
+        storage.sequencerPatternLibrary,
+        storage.sequencerSetLibrary
+    );
+    configureAutomation(state);
+    state.pages.activePageData().cc[0] = 74U;
+    state.pages.updateActiveConfigs();
+    state.statusBar.tempo.set(60.0f);
+    state.statusBar.playing.set(true);
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    PlaybackHarness playback(
+        state,
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        midi
+    );
+
+    playback.update(1000U);
+    assert(midiTransport.ccCount == 1);
+    assert(midiTransport.lastValue == 0U);
+
+    assert(core::state::project::setProjectTrackMuted(
+        state.projectTracks,
+        0U,
+        true
+    ).changed());
+    const uint32_t projectionBefore =
+        state.macroUi.runtimeProjectionRevision.get();
+    playback.update(1500U);
+    assert(midiTransport.ccCount == 1);
+    assert(state.pages.control.runtime.lastEvaluationMs == 1500U);
+    assert(state.macroUi.runtimeProjectionRevision.get() != projectionBefore);
+    assert(state.macroUi.runtimeProjectionValidFor(0U, 0U, 0U));
+    const auto mutedProjection = state.macroUi.runtimeProjections[0];
+    assert(mutedProjection.resolved > 0.49f &&
+           mutedProjection.resolved < 0.51f);
+    assert(state.macros[0].value.get() > 0.49f &&
+           state.macros[0].value.get() < 0.51f);
+
+    assert(core::state::project::setProjectTrackMuted(
+        state.projectTracks,
+        0U,
+        false
+    ).changed());
+    playback.update(1750U);
+    assert(midiTransport.ccCount == 2);
+    assert(midiTransport.lastValue >= 95U && midiTransport.lastValue <= 96U);
+    assert(state.macroUi.runtimeProjections[0].resolved > 0.74f &&
+           state.macroUi.runtimeProjections[0].resolved < 0.76f);
+
+    std::cout
+        << "[PASS] muted Automation evolves silently and resumes in phase\n";
+}
+
+void test_project_solo_mask_filters_macro_authors_globally() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(
+        storage.settings,
+        storage.macroLibrary,
+        storage.sequencerPatternLibrary,
+        storage.sequencerSetLibrary
+    );
+    auto configureStaticTrack = [&](uint8_t track,
+                                    uint8_t channel,
+                                    uint8_t cc,
+                                    float value) {
+        auto& trackData = state.pages.tracks[track];
+        trackData.setPageEnabled(0U, true);
+        trackData.activePage = 0U;
+        trackData.pages[0].setMacroActive(0U, true);
+        trackData.pages[0].cc[0] = cc;
+        trackData.pages[0].values[0] = value;
+        assert(core::state::project::setProjectTrackMidiChannel(
+            state.projectTracks,
+            track,
+            channel
+        ).status != core::state::project::ProjectTrackMutationStatus::INVALID_TRACK);
+    };
+    configureStaticTrack(0U, 5U, 70U, 0.25f);
+    configureStaticTrack(1U, 9U, 71U, 0.75f);
+    state.pages.syncSharedTrackState(0x0003U, 0U);
+    state.pages.updateActiveConfigs();
+    assert(core::state::project::setProjectTrackSoloed(
+        state.projectTracks,
+        1U,
+        true
+    ).changed());
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    PlaybackHarness playback(
+        state,
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state),
+        midi
+    );
+    playback.update(1000U);
+    assert(midiTransport.ccCount == 1);
+    assert(midiTransport.lastChannel == 9U);
+    assert(midiTransport.lastCc == 71U);
+
+    assert(core::state::project::setProjectTrackSoloed(
+        state.projectTracks,
+        1U,
+        false
+    ).changed());
+    // The canonical Track revision bypasses the Static author's 16 ms guard.
+    playback.update(1001U);
+    assert(midiTransport.ccCount == 2);
+    assert(midiTransport.lastChannel == 5U);
+    assert(midiTransport.lastCc == 70U);
+
+    std::cout << "[PASS] canonical Solo filters all Macro authors globally\n";
+}
+
+void test_stopped_transport_publishes_static_owner_without_playing_curve() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings,
                                  storage.macroLibrary,
@@ -145,12 +593,8 @@ void test_playback_stops_when_transport_is_stopped() {
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
         midi
     );
@@ -158,9 +602,11 @@ void test_playback_stops_when_transport_is_stopped() {
     state.statusBar.playing.set(false);
     playback.update(1000);
     playback.update(1500);
-    assert(midiTransport.ccCount == 0);
+    assert(midiTransport.ccCount == 1);
+    assert(midiTransport.lastValue == 0);
 
-    std::cout << "[PASS] test_playback_stops_when_transport_is_stopped\n";
+    std::cout
+        << "[PASS] stopped transport publishes Static owner without curve motion\n";
 }
 
 void test_update_period_remains_bounded_across_millisecond_rollover() {
@@ -175,12 +621,8 @@ void test_update_period_remains_bounded_across_millisecond_rollover() {
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
         midi
     );
@@ -210,12 +652,8 @@ void test_manual_override_replaces_automation_base_until_resume() {
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         services,
         midi
     );
@@ -256,12 +694,8 @@ void test_modulation_only_playback_and_depth_zero_remain_computed() {
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         services,
         midi
     );
@@ -277,29 +711,38 @@ void test_modulation_only_playback_and_depth_zero_remain_computed() {
         .page = state.pages.currentActivePage(),
         .macro = 0,
     };
-    auto* slot = core::state::macro::macroAutomationFindMutableSlot(
-        state.pages.automation,
+    auto slot = test_support::project_control::readSlot(
+        state.pages.control,
         address
     );
-    assert(slot != nullptr);
-    const uint16_t pointCount = slot->modulation.pointCount;
-    slot->modulationDepth = 0.0f;
+    const uint16_t pointCount = slot.primaryModulation.recordedShape.pointCount;
+    assert(core::state::modulation::setProjectControlModulationAmount(
+        state.pages.control,
+        address,
+        0.0f
+    ));
     playback.update(1500);
     assert(midiTransport.ccCount == 2);
     assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
     assert(services.computedSourcePlaybackActiveFor(0));
-    assert(slot->modulation.pointCount == pointCount);
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    assert(slot.primaryModulation.recordedShape.pointCount == pointCount);
 
-    slot->modulationDepth = 0.4f;
+    assert(core::state::modulation::setProjectControlModulationAmount(
+        state.pages.control,
+        address,
+        0.4f
+    ));
     playback.update(2000);
     assert(midiTransport.ccCount == 3);
     assert(midiTransport.lastValue >= 50 && midiTransport.lastValue <= 52);
-    assert(slot->modulation.pointCount == pointCount);
+    slot = test_support::project_control::readSlot(state.pages.control, address);
+    assert(slot.primaryModulation.recordedShape.pointCount == pointCount);
 
     std::cout << "[PASS] test_modulation_only_playback_and_depth_zero_remain_computed\n";
 }
 
-void test_recording_keeps_modulation_audible_and_active_after_commit() {
+void test_automation_take_keeps_modulation_audible_and_active_after_commit() {
     test_support::CoreStorages storage;
     core::state::CoreState state(storage.settings,
                                  storage.macroLibrary,
@@ -313,12 +756,8 @@ void test_recording_keeps_modulation_audible_and_active_after_commit() {
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         services,
         midi
     );
@@ -327,28 +766,62 @@ void test_recording_keeps_modulation_audible_and_active_after_commit() {
     assert(midiTransport.ccCount == 1);
     assert(midiTransport.lastValue >= 31 && midiTransport.lastValue <= 32);
 
-    assert(services.beginAutomationRecording(0, 1100));
-    assert(services.recordAutomationPoint(0, 1200, 0.4f));
+    (void)services.setAutomationTakeTiming(
+        core::state::macro::MacroAutomationTakeTiming::HOLD
+    );
+    assert(services.armAutomationTake());
+    assert(services.recordAutomationTakeValue(0, 1100, 0.4f));
     playback.update(1250);
     assert(midiTransport.ccCount == 2);
     assert(midiTransport.lastValue >= 66 && midiTransport.lastValue <= 67);
     const auto projection = state.macroUi.runtimeProjections[0];
     assert(projection.valid && projection.modulationActive);
-    assert(std::fabs(projection.base - 0.4f) < 0.0001f);
+    assert(std::fabs(projection.base - 0.4f) < 0.005f);
     assert(std::fabs(projection.modulation - 0.125f) < 0.01f);
 
-    assert(services.recordAutomationPoint(0, 1600, 0.6f));
-    assert(services.commitAutomationRecording(2000));
-    const auto* slot = core::state::macro::macroAutomationFindSlot(
-        state.pages.automation,
+    assert(services.recordAutomationTakeValue(0, 1600, 0.6f));
+    assert(services.releaseAutomationTake(2000));
+    const auto slot = test_support::project_control::readSlot(
+        state.pages.control,
         {state.pages.currentActiveTrack(), state.pages.currentActivePage(), 0}
     );
-    assert(slot != nullptr);
-    assert(core::state::macro::macroCurvePlaybackActive(slot->modulation));
-    assert(slot->modulation.playbackState ==
-           core::state::macro::MacroCurvePlaybackState::ACTIVE);
+    assert(slot.primaryModulation.recordedShape.stored());
+    assert(slot.primaryModulation.recordedShape.enabled);
 
-    std::cout << "[PASS] recording captures raw Base while Modulation stays audible\n";
+    std::cout << "[PASS] take captures raw Base while Modulation stays audible\n";
+}
+
+void test_shared_take_publishes_live_base_without_printing_modulation() {
+    test_support::CoreStorages storage;
+    core::state::CoreState state(storage.settings,
+                                 storage.macroLibrary,
+                                 storage.sequencerPatternLibrary,
+                                 storage.sequencerSetLibrary);
+    configureAutomation(state);
+    configureModulation(state, 1.0f);
+    state.statusBar.tempo.set(60.0f);
+    state.statusBar.playing.set(true);
+
+    MockMidiTransport midiTransport;
+    oc::api::MidiAPI midi(midiTransport);
+    const auto services =
+        core::handler::MacroPerformanceDomainServices::fromCoreState(state);
+    PlaybackHarness playback(state, services, midi);
+
+    playback.update(1000U);
+    assert(services.armAutomationTake());
+    assert(services.recordAutomationTakeValue(0U, 1200U, 0.4f));
+    playback.update(1250U);
+
+    const auto projection = state.macroUi.runtimeProjections[0];
+    assert(projection.valid && projection.modulationActive);
+    assert(std::fabs(projection.base - 0.4f) < 0.01f);
+    assert(std::fabs(projection.modulation - 0.125f) < 0.01f);
+    assert(midiTransport.lastValue >= 66U && midiTransport.lastValue <= 67U);
+    assert(services.cancelAutomationTake());
+
+    std::cout
+        << "[PASS] shared take publishes Base while Modulation stays live\n";
 }
 
 void test_reactivating_slot_or_lane_resends_value_superseded_while_inactive() {
@@ -363,12 +836,8 @@ void test_reactivating_slot_or_lane_resends_value_superseded_while_inactive() {
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
         midi
     );
@@ -395,19 +864,27 @@ void test_reactivating_slot_or_lane_resends_value_superseded_while_inactive() {
         .page = state.pages.currentActivePage(),
         .macro = 0,
     };
-    auto* slot =
-        core::state::macro::macroAutomationFindMutableSlot(state.pages.automation, address);
-    assert(slot != nullptr);
-    slot->automation.active = false;
+    assert(core::state::modulation::setProjectControlAutomationEnabled(
+        state.pages.control,
+        address,
+        false
+    ));
     state.macros[0].value.set(0.42f);
     playback.update(3500);
-    assert(midiTransport.ccCount == 2);
-
-    // The same ownership guarantee applies when only the automation lane is
-    // disabled while the macro slot remains active.
-    slot->automation.active = true;
-    playback.update(5000);
     assert(midiTransport.ccCount == 3);
+    assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
+    assert(state.macros[0].value.get() > 0.49f &&
+           state.macros[0].value.get() < 0.51f);
+
+    // Disabling Automation transfers ownership to the authored Static Base;
+    // re-enabling it must explicitly reclaim ownership for the curve.
+    assert(core::state::modulation::setProjectControlAutomationEnabled(
+        state.pages.control,
+        address,
+        true
+    ));
+    playback.update(5000);
+    assert(midiTransport.ccCount == 4);
     assert(midiTransport.lastValue == 0);
     assert(std::fabs(state.macros[0].value.get() - 0.0f) < 0.0001f);
 
@@ -424,20 +901,21 @@ void test_runtime_owner_epoch_is_independent_from_navigation_and_transport() {
     state.pages.activePageData().values[0] = 0.5f;
     state.pages.activePageData().cc[0] = 74;
     state.pages.updateActiveConfigs();
+    // Keep Track 1 intentionally silent: this test isolates navigation from
+    // Project-author topology changes, which are covered by the integration
+    // frame tests.
+    state.pages.tracks[1].pages[0].setMacroActive(0, false);
+    state.pages.syncSharedTrackState(0x0003U, 0);
     state.statusBar.tempo.set(60.0f);
     state.statusBar.playing.set(true);
 
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-            &state.macroRuntimeOwnerRevision,
-        },
+    PlaybackHarness playback(
+        state,
         core::handler::MacroPerformanceDomainServices::fromCoreState(state),
-        midi
+        midi,
+        &state.macroRuntimeOwnerRevision
     );
 
     playback.update(1000);
@@ -477,7 +955,9 @@ void test_runtime_owner_epoch_is_independent_from_navigation_and_transport() {
 
     state.statusBar.playing.set(true);
     playback.update(4000);
-    assert(midiTransport.ccCount == beforeStop + 1);
+    // The production coordinator retains physical output ownership across a
+    // transport pause, so restarting on the same value must not resend MIDI.
+    assert(midiTransport.ccCount == beforeStop);
     assert(midiTransport.lastValue >= 31 && midiTransport.lastValue <= 32);
     playback.update(4750);
     assert(midiTransport.lastValue >= 63 && midiTransport.lastValue <= 64);
@@ -513,15 +993,11 @@ void test_runtime_owner_activation_preserves_manual_ownership() {
     MockMidiTransport midiTransport;
     oc::api::MidiAPI midi(midiTransport);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
-    core::handler::MacroAutomationPlaybackService playback(
-        core::handler::MacroAutomationPlaybackService::StateRefs{
-            state.pages,
-            state.macroUi,
-            state.statusBar,
-            &state.macroRuntimeOwnerRevision,
-        },
+    PlaybackHarness playback(
+        state,
         services,
-        midi
+        midi,
+        &state.macroRuntimeOwnerRevision
     );
 
     assert(services.takeManualControl(0, 0.42f));
@@ -540,12 +1016,19 @@ void test_runtime_owner_activation_preserves_manual_ownership() {
 }  // namespace
 
 int main() {
+    oc::time::setProvider(mockTimeMs);
+    test_runtime_projection_publication_is_atomic();
+    test_project_control_cadence_tracks_motion_without_unbounded_work();
     test_playback_updates_runtime_and_sends_cc_when_value_changes();
-    test_playback_stops_when_transport_is_stopped();
+    test_canonical_track_channel_routes_computed_and_static_authors();
+    test_muted_automation_keeps_ui_and_phase_then_resumes_current_value();
+    test_project_solo_mask_filters_macro_authors_globally();
+    test_stopped_transport_publishes_static_owner_without_playing_curve();
     test_update_period_remains_bounded_across_millisecond_rollover();
     test_manual_override_replaces_automation_base_until_resume();
     test_modulation_only_playback_and_depth_zero_remain_computed();
-    test_recording_keeps_modulation_audible_and_active_after_commit();
+    test_automation_take_keeps_modulation_audible_and_active_after_commit();
+    test_shared_take_publishes_live_base_without_printing_modulation();
     test_reactivating_slot_or_lane_resends_value_superseded_while_inactive();
     test_runtime_owner_epoch_is_independent_from_navigation_and_transport();
     test_runtime_owner_activation_preserves_manual_ownership();

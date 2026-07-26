@@ -5,6 +5,7 @@
 #include "handler/sequencer/SequencerCcLaneDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/StatusBarState.hpp"
+#include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 
 namespace core::handler {
@@ -13,11 +14,10 @@ class MidiCcGlobalFrameCoordinator;
 
 class SequencerCcLaneWorkflow {
 public:
-    static constexpr uint32_t EVENT_EDIT_IDLE_MS = 320;
-
     struct StateRefs {
         core::state::sequencer::SequencerState& editor;
         core::state::sequencer::SequencerTrackBankState& tracks;
+        const core::state::project::ProjectNavigationState& projectNavigation;
         SequencerHistoryDomainServices history;
         core::state::StatusBarState& statusBar;
         const MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
@@ -27,11 +27,11 @@ public:
 
     void openLaneSelector();
     bool openLane(uint8_t lane);
-    bool openAddDraft();
+    bool createDefaultLane(uint32_t nowMs);
     void suspendGridForPropertySelector(uint32_t nowMs);
     void closeOneLevel(uint32_t nowMs);
     void moveSelector(float delta);
-    bool activateSelector();
+    bool activateSelector(uint32_t nowMs = 0);
     bool openSettings();
     void moveDraftField(float delta);
     bool activateDraftField();
@@ -43,6 +43,7 @@ public:
     bool editVisibleEvent(uint8_t indexInWindow, float normalized, uint32_t nowMs);
     bool toggleVisibleEvent(uint8_t indexInWindow, uint32_t nowMs);
     bool openTransitionPicker(uint8_t indexInWindow, uint32_t nowMs);
+    bool openFocusedTransitionPicker(uint32_t nowMs);
     void moveTransition(float delta);
     bool selectTransitionNormalized(float normalized);
     bool applyTransition(uint32_t nowMs);
@@ -84,12 +85,12 @@ private:
     );
     bool installPreparedChange_(PatternChangePtr change, LaneBankPtr bank);
     bool stageCurrentBank_(LaneBankPtr& out, bool materializeEmpty) const;
-    bool applyDraft_(bool macroConflictAuthorized, uint32_t nowMs);
+    bool applySettings_(bool macroConflictAuthorized, uint32_t nowMs);
     bool clearFocusedEvent_(uint32_t nowMs);
     bool setFocusedEventValue_(uint8_t value, uint32_t nowMs);
     bool focusVisibleStep_(uint8_t indexInWindow, uint32_t nowMs);
+    bool openTransitionPickerForFocused_(bool compact, uint32_t nowMs);
     bool removeCurrentLane_(uint32_t nowMs);
-    void openAddDraft_();
     void openGrid_(uint8_t lane);
     void loadSettingsDraft_();
     void refreshActions_(const SequencerCcLanePreflight& preflight);
@@ -111,12 +112,11 @@ private:
 
     core::state::sequencer::SequencerState& editor_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
+    const core::state::project::ProjectNavigationState& project_navigation_;
     SequencerHistoryDomainServices history_;
     core::state::StatusBarState& status_bar_;
     const MidiCcGlobalFrameCoordinator* midi_cc_coordinator_ = nullptr;
     SequencerCcLaneDomainServices services_;
-    PatternChangePtr pending_event_change_;
-    uint32_t last_event_edit_ms_ = 0;
     bool last_transport_playing_ = false;
     core::state::sequencer::SequencerCcLaneActionSlot guard_slot_ =
         core::state::sequencer::SequencerCcLaneActionSlot::BOTTOM_RIGHT;
