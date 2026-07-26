@@ -90,6 +90,14 @@ jobs:
           path: workspace/open-control/note
           persist-credentials: false
 
+      - name: Checkout UI
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ui
+          ref: ${{ env.MIDI_STUDIO_UI_SHA }}
+          path: workspace/midi-studio/ui
+          persist-credentials: false
+
       - name: Checkout core
         uses: actions/checkout@v6
         with:
