@@ -13,6 +13,11 @@ const char* stageName(oc::core::input::InputBindingTraceStage stage) {
         case Stage::Candidate: return "candidate";
         case Stage::Dispatch: return "dispatch";
         case Stage::NoDispatch: return "no_dispatch";
+        case Stage::RouteCapture: return "route_capture";
+        case Stage::RouteHandoff: return "route_handoff";
+        case Stage::Fallback: return "fallback";
+        case Stage::Ambiguous: return "ambiguous";
+        case Stage::Consumed: return "consumed";
     }
     return "unknown";
 }
@@ -78,6 +83,8 @@ void InputBindingTraceWriter::write(const oc::core::input::InputBindingTraceEven
             << ",\"authority\":" << boolInt(event.authority)
             << ",\"required_button\":" << boolInt(event.requiredButton)
             << ",\"dispatched\":" << boolInt(event.dispatched)
+            << ",\"candidate_count\":"
+            << static_cast<unsigned>(event.candidateCount)
             << ",\"encoder_value\":" << event.encoderValue
             << "}\n";
 }
