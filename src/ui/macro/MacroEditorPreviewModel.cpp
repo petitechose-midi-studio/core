@@ -169,6 +169,75 @@ float sourcePreviewValue(
     );
 }
 
+ContributionSample sampleResolvedProjectContribution(
+    const MacroEditorPreviewModel& model,
+    const state_mod::ModulatorSourceState& source,
+    state_mod::ResolvedModulationMapping mapping,
+    int16_t amountQ15,
+    uint8_t bindingFlags,
+    uint16_t positionQ16,
+    uint16_t previousPositionQ16,
+    bool hasPrevious,
+    bool naturalTimeline,
+    bool capturedSource
+) {
+    ContributionSample result{};
+    float phase = 0.0f;
+    float sourceValue = 0.0f;
+    if (capturedSource) {
+        const auto& capture = *model.recordedShapeCapture;
+        int16_t valueQ15 = 0;
+        const uint16_t capturePositionQ16 = naturalTimeline
+            ? positionQ16
+            : sourcePhasePositionQ16(
+                model.timelineDurationTicks,
+                capture.durationTicks,
+                positionQ16
+            );
+        if (!capture.take->samplePreviewValue(
+                capturePositionQ16,
+                valueQ15
+            )) {
+            return result;
+        }
+        sourceValue = static_cast<float>(valueQ15) / 32767.0f;
+        phase = normalizedPosition(capturePositionQ16);
+    } else {
+        sourceValue = sourcePreviewValue(
+            model,
+            source,
+            positionQ16,
+            naturalTimeline,
+            phase
+        );
+    }
+    sourceValue = state_mod::applyResolvedModulationMapping(
+        sourceValue,
+        mapping
+    );
+    result.stored = sourceValue *
+        (static_cast<float>(amountQ15) / 32767.0f);
+    const bool active =
+        (bindingFlags &
+         state_mod::PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U &&
+        (source.flags & state_mod::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
+    result.active = active ? result.stored : 0.0f;
+    if (!capturedSource && hasPrevious &&
+        source.kind == state_mod::ModulatorKind::LFO &&
+        source.parameters.lfo.shape == state_mod::ModulatorLfoShape::SQUARE) {
+        float previousPhase = 0.0f;
+        (void)sourcePreviewValue(
+            model,
+            source,
+            previousPositionQ16,
+            naturalTimeline,
+            previousPhase
+        );
+        result.discontinuityBefore = crossesSquareEdge(previousPhase, phase);
+    }
+    return result;
+}
+
 ContributionSample sampleProjectContribution(
     const MacroEditorPreviewModel& model,
     const state_mod::ModulationBindingState& binding,
@@ -208,59 +277,43 @@ ContributionSample sampleProjectContribution(
         )) {
         return result;
     }
-    float phase = 0.0f;
-    float sourceValue = 0.0f;
-    if (capturedSource) {
-        int16_t valueQ15 = 0;
-        const uint16_t capturePositionQ16 = naturalTimeline
-            ? positionQ16
-            : sourcePhasePositionQ16(
-                model.timelineDurationTicks,
-                capture->durationTicks,
-                positionQ16
-            );
-        if (!capture->take->samplePreviewValue(
-                capturePositionQ16,
-                valueQ15
-            )) {
-            return result;
-        }
-        sourceValue = static_cast<float>(valueQ15) / 32767.0f;
-        phase = normalizedPosition(capturePositionQ16);
-    } else {
-        sourceValue = sourcePreviewValue(
-            model,
-            *source,
-            positionQ16,
-            naturalTimeline,
-            phase
-        );
-    }
-    sourceValue = state_mod::applyResolvedModulationMapping(
-        sourceValue,
-        mapping
+    return sampleResolvedProjectContribution(
+        model,
+        *source,
+        mapping,
+        binding.amountQ15,
+        binding.flags,
+        positionQ16,
+        previousPositionQ16,
+        hasPrevious,
+        naturalTimeline,
+        capturedSource
     );
-    result.stored = sourceValue *
-        (static_cast<float>(binding.amountQ15) / 32767.0f);
-    const bool active =
-        (binding.flags & state_mod::PROJECT_MODULATION_BINDING_FLAG_ENABLED) !=
-            0U &&
-        (source->flags & state_mod::PROJECT_MODULATOR_FLAG_ENABLED) != 0U;
-    result.active = active ? result.stored : 0.0f;
-    if (!capturedSource && hasPrevious &&
-        source->kind == state_mod::ModulatorKind::LFO &&
-        source->parameters.lfo.shape == state_mod::ModulatorLfoShape::SQUARE) {
-        float previousPhase = 0.0f;
-        (void)sourcePreviewValue(
-            model,
-            *source,
-            previousPositionQ16,
-            naturalTimeline,
-            previousPhase
-        );
-        result.discontinuityBefore = crossesSquareEdge(previousPhase, phase);
-    }
-    return result;
+}
+
+ContributionSample sampleRuntimeProjectContribution(
+    const MacroEditorPreviewModel& model,
+    const state_mod::ProjectModulationRuntimeBinding& binding,
+    uint16_t positionQ16,
+    uint16_t previousPositionQ16,
+    bool hasPrevious,
+    bool naturalTimeline
+) {
+    const auto& graph = model.control->authored.modulation;
+    if (binding.sourceIndex >= graph.sourceCount) return {};
+    const auto& source = graph.sources[binding.sourceIndex];
+    return sampleResolvedProjectContribution(
+        model,
+        source,
+        binding.mapping,
+        binding.amountQ15,
+        binding.flags,
+        positionQ16,
+        previousPositionQ16,
+        hasPrevious,
+        naturalTimeline,
+        false
+    );
 }
 
 ContributionSample sampleProvisionalRecordedShape(
@@ -300,7 +353,6 @@ ContributionSample sampleProvisionalRecordedShape(
 
 float sampleProjectAutomation(
     const MacroEditorPreviewModel& model,
-    const state_mod::ProjectControlMacroDestinationView& view,
     uint16_t positionQ16
 ) {
     float takeValue = 0.0f;
@@ -316,16 +368,17 @@ float sampleProjectAutomation(
         )) {
         return takeValue;
     }
-    if (!view.automation.stored()) return model.staticBase;
-    return state_mod::evaluateProjectControlCurve(
+    if (!model.automationStored) return model.staticBase;
+    return state_mod::evaluateProjectControlCurveRecord(
         *model.control,
-        view.automation.id,
+        model.automationCurveId,
+        model.automationCurveRecordIndex,
         elapsedBeat(model.timelineDurationTicks, positionQ16),
         model.staticBase
     );
 }
 
-void selectFirstBinding(MacroEditorPreviewModel& model) {
+FLASHMEM void selectFirstBinding(MacroEditorPreviewModel& model) {
     if (model.control == nullptr || state_mod::valid(model.focusedBindingId)) {
         return;
     }
@@ -340,7 +393,7 @@ void selectFirstBinding(MacroEditorPreviewModel& model) {
     }
 }
 
-void cacheFocusedSourceIndices(MacroEditorPreviewModel& model) {
+FLASHMEM void cacheFocusedSourceIndices(MacroEditorPreviewModel& model) {
     if (model.control == nullptr ||
         model.focusedBindingIndex >=
             model.control->authored.modulation.outputBindingCount) {
@@ -355,11 +408,39 @@ void cacheFocusedSourceIndices(MacroEditorPreviewModel& model) {
             break;
         }
     }
-    for (uint16_t index = 0U; index < model.control->plan.sourceCount; ++index) {
-        if (model.control->plan.sources[index].id == binding.sourceId) {
-            model.focusedRuntimeSourceIndex = index;
-            break;
+}
+
+FLASHMEM void cacheRuntimePlanIndices(MacroEditorPreviewModel& model) {
+    if (model.control == nullptr ||
+        model.control->compiledRevision == 0U ||
+        model.control->compiledRevision !=
+            model.control->authoredRevision) {
+        return;
+    }
+    const auto& plan = model.control->plan;
+    for (uint16_t index = 0U; index < plan.destinationCount; ++index) {
+        const auto& destination = plan.destinations[index];
+        if (destination.destination != model.destination) continue;
+        model.runtimeDestinationIndex = index;
+        model.destinationScaleQ15 = destination.destinationScaleQ15;
+        model.planCompiledRevision = model.control->compiledRevision;
+        model.planContextHash = model.control->runtimeContextHash;
+        for (uint16_t relative = 0U;
+             relative < destination.bindingCount;
+             ++relative) {
+            const uint16_t order = static_cast<uint16_t>(
+                destination.firstBinding + relative
+            );
+            if (order >= plan.bindingCount) break;
+            const uint16_t bindingIndex = plan.bindingOrder[order];
+            if (bindingIndex < plan.bindingCount &&
+                plan.bindings[bindingIndex].id ==
+                    model.focusedBindingId) {
+                model.focusedRuntimeBindingIndex = bindingIndex;
+                break;
+            }
         }
+        return;
     }
 }
 
@@ -378,6 +459,13 @@ FLASHMEM void buildMacroEditorPreviewModel(
     model.backend = MacroEditorPreviewModel::Backend::PROJECT_CONTROL;
     model.control = &control;
     model.address = address;
+    model.authoredRevision = control.authoredRevision;
+    model.destination = state_mod::projectControlDestination(address);
+    model.destinationScaleQ15 =
+        state_mod::projectModulationDestinationScaleQ15(
+            control.authored.modulation,
+            model.destination
+        );
     model.focusedBindingId = focusedBindingId;
     model.staticBase = macro::macroAutomationClamp01(staticBase);
     model.manualOverride = manualOverride;
@@ -400,6 +488,7 @@ FLASHMEM void buildMacroEditorPreviewModel(
         return;
     }
     model.automationStored = view.automation.stored();
+    model.automationCurveId = view.automation.id;
     model.automationPlayback =
         view.automation.stored() && view.automation.enabled && !manualOverride;
     model.automationDrivingBase = model.automationPlayback;
@@ -409,6 +498,9 @@ FLASHMEM void buildMacroEditorPreviewModel(
             view.automation.id
         );
         if (curve != nullptr) {
+            model.automationCurveRecordIndex = static_cast<uint16_t>(
+                curve - control.authored.curves.records.data()
+            );
             model.automationDurationTicks = std::max<uint16_t>(
                 curve->durationTicks,
                 1U
@@ -423,7 +515,7 @@ FLASHMEM void buildMacroEditorPreviewModel(
         }
     }
 
-    const auto destination = state_mod::projectControlDestination(address);
+    const auto destination = model.destination;
     const auto& graph = control.authored.modulation;
     for (uint16_t index = 0U; index < graph.outputBindingCount; ++index) {
         const auto& binding = graph.outputBindings[index];
@@ -472,6 +564,7 @@ FLASHMEM void buildMacroEditorPreviewModel(
     }
     selectFirstBinding(model);
     cacheFocusedSourceIndices(model);
+    cacheRuntimePlanIndices(model);
 }
 
 FLASHMEM void buildMacroEditorPreviewModel(
@@ -584,68 +677,128 @@ FLASHMEM bool sampleMacroEditorPreview(
         model.backend == MacroEditorPreviewModel::Backend::PROJECT_CONTROL &&
         model.control != nullptr
     ) {
-        state_mod::ProjectControlMacroDestinationView view{};
-        (void)state_mod::readProjectControlMacroDestination(
-            *model.control,
-            model.address,
-            view
-        );
-        automation = sampleProjectAutomation(model, view, positionQ16);
+        automation = sampleProjectAutomation(model, positionQ16);
         base = model.automationPlayback ? automation : model.staticBase;
-        const auto destination = state_mod::projectControlDestination(model.address);
-        const float scale = static_cast<float>(
-            state_mod::projectModulationDestinationScaleQ15(
+        const auto destination = model.destination;
+        const bool authoredModelCurrent =
+            model.authoredRevision == model.control->authoredRevision;
+        const uint16_t destinationScaleQ15 = authoredModelCurrent
+            ? model.destinationScaleQ15
+            : state_mod::projectModulationDestinationScaleQ15(
                 model.control->authored.modulation,
                 destination
-            )
-        ) / static_cast<float>(
+            );
+        const float scale = static_cast<float>(destinationScaleQ15) /
+            static_cast<float>(
             state_mod::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15
         );
         const auto& graph = model.control->authored.modulation;
-        const auto* focusedSource =
-            model.focusedSourceIndex < graph.sourceCount
-            ? &graph.sources[model.focusedSourceIndex]
-            : nullptr;
         const bool provisionalFocused =
             model.recordedShapeCapture != nullptr &&
             model.recordedShapeCapture->mode == state_mod::
                 ProjectRecordedShapeCaptureMode::CREATE_ASSIGNED &&
             focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR;
-        const uint16_t begin =
-            focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR &&
-            !provisionalFocused &&
-            model.focusedBindingIndex < graph.outputBindingCount
-            ? model.focusedBindingIndex
-            : 0U;
-        const uint16_t end =
-            provisionalFocused
-            ? 0U
-            : (focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR &&
-                   model.focusedBindingIndex < graph.outputBindingCount
-                ? static_cast<uint16_t>(model.focusedBindingIndex + 1U)
-                : graph.outputBindingCount);
-        for (uint16_t index = begin; index < end; ++index) {
-            const auto& binding = graph.outputBindings[index];
-            if (binding.destination != destination) continue;
-            if (focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR &&
-                binding.id != model.focusedBindingId) {
-                continue;
+        const auto& plan = model.control->plan;
+        const bool runtimePlanCurrent =
+            authoredModelCurrent &&
+            model.recordedShapeCapture == nullptr &&
+            model.runtimeDestinationIndex < plan.destinationCount &&
+            model.planCompiledRevision != 0U &&
+            model.planCompiledRevision ==
+                model.control->authoredRevision &&
+            model.planCompiledRevision ==
+                model.control->compiledRevision &&
+            model.planContextHash ==
+                model.control->runtimeContextHash &&
+            plan.destinations[model.runtimeDestinationIndex].destination ==
+                destination;
+        if (runtimePlanCurrent) {
+            const auto sampleBinding =
+                [&](uint16_t bindingIndex) {
+                    if (bindingIndex >= plan.bindingCount) return;
+                    const auto contribution =
+                        sampleRuntimeProjectContribution(
+                            model,
+                            plan.bindings[bindingIndex],
+                            positionQ16,
+                            previousPositionQ16,
+                            hasPrevious,
+                            focus ==
+                                MacroEditorPreviewFocus::FOCUSED_MODULATOR
+                        );
+                    storedModulation += contribution.stored;
+                    activeModulation += contribution.active;
+                    discontinuity = discontinuity ||
+                        contribution.discontinuityBefore;
+                };
+            if (focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR) {
+                if (!provisionalFocused) {
+                    sampleBinding(model.focusedRuntimeBindingIndex);
+                }
+            } else {
+                const auto& runtimeDestination =
+                    plan.destinations[model.runtimeDestinationIndex];
+                for (uint16_t relative = 0U;
+                     relative < runtimeDestination.bindingCount;
+                     ++relative) {
+                    const uint16_t order = static_cast<uint16_t>(
+                        runtimeDestination.firstBinding + relative
+                    );
+                    if (order >= plan.bindingCount) break;
+                    sampleBinding(plan.bindingOrder[order]);
+                }
             }
-            const auto contribution = sampleProjectContribution(
-                model,
-                binding,
-                positionQ16,
-                previousPositionQ16,
-                hasPrevious,
-                focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR,
-                focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR
-                    ? focusedSource
-                    : nullptr
-            );
-            storedModulation += contribution.stored;
-            activeModulation += contribution.active;
-            discontinuity = discontinuity ||
-                contribution.discontinuityBefore;
+        } else {
+            const auto* focusedSource =
+                model.focusedSourceIndex < graph.sourceCount
+                ? &graph.sources[model.focusedSourceIndex]
+                : nullptr;
+            const bool focusedBindingCacheCurrent =
+                authoredModelCurrent &&
+                model.focusedBindingIndex < graph.outputBindingCount &&
+                graph.outputBindings[model.focusedBindingIndex].id ==
+                    model.focusedBindingId;
+            const uint16_t begin =
+                focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR &&
+                !provisionalFocused &&
+                focusedBindingCacheCurrent
+                ? model.focusedBindingIndex
+                : 0U;
+            const uint16_t end =
+                provisionalFocused
+                ? 0U
+                : (focus == MacroEditorPreviewFocus::FOCUSED_MODULATOR &&
+                       focusedBindingCacheCurrent
+                    ? static_cast<uint16_t>(
+                        model.focusedBindingIndex + 1U
+                    )
+                    : graph.outputBindingCount);
+            for (uint16_t index = begin; index < end; ++index) {
+                const auto& binding = graph.outputBindings[index];
+                if (binding.destination != destination) continue;
+                if (focus ==
+                        MacroEditorPreviewFocus::FOCUSED_MODULATOR &&
+                    binding.id != model.focusedBindingId) {
+                    continue;
+                }
+                const auto contribution = sampleProjectContribution(
+                    model,
+                    binding,
+                    positionQ16,
+                    previousPositionQ16,
+                    hasPrevious,
+                    focus ==
+                        MacroEditorPreviewFocus::FOCUSED_MODULATOR,
+                    focus ==
+                            MacroEditorPreviewFocus::FOCUSED_MODULATOR
+                        ? focusedSource
+                        : nullptr
+                );
+                storedModulation += contribution.stored;
+                activeModulation += contribution.active;
+                discontinuity = discontinuity ||
+                    contribution.discontinuityBefore;
+            }
         }
         if (model.recordedShapeCapture != nullptr &&
             model.recordedShapeCapture->mode == state_mod::

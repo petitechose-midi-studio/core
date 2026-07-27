@@ -80,6 +80,24 @@ FLASHMEM ProjectModulationResult setProjectAutomationCurve(
     return result(ProjectModulationStatus::OK, {}, {}, curveId);
 }
 
+FLASHMEM ProjectModulationResult setProjectAutomationCurveSpec(
+    ProjectAutomationCurveDirectory& automation,
+    ProjectCurveArena& arena,
+    const ModulationDestination& destination,
+    const ProjectCurveSpec& spec
+) {
+    if (!modulationDestinationValid(destination) ||
+        spec.valueDomain != ProjectCurveValueDomain::ABSOLUTE_UNIPOLAR ||
+        spec.origin != ProjectCurveOrigin::NATIVE) {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT);
+    }
+    auto* existing = findProjectAutomationCurve(automation, destination);
+    if (existing == nullptr) {
+        return result(ProjectModulationStatus::INVALID_ID);
+    }
+    return replaceOwnedCurveSpec(arena, existing->curveId, spec);
+}
+
 FLASHMEM ProjectModulationResult setProjectAutomationEnabled(
     ProjectAutomationCurveDirectory& automation,
     const ModulationDestination& destination,

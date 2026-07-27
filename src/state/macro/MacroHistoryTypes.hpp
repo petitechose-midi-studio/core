@@ -96,6 +96,27 @@ struct MacroValueHistoryPayload {
 };
 
 /**
+ * Compact timing-only Automation edit.
+ *
+ * Points remain immutable throughout Length/Window gestures. A fingerprint
+ * retains fail-closed Undo/Redo validation without reserving two 4096-point
+ * Slot snapshots for every encoder detent.
+ */
+struct MacroAutomationMetadataHistoryPayload {
+    core::state::modulation::ProjectCurveSpec before{};
+    core::state::modulation::ProjectCurveSpec after{};
+    uint64_t pointFingerprint = 0U;
+    uint16_t pointCount = 0U;
+    bool enabled = false;
+    bool valid = false;
+};
+
+static_assert(
+    sizeof(MacroAutomationMetadataHistoryPayload) <= 40U,
+    "Automation metadata history must stay compact"
+);
+
+/**
  * Address-scoped runtime authority retained beside an optional Base edit.
  *
  * A physical takeover can change both the durable Macro Base and the
@@ -153,6 +174,7 @@ struct MacroAutomationHistorySnapshot {
 struct MacroAutomationHistoryPayload {
     MacroAutomationHistorySnapshot before{};
     MacroAutomationHistorySnapshot after{};
+    MacroAutomationMetadataHistoryPayload metadata{};
 };
 
 inline constexpr uint8_t MACRO_AUTOMATION_TAKE_DESTINATION_CAPACITY =

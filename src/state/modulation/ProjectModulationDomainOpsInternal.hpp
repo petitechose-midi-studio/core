@@ -156,6 +156,12 @@ void releaseCurve(ProjectCurveArena& arena, ProjectCurveId id);
     uint16_t pointCount,
     ModulatorId sourceId = {}
 );
+[[nodiscard]] ProjectModulationResult replaceOwnedCurveSpec(
+    ProjectCurveArena& arena,
+    ProjectCurveId& owner,
+    const ProjectCurveSpec& spec,
+    ModulatorId sourceId = {}
+);
 
 [[nodiscard]] bool selectedForSplit(
     ModulationBindingId id,

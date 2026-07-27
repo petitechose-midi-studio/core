@@ -177,6 +177,18 @@ ProjectModulationResult setProjectAutomationCurve(
     uint16_t pointCount,
     bool enabled
 );
+/**
+ * Replaces only Automation curve metadata.
+ *
+ * A uniquely owned curve is updated in place. Shared curves use exact
+ * copy-on-write without allocating a temporary maximum-sized scratch buffer.
+ */
+ProjectModulationResult setProjectAutomationCurveSpec(
+    ProjectAutomationCurveDirectory& automation,
+    ProjectCurveArena& arena,
+    const ModulationDestination& destination,
+    const ProjectCurveSpec& spec
+);
 ProjectModulationResult setProjectAutomationEnabled(
     ProjectAutomationCurveDirectory& automation,
     const ModulationDestination& destination,

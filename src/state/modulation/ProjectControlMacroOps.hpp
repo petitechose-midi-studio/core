@@ -286,18 +286,6 @@ preflightProjectControlConversion(
     bool overwriteConfirmed
 );
 
-[[nodiscard]] bool setProjectControlAutomationDurationBeats(
-    ProjectControlState& control,
-    const macro::MacroAutomationSlotAddress& address,
-    float durationBeats
-);
-
-[[nodiscard]] bool setProjectControlAutomationWindowOffsetBeats(
-    ProjectControlState& control,
-    const macro::MacroAutomationSlotAddress& address,
-    float offsetBeats
-);
-
 [[nodiscard]] bool readProjectControlCurvePoint(
     const ProjectControlState& control,
     ProjectCurveId curveId,
@@ -316,6 +304,19 @@ projectControlCurveWindowSummary(
 [[nodiscard]] float evaluateProjectControlCurve(
     const ProjectControlState& control,
     ProjectCurveId curveId,
+    float elapsedBeat,
+    float fallback
+);
+/**
+ * UI/cold sampler with a caller-cached directory index.
+ *
+ * The stable Curve ID validates the cache and falls back to an ID lookup when
+ * a concurrent authored mutation compacted the directory.
+ */
+[[nodiscard]] float evaluateProjectControlCurveRecord(
+    const ProjectControlState& control,
+    ProjectCurveId curveId,
+    uint16_t recordIndex,
     float elapsedBeat,
     float fallback
 );

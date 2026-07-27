@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -21,6 +22,65 @@ constexpr macro::MacroAutomationSlotAddress kAddress{
     .page = 0,
     .macro = 1,
 };
+
+void compileActiveControlPlan(
+    core::state::modulation::ProjectControlState& control
+) {
+    using namespace core::state::modulation;
+    ProjectModulationCompileContext context{};
+    context.enabledTrackMask = 0x0001U;
+    context.activePage[0] = kAddress.page;
+    context.activeMacroMask[0] =
+        static_cast<uint8_t>(1U << kAddress.macro);
+    assert(compileProjectControlRuntimePlan(
+        control.authored,
+        context,
+        control.plan
+    ).compiled());
+    control.compiledRevision = control.authoredRevision;
+    control.runtimeContextHash =
+        projectModulationCompileContextHash(context);
+}
+
+const core::state::modulation::ProjectModulationRuntimeBinding*
+runtimeBinding(
+    const core::state::modulation::ProjectControlState& control,
+    core::state::modulation::ModulationBindingId bindingId
+) {
+    const auto begin = control.plan.bindings.begin();
+    const auto end = begin + control.plan.bindingCount;
+    const auto found = std::find_if(
+        begin,
+        end,
+        [bindingId](
+            const core::state::modulation::ProjectModulationRuntimeBinding&
+                binding
+        ) {
+            return binding.id == bindingId;
+        }
+    );
+    return found == end ? nullptr : &*found;
+}
+
+const core::state::modulation::ProjectModulationRuntimeDestination*
+runtimeDestination(
+    const core::state::modulation::ProjectControlState& control,
+    const core::state::modulation::ModulationDestination& destination
+) {
+    const auto begin = control.plan.destinations.begin();
+    const auto end = begin + control.plan.destinationCount;
+    const auto found = std::find_if(
+        begin,
+        end,
+        [&destination](
+            const core::state::modulation::ProjectModulationRuntimeDestination&
+                runtime
+        ) {
+            return runtime.destination == destination;
+        }
+    );
+    return found == end ? nullptr : &*found;
+}
 
 void seedCurves(macro::MacroPagesState& pages) {
     macro::MacroAutomationLane automation{};
@@ -114,14 +174,30 @@ void test_clear_is_one_undo_redo_action() {
 }
 
 void test_depth_turns_coalesce_without_extra_entries() {
+    using namespace core::state::modulation;
     macro::MacroPagesState pages;
     seedCurves(pages);
+    const auto bindingId =
+        pages.control.authored.modulation.outputBindings[0].id;
+    compileActiveControlPlan(pages.control);
+    assert(runtimeBinding(pages.control, bindingId) != nullptr);
     macro::MacroHistoryService history;
     assert(history.setModulationDepthCoalesced(pages, kAddress, 0.5f));
+    assert(pages.control.compiledRevision ==
+           pages.control.authoredRevision);
+    assert(runtimeBinding(pages.control, bindingId)->amountQ15 == 16384);
     assert(history.setModulationDepthCoalesced(pages, kAddress, 0.25f));
+    assert(pages.control.compiledRevision ==
+           pages.control.authoredRevision);
+    assert(runtimeBinding(pages.control, bindingId)->amountQ15 == 8192);
     assert(history.setModulationDepthCoalesced(pages, kAddress, 0.0f));
+    assert(pages.control.compiledRevision ==
+           pages.control.authoredRevision);
+    assert(runtimeBinding(pages.control, bindingId)->amountQ15 == 0);
     assert(history.undoCount() == 1);
     assert(history.undo(pages));
+    assert(pages.control.compiledRevision !=
+           pages.control.authoredRevision);
     auto slot = test_support::project_control::readSlot(pages.control, kAddress);
     assert(std::fabs(slot.primaryModulation.amount - 0.65f) < 0.0001f);
     assert(history.redo(pages));
@@ -137,17 +213,31 @@ void test_global_depth_is_compact_coalesced_and_independent_from_bypass() {
     macro::MacroHistoryService history;
     const auto destination = projectControlDestination(kAddress);
     const auto bindingId = pages.control.authored.modulation.outputBindings[0].id;
+    compileActiveControlPlan(pages.control);
+    assert(runtimeDestination(pages.control, destination) != nullptr);
 
     assert(history.setModulationDestinationScaleCoalesced(
         pages,
         kAddress,
         32768U
     ));
+    assert(pages.control.compiledRevision ==
+           pages.control.authoredRevision);
+    assert(runtimeDestination(
+        pages.control,
+        destination
+    )->destinationScaleQ15 == 32768U);
     assert(history.setModulationDestinationScaleCoalesced(
         pages,
         kAddress,
         16384U
     ));
+    assert(pages.control.compiledRevision ==
+           pages.control.authoredRevision);
+    assert(runtimeDestination(
+        pages.control,
+        destination
+    )->destinationScaleQ15 == 16384U);
     assert(history.undoCount() == 1U);
     assert(projectModulationDestinationScaleQ15(
         pages.control.authored.modulation,
@@ -159,6 +249,8 @@ void test_global_depth_is_compact_coalesced_and_independent_from_bypass() {
     )->flags & PROJECT_MODULATION_BINDING_FLAG_ENABLED) != 0U);
 
     assert(history.undo(pages));
+    assert(pages.control.compiledRevision !=
+           pages.control.authoredRevision);
     assert(projectModulationDestinationScaleQ15(
         pages.control.authored.modulation,
         destination
@@ -169,6 +261,183 @@ void test_global_depth_is_compact_coalesced_and_independent_from_bypass() {
         destination
     ) == 16384U);
     std::cout << "[PASS] Global Depth coalesces independently from bypass\n";
+}
+
+void test_automation_timing_edits_are_compact_coalesced_and_exact() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    seedCurves(pages);
+    macro::MacroHistoryService history;
+    ProjectControlMacroDestinationView before{};
+    assert(readProjectControlMacroDestination(pages.control, kAddress, before));
+    assert(before.automation.stored());
+    const auto* beforeRecord = findProjectCurve(
+        pages.control.authored.curves,
+        before.automation.id
+    );
+    assert(beforeRecord != nullptr && beforeRecord->pointCount == 2U);
+    const std::array<ProjectPackedCurvePoint, 2> expectedPoints{{
+        pages.control.authored.curves.points[beforeRecord->pointOffset],
+        pages.control.authored.curves.points[beforeRecord->pointOffset + 1U],
+    }};
+    const uint16_t originalDuration = before.automation.spec.durationTicks;
+    const uint16_t originalWindow = before.automation.spec.windowOffsetTicks;
+
+    assert(history.setAutomationDurationBeatsCoalesced(
+        pages,
+        kAddress,
+        2.0f
+    ));
+    assert(history.setAutomationDurationBeatsCoalesced(
+        pages,
+        kAddress,
+        4.0f
+    ));
+    assert(history.undoCount() == 1U);
+    ProjectControlMacroDestinationView edited{};
+    assert(readProjectControlMacroDestination(pages.control, kAddress, edited));
+    assert(edited.automation.spec.durationTicks ==
+           4U * macro::MACRO_AUTOMATION_TICKS_PER_BEAT);
+
+    history.endCoalescing();
+    assert(history.setAutomationWindowOffsetBeatsCoalesced(
+        pages,
+        kAddress,
+        0.25f
+    ));
+    assert(history.setAutomationWindowOffsetBeatsCoalesced(
+        pages,
+        kAddress,
+        0.5f
+    ));
+    assert(history.undoCount() == 2U);
+    assert(readProjectControlMacroDestination(pages.control, kAddress, edited));
+    assert(edited.automation.spec.windowOffsetTicks ==
+           macro::MACRO_AUTOMATION_TICKS_PER_BEAT / 2U);
+
+    assert(history.undo(pages));
+    assert(readProjectControlMacroDestination(pages.control, kAddress, edited));
+    assert(edited.automation.spec.windowOffsetTicks == originalWindow);
+    assert(edited.automation.spec.durationTicks ==
+           4U * macro::MACRO_AUTOMATION_TICKS_PER_BEAT);
+    assert(history.undo(pages));
+    assert(readProjectControlMacroDestination(pages.control, kAddress, edited));
+    assert(edited.automation.spec.durationTicks == originalDuration);
+    assert(history.redo(pages));
+    assert(history.redo(pages));
+
+    assert(readProjectControlMacroDestination(pages.control, kAddress, edited));
+    const auto* editedRecord = findProjectCurve(
+        pages.control.authored.curves,
+        edited.automation.id
+    );
+    assert(editedRecord != nullptr && editedRecord->pointCount == 2U);
+    assert(pages.control.authored.curves.points[editedRecord->pointOffset].tick ==
+           expectedPoints[0].tick);
+    assert(pages.control.authored.curves.points[editedRecord->pointOffset].value ==
+           expectedPoints[0].value);
+    assert(pages.control.authored.curves.points[editedRecord->pointOffset + 1U].tick ==
+           expectedPoints[1].tick);
+    assert(pages.control.authored.curves.points[editedRecord->pointOffset + 1U].value ==
+           expectedPoints[1].value);
+    assert(std::fabs(edited.primaryModulation.amount - 0.65f) < 0.0001f);
+    std::cout << "[PASS] Automation timing uses compact exact coalesced history\n";
+}
+
+void test_automation_timing_copy_on_write_preserves_shared_owner() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    seedCurves(pages);
+    constexpr macro::MacroAutomationSlotAddress copyAddress{
+        .track = 0U,
+        .page = 0U,
+        .macro = 2U,
+    };
+    assert(duplicateProjectAutomationCurve(
+        pages.control.authored.automation,
+        pages.control.authored.curves,
+        projectControlDestination(kAddress),
+        projectControlDestination(copyAddress)
+    ).changed());
+    pages.control.markAuthoredMutation();
+    ProjectControlMacroDestinationView sourceBefore{};
+    ProjectControlMacroDestinationView copyBefore{};
+    assert(readProjectControlMacroDestination(
+        pages.control,
+        kAddress,
+        sourceBefore
+    ));
+    assert(readProjectControlMacroDestination(
+        pages.control,
+        copyAddress,
+        copyBefore
+    ));
+    assert(sourceBefore.automation.id == copyBefore.automation.id);
+
+    macro::MacroHistoryService history;
+    assert(history.setAutomationDurationBeatsCoalesced(
+        pages,
+        kAddress,
+        8.0f
+    ));
+    ProjectControlMacroDestinationView sourceAfter{};
+    ProjectControlMacroDestinationView copyAfter{};
+    assert(readProjectControlMacroDestination(
+        pages.control,
+        kAddress,
+        sourceAfter
+    ));
+    assert(readProjectControlMacroDestination(
+        pages.control,
+        copyAddress,
+        copyAfter
+    ));
+    assert(sourceAfter.automation.id != copyAfter.automation.id);
+    assert(copyAfter.automation.spec.durationTicks ==
+           copyBefore.automation.spec.durationTicks);
+    assert(history.undo(pages));
+    assert(readProjectControlMacroDestination(
+        pages.control,
+        kAddress,
+        sourceAfter
+    ));
+    assert(sourceAfter.automation.spec.durationTicks ==
+           sourceBefore.automation.spec.durationTicks);
+    assert(readProjectControlMacroDestination(
+        pages.control,
+        copyAddress,
+        copyAfter
+    ));
+    assert(copyAfter.automation.spec.durationTicks ==
+           copyBefore.automation.spec.durationTicks);
+    std::cout << "[PASS] Automation timing copy-on-write preserves shared owner\n";
+}
+
+void test_automation_timing_undo_fails_closed_on_point_corruption() {
+    using namespace core::state::modulation;
+    macro::MacroPagesState pages;
+    seedCurves(pages);
+    macro::MacroHistoryService history;
+    assert(history.setAutomationDurationBeatsCoalesced(
+        pages,
+        kAddress,
+        2.0f
+    ));
+    ProjectControlMacroDestinationView view{};
+    assert(readProjectControlMacroDestination(pages.control, kAddress, view));
+    const auto* record = findProjectCurve(
+        pages.control.authored.curves,
+        view.automation.id
+    );
+    assert(record != nullptr);
+    ++pages.control.authored.curves.points[record->pointOffset].value;
+    pages.control.markAuthoredMutation();
+    assert(!history.undo(pages));
+    assert(history.undoCount() == 1U);
+    assert(readProjectControlMacroDestination(pages.control, kAddress, view));
+    assert(view.automation.spec.durationTicks ==
+           2U * macro::MACRO_AUTOMATION_TICKS_PER_BEAT);
+    std::cout << "[PASS] Automation timing Undo rejects point corruption\n";
 }
 
 void test_assignment_undo_preserves_unrelated_macro_fields() {
@@ -3103,6 +3372,9 @@ int main() {
     test_clear_is_one_undo_redo_action();
     test_depth_turns_coalesce_without_extra_entries();
     test_global_depth_is_compact_coalesced_and_independent_from_bypass();
+    test_automation_timing_edits_are_compact_coalesced_and_exact();
+    test_automation_timing_copy_on_write_preserves_shared_owner();
+    test_automation_timing_undo_fails_closed_on_point_corruption();
     test_assignment_undo_preserves_unrelated_macro_fields();
     test_history_admission_rejects_oversized_slot();
     test_history_evicts_oldest_entry_at_fixed_limit();

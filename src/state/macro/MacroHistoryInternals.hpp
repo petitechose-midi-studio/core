@@ -30,6 +30,32 @@ bool sameCurveMetadata(
     const core::state::modulation::ProjectControlCurvePayload& rhs
 );
 
+bool sameCurveSpec(
+    const core::state::modulation::ProjectCurveSpec& lhs,
+    const core::state::modulation::ProjectCurveSpec& rhs
+);
+
+bool captureAutomationMetadataHistory(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    MacroAutomationMetadataHistoryPayload& out
+);
+
+bool liveAutomationMetadataMatches(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    const MacroAutomationMetadataHistoryPayload& payload,
+    bool after,
+    bool verifyPoints
+);
+
+bool applyAutomationMetadataHistory(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    const MacroAutomationMetadataHistoryPayload& payload,
+    bool after
+);
+
 bool sameFloatBits(float lhs, float rhs);
 
 bool samePoint(

@@ -236,6 +236,18 @@ public:
         float value
     );
 
+    /** Timing-only fast paths: one compact history entry per encoder gesture. */
+    [[nodiscard]] bool setAutomationDurationBeatsCoalesced(
+        MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address,
+        float durationBeats
+    );
+    [[nodiscard]] bool setAutomationWindowOffsetBeatsCoalesced(
+        MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address,
+        float offsetBeats
+    );
+
     /** One takeover gesture: Manual authority and optional Base edit together. */
     [[nodiscard]] bool setManualOverrideCoalesced(
         MacroPagesState& pages,
@@ -450,6 +462,12 @@ private:
         MacroPagesState& pages,
         MacroHistoryChangePtr change,
         bool coalesce
+    );
+    [[nodiscard]] bool setAutomationMetadataCoalesced_(
+        MacroPagesState& pages,
+        const MacroAutomationSlotAddress& address,
+        const core::state::modulation::ProjectCurveSpec& spec,
+        MacroHistoryActionKind kind
     );
     [[nodiscard]] MacroHistoryChangePtr* pendingModulatorSlot_();
     [[nodiscard]] const MacroHistoryChangePtr* pendingModulatorSlot_() const;

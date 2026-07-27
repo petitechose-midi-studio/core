@@ -30,8 +30,12 @@ constexpr lv_coord_t GRAPH_WIDTH = 304;
 constexpr lv_coord_t GRAPH_HEIGHT = 92;
 template <size_t N>
 bool copyText(std::array<char, N>& destination, const char* source) {
+    static_assert(N > 1U);
     const char* text = source ? source : "";
-    if (std::strncmp(destination.data(), text, N) == 0) return false;
+    // Equality is based on the retained, displayable prefix. A source longer
+    // than the fixed label buffer must not retrigger the same LVGL update on
+    // every render.
+    if (std::strncmp(destination.data(), text, N - 1U) == 0) return false;
     std::strncpy(destination.data(), text, N - 1U);
     destination[N - 1U] = '\0';
     return true;
@@ -182,6 +186,7 @@ FLASHMEM void MacroEditorOverlay::createTab(
     lv_obj_set_style_radius(tab.root, 3, 0);
     lv_obj_set_style_border_width(tab.root, 1, 0);
     lv_obj_set_style_border_color(tab.root, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_color(tab.root, lv_color_hex(color), 0);
     lv_obj_clear_flag(tab.root, LV_OBJ_FLAG_SCROLLABLE);
     tab.icon = createLabel(tab.root, standalone_fonts.icons_12, color);
     lv_label_set_text(tab.icon, icon);
@@ -200,6 +205,7 @@ FLASHMEM void MacroEditorOverlay::createTab(
     lv_obj_set_size(tab.state, 10, 3);
     lv_obj_set_style_radius(tab.state, 2, 0);
     lv_obj_set_style_bg_color(tab.state, lv_color_hex(color), 0);
+    tab.color = color;
 }
 
 FLASHMEM void MacroEditorOverlay::renderTab(
@@ -215,16 +221,46 @@ FLASHMEM void MacroEditorOverlay::renderTab(
     if (copyText(tab.valueText, value)) {
         lv_label_set_text_static(tab.value, tab.valueText.data());
     }
-    lv_obj_set_style_bg_color(tab.root, lv_color_hex(color), 0);
-    lv_obj_set_style_bg_opa(tab.root, selected ? LV_OPA_10 : LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_opa(tab.root, selected ? LV_OPA_80 : LV_OPA_20, 0);
-    lv_obj_set_style_text_opa(tab.label, selected ? LV_OPA_COVER : LV_OPA_70, 0);
-    lv_obj_set_style_text_opa(tab.value, selected ? LV_OPA_COVER : LV_OPA_60, 0);
-    lv_obj_set_style_bg_opa(
-        tab.state,
-        playback ? LV_OPA_COVER : (stored ? LV_OPA_30 : LV_OPA_TRANSP),
-        0
-    );
+    if (!tab.rendered || tab.color != color) {
+        lv_obj_set_style_bg_color(tab.root, lv_color_hex(color), 0);
+        tab.color = color;
+    }
+    if (!tab.rendered || tab.selected != selected) {
+        lv_obj_set_style_bg_opa(
+            tab.root,
+            selected ? LV_OPA_10 : LV_OPA_TRANSP,
+            0
+        );
+        lv_obj_set_style_border_opa(
+            tab.root,
+            selected ? LV_OPA_80 : LV_OPA_20,
+            0
+        );
+        lv_obj_set_style_text_opa(
+            tab.label,
+            selected ? LV_OPA_COVER : LV_OPA_70,
+            0
+        );
+        lv_obj_set_style_text_opa(
+            tab.value,
+            selected ? LV_OPA_COVER : LV_OPA_60,
+            0
+        );
+        tab.selected = selected;
+    }
+    if (!tab.rendered || tab.stored != stored ||
+        tab.playback != playback) {
+        lv_obj_set_style_bg_opa(
+            tab.state,
+            playback
+                ? LV_OPA_COVER
+                : (stored ? LV_OPA_30 : LV_OPA_TRANSP),
+            0
+        );
+        tab.stored = stored;
+        tab.playback = playback;
+    }
+    tab.rendered = true;
 }
 
 FLASHMEM bool MacroEditorOverlay::sampleCurve(
@@ -420,7 +456,7 @@ FLASHMEM void MacroEditorOverlay::renderGraph(
         .sampleProvider = &MacroEditorOverlay::sampleCurve,
         .sampleContext = &curve_sample_context_,
         .geometryRevision = previewRevision * 3U + static_cast<uint32_t>(selected),
-        .geometryUpdate = ms::ui::CurvePreviewGeometryUpdate::REBUILD,
+        .geometryUpdate = ms::ui::CurvePreviewGeometryUpdate::REBUILD_DAMAGE,
         .geometryAdvance = 0U,
         .markerProvider = &MacroEditorOverlay::sampleMarker,
         .markerContext = &curve_sample_context_,
@@ -522,13 +558,24 @@ FLASHMEM void MacroEditorOverlay::render(
         "Absolute gesture · Press to edit",
         "Relative loop · Press to edit",
     };
-    lv_label_set_text_static(hint_, HINTS[static_cast<size_t>(selected)]);
+    if (renderedSelectedDomain_ != selected) {
+        lv_label_set_text_static(
+            hint_,
+            HINTS[static_cast<size_t>(selected)]
+        );
+        renderedSelectedDomain_ = selected;
+    }
 
     if (props.interactionOverlayVisible) {
-        lv_label_set_text(
-            interaction_icon_,
-            props.interactionIcon ? props.interactionIcon : standalone::icons::KNOB
-        );
+        const char* interactionIcon = props.interactionIcon
+            ? props.interactionIcon
+            : standalone::icons::KNOB;
+        if (copyText(interactionIconText_, interactionIcon)) {
+            lv_label_set_text_static(
+                interaction_icon_,
+                interactionIconText_.data()
+            );
+        }
         if (copyText(interactionLabelText_, props.interactionLabel)) {
             lv_label_set_text_static(
                 interaction_label_, interactionLabelText_.data()
@@ -542,16 +589,23 @@ FLASHMEM void MacroEditorOverlay::render(
         const uint32_t color = props.interactionColor != 0U
             ? props.interactionColor
             : theme::color::TEXT_PRIMARY;
-        lv_obj_set_style_border_color(
-            interaction_overlay_, lv_color_hex(color), 0
-        );
-        lv_obj_set_style_text_color(
-            interaction_icon_, lv_color_hex(color), 0
-        );
-        lv_obj_clear_flag(interaction_overlay_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_foreground(interaction_overlay_);
-    } else {
+        if (interactionColor_ != color) {
+            lv_obj_set_style_border_color(
+                interaction_overlay_, lv_color_hex(color), 0
+            );
+            lv_obj_set_style_text_color(
+                interaction_icon_, lv_color_hex(color), 0
+            );
+            interactionColor_ = color;
+        }
+        if (!interaction_overlay_visible_) {
+            lv_obj_clear_flag(interaction_overlay_, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(interaction_overlay_);
+            interaction_overlay_visible_ = true;
+        }
+    } else if (interaction_overlay_visible_) {
         lv_obj_add_flag(interaction_overlay_, LV_OBJ_FLAG_HIDDEN);
+        interaction_overlay_visible_ = false;
     }
 }
 

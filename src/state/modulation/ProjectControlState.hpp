@@ -104,6 +104,26 @@ struct ProjectControlState {
         ++authoredRevision;
         if (authoredRevision == 0U) authoredRevision = 1U;
     }
+
+    /**
+     * Amount-only publication keeps an already-current runtime plan valid.
+     *
+     * Binding identity, source/destination indices, ordering, mapping and
+     * runtime slew memory are unchanged. An inactive binding is deliberately
+     * absent from the plan, but its amount still cannot change compile
+     * topology, so the compiled revision may advance without rebuilding.
+     */
+    void markAuthoredBindingAmountMutation(
+        ModulationBindingId bindingId
+    );
+
+    /**
+     * Destination-scale publication is likewise value-only. Runtime
+     * destinations retain their identity and binding ranges.
+     */
+    void markAuthoredDestinationScaleMutation(
+        const ModulationDestination& destination
+    );
 };
 
 static_assert(sizeof(ProjectModulatorAuditionState) == 20U);

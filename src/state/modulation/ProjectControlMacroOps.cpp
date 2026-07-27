@@ -170,7 +170,7 @@ FLASHMEM bool setProjectControlModulationAmount(
     );
     if (binding->amountQ15 == packed) return false;
     binding->amountQ15 = packed;
-    control.markAuthoredMutation();
+    control.markAuthoredBindingAmountMutation(binding->id);
     return true;
 }
 
