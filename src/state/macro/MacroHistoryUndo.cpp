@@ -183,6 +183,15 @@ FLASHMEM bool MacroHistoryService::undo(
         if (change->valueEdit.valid) {
             page.values[change->address.macro] = change->valueEdit.before;
         }
+    } else if (change->automation && change->automation->metadata.valid) {
+        if (!applyAutomationMetadataHistory(
+                pages,
+                change->address,
+                change->automation->metadata,
+                false
+            )) {
+            return false;
+        }
     } else if (change->valueEdit.valid) {
         auto& page = pages.pageData(change->address.track, change->address.page);
         if (!sameFloatBits(

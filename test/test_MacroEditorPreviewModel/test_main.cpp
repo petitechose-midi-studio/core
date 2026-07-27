@@ -6,6 +6,7 @@
 #include "state/macro/MacroAutomationAddress.hpp"
 #include "state/macro/MacroAutomationDomain.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/modulation/ProjectModulationRuntimePlan.hpp"
 #include "state/modulation/ProjectRecordedShapeCaptureState.hpp"
 #include "ui/macro/MacroEditorPreviewModel.hpp"
 
@@ -644,6 +645,66 @@ void test_project_preview_applies_destination_global_depth() {
     std::cout << "[PASS] Project preview reflects destination Global Depth\n";
 }
 
+void test_stale_preview_model_reads_live_destination_global_depth() {
+    namespace mod = core::state::modulation;
+    mod::ProjectControlState control{};
+    const MacroAutomationSlotAddress address{.track = 0, .page = 0, .macro = 0};
+    const auto target = mod::projectControlDestination(address);
+    mod::ModulatorLfoDraft source{};
+    source.name = "Square";
+    source.parameters.shape = mod::ModulatorLfoShape::SQUARE;
+    const auto created = mod::createLfoModulator(control.authored.modulation, source);
+    assert(created.changed());
+    mod::ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination = target;
+    binding.amountQ15 = 16384;
+    assert(mod::addProjectModulationBinding(
+        control.authored.modulation,
+        binding
+    ).changed());
+
+    core::ui::MacroEditorPreviewModel model{};
+    core::ui::buildMacroEditorPreviewModel(
+        0.5f,
+        control,
+        address,
+        false,
+        model
+    );
+    const auto peakFor = [](const core::ui::MacroEditorPreviewModel& preview) {
+        int peak = 0;
+        for (uint16_t index = 0; index < 64U; ++index) {
+            const uint16_t position = static_cast<uint16_t>(
+                (static_cast<uint32_t>(index) * 65535U) / 63U
+            );
+            peak = std::max(
+                peak,
+                std::abs(static_cast<int>(sampleAt(
+                    preview,
+                    core::ui::MacroEditorPreviewFocus::ALL_MODULATION,
+                    position
+                ).modulationQ15))
+            );
+        }
+        return peak;
+    };
+    const int unityPeak = peakFor(model);
+    assert(mod::setProjectModulationDestinationScale(
+        control.authored.modulation,
+        target,
+        16384U
+    ).changed());
+    control.markAuthoredDestinationScaleMutation(target);
+    assert(model.authoredRevision != control.authoredRevision);
+
+    const int halfPeak = peakFor(model);
+    assert(unityPeak > 0 && halfPeak > 0);
+    assert(std::abs(unityPeak - halfPeak * 2) <= 2);
+    std::cout
+        << "[PASS] stale preview model reads live destination Global Depth\n";
+}
+
 void test_project_square_reports_explicit_discontinuity() {
     namespace mod = core::state::modulation;
     mod::ProjectControlState control{};
@@ -930,6 +991,155 @@ void test_active_take_is_the_editor_automation_curve_and_write_head() {
     std::cout << "[PASS] Active take drives editor curve and write head\n";
 }
 
+void test_compiled_preview_sparse_path_matches_authored_fallback() {
+    namespace mod = core::state::modulation;
+    mod::ProjectControlState control{};
+    const MacroAutomationSlotAddress address{
+        .track = 0,
+        .page = 0,
+        .macro = 0,
+    };
+    const auto destination = mod::projectControlDestination(address);
+    assignAutomation(control, address, 0.15f, 0.75f, 2.0f);
+    const auto focused = addLfo(
+        control,
+        destination,
+        mod::ModulatorTimingMode::SYNC,
+        MACRO_AUTOMATION_TICKS_PER_BEAT,
+        1000U
+    );
+    (void)addConstantRecordedShape(
+        control,
+        destination,
+        8192,
+        16384,
+        "Sparse peer"
+    );
+    assert(mod::setProjectModulationDestinationScale(
+        control.authored.modulation,
+        destination,
+        24576U
+    ).changed());
+
+    core::ui::MacroEditorPreviewModel authored{};
+    core::ui::buildMacroEditorPreviewModel(
+        0.25f,
+        control,
+        address,
+        false,
+        focused.bindingId,
+        authored
+    );
+    assert(authored.runtimeDestinationIndex == UINT16_MAX);
+
+    mod::ProjectModulationCompileContext context{};
+    context.enabledTrackMask = 0x0001U;
+    context.activePage[0] = 0U;
+    context.activeMacroMask[0] = 0x01U;
+    const auto compiled = mod::compileProjectControlRuntimePlan(
+        control.authored,
+        context,
+        control.plan
+    );
+    assert(compiled.compiled());
+    control.compiledRevision = control.authoredRevision;
+    control.runtimeContextHash =
+        mod::projectModulationCompileContextHash(context);
+
+    core::ui::MacroEditorPreviewModel sparse{};
+    core::ui::buildMacroEditorPreviewModel(
+        0.25f,
+        control,
+        address,
+        false,
+        focused.bindingId,
+        sparse
+    );
+    assert(sparse.runtimeDestinationIndex < control.plan.destinationCount);
+    assert(sparse.focusedRuntimeBindingIndex < control.plan.bindingCount);
+    assert(sparse.planCompiledRevision == control.authoredRevision);
+
+    for (const auto focus : {
+             core::ui::MacroEditorPreviewFocus::DESTINATION,
+             core::ui::MacroEditorPreviewFocus::AUTOMATION,
+             core::ui::MacroEditorPreviewFocus::FOCUSED_MODULATOR,
+             core::ui::MacroEditorPreviewFocus::ALL_MODULATION,
+         }) {
+        for (const uint16_t position : {
+                 uint16_t{0U},
+                 uint16_t{8192U},
+                 uint16_t{32768U},
+                 uint16_t{65535U},
+             }) {
+            const auto expected = sampleAt(authored, focus, position);
+            const auto actual = sampleAt(sparse, focus, position);
+            assert(actual.automationQ16 == expected.automationQ16);
+            assert(actual.baseQ16 == expected.baseQ16);
+            assert(actual.modulationQ15 == expected.modulationQ15);
+            assert(actual.outQ16 == expected.outQ16);
+            assert(actual.clippedLow == expected.clippedLow);
+            assert(actual.clippedHigh == expected.clippedHigh);
+            assert(
+                actual.discontinuityBefore ==
+                expected.discontinuityBefore
+            );
+        }
+    }
+    std::cout
+        << "[PASS] compiled sparse preview matches authored fallback\n";
+}
+
+void test_preview_cache_falls_back_after_curve_directory_compaction() {
+    namespace mod = core::state::modulation;
+    mod::ProjectControlState control{};
+    const MacroAutomationSlotAddress first{
+        .track = 0U,
+        .page = 0U,
+        .macro = 0U,
+    };
+    const MacroAutomationSlotAddress target{
+        .track = 0U,
+        .page = 0U,
+        .macro = 1U,
+    };
+    assignAutomation(control, first, 0.1f, 0.3f, 1.0f);
+    assignAutomation(control, target, 0.2f, 0.8f, 1.0f);
+
+    core::ui::MacroEditorPreviewModel model{};
+    core::ui::buildMacroEditorPreviewModel(
+        0.4f,
+        control,
+        target,
+        false,
+        model
+    );
+    assert(model.automationCurveRecordIndex == 1U);
+    const auto expected = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::AUTOMATION,
+        65535U
+    );
+
+    assert(mod::removeProjectAutomationCurve(
+        control.authored.automation,
+        control.authored.curves,
+        mod::projectControlDestination(first)
+    ).changed());
+    control.markAuthoredMutation();
+    assert(model.authoredRevision != control.authoredRevision);
+    assert(control.authored.curves.recordCount == 1U);
+
+    const auto afterCompaction = sampleAt(
+        model,
+        core::ui::MacroEditorPreviewFocus::AUTOMATION,
+        65535U
+    );
+    assert(afterCompaction.automationQ16 == expected.automationQ16);
+    assert(afterCompaction.baseQ16 == expected.baseQ16);
+    std::cout
+        << "[PASS] stale preview cache resolves stable Curve ID after compaction\n";
+}
+
 
 }  // namespace
 
@@ -944,10 +1154,13 @@ int main() {
     test_all_modulation_and_destination_sum_every_active_source();
     test_live_modulation_capture_cannot_shorten_shared_reference();
     test_project_preview_applies_destination_global_depth();
+    test_stale_preview_model_reads_live_destination_global_depth();
     test_project_square_reports_explicit_discontinuity();
     test_provisional_recorded_shape_sums_before_global_scale();
     test_recorded_shape_overdub_substitutes_only_its_source();
     test_active_take_is_the_editor_automation_curve_and_write_head();
+    test_compiled_preview_sparse_path_matches_authored_fallback();
+    test_preview_cache_falls_back_after_curve_directory_compaction();
     std::cout << "All MacroEditorPreviewModel tests passed.\n";
     return 0;
 }

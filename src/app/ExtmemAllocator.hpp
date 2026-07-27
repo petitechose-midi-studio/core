@@ -70,6 +70,30 @@ ExtmemUniquePtr<T> makeExtmemUnique(Args&&... args) {
 }
 
 /**
+ * Allocates and copy-constructs one trivial PSRAM object without first
+ * value-initializing its complete storage.
+ *
+ * Large transaction snapshots must not pay for a redundant zero fill before
+ * immediately copying every byte from their live source.
+ */
+template <typename T>
+ExtmemUniquePtr<T> makeExtmemUniqueCopy(const T& source) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    static_assert(std::is_trivially_destructible_v<T>);
+    static_assert(std::is_copy_constructible_v<T>);
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+    void* memory = extmem_malloc(sizeof(T));
+    if (!memory) return ExtmemUniquePtr<T>(nullptr);
+#if OC_ENABLE_STATS
+    core::diagnostics::trackExtmemAllocation(memory);
+#endif
+    return ExtmemUniquePtr<T>(new(memory) T(source));
+#else
+    return ExtmemUniquePtr<T>(new T(source));
+#endif
+}
+
+/**
  * Allocates storage for a trivial object whose complete contents will be
  * overwritten before the first read.
  *

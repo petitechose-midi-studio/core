@@ -518,6 +518,83 @@ FLASHMEM ProjectModulationResult replaceOwnedCurve(
     return result(ProjectModulationStatus::OK, sourceId, {}, retainedId);
 }
 
+FLASHMEM ProjectModulationResult replaceOwnedCurveSpec(
+    ProjectCurveArena& arena,
+    ProjectCurveId& owner,
+    const ProjectCurveSpec& spec,
+    ModulatorId sourceId
+) {
+    const int16_t recordPosition = curveIndex(arena, owner);
+    if (recordPosition < 0) {
+        return result(ProjectModulationStatus::INVARIANT_VIOLATION, sourceId);
+    }
+    auto& record = arena.records[static_cast<uint16_t>(recordPosition)];
+    const auto* points = arena.points.data() + record.pointOffset;
+    if (!validProjectCurveSpec(spec, points, record.pointCount)) {
+        return result(ProjectModulationStatus::INVALID_ARGUMENT, sourceId);
+    }
+    if (record.sourceDurationTicks == spec.sourceDurationTicks &&
+        record.durationTicks == spec.durationTicks &&
+        record.windowOffsetTicks == spec.windowOffsetTicks &&
+        record.interpolation == spec.interpolation &&
+        record.valueDomain == spec.valueDomain &&
+        record.origin == spec.origin) {
+        return result(
+            ProjectModulationStatus::NO_CHANGE,
+            sourceId,
+            {},
+            record.id
+        );
+    }
+
+    if (record.referenceCount > 1U) {
+        if (arena.recordCount >= PROJECT_CURVE_LIVE_CAPACITY ||
+            arena.recordCount >= PROJECT_CURVE_RECORD_CAPACITY) {
+            return result(
+                ProjectModulationStatus::CURVE_RECORD_CAPACITY_EXCEEDED,
+                sourceId
+            );
+        }
+        if (record.pointCount >
+            PROJECT_CURVE_POINT_CAPACITY - arena.pointCount) {
+            return result(
+                ProjectModulationStatus::CURVE_POINT_CAPACITY_EXCEEDED,
+                sourceId
+            );
+        }
+        if (!canAllocateId(arena.nextCurveId)) {
+            return result(ProjectModulationStatus::ID_EXHAUSTED, sourceId);
+        }
+        // appendCurve writes after arena.pointCount, so this arena-owned input
+        // is adjacent or disjoint and cannot overlap the destination range.
+        const ProjectCurveId replacement = appendCurve(
+            arena,
+            spec,
+            points,
+            record.pointCount
+        );
+        --record.referenceCount;
+        owner = replacement;
+        return result(
+            ProjectModulationStatus::OK,
+            sourceId,
+            {},
+            replacement
+        );
+    }
+    if (record.referenceCount != 1U) {
+        return result(ProjectModulationStatus::INVARIANT_VIOLATION, sourceId);
+    }
+
+    record.sourceDurationTicks = spec.sourceDurationTicks;
+    record.durationTicks = spec.durationTicks;
+    record.windowOffsetTicks = spec.windowOffsetTicks;
+    record.interpolation = spec.interpolation;
+    record.valueDomain = spec.valueDomain;
+    record.origin = spec.origin;
+    return result(ProjectModulationStatus::OK, sourceId, {}, record.id);
+}
+
 FLASHMEM bool selectedForSplit(
     ModulationBindingId id,
     const ModulatorSplitRequest& request

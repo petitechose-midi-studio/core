@@ -53,6 +53,11 @@ private:
         lv_obj_t* value = nullptr;
         lv_obj_t* state = nullptr;
         std::array<char, 24> valueText{};
+        uint32_t color = 0U;
+        bool selected = false;
+        bool stored = false;
+        bool playback = false;
+        bool rendered = false;
     };
 
     void createUi(lv_obj_t* parent);
@@ -107,12 +112,16 @@ private:
     lv_obj_t* interaction_value_ = nullptr;
     std::array<char, 24> titleText_{};
     std::array<char, 24> metaText_{};
+    std::array<char, 16> interactionIconText_{};
     std::array<char, 24> interactionLabelText_{};
     std::array<char, 32> interactionValueText_{};
     uint32_t renderedRevision_ = UINT32_MAX;
     uint32_t renderedPreviewRevision_ = UINT32_MAX;
+    uint32_t interactionColor_ = UINT32_MAX;
     MacroEditorLiveValue latest_live_{};
+    int renderedSelectedDomain_ = -1;
     bool clipping_visible_ = false;
+    bool interaction_overlay_visible_ = false;
     bool visible_ = false;
 };
 

@@ -77,6 +77,164 @@ FLASHMEM bool MacroHistoryService::setMacroValueCoalesced(
     return true;
 }
 
+FLASHMEM bool MacroHistoryService::setAutomationMetadataCoalesced_(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    const core::state::modulation::ProjectCurveSpec& spec,
+    MacroHistoryActionKind kind
+) {
+    using namespace core::state::modulation;
+    if (!macroAutomationAddressValid(address) ||
+        pendingModulatorSlot_() != nullptr ||
+        (kind != MacroHistoryActionKind::AUTOMATION_DURATION_EDIT &&
+         kind != MacroHistoryActionKind::AUTOMATION_WINDOW_EDIT)) {
+        return false;
+    }
+    ProjectControlMacroDestinationView view{};
+    if (!readProjectControlMacroDestination(pages.control, address, view) ||
+        !view.automation.stored() ||
+        sameCurveSpec(view.automation.spec, spec)) {
+        return false;
+    }
+
+    if (coalescing_ && undo_count_ > 0U &&
+        coalesced_kind_ == kind && sameAddress(coalesced_address_, address)) {
+        auto& previous = undo_[undo_count_ - 1U];
+        if (previous && previous->automation &&
+            previous->automation->metadata.valid &&
+            liveAutomationMetadataMatches(
+                pages,
+                address,
+                previous->automation->metadata,
+                true,
+                false
+            )) {
+            const auto changed = setProjectAutomationCurveSpec(
+                pages.control.authored.automation,
+                pages.control.authored.curves,
+                projectControlDestination(address),
+                spec
+            );
+            if (!changed.changed()) return false;
+            pages.control.markAuthoredMutation();
+            previous->automation->metadata.after = spec;
+            clearRedo_();
+            return true;
+        }
+    }
+
+    auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
+    if (!change) return false;
+    change->automation =
+        core::app::makeExtmemUnique<MacroAutomationHistoryPayload>();
+    if (!change->automation) return false;
+    change->kind = kind;
+    change->address = address;
+    if (!captureAutomationMetadataHistory(
+            pages,
+            address,
+            change->automation->metadata
+        )) {
+        return false;
+    }
+    const auto changed = setProjectAutomationCurveSpec(
+        pages.control.authored.automation,
+        pages.control.authored.curves,
+        projectControlDestination(address),
+        spec
+    );
+    if (!changed.changed()) return false;
+    pages.control.markAuthoredMutation();
+    change->automation->metadata.after = spec;
+    if (!liveAutomationMetadataMatches(
+            pages,
+            address,
+            change->automation->metadata,
+            true,
+            true
+        )) {
+        const auto restored = setProjectAutomationCurveSpec(
+            pages.control.authored.automation,
+            pages.control.authored.curves,
+            projectControlDestination(address),
+            change->automation->metadata.before
+        );
+        if (restored.changed()) pages.control.markAuthoredMutation();
+        return false;
+    }
+
+    endCoalescing();
+    recordNewEntry_(std::move(change));
+    coalescing_ = true;
+    coalesced_kind_ = kind;
+    coalesced_address_ = address;
+    return true;
+}
+
+FLASHMEM bool MacroHistoryService::setAutomationDurationBeatsCoalesced(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    float durationBeats
+) {
+    core::state::modulation::ProjectControlMacroDestinationView view{};
+    if (!core::state::modulation::readProjectControlMacroDestination(
+            pages.control,
+            address,
+            view
+        ) || !view.automation.stored()) {
+        return false;
+    }
+    auto spec = view.automation.spec;
+    spec.durationTicks = macroAutomationTicksFromBeats(durationBeats);
+    spec.windowOffsetTicks = static_cast<uint16_t>(
+        spec.windowOffsetTicks %
+        std::max<uint16_t>(spec.sourceDurationTicks, 1U)
+    );
+    return setAutomationMetadataCoalesced_(
+        pages,
+        address,
+        spec,
+        MacroHistoryActionKind::AUTOMATION_DURATION_EDIT
+    );
+}
+
+FLASHMEM bool MacroHistoryService::setAutomationWindowOffsetBeatsCoalesced(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    float offsetBeats
+) {
+    if (!std::isfinite(offsetBeats)) return false;
+    core::state::modulation::ProjectControlMacroDestinationView view{};
+    if (!core::state::modulation::readProjectControlMacroDestination(
+            pages.control,
+            address,
+            view
+        ) || !view.automation.stored()) {
+        return false;
+    }
+    const float safeBeats = std::max(offsetBeats, 0.0f);
+    const uint32_t rawTicks = static_cast<uint32_t>(std::clamp<long long>(
+        std::llround(
+            safeBeats *
+            static_cast<float>(
+                core::state::modulation::PROJECT_CONTROL_TICKS_PER_BEAT
+            )
+        ),
+        0LL,
+        static_cast<long long>(UINT16_MAX)
+    ));
+    auto spec = view.automation.spec;
+    spec.windowOffsetTicks = static_cast<uint16_t>(
+        rawTicks % std::max<uint16_t>(spec.sourceDurationTicks, 1U)
+    );
+    return setAutomationMetadataCoalesced_(
+        pages,
+        address,
+        spec,
+        MacroHistoryActionKind::AUTOMATION_WINDOW_EDIT
+    );
+}
+
 FLASHMEM bool MacroHistoryService::setManualOverrideCoalesced(
     MacroPagesState& pages,
     MacroManualOverrideState& overrides,
@@ -246,7 +404,9 @@ FLASHMEM bool MacroHistoryService::setModulationBindingDepthCoalesced(
                 ).changed()) {
                 return false;
             }
-            pages.control.markAuthoredMutation();
+            pages.control.markAuthoredBindingAmountMutation(
+                bindingId
+            );
             if (!captureModulationAssignments(
                     pages,
                     address,
@@ -285,7 +445,7 @@ FLASHMEM bool MacroHistoryService::setModulationBindingDepthCoalesced(
         ).changed()) {
         return false;
     }
-    pages.control.markAuthoredMutation();
+    pages.control.markAuthoredBindingAmountMutation(bindingId);
     return commitModulationAssignments_(pages, std::move(change), true);
 }
 
@@ -316,7 +476,9 @@ FLASHMEM bool MacroHistoryService::setModulationDestinationScaleCoalesced(
                 destination,
                 scaleQ15
             ).changed()) {
-            pages.control.markAuthoredMutation();
+            pages.control.markAuthoredDestinationScaleMutation(
+                destination
+            );
             previous->destinationScale.afterScaleQ15 = scaleQ15;
             clearRedo_();
             return true;
@@ -340,7 +502,9 @@ FLASHMEM bool MacroHistoryService::setModulationDestinationScaleCoalesced(
         ).changed()) {
         return false;
     }
-    pages.control.markAuthoredMutation();
+    pages.control.markAuthoredDestinationScaleMutation(
+        destination
+    );
     endCoalescing();
     recordNewEntry_(std::move(change));
     coalescing_ = true;

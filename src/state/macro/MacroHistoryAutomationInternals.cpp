@@ -16,8 +16,6 @@ namespace core::state::macro {
 
 namespace history_detail {
 
-namespace {
-
 FLASHMEM bool sameCurveSpec(
     const core::state::modulation::ProjectCurveSpec& lhs,
     const core::state::modulation::ProjectCurveSpec& rhs
@@ -28,6 +26,23 @@ FLASHMEM bool sameCurveSpec(
            lhs.interpolation == rhs.interpolation &&
            lhs.valueDomain == rhs.valueDomain &&
            lhs.origin == rhs.origin;
+}
+
+namespace {
+
+constexpr uint64_t AUTOMATION_POINT_FINGERPRINT_SEED =
+    UINT64_C(14695981039346656037);
+
+FLASHMEM uint64_t automationPointFingerprint(
+    const core::state::modulation::ProjectCurveArena& arena,
+    const core::state::modulation::ProjectCurveRecord& record
+) {
+    return hashBytes64(
+        AUTOMATION_POINT_FINGERPRINT_SEED,
+        arena.points.data() + record.pointOffset,
+        static_cast<size_t>(record.pointCount) *
+            sizeof(core::state::modulation::ProjectPackedCurvePoint)
+    );
 }
 
 }  // namespace
@@ -48,6 +63,131 @@ FLASHMEM bool sameCurveMetadata(
     return lhs.enabled == rhs.enabled &&
            lhs.pointCount == rhs.pointCount &&
            sameCurveSpec(lhs.spec, rhs.spec);
+}
+
+FLASHMEM bool captureAutomationMetadataHistory(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    MacroAutomationMetadataHistoryPayload& out
+) {
+    out = {};
+    if (!macroAutomationAddressValid(address)) return false;
+    core::state::modulation::ProjectControlMacroDestinationView view{};
+    if (!core::state::modulation::readProjectControlMacroDestination(
+            pages.control,
+            address,
+            view
+        ) || !view.automation.stored() ||
+        view.automation.pointCount >
+            MACRO_AUTOMATION_RECORDING_MAX_POINTS) {
+        return false;
+    }
+    const auto* record = core::state::modulation::findProjectCurve(
+        pages.control.authored.curves,
+        view.automation.id
+    );
+    if (record == nullptr ||
+        record->pointCount != view.automation.pointCount ||
+        static_cast<uint32_t>(record->pointOffset) + record->pointCount >
+            pages.control.authored.curves.pointCount) {
+        return false;
+    }
+    out.before = view.automation.spec;
+    out.after = view.automation.spec;
+    out.pointFingerprint = automationPointFingerprint(
+        pages.control.authored.curves,
+        *record
+    );
+    out.pointCount = record->pointCount;
+    out.enabled = view.automation.enabled;
+    out.valid = true;
+    return true;
+}
+
+FLASHMEM bool liveAutomationMetadataMatches(
+    const MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    const MacroAutomationMetadataHistoryPayload& payload,
+    bool after,
+    bool verifyPoints
+) {
+    if (!payload.valid || !macroAutomationAddressValid(address) ||
+        payload.pointCount == 0U ||
+        payload.pointCount > MACRO_AUTOMATION_RECORDING_MAX_POINTS) {
+        return false;
+    }
+    core::state::modulation::ProjectControlMacroDestinationView view{};
+    if (!core::state::modulation::readProjectControlMacroDestination(
+            pages.control,
+            address,
+            view
+        ) || !view.automation.stored() ||
+        view.automation.enabled != payload.enabled ||
+        view.automation.pointCount != payload.pointCount ||
+        !sameCurveSpec(
+            view.automation.spec,
+            after ? payload.after : payload.before
+        )) {
+        return false;
+    }
+    const auto* record = core::state::modulation::findProjectCurve(
+        pages.control.authored.curves,
+        view.automation.id
+    );
+    if (record == nullptr || record->pointCount != payload.pointCount ||
+        static_cast<uint32_t>(record->pointOffset) + record->pointCount >
+            pages.control.authored.curves.pointCount) {
+        return false;
+    }
+    return !verifyPoints ||
+        automationPointFingerprint(pages.control.authored.curves, *record) ==
+            payload.pointFingerprint;
+}
+
+FLASHMEM bool applyAutomationMetadataHistory(
+    MacroPagesState& pages,
+    const MacroAutomationSlotAddress& address,
+    const MacroAutomationMetadataHistoryPayload& payload,
+    bool after
+) {
+    if (!liveAutomationMetadataMatches(
+            pages,
+            address,
+            payload,
+            !after,
+            true
+        )) {
+        return false;
+    }
+    const auto& target = after ? payload.after : payload.before;
+    const auto& rollback = after ? payload.before : payload.after;
+    const auto applied =
+        core::state::modulation::setProjectAutomationCurveSpec(
+            pages.control.authored.automation,
+            pages.control.authored.curves,
+            core::state::modulation::projectControlDestination(address),
+            target
+        );
+    if (!applied.changed()) return false;
+    pages.control.markAuthoredMutation();
+    if (liveAutomationMetadataMatches(
+            pages,
+            address,
+            payload,
+            after,
+            true
+        )) {
+        return true;
+    }
+    const auto restored =
+        core::state::modulation::setProjectAutomationCurveSpec(
+            pages.control.authored.automation,
+            pages.control.authored.curves,
+            core::state::modulation::projectControlDestination(address),
+            rollback
+        );
+    if (restored.changed()) pages.control.markAuthoredMutation();
+    return false;
 }
 
 FLASHMEM bool sameFloatBits(float lhs, float rhs) {

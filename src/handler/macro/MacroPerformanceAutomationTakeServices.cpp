@@ -178,60 +178,101 @@ FLASHMEM bool MacroPerformanceDomainServices::beginAutomationTake_(
         return false;
     }
 
-    auto historyChange = history_->prepareAutomationTake(
-        *pages_,
-        take.track,
-        take.page,
-        take.candidateMask
-    );
-    auto staged = core::app::makeExtmemUnique<ProjectControlDomainState>();
+    core::state::macro::MacroHistoryChangePtr historyChange{};
+    {
+        OC_PERF_SCOPE(perfHistory, "macro.take.begin.history");
+        historyChange = history_->prepareAutomationTake(
+            *pages_,
+            take.track,
+            take.page,
+            take.candidateMask
+        );
+        OC_PERF_UNITS(
+            perfHistory,
+            static_cast<uint32_t>(__builtin_popcount(take.candidateMask)),
+            take.candidateMask
+        );
+    }
+    core::app::ExtmemUniquePtr<ProjectControlDomainState> staged{};
+    {
+        OC_PERF_SCOPE(perfCopy, "macro.take.begin.copy-domain");
+        staged = core::app::makeExtmemUniqueCopy(
+            pages_->control.authored
+        );
+        OC_PERF_UNITS(
+            perfCopy,
+            sizeof(ProjectControlDomainState),
+            staged ? 1U : 0U
+        );
+    }
     if (!historyChange || !historyChange->automationTake || !staged) {
         return false;
     }
-    *staged = pages_->control.authored;
 
     // Prove the conservative eight-lane maximum against the exact live arena.
     constexpr uint16_t PREFLIGHT_DURATION_TICKS = 24576U;
-    for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
-        const uint16_t bit = static_cast<uint16_t>(1U << macro);
-        if ((take.candidateMask & bit) == 0U) continue;
-        auto& snapshot = historyChange->automationTake->after[macro];
-        for (uint16_t point = 0U;
-             point < MACRO_AUTOMATION_RECORDING_MAX_POINTS;
-             ++point) {
-            snapshot.points[point] = {
-                static_cast<uint16_t>(
-                    (static_cast<uint32_t>(point) * PREFLIGHT_DURATION_TICKS) /
-                    (MACRO_AUTOMATION_RECORDING_MAX_POINTS - 1U)
-                ),
-                packTakeMidi7(take.initialValues[macro]),
-            };
+    {
+        OC_PERF_SCOPE(perfPreflight, "macro.take.begin.preflight");
+        for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+            const uint16_t bit = static_cast<uint16_t>(1U << macro);
+            if ((take.candidateMask & bit) == 0U) continue;
+            auto& snapshot = historyChange->automationTake->after[macro];
+            for (uint16_t point = 0U;
+                 point < MACRO_AUTOMATION_RECORDING_MAX_POINTS;
+                 ++point) {
+                snapshot.points[point] = {
+                    static_cast<uint16_t>(
+                        (static_cast<uint32_t>(point) *
+                         PREFLIGHT_DURATION_TICKS) /
+                        (MACRO_AUTOMATION_RECORDING_MAX_POINTS - 1U)
+                    ),
+                    packTakeMidi7(take.initialValues[macro]),
+                };
+            }
+            snapshot.pointCount = MACRO_AUTOMATION_RECORDING_MAX_POINTS;
+            snapshot.automation = takeCurvePayload(
+                snapshot.pointCount,
+                PREFLIGHT_DURATION_TICKS,
+                0U
+            );
+            if (!replaceProjectControlAutomationInDomain(
+                    *staged,
+                    snapshot.address,
+                    snapshot.automation,
+                    snapshot.points.get(),
+                    snapshot.pointCount
+                )) {
+                return false;
+            }
         }
-        snapshot.pointCount = MACRO_AUTOMATION_RECORDING_MAX_POINTS;
-        snapshot.automation = takeCurvePayload(
-            snapshot.pointCount,
-            PREFLIGHT_DURATION_TICKS,
-            0U
+        OC_PERF_UNITS(
+            perfPreflight,
+            static_cast<uint32_t>(__builtin_popcount(take.candidateMask)),
+            MACRO_AUTOMATION_RECORDING_MAX_POINTS
         );
-        if (!replaceProjectControlAutomationInDomain(
-                *staged,
-                snapshot.address,
-                snapshot.automation,
-                snapshot.points.get(),
-                snapshot.pointCount
-            )) {
-            return false;
-        }
     }
-    if (!validProjectModulationDomain(
+    {
+        OC_PERF_SCOPE(perfValidate, "macro.take.begin.validate");
+        const bool valid = validProjectModulationDomain(
             staged->modulation,
             staged->curves,
             &staged->automation
-        )) {
-        return false;
+        );
+        OC_PERF_UNITS(
+            perfValidate,
+            staged->automation.entryCount,
+            staged->curves.pointCount
+        );
+        if (!valid) return false;
     }
-    // Keep the proven allocation but restore the exact pre-take authored bytes.
-    *staged = pages_->control.authored;
+    // Keep both the proven allocation and an exact pre-take authored snapshot.
+    // The authored revision guard at commit makes a second full-domain copy
+    // redundant: this restored snapshot is the transaction's staging base.
+    {
+        OC_PERF_SCOPE(perfRestore, "macro.take.begin.restore-domain");
+        *staged = pages_->control.authored;
+        OC_PERF_UNITS(perfRestore, sizeof(ProjectControlDomainState), 1U);
+    }
     for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
         const uint16_t bit = static_cast<uint16_t>(1U << macro);
         if ((take.candidateMask & bit) == 0U) continue;
@@ -455,15 +496,6 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
         "memory.psram.macro-take.commit-begin"
     );
 #endif
-    {
-        OC_PERF_SCOPE(perfDomainCopy, "macro.take.commit.copy-domain");
-        *macro_ui_->automationTakeDomain = pages_->control.authored;
-        OC_PERF_UNITS(
-            perfDomainCopy,
-            sizeof(ProjectControlDomainState),
-            take.sampleCount
-        );
-    }
     auto& payload = *macro_ui_->automationTakeHistory->automationTake;
     payload.touchedMask = take.touchedMask;
     for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {

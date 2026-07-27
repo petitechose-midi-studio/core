@@ -57,9 +57,19 @@ struct MacroEditorPreviewModel {
         recordedShapeCapture = nullptr;
     core::state::macro::MacroAutomationSlotAddress address{};
     core::state::modulation::ModulationBindingId focusedBindingId{};
+    core::state::modulation::ProjectCurveId automationCurveId{};
+    core::state::modulation::ModulationDestination destination{};
+    uint32_t authoredRevision = 0U;
+    uint32_t planCompiledRevision = 0U;
+    uint32_t planContextHash = 0U;
     uint16_t focusedBindingIndex = UINT16_MAX;
     uint16_t focusedSourceIndex = UINT16_MAX;
-    uint16_t focusedRuntimeSourceIndex = UINT16_MAX;
+    uint16_t focusedRuntimeBindingIndex = UINT16_MAX;
+    uint16_t runtimeDestinationIndex = UINT16_MAX;
+    uint16_t automationCurveRecordIndex = UINT16_MAX;
+    uint16_t destinationScaleQ15 =
+        core::state::modulation::
+            PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
     float staticBase = 0.0f;
     uint16_t automationDurationTicks =
         core::state::macro::MACRO_AUTOMATION_TICKS_PER_BEAT;

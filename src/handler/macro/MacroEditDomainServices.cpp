@@ -551,21 +551,11 @@ FLASHMEM bool MacroEditDomainServices::setAutomationDurationBeats(
         return false;
     }
     const auto address = automationAddress(index);
-    auto change = history_->prepare(
-        *pages_,
-        address,
-        core::state::macro::MacroHistoryActionKind::AUTOMATION_DURATION_EDIT
-    );
-    if (!change) return false;
-    const bool changed =
-        core::state::modulation::setProjectControlAutomationDurationBeats(
-        pages_->control,
-        address,
-        durationBeats
-    );
-    if (!changed) return false;
-
-    if (!history_->commitPrepared(*pages_, std::move(change), true)) {
+    if (!history_->setAutomationDurationBeatsCoalesced(
+            *pages_,
+            address,
+            durationBeats
+        )) {
         return false;
     }
 
@@ -588,21 +578,11 @@ FLASHMEM bool MacroEditDomainServices::setAutomationWindowOffsetBeats(
         return false;
     }
     const auto address = automationAddress(index);
-    auto change = history_->prepare(
-        *pages_,
-        address,
-        core::state::macro::MacroHistoryActionKind::AUTOMATION_WINDOW_EDIT
-    );
-    if (!change) return false;
-    const bool changed =
-        core::state::modulation::setProjectControlAutomationWindowOffsetBeats(
-        pages_->control,
-        address,
-        offsetBeats
-    );
-    if (!changed) return false;
-
-    if (!history_->commitPrepared(*pages_, std::move(change), true)) {
+    if (!history_->setAutomationWindowOffsetBeatsCoalesced(
+            *pages_,
+            address,
+            offsetBeats
+        )) {
         return false;
     }
 
