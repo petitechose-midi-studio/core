@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 
+#include <oc/note/sequencer/StepBitMask128.hpp>
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
@@ -30,12 +31,16 @@ enum class StructureClipboardKind : uint8_t {
     SEQUENCER_TRACK = 4,
     SEQUENCER_STEP_CONTENT = 5,
     SEQUENCER_STEPS = 6,
+    SEQUENCER_PAGE_SELECTION = 7,
+    SEQUENCER_TRACK_SELECTION = 8,
     MACRO_AUTOMATION = 9,
     MACRO_SLOT = 10,
     MACRO_MODULATION = 11,
     MACRO_DESTINATION = 12,
     MACRO_MODULATION_ASSIGNMENT = 13,
     PROJECT_MODULATOR_SOURCE = 14,
+    MACRO_SLOT_SELECTION = 15,
+    MACRO_PAGE_SELECTION = 16,
 };
 
 enum class MacroClipboardPayloadKind : uint8_t {
@@ -104,10 +109,83 @@ struct SequencerStepsClipboard {
     void reset();
 };
 
+struct SequencerPageSelectionClipboard {
+    static constexpr uint8_t MAX_ENTRIES =
+        core::state::sequencer::SequencerPatternState::PAGE_COUNT;
+
+    bool valid = false;
+    uint8_t sourceFirstPage =
+        core::state::sequencer::SequencerPatternState::PAGE_COUNT;
+    uint8_t count = 0;
+    std::array<SequencerPageClipboard, MAX_ENTRIES> pages{};
+
+    void reset();
+};
+
+struct SequencerTrackSelectionClipboardEntry {
+    bool valid = false;
+    uint8_t sourceTrack =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+    core::state::sequencer::SequencerPatternSnapshot snapshot{};
+    core::app::ExtmemUniquePtr<
+        oc::note::sequencer::StepSequencerGraph
+    > graph;
+    core::state::sequencer::SequencerCcLaneBankPtr ccLanes;
+    /** Macro/Page content for the same global Track. */
+    core::state::macro::MacroTrackData macroTrack{};
+};
+
+struct SequencerTrackSelectionClipboard {
+    static constexpr uint8_t MAX_ENTRIES =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+
+    bool valid = false;
+    uint8_t count = 0;
+    std::array<
+        SequencerTrackSelectionClipboardEntry,
+        MAX_ENTRIES
+    > tracks{};
+    /** Self-contained Project-control source snapshot for Track remapping. */
+    core::app::ExtmemUniquePtr<
+        core::state::modulation::ProjectControlDomainState
+    > projectControl;
+
+    void reset();
+};
+
+struct MacroPageSelectionClipboardEntry {
+    bool valid = false;
+    uint8_t sourcePage = core::state::macro::PAGE_COUNT;
+    core::state::macro::MacroPageData page{};
+};
+
+struct MacroPageSelectionClipboard {
+    static constexpr uint8_t MAX_ENTRIES =
+        core::state::macro::PAGE_COUNT;
+
+    bool valid = false;
+    uint8_t sourceTrack = core::state::macro::TRACK_COUNT;
+    uint8_t sourceFirstPage = core::state::macro::PAGE_COUNT;
+    uint8_t count = 0U;
+    std::array<
+        MacroPageSelectionClipboardEntry,
+        MAX_ENTRIES
+    > pages{};
+    core::app::ExtmemUniquePtr<
+        core::state::modulation::ProjectControlDomainState
+    > projectControl;
+
+    void reset();
+};
+
 struct MacroAutomationClipboardEntry {
     bool valid = false;
     uint8_t sourcePage = 0;
     uint8_t sourceMacro = 0;
+    bool sourceMacroActive = false;
+    bool sourceSlotPresent = false;
+    uint8_t sourceCc = 0;
+    float sourceStaticValue = 0.0f;
     core::state::modulation::ProjectControlMacroDestinationPayload control{};
     uint16_t destinationScaleQ15 =
         core::state::modulation::PROJECT_MODULATION_DESTINATION_SCALE_ONE_Q15;
@@ -122,7 +200,9 @@ struct MacroControlClipboardPointPool {
 };
 
 struct MacroAutomationClipboard {
-    static constexpr uint8_t MAX_ENTRIES = 64U;
+    static constexpr uint8_t MAX_ENTRIES =
+        core::state::macro::PAGE_COUNT *
+        core::state::macro::MACRO_COUNT;
 
     bool valid = false;
     bool trackScope = false;
@@ -189,11 +269,18 @@ struct StructureClipboardState {
     ProjectModulatorSourceClipboard projectModulatorSource{};
     core::state::SequencerPageClipboard sequencerPage{};
     core::state::SequencerStepsClipboard sequencerSteps{};
+    core::state::SequencerPageSelectionClipboard sequencerPageSelection{};
     core::state::sequencer::SequencerPatternSnapshot sequencerTrack{};
     uint8_t sequencerTrackSource =
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> sequencerGraph;
     core::state::sequencer::SequencerCcLaneBankPtr sequencerCcLanes;
+    core::app::ExtmemUniquePtr<
+        core::state::SequencerTrackSelectionClipboard
+    > sequencerTrackSelection;
+    core::app::ExtmemUniquePtr<
+        core::state::MacroPageSelectionClipboard
+    > macroPageSelection;
     core::state::sequencer::SequencerGraphNodeId sequencerStepContentNodeId =
         oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
     SequencerStepContentClipboardKind sequencerStepContentKind =
@@ -231,6 +318,20 @@ struct StructureClipboardState {
     [[nodiscard]] bool storeMacroSlot(
         const core::state::macro::MacroPagesState& pages,
         const core::state::macro::MacroAutomationSlotAddress& address
+    );
+
+    /** Stores an ordered sparse set of full Slots across existing Pages. */
+    [[nodiscard]] bool storeMacroSlotSelection(
+        const core::state::macro::MacroPagesState& pages,
+        uint8_t sourceTrack,
+        const oc::note::sequencer::StepBitMask128& selectedMask
+    );
+
+    /** Stores sparse complete Macro Pages plus their Project-control graph. */
+    [[nodiscard]] bool storeMacroPageSelection(
+        const core::state::macro::MacroPagesState& pages,
+        uint8_t sourceTrack,
+        uint16_t selectedMask
     );
 
     /** Stores only Modulation shape/timing/depth for target-preserving paste. */
@@ -273,6 +374,17 @@ struct StructureClipboardState {
         const oc::note::sequencer::StepSequencerGraph* graph
     );
 
+    [[nodiscard]] bool storeSequencerPageSelection(
+        const core::state::SequencerPageSelectionClipboard& pages,
+        const oc::note::sequencer::StepSequencerGraph* graph
+    );
+
+    [[nodiscard]] bool storeSequencerTrackSelection(
+        core::app::ExtmemUniquePtr<
+            core::state::SequencerTrackSelectionClipboard
+        > tracks
+    );
+
     bool hasMacroPage() const { return kind.get() == StructureClipboardKind::MACRO_PAGE; }
     bool hasMacroTrack() const { return kind.get() == StructureClipboardKind::MACRO_TRACK; }
     bool hasMacroAutomation() const;
@@ -288,6 +400,22 @@ struct StructureClipboardState {
                macroAutomationSet && macroAutomationSet->valid &&
                macroAutomationSet->payloadKind == MacroClipboardPayloadKind::SLOT &&
                macroAutomationSet->count == 1;
+    }
+    bool hasMacroSlotSelection() const {
+        return kind.get() ==
+                   StructureClipboardKind::MACRO_SLOT_SELECTION &&
+               macroAutomationSet && macroAutomationSet->valid &&
+               macroAutomationSet->payloadKind ==
+                   MacroClipboardPayloadKind::SLOT &&
+               macroAutomationSet->count > 0U;
+    }
+    bool hasMacroPageSelection() const {
+        return kind.get() ==
+                   StructureClipboardKind::MACRO_PAGE_SELECTION &&
+               macroPageSelection &&
+               macroPageSelection->valid &&
+               macroPageSelection->count > 0U &&
+               macroPageSelection->projectControl;
     }
     bool hasMacroModulation() const {
         return kind.get() == StructureClipboardKind::MACRO_MODULATION &&
@@ -331,6 +459,20 @@ struct StructureClipboardState {
         return kind.get() == StructureClipboardKind::SEQUENCER_STEPS &&
                sequencerSteps.valid &&
                sequencerSteps.count > 0;
+    }
+    bool hasSequencerPageSelection() const {
+        return kind.get() ==
+                   StructureClipboardKind::SEQUENCER_PAGE_SELECTION &&
+               sequencerPageSelection.valid &&
+               sequencerPageSelection.count > 0;
+    }
+    bool hasSequencerTrackSelection() const {
+        return kind.get() ==
+                   StructureClipboardKind::SEQUENCER_TRACK_SELECTION &&
+               sequencerTrackSelection &&
+               sequencerTrackSelection->valid &&
+               sequencerTrackSelection->count > 0 &&
+               sequencerTrackSelection->projectControl;
     }
 };
 

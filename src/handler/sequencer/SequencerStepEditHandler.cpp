@@ -109,7 +109,6 @@ FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) 
     if (!step_edit_session_workflow::openForMacroInPage(
             sequencer_,
             history_,
-            open_release_latch_,
             overlays_,
             history_snapshot_,
             history_snapshot_valid_,
@@ -135,7 +134,6 @@ FLASHMEM bool SequencerStepEditHandler::openFocusedStepAtRow(uint8_t row) {
     if (!step_edit_session_workflow::openForMacroInPage(
             sequencer_,
             history_,
-            open_release_latch_,
             overlays_,
             history_snapshot_,
             history_snapshot_valid_,
@@ -143,8 +141,6 @@ FLASHMEM bool SequencerStepEditHandler::openFocusedStepAtRow(uint8_t row) {
         )) {
         return false;
     }
-    // This direct entry owns no Macro long-press release.
-    open_release_latch_.clear();
     step_retarget_active_ = false;
     sequencer_.stepEdit.focusedRow.set(row);
     configureOptForFocusedRow();
@@ -252,7 +248,6 @@ FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
     step_edit_session_workflow::close(
         sequencer_,
         history_,
-        open_release_latch_,
         context_release_latch_,
         overlays_,
         history_snapshot_,
@@ -588,7 +583,6 @@ FLASHMEM bool SequencerStepEditHandler::editedStepInRange(uint8_t& step) const {
 FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage) {
     if (sequencer_.stepContentDraft.exitPromptVisible.get()) return;
     if (step_edit_session_workflow::shouldCloseFromMacro(
-            open_release_latch_,
             sequencer_,
             indexInPage
         )) {

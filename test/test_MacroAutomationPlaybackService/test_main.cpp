@@ -209,10 +209,7 @@ void configureModulation(core::state::CoreState& state, float depth) {
 
 void test_runtime_projection_publication_is_atomic() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     auto configurePage = [&](uint8_t track,
                              uint8_t page,
                              float first,
@@ -361,10 +358,7 @@ void test_project_control_cadence_tracks_motion_without_unbounded_work() {
 
 void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     configureAutomation(state);
     state.pages.activePageData().cc[0] = 74;
     state.pages.updateActiveConfigs();
@@ -401,10 +395,7 @@ void test_playback_updates_runtime_and_sends_cc_when_value_changes() {
 void test_canonical_track_channel_routes_computed_and_static_authors() {
     test_support::CoreStorages computedStorage;
     core::state::CoreState computedState(
-        computedStorage.settings,
-        computedStorage.macroLibrary,
-        computedStorage.sequencerPatternLibrary,
-        computedStorage.sequencerSetLibrary
+        computedStorage.settings
     );
     configureAutomation(computedState);
     computedState.pages.activePageData().cc[0] = 74U;
@@ -431,10 +422,7 @@ void test_canonical_track_channel_routes_computed_and_static_authors() {
 
     test_support::CoreStorages staticStorage;
     core::state::CoreState staticState(
-        staticStorage.settings,
-        staticStorage.macroLibrary,
-        staticStorage.sequencerPatternLibrary,
-        staticStorage.sequencerSetLibrary
+        staticStorage.settings
     );
     staticState.pages.setMacroSlotActive(0U, true);
     staticState.pages.activePageData().cc[0] = 71U;
@@ -467,10 +455,7 @@ void test_canonical_track_channel_routes_computed_and_static_authors() {
 void test_muted_automation_keeps_ui_and_phase_then_resumes_current_value() {
     test_support::CoreStorages storage;
     core::state::CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
+        storage.settings
     );
     configureAutomation(state);
     state.pages.activePageData().cc[0] = 74U;
@@ -526,10 +511,7 @@ void test_muted_automation_keeps_ui_and_phase_then_resumes_current_value() {
 void test_project_solo_mask_filters_macro_authors_globally() {
     test_support::CoreStorages storage;
     core::state::CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
+        storage.settings
     );
     auto configureStaticTrack = [&](uint8_t track,
                                     uint8_t channel,
@@ -585,10 +567,7 @@ void test_project_solo_mask_filters_macro_authors_globally() {
 
 void test_stopped_transport_publishes_static_owner_without_playing_curve() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     configureAutomation(state);
 
     MockMidiTransport midiTransport;
@@ -611,10 +590,7 @@ void test_stopped_transport_publishes_static_owner_without_playing_curve() {
 
 void test_update_period_remains_bounded_across_millisecond_rollover() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     configureAutomation(state);
     state.statusBar.tempo.set(60.0f);
     state.statusBar.playing.set(true);
@@ -641,10 +617,7 @@ void test_update_period_remains_bounded_across_millisecond_rollover() {
 
 void test_manual_override_replaces_automation_base_until_resume() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     configureAutomation(state);
     state.statusBar.tempo.set(60.0f);
     state.statusBar.playing.set(true);
@@ -680,10 +653,7 @@ void test_manual_override_replaces_automation_base_until_resume() {
 
 void test_modulation_only_playback_and_depth_zero_remain_computed() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     configureModulation(state, 0.4f);
     state.pages.activePageData().values[0] = 0.5f;
     state.pages.activePageData().cc[0] = 74;
@@ -744,10 +714,7 @@ void test_modulation_only_playback_and_depth_zero_remain_computed() {
 
 void test_automation_take_keeps_modulation_audible_and_active_after_commit() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     configureAutomation(state);
     configureModulation(state, 1.0f);
     state.statusBar.tempo.set(60.0f);
@@ -793,10 +760,7 @@ void test_automation_take_keeps_modulation_audible_and_active_after_commit() {
 
 void test_shared_take_publishes_live_base_without_printing_modulation() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     configureAutomation(state);
     configureModulation(state, 1.0f);
     state.statusBar.tempo.set(60.0f);
@@ -826,10 +790,7 @@ void test_shared_take_publishes_live_base_without_printing_modulation() {
 
 void test_reactivating_slot_or_lane_resends_value_superseded_while_inactive() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     configureAutomation(state);
     state.statusBar.tempo.set(60.0f);
     state.statusBar.playing.set(true);
@@ -893,10 +854,7 @@ void test_reactivating_slot_or_lane_resends_value_superseded_while_inactive() {
 
 void test_runtime_owner_epoch_is_independent_from_navigation_and_transport() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     configureModulation(state, 1.0f);
     state.pages.activePageData().values[0] = 0.5f;
     state.pages.activePageData().cc[0] = 74;
@@ -982,10 +940,7 @@ void test_runtime_owner_epoch_is_independent_from_navigation_and_transport() {
 
 void test_runtime_owner_activation_preserves_manual_ownership() {
     test_support::CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     configureAutomation(state);
     configureModulation(state, 1.0f);
     state.statusBar.playing.set(true);

@@ -7,12 +7,14 @@
 #include <config/PlatformCompat.hpp>
 
 #include "config/Timing.hpp"
+#include "state/project/ProjectDomainRules.hpp"
 #include "state/StructureNavigationState.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerInteractionContextOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
+#include "state/sequencer/SequencerStepPastePlan.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerActionStripVisuals.hpp"
@@ -75,26 +77,6 @@ FLASHMEM bool showPastePending(
     );
     slot.showLabel = true;
     std::snprintf(slot.labelText.data(), slot.labelText.size(), "%s", model.label);
-    return true;
-}
-
-FLASHMEM bool showTrackPasteDetailsAction(
-    SlotProps& slot,
-    const TrackTransferProjection& projection
-) {
-    if (!projection.plan.canCommit()) return false;
-    slot = core::ui::makeStandaloneIconStripSlot(
-        standalone::icons::STATUS_PREVIEW,
-        Visual::ACTIVE,
-        projection.detailVisible ? Tone::CONSTRUCTIVE : Tone::NEUTRAL
-    );
-    slot.showLabel = true;
-    std::snprintf(
-        slot.labelText.data(),
-        slot.labelText.size(),
-        "%s",
-        projection.detailVisible ? "Close" : "Details"
-    );
     return true;
 }
 
@@ -237,6 +219,7 @@ makeBottomInteractionContext(
                 core::state::sequencer::activeContentLength(source.sequencer)
             ) > 0;
         context.compatibleClipboardAvailable =
+            source.sequencer.structureUi.stepSelection.placementActive() &&
             source.structureClipboard.hasSequencerSteps() &&
             source.structureClipboard.sequencerSteps.rootContext ==
                 core::state::sequencer::isRootContentView(source.sequencer);
@@ -383,6 +366,9 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
     );
 
     if (selectingTrack || selectingPage) {
+        const auto& selection = selectingTrack
+            ? source.trackNavigation.selection
+            : source.sequencer.structureUi.pageSelection;
         const uint8_t itemCount = selectingTrack
             ? core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
             : core::state::sequencer::activeContentPageCount(source.sequencer);
@@ -390,13 +376,75 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             ? source.sharedTrackEnabledMask.get()
             : structure_slots::prefixMask(itemCount);
         const uint16_t selectionMask = static_cast<uint16_t>(
-            (selectingTrack
-                ? source.trackNavigation.selection.selectedMask.get()
-                : source.sequencer.structureUi.pageSelection.selectedMask.get()) &
+            selection.selectedMask.get() &
             availableMask
         );
         const uint8_t selectedCount =
             countSelectedItems(selectionMask);
+        const bool placing = selection.placementActive();
+        if (placing) {
+            const uint8_t overwriteCount =
+                countSelectedItems(selection.overwriteMask.get());
+            const bool blocked = selection.pasteBlocked.get();
+            const bool canPaste = !blocked &&
+                selection.destinationMask.get() != 0U;
+            const auto& holdState = selectingTrack
+                ? source.trackNavigation.hold
+                : source.sequencer.structureUi.pageHold;
+            const bool pageHoldActive =
+                !selectingTrack &&
+                holdState.action.get() ==
+                    core::state::StructureHoldAction::PASTE &&
+                canPaste;
+            const auto& trackPaste =
+                source.sequencer.structureUi.trackPaste;
+            const bool trackHoldActive =
+                selectingTrack &&
+                trackPaste.buttonOwned &&
+                trackPaste.guard.phase !=
+                    core::state::contextual::GuardedActionPhase::IDLE &&
+                trackPaste.guard.phase !=
+                    core::state::contextual::GuardedActionPhase::CANCELLED;
+
+            props.slots[0].visualState = Visual::HIDDEN;
+            props.slots[1] = makeSelectionCountSlot(selectedCount);
+            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_PASTE,
+                blocked
+                    ? Visual::DISABLED
+                    : ((trackHoldActive || pageHoldActive)
+                        ? Visual::ARMED
+                        : Visual::ACTIVE),
+                blocked
+                    ? Tone::DESTRUCTIVE
+                    : (overwriteCount > 0U
+                        ? Tone::WARNING
+                        : Tone::POSITIVE)
+            );
+            if (overwriteCount > 0U) {
+                props.slots[2].showLabel = true;
+                std::snprintf(
+                    props.slots[2].labelText.data(),
+                    props.slots[2].labelText.size(),
+                    "PST \xC2\xB7 %u OVR",
+                    static_cast<unsigned>(overwriteCount)
+                );
+            }
+            if (selectingTrack) {
+                applyTrackPasteProgress(
+                    props.slots[2],
+                    trackPaste.guard
+                );
+            } else {
+                applyHoldProgress(
+                    props.slots[2],
+                    holdState,
+                    pageHoldActive
+                );
+            }
+            return props;
+        }
+
         const uint8_t availableCount =
             countSelectedItems(availableMask);
         const bool canTap = selectedCount > 0U;
@@ -427,24 +475,117 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         );
         applyHoldProgress(props.slots[0], holdState, holdActive);
         props.slots[1] = makeSelectionCountSlot(selectedCount);
-        props.slots[2].visualState = Visual::HIDDEN;
+        const bool canCopy = selectedCount > 0U &&
+            (selectingTrack ||
+             core::state::sequencer::isRootContentView(source.sequencer));
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_COPY,
+            canCopy ? Visual::ACTIVE : Visual::DISABLED,
+            Tone::NEUTRAL
+        );
         return props;
     }
 
     if (selectingStep) {
+        const auto& selection =
+            source.sequencer.structureUi.stepSelection;
         const uint8_t selectedCount =
             countSelectedSteps(
-                source.sequencer.structureUi.stepSelection.selectedMask.get(),
+                selection.selectedMask.get(),
                 core::state::sequencer::activeContentLength(source.sequencer)
             );
+        if (selection.placementActive()) {
+            const bool compatibleClipboard =
+                selection.clipboardRevision.get() ==
+                    source.structureClipboard.revision.get() &&
+                source.structureClipboard.hasSequencerSteps() &&
+                source.structureClipboard.sequencerSteps.rootContext ==
+                    core::state::sequencer::isRootContentView(
+                        source.sequencer
+                    );
+            core::state::sequencer::SequencerStepPastePreviewPlan plan{};
+            if (compatibleClipboard) {
+                plan =
+                    core::state::sequencer::buildStepPastePreviewPlan(
+                        source.structureClipboard.sequencerSteps,
+                        core::state::sequencer::isRootContentView(
+                            source.sequencer
+                        ),
+                        selection.cursorStep.get(),
+                        core::state::sequencer::activeContentLength(
+                            source.sequencer
+                        ),
+                        core::state::sequencer::maxStepCursorForPaste(
+                            source.sequencer
+                        ),
+                        core::state::project::sanitizeProjectStepPasteMode(
+                            source.projectNavigation.stepPasteMode
+                        )
+                    );
+            }
+
+            uint8_t overwriteCount = 0U;
+            for (uint8_t index = 0U; index < plan.count; ++index) {
+                if (plan.entries[index].valid &&
+                    plan.entries[index].preview ==
+                        core::state::sequencer::
+                            SequencerStepPastePreview::OVERWRITE) {
+                    ++overwriteCount;
+                }
+            }
+            const bool blocked =
+                !compatibleClipboard || plan.blocked ||
+                !plan.hasEntries();
+            const auto& holdState =
+                source.sequencer.structureUi.pageHold;
+            const bool pasteHoldActive =
+                !blocked &&
+                holdState.action.get() ==
+                    core::state::StructureHoldAction::PASTE;
+
+            props.slots[0].visualState = Visual::HIDDEN;
+            props.slots[1] = makeSelectionCountSlot(selectedCount);
+            props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+                standalone::icons::ACTION_PASTE,
+                blocked
+                    ? Visual::DISABLED
+                    : (pasteHoldActive
+                        ? Visual::ARMED
+                        : Visual::ACTIVE),
+                blocked
+                    ? Tone::DESTRUCTIVE
+                    : (overwriteCount > 0U
+                        ? Tone::WARNING
+                        : Tone::POSITIVE)
+            );
+            if (blocked) {
+                props.slots[2].showLabel = true;
+                std::snprintf(
+                    props.slots[2].labelText.data(),
+                    props.slots[2].labelText.size(),
+                    "PST BLOCK"
+                );
+            } else if (overwriteCount > 0U) {
+                props.slots[2].showLabel = true;
+                std::snprintf(
+                    props.slots[2].labelText.data(),
+                    props.slots[2].labelText.size(),
+                    "PST \xC2\xB7 %u OVR",
+                    static_cast<unsigned>(overwriteCount)
+                );
+            }
+            applyHoldProgress(
+                props.slots[2],
+                holdState,
+                pasteHoldActive
+            );
+            return props;
+        }
+
         const bool canClear = selectedCount > 0;
-        const bool canPaste =
-            source.structureClipboard.hasSequencerSteps() &&
-            source.structureClipboard.sequencerSteps.rootContext ==
-                core::state::sequencer::isRootContentView(source.sequencer);
+        const bool canPaste = false;
         const bool canCopy = selectedCount > 0;
-        const bool pastePreviewActive =
-            source.sequencer.structureUi.stepSelection.pastePreviewActive.get() && canPaste;
+        const bool pastePreviewActive = false;
         const auto& holdState = source.sequencer.structureUi.pageHold;
         const auto holdAction = holdState.action.get();
         const bool removeHoldActive =
@@ -540,9 +681,6 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
     );
     applyHoldProgress(props.slots[0], holdState, removeHoldActive);
     props.slots[1].visualState = Visual::HIDDEN;
-    if (trackFocus) {
-        showTrackPasteDetailsAction(props.slots[1], trackProjection);
-    }
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         interactionActionIcon(rightAction),
         rightAction == InteractionAction::NONE

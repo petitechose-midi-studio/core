@@ -45,7 +45,8 @@ void test_horizontal_navigation_wraps_between_keyboard_ends() {
     uint8_t index = 0;
 
     index = projectNameKeyboardMoveColumn(index, -1);
-    assert(std::strcmp(projectNameKeyboardCellAt(index).label, ".") == 0);
+    assert(std::strcmp(projectNameKeyboardCellAt(index).label, "SPC") == 0);
+    assert(projectNameKeyboardCellAt(index).character == ' ');
 
     index = projectNameKeyboardMoveColumn(index, 1);
     assert(std::strcmp(projectNameKeyboardCellAt(index).label, "1") == 0);
@@ -83,7 +84,7 @@ void test_vertical_navigation_wraps_between_top_and_bottom() {
     std::cout << "[PASS] test_vertical_navigation_wraps_between_top_and_bottom\n";
 }
 
-void test_character_grid_has_no_action_keys() {
+void test_character_grid_includes_space_without_button_binding() {
     const auto& first = projectNameKeyboardCellAt(0);
     assert(std::strcmp(first.label, "1") == 0);
     assert(first.character == '1');
@@ -91,12 +92,12 @@ void test_character_grid_has_no_action_keys() {
     assert(first.column == 0);
 
     const auto& last = projectNameKeyboardCellAt(projectNameKeyboardCellCount() - 1U);
-    assert(std::strcmp(last.label, ".") == 0);
-    assert(last.character == '.');
+    assert(std::strcmp(last.label, "SPC") == 0);
+    assert(last.character == ' ');
     assert(last.row == 3);
-    assert(last.column == 8);
+    assert(last.column == 9);
 
-    std::cout << "[PASS] test_character_grid_has_no_action_keys\n";
+    std::cout << "[PASS] test_character_grid_includes_space_without_button_binding\n";
 }
 
 void test_invalid_index_falls_back_to_default_key() {
@@ -116,7 +117,7 @@ int main() {
     test_horizontal_navigation_wraps_between_keyboard_ends();
     test_vertical_navigation_keeps_nearest_column();
     test_vertical_navigation_wraps_between_top_and_bottom();
-    test_character_grid_has_no_action_keys();
+    test_character_grid_includes_space_without_button_binding();
     test_invalid_index_falls_back_to_default_key();
 
     std::cout << "\nAll ProjectNameKeyboard tests passed.\n";

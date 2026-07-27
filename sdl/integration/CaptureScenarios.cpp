@@ -10,7 +10,6 @@
 
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
-#include "state/DataManagerCatalog.hpp"
 #include "state/macro/MacroAutomationDomain.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
@@ -2037,24 +2036,6 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     if (std::strcmp(scenario, "settings") == 0) {
         state.activeView.set(core::ui::ViewType::DEVICE_SETTINGS);
         state.deviceSettings.openView();
-        return true;
-    }
-
-    if (std::strcmp(scenario, "data-manager") == 0) {
-        state.overlays.show(core::ui::OverlayType::DATA_MANAGER, false);
-        state.dataManager.openSession(
-            state.activeView.get() == core::ui::ViewType::SEQUENCER
-                ? core::state::DataManagerContext::SEQUENCER
-                : core::state::DataManagerContext::MACRO
-        );
-        return true;
-    }
-
-    if (std::strcmp(scenario, "data-manager-dialog") == 0) {
-        state.overlays.show(core::ui::OverlayType::DATA_MANAGER, false);
-        state.dataManager.openSession(core::state::DataManagerContext::MACRO);
-        state.overlays.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
-        state.dataManager.showDialog(core::state::DataManagerDialogMode::COMMAND_PALETTE, 0);
         return true;
     }
 

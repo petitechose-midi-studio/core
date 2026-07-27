@@ -84,9 +84,6 @@ FLASHMEM bool ccLaneActionGesture(
         static_cast<oc::type::ButtonID>(Config::ButtonID::BOTTOM_LEFT)) {
         slot = core::state::sequencer::SequencerCcLaneActionSlot::BOTTOM_LEFT;
     } else if (event.buttonId ==
-               static_cast<oc::type::ButtonID>(Config::ButtonID::BOTTOM_CENTER)) {
-        slot = core::state::sequencer::SequencerCcLaneActionSlot::BOTTOM_CENTER;
-    } else if (event.buttonId ==
                static_cast<oc::type::ButtonID>(Config::ButtonID::BOTTOM_RIGHT)) {
         slot = core::state::sequencer::SequencerCcLaneActionSlot::BOTTOM_RIGHT;
     } else {
@@ -1180,14 +1177,9 @@ FLASHMEM bool SequencerStepPresetUxSurface::captureSemanticUxContext(
             ? "show_step_preset_details"
             : "hide_step_preset_details";
     } else if (isButton(event, Config::ButtonID::LEFT_TOP, ButtonType::RELEASE) ||
-               isButton(event, Config::ButtonID::LEFT_CENTER, ButtonType::RELEASE) ||
-               isButton(event, Config::ButtonID::BOTTOM_LEFT, ButtonType::RELEASE)) {
+               isButton(event, Config::ButtonID::LEFT_CENTER, ButtonType::RELEASE)) {
         out.effect = "close_step_preset_picker";
-    } else if (isButton(
-                   event,
-                   Config::ButtonID::BOTTOM_CENTER,
-                   ButtonType::RELEASE
-               )) {
+    } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, ButtonType::RELEASE)) {
         out.effect = saveMode
             ? "show_step_preset_save_mode"
             : "show_step_preset_load_mode";
@@ -1735,7 +1727,7 @@ FLASHMEM bool ProjectTrackEditorUxSurface::captureSemanticUxContext(
         event, Config::ButtonID::BOTTOM_LEFT, ButtonType::RELEASE
     );
     const bool solo = isButton(
-        event, Config::ButtonID::BOTTOM_CENTER, ButtonType::RELEASE
+        event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::RELEASE
     );
     const bool back = isButton(
         event, Config::ButtonID::LEFT_TOP, ButtonType::RELEASE
@@ -1873,12 +1865,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
     const bool trackPasteDetailsEvent =
         isButton(
             event,
-            Config::ButtonID::BOTTOM_CENTER,
-            oc::core::input::ButtonBindingType::PRESS
-        ) ||
-        isButton(
-            event,
-            Config::ButtonID::BOTTOM_CENTER,
+            Config::ButtonID::LEFT_CENTER,
             oc::core::input::ButtonBindingType::RELEASE
         );
     const bool structureEvent =

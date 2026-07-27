@@ -11,7 +11,6 @@
 #endif
 
 #include "../../src/state/CoreState.hpp"
-#include "../../src/state/sequencer/SequencerPersistenceWorkflow.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
 
@@ -20,7 +19,6 @@ namespace {
 using core::state::CoreState;
 using core::state::sequencer::SequencerContentViewKind;
 using core::state::sequencer::SequencerPatternState;
-using core::state::sequencer::SequencerPersistenceWorkflow;
 using core::state::sequencer::StepProperty;
 using test_support::CoreStorages;
 using test_support::drainNotifications;
@@ -243,7 +241,9 @@ void prepareStoredFullBank(CoreState& state) {
 void prepareDifferentLiveBank(CoreState& state) {
     state.sequencerTracks.reset();
     state.sequencer.reset();
-    assert(state.setSharedTrackState(0x0001U, 0));
+    (void)state.setSharedTrackState(0x0001U, 0);
+    assert(state.currentSharedTrackEnabledMask() == 0x0001U);
+    assert(state.currentSharedActiveTrack() == 0U);
 
     state.sequencer.pattern.setContentLength(64);
     state.sequencer.pattern.stepsPerBeat.set(8);
@@ -275,21 +275,22 @@ void test_full_bank_apply_at_next_playhead_step_stays_within_notification_capaci
     );
 
     CoreStorages storage;
+    CoreStorages stagedStorage;
     storage.initAll();
+    stagedStorage.initAll();
 
 #if OC_ENABLE_STATS
     oc::log::setOutput(diagnosticOutput);
 #endif
 
     CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
+        storage.settings
+    );
+    CoreState staged(
+        stagedStorage.settings
     );
 
-    prepareStoredFullBank(state);
-    assert(SequencerPersistenceWorkflow::saveSetSlot(state, 3));
+    prepareStoredFullBank(staged);
     prepareDifferentLiveBank(state);
 
     state.statusBar.playing.set(true);
@@ -305,8 +306,10 @@ void test_full_bank_apply_at_next_playhead_step_stays_within_notification_capaci
     size_t peakPending = queue.pendingCount();
     sampleQueue(queue, peakPending);
 
-    const auto loadStatus = SequencerPersistenceWorkflow::loadSetSlot(state, 3, false);
-    assert(loadStatus == core::persistence::SlotLoadStatus::OK);
+    assert(state.queuePendingSequencerBankApply(
+        staged.sequencerTracks,
+        staged.sequencer
+    ));
     assert(state.hasPendingSequencerApply());
     assert(state.sequencer.pattern.length.get() == 64);
     sampleQueue(queue, peakPending);

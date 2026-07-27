@@ -52,10 +52,7 @@ struct MacroAutomationHarness {
     core::handler::MacroAutomationHandler handler;
 
     MacroAutomationHarness()
-        : state(storage.settings,
-                storage.macroLibrary,
-                storage.sequencerPatternLibrary,
-                storage.sequencerSetLibrary)
+        : state(storage.settings)
         , services(core::handler::MacroEditDomainServices::fromCoreState(state))
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)

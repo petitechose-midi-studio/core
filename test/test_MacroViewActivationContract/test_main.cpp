@@ -18,10 +18,7 @@ void test_prepare_macro_view_activation_syncs_runtime_and_status_from_active_pag
     CoreStorages storage;
     storage.initAll();
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
 
     std::strncpy(state.pages.activeTrackData().pages[2].name,
                  "Mix Bus",

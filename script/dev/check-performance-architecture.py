@@ -22,6 +22,21 @@ FORBIDDEN_LEGACY = (
     "MacroButtonWidget",
     "BaseMacroWidget",
     "IMacroWidget",
+    "DataManager",
+    "Data Manager",
+    "MacroPersistence",
+    "PersistenceSlotFileStore",
+)
+
+FORBIDDEN_PERSISTENCE_PATHS = (
+    "/macros.bin",
+    "./macros.bin",
+    "/patterns.bin",
+    "./patterns.bin",
+    "/sets.bin",
+    "./sets.bin",
+    "macro-workspace",
+    "sequencer-workspace",
 )
 
 FORBIDDEN_HEAP_REACTIVE_STORAGE = (
@@ -63,9 +78,22 @@ HOT_RUNTIME_FLASHMEM = re.compile(
     r")\s*\("
 )
 
+BOTTOM_CENTER_BINDING = re.compile(
+    r"\.button\s*\(\s*(?:Config::)?ButtonID::BOTTOM_CENTER\s*\)"
+)
+
+GLOBAL_PASS_THROUGH = re.compile(r"\.globalPassThrough\s*\(\s*\)")
+
 def source_files():
     for suffix in ("*.hpp", "*.cpp"):
         yield from SOURCE_ROOT.rglob(suffix)
+
+
+def product_implementation_files():
+    yield ROOT / "main.cpp"
+    for suffix in ("*.hpp", "*.cpp", "*.ux"):
+        yield from (ROOT / "sdl").rglob(suffix)
+    yield from source_files()
 
 
 def relative(path: Path) -> str:
@@ -78,6 +106,11 @@ def main() -> int:
     platformio = PLATFORMIO.read_text(encoding="utf-8")
     if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
         errors.append("platformio.ini: Teensy base must use the product linker script")
+    if platformio.count("-D OC_MAX_BUTTONS=48") < 2:
+        errors.append(
+            "platformio.ini: product/native builds must retain the measured "
+            "48-slot physical-button bound"
+        )
     if not re.search(
         r"^\s*post:script/pio/check_memory_budget\.py\s*$",
         platformio,
@@ -156,6 +189,19 @@ def main() -> int:
         errors.append(
             "script/pio/check_memory_budget.py: missing post-link placement gates"
         )
+
+    app_config = (SOURCE_ROOT / "config" / "App.hpp").read_text(encoding="utf-8")
+    for marker in (
+        "ReleaseRoutingPolicy::OwnerOnly",
+        "GestureRoutingPolicy::PressScoped",
+        "BindingAmbiguityPolicy::FailClosed",
+        "GlobalRoutingPolicy::ExplicitPassThroughOnly",
+    ):
+        if marker not in app_config:
+            errors.append(
+                "config/App.hpp: strict physical-button routing must keep "
+                f"{marker}"
+            )
 
     reporter = (SOURCE_ROOT / "diagnostics" / "PerformanceReporter.cpp").read_text(
         encoding="utf-8"
@@ -236,6 +282,42 @@ def main() -> int:
             errors.append(f"{rel}: hot retained-view rendering must stay in ITCM")
         if HOT_RUNTIME_FLASHMEM.search(content):
             errors.append(f"{rel}: main-loop and realtime wrappers must stay in ITCM")
+
+        if BOTTOM_CENTER_BINDING.search(content) and rel != (
+            "handler/transport/TransportHandler.cpp"
+        ):
+            errors.append(
+                f"{rel}: BOTTOM_CENTER is reserved for invariant Transport"
+            )
+        if GLOBAL_PASS_THROUGH.search(content) and rel != (
+            "handler/transport/TransportHandler.cpp"
+        ):
+            errors.append(
+                f"{rel}: global pass-through is reserved for invariant Transport"
+            )
+
+    for path in product_implementation_files():
+        content = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
+        for marker in FORBIDDEN_PERSISTENCE_PATHS:
+            if marker in content:
+                errors.append(f"{rel}: retired fixed-slot persistence path {marker}")
+
+    for retired_path in (
+        SOURCE_ROOT / "persistence" / "MacroPersistence.hpp",
+        SOURCE_ROOT / "persistence" / "MacroPersistence.cpp",
+        SOURCE_ROOT / "persistence" / "PersistenceSlotFileStore.hpp",
+        SOURCE_ROOT / "persistence" / "PersistenceSlotFileStore.cpp",
+        SOURCE_ROOT / "persistence" / "SequencerPersistence.hpp",
+        SOURCE_ROOT / "persistence" / "SequencerPersistence.cpp",
+        SOURCE_ROOT / "state" / "DataManagerState.hpp",
+        SOURCE_ROOT / "handler" / "settings" / "DataManagerHandler.hpp",
+    ):
+        if retired_path.exists():
+            errors.append(
+                f"{retired_path.relative_to(ROOT).as_posix()}: retired product path "
+                "must not be restored"
+            )
 
     # Standalone assemblies own retained product views. Derive that set from
     # construction sites so newly added views inherit the contract while

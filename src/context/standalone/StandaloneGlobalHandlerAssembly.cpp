@@ -40,7 +40,7 @@ public:
               state.viewSelector,
               state.projectHistory
           ),
-          transport_ux_surface_(state.statusBar, state.overlays)
+          transport_ux_surface_(state.statusBar)
 #endif
     {
         if (!viewSelectorElement) return;
@@ -58,14 +58,7 @@ public:
 
         transport_handler_ = core::app::makeExtmemUnique<core::handler::TransportHandler>(
             core::handler::TransportHandler::StateRefs{state.statusBar},
-            buttons,
-            core::handler::TransportHandler::ViewScopes{
-                macroViewScope,
-                sequencerViewScope,
-                projectViewScope,
-                deviceSettingsViewScope,
-                projectViewScope,
-            }
+            buttons
         );
         if (!transport_handler_) return;
 

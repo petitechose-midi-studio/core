@@ -16,7 +16,6 @@ using StepEditHistorySnapshot = core::state::sequencer::SequencerHistoryPatternS
 
 bool openForMacroInPage(core::state::sequencer::SequencerState& sequencer,
                         SequencerHistoryDomainServices& history,
-                        ButtonReleaseLatch<8>& openReleaseLatch,
                         oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                         StepEditHistorySnapshot& historySnapshot,
                         bool& historySnapshotValid,
@@ -36,15 +35,13 @@ bool backToParentContent(core::state::sequencer::SequencerState& sequencer,
                          bool& historySnapshotValid);
 void close(core::state::sequencer::SequencerState& sequencer,
            SequencerHistoryDomainServices& history,
-           ButtonReleaseLatch<8>& openReleaseLatch,
            ButtonReleaseLatch<2>& contextReleaseLatch,
            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
            StepEditHistorySnapshot& historySnapshot,
            bool& historySnapshotValid);
 bool editedStepInRange(const core::state::sequencer::SequencerState& sequencer,
                        uint8_t& step);
-bool shouldCloseFromMacro(ButtonReleaseLatch<8>& openReleaseLatch,
-                          const core::state::sequencer::SequencerState& sequencer,
+bool shouldCloseFromMacro(const core::state::sequencer::SequencerState& sequencer,
                           uint8_t indexInPage);
 
 }  // namespace core::handler::sequencer::step_edit_session_workflow

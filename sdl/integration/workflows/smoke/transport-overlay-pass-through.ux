@@ -1,0 +1,29 @@
+# UX workflow: invariant Transport through an active overlay.
+# Purpose: proves that BOTTOM_CENTER is the sole explicit global pass-through:
+# it stops and restarts playback without closing or mutating the View Selector.
+# Expect: semantic:playing_at_root:effect=transport_start, semantic:selector_stopped:effect=transport_stop
+# Expect: semantic:selector_restarted:effect=transport_start, semantic:stopped_at_root:effect=transport_stop
+# Expect: semantic:selector_stopped:overlay=view_selector, semantic:selector_stopped:playing=false
+# Expect: semantic:selector_restarted:overlay=view_selector, semantic:selector_restarted:playing=true
+
+0 scenario sequencer
+
+# Start from the Sequencer root.
+100 tap MACRO_1 60
+240 tap BOTTOM_CENTER 60
+460 capture screen playing_at_root
+
+# A short LEFT_TOP latches the selector. Transport remains globally available
+# but must not dismiss, navigate, or otherwise mutate the overlay.
+560 tap LEFT_TOP 60
+820 capture screen selector_playing
+920 tap BOTTOM_CENTER 60
+1160 capture screen selector_stopped
+1260 tap BOTTOM_CENTER 60
+1500 capture screen selector_restarted
+
+# Close the selector explicitly, then stop once more at the view root.
+1600 tap LEFT_TOP 60
+1840 capture screen playing_after_selector
+1940 tap BOTTOM_CENTER 60
+2180 capture screen stopped_at_root

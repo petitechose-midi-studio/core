@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include "state/StructureClipboardState.hpp"
@@ -42,6 +43,7 @@ enum ClipboardTransferBinding : uint8_t {
 };
 
 struct ClipboardTransferPlanEntry {
+    uint8_t clipboardIndex = 0;
     uint8_t sourceTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     uint8_t targetTrack = core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     uint8_t targetMidiChannel = 0;
@@ -54,26 +56,50 @@ struct ClipboardTransferPlanEntry {
 
 /**
  * Non-mutating Track transfer preflight shared by handlers, presenters and UX
- * traces. The current direct Track workflow transfers one source Track to the
- * focused destination without retaining an inaccessible multi-selection path.
+ * traces. A sparse selection keeps every source offset relative to its first
+ * Track; entries are never compacted, clipped or silently skipped.
  */
 struct ClipboardTransferPlan {
+    static constexpr uint8_t MAX_ENTRIES =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+
     StructureClipboardKind payloadKind = StructureClipboardKind::NONE;
     uint32_t clipboardRevision = 0;
     uint16_t sourceMask = 0;
     uint16_t targetMask = 0;
     uint16_t createMask = 0;
     uint16_t overwriteMask = 0;
+    uint16_t targetEndExclusive = 0;
+    uint8_t sourceCount = 0;
+    uint8_t count = 0;
+    uint8_t firstSource =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+    uint8_t lastSource =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+    uint8_t firstTarget =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+    uint8_t lastTarget =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     uint8_t bindingPolicy = 0;
+    uint8_t inheritedLaneCount = 0;
+    uint8_t pinnedLaneCount = 0;
     ClipboardTransferAvailability availability = ClipboardTransferAvailability::DISABLED;
     ClipboardTransferReason reason = ClipboardTransferReason::EMPTY_CLIPBOARD;
+    std::array<ClipboardTransferPlanEntry, MAX_ENTRIES> entries{};
+
+    // Compatibility mirror for the existing single-Track presenters and
+    // transaction call sites while the multi-entry path shares the same plan.
     ClipboardTransferPlanEntry entry{};
     bool hasEntry = false;
 
-    bool hasEntries() const { return hasEntry; }
+    bool hasEntries() const { return count > 0U || hasEntry; }
     bool canCommit() const {
-        return availability != ClipboardTransferAvailability::DISABLED &&
-               hasEntry;
+        if (availability == ClipboardTransferAvailability::DISABLED) {
+            return false;
+        }
+        return sourceCount > 0U
+            ? count == sourceCount
+            : hasEntry;
     }
 };
 
@@ -98,6 +124,91 @@ bool sameSequencerTrackClipboardTransferIdentity(
 bool sameSequencerTrackClipboardTransferPlan(
     const ClipboardTransferPlan& lhs,
     const ClipboardTransferPlan& rhs
+);
+
+struct SequencerPageSelectionPastePlanEntry {
+    uint8_t clipboardIndex = 0;
+    uint8_t destinationPage =
+        core::state::sequencer::SequencerPatternState::PAGE_COUNT;
+};
+
+/**
+ * Sparse Page placement. Page offsets are preserved, existing intermediate
+ * pages stay untouched, and any required extension is explicit and atomic.
+ */
+struct SequencerPageSelectionPastePlan {
+    static constexpr uint8_t MAX_ENTRIES =
+        core::state::sequencer::SequencerPatternState::PAGE_COUNT;
+
+    uint16_t destinationMask = 0;
+    uint16_t createMask = 0;
+    uint16_t overwriteMask = 0;
+    uint8_t sourceCount = 0;
+    uint8_t count = 0;
+    uint8_t firstDestinationPage =
+        core::state::sequencer::SequencerPatternState::PAGE_COUNT;
+    uint8_t lastDestinationPage =
+        core::state::sequencer::SequencerPatternState::PAGE_COUNT;
+    uint8_t requiredPageCount = 0;
+    ClipboardTransferAvailability availability =
+        ClipboardTransferAvailability::DISABLED;
+    ClipboardTransferReason reason =
+        ClipboardTransferReason::EMPTY_CLIPBOARD;
+    std::array<
+        SequencerPageSelectionPastePlanEntry,
+        MAX_ENTRIES
+    > entries{};
+
+    bool hasEntries() const { return count > 0U; }
+    bool canCommit() const {
+        return availability != ClipboardTransferAvailability::DISABLED &&
+               sourceCount > 0U && count == sourceCount;
+    }
+};
+
+SequencerPageSelectionPastePlan buildSequencerPageSelectionPastePlan(
+    const SequencerPageSelectionClipboard& clipboard,
+    uint8_t cursorPage,
+    uint8_t activePageCount
+);
+
+struct MacroPageSelectionPastePlanEntry {
+    uint8_t clipboardIndex = 0U;
+    uint8_t destinationPage = core::state::macro::PAGE_COUNT;
+};
+
+/** Sparse Macro Page placement with an explicit contiguous page extension. */
+struct MacroPageSelectionPastePlan {
+    static constexpr uint8_t MAX_ENTRIES =
+        core::state::macro::PAGE_COUNT;
+
+    uint16_t destinationMask = 0U;
+    uint16_t createMask = 0U;
+    uint16_t overwriteMask = 0U;
+    uint8_t sourceCount = 0U;
+    uint8_t count = 0U;
+    uint8_t firstDestinationPage = core::state::macro::PAGE_COUNT;
+    uint8_t lastDestinationPage = core::state::macro::PAGE_COUNT;
+    uint8_t requiredPageCount = 0U;
+    ClipboardTransferAvailability availability =
+        ClipboardTransferAvailability::DISABLED;
+    ClipboardTransferReason reason =
+        ClipboardTransferReason::EMPTY_CLIPBOARD;
+    std::array<
+        MacroPageSelectionPastePlanEntry,
+        MAX_ENTRIES
+    > entries{};
+
+    [[nodiscard]] bool canCommit() const {
+        return availability != ClipboardTransferAvailability::DISABLED &&
+               sourceCount > 0U && count == sourceCount;
+    }
+};
+
+MacroPageSelectionPastePlan buildMacroPageSelectionPastePlan(
+    const MacroPageSelectionClipboard& clipboard,
+    uint8_t cursorPage,
+    uint8_t activePageCount
 );
 
 }  // namespace core::state

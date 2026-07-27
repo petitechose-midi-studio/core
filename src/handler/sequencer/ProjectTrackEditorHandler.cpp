@@ -101,7 +101,7 @@ FLASHMEM void ProjectTrackEditorHandler::setupBindings() {
         .when([this]() { return editor_.active && ownsActiveTrack(); })
         .then([this]() { toggleMute(); });
 
-    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(overlay_scope_)
         .when([this]() { return editor_.active && ownsActiveTrack(); })

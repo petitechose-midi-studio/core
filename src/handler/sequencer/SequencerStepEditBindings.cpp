@@ -73,6 +73,15 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .scope(overlay_scope_)
         .then([this]() { activateFocusedRowOrClose(); });
 
+    buttons_.button(Config::ButtonID::NAV)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(overlay_scope_)
+        .when([this]() {
+            return !sequencer_.stepContentDraft.active.get() &&
+                   !sequencer_.stepContentDraft.exitPromptVisible.get();
+        })
+        .then([this]() { openStepPresetPicker(); });
+
     // Close without reverting live edits.
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
@@ -97,15 +106,6 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         // Back gesture and therefore the only path that may open a safe-exit
         // prompt.
         .then([this]() { step_retarget_active_ = false; });
-
-    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
-        .release()
-        .scope(overlay_scope_)
-        .when([this]() {
-            return !sequencer_.stepContentDraft.active.get() &&
-                   !sequencer_.stepContentDraft.exitPromptVisible.get();
-        })
-        .then([this]() { openStepPresetPicker(); });
 
     buttons_.button(Config::ButtonID::LEFT_BOTTOM)
         .press()
@@ -270,11 +270,6 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .then([this]() { closeStepPresetPicker(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
-        .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { closeStepPresetPicker(); });
-
-    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
         .release()
         .scope(step_preset_overlay_scope_)
         .then([this]() { toggleStepPresetMode(); });

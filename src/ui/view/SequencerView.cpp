@@ -196,6 +196,7 @@ void SequencerView::onStepGridGeometryInvalidated(void* userData) {
 FLASHMEM bool SequencerView::bindToState() {
     bindHeaderState();
     bindHeaderStripState();
+    const bool structureSelectionBound = bindStructureSelectionState();
     bindGridState();
     bindSelectorOverlayState();
     bindOverlayVisibilityState();
@@ -207,8 +208,11 @@ FLASHMEM bool SequencerView::bindToState() {
     bindClipboardState();
 
     const bool bound =
+        structureSelectionBound &&
         header_watcher_.subscriptionCount() == header_watcher_.capacity() &&
         header_strip_watcher_.subscriptionCount() == header_strip_watcher_.capacity() &&
+        structure_selection_watcher_.subscriptionCount() ==
+            structure_selection_watcher_.capacity() &&
         grid_watcher_.subscriptionCount() == grid_watcher_.capacity() &&
         grid_tick_watcher_.subscriptionCount() == grid_tick_watcher_.capacity() &&
         selector_overlay_watcher_.subscriptionCount() == selector_overlay_watcher_.capacity() &&
@@ -243,6 +247,7 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.revision,
+        state_refs_.sequencer.structureUi.trackPaste.revision,
         state_refs_.sequencer.ccLaneUi.revision
     );
 }
@@ -267,6 +272,20 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.revision
     );
+}
+
+FLASHMEM bool SequencerView::bindStructureSelectionState() {
+    structure_selection_watcher_.bind<
+        &SequencerView::requestStructureSelectionRender
+    >(*this, 12, "SequencerView.structureSelection");
+    return core::ui::watchStructureSelectionInvalidation(
+               structure_selection_watcher_,
+               state_refs_.trackNavigation.selection
+           ) &&
+           core::ui::watchStructureSelectionInvalidation(
+               structure_selection_watcher_,
+               state_refs_.sequencer.structureUi.pageSelection
+           );
 }
 
 FLASHMEM void SequencerView::bindGridState() {
@@ -296,6 +315,7 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.structureNavigationFocus,
         state_refs_.projectNavigation.contentRevision,
         state_refs_.sequencer.structureUi.stepSelection.active,
+        state_refs_.sequencer.structureUi.stepSelection.placing,
         state_refs_.sequencer.structureUi.stepSelection.cursorStep,
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.structureUi.stepSelection.pastePreviewActive,
@@ -367,9 +387,7 @@ FLASHMEM void SequencerView::bindOverlayVisibilityState() {
         state_refs_.deviceSettings.visible,
         state_refs_.deviceSettings.selector.visible,
         state_refs_.sequencerSettings.visible,
-        state_refs_.sequencerSettings.selector.visible,
-        state_refs_.dataManager.visible,
-        state_refs_.dataManager.dialog.visible
+        state_refs_.sequencerSettings.selector.visible
     );
 }
 
@@ -400,9 +418,12 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.sequencer.structureUi.previewAddPageSlot,
         state_refs_.sequencer.structureUi.trackPaste.revision,
+        state_refs_.trackNavigation.hold.action,
+        state_refs_.trackNavigation.hold.startedAtMs,
         state_refs_.sequencer.structureUi.pageHold.action,
         state_refs_.sequencer.structureUi.pageHold.startedAtMs,
         state_refs_.sequencer.structureUi.stepSelection.active,
+        state_refs_.sequencer.structureUi.stepSelection.placing,
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.structureUi.stepSelection.pastePreviewActive,
         state_refs_.sequencer.structureUi.stepSelection.pastePreview,
@@ -494,9 +515,7 @@ bool SequencerView::hasBlockingOverlay() const {
            state_refs_.deviceSettings.visible.get() ||
            state_refs_.deviceSettings.selector.visible.get() ||
            state_refs_.sequencerSettings.visible.get() ||
-           state_refs_.sequencerSettings.selector.visible.get() ||
-           state_refs_.dataManager.visible.get() ||
-           state_refs_.dataManager.dialog.visible.get();
+           state_refs_.sequencerSettings.selector.visible.get();
 }
 
 void SequencerView::handleOverlayVisibilityChanged() {
@@ -535,6 +554,15 @@ void SequencerView::requestHeaderAndLeftRender() {
 
 void SequencerView::requestHeaderStripAndLeftRender() {
     requestRender(RENDER_HEADER_STRIP | RENDER_LEFT_ACTION_STRIP);
+}
+
+void SequencerView::requestStructureSelectionRender() {
+    requestRender(
+        RENDER_HEADER_TOP |
+        RENDER_HEADER_STRIP |
+        RENDER_LEFT_ACTION_STRIP |
+        RENDER_BOTTOM_ACTION_STRIP
+    );
 }
 
 void SequencerView::requestSelectorOverlayRender() {

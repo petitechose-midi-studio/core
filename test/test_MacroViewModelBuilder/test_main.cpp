@@ -62,10 +62,7 @@ core::state::macro::MacroAutomationSlotAddress configureAutomation(
 void test_macro_slot_focus_shows_guarded_slot_actions() {
     CoreStorages storage;
     core::state::CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
+        storage.settings
     );
 
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::STEP);
@@ -89,10 +86,7 @@ void test_macro_slot_focus_shows_guarded_slot_actions() {
 void test_macro_slot_focus_only_arms_paste_for_typed_slot_clipboard() {
     CoreStorages storage;
     core::state::CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
+        storage.settings
     );
 
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::STEP);
@@ -130,10 +124,7 @@ void test_macro_slot_focus_only_arms_paste_for_typed_slot_clipboard() {
 void test_macro_add_slot_focus_dims_structure_actions() {
     CoreStorages storage;
     core::state::CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
+        storage.settings
     );
 
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::STEP);
@@ -153,10 +144,7 @@ void test_macro_add_slot_focus_dims_structure_actions() {
 void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
     CoreStorages storage;
     core::state::CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
+        storage.settings
     );
     state.pages.setMacroSlotActive(0, true);
     const auto address = configureAutomation(state, 0, 0.42f);
@@ -238,10 +226,7 @@ void test_macro_grid_distinguishes_stored_playback_modulation_and_manual() {
 void test_runtime_projection_revision_targets_one_macro_or_all() {
     CoreStorages storage;
     core::state::CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
+        storage.settings
     );
 
     core::state::macro::MacroResolvedValue projection{};
@@ -288,10 +273,7 @@ void test_runtime_projection_revision_targets_one_macro_or_all() {
 void test_macro_performance_projection_explains_edit_and_shared_take() {
     CoreStorages storage;
     core::state::CoreState state(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
+        storage.settings
     );
     state.pages.setMacroSlotActive(0, true);
     state.pages.setMacroSlotActive(2, true);
@@ -368,6 +350,115 @@ void test_macro_performance_projection_explains_edit_and_shared_take() {
         << "test_macro_performance_projection_explains_edit_and_shared_take\n";
 }
 
+void test_macro_selection_projection_exposes_copy_collision_and_blocked_states() {
+    CoreStorages storage;
+    core::state::CoreState state(
+        storage.settings
+    );
+    auto selected = state.macroUi.slotSelection.selectedMask.get();
+    selected.setBit(0U, true);
+    selected.setBit(3U, true);
+    state.macroUi.slotSelection.selectedMask.set(selected);
+    state.macroUi.slotSelection.active.set(true);
+    state.macroUi.slotSelection.cursorLinear.set(0U);
+
+    auto strip =
+        core::ui::buildMacroBottomActionStripProps(sourceFor(state));
+    assert(strip.slots[0].visualState ==
+           ContextActionStripVisualState::HIDDEN);
+    assert(strip.slots[2].showLabel);
+    assert(std::strcmp(
+        strip.slots[2].labelText.data(),
+        "CPY \xC2\xB7 2"
+    ) == 0);
+    auto sourceSlot =
+        core::ui::buildMacroWidgetProps(sourceFor(state), 0U);
+    assert(sourceSlot.selected);
+    assert(sourceSlot.focused);
+
+    state.macroUi.slotSelection.placing.set(true);
+    state.macroUi.slotSelection.cursorLinear.set(10U);
+    std::array<uint8_t, core::state::macro::PAGE_COUNT>
+        destinations{};
+    std::array<uint8_t, core::state::macro::PAGE_COUNT>
+        overwrites{};
+    destinations[1] =
+        static_cast<uint8_t>((1U << 2U) | (1U << 5U));
+    overwrites[1] = static_cast<uint8_t>(1U << 5U);
+    state.macroUi.slotSelection.publishPlacement(
+        destinations,
+        overwrites,
+        false,
+        1U,
+        2U,
+        7U
+    );
+
+    strip =
+        core::ui::buildMacroBottomActionStripProps(sourceFor(state));
+    assert(strip.slots[2].tone == ContextActionStripTone::WARNING);
+    assert(std::strcmp(
+        strip.slots[2].labelText.data(),
+        "PST \xC2\xB7 1 OVR"
+    ) == 0);
+    const auto freeTarget =
+        core::ui::buildMacroWidgetProps(sourceFor(state), 2U);
+    const auto overwriteTarget =
+        core::ui::buildMacroWidgetProps(sourceFor(state), 5U);
+    assert(freeTarget.placementPreview ==
+           core::ui::MacroSlotPlacementPreview::FREE);
+    assert(std::fabs(freeTarget.value - 0.5f) < 0.0001f);
+    assert(overwriteTarget.placementPreview ==
+           core::ui::MacroSlotPlacementPreview::OVERWRITE);
+    const auto header =
+        core::ui::buildMacroHeaderBarProps(sourceFor(state));
+    assert(header.slotSelectionActive);
+    assert(header.previewPage == 1U);
+    assert(header.previewPageAddSlot);
+
+    state.macroUi.slotSelection.publishPlacement(
+        destinations,
+        overwrites,
+        true,
+        1U,
+        3U,
+        7U
+    );
+    strip =
+        core::ui::buildMacroBottomActionStripProps(sourceFor(state));
+    assert(strip.slots[2].visualState ==
+           ContextActionStripVisualState::DISABLED);
+    assert(strip.slots[2].tone ==
+           ContextActionStripTone::DESTRUCTIVE);
+    assert(core::ui::buildMacroWidgetProps(
+        sourceFor(state),
+        2U
+    ).placementPreview ==
+           core::ui::MacroSlotPlacementPreview::BLOCKED);
+
+    std::cout
+        << "[PASS] Macro selection UI exposes Copy, overwrite and blocked states\n";
+}
+
+void test_macro_selection_uses_existing_preview_page_value() {
+    CoreStorages storage;
+    core::state::CoreState state(
+        storage.settings
+    );
+    state.pages.setPageEnabled(1U, true);
+    state.macros.slots[2U].value.set(0.15f);
+    state.pages.tracks[0U].pages[1U].values[2U] = 0.75f;
+    state.macroUi.slotSelection.active.set(true);
+    state.macroUi.slotSelection.cursorLinear.set(10U);
+
+    const auto preview =
+        core::ui::buildMacroWidgetProps(sourceFor(state), 2U);
+    assert(std::fabs(preview.value - 0.75f) < 0.0001f);
+
+    std::cout
+        << "[PASS] Macro selection uses the existing preview Page value\n";
+}
+
 }  // namespace
 
 int main() {
@@ -377,6 +468,8 @@ int main() {
     test_macro_grid_distinguishes_stored_playback_modulation_and_manual();
     test_runtime_projection_revision_targets_one_macro_or_all();
     test_macro_performance_projection_explains_edit_and_shared_take();
+    test_macro_selection_projection_exposes_copy_collision_and_blocked_states();
+    test_macro_selection_uses_existing_preview_page_value();
     std::cout << "\nAll MacroViewModelBuilder tests passed.\n";
     return 0;
 }

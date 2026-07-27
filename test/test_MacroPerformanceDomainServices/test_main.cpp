@@ -196,10 +196,7 @@ void assertCurvePayloadEquals(
 void test_runtime_values_are_forwarded_and_clamped() {
     CoreStorages storage;
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     services.setResolvedValue(0, 1.5f);
@@ -217,10 +214,7 @@ void test_runtime_values_are_forwarded_and_clamped() {
 void test_manual_value_updates_base_and_stages_project_mutation() {
     CoreStorages storage;
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     services.setManualValue(0, 0.75f);
@@ -241,10 +235,7 @@ void test_manual_value_updates_base_and_stages_project_mutation() {
 
 void test_manual_override_persists_absolute_base_and_is_addressed_by_slot() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const auto firstAddress = core::state::macro::MacroAutomationSlotAddress{
         .track = state.pages.currentActiveTrack(),
@@ -294,10 +285,7 @@ void test_config_changes_mark_project_dirty_and_bump_revision() {
     uint8_t updatedChannel = 0;
     uint8_t updatedCc = 0;
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     const auto initialConfig = services.activeConfig(0);
@@ -340,10 +328,7 @@ void test_config_changes_mark_project_dirty_and_bump_revision() {
     assert(state.projectTracks.authored.midiChannels[track] == updatedChannel);
     assert(services.activeConfig(0).cc == updatedCc);
 
-    core::state::CoreState restored(storage.settings,
-                                    storage.macroLibrary,
-                                    storage.sequencerPatternLibrary,
-                                    storage.sequencerSetLibrary);
+    core::state::CoreState restored(storage.settings);
     const auto restoredServices = core::handler::MacroPerformanceDomainServices::fromCoreState(
         restored
     );
@@ -358,10 +343,7 @@ void test_config_changes_mark_project_dirty_and_bump_revision() {
 
 void test_macro_channel_gesture_coalesces_into_one_global_track_command() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services =
         core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const uint8_t initial = services.activeTrackChannel();
@@ -386,10 +368,7 @@ void test_switch_to_page_updates_runtime_status_and_marks_project_dirty() {
     CoreStorages storage;
     storage.initAll();
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     std::strncpy(state.pages.activeTrackData().pages[2].name,
@@ -417,10 +396,7 @@ void test_status_bar_pulses_are_forwarded() {
     CoreStorages storage;
     storage.initAll();
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     services.pulseCcIn();
@@ -437,10 +413,7 @@ void test_status_bar_pulses_are_forwarded() {
 void test_macro_slot_activation_is_sparse_and_marks_project_dirty() {
     CoreStorages storage;
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     assert(services.isMacroSlotActive(0));
@@ -463,10 +436,7 @@ void test_macro_slot_activation_is_sparse_and_marks_project_dirty() {
 
 void test_addressed_macro_slot_activation_preserves_cold_page_cache() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
 
     const auto activeConfigBefore = state.pages.activeConfigs[1];
     const core::state::macro::MacroAutomationSlotAddress coldAddress{0, 1, 1};
@@ -499,10 +469,7 @@ void test_addressed_macro_slot_activation_preserves_cold_page_cache() {
 
 void test_destination_activation_keeps_structure_contiguous_and_macros_sparse() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     using core::state::macro::MacroAutomationSlotAddress;
     using core::state::macro::MacroWorkflow;
 
@@ -551,10 +518,7 @@ void test_destination_activation_keeps_structure_contiguous_and_macros_sparse() 
 void test_automation_take_commits_to_current_macro_slot() {
     CoreStorages storage;
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     state.statusBar.tempo.set(120.0f);
@@ -618,10 +582,7 @@ void test_automation_take_commits_to_current_macro_slot() {
 void test_automation_take_cancel_discards_session() {
     CoreStorages storage;
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     assert(services.armAutomationTake());
@@ -648,10 +609,7 @@ void test_automation_take_cancel_discards_session() {
 void test_shared_automation_take_records_late_join_and_one_undo() {
     using namespace core::state::macro;
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services =
         core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     state.statusBar.tempo.set(120.0f);
@@ -722,10 +680,7 @@ void test_shared_automation_take_records_late_join_and_one_undo() {
 void test_fixed_take_overdubs_multiple_wraps_until_explicit_release() {
     using namespace core::state::macro;
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services =
         core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     state.statusBar.tempo.set(120.0f);
@@ -779,10 +734,7 @@ void test_fixed_take_overdubs_multiple_wraps_until_explicit_release() {
 void test_existing_lane_prefill_survives_outside_partial_overdub() {
     using namespace core::state::macro;
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const MacroAutomationSlotAddress address{0U, 0U, 0U};
     const auto before = configureAutomation(state.pages.control, address);
     const float untouchedBefore =
@@ -833,10 +785,7 @@ void test_existing_lane_prefill_survives_outside_partial_overdub() {
 void test_take_cancel_restores_manual_and_preflight_failure_is_clean() {
     using namespace core::state::macro;
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services =
         core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const MacroAutomationSlotAddress address{0U, 0U, 0U};
@@ -852,10 +801,7 @@ void test_take_cancel_restores_manual_and_preflight_failure_is_clean() {
 
     // A full arena fails before the first authored/manual mutation.
     state.macroUi.manualOverrides.clearProjectRuntime();
-    core::state::CoreState full(storage.settings,
-                                storage.macroLibrary,
-                                storage.sequencerPatternLibrary,
-                                storage.sequencerSetLibrary);
+    core::state::CoreState full(storage.settings);
     const auto fullServices =
         core::handler::MacroPerformanceDomainServices::fromCoreState(full);
     fillAutomationPointPoolExcept(full.pages.control, address);
@@ -876,10 +822,7 @@ void test_take_cancel_restores_manual_and_preflight_failure_is_clean() {
 void test_armed_automation_take_without_motion_does_not_create_slot() {
     CoreStorages storage;
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
 
     assert(services.armAutomationTake());
@@ -904,10 +847,7 @@ void test_armed_automation_take_without_motion_does_not_create_slot() {
 
 void test_cancelled_automation_take_restores_previous_manual_state() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const auto address = core::state::macro::MacroAutomationSlotAddress{
         .track = state.pages.currentActiveTrack(),
@@ -935,10 +875,7 @@ void test_cancelled_automation_take_restores_previous_manual_state() {
 
 void test_automation_take_preserves_active_modulation_without_resume() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const auto address = core::state::macro::MacroAutomationSlotAddress{
         .track = state.pages.currentActiveTrack(),
@@ -1007,10 +944,7 @@ void test_automation_take_preserves_active_modulation_without_resume() {
 void test_automation_take_preserves_shared_lfos_through_undo_redo() {
     using namespace core::state::modulation;
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services =
         core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const auto address = core::state::macro::MacroAutomationSlotAddress{
@@ -1177,10 +1111,7 @@ void test_automation_take_preserves_shared_lfos_through_undo_redo() {
 void test_failed_first_automation_take_does_not_leave_an_empty_slot() {
     CoreStorages storage;
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const auto address = core::state::macro::MacroAutomationSlotAddress{
         .track = state.pages.currentActiveTrack(),
@@ -1212,10 +1143,7 @@ void test_failed_first_automation_take_does_not_leave_an_empty_slot() {
 void test_macro_edit_automation_lifecycle_actions() {
     CoreStorages storage;
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto performance = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const auto edit = core::handler::MacroEditDomainServices::fromCoreState(state);
 
@@ -1252,10 +1180,7 @@ void test_macro_edit_automation_lifecycle_actions() {
 
 void test_modulation_copy_paste_preserves_target_and_exact_payload() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto edit = core::handler::MacroEditDomainServices::fromCoreState(state);
     auto& page = state.pages.activePageData();
     page.setMacroActive(0, true);
@@ -1386,10 +1311,7 @@ void test_modulation_copy_paste_preserves_target_and_exact_payload() {
 
 void test_typed_slot_copy_paste_preserves_automation_and_modulation() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto structure =
         core::handler::MacroStructureDomainServices::fromCoreState(state);
     auto& page = state.pages.activePageData();
@@ -1464,10 +1386,7 @@ void test_typed_slot_copy_paste_preserves_automation_and_modulation() {
 
 void test_page_and_track_copy_preserve_automation_and_modulation() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto structure = core::handler::MacroStructureDomainServices::fromCoreState(state);
     const auto source = core::state::macro::MacroAutomationSlotAddress{
         .track = 0,
@@ -1597,10 +1516,7 @@ void test_page_and_track_copy_preserve_automation_and_modulation() {
 
 void test_macro_track_structure_mutations_preserve_project_track_identity() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto structure =
         core::handler::MacroStructureDomainServices::fromCoreState(state);
 
@@ -1684,10 +1600,7 @@ void test_macro_track_structure_mutations_preserve_project_track_identity() {
 
 void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entries() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto performance = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const auto edit = core::handler::MacroEditDomainServices::fromCoreState(state);
     const auto structure = core::handler::MacroStructureDomainServices::fromCoreState(state);
@@ -1785,10 +1698,7 @@ void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entrie
 
 void test_destination_paste_preserves_canonical_track_channel() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     state.pages.setMacroSlotActive(0U, true);
     state.pages.setMacroSlotActive(1U, true);
     state.pages.activePageData().cc[0] = 74U;
@@ -1812,10 +1722,7 @@ void test_destination_paste_preserves_canonical_track_channel() {
 
 void test_manual_takeover_is_one_global_value_and_authority_transaction() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
     const auto services =
         core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     const auto address = core::state::macro::MacroAutomationSlotAddress{

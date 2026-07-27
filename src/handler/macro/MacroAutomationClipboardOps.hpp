@@ -88,11 +88,39 @@ MacroTypedPastePreflight preflightSlotPaste(
     const core::state::StructureClipboardState& clipboard
 );
 
+MacroTypedPastePreflight preflightSlotPasteEntry(
+    const core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard,
+    uint8_t clipboardIndex
+);
+
 bool pasteSlotFromClipboard(
     core::state::macro::MacroPagesState& pages,
     const core::state::macro::MacroAutomationSlotAddress& address,
     const core::state::StructureClipboardState& clipboard,
     bool overwriteConfirmed
+);
+
+bool pasteSlotEntryFromClipboard(
+    core::state::macro::MacroPagesState& pages,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard,
+    uint8_t clipboardIndex,
+    bool overwriteConfirmed
+);
+
+/**
+ * Allocation-free inner operation for a caller-owned atomic transaction.
+ * The caller publishes the completed domain/page state only after every
+ * selected Slot has succeeded.
+ */
+bool pasteSlotEntryFromClipboardInDomain(
+    core::state::modulation::ProjectControlDomainState& domain,
+    core::state::macro::MacroPageData& page,
+    const core::state::macro::MacroAutomationSlotAddress& address,
+    const core::state::StructureClipboardState& clipboard,
+    uint8_t clipboardIndex
 );
 
 bool copyModulationToClipboard(

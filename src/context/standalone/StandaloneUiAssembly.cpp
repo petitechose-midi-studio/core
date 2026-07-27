@@ -313,7 +313,6 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
             core_state_.macroEdit,
             core_state_.viewSelector,
             core_state_.deviceSettings,
-            core_state_.dataManager,
         }
     );
     if (!macro_view_ || !macro_view_->valid()) {
@@ -336,7 +335,6 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
             core_state_.viewSelector,
             core_state_.deviceSettings,
             core_state_.sequencerSettings,
-            core_state_.dataManager,
             core_state_.projectNavigation,
             core_state_.sequencerTrackActivations,
         }
@@ -430,6 +428,10 @@ FLASHMEM bool StandaloneUiAssembly::bindGlobalTrackStrip() {
         core_state_.projectTracks.revision,
         core_state_.trackNavigation.previewAddSlot,
         core_state_.trackNavigation.previewTrackIndex
+    ) && bound;
+    bound = core::ui::watchStructureSelectionInvalidation(
+        global_track_structure_watcher_,
+        core_state_.trackNavigation.selection
     ) && bound;
 
     global_track_activity_low_watcher_.bind<

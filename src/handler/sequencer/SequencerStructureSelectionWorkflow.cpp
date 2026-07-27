@@ -14,6 +14,7 @@ namespace core::handler {
 FLASHMEM bool
 SequencerStructureEditWorkflow::selectionHoldActionAvailable() const {
     if (track_ui_.selection.active.get()) {
+        if (track_ui_.selection.placing.get()) return false;
         const uint16_t enabledMask = currentTrackEnabledMask();
         const uint16_t selectedMask = activeTrackSelectionMask(
             track_ui_.selection.selectedMask.get(),
@@ -28,6 +29,9 @@ SequencerStructureEditWorkflow::selectionHoldActionAvailable() const {
         return selectedCount > 0U && selectedCount < enabledCount;
     }
     if (sequencer_.structureUi.pageSelection.active.get()) {
+        if (sequencer_.structureUi.pageSelection.placing.get()) {
+            return false;
+        }
         const uint8_t pageCount =
             core::state::sequencer::activeContentPageCount(sequencer_);
         const uint16_t selectedMask = activeContentPageSelectionMask(
@@ -46,6 +50,7 @@ SequencerStructureEditWorkflow::selectionHoldActionAvailable() const {
 
 FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftTap() {
     if (track_ui_.selection.active.get()) {
+        if (track_ui_.selection.placing.get()) return;
         const uint16_t selectedMask = activeTrackSelectionMask(
             track_ui_.selection.selectedMask.get(),
             currentTrackEnabledMask()
@@ -68,6 +73,7 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftTap() {
     }
 
     if (sequencer_.structureUi.pageSelection.active.get()) {
+        if (sequencer_.structureUi.pageSelection.placing.get()) return;
         const uint16_t selectedMask =
             sequencer_.structureUi.pageSelection.selectedMask.get();
         auto historyChange = capturePageHistoryBefore();
@@ -95,6 +101,7 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftTap() {
 
 FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftHold() {
     if (track_ui_.selection.active.get()) {
+        if (track_ui_.selection.placing.get()) return;
         const uint16_t selectedMask = activeTrackSelectionMask(
             track_ui_.selection.selectedMask.get(),
             currentTrackEnabledMask()
@@ -126,6 +133,7 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftHold() {
     }
 
     if (sequencer_.structureUi.pageSelection.active.get()) {
+        if (sequencer_.structureUi.pageSelection.placing.get()) return;
         auto& selection = sequencer_.structureUi.pageSelection;
         const uint16_t selectedMask = selection.selectedMask.get();
         auto historyChange = capturePageHistoryBefore();

@@ -155,10 +155,7 @@ struct Harness {
 
     Harness()
         : state(
-              storages.settings,
-              storages.macroLibrary,
-              storages.sequencerPatternLibrary,
-              storages.sequencerSetLibrary
+              storages.settings
           )
         , filesystem(testRoot().string().c_str())
         , files(filesystem)

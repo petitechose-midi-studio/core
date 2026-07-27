@@ -6,6 +6,7 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 
+#include "../../src/config/App.hpp"
 #include "../../src/handler/transport/TransportHandler.hpp"
 #include "../support/InputTestHardware.hpp"
 
@@ -14,9 +15,6 @@ namespace {
 using test_support::TestButtonHardware;
 
 struct TransportHarness {
-    static constexpr oc::type::ScopeID MACRO_VIEW_SCOPE = 1001;
-    static constexpr oc::type::ScopeID SEQUENCER_VIEW_SCOPE = 1002;
-
     core::state::StatusBarState statusBar;
     oc::core::event::EventBus eventBus;
     oc::core::input::InputBinding inputBinding;
@@ -25,14 +23,9 @@ struct TransportHarness {
     core::handler::TransportHandler handler;
 
     TransportHarness()
-        : inputBinding(eventBus)
+        : inputBinding(eventBus, nullptr, Config::Input::CONFIG)
         , buttons(inputBinding, buttonHw)
-        , handler(core::handler::TransportHandler::StateRefs{statusBar},
-                  buttons,
-                  core::handler::TransportHandler::ViewScopes{
-                      MACRO_VIEW_SCOPE,
-                      SEQUENCER_VIEW_SCOPE,
-                  }) {}
+        , handler(core::handler::TransportHandler::StateRefs{statusBar}, buttons) {}
 
     void press(Config::ButtonID id) {
         const auto buttonId = static_cast<oc::type::ButtonID>(id);
@@ -79,11 +72,23 @@ void test_transport_lock_blocks_play_toggle() {
     std::cout << "[PASS] test_transport_lock_blocks_play_toggle\n";
 }
 
+void test_transport_lock_never_blocks_stop() {
+    TransportHarness h;
+    h.statusBar.playing.set(true);
+    h.statusBar.transportLocked.set(true);
+
+    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    assert(!h.statusBar.playing.get());
+
+    std::cout << "[PASS] test_transport_lock_never_blocks_stop\n";
+}
+
 }  // namespace
 
 int main() {
     test_bottom_center_toggles_play_state();
     test_transport_lock_blocks_play_toggle();
+    test_transport_lock_never_blocks_stop();
 
     std::cout << "\nAll TransportHandler tests passed.\n";
     return 0;

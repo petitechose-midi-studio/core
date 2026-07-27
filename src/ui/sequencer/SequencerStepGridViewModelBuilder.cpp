@@ -18,7 +18,12 @@ FLASHMEM void applyStepPasteFootprint(
     const SequencerViewModelSource& source
 ) {
     const auto& selection = source.sequencer.structureUi.stepSelection;
-    if (!selection.active.get() || !source.structureClipboard.hasSequencerSteps()) return;
+    if (!selection.placementActive() ||
+        selection.clipboardRevision.get() !=
+            source.structureClipboard.revision.get() ||
+        !source.structureClipboard.hasSequencerSteps()) {
+        return;
+    }
 
     const auto mode = core::state::project::sanitizeProjectStepPasteMode(
         source.projectNavigation.stepPasteMode

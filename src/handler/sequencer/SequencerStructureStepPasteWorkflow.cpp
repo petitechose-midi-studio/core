@@ -38,7 +38,11 @@ FLASHMEM void beginStructureStepPastePreview(
     const core::state::project::ProjectNavigationState& projectNavigation
 ) {
     auto& selection = sequencer.structureUi.stepSelection;
-    if (!selection.active.get()) return;
+    if (!selection.placementActive() ||
+        selection.clipboardRevision.get() !=
+            structureClipboard.revision.get()) {
+        return;
+    }
 
     selection.pastePreviewActive.set(true);
     if (!structureClipboard.hasSequencerSteps()) {

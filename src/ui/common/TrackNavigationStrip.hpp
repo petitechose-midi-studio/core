@@ -42,6 +42,8 @@ private:
         lv_opa_t borderOpa = LV_OPA_TRANSP;
         lv_coord_t outlineWidth = -1;
         lv_opa_t outlineOpa = LV_OPA_TRANSP;
+        bool destinationVisible = false;
+        uint32_t destinationColor = 0;
     };
 
     lv_obj_t* container_ = nullptr;
@@ -49,6 +51,10 @@ private:
     lv_obj_t* active_cursor_ = nullptr;
     lv_obj_t* current_cursor_ = nullptr;
     std::array<lv_obj_t*, TrackNavigationStripProps::TRACK_COUNT> items_{};
+    std::array<
+        lv_obj_t*,
+        TrackNavigationStripProps::TRACK_COUNT
+    > destination_markers_{};
     std::array<add_slot_icon::ObjectPair, TrackNavigationStripProps::TRACK_COUNT> item_add_icons_{};
     std::array<ItemRenderCache, TrackNavigationStripProps::TRACK_COUNT> item_cache_{};
     bool item_geometry_cache_initialized_ = false;

@@ -49,10 +49,7 @@ struct Harness {
     core::handler::MacroMidiHandler handler;
 
     Harness()
-        : state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary)
+        : state(storages.settings)
         , inputBinding(eventBus, mockTimeMs)
         , encoders(inputBinding, encoderHardware)
         , handler(

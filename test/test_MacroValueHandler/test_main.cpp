@@ -99,10 +99,7 @@ struct MacroValueHarness {
     uint32_t deadlineUs = 0U;
 
     MacroValueHarness()
-        : state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary)
+        : state(storages.settings)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
@@ -290,7 +287,7 @@ void test_macro_value_handler_respects_modal_guards() {
 
     {
         MacroValueHarness h;
-        h.state.overlays.show(core::ui::OverlayType::DATA_MANAGER);
+        h.state.overlays.show(core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR);
         h.turn(Config::EncoderID::MACRO_1, 1.0f);
         assert(std::fabs(h.state.macros[0].value.get() - 0.5f) < 0.0005f);
         assert(h.midiTransport.ccCount == 0);

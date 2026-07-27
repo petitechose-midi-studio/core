@@ -7,7 +7,7 @@
 namespace core::handler::modal {
 
 /**
- * Small modal-navigation helpers shared by settings and Data Manager handlers.
+ * Small modal-navigation helpers shared by retained settings and picker handlers.
  *
  * These helpers only advance wrapped selections and close overlays; callers own
  * validation, command execution, and state-specific side effects.

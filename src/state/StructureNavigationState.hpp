@@ -27,11 +27,16 @@ enum class StructureSelectionScope : uint8_t {
 
 struct StructureSelectionState {
     oc::state::Signal<bool, 8> active{false};
+    oc::state::Signal<bool, 8> placing{false};
     oc::state::Signal<StructureSelectionScope, 8> scope{
         StructureSelectionScope::PAGE
     };
     oc::state::Signal<uint8_t, 8> cursorIndex{0};
     oc::state::Signal<uint16_t, 16> selectedMask{0};
+    oc::state::Signal<uint16_t, 16> destinationMask{0};
+    oc::state::Signal<uint16_t, 16> overwriteMask{0};
+    oc::state::Signal<bool, 8> pasteBlocked{false};
+    oc::state::Signal<uint32_t, 8> clipboardRevision{0};
 
     void reset(
         StructureSelectionScope nextScope = StructureSelectionScope::PAGE,
@@ -41,6 +46,16 @@ struct StructureSelectionState {
     [[nodiscard]] bool anySelected() const {
         return selectedMask.get() != 0U;
     }
+
+    [[nodiscard]] bool placementActive() const {
+        return active.get() && placing.get();
+    }
+
+    /**
+     * Clears the current sparse selection/placement while keeping the
+     * selection scope armed at the current cursor.
+     */
+    void clearCurrent();
 };
 
 struct StructureHoldState {

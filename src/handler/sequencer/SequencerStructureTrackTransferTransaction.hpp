@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
@@ -62,6 +63,14 @@ struct PreparedSequencerTrackTransfer {
     core::state::sequencer::SequencerHistoryTrackStructureChangePtr history;
     GraphPtr bankGraph;
     CcLanePtr bankCcLanes;
+    std::array<
+        GraphPtr,
+        core::state::ClipboardTransferPlan::MAX_ENTRIES - 1U
+    > additionalBankGraphs{};
+    std::array<
+        CcLanePtr,
+        core::state::ClipboardTransferPlan::MAX_ENTRIES - 1U
+    > additionalBankCcLanes{};
     GraphPtr editorGraph;
     CcLanePtr editorCcLanes;
     GraphPtr outgoingActiveGraph;
@@ -77,6 +86,18 @@ struct PreparedSequencerTrackTransfer {
     bool ready() const {
         return status == SequencerTrackTransferStatus::READY && history != nullptr;
     }
+
+    GraphPtr& bankGraphAt(uint8_t index) {
+        return index == 0U
+            ? bankGraph
+            : additionalBankGraphs[index - 1U];
+    }
+
+    CcLanePtr& bankCcLanesAt(uint8_t index) {
+        return index == 0U
+            ? bankCcLanes
+            : additionalBankCcLanes[index - 1U];
+    }
 };
 
 PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
@@ -89,7 +110,8 @@ PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     uint8_t targetTrack,
     uint16_t pendingTrackMask = 0,
     core::state::sequencer::SequencerTrackActivationQueue* activationQueue = nullptr,
-    bool transportPlaying = false
+    bool transportPlaying = false,
+    core::state::macro::MacroPagesState* macroPages = nullptr
 );
 
 SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
@@ -99,7 +121,8 @@ SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,
     const SequencerHistoryDomainServices& history,
-    PreparedSequencerTrackTransfer prepared
+    PreparedSequencerTrackTransfer prepared,
+    core::state::macro::MacroPagesState* macroPages = nullptr
 );
 
 SequencerTrackTransferResult executeSequencerTrackTransfer(
@@ -112,7 +135,8 @@ SequencerTrackTransferResult executeSequencerTrackTransfer(
     uint8_t targetTrack,
     uint16_t pendingTrackMask = 0,
     core::state::sequencer::SequencerTrackActivationQueue* activationQueue = nullptr,
-    bool transportPlaying = false
+    bool transportPlaying = false,
+    core::state::macro::MacroPagesState* macroPages = nullptr
 );
 
 }  // namespace core::handler

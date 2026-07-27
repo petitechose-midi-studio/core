@@ -36,20 +36,15 @@
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
-#include "persistence/MacroPersistence.hpp"
 #include "persistence/ProductFileService.hpp"
-#include "persistence/SequencerPersistence.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 #include "validation/ux/SemanticUxRecorder.hpp"
 
 namespace {
 
-constexpr std::array<const char*, 4> kStorageFiles = {
-    "./macros.bin",
-    "./macro-library.bin",
-    "./sequencer-pattern-library.bin",
-    "./sequencer-set-library.bin",
+constexpr std::array<const char*, 1> kStorageFiles = {
+    "./core-settings.bin",
 };
 
 bool removeStorageFilesForUxRun() {
@@ -138,29 +133,11 @@ int main(int argc, char** argv) {
 
     // 2. Create storages and state (specific to core)
     oc::impl::FileStorage settingsStorage(kStorageFiles[0]);
-    oc::impl::FileStorage macroLibraryStorage(
-        kStorageFiles[1],
-        core::persistence::MacroPersistence::LIBRARY_STORAGE_CAPACITY
-    );
-    oc::impl::FileStorage sequencerPatternLibraryStorage(
-        kStorageFiles[2],
-        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
-    );
-    oc::impl::FileStorage sequencerSetLibraryStorage(
-        kStorageFiles[3],
-        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
-    );
-    if (!settingsStorage.init() ||
-        !macroLibraryStorage.init() ||
-        !sequencerPatternLibraryStorage.init() ||
-        !sequencerSetLibraryStorage.init()) {
+    if (!settingsStorage.init()) {
         fprintf(stderr, "Failed to open storage files\n");
         return 1;
     }
-    core::state::CoreState coreState(settingsStorage,
-                                     macroLibraryStorage,
-                                     sequencerPatternLibraryStorage,
-                                     sequencerSetLibraryStorage);
+    core::state::CoreState coreState(settingsStorage);
 
     std::filesystem::path productFileRoot = uxScript
         ? std::filesystem::path(uxOutput) / "product-files"

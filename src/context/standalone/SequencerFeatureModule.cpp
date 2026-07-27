@@ -403,6 +403,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.structureClipboard,
             sharedTracks,
             stateRefs.history,
+            *stateRefs.macroPages,
             stateRefs.trackActivations,
             stateRefs.statusBar,
         },

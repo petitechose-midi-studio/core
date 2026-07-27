@@ -151,38 +151,6 @@ void test_factory_reset_failure_propagates() {
     std::cout << "[PASS] test_factory_reset_failure_propagates\n";
 }
 
-void test_load_shortcuts_returns_false_on_short_read() {
-    FaultyStorage storage;
-    storage.init();
-
-    namespace StorageLayout = core::state::core_settings::layout;
-
-    uint32_t magic = StorageLayout::MAGIC;
-    const uint8_t version = StorageLayout::VERSION;
-    storage.write(StorageLayout::ADDR_MAGIC,
-                  reinterpret_cast<const uint8_t*>(&magic),
-                  sizeof(magic));
-    storage.write(StorageLayout::ADDR_VERSION, &version, 1);
-    storage.commit();
-
-    storage.setFaultMode(FaultyStorage::FaultMode::SHORT_READ);
-
-    core::state::CoreSettings settings(storage);
-
-    uint8_t macroLeft = 0;
-    uint8_t macroRight = 0;
-    uint8_t seqLeft = 0;
-    uint8_t seqRight = 0;
-
-    assert(!settings.loadDataManagerShortcuts(macroLeft, macroRight, seqLeft, seqRight));
-    assert(macroLeft == StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT);
-    assert(macroRight == StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT);
-    assert(seqLeft == StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT);
-    assert(seqRight == StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT);
-
-    std::cout << "[PASS] test_load_shortcuts_returns_false_on_short_read\n";
-}
-
 }  // namespace
 
 int main() {
@@ -190,7 +158,6 @@ int main() {
     test_unavailable_storage_reports_unavailable_statuses();
     test_commit_failure_propagates();
     test_factory_reset_failure_propagates();
-    test_load_shortcuts_returns_false_on_short_read();
     std::cout << "\nAll CoreSettings failure tests passed.\n";
     return 0;
 }

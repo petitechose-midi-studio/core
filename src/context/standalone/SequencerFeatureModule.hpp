@@ -106,7 +106,7 @@ public:
         core::handler::SequencerHistoryDomainServices history;
         core::state::sequencer::SequencerTrackActivationQueue* trackActivations = nullptr;
         core::state::StatusBarState* statusBar = nullptr;
-        const core::state::macro::MacroPagesState* macroPages = nullptr;
+        core::state::macro::MacroPagesState* macroPages = nullptr;
         const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
     };
 

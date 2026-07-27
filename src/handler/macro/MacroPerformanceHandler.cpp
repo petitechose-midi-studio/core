@@ -84,7 +84,8 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .press()
         .scope(scope_id_)
         .when([this]() {
-            return policyAllows(MacroAction::OPEN_SLOT_PROPERTIES);
+            return !structure_workflow_.selectionActive() &&
+                   policyAllows(MacroAction::OPEN_SLOT_PROPERTIES);
         })
         .then([this]() { performance_workflow_.openEditPrompt(); });
 
@@ -92,7 +93,8 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .press()
         .scope(scope_id_)
         .when([this]() {
-            return MacroPolicy::performanceAvailable(interactionContext());
+            return !structure_workflow_.selectionActive() &&
+                   MacroPolicy::performanceAvailable(interactionContext());
         })
         .then([this]() { (void)performance_services_.armAutomationTake(); });
 
@@ -107,7 +109,8 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .press()
         .scope(scope_id_)
         .when([this]() {
-            return MacroPolicy::performanceAvailable(interactionContext());
+            return !structure_workflow_.selectionActive() &&
+                   MacroPolicy::performanceAvailable(interactionContext());
         })
         .then([this]() { beginContextSelector(); });
 
@@ -128,6 +131,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             return context_selector_gesture_.active() ||
+                   structure_workflow_.selectionActive() ||
                    policyAllows(MacroAction::COMMIT_OR_CYCLE_STRUCTURE) ||
                    policyAllows(MacroAction::CREATE_PREVIEWED_STRUCTURE);
         })
@@ -137,6 +141,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
 #if defined(MS_UX_RECORDER)
                 if (ux_trace_state_) ux_trace_state_->ignoreNextNavRelease = false;
 #endif
+                return;
+            }
+            if (structure_workflow_.selectionActive()) {
+                structure_workflow_.toggleSelectionAtCursor();
                 return;
             }
             const auto action = MacroPolicy::navRelease(interactionContext());
@@ -157,7 +165,8 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .then([this]() {
-            if (policyAllows(MacroAction::APPLY_SLOT_PROPERTIES)) {
+            if (!structure_workflow_.selectionActive() &&
+                policyAllows(MacroAction::APPLY_SLOT_PROPERTIES)) {
                 performance_workflow_.closePerformanceOverlay();
             }
         });
@@ -176,7 +185,8 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .turn()
         .scope(scope_id_)
         .when([this]() {
-            return !context_selector_gesture_.active() &&
+            return !structure_workflow_.selectionActive() &&
+                   !context_selector_gesture_.active() &&
                    policyAllows(MacroAction::MOVE_STRUCTURE);
         })
         .then([this](float delta) {
@@ -184,12 +194,23 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             performance_workflow_.refreshEncoders();
         });
 
+    encoders_.encoder(Config::EncoderID::NAV)
+        .turn()
+        .scope(scope_id_)
+        .when([this]() {
+            return structure_workflow_.selectionActive();
+        })
+        .then([this](float delta) {
+            structure_workflow_.navigateSelection(delta);
+        });
+
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .press()
         .scope(scope_id_)
         .when([this]() {
-            return policyAllows(MacroAction::CLEAR_STRUCTURE) ||
-                   policyAllows(MacroAction::REMOVE_STRUCTURE);
+            return !structure_workflow_.selectionActive() &&
+                   (policyAllows(MacroAction::CLEAR_STRUCTURE) ||
+                    policyAllows(MacroAction::REMOVE_STRUCTURE));
         })
         .then([this]() {
             ignore_next_bottom_left_release_ = false;
@@ -205,11 +226,12 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() {
-            return ignore_next_bottom_left_release_ ||
+            return !structure_workflow_.selectionActive() &&
+                   (ignore_next_bottom_left_release_ ||
                    structure_workflow_.hasHoldAction(
                        core::state::StructureHoldAction::REMOVE
                    ) ||
-                   policyAllows(MacroAction::CLEAR_STRUCTURE);
+                   policyAllows(MacroAction::CLEAR_STRUCTURE));
         })
         .then([this]() {
             const bool clearAllowed = policyAllows(MacroAction::CLEAR_STRUCTURE);
@@ -233,7 +255,8 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
         .when([this]() {
-            return policyAllows(MacroAction::REMOVE_STRUCTURE);
+            return !structure_workflow_.selectionActive() &&
+                   policyAllows(MacroAction::REMOVE_STRUCTURE);
         })
         .then([this]() {
             ignore_next_bottom_left_release_ = true;
@@ -251,8 +274,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .press()
         .scope(scope_id_)
         .when([this]() {
-            return policyAllows(MacroAction::COPY_STRUCTURE) ||
-                   policyAllows(MacroAction::PASTE_STRUCTURE);
+            return !structure_workflow_.selectionActive() &&
+                   (policyAllows(MacroAction::COPY_STRUCTURE) ||
+                    policyAllows(MacroAction::PASTE_STRUCTURE));
         })
         .then([this]() {
 #if defined(MS_UX_RECORDER)
@@ -270,11 +294,12 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() {
-            return ignore_next_bottom_right_release_ ||
+            return !structure_workflow_.selectionActive() &&
+                   (ignore_next_bottom_right_release_ ||
                    structure_workflow_.hasHoldAction(
                        core::state::StructureHoldAction::PASTE
                    ) ||
-                   policyAllows(MacroAction::COPY_STRUCTURE);
+                   policyAllows(MacroAction::COPY_STRUCTURE));
         })
         .then([this]() {
             const bool copyAllowed = policyAllows(MacroAction::COPY_STRUCTURE);
@@ -297,7 +322,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::PASTE_STRUCTURE); })
+        .when([this]() {
+            return !structure_workflow_.selectionActive() &&
+                   policyAllows(MacroAction::PASTE_STRUCTURE);
+        })
         .then([this]() {
             ignore_next_bottom_right_release_ = true;
 #if defined(MS_UX_RECORDER)
@@ -310,14 +338,91 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             }
         });
 
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .press()
+        .scope(scope_id_)
+        .when([this]() {
+            return structure_workflow_.selectionActive();
+        })
+        .then([this]() {
+            ignore_next_bottom_right_release_ = false;
+            selection_paste_press_active_ = false;
+            if (structure_workflow_.selectionPlacementActive() &&
+                structure_workflow_.canPasteSelection()) {
+                selection_paste_press_active_ = true;
+                selection_paste_anchor_ =
+                    structure_workflow_.selectionCursor();
+                selection_paste_clipboard_revision_ =
+                    structure_workflow_.selectionClipboardRevision();
+                macro_ui_.pageHold.begin(
+                    core::state::StructureHoldAction::PASTE,
+                    time_provider_()
+                );
+            }
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .release()
+        .scope(scope_id_)
+        .when([this]() {
+            return structure_workflow_.selectionActive();
+        })
+        .then([this]() {
+            macro_ui_.pageHold.clear();
+            selection_paste_press_active_ = false;
+            if (ignore_next_bottom_right_release_) {
+                ignore_next_bottom_right_release_ = false;
+                return;
+            }
+            if (structure_workflow_.selectionPlacementActive()) {
+                return;
+            }
+            (void)structure_workflow_.copySelection();
+        });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(scope_id_)
+        .when([this]() {
+            return selection_paste_press_active_ &&
+                   structure_workflow_.selectionPlacementActive() &&
+                   selection_paste_anchor_ ==
+                       structure_workflow_.selectionCursor() &&
+                   selection_paste_clipboard_revision_ ==
+                       structure_workflow_.selectionClipboardRevision() &&
+                   structure_workflow_.canPasteSelection();
+        })
+        .then([this]() {
+            ignore_next_bottom_right_release_ = true;
+            selection_paste_press_active_ = false;
+            macro_ui_.pageHold.clear();
+            if (structure_workflow_.pasteSelection()) {
+                performance_workflow_.refreshEncoders();
+            }
+        });
+
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
         .scope(scope_id_)
-        .when([this]() { return policyAllows(MacroAction::CANCEL_SLOT_PROPERTIES); })
+        .when([this]() {
+            return !structure_workflow_.selectionActive() &&
+                   policyAllows(MacroAction::CANCEL_SLOT_PROPERTIES);
+        })
         .then([this]() {
             if (!performance_services_.cancelAutomationTake()) {
                 performance_workflow_.closePerformanceOverlay();
             }
+        });
+
+    buttons_.button(Config::ButtonID::LEFT_TOP)
+        .release()
+        .scope(scope_id_)
+        .when([this]() {
+            return structure_workflow_.selectionActive();
+        })
+        .then([this]() {
+            (void)structure_workflow_.backSelectionMode();
+            performance_workflow_.refreshEncoders();
         });
 }
 
@@ -364,6 +469,12 @@ FLASHMEM void MacroPerformanceHandler::releaseContextSelector() {
         performance_workflow_.refreshEncoders();
         return;
     }
+    if (release == PressHoldTurnReleaseGesture::Release::HOLD) {
+        structure_workflow_.setNavigationFocus(selected);
+        structure_workflow_.enterSelectionModeForCurrentFocus();
+        performance_workflow_.refreshEncoders();
+        return;
+    }
     if (release != PressHoldTurnReleaseGesture::Release::TAP) return;
     if (selected == core::state::StructureNavigationFocus::STEP) {
         if (structure_workflow_.interactionContext(false, false).previewingAddSlot) {
@@ -399,14 +510,23 @@ FLASHMEM void MacroPerformanceHandler::beginMacroButtonGesture(uint8_t index) {
     if (index >= core::state::macro::MACRO_COUNT) return;
     const uint16_t bit = static_cast<uint16_t>(1U << index);
     owned_macro_button_mask_ = static_cast<uint16_t>(owned_macro_button_mask_ & ~bit);
-    edit_chord_macro_mask_ = static_cast<uint16_t>(edit_chord_macro_mask_ & ~bit);
+    selection_macro_button_mask_ = static_cast<uint16_t>(
+        selection_macro_button_mask_ & ~bit
+    );
+
+    if (structure_workflow_.slotSelectionActive()) {
+        selection_macro_button_mask_ = static_cast<uint16_t>(
+            selection_macro_button_mask_ | bit
+        );
+        return;
+    }
+    if (structure_workflow_.selectionActive()) return;
 
     const bool editChord =
         buttons_.isPressed(Config::ButtonID::LEFT_BOTTOM) ||
         macro_ui_.performanceOverlayMode.get() ==
             core::state::macro::MacroPerformanceOverlayMode::EDIT;
     if (editChord) {
-        edit_chord_macro_mask_ = static_cast<uint16_t>(edit_chord_macro_mask_ | bit);
         macro_ui_.focusedMacroSlot.set(index);
         if (performance_services_.isMacroSlotActive(index) &&
             macro_editor_ != nullptr &&
@@ -425,10 +545,15 @@ FLASHMEM void MacroPerformanceHandler::beginMacroButtonGesture(uint8_t index) {
 FLASHMEM void MacroPerformanceHandler::releaseMacroButtonGesture(uint8_t index) {
     if (index >= core::state::macro::MACRO_COUNT) return;
     const uint16_t bit = static_cast<uint16_t>(1U << index);
-    const bool editChord = (edit_chord_macro_mask_ & bit) != 0U;
-    edit_chord_macro_mask_ = static_cast<uint16_t>(edit_chord_macro_mask_ & ~bit);
-    if (editChord) return;
-
+    const bool selectionOwned =
+        (selection_macro_button_mask_ & bit) != 0U;
+    selection_macro_button_mask_ = static_cast<uint16_t>(
+        selection_macro_button_mask_ & ~bit
+    );
+    if (selectionOwned) {
+        structure_workflow_.toggleSlotSelectionAtPageIndex(index);
+        return;
+    }
     const bool owned = (owned_macro_button_mask_ & bit) != 0U;
     owned_macro_button_mask_ = static_cast<uint16_t>(owned_macro_button_mask_ & ~bit);
     if (!owned) return;

@@ -25,10 +25,7 @@ using test_support::CoreStorages;
 void test_overlay_registration_supports_stacking_and_restore() {
     CoreStorages storage;
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
 
     assert(state.overlays.current() == core::ui::OverlayType::NONE);
     assert(!state.macroEdit.visible.get());
@@ -61,27 +58,19 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     CoreStorages storage;
     storage.initAll();
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
 
     state.activeView.set(core::ui::ViewType::SEQUENCER);
     state.macroEdit.openEditor(1, 2, 10, 1000);
     state.macroEdit.openValueSelector(0, 2);
     state.deviceSettings.openView();
     state.deviceSettings.openSelector(1, 1);
-    state.dataManager.openSession(core::state::DataManagerContext::SEQUENCER);
-    state.dataManager.showDialog(core::state::DataManagerDialogMode::SET_LOAD_MODE, 1);
-    state.dataManager.feedback.set("busy");
     state.sequencer.stepInlineFeedback.show(
         3,
         core::state::sequencer::StepProperty::VELOCITY,
         0
     );
     state.sequencer.patternQuickControls.selecting.set(true);
-    state.overlays.show(core::ui::OverlayType::DATA_MANAGER, false);
-    state.overlays.show(core::ui::OverlayType::DATA_MANAGER_DIALOG, true);
     const auto manualAddress = core::state::macro::MacroAutomationSlotAddress{
         .track = state.pages.currentActiveTrack(),
         .page = state.pages.currentActivePage(),
@@ -98,12 +87,8 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     assert(state.overlays.current() == core::ui::OverlayType::NONE);
     assert(state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
     assert(state.deviceSettings.flowPhase.get() == core::state::DeviceSettingsFlowPhase::CLOSED);
-    assert(!state.dataManager.visible.get());
-    assert(!state.dataManager.dialog.visible.get());
-    assert(state.dataManager.flowPhase.get() == core::state::DataManagerFlowPhase::CLOSED);
     assert(!state.sequencer.stepInlineFeedback.visible.get());
     assert(!state.sequencer.patternQuickControls.selecting.get());
-    assert(std::strcmp(state.dataManager.feedback.get(), "") == 0);
     assert(!state.macroUi.manualOverrides.activeFor(manualAddress));
     assert(state.macroRuntimeOwnerRevision.get() == beforeRuntimeOwnerRevision + 1U);
     assert(std::strcmp(state.statusBar.pageName.get(), state.pages.activePageData().name) == 0);
@@ -122,10 +107,7 @@ void test_core_state_update_expires_inline_feedback() {
     CoreStorages storage;
     storage.initAll();
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
 
     g_mock_now_ms = 1000;
     state.sequencer.stepInlineFeedback.show(
@@ -150,10 +132,7 @@ void test_core_state_update_expires_status_bar_pulses() {
     CoreStorages storage;
     storage.initAll();
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
 
     g_mock_now_ms = 2000;
     state.statusBar.pulseNoteIn();
@@ -196,17 +175,12 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     CoreStorages storage;
     storage.initAll();
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
 
     state.macroEdit.openEditor(2, 1, 64, 1500);
     state.macroEdit.openModulatorPicker(4);
     state.deviceSettings.openView();
     state.deviceSettings.openSelector(2, 3);
-    state.dataManager.openSession(core::state::DataManagerContext::SEQUENCER);
-    state.dataManager.showDialog(core::state::DataManagerDialogMode::COMMAND_PALETTE, 0);
     state.sequencer.stepEdit.visible.set(true);
     state.sequencer.stepPropertyInlineSelector.selecting.set(true);
     state.sequencer.patternQuickControls.selecting.set(true);
@@ -247,9 +221,6 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(state.macroEdit.flowPhase.get() == core::state::MacroEditFlowPhase::CLOSED);
     assert(!state.deviceSettings.visible.get());
     assert(state.deviceSettings.flowPhase.get() == core::state::DeviceSettingsFlowPhase::CLOSED);
-    assert(!state.dataManager.visible.get());
-    assert(state.dataManager.flowPhase.get() == core::state::DataManagerFlowPhase::CLOSED);
-    assert(state.dataManager.context.get() == core::state::DataManagerContext::MACRO);
     assert(!state.sequencer.stepEdit.visible.get());
     assert(!state.sequencer.stepPropertyInlineSelector.selecting.get());
     assert(!state.sequencer.patternQuickControls.selecting.get());
@@ -268,10 +239,7 @@ void test_musical_project_reset_activates_one_new_macro_runtime_owner() {
     CoreStorages storage;
     storage.initAll();
 
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
 
     const uint32_t beforeRevision = state.macroRuntimeOwnerRevision.get();
     state.resetMusicalProject();
@@ -282,10 +250,7 @@ void test_musical_project_reset_activates_one_new_macro_runtime_owner() {
 
 void test_macro_runtime_owner_revision_skips_zero_on_wrap() {
     CoreStorages storage;
-    core::state::CoreState state(storage.settings,
-                                 storage.macroLibrary,
-                                 storage.sequencerPatternLibrary,
-                                 storage.sequencerSetLibrary);
+    core::state::CoreState state(storage.settings);
 
     state.macroRuntimeOwnerRevision.set(0xFFFF'FFFFU);
     state.requestMacroRuntimeOwnerActivation();

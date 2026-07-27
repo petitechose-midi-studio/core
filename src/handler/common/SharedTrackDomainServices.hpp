@@ -31,11 +31,17 @@ public:
         uint16_t enabledMask,
         uint8_t activeTrack
     );
+    using ReconcilePreparedMacroTrackTransferFn = void (*)(
+        void* context,
+        uint16_t capturedTrackMask
+    );
 
     struct Operations {
         void* context = nullptr;
         SetSharedTrackStateFn setSharedTrackState = nullptr;
         PublishPreparedSequencerStateFn publishPreparedSequencerState = nullptr;
+        ReconcilePreparedMacroTrackTransferFn
+            reconcilePreparedMacroTrackTransfer = nullptr;
     };
 
     explicit SharedTrackDomainServices(StateRefs state);
@@ -47,6 +53,9 @@ public:
     bool setState(uint16_t enabledMask, uint8_t activeTrack) const;
     bool canPublishPreparedSequencerState() const;
     void publishPreparedSequencerState(uint16_t enabledMask, uint8_t activeTrack) const;
+    void reconcilePreparedMacroTrackTransfer(
+        uint16_t capturedTrackMask
+    ) const;
 
 private:
     oc::state::Signal<uint8_t, 8>* active_track_ = nullptr;

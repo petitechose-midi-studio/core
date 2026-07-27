@@ -18,8 +18,6 @@ private:
     static void registerOverlaySignals_(CoreState& state);
     static void initializePersistence_(CoreState& state);
     static void setupMutationCoalescing_(CoreState& state);
-    static void initializeMacroPersistence_(CoreState& state);
-    static void initializeSequencerPersistence_(CoreState& state);
     static void configureMacroMutationCoalescing_(CoreState& state);
     static void configureSequencerMutationCoalescing_(CoreState& state);
 };

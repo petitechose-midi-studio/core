@@ -26,9 +26,6 @@ using oc::note::sequencer::StepSequencerScaleType;
 core::state::CoreState makeCoreState(test_support::CoreStorages& storages) {
     return core::state::CoreState{
         storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary,
     };
 }
 

@@ -10,7 +10,6 @@
 #include "state/CoreState.hpp"
 #include "state/CoreStateDiagnostics.hpp"
 #include "state/CoreSettingsLayout.hpp"
-#include "state/DataManagerWorkflow.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 
 namespace core::state {
@@ -28,22 +27,6 @@ constexpr size_t SEQUENCER_COALESCER_SUBSCRIPTION_COUNT = 15;
 }
 
 }  // namespace
-
-FLASHMEM void CoreStateBootstrap::initializeMacroPersistence_(CoreState& state) {
-    state.macroDomain_.persistenceReady =
-        state.macroPersistence.initStatus() == persistence::PersistenceWriteStatus::OK;
-    if (!state.macroDomain_.persistenceReady) {
-        OC_LOG_WARN("[CoreState] Macro persistence init failed");
-    }
-}
-
-FLASHMEM void CoreStateBootstrap::initializeSequencerPersistence_(CoreState& state) {
-    state.sequencerDomain_.persistenceReady =
-        state.sequencerPersistence.initStatus() == persistence::PersistenceWriteStatus::OK;
-    if (!state.sequencerDomain_.persistenceReady) {
-        OC_LOG_WARN("[CoreState] Sequencer persistence init failed");
-    }
-}
 
 FLASHMEM void CoreStateBootstrap::configureMacroMutationCoalescing_(CoreState& state) {
     state.macroDomain_.mutationCoalescer =
@@ -119,8 +102,6 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
     state.overlays.registerItem(core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR, state.sequencerSettings.selector.visible);
     state.overlays.registerItem(core::ui::OverlayType::PATTERN_PITCH_SETTINGS, state.patternPitchSettings.visible);
     state.overlays.registerItem(core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR, state.patternPitchSettings.selector.visible);
-    state.overlays.registerItem(core::ui::OverlayType::DATA_MANAGER, state.dataManager.visible);
-    state.overlays.registerItem(core::ui::OverlayType::DATA_MANAGER_DIALOG, state.dataManager.dialog.visible);
 }
 
 FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
@@ -133,17 +114,11 @@ FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
         persistedSharedTrackMask,
         persistedSharedTrackActive
     );
-    DataManagerWorkflow::loadShortcutsFromSettings(DataManagerWorkflow::StateRefs{
-        state.dataManager,
-        state.settings,
-    });
     state.setSharedTrackState_(
         persistedSharedTrackMask,
         persistedSharedTrackActive,
         false
     );
-    initializeMacroPersistence_(state);
-    initializeSequencerPersistence_(state);
 }
 
 FLASHMEM void CoreStateBootstrap::setupMutationCoalescing_(CoreState& state) {

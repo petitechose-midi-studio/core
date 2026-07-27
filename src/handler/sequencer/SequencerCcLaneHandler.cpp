@@ -138,11 +138,6 @@ FLASHMEM void SequencerCcLaneHandler::setupBindings() {
         .scope(overlay_scope_)
         .then([this]() { onActionRelease(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT); });
 
-    buttons_.button(ButtonID::BOTTOM_CENTER)
-        .release()
-        .scope(overlay_scope_)
-        .then([this]() { onActionRelease(seq::SequencerCcLaneActionSlot::BOTTOM_CENTER); });
-
     buttons_.button(ButtonID::BOTTOM_RIGHT)
         .press()
         .scope(overlay_scope_)
@@ -464,6 +459,7 @@ FLASHMEM void SequencerCcLaneHandler::onNavTurn(float delta) {
         nav_button_turned_ = true;
         if (workflow_.openFocusedTransitionPicker(now())) {
             overlays_.show(core::ui::OverlayType::SEQ_CC_LANE, false);
+            buttons_.handoffPress(ButtonID::NAV, overlay_scope_);
             workflow_.moveTransition(delta);
         }
         return;

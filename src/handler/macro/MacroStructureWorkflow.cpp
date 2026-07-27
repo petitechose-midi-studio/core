@@ -360,9 +360,614 @@ FLASHMEM void MacroStructureWorkflow::createPreviewedStructure() {
     macro_ui_.previewAddPageSlot.set(false);
 }
 
+FLASHMEM void
+MacroStructureWorkflow::enterSelectionModeForCurrentFocus() {
+    if (selectionActive()) return;
+    track_ui_.previewAddSlot.set(false);
+    macro_ui_.previewAddPageSlot.set(false);
+
+    switch (effectiveFocus()) {
+        case core::state::StructureNavigationFocus::TRACK:
+            enterTrackSelection();
+            return;
+        case core::state::StructureNavigationFocus::PAGE:
+            enterPageSelection();
+            return;
+        case core::state::StructureNavigationFocus::STEP:
+        default:
+            enterSlotSelection();
+            return;
+    }
+}
+
+FLASHMEM bool MacroStructureWorkflow::backSelectionMode() {
+    if (track_ui_.selection.active.get()) {
+        auto& selection = track_ui_.selection;
+        if (selection.placing.get() || selection.anySelected()) {
+            selection.clearCurrent();
+            track_ui_.syncPreviewTrack(selection.cursorIndex.get());
+        } else {
+            selection.reset(
+                core::state::StructureSelectionScope::TRACK,
+                services_.activeTrack()
+            );
+            syncPreviewToCurrentContext();
+        }
+        clearHoldAction();
+        return true;
+    }
+    if (macro_ui_.pageSelection.active.get()) {
+        auto& selection = macro_ui_.pageSelection;
+        if (selection.placing.get() || selection.anySelected()) {
+            selection.clearCurrent();
+            syncPageSelectionCursorPresentation();
+        } else {
+            selection.reset(
+                core::state::StructureSelectionScope::PAGE,
+                pages_.currentActivePage()
+            );
+            syncPreviewToCurrentContext();
+        }
+        clearHoldAction();
+        return true;
+    }
+    if (slotSelectionActive()) {
+        if (macro_ui_.slotSelection.placing.get() ||
+            macro_ui_.slotSelection.anySelected()) {
+            macro_ui_.slotSelection.clearCurrent();
+            syncSlotSelectionCursorPresentation();
+        } else {
+            cancelSlotSelection();
+        }
+        clearHoldAction();
+        return true;
+    }
+    return false;
+}
+
+FLASHMEM void MacroStructureWorkflow::cancelSelectionMode() {
+    if (track_ui_.selection.active.get()) {
+        track_ui_.selection.reset(
+            core::state::StructureSelectionScope::TRACK,
+            services_.activeTrack()
+        );
+    }
+    if (macro_ui_.pageSelection.active.get()) {
+        macro_ui_.pageSelection.reset(
+            core::state::StructureSelectionScope::PAGE,
+            pages_.currentActivePage()
+        );
+    }
+    if (slotSelectionActive()) {
+        cancelSlotSelection();
+        return;
+    }
+    clearHoldAction();
+    syncPreviewToCurrentContext();
+}
+
+FLASHMEM bool MacroStructureWorkflow::selectionActive() const {
+    return track_ui_.selection.active.get() ||
+           macro_ui_.pageSelection.active.get() ||
+           slotSelectionActive();
+}
+
+FLASHMEM bool
+MacroStructureWorkflow::selectionPlacementActive() const {
+    return track_ui_.selection.placementActive() ||
+           macro_ui_.pageSelection.placementActive() ||
+           slotSelectionPlacementActive();
+}
+
+FLASHMEM void MacroStructureWorkflow::navigateSelection(float delta) {
+    if (track_ui_.selection.active.get()) {
+        navigateTrackSelection(delta);
+        return;
+    }
+    if (macro_ui_.pageSelection.active.get()) {
+        navigatePageSelection(delta);
+        return;
+    }
+    navigateSlotSelection(delta);
+}
+
+FLASHMEM void MacroStructureWorkflow::toggleSelectionAtCursor() {
+    if (track_ui_.selection.active.get()) {
+        toggleTrackSelectionAtCursor();
+        return;
+    }
+    if (macro_ui_.pageSelection.active.get()) {
+        togglePageSelectionAtCursor();
+        return;
+    }
+    toggleSlotSelectionAtCursor();
+}
+
+FLASHMEM bool MacroStructureWorkflow::copySelection() {
+    if (slotSelectionActive()) return copySlotSelection();
+    if (track_ui_.selection.active.get()) {
+        auto& selection = track_ui_.selection;
+        if (selection.placing.get() || !selection.anySelected() ||
+            !services_.copyTrackSelection(
+                selection.selectedMask.get(),
+                structure_clipboard_
+            )) {
+            return false;
+        }
+        selection.placing.set(true);
+        const auto plan = services_.trackSelectionPastePlan(
+            structure_clipboard_,
+            selection.cursorIndex.get()
+        );
+        selection.destinationMask.set(plan.targetMask);
+        selection.overwriteMask.set(plan.overwriteMask);
+        selection.pasteBlocked.set(!plan.canCommit());
+        selection.clipboardRevision.set(
+            structure_clipboard_.revision.get()
+        );
+        return true;
+    }
+    if (macro_ui_.pageSelection.active.get()) {
+        auto& selection = macro_ui_.pageSelection;
+        if (selection.placing.get() || !selection.anySelected() ||
+            !structure_clipboard_.storeMacroPageSelection(
+                pages_,
+                pages_.currentActiveTrack(),
+                selection.selectedMask.get()
+            )) {
+            return false;
+        }
+        selection.placing.set(true);
+        const auto plan = core::state::buildMacroPageSelectionPastePlan(
+            *structure_clipboard_.macroPageSelection,
+            selection.cursorIndex.get(),
+            existingMacroPageCount()
+        );
+        selection.destinationMask.set(plan.destinationMask);
+        selection.overwriteMask.set(plan.overwriteMask);
+        selection.pasteBlocked.set(!plan.canCommit());
+        selection.clipboardRevision.set(
+            structure_clipboard_.revision.get()
+        );
+        return true;
+    }
+    return false;
+}
+
+FLASHMEM bool MacroStructureWorkflow::canPasteSelection() const {
+    if (slotSelectionActive()) return canPasteSlotSelection();
+    if (track_ui_.selection.placementActive()) {
+        return services_.trackSelectionPastePlan(
+            structure_clipboard_,
+            track_ui_.selection.cursorIndex.get()
+        ).canCommit();
+    }
+    if (macro_ui_.pageSelection.placementActive() &&
+        structure_clipboard_.hasMacroPageSelection()) {
+        return core::state::buildMacroPageSelectionPastePlan(
+            *structure_clipboard_.macroPageSelection,
+            macro_ui_.pageSelection.cursorIndex.get(),
+            existingMacroPageCount()
+        ).canCommit();
+    }
+    return false;
+}
+
+FLASHMEM bool MacroStructureWorkflow::pasteSelection() {
+    if (slotSelectionActive()) return pasteSlotSelection();
+    if (track_ui_.selection.placementActive()) {
+        auto& selection = track_ui_.selection;
+        if (!services_.pasteTrackSelection(
+                structure_clipboard_,
+                selection.cursorIndex.get()
+            )) {
+            const auto failed = services_.trackSelectionPastePlan(
+                structure_clipboard_,
+                selection.cursorIndex.get()
+            );
+            selection.destinationMask.set(failed.targetMask);
+            selection.overwriteMask.set(failed.overwriteMask);
+            selection.pasteBlocked.set(true);
+            return false;
+        }
+        const auto refreshed = services_.trackSelectionPastePlan(
+            structure_clipboard_,
+            selection.cursorIndex.get()
+        );
+        selection.destinationMask.set(refreshed.targetMask);
+        selection.overwriteMask.set(refreshed.overwriteMask);
+        selection.pasteBlocked.set(!refreshed.canCommit());
+        return true;
+    }
+    if (macro_ui_.pageSelection.placementActive() &&
+        structure_clipboard_.hasMacroPageSelection()) {
+        const auto plan =
+            core::state::buildMacroPageSelectionPastePlan(
+                *structure_clipboard_.macroPageSelection,
+                macro_ui_.pageSelection.cursorIndex.get(),
+                existingMacroPageCount()
+            );
+        if (!plan.canCommit() ||
+            !services_.pasteMacroPageSelection(
+                structure_clipboard_,
+                plan
+            )) {
+            macro_ui_.pageSelection.pasteBlocked.set(true);
+            return false;
+        }
+        macro_ui_.pageSelection.cursorIndex.set(
+            plan.firstDestinationPage
+        );
+        syncPageSelectionCursorPresentation();
+        const auto refreshed =
+            core::state::buildMacroPageSelectionPastePlan(
+                *structure_clipboard_.macroPageSelection,
+                macro_ui_.pageSelection.cursorIndex.get(),
+                existingMacroPageCount()
+            );
+        macro_ui_.pageSelection.destinationMask.set(
+            refreshed.destinationMask
+        );
+        macro_ui_.pageSelection.overwriteMask.set(
+            refreshed.overwriteMask
+        );
+        macro_ui_.pageSelection.pasteBlocked.set(
+            !refreshed.canCommit()
+        );
+        return true;
+    }
+    return false;
+}
+
+FLASHMEM uint8_t MacroStructureWorkflow::selectionCursor() const {
+    if (track_ui_.selection.active.get()) {
+        return track_ui_.selection.cursorIndex.get();
+    }
+    if (macro_ui_.pageSelection.active.get()) {
+        return macro_ui_.pageSelection.cursorIndex.get();
+    }
+    return macro_ui_.slotSelection.cursorLinear.get();
+}
+
+FLASHMEM uint32_t
+MacroStructureWorkflow::selectionClipboardRevision() const {
+    if (track_ui_.selection.active.get()) {
+        return track_ui_.selection.clipboardRevision.get();
+    }
+    if (macro_ui_.pageSelection.active.get()) {
+        return macro_ui_.pageSelection.clipboardRevision.get();
+    }
+    return macro_ui_.slotSelection.clipboardRevision;
+}
+
+FLASHMEM void MacroStructureWorkflow::enterTrackSelection() {
+    auto& selection = track_ui_.selection;
+    const uint8_t cursor = services_.activeTrack();
+    selection.reset(
+        core::state::StructureSelectionScope::TRACK,
+        cursor
+    );
+    selection.active.set(true);
+    setNavigationFocus(core::state::StructureNavigationFocus::TRACK);
+    track_ui_.syncPreviewTrack(cursor);
+}
+
+FLASHMEM void MacroStructureWorkflow::enterPageSelection() {
+    auto& selection = macro_ui_.pageSelection;
+    const uint8_t cursor = pages_.currentActivePage();
+    selection.reset(
+        core::state::StructureSelectionScope::PAGE,
+        cursor
+    );
+    selection.active.set(true);
+    setNavigationFocus(core::state::StructureNavigationFocus::PAGE);
+    syncPageSelectionCursorPresentation();
+}
+
+FLASHMEM void MacroStructureWorkflow::enterSlotSelection() {
+    const uint8_t cursor = static_cast<uint8_t>(
+        pages_.currentActivePage() *
+            core::state::macro::MACRO_COUNT +
+        std::min<uint8_t>(
+            macro_ui_.focusedMacroSlot.get(),
+            core::state::macro::MACRO_COUNT - 1U
+        )
+    );
+    macro_ui_.slotSelection.reset(cursor);
+    macro_ui_.slotSelection.active.set(true);
+    macro_ui_.slotSelection.bump();
+    setNavigationFocus(core::state::StructureNavigationFocus::STEP);
+    syncSlotSelectionCursorPresentation();
+}
+
+FLASHMEM void MacroStructureWorkflow::cancelSlotSelection() {
+    const uint8_t cursor = static_cast<uint8_t>(
+        pages_.currentActivePage() *
+            core::state::macro::MACRO_COUNT +
+        std::min<uint8_t>(
+            macro_ui_.focusedMacroSlot.get(),
+            core::state::macro::MACRO_COUNT - 1U
+        )
+    );
+    macro_ui_.slotSelection.reset(cursor);
+    clearHoldAction();
+    syncPreviewToCurrentContext();
+}
+
+FLASHMEM bool MacroStructureWorkflow::slotSelectionActive() const {
+    return macro_ui_.slotSelection.active.get();
+}
+
+FLASHMEM bool
+MacroStructureWorkflow::slotSelectionPlacementActive() const {
+    return slotSelectionActive() &&
+           macro_ui_.slotSelection.placing.get();
+}
+
+FLASHMEM void MacroStructureWorkflow::navigateTrackSelection(float delta) {
+    auto& selection = track_ui_.selection;
+    if (!selection.active.get() || !nav::hasTurnDelta(delta)) return;
+    const int direction = nav::turnStep(delta);
+    uint8_t next = selection.cursorIndex.get();
+    if (selection.placing.get()) {
+        next = structure_slots::wrapIndex(
+            next,
+            direction,
+            core::state::macro::TRACK_COUNT
+        );
+    } else {
+        const uint16_t enabledMask = services_.trackEnabledMask();
+        if (enabledMask == 0U) return;
+        next = structure_slots::nextEnabledIndex(
+            enabledMask,
+            next,
+            core::state::macro::TRACK_COUNT,
+            direction
+        );
+    }
+    selection.cursorIndex.set(next);
+    track_ui_.syncPreviewTrack(next);
+    if (selection.placing.get()) {
+        const auto plan = services_.trackSelectionPastePlan(
+            structure_clipboard_,
+            next
+        );
+        selection.destinationMask.set(plan.targetMask);
+        selection.overwriteMask.set(plan.overwriteMask);
+        selection.pasteBlocked.set(!plan.canCommit());
+        selection.clipboardRevision.set(
+            structure_clipboard_.revision.get()
+        );
+    }
+}
+
+FLASHMEM void MacroStructureWorkflow::navigatePageSelection(float delta) {
+    auto& selection = macro_ui_.pageSelection;
+    if (!selection.active.get() || !nav::hasTurnDelta(delta)) return;
+    const uint8_t existing = existingMacroPageCount();
+    const uint8_t navigationCount = selection.placing.get()
+        ? static_cast<uint8_t>(std::min<uint16_t>(
+              core::state::macro::PAGE_COUNT,
+              static_cast<uint16_t>(existing) + 1U
+          ))
+        : existing;
+    if (navigationCount == 0U) return;
+    const uint8_t next = structure_slots::wrapIndex(
+        selection.cursorIndex.get(),
+        nav::turnStep(delta),
+        navigationCount
+    );
+    selection.cursorIndex.set(next);
+    syncPageSelectionCursorPresentation();
+    if (selection.placing.get() &&
+        structure_clipboard_.hasMacroPageSelection()) {
+        const auto plan =
+            core::state::buildMacroPageSelectionPastePlan(
+                *structure_clipboard_.macroPageSelection,
+                next,
+                existingMacroPageCount()
+            );
+        selection.destinationMask.set(plan.destinationMask);
+        selection.overwriteMask.set(plan.overwriteMask);
+        selection.pasteBlocked.set(!plan.canCommit());
+        selection.clipboardRevision.set(
+            structure_clipboard_.revision.get()
+        );
+    }
+}
+
+FLASHMEM void
+MacroStructureWorkflow::toggleTrackSelectionAtCursor() {
+    auto& selection = track_ui_.selection;
+    if (!selection.active.get() || selection.placing.get()) return;
+    const uint8_t cursor = selection.cursorIndex.get();
+    if (!structure_slots::isEnabled(
+            services_.trackEnabledMask(),
+            cursor
+        )) {
+        return;
+    }
+    selection.selectedMask.set(static_cast<uint16_t>(
+        selection.selectedMask.get() ^
+        structure_slots::slotBit(cursor)
+    ));
+}
+
+FLASHMEM void
+MacroStructureWorkflow::togglePageSelectionAtCursor() {
+    auto& selection = macro_ui_.pageSelection;
+    if (!selection.active.get() || selection.placing.get()) return;
+    const uint8_t cursor = selection.cursorIndex.get();
+    if (cursor >= core::state::macro::PAGE_COUNT ||
+        !pages_.activeTrackData().isPageEnabled(cursor)) {
+        return;
+    }
+    selection.selectedMask.set(static_cast<uint16_t>(
+        selection.selectedMask.get() ^
+        structure_slots::slotBit(cursor)
+    ));
+}
+
+FLASHMEM void MacroStructureWorkflow::navigateSlotSelection(
+    float delta
+) {
+    if (!slotSelectionActive() || !nav::hasTurnDelta(delta)) return;
+    const uint8_t pageCount = slotSelectionNavigationPageCount();
+    if (pageCount == 0U) return;
+    const int maximum = static_cast<int>(
+        pageCount * core::state::macro::MACRO_COUNT - 1U
+    );
+    const int next = std::clamp(
+        static_cast<int>(
+            macro_ui_.slotSelection.cursorLinear.get()
+        ) + nav::turnStep(delta),
+        0,
+        maximum
+    );
+    if (next ==
+        macro_ui_.slotSelection.cursorLinear.get()) {
+        return;
+    }
+    macro_ui_.slotSelection.cursorLinear.set(
+        static_cast<uint8_t>(next)
+    );
+    macro_ui_.slotSelection.bump();
+    syncSlotSelectionCursorPresentation();
+    refreshSlotSelectionPastePreview();
+}
+
+FLASHMEM void MacroStructureWorkflow::toggleSlotSelectionAtCursor() {
+    if (!slotSelectionActive() ||
+        slotSelectionPlacementActive()) {
+        return;
+    }
+    const uint8_t linear =
+        macro_ui_.slotSelection.cursorLinear.get();
+    const uint8_t page = static_cast<uint8_t>(
+        linear / core::state::macro::MACRO_COUNT
+    );
+    const uint8_t macro = static_cast<uint8_t>(
+        linear % core::state::macro::MACRO_COUNT
+    );
+    const uint8_t track = pages_.currentActiveTrack();
+    if (page >= core::state::macro::PAGE_COUNT ||
+        !pages_.tracks[track].isPageEnabled(page) ||
+        !pages_.pageData(track, page).isMacroActive(macro)) {
+        return;
+    }
+    macro_ui_.slotSelection.setSelected(
+        linear,
+        !macro_ui_.slotSelection.selected(linear)
+    );
+}
+
+FLASHMEM void
+MacroStructureWorkflow::toggleSlotSelectionAtPageIndex(
+    uint8_t macroIndex
+) {
+    if (!slotSelectionActive() ||
+        slotSelectionPlacementActive() ||
+        macroIndex >= core::state::macro::MACRO_COUNT) {
+        return;
+    }
+    const uint8_t page = static_cast<uint8_t>(
+        macro_ui_.slotSelection.cursorLinear.get() /
+        core::state::macro::MACRO_COUNT
+    );
+    macro_ui_.slotSelection.cursorLinear.set(
+        static_cast<uint8_t>(
+            page * core::state::macro::MACRO_COUNT + macroIndex
+        )
+    );
+    macro_ui_.slotSelection.bump();
+    syncSlotSelectionCursorPresentation();
+    toggleSlotSelectionAtCursor();
+}
+
+FLASHMEM bool MacroStructureWorkflow::copySlotSelection() {
+    if (!slotSelectionActive() ||
+        slotSelectionPlacementActive() ||
+        !macro_ui_.slotSelection.anySelected() ||
+        !structure_clipboard_.storeMacroSlotSelection(
+            pages_,
+            pages_.currentActiveTrack(),
+            macro_ui_.slotSelection.selectedMask.get()
+        )) {
+        return false;
+    }
+    macro_ui_.slotSelection.placing.set(true);
+    macro_ui_.slotSelection.bump();
+    refreshSlotSelectionPastePreview();
+    return true;
+}
+
+FLASHMEM bool MacroStructureWorkflow::canPasteSlotSelection() const {
+    if (!slotSelectionPlacementActive()) return false;
+    return core::state::macro::buildMacroSlotClipboardPlan(
+        structure_clipboard_,
+        pages_,
+        pages_.currentActiveTrack(),
+        macro_ui_.slotSelection.cursorLinear.get()
+    ).canCommit();
+}
+
+FLASHMEM bool MacroStructureWorkflow::pasteSlotSelection() {
+    if (!slotSelectionPlacementActive()) return false;
+    const auto plan =
+        core::state::macro::buildMacroSlotClipboardPlan(
+            structure_clipboard_,
+            pages_,
+            pages_.currentActiveTrack(),
+            macro_ui_.slotSelection.cursorLinear.get()
+        );
+    if (!plan.canCommit() ||
+        !services_.pasteMacroSlotSelection(
+            structure_clipboard_,
+            plan
+        )) {
+        refreshSlotSelectionPastePreview();
+        return false;
+    }
+    syncSlotSelectionCursorPresentation();
+    refreshSlotSelectionPastePreview();
+    return true;
+}
+
+FLASHMEM void
+MacroStructureWorkflow::refreshSlotSelectionPastePreview() {
+    if (!slotSelectionPlacementActive()) {
+        macro_ui_.slotSelection.clearPlacementProjection();
+        return;
+    }
+    const auto plan =
+        core::state::macro::buildMacroSlotClipboardPlan(
+            structure_clipboard_,
+            pages_,
+            pages_.currentActiveTrack(),
+            macro_ui_.slotSelection.cursorLinear.get()
+        );
+    macro_ui_.slotSelection.publishPlacement(
+        plan.destinationMasks,
+        plan.overwriteMasks,
+        !plan.canCommit(),
+        plan.overwriteCount,
+        plan.requiredPageCount,
+        plan.clipboardRevision
+    );
+}
+
 FLASHMEM void MacroStructureWorkflow::bindStateSync() {
     subscriptions_.push_back(
         shared_track_active_.subscribe([this](uint8_t activeTrack) {
+            if (macro_ui_.slotSelection.active.get()) {
+                macro_ui_.slotSelection.reset();
+            }
+            if (macro_ui_.pageSelection.active.get()) {
+                macro_ui_.pageSelection.reset(
+                    core::state::StructureSelectionScope::PAGE,
+                    pages_.currentActivePage()
+                );
+            }
             track_ui_.syncPreviewTrack(activeTrack);
             macro_ui_.syncPreviewPage(pages_.currentActivePage());
             clampFocusedMacroSlot();
@@ -477,6 +1082,68 @@ FLASHMEM void MacroStructureWorkflow::clampFocusedMacroSlot() {
     );
     if (macro_ui_.focusedMacroSlot.get() > maxIndex) {
         macro_ui_.focusedMacroSlot.set(maxIndex);
+    }
+}
+
+FLASHMEM uint8_t
+MacroStructureWorkflow::existingMacroPageCount() const {
+    int highest = -1;
+    const auto& track =
+        pages_.tracks[pages_.currentActiveTrack()];
+    for (uint8_t page = 0U;
+         page < core::state::macro::PAGE_COUNT;
+         ++page) {
+        if (track.isPageEnabled(page)) highest = page;
+    }
+    return highest < 0
+        ? 0U
+        : static_cast<uint8_t>(highest + 1);
+}
+
+FLASHMEM uint8_t
+MacroStructureWorkflow::slotSelectionNavigationPageCount() const {
+    const uint8_t existing = existingMacroPageCount();
+    if (!slotSelectionPlacementActive()) return existing;
+    return static_cast<uint8_t>(std::min<uint16_t>(
+        core::state::macro::PAGE_COUNT,
+        static_cast<uint16_t>(existing) + 1U
+    ));
+}
+
+FLASHMEM void
+MacroStructureWorkflow::syncSlotSelectionCursorPresentation() {
+    if (!slotSelectionActive()) return;
+    const uint8_t linear =
+        macro_ui_.slotSelection.cursorLinear.get();
+    const uint8_t page = static_cast<uint8_t>(
+        linear / core::state::macro::MACRO_COUNT
+    );
+    const uint8_t macro = static_cast<uint8_t>(
+        linear % core::state::macro::MACRO_COUNT
+    );
+    macro_ui_.focusedMacroSlot.set(macro);
+    macro_ui_.syncPreviewPage(page);
+    const bool existing =
+        page < core::state::macro::PAGE_COUNT &&
+        pages_.tracks[pages_.currentActiveTrack()]
+            .isPageEnabled(page);
+    macro_ui_.previewAddPageSlot.set(!existing);
+    if (existing && page != pages_.currentActivePage()) {
+        services_.switchToPage(page);
+    }
+}
+
+FLASHMEM void
+MacroStructureWorkflow::syncPageSelectionCursorPresentation() {
+    if (!macro_ui_.pageSelection.active.get()) return;
+    const uint8_t page = macro_ui_.pageSelection.cursorIndex.get();
+    macro_ui_.syncPreviewPage(page);
+    const bool existing =
+        page < core::state::macro::PAGE_COUNT &&
+        pages_.activeTrackData().isPageEnabled(page);
+    macro_ui_.previewAddPageSlot.set(!existing);
+    if (existing && page != pages_.currentActivePage()) {
+        services_.switchToPage(page);
     }
 }
 

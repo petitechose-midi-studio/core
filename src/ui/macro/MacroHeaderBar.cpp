@@ -128,7 +128,13 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
     const bool showRecordingStatus = recordingLabel[0] != '\0';
 
     TrackHeaderRowProps rowProps;
-    rowProps.leftText = showRecordingStatus ? recordingLabel : focusLabel(trackScope);
+    rowProps.leftText = showRecordingStatus
+        ? recordingLabel
+        : props.slotSelectionActive
+            ? "MACROS"
+            : props.pageSelectionActive
+                ? "PAGES"
+            : focusLabel(trackScope);
     rowProps.itemCount = core::state::macro::PAGE_COUNT;
     rowProps.accentColor = showRecordingStatus
         ? theme::color::MACRO_AUTOMATION
@@ -142,7 +148,9 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
                 core::state::macro::MacroPerformanceOverlayMode::NONE
             ? HEADER_BG_OPA_CLUTCH
             : HEADER_BG_OPA_IDLE;
-    rowProps.showCursor = props.focusingPage;
+    rowProps.showCursor =
+        props.focusingPage || props.slotSelectionActive ||
+        props.pageSelectionActive;
     rowProps.cursorIndex = displayPage;
     rowProps.cursorColor = rowProps.accentColor;
     rowProps.cursorOpa = LV_OPA_COVER;
@@ -152,9 +160,33 @@ FLASHMEM void MacroHeaderBar::render(const MacroHeaderBarProps& props) {
         const bool enabled = (props.enabledMask & static_cast<uint16_t>(1U << i)) != 0;
         rowProps.itemActive[i] = isActive;
         rowProps.itemAddSlot[i] = props.addPageIndex == i && !enabled;
-        rowProps.itemColors[i] = enabled ? rowProps.accentColor : theme::color::INACTIVE;
+        const uint16_t bit = static_cast<uint16_t>(1U << i);
+        const bool selected = (props.pageSelectedMask & bit) != 0U;
+        const bool destination =
+            (props.pageDestinationMask & bit) != 0U;
+        const bool overwrite =
+            (props.pageOverwriteMask & bit) != 0U;
+        const bool blocked =
+            (props.pageBlockedMask & bit) != 0U;
+        rowProps.itemColors[i] = blocked
+            ? theme::color::MACRO_AUTOMATION_RECORDING
+            : destination
+                ? (overwrite
+                    ? theme::color::MACRO_CONFLICT
+                    : theme::color::MACRO_CC_COLOR)
+                : selected
+                    ? theme::color::TEXT_PRIMARY
+                    : enabled
+                        ? rowProps.accentColor
+                        : theme::color::INACTIVE;
         rowProps.itemOpacities[i] =
-            pageSelectorOpa(props.pageOutputActivity[i], isActive, enabled);
+            selected || destination
+                ? LV_OPA_80
+                : pageSelectorOpa(
+                      props.pageOutputActivity[i],
+                      isActive,
+                      enabled
+                  );
     }
 
     header_row_->render(rowProps);

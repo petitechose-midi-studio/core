@@ -33,10 +33,16 @@ struct MacroHeaderBarProps {
     uint16_t automationTakeTouchedMask = 0;
     bool focusingPage = false;
     bool focusingTrack = false;
+    bool slotSelectionActive = false;
+    bool pageSelectionActive = false;
     bool previewPageAddSlot = false;
     bool previewTrackAddSlot = false;
     core::state::macro::MacroAutomationRecordingStatus automationRecordingStatus =
         core::state::macro::MacroAutomationRecordingStatus::IDLE;
+    uint16_t pageSelectedMask = 0U;
+    uint16_t pageDestinationMask = 0U;
+    uint16_t pageOverwriteMask = 0U;
+    uint16_t pageBlockedMask = 0U;
     std::array<uint8_t, ACTIVITY_COUNT> pageOutputActivity{};
 };
 

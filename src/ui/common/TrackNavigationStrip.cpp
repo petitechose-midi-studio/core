@@ -32,6 +32,7 @@ constexpr lv_coord_t SOLO_BORDER_WIDTH = 1;
 constexpr lv_opa_t SOLO_BORDER_OPA = LV_OPA_COVER;
 constexpr lv_coord_t SELECTION_OUTLINE_WIDTH = 1;
 constexpr lv_opa_t SELECTION_OUTLINE_OPA = LV_OPA_70;
+constexpr lv_coord_t DESTINATION_MARKER_HEIGHT = 2;
 
 }  // namespace
 
@@ -92,6 +93,30 @@ FLASHMEM void TrackNavigationStrip::createUI(lv_obj_t* parent) {
 
         item_add_icons_[i] =
             add_slot_icon_ns::createCentered(items_[i], theme::color::TEXT_PRIMARY);
+
+        destination_markers_[i] = lv_obj_create(items_[i]);
+        lv_obj_remove_style_all(destination_markers_[i]);
+        lv_obj_set_size(
+            destination_markers_[i],
+            LV_PCT(100),
+            DESTINATION_MARKER_HEIGHT
+        );
+        lv_obj_align(
+            destination_markers_[i],
+            LV_ALIGN_TOP_MID,
+            0,
+            0
+        );
+        lv_obj_set_style_radius(destination_markers_[i], 1, 0);
+        lv_obj_set_style_bg_opa(
+            destination_markers_[i],
+            LV_OPA_COVER,
+            0
+        );
+        lv_obj_add_flag(
+            destination_markers_[i],
+            LV_OBJ_FLAG_HIDDEN
+        );
     }
 
     active_cursor_ = lv_obj_create(items_row_);
@@ -160,6 +185,8 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
             cache.borderOpa = LV_OPA_TRANSP;
             cache.outlineWidth = -1;
             cache.outlineOpa = LV_OPA_TRANSP;
+            cache.destinationVisible = false;
+            cache.destinationColor = 0;
         }
         const lv_color_t baseColor = lv_color_hex(enabled ? theme::color::trackColor(i)
                                                           : theme::color::INACTIVE);
@@ -245,6 +272,44 @@ FLASHMEM void TrackNavigationStrip::render(const TrackNavigationStripProps& prop
             }
             lv_obj_set_style_outline_opa(items_[i], outlineOpa, 0);
             cache.outlineOpa = outlineOpa;
+        }
+
+        const bool destination =
+            (props.destinationPreviewMask & trackBit) != 0U;
+        const bool destinationOverwrite =
+            (props.destinationOverwriteMask & trackBit) != 0U;
+        const bool destinationBlocked =
+            (props.destinationBlockedMask & trackBit) != 0U;
+        if (!cache.initialized ||
+            cache.destinationVisible != destination) {
+            if (destination) {
+                lv_obj_clear_flag(
+                    destination_markers_[i],
+                    LV_OBJ_FLAG_HIDDEN
+                );
+            } else {
+                lv_obj_add_flag(
+                    destination_markers_[i],
+                    LV_OBJ_FLAG_HIDDEN
+                );
+            }
+            cache.destinationVisible = destination;
+        }
+        if (destination) {
+            const uint32_t destinationColor = destinationBlocked
+                ? theme::color::MACRO_AUTOMATION_RECORDING
+                : (destinationOverwrite
+                    ? theme::color::MACRO_CONFLICT
+                    : theme::color::MACRO_CC_COLOR);
+            if (!cache.initialized ||
+                cache.destinationColor != destinationColor) {
+                lv_obj_set_style_bg_color(
+                    destination_markers_[i],
+                    lv_color_hex(destinationColor),
+                    0
+                );
+                cache.destinationColor = destinationColor;
+            }
         }
 
         cache.initialized = true;

@@ -306,10 +306,20 @@ FLASHMEM void SequencerPatternQuickControlsState::reset() {
 
 FLASHMEM void SequencerStepSelectionState::reset(uint8_t cursor) {
     active.set(false);
+    placing.set(false);
     cursorStep.set(cursor);
     selectedMask.set({});
     pastePreviewActive.set(false);
     pastePreview.set(SequencerStepPastePreview::NONE);
+    clipboardRevision.set(0U);
+}
+
+FLASHMEM void SequencerStepSelectionState::clearCurrent() {
+    placing.set(false);
+    selectedMask.set({});
+    pastePreviewActive.set(false);
+    pastePreview.set(SequencerStepPastePreview::NONE);
+    clipboardRevision.set(0U);
 }
 
 FLASHMEM void SequencerStepSelectionState::setSelected(uint8_t step, bool selected) {

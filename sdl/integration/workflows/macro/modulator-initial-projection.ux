@@ -12,26 +12,25 @@
 580 tap NAV 60
 800 capture screen page_2_projection
 
-# Track is reachable only through Structure. Select Track 2, descend to Page,
-# apply the context, and verify its first hot frame without a refresh gesture.
+# Switch the held-NAV context Page -> Track, then move the sparse Track cursor
+# to Track 2. Merely focusing the Track must publish its Macro projection; a
+# short NAV would open Track Editor and is intentionally not used here.
 940 button NAV down
-2010 tick
-2070 button NAV up
-2210 encoder NAV 1
-2350 tap NAV 60
-2490 tap NAV 60
-2730 capture screen track_2_projection
+1020 encoder NAV -1
+1100 button NAV up
+1240 encoder NAV 1
+1480 capture screen track_2_projection
 
 # Leave Macro for Project, then return through the same global selector. View
 # entry must reuse/publish the coherent Track 2 tuple, not repaint Out as Base.
-2870 button LEFT_TOP down
-2990 encoder NAV 1
-3110 encoder NAV 1
-3230 button LEFT_TOP up
-3450 capture screen project_view
+1620 button LEFT_TOP down
+1740 encoder NAV 1
+1860 encoder NAV 1
+1980 button LEFT_TOP up
+2200 capture screen project_view
 
-3590 button LEFT_TOP down
-3710 encoder NAV -1
-3830 encoder NAV -1
-3950 button LEFT_TOP up
-4230 capture screen macro_reentered
+2340 button LEFT_TOP down
+2460 encoder NAV -1
+2580 encoder NAV -1
+2700 button LEFT_TOP up
+2980 capture screen macro_reentered

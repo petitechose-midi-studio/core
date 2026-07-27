@@ -50,10 +50,7 @@ struct SequencerMacroPropertyHarness {
     core::handler::SequencerMacroPropertyHandler handler;
 
     SequencerMacroPropertyHarness()
-        : state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary)
+        : state(storages.settings)
         , navigationFocus(core::state::StructureNavigationFocus::PAGE)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)

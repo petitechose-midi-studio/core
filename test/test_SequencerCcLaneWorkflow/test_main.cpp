@@ -8,6 +8,7 @@
 #include <iostream>
 #include <limits>
 
+#include <config/App.hpp>
 #include <config/InputIDs.hpp>
 #include <config/Timing.hpp>
 #include <oc/api/ButtonAPI.hpp>
@@ -53,9 +54,6 @@ struct Harness {
     test_support::CoreStorages storages;
     core::state::CoreState state{
         storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary,
     };
     core::handler::SequencerCcLaneDomainServices services{
         {state.sequencer, state.sequencerTracks, state.projectTracks, nullptr}
@@ -74,7 +72,11 @@ struct Harness {
             core::state::StructureNavigationFocus::PAGE
         };
     oc::core::event::EventBus eventBus;
-    oc::core::input::InputBinding inputBinding{eventBus, mockTimeMs};
+    oc::core::input::InputBinding inputBinding{
+        eventBus,
+        mockTimeMs,
+        Config::Input::CONFIG,
+    };
     test_support::TestButtonHardware buttonHw;
     test_support::TestEncoderHardware encoderHw;
     oc::api::ButtonAPI buttons{inputBinding, buttonHw};
@@ -874,6 +876,7 @@ void test_eight_macro_controls_edit_visible_steps_and_long_hold_selects_shape() 
     assert(h.state.sequencer.ccLaneUi.mode ==
            seq::SequencerCcLaneUiMode::TRANSITION_PICKER);
 
+    h.press(Config::ButtonID::NAV);
     h.turnNav(1.0f);
     assert(h.state.sequencer.ccLaneUi.selectedTransition ==
            seq::SequencerCcLaneTransition::LINEAR);
@@ -963,10 +966,10 @@ void test_handler_registers_only_guard_capable_action_presses() {
     Harness h;
 
     // The property grammar has no CC-only long press or NAV shortcut: five
-    // button bindings cover open/apply/cancel. CC owns eight overlay bindings
+    // button bindings cover open/apply/cancel. CC owns seven overlay bindings
     // plus seven main-grid bindings; Macro keys remain polled only in context.
     constexpr std::size_t PROPERTY_SELECTOR_BINDINGS = 5U;
-    constexpr std::size_t CC_LANE_BINDINGS = 15U;
+    constexpr std::size_t CC_LANE_BINDINGS = 14U;
     assert(h.inputBinding.buttonBindingCount() ==
            PROPERTY_SELECTOR_BINDINGS + CC_LANE_BINDINGS);
 

@@ -28,9 +28,7 @@
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
-#include "persistence/MacroPersistence.hpp"
 #include "persistence/ProductFileService.hpp"
-#include "persistence/SequencerPersistence.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
 
@@ -41,31 +39,16 @@ static void tick_core_state(void* user) {
 int main(int argc, char** argv) {
     static sdl::SdlEnvironment env;
     static desktop::MemoryStorage settingsStorage;
-    static desktop::MemoryStorage macroLibraryStorage(
-        core::persistence::MacroPersistence::LIBRARY_STORAGE_CAPACITY
-    );
-    static desktop::MemoryStorage sequencerPatternLibraryStorage(
-        core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
-    );
-    static desktop::MemoryStorage sequencerSetLibraryStorage(
-        core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
-    );
     static std::optional<core::state::CoreState> coreState;
     static oc::impl::HostFileSystem productFilesystem("/midi-studio-wasm");
     static core::persistence::ProductFileService productFiles(productFilesystem);
     static std::unique_ptr<core::sequencer::SequencerRuntimeService> standaloneSequencerRuntime;
 
-    if (!settingsStorage.init() ||
-        !macroLibraryStorage.init() ||
-        !sequencerPatternLibraryStorage.init() ||
-        !sequencerSetLibraryStorage.init()) {
+    if (!settingsStorage.init()) {
         return 1;
     }
     if (!coreState) {
-        coreState.emplace(settingsStorage,
-                          macroLibraryStorage,
-                          sequencerPatternLibraryStorage,
-                          sequencerSetLibraryStorage);
+        coreState.emplace(settingsStorage);
     }
     if (!productFilesystem.init() || !productFiles.init()) {
         return 1;

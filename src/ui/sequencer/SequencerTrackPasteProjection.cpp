@@ -14,7 +14,13 @@ FLASHMEM SequencerTrackPasteProjection projectSequencerTrackPaste(
     const SequencerViewModelSource& source
 ) {
     SequencerTrackPasteProjection projection{};
-    projection.targetTrack = source.trackNavigation.previewAddSlot.get()
+    const bool selectionPlacement =
+        source.trackNavigation.selection.placementActive();
+    projection.targetTrack = selectionPlacement
+        ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
+              source.trackNavigation.selection.cursorIndex.get()
+          )
+        : source.trackNavigation.previewAddSlot.get()
         ? core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
               source.trackNavigation.previewTrackIndex.get()
           )
@@ -29,11 +35,16 @@ FLASHMEM SequencerTrackPasteProjection projectSequencerTrackPaste(
         projection.targetTrack,
         source.trackActivations.pendingTrackMask()
     );
-    projection.copyAvailable = !source.trackNavigation.previewAddSlot.get();
+    projection.copyAvailable =
+        !selectionPlacement &&
+        !source.trackNavigation.previewAddSlot.get();
     const auto& paste = source.sequencer.structureUi.trackPaste;
     if (paste.feedback.active && paste.plan.hasEntries()) {
         projection.plan = paste.plan;
-        projection.targetTrack = paste.plan.entry.targetTrack;
+        projection.targetTrack = paste.plan.firstTarget <
+                core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+            ? paste.plan.firstTarget
+            : paste.plan.entry.targetTrack;
     }
     projection.guard = paste.guard;
     projection.feedback = paste.feedback;

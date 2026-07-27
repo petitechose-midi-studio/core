@@ -44,10 +44,7 @@ struct SequencerEncoderSyncHarness {
     core::context::standalone::SequencerEncoderSyncCoordinator sync;
 
     SequencerEncoderSyncHarness()
-        : state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary)
+        : state(storages.settings)
         , navigationFocus(core::state::StructureNavigationFocus::PAGE)
         , inputBinding(eventBus, mockTimeMs)
         , encoders(inputBinding, encoderHw)

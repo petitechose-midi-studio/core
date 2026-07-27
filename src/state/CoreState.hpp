@@ -4,9 +4,9 @@
  * @file CoreState.hpp
  * @brief Global state aggregate for standalone mode
  *
- * CoreState lives at application level (in main.cpp) and survives
- * context switches. This allows state persistence across context
- * activate/deactivate cycles.
+ * CoreState lives at application level (in main.cpp) and survives context
+ * switches. It is the in-memory authority across context activate/deactivate
+ * cycles; ProductFileService owns Project and preset files.
  *
  * Includes:
  * - MacroState: Runtime values and labels for 8 macro slots
@@ -27,7 +27,6 @@
 
 #include "app/ExtmemAllocator.hpp"
 #include "CoreSettings.hpp"
-#include "DataManagerState.hpp"
 #include "DeviceSettingsState.hpp"
 #include "PatternPitchSettingsState.hpp"
 #include "SequencerSettingsState.hpp"
@@ -40,8 +39,7 @@
 #include "StatusBarState.hpp"
 #include "TrackNavigationState.hpp"
 #include "ViewSelectorState.hpp"
-#include "persistence/MacroPersistence.hpp"
-#include "persistence/SequencerPersistence.hpp"
+#include "persistence/PersistenceStatus.hpp"
 #include "macro/MacroPagesState.hpp"
 #include "macro/MacroHistory.hpp"
 #include "macro/MacroUiState.hpp"
@@ -68,10 +66,10 @@ struct CoreStateBootstrap;
 struct CoreStateLifecycle;
 
 /**
- * Owns the macro runtime, page bank, persistence adapter, and projection state.
+ * Owns the macro runtime, page bank, history, and projection state.
  *
  * CoreState exposes public references to the runtime/page state while this
- * domain struct remains the ownership boundary for allocation and persistence.
+ * domain struct remains the in-memory ownership and allocation boundary.
  */
 struct MacroDomainState {
     static constexpr uint32_t COALESCED_VALUE_HISTORY_IDLE_MS = 500U;
@@ -93,12 +91,10 @@ struct MacroDomainState {
     macro::MacroHistoryService history;
     oc::state::Signal<uint32_t> runtimeOwnerRevision{1};
     oc::state::Signal<uint32_t> configRevision{0};
-    persistence::MacroPersistence persistence;
-    bool persistenceReady = false;
     std::unique_ptr<oc::state::ChangeCoalescer<>> mutationCoalescer;
     CoalescedValueHistory coalescedValueHistory{};
 
-    explicit MacroDomainState(oc::interface::IStorage& libraryStorage);
+    MacroDomainState();
     ~MacroDomainState();
 
     MacroDomainState(const MacroDomainState&) = delete;
@@ -106,8 +102,8 @@ struct MacroDomainState {
 };
 
 /**
- * Owns the editable sequencer state, per-track bank, persistence adapter, and
- * pending load snapshots staged while transport is playing.
+ * Owns the editable sequencer state, per-track bank, history, and pending
+ * Project snapshots staged while transport is playing.
  */
 struct SequencerDomainState {
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_IDLE_MS = 500;
@@ -205,14 +201,11 @@ struct SequencerDomainState {
     core::app::ExtmemUniquePtr<sequencer::SequencerHistoryService> history;
     sequencer::SequencerTrackActivationQueue trackActivations;
     oc::state::Signal<uint32_t> runtimeProjectRevision{1};
-    persistence::SequencerPersistence persistence;
-    bool persistenceReady = false;
     PendingApplyPtr pendingApply;
     CoalescedPatternHistory coalescedPatternHistory;
     std::unique_ptr<oc::state::ChangeCoalescer<15>> mutationCoalescer;
 
-    SequencerDomainState(oc::interface::IStorage& patternLibraryStorage,
-                         oc::interface::IStorage& setLibraryStorage);
+    SequencerDomainState();
     ~SequencerDomainState();
 
     SequencerDomainState(const SequencerDomainState&) = delete;
@@ -246,7 +239,6 @@ struct UiSystemState {
     DeviceSettingsState deviceSettings;
     SequencerSettingsState sequencerSettings;
     PatternPitchSettingsState patternPitchSettings;
-    DataManagerState dataManager;
     MacroEditState macroEdit;
     macro::MacroUiState macroUi;
     project::ProjectNavigationState projectNavigation;
@@ -287,7 +279,7 @@ private:
     uint32_t sharedTrackPersistTimestampMs_ = 0;
 
 public:
-    /// Persistence manager
+    /// Durable device settings only; musical content is file-based.
     CoreSettings settings;
 
     /// Macro domain aliases
@@ -296,16 +288,12 @@ public:
     macro::MacroHistoryService& macroHistory;
     oc::state::Signal<uint32_t>& macroRuntimeOwnerRevision;
     oc::state::Signal<uint32_t>& configRevision;
-    persistence::MacroPersistence& macroPersistence;
-
     /// Sequencer domain aliases
     sequencer::SequencerState& sequencer;
     sequencer::SequencerTrackBankState& sequencerTracks;
     sequencer::SequencerHistoryService& sequencerHistory;
     sequencer::SequencerTrackActivationQueue& sequencerTrackActivations;
     oc::state::Signal<uint32_t>& sequencerRuntimeProjectRevision;
-    persistence::SequencerPersistence& sequencerPersistence;
-
     // Published by the singular SequencerRuntimeService. Feature modules may
     // produce immutable CC author frames through this non-owning handle, but
     // CoreState never owns or destroys the realtime coordinator.
@@ -331,7 +319,6 @@ public:
     DeviceSettingsState& deviceSettings;
     SequencerSettingsState& sequencerSettings;
     PatternPitchSettingsState& patternPitchSettings;
-    DataManagerState& dataManager;
     MacroEditState& macroEdit;
     macro::MacroUiState& macroUi;
     project::ProjectNavigationState& projectNavigation;
@@ -339,15 +326,9 @@ public:
 
     /**
      * @brief Construct with storage backend
-     * @param settingsStorage Core settings storage (midi sync + shortcuts)
-     * @param macroLibraryStorage Dedicated macro library storage
-     * @param sequencerPatternLibraryStorage Dedicated sequencer pattern library storage
-     * @param sequencerSetLibraryStorage Dedicated sequencer set library storage
+     * @param settingsStorage Core settings storage (MIDI sync + shared Track)
      */
-    explicit CoreState(oc::interface::IStorage& settingsStorage,
-                       oc::interface::IStorage& macroLibraryStorage,
-                       oc::interface::IStorage& sequencerPatternLibraryStorage,
-                       oc::interface::IStorage& sequencerSetLibraryStorage);
+    explicit CoreState(oc::interface::IStorage& settingsStorage);
     ~CoreState();
 
     // Non-copyable, non-movable
@@ -356,22 +337,25 @@ public:
     CoreState(CoreState&&) = delete;
     CoreState& operator=(CoreState&&) = delete;
 
-    // Persistence and runtime coordination.
+    // Settings persistence and runtime coordination.
 
     /**
-     * @brief Update persistence (call from main loop)
+     * @brief Update runtime coordination and debounced device settings
      *
-     * Saves dirty values incrementally after debounce timeout.
+     * Saves dirty CoreSettings values after their debounce timeout. Project
+     * files and presets are coordinated by ProductFileService.
      */
     void update();
 
     /**
-     * @brief Factory reset - clear all settings
+     * @brief Reset runtime musical state and durable device settings
+     *
+     * Existing Project and preset files are not deleted.
      */
     void factoryReset();
 
     /**
-     * @brief Flush any pending dirty values immediately
+     * @brief Flush pending history coalescing and dirty device settings
      */
     void flush();
     void flushProjectMutationCoalescing();
@@ -397,8 +381,6 @@ public:
     bool hasPendingProjectMutationCoalescing() const;
     bool hasPendingProjectTransaction() const;
 
-    bool isMacroPersistenceReady() const;
-    bool isSequencerPersistenceReady() const;
     void markSequencerProjectMutated();
     bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternSnapshot before,
                                        sequencer::SequencerHistoryPatternSnapshot after,
@@ -453,16 +435,18 @@ public:
     uint8_t currentSharedActiveTrack() const;
     bool setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack);
     void publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t activeTrack);
+    /** Reconciles transient Macro/UI state after one atomic global Track paste. */
+    void reconcilePreparedMacroTrackTransfer(uint16_t capturedTrackMask);
     bool refreshSharedTrackStateFromMacroPages();
     bool refreshSharedTrackStateFromSequencer();
 
     /**
-     * @brief Reinitialize explicit persistence domains and save current RAM to storage.
+     * @brief Save current device settings after reopening their storage
      *
-     * Used after platform code has reopened storage. Retired macro/sequencer
-     * domain stores are not part of session recovery.
+     * Project and preset files are independent ProductFileService domains and
+     * are not rewritten by this recovery path.
      */
-    persistence::PersistenceWriteStatus recoverPersistenceFromRamAfterStorageReopen();
+    persistence::PersistenceWriteStatus recoverSettingsFromRamAfterStorageReopen();
 
 private:
     [[nodiscard]] bool queueSequencerApply_(

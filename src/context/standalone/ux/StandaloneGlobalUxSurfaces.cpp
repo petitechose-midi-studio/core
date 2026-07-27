@@ -79,6 +79,18 @@ FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
+    // BOTTOM_CENTER is the product's reserved global Transport binding. Even
+    // while this overlay is authoritative, leave that event to
+    // TransportUxSurface so the semantic trace reports the action that
+    // actually owned the gesture.
+    if (isButton(
+            event,
+            Config::ButtonID::BOTTOM_CENTER,
+            oc::core::input::ButtonBindingType::RELEASE
+        )) {
+        return false;
+    }
+
     const bool opening =
         isButton(
             event,
@@ -212,19 +224,14 @@ FLASHMEM bool DeviceSettingsUxSurface::captureSemanticUxContext(
 }
 
 FLASHMEM TransportUxSurface::TransportUxSurface(
-    core::state::StatusBarState& statusBar,
-    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays
+    core::state::StatusBarState& statusBar
 )
-    : status_bar_(statusBar), overlays_(overlays) {}
+    : status_bar_(statusBar) {}
 
 FLASHMEM bool TransportUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
     core::validation::ux::SemanticUxContext& out
 ) const {
-    // Contextual overlays own BOTTOM_CENTER while visible (for example
-    // CC-lane Settings). The global transport binding does not dispatch there,
-    // so the recorder must not infer transport semantics from the physical ID.
-    if (overlays_.hasVisible()) return false;
     if (!isButton(event, Config::ButtonID::BOTTOM_CENTER, oc::core::input::ButtonBindingType::RELEASE)) {
         return false;
     }

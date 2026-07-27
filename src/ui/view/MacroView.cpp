@@ -46,6 +46,10 @@ FLASHMEM MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
     rendered_active_.fill(true);
     rendered_add_slot_.fill(false);
     rendered_focused_.fill(false);
+    rendered_selected_.fill(false);
+    rendered_placement_preview_.fill(
+        MacroSlotPlacementPreview::NONE
+    );
     createLayout(parent);
     createHeaderBar();
     createActionStrips();
@@ -167,6 +171,58 @@ FLASHMEM bool MacroView::bindToState() {
             requestSlotPropertyOverlayRender();
             requestHeaderRender();
         })
+    );
+
+    subscriptions_.push_back(
+        state_refs_.macroUi.slotSelection.revision.subscribe(
+            [this](uint32_t) {
+                requestHeaderRender();
+                requestLeftActionStripRender();
+                requestBottomActionStripRender();
+                markConfigDirtyIfChanged();
+            }
+        )
+    );
+
+    const auto pageSelectionChanged = [this](auto) {
+        requestHeaderRender();
+        requestLeftActionStripRender();
+        requestBottomActionStripRender();
+    };
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.active.subscribe(
+            pageSelectionChanged
+        )
+    );
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.placing.subscribe(
+            pageSelectionChanged
+        )
+    );
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.cursorIndex.subscribe(
+            pageSelectionChanged
+        )
+    );
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.selectedMask.subscribe(
+            pageSelectionChanged
+        )
+    );
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.destinationMask.subscribe(
+            pageSelectionChanged
+        )
+    );
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.overwriteMask.subscribe(
+            pageSelectionChanged
+        )
+    );
+    subscriptions_.push_back(
+        state_refs_.macroUi.pageSelection.pasteBlocked.subscribe(
+            pageSelectionChanged
+        )
     );
 
     subscriptions_.push_back(
@@ -295,6 +351,36 @@ FLASHMEM bool MacroView::bindToState() {
         })
     );
 
+    const auto trackSelectionChanged = [this](auto) {
+        requestLeftActionStripRender();
+        requestBottomActionStripRender();
+    };
+    subscriptions_.push_back(
+        state_refs_.trackNavigation.selection.active.subscribe(
+            trackSelectionChanged
+        )
+    );
+    subscriptions_.push_back(
+        state_refs_.trackNavigation.selection.placing.subscribe(
+            trackSelectionChanged
+        )
+    );
+    subscriptions_.push_back(
+        state_refs_.trackNavigation.selection.selectedMask.subscribe(
+            trackSelectionChanged
+        )
+    );
+    subscriptions_.push_back(
+        state_refs_.trackNavigation.selection.overwriteMask.subscribe(
+            trackSelectionChanged
+        )
+    );
+    subscriptions_.push_back(
+        state_refs_.trackNavigation.selection.pasteBlocked.subscribe(
+            trackSelectionChanged
+        )
+    );
+
     subscriptions_.push_back(
         state_refs_.macroUi.previewAddPageSlot.subscribe([this](bool) {
             requestHeaderRender();
@@ -372,17 +458,6 @@ FLASHMEM bool MacroView::bindToState() {
             handleOverlayVisibilityChanged();
         })
     );
-    subscriptions_.push_back(
-        state_refs_.dataManager.visible.subscribe([this](bool) {
-            handleOverlayVisibilityChanged();
-        })
-    );
-    subscriptions_.push_back(
-        state_refs_.dataManager.dialog.visible.subscribe([this](bool) {
-            handleOverlayVisibilityChanged();
-        })
-    );
-
     markAllDirty();
 
     if (!subscriptions_.valid()) {
@@ -498,9 +573,7 @@ bool MacroView::hasBlockingOverlay() const {
     return state_refs_.macroEdit.visible.get() ||
            state_refs_.viewSelector.visible.get() ||
            state_refs_.deviceSettings.visible.get() ||
-           state_refs_.deviceSettings.selector.visible.get() ||
-           state_refs_.dataManager.visible.get() ||
-           state_refs_.dataManager.dialog.visible.get();
+           state_refs_.deviceSettings.selector.visible.get();
 }
 
 void MacroView::handleOverlayVisibilityChanged() {
@@ -567,6 +640,9 @@ void MacroView::markConfigDirtyIfChanged() {
             rendered_active_[i] != props.active ||
             rendered_add_slot_[i] != props.addSlot ||
             rendered_focused_[i] != props.focused ||
+            rendered_selected_[i] != props.selected ||
+            rendered_placement_preview_[i] !=
+                props.placementPreview ||
             rendered_source_state_[i] != sourceStateBits(props) ||
             rendered_automation_recording_[i] != props.automationRecording ||
             rendered_automation_manual_override_[i] != props.automationManualOverride) {
@@ -722,6 +798,22 @@ void MacroView::processRenderFlags(uint32_t flags) {
                     if (rendered_focused_[i] != props.focused) {
                         macros_[i]->setFocused(props.focused);
                         rendered_focused_[i] = props.focused;
+                    }
+                    if (rendered_selected_[i] != props.selected ||
+                        rendered_placement_preview_[i] !=
+                            props.placementPreview) {
+                        macros_[i]->setSelectionState(
+                            props.selected,
+                            props.placementPreview ==
+                                MacroSlotPlacementPreview::FREE,
+                            props.placementPreview ==
+                                MacroSlotPlacementPreview::OVERWRITE,
+                            props.placementPreview ==
+                                MacroSlotPlacementPreview::BLOCKED
+                        );
+                        rendered_selected_[i] = props.selected;
+                        rendered_placement_preview_[i] =
+                            props.placementPreview;
                     }
                 }
             }

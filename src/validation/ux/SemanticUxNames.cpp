@@ -143,10 +143,6 @@ FLASHMEM const char* overlayName(core::ui::OverlayType overlay) {
             return "pattern_pitch_settings";
         case core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR:
             return "pattern_pitch_settings_selector";
-        case core::ui::OverlayType::DATA_MANAGER:
-            return "data_manager";
-        case core::ui::OverlayType::DATA_MANAGER_DIALOG:
-            return "data_manager_dialog";
         case core::ui::OverlayType::SEQ_PATTERN_EDIT:
             return "seq_pattern_edit";
         case core::ui::OverlayType::SEQ_TRACK_EDIT:

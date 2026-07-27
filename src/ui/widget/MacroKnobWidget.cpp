@@ -313,6 +313,25 @@ void MacroKnobWidget::setFocused(bool focused) {
     updateFocusFrame();
 }
 
+void MacroKnobWidget::setSelectionState(
+    bool selected,
+    bool placementFree,
+    bool placementOverwrite,
+    bool placementBlocked
+) {
+    if (selected_ == selected &&
+        placement_free_ == placementFree &&
+        placement_overwrite_ == placementOverwrite &&
+        placement_blocked_ == placementBlocked) {
+        return;
+    }
+    selected_ = selected;
+    placement_free_ = placementFree;
+    placement_overwrite_ = placementOverwrite;
+    placement_blocked_ = placementBlocked;
+    updateFocusFrame();
+}
+
 void MacroKnobWidget::updateAutomationTrackColor() {
     if (!knob_) return;
     const uint32_t nextColor = automationTrackColor(
@@ -328,9 +347,35 @@ void MacroKnobWidget::updateAutomationTrackColor() {
 
 void MacroKnobWidget::updateFocusFrame() {
     if (!container_) return;
-    lv_obj_set_style_border_width(container_, focused_ ? 1 : 0, 0);
-    lv_obj_set_style_border_color(container_, lv_color_hex(stheme::color::TEXT_PRIMARY), 0);
-    lv_obj_set_style_border_opa(container_, focused_ ? LV_OPA_70 : LV_OPA_TRANSP, 0);
+    const bool placement =
+        placement_free_ || placement_overwrite_ ||
+        placement_blocked_;
+    const bool framed = focused_ || selected_ || placement;
+    const uint32_t color = placement_blocked_
+        ? stheme::color::MACRO_AUTOMATION_RECORDING
+        : placement_overwrite_
+            ? stheme::color::MACRO_CONFLICT
+            : placement_free_
+                ? stheme::color::MACRO_CC_COLOR
+                : selected_
+                    ? stheme::color::MACRO_MODULATION
+                    : stheme::color::TEXT_PRIMARY;
+    lv_obj_set_style_border_width(
+        container_,
+        placement || selected_ ? 2 : (focused_ ? 1 : 0),
+        0
+    );
+    lv_obj_set_style_border_color(
+        container_,
+        lv_color_hex(color),
+        0
+    );
+    lv_obj_set_style_border_opa(
+        container_,
+        framed ? (placement ? LV_OPA_COVER : LV_OPA_70)
+               : LV_OPA_TRANSP,
+        0
+    );
     if (add_label_) {
         lv_obj_set_style_text_opa(
             add_label_,

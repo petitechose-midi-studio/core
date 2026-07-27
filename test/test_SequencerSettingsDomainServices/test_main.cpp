@@ -47,10 +47,7 @@ struct SequencerSettingsHandlerHarness {
     core::handler::SequencerSettingsHandler handler;
 
     SequencerSettingsHandlerHarness()
-        : state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary)
+        : state(storages.settings)
         , services(core::handler::SequencerSettingsDomainServices::StateRefs{
               state.sequencer,
               state.sequencerTracks,

@@ -1,5 +1,6 @@
 #include "state/macro/MacroUiState.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include <config/PlatformCompat.hpp>
@@ -52,6 +53,107 @@ FLASHMEM bool sameRuntimeProjection(
 
 }  // namespace
 
+FLASHMEM void MacroSlotSelectionState::reset(uint8_t cursor) {
+    active.set(false);
+    placing.set(false);
+    cursorLinear.set(static_cast<uint8_t>(std::min<uint16_t>(
+        cursor,
+        static_cast<uint16_t>(PAGE_COUNT * MACRO_COUNT - 1U)
+    )));
+    selectedMask.set({});
+    destinationMasks = {};
+    overwriteMasks = {};
+    pasteBlocked = false;
+    overwriteCount = 0U;
+    requiredPageCount = 0U;
+    clipboardRevision = 0U;
+    bump();
+}
+
+FLASHMEM void MacroSlotSelectionState::setSelected(
+    uint8_t linear,
+    bool nextSelected
+) {
+    if (linear >= PAGE_COUNT * MACRO_COUNT) return;
+    auto mask = selectedMask.get();
+    mask.setBit(linear, nextSelected);
+    selectedMask.set(mask);
+    bump();
+}
+
+FLASHMEM bool MacroSlotSelectionState::selected(
+    uint8_t linear
+) const {
+    return linear < PAGE_COUNT * MACRO_COUNT &&
+           selectedMask.get().test(linear);
+}
+
+FLASHMEM bool MacroSlotSelectionState::anySelected() const {
+    const auto mask = selectedMask.get();
+    for (uint8_t linear = 0U;
+         linear < PAGE_COUNT * MACRO_COUNT;
+         ++linear) {
+        if (mask.test(linear)) return true;
+    }
+    return false;
+}
+
+FLASHMEM uint8_t MacroSlotSelectionState::selectedCount() const {
+    const auto mask = selectedMask.get();
+    uint8_t count = 0U;
+    for (uint8_t linear = 0U;
+         linear < PAGE_COUNT * MACRO_COUNT;
+         ++linear) {
+        if (mask.test(linear)) ++count;
+    }
+    return count;
+}
+
+FLASHMEM void MacroSlotSelectionState::publishPlacement(
+    const std::array<uint8_t, PAGE_COUNT>& destinations,
+    const std::array<uint8_t, PAGE_COUNT>& overwrites,
+    bool blocked,
+    uint8_t overwriteTotal,
+    uint8_t requiredPages,
+    uint32_t sourceRevision
+) {
+    if (destinationMasks == destinations &&
+        overwriteMasks == overwrites &&
+        pasteBlocked == blocked &&
+        overwriteCount == overwriteTotal &&
+        requiredPageCount == requiredPages &&
+        clipboardRevision == sourceRevision) {
+        return;
+    }
+    destinationMasks = destinations;
+    overwriteMasks = overwrites;
+    pasteBlocked = blocked;
+    overwriteCount = overwriteTotal;
+    requiredPageCount = requiredPages;
+    clipboardRevision = sourceRevision;
+    bump();
+}
+
+FLASHMEM void MacroSlotSelectionState::clearPlacementProjection() {
+    publishPlacement({}, {}, false, 0U, 0U, 0U);
+}
+
+FLASHMEM void MacroSlotSelectionState::clearCurrent() {
+    placing.set(false);
+    selectedMask.set({});
+    destinationMasks.fill(0U);
+    overwriteMasks.fill(0U);
+    pasteBlocked = false;
+    overwriteCount = 0U;
+    requiredPageCount = 0U;
+    clipboardRevision = 0U;
+    bump();
+}
+
+FLASHMEM void MacroSlotSelectionState::bump() {
+    revision.set(revision.get() + 1U);
+}
+
 FLASHMEM MacroUiState::MacroUiState() = default;
 FLASHMEM MacroUiState::~MacroUiState() = default;
 
@@ -78,6 +180,8 @@ FLASHMEM void MacroUiState::resetInteraction() {
     previewAddPageSlot.set(false);
     previewPageIndex.set(0);
     pageHold.clear();
+    pageSelection.reset(core::state::StructureSelectionScope::PAGE);
+    slotSelection.reset();
     contextSelector.reset();
     automationTake.reset();
     postTakeInputGuardStartedAtMs = 0U;

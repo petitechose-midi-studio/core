@@ -29,9 +29,13 @@
 2140 tap LEFT_TOP 60
 2380 capture screen track_back_to_macro
 
-# A hold without rotation is inspection-only and never opens legacy Structure.
+# A stationary hold enters selection in the focused Track context.
 2480 button NAV down
 3560 tick
-3640 capture screen held_context_inspection
+3640 capture screen track_selection_armed
 3720 button NAV up
-3960 capture screen held_context_released
+3960 capture screen track_selection_active
+
+# The first Back clears local selection; it must not open the View Selector.
+4060 tap LEFT_TOP 60
+4300 capture screen track_selection_cleared

@@ -121,6 +121,15 @@ FLASHMEM void ViewSwitcherHandler::setupBindings() {
 
 FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
     if (overlays_state_.hasVisible()) return false;
+    // Local structure-selection state owns LEFT_TOP before the global view
+    // selector, independently of which performance view is visible.
+    if (core_state_.trackNavigation.selection.active.get() ||
+        core_state_.macroUi.pageSelection.active.get() ||
+        core_state_.macroUi.slotSelection.active.get() ||
+        core_state_.sequencer.structureUi.pageSelection.active.get() ||
+        sequencer_step_selection_.active.get()) {
+        return false;
+    }
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) {
         if (core::ui::isProjectWorkspaceView(active_view_.get())) {
             const auto node = project_navigation_.currentNode.get();
@@ -136,9 +145,6 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
     }
 
     return core::state::sequencer::isRootContentView(core_state_.sequencer) &&
-           !core_state_.trackNavigation.selection.active.get() &&
-           !core_state_.sequencer.structureUi.pageSelection.active.get() &&
-           !sequencer_step_selection_.active.get() &&
            !pattern_quick_controls_.selecting.get() &&
            !step_property_inline_selector_.selecting.get() &&
            !core_state_.sequencer.stepContentSelector.selecting.get() &&
@@ -147,7 +153,7 @@ FLASHMEM bool ViewSwitcherHandler::canOpenSelector() const {
 
 FLASHMEM bool ViewSwitcherHandler::beginSelectorPress() {
     if (!openSelector()) return false;
-    buttons_.setPressOwner(ButtonID::LEFT_TOP, view_selector_scope_);
+    buttons_.handoffPress(ButtonID::LEFT_TOP, view_selector_scope_);
     return true;
 }
 

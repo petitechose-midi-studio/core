@@ -84,10 +84,7 @@ struct ProjectHandlerHarness {
         : projectFsRootPath(projectHandlerFsRoot().string())
         , projectFilesystem(projectFsRootPath.c_str())
         , productFiles(projectFilesystem)
-        , state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary)
+        , state(storages.settings)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
@@ -169,10 +166,7 @@ struct RestoredProjectHarness {
     core::state::CoreState state;
 
     explicit RestoredProjectHarness(const core::state::project::ProjectSnapshot& snapshot)
-        : state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary) {
+        : state(storages.settings) {
         assert(core::state::project::applyProjectSnapshot(state, snapshot));
     }
 };
@@ -581,9 +575,11 @@ void test_project_name_editor_uses_physical_action_buttons() {
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.projectNavigation.projectNameShiftActive);
 
-    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    h.turn(Config::EncoderID::NAV, 28.0f);  // SPC
+    h.tap(Config::ButtonID::NAV);
     assert(std::strcmp(h.state.projectNavigation.editingProjectSlug.data(), "Q ") == 0);
 
+    h.turn(Config::EncoderID::NAV, 11.0f);  // q
     h.tap(Config::ButtonID::NAV);  // q
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(h.state.projectNavigation.editingProjectSlug[0] == '\0');
@@ -616,7 +612,9 @@ void test_overview_save_as_name_editor_persists_named_project() {
     h.press(Config::ButtonID::LEFT_CENTER);
     h.tap(Config::ButtonID::NAV);  // shifted default key Q
     h.release(Config::ButtonID::LEFT_CENTER);
-    h.tap(Config::ButtonID::BOTTOM_CENTER);
+    h.turn(Config::EncoderID::NAV, 28.0f);  // SPC
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 11.0f);  // q
     h.tap(Config::ButtonID::NAV);  // q
     assert(std::strcmp(h.state.projectNavigation.editingProjectSlug.data(), "Q q") == 0);
 

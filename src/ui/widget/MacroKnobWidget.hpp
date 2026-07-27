@@ -57,6 +57,10 @@ public:
                              uint8_t modulationSourceCount = 0);
     void setSlotState(bool active, bool addSlot);
     void setFocused(bool focused);
+    void setSelectionState(bool selected,
+                           bool placementFree,
+                           bool placementOverwrite,
+                           bool placementBlocked);
 
 private:
     struct ArcGeometry {
@@ -106,6 +110,10 @@ private:
     bool slot_active_ = true;
     bool add_slot_ = false;
     bool focused_ = false;
+    bool selected_ = false;
+    bool placement_free_ = false;
+    bool placement_overwrite_ = false;
+    bool placement_blocked_ = false;
     bool config_labels_visible_ = true;
     float current_value_ = 0.0f;
     float base_value_ = 0.0f;

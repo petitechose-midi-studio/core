@@ -19,7 +19,6 @@ namespace core::state {
 struct DeviceSettingsState;
 struct MacroEditState;
 struct MacroState;
-struct DataManagerState;
 struct MidiSyncState;
 struct StatusBarState;
 struct StructureClipboardState;
@@ -72,7 +71,6 @@ constexpr uint8_t PROJECT_MODULATORS = 53;
 constexpr uint8_t MACRO_PERFORMANCE = 54;
 constexpr uint8_t MACRO_EDIT = 55;
 constexpr uint8_t MACRO_VALUE = 60;
-constexpr uint8_t DATA_MANAGER = 70;
 }  // namespace priority
 
 class ViewSelectorUxSurface final : public core::validation::ux::SemanticUxSurface {
@@ -109,10 +107,7 @@ private:
 
 class TransportUxSurface final : public core::validation::ux::SemanticUxSurface {
 public:
-    TransportUxSurface(
-        core::state::StatusBarState& statusBar,
-        oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays
-    );
+    explicit TransportUxSurface(core::state::StatusBarState& statusBar);
 
     bool captureSemanticUxContext(
         const oc::core::input::InputBindingTraceEvent& event,
@@ -121,7 +116,6 @@ public:
 
 private:
     core::state::StatusBarState& status_bar_;
-    oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
 };
 
 class SequencerPropertySelectorUxSurface final : public core::validation::ux::SemanticUxSurface {
@@ -483,19 +477,6 @@ private:
     core::state::StructureClipboardState& clipboard_;
     core::state::macro::MacroHistoryService& history_;
     mutable bool recorded_shape_capture_button_seen_ = false;
-};
-
-class DataManagerUxSurface final : public core::validation::ux::SemanticUxSurface {
-public:
-    explicit DataManagerUxSurface(core::state::DataManagerState& dataManager);
-
-    bool captureSemanticUxContext(
-        const oc::core::input::InputBindingTraceEvent& event,
-        core::validation::ux::SemanticUxContext& out
-    ) const override;
-
-private:
-    core::state::DataManagerState& data_manager_;
 };
 
 }  // namespace core::context::standalone::ux

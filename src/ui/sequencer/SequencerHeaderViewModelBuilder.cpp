@@ -60,6 +60,10 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     const bool focusingStep =
         !anySelection &&
         source.navigationFocus.get() == core::state::StructureNavigationFocus::STEP;
+    const auto& trackPaste = sequencer.structureUi.trackPaste;
+    const bool trackPasteDetailsAvailable =
+        focusingTrack && trackPaste.inspectable() &&
+        trackPaste.plan.canCommit() && trackPaste.feedback.active;
     const bool previewAddTrackSlot =
         !selectingTrack && source.trackNavigation.previewAddSlot.get();
     const bool previewAddPageSlot =
@@ -121,6 +125,22 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
         (pageClipboardPreview && viewedPage < sequencer.activePageCount())
             ? pageClipboardDestinationMask
             : 0U;
+    const bool pageSelectionPlacing =
+        selectingPage &&
+        sequencer.structureUi.pageSelection.placing.get();
+    const uint16_t pageSelectionDestinationMask =
+        pageSelectionPlacing
+            ? sequencer.structureUi.pageSelection.destinationMask.get()
+            : 0U;
+    const uint16_t pageSelectionOverwriteMask =
+        pageSelectionPlacing
+            ? sequencer.structureUi.pageSelection.overwriteMask.get()
+            : 0U;
+    const uint16_t pageSelectionBlockedMask =
+        pageSelectionPlacing &&
+        sequencer.structureUi.pageSelection.pasteBlocked.get()
+            ? pageSelectionDestinationMask
+            : 0U;
 
     const bool microContext = core::state::sequencer::isMicroSequenceContentView(sequencer);
     const bool cycleContext = core::state::sequencer::isCycleStatesContentView(sequencer);
@@ -153,6 +173,13 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                 )
             );
         }
+    } else if (trackPasteDetailsAvailable) {
+        std::snprintf(
+            badgeText.data(),
+            badgeText.size(),
+            "%s",
+            trackPaste.detailVisible ? "LC Close" : "LC Details"
+        );
     } else if (!anySelection) {
         const char* badge = clipboardBadge(source.structureClipboard);
         if (badge[0] != '\0' && std::strcmp(badge, leftText) == 0) {
@@ -186,8 +213,13 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
                   )
               )
             : pageClipboardSourceMask,
-        .pageDestinationPreviewMask = pageClipboardDestinationMask,
-        .pageDestinationOverwriteMask = pageClipboardOverwriteMask,
+        .pageDestinationPreviewMask = pageSelectionPlacing
+            ? pageSelectionDestinationMask
+            : pageClipboardDestinationMask,
+        .pageDestinationOverwriteMask = pageSelectionPlacing
+            ? pageSelectionOverwriteMask
+            : pageClipboardOverwriteMask,
+        .pageDestinationBlockedMask = pageSelectionBlockedMask,
         .leftText = leftText,
         .badgeText = badgeText,
     };

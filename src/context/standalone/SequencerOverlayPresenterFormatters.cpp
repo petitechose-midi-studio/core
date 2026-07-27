@@ -39,14 +39,6 @@ using StripProps = core::ui::ContextActionStripProps;
 using Visual = core::ui::ContextActionStripVisualState;
 using Tone = core::ui::ContextActionStripTone;
 
-FLASHMEM core::ui::ContextActionStripSlotProps stepPresetStripSlot() {
-    return core::ui::makeStandaloneIconStripSlot(
-        ::standalone::icons::SETTINGS_GEAR,
-        Visual::ACTIVE,
-        Tone::NEUTRAL
-    );
-}
-
 FLASHMEM const char* availabilityLabel(
     const core::state::sequencer::StepContentCreationAvailability& availability
 ) {
@@ -467,7 +459,7 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     std::snprintf(
         data.meta.data(),
         data.meta.size(),
-        "PATTERN %u · STEP %u/%u · %s",
+        "P%u · S%u/%u · %s · HOLD NAV",
         static_cast<unsigned>(
             core::state::sequencer::activeContentPageForStep(step)
         ) + 1U,
@@ -808,7 +800,7 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
             Visual::ACTIVE,
             Tone::WARNING
         );
-        props.slots[1] = stepPresetStripSlot();
+        props.slots[1].visualState = Visual::HIDDEN;
         props.slots[2].visualState = Visual::HIDDEN;
         return props;
     }
@@ -816,7 +808,7 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
     if (!focusedRowIsContextRow(sequencer)) {
         props.visible = true;
         props.slots[0].visualState = Visual::HIDDEN;
-        props.slots[1] = stepPresetStripSlot();
+        props.slots[1].visualState = Visual::HIDDEN;
         props.slots[2].visualState = Visual::HIDDEN;
         return props;
     }
@@ -841,7 +833,7 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
         removeHoldActive ? Visual::ARMED : (hasChild ? Visual::ACTIVE : Visual::DISABLED),
         removeHoldActive ? Tone::DESTRUCTIVE : Tone::WARNING
     );
-    props.slots[1] = stepPresetStripSlot();
+    props.slots[1].visualState = Visual::HIDDEN;
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         core::ui::sequencer::interactionActionIcon(rightAction),
         pasteHoldActive && canPaste

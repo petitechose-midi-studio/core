@@ -907,7 +907,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::executeTap(
         case seq::SequencerCcLaneActionSlot::BOTTOM_LEFT:
             return clearFocusedEvent_(nowMs);
         case seq::SequencerCcLaneActionSlot::BOTTOM_CENTER:
-            return openSettings();
+            return false;
         case seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT:
             return editor_.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID
                 ? openSettings()
@@ -1090,9 +1090,7 @@ FLASHMEM void SequencerCcLaneWorkflow::refreshActions_(
 
     if (ui.mode == seq::SequencerCcLaneUiMode::LANE_SELECTOR ||
         ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID) {
-        const auto slot = ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID
-            ? seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT
-            : seq::SequencerCcLaneActionSlot::BOTTOM_CENTER;
+        const auto slot = seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT;
         auto& settings = makeSpec(slot);
         const bool laneAvailable = ui.mode == seq::SequencerCcLaneUiMode::LANE_GRID ||
             selectorLane() >= 0;

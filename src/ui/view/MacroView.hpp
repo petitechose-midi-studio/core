@@ -19,7 +19,6 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
-#include "state/DataManagerState.hpp"
 #include "state/DeviceSettingsState.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/StructureClipboardState.hpp"
@@ -59,7 +58,6 @@ public:
         core::state::MacroEditState& macroEdit;
         core::state::ViewSelectorState& viewSelector;
         core::state::DeviceSettingsState& deviceSettings;
-        core::state::DataManagerState& dataManager;
     };
 
     MacroView(lv_obj_t* parent, StateRefs stateRefs);
@@ -132,6 +130,11 @@ private:
     std::array<bool, MACRO_COUNT> rendered_active_{};
     std::array<bool, MACRO_COUNT> rendered_add_slot_{};
     std::array<bool, MACRO_COUNT> rendered_focused_{};
+    std::array<bool, MACRO_COUNT> rendered_selected_{};
+    std::array<
+        MacroSlotPlacementPreview,
+        MACRO_COUNT
+    > rendered_placement_preview_{};
     std::array<uint8_t, MACRO_COUNT> rendered_ccs_{};
     core::app::ExtmemUniquePtr<core::ui::CoalescedLvglRenderScheduler>
         render_scheduler_;

@@ -40,6 +40,30 @@ FLASHMEM const char* reasonLabel(Reason reason) {
     }
 }
 
+FLASHMEM uint8_t effectivePlanCount(
+    const core::state::ClipboardTransferPlan& plan
+) {
+    return plan.count > 0U
+        ? plan.count
+        : (plan.hasEntry ? 1U : 0U);
+}
+
+FLASHMEM const core::state::ClipboardTransferPlanEntry& planEntry(
+    const core::state::ClipboardTransferPlan& plan,
+    uint8_t index
+) {
+    return plan.count > 0U ? plan.entries[index] : plan.entry;
+}
+
+FLASHMEM uint8_t countMaskBits(uint16_t mask) {
+    uint8_t count = 0U;
+    while (mask != 0U) {
+        count = static_cast<uint8_t>(count + (mask & 1U));
+        mask = static_cast<uint16_t>(mask >> 1U);
+    }
+    return count;
+}
+
 FLASHMEM void formatSummaryMapping(
     std::array<char, 272>& out,
     const core::state::ClipboardTransferPlan& plan,
@@ -53,7 +77,19 @@ FLASHMEM void formatSummaryMapping(
         );
         return;
     }
-    const auto& entry = plan.entry;
+    const uint8_t count = effectivePlanCount(plan);
+    const auto& entry = planEntry(plan, 0U);
+    if (count > 1U) {
+        format(
+            out,
+            "T%u..T%u -> T%u..T%u | sparse",
+            static_cast<unsigned>(plan.firstSource + 1U),
+            static_cast<unsigned>(plan.lastSource + 1U),
+            static_cast<unsigned>(plan.firstTarget + 1U),
+            static_cast<unsigned>(plan.lastTarget + 1U)
+        );
+        return;
+    }
     if (entry.targetRouteValid) {
         format(
             out,
@@ -90,7 +126,8 @@ FLASHMEM ActivationProjection activationProjection(
         return out;
     }
 
-    const uint8_t target = projection.plan.entry.targetTrack;
+    const uint8_t target =
+        planEntry(projection.plan, 0U).targetTrack;
     if (target >= telemetry.size()) return out;
     const auto& entry = telemetry[target];
     if (entry.generation != projection.activationGeneration ||
@@ -113,9 +150,9 @@ FLASHMEM void projectFocusedMapping(
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT>& telemetry
 ) {
     if (!projection.plan.hasEntries()) return;
-    const auto& entry = projection.plan.entry;
+    const auto& entry = planEntry(projection.plan, 0U);
     out.mappingIndex = 0;
-    out.mappingCount = 1;
+    out.mappingCount = effectivePlanCount(projection.plan);
     out.sourceTrack = entry.sourceTrack;
     out.targetTrack = entry.targetTrack;
     out.inheritedLaneCount = entry.inheritedLaneCount;
@@ -136,26 +173,51 @@ FLASHMEM void formatSummary(
     SequencerTrackPastePreflightViewModel& out,
     const SequencerTrackPasteProjection& projection
 ) {
-    const auto& entry = projection.plan.entry;
-    format(out.header, "Track paste | 1 Track");
+    const auto& plan = projection.plan;
+    const uint8_t count = effectivePlanCount(plan);
+    format(
+        out.header,
+        "Track paste | %u Track%s",
+        static_cast<unsigned>(count),
+        count > 1U ? "s" : ""
+    );
     formatSummaryMapping(out.mapping, projection.plan, projection.targetTrack);
+    const uint8_t overwriteCount = countMaskBits(plan.overwriteMask);
+    const uint8_t freeCount = countMaskBits(plan.createMask);
     format(
         out.footprint,
-        "%s | Mute kept",
-        entry.targetKind == core::state::ClipboardTransferTargetKind::FREE
-            ? "Free"
-            : "Overwrite"
+        "%u free | %u overwrite",
+        static_cast<unsigned>(freeCount),
+        static_cast<unsigned>(overwriteCount)
     );
-    if (entry.targetRouteValid) {
-        format(out.route, "Route | target channel kept live");
+    uint8_t missingRoutes = 0U;
+    uint8_t inherited = 0U;
+    uint8_t pinned = 0U;
+    for (uint8_t index = 0; index < count; ++index) {
+        const auto& current = planEntry(plan, index);
+        if (!current.targetRouteValid) ++missingRoutes;
+        inherited = static_cast<uint8_t>(
+            inherited + current.inheritedLaneCount
+        );
+        pinned = static_cast<uint8_t>(
+            pinned + current.pinnedLaneCount
+        );
+    }
+    if (missingRoutes == 0U) {
+        format(out.route, "Routes | target channels kept live");
     } else {
-        format(out.route, "Route | target stays silent");
+        format(
+            out.route,
+            "Routes | %u target%s stay silent",
+            static_cast<unsigned>(missingRoutes),
+            missingRoutes > 1U ? "s" : ""
+        );
     }
     format(
         out.laneBindings,
         "CC | %u inherit target | %u pinned",
-        static_cast<unsigned>(entry.inheritedLaneCount),
-        static_cast<unsigned>(entry.pinnedLaneCount)
+        static_cast<unsigned>(inherited),
+        static_cast<unsigned>(pinned)
     );
 }
 FLASHMEM void formatDetail(
@@ -163,8 +225,65 @@ FLASHMEM void formatDetail(
     const SequencerTrackPasteProjection& projection
 ) {
     if (!projection.plan.hasEntries()) return;
-    const auto& entry = projection.plan.entry;
-    format(out.header, "Track paste | 1/1");
+    const auto& plan = projection.plan;
+    const uint8_t count = effectivePlanCount(plan);
+    const auto& entry = planEntry(plan, 0U);
+    format(
+        out.header,
+        "Track paste | %u/%u",
+        static_cast<unsigned>(count),
+        static_cast<unsigned>(count)
+    );
+    if (count > 1U) {
+        out.mapping[0] = '\0';
+        size_t used = 0U;
+        for (uint8_t index = 0; index < count; ++index) {
+            const auto& current = planEntry(plan, index);
+            const int written = current.targetRouteValid
+                ? std::snprintf(
+                      out.mapping.data() + used,
+                      out.mapping.size() - used,
+                      "%sT%u>T%u/C%u",
+                      index == 0U ? "" : " | ",
+                      static_cast<unsigned>(current.sourceTrack + 1U),
+                      static_cast<unsigned>(current.targetTrack + 1U),
+                      static_cast<unsigned>(
+                          current.targetMidiChannel + 1U
+                      )
+                  )
+                : std::snprintf(
+                      out.mapping.data() + used,
+                      out.mapping.size() - used,
+                      "%sT%u>T%u/--",
+                      index == 0U ? "" : " | ",
+                      static_cast<unsigned>(current.sourceTrack + 1U),
+                      static_cast<unsigned>(current.targetTrack + 1U)
+                  );
+            if (written <= 0 ||
+                static_cast<size_t>(written) >=
+                    out.mapping.size() - used) {
+                break;
+            }
+            used += static_cast<size_t>(written);
+        }
+        format(
+            out.route,
+            "Routes | each target binding checked live"
+        );
+        format(
+            out.footprint,
+            "%u free | %u overwrite",
+            static_cast<unsigned>(countMaskBits(plan.createMask)),
+            static_cast<unsigned>(countMaskBits(plan.overwriteMask))
+        );
+        format(
+            out.laneBindings,
+            "CC | %u inherit target | %u pinned",
+            static_cast<unsigned>(plan.inheritedLaneCount),
+            static_cast<unsigned>(plan.pinnedLaneCount)
+        );
+        return;
+    }
     if (entry.targetRouteValid) {
         format(
             out.mapping,

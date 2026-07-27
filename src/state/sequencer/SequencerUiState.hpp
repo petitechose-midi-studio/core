@@ -490,15 +490,22 @@ enum class SequencerStepPastePreview : uint8_t {
 
 struct SequencerStepSelectionState {
     Signal<bool, 8> active{false};
+    Signal<bool, 8> placing{false};
     Signal<uint8_t, 8> cursorStep{0};
     Signal<oc::note::sequencer::StepBitMask128, 8> selectedMask{};
     Signal<bool, 8> pastePreviewActive{false};
     Signal<SequencerStepPastePreview, 8> pastePreview{SequencerStepPastePreview::NONE};
+    Signal<uint32_t, 8> clipboardRevision{0};
 
     SequencerStepSelectionState();
     ~SequencerStepSelectionState();
 
     void reset(uint8_t cursor = 0);
+    void clearCurrent();
+
+    bool placementActive() const {
+        return active.get() && placing.get();
+    }
 
     void setSelected(uint8_t step, bool selected);
     bool selected(uint8_t step) const;

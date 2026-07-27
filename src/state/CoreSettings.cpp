@@ -30,12 +30,6 @@ FLASHMEM bool resetToDefaultsAndPersist(CoreSettings& settings,
         return false;
     }
 
-    const auto shortcutStatus = settings.saveDefaultDataManagerShortcutsStatus();
-    if (shortcutStatus != PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[CoreSettings] Failed to persist default Data Manager shortcuts: {}",
-                    core::persistence::persistenceWriteStatusLabel(shortcutStatus));
-    }
-
     return true;
 }
 
@@ -212,51 +206,6 @@ FLASHMEM PersistenceWriteStatus CoreSettings::saveSharedTrackStateStatus(uint16_
     return commitStatus();
 }
 
-FLASHMEM bool CoreSettings::saveDataManagerMacroShortcutLeft(uint8_t command) {
-    return saveDataManagerMacroShortcutLeftStatus(command) == PersistenceWriteStatus::OK;
-}
-
-FLASHMEM bool CoreSettings::saveDataManagerMacroShortcutRight(uint8_t command) {
-    return saveDataManagerMacroShortcutRightStatus(command) == PersistenceWriteStatus::OK;
-}
-
-FLASHMEM bool CoreSettings::saveDataManagerSeqShortcutLeft(uint8_t command) {
-    return saveDataManagerSeqShortcutLeftStatus(command) == PersistenceWriteStatus::OK;
-}
-
-FLASHMEM bool CoreSettings::saveDataManagerSeqShortcutRight(uint8_t command) {
-    return saveDataManagerSeqShortcutRightStatus(command) == PersistenceWriteStatus::OK;
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerMacroShortcutLeftStatus(uint8_t command) {
-    return saveDataManagerShortcutStatus_(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT, command);
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerMacroShortcutRightStatus(uint8_t command) {
-    return saveDataManagerShortcutStatus_(StorageLayout::ADDR_SHORTCUT_MACRO_RIGHT, command);
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerSeqShortcutLeftStatus(uint8_t command) {
-    return saveDataManagerShortcutStatus_(StorageLayout::ADDR_SHORTCUT_SEQ_LEFT, command);
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerSeqShortcutRightStatus(uint8_t command) {
-    return saveDataManagerShortcutStatus_(StorageLayout::ADDR_SHORTCUT_SEQ_RIGHT, command);
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::saveDefaultDataManagerShortcutsStatus() {
-    const auto status = writeDefaultShortcutsStatus_();
-    if (status != PersistenceWriteStatus::OK) return status;
-    return commitStatus();
-}
-
-FLASHMEM bool CoreSettings::loadDataManagerShortcuts(uint8_t& macroLeft,
-                                                     uint8_t& macroRight,
-                                                     uint8_t& seqLeft,
-                                                     uint8_t& seqRight) {
-    return core_settings::loadDataManagerShortcuts(backend_, macroLeft, macroRight, seqLeft, seqRight);
-}
-
 FLASHMEM bool CoreSettings::commit() {
     return commitStatus() == PersistenceWriteStatus::OK;
 }
@@ -293,15 +242,6 @@ FLASHMEM PersistenceWriteStatus CoreSettings::writeExactStatus_(uint32_t address
                                                                 const uint8_t* buffer,
                                                                 size_t size) {
     return core_settings::writeExactStatus(backend_, address, buffer, size);
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::saveDataManagerShortcutStatus_(uint32_t address,
-                                                                             uint8_t command) {
-    return writeExactStatus_(address, reinterpret_cast<const uint8_t*>(&command), 1);
-}
-
-FLASHMEM PersistenceWriteStatus CoreSettings::writeDefaultShortcutsStatus_() {
-    return core_settings::writeDefaultShortcuts(backend_);
 }
 
 FLASHMEM bool CoreSettings::loadMidiSync_(MidiSyncState& midiSync) {

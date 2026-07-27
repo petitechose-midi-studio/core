@@ -233,6 +233,60 @@ void test_project_modulator_source_clipboard_keeps_stable_reference() {
         << "[PASS] Project Source clipboard keeps one stable shared reference\n";
 }
 
+void test_macro_slot_selection_clipboard_keeps_sparse_full_slot_metadata() {
+    core::state::StructureClipboardState clipboard;
+    macro::MacroPagesState pages;
+    auto& track = pages.tracks[0];
+    track.enabledPageMask = 0x0003U;
+    track.pages[0].setMacroActive(0U, true);
+    track.pages[1].setMacroActive(3U, true);
+    track.pages[0].cc[0] = 14U;
+    track.pages[0].values[0] = 0.25f;
+    track.pages[1].cc[3] = 74U;
+    track.pages[1].values[3] = 0.75f;
+    pages.syncActiveTrackCache();
+
+    macro::MacroAutomationLane lane;
+    assert(macro::macroAutomationAppendPoint(lane, 0.0f, 0.2f));
+    assert(macro::macroAutomationAppendPoint(lane, 1.0f, 0.8f));
+    assert(test_support::project_control::assignAutomation(
+        pages.control,
+        {.track = 0U, .page = 1U, .macro = 3U},
+        lane
+    ));
+
+    oc::note::sequencer::StepBitMask128 selected{};
+    selected.setBit(0U, true);
+    selected.setBit(11U, true);
+    assert(clipboard.storeMacroSlotSelection(
+        pages,
+        0U,
+        selected
+    ));
+    assert(clipboard.hasMacroSlotSelection());
+    assert(!clipboard.hasMacroSlot());
+    assert(clipboard.macroAutomationSet != nullptr);
+    const auto& payload = *clipboard.macroAutomationSet;
+    assert(payload.count == 2U);
+    assert(payload.entries[0].sourcePage == 0U);
+    assert(payload.entries[0].sourceMacro == 0U);
+    assert(payload.entries[0].sourceCc == 14U);
+    assert(std::fabs(
+        payload.entries[0].sourceStaticValue - 0.25f
+    ) < 0.0001f);
+    assert(payload.entries[1].sourcePage == 1U);
+    assert(payload.entries[1].sourceMacro == 3U);
+    assert(payload.entries[1].sourceCc == 74U);
+    assert(std::fabs(
+        payload.entries[1].sourceStaticValue - 0.75f
+    ) < 0.0001f);
+    assert(payload.entries[1].sourceSlotPresent);
+    assert(payload.entries[1].control.automation.stored());
+
+    std::cout
+        << "[PASS] sparse Macro Slot clipboard keeps full entry metadata\n";
+}
+
 }  // namespace
 
 int main() {
@@ -242,6 +296,7 @@ int main() {
     test_macro_clipboards_store_only_the_selected_semantic_domain();
     test_modulation_assignment_clipboard_references_shared_source_only();
     test_project_modulator_source_clipboard_keeps_stable_reference();
+    test_macro_slot_selection_clipboard_keeps_sparse_full_slot_metadata();
 
     std::cout << "\nAll StructureClipboardState tests passed.\n";
     return 0;

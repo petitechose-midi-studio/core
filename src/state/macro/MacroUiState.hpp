@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 
+#include <oc/note/sequencer/StepBitMask128.hpp>
 #include <oc/state/Signal.hpp>
 
 #include "state/macro/MacroAutomationTake.hpp"
@@ -112,6 +113,42 @@ struct MacroContextSelectorState {
     void bump() { revision.set(revision.get() + 1U); }
 };
 
+struct MacroSlotSelectionState {
+    oc::state::Signal<bool, 4> active{false};
+    oc::state::Signal<bool, 4> placing{false};
+    oc::state::Signal<uint8_t, 4> cursorLinear{0U};
+    oc::state::Signal<
+        oc::note::sequencer::StepBitMask128,
+        4
+    > selectedMask{};
+    oc::state::Signal<uint32_t, 4> revision{0U};
+
+    std::array<uint8_t, PAGE_COUNT> destinationMasks{};
+    std::array<uint8_t, PAGE_COUNT> overwriteMasks{};
+    bool pasteBlocked = false;
+    uint8_t overwriteCount = 0U;
+    uint8_t requiredPageCount = 0U;
+    uint32_t clipboardRevision = 0U;
+
+    void reset(uint8_t cursor = 0U);
+    void setSelected(uint8_t linear, bool selected);
+    [[nodiscard]] bool selected(uint8_t linear) const;
+    [[nodiscard]] bool anySelected() const;
+    [[nodiscard]] uint8_t selectedCount() const;
+    void publishPlacement(
+        const std::array<uint8_t, PAGE_COUNT>& destinations,
+        const std::array<uint8_t, PAGE_COUNT>& overwrites,
+        bool blocked,
+        uint8_t overwriteTotal,
+        uint8_t requiredPages,
+        uint32_t sourceRevision
+    );
+    void clearPlacementProjection();
+    /** Clears one selection/placement cycle while keeping the mode armed. */
+    void clearCurrent();
+    void bump();
+};
+
 struct MacroUiState {
     static constexpr uint8_t INVALID_RUNTIME_PROJECTION_CONTEXT = 0xFFU;
     static constexpr uint32_t POST_TAKE_INPUT_GUARD_MS = 120U;
@@ -164,6 +201,8 @@ struct MacroUiState {
     oc::state::Signal<bool, 2> previewAddPageSlot{false};
     oc::state::Signal<uint8_t, 2> previewPageIndex{0};
     core::state::StructureHoldState pageHold;
+    core::state::StructureSelectionState pageSelection;
+    MacroSlotSelectionState slotSelection;
     MacroContextSelectorState contextSelector;
     MacroAutomationTakeState automationTake;
     uint32_t postTakeInputGuardStartedAtMs = 0U;

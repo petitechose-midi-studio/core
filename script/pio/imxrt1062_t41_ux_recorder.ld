@@ -49,7 +49,6 @@ SECTIONS
 		*StandaloneSequencerUxSurfaces.cpp.o(.rodata*)
 		*StandaloneMacroUxSurfaces.cpp.o(.rodata*)
 		*StandaloneGlobalUxSurfaces.cpp.o(.rodata*)
-		*StandaloneDataManagerUxSurfaces.cpp.o(.rodata*)
 		*SemanticUxRecorder.cpp.o(.rodata*)
 		*SemanticUxNames.cpp.o(.rodata*)
 		*SemanticUxSurface.cpp.o(.rodata*)
