@@ -18,7 +18,6 @@
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
-#include "handler/settings/DataManagerDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
@@ -184,9 +183,6 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.sequencerSettings,
             state.viewSelector,
             state.midiSync,
-            state.settings,
-            state.dataManager,
-            state.activeView,
             state.sequencer,
             state.sequencerTracks,
             core::handler::SequencerHistoryDomainServices::fromCoreState(state),
@@ -203,19 +199,12 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                 state.sequencerTracks,
             }
         },
-        core::handler::DataManagerDomainServices::fromCoreState(state),
         overlays,
         overlayPresentations,
         encoders,
         buttons,
         overlayRoot,
-        contextSoftkeyBar,
-        transportBar,
-        deviceSettingsViewScope,
-        core::handler::DataManagerHandler::ViewScopes{
-            macroViewScope,
-            sequencerViewScope,
-        }
+        deviceSettingsViewScope
 #if defined(MS_UX_RECORDER)
         ,
         uxRegistry

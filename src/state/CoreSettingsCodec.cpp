@@ -27,27 +27,6 @@ FLASHMEM PersistenceWriteStatus writeExactStatus(oc::interface::IStorage& backen
                : PersistenceWriteStatus::IO_ERROR;
 }
 
-FLASHMEM PersistenceWriteStatus writeDefaultShortcuts(oc::interface::IStorage& backend) {
-    const uint8_t macroLeft = layout::DEFAULT_SHORTCUT_MACRO_LEFT;
-    const uint8_t macroRight = layout::DEFAULT_SHORTCUT_MACRO_RIGHT;
-    const uint8_t seqLeft = layout::DEFAULT_SHORTCUT_SEQ_LEFT;
-    const uint8_t seqRight = layout::DEFAULT_SHORTCUT_SEQ_RIGHT;
-
-    const auto macroLeftStatus =
-        writeExactStatus(backend, layout::ADDR_SHORTCUT_MACRO_LEFT, &macroLeft, 1);
-    if (macroLeftStatus != PersistenceWriteStatus::OK) return macroLeftStatus;
-
-    const auto macroRightStatus =
-        writeExactStatus(backend, layout::ADDR_SHORTCUT_MACRO_RIGHT, &macroRight, 1);
-    if (macroRightStatus != PersistenceWriteStatus::OK) return macroRightStatus;
-
-    const auto seqLeftStatus =
-        writeExactStatus(backend, layout::ADDR_SHORTCUT_SEQ_LEFT, &seqLeft, 1);
-    if (seqLeftStatus != PersistenceWriteStatus::OK) return seqLeftStatus;
-
-    return writeExactStatus(backend, layout::ADDR_SHORTCUT_SEQ_RIGHT, &seqRight, 1);
-}
-
 FLASHMEM PersistenceWriteStatus saveAll(oc::interface::IStorage& backend,
                                         const MidiSyncState& midiSync,
                                         uint16_t sharedTrackEnabledMask,
@@ -186,30 +165,6 @@ FLASHMEM bool loadSharedTrackState(oc::interface::IStorage& backend,
         sharedTrackEnabledMask = layout::DEFAULT_SHARED_TRACK_ENABLED_MASK;
     }
     return true;
-}
-
-FLASHMEM bool loadDataManagerShortcuts(oc::interface::IStorage& backend,
-                                       uint8_t& macroLeft,
-                                       uint8_t& macroRight,
-                                       uint8_t& seqLeft,
-                                       uint8_t& seqRight) {
-    macroLeft = layout::DEFAULT_SHORTCUT_MACRO_LEFT;
-    macroRight = layout::DEFAULT_SHORTCUT_MACRO_RIGHT;
-    seqLeft = layout::DEFAULT_SHORTCUT_SEQ_LEFT;
-    seqRight = layout::DEFAULT_SHORTCUT_SEQ_RIGHT;
-
-    uint8_t version = 0;
-    if (!readExact(backend, layout::ADDR_VERSION, &version, 1)) {
-        return false;
-    }
-    if (version != layout::VERSION) {
-        return true;
-    }
-
-    return readExact(backend, layout::ADDR_SHORTCUT_MACRO_LEFT, &macroLeft, 1) &&
-           readExact(backend, layout::ADDR_SHORTCUT_MACRO_RIGHT, &macroRight, 1) &&
-           readExact(backend, layout::ADDR_SHORTCUT_SEQ_LEFT, &seqLeft, 1) &&
-           readExact(backend, layout::ADDR_SHORTCUT_SEQ_RIGHT, &seqRight, 1);
 }
 
 }  // namespace core::state::core_settings

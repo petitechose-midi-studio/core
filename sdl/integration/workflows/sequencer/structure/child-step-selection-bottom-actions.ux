@@ -1,7 +1,7 @@
 # UX workflow: child-context step selection bottom actions.
 # Purpose: verifies that step-selection copy/paste plus shallow/deep reset work
 # inside a micro-sequence content view, not only at root pattern level.
-# Expect: capture_changed:child_steps_1_3_selected=child_selection_tap_shallow_reset, capture_changed:child_paste_preview_cursor_2=child_selection_pasted
+# Expect: capture_changed:child_steps_1_2_selected=child_selection_tap_shallow_reset, capture_changed:child_paste_preview_cursor_1=child_selection_pasted
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -28,15 +28,13 @@
 # while it is a draft that same slot is deliberately Apply.
 2680 tap BOTTOM_RIGHT 40
 
-# Move to child Step context and enable two child steps.
+# Move to child Step context. A newly published micro-sequence already owns two
+# active child steps; do not toggle either one while preparing the selection.
 2760 button NAV down
 2820 encoder NAV 1
 2880 button NAV up
 2960 capture screen child_step_focus
-3060 tap MACRO_1 60
-3310 capture screen child_step_1_enabled
-3410 tap MACRO_3 60
-3660 capture screen child_steps_1_3_enabled
+3660 capture screen child_steps_1_2_enabled
 
 # Enter child Step selection through the same stationary NAV hold as root.
 # LEFT_TOP remains exclusively Back in the child context.
@@ -46,10 +44,10 @@
 5130 capture screen child_step_selection_entered
 5230 tap MACRO_1 60
 5480 capture screen child_step_1_selected
-5580 encoder NAV 2
-5780 capture screen child_selection_cursor_3
-5880 tap MACRO_3 60
-6130 capture screen child_steps_1_3_selected
+5580 encoder NAV 1
+5780 capture screen child_selection_cursor_2
+5880 tap MACRO_2 60
+6130 capture screen child_steps_1_2_selected
 6230 tap BOTTOM_RIGHT 60
 6480 capture screen child_step_selection_copied
 6580 tap BOTTOM_LEFT 60
@@ -60,9 +58,9 @@
 8080 button BOTTOM_LEFT up
 8330 capture screen child_selection_deep_reset_released
 
-# Paste the copied footprint back from cursor step 2.
+# Paste the copied footprint back from cursor step 1.
 8430 encoder NAV -1
-8630 capture screen child_paste_preview_cursor_2
+8630 capture screen child_paste_preview_cursor_1
 8730 button BOTTOM_RIGHT down
 9780 tick
 9830 capture screen child_paste_hold_applied

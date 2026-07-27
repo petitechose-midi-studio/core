@@ -2,7 +2,10 @@
 
 #include <cstdint>
 
+#include "app/ExtmemAllocator.hpp"
 #include "handler/sequencer/SequencerStructureStepOps.hpp"
+#include "state/StructureClipboardPastePlan.hpp"
+#include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/shared/StructureSlotOps.hpp"
@@ -34,6 +37,34 @@ bool resetSelectedActiveContentPages(
 bool removeSelectedRootPages(
     core::state::sequencer::SequencerState& sequencer,
     uint16_t selectedMask
+);
+
+core::app::ExtmemUniquePtr<
+    core::state::SequencerTrackSelectionClipboard
+> captureTrackSelectionClipboard(
+    core::state::sequencer::SequencerTrackBankState& tracks,
+    core::state::sequencer::SequencerState& sequencer,
+    const core::state::macro::MacroPagesState& pages,
+    uint16_t selectedMask
+);
+
+bool capturePageSelectionClipboard(
+    const core::state::sequencer::SequencerState& sequencer,
+    uint16_t selectedMask,
+    core::state::SequencerPageSelectionClipboard& clipboard
+);
+
+core::state::SequencerPageSelectionPastePlan
+buildPageSelectionPastePlan(
+    const core::state::sequencer::SequencerState& sequencer,
+    const core::state::StructureClipboardState& structureClipboard,
+    uint8_t cursorPage
+);
+
+bool pastePageSelectionClipboard(
+    core::state::sequencer::SequencerState& sequencer,
+    const core::state::StructureClipboardState& structureClipboard,
+    const core::state::SequencerPageSelectionPastePlan& plan
 );
 
 }  // namespace core::handler

@@ -57,24 +57,20 @@ FLASHMEM core::ui::ContextActionStripProps buildStepPresetActionStripProps(
 
     props.visible = true;
     props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-        ::standalone::icons::ACTION_CANCEL,
-        Visual::ACTIVE,
-        Tone::NEUTRAL
-    );
-    props.slots[1] = core::ui::makeStandaloneIconStripSlot(
         action.saveIcon
             ? ::standalone::icons::ACTION_APPLY
             : ::standalone::icons::STORAGE,
         Visual::ACTIVE,
         action.saveIcon ? Tone::CONSTRUCTIVE : Tone::POSITIVE
     );
-    props.slots[1].showLabel = true;
+    props.slots[0].showLabel = true;
     std::snprintf(
-        props.slots[1].labelText.data(),
-        props.slots[1].labelText.size(),
+        props.slots[0].labelText.data(),
+        props.slots[0].labelText.size(),
         "%s",
         action.saveIcon ? "Load" : "Save"
     );
+    props.slots[1].visualState = Visual::HIDDEN;
     props.slots[2] = core::ui::makeStandaloneIconStripSlot(
         action.statusIcon != nullptr
             ? action.statusIcon

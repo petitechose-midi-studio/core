@@ -106,13 +106,6 @@ FLASHMEM void configureDebugLabels(CoreState& state) {
     state.patternPitchSettings.selector.selectedIndex.setDebugLabel("core.patternPitchSettings.selector.selectedIndex");
     state.patternPitchSettings.selector.editingRow.setDebugLabel("core.patternPitchSettings.selector.editingRow");
 
-    state.dataManager.context.setDebugLabel("core.dataManager.context");
-    state.dataManager.flowPhase.setDebugLabel("core.dataManager.flowPhase");
-    state.dataManager.dialog.visible.setDebugLabel("core.dataManager.dialog.visible");
-    state.dataManager.dialog.mode.setDebugLabel("core.dataManager.dialog.mode");
-    state.dataManager.dialog.selectedIndex.setDebugLabel("core.dataManager.dialog.selectedIndex");
-    state.dataManager.dialog.editingShortcutRow.setDebugLabel("core.dataManager.dialog.editingShortcutRow");
-
     state.sequencer.stepPropertyInlineSelector.selecting.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selecting");
     state.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive.setDebugLabel("core.sequencer.stepPropertyInlineSelector.macroLocalVariationEditActive");
     state.sequencer.stepPropertyInlineSelector.selectedIndex.setDebugLabel("core.sequencer.stepPropertyInlineSelector.selectedIndex");

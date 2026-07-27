@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <utility>
 
-#include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
@@ -15,7 +14,6 @@ namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 FLASHMEM bool openForMacroInPage(
     core::state::sequencer::SequencerState& sequencer,
     SequencerHistoryDomainServices& history,
-    ButtonReleaseLatch<8>& openReleaseLatch,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     StepEditHistorySnapshot& historySnapshot,
     bool& historySnapshotValid,
@@ -43,7 +41,6 @@ FLASHMEM bool openForMacroInPage(
     edit.focusedRow.set(step_edit_rows::rowForNavigationIndex(0));
     edit.stepIndex.set(abs);
 
-    openReleaseLatch.arm(Config::MACRO_BUTTONS[indexInPage]);
     overlays.show(core::ui::OverlayType::SEQ_STEP_EDIT);
     return true;
 }
@@ -165,14 +162,12 @@ FLASHMEM bool backToParentContent(
 FLASHMEM void close(
     core::state::sequencer::SequencerState& sequencer,
     SequencerHistoryDomainServices& history,
-    ButtonReleaseLatch<8>& openReleaseLatch,
     ButtonReleaseLatch<2>& contextReleaseLatch,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     StepEditHistorySnapshot& historySnapshot,
     bool& historySnapshotValid
 ) {
     commitHistory(sequencer, history, historySnapshot, historySnapshotValid);
-    openReleaseLatch.clear();
     contextReleaseLatch.clear();
     overlays.hide();
     sequencer.stepEdit.reset();
@@ -190,14 +185,9 @@ FLASHMEM bool editedStepInRange(
 }
 
 FLASHMEM bool shouldCloseFromMacro(
-    ButtonReleaseLatch<8>& openReleaseLatch,
     const core::state::sequencer::SequencerState& sequencer,
     uint8_t indexInPage
 ) {
-    if (openReleaseLatch.consume(Config::MACRO_BUTTONS[indexInPage])) {
-        return false;
-    }
-
     constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
     const uint8_t currentIndexInPage =
         static_cast<uint8_t>(sequencer.stepEdit.stepIndex.get() % stepsPerPage);

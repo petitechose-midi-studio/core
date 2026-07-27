@@ -247,6 +247,7 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.revision,
+        state_refs_.sequencer.structureUi.trackPaste.revision,
         state_refs_.sequencer.ccLaneUi.revision
     );
 }
@@ -314,6 +315,7 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.structureNavigationFocus,
         state_refs_.projectNavigation.contentRevision,
         state_refs_.sequencer.structureUi.stepSelection.active,
+        state_refs_.sequencer.structureUi.stepSelection.placing,
         state_refs_.sequencer.structureUi.stepSelection.cursorStep,
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.structureUi.stepSelection.pastePreviewActive,
@@ -385,9 +387,7 @@ FLASHMEM void SequencerView::bindOverlayVisibilityState() {
         state_refs_.deviceSettings.visible,
         state_refs_.deviceSettings.selector.visible,
         state_refs_.sequencerSettings.visible,
-        state_refs_.sequencerSettings.selector.visible,
-        state_refs_.dataManager.visible,
-        state_refs_.dataManager.dialog.visible
+        state_refs_.sequencerSettings.selector.visible
     );
 }
 
@@ -423,6 +423,7 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.structureUi.pageHold.action,
         state_refs_.sequencer.structureUi.pageHold.startedAtMs,
         state_refs_.sequencer.structureUi.stepSelection.active,
+        state_refs_.sequencer.structureUi.stepSelection.placing,
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.structureUi.stepSelection.pastePreviewActive,
         state_refs_.sequencer.structureUi.stepSelection.pastePreview,
@@ -514,9 +515,7 @@ bool SequencerView::hasBlockingOverlay() const {
            state_refs_.deviceSettings.visible.get() ||
            state_refs_.deviceSettings.selector.visible.get() ||
            state_refs_.sequencerSettings.visible.get() ||
-           state_refs_.sequencerSettings.selector.visible.get() ||
-           state_refs_.dataManager.visible.get() ||
-           state_refs_.dataManager.dialog.visible.get();
+           state_refs_.sequencerSettings.selector.visible.get();
 }
 
 void SequencerView::handleOverlayVisibilityChanged() {

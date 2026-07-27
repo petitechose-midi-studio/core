@@ -38,6 +38,13 @@ struct MacroViewModelSource {
     const core::state::StatusBarState& statusBar;
 };
 
+enum class MacroSlotPlacementPreview : uint8_t {
+    NONE = 0,
+    FREE,
+    OVERWRITE,
+    BLOCKED,
+};
+
 struct MacroWidgetProps {
     float value = 0.5f;
     float baseValue = 0.5f;
@@ -57,6 +64,9 @@ struct MacroWidgetProps {
     bool active = true;
     bool addSlot = false;
     bool focused = false;
+    bool selected = false;
+    MacroSlotPlacementPreview placementPreview =
+        MacroSlotPlacementPreview::NONE;
 };
 
 struct MacroViewFrameState {

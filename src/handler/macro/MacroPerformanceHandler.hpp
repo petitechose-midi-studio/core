@@ -99,8 +99,11 @@ private:
     bool ignore_next_bottom_left_release_ = false;
     bool ignore_next_bottom_right_release_ = false;
     bool paste_only_press_active_ = false;
+    bool selection_paste_press_active_ = false;
+    uint8_t selection_paste_anchor_ = 0U;
+    uint32_t selection_paste_clipboard_revision_ = 0U;
     uint16_t owned_macro_button_mask_ = 0U;
-    uint16_t edit_chord_macro_mask_ = 0U;
+    uint16_t selection_macro_button_mask_ = 0U;
 #if defined(MS_UX_RECORDER)
     core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
 #endif

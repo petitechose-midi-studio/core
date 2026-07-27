@@ -41,6 +41,7 @@ public:
         core::state::StructureClipboardState& structureClipboard;
         SharedTrackDomainServices sharedTracks;
         SequencerHistoryDomainServices history;
+        core::state::macro::MacroPagesState& macroPages;
         core::state::sequencer::SequencerTrackActivationQueue* trackActivations = nullptr;
         core::state::StatusBarState* statusBar = nullptr;
     };
@@ -68,6 +69,9 @@ public:
     bool selectionHoldActionAvailable() const;
     void applySelectionBottomLeftTap();
     void applySelectionBottomLeftHold();
+    bool canPasteStructureSelection() const;
+    void copyStructureSelection();
+    void pasteStructureSelection();
     void removeCurrentStructure();
     void copyCurrentStructure();
     void pasteCurrentStructure();
@@ -94,7 +98,7 @@ private:
     void pasteFocusedStep();
     void resetFocusedStep(StepResetDepth depth);
     void resetStepSelection(StepResetDepth depth);
-    void pasteStepClipboardAt(uint8_t cursorStep, bool resetSelection);
+    void pasteStepClipboardAt(uint8_t cursorStep, bool selectionPaste);
     uint16_t currentTrackEnabledMask() const;
     uint8_t currentActiveTrack() const;
     bool applyTrackState(uint16_t enabledMask, uint8_t activeTrack);
@@ -103,6 +107,7 @@ private:
     bool beginTrackPasteAction(uint32_t nowMs);
     void refreshTrackPastePreview(uint32_t nowMs);
     void updateTrackPasteActivation(uint32_t nowMs);
+    void refreshStructureSelectionPastePreview();
     void setTrackPasteFeedback(
         core::state::contextual::OperationFeedbackStatus status,
         core::state::contextual::ContextActionReason reason,
@@ -124,6 +129,7 @@ private:
     core::state::StructureClipboardState& structure_clipboard_;
     SharedTrackDomainServices shared_tracks_;
     SequencerHistoryDomainServices history_;
+    core::state::macro::MacroPagesState& macro_pages_;
     core::state::sequencer::SequencerTrackActivationQueue* track_activations_ = nullptr;
     core::state::StatusBarState* status_bar_ = nullptr;
 };

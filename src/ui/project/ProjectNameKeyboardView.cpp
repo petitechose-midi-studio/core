@@ -87,18 +87,6 @@ FLASHMEM ContextActionStripSlotProps standaloneIconSlot(
     };
 }
 
-FLASHMEM ContextActionStripSlotProps labelSlot(
-    const char* label,
-    ContextActionStripTone tone = ContextActionStripTone::NEUTRAL
-) {
-    return ContextActionStripSlotProps{
-        .visualState = ContextActionStripVisualState::ACTIVE,
-        .tone = tone,
-        .showLabel = true,
-        .label = label,
-    };
-}
-
 }  // namespace
 
 FLASHMEM ProjectNameKeyboardView::ProjectNameKeyboardView(lv_obj_t* parent) {
@@ -110,7 +98,7 @@ FLASHMEM ProjectNameKeyboardView::ProjectNameKeyboardView(lv_obj_t* parent) {
         const auto& widgets = keys_[i];
         const auto& cell =
             core::state::project::projectNameKeyboardCellAt(i);
-        if (!widgets.container || !widgets.label ||
+        if (!widgets.label ||
             (isLetter(cell.character) && !widgets.shiftLabel)) {
             return;
         }
@@ -215,19 +203,19 @@ FLASHMEM void ProjectNameKeyboardView::createLayout(lv_obj_t* parent) {
         );
 
         auto& widgets = keys_[i];
-        widgets.container = lv_obj_create(container_);
-        if (!widgets.container) return;
-        style::apply(widgets.container)
+        lv_obj_t* keyContainer = lv_obj_create(container_);
+        if (!keyContainer) return;
+        style::apply(keyContainer)
             .transparent()
             .noBorder()
             .pad(0)
             .noScroll();
-        lv_obj_set_pos(widgets.container, x, y);
-        lv_obj_set_size(widgets.container, width, KEYBOARD_KEY_H);
-        lv_obj_set_style_radius(widgets.container, 3, 0);
-        lv_obj_set_style_border_width(widgets.container, 1, 0);
+        lv_obj_set_pos(keyContainer, x, y);
+        lv_obj_set_size(keyContainer, width, KEYBOARD_KEY_H);
+        lv_obj_set_style_radius(keyContainer, 3, 0);
+        lv_obj_set_style_border_width(keyContainer, 1, 0);
 
-        widgets.label = lv_label_create(widgets.container);
+        widgets.label = lv_label_create(keyContainer);
         if (!widgets.label) return;
         configureKeyLabel(widgets.label, cell.label);
         if (isLetter(cell.character)) {
@@ -235,7 +223,7 @@ FLASHMEM void ProjectNameKeyboardView::createLayout(lv_obj_t* parent) {
                 shiftedCharacter(cell.character),
                 '\0'
             };
-            widgets.shiftLabel = lv_label_create(widgets.container);
+            widgets.shiftLabel = lv_label_create(keyContainer);
             if (!widgets.shiftLabel) return;
             configureKeyLabel(widgets.shiftLabel, shiftedText);
             lv_obj_add_flag(widgets.shiftLabel, LV_OBJ_FLAG_HIDDEN);
@@ -276,28 +264,30 @@ void ProjectNameKeyboardView::renderKey(
     if (index >= keys_.size()) return;
 
     auto& widgets = keys_[index];
-    if (!widgets.container || !widgets.label) return;
+    if (!widgets.label) return;
+    lv_obj_t* keyContainer = lv_obj_get_parent(widgets.label);
+    if (!keyContainer) return;
 
     const uint32_t accent = theme::color::MACRO_2;
     lv_obj_set_style_bg_color(
-        widgets.container,
+        keyContainer,
         lv_color_hex(
             selected ? accent : theme::color::KNOB_BACKGROUND
         ),
         0
     );
     lv_obj_set_style_bg_opa(
-        widgets.container,
+        keyContainer,
         selected ? LV_OPA_80 : LV_OPA_20,
         0
     );
     lv_obj_set_style_border_color(
-        widgets.container,
+        keyContainer,
         lv_color_hex(selected ? accent : theme::color::INACTIVE),
         0
     );
     lv_obj_set_style_border_opa(
-        widgets.container,
+        keyContainer,
         selected ? LV_OPA_COVER : LV_OPA_40,
         0
     );
@@ -358,7 +348,7 @@ ProjectNameKeyboardView::leftActionStripProps(
 }
 
 FLASHMEM ContextActionStripProps
-ProjectNameKeyboardView::bottomActionStripProps(bool visible) {
+ProjectNameKeyboardView::bottomActionStripProps(bool visible, bool playing) {
     ContextActionStripProps props;
     props.visible = visible;
     if (!visible) return props;
@@ -366,7 +356,13 @@ ProjectNameKeyboardView::bottomActionStripProps(bool visible) {
         standalone::icons::ACTION_BACKWARD,
         ContextActionStripTone::WARNING
     );
-    props.slots[1] = labelSlot("Space");
+    props.slots[1] = standaloneIconSlot(
+        standalone::icons::TRANSPORT_PLAY,
+        playing
+            ? ContextActionStripTone::WARNING
+            : ContextActionStripTone::POSITIVE,
+        standalone::icons::Size::M
+    );
     props.slots[2] = standaloneIconSlot(
         standalone::icons::ACTION_VALIDATE,
         ContextActionStripTone::POSITIVE

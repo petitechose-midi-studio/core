@@ -5,39 +5,27 @@
 namespace core::handler {
 
 FLASHMEM TransportHandler::TransportHandler(StateRefs state,
-                                   oc::api::ButtonAPI& buttons,
-                                   TransportHandler::ViewScopes playToggleScopes)
+                                             oc::api::ButtonAPI& buttons)
     : status_bar_(state.statusBar)
-    , buttons_(buttons)
-    , play_toggle_scopes_(playToggleScopes) {
+    , buttons_(buttons) {
     setupBindings();
 }
 
 FLASHMEM void TransportHandler::setupBindings() {
-    std::array<oc::type::ScopeID, VIEW_SCOPE_COUNT> boundScopes{};
-    std::size_t boundScopeCount = 0;
-    for (const auto scope : play_toggle_scopes_) {
-        if (!scope) continue;
-        bool alreadyBound = false;
-        for (std::size_t i = 0; i < boundScopeCount; ++i) {
-            if (boundScopes[i] == scope) {
-                alreadyBound = true;
-                break;
-            }
-        }
-        if (alreadyBound) continue;
-        buttons_.button(Config::ButtonID::BOTTOM_CENTER)
-            .release()
-            .scope(scope)
-            .when([this]() { return !status_bar_.transportLocked.get(); })
-            .then([this]() { handlePlayToggle(); });
-        boundScopes[boundScopeCount++] = scope;
-    }
+    buttons_.button(Config::ButtonID::BOTTOM_CENTER)
+        .release()
+        .globalPassThrough()
+        .then([this]() { handlePlayToggle(); });
 }
 
 void TransportHandler::handlePlayToggle() {
-    bool playing = status_bar_.playing.get();
-    status_bar_.playing.set(!playing);
+    if (status_bar_.playing.get()) {
+        // Stop is always available, including while an edit flow locks start.
+        status_bar_.playing.set(false);
+        return;
+    }
+    if (status_bar_.transportLocked.get()) return;
+    status_bar_.playing.set(true);
 }
 
 }  // namespace core::handler

@@ -32,6 +32,15 @@ FLASHMEM void publishPreparedSequencerStateFromCoreState(
     state->publishPreparedSequencerTrackState(enabledMask, activeTrack);
 }
 
+FLASHMEM void reconcilePreparedMacroTrackTransferFromCoreState(
+    void* context,
+    uint16_t capturedTrackMask
+) {
+    if (context == nullptr) return;
+    static_cast<core::state::CoreState*>(context)
+        ->reconcilePreparedMacroTrackTransfer(capturedTrackMask);
+}
+
 }  // namespace
 
 FLASHMEM SharedTrackDomainServices::SharedTrackDomainServices(StateRefs state)
@@ -54,6 +63,7 @@ FLASHMEM SharedTrackDomainServices SharedTrackDomainServices::fromCoreState(
             &state,
             setSharedTrackStateFromCoreState,
             publishPreparedSequencerStateFromCoreState,
+            reconcilePreparedMacroTrackTransferFromCoreState,
         },
     };
 }
@@ -84,6 +94,19 @@ FLASHMEM void SharedTrackDomainServices::publishPreparedSequencerState(
         operations_.context,
         enabledMask,
         activeTrack
+    );
+}
+
+FLASHMEM void
+SharedTrackDomainServices::reconcilePreparedMacroTrackTransfer(
+    uint16_t capturedTrackMask
+) const {
+    if (operations_.reconcilePreparedMacroTrackTransfer == nullptr) {
+        return;
+    }
+    operations_.reconcilePreparedMacroTrackTransfer(
+        operations_.context,
+        capturedTrackMask
     );
 }
 

@@ -65,6 +65,18 @@ TrackNavigationStripProps buildTrackNavigationStripProps(
             trackNavigation.selection.selectedMask.get() & enabledMask
         )
         : 0U;
+    const bool placing =
+        selectingTrack && trackNavigation.selection.placing.get();
+    props.destinationPreviewMask = placing
+        ? trackNavigation.selection.destinationMask.get()
+        : 0U;
+    props.destinationOverwriteMask = placing
+        ? trackNavigation.selection.overwriteMask.get()
+        : 0U;
+    props.destinationBlockedMask =
+        placing && trackNavigation.selection.pasteBlocked.get()
+            ? props.destinationPreviewMask
+            : 0U;
     props.focusingTrack = focusingTrack;
     props.selectingTrack = selectingTrack;
     for (uint8_t i = 0; i < TrackNavigationStripProps::TRACK_COUNT; ++i) {
@@ -93,6 +105,9 @@ FLASHMEM bool globalTrackNavigationStripPropsEqual(
            lhs.soloMask == rhs.soloMask &&
            lhs.inaudibleMask == rhs.inaudibleMask &&
            lhs.selectedMask == rhs.selectedMask &&
+           lhs.destinationPreviewMask == rhs.destinationPreviewMask &&
+           lhs.destinationOverwriteMask == rhs.destinationOverwriteMask &&
+           lhs.destinationBlockedMask == rhs.destinationBlockedMask &&
            lhs.focusingTrack == rhs.focusingTrack &&
            lhs.selectingTrack == rhs.selectingTrack &&
            lhs.activity == rhs.activity;

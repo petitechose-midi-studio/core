@@ -8,6 +8,7 @@
 
 #include "../../src/state/macro/MacroAutomationDomain.hpp"
 #include "../../src/state/modulation/ProjectControlMacroOps.hpp"
+#include "../../src/state/modulation/ProjectModulationDomainOps.hpp"
 
 namespace test_support::project_control {
 
@@ -76,6 +77,53 @@ inline bool assignAutomation(
     const macro::MacroAutomationLane& lane
 ) {
     return modulation::assignProjectControlAutomation(control, address, lane);
+}
+
+inline modulation::ModulatorId addLocalLfo(
+    modulation::ProjectControlState& control,
+    const macro::MacroAutomationSlotAddress& address,
+    const char* name = "Test LFO"
+) {
+    modulation::ModulatorLfoDraft source{};
+    source.name = name;
+    source.parameters.periodTicks =
+        modulation::PROJECT_CONTROL_TICKS_PER_BEAT;
+    const auto created = modulation::createLfoModulator(
+        control.authored.modulation,
+        source
+    );
+    assert(created.changed());
+
+    modulation::ModulationBindingDraft binding{};
+    binding.sourceId = created.sourceId;
+    binding.destination =
+        modulation::projectControlDestination(address);
+    binding.amountQ15 = 16384;
+    assert(modulation::addProjectModulationBinding(
+        control.authored.modulation,
+        binding
+    ).changed());
+    control.markAuthoredMutation();
+    return created.sourceId;
+}
+
+inline uint8_t outputBindingCountAt(
+    const modulation::ProjectControlState& control,
+    const macro::MacroAutomationSlotAddress& address
+) {
+    const auto destination =
+        modulation::projectControlDestination(address);
+    uint8_t count = 0U;
+    for (uint16_t index = 0U;
+         index < control.authored.modulation.outputBindingCount;
+         ++index) {
+        if (control.authored.modulation
+                .outputBindings[index]
+                .destination == destination) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 inline bool assignModulation(

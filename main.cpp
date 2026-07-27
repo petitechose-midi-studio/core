@@ -23,12 +23,11 @@
 #endif
 #include "context/StandaloneContext.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
-#include "persistence/PersistenceSlotFileStore.hpp"
+#include "persistence/PersistenceStatus.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "persistence/ProjectSessionAutosaveService.hpp"
 #include "persistence/ProjectSessionRestoreService.hpp"
 #include "persistence/ProjectSessionStore.hpp"
-#include "persistence/SequencerPersistence.hpp"
 #include "persistence/StorageRecoveryMachine.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
@@ -50,16 +49,7 @@ static std::optional<oc::hal::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::hal::teensy::CD74HC4067> mux;
 #endif
-static oc::hal::teensy::SDCardBackend settingsStorage("/macros.bin");
-static oc::hal::teensy::SDCardBackend macroLibraryStorage("/macro-library.bin");
-static oc::hal::teensy::SDCardBackend sequencerPatternLibraryStorage(
-    "/sequencer-pattern-library.bin",
-    core::persistence::SequencerPersistence::PATTERN_LIBRARY_STORAGE_CAPACITY
-);
-static oc::hal::teensy::SDCardBackend sequencerSetLibraryStorage(
-    "/sequencer-set-library.bin",
-    core::persistence::SequencerPersistence::SET_LIBRARY_STORAGE_CAPACITY
-);
+static oc::hal::teensy::SDCardBackend settingsStorage("/core-settings.bin");
 static oc::hal::teensy::SDFileSystemBackend productFileSystemBackend;
 static std::optional<core::persistence::ProductFileService> productFileService;
 static std::optional<core::persistence::ProjectSessionStore> projectSessionStore;
@@ -83,9 +73,6 @@ struct StorageBackendRef {
 
 StorageBackendRef storageBackends[] = {
     {"Settings", &settingsStorage},
-    {"Macro library", &macroLibraryStorage},
-    {"Sequencer pattern library", &sequencerPatternLibraryStorage},
-    {"Sequencer set library", &sequencerSetLibraryStorage},
 };
 
 class StorageRecoveryRuntimeManager {
@@ -132,7 +119,7 @@ private:
             return false;
         }
 
-        const auto status = coreState->recoverPersistenceFromRamAfterStorageReopen();
+        const auto status = coreState->recoverSettingsFromRamAfterStorageReopen();
         if (status != core::persistence::PersistenceWriteStatus::OK) {
             OC_LOG_WARN("[StorageRecovery] RAM revalidation failed at {}ms: {}",
                         nowMs,
@@ -268,9 +255,6 @@ static FLASHMEM void initStorage() {
 
     const StorageInitItem items[] = {
         {"Settings", &settingsStorage},
-        {"Macro library", &macroLibraryStorage},
-        {"Sequencer pattern library", &sequencerPatternLibraryStorage},
-        {"Sequencer set library", &sequencerSetLibraryStorage},
     };
 
     for (const auto& item : items) {
@@ -285,20 +269,13 @@ static FLASHMEM void initStorage() {
         while (true) {}
     }
 
-    OC_LOG_INFO("Storages ready settings={}B macroLib={}B seqPatternLib={}B seqSetLib={}B",
-                settingsStorage.capacity(),
-                macroLibraryStorage.capacity(),
-                sequencerPatternLibraryStorage.capacity(),
-                sequencerSetLibraryStorage.capacity());
+    OC_LOG_INFO("Storage ready settings={}B; presets/projects use ProductFileService",
+                settingsStorage.capacity());
 }
 
 #if !defined(MS_PROJECT_STORE_SMOKE)
 static FLASHMEM void initApp() {
-    // Create global state with dedicated storage domains (survives context switches)
-    coreState.emplace(settingsStorage,
-                      macroLibraryStorage,
-                      sequencerPatternLibraryStorage,
-                      sequencerSetLibraryStorage);
+    coreState.emplace(settingsStorage);
     projectSessionStore.emplace(*productFileService);
     projectSessionRestoreService.emplace(*projectSessionStore);
     const auto sessionRestore = projectSessionRestoreService->restore(*coreState);
@@ -429,10 +406,7 @@ FLASHMEM void setup() {
 #if defined(MS_PROJECT_STORE_SMOKE)
     initStorage();
     if (productFileService) {
-        coreState.emplace(settingsStorage,
-                          macroLibraryStorage,
-                          sequencerPatternLibraryStorage,
-                          sequencerSetLibraryStorage);
+        coreState.emplace(settingsStorage);
         projectStoreSmokeResult =
             core::validation::project::runProjectStoreSmoke(*productFileService, *coreState);
     } else {

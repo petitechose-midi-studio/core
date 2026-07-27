@@ -2,14 +2,14 @@
 
 /**
  * @file CoreSettings.hpp
- * @brief Incremental persistence for pages + sync + shortcut mappings
+ * @brief Incremental persistence for MIDI sync and shared Track state
  */
 
 #include <cstdint>
 
 #include <oc/interface/IStorage.hpp>
 
-#include "persistence/PersistenceSlotFileStore.hpp"
+#include "persistence/PersistenceStatus.hpp"
 #include "MidiSyncState.hpp"
 namespace core::state {
 
@@ -44,20 +44,6 @@ public:
     persistence::PersistenceWriteStatus saveSharedTrackStateStatus(uint16_t enabledMask,
                                                                    uint8_t activeTrack);
 
-    bool saveDataManagerMacroShortcutLeft(uint8_t command);
-    bool saveDataManagerMacroShortcutRight(uint8_t command);
-    bool saveDataManagerSeqShortcutLeft(uint8_t command);
-    bool saveDataManagerSeqShortcutRight(uint8_t command);
-    persistence::PersistenceWriteStatus saveDataManagerMacroShortcutLeftStatus(uint8_t command);
-    persistence::PersistenceWriteStatus saveDataManagerMacroShortcutRightStatus(uint8_t command);
-    persistence::PersistenceWriteStatus saveDataManagerSeqShortcutLeftStatus(uint8_t command);
-    persistence::PersistenceWriteStatus saveDataManagerSeqShortcutRightStatus(uint8_t command);
-    persistence::PersistenceWriteStatus saveDefaultDataManagerShortcutsStatus();
-    bool loadDataManagerShortcuts(uint8_t& macroLeft,
-                                  uint8_t& macroRight,
-                                  uint8_t& seqLeft,
-                                  uint8_t& seqRight);
-
     bool commit();
     bool factoryReset();
     persistence::PersistenceWriteStatus commitStatus();
@@ -69,9 +55,6 @@ private:
     persistence::PersistenceWriteStatus writeExactStatus_(uint32_t address,
                                                           const uint8_t* buffer,
                                                           size_t size);
-    persistence::PersistenceWriteStatus saveDataManagerShortcutStatus_(uint32_t address,
-                                                                       uint8_t command);
-    persistence::PersistenceWriteStatus writeDefaultShortcutsStatus_();
     bool loadMidiSync_(MidiSyncState& midiSync);
 
     oc::interface::IStorage& backend_;

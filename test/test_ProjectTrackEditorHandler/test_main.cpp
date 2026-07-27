@@ -37,10 +37,7 @@ struct Harness {
     core::handler::ProjectTrackEditorHandler handler;
 
     Harness()
-        : state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary)
+        : state(storages.settings)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
@@ -135,8 +132,8 @@ void test_bottom_mute_and_solo_are_global_history_commands() {
     assert(core::state::project::projectTrackMuted(h.state.projectTracks, 0U));
     assert(h.state.projectTrackHistory.undoCount() == 1U);
 
-    h.press(Config::ButtonID::BOTTOM_CENTER);
-    h.release(Config::ButtonID::BOTTOM_CENTER);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
     assert(core::state::project::projectTrackSoloed(h.state.projectTracks, 0U));
     assert(h.state.projectTrackHistory.undoCount() == 2U);
 

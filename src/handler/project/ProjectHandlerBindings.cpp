@@ -116,19 +116,6 @@ FLASHMEM void ProjectHandler::setupBindings() {
         })
         .then([this]() { clearProjectName(navigation_); });
 
-    buttons_.button(ButtonID::BOTTOM_CENTER)
-        .release()
-        .scope(project_view_scope_)
-        .when([this]() {
-            return regularProjectInputActive() &&
-                   isProjectNameEditorNode(navigation_.currentNode.get());
-        })
-        .then([this]() {
-            if (!appendProjectNameSpace(navigation_)) {
-                navigation_.setLifecycleFeedback("Name too long");
-            }
-        });
-
     buttons_.button(ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(project_view_scope_)

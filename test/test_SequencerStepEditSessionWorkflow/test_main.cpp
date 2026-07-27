@@ -35,16 +35,12 @@ struct SessionHarness {
     oc::api::ButtonAPI buttons;
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
     core::handler::SequencerHistoryDomainServices history;
-    core::handler::ButtonReleaseLatch<8> openReleaseLatch;
     core::handler::ButtonReleaseLatch<2> contextReleaseLatch;
     session_workflow::StepEditHistorySnapshot snapshot{};
     bool snapshotValid = false;
 
     SessionHarness()
-        : state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary)
+        : state(storages.settings)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , overlays(state.overlays, buttons)
@@ -55,7 +51,7 @@ struct SessionHarness {
     }
 };
 
-void test_open_session_resolves_page_step_and_latches_open_release() {
+void test_open_session_resolves_page_step() {
     SessionHarness h;
     h.state.sequencer.pattern.setContentLength(16);
     h.state.sequencer.page.set(1);
@@ -63,7 +59,6 @@ void test_open_session_resolves_page_step_and_latches_open_release() {
     assert(session_workflow::openForMacroInPage(
         h.state.sequencer,
         h.history,
-        h.openReleaseLatch,
         h.overlays,
         h.snapshot,
         h.snapshotValid,
@@ -75,11 +70,10 @@ void test_open_session_resolves_page_step_and_latches_open_release() {
     assert(h.state.sequencer.focusedStep.get() == 10);
     assert(h.state.sequencer.stepEdit.focusedRow.get() == step_edit_rows::ACTIVATED);
     assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
-    assert(!session_workflow::shouldCloseFromMacro(h.openReleaseLatch, h.state.sequencer, 2));
-    assert(session_workflow::shouldCloseFromMacro(h.openReleaseLatch, h.state.sequencer, 2));
-    assert(!session_workflow::shouldCloseFromMacro(h.openReleaseLatch, h.state.sequencer, 3));
+    assert(session_workflow::shouldCloseFromMacro(h.state.sequencer, 2));
+    assert(!session_workflow::shouldCloseFromMacro(h.state.sequencer, 3));
 
-    std::cout << "[PASS] test_open_session_resolves_page_step_and_latches_open_release\n";
+    std::cout << "[PASS] test_open_session_resolves_page_step\n";
 }
 
 void test_close_commits_live_step_edit_history() {
@@ -90,7 +84,6 @@ void test_close_commits_live_step_edit_history() {
     assert(session_workflow::openForMacroInPage(
         h.state.sequencer,
         h.history,
-        h.openReleaseLatch,
         h.overlays,
         h.snapshot,
         h.snapshotValid,
@@ -101,7 +94,6 @@ void test_close_commits_live_step_edit_history() {
     session_workflow::close(
         h.state.sequencer,
         h.history,
-        h.openReleaseLatch,
         h.contextReleaseLatch,
         h.overlays,
         h.snapshot,
@@ -136,7 +128,6 @@ void test_back_to_parent_content_restores_parent_context_row() {
     assert(session_workflow::openForMacroInPage(
         h.state.sequencer,
         h.history,
-        h.openReleaseLatch,
         h.overlays,
         h.snapshot,
         h.snapshotValid,
@@ -170,7 +161,6 @@ void test_root_retarget_wraps_pages_and_separates_step_history() {
     assert(session_workflow::openForMacroInPage(
         h.state.sequencer,
         h.history,
-        h.openReleaseLatch,
         h.overlays,
         h.snapshot,
         h.snapshotValid,
@@ -234,7 +224,7 @@ void test_root_retarget_wraps_pages_and_separates_step_history() {
 }  // namespace
 
 int main() {
-    test_open_session_resolves_page_step_and_latches_open_release();
+    test_open_session_resolves_page_step();
     test_close_commits_live_step_edit_history();
     test_back_to_parent_content_restores_parent_context_row();
     test_root_retarget_wraps_pages_and_separates_step_history();

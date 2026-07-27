@@ -328,6 +328,22 @@ FLASHMEM bool clipboardUsage(const core::state::MacroAutomationClipboard* clipbo
 
 }  // namespace
 
+FLASHMEM bool clearPagesInDomain(
+    modulation::ProjectControlDomainState& domain,
+    uint8_t track,
+    uint16_t pageMask
+) {
+    if (track >= macro::TRACK_COUNT || pageMask == 0U) return false;
+    return clearProjectSelectionInDomain(
+        domain,
+        ProjectScopeSelection{
+            .kind = ScopeKind::PAGE,
+            .mask = pageMask,
+            .track = track,
+        }
+    );
+}
+
 FLASHMEM bool clearPages(
     modulation::ProjectControlState& control,
     uint8_t track,

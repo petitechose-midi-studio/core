@@ -57,10 +57,7 @@ struct SequencerInlineHarness {
     core::handler::SequencerMacroPropertyHandler macroPropertyHandler;
 
     SequencerInlineHarness()
-        : state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary)
+        : state(storages.settings)
         , navigationFocus(core::state::StructureNavigationFocus::PAGE)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
@@ -882,7 +879,7 @@ void test_pattern_quick_controls_undo_release_does_not_record_inverse_action() {
 void test_pattern_quick_controls_respect_blocking_states() {
     SequencerInlineHarness h;
 
-    h.state.overlays.show(core::ui::OverlayType::DATA_MANAGER);
+    h.state.overlays.show(core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR);
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
 

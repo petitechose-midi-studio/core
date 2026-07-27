@@ -23,20 +23,23 @@
 1220 tap NAV 60
 1460 capture screen keyboard_initial
 
-# Hold LEFT_CENTER as Shift, insert an uppercase default key, then insert Space.
+# Hold LEFT_CENTER as Shift and insert an uppercase default key. Space is a
+# normal SPC grid cell; physical BOTTOM_CENTER remains transport in every view.
 1560 button LEFT_CENTER down
 1700 capture screen keyboard_shift_active
 1800 tap NAV 60
 2020 capture screen keyboard_uppercase_q_inserted
 2120 button LEFT_CENTER up
-2260 tap BOTTOM_CENTER 60
+2220 encoder NAV -11
+2260 tap NAV 60
 2480 capture screen keyboard_space_inserted
 
-# Move horizontally across the letter row.
-2580 encoder NAV 1
+# Return to q, then move horizontally across the letter row.
+2580 encoder NAV 11
 2660 encoder NAV 1
 2740 encoder NAV 1
 2820 encoder NAV 1
+2900 encoder NAV 1
 3040 capture screen keyboard_letter_focus
 
 # The action keys are physical: bottom-left backspaces, left-bottom clears,

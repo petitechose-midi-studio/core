@@ -339,10 +339,7 @@ core::handler::SequencerTrackTransferResult pasteTrackZeroToOne(
 void test_track_paste_activation_masks_follow_exclusive_solo() {
     test_support::CoreStorages storages;
     core::state::CoreState state(
-        storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary
+        storages.settings
     );
     state.sequencer.pattern.note[0] = 82;
     state.sequencer.pattern.setEnabled(0, true);
@@ -446,10 +443,7 @@ core::handler::SequencerTrackTransferResult pasteExternalNoteToTrackOne(
 void test_second_paste_same_track_is_blocked_by_canonical_pending_plan() {
     test_support::CoreStorages storages;
     core::state::CoreState state(
-        storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary
+        storages.settings
     );
     const auto first = pasteTrackZeroToOne(state);
     assert(first.applied());
@@ -485,10 +479,7 @@ void test_second_paste_same_track_is_blocked_by_canonical_pending_plan() {
 void test_undo_before_activation_cancels_and_redo_requeues_without_audible_after() {
     test_support::CoreStorages storages;
     core::state::CoreState state(
-        storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary
+        storages.settings
     );
     const auto paste = pasteTrackZeroToOne(state);
     assert(paste.applied());
@@ -520,10 +511,7 @@ void test_undo_before_activation_cancels_and_redo_requeues_without_audible_after
 void test_undo_and_redo_after_activation_use_new_inverse_generations() {
     test_support::CoreStorages storages;
     core::state::CoreState state(
-        storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary
+        storages.settings
     );
     const auto paste = pasteTrackZeroToOne(state);
     assert(paste.applied());
@@ -561,10 +549,7 @@ void test_undo_and_redo_after_activation_use_new_inverse_generations() {
 void test_stacked_same_track_history_supersedes_pending_intermediate_targets() {
     test_support::CoreStorages storages;
     core::state::CoreState state(
-        storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary
+        storages.settings
     );
 
     assert(pasteTrackZeroToOne(state).applied());
@@ -602,10 +587,7 @@ void test_stacked_same_track_history_supersedes_pending_intermediate_targets() {
 void test_stacked_same_track_history_traverses_after_each_boundary() {
     test_support::CoreStorages storages;
     core::state::CoreState state(
-        storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary
+        storages.settings
     );
 
     assert(pasteTrackZeroToOne(state).applied());
@@ -637,10 +619,7 @@ void test_track_paste_rebinds_inherited_lane_and_preserves_pin_through_history()
     namespace seq = core::state::sequencer;
     test_support::CoreStorages storages;
     core::state::CoreState state(
-        storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary
+        storages.settings
     );
 
     assert(core::state::project::setProjectTrackMidiChannel(
@@ -755,10 +734,7 @@ void test_track_copy_paste_undo_redo_preserves_canonical_destination_identity() 
     namespace seq = core::state::sequencer;
     test_support::CoreStorages storages;
     core::state::CoreState state(
-        storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary
+        storages.settings
     );
 
     constexpr uint8_t sourceTrack = 0;
@@ -884,10 +860,7 @@ void test_track_paste_rebases_lane_lifecycle_and_clears_destination_hold() {
     namespace seq = core::state::sequencer;
     test_support::CoreStorages storages;
     core::state::CoreState state(
-        storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary
+        storages.settings
     );
     assert(state.setSharedTrackState(0x0003, 0));
 

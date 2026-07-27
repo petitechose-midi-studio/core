@@ -1498,10 +1498,7 @@ void test_track_paste_emits_note_and_inherited_cc_on_destination_channel() {
     namespace seq = core::state::sequencer;
     test_support::CoreStorages storages;
     core::state::CoreState state(
-        storages.settings,
-        storages.macroLibrary,
-        storages.sequencerPatternLibrary,
-        storages.sequencerSetLibrary
+        storages.settings
     );
 
     constexpr uint8_t sourceChannel = 1;       // User-facing MIDI channel 2.

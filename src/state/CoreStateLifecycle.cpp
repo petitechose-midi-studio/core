@@ -7,7 +7,6 @@
 #include <oc/time/Time.hpp>
 
 #include "state/CoreState.hpp"
-#include "state/DataManagerWorkflow.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
@@ -186,21 +185,12 @@ FLASHMEM void CoreStateLifecycle::persistFactoryDefaults_(CoreState& state) {
         return;
     }
 
-    const auto shortcutStatus = state.settings.saveDefaultDataManagerShortcutsStatus();
-    if (shortcutStatus != persistence::PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[CoreState] Failed to persist default Data Manager shortcuts during factory reset: {}",
-                    persistence::persistenceWriteStatusLabel(shortcutStatus));
-    }
 }
 
 FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
     state.pages.initDefaults();
     state.midiSync.reset();
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
-    DataManagerWorkflow::loadShortcutsFromSettings(DataManagerWorkflow::StateRefs{
-        state.dataManager,
-        state.settings,
-    });
     state.statusBar.pageName.set(state.pages.activePageData().name);
     state.macroEdit.reset();
     state.macroUi.resetInteraction();
@@ -226,8 +216,6 @@ FLASHMEM void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.deviceSettings.reset();
     state.sequencerSettings.reset();
     state.patternPitchSettings.reset();
-    state.dataManager.resetSession(DataManagerContext::MACRO);
-    state.dataManager.feedback.set("");
     // Factory reset already cleared Project-scoped Macro runtime in
     // resetMacroDomain_. This second pass owns UI/session state only.
     state.macroUi.resetInteraction();
@@ -291,7 +279,6 @@ FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.projectTrackEditor.reset();
     state.deviceSettings.reset();
     state.sequencerSettings.reset();
-    state.dataManager.resetSession(DataManagerContext::MACRO);
 }
 
 FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {

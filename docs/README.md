@@ -7,7 +7,8 @@ Developer documentation for the standalone firmware in this repository.
 Read these first, in order:
 
 1. [ARCHITECTURE_REVIEW_RULES.md](ARCHITECTURE_REVIEW_RULES.md)
-2. [CODE_STYLE.md](CODE_STYLE.md)
+2. [INPUT_BINDINGS.md](INPUT_BINDINGS.md)
+3. [CODE_STYLE.md](CODE_STYLE.md)
 
 Architecture contracts should live as close as possible to the code they
 constrain. Put durable "why" comments in `.hpp` files when a reader needs the

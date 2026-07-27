@@ -19,10 +19,8 @@
 #include "state/CoreStateBootstrap.hpp"
 #include "state/CoreStateLifecycle.hpp"
 #include "state/shared/SharedTrackCoordinator.hpp"
-#include "macro/MacroPersistenceWorkflow.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
-#include "sequencer/SequencerPersistenceWorkflow.hpp"
 #include "sequencer/SequencerCcLanePatternOps.hpp"
 #include "sequencer/SequencerContentViewOps.hpp"
 #include "sequencer/SequencerStructureHistory.hpp"
@@ -118,24 +116,19 @@ constexpr uint32_t nextNonZeroRuntimeRevision(uint32_t current) {
 
 }  // namespace
 
-FLASHMEM MacroDomainState::MacroDomainState(oc::interface::IStorage& libraryStorage)
+FLASHMEM MacroDomainState::MacroDomainState()
     : runtime(core::app::makeExtmemUnique<MacroState>())
-    , pages(core::app::makeExtmemUnique<macro::MacroPagesState>())
-    , persistence(libraryStorage) {
+    , pages(core::app::makeExtmemUnique<macro::MacroPagesState>()) {
     if (!runtime) failCoreStateAllocation("macro runtime state");
     if (!pages) failCoreStateAllocation("macro pages state");
 }
 
 FLASHMEM MacroDomainState::~MacroDomainState() = default;
 
-FLASHMEM SequencerDomainState::SequencerDomainState(
-    oc::interface::IStorage& patternLibraryStorage,
-    oc::interface::IStorage& setLibraryStorage
-)
+FLASHMEM SequencerDomainState::SequencerDomainState()
     : editor(createSequencerEditorState())
     , tracks(createSequencerTrackBankState())
     , history(core::app::makeExtmemUnique<sequencer::SequencerHistoryService>())
-    , persistence(patternLibraryStorage, setLibraryStorage)
     , pendingApply(nullptr) {
     if (!history) failCoreStateAllocation("sequencer history service");
 }
@@ -155,13 +148,9 @@ FLASHMEM void SequencerDomainState::PendingApplyDeleter::operator()(PendingApply
 #endif
 }
 
-FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
-                              oc::interface::IStorage& macroLibraryStorage,
-                              oc::interface::IStorage& sequencerPatternLibraryStorage,
-                              oc::interface::IStorage& sequencerSetLibraryStorage)
-    : macroDomain_(macroLibraryStorage)
-    , sequencerDomain_(sequencerPatternLibraryStorage,
-                       sequencerSetLibraryStorage)
+FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage)
+    : macroDomain_()
+    , sequencerDomain_()
     , projectTracks_(createProjectTrackState())
     , projectTrackHistory_(createProjectTrackHistory())
     , projectSettingsHistory_(createProjectSettingsHistory())
@@ -173,13 +162,11 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , macroHistory(macroDomain_.history)
     , macroRuntimeOwnerRevision(macroDomain_.runtimeOwnerRevision)
     , configRevision(macroDomain_.configRevision)
-    , macroPersistence(macroDomain_.persistence)
     , sequencer(*sequencerDomain_.editor)
     , sequencerTracks(*sequencerDomain_.tracks)
     , sequencerHistory(*sequencerDomain_.history)
     , sequencerTrackActivations(sequencerDomain_.trackActivations)
     , sequencerRuntimeProjectRevision(sequencerDomain_.runtimeProjectRevision)
-    , sequencerPersistence(sequencerDomain_.persistence)
     , project(project_)
     , projectTracks(*projectTracks_)
     , projectTrackHistory(*projectTrackHistory_)
@@ -198,7 +185,6 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage,
     , deviceSettings(systemUi_->deviceSettings)
     , sequencerSettings(systemUi_->sequencerSettings)
     , patternPitchSettings(systemUi_->patternPitchSettings)
-    , dataManager(systemUi_->dataManager)
     , macroEdit(systemUi_->macroEdit)
     , macroUi(systemUi_->macroUi)
     , projectNavigation(systemUi_->projectNavigation)
@@ -407,14 +393,6 @@ bool CoreState::hasPendingProjectTransaction() const {
     return hasPendingProjectMutationCoalescing() ||
            macroHistory.hasPendingModulatorAuditionTransaction(pages) ||
            projectTrackHistory.hasPendingGesture();
-}
-
-bool CoreState::isMacroPersistenceReady() const {
-    return macroDomain_.persistenceReady;
-}
-
-bool CoreState::isSequencerPersistenceReady() const {
-    return sequencerDomain_.persistenceReady;
 }
 
 FLASHMEM void CoreState::markSequencerProjectMutated() {

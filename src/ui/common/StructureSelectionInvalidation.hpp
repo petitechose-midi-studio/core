@@ -8,7 +8,7 @@
 
 namespace core::ui {
 
-inline constexpr size_t STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT = 4U;
+inline constexpr size_t STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT = 9U;
 
 /**
  * Registers every signal that can change the visual projection of a
@@ -24,9 +24,14 @@ OC_ALWAYS_INLINE bool watchStructureSelectionInvalidation(
 ) {
     return watcher.watchAll(
         selection.active,
+        selection.placing,
         selection.scope,
         selection.cursorIndex,
-        selection.selectedMask
+        selection.selectedMask,
+        selection.destinationMask,
+        selection.overwriteMask,
+        selection.pasteBlocked,
+        selection.clipboardRevision
     );
 }
 

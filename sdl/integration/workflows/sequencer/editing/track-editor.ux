@@ -42,7 +42,7 @@
 # The visible action strip maps directly to Mute and Solo.
 3760 tap BOTTOM_LEFT 60
 3920 capture screen track_muted
-4020 tap BOTTOM_CENTER 60
+4020 tap BOTTOM_RIGHT 60
 4180 capture screen track_soloed
 
 # LEFT_CENTER+NAV wraps only through enabled Tracks and retargets in place.

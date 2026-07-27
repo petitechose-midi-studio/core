@@ -55,6 +55,8 @@ public:
     void moveByFocus(float delta);
     void setNavigationFocus(core::state::StructureNavigationFocus focus);
     void enterSelectionModeForCurrentFocus();
+    /** Handles one local Back tier; returns true when a selection owned it. */
+    bool backSelectionMode();
     void cancelSelectionMode();
     void toggleSelectionAtCursor();
     void toggleStepSelectionAtVisibleIndex(uint8_t indexInPage);

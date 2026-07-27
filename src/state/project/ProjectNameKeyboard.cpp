@@ -50,6 +50,7 @@ constexpr std::array<ProjectNameKeyboardCell, PROJECT_NAME_KEYBOARD_CELL_COUNT> 
     {"m", 'm', 3, 6, 1},
     {"-", '-', 3, 7, 1},
     {".", '.', 3, 8, 1},
+    {"SPC", ' ', 3, 9, 1},
 }};
 
 FLASHMEM uint8_t clampIndex(uint8_t index) {

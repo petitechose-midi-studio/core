@@ -8,13 +8,9 @@
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
-#include "handler/settings/DataManagerDomainServices.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
-#include "handler/settings/DataManagerHandler.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
-#include "state/CoreSettings.hpp"
-#include "state/DataManagerState.hpp"
 #include "state/DeviceSettingsState.hpp"
 #include "state/SequencerSettingsState.hpp"
 #include "state/ViewSelectorState.hpp"
@@ -33,20 +29,13 @@ class VirtualListKeyValueOverlay;
 class VirtualListSelectorOverlay;
 }
 
-namespace core::ui {
-class ContextSoftkeyBar;
-class TransportBar;
-}
-
 namespace core::context::standalone {
-class DataManagerPresenter;
 class DeviceSettingsSelectorPresenter;
 class OverlayPresentationRegistry;
 class SequencerSettingsOverlayPresenter;
 }  // namespace core::context::standalone
 
 namespace core::handler {
-class DataManagerHandler;
 class DeviceSettingsHandler;
 class SequencerSettingsHandler;
 }  // namespace core::handler
@@ -54,7 +43,7 @@ class SequencerSettingsHandler;
 namespace core::context::standalone {
 
 /**
- * Owns settings and Data Manager overlays, presenters, and modal handlers.
+ * Owns settings overlays, presenters, and modal handlers.
  *
  * Applying setting changes and persistence actions is delegated to the domain
  * services supplied at construction.
@@ -66,9 +55,6 @@ public:
         core::state::SequencerSettingsState& sequencerSettings;
         core::state::ViewSelectorState& viewSelector;
         core::state::MidiSyncState& midiSync;
-        core::state::CoreSettings& settings;
-        core::state::DataManagerState& dataManager;
-        oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& sequencerTracks;
         core::handler::SequencerHistoryDomainServices history;
@@ -77,16 +63,12 @@ public:
     SettingsFeatureModule(StateRefs stateRefs,
                           core::handler::DeviceSettingsDomainServices deviceSettingsServices,
                           core::handler::SequencerSettingsDomainServices sequencerSettingsServices,
-                          core::handler::DataManagerDomainServices dataManagerServices,
                           oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                           OverlayPresentationRegistry& overlayPresentations,
                           oc::api::EncoderAPI& encoders,
                           oc::api::ButtonAPI& buttons,
                           lv_obj_t* mainZone,
-                          core::ui::ContextSoftkeyBar& softkeyBar,
-                          core::ui::TransportBar& transportBar,
-                          oc::type::ScopeID deviceSettingsViewScope,
-                          core::handler::DataManagerHandler::ViewScopes viewScopes
+                          oc::type::ScopeID deviceSettingsViewScope
 #if defined(MS_UX_RECORDER)
                           ,
                           core::validation::ux::SemanticUxSurfaceRegistry* uxRegistry
@@ -102,24 +84,18 @@ public:
 private:
 #if defined(MS_UX_RECORDER)
     core::context::standalone::ux::DeviceSettingsUxSurface device_settings_ux_surface_;
-    core::context::standalone::ux::DataManagerUxSurface data_manager_ux_surface_;
 #endif
 
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
         device_settings_selector_overlay_;
-    core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> data_manager_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay> sequencer_settings_overlay_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
         sequencer_settings_selector_overlay_;
-    core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay> data_manager_dialog_overlay_;
     core::app::ExtmemUniquePtr<core::context::standalone::DeviceSettingsSelectorPresenter>
         device_settings_presenter_;
-    core::app::ExtmemUniquePtr<core::context::standalone::DataManagerPresenter>
-        data_manager_presenter_;
     core::app::ExtmemUniquePtr<core::context::standalone::SequencerSettingsOverlayPresenter>
         sequencer_settings_presenter_;
     core::app::ExtmemUniquePtr<core::handler::DeviceSettingsHandler> device_settings_handler_;
-    core::app::ExtmemUniquePtr<core::handler::DataManagerHandler> data_manager_handler_;
     core::app::ExtmemUniquePtr<core::handler::SequencerSettingsHandler>
         sequencer_settings_handler_;
     bool valid_ = false;

@@ -9,9 +9,23 @@ FLASHMEM void StructureSelectionState::reset(
     uint8_t cursor
 ) {
     active.set(false);
+    placing.set(false);
     scope.set(nextScope);
     cursorIndex.set(cursor);
     selectedMask.set(0U);
+    destinationMask.set(0U);
+    overwriteMask.set(0U);
+    pasteBlocked.set(false);
+    clipboardRevision.set(0U);
+}
+
+FLASHMEM void StructureSelectionState::clearCurrent() {
+    placing.set(false);
+    selectedMask.set(0U);
+    destinationMask.set(0U);
+    overwriteMask.set(0U);
+    pasteBlocked.set(false);
+    clipboardRevision.set(0U);
 }
 
 FLASHMEM bool StructureHoldState::active() const {

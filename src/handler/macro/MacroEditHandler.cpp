@@ -214,22 +214,6 @@ FLASHMEM void MacroEditHandler::setupBindings() {
     const oc::type::ScopeID valueScope = selector_scope_;
     // LEFT_BOTTOM owns Edit intent before a Macro button is pressed. There is
     // no motion-sensitive long press and therefore no record/edit ambiguity.
-    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
-        const auto macroButton = static_cast<oc::type::ButtonID>(Config::MACRO_BUTTONS[i]);
-
-        buttons_.button(macroButton)
-            .press()
-            .scope(macro_view_scope_)
-            .when([this, i]() {
-                return macro_ui_.performanceOverlayMode.get() ==
-                           core::state::macro::MacroPerformanceOverlayMode::EDIT &&
-                       services_.isMacroSlotActive(i);
-            })
-            .then([this, i]() {
-                openEdit(i);
-            });
-    }
-
     // The edit-intent overlay already carries a focused macro. NAV confirms
     // that target exactly like pressing its physical macro encoder, keeping
     // the learned "focus then confirm" grammar available one-handed.

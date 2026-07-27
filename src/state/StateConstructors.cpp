@@ -16,12 +16,6 @@ FLASHMEM MacroState::MacroState() {
 
 FLASHMEM MacroState::~MacroState() = default;
 
-FLASHMEM DataManagerState::DataManagerState() {
-    feedback.set("");
-}
-
-FLASHMEM DataManagerState::~DataManagerState() = default;
-
 FLASHMEM StatusBarState::StatusBarState() {
     pageName.set("Page 1");
 }
@@ -41,7 +35,6 @@ FLASHMEM UiSystemState::UiSystemState()
       deviceSettings{},
       sequencerSettings{},
       patternPitchSettings{},
-      dataManager{},
       macroEdit{},
       macroUi{},
       projectNavigation{} {}

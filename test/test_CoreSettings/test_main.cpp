@@ -23,15 +23,6 @@ void test_roundtrip_current_format() {
 
     core::state::CoreSettings settings(storage);
     assert(settings.saveAll(sync, sharedTrackEnabledMask, sharedTrackActive));
-    assert(settings.saveDataManagerMacroShortcutLeft(
-        static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_LOAD_SLOT)));
-    assert(settings.saveDataManagerMacroShortcutRight(
-        static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_ERASE_SLOT)));
-    assert(settings.saveDataManagerSeqShortcutLeft(
-        static_cast<uint8_t>(core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT)));
-    assert(settings.saveDataManagerSeqShortcutRight(
-        static_cast<uint8_t>(core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT)));
-    assert(settings.commit());
 
     core::state::MidiSyncState loadedSync;
     uint16_t loadedSharedTrackEnabledMask = 0;
@@ -49,17 +40,6 @@ void test_roundtrip_current_format() {
     assert(loadedSync.autoLockClockCount.get() == 12);
     assert(loadedSharedTrackEnabledMask == sharedTrackEnabledMask);
     assert(loadedSharedTrackActive == sharedTrackActive);
-
-    uint8_t macroLeft = 0;
-    uint8_t macroRight = 0;
-    uint8_t seqLeft = 0;
-    uint8_t seqRight = 0;
-    assert(settings.loadDataManagerShortcuts(macroLeft, macroRight, seqLeft, seqRight));
-
-    assert(macroLeft == static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_LOAD_SLOT));
-    assert(macroRight == static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_ERASE_SLOT));
-    assert(seqLeft == static_cast<uint8_t>(core::state::DataManagerCommand::SEQ_LOAD_SET_SLOT));
-    assert(seqRight == static_cast<uint8_t>(core::state::DataManagerCommand::SEQ_SAVE_SET_SLOT));
 
     std::cout << "[PASS] test_roundtrip_current_format\n";
 }
@@ -115,8 +95,7 @@ void test_stale_version_resets_to_current_defaults() {
     const uint8_t followTransport = 0;
     const uint16_t fallbackMs = 900;
     const uint8_t lockClocks = 8;
-    const uint8_t oldMacroLeft =
-        static_cast<uint8_t>(core::state::DataManagerCommand::MACRO_LOAD_SLOT);
+    const uint8_t retiredBytes[4] = {0x11U, 0x22U, 0x33U, 0x44U};
 
     storage.write(StorageLayout::ADDR_MAGIC,
                   reinterpret_cast<const uint8_t*>(&magic),
@@ -128,7 +107,11 @@ void test_stale_version_resets_to_current_defaults() {
                   reinterpret_cast<const uint8_t*>(&fallbackMs),
                   sizeof(fallbackMs));
     storage.write(StorageLayout::ADDR_SYNC_AUTO_LOCK_CLOCKS, &lockClocks, 1);
-    storage.write(StorageLayout::ADDR_SHORTCUT_MACRO_LEFT, &oldMacroLeft, 1);
+    storage.write(
+        StorageLayout::RETIRED_FIXED_SLOT_BYTES_BEGIN,
+        retiredBytes,
+        sizeof(retiredBytes)
+    );
     storage.commit();
 
     core::state::CoreSettings settings(storage);
@@ -148,21 +131,15 @@ void test_stale_version_resets_to_current_defaults() {
     assert(loadedSharedTrackEnabledMask == StorageLayout::DEFAULT_SHARED_TRACK_ENABLED_MASK);
     assert(loadedSharedTrackActive == StorageLayout::DEFAULT_SHARED_TRACK_ACTIVE);
 
-    uint8_t loadedMacroLeft = 0;
-    uint8_t loadedMacroRight = 0;
-    uint8_t loadedSeqLeft = 0;
-    uint8_t loadedSeqRight = 0;
-    assert(settings.loadDataManagerShortcuts(
-        loadedMacroLeft,
-        loadedMacroRight,
-        loadedSeqLeft,
-        loadedSeqRight
-    ));
-
-    assert(loadedMacroLeft == StorageLayout::DEFAULT_SHORTCUT_MACRO_LEFT);
-    assert(loadedMacroRight == StorageLayout::DEFAULT_SHORTCUT_MACRO_RIGHT);
-    assert(loadedSeqLeft == StorageLayout::DEFAULT_SHORTCUT_SEQ_LEFT);
-    assert(loadedSeqRight == StorageLayout::DEFAULT_SHORTCUT_SEQ_RIGHT);
+    uint8_t persistedRetiredBytes[4]{};
+    assert(storage.read(
+        StorageLayout::RETIRED_FIXED_SLOT_BYTES_BEGIN,
+        persistedRetiredBytes,
+        sizeof(persistedRetiredBytes)
+    ) == sizeof(persistedRetiredBytes));
+    for (size_t i = 0; i < sizeof(retiredBytes); ++i) {
+        assert(persistedRetiredBytes[i] == retiredBytes[i]);
+    }
 
     uint8_t persistedVersion = 0;
     storage.read(StorageLayout::ADDR_VERSION, &persistedVersion, 1);

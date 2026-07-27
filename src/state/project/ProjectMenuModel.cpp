@@ -1,6 +1,7 @@
 #include "state/project/ProjectMenuModel.hpp"
 
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
@@ -351,9 +352,15 @@ FLASHMEM void buildProjectNameEditorRows(ProjectMenuPage& page,
 
     auto keyRow = row("Key", "", ProjectMenuRowKind::Value, navigation.currentNode.get());
     const auto& key = projectNameKeyboardCellAt(navigation.projectNameKeyIndex);
-    char keyLabel[2] = {key.character, '\0'};
-    if (navigation.projectNameShiftActive && keyLabel[0] >= 'a' && keyLabel[0] <= 'z') {
-        keyLabel[0] = static_cast<char>(keyLabel[0] - 'a' + 'A');
+    char keyLabel[4] = {};
+    if (key.character == ' ') {
+        std::snprintf(keyLabel, sizeof(keyLabel), "%s", key.label);
+    } else {
+        keyLabel[0] = key.character;
+        if (navigation.projectNameShiftActive &&
+            keyLabel[0] >= 'a' && keyLabel[0] <= 'z') {
+            keyLabel[0] = static_cast<char>(keyLabel[0] - 'a' + 'A');
+        }
     }
     copyRowValue(keyRow, keyLabel);
     addRow(page, keyRow);

@@ -37,8 +37,22 @@ constexpr std::array<uint16_t, 12U> EXPECTED_SYNC_GRID{
     12288U,
 };
 
+template <typename T, std::size_t Size>
+constexpr bool arraysEqual(
+    const std::array<T, Size>& lhs,
+    const std::array<T, Size>& rhs
+) {
+    for (std::size_t index = 0U; index < Size; ++index) {
+        if (lhs[index] != rhs[index]) return false;
+    }
+    return true;
+}
+
 static_assert(mod::MODULATOR_ENVELOPE_TICKS_PER_BEAT == 192U);
-static_assert(mod::MODULATOR_ENVELOPE_SYNC_BASE_TICKS == EXPECTED_SYNC_GRID);
+static_assert(arraysEqual(
+    mod::MODULATOR_ENVELOPE_SYNC_BASE_TICKS,
+    EXPECTED_SYNC_GRID
+));
 static_assert(mod::resolveModulatorEnvelopeSyncTicks(
                   1U,
                   mod::ModulatorEnvelopeFeel::TRIPLET

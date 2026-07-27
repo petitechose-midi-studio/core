@@ -28,6 +28,12 @@ struct TrackNavigationStripProps {
     uint16_t inaudibleMask = 0;
     /** Session-only Track selection, clipped to structurally enabled Tracks. */
     uint16_t selectedMask = 0;
+    /** Sparse clipboard footprint at the current placement anchor. */
+    uint16_t destinationPreviewMask = 0;
+    /** Destination slots that will be replaced by Paste. */
+    uint16_t destinationOverwriteMask = 0;
+    /** Visible portion of a footprint that cannot be committed atomically. */
+    uint16_t destinationBlockedMask = 0;
     bool focusingTrack = false;
     bool selectingTrack = false;
     std::array<uint8_t, TRACK_COUNT> activity{};

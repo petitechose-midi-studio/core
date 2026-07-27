@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <oc/Config.hpp>
 #include <oc/type/Ids.hpp>
 
 namespace Config {
@@ -42,6 +43,11 @@ enum class ButtonID : oc::type::ButtonID {
     // Special encoder buttons (40-49)
     NAV = 40,
 };
+
+static_assert(
+    static_cast<oc::type::ButtonID>(ButtonID::NAV) < oc::MAX_BUTTONS,
+    "OC_MAX_BUTTONS must cover every product ButtonID"
+);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Encoder IDs

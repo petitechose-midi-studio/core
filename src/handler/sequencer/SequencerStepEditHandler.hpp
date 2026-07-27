@@ -120,8 +120,6 @@ private:
     void commitStepPresetActionGuard();
     void handleStepPresetOutcome(SequencerStepPresetPickerOutcome outcome);
 
-    // Long-press opens while still pressed; ignore the release that follows.
-    ButtonReleaseLatch<8> open_release_latch_;
     ButtonReleaseLatch<2> context_release_latch_;
     core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     bool history_snapshot_valid_ = false;

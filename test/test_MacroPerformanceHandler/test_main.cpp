@@ -10,10 +10,14 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 
+#include <config/App.hpp>
+
 #include "../../src/handler/macro/MacroPerformanceHandler.hpp"
 #include "../../src/handler/macro/MacroPerformanceDomainServices.hpp"
 #include "../../src/handler/macro/MacroStructureDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/modulation/ProjectControlMacroOps.hpp"
+#include "../../src/state/modulation/ProjectModulationDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/NotificationTestUtils.hpp"
@@ -54,14 +58,11 @@ struct MacroPerformanceHarness {
     core::handler::MacroPerformanceHandler handler;
 
     MacroPerformanceHarness()
-        : state(storage.settings,
-                storage.macroLibrary,
-                storage.sequencerPatternLibrary,
-                storage.sequencerSetLibrary)
+        : state(storage.settings)
         , performanceServices(core::handler::MacroPerformanceDomainServices::fromCoreState(state))
         , structureServices(core::handler::MacroStructureDomainServices::fromCoreState(state))
         , navigationFocus(core::state::StructureNavigationFocus::PAGE)
-        , inputBinding(eventBus, mockTimeMs)
+        , inputBinding(eventBus, mockTimeMs, Config::Input::CONFIG)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
         , overlays(state.overlays, buttons)
@@ -134,6 +135,39 @@ void configureMacroAutomation(core::state::CoreState& state,
         address,
         lane
     ));
+}
+
+core::state::modulation::ModulatorId configureLocalLfo(
+    core::state::CoreState& state,
+    uint8_t track,
+    uint8_t page,
+    uint8_t macro
+) {
+    return test_support::project_control::addLocalLfo(
+        state.pages.control,
+        {
+        .track = track,
+        .page = page,
+        .macro = macro,
+        },
+        "Local Copy LFO"
+    );
+}
+
+uint8_t modulationBindingCountAt(
+    const core::state::CoreState& state,
+    uint8_t track,
+    uint8_t page,
+    uint8_t macro
+) {
+    return test_support::project_control::outputBindingCountAt(
+        state.pages.control,
+        {
+            .track = track,
+            .page = page,
+            .macro = macro,
+        }
+    );
 }
 
 void test_nav_turn_switches_enabled_macro_page_directly() {
@@ -726,6 +760,7 @@ void test_page_navigation_applies_live_and_actions_follow_visible_page() {
     assert(h.state.pages.pageData(0U, 0U).cc[0] == 41U);
 
     h.state.macroUi.syncPreviewPage(1U);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.state.pages.pageData(0U, 1U).cc[0] ==
            core::state::macro::defaultMacroCc(1U, 0U));
@@ -1072,6 +1107,7 @@ void test_left_top_cancels_edit_prompt() {
     assert(h.state.macroUi.performanceOverlayMode.get() ==
            core::state::macro::MacroPerformanceOverlayMode::EDIT);
 
+    h.press(Config::ButtonID::LEFT_TOP);
     h.release(Config::ButtonID::LEFT_TOP);
     h.tick(2);
     assert(h.state.macroUi.performanceOverlayMode.get() ==
@@ -1106,6 +1142,288 @@ void test_left_center_arms_take_and_nav_selects_timing() {
     std::cout << "[PASS] LEFT_CENTER arms take and NAV selects timing\n";
 }
 
+void test_macro_slot_selection_pastes_sparse_footprint_atomically() {
+    MacroPerformanceHarness h;
+    auto& page = h.state.pages.pageData(0U, 0U);
+    page.setMacroActive(0U, true);
+    page.setMacroActive(3U, true);
+    page.cc[0] = 21U;
+    page.values[0] = 0.21f;
+    page.cc[3] = 74U;
+    page.values[3] = 0.74f;
+    h.state.pages.updateActiveConfigs();
+    configureMacroAutomation(h.state, 0U, 0U, 0U, 0.42f);
+    h.navigationFocus.set(
+        core::state::StructureNavigationFocus::STEP
+    );
+
+    h.tick(1000U);
+    h.press(Config::ButtonID::NAV);
+    h.tick(
+        1000U +
+        Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS
+    );
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.macroUi.slotSelection.active.get());
+    assert(!h.state.macroUi.slotSelection.placing.get());
+
+    h.press(Config::ButtonID::MACRO_1);
+    h.release(Config::ButtonID::MACRO_1);
+    h.press(Config::ButtonID::MACRO_4);
+    h.release(Config::ButtonID::MACRO_4);
+    assert(h.state.macroUi.slotSelection.selectedCount() == 2U);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.macroUi.slotSelection.placing.get());
+    assert(h.clipboard.hasMacroSlotSelection());
+    assert(h.clipboard.macroAutomationSet->count == 2U);
+
+    for (int position = 1; position <= 7; ++position) {
+        h.turn(
+            Config::EncoderID::NAV,
+            static_cast<float>(position)
+        );
+    }
+    assert(h.state.macroUi.slotSelection.cursorLinear.get() == 10U);
+    assert(h.state.macroUi.previewAddPageSlot.get());
+    assert(h.state.macroUi.slotSelection.destinationMasks[1] ==
+           static_cast<uint8_t>((1U << 2U) | (1U << 5U)));
+    assert(h.state.macroUi.slotSelection.overwriteCount == 0U);
+
+    const uint8_t undoBefore = h.state.projectHistory.undoCount();
+    h.tick(2000U);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.tick(
+        2000U +
+        Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS
+    );
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
+    assert(h.state.pages.currentActivePage() == 1U);
+    const auto& pasted = h.state.pages.pageData(0U, 1U);
+    assert(pasted.isMacroActive(2U));
+    assert(pasted.isMacroActive(5U));
+    assert(!pasted.isMacroActive(0U));
+    assert(pasted.cc[2] == 21U);
+    assert(pasted.cc[5] == 74U);
+    assert(std::fabs(pasted.values[2] - 0.21f) < 0.0001f);
+    assert(std::fabs(pasted.values[5] - 0.74f) < 0.0001f);
+    assert(test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 1U, .macro = 2U}
+    ).automation.stored());
+    assert(h.state.projectHistory.undoCount() ==
+           static_cast<uint8_t>(undoBefore + 1U));
+    assert(h.state.macroUi.slotSelection.placing.get());
+    assert(h.state.macroUi.slotSelection.overwriteCount == 2U);
+
+    assert(h.state.undoProjectHistory());
+    assert(h.state.pages.currentEnabledPageMask() == 0x0001U);
+    assert(!test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 1U, .macro = 2U}
+    ).present());
+    assert(h.state.redoProjectHistory());
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
+    assert(h.state.pages.pageData(0U, 1U).isMacroActive(2U));
+    assert(h.state.pages.pageData(0U, 1U).isMacroActive(5U));
+
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(h.state.macroUi.slotSelection.active.get());
+    assert(!h.state.macroUi.slotSelection.placing.get());
+    assert(h.state.macroUi.slotSelection.selectedCount() == 0U);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.macroUi.slotSelection.selectedCount() == 1U);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.macroUi.slotSelection.placing.get());
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(h.state.macroUi.slotSelection.active.get());
+    assert(!h.state.macroUi.slotSelection.placing.get());
+    assert(h.state.macroUi.slotSelection.selectedCount() == 0U);
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.macroUi.slotSelection.active.get());
+
+    drainNotifications();
+    std::cout
+        << "[PASS] sparse Macro selection Paste is one exact Undo/Redo\n";
+}
+
+void test_macro_page_selection_uses_shared_grammar_and_warns_before_overwrite() {
+    MacroPerformanceHarness h;
+    auto& source = h.state.pages.pageData(0U, 0U);
+    source.setMacroActive(0U, true);
+    source.cc[0] = 71U;
+    source.values[0] = 0.63f;
+    h.state.pages.updateActiveConfigs();
+    configureMacroAutomation(h.state, 0U, 0U, 0U, 0.37f);
+    (void)configureLocalLfo(h.state, 0U, 0U, 0U);
+    h.navigationFocus.set(
+        core::state::StructureNavigationFocus::PAGE
+    );
+
+    h.tick(1000U);
+    h.press(Config::ButtonID::NAV);
+    h.tick(
+        1000U +
+        Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS
+    );
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.macroUi.pageSelection.active.get());
+    assert(!h.state.macroUi.slotSelection.active.get());
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(
+        h.state.macroUi.pageSelection.selectedMask.get() ==
+        0x0001U
+    );
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.macroUi.pageSelection.placing.get());
+    assert(h.clipboard.hasMacroPageSelection());
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.macroUi.pageSelection.cursorIndex.get() == 1U
+    );
+    assert(
+        h.state.macroUi.pageSelection.destinationMask.get() ==
+        0x0002U
+    );
+    assert(
+        h.state.macroUi.pageSelection.overwriteMask.get() == 0U
+    );
+
+    h.tick(2000U);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.tick(
+        2000U +
+        Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS
+    );
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
+    assert(h.state.pages.currentActivePage() == 1U);
+    const auto& pasted = h.state.pages.pageData(0U, 1U);
+    assert(pasted.isMacroActive(0U));
+    assert(pasted.cc[0] == 71U);
+    assert(std::fabs(pasted.values[0] - 0.63f) < 0.0001f);
+    assert(test_support::project_control::readSlot(
+        h.state.pages.control,
+        {.track = 0U, .page = 1U, .macro = 0U}
+    ).automation.stored());
+    assert(modulationBindingCountAt(h.state, 0U, 1U, 0U) == 1U);
+    assert(
+        h.state.macroUi.pageSelection.overwriteMask.get() ==
+        0x0002U
+    );
+
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(h.state.macroUi.pageSelection.active.get());
+    assert(!h.state.macroUi.pageSelection.placing.get());
+    assert(
+        h.state.macroUi.pageSelection.selectedMask.get() == 0U
+    );
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.macroUi.pageSelection.active.get());
+
+    assert(h.state.undoProjectHistory());
+    assert(h.state.pages.currentEnabledPageMask() == 0x0001U);
+    assert(modulationBindingCountAt(h.state, 0U, 1U, 0U) == 0U);
+    assert(h.state.redoProjectHistory());
+    assert(h.state.pages.currentEnabledPageMask() == 0x0003U);
+    assert(modulationBindingCountAt(h.state, 0U, 1U, 0U) == 1U);
+
+    drainNotifications();
+    std::cout
+        << "[PASS] Macro Page selection shares placement/back grammar\n";
+}
+
+void test_macro_track_selection_copies_the_complete_global_track() {
+    MacroPerformanceHarness h;
+    h.state.sequencer.pattern.setContentLength(8U);
+    h.state.sequencer.pattern.setEnabled(0U, true);
+    h.state.sequencer.pattern.note[0] = 79U;
+    auto& page = h.state.pages.pageData(0U, 0U);
+    page.setMacroActive(2U, true);
+    page.cc[2] = 22U;
+    page.values[2] = 0.82f;
+    h.state.pages.updateActiveConfigs();
+    (void)configureLocalLfo(h.state, 0U, 0U, 2U);
+    h.navigationFocus.set(
+        core::state::StructureNavigationFocus::TRACK
+    );
+
+    h.tick(3000U);
+    h.press(Config::ButtonID::NAV);
+    h.tick(
+        3000U +
+        Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS
+    );
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.trackNavigation.selection.active.get());
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(
+        h.state.trackNavigation.selection.selectedMask.get() ==
+        0x0001U
+    );
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.clipboard.hasSequencerTrackSelection());
+    assert(h.state.trackNavigation.selection.placing.get());
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(
+        h.state.trackNavigation.selection.cursorIndex.get() == 1U
+    );
+    assert(
+        h.state.trackNavigation.selection.destinationMask.get() ==
+        0x0002U
+    );
+
+    h.tick(4000U);
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.tick(
+        4000U +
+        Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS
+    );
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+    assert(h.state.currentSharedTrackEnabledMask() == 0x0003U);
+    assert(h.state.currentSharedActiveTrack() == 1U);
+    assert(h.state.sequencer.pattern.note[0] == 79U);
+    assert(h.state.pages.pageData(1U, 0U).isMacroActive(2U));
+    assert(h.state.pages.pageData(1U, 0U).cc[2] == 22U);
+    assert(
+        std::fabs(
+            h.state.pages.pageData(1U, 0U).values[2] - 0.82f
+        ) < 0.0001f
+    );
+    assert(modulationBindingCountAt(h.state, 1U, 0U, 2U) == 1U);
+
+    assert(h.state.undoProjectHistory());
+    assert(h.state.currentSharedTrackEnabledMask() == 0x0001U);
+    assert(!h.state.pages.pageData(1U, 0U).isMacroActive(2U));
+    assert(modulationBindingCountAt(h.state, 1U, 0U, 2U) == 0U);
+    assert(h.state.redoProjectHistory());
+    assert(h.state.currentSharedTrackEnabledMask() == 0x0003U);
+    assert(h.state.pages.pageData(1U, 0U).isMacroActive(2U));
+    assert(modulationBindingCountAt(h.state, 1U, 0U, 2U) == 1U);
+
+    drainNotifications();
+    std::cout
+        << "[PASS] Track selection is global from the Macro view\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1131,6 +1449,9 @@ int main() {
     test_left_bottom_macro_chord_cannot_fall_through_to_performance_action();
     test_left_top_cancels_edit_prompt();
     test_left_center_arms_take_and_nav_selects_timing();
+    test_macro_slot_selection_pastes_sparse_footprint_atomically();
+    test_macro_page_selection_uses_shared_grammar_and_warns_before_overwrite();
+    test_macro_track_selection_copies_the_complete_global_track();
     std::cout << "\nAll MacroPerformanceHandler tests passed.\n";
     return 0;
 }

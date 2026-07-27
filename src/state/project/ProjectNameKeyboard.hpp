@@ -14,7 +14,7 @@ struct ProjectNameKeyboardCell {
 
 inline constexpr uint8_t PROJECT_NAME_KEYBOARD_COLUMN_COUNT = 10;
 inline constexpr uint8_t PROJECT_NAME_KEYBOARD_ROW_COUNT = 4;
-inline constexpr uint8_t PROJECT_NAME_KEYBOARD_CELL_COUNT = 38;
+inline constexpr uint8_t PROJECT_NAME_KEYBOARD_CELL_COUNT = 39;
 inline constexpr uint8_t PROJECT_NAME_KEYBOARD_DEFAULT_INDEX = 10;  // q
 
 const ProjectNameKeyboardCell& projectNameKeyboardCellAt(uint8_t index);

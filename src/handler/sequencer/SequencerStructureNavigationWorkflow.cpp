@@ -173,13 +173,8 @@ FLASHMEM void SequencerStructureNavigationWorkflow::enterSelectionModeForCurrent
                 sequencer_.focusedStep.get(),
                 maxStepCursor()
             );
+            selection.reset(cursor);
             selection.active.set(true);
-            selection.cursorStep.set(cursor);
-            selection.selectedMask.set({});
-            selection.pastePreviewActive.set(false);
-            selection.pastePreview.set(
-                core::state::sequencer::SequencerStepPastePreview::NONE
-            );
             return;
         }
     }
@@ -211,9 +206,61 @@ FLASHMEM void SequencerStructureNavigationWorkflow::cancelSelectionMode() {
     syncPreviewToFocus(focus);
 }
 
+FLASHMEM bool SequencerStructureNavigationWorkflow::backSelectionMode() {
+    const auto focus = navigation_focus_.get();
+    if (track_ui_.selection.active.get()) {
+        auto& selection = track_ui_.selection;
+        if (selection.placing.get() || selection.anySelected()) {
+            selection.clearCurrent();
+            track_ui_.syncPreviewTrack(selection.cursorIndex.get());
+        } else {
+            selection.reset(
+                core::state::StructureSelectionScope::TRACK,
+                currentActiveTrack()
+            );
+            syncPreviewToFocus(focus);
+        }
+        return true;
+    }
+    if (sequencer_.structureUi.pageSelection.active.get()) {
+        auto& selection = sequencer_.structureUi.pageSelection;
+        if (selection.placing.get() || selection.anySelected()) {
+            selection.clearCurrent();
+            sequencer_.structureUi.syncPreviewPage(
+                selection.cursorIndex.get()
+            );
+        } else {
+            selection.reset(
+                core::state::StructureSelectionScope::PAGE,
+                currentActiveContentPage(sequencer_)
+            );
+            syncPreviewToFocus(focus);
+        }
+        return true;
+    }
+    if (sequencer_.structureUi.stepSelection.active.get()) {
+        auto& selection = sequencer_.structureUi.stepSelection;
+        if (selection.placementActive() ||
+            selection.anySelected() ||
+            selection.pastePreviewActive.get()) {
+            selection.clearCurrent();
+        } else {
+            const uint8_t cursor = std::min<uint8_t>(
+                sequencer_.focusedStep.get(),
+                maxStepCursor()
+            );
+            selection.reset(cursor);
+            syncPreviewToFocus(focus);
+        }
+        return true;
+    }
+    return false;
+}
+
 FLASHMEM void SequencerStructureNavigationWorkflow::toggleSelectionAtCursor() {
     if (track_ui_.selection.active.get()) {
         auto& selection = track_ui_.selection;
+        if (selection.placing.get()) return;
         const uint8_t cursor = selection.cursorIndex.get();
         if (!structure_slots::isEnabled(currentTrackEnabledMask(), cursor)) return;
         selection.selectedMask.set(static_cast<uint16_t>(
@@ -223,6 +270,7 @@ FLASHMEM void SequencerStructureNavigationWorkflow::toggleSelectionAtCursor() {
     }
     if (sequencer_.structureUi.pageSelection.active.get()) {
         auto& selection = sequencer_.structureUi.pageSelection;
+        if (selection.placing.get()) return;
         const uint8_t cursor = selection.cursorIndex.get();
         const uint8_t pageCount =
             core::state::sequencer::activeContentPageCount(sequencer_);
@@ -234,6 +282,7 @@ FLASHMEM void SequencerStructureNavigationWorkflow::toggleSelectionAtCursor() {
     }
     if (sequencer_.structureUi.stepSelection.active.get()) {
         auto& selection = sequencer_.structureUi.stepSelection;
+        if (selection.placementActive()) return;
         const uint8_t cursor = selection.cursorStep.get();
         if (!stepSelectable(cursor)) return;
         selection.setSelected(cursor, !selection.selected(cursor));
@@ -247,6 +296,7 @@ FLASHMEM void SequencerStructureNavigationWorkflow::toggleStepSelectionAtVisible
     if (!selection.active.get() || indexInPage >= core::state::sequencer::SequencerState::STEPS_PER_PAGE) {
         return;
     }
+    if (selection.placementActive()) return;
 
     const uint16_t step = static_cast<uint16_t>(
         sequencer_.page.get() * core::state::sequencer::SequencerState::STEPS_PER_PAGE +
@@ -266,6 +316,16 @@ FLASHMEM void SequencerStructureNavigationWorkflow::navigateSelection(float delt
     const int direction = nav::turnStep(delta);
     if (track_ui_.selection.active.get()) {
         auto& selection = track_ui_.selection;
+        if (selection.placing.get()) {
+            const uint8_t next = structure_slots::wrapIndex(
+                selection.cursorIndex.get(),
+                direction,
+                core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
+            );
+            selection.cursorIndex.set(next);
+            track_ui_.syncPreviewTrack(next);
+            return;
+        }
         const uint16_t enabledMask = currentTrackEnabledMask();
         if (enabledMask == 0U) return;
         const uint8_t next = structure_slots::nextEnabledIndex(
@@ -279,6 +339,27 @@ FLASHMEM void SequencerStructureNavigationWorkflow::navigateSelection(float delt
     }
     if (sequencer_.structureUi.pageSelection.active.get()) {
         auto& selection = sequencer_.structureUi.pageSelection;
+        if (selection.placing.get()) {
+            const uint8_t next = structure_slots::wrapIndex(
+                selection.cursorIndex.get(),
+                direction,
+                core::state::sequencer::SequencerPatternState::PAGE_COUNT
+            );
+            selection.cursorIndex.set(next);
+            sequencer_.structureUi.syncPreviewPage(next);
+            const uint8_t pageCount =
+                core::state::sequencer::activeContentPageCount(sequencer_);
+            if (next < pageCount) {
+                sequencer_.page.set(next);
+                sequencer_.focusedStep.set(
+                    core::state::sequencer::activeContentPageStartStep(
+                        sequencer_,
+                        next
+                    )
+                );
+            }
+            return;
+        }
         const uint8_t pageCount =
             core::state::sequencer::activeContentPageCount(sequencer_);
         if (pageCount == 0U) return;

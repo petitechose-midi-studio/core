@@ -313,7 +313,6 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
             core_state_.macroEdit,
             core_state_.viewSelector,
             core_state_.deviceSettings,
-            core_state_.dataManager,
         }
     );
     if (!macro_view_ || !macro_view_->valid()) {
@@ -336,7 +335,6 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
             core_state_.viewSelector,
             core_state_.deviceSettings,
             core_state_.sequencerSettings,
-            core_state_.dataManager,
             core_state_.projectNavigation,
             core_state_.sequencerTrackActivations,
         }

@@ -2,14 +2,13 @@
 
 #include <cstdint>
 
-#include "DataManagerCatalog.hpp"
 namespace core::state::core_settings {
 
 /**
  * Byte-level layout for CoreSettings storage.
  *
- * Offsets and VERSION define the compatibility contract for MIDI sync, shared
- * track state, and Data Manager shortcuts.
+ * Offsets and VERSION define the compatibility contract for MIDI sync and
+ * shared Track state.
  */
 namespace layout {
 
@@ -28,24 +27,16 @@ constexpr uint32_t ADDR_SYNC_AUTO_LOCK_CLOCKS = ADDR_RESERVED + 4;
 constexpr uint32_t ADDR_SHARED_TRACK_ENABLED_MASK = ADDR_RESERVED + 5;
 constexpr uint32_t ADDR_SHARED_TRACK_ACTIVE = ADDR_RESERVED + 7;
 
-constexpr uint32_t ADDR_SHORTCUT_MACRO_LEFT = ADDR_RESERVED + 8;
-constexpr uint32_t ADDR_SHORTCUT_MACRO_RIGHT = ADDR_RESERVED + 9;
-constexpr uint32_t ADDR_SHORTCUT_SEQ_LEFT = ADDR_RESERVED + 10;
-constexpr uint32_t ADDR_SHORTCUT_SEQ_RIGHT = ADDR_RESERVED + 11;
-constexpr uint32_t STORAGE_END = ADDR_SHORTCUT_SEQ_RIGHT + 1;
-static_assert(ADDR_SHORTCUT_SEQ_RIGHT < STORAGE_END);
+// Bytes ADDR_RESERVED + 8..11 belonged to retired fixed-slot shortcuts.
+// Keep them reserved so the feature removal cannot alter the serialized
+// settings layout or silently reinterpret existing controller bytes.
+constexpr uint32_t RETIRED_FIXED_SLOT_BYTES_BEGIN = ADDR_RESERVED + 8;
+constexpr uint32_t RETIRED_FIXED_SLOT_BYTES_END = ADDR_RESERVED + 12;
+constexpr uint32_t STORAGE_END = RETIRED_FIXED_SLOT_BYTES_END;
+static_assert(RETIRED_FIXED_SLOT_BYTES_BEGIN < STORAGE_END);
 
 constexpr uint16_t DEFAULT_SHARED_TRACK_ENABLED_MASK = 0x0001;
 constexpr uint8_t DEFAULT_SHARED_TRACK_ACTIVE = 0;
-
-constexpr uint8_t DEFAULT_SHORTCUT_MACRO_LEFT =
-    static_cast<uint8_t>(DEFAULT_MACRO_SHORTCUT_LEFT);
-constexpr uint8_t DEFAULT_SHORTCUT_MACRO_RIGHT =
-    static_cast<uint8_t>(DEFAULT_MACRO_SHORTCUT_RIGHT);
-constexpr uint8_t DEFAULT_SHORTCUT_SEQ_LEFT =
-    static_cast<uint8_t>(DEFAULT_SEQ_SHORTCUT_LEFT);
-constexpr uint8_t DEFAULT_SHORTCUT_SEQ_RIGHT =
-    static_cast<uint8_t>(DEFAULT_SEQ_SHORTCUT_RIGHT);
 
 }  // namespace layout
 

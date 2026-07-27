@@ -19,75 +19,82 @@
 1550 capture screen step_editor_open
 1600 button MACRO_1 up
 
-# Open the Step Preset picker from the Step Editor.
-1700 tap BOTTOM_CENTER 60
-1950 capture screen step_preset_picker_load_empty
+# Open the Step Preset picker from the Step Editor with an intentional NAV
+# hold. A short NAV press keeps its normal focused-row action.
+1700 button NAV down
+2750 tick
+2800 capture screen step_preset_picker_load_empty
+2850 button NAV up
 
 # Toggle to Save mode and save the focused step as a new file-backed preset.
-2050 tap BOTTOM_CENTER 60
-2250 capture screen step_preset_picker_save_mode
-2350 tap BOTTOM_RIGHT 60
-2650 capture screen step_preset_picker_saved
+2950 tap BOTTOM_LEFT 60
+3150 capture screen step_preset_picker_save_mode
+3250 tap BOTTOM_RIGHT 60
+3550 capture screen step_preset_picker_saved
 
 # Re-enter Save mode, focus the existing preset, then prove that a short hold
 # cancels while a complete hold overwrites and reports success.
-2750 tap BOTTOM_CENTER 60
-2950 encoder NAV 1
-3150 capture screen step_preset_overwrite_ready
-3250 button BOTTOM_RIGHT down
-3400 capture screen step_preset_overwrite_pressed
-3500 tick
-3550 capture screen step_preset_overwrite_armed
-3600 button BOTTOM_RIGHT up
-3800 capture screen step_preset_overwrite_cancelled
+3650 tap BOTTOM_LEFT 60
+3850 encoder NAV 1
+4050 capture screen step_preset_overwrite_ready
+4150 button BOTTOM_RIGHT down
+4300 capture screen step_preset_overwrite_pressed
+4400 tick
+4450 capture screen step_preset_overwrite_armed
+4500 button BOTTOM_RIGHT up
+4700 capture screen step_preset_overwrite_cancelled
 
-3850 button BOTTOM_RIGHT down
-4000 capture screen step_preset_overwrite_pressed_again
-4100 tick
-4150 capture screen step_preset_overwrite_armed_again
-4900 tick
-4950 capture screen step_preset_overwritten
-5000 button BOTTOM_RIGHT up
+4750 button BOTTOM_RIGHT down
+4900 capture screen step_preset_overwrite_pressed_again
+5000 tick
+5050 capture screen step_preset_overwrite_armed_again
+5800 tick
+5850 capture screen step_preset_overwritten
+5900 button BOTTOM_RIGHT up
 
 # Return to the Step Editor, close it, then load the preset onto empty step 2.
-5100 tap LEFT_TOP 60
-5300 capture screen returned_to_step_editor
-5400 tap MACRO_1 60
-5600 capture screen step_editor_closed
-5700 button MACRO_2 down
-6750 tick
-6800 capture screen step_2_editor_open
-6850 button MACRO_2 up
-6950 tap BOTTOM_CENTER 60
-7200 capture screen step_preset_picker_load_existing
-7300 tap BOTTOM_RIGHT 60
-7500 capture screen step_preset_applied_to_step_2
-8700 capture screen returned_after_applied_feedback
+6000 tap LEFT_TOP 60
+6200 capture screen returned_to_step_editor
+6300 tap MACRO_1 60
+6500 capture screen step_editor_closed
+6600 button MACRO_2 down
+7650 tick
+7700 capture screen step_2_editor_open
+7750 button MACRO_2 up
+7850 button NAV down
+8900 tick
+8950 capture screen step_preset_picker_load_existing
+9000 button NAV up
+9100 tap BOTTOM_RIGHT 60
+9300 capture screen step_preset_applied_to_step_2
+10500 capture screen returned_after_applied_feedback
 
 # Close Step Edit and undo the exact preset action from the global View
 # Selector.
-8800 tap MACRO_2 60
-9000 capture screen step_2_after_apply
-9100 tap LEFT_TOP 60
-10100 tick
-10150 capture screen selector_preset_undo_ready
-10200 tap LEFT_CENTER 60
-11700 capture screen selector_preset_redo_ready
-11800 tap LEFT_TOP 60
-12000 capture screen step_2_after_preset_undo
+10600 tap MACRO_2 60
+10800 capture screen step_2_after_apply
+10900 tap LEFT_TOP 60
+11900 tick
+11950 capture screen selector_preset_undo_ready
+12000 tap LEFT_CENTER 60
+13500 capture screen selector_preset_redo_ready
+13600 tap LEFT_TOP 60
+13800 capture screen step_2_after_preset_undo
 
 # While transport is running, applying to another empty step stays explicit as
 # queued instead of pretending that the audible runtime changed immediately.
-12100 tap BOTTOM_CENTER 60
-12300 button MACRO_3 down
-13400 tick
-13450 capture screen step_3_editor_playing
-13500 button MACRO_3 up
-13600 tap BOTTOM_CENTER 60
-13850 capture screen step_preset_load_while_playing
-13950 tap BOTTOM_RIGHT 60
-14100 capture screen step_preset_queued_for_boundary
-14200 tap LEFT_TOP 60
-14400 tap MACRO_3 60
-14600 tap BOTTOM_CENTER 60
-14800 capture screen transport_stopped_after_queued_apply
+13900 tap BOTTOM_CENTER 60
+14100 button MACRO_3 down
+15150 tick
+15200 capture screen step_3_editor_playing
+15250 button MACRO_3 up
+15350 button NAV down
+16400 tick
+16450 capture screen step_preset_load_while_playing
+16500 button NAV up
+16600 tap BOTTOM_RIGHT 60
+16800 capture screen step_preset_queued_for_boundary
+16900 tap LEFT_TOP 60
+17100 tap MACRO_3 60
+17300 tap BOTTOM_CENTER 60
+17500 capture screen transport_stopped_after_queued_apply

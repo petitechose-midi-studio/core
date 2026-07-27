@@ -59,6 +59,32 @@ public:
     void pasteCurrentStructure();
     void createPreviewedStructure();
 
+    void enterSelectionModeForCurrentFocus();
+    /** Handles one local Back tier; returns true when a selection owned it. */
+    bool backSelectionMode();
+    void cancelSelectionMode();
+    [[nodiscard]] bool selectionActive() const;
+    [[nodiscard]] bool selectionPlacementActive() const;
+    void navigateSelection(float delta);
+    void toggleSelectionAtCursor();
+    [[nodiscard]] bool copySelection();
+    [[nodiscard]] bool canPasteSelection() const;
+    [[nodiscard]] bool pasteSelection();
+    [[nodiscard]] uint8_t selectionCursor() const;
+    [[nodiscard]] uint32_t selectionClipboardRevision() const;
+
+    void enterSlotSelection();
+    void cancelSlotSelection();
+    [[nodiscard]] bool slotSelectionActive() const;
+    [[nodiscard]] bool slotSelectionPlacementActive() const;
+    void navigateSlotSelection(float delta);
+    void toggleSlotSelectionAtCursor();
+    void toggleSlotSelectionAtPageIndex(uint8_t macroIndex);
+    [[nodiscard]] bool copySlotSelection();
+    [[nodiscard]] bool canPasteSlotSelection() const;
+    [[nodiscard]] bool pasteSlotSelection();
+    void refreshSlotSelectionPastePreview();
+
 private:
     void bindStateSync();
     core::state::StructureNavigationFocus effectiveFocus() const;
@@ -71,6 +97,16 @@ private:
     ) const;
     void syncPreviewToCurrentContext();
     void clampFocusedMacroSlot();
+    [[nodiscard]] uint8_t existingMacroPageCount() const;
+    void enterPageSelection();
+    void enterTrackSelection();
+    void navigatePageSelection(float delta);
+    void navigateTrackSelection(float delta);
+    void togglePageSelectionAtCursor();
+    void toggleTrackSelectionAtCursor();
+    void syncPageSelectionCursorPresentation();
+    [[nodiscard]] uint8_t slotSelectionNavigationPageCount() const;
+    void syncSlotSelectionCursorPresentation();
     void captureHoldTarget(core::state::StructureHoldAction action);
     [[nodiscard]] bool holdTargetStillMatches(
         core::state::StructureHoldAction action

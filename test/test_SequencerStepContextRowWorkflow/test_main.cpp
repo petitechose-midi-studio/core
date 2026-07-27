@@ -17,10 +17,7 @@ namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 
 core::state::CoreState makeState(test_support::CoreStorages& storage) {
     return core::state::CoreState(
-        storage.settings,
-        storage.macroLibrary,
-        storage.sequencerPatternLibrary,
-        storage.sequencerSetLibrary
+        storage.settings
     );
 }
 

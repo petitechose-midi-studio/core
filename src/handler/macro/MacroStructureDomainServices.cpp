@@ -1,6 +1,7 @@
 #include "handler/macro/MacroStructureDomainServices.hpp"
 
 #include <array>
+#include <cstring>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -8,10 +9,13 @@
 #include "handler/macro/MacroAutomationClipboardOps.hpp"
 #include "handler/macro/MacroStructureAutomationOps.hpp"
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
+#include "handler/sequencer/SequencerStructureSelectionOps.hpp"
+#include "handler/sequencer/SequencerStructureTrackTransferTransaction.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ProjectControlStructureTransferOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 
@@ -574,6 +578,182 @@ FLASHMEM bool MacroStructureDomainServices::pastePage(
     );
 }
 
+FLASHMEM bool MacroStructureDomainServices::pasteMacroPageSelection(
+    const core::state::StructureClipboardState& clipboard,
+    const core::state::MacroPageSelectionPastePlan& plan
+) const {
+    if (history_ == nullptr || !plan.canCommit() ||
+        !clipboard.hasMacroPageSelection()) {
+        return false;
+    }
+    const auto& source = *clipboard.macroPageSelection;
+    const uint8_t track = pages_->currentActiveTrack();
+    if (track >= core::state::macro::TRACK_COUNT ||
+        source.sourceTrack >= core::state::macro::TRACK_COUNT ||
+        plan.requiredPageCount == 0U ||
+        plan.requiredPageCount > core::state::macro::PAGE_COUNT) {
+        return false;
+    }
+
+    auto historyChange = history_->preparePageStructureSnapshot(
+        *pages_,
+        track
+    );
+    auto pendingControl = core::app::makeExtmemUnique<
+        core::state::modulation::ProjectControlDomainState
+    >(pages_->control.authored);
+    if (!historyChange || !pendingControl) return false;
+
+    const uint8_t previousPageCount = static_cast<uint8_t>(
+        structure_slots::countEnabled(
+            pages_->tracks[track].enabledPageMask,
+            core::state::macro::PAGE_COUNT
+        )
+    );
+    if (plan.requiredPageCount > previousPageCount) {
+        const uint16_t extensionMask = static_cast<uint16_t>(
+            structure_slots::prefixMask(plan.requiredPageCount) &
+            static_cast<uint16_t>(
+                ~structure_slots::prefixMask(previousPageCount)
+            )
+        );
+        if (extensionMask != 0U &&
+            !structure_automation_ops::clearPagesInDomain(
+                *pendingControl,
+                track,
+                extensionMask
+            )) {
+            return false;
+        }
+    }
+
+    core::state::modulation::ProjectControlStructureTransferPlan
+        transfer{};
+    transfer.count = plan.count;
+    for (uint8_t index = 0U; index < plan.count; ++index) {
+        const auto& mapping = plan.entries[index];
+        if (mapping.clipboardIndex >= source.count ||
+            mapping.destinationPage >=
+                core::state::macro::PAGE_COUNT) {
+            return false;
+        }
+        const auto& sourcePage =
+            source.pages[mapping.clipboardIndex];
+        if (!sourcePage.valid) return false;
+        transfer.entries[index] = {
+            .sourceTrack = source.sourceTrack,
+            .targetTrack = track,
+            .sourcePage = sourcePage.sourcePage,
+            .targetPage = mapping.destinationPage,
+            .wholeTrack = false,
+        };
+    }
+    if (!core::state::modulation::
+            replaceProjectControlStructureInDomain(
+                *pendingControl,
+                *source.projectControl,
+                transfer
+            )) {
+        return false;
+    }
+
+    auto pendingTrack = pages_->tracks[track];
+    for (uint8_t page = previousPageCount;
+         page < plan.requiredPageCount;
+         ++page) {
+        pendingTrack.pages[page].initDefault(page);
+    }
+    for (uint8_t index = 0U; index < plan.count; ++index) {
+        const auto& mapping = plan.entries[index];
+        pendingTrack.pages[mapping.destinationPage] =
+            source.pages[mapping.clipboardIndex].page;
+    }
+    pendingTrack.enabledPageMask =
+        structure_slots::prefixMask(plan.requiredPageCount);
+    pendingTrack.activePage = plan.firstDestinationPage;
+
+    flushMutationCoalescing(operations_);
+    pages_->control.authored = *pendingControl;
+    pages_->control.markAuthoredMutation();
+    pages_->tracks[track] = pendingTrack;
+    pages_->syncActiveTrackCache();
+    pages_->setActivePage(plan.firstDestinationPage);
+    for (uint8_t page = previousPageCount;
+         page < plan.requiredPageCount;
+         ++page) {
+        clearManualForPage(stateRefs_(), track, page);
+    }
+    for (uint8_t index = 0U; index < plan.count; ++index) {
+        clearManualForPage(
+            stateRefs_(),
+            track,
+            plan.entries[index].destinationPage
+        );
+    }
+    finalizeStructureChange(stateRefs_(), operations_);
+    return history_->commitPreparedPageStructureSnapshot(
+        *pages_,
+        std::move(historyChange)
+    );
+}
+
+FLASHMEM bool MacroStructureDomainServices::copyTrackSelection(
+    uint16_t selectedMask,
+    core::state::StructureClipboardState& clipboard
+) const {
+    if (core_state_ == nullptr) return false;
+    auto payload = captureTrackSelectionClipboard(
+        core_state_->sequencerTracks,
+        core_state_->sequencer,
+        core_state_->pages,
+        selectedMask
+    );
+    return payload &&
+        clipboard.storeSequencerTrackSelection(
+            std::move(payload)
+        );
+}
+
+FLASHMEM core::state::ClipboardTransferPlan
+MacroStructureDomainServices::trackSelectionPastePlan(
+    const core::state::StructureClipboardState& clipboard,
+    uint8_t targetTrack
+) const {
+    if (core_state_ == nullptr) return {};
+    return core::state::buildSequencerTrackClipboardTransferPlan(
+        clipboard,
+        core_state_->sequencerTracks,
+        core_state_->projectTracks,
+        targetTrack,
+        core_state_->sequencerTrackActivations.pendingTrackMask()
+    );
+}
+
+FLASHMEM bool MacroStructureDomainServices::pasteTrackSelection(
+    const core::state::StructureClipboardState& clipboard,
+    uint8_t targetTrack
+) const {
+    if (core_state_ == nullptr) return false;
+    const auto result = executeSequencerTrackTransfer(
+        core_state_->sequencerTracks,
+        core_state_->projectTracks,
+        core_state_->sequencer,
+        clipboard,
+        core::handler::SharedTrackDomainServices::fromCoreState(
+            *core_state_
+        ),
+        core::handler::SequencerHistoryDomainServices::fromCoreState(
+            *core_state_
+        ),
+        targetTrack,
+        0U,
+        &core_state_->sequencerTrackActivations,
+        core_state_->statusBar.playing.get(),
+        &core_state_->pages
+    );
+    return result.applied();
+}
+
 FLASHMEM bool MacroStructureDomainServices::pasteTrack(
     uint8_t trackIndex,
     const core::state::macro::MacroTrackData& trackData,
@@ -880,6 +1060,133 @@ FLASHMEM bool MacroStructureDomainServices::pasteMacroAutomation(
     );
     persistConfigChange(stateRefs_(), operations_);
     return true;
+}
+
+FLASHMEM bool MacroStructureDomainServices::pasteMacroSlotSelection(
+    const core::state::StructureClipboardState& clipboard,
+    const core::state::macro::MacroSlotClipboardPlan& plan
+) const {
+    if (history_ == nullptr || !plan.canCommit() ||
+        plan.targetTrack != pages_->currentActiveTrack() ||
+        plan.clipboardRevision != clipboard.revision.get()) {
+        return false;
+    }
+    const auto livePlan =
+        core::state::macro::buildMacroSlotClipboardPlan(
+            clipboard,
+            *pages_,
+            plan.targetTrack,
+            plan.anchorLinear
+        );
+    if (!livePlan.canCommit() ||
+        !core::state::macro::sameMacroSlotClipboardPlan(
+            plan,
+            livePlan
+        )) {
+        return false;
+    }
+
+    auto historyChange = history_->preparePageStructureSnapshot(
+        *pages_,
+        plan.targetTrack
+    );
+    if (!historyChange || !historyChange->pageStructure ||
+        !historyChange->pageStructure->beforeControl ||
+        !historyChange->pageStructure->afterControl) {
+        return false;
+    }
+    auto& historyPayload = *historyChange->pageStructure;
+    auto pendingTrack = pages_->tracks[plan.targetTrack];
+    auto& pendingDomain = *historyPayload.afterControl;
+    pendingDomain = pages_->control.authored;
+
+    flushMutationCoalescing(operations_);
+    if (plan.createPageMask != 0U) {
+        if (!structure_automation_ops::clearPagesInDomain(
+                pendingDomain,
+                plan.targetTrack,
+                plan.createPageMask
+            )) {
+            return false;
+        }
+        for (uint8_t page = plan.existingPageCount;
+             page < plan.requiredPageCount;
+             ++page) {
+            pendingTrack.pages[page].initDefault(page);
+            pendingTrack.pages[page].activeMacroMask = 0U;
+            pendingTrack.setPageEnabled(page, true);
+        }
+    }
+
+    for (uint8_t index = 0U; index < plan.count; ++index) {
+        const auto& entry = plan.entries[index];
+        if (!automation_clipboard_ops::
+                pasteSlotEntryFromClipboardInDomain(
+                    pendingDomain,
+                    pendingTrack.pages[entry.targetPage],
+                    core::state::macro::MacroAutomationSlotAddress{
+                        .track = plan.targetTrack,
+                        .page = entry.targetPage,
+                        .macro = entry.targetMacro,
+                    },
+                    clipboard,
+                    entry.clipboardIndex
+                )) {
+            return false;
+        }
+    }
+    if (!core::state::modulation::validProjectModulationDomain(
+            pendingDomain.modulation,
+            pendingDomain.curves,
+            &pendingDomain.automation
+        )) {
+        return false;
+    }
+
+    pendingTrack.activePage = static_cast<uint8_t>(
+        plan.anchorLinear / core::state::macro::MACRO_COUNT
+    );
+    const bool trackChanged =
+        std::memcmp(
+            &historyPayload.beforeTrack,
+            &pendingTrack,
+            sizeof(pendingTrack)
+        ) != 0;
+    const bool controlChanged =
+        std::memcmp(
+            historyPayload.beforeControl.get(),
+            &pendingDomain,
+            sizeof(pendingDomain)
+        ) != 0;
+    if (!trackChanged && !controlChanged) return true;
+
+    pages_->control.authored = pendingDomain;
+    pages_->control.markAuthoredMutation();
+    pages_->tracks[plan.targetTrack] = pendingTrack;
+    pages_->syncActiveTrackCache();
+    pages_->setActivePage(pendingTrack.activePage);
+
+    for (uint8_t page = plan.existingPageCount;
+         page < plan.requiredPageCount;
+         ++page) {
+        clearManualForPage(stateRefs_(), plan.targetTrack, page);
+    }
+    for (uint8_t index = 0U; index < plan.count; ++index) {
+        const auto& entry = plan.entries[index];
+        clearManualForAddress(
+            stateRefs_(),
+            core::state::macro::MacroAutomationSlotAddress{
+                .track = plan.targetTrack,
+                .page = entry.targetPage,
+                .macro = entry.targetMacro,
+            }
+        );
+    }
+    finalizeStructureChange(stateRefs_(), operations_);
+    return history_->commitPreparedPageStructureSnapshot(
+        *pages_,
+        std::move(historyChange)
+    );
 }
 
 }  // namespace core::handler

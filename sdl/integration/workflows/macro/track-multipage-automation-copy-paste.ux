@@ -6,25 +6,28 @@
 0 scenario macro-track-multipage-automation
 80 capture screen source_track_page_3
 
-# Enter Structure / Tracks, then copy Track 1.
+# Switch the held-NAV context Page -> Track, then copy the focused Track 1.
+# This workflow validates the complete Track payload; multi-selection is
+# covered separately.
 120 button NAV down
-1190 tick
-1250 button NAV up
-1400 tap BOTTOM_RIGHT 60
-1550 capture screen track_copied
+200 encoder NAV -1
+280 button NAV up
+420 tap BOTTOM_RIGHT 60
+570 capture screen track_copied
 
 # Move to the next track add slot and paste the full track there.
-1700 encoder NAV 1
-1860 capture screen track_add_target
-2000 button BOTTOM_RIGHT down
-3140 tick
-3240 button BOTTOM_RIGHT up
-3490 capture screen pasted_track_page_3
+720 encoder NAV 1
+880 capture screen track_add_target
+1020 button BOTTOM_RIGHT down
+2160 tick
+2260 button BOTTOM_RIGHT up
+2510 capture screen pasted_track_page_3
 
-# Apply Track -> Page, leave Structure, then focus Macro 2. The pasted track
-# must still expose Page 3 and keep both Automation lanes.
-3640 tap NAV 60
-3790 tap NAV 60
-3940 tap NAV 60
-4090 encoder NAV 1
-4240 capture screen pasted_track_macro_2_focused
+# Use the same held selector Track -> Page -> Macro and focus Macro 2. The
+# pasted track must still expose Page 3 and keep both Automation lanes.
+2650 button NAV down
+2730 encoder NAV 1
+2810 encoder NAV 1
+2890 button NAV up
+3030 encoder NAV 1
+3190 capture screen pasted_track_macro_2_focused

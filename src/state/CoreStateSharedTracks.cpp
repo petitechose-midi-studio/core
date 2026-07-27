@@ -15,10 +15,8 @@
 #include "state/CoreStateBootstrap.hpp"
 #include "state/CoreStateLifecycle.hpp"
 #include "state/shared/SharedTrackCoordinator.hpp"
-#include "macro/MacroPersistenceWorkflow.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
-#include "sequencer/SequencerPersistenceWorkflow.hpp"
 #include "sequencer/SequencerCcLanePatternOps.hpp"
 #include "sequencer/SequencerContentViewOps.hpp"
 #include "sequencer/SequencerStructureHistory.hpp"
@@ -95,6 +93,43 @@ void CoreState::publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t
     }
 }
 
+FLASHMEM void CoreState::reconcilePreparedMacroTrackTransfer(
+    uint16_t capturedTrackMask
+) {
+    for (uint8_t track = 0U;
+         track < macro::TRACK_COUNT;
+         ++track) {
+        if ((capturedTrackMask &
+             static_cast<uint16_t>(1U << track)) == 0U) {
+            continue;
+        }
+        (void)macroUi.manualOverrides.clearTrack(track);
+    }
+    macroUi.refreshManualOverrideMask(
+        pages.currentActiveTrack(),
+        pages.currentActivePage()
+    );
+    macroUi.automationEditRevision.set(
+        macroUi.automationEditRevision.get() + 1U
+    );
+    macroUi.runtimeProjectionRevision.set(
+        macro::nextMacroRuntimeProjectionRevision(
+            macroUi.runtimeProjectionRevision.get(),
+            macro::kMacroRuntimeProjectionDirtyConfig
+        )
+    );
+    macro::MacroWorkflow::syncRuntimeFromActivePage(macros, pages);
+    statusBar.pageName.set(pages.activePageData().name);
+    configRevision.set(macro::nextMacroConfigRevision(
+        configRevision.get(),
+        macro::kMacroConfigDirtyAll
+    ));
+    project::reconcileProjectModulatorNavigationAfterHistory(
+        projectNavigation,
+        pages.control.authored.modulation
+    );
+}
+
 bool CoreState::refreshSharedTrackStateFromMacroPages() {
     return refreshSharedTrackStateFromMacroPages_(true);
 }
@@ -103,39 +138,12 @@ bool CoreState::refreshSharedTrackStateFromSequencer() {
     return refreshSharedTrackStateFromSequencer_(true);
 }
 
-FLASHMEM persistence::PersistenceWriteStatus CoreState::recoverPersistenceFromRamAfterStorageReopen() {
-    auto status = settings.saveAllStatus(
+FLASHMEM persistence::PersistenceWriteStatus CoreState::recoverSettingsFromRamAfterStorageReopen() {
+    const auto status = settings.saveAllStatus(
         midiSync,
         sharedTrackEnabledMask.get(),
         sharedTrackActive.get()
     );
-    if (status != persistence::PersistenceWriteStatus::OK) return status;
-
-    status = settings.saveDataManagerMacroShortcutLeftStatus(
-        static_cast<uint8_t>(dataManager.macroShortcutLeft.get())
-    );
-    if (status != persistence::PersistenceWriteStatus::OK) return status;
-    status = settings.saveDataManagerMacroShortcutRightStatus(
-        static_cast<uint8_t>(dataManager.macroShortcutRight.get())
-    );
-    if (status != persistence::PersistenceWriteStatus::OK) return status;
-    status = settings.saveDataManagerSeqShortcutLeftStatus(
-        static_cast<uint8_t>(dataManager.seqShortcutLeft.get())
-    );
-    if (status != persistence::PersistenceWriteStatus::OK) return status;
-    status = settings.saveDataManagerSeqShortcutRightStatus(
-        static_cast<uint8_t>(dataManager.seqShortcutRight.get())
-    );
-    if (status != persistence::PersistenceWriteStatus::OK) return status;
-    status = settings.commitStatus();
-    if (status != persistence::PersistenceWriteStatus::OK) return status;
-
-    status = macroPersistence.initStatus();
-    macroDomain_.persistenceReady = status == persistence::PersistenceWriteStatus::OK;
-    if (status != persistence::PersistenceWriteStatus::OK) return status;
-
-    status = sequencerPersistence.initStatus();
-    sequencerDomain_.persistenceReady = status == persistence::PersistenceWriteStatus::OK;
     if (status != persistence::PersistenceWriteStatus::OK) return status;
 
     sharedTrackPersistPending_ = false;

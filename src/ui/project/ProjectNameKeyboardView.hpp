@@ -33,12 +33,12 @@ public:
         bool shiftActive
     );
     [[nodiscard]] static ContextActionStripProps bottomActionStripProps(
-        bool visible
+        bool visible,
+        bool playing
     );
 
 private:
     struct KeyWidgets {
-        lv_obj_t* container = nullptr;
         lv_obj_t* label = nullptr;
         lv_obj_t* shiftLabel = nullptr;
     };

@@ -11,6 +11,7 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
+#include <config/App.hpp>
 #include "../../src/handler/macro/MacroEditDomainServices.hpp"
 #include "../../src/handler/macro/MacroEditHandler.hpp"
 #include "../../src/handler/macro/MacroMidiCcRuntimeAdapter.hpp"
@@ -61,10 +62,7 @@ struct MacroEditHarness {
     core::handler::MacroEditHandler handler;
 
     MacroEditHarness()
-        : state(storage.settings,
-                storage.macroLibrary,
-                storage.sequencerPatternLibrary,
-                storage.sequencerSetLibrary)
+        : state(storage.settings)
         , services(core::handler::MacroEditDomainServices::fromCoreState(state))
         , performanceServices(
               core::handler::MacroPerformanceDomainServices::fromCoreState(state)
@@ -78,7 +76,7 @@ struct MacroEditHarness {
               performanceServices,
               midiCoordinator
           )
-        , inputBinding(eventBus, mockTimeMs)
+        , inputBinding(eventBus, mockTimeMs, Config::Input::CONFIG)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
         , overlays(state.overlays, buttons)
@@ -152,16 +150,17 @@ struct MacroEditHarness {
 
 void openMacroEdit(MacroEditHarness& h, uint8_t macroIndex, uint32_t releaseAtMs) {
     h.tick(0);
+    h.state.pages.setMacroSlotActive(macroIndex, true);
+    h.state.macroUi.focusedMacroSlot.set(macroIndex);
     h.state.macroUi.performanceOverlayMode.set(
         core::state::macro::MacroPerformanceOverlayMode::EDIT
     );
-    h.pressMacro(macroIndex);
+    h.press(Config::ButtonID::NAV);
+    h.tick(releaseAtMs);
+    h.release(Config::ButtonID::NAV);
     assert(h.state.macroEdit.visible.get());
     assert(h.state.macroEdit.editingIndex.get() == macroIndex);
     assert(h.overlays.current() == core::ui::OverlayType::MACRO_EDIT);
-    h.tick(releaseAtMs);
-    h.releaseMacro(macroIndex);
-    h.release(Config::ButtonID::LEFT_BOTTOM);
 }
 
 void test_quick_release_keeps_macro_edit_open_and_left_top_closes() {

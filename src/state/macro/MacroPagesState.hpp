@@ -2,7 +2,7 @@
 
 /**
  * @file MacroPagesState.hpp
- * @brief Multi-page macro configuration with persistence support
+ * @brief In-memory multi-page Macro configuration
  *
  * Manages a bank of macro tracks. Each track stores:
  * - Active page index

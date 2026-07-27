@@ -7,8 +7,10 @@
 #include "state/MacroState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/StructureClipboardPastePlan.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroHistory.hpp"
+#include "state/macro/MacroSlotClipboardPlan.hpp"
 #include "state/macro/MacroUiState.hpp"
 
 namespace core::state {
@@ -78,6 +80,27 @@ public:
     bool removeMacroAutomation(uint8_t index) const;
     bool copyMacroAutomation(uint8_t index, core::state::StructureClipboardState& clipboard) const;
     bool pasteMacroAutomation(uint8_t index, const core::state::StructureClipboardState& clipboard) const;
+    bool pasteMacroSlotSelection(
+        const core::state::StructureClipboardState& clipboard,
+        const core::state::macro::MacroSlotClipboardPlan& plan
+    ) const;
+    bool pasteMacroPageSelection(
+        const core::state::StructureClipboardState& clipboard,
+        const core::state::MacroPageSelectionPastePlan& plan
+    ) const;
+    bool copyTrackSelection(
+        uint16_t selectedMask,
+        core::state::StructureClipboardState& clipboard
+    ) const;
+    [[nodiscard]] core::state::ClipboardTransferPlan
+    trackSelectionPastePlan(
+        const core::state::StructureClipboardState& clipboard,
+        uint8_t targetTrack
+    ) const;
+    bool pasteTrackSelection(
+        const core::state::StructureClipboardState& clipboard,
+        uint8_t targetTrack
+    ) const;
 
 private:
     StateRefs stateRefs_() const;

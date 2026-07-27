@@ -82,8 +82,6 @@ Supported capture scenarios:
 | `seq-quick-controls` | sequencer quick-control selector |
 | `view-selector` | active view selector overlay |
 | `settings` | device settings view |
-| `data-manager` | Data Manager overlay |
-| `data-manager-dialog` | Data Manager command dialog |
 
 ## UX Scenario Replay
 
@@ -112,10 +110,10 @@ plain `.ux` scripts with comments documenting intent, grouped by feature area:
 
 | Workflow group | User path covered |
 |---|---|
-| `smoke/` | Global view selector, project-wide history, and overlay exclusivity smoke checks. |
+| `smoke/` | Global View Selector, Project history, overlay exclusivity, and invariant Transport pass-through. |
 | `overlays/` | Overlay authority and recovery. |
 | `macro/` | Macro performance and edit gestures. |
-| `data-manager/` | Data Manager dialogs and command palette flows. |
+| `project/` | File-backed project navigation, naming, save, load, and deletion flows. |
 | `sequencer/editing/` | Step editing, quick controls, and pattern variation editing. |
 | `sequencer/runtime/` | Playhead progression and runtime sequencer feedback. |
 | `sequencer/settings/` | Project/scale settings workflows. |

@@ -11,6 +11,7 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 
+#include <config/App.hpp>
 #include <config/Timing.hpp>
 
 #include "../../src/app/ExtmemAllocator.hpp"
@@ -53,11 +54,8 @@ struct ViewSwitcherHarness {
     core::handler::ViewSwitcherHandler handler;
 
     ViewSwitcherHarness()
-        : state(storages.settings,
-                storages.macroLibrary,
-                storages.sequencerPatternLibrary,
-                storages.sequencerSetLibrary)
-        , inputBinding(eventBus, mockTimeMs)
+        : state(storages.settings)
+        , inputBinding(eventBus, mockTimeMs, Config::Input::CONFIG)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
         , overlays(state.overlays, buttons)
@@ -562,7 +560,7 @@ void test_empty_global_history_keys_are_no_ops() {
 void test_selector_does_not_open_when_overlay_or_structure_selection_is_active() {
     {
         ViewSwitcherHarness h;
-        h.state.overlays.show(core::ui::OverlayType::DATA_MANAGER);
+        h.state.overlays.show(core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR);
         h.tap(Config::ButtonID::LEFT_TOP);
         assert(!h.state.viewSelector.visible.get());
     }
@@ -586,6 +584,30 @@ void test_selector_does_not_open_when_overlay_or_structure_selection_is_active()
     {
         ViewSwitcherHarness h;
         h.state.activeView.set(core::ui::ViewType::SEQUENCER);
+        h.state.trackNavigation.selection.active.set(true);
+        h.tap(Config::ButtonID::LEFT_TOP);
+        assert(!h.state.viewSelector.visible.get());
+    }
+
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::MACRO);
+        h.state.macroUi.slotSelection.active.set(true);
+        h.tap(Config::ButtonID::LEFT_TOP);
+        assert(!h.state.viewSelector.visible.get());
+    }
+
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::MACRO);
+        h.state.macroUi.pageSelection.active.set(true);
+        h.tap(Config::ButtonID::LEFT_TOP);
+        assert(!h.state.viewSelector.visible.get());
+    }
+
+    {
+        ViewSwitcherHarness h;
+        h.state.activeView.set(core::ui::ViewType::MACRO);
         h.state.trackNavigation.selection.active.set(true);
         h.tap(Config::ButtonID::LEFT_TOP);
         assert(!h.state.viewSelector.visible.get());

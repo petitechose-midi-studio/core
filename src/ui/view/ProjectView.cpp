@@ -408,7 +408,10 @@ void ProjectView::renderKeyboardActionStrips(bool visible) {
     if (bottom_action_strip_) {
         bottom_action_strip_->render(
             core::ui::project::ProjectNameKeyboardView::
-                bottomActionStripProps(visible)
+                bottomActionStripProps(
+                    visible,
+                    state_refs_.statusBar.playing.get()
+                )
         );
     }
 }

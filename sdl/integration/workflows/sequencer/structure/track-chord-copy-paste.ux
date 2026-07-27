@@ -84,8 +84,8 @@
 6800 scenario seq-track-paste-single
 6950 capture screen track_paste_source
 
-# Start transport before a compatible clipboard exists. Once the paste plan is
-# visible, BOTTOM_CENTER becomes Details and must never toggle transport.
+# Start transport before a compatible clipboard exists. BOTTOM_CENTER remains
+# the invariant transport binding while LEFT_CENTER owns paste-plan Details.
 7050 tap BOTTOM_CENTER 60
 7250 capture screen track_paste_transport_playing
 
@@ -99,9 +99,9 @@
 8150 capture screen track_paste_summary
 
 # Details exposes the exact direct mapping while keeping the paste anchor fixed.
-8250 tap BOTTOM_CENTER 60
+8250 tap LEFT_CENTER 60
 8450 capture screen track_paste_details_1
-8750 tap BOTTOM_CENTER 60
+8750 tap LEFT_CENTER 60
 9050 capture screen track_paste_summary_restored
 
 # An armed release is explicitly non-mutating and leaves a short Cancelled

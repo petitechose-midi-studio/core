@@ -30,6 +30,8 @@ constexpr uint32_t PAGE_CURSOR_COLOR = theme::color::MACRO_1;
 constexpr uint32_t PAGE_SELECTION_COLOR = theme::color::MACRO_6;
 constexpr uint32_t PAGE_DUPLICATE_PREVIEW_COLOR = theme::color::MACRO_4;
 constexpr uint32_t PAGE_DUPLICATE_OVERWRITE_COLOR = 0xFFB000;
+constexpr uint32_t PAGE_DUPLICATE_BLOCKED_COLOR =
+    theme::color::MACRO_AUTOMATION_RECORDING;
 
 template <size_t N>
 FLASHMEM void setLabelTextIfChanged(lv_obj_t* label, std::array<char, N>& cache, const char* text) {
@@ -327,9 +329,11 @@ FLASHMEM void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
                     header_model::MARKER_GAP
                 )
             );
-            const uint32_t color = visual.destinationOverwrite
-                ? PAGE_DUPLICATE_OVERWRITE_COLOR
-                : PAGE_DUPLICATE_PREVIEW_COLOR;
+            const uint32_t color = visual.destinationBlocked
+                ? PAGE_DUPLICATE_BLOCKED_COLOR
+                : (visual.destinationOverwrite
+                    ? PAGE_DUPLICATE_OVERWRITE_COLOR
+                    : PAGE_DUPLICATE_PREVIEW_COLOR);
             drawStripRect(layer, area, lv_color_hex(color), LV_OPA_COVER, 1);
         }
     }
@@ -365,6 +369,8 @@ FLASHMEM void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& pro
                                        props.pageDestinationPreviewMask ||
                                    strip_cached_page_destination_overwrite_mask_ !=
                                        props.pageDestinationOverwriteMask ||
+                                   strip_cached_page_destination_blocked_mask_ !=
+                                       props.pageDestinationBlockedMask ||
                                    strip_cached_preview_page_add_slot_ != props.previewPageAddSlot;
 
     if (!stripStateChanged && !widthChanged) {
@@ -381,6 +387,8 @@ FLASHMEM void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& pro
     strip_cached_page_source_marker_mask_ = props.pageSourceMarkerMask;
     strip_cached_page_destination_preview_mask_ = props.pageDestinationPreviewMask;
     strip_cached_page_destination_overwrite_mask_ = props.pageDestinationOverwriteMask;
+    strip_cached_page_destination_blocked_mask_ =
+        props.pageDestinationBlockedMask;
     strip_cached_preview_page_add_slot_ = props.previewPageAddSlot;
     strip_draw_props_ = props;
     lv_obj_invalidate(strip_row_);
