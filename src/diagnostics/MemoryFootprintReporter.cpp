@@ -75,8 +75,23 @@ MemoryHighWater& highWater() {
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 constexpr uint32_t STACK_WATERMARK_PATTERN = UINT32_C(0xA55A3CC3);
+// Teensyduino installs a 32-byte NOACCESS MPU region at _ebss to trap stack
+// overflow. The watermark must begin after that guard, never on _ebss itself.
+constexpr uintptr_t STACK_MPU_GUARD_BYTES = 32U;
 constexpr uintptr_t STACK_WATERMARK_SAFETY_BYTES = 1024U;
 constexpr size_t PSRAM_ALLOCATION_OVERHEAD = HEADER_SZ * 2U;
+
+constexpr uintptr_t stackWatermarkLowAddress(uintptr_t ebss) {
+    return (
+        ebss + STACK_MPU_GUARD_BYTES + alignof(uint32_t) - 1U
+    ) & ~(static_cast<uintptr_t>(alignof(uint32_t) - 1U));
+}
+
+static_assert(
+    stackWatermarkLowAddress(UINT32_C(0x20014B80)) ==
+        UINT32_C(0x20014BA0),
+    "RAM1 watermark must skip the Teensy MPU stack guard"
+);
 
 uint32_t boundedU32(size_t value) {
     return static_cast<uint32_t>(std::min<size_t>(value, UINT32_MAX));
@@ -274,9 +289,9 @@ FLASHMEM void beginMemoryFootprintTracking() {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     auto& state = highWater();
     bootstrapPsramTracker(state);
-    const uintptr_t low = (
-        reinterpret_cast<uintptr_t>(&_ebss) + alignof(uint32_t) - 1U
-    ) & ~(static_cast<uintptr_t>(alignof(uint32_t) - 1U));
+    const uintptr_t low = stackWatermarkLowAddress(
+        reinterpret_cast<uintptr_t>(&_ebss)
+    );
     const uintptr_t stackPointer = currentStackPointer();
     const uintptr_t high = stackPointer >
             low + STACK_WATERMARK_SAFETY_BYTES
@@ -285,14 +300,16 @@ FLASHMEM void beginMemoryFootprintTracking() {
         : low;
     if (high <= low) return;
 
-    oc::realtime::InterruptGuard lock;
-    auto* cursor = reinterpret_cast<volatile uint32_t*>(low);
-    auto* const end = reinterpret_cast<volatile uint32_t*>(high);
-    while (cursor < end) {
-        *cursor++ = STACK_WATERMARK_PATTERN;
+    {
+        oc::realtime::InterruptGuard lock;
+        auto* cursor = reinterpret_cast<volatile uint32_t*>(low);
+        auto* const end = reinterpret_cast<volatile uint32_t*>(high);
+        while (cursor < end) {
+            *cursor++ = STACK_WATERMARK_PATTERN;
+        }
+        state.stackWatermarkLow = low;
+        state.stackWatermarkHigh = high;
     }
-    state.stackWatermarkLow = low;
-    state.stackWatermarkHigh = high;
 #endif
 }
 
@@ -487,7 +504,8 @@ FLASHMEM void logMemoryFootprint(const char* phase) {
     );
 
     const uintptr_t stackPointer = currentStackPointer();
-    const uintptr_t ram1StaticEnd = reinterpret_cast<uintptr_t>(&_ebss);
+    const uintptr_t ram1StaticEnd =
+        reinterpret_cast<uintptr_t>(&_ebss) + STACK_MPU_GUARD_BYTES;
     const uintptr_t stackTop = reinterpret_cast<uintptr_t>(&_estack);
     const uintptr_t highWaterBoundary = stackHighWaterBoundary(high);
     OC_LOG_INFO(
