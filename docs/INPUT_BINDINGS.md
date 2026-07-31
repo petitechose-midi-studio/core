@@ -70,8 +70,9 @@ remain valid.
 | View Selector | `NAV` select/confirm, `LEFT_CENTER` Undo, `LEFT_BOTTOM` Redo, `LEFT_TOP` apply/close |
 | Track Editor | `BOTTOM_LEFT` Mute, `BOTTOM_RIGHT` Solo |
 | Track Paste preflight | `LEFT_CENTER` Summary/Details, `BOTTOM_RIGHT` Copy/Paste and guard |
-| Step Editor | short `NAV` focused-row action; long `NAV` Step Preset |
-| Step Preset | `NAV` asset/detail, `OPT` preview state, `BOTTOM_LEFT` Load/Save, `BOTTOM_RIGHT` action/guard, `LEFT_TOP` or `LEFT_CENTER` close |
+| Step Editor | short `NAV` focused-row action; long `NAV` opens the Step Preset library |
+| Chord Editor root | `NAV` field/action; long `NAV` opens the Chord Preset library; Formula and Source keep their local grammar |
+| Preset Library | `NAV` selects then enters Detail, `OPT` adjusts an explicit detail row only, `BOTTOM_LEFT` Load/Save, `BOTTOM_RIGHT` primary action/guard, `LEFT_TOP` backs out one level, `LEFT_CENTER` is consumed without action |
 | Project name keyboard | `NAV` key/insert including `SPC`, `OPT` row, held `LEFT_CENTER` Shift, `BOTTOM_LEFT` Backspace, `LEFT_BOTTOM` Clear, `LEFT_TOP` Cancel, `BOTTOM_RIGHT` Validate |
 | CC Lane | contextual settings use `BOTTOM_RIGHT`; Transport remains `BOTTOM_CENTER` |
 
@@ -101,4 +102,8 @@ the quarantine invariant but must not become a second overlay API.
 - SDL workflows for overlay exclusivity, view-selector roundtrip, Project name
   keyboard, Step Preset, Track Editor, Track Paste, and Transport pass-through
   while an overlay remains active;
-- `pio run -e dev` to preserve the firmware memory gates.
+- `macro/structure/selection-lifecycle.ux`,
+  `sequencer/structure/structure-selection-lifecycle.ux` and
+  `sequencer/structure/step-selection.ux` for the shared selection lifecycle;
+- `ms build core --target teensy --env dev` to preserve the firmware memory
+  gates.

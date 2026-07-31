@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import argparse
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 
@@ -13,6 +15,8 @@ UX_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_ux_recorder.ld"
 DIAGNOSTICS_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_diagnostics.ld"
 COLD_PLACEMENT = ROOT / "script" / "pio" / "imxrt1062_t41_cold_placement.ld"
 MEMORY_GATE = ROOT / "script" / "pio" / "check_memory_budget.py"
+ATTENTION_LINE_THRESHOLD = 800
+ATTENTION_SUFFIXES = frozenset((".c", ".cc", ".cpp", ".h", ".hpp", ".ux"))
 
 FORBIDDEN_LEGACY = (
     "PERF_LOG",
@@ -37,6 +41,33 @@ FORBIDDEN_PERSISTENCE_PATHS = (
     "./sets.bin",
     "macro-workspace",
     "sequencer-workspace",
+)
+
+FORBIDDEN_MUTATION_SYMBOLS = (
+    "eraseCurrentStructure",
+    "removeCurrentStructure",
+    "applyBottomLeftTapCurrentStructure",
+    "eraseTrack",
+    "erasePage",
+    "removeMacroAutomation",
+    "removeSlot",
+    "removePage",
+)
+
+ALLOWED_LOW_LEVEL_ERASE_SYMBOLS = frozenset(
+    (
+        "eraseCurveRecord",
+        "eraseDense",
+        "eraseIdentity",
+        "eraseWithBarrier",
+    )
+)
+
+CORE_STATE_PERSISTENCE_COMPOSITION_INCLUDES = frozenset(
+    (
+        "persistence/DeviceSettingsStore.hpp",
+        "persistence/PersistenceStatus.hpp",
+    )
 )
 
 FORBIDDEN_HEAP_REACTIVE_STORAGE = (
@@ -84,8 +115,18 @@ BOTTOM_CENTER_BINDING = re.compile(
 
 GLOBAL_PASS_THROUGH = re.compile(r"\.globalPassThrough\s*\(\s*\)")
 
+INCLUDE_DIRECTIVE = re.compile(
+    r'^\s*#\s*include\s*[<"]([^">]+)[">]',
+    flags=re.MULTILINE,
+)
+
+DOMAIN_ERASE_SYMBOL = re.compile(r"\berase[A-Z][A-Za-z0-9_]*\b")
+
+MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+
+
 def source_files():
-    for suffix in ("*.hpp", "*.cpp"):
+    for suffix in ("*.h", "*.hpp", "*.c", "*.cc", "*.cpp"):
         yield from SOURCE_ROOT.rglob(suffix)
 
 
@@ -100,8 +141,271 @@ def relative(path: Path) -> str:
     return path.relative_to(SOURCE_ROOT).as_posix()
 
 
-def main() -> int:
+def layer_dependency_error(rel: str, include: str) -> str | None:
+    forbidden_targets: tuple[str, ...] = ()
+    if rel.startswith("handler/"):
+        forbidden_targets = ("ui/", "context/")
+    elif rel.startswith("persistence/"):
+        forbidden_targets = ("handler/", "ui/", "context/")
+    elif rel.startswith("sequencer/"):
+        forbidden_targets = ("handler/", "ui/", "context/", "persistence/")
+    elif rel.startswith("ui/"):
+        forbidden_targets = ("handler/", "context/", "persistence/")
+    elif rel.startswith("state/"):
+        forbidden_targets = ("handler/", "ui/", "context/")
+        if include.startswith("persistence/") and not (
+            rel == "state/CoreState.hpp"
+            and include in CORE_STATE_PERSISTENCE_COMPOSITION_INCLUDES
+        ):
+            return (
+                f"{rel}: State must not depend on Persistence "
+                f"({include}); CoreState.hpp has only the explicit "
+                "Device Settings composition includes"
+            )
+
+    if include.startswith(forbidden_targets):
+        target = include.split("/", maxsplit=1)[0]
+        owner = rel.split("/", maxsplit=1)[0]
+        return f"{rel}: {owner} must not depend on {target} ({include})"
+
+    if (
+        rel.startswith("state/CoreState")
+        and include.startswith("sequencer/")
+    ):
+        return (
+            f"{rel}: ambiguous Core State include {include}; "
+            "use state/sequencer/... explicitly"
+        )
+    return None
+
+
+def mutation_contract_errors(rel: str, content: str) -> list[str]:
+    if not rel.startswith(("state/", "handler/", "persistence/")):
+        return []
+
     errors: list[str] = []
+    for symbol in sorted(set(DOMAIN_ERASE_SYMBOL.findall(content))):
+        if symbol not in ALLOWED_LOW_LEVEL_ERASE_SYMBOLS:
+            errors.append(
+                f"{rel}: product-domain symbol {symbol} violates the "
+                "ADR-0065 erase contract"
+            )
+    for symbol in FORBIDDEN_MUTATION_SYMBOLS:
+        if re.search(rf"\b{re.escape(symbol)}\b", content):
+            errors.append(f"{rel}: obsolete mutation symbol {symbol}")
+    return errors
+
+
+def attention_category(rel: str) -> str | None:
+    if rel.startswith("test/"):
+        return "tests"
+    if rel.startswith("sdl/"):
+        return "sdl"
+    if rel.startswith(
+        ("src/validation/", "src/context/standalone/ux/")
+    ):
+        return "validation"
+    if rel.startswith("src/"):
+        return "product"
+    return None
+
+
+def version_control_source_candidates() -> list[Path]:
+    result = subprocess.run(
+        (
+            "git",
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            "src",
+            "test",
+            "sdl",
+        ),
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"git ls-files failed: {detail}")
+
+    paths: list[Path] = []
+    for raw_path in result.stdout.split(b"\0"):
+        if not raw_path:
+            continue
+        rel = raw_path.decode("utf-8", errors="strict").replace("\\", "/")
+        path = ROOT / rel
+        if path.is_file() and path.suffix.lower() in ATTENTION_SUFFIXES:
+            paths.append(path)
+    return paths
+
+
+def attention_inventory(paths: list[Path]) -> list[tuple[str, int, str]]:
+    inventory: list[tuple[str, int, str]] = []
+    for path in paths:
+        rel = path.relative_to(ROOT).as_posix()
+        category = attention_category(rel)
+        if category is None:
+            continue
+        line_count = len(path.read_text(encoding="utf-8").splitlines())
+        if line_count > ATTENTION_LINE_THRESHOLD:
+            inventory.append((category, line_count, rel))
+    return sorted(inventory, key=lambda row: (-row[1], row[2]))
+
+
+def local_markdown_target(raw_target: str) -> str | None:
+    target = raw_target.strip().strip("<>")
+    if not target or target.startswith(
+        ("#", "http://", "https://", "mailto:")
+    ):
+        return None
+    return target.split("#", maxsplit=1)[0]
+
+
+def documentation_contract_errors() -> list[str]:
+    required_docs = (
+        ROOT / "README.md",
+        ROOT / "docs" / "README.md",
+        ROOT / "docs" / "DEVELOPER_ONBOARDING.md",
+        ROOT / "docs" / "CORE_ARCHITECTURE.md",
+        ROOT / "docs" / "INPUT_BINDINGS.md",
+        ROOT / "docs" / "ARCHITECTURE_REVIEW_RULES.md",
+    )
+    errors: list[str] = []
+    for path in required_docs:
+        if not path.is_file():
+            errors.append(
+                f"{path.relative_to(ROOT).as_posix()}: "
+                "required developer entrypoint is missing"
+            )
+            continue
+        content = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
+        if re.search(r"\b(?:pio|platformio)\s+test\b", content, re.IGNORECASE):
+            errors.append(
+                f"{rel}: native tests must use the workspace ms test command"
+            )
+        for raw_target in MARKDOWN_LINK.findall(content):
+            target = local_markdown_target(raw_target)
+            if target is None:
+                continue
+            resolved = path.parent / target
+            if not resolved.exists():
+                errors.append(f"{rel}: broken local link {target}")
+    return errors
+
+
+def self_test() -> int:
+    checks = (
+        (
+            layer_dependency_error(
+                "handler/macro/Example.cpp",
+                "ui/view/MacroView.hpp",
+            )
+            is not None,
+            "Handler-to-UI dependency is rejected",
+        ),
+        (
+            layer_dependency_error(
+                "handler/macro/Example.cpp",
+                "state/macro/MacroState.hpp",
+            )
+            is None,
+            "Handler-to-State dependency is accepted",
+        ),
+        (
+            layer_dependency_error(
+                "state/CoreState.hpp",
+                "persistence/DeviceSettingsStore.hpp",
+            )
+            is None,
+            "CoreState composition exception is accepted",
+        ),
+        (
+            layer_dependency_error(
+                "state/CoreState.hpp",
+                "persistence/UnrelatedStore.hpp",
+            )
+            is not None,
+            "CoreState composition exception is exact, not directory-wide",
+        ),
+        (
+            layer_dependency_error(
+                "state/sequencer/Example.cpp",
+                "persistence/ExampleCodec.hpp",
+            )
+            is not None,
+            "general State-to-Persistence dependency is rejected",
+        ),
+        (
+            layer_dependency_error(
+                "state/CoreState.cpp",
+                "sequencer/SequencerState.hpp",
+            )
+            is not None,
+            "ambiguous CoreState Sequencer include is rejected",
+        ),
+        (
+            bool(
+                mutation_contract_errors(
+                    "handler/macro/Example.cpp",
+                    "void erasePage();",
+                )
+            ),
+            "product-domain erase verb is rejected",
+        ),
+        (
+            not mutation_contract_errors(
+                "persistence/Example.cpp",
+                "void eraseWithBarrier();",
+            ),
+            "low-level erase primitive is accepted",
+        ),
+        (
+            attention_category(
+                "src/context/standalone/ux/StandaloneMacroUxSurfaces.cpp"
+            )
+            == "validation",
+            "semantic UX source is classified as validation",
+        ),
+        (
+            attention_category("src/handler/macro/MacroEditHandler.cpp")
+            == "product",
+            "product source is classified as product",
+        ),
+        (
+            attention_category("test/test_MacroHistory/test_main.cpp")
+            == "tests",
+            "native test is classified as tests",
+        ),
+        (
+            local_markdown_target(
+                "CORE_ARCHITECTURE.md#layer-ownership"
+            )
+            == "CORE_ARCHITECTURE.md",
+            "local documentation target strips its anchor",
+        ),
+        (
+            local_markdown_target("https://example.com/doc") is None,
+            "external documentation target is ignored",
+        ),
+    )
+    failures = [description for ok, description in checks if not ok]
+    if failures:
+        for failure in failures:
+            print(f"SELF-TEST ERROR: {failure}")
+        return 1
+    print(f"Architecture contract self-tests: OK ({len(checks)}/{len(checks)})")
+    return 0
+
+
+def main(show_inventory: bool = False) -> int:
+    errors: list[str] = []
+
+    errors.extend(documentation_contract_errors())
 
     platformio = PLATFORMIO.read_text(encoding="utf-8")
     if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
@@ -260,6 +564,13 @@ def main() -> int:
         content = path.read_text(encoding="utf-8")
         rel = relative(path)
 
+        for include in INCLUDE_DIRECTIVE.findall(content):
+            dependency_error = layer_dependency_error(rel, include)
+            if dependency_error is not None:
+                errors.append(dependency_error)
+
+        errors.extend(mutation_contract_errors(rel, content))
+
         for marker in FORBIDDEN_LEGACY:
             if marker in content:
                 errors.append(f"{rel}: forbidden legacy marker {marker}")
@@ -312,6 +623,16 @@ def main() -> int:
         SOURCE_ROOT / "persistence" / "SequencerPersistence.cpp",
         SOURCE_ROOT / "state" / "DataManagerState.hpp",
         SOURCE_ROOT / "handler" / "settings" / "DataManagerHandler.hpp",
+        SOURCE_ROOT / "state" / "CoreSettings.hpp",
+        SOURCE_ROOT / "state" / "CoreSettings.cpp",
+        SOURCE_ROOT / "state" / "CoreSettingsCodec.hpp",
+        SOURCE_ROOT / "state" / "CoreSettingsCodec.cpp",
+        SOURCE_ROOT / "state" / "CoreSettingsLayout.hpp",
+        SOURCE_ROOT / "state" / "sequencer" / "SequencerGraphAssetCodec.hpp",
+        SOURCE_ROOT / "state" / "sequencer" / "SequencerGraphAssetCodec.cpp",
+        SOURCE_ROOT / "state" / "sequencer" / "SequencerGraphAssetRecords.hpp",
+        SOURCE_ROOT / "handler" / "common" / "MidiCcGlobalFrameCoordinator.hpp",
+        SOURCE_ROOT / "handler" / "common" / "MidiCcGlobalFrameCoordinator.cpp",
     ):
         if retired_path.exists():
             errors.append(
@@ -358,14 +679,52 @@ def main() -> int:
         if 'extern "C" lv_result_t lv_inv_area' in content:
             errors.append(f"{rel}: direct LVGL invalidation belongs in oc-ui-lvgl")
 
+    try:
+        inventory = attention_inventory(version_control_source_candidates())
+    except RuntimeError as error:
+        errors.append(f"attention inventory unavailable: {error}")
+        inventory = []
+
+    category_order = ("product", "validation", "tests", "sdl")
+    category_counts = {
+        category: sum(1 for row in inventory if row[0] == category)
+        for category in category_order
+    }
+
     if errors:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
 
-    print("Performance architecture contract: OK")
+    print(
+        "Attention inventory "
+        f"(>{ATTENTION_LINE_THRESHOLD} physical lines; advisory): "
+        + ", ".join(
+            f"{category}={category_counts[category]}"
+            for category in category_order
+        )
+        + f", total={len(inventory)}"
+    )
+    if show_inventory:
+        for category, line_count, rel in inventory:
+            print(f"{category:10} {line_count:5} {rel}")
+    print("Core architecture contracts: OK")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    parser = argparse.ArgumentParser(
+        description="Check executable Core architecture contracts."
+    )
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="run deterministic fixture checks for the gate itself",
+    )
+    parser.add_argument(
+        "--inventory",
+        action="store_true",
+        help="print the full advisory >800-line inventory",
+    )
+    args = parser.parse_args()
+    sys.exit(self_test() if args.self_test else main(args.inventory))

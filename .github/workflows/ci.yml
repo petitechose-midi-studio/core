@@ -109,6 +109,12 @@ jobs:
         with:
           working-directory: workspace
 
+      - name: Architecture contracts
+        working-directory: workspace/midi-studio/core
+        run: |
+          python script/dev/check-architecture-contracts.py --self-test
+          python script/dev/check-architecture-contracts.py
+
       - name: Cache ms test tools
         uses: actions/cache@v5
         with:

@@ -82,10 +82,17 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
     add_test(
-        NAME check_PerformanceArchitecture
+        NAME check_ArchitectureContracts
         COMMAND "${Python3_EXECUTABLE}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-performance-architecture.py")
-    set_tests_properties(check_PerformanceArchitecture PROPERTIES LABELS core)
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-architecture-contracts.py")
+    set_tests_properties(check_ArchitectureContracts PROPERTIES LABELS core)
+
+    add_test(
+        NAME check_ArchitectureContractsSelfTest
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-architecture-contracts.py"
+                "--self-test")
+    set_tests_properties(check_ArchitectureContractsSelfTest PROPERTIES LABELS core)
 
     add_test(
         NAME check_TeensyMemoryBudgetParser
