@@ -7,18 +7,19 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/modulation/ModulationDepthParameterMapping.hpp"
+#include "state/modulation/ModulatorEnvelopeParameterMapping.hpp"
+#include "state/modulation/ModulatorLfoParameterMapping.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/modulation/ProjectModulatorSourceSession.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
-#include "ui/modulation/ModulatorAdsrUiModel.hpp"
-#include "ui/modulation/ModulatorLfoUiModel.hpp"
 
 namespace core::handler {
 
 using namespace project_handler_internal;
-namespace adsr_ui = core::ui::modulation::adsr;
-namespace depth_ui = core::ui::modulation::depth;
+namespace depth_parameter = core::state::modulation::depth;
+namespace envelope_parameter = core::state::modulation::envelope;
+namespace lfo_parameter = core::state::modulation::lfo;
 
 namespace {
 
@@ -86,16 +87,17 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             pages_.control.audition.bindingId
         );
         if (!binding) return true;
-        const auto scale = depth_ui::scaleFor(
+        const auto scale = depth_parameter::scaleFor(
             pages_.control.authored.modulation,
             pages_.control.authored.curves,
             *binding
         );
-        const int16_t amount = depth_ui::amountQ15AtNormalized(
+        const int16_t amount = depth_parameter::amountQ15AtNormalized(
             clampNormalized(normalized),
             scale
         );
-        const int16_t percent = depth_ui::amountQ15ToPercent(amount, scale);
+        const int16_t percent =
+            depth_parameter::amountQ15ToPercent(amount, scale);
         if (binding->amountQ15 != amount) {
             binding->amountQ15 = amount;
             pages_.control.markAuthoredMutation();
@@ -120,12 +122,12 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             binding->destination.page,
             binding->destination.macro,
         };
-        const auto scale = depth_ui::scaleFor(
+        const auto scale = depth_parameter::scaleFor(
             pages_.control.authored.modulation,
             pages_.control.authored.curves,
             *binding
         );
-        const int16_t amount = depth_ui::amountQ15AtNormalized(
+        const int16_t amount = depth_parameter::amountQ15AtNormalized(
             clampNormalized(normalized),
             scale
         );
@@ -256,13 +258,15 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             ) || binding == nullptr) {
             return false;
         }
-        const auto scale = depth_ui::scaleFor(
+        const auto scale = depth_parameter::scaleFor(
             pages_.control.authored.modulation,
             pages_.control.authored.curves,
             *binding
         );
-        const int16_t amount = depth_ui::amountQ15AtNormalized(value, scale);
-        const int16_t percent = depth_ui::amountQ15ToPercent(amount, scale);
+        const int16_t amount =
+            depth_parameter::amountQ15AtNormalized(value, scale);
+        const int16_t percent =
+            depth_parameter::amountQ15ToPercent(amount, scale);
         if (binding->amountQ15 != amount) {
             binding->amountQ15 = amount;
             pages_.control.markAuthoredMutation();
@@ -325,14 +329,14 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
                                 : (item == Item::RELEASE
                                     ? ModulatorEnvelopeTimeParameter::RELEASE
                                     : ModulatorEnvelopeTimeParameter::SMOOTH))));
-                const uint16_t count = adsr_ui::durationCount(
+                const uint16_t count = envelope_parameter::durationCount(
                     timing,
                     parameter
                 );
                 (void)setModulatorEnvelopeDuration(
                     parameters,
                     parameter,
-                    adsr_ui::durationAt(
+                    envelope_parameter::durationAt(
                         static_cast<uint16_t>(normalizedToIndex(value, count)),
                         timing,
                         parameter
@@ -429,7 +433,7 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
             parameters.shape = static_cast<ModulatorLfoShape>(
                 normalizedToIndex(
                     value,
-                    core::ui::modulation::lfo::SHAPE_COUNT
+                    lfo_parameter::SHAPE_COUNT
                 )
             );
             break;
@@ -443,10 +447,10 @@ FLASHMEM bool ProjectHandler::setFocusedModulatorValue(float normalized) {
                 ];
             } else {
                 parameters.periodTicks =
-                    core::ui::modulation::lfo::ratePeriodTicks(
+                    lfo_parameter::ratePeriodTicks(
                         static_cast<uint8_t>(normalizedToIndex(
                             value,
-                            core::ui::modulation::lfo::RATE_COUNT
+                            lfo_parameter::RATE_COUNT
                         ))
                     );
             }

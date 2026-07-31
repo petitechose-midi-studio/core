@@ -400,22 +400,22 @@ bool applyModulationAssignments(
     const MacroModulationAssignmentSnapshot& target
 );
 
-bool captureMacroSlotRemovalState(
+bool captureMacroSlotDeletionState(
     const MacroPagesState& pages,
     const MacroAutomationSlotAddress& address,
-    MacroSlotRemovalState& out
+    MacroSlotDeletionState& out
 );
 
-bool liveMacroSlotRemovalStateMatches(
+bool liveMacroSlotDeletionStateMatches(
     const MacroPagesState& pages,
     const MacroAutomationSlotAddress& address,
-    const MacroSlotRemovalState& expected
+    const MacroSlotDeletionState& expected
 );
 
-bool applyMacroSlotRemovalState(
+bool applyMacroSlotDeletionState(
     MacroPagesState& pages,
     const MacroAutomationSlotAddress& address,
-    const MacroSlotRemovalState& target
+    const MacroSlotDeletionState& target
 );
 
 uint64_t pageStructureControlHash(

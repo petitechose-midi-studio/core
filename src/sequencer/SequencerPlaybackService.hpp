@@ -20,6 +20,7 @@ namespace core::sequencer {
 
 struct SequencerCcLaneRuntimeProjectSnapshot;
 struct ProjectTrackRuntimeSnapshot;
+class MidiCcGlobalFrameCoordinator;
 
 /** Fixed tick scratch; production ownership is one PSRAM allocation. */
 struct SequencerCcTemporalRuntimeScratch {
@@ -31,10 +32,6 @@ struct SequencerCcTemporalRuntimeScratch {
 };
 
 static_assert(sizeof(SequencerCcTemporalRuntimeScratch) < 8U * 1024U);
-}
-
-namespace core::handler {
-class MidiCcGlobalFrameCoordinator;
 }
 
 namespace core::sequencer {
@@ -64,8 +61,8 @@ public:
                              core::state::sequencer::SequencerTrackActivationQueue*
                                  trackActivations = nullptr,
                              SequencerCcLaneRuntime* ccLaneRuntime = nullptr,
-                             core::handler::MidiCcGlobalFrameCoordinator*
-                                 ccCoordinator = nullptr,
+                             MidiCcGlobalFrameCoordinator* ccCoordinator =
+                                 nullptr,
                              SequencerCcLaneRuntime* ccPredictiveLaneRuntime = nullptr);
 
     /**
@@ -168,7 +165,7 @@ private:
     core::state::sequencer::SequencerTrackActivationQueue* track_activations_ = nullptr;
     SequencerCcLaneRuntime* cc_lane_runtime_ = nullptr;
     SequencerCcLaneRuntime* cc_predictive_lane_runtime_ = nullptr;
-    core::handler::MidiCcGlobalFrameCoordinator* cc_coordinator_ = nullptr;
+    MidiCcGlobalFrameCoordinator* cc_coordinator_ = nullptr;
     core::app::ExtmemUniquePtr<SequencerCcTemporalRuntimeScratch>
         cc_temporal_scratch_;
     PendingUiProjection pending_ui_projection_{};

@@ -65,8 +65,8 @@ public:
     uint16_t trackEnabledMask() const;
     bool deletePage(uint8_t pageIndex) const;
     bool deleteActiveTrack() const;
-    bool erasePage(uint8_t pageIndex) const;
-    bool eraseTrack(uint8_t trackIndex) const;
+    bool resetPageContent(uint8_t pageIndex) const;
+    bool resetTrackContent(uint8_t trackIndex) const;
     bool pastePage(uint8_t pageIndex,
                    const core::state::macro::MacroPageData& pageData,
                    const core::state::MacroAutomationClipboard* automation = nullptr) const;
@@ -77,7 +77,7 @@ public:
     bool createTrack(uint8_t trackIndex) const;
     bool activateMacroSlot(uint8_t index) const;
     bool clearMacroAutomation(uint8_t index) const;
-    bool removeMacroAutomation(uint8_t index) const;
+    bool deleteMacroSlot(uint8_t index) const;
     bool copyMacroAutomation(uint8_t index, core::state::StructureClipboardState& clipboard) const;
     bool pasteMacroAutomation(uint8_t index, const core::state::StructureClipboardState& clipboard) const;
     bool pasteMacroSlotSelection(

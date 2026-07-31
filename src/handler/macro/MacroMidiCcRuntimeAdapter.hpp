@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "state/macro/MacroConstants.hpp"
 #include "state/macro/MacroPagesState.hpp"
@@ -27,17 +27,21 @@ public:
     MacroMidiCcRuntimeAdapter(
         StateRefs state,
         MacroPerformanceDomainServices services,
-        MidiCcGlobalFrameCoordinator& coordinator
+        core::sequencer::MidiCcGlobalFrameCoordinator& coordinator
     );
 
     MacroMidiCcRuntimeAdapter(const MacroMidiCcRuntimeAdapter&) = delete;
     MacroMidiCcRuntimeAdapter& operator=(const MacroMidiCcRuntimeAdapter&) = delete;
 
     /** Publishes one immediate already-resolved encoder/manual movement. */
-    MidiCcGlobalFrameResult publishLiveManual(uint8_t macroIndex, uint8_t value);
+    core::sequencer::MidiCcGlobalFrameResult publishLiveManual(
+        uint8_t macroIndex,
+        uint8_t value
+    );
 
     bool publishProjectFrame(
-        MidiCcGlobalFrameCoordinator::PersistentAuthorProducer producer,
+        core::sequencer::MidiCcGlobalFrameCoordinator::
+            PersistentAuthorProducer producer,
         void* context
     );
     [[nodiscard]] core::state::modulation::ProjectControlTimeSnapshot
@@ -63,7 +67,7 @@ private:
     core::state::macro::MacroPagesState& pages_;
     const core::state::project::ProjectTrackState& project_tracks_;
     MacroPerformanceDomainServices services_;
-    MidiCcGlobalFrameCoordinator& coordinator_;
+    core::sequencer::MidiCcGlobalFrameCoordinator& coordinator_;
 };
 
 static_assert(

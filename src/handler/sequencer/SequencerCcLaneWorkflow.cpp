@@ -868,14 +868,14 @@ FLASHMEM bool SequencerCcLaneWorkflow::clearFocusedEvent_(uint32_t nowMs) {
     return true;
 }
 
-FLASHMEM bool SequencerCcLaneWorkflow::removeCurrentLane_(uint32_t nowMs) {
+FLASHMEM bool SequencerCcLaneWorkflow::deleteCurrentLane_(uint32_t nowMs) {
     (void)commitEventEdit(nowMs);
     auto& ui = editor_.ccLaneUi;
     LaneBankPtr staged;
     if (!stageCurrentBank_(staged, false) || !staged ||
-        !seq::removeSequencerCcLane(*staged, ui.focusedLane).changed()) return false;
+        !seq::deleteSequencerCcLane(*staged, ui.focusedLane).changed()) return false;
     auto change = prepareChange_(
-        seq::SequencerHistoryActionKind::CcLaneRemove,
+        seq::SequencerHistoryActionKind::CcLaneDelete,
         ui.focusedLane
     );
     if (!change || !installPreparedChange_(std::move(change), std::move(staged))) {
@@ -998,7 +998,7 @@ FLASHMEM bool SequencerCcLaneWorkflow::releaseGuard(
     }
     const auto action = editor_.ccLaneUi.action(slot).hold.action;
     const bool applied = slot == seq::SequencerCcLaneActionSlot::BOTTOM_LEFT
-        ? removeCurrentLane_(nowMs)
+        ? deleteCurrentLane_(nowMs)
         : applySettings_(true, nowMs);
     contextual::resetGuardedAction(guard);
     editor_.ccLaneUi.actionGuard.set(guard);

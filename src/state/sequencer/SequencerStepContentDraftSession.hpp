@@ -73,8 +73,8 @@ struct SequencerStepChordDraftState {
 };
 
 static_assert(
-    sizeof(SequencerStepChordDraftState) <= 24,
-    "Chord authoring must remain a small local POD"
+    sizeof(SequencerStepChordDraftState) <= 28,
+    "Eight-voice Chord authoring must remain a small local POD"
 );
 
 /** Data owned by a Step-content authoring session in hot RAM. */
@@ -101,7 +101,7 @@ struct SequencerStepContentDraftOwnedState {
 };
 
 static_assert(
-    sizeof(SequencerStepContentDraftOwnedState) <= 48,
+    sizeof(SequencerStepContentDraftOwnedState) <= 56,
     "Step draft owned hot state must remain one PSRAM handle, one Chord POD, "
     "and bounded scalar metadata"
 );

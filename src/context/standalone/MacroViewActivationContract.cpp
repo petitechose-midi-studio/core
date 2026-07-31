@@ -9,7 +9,6 @@ FLASHMEM void prepareMacroViewActivation(core::state::CoreState& state) {
         state.macros,
         state.pages
     );
-    state.statusBar.pageName.set(state.pages.activePageData().name);
 }
 
 }  // namespace core::context::standalone

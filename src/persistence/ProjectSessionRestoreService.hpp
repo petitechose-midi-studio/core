@@ -24,8 +24,6 @@ public:
     struct Result {
         Status status = Status::MISSING;
         uint32_t bytes = 0;
-        project_file::LoadStatus loadStatus = project_file::LoadStatus::OK;
-        bool overwriteSafe = true;
 
         bool restored() const {
             return status == Status::RESTORED;

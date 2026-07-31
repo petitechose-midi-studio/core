@@ -29,6 +29,22 @@ FLASHMEM SequencerInteractionContext makeSequencerInteractionContext(
     context.trackSelectionActive = trackUi.selection.active.get();
     context.pageSelectionActive = sequencer.structureUi.pageSelection.active.get();
     context.stepSelectionActive = sequencer.structureUi.stepSelection.active.get();
+    if (context.trackSelectionActive) {
+        context.selectionPlacementActive =
+            trackUi.selection.placementActive();
+        context.selectedItemsAvailable =
+            trackUi.selection.anySelected();
+    } else if (context.pageSelectionActive) {
+        context.selectionPlacementActive =
+            sequencer.structureUi.pageSelection.placementActive();
+        context.selectedItemsAvailable =
+            sequencer.structureUi.pageSelection.anySelected();
+    } else if (context.stepSelectionActive) {
+        context.selectionPlacementActive =
+            sequencer.structureUi.stepSelection.placementActive();
+        context.selectedItemsAvailable =
+            sequencer.structureUi.stepSelection.anySelected();
+    }
     context.patternQuickControlsActive = sequencer.patternQuickControls.selecting.get();
     context.propertySelectorActive = sequencer.stepPropertyInlineSelector.selecting.get();
     context.stepContentSelectorActive = sequencer.stepContentSelector.selecting.get();

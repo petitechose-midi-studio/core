@@ -16,6 +16,7 @@ struct StepContentBadgeProjection {
     bool microSequence = false;
     bool cycleStates = false;
     bool chord = false;
+    bool expansionLimitReached = false;
     uint8_t chordVoiceCount = 1;
     oc::note::sequencer::StepSequencerChordSource chordSource =
         oc::note::sequencer::StepSequencerChordSource::Single;

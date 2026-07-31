@@ -81,7 +81,7 @@ FLASHMEM bool clearProjectSelectionInDomain(
             ++cursor;
             continue;
         }
-        if (!modulation::removeProjectAutomationCurve(
+        if (!modulation::deleteProjectAutomationCurve(
                 domain.automation,
                 domain.curves,
                 destination
@@ -139,7 +139,7 @@ FLASHMEM bool clearProjectDestinationInDomain(
             domain.automation,
             destination
         ) != nullptr &&
-        !modulation::removeProjectAutomationCurve(
+        !modulation::deleteProjectAutomationCurve(
             domain.automation,
             domain.curves,
             destination

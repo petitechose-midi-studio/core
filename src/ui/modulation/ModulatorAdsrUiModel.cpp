@@ -1,5 +1,7 @@
 #include "ui/modulation/ModulatorAdsrUiModel.hpp"
 
+#include <cstdio>
+
 #include <config/PlatformCompat.hpp>
 
 namespace core::ui::modulation::adsr {

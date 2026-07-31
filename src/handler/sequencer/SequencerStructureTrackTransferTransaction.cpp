@@ -208,10 +208,6 @@ FLASHMEM void updateCommitTimeRoutes(
         destination.targetMidiChannel = live.targetMidiChannel;
         destination.targetRouteValid = live.targetRouteValid;
     }
-    if (prepared.plan.count > 0U) {
-        prepared.plan.entry = prepared.plan.entries[0];
-        prepared.plan.hasEntry = true;
-    }
     prepared.plan.availability = livePlan.availability;
     prepared.plan.reason = livePlan.reason;
 }

@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "handler/common/NavigationUtils.hpp"
+#include "SequencerChordEditOps.hpp"
 #include "SequencerStepChordEditorWorkflow.hpp"
 #include "SequencerStepContextRowWorkflow.hpp"
 #include "SequencerStepContentDraftWorkflow.hpp"
@@ -69,7 +70,7 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
     oc::api::ButtonAPI& buttons,
     oc::type::ScopeID sequencerViewScope,
     oc::type::ScopeID overlayScope,
-    oc::type::ScopeID stepPresetOverlayScope,
+    oc::type::ScopeID presetLibraryOverlayScope,
     TimeProviderFn timeProvider
 )
     : overlay_state_(state.overlays)
@@ -77,31 +78,55 @@ FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
     , tracks_(state.tracks)
     , structure_clipboard_(state.structureClipboard)
     , track_ui_(state.trackNavigation)
+    , pattern_pitch_settings_(state.patternPitchSettings)
     , navigation_focus_(state.navigationFocus)
     , history_(state.history)
     , step_presets_(state.stepPresets)
-    , step_preset_picker_(sequencer_, step_presets_, overlays)
+    , chord_presets_(state.chordPresets)
+    , step_preset_library_adapter_(sequencer_, step_presets_)
+    , chord_preset_library_adapter_(sequencer_, chord_presets_)
+    , preset_library_(sequencer_, overlays)
     , overlays_(overlays)
     , encoders_(encoders)
     , buttons_(buttons)
     , sequencer_view_scope_(sequencerViewScope)
     , overlay_scope_(overlayScope)
-    , step_preset_overlay_scope_(stepPresetOverlayScope)
+    , preset_library_overlay_scope_(presetLibraryOverlayScope)
     , time_provider_(timeProvider ? timeProvider : core::time_compat::millis)
 {
     setupBindings();
 }
 
 void SequencerStepEditHandler::update(uint32_t nowMs) {
-    const auto pickerOutcome = step_preset_picker_.update(nowMs);
-    if (pickerOutcome == SequencerStepPresetPickerOutcome::APPLIED ||
-        pickerOutcome == SequencerStepPresetPickerOutcome::CANCELLED) {
-        handleStepPresetOutcome(pickerOutcome);
+    if (pitch_context_settings_open_ &&
+        pattern_pitch_settings_.flowPhase.get() ==
+            core::state::PatternPitchSettingsFlowPhase::CLOSED) {
+        pitch_context_settings_open_ = false;
+        if (!sequencer_.stepContentDraft.active.get() &&
+            chordEditorActive()) {
+            history_snapshot_valid_ =
+                core::state::sequencer::captureHistorySnapshot(
+                    sequencer_,
+                    history_snapshot_
+                );
+        }
+        configureOptForFocusedRow();
     }
-    if (step_preset_auto_close_pending_ &&
-        !step_preset_action_press_active_ &&
-        oc::time::deadlineReachedMs(nowMs, step_preset_auto_close_at_ms_)) {
-        closeStepPresetPicker();
+
+    const auto presetResult = preset_library_.update(nowMs);
+    if (presetResult.outcome ==
+            SequencerPresetLibraryOutcome::LOADED ||
+        presetResult.outcome ==
+            SequencerPresetLibraryOutcome::CANCELLED) {
+        handlePresetLibraryResult(presetResult);
+    }
+    if (preset_library_auto_close_pending_ &&
+        !preset_library_action_press_active_ &&
+        oc::time::deadlineReachedMs(
+            nowMs,
+            preset_library_auto_close_at_ms_
+        )) {
+        closePresetLibrary();
     }
 }
 
@@ -181,6 +206,12 @@ FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
     if (sequencer_.stepContentDraft.exitPromptVisible.get()) {
         // Back from the explicit decision surface means Continue editing.
         sequencer_.stepContentDraft.hideExitPrompt();
+        return;
+    }
+
+    if (chordEditorActive() &&
+        step_chord_editor_workflow::cancelSubEditor(sequencer_)) {
+        configureOptForFocusedRow();
         return;
     }
 
@@ -306,6 +337,24 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
     const uint8_t focusedRow = edit.focusedRow.get();
 
     if (chordEditorActive()) {
+        if (!step_chord_editor_workflow::formulaEditorActive(sequencer_) &&
+            !step_chord_editor_workflow::sourceSelectorActive(sequencer_) &&
+            sequencer_.stepEdit.chordEditor.focusedField.get() ==
+                core::state::sequencer::SequencerChordEditField::
+                    PITCH_CONTEXT) {
+            openPitchContextSettings();
+            return;
+        }
+        uint8_t step = 0;
+        if (editedStepInRange(step) &&
+            step_chord_editor_workflow::activateFocusedItem(
+                sequencer_,
+                step,
+                effectiveScaleSettings(sequencer_, tracks_)
+            )) {
+            configureOptForFocusedRow();
+            return;
+        }
         backFromStepEdit();
         return;
     }
@@ -420,7 +469,10 @@ FLASHMEM void SequencerStepEditHandler::openChordEditor() {
     const auto nodeId =
         core::state::sequencer::activeContentStepNodeId(sequencer_, step);
     bool startedDraft = false;
-    if (!existed && !sequencer_.stepContentDraft.active.get()) {
+    // Every Chord editor is transactional. Existing Local/Parent state is
+    // copied into the same lightweight Chord draft used for creation; a Chord
+    // opened inside a Micro/Cycle draft keeps using that outer draft.
+    if (!sequencer_.stepContentDraft.active.get()) {
         startedDraft = core::state::sequencer::beginStepContentDraft(
             sequencer_,
             core::state::sequencer::SequencerStepContentDraftKind::CHORD,
@@ -435,36 +487,18 @@ FLASHMEM void SequencerStepEditHandler::openChordEditor() {
         // The seeded musical default is the pristine creation baseline: Back
         // immediately after opening abandons it without a confirmation.
         if (core::state::sequencer::isRootContentView(sequencer_)) {
-            step_chord_editor_workflow::setFocusedFieldValue(
-                sequencer_,
-                step,
-                effectiveScaleSettings(sequencer_, tracks_),
-                1.0f
-            );
-        } else {
             const auto scale = effectiveScaleSettings(sequencer_, tracks_);
-            auto chord = core::state::sequencer::resolveStepChordUiState(
-                sequencer_,
-                step
-            );
-            const auto projection =
-                core::state::sequencer::resolveActiveContentStepProjection(
+            (void)core::handler::sequencer::chord_edit_ops::
+                createDefaultLocalChord(
                     sequencer_,
                     step,
-                    scale
+                    core::state::sequencer::pitchContextUsesScaleDegrees(
+                        core::state::sequencer::authoringPattern(
+                            sequencer_
+                        ).pitchEditMode,
+                        scale
+                    )
                 );
-            core::state::sequencer::resolveStepChordPreview(
-                chord,
-                projection,
-                scale
-            );
-            if (core::state::sequencer::setAuthoringNodeChordSpec(
-                    sequencer_,
-                    nodeId,
-                    chord.spec
-                )) {
-                core::state::sequencer::notifyStepContentDraftMutation(sequencer_);
-            }
         }
         if (startedDraft) {
             core::state::sequencer::markStepContentDraftPristine(sequencer_);
@@ -531,7 +565,14 @@ FLASHMEM void SequencerStepEditHandler::confirmStepContentDraftExitChoice() {
 }
 
 FLASHMEM void SequencerStepEditHandler::moveChordEditorFocus(float delta) {
-    step_chord_editor_workflow::moveFocus(sequencer_, delta);
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+    step_chord_editor_workflow::moveFocus(
+        sequencer_,
+        step,
+        effectiveScaleSettings(sequencer_, tracks_),
+        delta
+    );
     configureOptForFocusedRow();
 }
 
@@ -570,6 +611,37 @@ FLASHMEM void SequencerStepEditHandler::resetFocusedChordFieldToDefault() {
             effectiveScaleSettings(sequencer_, tracks_)
         )) return;
     configureOptForFocusedRow();
+}
+
+FLASHMEM void SequencerStepEditHandler::toggleChordSourceSelector() {
+    if (!chordEditorActive() ||
+        sequencer_.stepContentDraft.exitPromptVisible.get()) {
+        return;
+    }
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+    step_chord_editor_workflow::toggleSourceSelector(
+        sequencer_,
+        step,
+        effectiveScaleSettings(sequencer_, tracks_)
+    );
+    configureOptForFocusedRow();
+}
+
+FLASHMEM void SequencerStepEditHandler::openPitchContextSettings() {
+    if (!chordEditorActive() || pitch_context_settings_open_) return;
+
+    // Pitch Context is Pattern-global, so it remains a separate Undo record
+    // even when reached from a Chord draft. The projection service also
+    // adapts the current draft formula without publishing it.
+    if (!sequencer_.stepContentDraft.active.get()) {
+        commitStepEditHistory();
+    }
+    sequencer_.stepPropertyInlineSelector.reset();
+    pattern_pitch_settings_.openOverlay();
+    pattern_pitch_settings_.focusedRow.set(3U);
+    overlays_.show(core::ui::OverlayType::PATTERN_PITCH_SETTINGS, true);
+    pitch_context_settings_open_ = true;
 }
 
 FLASHMEM bool SequencerStepEditHandler::chordEditorActive() const {

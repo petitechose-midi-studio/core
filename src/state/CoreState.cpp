@@ -21,10 +21,10 @@
 #include "state/shared/SharedTrackCoordinator.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
-#include "sequencer/SequencerCcLanePatternOps.hpp"
-#include "sequencer/SequencerContentViewOps.hpp"
-#include "sequencer/SequencerStructureHistory.hpp"
-#include "sequencer/SequencerTrackBankOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStructureHistory.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 
@@ -148,7 +148,7 @@ FLASHMEM void SequencerDomainState::PendingApplyDeleter::operator()(PendingApply
 #endif
 }
 
-FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage)
+FLASHMEM CoreState::CoreState(oc::interface::IStorage& deviceSettingsStorage)
     : macroDomain_()
     , sequencerDomain_()
     , projectTracks_(createProjectTrackState())
@@ -156,7 +156,7 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& settingsStorage)
     , projectSettingsHistory_(createProjectSettingsHistory())
     , projectHistory_(createProjectHistoryCoordinator())
     , systemUi_(createUiSystemState())
-    , settings(settingsStorage)
+    , deviceSettingsStore(deviceSettingsStorage)
     , macros(*macroDomain_.runtime)
     , pages(*macroDomain_.pages)
     , macroHistory(macroDomain_.history)

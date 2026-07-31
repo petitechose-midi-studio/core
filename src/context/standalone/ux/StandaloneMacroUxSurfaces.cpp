@@ -11,7 +11,7 @@
 
 #include "config/InputIDs.hpp"
 #include "context/standalone/MacroOverlayPresenterFormatters.hpp"
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/StructureClipboardState.hpp"
@@ -20,16 +20,16 @@
 #include "state/macro/MacroUiState.hpp"
 #include "state/macro/MacroEditMenuModel.hpp"
 #include "state/macro/MacroInteractionContextBuilder.hpp"
+#include "state/macro/MacroSourceDetailPolicy.hpp"
+#include "state/modulation/ModulationDepthParameterMapping.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
-#include "ui/macro/MacroSourceDetailLayout.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
 #include "validation/ux/SemanticUxTraceState.hpp"
 
 namespace core::context::standalone::ux {
 namespace {
 
-namespace detail_ui = core::ui::macro;
+namespace detail_policy = core::state::macro;
 
 FLASHMEM const char* recordedShapeOperationStatus(
     core::state::modulation::ProjectRecordedShapeCaptureStatus status
@@ -81,7 +81,7 @@ FLASHMEM const char* modulatorSourceLabel(
     }
 }
 
-FLASHMEM detail_ui::MacroSourceDetailContext macroSourceDetailContext(
+FLASHMEM detail_policy::MacroSourceDetailContext macroSourceDetailContext(
     const core::state::modulation::ProjectControlMacroDestinationView& slot,
     bool manualOverride
 ) {
@@ -96,7 +96,7 @@ FLASHMEM detail_ui::MacroSourceDetailContext macroSourceDetailContext(
 }
 
 FLASHMEM const char* macroSourceLabel(
-    const detail_ui::MacroSourceDetailContext& context
+    const detail_policy::MacroSourceDetailContext& context
 ) {
     if (context.manualOverride && context.modulationPlayback) {
         return "manual_modulation";
@@ -111,7 +111,7 @@ FLASHMEM const char* macroSourceLabel(
 }
 
 FLASHMEM core::state::shared::MidiCcCandidateClass macroCandidateClass(
-    const detail_ui::MacroSourceDetailContext& context
+    const detail_policy::MacroSourceDetailContext& context
 ) {
     if (context.manualOverride) {
         return core::state::shared::MidiCcCandidateClass::LIVE_MANUAL;
@@ -211,8 +211,6 @@ FLASHMEM const char* contextualReasonName(
             return "invalid_payload";
         case core::state::contextual::ContextActionReason::ADAPTED:
             return "adapted";
-        case core::state::contextual::ContextActionReason::DEFAULTED:
-            return "defaulted";
         case core::state::contextual::ContextActionReason::CORRUPT_ASSET:
             return "corrupt_asset";
         case core::state::contextual::ContextActionReason::UNSUPPORTED_VERSION:
@@ -316,7 +314,7 @@ FLASHMEM const char* candidateClassName(
 
 FLASHMEM void fillMacroResolutionFacts(
     core::validation::ux::SemanticUxContext& out,
-    const core::handler::MidiCcGlobalFrameCoordinator* coordinator,
+    const core::sequencer::MidiCcGlobalFrameCoordinator* coordinator,
     const core::state::macro::MacroPagesState& pages,
     uint8_t macroIndex,
     core::state::shared::MidiCcCandidateClass localClass
@@ -701,7 +699,7 @@ FLASHMEM MacroEditUxSurface::MacroEditUxSurface(
     core::state::macro::MacroUiState& macroUi,
     oc::state::Signal<uint32_t>& configRevision,
     core::state::StructureClipboardState& structureClipboard,
-    const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator
+    const core::sequencer::MidiCcGlobalFrameCoordinator* midiCcCoordinator
 ) : active_view_(activeView),
     macro_edit_(macroEdit),
     pages_(pages),
@@ -1012,8 +1010,9 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             (macro_ui_.automationManualOverrideMask.get() &
              static_cast<uint16_t>(1U << macroIndex)) != 0;
         const auto context = macroSourceDetailContext(slot, manual);
-        const auto layout = detail_ui::buildAutomationDetailLayout(context);
-        const auto item = layout.at(static_cast<uint8_t>(row));
+        const auto policy =
+            detail_policy::buildAutomationDetailPolicy(context);
+        const auto item = policy.at(static_cast<uint8_t>(row));
         out.mode = "macro.automation_editor";
         out.target = "automation";
         out.targetIndex = static_cast<int16_t>(macroIndex);
@@ -1025,29 +1024,29 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             out.effect = "focus_macro_automation";
         } else if (isEncoder(event, Config::EncoderID::OPT)) {
             switch (item) {
-                case detail_ui::AutomationDetailItem::PLAYBACK:
+                case detail_policy::AutomationDetailItem::PLAYBACK:
                     out.effect = "edit_automation_playback";
                     break;
-                case detail_ui::AutomationDetailItem::LENGTH:
+                case detail_policy::AutomationDetailItem::LENGTH:
                     out.effect = "edit_automation_length";
                     break;
-                case detail_ui::AutomationDetailItem::OFFSET:
+                case detail_policy::AutomationDetailItem::OFFSET:
                     out.effect = "edit_automation_offset";
                     break;
-                case detail_ui::AutomationDetailItem::INVALID:
+                case detail_policy::AutomationDetailItem::INVALID:
                 default:
                     out.effect = "noop_read_only";
                     break;
             }
         } else if (isButton(event, Config::ButtonID::NAV, oc::core::input::ButtonBindingType::RELEASE)) {
             switch (item) {
-                case detail_ui::AutomationDetailItem::RESUME:
+                case detail_policy::AutomationDetailItem::RESUME:
                     out.effect = "resume_macro_automation";
                     break;
-                case detail_ui::AutomationDetailItem::CONVERT_TO_MODULATION:
+                case detail_policy::AutomationDetailItem::CONVERT_TO_MODULATION:
                     out.effect = "preview_conversion";
                     break;
-                case detail_ui::AutomationDetailItem::INVALID:
+                case detail_policy::AutomationDetailItem::INVALID:
                     out.effect = "noop_read_only";
                     break;
                 default:
@@ -1265,9 +1264,10 @@ FLASHMEM bool MacroEditUxSurface::captureSemanticUxContext(
             out.source = modulatorSourceLabel(modulator->kind);
             out.mappingIndex = static_cast<int16_t>(binding->id.value);
             out.mappingCount = static_cast<int16_t>(assignmentCount);
-            const int depth = core::ui::modulation::depth::amountQ15ToPercent(
+            const int depth =
+                core::state::modulation::depth::amountQ15ToPercent(
                 binding->amountQ15,
-                core::ui::modulation::depth::scaleFor(
+                core::state::modulation::depth::scaleFor(
                     pages_.control.authored.modulation,
                     pages_.control.authored.curves,
                     *binding

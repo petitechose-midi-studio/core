@@ -199,11 +199,6 @@ FLASHMEM void MacroUiState::resetProjectRuntime() {
     automationManualOverrideMask.set(0);
 }
 
-FLASHMEM void MacroUiState::reset() {
-    resetInteraction();
-    resetProjectRuntime();
-}
-
 FLASHMEM void MacroUiState::refreshManualOverrideMask(uint8_t track, uint8_t page) {
     uint16_t mask = 0;
     if (track < TRACK_COUNT && page < PAGE_COUNT) {

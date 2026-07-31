@@ -105,7 +105,6 @@ void assertCurrentSessionNote(core::persistence::ProductFileService& files, uint
     project_file::LoadReport report{};
     auto result = store.loadCurrent(loaded, &report);
     assert(result);
-    assert(result.value().loadStatus == project_file::LoadStatus::OK);
     assert(report.ok());
 
     test_support::CoreStorages storages;

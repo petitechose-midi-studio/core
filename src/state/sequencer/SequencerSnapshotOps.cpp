@@ -796,7 +796,7 @@ FLASHMEM bool ensurePageExists(SequencerState& target, uint8_t pageIndex) {
     return true;
 }
 
-FLASHMEM bool removePage(SequencerState& target, uint8_t pageIndex) {
+FLASHMEM bool deletePage(SequencerState& target, uint8_t pageIndex) {
     const uint8_t len = target.pattern.length.get();
     if (len <= SequencerState::STEPS_PER_PAGE) return false;
 

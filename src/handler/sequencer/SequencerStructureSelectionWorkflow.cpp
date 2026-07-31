@@ -106,7 +106,7 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftHold() {
             track_ui_.selection.selectedMask.get(),
             currentTrackEnabledMask()
         );
-        const auto mutation = removeSelectedStructureTracks(
+        const auto mutation = deleteSelectedStructureTracks(
             currentTrackEnabledMask(),
             selectedMask,
             currentActiveTrack()
@@ -140,7 +140,7 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftHold() {
         if (!historyChange) return;
 
         if (core::state::sequencer::isRootContentView(sequencer_)) {
-            if (!removeSelectedRootPages(sequencer_, selectedMask)) return;
+            if (!deleteSelectedRootPages(sequencer_, selectedMask)) return;
             const uint8_t cursor = sequencer_.visiblePage();
             selection.reset(
                 core::state::StructureSelectionScope::PAGE,

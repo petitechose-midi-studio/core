@@ -91,7 +91,7 @@ enum class SequencerHistoryActionKind : uint8_t {
     CcLaneEventEdit,
     CcLaneEventClear,
     CcLaneSettings,
-    CcLaneRemove,
+    CcLaneDelete,
     CcLaneTransitionEdit,
     FullBank,
     // Appended so persisted/diagnostic identities of existing actions remain stable.

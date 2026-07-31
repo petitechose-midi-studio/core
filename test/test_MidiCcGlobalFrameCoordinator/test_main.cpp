@@ -17,15 +17,15 @@
 #include <oc/note/sequencer/StepSequencerChord.hpp>
 #include <oc/time/Time.hpp>
 
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "sequencer/ProjectTrackRuntimeSnapshotBank.hpp"
 #include "state/macro/MacroConstants.hpp"
 #include "support/ProjectTrackRuntimeSnapshotTestFixture.hpp"
 
 namespace {
 
-using core::handler::MidiCcGlobalFrameCoordinator;
-using core::handler::MidiCcGlobalFrameStatus;
+using core::sequencer::MidiCcGlobalFrameCoordinator;
+using core::sequencer::MidiCcGlobalFrameStatus;
 using core::sequencer::RealtimeMidiEvent;
 using core::sequencer::RealtimeMidiEventType;
 using core::sequencer::RealtimeMidiQueue;
@@ -518,7 +518,7 @@ void test_strict_source_validation() {
     assert(!coordinator.publishPersistentAuthors(&invalid, 1));
     assert(!coordinator.publishPersistentAuthors(
         nullptr,
-        core::handler::MidiCcPersistentAuthorFrame::MAX_CANDIDATES + 1U
+        core::sequencer::MidiCcPersistentAuthorFrame::MAX_CANDIDATES + 1U
     ));
     const std::array duplicateBase{
         candidate(MidiCcCandidateClass::MACRO_COMPUTED, 1U, 10U),
@@ -666,7 +666,7 @@ void test_identical_lane_frame_is_not_republished_or_reinvalidated() {
 void test_exact_320_candidate_envelope_and_measurements() {
     static std::array<
         MidiCcCandidate,
-        core::handler::MidiCcPersistentAuthorFrame::MAX_CANDIDATES
+        core::sequencer::MidiCcPersistentAuthorFrame::MAX_CANDIDATES
     > persistent{};
     static std::array<MidiCcCandidate, 64> laneCandidates{};
     static std::array<MidiCcCandidate, MidiCcResolutionTelemetry::MAX_CANDIDATES>

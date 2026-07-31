@@ -11,7 +11,7 @@
  * Includes:
  * - MacroState: Runtime values and labels for 8 macro slots
  * - MacroPagesState: macro track/page configurations
- * - CoreSettings: persistence manager for core settings storage
+ * - DeviceSettingsStore: durable controller-settings persistence
  * - ExclusiveVisibilityStack: Overlay visibility management
  */
 
@@ -26,7 +26,6 @@
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
-#include "CoreSettings.hpp"
 #include "DeviceSettingsState.hpp"
 #include "PatternPitchSettingsState.hpp"
 #include "SequencerSettingsState.hpp"
@@ -40,14 +39,15 @@
 #include "TrackNavigationState.hpp"
 #include "ViewSelectorState.hpp"
 #include "persistence/PersistenceStatus.hpp"
+#include "persistence/DeviceSettingsStore.hpp"
 #include "macro/MacroPagesState.hpp"
 #include "macro/MacroHistory.hpp"
 #include "macro/MacroUiState.hpp"
-#include "sequencer/SequencerState.hpp"
-#include "sequencer/SequencerHistory.hpp"
-#include "sequencer/SequencerSnapshots.hpp"
-#include "sequencer/SequencerTrackActivationQueue.hpp"
-#include "sequencer/SequencerTrackBankState.hpp"
+#include "state/sequencer/SequencerState.hpp"
+#include "state/sequencer/SequencerHistory.hpp"
+#include "state/sequencer/SequencerSnapshots.hpp"
+#include "state/sequencer/SequencerTrackActivationQueue.hpp"
+#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectHistoryCoordinator.hpp"
 #include "state/project/ProjectState.hpp"
@@ -56,7 +56,7 @@
 #include "state/project/ProjectTrackEditorState.hpp"
 #include "state/project/ProjectTrackState.hpp"
 
-namespace core::handler {
+namespace core::sequencer {
 class MidiCcGlobalFrameCoordinator;
 }
 
@@ -275,12 +275,10 @@ private:
     bool projectSessionTrackingEnabled_ = false;
     bool projectSessionSavePending_ = false;
     uint32_t projectSessionSaveTimestampMs_ = 0;
-    bool sharedTrackPersistPending_ = false;
-    uint32_t sharedTrackPersistTimestampMs_ = 0;
 
 public:
     /// Durable device settings only; musical content is file-based.
-    CoreSettings settings;
+    persistence::DeviceSettingsStore deviceSettingsStore;
 
     /// Macro domain aliases
     MacroState& macros;
@@ -297,7 +295,7 @@ public:
     // Published by the singular SequencerRuntimeService. Feature modules may
     // produce immutable CC author frames through this non-owning handle, but
     // CoreState never owns or destroys the realtime coordinator.
-    core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
+    core::sequencer::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
 
     /// Shared UI/system domain aliases
     project::ProjectState& project;
@@ -326,9 +324,9 @@ public:
 
     /**
      * @brief Construct with storage backend
-     * @param settingsStorage Core settings storage (MIDI sync + shared Track)
+     * @param deviceSettingsStorage Durable device-settings storage (MIDI sync)
      */
-    explicit CoreState(oc::interface::IStorage& settingsStorage);
+    explicit CoreState(oc::interface::IStorage& deviceSettingsStorage);
     ~CoreState();
 
     // Non-copyable, non-movable
@@ -340,10 +338,9 @@ public:
     // Settings persistence and runtime coordination.
 
     /**
-     * @brief Update runtime coordination and debounced device settings
+     * @brief Update runtime coordination
      *
-     * Saves dirty CoreSettings values after their debounce timeout. Project
-     * files and presets are coordinated by ProductFileService.
+     * Project files and presets are coordinated by ProductFileService.
      */
     void update();
 
@@ -355,7 +352,7 @@ public:
     void factoryReset();
 
     /**
-     * @brief Flush pending history coalescing and dirty device settings
+     * @brief Flush pending history coalescing
      */
     void flush();
     void flushProjectMutationCoalescing();
@@ -459,12 +456,10 @@ private:
     );
     void requestProjectSessionSave_();
     void markSequencerProjectMutated_();
-    void requestSharedTrackPersist_();
-    void persistSharedTrackState_();
     void clearPendingSequencerApply_();
-    bool refreshSharedTrackStateFromMacroPages_(bool persist);
-    bool refreshSharedTrackStateFromSequencer_(bool persist);
-    bool setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack, bool persist);
+    bool refreshSharedTrackStateFromMacroPages_();
+    bool refreshSharedTrackStateFromSequencer_();
+    bool setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack);
 
 };
 

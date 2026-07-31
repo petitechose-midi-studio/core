@@ -70,7 +70,6 @@ public:
     MacroPerformanceHandler(const MacroPerformanceHandler&) = delete;
     MacroPerformanceHandler& operator=(const MacroPerformanceHandler&) = delete;
 
-    void update(uint32_t nowMs);
     void attachEditors(MacroEditHandler& macroEditor,
                        ProjectTrackEditorHandler& trackEditor);
 

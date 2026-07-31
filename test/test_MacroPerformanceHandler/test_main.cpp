@@ -94,7 +94,6 @@ struct MacroPerformanceHarness {
     void tick(uint32_t nowMs) {
         g_now_ms = nowMs;
         inputBinding.processTick();
-        handler.update(nowMs);
     }
 
     void press(Config::ButtonID id) {
@@ -185,7 +184,6 @@ void test_nav_turn_switches_enabled_macro_page_directly() {
     assert(h.state.macroUi.previewPageIndex.get() == 1);
     assert(h.state.pages.currentActivePage() == 1);
     assert(!h.state.macroUi.previewAddPageSlot.get());
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Page 2") == 0);
     assert(!h.state.macroUi.clutchActive.get());
 
     drainNotifications();
@@ -213,7 +211,6 @@ void test_nav_focus_track_turn_switches_context_to_highlighted_macro_track() {
     assert(h.state.pages.currentActivePage() == 3);
     assert(h.performanceServices.activeTrackChannel() == 9);
     assert(h.performanceServices.activeConfig(0).cc == 91);
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Track 2 Page 4") == 0);
 
     drainNotifications();
 
@@ -1005,7 +1002,6 @@ void test_delete_intermediate_macro_page_compacts_complete_page_state() {
         manual
     ));
     assert(std::fabs(manual - 0.81f) < 0.0001f);
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Shifted Page") == 0);
 
     assert(h.state.projectHistory.undoCount() == 1U);
     assert(h.state.undoProjectHistory());
@@ -1021,7 +1017,6 @@ void test_delete_intermediate_macro_page_compacts_complete_page_state() {
         h.state.pages.control,
         {.track = 0U, .page = 2U, .macro = 3U}
     ).automation.stored());
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Deleted") == 0);
     assert(h.state.redoProjectHistory());
     assert(track.enabledPageMask == 0x0003U);
     assert(h.state.pages.currentActivePage() == 1U);
@@ -1030,7 +1025,6 @@ void test_delete_intermediate_macro_page_compacts_complete_page_state() {
         h.state.pages.control,
         {.track = 0U, .page = 1U, .macro = 3U}
     ).automation.id);
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Shifted Page") == 0);
 
     // Removing the last Page returns focus to the previous surviving Page.
     assert(h.structureServices.deletePage(1U));

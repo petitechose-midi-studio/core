@@ -19,7 +19,7 @@ bool clearCurrentSequencerStructurePage(
     core::state::sequencer::SequencerState& sequencer
 );
 
-bool removeCurrentSequencerStructurePage(
+bool deleteCurrentSequencerStructurePage(
     core::state::sequencer::SequencerState& sequencer
 );
 

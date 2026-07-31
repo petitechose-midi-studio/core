@@ -10,10 +10,10 @@
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/time/Time.hpp>
 
+#include "state/modulation/ModulationDepthParameterMapping.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
 #include "ui/font/StandaloneIcons.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
 #include "ui/modulation/ModulatorLfoUiModel.hpp"
 #include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "ui/modulation/ModulatorSparklineModel.hpp"
@@ -27,7 +27,7 @@ namespace theme = standalone::theme;
 using namespace core::state::modulation;
 using Item = core::state::project::modulators::SourceDetailItem;
 namespace adsr_ui = core::ui::modulation::adsr;
-namespace depth_ui = core::ui::modulation::depth;
+namespace depth_parameter = core::state::modulation::depth;
 
 constexpr lv_coord_t HEADER_HEIGHT = 21;
 constexpr lv_coord_t CURVE_Y = 22;
@@ -212,9 +212,9 @@ FLASHMEM void populateAuditionDepthRow(
 ) {
     std::snprintf(out.key.data(), out.key.size(), "Depth");
     const int percent = control != nullptr && binding != nullptr
-        ? depth_ui::amountQ15ToPercent(
+        ? depth_parameter::amountQ15ToPercent(
               binding->amountQ15,
-              depth_ui::scaleFor(
+              depth_parameter::scaleFor(
                   control->authored.modulation,
                   control->authored.curves,
                   *binding
@@ -485,9 +485,9 @@ FLASHMEM void ProjectModulatorWorkspace::renderHeader(
             props.transientFeedback
         );
     } else if (audition && props.auditionBinding) {
-        const int depth = depth_ui::amountQ15ToPercent(
+        const int depth = depth_parameter::amountQ15ToPercent(
             props.auditionBinding->amountQ15,
-            depth_ui::scaleFor(
+            depth_parameter::scaleFor(
                 props.control->authored.modulation,
                 props.control->authored.curves,
                 *props.auditionBinding

@@ -16,16 +16,20 @@
 
 #include "../../src/handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
+#include "../../src/persistence/SequencerGraphAssetCodec.hpp"
 #include "../../src/persistence/StepPresetFileStore.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/project/ProjectTrackDomainOps.hpp"
-#include "../../src/state/sequencer/SequencerGraphAssetCodec.hpp"
+#include "../../src/state/sequencer/SequencerGraphAsset.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerHistory.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/CoreStorages.hpp"
 
 namespace {
+
+namespace asset_codec =
+    core::persistence::sequencer_graph_asset_codec;
 
 using core::handler::SequencerStepPresetActionResult;
 using core::handler::SequencerStepPresetActivation;
@@ -91,7 +95,7 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
         if (result && mutateAfterNextPresetRead && !mutationDone && path != nullptr &&
             std::strstr(path, mutationPathFragment.c_str()) != nullptr) {
             constexpr uint32_t semanticOffset =
-                core::state::sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
+                asset_codec::BASE_HEADER_SIZE + 4U +
                 SequencerStepGraphPreset::TECHNICAL_ID_SIZE;
             const uint8_t replacement = 'T';
             const auto changed = delegate.write(
@@ -173,7 +177,9 @@ struct Harness {
 std::vector<uint8_t> encodePreset(
     const char* technicalId,
     const char* semanticName,
-    uint8_t note = 67
+    uint8_t note = 67,
+    SequencerStepGraphPreset::ScalePolicy scalePolicy =
+        SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
 ) {
     SequencerState source;
     source.pattern.setContentLength(8);
@@ -186,11 +192,22 @@ std::vector<uint8_t> encodePreset(
     );
     assert(sequence.ok);
 
+    const oc::note::sequencer::StepSequencerScaleSettings sourceScale =
+        scalePolicy == SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
+        ? oc::note::sequencer::StepSequencerScaleSettings{
+              .root = 5,
+              .type =
+                  oc::note::sequencer::StepSequencerScaleType::HarmonicMinor,
+              .mode = oc::note::sequencer::
+                  StepSequencerScaleConstraintMode::ConstrainNearest,
+          }
+        : oc::note::sequencer::StepSequencerScaleSettings{};
     SequencerStepGraphPreset preset{};
     SequencerGraphAssetReport report{};
     assert(core::state::sequencer::captureStepGraphPreset(
         source,
         2,
+        sourceScale,
         preset,
         &report
     ));
@@ -198,14 +215,14 @@ std::vector<uint8_t> encodePreset(
         preset,
         technicalId,
         semanticName,
-        SequencerStepGraphPreset::ScalePolicy::CHROMATIC,
-        {}
+        scalePolicy,
+        sourceScale
     ));
 
     std::vector<uint8_t> bytes(
-        core::state::sequencer::STEP_GRAPH_PRESET_MAX_ENCODED_SIZE
+        asset_codec::MAX_ENCODED_SIZE
     );
-    const auto encoded = core::state::sequencer::encodeStepGraphPreset(
+    const auto encoded = asset_codec::encode(
         preset,
         bytes.data(),
         static_cast<uint16_t>(bytes.size())
@@ -268,6 +285,7 @@ std::vector<uint8_t> encodeRandomCyclePreset(
     assert(core::state::sequencer::captureStepGraphPreset(
         source,
         2,
+        {},
         preset,
         &report
     ));
@@ -279,9 +297,9 @@ std::vector<uint8_t> encodeRandomCyclePreset(
         {}
     ));
     std::vector<uint8_t> bytes(
-        core::state::sequencer::STEP_GRAPH_PRESET_MAX_ENCODED_SIZE
+        asset_codec::MAX_ENCODED_SIZE
     );
-    const auto encoded = core::state::sequencer::encodeStepGraphPreset(
+    const auto encoded = asset_codec::encode(
         preset,
         bytes.data(),
         static_cast<uint16_t>(bytes.size())
@@ -544,7 +562,7 @@ void test_manager_rename_reorders_and_delete_is_guarded() {
     const auto renamedBytes = loadBytes(h.files, "preset-z");
     assert(renamedBytes.size() == before.size());
     constexpr size_t semanticOffset =
-        core::state::sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
+        asset_codec::BASE_HEADER_SIZE + 4U +
         SequencerStepGraphPreset::TECHNICAL_ID_SIZE;
     constexpr size_t semanticEnd =
         semanticOffset + SequencerStepGraphPreset::SEMANTIC_NAME_SIZE;
@@ -600,6 +618,109 @@ void test_manager_refuses_previous_future_and_partial_without_mutation() {
     );
 
     std::cout << "[PASS] test_manager_refuses_previous_future_and_partial_without_mutation\n";
+}
+
+void test_step_presets_require_one_matching_pattern_pitch_context() {
+    using Compatibility =
+        core::state::sequencer::SequencerStepPresetCompatibility;
+    using PitchMode =
+        core::state::sequencer::SequencerPitchEditMode;
+
+    Harness h;
+    saveBytes(
+        h.files,
+        "chromatic",
+        encodePreset(
+            "chromatic",
+            "Chromatic",
+            67,
+            SequencerStepGraphPreset::ScalePolicy::CHROMATIC
+        )
+    );
+    saveBytes(
+        h.files,
+        "relative",
+        encodePreset(
+            "relative",
+            "Relative",
+            67,
+            SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
+        )
+    );
+
+    const auto followTarget = h.presets.captureTarget();
+    const auto chromaticInFollow = h.presets.inspectPreset(
+        "chromatic",
+        followTarget,
+        0,
+        1
+    );
+    assert(
+        chromaticInFollow.status ==
+        SequencerStepPresetStatus::INCOMPATIBLE
+    );
+    assert(
+        chromaticInFollow.descriptor.compatibility ==
+        Compatibility::BLOCKED_PITCH_CONTEXT
+    );
+    assert(
+        std::strcmp(
+            chromaticInFollow.descriptor.adaptationSummary,
+            "Requires Chromatic"
+        ) == 0
+    );
+
+    const auto relativeInFollow = h.presets.inspectPreset(
+        "relative",
+        followTarget,
+        0,
+        2
+    );
+    assert(relativeInFollow.status == SequencerStepPresetStatus::OK);
+    assert(
+        relativeInFollow.descriptor.compatibility ==
+            Compatibility::READY ||
+        relativeInFollow.descriptor.compatibility ==
+            Compatibility::WARNING_ADAPTED
+    );
+
+    assert(h.state.sequencer.setPitchEditMode(PitchMode::CHROMATIC));
+    const auto chromaticTarget = h.presets.captureTarget();
+    const auto chromaticInChromatic = h.presets.inspectPreset(
+        "chromatic",
+        chromaticTarget,
+        0,
+        3
+    );
+    assert(chromaticInChromatic.status == SequencerStepPresetStatus::OK);
+    assert(
+        chromaticInChromatic.descriptor.compatibility ==
+        Compatibility::READY
+    );
+
+    const auto relativeInChromatic = h.presets.inspectPreset(
+        "relative",
+        chromaticTarget,
+        0,
+        4
+    );
+    assert(
+        relativeInChromatic.status ==
+        SequencerStepPresetStatus::INCOMPATIBLE
+    );
+    assert(
+        relativeInChromatic.descriptor.compatibility ==
+        Compatibility::BLOCKED_PITCH_CONTEXT
+    );
+    assert(
+        std::strcmp(
+            relativeInChromatic.descriptor.adaptationSummary,
+            "Requires Follow Scale"
+        ) == 0
+    );
+
+    std::cout
+        << "[PASS] Step presets require one matching Pitch Context\n";
 }
 
 void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
@@ -744,7 +865,7 @@ void test_apply_second_read_payload_change_is_stale_and_non_mutating() {
     SequencerStepGraphPreset mutated{};
     SequencerGraphAssetReport report{};
     const auto bytes = loadBytes(h.files, "race-source");
-    assert(core::state::sequencer::decodeStepGraphPreset(
+    assert(asset_codec::decode(
         bytes.data(),
         static_cast<uint16_t>(bytes.size()),
         mutated,
@@ -961,6 +1082,7 @@ void test_apply_playing_is_queued_and_undo_before_boundary_cancels_it() {
 int main() {
     test_manager_rename_reorders_and_delete_is_guarded();
     test_manager_refuses_previous_future_and_partial_without_mutation();
+    test_step_presets_require_one_matching_pattern_pitch_context();
     test_apply_preflight_failures_leave_every_live_domain_unchanged();
     test_random_cycle_preview_is_stable_and_generation_admission_is_exact();
     test_apply_second_read_payload_change_is_stale_and_non_mutating();

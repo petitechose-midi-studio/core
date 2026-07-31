@@ -209,15 +209,15 @@ FLASHMEM bool MacroHistoryService::undo(
             )) {
             return false;
         }
-    } else if (change->slotRemoval) {
-        if (!liveMacroSlotRemovalStateMatches(
+    } else if (change->slotDeletion) {
+        if (!liveMacroSlotDeletionStateMatches(
                 pages,
                 change->address,
-                change->slotRemoval->after
-            ) || !applyMacroSlotRemovalState(
+                change->slotDeletion->after
+            ) || !applyMacroSlotDeletionState(
                 pages,
                 change->address,
-                change->slotRemoval->before
+                change->slotDeletion->before
             )) {
             return false;
         }

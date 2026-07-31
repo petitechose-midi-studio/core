@@ -25,7 +25,13 @@ ui::SequencerTrackPasteProjection projection(bool overwrite = false) {
     plan.overwriteMask = overwrite ? 0x0010 : 0;
     plan.availability = core::state::ClipboardTransferAvailability::READY;
     plan.reason = core::state::ClipboardTransferReason::NONE;
-    plan.entry = {
+    plan.sourceCount = 1;
+    plan.count = 1;
+    plan.firstSource = 0;
+    plan.lastSource = 0;
+    plan.firstTarget = 4;
+    plan.lastTarget = 4;
+    plan.entries[0] = {
         .sourceTrack = 0,
         .targetTrack = 4,
         .targetMidiChannel = 0,
@@ -37,8 +43,7 @@ ui::SequencerTrackPasteProjection projection(bool overwrite = false) {
             ? core::state::ClipboardTransferTargetKind::OVERWRITE
             : core::state::ClipboardTransferTargetKind::FREE,
     };
-    plan.hasEntry = true;
-    out.targetTrack = plan.entry.targetTrack;
+    out.targetTrack = plan.entries[0].targetTrack;
     out.copyAvailable = true;
     out.action = seq::buildSequencerTrackTransferActionSpec(
         plan,
@@ -113,10 +118,10 @@ void test_guard_phases_explain_copy_cancel_and_progress() {
 
 void test_detail_exposes_kind_mute_lane_and_live_route_semantics() {
     auto value = projection(true);
-    value.plan.entry.targetMuted = true;
-    value.plan.entry.inheritedLaneCount = 2;
-    value.plan.entry.pinnedLaneCount = 1;
-    value.plan.entry.targetMidiChannel = 1;
+    value.plan.entries[0].targetMuted = true;
+    value.plan.entries[0].inheritedLaneCount = 2;
+    value.plan.entries[0].pinnedLaneCount = 1;
+    value.plan.entries[0].targetMidiChannel = 1;
     feedback(value, contextual::OperationFeedbackStatus::PREVIEW);
     value.detailVisible = true;
     auto model = ui::buildSequencerTrackPastePreflightViewModel(
@@ -132,7 +137,7 @@ void test_detail_exposes_kind_mute_lane_and_live_route_semantics() {
         "CC | 2 inherit target | 1 pinned"
     ) == 0);
 
-    value.plan.entry.targetMidiChannel = 8;
+    value.plan.entries[0].targetMidiChannel = 8;
     model = ui::buildSequencerTrackPastePreflightViewModel(
         value,
         false,

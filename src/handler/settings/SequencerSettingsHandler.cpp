@@ -4,9 +4,11 @@
 
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
+#include <oc/time/Time.hpp>
 
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/sequencer/SequencerChordProjectionFeedback.hpp"
 #include "handler/sequencer/SequencerFullBankHistoryUtils.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/ViewSelectorItems.hpp"
@@ -149,7 +151,7 @@ FLASHMEM void SequencerSettingsHandler::applySelectorAndClose() {
 
     auto change = captureSequencerFullBankHistoryBefore(sequencer_tracks_, sequencer_);
 
-    services_.applyChoice(row, choice);
+    const auto projection = services_.applyChoice(row, choice);
 
     if (change && captureSequencerFullBankHistoryAfter(sequencer_tracks_, sequencer_, *change)) {
         recordSequencerFullBankHistoryChange(
@@ -160,6 +162,11 @@ FLASHMEM void SequencerSettingsHandler::applySelectorAndClose() {
             }
         );
     }
+    showChordProjectionFeedback(
+        sequencer_.historyFeedback,
+        projection,
+        oc::time::millis()
+    );
 
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR);
     sequencer_settings_.closeSelector();

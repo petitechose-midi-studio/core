@@ -26,10 +26,12 @@ inline project_file::EncodeResult encode(
     codec::ProjectTransportPayload transport{};
     codec::ProjectMusicalContextPayload musical{};
     codec::ProjectEditingPayload editing{};
-    codec::fillMetaPayload(state.metadata, meta);
-    codec::fillTransportPayload(state.transport, transport);
-    codec::fillMusicalContextPayload(state.musical, musical);
-    codec::fillEditingPayload(state.editing, editing);
+    if (!codec::fillMetaPayload(state.metadata, meta) ||
+        !codec::fillTransportPayload(state.transport, transport) ||
+        !codec::fillMusicalContextPayload(state.musical, musical) ||
+        !codec::fillEditingPayload(state.editing, editing)) {
+        return {.status = project_file::Status::INVALID_ARGUMENT, .bytesWritten = 0};
+    }
 
     std::array<uint8_t, codec::PROJECT_META_PAYLOAD_SIZE> metaBytes{};
     std::array<uint8_t, codec::PROJECT_TRANSPORT_PAYLOAD_SIZE> transportBytes{};
@@ -95,7 +97,7 @@ inline DecodeResult decode(
     project_file::LoadReport localReport{};
     auto* effectiveReport = report != nullptr ? report : &localReport;
     std::array<project_file::DecodedChunkView, project_file::MAX_CHUNKS> chunks{};
-    const auto decoded = project_file::decode(
+    const auto decoded = project_file::scan(
         data,
         size,
         chunks.data(),
@@ -110,20 +112,38 @@ inline DecodeResult decode(
             .overwriteSafe = false,
         };
     }
+    if (effectiveReport->hasIssues()) {
+        effectiveReport->markRejected();
+        return {
+            .ok = false,
+            .containerStatus = decoded.status,
+            .loadStatus = effectiveReport->status,
+            .overwriteSafe = false,
+        };
+    }
 
     core::state::project::ProjectState next;
-    codec::applyProjectStateChunks(
+    const bool applied = codec::applyProjectStateChunks(
         chunks.data(),
         decoded.chunkCount,
         next,
         effectiveReport
     );
+    if (!applied || effectiveReport->hasIssues()) {
+        effectiveReport->markRejected();
+        return {
+            .ok = false,
+            .containerStatus = decoded.status,
+            .loadStatus = effectiveReport->status,
+            .overwriteSafe = false,
+        };
+    }
     out = next;
     return {
-        .ok = effectiveReport->status != project_file::LoadStatus::FAILED,
+        .ok = true,
         .containerStatus = decoded.status,
-        .loadStatus = effectiveReport->status,
-        .overwriteSafe = effectiveReport->overwriteSafe,
+        .loadStatus = project_file::LoadStatus::OK,
+        .overwriteSafe = true,
     };
 }
 

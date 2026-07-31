@@ -20,8 +20,6 @@ FLASHMEM ProjectSessionRestoreService::Result ProjectSessionRestoreService::rest
     if (!snapshot) {
         return Result{
             .status = Status::DEGRADED,
-            .loadStatus = project_file::LoadStatus::FAILED,
-            .overwriteSafe = false,
         };
     }
     core::persistence::project_file::LoadReport localReport{};
@@ -39,16 +37,12 @@ FLASHMEM ProjectSessionRestoreService::Result ProjectSessionRestoreService::rest
         return Result{
             .status = Status::APPLY_FAILED,
             .bytes = loaded.value().bytesRead,
-            .loadStatus = loaded.value().loadStatus,
-            .overwriteSafe = loaded.value().overwriteSafe,
         };
     }
 
     return Result{
         .status = Status::RESTORED,
         .bytes = loaded.value().bytesRead,
-        .loadStatus = loaded.value().loadStatus,
-        .overwriteSafe = loaded.value().overwriteSafe,
     };
 }
 

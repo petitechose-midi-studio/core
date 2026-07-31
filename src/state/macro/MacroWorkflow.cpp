@@ -62,7 +62,6 @@ FLASHMEM void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
     if (!configsMatch(previousConfigs, state.pages.activeConfigs)) {
         state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
     }
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     syncRuntimeFromActivePage(state.macros, state.pages);
 }
 
@@ -76,7 +75,6 @@ FLASHMEM void MacroWorkflow::switchToTrack(CoreState& state, uint8_t trackIndex)
     if (!configsMatch(previousConfigs, state.pages.activeConfigs)) {
         state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
     }
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     syncRuntimeFromActivePage(state.macros, state.pages);
 }
 

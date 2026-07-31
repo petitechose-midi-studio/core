@@ -395,7 +395,7 @@ FLASHMEM bool MacroPerformanceDomainServices::recordAutomationTakeValue(
     auto& take = macro_ui_->automationTake;
     if (take.phase == MacroAutomationTakePhase::ARMED &&
         !beginAutomationTake_(nowMs)) {
-        clearAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
+        resetAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
         return false;
     }
     if (take.phase != MacroAutomationTakePhase::RECORDING ||
@@ -405,7 +405,7 @@ FLASHMEM bool MacroPerformanceDomainServices::recordAutomationTakeValue(
     }
     if (!seedAutomationTakeColumn_(index)) {
         restoreAutomationTakeManual_();
-        clearAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
+        resetAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
         return false;
     }
     const uint16_t bit = static_cast<uint16_t>(1U << index);
@@ -468,7 +468,7 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
         !macro_ui_->automationTakeDomain ||
         pages_->control.authoredRevision != take.authoredRevision) {
         restoreAutomationTakeManual_();
-        clearAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
+        resetAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
         return false;
     }
     bool finished = false;
@@ -479,14 +479,14 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
     }
     if (!finished) {
         restoreAutomationTakeManual_();
-        clearAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
+        resetAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
         return false;
     }
     if (take.changedMask == 0U) {
         // A real gesture that resolves byte-identically to the prefilled lane
         // is a valid no-op, not a failed recording.
         restoreAutomationTakeManual_();
-        clearAutomationTake_(MacroAutomationRecordingStatus::IDLE);
+        resetAutomationTake_(MacroAutomationRecordingStatus::IDLE);
         macro_ui_->armPostTakeInputGuard(completedMask, nowMs);
         return true;
     }
@@ -516,7 +516,7 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
         }
         if (!built) {
             restoreAutomationTakeManual_();
-            clearAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
+            resetAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
             return false;
         }
         snapshot.pointCount = written;
@@ -539,7 +539,7 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
         }
         if (!replaced) {
             restoreAutomationTakeManual_();
-            clearAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
+            resetAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
             return false;
         }
     }
@@ -559,7 +559,7 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
     }
     if (!domainValid) {
         restoreAutomationTakeManual_();
-        clearAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
+        resetAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
         return false;
     }
 
@@ -594,7 +594,7 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
             );
         }
         restoreAutomationTakeManual_();
-        clearAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
+        resetAutomationTake_(MacroAutomationRecordingStatus::COMMIT_FAILED);
         return false;
     }
 #if OC_ENABLE_STATS
@@ -603,7 +603,7 @@ FLASHMEM bool MacroPerformanceDomainServices::commitAutomationTake_(
     );
 #endif
     refreshManualProjection_();
-    clearAutomationTake_(MacroAutomationRecordingStatus::IDLE);
+    resetAutomationTake_(MacroAutomationRecordingStatus::IDLE);
     macro_ui_->armPostTakeInputGuard(completedMask, nowMs);
     if (operations_.table != nullptr &&
         operations_.table->markProjectMutated != nullptr) {
@@ -618,7 +618,7 @@ FLASHMEM bool MacroPerformanceDomainServices::releaseAutomationTake(
     using namespace core::state::macro;
     const auto phase = macro_ui_->automationTake.phase;
     if (phase == MacroAutomationTakePhase::ARMED) {
-        clearAutomationTake_(MacroAutomationRecordingStatus::IDLE);
+        resetAutomationTake_(MacroAutomationRecordingStatus::IDLE);
         return true;
     }
     if (phase != MacroAutomationTakePhase::RECORDING) return false;
@@ -650,7 +650,7 @@ FLASHMEM void MacroPerformanceDomainServices::restoreAutomationTakeManual_() con
     refreshManualProjection_();
 }
 
-FLASHMEM void MacroPerformanceDomainServices::clearAutomationTake_(
+FLASHMEM void MacroPerformanceDomainServices::resetAutomationTake_(
     core::state::macro::MacroAutomationRecordingStatus status
 ) const {
     macro_ui_->automationTake.reset();
@@ -671,7 +671,7 @@ FLASHMEM bool MacroPerformanceDomainServices::cancelAutomationTake() const {
     if (macro_ui_->automationTake.phase == MacroAutomationTakePhase::RECORDING) {
         restoreAutomationTakeManual_();
     }
-    clearAutomationTake_(MacroAutomationRecordingStatus::IDLE);
+    resetAutomationTake_(MacroAutomationRecordingStatus::IDLE);
     return true;
 }
 

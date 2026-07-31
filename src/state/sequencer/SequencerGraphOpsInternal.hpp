@@ -18,7 +18,6 @@ using oc::note::sequencer::STEP_NODE_GATE_OFFSET;
 using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
 using oc::note::sequencer::STEP_NODE_NUDGE_OFFSET;
 using oc::note::sequencer::STEP_NODE_PROBABILITY_OFFSET;
-using oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC;
 using oc::note::sequencer::STEP_NODE_VELOCITY_OFFSET;
 using oc::note::sequencer::StepSequencerCycleStateSet;
 using oc::note::sequencer::StepSequencerGraph;
@@ -49,10 +48,6 @@ FLASHMEM StepSequencerCycleStateSet* mutableCycleSet(
 );
 FLASHMEM bool ensureGraphAllocated(SequencerPatternState& pattern);
 FLASHMEM bool assignFlag(uint16_t& flags, uint16_t flag, bool enabled);
-FLASHMEM bool initializeNodePitchPolicy(
-    StepSequencerStepNode& node,
-    SequencerPitchEditMode mode
-);
 FLASHMEM uint16_t allocateStepNodes(StepSequencerGraph& graph, uint8_t count);
 FLASHMEM uint16_t allocateSequence(
     StepSequencerGraph& graph,

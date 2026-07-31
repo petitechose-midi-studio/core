@@ -60,7 +60,7 @@ struct EncodeResult {
     uint32_t bytesWritten = 0;
 };
 
-struct DecodeResult {
+struct ScanResult {
     Status status = Status::OK;
     uint16_t chunkCount = 0;
     bool overwriteSafe = true;
@@ -80,10 +80,16 @@ EncodeResult encode(const ChunkView* chunks,
                     uint8_t* out,
                     uint32_t outCapacity);
 
-DecodeResult decode(const uint8_t* data,
-                    uint32_t size,
-                    DecodedChunkView* outChunks,
-                    uint16_t outCapacity,
-                    LoadReport* report = nullptr);
+/**
+ * Performs a bounded structural scan only.
+ *
+ * The returned chunk views are inspection data. Runtime state publication
+ * must go through the strict, atomic ProjectSnapshotPersistenceCodec.
+ */
+ScanResult scan(const uint8_t* data,
+                uint32_t size,
+                DecodedChunkView* outChunks,
+                uint16_t outCapacity,
+                LoadReport* report = nullptr);
 
 }  // namespace core::persistence::project_file

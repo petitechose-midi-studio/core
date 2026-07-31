@@ -20,8 +20,7 @@ const char* rowValue(const core::state::project::ProjectMenuRow& row) {
 core::state::project::ProjectMenuContext projectContext(const char* id,
                                                         const char* name,
                                                         bool dirty,
-                                                        bool hasSavedIdentity,
-                                                        bool overwriteSafe = true) {
+                                                        bool hasSavedIdentity) {
     auto context = core::state::project::ProjectMenuContext{};
     if (id) {
         std::strncpy(context.projectId.data(), id, context.projectId.size() - 1U);
@@ -33,7 +32,6 @@ core::state::project::ProjectMenuContext projectContext(const char* id,
     }
     context.projectDirty = dirty;
     context.projectHasSavedIdentity = hasSavedIdentity;
-    context.projectOverwriteSafe = overwriteSafe;
     return context;
 }
 
@@ -182,24 +180,6 @@ void test_new_project_confirmation_uses_current_project_identity() {
     assert(std::string(rowValue(page.rows[1])) == "Reset");
 
     std::cout << "[PASS] test_new_project_confirmation_uses_current_project_identity\n";
-}
-
-void test_new_project_confirmation_uses_save_as_for_read_only_project() {
-    core::state::project::ProjectNavigationState navigation;
-
-    assert(core::state::project::openNewProjectConfirmation(navigation));
-    const auto page = core::state::project::buildProjectMenuPage(
-        navigation,
-        projectContext("future-project", "future-project", true, true, false)
-    );
-
-    assert(page.rowCount == 3);
-    assert(page.selectedIndex == 0);
-    assert(std::string(page.rows[0].label) == "Save As New");
-    assert(page.rows[0].enabled);
-    assert(std::string(rowValue(page.rows[0])) == "future-project");
-
-    std::cout << "[PASS] test_new_project_confirmation_uses_save_as_for_read_only_project\n";
 }
 
 void test_music_scale_rows_use_project_scale_context() {
@@ -750,7 +730,6 @@ int main() {
     test_root_section_is_a_navigation_root();
     test_new_project_confirmation_page_defaults_to_save_choice();
     test_new_project_confirmation_uses_current_project_identity();
-    test_new_project_confirmation_uses_save_as_for_read_only_project();
     test_music_scale_rows_use_project_scale_context();
     test_music_root_scale_row_summarizes_key_and_folder_target();
     test_transport_rows_use_runtime_context();

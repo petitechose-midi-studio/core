@@ -6,10 +6,10 @@ namespace core::context::standalone::sequencer_overlay_presenter {
 
 StepEditRenderData buildStepEditRenderData(const Source& source);
 core::ui::ContextActionStripProps buildStepEditActionStripProps(const ActionSource& source);
-StepPresetPickerRenderData buildStepPresetPickerRenderData(
+PresetLibraryRenderData buildPresetLibraryRenderData(
     const Source& source
 );
-core::ui::ContextActionStripProps buildStepPresetActionStripProps(
+core::ui::ContextActionStripProps buildPresetLibraryActionStripProps(
     const Source& source
 );
 

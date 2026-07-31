@@ -30,12 +30,10 @@ void test_prepare_macro_view_activation_syncs_runtime_and_status_from_active_pag
 
     state.macros.slots[0].value.set(0.91f);
     state.macros.slots[1].value.set(0.11f);
-    state.statusBar.pageName.set("Old Page");
 
     core::context::standalone::prepareMacroViewActivation(state);
 
     assert(state.pages.currentActivePage() == 2);
-    assert(std::strcmp(state.statusBar.pageName.get(), "Mix Bus") == 0);
     assert(std::fabs(state.macros.slots[0].value.get() - 0.23f) < 0.0001f);
     assert(std::fabs(state.macros.slots[1].value.get() - 0.87f) < 0.0001f);
     assert(std::strcmp(state.macros.slots[0].label.get(), "Macro 1") == 0);

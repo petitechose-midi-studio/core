@@ -49,7 +49,7 @@ static std::optional<oc::hal::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::hal::teensy::CD74HC4067> mux;
 #endif
-static oc::hal::teensy::SDCardBackend settingsStorage("/core-settings.bin");
+static oc::hal::teensy::SDCardBackend deviceSettingsStorage("/core-settings.bin");
 static oc::hal::teensy::SDFileSystemBackend productFileSystemBackend;
 static std::optional<core::persistence::ProductFileService> productFileService;
 static std::optional<core::persistence::ProjectSessionStore> projectSessionStore;
@@ -72,7 +72,7 @@ struct StorageBackendRef {
 };
 
 StorageBackendRef storageBackends[] = {
-    {"Settings", &settingsStorage},
+    {"Settings", &deviceSettingsStorage},
 };
 
 class StorageRecoveryRuntimeManager {
@@ -254,7 +254,7 @@ static FLASHMEM void initStorage() {
     };
 
     const StorageInitItem items[] = {
-        {"Settings", &settingsStorage},
+        {"Settings", &deviceSettingsStorage},
     };
 
     for (const auto& item : items) {
@@ -270,12 +270,12 @@ static FLASHMEM void initStorage() {
     }
 
     OC_LOG_INFO("Storage ready settings={}B; presets/projects use ProductFileService",
-                settingsStorage.capacity());
+                deviceSettingsStorage.capacity());
 }
 
 #if !defined(MS_PROJECT_STORE_SMOKE)
 static FLASHMEM void initApp() {
-    coreState.emplace(settingsStorage);
+    coreState.emplace(deviceSettingsStorage);
     projectSessionStore.emplace(*productFileService);
     projectSessionRestoreService.emplace(*projectSessionStore);
     const auto sessionRestore = projectSessionRestoreService->restore(*coreState);
@@ -406,7 +406,7 @@ FLASHMEM void setup() {
 #if defined(MS_PROJECT_STORE_SMOKE)
     initStorage();
     if (productFileService) {
-        coreState.emplace(settingsStorage);
+        coreState.emplace(deviceSettingsStorage);
         projectStoreSmokeResult =
             core::validation::project::runProjectStoreSmoke(*productFileService, *coreState);
     } else {

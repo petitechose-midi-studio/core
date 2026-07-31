@@ -4,6 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/sequencer/SequencerChordContextProjection.hpp"
 #include "state/sequencer/SequencerScaleCatalog.hpp"
 
 namespace core::handler {
@@ -12,6 +13,17 @@ namespace {
 
 using oc::note::sequencer::StepSequencerScaleSettings;
 namespace catalog = core::state::sequencer::scale_catalog;
+
+FLASHMEM bool sameScaleSettings(
+    StepSequencerScaleSettings lhs,
+    StepSequencerScaleSettings rhs
+) {
+    lhs.clamp();
+    rhs.clamp();
+    return lhs.root == rhs.root &&
+           lhs.type == rhs.type &&
+           lhs.mode == rhs.mode;
+}
 
 }  // namespace
 
@@ -42,8 +54,14 @@ FLASHMEM int SequencerSettingsDomainServices::choiceCount(uint8_t row) const {
     }
 }
 
-FLASHMEM void SequencerSettingsDomainServices::applyChoice(uint8_t row, int choiceIndex) const {
-    StepSequencerScaleSettings settings = track_bank_->projectScaleSettings();
+FLASHMEM core::state::sequencer::SequencerChordContextProjectionStats
+SequencerSettingsDomainServices::applyChoice(
+    uint8_t row,
+    int choiceIndex
+) const {
+    const StepSequencerScaleSettings sourceSettings =
+        track_bank_->projectScaleSettings();
+    StepSequencerScaleSettings settings = sourceSettings;
 
     switch (row) {
         case 0:
@@ -62,13 +80,22 @@ FLASHMEM void SequencerSettingsDomainServices::applyChoice(uint8_t row, int choi
             ];
             break;
         default:
-            return;
+            return {};
     }
 
+    const auto projection = sameScaleSettings(sourceSettings, settings)
+        ? core::state::sequencer::SequencerChordContextProjectionStats{}
+        : core::state::sequencer::projectInheritedChordContexts(
+              *track_bank_,
+              *active_sequencer_,
+              sourceSettings,
+              settings
+          );
     if (track_bank_->setProjectScaleSettings(settings) &&
         !core::state::sequencer::isPatternScaleOverride(active_sequencer_->pattern.scalePolicy)) {
         active_sequencer_->invalidateVariationTelemetry();
     }
+    return projection;
 }
 
 }  // namespace core::handler

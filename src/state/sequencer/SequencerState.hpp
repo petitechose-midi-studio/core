@@ -50,6 +50,7 @@ struct SequencerState {
     oc::note::sequencer::StepSequencerResolvedVariation lastResolvedVariation{};
     oc::note::sequencer::StepSequencerCycleVariationTelemetry cycleVariationTelemetry{};
     oc::note::sequencer::StepSequencerExpandedVariationTelemetry expandedVariationTelemetry{};
+    oc::note::sequencer::StepSequencerRuntimeDiagnostics runtimeDiagnostics{};
 
     /// Active property edited by the 8 macro encoders in Sequencer view
     Signal<StepProperty, 6> activeStepProperty{StepProperty::NOTE};
@@ -59,7 +60,7 @@ struct SequencerState {
     // UI state
     SequencerStepEditOverlayState stepEdit;
     SequencerContextSelectorState contextSelector;
-    SequencerStepPresetPickerState stepPresetPicker;
+    SequencerPresetLibrarySessionState presetLibrary;
     SequencerCcLaneUiState ccLaneUi;
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
     SequencerStepContentSelectorState stepContentSelector;

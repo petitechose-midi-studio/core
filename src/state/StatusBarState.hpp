@@ -10,17 +10,15 @@
 
 #include <oc/time/Time.hpp>
 #include <oc/state/Signal.hpp>
-#include <oc/state/SignalString.hpp>
 
 #include "config/Timing.hpp"
 
 namespace core::state {
 
 using oc::state::Signal;
-using oc::state::SignalLabel;
 
 /**
- * @brief State for TopBar and TransportBar
+ * @brief Reactive transport and runtime activity feedback.
  */
 struct StatusBarState {
     static constexpr uint8_t TRACK_COUNT = 16;
@@ -30,9 +28,6 @@ struct StatusBarState {
     static constexpr uint8_t TRANSIENT_CC_OUT = 1U << 3;
     static constexpr uint8_t TRANSIENT_SYNC_INPUT = 1U << 4;
     static constexpr uint8_t TRANSIENT_BEAT = 1U << 5;
-
-    // TopBar
-    SignalLabel pageName;
 
     // TransportBar - MIDI Note indicators
     Signal<bool> noteInActive{false};

@@ -12,8 +12,10 @@ enum class SequencerPatternScalePolicy : uint8_t {
 };
 
 enum class SequencerPitchEditMode : uint8_t {
-    CHROMATIC = 0,
-    SCALE_DEGREES = 1,
+    // Follow the effective musical context: constrained non-chromatic scales
+    // use degrees; Chromatic and Free contexts use semitones.
+    FOLLOW_SCALE = 0,
+    CHROMATIC = 1,
 };
 
 inline bool isPatternScaleOverride(SequencerPatternScalePolicy policy) {
@@ -28,10 +30,23 @@ inline SequencerPatternScalePolicy sanitizePatternScalePolicy(uint8_t value) {
 }
 
 inline SequencerPitchEditMode sanitizePitchEditMode(uint8_t value) {
-    if (value > static_cast<uint8_t>(SequencerPitchEditMode::SCALE_DEGREES)) {
-        return SequencerPitchEditMode::CHROMATIC;
+    if (value > static_cast<uint8_t>(SequencerPitchEditMode::CHROMATIC)) {
+        return SequencerPitchEditMode::FOLLOW_SCALE;
     }
     return static_cast<SequencerPitchEditMode>(value);
+}
+
+inline bool validPitchEditMode(uint8_t value) {
+    return value <= static_cast<uint8_t>(SequencerPitchEditMode::CHROMATIC);
+}
+
+inline bool pitchContextUsesScaleDegrees(
+    SequencerPitchEditMode mode,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+) {
+    scaleSettings.clamp();
+    return mode == SequencerPitchEditMode::FOLLOW_SCALE &&
+           scaleSettings.isConstrained();
 }
 
 inline oc::note::sequencer::StepSequencerScaleSettings sanitizedScaleSettings(

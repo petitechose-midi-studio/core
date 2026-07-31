@@ -12,6 +12,7 @@
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
+#include "handler/sequencer/SequencerChordPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
@@ -39,6 +40,7 @@ class VirtualListSelectorOverlay;
 }
 
 namespace core::ui {
+class SequencerChordVoiceRail;
 class SequencerPatternEditorOverlay;
 class SequencerStepEditOverlay;
 }
@@ -58,7 +60,6 @@ class SequencerPatternEditorPresenter;
 }  // namespace core::context::standalone
 
 namespace core::handler {
-class MidiCcGlobalFrameCoordinator;
 class PatternPitchSettingsHandler;
 class ProjectTrackEditorHandler;
 class SequencerCcLaneHandler;
@@ -71,6 +72,10 @@ class SequencerStepEditHandler;
 class SequencerStepContentHandler;
 class SequencerStepHandler;
 }  // namespace core::handler
+
+namespace core::sequencer {
+class MidiCcGlobalFrameCoordinator;
+}
 
 namespace core::state::macro {
 struct MacroPagesState;
@@ -107,13 +112,15 @@ public:
         core::state::sequencer::SequencerTrackActivationQueue* trackActivations = nullptr;
         core::state::StatusBarState* statusBar = nullptr;
         core::state::macro::MacroPagesState* macroPages = nullptr;
-        const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
+        const core::sequencer::MidiCcGlobalFrameCoordinator*
+            midiCcCoordinator = nullptr;
     };
 
     SequencerFeatureModule(StateRefs stateRefs,
                            core::handler::SharedTrackDomainServices sharedTracks,
                            core::state::project::ProjectTrackDomainServices trackDomain,
                            core::handler::SequencerStepPresetDomainServices stepPresets,
+                           core::handler::SequencerChordPresetDomainServices chordPresets,
                            oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                            OverlayPresentationRegistry& overlayPresentations,
                            oc::api::EncoderAPI& encoders,
@@ -148,8 +155,8 @@ private:
     core::validation::ux::StructureUxTraceState structure_ux_trace_state_;
     core::context::standalone::ux::SequencerPropertySelectorUxSurface
         property_selector_ux_surface_;
-    core::context::standalone::ux::SequencerStepPresetUxSurface
-        step_preset_ux_surface_;
+    core::context::standalone::ux::SequencerPresetLibraryUxSurface
+        preset_library_ux_surface_;
     core::context::standalone::ux::SequencerCcLaneUxSurface cc_lane_ux_surface_;
     core::context::standalone::ux::SequencerQuickControlsUxSurface quick_controls_ux_surface_;
     core::context::standalone::ux::SequencerStructureUxSurface structure_ux_surface_;
@@ -173,9 +180,11 @@ private:
     core::app::ExtmemUniquePtr<core::ui::SequencerStepEditOverlay> step_edit_overlay_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> step_edit_action_strip_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListSelectorOverlay>
-        step_preset_overlay_;
+        preset_library_overlay_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>
-        step_preset_action_strip_;
+        preset_library_action_strip_;
+    core::app::ExtmemUniquePtr<core::ui::SequencerChordVoiceRail>
+        preset_library_chord_voice_rail_;
     core::app::ExtmemUniquePtr<ms::ui::VirtualListKeyValueOverlay>
         cc_lane_overlay_;
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip>

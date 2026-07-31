@@ -652,15 +652,15 @@ void test_track_paste_rebinds_inherited_lane_and_preserves_pin_through_history()
         true
     );
     assert(result.applied());
-    assert(result.plan.entry.inheritedLaneCount == 1);
-    assert(result.plan.entry.pinnedLaneCount == 1);
+    assert(result.plan.entries[0].inheritedLaneCount == 1);
+    assert(result.plan.entries[0].pinnedLaneCount == 1);
     assert((result.plan.bindingPolicy &
             core::state::CLIPBOARD_TRANSFER_REBIND_INHERITED) != 0);
     assert((result.plan.bindingPolicy &
             core::state::CLIPBOARD_TRANSFER_PRESERVE_PINNED) != 0);
-    assert(result.plan.entry.targetMidiChannel == 10);
-    assert(result.plan.entry.inheritedLaneCount == 1);
-    assert(result.plan.entry.pinnedLaneCount == 1);
+    assert(result.plan.entries[0].targetMidiChannel == 10);
+    assert(result.plan.entries[0].inheritedLaneCount == 1);
+    assert(result.plan.entries[0].pinnedLaneCount == 1);
 
     assert(state.sequencerTracks.activeTrackIndex() == 1);
     assert(state.projectTracks.authored.midiChannels[1] == 10);
@@ -790,8 +790,8 @@ void test_track_copy_paste_undo_redo_preserves_canonical_destination_identity() 
     );
     assert(paste.applied());
     assert(paste.plan.createMask == static_cast<uint16_t>(1U << targetTrack));
-    assert(paste.plan.entry.targetMidiChannel == targetChannel);
-    assert(paste.plan.entry.targetMuted);
+    assert(paste.plan.entries[0].targetMidiChannel == targetChannel);
+    assert(paste.plan.entries[0].targetMuted);
     assert(state.sequencerTracks.currentEnabledMask() ==
            static_cast<uint16_t>((1U << sourceTrack) | (1U << targetTrack)));
     assert(state.sequencerTracks.activeTrackIndex() == targetTrack);

@@ -141,7 +141,7 @@ FLASHMEM bool MacroStructureWorkflow::commitHoldAction(
     // effective target, so callbacks cannot reuse this physical gesture.
     clearHoldAction();
     if (action == core::state::StructureHoldAction::REMOVE) {
-        removeCurrentStructure();
+        applyCurrentStructureLongPress();
         return true;
     }
     if (action == core::state::StructureHoldAction::PASTE) {
@@ -218,11 +218,11 @@ FLASHMEM bool MacroStructureWorkflow::holdTargetStillMatches(
     }
 }
 
-FLASHMEM void MacroStructureWorkflow::eraseCurrentStructure() {
+FLASHMEM void MacroStructureWorkflow::applyCurrentStructureShortPress() {
     switch (effectiveFocus()) {
         case core::state::StructureNavigationFocus::TRACK:
             if (track_ui_.previewAddSlot.get()) return;
-            if (services_.eraseTrack(services_.activeTrack())) {
+            if (services_.resetTrackContent(services_.activeTrack())) {
                 syncPreviewToCurrentContext();
             }
             return;
@@ -235,14 +235,14 @@ FLASHMEM void MacroStructureWorkflow::eraseCurrentStructure() {
         case core::state::StructureNavigationFocus::PAGE:
         default:
             if (macro_ui_.previewAddPageSlot.get()) return;
-            if (services_.erasePage(macro_ui_.previewPageIndex.get())) {
+            if (services_.resetPageContent(macro_ui_.previewPageIndex.get())) {
                 syncPreviewToCurrentContext();
             }
             return;
     }
 }
 
-FLASHMEM void MacroStructureWorkflow::removeCurrentStructure() {
+FLASHMEM void MacroStructureWorkflow::applyCurrentStructureLongPress() {
     switch (effectiveFocus()) {
         case core::state::StructureNavigationFocus::TRACK:
             if (track_ui_.previewAddSlot.get()) return;
@@ -252,7 +252,7 @@ FLASHMEM void MacroStructureWorkflow::removeCurrentStructure() {
             return;
         case core::state::StructureNavigationFocus::STEP:
             if (pages_.isMacroAddSlot(macro_ui_.focusedMacroSlot.get())) return;
-            if (services_.removeMacroAutomation(macro_ui_.focusedMacroSlot.get())) {
+            if (services_.deleteMacroSlot(macro_ui_.focusedMacroSlot.get())) {
                 syncPreviewToCurrentContext();
             }
             return;
@@ -457,6 +457,34 @@ MacroStructureWorkflow::selectionPlacementActive() const {
     return track_ui_.selection.placementActive() ||
            macro_ui_.pageSelection.placementActive() ||
            slotSelectionPlacementActive();
+}
+
+FLASHMEM bool MacroStructureWorkflow::selectionHasItems() const {
+    if (track_ui_.selection.active.get()) {
+        return (
+            track_ui_.selection.selectedMask.get() &
+            services_.trackEnabledMask()
+        ) != 0U;
+    }
+    if (macro_ui_.pageSelection.active.get()) {
+        return (
+            macro_ui_.pageSelection.selectedMask.get() &
+            pages_.currentEnabledPageMask()
+        ) != 0U;
+    }
+    return slotSelectionActive() &&
+           macro_ui_.slotSelection.anySelected();
+}
+
+FLASHMEM core::state::StructureSelectionInteractionPolicy
+MacroStructureWorkflow::selectionInteractionPolicy() const {
+    return core::state::buildStructureSelectionInteractionPolicy({
+        .entryAvailable = false,
+        .active = selectionActive(),
+        .placing = selectionPlacementActive(),
+        .selectedItemsAvailable = selectionHasItems(),
+        .pasteAvailable = canPasteSelection(),
+    });
 }
 
 FLASHMEM void MacroStructureWorkflow::navigateSelection(float delta) {

@@ -9,15 +9,16 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "state/macro/MacroEditMenuModel.hpp"
+#include "state/macro/MacroSourceDetailPolicy.hpp"
+#include "state/modulation/ModulationDepthParameterMapping.hpp"
+#include "state/modulation/ModulatorLfoParameterMapping.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
-#include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
+#include "state/project/ProjectTrackDomainOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
 #include "ui/modulation/ModulatorLfoUiModel.hpp"
-#include "ui/macro/MacroSourceDetailLayout.hpp"
 #include "ui/modulation/ModulatorSparklineModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -27,7 +28,8 @@ namespace internal {
 
 namespace mod_sparkline = core::ui::modulation::sparkline;
 namespace menu = core::state::macro;
-namespace depth_ui = core::ui::modulation::depth;
+namespace depth_parameter = core::state::modulation::depth;
+namespace lfo_parameter = core::state::modulation::lfo;
 
 FLASHMEM const char* recordedShapeCaptureLabel(
     const core::state::modulation::ProjectRecordedShapeCaptureState& capture
@@ -62,9 +64,9 @@ FLASHMEM int bindingDepthPercent(
     const core::state::modulation::ProjectControlState& control,
     const core::state::modulation::ModulationBindingState& binding
 ) {
-    return depth_ui::amountQ15ToPercent(
+    return depth_parameter::amountQ15ToPercent(
         binding.amountQ15,
-        depth_ui::scaleFor(
+        depth_parameter::scaleFor(
             control.authored.modulation,
             control.authored.curves,
             binding
@@ -183,7 +185,7 @@ FLASHMEM void provideModulatorPickerRow(
     const char* primary = "Motion";
     if (modulator.kind == core::state::modulation::ModulatorKind::LFO) {
         primary = lfoRateCompact(
-            core::ui::modulation::lfo::rateIndex(
+            lfo_parameter::rateIndex(
                 modulator.parameters.lfo.periodTicks
             )
         );
@@ -498,7 +500,7 @@ FLASHMEM void formatModulationState(
     );
 }
 
-FLASHMEM core::ui::macro::MacroSourceDetailContext sourceDetailContext(
+FLASHMEM core::state::macro::MacroSourceDetailContext sourceDetailContext(
     const core::state::modulation::ProjectControlMacroDestinationView* slot,
     bool manual
 ) {

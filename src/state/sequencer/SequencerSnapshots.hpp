@@ -30,7 +30,7 @@ struct SequencerPatternSnapshot {
     oc::note::sequencer::StepSequencerVariationRanges variationRanges{};
     SequencerPatternScalePolicy scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
     oc::note::sequencer::StepSequencerScaleSettings scaleOverride{};
-    SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::CHROMATIC;
+    SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;
     oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings{};
     std::array<uint8_t, SequencerPatternState::MAX_STEPS> note{};
     std::array<uint8_t, SequencerPatternState::MAX_STEPS> velocity{};

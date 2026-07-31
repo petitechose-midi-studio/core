@@ -15,7 +15,7 @@ struct AtomicProductFilePaths {
     const char* tmp = nullptr;
 };
 
-oc::type::Result<void> removeProductFileIfExists(
+oc::type::Result<void> deleteProductFileIfExists(
     ProductFileService& files,
     const char* path
 );

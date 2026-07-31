@@ -121,7 +121,6 @@ enum class ContextActionReason : uint8_t {
     WRONG_PAYLOAD,
     INVALID_PAYLOAD,
     ADAPTED,
-    DEFAULTED,
     CORRUPT_ASSET,
     UNSUPPORTED_VERSION,
     STALE_TARGET,

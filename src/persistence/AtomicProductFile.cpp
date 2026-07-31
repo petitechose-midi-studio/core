@@ -17,7 +17,7 @@ FLASHMEM bool isNotFound(const oc::type::Result<void>& result) {
 
 }  // namespace
 
-FLASHMEM oc::type::Result<void> removeProductFileIfExists(
+FLASHMEM oc::type::Result<void> deleteProductFileIfExists(
     ProductFileService& files,
     const char* path
 ) {
@@ -84,8 +84,8 @@ FLASHMEM oc::type::Result<void> commitProductFileTemp(
         );
     }
 
-    auto removeBackup = removeProductFileIfExists(files, backup);
-    if (!removeBackup) return removeBackup;
+    auto deleteBackup = deleteProductFileIfExists(files, backup);
+    if (!deleteBackup) return deleteBackup;
 
     auto currentInfo = files.stat(current);
     if (!currentInfo && currentInfo.error().code != ErrorCode::RESOURCE_NOT_FOUND) {
@@ -106,7 +106,7 @@ FLASHMEM oc::type::Result<void> commitProductFileTemp(
     }
 
     if (hadCurrent) {
-        (void)removeProductFileIfExists(files, backup);
+        (void)deleteProductFileIfExists(files, backup);
     }
     return oc::type::Result<void>::ok();
 }
@@ -128,18 +128,18 @@ FLASHMEM oc::type::Result<void> replaceProductFileAtomically(
     auto ensureDirectory = files.createDirectory(paths.directory);
     if (!ensureDirectory) return ensureDirectory;
 
-    auto removeTmp = removeProductFileIfExists(files, paths.tmp);
-    if (!removeTmp) return removeTmp;
+    auto deleteTmp = deleteProductFileIfExists(files, paths.tmp);
+    if (!deleteTmp) return deleteTmp;
 
     auto write = writeProductFileTemp(files, paths.tmp, data, size, chunkSize);
     if (!write) {
-        (void)removeProductFileIfExists(files, paths.tmp);
+        (void)deleteProductFileIfExists(files, paths.tmp);
         return write;
     }
 
     auto commit = commitProductFileTemp(files, paths.current, paths.backup, paths.tmp);
     if (!commit) {
-        (void)removeProductFileIfExists(files, paths.tmp);
+        (void)deleteProductFileIfExists(files, paths.tmp);
         return commit;
     }
     return oc::type::Result<void>::ok();

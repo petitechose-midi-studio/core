@@ -19,7 +19,6 @@ struct ProjectMetadata {
     uint32_t modifiedCounter = 0;
     bool dirty = false;
     bool hasSavedIdentity = false;
-    bool overwriteSafe = true;
 
     void reset();
 };

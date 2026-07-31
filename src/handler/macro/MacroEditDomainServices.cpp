@@ -515,13 +515,13 @@ FLASHMEM bool MacroEditDomainServices::resumeSources(uint8_t index) const {
     return true;
 }
 
-FLASHMEM bool MacroEditDomainServices::removeSlot(uint8_t index) const {
+FLASHMEM bool MacroEditDomainServices::deleteSlot(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT ||
         !pages_->isMacroSlotActive(index) || history_ == nullptr) {
         return false;
     }
     const auto address = automationAddress(index);
-    if (!history_->removeMacroSlot(*pages_, address)) {
+    if (!history_->deleteMacroSlot(*pages_, address)) {
         return false;
     }
     if (macro_ui_ != nullptr) {

@@ -16,7 +16,7 @@
 #include "../../src/handler/macro/MacroEditHandler.hpp"
 #include "../../src/handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "../../src/state/project/ProjectTrackDomainServices.hpp"
-#include "../../src/handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "../../src/sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "../../src/handler/common/ProjectRecordedShapeCaptureWorkflow.hpp"
 #include "../../src/sequencer/RealtimeMidiQueue.hpp"
 #include "../../src/state/CoreState.hpp"
@@ -49,7 +49,7 @@ struct MacroEditHarness {
     core::handler::MacroEditDomainServices services;
     core::handler::MacroPerformanceDomainServices performanceServices;
     core::sequencer::RealtimeMidiQueue realtimeQueue;
-    core::handler::MidiCcGlobalFrameCoordinator midiCoordinator;
+    core::sequencer::MidiCcGlobalFrameCoordinator midiCoordinator;
     core::handler::MacroMidiCcRuntimeAdapter midiRuntime;
 
     oc::core::event::EventBus eventBus;

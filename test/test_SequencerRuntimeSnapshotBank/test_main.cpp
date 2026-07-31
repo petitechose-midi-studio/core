@@ -337,13 +337,16 @@ void test_refresh_resolves_project_and_pattern_scale() {
         core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE
     ));
     assert(sequencer.setPatternScaleOverride(overrideScale));
-    assert(sequencer.setPitchEditMode(core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES));
+    assert(
+        sequencer.pattern.pitchEditMode ==
+        core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
+    );
 
     index = bank.refresh();
     bank.commit(index);
     assert(sameScale(bank.activeSnapshot().tracks[0].effectiveScaleSettings, overrideScale));
     assert(bank.activeSnapshot().tracks[0].pitchEditMode ==
-           core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
+           core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE);
 
     const StepSequencerScaleSettings nextProjectScale{
         .root = 5,

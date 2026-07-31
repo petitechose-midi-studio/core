@@ -45,7 +45,7 @@ enum class MacroHistoryActionKind : uint8_t {
     CLEAR_AUTOMATION,
     CLEAR_MODULATION,
     PAGE_STRUCTURE,
-    REMOVE_SLOT,
+    DELETE_SLOT,
     DEPTH_EDIT,
     GLOBAL_DEPTH_EDIT,
     SOURCE_STATE,
@@ -326,7 +326,7 @@ struct MacroModulationAssignmentsHistoryPayload {
 };
 
 /** Exact destination removal state; all large/cold members live in PSRAM. */
-struct MacroSlotRemovalState {
+struct MacroSlotDeletionState {
     MacroAutomationHistorySnapshot automation{};
     MacroModulationAssignmentSnapshot modulation{};
     bool macroActive = false;
@@ -334,9 +334,9 @@ struct MacroSlotRemovalState {
     float staticValue = 0.5f;
 };
 
-struct MacroSlotRemovalHistoryPayload {
-    MacroSlotRemovalState before{};
-    MacroSlotRemovalState after{};
+struct MacroSlotDeletionHistoryPayload {
+    MacroSlotDeletionState before{};
+    MacroSlotDeletionState after{};
 };
 
 /**
@@ -522,7 +522,7 @@ struct MacroHistoryChange {
         automationTake{};
     core::app::ExtmemUniquePtr<MacroModulationAssignmentsHistoryPayload>
         modulationAssignments{};
-    core::app::ExtmemUniquePtr<MacroSlotRemovalHistoryPayload> slotRemoval{};
+    core::app::ExtmemUniquePtr<MacroSlotDeletionHistoryPayload> slotDeletion{};
     core::app::ExtmemUniquePtr<MacroPageStructureHistoryPayload>
         pageStructure{};
     MacroDestinationScaleHistoryPayload destinationScale{};

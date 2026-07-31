@@ -16,11 +16,12 @@ int main() {
     storage.init();
 
     core::state::MidiSyncState sync;
-    core::state::CoreSettings settings(storage);
+    core::persistence::DeviceSettingsStore store(storage);
+    assert(store.load(sync));
     core::handler::DeviceSettingsDomainServices services(
         core::handler::DeviceSettingsDomainServices::StateRefs{
             sync,
-            settings,
+            store,
         }
     );
 
@@ -48,6 +49,21 @@ int main() {
     services.applyChoice(3, 7);
     assert(sync.autoLockClockCount.get() == 24);
     assert(!storage.isDirty());
+
+    MemoryStorage failingStorage;
+    failingStorage.init();
+    core::state::MidiSyncState unchangedSync;
+    core::persistence::DeviceSettingsStore failingStore(failingStorage);
+    assert(failingStore.load(unchangedSync));
+    core::handler::DeviceSettingsDomainServices failingServices(
+        core::handler::DeviceSettingsDomainServices::StateRefs{
+            unchangedSync,
+            failingStore,
+        }
+    );
+    failingStorage.setFaultMode(MemoryStorage::FaultMode::COMMIT_FAIL);
+    failingServices.applyChoice(0, 1);
+    assert(unchangedSync.mode.get() == core::state::MidiSyncMode::AUTO);
 
     return 0;
 }

@@ -70,6 +70,7 @@ project::ProjectSnapshot makeSnapshot() {
         "hardware-smoke",
         snapshot.project.metadata.name.size() - 1U
     );
+    snapshot.project.metadata.hasSavedIdentity = true;
     snapshot.project.metadata.modifiedCounter = 42U;
     snapshot.project.transport.tempoBpm = 132.5F;
     snapshot.project.transport.swingPercent = 57U;
@@ -109,6 +110,8 @@ struct RebuildOptions {
     bool omitTrackState = false;
     bool omitMacro = false;
     bool omitSequencer = false;
+    bool setMetaChunkFlags = false;
+    bool addManifest = false;
     project_file::ChunkId changeVersionOf = project_file::ChunkId::MANIFEST;
     int8_t versionDelta = 0;
 };
@@ -121,7 +124,7 @@ uint32_t rebuildContainer(
 ) {
     std::array<project_file::DecodedChunkView, project_file::MAX_CHUNKS> decoded{};
     project_file::LoadReport report{};
-    const auto read = project_file::decode(
+    const auto read = project_file::scan(
         source.data(),
         sourceSize,
         decoded.data(),
@@ -158,9 +161,28 @@ uint32_t rebuildContainer(
             .id = item.id,
             .versionMajor = item.versionMajor,
             .versionMinor = minor,
-            .flags = item.flags,
+            .flags = static_cast<uint16_t>(
+                item.flags |
+                (options.setMetaChunkFlags &&
+                         item.id == project_file::chunkIdValue(
+                             project_file::ChunkId::PROJECT_META
+                         )
+                     ? 1U
+                     : 0U)
+            ),
             .data = item.data,
             .size = item.size,
+        };
+    }
+    const uint8_t manifestPayload = 0U;
+    if (options.addManifest) {
+        chunks[count++] = {
+            .id = project_file::chunkIdValue(project_file::ChunkId::MANIFEST),
+            .versionMajor = 1U,
+            .versionMinor = 0U,
+            .flags = 0U,
+            .data = &manifestPayload,
+            .size = sizeof(manifestPayload),
         };
     }
 
@@ -235,12 +257,12 @@ void testMissingCurrentTrackChunkIsRejected() {
     assert(!decoded.ok);
     assert(!decoded.overwriteSafe);
     assert(decoded.loadStatus == project_file::LoadStatus::FAILED);
-    assert(reportHas(report, project_file::LoadCode::CHUNK_PAYLOAD_INVALID));
+    assert(reportHas(report, project_file::LoadCode::MISSING_REQUIRED_CHUNK));
 
     std::cout << "[PASS] missing authoritative Track chunk is rejected\n";
 }
 
-void testMissingMacroAndSequencerChunksDefaultSafely() {
+void testMissingMacroAndSequencerChunksAreRejectedAtomically() {
     const auto source = makeSnapshot();
     auto current = std::make_unique<ProjectBytes>();
     auto reduced = std::make_unique<ProjectBytes>();
@@ -254,6 +276,9 @@ void testMissingMacroAndSequencerChunksDefaultSafely() {
     );
 
     project::ProjectSnapshot loaded{};
+    loaded.project.transport.tempoBpm = 91.25F;
+    const auto sentinelTracks = authoredTracks();
+    loaded.projectTracks = sentinelTracks;
     project_file::LoadReport report{};
     const auto decoded = snapshot_codec::decodeProjectSnapshot(
         reduced->data(),
@@ -261,12 +286,63 @@ void testMissingMacroAndSequencerChunksDefaultSafely() {
         loaded,
         &report
     );
-    assert(decoded.ok && decoded.overwriteSafe);
-    assert(decoded.loadStatus == project_file::LoadStatus::OK);
-    assert(reportHas(report, project_file::LoadCode::MISSING_OPTIONAL_CHUNK));
-    assert(sameTracks(loaded.projectTracks, source.projectTracks));
+    assert(!decoded.ok && !decoded.overwriteSafe);
+    assert(decoded.loadStatus == project_file::LoadStatus::FAILED);
+    assert(reportHas(report, project_file::LoadCode::MISSING_REQUIRED_CHUNK));
+    assert(loaded.project.transport.tempoBpm == 91.25F);
+    assert(sameTracks(loaded.projectTracks, sentinelTracks));
 
-    std::cout << "[PASS] missing optional runtime chunks default safely\n";
+    std::cout << "[PASS] missing runtime chunks are rejected atomically\n";
+}
+
+void testCurrentProjectChunkSetIsExact() {
+    const auto source = makeSnapshot();
+    auto current = std::make_unique<ProjectBytes>();
+    auto flagged = std::make_unique<ProjectBytes>();
+    auto unexpected = std::make_unique<ProjectBytes>();
+    assert(current && flagged && unexpected);
+    const uint32_t currentSize = encodeSnapshot(source, *current);
+    const uint32_t flaggedSize = rebuildContainer(
+        *current,
+        currentSize,
+        *flagged,
+        {.setMetaChunkFlags = true}
+    );
+    const uint32_t unexpectedSize = rebuildContainer(
+        *current,
+        currentSize,
+        *unexpected,
+        {.addManifest = true}
+    );
+
+    project::ProjectSnapshot loaded{};
+    loaded.project.transport.tempoBpm = 91.25F;
+    project_file::LoadReport report{};
+    auto decoded = snapshot_codec::decodeProjectSnapshot(
+        flagged->data(),
+        flaggedSize,
+        loaded,
+        &report
+    );
+    assert(!decoded.ok);
+    assert(reportHas(
+        report,
+        project_file::LoadCode::UNSUPPORTED_CHUNK_FLAGS
+    ));
+    assert(loaded.project.transport.tempoBpm == 91.25F);
+
+    report.reset();
+    decoded = snapshot_codec::decodeProjectSnapshot(
+        unexpected->data(),
+        unexpectedSize,
+        loaded,
+        &report
+    );
+    assert(!decoded.ok);
+    assert(reportHas(report, project_file::LoadCode::UNEXPECTED_CHUNK));
+    assert(loaded.project.transport.tempoBpm == 91.25F);
+
+    std::cout << "[PASS] current project chunk set is exact\n";
 }
 
 void testStaleCurrentChunkVersionsAreRejectedStrictly() {
@@ -287,6 +363,11 @@ void testStaleCurrentChunkVersionsAreRejectedStrictly() {
         }
     );
     project::ProjectSnapshot partial{};
+    std::strncpy(
+        partial.project.metadata.name.data(),
+        "unchanged",
+        partial.project.metadata.name.size() - 1U
+    );
     project_file::LoadReport partialReport{};
     const auto staleDecoded = snapshot_codec::decodeProjectSnapshot(
         staleControl->data(),
@@ -294,15 +375,19 @@ void testStaleCurrentChunkVersionsAreRejectedStrictly() {
         partial,
         &partialReport
     );
-    assert(staleDecoded.ok);
-    assert(staleDecoded.loadStatus == project_file::LoadStatus::PARTIAL);
+    assert(!staleDecoded.ok);
+    assert(staleDecoded.loadStatus == project_file::LoadStatus::FAILED);
     assert(!staleDecoded.overwriteSafe);
     assert(reportHas(
         partialReport,
         project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION
     ));
-    assert(partial.projectControl);
-    assert(partial.projectControl->modulation.sourceCount == 0U);
+    assert(
+        std::strcmp(
+            partial.project.metadata.name.data(),
+            "unchanged"
+        ) == 0
+    );
 
     const uint32_t futureSize = rebuildContainer(
         *current,
@@ -329,7 +414,47 @@ void testStaleCurrentChunkVersionsAreRejectedStrictly() {
         project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION
     ));
 
-    std::cout << "[PASS] stale current chunks are rejected strictly\n";
+    std::memcpy(
+        futureTrack->data(),
+        current->data(),
+        currentSize
+    );
+    (*futureTrack)[4] = static_cast<uint8_t>(
+        project_file::CONTAINER_VERSION_MAJOR + 1U
+    );
+    project::ProjectSnapshot futureContainer{};
+    std::strncpy(
+        futureContainer.project.metadata.name.data(),
+        "unchanged",
+        futureContainer.project.metadata.name.size() - 1U
+    );
+    project_file::LoadReport futureContainerReport{};
+    const auto futureContainerDecoded =
+        snapshot_codec::decodeProjectSnapshot(
+            futureTrack->data(),
+            currentSize,
+            futureContainer,
+            &futureContainerReport
+        );
+    assert(!futureContainerDecoded.ok);
+    assert(
+        futureContainerDecoded.loadStatus ==
+        project_file::LoadStatus::FAILED
+    );
+    assert(!futureContainerDecoded.overwriteSafe);
+    assert(reportHas(
+        futureContainerReport,
+        project_file::LoadCode::UNSUPPORTED_CONTAINER_VERSION
+    ));
+    assert(
+        std::strcmp(
+            futureContainer.project.metadata.name.data(),
+            "unchanged"
+        ) == 0
+    );
+
+    std::cout
+        << "[PASS] non-current project formats are rejected atomically\n";
 }
 
 }  // namespace
@@ -337,7 +462,8 @@ void testStaleCurrentChunkVersionsAreRejectedStrictly() {
 int main() {
     testCurrentSnapshotRoundTripAndDeterminism();
     testMissingCurrentTrackChunkIsRejected();
-    testMissingMacroAndSequencerChunksDefaultSafely();
+    testMissingMacroAndSequencerChunksAreRejectedAtomically();
+    testCurrentProjectChunkSetIsExact();
     testStaleCurrentChunkVersionsAreRejectedStrictly();
     std::cout << "All ProjectSnapshotPersistenceCodec tests passed\n";
     return 0;

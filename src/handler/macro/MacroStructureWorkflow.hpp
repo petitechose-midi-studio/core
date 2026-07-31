@@ -7,6 +7,7 @@
 
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "state/StructureClipboardState.hpp"
+#include "state/StructureSelectionInteractionPolicy.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/macro/MacroInteractionContextBuilder.hpp"
 #include "state/macro/MacroPagesState.hpp"
@@ -53,8 +54,8 @@ public:
     [[nodiscard]] bool hasHoldAction(core::state::StructureHoldAction action) const;
     [[nodiscard]] bool commitHoldAction(core::state::StructureHoldAction action);
     void clearHoldAction();
-    void eraseCurrentStructure();
-    void removeCurrentStructure();
+    void applyCurrentStructureShortPress();
+    void applyCurrentStructureLongPress();
     void copyCurrentStructure();
     void pasteCurrentStructure();
     void createPreviewedStructure();
@@ -65,6 +66,9 @@ public:
     void cancelSelectionMode();
     [[nodiscard]] bool selectionActive() const;
     [[nodiscard]] bool selectionPlacementActive() const;
+    [[nodiscard]] bool selectionHasItems() const;
+    [[nodiscard]] core::state::StructureSelectionInteractionPolicy
+        selectionInteractionPolicy() const;
     void navigateSelection(float delta);
     void toggleSelectionAtCursor();
     [[nodiscard]] bool copySelection();

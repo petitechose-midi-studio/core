@@ -41,18 +41,6 @@ FLASHMEM SequencerGraphCreateResult createMicroSequence(
         return {.ok = false, .limitReached = true};
     }
 
-    const auto* created = graph->sequence(sequenceId);
-    if (created == nullptr) {
-        return {.ok = false, .limitReached = true};
-    }
-    const uint8_t reserved = sequenceReservedCapacity(*graph, sequenceId);
-    for (uint8_t i = 0; i < reserved; ++i) {
-        (void)initializeNodePitchPolicy(
-            graph->stepNodes[static_cast<uint16_t>(created->firstStepNode + i)],
-            pattern.pitchEditMode
-        );
-    }
-
     parent.childSequenceId = sequenceId;
     parent.flags = static_cast<uint16_t>(parent.flags | STEP_NODE_CHILD_SEQUENCE);
     pattern.bumpGraphRevision();
@@ -247,17 +235,6 @@ FLASHMEM SequencerGraphCreateResult createCycleStateSet(
     const uint16_t setId = allocateCycleSet(*graph, length);
     if (setId == kInvalidId) {
         return {.ok = false, .limitReached = true};
-    }
-
-    const auto* created = graph->cycleSet(setId);
-    if (created == nullptr) {
-        return {.ok = false, .limitReached = true};
-    }
-    for (uint8_t i = 0; i < StepSequencerGraphLimits::MAX_CYCLE_STATES_PER_SET; ++i) {
-        (void)initializeNodePitchPolicy(
-            graph->stepNodes[static_cast<uint16_t>(created->firstStateNode + i)],
-            pattern.pitchEditMode
-        );
     }
 
     parent.cycleSetId = setId;

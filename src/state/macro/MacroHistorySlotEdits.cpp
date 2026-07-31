@@ -16,7 +16,7 @@ namespace core::state::macro {
 
 using namespace history_detail;
 
-FLASHMEM bool MacroHistoryService::removeMacroSlot(
+FLASHMEM bool MacroHistoryService::deleteMacroSlot(
     MacroPagesState& pages,
     const MacroAutomationSlotAddress& address
 ) {
@@ -31,13 +31,13 @@ FLASHMEM bool MacroHistoryService::removeMacroSlot(
 
     auto change = core::app::makeExtmemUnique<MacroHistoryChange>();
     if (!change) return false;
-    change->slotRemoval =
-        core::app::makeExtmemUnique<MacroSlotRemovalHistoryPayload>();
-    if (!change->slotRemoval) return false;
-    change->kind = MacroHistoryActionKind::REMOVE_SLOT;
+    change->slotDeletion =
+        core::app::makeExtmemUnique<MacroSlotDeletionHistoryPayload>();
+    if (!change->slotDeletion) return false;
+    change->kind = MacroHistoryActionKind::DELETE_SLOT;
     change->address = address;
-    auto& payload = *change->slotRemoval;
-    if (!captureMacroSlotRemovalState(pages, address, payload.before)) {
+    auto& payload = *change->slotDeletion;
+    if (!captureMacroSlotDeletionState(pages, address, payload.before)) {
         return false;
     }
 
@@ -55,11 +55,11 @@ FLASHMEM bool MacroHistoryService::removeMacroSlot(
     payload.after.cc = defaultMacroCc(address.page, address.macro);
     payload.after.staticValue = 0.5f;
 
-    if (!liveMacroSlotRemovalStateMatches(pages, address, payload.before) ||
-        !applyMacroSlotRemovalState(pages, address, payload.after) ||
-        !liveMacroSlotRemovalStateMatches(pages, address, payload.after)) {
-        if (!liveMacroSlotRemovalStateMatches(pages, address, payload.before)) {
-            (void)applyMacroSlotRemovalState(pages, address, payload.before);
+    if (!liveMacroSlotDeletionStateMatches(pages, address, payload.before) ||
+        !applyMacroSlotDeletionState(pages, address, payload.after) ||
+        !liveMacroSlotDeletionStateMatches(pages, address, payload.after)) {
+        if (!liveMacroSlotDeletionStateMatches(pages, address, payload.before)) {
+            (void)applyMacroSlotDeletionState(pages, address, payload.before);
         }
         return false;
     }

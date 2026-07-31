@@ -47,7 +47,7 @@ FLASHMEM const char* macroActionLabel(uint8_t rawKind) {
             return "Clear Modulation";
         case Kind::PAGE_STRUCTURE:
             return "Macro Page Structure";
-        case Kind::REMOVE_SLOT:
+        case Kind::DELETE_SLOT:
             return "Delete Macro";
         case Kind::DEPTH_EDIT:
             return "Modulation Depth";
@@ -119,7 +119,7 @@ FLASHMEM const char* sequencerActionLabel(uint8_t rawKind) {
             return "Clear CC Event";
         case Kind::CcLaneSettings:
             return "CC Lane Settings";
-        case Kind::CcLaneRemove:
+        case Kind::CcLaneDelete:
             return "Remove CC Lane";
         case Kind::CcLaneTransitionEdit:
             return "CC Lane Curve";

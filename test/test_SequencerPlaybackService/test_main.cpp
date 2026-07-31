@@ -13,7 +13,7 @@
 #include <oc/time/Time.hpp>
 
 #include "../../src/handler/common/SharedTrackDomainServices.hpp"
-#include "../../src/handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "../../src/sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/sequencer/SequencerStructureTrackTransferTransaction.hpp"
 #include "../../src/sequencer/RealtimeMidiQueue.hpp"
@@ -1057,7 +1057,7 @@ void test_cc_lane_runtime_is_integrated_once_per_tick_before_note_on() {
         sequencer, bank, projectNavigation,
     };
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     setRootStep(sequencer.pattern, 60, 4);
     auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
@@ -1235,7 +1235,7 @@ void test_project_track_mute_and_solo_filter_note_and_cc_emission() {
     const auto runMixCase = [&](uint16_t mutedMask, uint16_t soloMask) {
         core::sequencer::RealtimeMidiQueue midiQueue;
         core::sequencer::SequencerCcLaneRuntime ccRuntime;
-        core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+        core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
         SequencerTrackFixturePlaybackAdapter service{
             sequencer,
             status,
@@ -1420,7 +1420,7 @@ void test_track_three_channel_five_cc74_precedes_note_on() {
         sequencer, bank, projectNavigation,
     };
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     constexpr uint8_t trackThree = 2;
     constexpr uint8_t channelFive = 4;
@@ -1563,7 +1563,7 @@ void test_track_paste_emits_note_and_inherited_cc_on_destination_channel() {
         state.projectNavigation,
     };
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
     SequencerTrackFixturePlaybackAdapter service{
         state.sequencer,
         state.statusBar,
@@ -1673,7 +1673,7 @@ void test_cc_lane_event_is_emitted_on_note_off_only_step() {
         sequencer, bank, projectNavigation,
     };
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     // Step 0 owns the note. Step 1 is deliberately note-empty and only owns
     // a CC event, at the exact tick where step 0's 100% gate emits Note-Off.
@@ -1779,7 +1779,7 @@ void test_editing_future_cc_step_waits_for_playhead() {
         sequencer, bank, projectNavigation,
     };
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     sequencer.pattern.setContentLength(4);
     sequencer.pattern.stepsPerBeat.set(4);
@@ -1892,7 +1892,7 @@ void test_negative_project_delay_predicts_cc_lane_without_advancing_live_hold() 
     };
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
     core::sequencer::SequencerCcLaneRuntime predictiveRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     sequencer.pattern.setContentLength(4);
     sequencer.pattern.stepsPerBeat.set(4);
@@ -1969,7 +1969,7 @@ void test_negative_cc_lookahead_crosses_uint32_tick_wrap() {
     };
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
     core::sequencer::SequencerCcLaneRuntime predictiveRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     constexpr uint32_t tick = UINT32_MAX - 49U;
     constexpr uint32_t tickPeriodUs = 1000U;
@@ -2080,7 +2080,7 @@ void test_failed_negative_cc_projection_falls_back_due_now() {
     };
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
     core::sequencer::SequencerCcLaneRuntime predictiveRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     sequencer.pattern.setContentLength(8U);
     sequencer.pattern.stepsPerBeat.set(4U);
@@ -2177,7 +2177,7 @@ void test_sixteen_track_negative_cc_lookahead_uses_one_complete_pass() {
 
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
     core::sequencer::SequencerCcLaneRuntime predictiveRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
     SequencerTrackFixturePlaybackAdapter service{
         sequencer,
         status,
@@ -2266,7 +2266,7 @@ void test_transport_stop_keeps_lane_winner_without_macro_fallback_or_reemit() {
         sequencer, bank, projectNavigation,
     };
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
     assert(lanes != nullptr);
@@ -2384,7 +2384,7 @@ void test_unassigned_inherited_route_replaces_valid_hold_without_stale_cc() {
         sequencer, bank, projectNavigation,
     };
     core::sequencer::SequencerCcLaneRuntime ccRuntime;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{midiQueue};
 
     auto* lanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
     assert(lanes != nullptr);

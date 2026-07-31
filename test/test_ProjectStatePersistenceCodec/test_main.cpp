@@ -164,12 +164,13 @@ void test_project_state_roundtrip_long_slug() {
     std::cout << "[PASS] test_project_state_roundtrip_long_slug\n";
 }
 
-void test_missing_optional_chunks_default_and_report_without_blocking_overwrite() {
+void test_missing_required_chunks_are_rejected_atomically() {
     uint8_t bytes[128] = {};
     auto encodeResult = project_file::encode(nullptr, 0, 0, bytes, sizeof(bytes));
     assert(encodeResult.status == project_file::Status::OK);
 
     project::ProjectState loaded;
+    loaded.transport.tempoBpm = 91.25F;
     project_file::LoadReport report{};
     auto decodeResult = container_support::decode(
         bytes,
@@ -177,19 +178,16 @@ void test_missing_optional_chunks_default_and_report_without_blocking_overwrite(
         loaded,
         &report
     );
-    assert(decodeResult.ok);
-    assert(decodeResult.overwriteSafe);
-    assert(report.ok());
-    assert(reportHas(report, project_file::LoadCode::MISSING_OPTIONAL_CHUNK));
-    assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
+    assert(!decodeResult.ok);
+    assert(!decodeResult.overwriteSafe);
+    assert(report.status == project_file::LoadStatus::FAILED);
+    assert(reportHas(report, project_file::LoadCode::MISSING_REQUIRED_CHUNK));
+    assert(loaded.transport.tempoBpm == 91.25F);
 
-    project::ProjectState defaults;
-    assert(sameProjectCore(loaded, defaults));
-
-    std::cout << "[PASS] test_missing_optional_chunks_default_and_report_without_blocking_overwrite\n";
+    std::cout << "[PASS] missing required chunks are rejected atomically\n";
 }
 
-void test_same_size_stale_minor_defaults_and_blocks_overwrite() {
+void test_same_size_stale_minor_is_rejected_atomically() {
     codec::ProjectTransportPayload transport{};
     transport.tempoCentiBpm = 18000;
     std::array<uint8_t, codec::PROJECT_TRANSPORT_PAYLOAD_SIZE> transportBytes{};
@@ -212,6 +210,7 @@ void test_same_size_stale_minor_defaults_and_blocks_overwrite() {
     assert(encodeResult.status == project_file::Status::OK);
 
     project::ProjectState loaded;
+    loaded.transport.tempoBpm = 91.25F;
     project_file::LoadReport report{};
     auto decodeResult = container_support::decode(
         bytes,
@@ -219,17 +218,16 @@ void test_same_size_stale_minor_defaults_and_blocks_overwrite() {
         loaded,
         &report
     );
-    assert(decodeResult.ok);
+    assert(!decodeResult.ok);
     assert(!decodeResult.overwriteSafe);
-    assert(report.status == project_file::LoadStatus::PARTIAL);
+    assert(report.status == project_file::LoadStatus::FAILED);
     assert(reportHas(report, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
-    assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
-    assert(loaded.transport.tempoBpm == project::ProjectTransportState::DEFAULT_TEMPO_BPM);
+    assert(loaded.transport.tempoBpm == 91.25F);
 
-    std::cout << "[PASS] stale minor defaults and blocks overwrite\n";
+    std::cout << "[PASS] stale minor is rejected atomically\n";
 }
 
-void test_future_chunk_version_defaults_and_blocks_overwrite() {
+void test_future_chunk_version_is_rejected_atomically() {
     codec::ProjectTransportPayload transport{};
     transport.tempoCentiBpm = 18000;
     std::array<uint8_t, codec::PROJECT_TRANSPORT_PAYLOAD_SIZE> transportBytes{};
@@ -252,6 +250,7 @@ void test_future_chunk_version_defaults_and_blocks_overwrite() {
     assert(encodeResult.status == project_file::Status::OK);
 
     project::ProjectState loaded;
+    loaded.transport.tempoBpm = 91.25F;
     project_file::LoadReport report{};
     auto decodeResult = container_support::decode(
         bytes,
@@ -259,18 +258,17 @@ void test_future_chunk_version_defaults_and_blocks_overwrite() {
         loaded,
         &report
     );
-    assert(decodeResult.ok);
+    assert(!decodeResult.ok);
     assert(!decodeResult.overwriteSafe);
-    assert(report.status == project_file::LoadStatus::PARTIAL);
+    assert(report.status == project_file::LoadStatus::FAILED);
     assert(report.hasUnknownUnsupportedData);
     assert(reportHas(report, project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION));
-    assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
-    assert(loaded.transport.tempoBpm == project::ProjectTransportState::DEFAULT_TEMPO_BPM);
+    assert(loaded.transport.tempoBpm == 91.25F);
 
-    std::cout << "[PASS] test_future_chunk_version_defaults_and_blocks_overwrite\n";
+    std::cout << "[PASS] future chunk version is rejected atomically\n";
 }
 
-void test_invalid_payload_size_defaults_and_reports_partial_load() {
+void test_invalid_payload_size_is_rejected_atomically() {
     const uint8_t badTransport[] = {1, 2, 3};
     const project_file::ChunkView chunks[] = {{
         .id = project_file::chunkIdValue(project_file::ChunkId::TRANSPORT),
@@ -286,6 +284,7 @@ void test_invalid_payload_size_defaults_and_reports_partial_load() {
     assert(encodeResult.status == project_file::Status::OK);
 
     project::ProjectState loaded;
+    loaded.transport.tempoBpm = 91.25F;
     project_file::LoadReport report{};
     auto decodeResult = container_support::decode(
         bytes,
@@ -293,14 +292,13 @@ void test_invalid_payload_size_defaults_and_reports_partial_load() {
         loaded,
         &report
     );
-    assert(decodeResult.ok);
+    assert(!decodeResult.ok);
     assert(!decodeResult.overwriteSafe);
-    assert(report.status == project_file::LoadStatus::PARTIAL);
+    assert(report.status == project_file::LoadStatus::FAILED);
     assert(reportHas(report, project_file::LoadCode::CHUNK_PAYLOAD_INVALID));
-    assert(reportHas(report, project_file::LoadCode::DEFAULTED_CHUNK));
-    assert(loaded.transport.tempoBpm == project::ProjectTransportState::DEFAULT_TEMPO_BPM);
+    assert(loaded.transport.tempoBpm == 91.25F);
 
-    std::cout << "[PASS] test_invalid_payload_size_defaults_and_reports_partial_load\n";
+    std::cout << "[PASS] invalid payload size is rejected atomically\n";
 }
 
 void test_editing_defaults_roundtrip_explicit_cc_zero_without_growth() {
@@ -376,10 +374,10 @@ int main() {
 
     test_project_state_roundtrip_core_chunks();
     test_project_state_roundtrip_long_slug();
-    test_missing_optional_chunks_default_and_report_without_blocking_overwrite();
-    test_same_size_stale_minor_defaults_and_blocks_overwrite();
-    test_future_chunk_version_defaults_and_blocks_overwrite();
-    test_invalid_payload_size_defaults_and_reports_partial_load();
+    test_missing_required_chunks_are_rejected_atomically();
+    test_same_size_stale_minor_is_rejected_atomically();
+    test_future_chunk_version_is_rejected_atomically();
+    test_invalid_payload_size_is_rejected_atomically();
     test_editing_defaults_roundtrip_explicit_cc_zero_without_growth();
     test_editing_corruption_is_rejected_transactionally();
 

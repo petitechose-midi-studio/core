@@ -9,15 +9,13 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "state/macro/MacroEditMenuModel.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
-#include "ui/modulation/ModulatorLfoUiModel.hpp"
-#include "ui/macro/MacroSourceDetailLayout.hpp"
+#include "state/macro/MacroSourceDetailPolicy.hpp"
 #include "ui/modulation/ModulatorSparklineModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -299,26 +297,26 @@ FLASHMEM void buildAutomationRenderData(
         );
 
         const auto layout =
-            core::ui::macro::buildAutomationDetailLayout(detailContext);
+            core::state::macro::buildAutomationDetailPolicy(detailContext);
         for (uint8_t i = 0; i < layout.count; ++i) {
             ms::ui::KeyValueRow row{};
             switch (layout.items[i]) {
-                case core::ui::macro::AutomationDetailItem::PLAYBACK:
+                case core::state::macro::AutomationDetailItem::PLAYBACK:
                     row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = ::standalone::icons::MACRO_AUTOMATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION};
                     break;
-                case core::ui::macro::AutomationDetailItem::RESUME:
+                case core::state::macro::AutomationDetailItem::RESUME:
                     row = {.key = "Automation", .value = data.valueBuffers[5].data(), .icon = ::standalone::icons::STATUS_RESUME, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_AUTOMATION};
                     break;
-                case core::ui::macro::AutomationDetailItem::CONVERT_TO_MODULATION:
+                case core::state::macro::AutomationDetailItem::CONVERT_TO_MODULATION:
                     row = {.key = "Convert to Mod", .value = data.valueBuffers[1].data(), .icon = ::standalone::icons::STATUS_PREVIEW, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION};
                     break;
-                case core::ui::macro::AutomationDetailItem::LENGTH:
+                case core::state::macro::AutomationDetailItem::LENGTH:
                     row = {.key = "Length", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::LENGTH, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::STEP_LENGTH};
                     break;
-                case core::ui::macro::AutomationDetailItem::OFFSET:
+                case core::state::macro::AutomationDetailItem::OFFSET:
                     row = {.key = "Offset", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::OFFSET, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::STEP_OFFSET};
                     break;
-                case core::ui::macro::AutomationDetailItem::INVALID:
+                case core::state::macro::AutomationDetailItem::INVALID:
                     break;
             }
             data.rows[i] = row;
@@ -416,23 +414,23 @@ FLASHMEM void buildAutomationRenderData(
             ? buildModulationSparkline(data.modulationPreview)
             : ms::ui::KeyValueSparkline{};
         const auto layout =
-            core::ui::macro::buildModulationDetailLayout(detailContext);
+            core::state::macro::buildModulationDetailPolicy(detailContext);
         for (uint8_t i = 0; i < layout.count; ++i) {
             ms::ui::KeyValueRow row{};
             switch (layout.items[i]) {
-                case core::ui::macro::ModulationDetailItem::PLAYBACK:
+                case core::state::macro::ModulationDetailItem::PLAYBACK:
                     row = {.key = "Playback", .value = data.valueBuffers[0].data(), .icon = paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION};
                     break;
-                case core::ui::macro::ModulationDetailItem::DEPTH:
+                case core::state::macro::ModulationDetailItem::DEPTH:
                     row = {.key = "Depth", .value = data.valueBuffers[1].data(), .icon = paused ? ::standalone::icons::STATUS_PAUSED : ::standalone::icons::KNOB, .iconFont = standalone_fonts.icons_14, .iconColor = paused ? ::standalone::theme::color::MACRO_PAUSED : ::standalone::theme::color::MACRO_MODULATION};
                     break;
-                case core::ui::macro::ModulationDetailItem::SHAPE:
+                case core::state::macro::ModulationDetailItem::SHAPE:
                     row = {.key = "Shape", .value = data.valueBuffers[2].data(), .icon = ::standalone::icons::MACRO_MODULATION, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::MACRO_MODULATION, .sparkline = modulationSparkline};
                     break;
-                case core::ui::macro::ModulationDetailItem::ORIGIN:
+                case core::state::macro::ModulationDetailItem::ORIGIN:
                     row = {.key = "Origin", .value = data.valueBuffers[3].data(), .icon = ::standalone::icons::STATUS_PREVIEW, .iconFont = standalone_fonts.icons_14, .iconColor = ::standalone::theme::color::TEXT_SECONDARY};
                     break;
-                case core::ui::macro::ModulationDetailItem::INVALID:
+                case core::state::macro::ModulationDetailItem::INVALID:
                     break;
             }
             data.rows[i] = row;

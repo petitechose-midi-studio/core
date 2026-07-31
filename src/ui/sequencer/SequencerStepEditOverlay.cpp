@@ -465,6 +465,8 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
         lv_obj_set_style_text_align(widgets.value, LV_TEXT_ALIGN_CENTER, 0);
     }
 
+    chord_voice_rail_.create(property_row_);
+
     spacer_ = lv_obj_create(panel_);
     lv_obj_remove_style_all(spacer_);
     lv_obj_set_width(spacer_, LV_PCT(100));
@@ -487,7 +489,7 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
     lv_obj_set_style_pad_column(action_row_, CHIP_GAP, 0);
     lv_obj_clear_flag(action_row_, LV_OBJ_FLAG_SCROLLABLE);
 
-    for (size_t i = 0; i < ACTION_COUNT; ++i) {
+    for (size_t i = 0; i < ACTION_WIDGET_COUNT; ++i) {
         auto& widgets = action_widgets_[i];
         widgets.box = lv_obj_create(action_row_);
         lv_obj_remove_style_all(widgets.box);
@@ -515,6 +517,9 @@ FLASHMEM void SequencerStepEditOverlay::createUI(lv_obj_t* parent) {
         lv_obj_set_width(widgets.value, LV_PCT(100));
         lv_obj_set_height(widgets.value, LV_SIZE_CONTENT);
         lv_obj_set_style_text_align(widgets.value, LV_TEXT_ALIGN_CENTER, 0);
+        if (i >= ACTION_COUNT) {
+            lv_obj_add_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 
@@ -530,6 +535,16 @@ FLASHMEM void SequencerStepEditOverlay::renderChip(
 
     const char* value = chip.value ? chip.value : "";
     const char* icon = chip.icon ? chip.icon : "";
+    const bool visible = (chip.key && chip.key[0] != '\0') ||
+                         value[0] != '\0' ||
+                         icon[0] != '\0';
+    if (!visible) {
+        lv_obj_add_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
+        cache.valid = false;
+        return;
+    }
+    lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
+
     const uint32_t color = chip.color == 0 ? TEXT_SECONDARY : chip.color;
     const lv_opa_t iconOpa = selected ? LV_OPA_COVER : (active ? LV_OPA_70 : LV_OPA_30);
     const uint32_t valueColor = selected ? TEXT_PRIMARY : TEXT_SECONDARY;
@@ -573,7 +588,7 @@ FLASHMEM void SequencerStepEditOverlay::renderAction(
     const SequencerStepEditActionChip& chip,
     bool selected
 ) {
-    if (index >= ACTION_COUNT) return;
+    if (index >= ACTION_WIDGET_COUNT) return;
     auto& widgets = action_widgets_[index];
     auto& cache = action_cache_[index];
     if (!widgets.box || !widgets.icon || !widgets.value) return;
@@ -583,10 +598,17 @@ FLASHMEM void SequencerStepEditOverlay::renderAction(
     const bool active = (chip.key && chip.key[0] != '\0') ||
                         value[0] != '\0' ||
                         icon[0] != '\0';
+    if (!active) {
+        lv_obj_add_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
+        cache.valid = false;
+        return;
+    }
+    lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
+
     const uint32_t color = chip.color == 0 ? TEXT_SECONDARY : chip.color;
-    const lv_opa_t iconOpa = active ? (selected ? LV_OPA_COVER : LV_OPA_70) : LV_OPA_TRANSP;
+    const lv_opa_t iconOpa = selected ? LV_OPA_COVER : LV_OPA_70;
     const uint32_t valueColor = selected ? TEXT_PRIMARY : TEXT_SECONDARY;
-    const lv_opa_t valueOpa = active ? (selected ? LV_OPA_COVER : LV_OPA_70) : LV_OPA_TRANSP;
+    const lv_opa_t valueOpa = selected ? LV_OPA_COVER : LV_OPA_70;
     const bool colorChanged = !cache.valid || cache.color != color;
     const bool stateChanged =
         !cache.valid || cache.selected != selected || cache.active != active;
@@ -597,7 +619,7 @@ FLASHMEM void SequencerStepEditOverlay::renderAction(
         lv_obj_set_style_text_color(widgets.icon, lv_color_hex(color), 0);
     }
     if (stateChanged) {
-        setChipState(widgets.box, selected && active, active, LV_OPA_30);
+        setChipState(widgets.box, selected, true, LV_OPA_30);
     }
     setCachedIcon(
         widgets.icon,
@@ -666,9 +688,12 @@ FLASHMEM void SequencerStepEditOverlay::render(
         title_centered_cache_ == props.titleCentered &&
         focus_label_visible_cache_ == props.focusLabelVisible &&
         chord_detail_layout_cache_ == props.chordDetailLayout &&
+        chord_formula_layout_cache_ == props.chordFormulaLayout &&
+        chord_source_layout_cache_ == props.chordSourceLayout &&
         selected_visual_slot_cache_ == props.selectedVisualSlot &&
         focus_color_cache_ == props.focusColor &&
-        title_cache_.color == (props.titleColor == 0 ? TEXT_PRIMARY : props.titleColor)) {
+        title_cache_.color == (props.titleColor == 0 ? TEXT_PRIMARY : props.titleColor) &&
+        meta_cache_.color == (props.metaColor == 0 ? TEXT_SECONDARY : props.metaColor)) {
         return;
     }
 
@@ -680,8 +705,31 @@ FLASHMEM void SequencerStepEditOverlay::render(
                 lv_obj_clear_flag(trigger_row_, LV_OBJ_FLAG_HIDDEN);
             }
         }
+        for (size_t i = ACTION_COUNT; i < ACTION_WIDGET_COUNT; ++i) {
+            if (!action_widgets_[i].box) continue;
+            if (props.chordDetailLayout) {
+                lv_obj_clear_flag(action_widgets_[i].box, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(action_widgets_[i].box, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
         chord_detail_layout_cache_ = props.chordDetailLayout;
     }
+
+    if (chord_formula_layout_cache_ != props.chordFormulaLayout) {
+        for (auto& widgets : property_widgets_) {
+            if (!widgets.box) continue;
+            if (props.chordFormulaLayout) {
+                lv_obj_add_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_clear_flag(widgets.box, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+    }
+    auto voiceRailProps = props.chordVoiceRail;
+    voiceRailProps.visible =
+        props.chordFormulaLayout && props.chordVoiceRail.visible;
+    chord_voice_rail_.render(voiceRailProps);
 
     if (action_row_ && actions_visible_cache_ != actionRowVisible) {
         if (actionRowVisible) {
@@ -715,6 +763,11 @@ FLASHMEM void SequencerStepEditOverlay::render(
     }
     if (meta_) {
         setCachedText(meta_, meta_cache_.text, props.meta);
+        setCachedColor(
+            meta_,
+            meta_cache_.color,
+            props.metaColor == 0 ? TEXT_SECONDARY : props.metaColor
+        );
     }
     if (focus_label_) {
         if (focus_label_visible_cache_ != props.focusLabelVisible) {
@@ -921,15 +974,25 @@ FLASHMEM void SequencerStepEditOverlay::render(
         NUDGE_INDEX,
     };
     constexpr SequencerStepEditVisualSlot chordCompositionSlots[] = {
-        SequencerStepEditVisualSlot::CHORD_MODE,
-        SequencerStepEditVisualSlot::CHORD_HARMONY,
-        SequencerStepEditVisualSlot::CHORD_VOICES,
+        SequencerStepEditVisualSlot::CHORD_SHAPE,
+        SequencerStepEditVisualSlot::CHORD_FORMULA,
         SequencerStepEditVisualSlot::CHORD_INVERSION,
+        SequencerStepEditVisualSlot::CHORD_VOICING,
+    };
+    constexpr SequencerStepEditVisualSlot chordSourceSlots[] = {
+        SequencerStepEditVisualSlot::CHORD_SOURCE_PARENT,
+        SequencerStepEditVisualSlot::CHORD_SOURCE_SINGLE,
+        SequencerStepEditVisualSlot::CHORD_SOURCE_LOCAL,
+        SequencerStepEditVisualSlot::AUTO,
     };
     for (size_t i = 0; i < MUSICAL_PROPERTY_COUNT; ++i) {
         const size_t propertyIndex = musicalIndices[i];
         const auto slot = props.chordDetailLayout
-            ? chordCompositionSlots[i]
+            ? (props.chordSourceLayout
+                ? chordSourceSlots[i]
+                : (props.chordFormulaLayout
+                    ? SequencerStepEditVisualSlot::AUTO
+                    : chordCompositionSlots[i]))
             : static_cast<SequencerStepEditVisualSlot>(
                   static_cast<uint8_t>(SequencerStepEditVisualSlot::PITCH) + i
               );
@@ -938,16 +1001,17 @@ FLASHMEM void SequencerStepEditOverlay::render(
             property_cache_[i],
             props.properties[propertyIndex],
             selectedVisualSlot(props, slot, selectedProperty == propertyIndex),
-            props.enabled,
+            props.enabled && props.properties[propertyIndex].active,
             standalone::icons::Size::M
         );
     }
 
     if (props.chordDetailLayout) {
         constexpr SequencerStepEditVisualSlot chordPerformanceSlots[] = {
-            SequencerStepEditVisualSlot::CHORD_VOICING,
             SequencerStepEditVisualSlot::CHORD_STRUM,
             SequencerStepEditVisualSlot::CHORD_VELOCITY,
+            SequencerStepEditVisualSlot::CHORD_CONTEXT,
+            SequencerStepEditVisualSlot::AUTO,
         };
         for (size_t i = 0; i < CHORD_PERFORMANCE_COUNT; ++i) {
             const auto& chip = props.chordPerformance[i];
@@ -981,6 +1045,8 @@ FLASHMEM void SequencerStepEditOverlay::render(
     title_centered_cache_ = props.titleCentered;
     focus_label_visible_cache_ = props.focusLabelVisible;
     chord_detail_layout_cache_ = props.chordDetailLayout;
+    chord_formula_layout_cache_ = props.chordFormulaLayout;
+    chord_source_layout_cache_ = props.chordSourceLayout;
     selected_visual_slot_cache_ = props.selectedVisualSlot;
     focus_color_cache_ = props.focusColor;
 }

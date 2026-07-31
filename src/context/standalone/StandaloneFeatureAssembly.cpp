@@ -18,6 +18,7 @@
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerChordPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
@@ -112,6 +113,10 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         core::handler::SharedTrackDomainServices::fromCoreState(state),
         core::state::project::ProjectTrackDomainServices::fromCoreState(state),
         core::handler::SequencerStepPresetDomainServices::fromCoreState(state, productFiles),
+        core::handler::SequencerChordPresetDomainServices::fromCoreState(
+            state,
+            productFiles
+        ),
         overlays,
         overlayPresentations,
         encoders,
@@ -190,7 +195,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         core::handler::DeviceSettingsDomainServices{
             core::handler::DeviceSettingsDomainServices::StateRefs{
                 state.midiSync,
-                state.settings,
+                state.deviceSettingsStore,
             }
         },
         core::handler::SequencerSettingsDomainServices{

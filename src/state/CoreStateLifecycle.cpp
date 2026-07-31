@@ -148,17 +148,6 @@ void CoreStateLifecycle::updateMutationCoalescers_(CoreState& state) {
     }
 }
 
-void CoreStateLifecycle::updatePendingSharedTrackPersist_(CoreState& state) {
-    if (!state.sharedTrackPersistPending_) return;
-
-    const uint32_t nowMs = oc::time::millis();
-    if ((nowMs - state.sharedTrackPersistTimestampMs_) < CoreSettings::VALUE_SAVE_DELAY_MS) {
-        return;
-    }
-
-    state.persistSharedTrackState_();
-}
-
 FLASHMEM void CoreStateLifecycle::flushMutationCoalescers_(CoreState& state) {
     if (state.macroDomain_.mutationCoalescer) {
         state.macroDomain_.mutationCoalescer->flush();
@@ -168,19 +157,11 @@ FLASHMEM void CoreStateLifecycle::flushMutationCoalescers_(CoreState& state) {
     }
 }
 
-FLASHMEM void CoreStateLifecycle::flushPendingSharedTrackPersist_(CoreState& state) {
-    if (!state.sharedTrackPersistPending_) return;
-    state.persistSharedTrackState_();
-}
-
 FLASHMEM void CoreStateLifecycle::persistFactoryDefaults_(CoreState& state) {
-    const auto saveStatus = state.settings.saveAllStatus(
-        state.midiSync,
-        state.sharedTrackEnabledMask.get(),
-        state.sharedTrackActive.get()
-    );
+    const auto saveStatus =
+        state.deviceSettingsStore.saveAllStatus(state.midiSync);
     if (saveStatus != persistence::PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[CoreState] Failed to persist default core settings during factory reset: {}",
+        OC_LOG_WARN("[CoreState] Failed to persist default device settings during factory reset: {}",
                     persistence::persistenceWriteStatusLabel(saveStatus));
         return;
     }
@@ -191,7 +172,6 @@ FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
     state.pages.initDefaults();
     state.midiSync.reset();
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     state.macroEdit.reset();
     state.macroUi.resetInteraction();
     state.macroUi.resetProjectRuntime();
@@ -227,7 +207,7 @@ FLASHMEM void CoreStateLifecycle::resetUiState_(CoreState& state) {
     state.activeView.set(core::ui::ViewType::MACRO);
     state.overlays.hideAll();
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
-    state.refreshSharedTrackStateFromMacroPages_(false);
+    state.refreshSharedTrackStateFromMacroPages_();
 }
 
 void CoreStateLifecycle::update(CoreState& state) {
@@ -238,14 +218,12 @@ void CoreStateLifecycle::update(CoreState& state) {
     state.updateSequencerPatternHistoryCoalescing(nowMs);
     state.updateMacroValueHistoryCoalescing(nowMs);
     updateMutationCoalescers_(state);
-    updatePendingSharedTrackPersist_(state);
 }
 
 FLASHMEM void CoreStateLifecycle::flush(CoreState& state) {
     state.flushMacroValueHistoryCoalescing();
     state.projectSettingsHistory.endCoalescing();
     flushMutationCoalescers_(state);
-    flushPendingSharedTrackPersist_(state);
 }
 
 FLASHMEM void CoreStateLifecycle::flushProjectMutationCoalescing(CoreState& state) {
@@ -271,7 +249,7 @@ FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.sequencer.stepEdit.reset();
     state.sequencer.patternEditor.reset();
     state.sequencer.contextSelector.reset();
-    state.sequencer.stepPresetPicker.reset();
+    state.sequencer.presetLibrary.reset();
     state.sequencer.stepPropertyInlineSelector.reset();
     state.sequencer.patternQuickControls.reset();
     state.sequencer.structureUi.reset();
@@ -301,14 +279,13 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     clearPendingSequencerApply(state);
     state.requestSequencerRuntimeProjectReset();
 
-    state.setSharedTrackState_(macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK, 0, false);
+    state.setSharedTrackState_(macro::MacroPagesState::DEFAULT_TRACK_ENABLED_MASK, 0);
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
 
     state.statusBar.tempo.set(120.0f);
     if (!state.statusBar.tempoLocked.get()) {
         state.statusBar.tempoDisplay.set(120.0f);
     }
-    state.statusBar.pageName.set(state.pages.activePageData().name);
 
     state.macroEdit.reset();
     state.macroUi.resetInteraction();
@@ -321,7 +298,7 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     state.sequencer.stepEdit.reset();
     state.sequencer.patternEditor.reset();
     state.sequencer.contextSelector.reset();
-    state.sequencer.stepPresetPicker.reset();
+    state.sequencer.presetLibrary.reset();
     state.sequencer.stepPropertyInlineSelector.reset();
     state.sequencer.patternQuickControls.reset();
     state.sequencer.structureUi.reset();
@@ -357,9 +334,9 @@ FLASHMEM void CoreStateLifecycle::factoryReset(CoreState& state) {
         );
         return;
     }
-    const auto resetStatus = state.settings.factoryResetStatus();
+    const auto resetStatus = state.deviceSettingsStore.factoryResetStatus();
     if (resetStatus != persistence::PersistenceWriteStatus::OK) {
-        OC_LOG_WARN("[CoreState] CoreSettings factory reset failed: {}",
+        OC_LOG_WARN("[CoreState] Device settings factory reset failed: {}",
                     persistence::persistenceWriteStatusLabel(resetStatus));
     }
     const bool historyBoundaryCleared = state.clearProjectHistory();
@@ -369,8 +346,6 @@ FLASHMEM void CoreStateLifecycle::factoryReset(CoreState& state) {
     state.project.reset();
     state.projectTracks.reset();
     resetUiState_(state);
-    state.sharedTrackPersistPending_ = false;
-    state.sharedTrackPersistTimestampMs_ = 0;
     if (!historyBoundaryCleared) {
         OC_LOG_ERROR(
             "[CoreState] Invalid Modulator audition discarded by factory reset"

@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "state/StructureNavigationState.hpp"
+#include "state/StructureSelectionInteractionPolicy.hpp"
 
 namespace core::state::sequencer {
 
@@ -61,6 +62,8 @@ enum class SequencerInteractionAction : uint8_t {
     CLEAR_STEP_CONTENT,
     COPY_CURRENT_STRUCTURE,
     PASTE_CURRENT_STRUCTURE,
+    COPY_STRUCTURE_SELECTION,
+    PASTE_STRUCTURE_SELECTION,
     COPY_STEP_CONTENT,
     PASTE_STEP_CONTENT,
     RESET_STEP_EDITOR_ROW,
@@ -90,6 +93,8 @@ struct SequencerInteractionContext {
     bool trackSelectionActive = false;
     bool pageSelectionActive = false;
     bool stepSelectionActive = false;
+    bool selectionPlacementActive = false;
+    bool selectionPasteAvailable = false;
     bool patternQuickControlsActive = false;
     bool propertySelectorActive = false;
     bool stepContentSelectorActive = false;

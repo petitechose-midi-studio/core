@@ -33,15 +33,14 @@ struct Args {
     std::string outputPath;
     std::string semanticName;
     bool json = false;
-    bool allowPartial = false;
 };
 
 const char* loadStatusName(project_file::LoadStatus status) {
     switch (status) {
         case project_file::LoadStatus::OK:
             return "ok";
-        case project_file::LoadStatus::PARTIAL:
-            return "partial";
+        case project_file::LoadStatus::INSPECTION_ISSUES:
+            return "inspection_issues";
         case project_file::LoadStatus::FAILED:
             return "failed";
         default:
@@ -111,12 +110,14 @@ const char* codeName(project_file::LoadCode code) {
             return "unknown_chunk";
         case project_file::LoadCode::DUPLICATE_CHUNK:
             return "duplicate_chunk";
+        case project_file::LoadCode::MISSING_REQUIRED_CHUNK:
+            return "missing_required_chunk";
+        case project_file::LoadCode::UNEXPECTED_CHUNK:
+            return "unexpected_chunk";
+        case project_file::LoadCode::UNSUPPORTED_CHUNK_FLAGS:
+            return "unsupported_chunk_flags";
         case project_file::LoadCode::OUTPUT_CAPACITY_EXCEEDED:
             return "output_capacity_exceeded";
-        case project_file::LoadCode::MISSING_OPTIONAL_CHUNK:
-            return "missing_optional_chunk";
-        case project_file::LoadCode::DEFAULTED_CHUNK:
-            return "defaulted_chunk";
         case project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION:
             return "unsupported_chunk_version";
         default:
@@ -217,7 +218,7 @@ int statusExitCode(inspection::Status status) {
     switch (status) {
         case inspection::Status::CURRENT:
             return 0;
-        case inspection::Status::PARTIAL:
+        case inspection::Status::UNSUPPORTED:
             return 2;
         case inspection::Status::FAILED:
         default:
@@ -230,7 +231,7 @@ void printUsage() {
               << "  ms-core-file-tool inspect <file.mspj> [--json]\n"
               << "  ms-core-file-tool validate <file.mspj> [--json]\n"
               << "  ms-core-file-tool rewrite <file.mspj> --out <file.mspj> "
-                 "[--json] [--allow-partial]\n"
+                 "[--json]\n"
               << "  ms-core-file-tool inspect-step-graph-preset <file.mssp> [--json]\n"
               << "  ms-core-file-tool validate-step-graph-preset <file.mssp> [--json]\n"
               << "  ms-core-file-tool rename-step-graph-preset <in.mssp> "
@@ -283,8 +284,6 @@ bool parseArgs(int argc, char** argv, Args& out) {
         const std::string arg = argv[i];
         if (arg == "--json") {
             out.json = true;
-        } else if (arg == "--allow-partial") {
-            out.allowPartial = true;
         } else if (arg == "--out" && i + 1 < argc) {
             out.outputPath = argv[++i];
         } else if (arg == "--name" && i + 1 < argc) {
@@ -306,9 +305,6 @@ bool parseArgs(int argc, char** argv, Args& out) {
     if (writesOutput && sameOutputPath(out.inputPath, out.outputPath)) return false;
     if (renamePreset && out.semanticName.empty()) return false;
     if (!renamePreset && !out.semanticName.empty()) return false;
-    if (step_graph_preset_tool::isStepGraphPresetCommand(out.command) && out.allowPartial) {
-        return false;
-    }
     return true;
 }
 
@@ -358,8 +354,7 @@ int runMain(int argc, char** argv) {
             static_cast<uint32_t>(input.size()),
             output.data(),
             static_cast<uint32_t>(output.size()),
-            &report,
-            {.allowPartialOutput = args.allowPartial}
+            &report
         );
         if (result.bytesWritten > 0) {
             if (!writeFile(args.outputPath, output.data(), result.bytesWritten)) {

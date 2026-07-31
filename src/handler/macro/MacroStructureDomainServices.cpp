@@ -48,7 +48,6 @@ FLASHMEM bool setSharedTrackState(Operations operations, uint16_t enabledMask, u
 }
 
 FLASHMEM void syncActivePagePresentation(StateRefs state) {
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     state.macroUi.refreshManualOverrideMask(
         state.pages.currentActiveTrack(),
@@ -471,7 +470,7 @@ FLASHMEM bool MacroStructureDomainServices::deleteActiveTrack() const {
     );
 }
 
-FLASHMEM bool MacroStructureDomainServices::erasePage(uint8_t pageIndex) const {
+FLASHMEM bool MacroStructureDomainServices::resetPageContent(uint8_t pageIndex) const {
     if (pageIndex >= core::state::macro::PAGE_COUNT || history_ == nullptr) {
         return false;
     }
@@ -504,7 +503,7 @@ FLASHMEM bool MacroStructureDomainServices::erasePage(uint8_t pageIndex) const {
     );
 }
 
-FLASHMEM bool MacroStructureDomainServices::eraseTrack(uint8_t trackIndex) const {
+FLASHMEM bool MacroStructureDomainServices::resetTrackContent(uint8_t trackIndex) const {
     if (trackIndex >= core::state::macro::TRACK_COUNT) return false;
     if (!pages_->isTrackEnabled(trackIndex)) return false;
 
@@ -962,7 +961,7 @@ FLASHMEM bool MacroStructureDomainServices::clearMacroAutomation(uint8_t index) 
     return true;
 }
 
-FLASHMEM bool MacroStructureDomainServices::removeMacroAutomation(uint8_t index) const {
+FLASHMEM bool MacroStructureDomainServices::deleteMacroSlot(uint8_t index) const {
     if (index >= core::state::macro::MACRO_COUNT || history_ == nullptr) {
         return false;
     }
@@ -973,7 +972,7 @@ FLASHMEM bool MacroStructureDomainServices::removeMacroAutomation(uint8_t index)
     };
     if (!pages_->isMacroSlotActive(index)) return false;
     flushMutationCoalescing(operations_);
-    if (!history_->removeMacroSlot(*pages_, address)) {
+    if (!history_->deleteMacroSlot(*pages_, address)) {
         return false;
     }
 

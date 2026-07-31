@@ -16,10 +16,10 @@ namespace core::state::macro {
 
 namespace history_detail {
 
-FLASHMEM bool captureMacroSlotRemovalState(
+FLASHMEM bool captureMacroSlotDeletionState(
     const MacroPagesState& pages,
     const MacroAutomationSlotAddress& address,
-    MacroSlotRemovalState& out
+    MacroSlotDeletionState& out
 ) {
     if (!macroAutomationAddressValid(address) ||
         !captureMacroAutomationHistorySnapshot(
@@ -40,10 +40,10 @@ FLASHMEM bool captureMacroSlotRemovalState(
     return true;
 }
 
-FLASHMEM bool liveMacroSlotRemovalStateMatches(
+FLASHMEM bool liveMacroSlotDeletionStateMatches(
     const MacroPagesState& pages,
     const MacroAutomationSlotAddress& address,
-    const MacroSlotRemovalState& expected
+    const MacroSlotDeletionState& expected
 ) {
     if (!macroAutomationAddressValid(address) ||
         !macroAutomationAddressEquals(expected.automation.address, address) ||
@@ -61,10 +61,10 @@ FLASHMEM bool liveMacroSlotRemovalStateMatches(
            ) && liveModulationAssignmentsMatch(pages, expected.modulation);
 }
 
-FLASHMEM bool applyMacroSlotRemovalState(
+FLASHMEM bool applyMacroSlotDeletionState(
     MacroPagesState& pages,
     const MacroAutomationSlotAddress& address,
-    const MacroSlotRemovalState& target
+    const MacroSlotDeletionState& target
 ) {
     using namespace core::state::modulation;
     if (!macroAutomationAddressValid(address) ||

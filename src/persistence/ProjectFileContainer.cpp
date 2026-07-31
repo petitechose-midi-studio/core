@@ -74,7 +74,6 @@ FLASHMEM bool writeFileHeader(uint8_t* out, uint32_t outCapacity, const FileHead
 FLASHMEM bool readFileHeader(const uint8_t* data, uint32_t size, FileHeader& out) {
     if (size < kHeaderSize) return false;
     binary::Reader reader(data, size);
-    uint32_t reserved = 0;
     return reader.readU32(out.magic) &&
            reader.readU8(out.versionMajor) &&
            reader.readU8(out.versionMinor) &&
@@ -84,7 +83,7 @@ FLASHMEM bool readFileHeader(const uint8_t* data, uint32_t size, FileHeader& out
            reader.readU32(out.directoryOffset) &&
            reader.readU32(out.payloadOffset) &&
            reader.readU32(out.modifiedCounter) &&
-           reader.readU32(reserved) &&
+           reader.readU32(out.reserved0) &&
            reader.ok() &&
            reader.offset() == kHeaderSize;
 }
@@ -179,9 +178,9 @@ FLASHMEM void LoadReport::add(LoadSeverity severity,
     }
 
     if (severity == LoadSeverity::WARNING && status == LoadStatus::OK) {
-        status = LoadStatus::PARTIAL;
+        status = LoadStatus::INSPECTION_ISSUES;
     } else if (severity == LoadSeverity::ERROR) {
-        status = LoadStatus::PARTIAL;
+        status = LoadStatus::INSPECTION_ISSUES;
     } else if (severity == LoadSeverity::FATAL) {
         status = LoadStatus::FAILED;
     }
@@ -191,11 +190,19 @@ FLASHMEM void LoadReport::add(LoadSeverity severity,
     }
     if (code == LoadCode::UNKNOWN_CHUNK ||
         code == LoadCode::UNSUPPORTED_CONTAINER_VERSION ||
+        code == LoadCode::MISSING_REQUIRED_CHUNK ||
+        code == LoadCode::UNEXPECTED_CHUNK ||
+        code == LoadCode::UNSUPPORTED_CHUNK_FLAGS ||
         code == LoadCode::OUTPUT_CAPACITY_EXCEEDED ||
         code == LoadCode::UNSUPPORTED_CHUNK_VERSION) {
         hasUnknownUnsupportedData = true;
         overwriteSafe = false;
     }
+}
+
+FLASHMEM void LoadReport::markRejected() {
+    status = LoadStatus::FAILED;
+    overwriteSafe = false;
 }
 
 FLASHMEM bool isKnownChunkId(uint32_t id) {
@@ -298,11 +305,11 @@ FLASHMEM EncodeResult encode(const ChunkView* chunks,
     return {.status = Status::OK, .bytesWritten = required};
 }
 
-FLASHMEM DecodeResult decode(const uint8_t* data,
-                             uint32_t size,
-                             DecodedChunkView* outChunks,
-                             uint16_t outCapacity,
-                             LoadReport* loadReport) {
+FLASHMEM ScanResult scan(const uint8_t* data,
+                         uint32_t size,
+                         DecodedChunkView* outChunks,
+                         uint16_t outCapacity,
+                         LoadReport* loadReport) {
     LoadReport localReport{};
     LoadReport* effectiveReport = loadReport != nullptr ? loadReport : &localReport;
     effectiveReport->reset();
@@ -326,7 +333,8 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
     }
 
-    if (header.versionMajor > CONTAINER_VERSION_MAJOR) {
+    if (header.versionMajor != CONTAINER_VERSION_MAJOR ||
+        header.versionMinor != CONTAINER_VERSION_MINOR) {
         report(effectiveReport,
                LoadSeverity::WARNING,
                LoadCode::UNSUPPORTED_CONTAINER_VERSION,
@@ -338,7 +346,8 @@ FLASHMEM DecodeResult decode(const uint8_t* data,
     if (header.headerSize != kHeaderSize ||
         header.directoryEntrySize != kDirectoryEntrySize ||
         header.chunkCount > MAX_CHUNKS ||
-        header.directoryOffset < kHeaderSize) {
+        header.directoryOffset < kHeaderSize ||
+        header.reserved0 != 0U) {
         report(effectiveReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
     }

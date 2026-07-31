@@ -7,7 +7,7 @@
 
 namespace core::persistence::project_state_codec {
 
-void fillMetaPayload(const core::state::project::ProjectMetadata& source,
+bool fillMetaPayload(const core::state::project::ProjectMetadata& source,
                      ProjectMetaPayload& out);
 bool encodeMetaPayload(const ProjectMetaPayload& payload,
                        uint8_t* out,
@@ -18,7 +18,7 @@ bool decodeMetaPayload(const uint8_t* data,
 void applyMetaPayload(const ProjectMetaPayload& payload,
                       core::state::project::ProjectMetadata& target);
 
-void fillTransportPayload(const core::state::project::ProjectTransportState& source,
+bool fillTransportPayload(const core::state::project::ProjectTransportState& source,
                           ProjectTransportPayload& out);
 bool encodeTransportPayload(const ProjectTransportPayload& payload,
                             uint8_t* out,
@@ -29,7 +29,7 @@ bool decodeTransportPayload(const uint8_t* data,
 void applyTransportPayload(const ProjectTransportPayload& payload,
                            core::state::project::ProjectTransportState& target);
 
-void fillMusicalContextPayload(const core::state::project::ProjectMusicalContext& source,
+bool fillMusicalContextPayload(const core::state::project::ProjectMusicalContext& source,
                                ProjectMusicalContextPayload& out);
 bool encodeMusicalContextPayload(const ProjectMusicalContextPayload& payload,
                                  uint8_t* out,
@@ -40,7 +40,7 @@ bool decodeMusicalContextPayload(const uint8_t* data,
 void applyMusicalContextPayload(const ProjectMusicalContextPayload& payload,
                                 core::state::project::ProjectMusicalContext& target);
 
-void fillEditingPayload(const core::state::project::ProjectEditingState& source,
+bool fillEditingPayload(const core::state::project::ProjectEditingState& source,
                         ProjectEditingPayload& out);
 bool encodeEditingPayload(const ProjectEditingPayload& payload,
                           uint8_t* out,
@@ -51,7 +51,7 @@ bool decodeEditingPayload(const uint8_t* data,
 void applyEditingPayload(const ProjectEditingPayload& payload,
                          core::state::project::ProjectEditingState& target);
 
-void applyProjectStateChunks(
+bool applyProjectStateChunks(
     const core::persistence::project_file::DecodedChunkView* chunks,
     uint16_t chunkCount,
     core::state::project::ProjectState& target,

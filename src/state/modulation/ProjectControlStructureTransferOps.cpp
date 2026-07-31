@@ -93,7 +93,7 @@ FLASHMEM bool clearMappedDestinations(
             ++cursor;
             continue;
         }
-        if (!removeProjectAutomationCurve(
+        if (!deleteProjectAutomationCurve(
                 target.automation,
                 target.curves,
                 destination

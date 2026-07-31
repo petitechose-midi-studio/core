@@ -20,9 +20,6 @@ struct ProjectSaveResult {
 
 struct ProjectLoadResult {
     uint32_t bytesRead = 0;
-    core::persistence::project_file::LoadStatus loadStatus =
-        core::persistence::project_file::LoadStatus::OK;
-    bool overwriteSafe = true;
     char projectPath[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
 };
 

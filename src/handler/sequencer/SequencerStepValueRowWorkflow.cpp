@@ -7,6 +7,8 @@
 #include "state/sequencer/SequencerChordUiOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerScaleState.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
 
 namespace core::handler::sequencer::step_value_row_workflow {
@@ -110,7 +112,12 @@ FLASHMEM void setFocusedRowValue(
             sequencer,
             step,
             choice,
-            chord.pitchUsesScaleDegrees && scaleSettings.isConstrained()
+            core::state::sequencer::pitchContextUsesScaleDegrees(
+                core::state::sequencer::authoringPattern(
+                    sequencer
+                ).pitchEditMode,
+                scaleSettings
+            )
         );
         return;
     }

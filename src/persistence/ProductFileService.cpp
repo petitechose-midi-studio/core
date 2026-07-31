@@ -14,6 +14,7 @@ constexpr const char* const kLayoutDirectories[] PROGMEM = {
     ProductFileService::PROJECTS_DIR,
     ProductFileService::LIBRARY_DIR,
     ProductFileService::STEP_PRESETS_DIR,
+    ProductFileService::CHORD_PRESETS_DIR,
     ProductFileService::TMP_DIR,
 };
 

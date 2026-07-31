@@ -67,7 +67,7 @@ void test_roundtrip_known_chunks() {
     DecodedChunkView decoded[4] = {};
     LoadReport report{};
     auto decodeResult =
-        decode(encoded, encodeResult.bytesWritten, decoded, 4, &report);
+        scan(encoded, encodeResult.bytesWritten, decoded, 4, &report);
     assert(decodeResult.status == Status::OK);
     assert(decodeResult.chunkCount == 2);
     assert(decodeResult.overwriteSafe);
@@ -108,11 +108,11 @@ void test_unknown_chunk_is_preserved_as_read_view_and_blocks_overwrite() {
     DecodedChunkView decoded[2] = {};
     LoadReport report{};
     auto decodeResult =
-        decode(encoded, encodeResult.bytesWritten, decoded, 2, &report);
+        scan(encoded, encodeResult.bytesWritten, decoded, 2, &report);
     assert(decodeResult.status == Status::OK);
     assert(decodeResult.chunkCount == 1);
     assert(!decodeResult.overwriteSafe);
-    assert(report.status == LoadStatus::PARTIAL);
+    assert(report.status == LoadStatus::INSPECTION_ISSUES);
     assert(report.hasUnknownUnsupportedData);
     assert(!report.overwriteSafe);
     assert(reportHas(report, LoadCode::UNKNOWN_CHUNK));
@@ -143,11 +143,11 @@ void test_crc_mismatch_skips_corrupt_chunk() {
     DecodedChunkView decoded[2] = {};
     LoadReport report{};
     auto decodeResult =
-        decode(encoded, encodeResult.bytesWritten, decoded, 2, &report);
+        scan(encoded, encodeResult.bytesWritten, decoded, 2, &report);
     assert(decodeResult.status == Status::OK);
     assert(decodeResult.chunkCount == 0);
     assert(!decodeResult.overwriteSafe);
-    assert(report.status == LoadStatus::PARTIAL);
+    assert(report.status == LoadStatus::INSPECTION_ISSUES);
     assert(reportHas(report, LoadCode::CHUNK_CRC_MISMATCH));
 
     std::cout << "[PASS] test_crc_mismatch_skips_corrupt_chunk\n";
@@ -171,7 +171,7 @@ void test_invalid_magic_fails() {
     DecodedChunkView decoded[2] = {};
     LoadReport report{};
     auto decodeResult =
-        decode(encoded, encodeResult.bytesWritten, decoded, 2, &report);
+        scan(encoded, encodeResult.bytesWritten, decoded, 2, &report);
     assert(decodeResult.status == Status::INVALID_CONTAINER);
     assert(decodeResult.chunkCount == 0);
     assert(report.status == LoadStatus::FAILED);
@@ -180,7 +180,7 @@ void test_invalid_magic_fails() {
     std::cout << "[PASS] test_invalid_magic_fails\n";
 }
 
-void test_future_container_major_decodes_best_effort_but_blocks_overwrite() {
+void test_noncurrent_container_versions_can_be_scanned_for_inspection_only() {
     uint8_t encoded[128] = {};
     const uint8_t payload[] = {7, 8};
     const ChunkView chunks[] = {{
@@ -194,24 +194,35 @@ void test_future_container_major_decodes_best_effort_but_blocks_overwrite() {
     auto encodeResult = encode(chunks, 1, 5, encoded, sizeof(encoded));
     assert(encodeResult.status == Status::OK);
 
-    RawHeaderView header{};
-    std::memcpy(&header, encoded, sizeof(header));
-    header.versionMajor = static_cast<uint8_t>(CONTAINER_VERSION_MAJOR + 1);
-    std::memcpy(encoded, &header, sizeof(header));
+    const uint8_t versions[][2] = {
+        {0U, 0U},
+        {CONTAINER_VERSION_MAJOR, static_cast<uint8_t>(CONTAINER_VERSION_MINOR + 1U)},
+        {static_cast<uint8_t>(CONTAINER_VERSION_MAJOR + 1U), 0U},
+    };
+    for (const auto& version : versions) {
+        uint8_t candidate[sizeof(encoded)]{};
+        std::memcpy(candidate, encoded, sizeof(candidate));
+        RawHeaderView header{};
+        std::memcpy(&header, candidate, sizeof(header));
+        header.versionMajor = version[0];
+        header.versionMinor = version[1];
+        std::memcpy(candidate, &header, sizeof(header));
 
-    DecodedChunkView decoded[2] = {};
-    LoadReport report{};
-    auto decodeResult =
-        decode(encoded, encodeResult.bytesWritten, decoded, 2, &report);
-    assert(decodeResult.status == Status::OK);
-    assert(decodeResult.chunkCount == 1);
-    assert(!decodeResult.overwriteSafe);
-    assert(report.status == LoadStatus::PARTIAL);
-    assert(report.hasUnknownUnsupportedData);
-    assert(reportHas(report, LoadCode::UNSUPPORTED_CONTAINER_VERSION));
-    assert(decoded[0].id == chunkIdValue(ChunkId::EDITING));
+        DecodedChunkView decoded[2] = {};
+        LoadReport report{};
+        const auto scanResult =
+            scan(candidate, encodeResult.bytesWritten, decoded, 2, &report);
+        assert(scanResult.status == Status::OK);
+        assert(scanResult.chunkCount == 1);
+        assert(!scanResult.overwriteSafe);
+        assert(report.status == LoadStatus::INSPECTION_ISSUES);
+        assert(report.hasUnknownUnsupportedData);
+        assert(reportHas(report, LoadCode::UNSUPPORTED_CONTAINER_VERSION));
+        assert(decoded[0].id == chunkIdValue(ChunkId::EDITING));
+    }
 
-    std::cout << "[PASS] test_future_container_major_decodes_best_effort_but_blocks_overwrite\n";
+    std::cout
+        << "[PASS] noncurrent containers are inspection-only\n";
 }
 
 void test_encode_reports_required_size_when_buffer_too_small() {
@@ -244,7 +255,7 @@ int main() {
     test_unknown_chunk_is_preserved_as_read_view_and_blocks_overwrite();
     test_crc_mismatch_skips_corrupt_chunk();
     test_invalid_magic_fails();
-    test_future_container_major_decodes_best_effort_but_blocks_overwrite();
+    test_noncurrent_container_versions_can_be_scanned_for_inspection_only();
     test_encode_reports_required_size_when_buffer_too_small();
 
     std::cout << "\n==============================================\n";

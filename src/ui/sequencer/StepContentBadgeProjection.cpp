@@ -48,8 +48,8 @@ FLASHMEM StepContentBadgeProjection buildStepContentBadgeProjectionForNode(
     if (localChord) {
         auto spec = node->chordSpec;
         spec.clamp();
-        badges.chord = spec.voiceCount > 1;
-        badges.chordVoiceCount = spec.voiceCount;
+        badges.chord = spec.voices() > 1;
+        badges.chordVoiceCount = spec.voices();
         badges.chordSource = StepSequencerChordSource::Local;
     }
     return badges;
@@ -69,6 +69,13 @@ FLASHMEM bool mergeExpandedTelemetryChordBadgeForNode(
         return false;
     }
 
+    if (telemetry.noteBudgetExceeded &&
+        nodeId == core::state::sequencer::rootStepNodeId(
+                      telemetry.rootStepIndex
+                  )) {
+        badges.expansionLimitReached = true;
+    }
+
     bool found = false;
     uint8_t voiceCount = badges.chordVoiceCount;
     StepSequencerChordSource source = badges.chordSource;
@@ -86,6 +93,9 @@ FLASHMEM bool mergeExpandedTelemetryChordBadgeForNode(
         found = true;
     }
 
+    if (found && telemetry.noteBudgetExceeded) {
+        badges.expansionLimitReached = true;
+    }
     if (!found || voiceCount <= 1) return false;
     badges.chord = true;
     badges.chordVoiceCount = voiceCount;

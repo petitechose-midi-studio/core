@@ -47,17 +47,17 @@ void test_single_track_plan_exposes_source_and_destination_owned_bindings() {
     assert(plan.availability == ClipboardTransferAvailability::READY);
     assert(plan.reason == ClipboardTransferReason::NONE);
     assert(plan.canCommit());
-    assert(plan.hasEntry);
+    assert(plan.hasEntries());
     assert(plan.sourceMask == 0x0001);
     assert(plan.targetMask == 0x0010);
     assert(plan.createMask == 0);
     assert(plan.overwriteMask == 0x0010);
-    assert(plan.entry.sourceTrack == 0);
-    assert(plan.entry.targetTrack == 4);
-    assert(plan.entry.targetMidiChannel == 10);
-    assert(plan.entry.targetRouteValid);
-    assert(plan.entry.targetMuted);
-    assert(plan.entry.targetKind == ClipboardTransferTargetKind::OVERWRITE);
+    assert(plan.entries[0].sourceTrack == 0);
+    assert(plan.entries[0].targetTrack == 4);
+    assert(plan.entries[0].targetMidiChannel == 10);
+    assert(plan.entries[0].targetRouteValid);
+    assert(plan.entries[0].targetMuted);
+    assert(plan.entries[0].targetKind == ClipboardTransferTargetKind::OVERWRITE);
     assert((plan.bindingPolicy & core::state::CLIPBOARD_TRANSFER_PRESERVE_ROUTE) != 0);
     assert((plan.bindingPolicy & core::state::CLIPBOARD_TRANSFER_PRESERVE_MUTE) != 0);
     assert((plan.bindingPolicy & core::state::CLIPBOARD_TRANSFER_PRESERVE_SLOT) != 0);
@@ -90,9 +90,9 @@ void test_single_track_plan_uses_free_slot_dormant_route() {
     assert(plan.canCommit());
     assert(plan.createMask == 0x0008);
     assert(plan.overwriteMask == 0);
-    assert(plan.entry.targetMidiChannel == 8);
-    assert(!plan.entry.targetMuted);
-    assert(plan.entry.targetKind == ClipboardTransferTargetKind::FREE);
+    assert(plan.entries[0].targetMidiChannel == 8);
+    assert(!plan.entries[0].targetMuted);
+    assert(plan.entries[0].targetKind == ClipboardTransferTargetKind::FREE);
 
     std::cout << "[PASS] test_single_track_plan_uses_free_slot_dormant_route\n";
 }
@@ -118,9 +118,9 @@ void test_track_plan_reads_only_canonical_destination_route() {
     );
 
     assert(plan.canCommit());
-    assert(plan.entry.targetTrack == 1);
-    assert(plan.entry.targetMidiChannel == 11);
-    assert(plan.entry.targetRouteValid);
+    assert(plan.entries[0].targetTrack == 1);
+    assert(plan.entries[0].targetMidiChannel == 11);
+    assert(plan.entries[0].targetRouteValid);
 
     std::cout
         << "[PASS] test_track_plan_reads_only_canonical_destination_route\n";
@@ -168,7 +168,7 @@ void test_track_plan_reports_same_target_pending_invalid_and_missing_route() {
     assert(noRoute.availability == ClipboardTransferAvailability::WARNING);
     assert(noRoute.reason == ClipboardTransferReason::NO_ROUTE);
     assert(noRoute.canCommit());
-    assert(!noRoute.entry.targetRouteValid);
+    assert(!noRoute.entries[0].targetRouteValid);
 
     std::cout
         << "[PASS] test_track_plan_reports_same_target_pending_invalid_and_missing_route\n";
@@ -210,7 +210,7 @@ void test_track_plan_identity_allows_only_live_route_refresh() {
     ));
 
     auto changedTarget = rerouted;
-    changedTarget.entry.targetTrack = 5;
+    changedTarget.entries[0].targetTrack = 5;
     changedTarget.targetMask = 0x0020;
     assert(!core::state::sameSequencerTrackClipboardTransferIdentity(
         original,

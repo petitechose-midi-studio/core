@@ -125,12 +125,12 @@ FLASHMEM void SequencerStructureEditWorkflow::setTrackPasteFeedback(
         contextual::ContextActionId::PASTE,
         {
             .kind = contextual::ContextEntityKind::TRACK,
-            .track = paste.plan.entry.sourceTrack,
+            .track = paste.plan.entries[0].sourceTrack,
             .item = paste.plan.sourceMask,
         },
         {
             .kind = contextual::ContextEntityKind::TRACK,
-            .track = paste.plan.entry.targetTrack,
+            .track = paste.plan.entries[0].targetTrack,
             .item = paste.plan.targetMask,
         },
         status,
@@ -202,7 +202,7 @@ FLASHMEM void SequencerStructureEditWorkflow::refreshTrackPastePreview(
             structure_clipboard_,
             tracks_,
             project_tracks_,
-            paste.plan.entry.targetTrack,
+            paste.plan.entries[0].targetTrack,
             track_activations_ != nullptr ? track_activations_->pendingTrackMask() : 0
         );
         if (paste.clipboardKind != structure_clipboard_.kind.get() ||
@@ -277,7 +277,7 @@ FLASHMEM void SequencerStructureEditWorkflow::updateTrackPasteActivation(
     }
 
     const auto telemetry = track_activations_->telemetry(
-        paste.plan.entry.targetTrack
+        paste.plan.entries[0].targetTrack
     );
     if (telemetry.generation != paste.activationGeneration ||
         telemetry.origin !=
@@ -321,7 +321,7 @@ FLASHMEM bool SequencerStructureEditWorkflow::commitTrackPaste(uint32_t nowMs) {
         structure_clipboard_,
         shared_tracks_,
         history_,
-        paste.plan.entry.targetTrack,
+        paste.plan.entries[0].targetTrack,
         0,
         track_activations_,
         status_bar_ != nullptr && status_bar_->playing.get(),
@@ -671,7 +671,7 @@ FLASHMEM void SequencerStructureEditWorkflow::toggleTrackPasteDetails() {
     paste.bump();
 }
 
-FLASHMEM void SequencerStructureEditWorkflow::applyBottomLeftTapCurrentStructure() {
+FLASHMEM void SequencerStructureEditWorkflow::applyCurrentStructureShortPress() {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (track_ui_.previewAddSlot.get()) return;
         const uint8_t activeTrack = currentActiveTrack();
@@ -694,7 +694,7 @@ FLASHMEM void SequencerStructureEditWorkflow::applyBottomLeftTapCurrentStructure
     }
 }
 
-FLASHMEM void SequencerStructureEditWorkflow::removeCurrentStructure() {
+FLASHMEM void SequencerStructureEditWorkflow::applyCurrentStructureLongPress() {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (track_ui_.previewAddSlot.get()) return;
         const auto mutation = structure_slots::removeIndex(
@@ -720,7 +720,7 @@ FLASHMEM void SequencerStructureEditWorkflow::removeCurrentStructure() {
 
     auto historyChange = capturePageHistoryBefore();
     if (!historyChange) return;
-    if (removeCurrentSequencerStructurePage(sequencer_)) {
+    if (deleteCurrentSequencerStructurePage(sequencer_)) {
         recordPageHistoryAfter(std::move(historyChange));
     }
 }
@@ -855,6 +855,27 @@ FLASHMEM void SequencerStructureEditWorkflow::copyStepSelection() {
     selection.placing.set(true);
     selection.clipboardRevision.set(structure_clipboard_.revision.get());
     clearStepPastePreview();
+}
+
+FLASHMEM bool
+SequencerStructureEditWorkflow::canPasteStepSelection() const {
+    const auto& selection = sequencer_.structureUi.stepSelection;
+    if (!selection.placementActive() ||
+        selection.clipboardRevision.get() !=
+            structure_clipboard_.revision.get() ||
+        !structure_clipboard_.hasSequencerSteps() ||
+        structure_clipboard_.sequencerSteps.rootContext !=
+            core::state::sequencer::isRootContentView(sequencer_)) {
+        return false;
+    }
+
+    const auto plan = buildStructureStepPastePlan(
+        sequencer_,
+        structure_clipboard_.sequencerSteps,
+        structureStepPasteMode(project_navigation_),
+        selection.cursorStep.get()
+    );
+    return !plan.blocked && plan.hasEntries();
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::resetStepSelectionShallow() {

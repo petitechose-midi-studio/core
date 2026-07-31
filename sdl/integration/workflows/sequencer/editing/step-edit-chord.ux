@@ -1,7 +1,11 @@
-# UX workflow: author one named chord, invert and voice it, then inherit it.
-# Purpose: prove that the musician edits semantic intent while the preview shows
-# the exact sounding name/notes and the child reuses the same resolved result.
-# Expect: capture_changed:harmony_major=harmony_minor7, capture_changed:inversion_root=inversion_first, capture_changed:voicing_close=voicing_wide, capture_changed:step_1_enabled=chord_badge_on_grid
+# UX workflow: author one scale-aware chord, invert it, and widen its voicing.
+# Purpose: prove that the current Shape -> Formula -> Inversion -> Voicing
+# grammar edits semantic intent and publishes the completed Chord draft.
+# Expect: capture_changed:shape_triad=shape_sus4, capture_changed:inversion_root=inversion_first, capture_changed:voicing_close=voicing_wide, capture_changed:chord_row_single=chord_published
+# Expect: semantic:shape_sus4:effect=edit_step_editor_row, semantic:shape_sus4:draft_active=true, semantic:shape_sus4:dirty=true
+# Expect: semantic:formula_readable:draft_active=true, semantic:inversion_first:effect=edit_step_editor_row, semantic:inversion_first:value_label=1st
+# Expect: semantic:voicing_wide:effect=edit_step_editor_row, semantic:voicing_wide:dirty=true
+# Expect: semantic:chord_published:effect=resolve_draft_exit, semantic:chord_published:outcome=applied, semantic:chord_published:projection=published, semantic:chord_published:draft_active=false, semantic:chord_published:published=true
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -27,61 +31,27 @@
 2620 encoder NAV 1
 2700 encoder NAV 1
 2900 capture screen chord_row_single
-# NAV opens the transactional semantic editor. Change the named Harmony, then
-# make the resulting four-voice Minor 7 explicitly first-inversion and Wide.
+# NAV opens the transactional semantic editor on Shape. Choose a scale-aware
+# Sus 4 shape, inspect its Formula, then set first inversion and Wide voicing.
 3000 tap NAV 60
 3300 capture screen chord_detail_mode
-3400 encoder NAV 1
-3650 capture screen harmony_major
-3750 encoder OPT 2.0
-4100 capture screen harmony_minor7
-4300 encoder NAV 1
-4450 capture screen voices_four
-4550 encoder NAV 1
-4700 capture screen inversion_root
-4800 encoder OPT 0.34
-5000 capture screen inversion_first
-5100 encoder NAV 1
-5250 capture screen voicing_close
-5350 encoder OPT 2.0
-5550 capture screen voicing_wide
+3400 capture screen shape_triad
+3500 encoder OPT 1.0
+3750 capture screen shape_sus4
+3850 encoder NAV 1
+4050 capture screen formula_readable
+4150 encoder NAV 1
+4350 capture screen inversion_root
+4450 encoder OPT 1.0
+4650 capture screen inversion_first
+4750 encoder NAV 1
+4950 capture screen voicing_close
+5050 encoder OPT 2.0
+5250 capture screen voicing_wide
 
-# Close the detail, then close the editor and reveal the chord badge on the step tile.
-5650 tap NAV 60
-5850 capture screen chord_row_after_detail
-5880 tap BOTTOM_RIGHT 40
-5950 tap LEFT_TOP 60
-6250 capture screen chord_badge_on_grid
-
-# Reopen the root editor, create a micro-sequence, and verify that a child step
-# in Inherit mode previews the parent chord.
-6350 button MACRO_1 down
-7400 tick
-7450 capture screen root_chord_editor_reopened
-7500 button MACRO_1 up
-7600 encoder NAV 1
-7680 encoder NAV 1
-7760 encoder NAV 1
-7840 encoder NAV 1
-7920 encoder NAV 1
-8000 encoder NAV 1
-8080 encoder NAV 1
-8200 capture screen root_micro_row_for_inherit
-8300 tap NAV 60
-8600 capture screen child_context_after_chord_parent
-8620 tap BOTTOM_RIGHT 40
-8700 button MACRO_1 down
-9750 tick
-9800 capture screen child_step_editor_open
-9850 button MACRO_1 up
-9950 encoder NAV 1
-10030 encoder NAV 1
-10110 encoder NAV 1
-10190 encoder NAV 1
-10270 encoder NAV 1
-10350 encoder NAV 1
-10550 capture screen child_chord_row_inherit
-10650 tap NAV 60
-10950 capture screen child_chord_detail_inherit
-11050 tap BOTTOM_RIGHT 60
-11300 capture screen child_chord_published
+# Back requests the transactional exit. NAV accepts the default Save choice;
+# the completed Step-content draft is then published on the Chord row.
+5350 tap LEFT_TOP 60
+5600 capture screen chord_exit_save
+5700 tap NAV 60
+6000 capture screen chord_published

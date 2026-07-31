@@ -314,7 +314,7 @@ void testPredictiveScratchDoesNotResurrectPreWindowLifecycleEvent() {
 
     // Replacing the lane creates a new lifecycle. Its only event is before the
     // predictive observation boundary and therefore must remain silent.
-    assert(seq::removeSequencerCcLane(bank, 0).changed());
+    assert(seq::deleteSequencerCcLane(bank, 0).changed());
     createWithEvent(bank, 0, 74, 0, 99);
     core::sequencer::SequencerCcLaneRuntime scratch{};
     assert(scratch.seedFrom(audible));
@@ -611,13 +611,16 @@ void testFourLaneCapacityAndCanonicalDecode() {
     assert(seq::firstFreeSequencerCcLane(bank) == -1);
 
     seq::SequencerCcLaneBank persisted{};
-    persisted.lanes[2].values[73] = 99;  // stale reserved data in empty lane
+    persisted.lanes[2].values[73] = 99;  // non-canonical data in empty lane
     assert(!seq::validSequencerCcLaneBank(persisted));
     seq::SequencerCcLaneBank decoded{};
+    decoded.revision = 999U;
+    assert(!seq::decodeCanonicalSequencerCcLaneBank(persisted, decoded));
+    assert(decoded.revision == 999U);
+
+    persisted.lanes[2] = {};
     assert(seq::decodeCanonicalSequencerCcLaneBank(persisted, decoded));
     assert(seq::validSequencerCcLaneBank(decoded));
-    assert(decoded.lanes[2].values[73] == 0);
-
     persisted.formatVersion = 99;
     const auto decodedBefore = decoded;
     assert(!seq::decodeCanonicalSequencerCcLaneBank(persisted, decoded));

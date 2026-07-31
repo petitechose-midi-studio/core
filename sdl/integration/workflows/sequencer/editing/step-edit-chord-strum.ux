@@ -2,6 +2,9 @@
 # Purpose: Strum 0 should show simultaneous voices; increasing Strum should
 # spread voice markers across the step proportionally to the edited value.
 # Expect: capture_changed:strum_zero=strum_adjusted, capture_changed:velocity_contour_zero=velocity_contour_adjusted
+# Expect: semantic:strum_adjusted:effect=edit_step_editor_row, semantic:strum_adjusted:dirty=true
+# Expect: semantic:velocity_contour_adjusted:effect=edit_step_editor_row, semantic:velocity_contour_adjusted:dirty=true
+# Expect: semantic:chord_published:effect=resolve_draft_exit, semantic:chord_published:outcome=applied, semantic:chord_published:published=true
 
 0 scenario sequencer
 50 capture screen sequencer_ready
@@ -29,21 +32,24 @@
 2850 encoder OPT 0.3
 3050 tap NAV 60
 
-# Move to Strum: Mode -> Harmony -> Voices -> Inversion -> Voicing -> Strum.
+# Move to Strum: Shape -> Formula -> Inversion -> Voicing -> Strum.
 3150 encoder NAV 1
 3230 encoder NAV 1
 3310 encoder NAV 1
 3390 encoder NAV 1
-3470 encoder NAV 1
-3650 capture screen strum_zero
-3750 encoder OPT 1.0
-3950 capture screen strum_adjusted
+3600 capture screen strum_zero
+3700 encoder OPT 1.0
+3900 capture screen strum_adjusted
 
 # Move to Velocity contour and verify it has distinct top-title feedback while
 # the chord map remains readable.
-4050 encoder NAV 1
-4250 capture screen velocity_contour_zero
-4350 encoder OPT 1.0
-4550 capture screen velocity_contour_adjusted
-4650 tap BOTTOM_RIGHT 60
-4900 capture screen chord_published
+4000 encoder NAV 1
+4200 capture screen velocity_contour_zero
+4300 encoder OPT 1.0
+4500 capture screen velocity_contour_adjusted
+
+# Save the transactional Chord draft.
+4600 tap LEFT_TOP 60
+4850 capture screen chord_exit_save
+4950 tap NAV 60
+5250 capture screen chord_published

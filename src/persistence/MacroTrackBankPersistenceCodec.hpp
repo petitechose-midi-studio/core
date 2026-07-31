@@ -32,10 +32,9 @@ bool encodeTrackBankPayload(
 );
 
 /**
- * Decode directly into caller-owned scratch storage.
+ * Decode the exact current payload transactionally.
  *
- * The destination may be partially written when false is returned. Callers
- * that expose live state must therefore decode into disposable storage first.
+ * On failure, tracks and scalar outputs remain unchanged.
  */
 bool decodeTrackBankPayloadInto(
     const uint8_t* data,

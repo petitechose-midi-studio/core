@@ -55,11 +55,11 @@ FLASHMEM bool clearCurrentSequencerStructurePage(
     return core::state::sequencer::clearStepRange(sequencer, start, end);
 }
 
-FLASHMEM bool removeCurrentSequencerStructurePage(
+FLASHMEM bool deleteCurrentSequencerStructurePage(
     core::state::sequencer::SequencerState& sequencer
 ) {
     if (sequencer.structureUi.previewAddPageSlot.get()) return false;
-    return core::state::sequencer::removePage(sequencer, sequencer.visiblePage());
+    return core::state::sequencer::deletePage(sequencer, sequencer.visiblePage());
 }
 
 }  // namespace core::handler

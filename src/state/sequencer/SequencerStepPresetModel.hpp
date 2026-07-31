@@ -39,7 +39,6 @@ enum class SequencerStepPresetScalePolicy : uint8_t {
 enum class SequencerStepPresetAdaptation : uint8_t {
     PRESERVED = 0,
     DESTINATION_SCALE,
-    DEFAULTED,
 };
 
 enum class SequencerStepPresetFootprint : uint8_t {
@@ -56,8 +55,8 @@ enum class SequencerStepPresetCompatibility : uint8_t {
     UNKNOWN = 0,
     READY,
     WARNING_ADAPTED,
-    WARNING_DEFAULTED,
     BLOCKED_CONTEXT,
+    BLOCKED_PITCH_CONTEXT,
     BLOCKED_CAPACITY,
     CORRUPT,
     UNSUPPORTED_VERSION,
@@ -120,10 +119,6 @@ struct SequencerStepPresetDescriptor {
     uint8_t cycleSetCount = 0;
     SequencerStepPresetScalePolicy scalePolicy =
         SequencerStepPresetScalePolicy::CHROMATIC;
-    // True when the asset contains both scale-relative and explicitly
-    // chromatic nodes. Kept separate from the dominant portability policy so
-    // preview and UI can explain the exception instead of hiding it.
-    bool mixedPitchPolicy = false;
     SequencerStepPresetAdaptation adaptation =
         SequencerStepPresetAdaptation::PRESERVED;
     SequencerStepPresetFootprint footprint =

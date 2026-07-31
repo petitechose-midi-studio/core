@@ -9,7 +9,6 @@
 
 #include "state/CoreState.hpp"
 #include "state/CoreStateDiagnostics.hpp"
-#include "state/CoreSettingsLayout.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 
 namespace core::state {
@@ -19,6 +18,7 @@ namespace {
 // mutation notification is coalesced so encoder-rate input does not
 // continuously enqueue session saves.
 constexpr uint32_t MACRO_VALUE_PROJECT_SAVE_DELAY_MS = 5000;
+constexpr uint32_t SEQUENCER_PROJECT_SAVE_DELAY_MS = 300;
 constexpr size_t SEQUENCER_COALESCER_SUBSCRIPTION_COUNT = 15;
 
 [[noreturn]] FLASHMEM void failSequencerCoalescerSetup() {
@@ -42,7 +42,7 @@ FLASHMEM void CoreStateBootstrap::configureSequencerMutationCoalescing_(CoreStat
             [&state]() {
                 state.markSequencerProjectMutated_();
             },
-            CoreSettings::VALUE_SAVE_DELAY_MS
+            SEQUENCER_PROJECT_SAVE_DELAY_MS
         );
 
     auto& coalescer = *state.sequencerDomain_.mutationCoalescer;
@@ -87,8 +87,8 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
         state.projectTrackEditor
     );
     state.overlays.registerItem(
-        core::ui::OverlayType::SEQ_STEP_PRESET,
-        state.sequencer.stepPresetPicker.visible
+        core::ui::OverlayType::PRESET_LIBRARY,
+        state.sequencer.presetLibrary.visible
     );
     state.overlays.registerItem(
         core::ui::OverlayType::SEQ_CC_LANE,
@@ -107,17 +107,15 @@ FLASHMEM void CoreStateBootstrap::registerOverlaySignals_(CoreState& state) {
 FLASHMEM void CoreStateBootstrap::initializePersistence_(CoreState& state) {
     state.sequencer.reset();
     state.sequencerTracks.reset();
-    uint16_t persistedSharedTrackMask = core_settings::layout::DEFAULT_SHARED_TRACK_ENABLED_MASK;
-    uint8_t persistedSharedTrackActive = core_settings::layout::DEFAULT_SHARED_TRACK_ACTIVE;
-    state.settings.load(
-        state.midiSync,
-        persistedSharedTrackMask,
-        persistedSharedTrackActive
-    );
+    if (!state.deviceSettingsStore.load(state.midiSync)) {
+        OC_LOG_WARN(
+            "{}",
+            "[CoreState] Device settings rejected; retaining runtime defaults"
+        );
+    }
     state.setSharedTrackState_(
-        persistedSharedTrackMask,
-        persistedSharedTrackActive,
-        false
+        state.pages.currentTrackEnabledMask(),
+        state.pages.currentActiveTrack()
     );
 }
 
@@ -129,7 +127,6 @@ FLASHMEM void CoreStateBootstrap::setupMutationCoalescing_(CoreState& state) {
 FLASHMEM void CoreStateBootstrap::initialize(CoreState& state) {
     initializePersistence_(state);
     diagnostics::configureDebugLabels(state);
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     registerOverlaySignals_(state);
     setupMutationCoalescing_(state);

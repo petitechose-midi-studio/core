@@ -1,11 +1,13 @@
 #include "persistence/ProjectStatePersistenceCodec.hpp"
 
+#include <cmath>
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/PersistenceBinaryCodec.hpp"
 #include "state/project/ProjectDomainRules.hpp"
+#include "state/project/ProjectSlug.hpp"
 
 namespace core::persistence::project_state_codec {
 
@@ -16,14 +18,14 @@ namespace binary = core::persistence::binary_codec;
 
 constexpr uint8_t kMetaFlagDirty = 1U << 0U;
 constexpr uint8_t kMetaFlagHasSavedIdentity = 1U << 1U;
+constexpr uint8_t kMetaKnownFlags =
+    kMetaFlagDirty | kMetaFlagHasSavedIdentity;
 constexpr uint8_t kMusicalFlagPatternsInheritScale = 1U << 0U;
 constexpr uint8_t kMusicalFlagClipsInheritScale = 1U << 1U;
-FLASHMEM uint16_t tempoToCentiBpm(float tempoBpm) {
-    return core::state::project::projectTempoToCentiBpm(tempoBpm);
-}
-
+constexpr uint8_t kMusicalKnownFlags =
+    kMusicalFlagPatternsInheritScale | kMusicalFlagClipsInheritScale;
 FLASHMEM float centiBpmToTempo(uint16_t centiBpm) {
-    return core::state::project::projectCentiBpmToTempo(centiBpm);
+    return static_cast<float>(centiBpm) / 100.0F;
 }
 
 FLASHMEM void copyFixedText(const char* source, char* target, size_t size) {
@@ -31,6 +33,88 @@ FLASHMEM void copyFixedText(const char* source, char* target, size_t size) {
     std::memset(target, 0, size);
     if (source == nullptr) return;
     std::strncpy(target, source, size - 1U);
+}
+
+FLASHMEM bool fixedSlugCanonical(const char* text, size_t capacity) {
+    if (text == nullptr || capacity == 0U) return false;
+    size_t length = 0U;
+    while (length < capacity && text[length] != '\0') ++length;
+    if (length == capacity ||
+        !core::state::project::validProjectSlug(text)) {
+        return false;
+    }
+    for (size_t index = length + 1U; index < capacity; ++index) {
+        if (text[index] != '\0') return false;
+    }
+    return true;
+}
+
+FLASHMEM bool fixedEmptyTextCanonical(const char* text, size_t capacity) {
+    if (text == nullptr || capacity == 0U || text[0] != '\0') return false;
+    for (size_t index = 1U; index < capacity; ++index) {
+        if (text[index] != '\0') return false;
+    }
+    return true;
+}
+
+FLASHMEM bool metaPayloadCanonical(const ProjectMetaPayload& payload) {
+    if ((payload.flags & static_cast<uint8_t>(~kMetaKnownFlags)) != 0U ||
+        !fixedSlugCanonical(payload.name, sizeof(payload.name))) {
+        return false;
+    }
+    return (payload.flags & kMetaFlagHasSavedIdentity) != 0U
+        ? fixedSlugCanonical(payload.id, sizeof(payload.id))
+        : fixedEmptyTextCanonical(payload.id, sizeof(payload.id));
+}
+
+FLASHMEM bool transportPayloadCanonical(
+    const ProjectTransportPayload& payload
+) {
+    constexpr uint16_t minimumTempo =
+        static_cast<uint16_t>(
+            core::state::project::PROJECT_TEMPO_MIN_BPM * 100.0F
+        );
+    constexpr uint16_t maximumTempo =
+        static_cast<uint16_t>(
+            core::state::project::PROJECT_TEMPO_MAX_BPM * 100.0F
+        );
+    return payload.tempoCentiBpm >= minimumTempo &&
+           payload.tempoCentiBpm <= maximumTempo &&
+           payload.swingPercent <=
+               core::state::project::PROJECT_SWING_MAX_PERCENT &&
+           payload.runMode < core::state::project::PROJECT_RUN_MODE_COUNT;
+}
+
+FLASHMEM bool tempoToCanonicalCentiBpm(
+    float tempoBpm,
+    uint16_t& centiBpm
+) {
+    if (!std::isfinite(tempoBpm) ||
+        tempoBpm < core::state::project::PROJECT_TEMPO_MIN_BPM ||
+        tempoBpm > core::state::project::PROJECT_TEMPO_MAX_BPM) {
+        return false;
+    }
+
+    const float scaled = tempoBpm * 100.0F;
+    const auto rounded = static_cast<uint16_t>(scaled + 0.5F);
+    const float restored = static_cast<float>(rounded) / 100.0F;
+    if (std::fabs(restored - tempoBpm) > 0.0001F) return false;
+    centiBpm = rounded;
+    return true;
+}
+
+FLASHMEM bool musicalPayloadCanonical(
+    const ProjectMusicalContextPayload& payload
+) {
+    return payload.scaleRoot < 12U &&
+           payload.scaleType <= static_cast<uint8_t>(
+               oc::note::sequencer::StepSequencerScaleType::WholeTone
+           ) &&
+           payload.scaleConstraintMode <= static_cast<uint8_t>(
+               oc::note::sequencer::StepSequencerScaleConstraintMode::
+                   ConstrainDown
+           ) &&
+           (payload.flags & static_cast<uint8_t>(~kMusicalKnownFlags)) == 0U;
 }
 
 FLASHMEM void addReport(project_file::LoadReport* report,
@@ -67,6 +151,15 @@ FLASHMEM bool readPayload(const project_file::DecodedChunkView* chunk,
                           bool (*decodePayload)(const uint8_t*, uint32_t, Payload&),
                           project_file::LoadReport* report) {
     if (chunk == nullptr) return false;
+    if (chunk->flags != 0U) {
+        addReport(report,
+                  project_file::LoadSeverity::WARNING,
+                  project_file::LoadCode::UNSUPPORTED_CHUNK_FLAGS,
+                  chunk->id,
+                  chunk->versionMajor,
+                  chunk->versionMinor);
+        return false;
+    }
     if (chunk->versionMajor != PROJECT_STATE_CHUNK_VERSION_MAJOR ||
         chunk->versionMinor != PROJECT_STATE_CHUNK_VERSION_MINOR) {
         addReport(report,
@@ -86,11 +179,20 @@ FLASHMEM bool readPayload(const project_file::DecodedChunkView* chunk,
                   chunk->versionMinor);
         return false;
     }
-    return decodePayload(chunk->data, chunk->size, out);
+    if (!decodePayload(chunk->data, chunk->size, out)) {
+        addReport(report,
+                  project_file::LoadSeverity::ERROR,
+                  project_file::LoadCode::CHUNK_PAYLOAD_INVALID,
+                  chunk->id,
+                  chunk->versionMajor,
+                  chunk->versionMinor);
+        return false;
+    }
+    return true;
 }
 
 template <typename Payload, uint32_t PayloadSize>
-FLASHMEM bool applyOptionalChunk(const project_file::DecodedChunkView* chunks,
+FLASHMEM bool applyRequiredChunk(const project_file::DecodedChunkView* chunks,
                                  uint16_t count,
                                  project_file::ChunkId id,
                                  project_file::LoadReport* report,
@@ -101,22 +203,14 @@ FLASHMEM bool applyOptionalChunk(const project_file::DecodedChunkView* chunks,
     const auto* chunk = findChunk(chunks, count, id);
     if (chunk == nullptr) {
         addReport(report,
-                  project_file::LoadSeverity::INFO,
-                  project_file::LoadCode::MISSING_OPTIONAL_CHUNK,
+                  project_file::LoadSeverity::ERROR,
+                  project_file::LoadCode::MISSING_REQUIRED_CHUNK,
                   project_file::chunkIdValue(id));
-        addReport(report,
-                  project_file::LoadSeverity::INFO,
-                  project_file::LoadCode::DEFAULTED_CHUNK,
-                  project_file::chunkIdValue(id));
-        return true;
+        return false;
     }
 
     Payload payload{};
     if (!readPayload<Payload, PayloadSize>(chunk, payload, decodePayload, report)) {
-        addReport(report,
-                  project_file::LoadSeverity::INFO,
-                  project_file::LoadCode::DEFAULTED_CHUNK,
-                  project_file::chunkIdValue(id));
         return false;
     }
     applyPayload(payload, target);
@@ -145,20 +239,29 @@ FLASHMEM void applyEditingToProject(const ProjectEditingPayload& payload,
 
 }  // namespace
 
-FLASHMEM void fillMetaPayload(const core::state::project::ProjectMetadata& source,
-                              ProjectMetaPayload& out) {
-    copyFixedText(source.id.data(), out.id, sizeof(out.id));
-    copyFixedText(source.name.data(), out.name, sizeof(out.name));
-    out.modifiedCounter = source.modifiedCounter;
-    out.flags = 0;
-    if (source.dirty) out.flags |= kMetaFlagDirty;
-    if (source.hasSavedIdentity) out.flags |= kMetaFlagHasSavedIdentity;
+FLASHMEM bool fillMetaPayload(
+    const core::state::project::ProjectMetadata& source,
+    ProjectMetaPayload& out
+) {
+    ProjectMetaPayload pending{};
+    std::memcpy(pending.id, source.id.data(), sizeof(pending.id));
+    std::memcpy(pending.name, source.name.data(), sizeof(pending.name));
+    pending.modifiedCounter = source.modifiedCounter;
+    if (source.dirty) pending.flags |= kMetaFlagDirty;
+    if (source.hasSavedIdentity) pending.flags |= kMetaFlagHasSavedIdentity;
+    if (!metaPayloadCanonical(pending)) return false;
+    out = pending;
+    return true;
 }
 
 FLASHMEM bool encodeMetaPayload(const ProjectMetaPayload& payload,
                                 uint8_t* out,
                                 uint32_t outCapacity) {
-    if (outCapacity != PROJECT_META_PAYLOAD_SIZE) return false;
+    if (out == nullptr ||
+        outCapacity != PROJECT_META_PAYLOAD_SIZE ||
+        !metaPayloadCanonical(payload)) {
+        return false;
+    }
     binary::Writer writer(out, outCapacity);
     return writer.writeBytes(payload.id, sizeof(payload.id)) &&
            writer.writeBytes(payload.name, sizeof(payload.name)) &&
@@ -173,15 +276,26 @@ FLASHMEM bool encodeMetaPayload(const ProjectMetaPayload& payload,
 FLASHMEM bool decodeMetaPayload(const uint8_t* data,
                                 uint32_t size,
                                 ProjectMetaPayload& out) {
-    if (size != PROJECT_META_PAYLOAD_SIZE) return false;
+    if (data == nullptr || size != PROJECT_META_PAYLOAD_SIZE) return false;
+    ProjectMetaPayload pending{};
+    uint8_t reserved0 = 0U;
+    uint16_t reserved1 = 0U;
     binary::Reader reader(data, size);
-    return reader.readBytes(out.id, sizeof(out.id)) &&
-           reader.readBytes(out.name, sizeof(out.name)) &&
-           reader.readU32(out.modifiedCounter) &&
-           reader.readU8(out.flags) &&
-           reader.skip(3) &&
-           reader.ok() &&
-           reader.offset() == PROJECT_META_PAYLOAD_SIZE;
+    if (!reader.readBytes(pending.id, sizeof(pending.id)) ||
+        !reader.readBytes(pending.name, sizeof(pending.name)) ||
+        !reader.readU32(pending.modifiedCounter) ||
+        !reader.readU8(pending.flags) ||
+        !reader.readU8(reserved0) ||
+        !reader.readU16(reserved1) ||
+        !reader.ok() ||
+        reader.offset() != PROJECT_META_PAYLOAD_SIZE ||
+        reserved0 != 0U ||
+        reserved1 != 0U ||
+        !metaPayloadCanonical(pending)) {
+        return false;
+    }
+    out = pending;
+    return true;
 }
 
 FLASHMEM void applyMetaPayload(const ProjectMetaPayload& payload,
@@ -193,17 +307,29 @@ FLASHMEM void applyMetaPayload(const ProjectMetaPayload& payload,
     target.hasSavedIdentity = (payload.flags & kMetaFlagHasSavedIdentity) != 0;
 }
 
-FLASHMEM void fillTransportPayload(const core::state::project::ProjectTransportState& source,
-                                   ProjectTransportPayload& out) {
-    out.tempoCentiBpm = tempoToCentiBpm(source.tempoBpm);
-    out.swingPercent = core::state::project::sanitizeProjectSwingPercent(source.swingPercent);
-    out.runMode = core::state::project::sanitizeProjectRunMode(source.runMode);
+FLASHMEM bool fillTransportPayload(
+    const core::state::project::ProjectTransportState& source,
+    ProjectTransportPayload& out
+) {
+    ProjectTransportPayload pending{};
+    if (!tempoToCanonicalCentiBpm(source.tempoBpm, pending.tempoCentiBpm)) {
+        return false;
+    }
+    pending.swingPercent = source.swingPercent;
+    pending.runMode = source.runMode;
+    if (!transportPayloadCanonical(pending)) return false;
+    out = pending;
+    return true;
 }
 
 FLASHMEM bool encodeTransportPayload(const ProjectTransportPayload& payload,
                                      uint8_t* out,
                                      uint32_t outCapacity) {
-    if (outCapacity != PROJECT_TRANSPORT_PAYLOAD_SIZE) return false;
+    if (out == nullptr ||
+        outCapacity != PROJECT_TRANSPORT_PAYLOAD_SIZE ||
+        !transportPayloadCanonical(payload)) {
+        return false;
+    }
     binary::Writer writer(out, outCapacity);
     return writer.writeU16(payload.tempoCentiBpm) &&
            writer.writeU8(payload.swingPercent) &&
@@ -216,39 +342,60 @@ FLASHMEM bool encodeTransportPayload(const ProjectTransportPayload& payload,
 FLASHMEM bool decodeTransportPayload(const uint8_t* data,
                                      uint32_t size,
                                      ProjectTransportPayload& out) {
-    if (size != PROJECT_TRANSPORT_PAYLOAD_SIZE) return false;
+    if (data == nullptr || size != PROJECT_TRANSPORT_PAYLOAD_SIZE) {
+        return false;
+    }
+    ProjectTransportPayload pending{};
+    uint32_t reserved = 0U;
     binary::Reader reader(data, size);
-    return reader.readU16(out.tempoCentiBpm) &&
-           reader.readU8(out.swingPercent) &&
-           reader.readU8(out.runMode) &&
-           reader.skip(4) &&
-           reader.ok() &&
-           reader.offset() == PROJECT_TRANSPORT_PAYLOAD_SIZE;
+    if (!reader.readU16(pending.tempoCentiBpm) ||
+        !reader.readU8(pending.swingPercent) ||
+        !reader.readU8(pending.runMode) ||
+        !reader.readU32(reserved) ||
+        !reader.ok() ||
+        reader.offset() != PROJECT_TRANSPORT_PAYLOAD_SIZE ||
+        reserved != 0U ||
+        !transportPayloadCanonical(pending)) {
+        return false;
+    }
+    out = pending;
+    return true;
 }
 
 FLASHMEM void applyTransportPayload(const ProjectTransportPayload& payload,
                                     core::state::project::ProjectTransportState& target) {
     target.tempoBpm = centiBpmToTempo(payload.tempoCentiBpm);
-    target.swingPercent = core::state::project::sanitizeProjectSwingPercent(payload.swingPercent);
-    target.runMode = core::state::project::sanitizeProjectRunMode(payload.runMode);
+    target.swingPercent = payload.swingPercent;
+    target.runMode = payload.runMode;
 }
 
-FLASHMEM void fillMusicalContextPayload(const core::state::project::ProjectMusicalContext& source,
-                                        ProjectMusicalContextPayload& out) {
-    auto scale = source.scale;
-    scale.clamp();
-    out.scaleRoot = scale.root;
-    out.scaleType = static_cast<uint8_t>(scale.type);
-    out.scaleConstraintMode = static_cast<uint8_t>(scale.mode);
-    out.flags = 0;
-    if (source.patternsInheritScale) out.flags |= kMusicalFlagPatternsInheritScale;
-    if (source.clipsInheritScale) out.flags |= kMusicalFlagClipsInheritScale;
+FLASHMEM bool fillMusicalContextPayload(
+    const core::state::project::ProjectMusicalContext& source,
+    ProjectMusicalContextPayload& out
+) {
+    ProjectMusicalContextPayload pending{};
+    pending.scaleRoot = source.scale.root;
+    pending.scaleType = static_cast<uint8_t>(source.scale.type);
+    pending.scaleConstraintMode = static_cast<uint8_t>(source.scale.mode);
+    if (source.patternsInheritScale) {
+        pending.flags |= kMusicalFlagPatternsInheritScale;
+    }
+    if (source.clipsInheritScale) {
+        pending.flags |= kMusicalFlagClipsInheritScale;
+    }
+    if (!musicalPayloadCanonical(pending)) return false;
+    out = pending;
+    return true;
 }
 
 FLASHMEM bool encodeMusicalContextPayload(const ProjectMusicalContextPayload& payload,
                                           uint8_t* out,
                                           uint32_t outCapacity) {
-    if (outCapacity != PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE) return false;
+    if (out == nullptr ||
+        outCapacity != PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE ||
+        !musicalPayloadCanonical(payload)) {
+        return false;
+    }
     binary::Writer writer(out, outCapacity);
     return writer.writeU8(payload.scaleRoot) &&
            writer.writeU8(payload.scaleType) &&
@@ -262,15 +409,25 @@ FLASHMEM bool encodeMusicalContextPayload(const ProjectMusicalContextPayload& pa
 FLASHMEM bool decodeMusicalContextPayload(const uint8_t* data,
                                           uint32_t size,
                                           ProjectMusicalContextPayload& out) {
-    if (size != PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE) return false;
+    if (data == nullptr || size != PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE) {
+        return false;
+    }
+    ProjectMusicalContextPayload pending{};
+    uint32_t reserved = 0U;
     binary::Reader reader(data, size);
-    return reader.readU8(out.scaleRoot) &&
-           reader.readU8(out.scaleType) &&
-           reader.readU8(out.scaleConstraintMode) &&
-           reader.readU8(out.flags) &&
-           reader.skip(4) &&
-           reader.ok() &&
-           reader.offset() == PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE;
+    if (!reader.readU8(pending.scaleRoot) ||
+        !reader.readU8(pending.scaleType) ||
+        !reader.readU8(pending.scaleConstraintMode) ||
+        !reader.readU8(pending.flags) ||
+        !reader.readU32(reserved) ||
+        !reader.ok() ||
+        reader.offset() != PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE ||
+        reserved != 0U ||
+        !musicalPayloadCanonical(pending)) {
+        return false;
+    }
+    out = pending;
+    return true;
 }
 
 FLASHMEM void applyMusicalContextPayload(const ProjectMusicalContextPayload& payload,
@@ -282,26 +439,32 @@ FLASHMEM void applyMusicalContextPayload(const ProjectMusicalContextPayload& pay
             payload.scaleConstraintMode
         ),
     };
-    target.scale.clamp();
     target.patternsInheritScale = (payload.flags & kMusicalFlagPatternsInheritScale) != 0;
     target.clipsInheritScale = (payload.flags & kMusicalFlagClipsInheritScale) != 0;
 }
 
-FLASHMEM void fillEditingPayload(const core::state::project::ProjectEditingState& source,
-                                 ProjectEditingPayload& out) {
-    out.stepPasteMode = static_cast<uint8_t>(
-        core::state::project::sanitizeProjectStepPasteMode(source.stepPasteMode)
-    );
-    out.ccLaneDefaultsMarker = PROJECT_EDITING_CC_LANE_DEFAULTS_MARKER;
+FLASHMEM bool fillEditingPayload(
+    const core::state::project::ProjectEditingState& source,
+    ProjectEditingPayload& out
+) {
+    ProjectEditingPayload pending{};
+    pending.stepPasteMode = static_cast<uint8_t>(source.stepPasteMode);
+    pending.ccLaneDefaultsMarker = PROJECT_EDITING_CC_LANE_DEFAULTS_MARKER;
     for (uint8_t lane = 0;
          lane < core::state::project::PROJECT_CC_LANE_DEFAULT_COUNT;
          ++lane) {
-        out.ccLaneDefaultControllers[lane] =
-            core::state::project::sanitizeProjectCcLaneDefault(
-                source.ccLaneDefaultControllers[lane],
-                lane
-            );
+        pending.ccLaneDefaultControllers[lane] =
+            source.ccLaneDefaultControllers[lane];
     }
+    if (pending.stepPasteMode >=
+        core::state::project::PROJECT_STEP_PASTE_MODE_COUNT) {
+        return false;
+    }
+    for (const uint8_t controller : pending.ccLaneDefaultControllers) {
+        if (!core::state::project::validProjectMidiCc(controller)) return false;
+    }
+    out = pending;
+    return true;
 }
 
 FLASHMEM bool encodeEditingPayload(const ProjectEditingPayload& payload,
@@ -364,58 +527,61 @@ FLASHMEM bool decodeEditingPayload(const uint8_t* data,
 FLASHMEM void applyEditingPayload(const ProjectEditingPayload& payload,
                                   core::state::project::ProjectEditingState& target) {
     target.stepPasteMode =
-        core::state::project::sanitizeProjectStepPasteMode(payload.stepPasteMode);
+        static_cast<core::state::project::ProjectStepPasteMode>(
+            payload.stepPasteMode
+        );
     for (uint8_t lane = 0;
          lane < core::state::project::PROJECT_CC_LANE_DEFAULT_COUNT;
          ++lane) {
         target.ccLaneDefaultControllers[lane] =
-            core::state::project::sanitizeProjectCcLaneDefault(
-                payload.ccLaneDefaultControllers[lane],
-                lane
-            );
+            payload.ccLaneDefaultControllers[lane];
     }
 }
 
-FLASHMEM void applyProjectStateChunks(const project_file::DecodedChunkView* chunks,
+FLASHMEM bool applyProjectStateChunks(const project_file::DecodedChunkView* chunks,
                                       uint16_t chunkCount,
                                       core::state::project::ProjectState& target,
                                       project_file::LoadReport* report) {
-    applyOptionalChunk<ProjectMetaPayload, PROJECT_META_PAYLOAD_SIZE>(
+    auto pending = target;
+    bool valid = true;
+    valid = applyRequiredChunk<ProjectMetaPayload, PROJECT_META_PAYLOAD_SIZE>(
         chunks,
         chunkCount,
         project_file::ChunkId::PROJECT_META,
         report,
         decodeMetaPayload,
         applyMetaToProject,
-        target
-    );
-    applyOptionalChunk<ProjectTransportPayload, PROJECT_TRANSPORT_PAYLOAD_SIZE>(
+        pending
+    ) && valid;
+    valid = applyRequiredChunk<ProjectTransportPayload, PROJECT_TRANSPORT_PAYLOAD_SIZE>(
         chunks,
         chunkCount,
         project_file::ChunkId::TRANSPORT,
         report,
         decodeTransportPayload,
         applyTransportToProject,
-        target
-    );
-    applyOptionalChunk<ProjectMusicalContextPayload, PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE>(
+        pending
+    ) && valid;
+    valid = applyRequiredChunk<ProjectMusicalContextPayload, PROJECT_MUSICAL_CONTEXT_PAYLOAD_SIZE>(
         chunks,
         chunkCount,
         project_file::ChunkId::MUSICAL_CONTEXT,
         report,
         decodeMusicalContextPayload,
         applyMusicalToProject,
-        target
-    );
-    applyOptionalChunk<ProjectEditingPayload, PROJECT_EDITING_PAYLOAD_SIZE>(
+        pending
+    ) && valid;
+    valid = applyRequiredChunk<ProjectEditingPayload, PROJECT_EDITING_PAYLOAD_SIZE>(
         chunks,
         chunkCount,
         project_file::ChunkId::EDITING,
         report,
         decodeEditingPayload,
         applyEditingToProject,
-        target
-    );
+        pending
+    ) && valid;
+    if (valid) target = pending;
+    return valid;
 }
 
 }  // namespace core::persistence::project_state_codec

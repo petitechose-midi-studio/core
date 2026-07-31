@@ -14,12 +14,16 @@
 #include <oc/state/Signal.hpp>
 
 #include "handler/common/ButtonReleaseLatch.hpp"
+#include "handler/sequencer/SequencerChordPresetDomainServices.hpp"
+#include "handler/sequencer/SequencerChordPresetLibraryAdapter.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerPresetLibraryWorkflow.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
-#include "handler/sequencer/SequencerStepPresetPickerWorkflow.hpp"
+#include "handler/sequencer/SequencerStepPresetLibraryAdapter.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
+#include "state/PatternPitchSettingsState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "app/OverlayTypes.hpp"
@@ -37,11 +41,13 @@ public:
         core::state::sequencer::SequencerTrackBankState& tracks;
         core::state::StructureClipboardState& structureClipboard;
         core::state::TrackNavigationState& trackNavigation;
+        core::state::PatternPitchSettingsState& patternPitchSettings;
         oc::state::Signal<
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         SequencerHistoryDomainServices history;
         SequencerStepPresetDomainServices stepPresets;
+        SequencerChordPresetDomainServices chordPresets;
     };
 
     SequencerStepEditHandler(
@@ -51,7 +57,7 @@ public:
         oc::api::ButtonAPI& buttons,
         oc::type::ScopeID sequencerViewScope,
         oc::type::ScopeID overlayScope,
-        oc::type::ScopeID stepPresetOverlayScope,
+        oc::type::ScopeID presetLibraryOverlayScope,
         TimeProviderFn timeProvider = core::time_compat::millis
     );
 
@@ -92,6 +98,8 @@ private:
     void setFocusedChordFieldValue(float normalized);
     void configureOptForFocusedChordField();
     void resetFocusedChordFieldToDefault();
+    void toggleChordSourceSelector();
+    void openPitchContextSettings();
     bool chordEditorActive() const;
     bool editedStepInRange(uint8_t& step) const;
     bool activateFocusedContextRow();
@@ -109,18 +117,23 @@ private:
         core::state::sequencer::SequencerHistoryPatternSnapshot before,
         bool beforeCaptured
     );
-    void openStepPresetPicker();
-    void closeStepPresetPicker();
-    void moveStepPresetItem(float delta);
-    void moveStepPresetPreviewState(float delta);
-    void toggleStepPresetDetail();
-    void toggleStepPresetMode();
-    void beginStepPresetActionGuard();
-    void releaseStepPresetAction();
-    void commitStepPresetActionGuard();
-    void handleStepPresetOutcome(SequencerStepPresetPickerOutcome outcome);
+    void openStepPresetLibrary();
+    void openChordPresetLibrary();
+    void closePresetLibrary();
+    void backFromPresetLibrary();
+    void movePresetLibraryItem(float delta);
+    void adjustPresetLibraryDetail(float delta);
+    void enterPresetLibraryDetail();
+    void togglePresetLibraryMode();
+    void beginPresetLibraryActionGuard();
+    void releasePresetLibraryAction();
+    void commitPresetLibraryActionGuard();
+    void handlePresetLibraryResult(
+        const SequencerPresetLibraryResult& result
+    );
 
     ButtonReleaseLatch<2> context_release_latch_;
+    ButtonReleaseLatch<1> preset_open_release_latch_;
     core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     bool history_snapshot_valid_ = false;
 
@@ -129,23 +142,28 @@ private:
     core::state::sequencer::SequencerTrackBankState& tracks_;
     core::state::StructureClipboardState& structure_clipboard_;
     core::state::TrackNavigationState& track_ui_;
+    core::state::PatternPitchSettingsState& pattern_pitch_settings_;
     oc::state::Signal<
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     SequencerHistoryDomainServices history_;
     SequencerStepPresetDomainServices step_presets_;
-    SequencerStepPresetPickerWorkflow step_preset_picker_;
+    SequencerChordPresetDomainServices chord_presets_;
+    SequencerStepPresetLibraryAdapter step_preset_library_adapter_;
+    SequencerChordPresetLibraryAdapter chord_preset_library_adapter_;
+    SequencerPresetLibraryWorkflow preset_library_;
     oc::context::OverlayManager<core::ui::OverlayType>& overlays_;
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID sequencer_view_scope_ = 0;
     oc::type::ScopeID overlay_scope_ = 0;
-    oc::type::ScopeID step_preset_overlay_scope_ = 0;
+    oc::type::ScopeID preset_library_overlay_scope_ = 0;
     TimeProviderFn time_provider_ = core::time_compat::millis;
-    bool step_preset_action_press_active_ = false;
-    bool step_preset_auto_close_pending_ = false;
+    bool preset_library_action_press_active_ = false;
+    bool preset_library_auto_close_pending_ = false;
     bool step_retarget_active_ = false;
-    uint32_t step_preset_auto_close_at_ms_ = 0;
+    bool pitch_context_settings_open_ = false;
+    uint32_t preset_library_auto_close_at_ms_ = 0;
 };
 
 }  // namespace core::handler

@@ -20,7 +20,7 @@
 #include <oc/time/Time.hpp>
 #include <oc/type/Result.hpp>
 
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/macro/MacroAutomationPlaybackService.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
@@ -105,7 +105,7 @@ struct Harness {
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
     core::handler::MacroPerformanceDomainServices services;
     core::sequencer::RealtimeMidiQueue queue;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator;
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator;
     core::handler::MacroMidiCcRuntimeAdapter adapter;
     core::handler::MacroValueHandler valueHandler;
     core::handler::MacroAutomationPlaybackService playback;
@@ -172,7 +172,7 @@ struct Harness {
         statusBar.playing.set(true);
     }
 
-    core::handler::MidiCcGlobalFrameResult resolveAndDrain(
+    core::sequencer::MidiCcGlobalFrameResult resolveAndDrain(
         uint32_t deadlineUs
     ) {
         const auto result = coordinator.resolveLive(deadlineUs, runtimeTracks);

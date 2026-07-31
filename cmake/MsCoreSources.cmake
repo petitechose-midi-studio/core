@@ -22,10 +22,12 @@ file(GLOB_RECURSE MS_CORE_NATIVE_SOURCES CONFIGURE_DEPENDS
 set(MS_CORE_NATIVE_EXTRA_SOURCES
     "${MS_CORE_SOURCE_ROOT}/context/standalone/MacroOverlayInvalidationBindings.cpp"
     "${MS_CORE_SOURCE_ROOT}/context/standalone/MacroViewActivationContract.cpp"
+    "${MS_CORE_SOURCE_ROOT}/context/standalone/SequencerChordFieldPresentation.cpp"
     "${MS_CORE_SOURCE_ROOT}/context/standalone/SequencerEncoderSyncCoordinator.cpp"
     "${MS_CORE_SOURCE_ROOT}/ui/common/GlobalTrackNavigationStripModel.cpp"
     "${MS_CORE_SOURCE_ROOT}/ui/modulation/ModulatorAdsrUiModel.cpp"
-    "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerStepPresetPickerPresentation.cpp"
+    "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerChordPresetPresentation.cpp"
+    "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerPresetLibraryPresentation.cpp"
     "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerPatternTimelineModel.cpp"
     "${MS_CORE_SOURCE_ROOT}/ui/sequencer/StepContentBadgeProjection.cpp")
 list(APPEND MS_CORE_NATIVE_EXTRA_SOURCES
@@ -38,6 +40,8 @@ list(APPEND MS_CORE_NATIVE_SOURCES ${MS_CORE_NATIVE_EXTRA_SOURCES})
 set(MS_CORE_PROJECT_FILE_OPEN_CONTROL_SOURCES
     "${MS_CORE_OC_FRAMEWORK_DIR}/src/oc/state/NotificationQueue.cpp"
     "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerChord.cpp"
+    "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerChordProjection.cpp"
+    "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerChordSpec.cpp"
     "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerGraph.cpp"
     "${MS_CORE_OC_NOTE_DIR}/src/oc/note/sequencer/StepSequencerState.cpp")
 
@@ -52,8 +56,10 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectSnapshotPersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectStatePersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/ProjectTrackStatePersistenceCodec.cpp"
-    "${MS_CORE_SOURCE_ROOT}/persistence/SequencerPersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/SequencerCcLanePersistenceCodec.cpp"
+    "${MS_CORE_SOURCE_ROOT}/persistence/SequencerGraphAssetCodec.cpp"
+    "${MS_CORE_SOURCE_ROOT}/persistence/SequencerGraphRecordCodec.cpp"
+    "${MS_CORE_SOURCE_ROOT}/persistence/SequencerPersistenceCodec.cpp"
     "${MS_CORE_SOURCE_ROOT}/persistence/SequencerPersistenceEnvelope.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/MacroEditState.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/contextual/OperationFeedbackState.cpp"
@@ -104,11 +110,12 @@ set(MS_CORE_PROJECT_FILE_CORE_SOURCES
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerCcLaneDomain.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerCcLanePatternOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerCcLaneProjectionOps.cpp"
-    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphAssetCodec.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerChordContextProjection.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphAsset.cpp"
+    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphCanonicalPolicy.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphChildOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphContentOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphOps.cpp"
-    "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphPresetWorkflow.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerGraphPropertyOps.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerHistory.cpp"
     "${MS_CORE_SOURCE_ROOT}/state/sequencer/SequencerPatternRegionOps.cpp"

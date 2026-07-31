@@ -81,8 +81,6 @@ void assertLoadedSession(core::persistence::ProjectSessionStore& store,
     project_file::LoadReport report{};
     auto loadedResult = store.loadCurrent(loaded, &report);
     assert(loadedResult);
-    assert(loadedResult.value().loadStatus == project_file::LoadStatus::OK);
-    assert(loadedResult.value().overwriteSafe);
     assert(report.ok());
 
     test_support::CoreStorages storages;

@@ -7,9 +7,10 @@
 
 #include <oc/type/TextFormat.hpp>
 
+#include "context/standalone/SequencerChordFieldPresentation.hpp"
+#include "state/sequencer/SequencerNoteSpelling.hpp"
+#include "state/sequencer/SequencerScaleCatalog.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
-#include "state/sequencer/StepPropertyDisplay.hpp"
-#include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -17,6 +18,9 @@ namespace core::context::standalone::sequencer_overlay_presenter {
 namespace {
 
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
+namespace note_spelling = core::state::sequencer::note_spelling;
+namespace chord_fields =
+    core::context::standalone::sequencer_chord_field_presentation;
 
 constexpr size_t CHIP_PITCH_INDEX = 0;
 constexpr size_t CHIP_VELOCITY_INDEX = 1;
@@ -30,7 +34,7 @@ FLASHMEM void copyText(char* out, size_t outSize, const char* text) {
     out[outSize - 1] = '\0';
 }
 
-FLASHMEM ms::ui::KeyValueRow makeIconRow(
+FLASHMEM StepEditKeyValueRow makeIconRow(
     const char* key,
     const char* value,
     const char* icon,
@@ -43,24 +47,6 @@ FLASHMEM ms::ui::KeyValueRow makeIconRow(
         .iconFont = standalone_fonts.icons_14,
         .iconColor = color,
     };
-}
-
-FLASHMEM void formatNoteName(char* out, size_t outSize, uint8_t note) {
-    core::state::sequencer::formatStepPropertyValue(
-        out,
-        outSize,
-        core::state::sequencer::StepProperty::NOTE,
-        note,
-        0,
-        0
-    );
-}
-
-FLASHMEM const char* pitchClassLabel(uint8_t pitchClass) {
-    constexpr const char* LABELS[] = {
-        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
-    };
-    return LABELS[pitchClass % 12U];
 }
 
 FLASHMEM const char* chordQualitySuffix(oc::note::sequencer::StepSequencerChordQuality quality) {
@@ -143,12 +129,28 @@ FLASHMEM void formatChordPreviewName(
 
     const auto& analysis = preview.analysis;
     size_t pos = 0;
-    pos = appendText(out, outSize, pos, pitchClassLabel(analysis.rootPitchClass));
+    pos = appendText(
+        out,
+        outSize,
+        pos,
+        note_spelling::pitchClassLabel(
+            analysis.rootPitchClass,
+            preview.scaleSettings
+        )
+    );
     if (analysis.recognized) {
         pos = appendText(out, outSize, pos, chordQualitySuffix(analysis.quality));
         if (analysis.slash) {
             pos = appendText(out, outSize, pos, "/");
-            pos = appendText(out, outSize, pos, pitchClassLabel(analysis.bassPitchClass));
+            pos = appendText(
+                out,
+                outSize,
+                pos,
+                note_spelling::pitchClassLabel(
+                    analysis.bassPitchClass,
+                    preview.scaleSettings
+                )
+            );
         }
     } else if (nonRootIntervalCount(analysis) > 3) {
         pos = appendText(out, outSize, pos, " chord");
@@ -237,260 +239,12 @@ FLASHMEM void populateChordPreviewMarkers(
             .size = markerSize,
             .width = markerSize,
             .height = markerSize,
-            .opa = 245,
+            .opa = static_cast<uint8_t>(
+                voice.inSelectedScale ? 245U : 140U
+            ),
             .color = mixColor(velocityLow, velocityHigh, velocityMix),
         };
     }
-}
-
-FLASHMEM const char* chordModeLabel(oc::note::sequencer::StepSequencerChordMode mode) {
-    using oc::note::sequencer::StepSequencerChordMode;
-    switch (mode) {
-        case StepSequencerChordMode::Inherit:
-            return "Inherit";
-        case StepSequencerChordMode::Local:
-            return "Local";
-        case StepSequencerChordMode::Single:
-        default:
-            return "Single";
-    }
-}
-
-FLASHMEM const char* chordHarmonyLabel(
-    oc::note::sequencer::StepSequencerChordHarmony harmony
-) {
-    using Harmony = oc::note::sequencer::StepSequencerChordHarmony;
-    switch (harmony) {
-        case Harmony::DiatonicTriad: return "Diatonic triad";
-        case Harmony::DiatonicSeventh: return "Diatonic 7th";
-        case Harmony::Suspended: return "Suspended";
-        case Harmony::Quartal: return "Quartal";
-        case Harmony::Fifths: return "Fifths";
-        case Harmony::Cluster: return "Cluster";
-        case Harmony::Major: return "Major";
-        case Harmony::Minor: return "Minor";
-        case Harmony::Diminished: return "Diminished";
-        case Harmony::Augmented: return "Augmented";
-        case Harmony::Sus2: return "Sus 2";
-        case Harmony::Sus4: return "Sus 4";
-        case Harmony::Dominant7: return "Dominant 7";
-        case Harmony::Major7: return "Major 7";
-        case Harmony::Minor7: return "Minor 7";
-        case Harmony::Count:
-        default: return "Harmony";
-    }
-}
-
-FLASHMEM const char* chordVoicingLabel(
-    oc::note::sequencer::StepSequencerChordVoicing voicing
-) {
-    using Voicing = oc::note::sequencer::StepSequencerChordVoicing;
-    switch (voicing) {
-        case Voicing::Open: return "Open";
-        case Voicing::Wide: return "Wide";
-        case Voicing::Close:
-        default: return "Close";
-    }
-}
-
-FLASHMEM void formatInversion(char* out, size_t outSize, uint8_t inversion) {
-    if (inversion == 0) {
-        copyText(out, outSize, "Root");
-        return;
-    }
-    const char* suffix = "th";
-    if (inversion == 1) suffix = "st";
-    else if (inversion == 2) suffix = "nd";
-    else if (inversion == 3) suffix = "rd";
-    std::snprintf(out, outSize, "%u%s", static_cast<unsigned>(inversion), suffix);
-}
-
-FLASHMEM const char* chordFieldLabel(core::state::sequencer::SequencerChordEditField field) {
-    using Field = core::state::sequencer::SequencerChordEditField;
-    switch (field) {
-        case Field::MODE:
-            return "Mode";
-        case Field::HARMONY:
-            return "Harmony";
-        case Field::VOICES:
-            return "Voices";
-        case Field::INVERSION:
-            return "Inversion";
-        case Field::VOICING:
-            return "Voicing";
-        case Field::STRUM:
-            return "Strum";
-        case Field::VELOCITY_CONTOUR:
-            return "Velocity contour";
-        case Field::COUNT:
-        default:
-            return "Chord";
-    }
-}
-
-FLASHMEM const char* chordFieldIcon(core::state::sequencer::SequencerChordEditField field) {
-    using Field = core::state::sequencer::SequencerChordEditField;
-    switch (field) {
-        case Field::MODE:
-            return ::standalone::icons::CHORD_PROP_MODE;
-        case Field::HARMONY:
-            return ::standalone::icons::CHORD_PROP_HARMONY;
-        case Field::VOICES:
-            return ::standalone::icons::CHORD_PROP_VOICE;
-        case Field::INVERSION:
-            return ::standalone::icons::CHORD_PROP_INVERSION;
-        case Field::VOICING:
-            return ::standalone::icons::CHORD_PROP_VOICING;
-        case Field::STRUM:
-            return ::standalone::icons::SWING;
-        case Field::VELOCITY_CONTOUR:
-            return ::standalone::icons::NOTE_PROP_VEL;
-        case Field::COUNT:
-        default:
-            return ::standalone::icons::CHORD;
-    }
-}
-
-FLASHMEM uint32_t chordFieldColor(core::state::sequencer::SequencerChordEditField field) {
-    using Field = core::state::sequencer::SequencerChordEditField;
-    using Tone = core::ui::sequencer::semantic::Tone;
-    switch (field) {
-        case Field::MODE:
-            return core::ui::sequencer::semantic::color(Tone::CHORD_MODE);
-        case Field::HARMONY:
-            return core::ui::sequencer::semantic::color(Tone::CHORD_HARMONY);
-        case Field::VOICES:
-            return core::ui::sequencer::semantic::color(Tone::CHORD_VOICE);
-        case Field::INVERSION:
-            return core::ui::sequencer::semantic::color(Tone::CHORD_INVERSION);
-        case Field::VOICING:
-            return core::ui::sequencer::semantic::color(Tone::CHORD_VOICING);
-        case Field::STRUM:
-            return core::ui::sequencer::semantic::color(Tone::CHORD_STRUM);
-        case Field::VELOCITY_CONTOUR:
-            return core::ui::sequencer::semantic::color(Tone::CHORD_VELOCITY);
-        case Field::COUNT:
-        default:
-            return chordColor();
-    }
-}
-
-FLASHMEM core::ui::SequencerStepEditVisualSlot chordFieldVisualSlot(
-    core::state::sequencer::SequencerChordEditField field
-) {
-    using Field = core::state::sequencer::SequencerChordEditField;
-    using Slot = core::ui::SequencerStepEditVisualSlot;
-    switch (field) {
-        case Field::MODE:
-            return Slot::CHORD_MODE;
-        case Field::HARMONY:
-            return Slot::CHORD_HARMONY;
-        case Field::VOICES:
-            return Slot::CHORD_VOICES;
-        case Field::INVERSION:
-            return Slot::CHORD_INVERSION;
-        case Field::VOICING:
-            return Slot::CHORD_VOICING;
-        case Field::STRUM:
-            return Slot::CHORD_STRUM;
-        case Field::VELOCITY_CONTOUR:
-            return Slot::CHORD_VELOCITY;
-        case Field::COUNT:
-        default:
-            return Slot::AUTO;
-    }
-}
-
-FLASHMEM void formatSigned(
-    char* out,
-    size_t outSize,
-    int value,
-    const char* suffix = ""
-) {
-    if (!out || outSize == 0) return;
-    std::snprintf(out, outSize, "%+d%s", value, suffix ? suffix : "");
-}
-
-FLASHMEM void formatChordFieldValue(
-    char* out,
-    size_t outSize,
-    core::state::sequencer::SequencerChordEditField field,
-    const core::state::sequencer::SequencerStepChordUiState& chord
-) {
-    using Field = core::state::sequencer::SequencerChordEditField;
-    if (!out || outSize == 0) return;
-
-    switch (field) {
-        case Field::MODE:
-            copyText(out, outSize, chordModeLabel(chord.mode));
-            return;
-        case Field::HARMONY:
-            if (!chord.spec.isSemantic()) {
-                copyText(out, outSize, "Recipe");
-            } else {
-                copyText(
-                    out,
-                    outSize,
-                    chordHarmonyLabel(
-                        chord.preview.valid ? chord.preview.harmony : chord.spec.harmony()
-                    )
-                );
-            }
-            return;
-        case Field::VOICES:
-            std::snprintf(
-                out,
-                outSize,
-                "%u",
-                static_cast<unsigned>(
-                    chord.mode == oc::note::sequencer::StepSequencerChordMode::Local
-                        ? chord.spec.voiceCount
-                        : chord.effectiveVoiceCount
-                )
-            );
-            return;
-        case Field::INVERSION:
-            if (!chord.spec.isSemantic()) {
-                copyText(out, outSize, "Recipe");
-            } else {
-                formatInversion(
-                    out,
-                    outSize,
-                    chord.preview.valid
-                        ? chord.preview.effectiveInversion
-                        : chord.spec.inversion()
-                );
-            }
-            return;
-        case Field::VOICING:
-            copyText(
-                out,
-                outSize,
-                chord.spec.isSemantic()
-                    ? chordVoicingLabel(chord.spec.voicing())
-                    : "Recipe"
-            );
-            return;
-        case Field::STRUM:
-            formatSigned(out, outSize, chord.spec.strum, "%");
-            return;
-        case Field::VELOCITY_CONTOUR:
-            formatSigned(out, outSize, chord.spec.velocityCurve);
-            return;
-        case Field::COUNT:
-        default:
-            copyText(out, outSize, "--");
-            return;
-    }
-}
-
-FLASHMEM void formatChordFieldTitle(
-    char* out,
-    size_t outSize,
-    core::state::sequencer::SequencerChordEditField field
-) {
-    if (!out || outSize == 0) return;
-    copyText(out, outSize, chordFieldLabel(field));
 }
 
 FLASHMEM char* chordFieldBuffer(
@@ -510,10 +264,10 @@ FLASHMEM void setChordPropertyChip(
     core::state::sequencer::SequencerChordEditField field
 ) {
     chip = core::ui::SequencerStepEditPropertyChip{
-        .key = chordFieldLabel(field),
+        .key = chord_fields::label(field),
         .value = chordFieldBuffer(data, field),
-        .icon = chordFieldIcon(field),
-        .color = chordFieldColor(field),
+        .icon = chord_fields::icon(field),
+        .color = chord_fields::color(field),
     };
 }
 
@@ -551,7 +305,7 @@ FLASHMEM void formatChordValue(
                     out,
                     outSize,
                     "%u voices",
-                    static_cast<unsigned>(std::max<uint8_t>(chord.spec.voiceCount, 1))
+                    static_cast<unsigned>(std::max<uint8_t>(chord.spec.voices(), 1))
                 );
             }
             return;
@@ -582,7 +336,19 @@ FLASHMEM void formatChordPreviewNotes(
 
     for (uint8_t i = 0; i < noteLimit; ++i) {
         char note[8] = {};
-        formatNoteName(note, sizeof(note), preview.voices[i].note);
+        note_spelling::formatNoteName(
+            note,
+            sizeof(note),
+            preview.voices[i].note,
+            preview.scaleSettings
+        );
+        if (!preview.voices[i].inSelectedScale) {
+            const size_t length = std::strlen(note);
+            if (length + 1U < sizeof(note)) {
+                note[length] = '!';
+                note[length + 1U] = '\0';
+            }
+        }
         const size_t noteLen = std::strlen(note);
         const size_t gap = pos > 0 ? 1U : 0U;
         const uint8_t remainingIfSkipped = static_cast<uint8_t>(preview.voiceCount - written);
@@ -631,26 +397,88 @@ FLASHMEM void populateChordDetailOverlay(
     StepEditRenderData& data,
     const core::state::sequencer::SequencerStepChordUiState& chord,
     core::state::sequencer::SequencerChordEditField focusedField,
-    bool enabled
+    bool formulaEditorActive,
+    uint8_t focusedFormulaItem,
+    bool sourceSelectorActive,
+    core::state::sequencer::SequencerChordSourceChoice focusedSourceChoice,
+    bool enabled,
+    bool presetLibraryAvailable
 ) {
     using Field = core::state::sequencer::SequencerChordEditField;
+    using SourceChoice =
+        core::state::sequencer::SequencerChordSourceChoice;
+    using Slot = core::ui::SequencerStepEditVisualSlot;
     data.meta[0] = '\0';
 
     constexpr Field fields[] = {
-        Field::MODE,
-        Field::HARMONY,
-        Field::VOICES,
+        Field::SHAPE,
+        Field::FORMULA,
         Field::INVERSION,
         Field::VOICING,
         Field::STRUM,
         Field::VELOCITY_CONTOUR,
+        Field::PITCH_CONTEXT,
     };
     for (auto field : fields) {
-        formatChordFieldValue(
+        chord_fields::formatValue(
             chordFieldBuffer(data, field),
             data.chordValueBuffers[0].size(),
             field,
             chord
+        );
+    }
+    chord_fields::formatFormula(
+        data.chordFormula.data(),
+        data.chordFormula.size(),
+        chord
+    );
+    chord_fields::formatContext(
+        data.chordContext.data(),
+        data.chordContext.size(),
+        chord
+    );
+    for (uint8_t voice = 0;
+         voice < data.chordFormulaValueBuffers.size();
+         ++voice) {
+        chord_fields::formatFormulaVoice(
+            data.chordFormulaValueBuffers[voice].data(),
+            data.chordFormulaValueBuffers[voice].size(),
+            voice,
+            chord
+        );
+        chord_fields::formatFormulaVoiceInterval(
+            data.chordFormulaIntervalBuffers[voice].data(),
+            data.chordFormulaIntervalBuffers[voice].size(),
+            voice,
+            chord
+        );
+        if (voice == 0U) {
+            copyText(
+                data.chordFormulaLabelBuffers[voice].data(),
+                data.chordFormulaLabelBuffers[voice].size(),
+                "R"
+            );
+        } else {
+            std::snprintf(
+                data.chordFormulaLabelBuffers[voice].data(),
+                data.chordFormulaLabelBuffers[voice].size(),
+                "V%u",
+                static_cast<unsigned>(voice + 1U)
+            );
+        }
+    }
+    constexpr SourceChoice sourceChoices[] = {
+        SourceChoice::PARENT_CHORD,
+        SourceChoice::SINGLE_NOTE,
+        SourceChoice::LOCAL_CHORD,
+    };
+    for (uint8_t index = 0;
+         index < data.chordSourceValueBuffers.size();
+         ++index) {
+        copyText(
+            data.chordSourceValueBuffers[index].data(),
+            data.chordSourceValueBuffers[index].size(),
+            chord_fields::sourceLabel(sourceChoices[index])
         );
     }
 
@@ -658,14 +486,20 @@ FLASHMEM void populateChordDetailOverlay(
         formatChordPreviewName(data.chordName.data(), data.chordName.size(), chord.preview);
         formatChordPreviewNotes(data.chordDetail.data(), data.chordDetail.size(), chord.preview);
     } else {
-        copyText(data.chordName.data(), data.chordName.size(), chordModeLabel(chord.mode));
+        copyText(
+            data.chordName.data(),
+            data.chordName.size(),
+            chord_fields::modeLabel(chord.mode)
+        );
         copyText(data.chordDetail.data(), data.chordDetail.size(), "");
     }
 
-    if (!chord.spec.isSemantic() &&
-        chord.mode != oc::note::sequencer::StepSequencerChordMode::Single) {
-        copyText(data.meta.data(), data.meta.size(), "Recipe");
-    } else if (chord.preview.droppedVoiceCount > 0) {
+    const bool outsideScale = std::any_of(
+        chord.preview.voices.begin(),
+        chord.preview.voices.begin() + chord.preview.voiceCount,
+        [](const auto& voice) { return !voice.inSelectedScale; }
+    );
+    if (chord.preview.droppedVoiceCount > 0) {
         const auto dropped = static_cast<unsigned>(chord.preview.droppedVoiceCount);
         std::snprintf(
             data.meta.data(),
@@ -674,41 +508,194 @@ FLASHMEM void populateChordDetailOverlay(
             dropped,
             dropped == 1U ? "" : "s"
         );
-    } else if (chord.preview.harmonyAdjustedForPitchMode) {
-        copyText(data.meta.data(), data.meta.size(), "Pitch adapted");
+    } else if (chord.preview.harmonyAdjustedForPitchMode ||
+               chord.preview.intervalBasisAdjusted) {
+        std::snprintf(
+            data.meta.data(),
+            data.meta.size(),
+            "Shape adapted | %s",
+            chord.intervalsUseScaleDegrees ? "DEG" : "ST"
+        );
+    } else if (outsideScale) {
+        copyText(data.meta.data(), data.meta.size(), "Outside scale | ST");
     } else if (chord.preview.inversionClamped) {
         copyText(data.meta.data(), data.meta.size(), "Inv clamped");
+    } else if (chord.preview.valid) {
+        const char* root = note_spelling::pitchClassLabel(
+            chord.preview.scaleSettings.root,
+            chord.preview.scaleSettings
+        );
+        const char* scale =
+            core::state::sequencer::scale_catalog::scaleTypeLabel(
+                chord.preview.scaleSettings.type
+            );
+        if (chord.intervalsUseScaleDegrees) {
+            std::snprintf(
+                data.meta.data(),
+                data.meta.size(),
+                "%s %s | DEG",
+                root,
+                scale
+            );
+        } else {
+            copyText(data.meta.data(), data.meta.size(), "Chromatic | ST");
+        }
     }
 
-    const char* focusedValue = chordFieldBuffer(data, focusedField);
-    data.rows[step_edit_rows::CHORD] = makeIconRow(
-        chordFieldLabel(focusedField),
-        focusedValue,
-        chordFieldIcon(focusedField),
-        chordFieldColor(focusedField)
-    );
-    copyText(data.focusLabel.data(), data.focusLabel.size(), chordFieldLabel(focusedField));
-    formatChordFieldTitle(
-        data.chordFieldTitle.data(),
-        data.chordFieldTitle.size(),
-        focusedField
-    );
+    const char* sourceStatus = "Single";
+    if (chord.mode ==
+        oc::note::sequencer::StepSequencerChordMode::Local) {
+        sourceStatus = "Local";
+    } else if (!chord.rootContext &&
+               chord.mode ==
+                   oc::note::sequencer::StepSequencerChordMode::Inherit) {
+        sourceStatus = "Parent";
+    }
+    const size_t metaLength = std::strlen(data.meta.data());
+    if (metaLength > 0U) {
+        std::snprintf(
+            data.meta.data() + metaLength,
+            data.meta.size() - metaLength,
+            " | %s",
+            sourceStatus
+        );
+    } else {
+        copyText(data.meta.data(), data.meta.size(), sourceStatus);
+    }
+
+    uint32_t selectedColor = chord_fields::color(focusedField);
+    Slot selectedSlot = chord_fields::visualSlot(focusedField);
+    if (sourceSelectorActive) {
+        selectedColor = core::ui::sequencer::semantic::color(
+            core::ui::sequencer::semantic::Tone::CHORD_MODE
+        );
+        switch (focusedSourceChoice) {
+            case SourceChoice::PARENT_CHORD:
+                selectedSlot = Slot::CHORD_SOURCE_PARENT;
+                break;
+            case SourceChoice::LOCAL_CHORD:
+                selectedSlot = Slot::CHORD_SOURCE_LOCAL;
+                break;
+            case SourceChoice::SINGLE_NOTE:
+            default:
+                selectedSlot = Slot::CHORD_SOURCE_SINGLE;
+                break;
+        }
+        copyText(
+            data.chordFieldTitle.data(),
+            data.chordFieldTitle.size(),
+            "Source"
+        );
+        data.rows[step_edit_rows::CHORD] = makeIconRow(
+            "Source",
+            chord_fields::sourceLabel(focusedSourceChoice),
+            ::standalone::icons::CHORD_PROP_MODE,
+            selectedColor
+        );
+        copyText(data.focusLabel.data(), data.focusLabel.size(), "Source");
+    } else if (formulaEditorActive) {
+        const auto formula = oc::note::sequencer::resolveChordFormula(
+            chord.spec,
+            chord.intervalsUseScaleDegrees
+        );
+        const uint8_t voiceCount = formula.valid
+            ? std::clamp<uint8_t>(
+                  formula.count,
+                  2U,
+                  oc::note::sequencer::StepSequencerChordSpec::
+                      MAX_CUSTOM_VOICES
+              )
+            : 2U;
+        const bool addVisible =
+            voiceCount <
+            oc::note::sequencer::StepSequencerChordSpec::MAX_CUSTOM_VOICES;
+        const uint8_t lastFocusable = addVisible
+            ? voiceCount
+            : static_cast<uint8_t>(voiceCount - 1U);
+        focusedFormulaItem = std::clamp<uint8_t>(
+            focusedFormulaItem,
+            1U,
+            lastFocusable
+        );
+        const bool addFocused =
+            addVisible && focusedFormulaItem == voiceCount;
+        const bool addEnabled =
+            addVisible &&
+            formula.valid &&
+            formula.intervals[voiceCount - 1U] <
+                oc::note::sequencer::StepSequencerChordSpec::
+                    MAX_CUSTOM_INTERVAL;
+        const char* focusedValue = addFocused
+            ? (addEnabled ? "Add voice" : "Lower last first")
+            : data.chordFormulaValueBuffers[focusedFormulaItem].data();
+        selectedColor = core::ui::sequencer::semantic::color(
+            core::ui::sequencer::semantic::Tone::CHORD_FORMULA
+        );
+        selectedSlot = Slot::CHORD_FORMULA_RAIL;
+        if (addFocused) {
+            copyText(
+                data.chordFieldTitle.data(),
+                data.chordFieldTitle.size(),
+                focusedValue
+            );
+        } else {
+            std::snprintf(
+                data.chordFieldTitle.data(),
+                data.chordFieldTitle.size(),
+                "V%u | %s",
+                static_cast<unsigned>(focusedFormulaItem + 1U),
+                focusedValue
+            );
+        }
+        data.rows[step_edit_rows::CHORD] = makeIconRow(
+            "Formula",
+            focusedValue,
+            ::standalone::icons::SCALE,
+            selectedColor
+        );
+        copyText(
+            data.focusLabel.data(),
+            data.focusLabel.size(),
+            "Formula"
+        );
+    } else {
+        const char* focusedValue = chordFieldBuffer(data, focusedField);
+        data.rows[step_edit_rows::CHORD] = makeIconRow(
+            chord_fields::label(focusedField),
+            focusedValue,
+            chord_fields::icon(focusedField),
+            selectedColor
+        );
+        copyText(
+            data.focusLabel.data(),
+            data.focusLabel.size(),
+            chord_fields::label(focusedField)
+        );
+        copyText(
+            data.chordFieldTitle.data(),
+            data.chordFieldTitle.size(),
+            presetLibraryAvailable ? "Chord · NAV hold" : "Chord"
+        );
+    }
 
     data.overlayProps = {};
     data.overlayProps.visible = true;
     data.overlayProps.stepBadge = data.stepBadge.data();
     data.overlayProps.title = data.chordFieldTitle.data();
     data.overlayProps.meta = data.meta.data();
-    data.overlayProps.focusLabel = "";
+    data.overlayProps.focusLabel = data.focusLabel.data();
     data.overlayProps.titleCentered = true;
-    data.overlayProps.focusLabelVisible = false;
+    data.overlayProps.focusLabelVisible =
+        !formulaEditorActive && !sourceSelectorActive;
     data.overlayProps.chordDetailLayout = true;
+    data.overlayProps.chordFormulaLayout = formulaEditorActive;
+    data.overlayProps.chordSourceLayout = sourceSelectorActive;
     data.overlayProps.enabled = enabled;
     data.overlayProps.selectedIndex = data.selectedIndex;
     data.overlayProps.actionsVisible = false;
-    data.overlayProps.selectedVisualSlot = chordFieldVisualSlot(focusedField);
-    data.overlayProps.focusColor = chordFieldColor(focusedField);
-    data.overlayProps.titleColor = chordFieldColor(focusedField);
+    data.overlayProps.selectedVisualSlot = selectedSlot;
+    data.overlayProps.focusColor = selectedColor;
+    data.overlayProps.titleColor = selectedColor;
     data.overlayProps.chordPreview = core::ui::SequencerChordPreviewProps{
         .visible = true,
         .name = data.chordName.data(),
@@ -717,13 +704,190 @@ FLASHMEM void populateChordDetailOverlay(
     };
     populateChordPreviewMarkers(data.overlayProps.chordPreview, chord.preview);
 
-    setChordPropertyChip(data.overlayProps.properties[CHIP_PITCH_INDEX], data, Field::MODE);
-    setChordPropertyChip(data.overlayProps.properties[CHIP_VELOCITY_INDEX], data, Field::HARMONY);
-    setChordPropertyChip(data.overlayProps.properties[CHIP_GATE_INDEX], data, Field::VOICES);
-    setChordPropertyChip(data.overlayProps.properties[CHIP_NUDGE_INDEX], data, Field::INVERSION);
-    setChordPropertyChip(data.overlayProps.chordPerformance[0], data, Field::VOICING);
-    setChordPropertyChip(data.overlayProps.chordPerformance[1], data, Field::STRUM);
-    setChordPropertyChip(data.overlayProps.chordPerformance[2], data, Field::VELOCITY_CONTOUR);
+    if (sourceSelectorActive) {
+        data.overlayProps.properties[0] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key = chord.rootContext ? "" : "Parent",
+                .value = chord.rootContext
+                    ? ""
+                    : data.chordSourceValueBuffers[0].data(),
+                .icon = chord.rootContext
+                    ? ""
+                    : ::standalone::icons::CHORD,
+                .color = selectedColor,
+                .active = !chord.rootContext,
+            };
+        data.overlayProps.properties[1] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key = "Single",
+                .value = data.chordSourceValueBuffers[1].data(),
+                .icon = ::standalone::icons::NOTE,
+                .color = selectedColor,
+            };
+        data.overlayProps.properties[2] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key = "Local",
+                .value = data.chordSourceValueBuffers[2].data(),
+                .icon = ::standalone::icons::CHORD,
+                .color = selectedColor,
+            };
+        data.overlayProps.properties[3] = {};
+        data.overlayProps.chordPerformance[0] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key = "Choose",
+                .value = "Turn NAV",
+                .icon = ::standalone::icons::KNOB,
+                .color = selectedColor,
+            };
+        data.overlayProps.chordPerformance[1] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key = "Apply",
+                .value = "Press NAV",
+                .icon = ::standalone::icons::ACTION_VALIDATE,
+                .color = selectedColor,
+            };
+        data.overlayProps.chordPerformance[2] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key = "Cancel",
+                .value = "LEFT TOP",
+                .icon = ::standalone::icons::ACTION_CANCEL,
+                .color = selectedColor,
+            };
+        data.overlayProps.chordPerformance[3] = {};
+        return;
+    }
+
+    if (formulaEditorActive) {
+        const auto formula = oc::note::sequencer::resolveChordFormula(
+            chord.spec,
+            chord.intervalsUseScaleDegrees
+        );
+        const uint8_t voiceCount = formula.valid
+            ? std::clamp<uint8_t>(
+                  formula.count,
+                  2U,
+                  oc::note::sequencer::StepSequencerChordSpec::
+                      MAX_CUSTOM_VOICES
+              )
+            : 2U;
+        const bool addVisible =
+            voiceCount <
+            oc::note::sequencer::StepSequencerChordSpec::MAX_CUSTOM_VOICES;
+        const bool addEnabled =
+            addVisible &&
+            formula.valid &&
+            formula.intervals[voiceCount - 1U] <
+                oc::note::sequencer::StepSequencerChordSpec::
+                    MAX_CUSTOM_INTERVAL;
+        const uint8_t itemCount = static_cast<uint8_t>(
+            voiceCount + (addVisible ? 1U : 0U)
+        );
+        for (auto& property : data.overlayProps.properties) {
+            property = {};
+        }
+        data.overlayProps.chordVoiceRail.visible = true;
+        data.overlayProps.chordVoiceRail.itemCount = itemCount;
+        data.overlayProps.chordVoiceRail.focusedItem =
+            std::min<uint8_t>(
+                focusedFormulaItem,
+                static_cast<uint8_t>(itemCount - 1U)
+            );
+        data.overlayProps.chordVoiceRail.color = selectedColor;
+        for (uint8_t voice = 0U; voice < voiceCount; ++voice) {
+            data.overlayProps.chordVoiceRail.items[voice] =
+                core::ui::SequencerChordVoiceRailItem{
+                    .label =
+                        data.chordFormulaLabelBuffers[voice].data(),
+                    .value =
+                        data.chordFormulaIntervalBuffers[voice].data(),
+                    .add = false,
+                    .enabled = true,
+                };
+        }
+        if (addVisible) {
+            data.overlayProps.chordVoiceRail.items[voiceCount] =
+                core::ui::SequencerChordVoiceRailItem{
+                    .label = "",
+                    .value = "+",
+                    .add = true,
+                    .enabled = addEnabled,
+                };
+        }
+        data.overlayProps.chordPerformance[0] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key = "Context",
+                .value = data.chordContext.data(),
+                .icon = ::standalone::icons::SCALE,
+                .color = selectedColor,
+            };
+        data.overlayProps.chordPerformance[1] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key =
+                    focusedFormulaItem == voiceCount && addVisible
+                        ? "Add"
+                        : "Edit",
+                .value =
+                    focusedFormulaItem == voiceCount && addVisible
+                        ? (addEnabled ? "Press NAV" : "Lower last")
+                        : "Turn OPT",
+                .icon = ::standalone::icons::KNOB,
+                .color = selectedColor,
+            };
+        data.overlayProps.chordPerformance[2] =
+            focusedFormulaItem == voiceCount && addVisible
+                ? core::ui::SequencerStepEditPropertyChip{}
+                : core::ui::SequencerStepEditPropertyChip{
+                      .key = "Remove",
+                      .value = "Trash",
+                      .icon = ::standalone::icons::ACTION_REMOVE,
+                      .color = selectedColor,
+                  };
+        data.overlayProps.chordPerformance[3] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key = "Done",
+                .value = "Press NAV",
+                .icon = ::standalone::icons::ACTION_VALIDATE,
+                .color = selectedColor,
+            };
+        return;
+    }
+
+    setChordPropertyChip(
+        data.overlayProps.properties[CHIP_PITCH_INDEX],
+        data,
+        Field::SHAPE
+    );
+    setChordPropertyChip(
+        data.overlayProps.properties[CHIP_VELOCITY_INDEX],
+        data,
+        Field::FORMULA
+    );
+    setChordPropertyChip(
+        data.overlayProps.properties[CHIP_GATE_INDEX],
+        data,
+        Field::INVERSION
+    );
+    setChordPropertyChip(
+        data.overlayProps.properties[CHIP_NUDGE_INDEX],
+        data,
+        Field::VOICING
+    );
+    setChordPropertyChip(
+        data.overlayProps.chordPerformance[0],
+        data,
+        Field::STRUM
+    );
+    setChordPropertyChip(
+        data.overlayProps.chordPerformance[1],
+        data,
+        Field::VELOCITY_CONTOUR
+    );
+    setChordPropertyChip(
+        data.overlayProps.chordPerformance[2],
+        data,
+        Field::PITCH_CONTEXT
+    );
+    data.overlayProps.chordPerformance[3] = {};
 }
 
 }  // namespace core::context::standalone::sequencer_overlay_presenter

@@ -156,7 +156,7 @@ void test_page_transforms_keep_region_and_cc_lane_in_lockstep() {
         18
     ) == core::state::sequencer::SequencerCcLaneTransition::EASE_OUT);
 
-    assert(core::state::sequencer::removePage(state, 0));
+    assert(core::state::sequencer::deletePage(state, 0));
     expectRegion(patternPlaybackRegion(state.pattern), 16, 0, 8, 16);
     assert(bank->lanes[0].activeMask.test(10));
     assert(bank->lanes[0].values[10] == 91);

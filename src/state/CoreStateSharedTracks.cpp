@@ -17,10 +17,10 @@
 #include "state/shared/SharedTrackCoordinator.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
-#include "sequencer/SequencerCcLanePatternOps.hpp"
-#include "sequencer/SequencerContentViewOps.hpp"
-#include "sequencer/SequencerStructureHistory.hpp"
-#include "sequencer/SequencerTrackBankOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStructureHistory.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 
@@ -71,7 +71,7 @@ uint8_t CoreState::currentSharedActiveTrack() const {
 }
 
 bool CoreState::setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack) {
-    return setSharedTrackState_(enabledMask, activeTrack, true);
+    return setSharedTrackState_(enabledMask, activeTrack);
 }
 
 void CoreState::publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t activeTrack) {
@@ -88,9 +88,7 @@ void CoreState::publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t
         enabledMask,
         activeTrack
     );
-    if (result.changed) {
-        requestSharedTrackPersist_();
-    }
+    (void)result;
 }
 
 FLASHMEM void CoreState::reconcilePreparedMacroTrackTransfer(
@@ -119,7 +117,6 @@ FLASHMEM void CoreState::reconcilePreparedMacroTrackTransfer(
         )
     );
     macro::MacroWorkflow::syncRuntimeFromActivePage(macros, pages);
-    statusBar.pageName.set(pages.activePageData().name);
     configRevision.set(macro::nextMacroConfigRevision(
         configRevision.get(),
         macro::kMacroConfigDirtyAll
@@ -131,24 +128,15 @@ FLASHMEM void CoreState::reconcilePreparedMacroTrackTransfer(
 }
 
 bool CoreState::refreshSharedTrackStateFromMacroPages() {
-    return refreshSharedTrackStateFromMacroPages_(true);
+    return refreshSharedTrackStateFromMacroPages_();
 }
 
 bool CoreState::refreshSharedTrackStateFromSequencer() {
-    return refreshSharedTrackStateFromSequencer_(true);
+    return refreshSharedTrackStateFromSequencer_();
 }
 
 FLASHMEM persistence::PersistenceWriteStatus CoreState::recoverSettingsFromRamAfterStorageReopen() {
-    const auto status = settings.saveAllStatus(
-        midiSync,
-        sharedTrackEnabledMask.get(),
-        sharedTrackActive.get()
-    );
-    if (status != persistence::PersistenceWriteStatus::OK) return status;
-
-    sharedTrackPersistPending_ = false;
-    sharedTrackPersistTimestampMs_ = 0;
-    return persistence::PersistenceWriteStatus::OK;
+    return deviceSettingsStore.saveAllStatus(midiSync);
 }
 
 FLASHMEM bool CoreState::queueSequencerApply_(
@@ -181,40 +169,11 @@ FLASHMEM void CoreState::markSequencerProjectMutated_() {
     markProjectMutated();
 }
 
-FLASHMEM void CoreState::requestSharedTrackPersist_() {
-    sharedTrackPersistPending_ = true;
-    sharedTrackPersistTimestampMs_ = oc::time::millis();
-}
-
-FLASHMEM void CoreState::persistSharedTrackState_() {
-    if (!sharedTrackPersistPending_) return;
-
-    const auto persistStatus = settings.saveSharedTrackStateStatus(
-        sharedTrackEnabledMask.get(),
-        sharedTrackActive.get()
-    );
-    if (persistStatus == persistence::PersistenceWriteStatus::OK) {
-        sharedTrackPersistPending_ = false;
-        sharedTrackPersistTimestampMs_ = 0;
-        return;
-    }
-
-    OC_LOG_WARN("[CoreState] Failed to persist shared track state: {}",
-                persistence::persistenceWriteStatusLabel(persistStatus));
-    if (persistStatus == persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE) {
-        sharedTrackPersistPending_ = true;
-        sharedTrackPersistTimestampMs_ = oc::time::millis();
-    } else {
-        sharedTrackPersistPending_ = false;
-        sharedTrackPersistTimestampMs_ = 0;
-    }
-}
-
 FLASHMEM void CoreState::clearPendingSequencerApply_() {
     CoreStateLifecycle::clearPendingSequencerApply(*this);
 }
 
-FLASHMEM bool CoreState::refreshSharedTrackStateFromMacroPages_(bool persist) {
+FLASHMEM bool CoreState::refreshSharedTrackStateFromMacroPages_() {
     const uint16_t enabledMask = shared::SharedTrackCoordinator::sanitizeEnabledMask(
         pages.currentTrackEnabledMask()
     );
@@ -231,13 +190,10 @@ FLASHMEM bool CoreState::refreshSharedTrackStateFromMacroPages_(bool persist) {
         return false;
     }
     const auto result = shared::SharedTrackCoordinator::refreshFromMacroPages(sharedTrackRefs(*this));
-    if (result.changed && persist) {
-        requestSharedTrackPersist_();
-    }
     return result.changed;
 }
 
-FLASHMEM bool CoreState::refreshSharedTrackStateFromSequencer_(bool persist) {
+FLASHMEM bool CoreState::refreshSharedTrackStateFromSequencer_() {
     const uint16_t enabledMask = shared::SharedTrackCoordinator::sanitizeEnabledMask(
         sequencerTracks.currentEnabledMask()
     );
@@ -254,13 +210,10 @@ FLASHMEM bool CoreState::refreshSharedTrackStateFromSequencer_(bool persist) {
         return false;
     }
     const auto result = shared::SharedTrackCoordinator::refreshFromSequencer(sharedTrackRefs(*this));
-    if (result.changed && persist) {
-        requestSharedTrackPersist_();
-    }
     return result.changed;
 }
 
-FLASHMEM bool CoreState::setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack, bool persist) {
+FLASHMEM bool CoreState::setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack) {
     if (sequencer.stepContentDraft.active.get() &&
         (enabledMask != sharedTrackEnabledMask.get() ||
          activeTrack != sharedTrackActive.get())) {
@@ -276,9 +229,6 @@ FLASHMEM bool CoreState::setSharedTrackState_(uint16_t enabledMask, uint8_t acti
         enabledMask,
         activeTrack
     );
-    if (result.changed && persist) {
-        requestSharedTrackPersist_();
-    }
     return result.changed;
 }
 

@@ -160,8 +160,6 @@ void assertLoadedProject(core::persistence::ProjectFileStore& store,
     project_file::LoadReport report{};
     auto loadedResult = store.load("p321", loaded, &report);
     assert(loadedResult);
-    assert(loadedResult.value().loadStatus == project_file::LoadStatus::OK);
-    assert(loadedResult.value().overwriteSafe);
     assert(report.ok());
 
     test_support::CoreStorages storages;

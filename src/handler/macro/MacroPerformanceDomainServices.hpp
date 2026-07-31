@@ -148,7 +148,7 @@ private:
     bool commitAutomationTake_(uint32_t nowMs) const;
     uint32_t automationTakeElapsedTicks_(uint32_t nowMs) const;
     void restoreAutomationTakeManual_() const;
-    void clearAutomationTake_(
+    void resetAutomationTake_(
         core::state::macro::MacroAutomationRecordingStatus status
     ) const;
 

@@ -8,9 +8,6 @@ struct CoreState;
 
 namespace core::persistence {
 class ProductFileService;
-namespace project_file {
-enum class LoadStatus : uint8_t;
-}
 }  // namespace core::persistence
 
 namespace core::handler {
@@ -25,20 +22,14 @@ public:
         SAVE_FAILED,
         LOAD_FAILED,
         LIST_FAILED,
-        PARTIAL_LOAD,
-        UNSAFE_OVERWRITE,
         DRAFT_ACTIVE,
     };
 
     struct Result {
         Status status = Status::UNAVAILABLE;
         uint32_t bytes = 0;
-        core::persistence::project_file::LoadStatus loadStatus{};
-        bool overwriteSafe = true;
 
-        bool success() const {
-            return status == Status::OK || status == Status::PARTIAL_LOAD;
-        }
+        bool success() const { return status == Status::OK; }
     };
 
     ProjectLifecycleDomainServices() = default;
@@ -55,7 +46,6 @@ public:
     const char* currentProjectId() const;
     bool currentProjectDirty() const;
     bool currentProjectHasSavedIdentity() const;
-    bool currentProjectOverwriteSafe() const;
     Result markProjectMutated() const;
     Result saveCurrentProject() const;
     Result saveAsNextProject() const;

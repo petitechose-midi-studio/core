@@ -151,7 +151,7 @@ FLASHMEM ProjectModulationResult duplicateProjectAutomationCurve(
     return result(ProjectModulationStatus::OK, {}, {}, copy.curveId);
 }
 
-FLASHMEM ProjectModulationResult removeProjectAutomationCurve(
+FLASHMEM ProjectModulationResult deleteProjectAutomationCurve(
     ProjectAutomationCurveDirectory& automation,
     ProjectCurveArena& arena,
     const ModulationDestination& destination

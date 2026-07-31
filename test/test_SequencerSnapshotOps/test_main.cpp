@@ -141,7 +141,7 @@ void test_remove_page_shifts_following_payloads() {
     sequencer.pattern.setContentLength(24);
     setStep(sequencer, 16, 72, 111, 91, -4, 61, true);
 
-    assert(core::state::sequencer::removePage(sequencer, 1));
+    assert(core::state::sequencer::deletePage(sequencer, 1));
 
     assert(sequencer.pattern.length.get() == 16);
     assertStep(sequencer, 8, 72, 111, 91, -4, 61, true);
@@ -157,7 +157,7 @@ void test_remove_page_shifts_child_content() {
     sequencer.pattern.setContentLength(24);
     createRootMicroSequence(sequencer, 16, 2);
 
-    assert(core::state::sequencer::removePage(sequencer, 1));
+    assert(core::state::sequencer::deletePage(sequencer, 1));
 
     assert(rootStepHasMicroSequence(sequencer, 8));
     assert(!rootStepHasMicroSequence(sequencer, 16));

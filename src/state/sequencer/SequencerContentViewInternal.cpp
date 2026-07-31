@@ -156,11 +156,12 @@ FLASHMEM uint8_t clampMidi7Offset(uint8_t base, int16_t offset) {
 FLASHMEM uint8_t applyNoteOffset(
     uint8_t base,
     int8_t offset,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    bool useScaleDegrees
 ) {
     if (offset == 0) return base;
-    scaleSettings.clamp();
-    if (scaleSettings.isConstrained()) {
+    if (useScaleDegrees) {
+        scaleSettings.clamp();
         return oc::note::sequencer::moveByScaleDegrees(base, offset, scaleSettings);
     }
     return clampMidi7Offset(base, offset);
@@ -210,7 +211,8 @@ FLASHMEM bool nodeEnabled(const Node& node) {
 FLASHMEM ResolvedStep applyNode(
     ResolvedStep parent,
     const Node& node,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    bool noteOffsetsUseScaleDegrees
 ) {
     if (!parent.valid) return parent;
 
@@ -218,7 +220,12 @@ FLASHMEM ResolvedStep applyNode(
         parent.enabled = node.has(oc::note::sequencer::STEP_NODE_ENABLED_VALUE);
     }
     if (node.has(oc::note::sequencer::STEP_NODE_NOTE_OFFSET)) {
-        parent.note = applyNoteOffset(parent.note, node.noteOffset, scaleSettings);
+        parent.note = applyNoteOffset(
+            parent.note,
+            node.noteOffset,
+            scaleSettings,
+            noteOffsetsUseScaleDegrees
+        );
     }
     if (node.has(oc::note::sequencer::STEP_NODE_VELOCITY_OFFSET)) {
         parent.velocity = clampMidi7Offset(parent.velocity, node.velocityOffset);
@@ -382,6 +389,7 @@ FLASHMEM bool resolveRepresentativeChildContentStep(
     uint32_t localCycleIndex,
     uint8_t microPlayIndex,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    bool noteOffsetsUseScaleDegrees,
     SequencerChildContentSummary* outSummary
 ) {
     if (!current.valid || depth >= GraphLimits::MAX_DEPTH) return false;
@@ -416,7 +424,12 @@ FLASHMEM bool resolveRepresentativeChildContentStep(
             childSequenceId = kInvalidId;
             childLocalCycleIndex = ownerActivationIndex;
         }
-        current = applyNode(current, *stateNode, scaleSettings);
+        current = applyNode(
+            current,
+            *stateNode,
+            scaleSettings,
+            noteOffsetsUseScaleDegrees
+        );
         if (stateNode->has(oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE)) {
             childSequenceId = stateNode->childSequenceId;
         }
@@ -454,7 +467,8 @@ FLASHMEM bool resolveRepresentativeChildContentStep(
                             scaleSettings
                         ),
                         *childNode,
-                        scaleSettings);
+                        scaleSettings,
+                        noteOffsetsUseScaleDegrees);
     resolveRepresentativeChildContentStep(
         graph,
         *childNode,
@@ -463,6 +477,7 @@ FLASHMEM bool resolveRepresentativeChildContentStep(
         childLocalCycleIndex,
         0,
         scaleSettings,
+        noteOffsetsUseScaleDegrees,
         outSummary
     );
     return touchedChild;
@@ -600,7 +615,8 @@ FLASHMEM bool validateFrame(
 FLASHMEM ResolvedStep resolveOwnerStepAtDepth(
     const SequencerState& sequencer,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
-    uint8_t frameDepth
+    uint8_t frameDepth,
+    bool noteOffsetsUseScaleDegrees
 ) {
     const auto& view = sequencer.contentView;
     if (view.stackDepth == 0 || view.stackDepth > view.frames.size()) return {};
@@ -613,7 +629,12 @@ FLASHMEM ResolvedStep resolveOwnerStepAtDepth(
     ResolvedStep current = rootBase(sequencer, first.ownerRootStep);
     const Node* rootNode = graph->stepNode(rootStepNodeId(first.ownerRootStep));
     if (rootNode == nullptr) return {};
-    current = applyNode(current, *rootNode, scaleSettings);
+    current = applyNode(
+        current,
+        *rootNode,
+        scaleSettings,
+        noteOffsetsUseScaleDegrees
+    );
 
     for (uint8_t i = 1; i < frameDepth; ++i) {
         const auto& frame = view.frames[i];
@@ -623,7 +644,8 @@ FLASHMEM ResolvedStep resolveOwnerStepAtDepth(
         current = applyNode(
             contentBaseForKind(current, containingFrame.kind, scaleSettings),
             *ownerNode,
-            scaleSettings
+            scaleSettings,
+            noteOffsetsUseScaleDegrees
         );
     }
     return current;
@@ -631,12 +653,14 @@ FLASHMEM ResolvedStep resolveOwnerStepAtDepth(
 
 FLASHMEM ResolvedStep resolveOwnerStep(
     const SequencerState& sequencer,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    bool noteOffsetsUseScaleDegrees
 ) {
     return resolveOwnerStepAtDepth(
         sequencer,
         scaleSettings,
-        sequencer.contentView.stackDepth
+        sequencer.contentView.stackDepth,
+        noteOffsetsUseScaleDegrees
     );
 }
 

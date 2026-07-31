@@ -238,6 +238,35 @@ FLASHMEM DecodeResult decodeProjectControlPayloads(
     modulation::ProjectControlDomainState& out
 ) {
     OC_PERF_SCOPE(perfDecode, "persistence.project-control.decode");
+    DecodeResult result{};
+    result.automationStatus = automation.present
+        ? ChunkStatus::CURRENT
+        : ChunkStatus::MISSING;
+    result.modulationStatus = modulationView.present
+        ? ChunkStatus::CURRENT
+        : ChunkStatus::MISSING;
+
+    if (!automation.present || !modulationView.present) {
+        result.status = Status::INCOMPLETE_PAYLOAD_SET;
+        return result;
+    }
+    if (automation.versionMajor != PROJECT_CONTROL_CHUNK_VERSION_MAJOR ||
+        automation.versionMinor !=
+            PROJECT_AUTOMATION_CHUNK_VERSION_MINOR) {
+        result.automationStatus = ChunkStatus::UNSUPPORTED_VERSION;
+    }
+    if (modulationView.versionMajor !=
+            PROJECT_CONTROL_CHUNK_VERSION_MAJOR ||
+        modulationView.versionMinor !=
+            PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR) {
+        result.modulationStatus = ChunkStatus::UNSUPPORTED_VERSION;
+    }
+    if (result.automationStatus == ChunkStatus::UNSUPPORTED_VERSION ||
+        result.modulationStatus == ChunkStatus::UNSUPPORTED_VERSION) {
+        result.status = Status::UNSUPPORTED_VERSION;
+        return result;
+    }
+
 #if OC_ENABLE_STATS
     core::diagnostics::recordDynamicMemorySample(
         "memory.psram.persistence.control-decode-begin"
@@ -249,14 +278,7 @@ FLASHMEM DecodeResult decodeProjectControlPayloads(
         return {.status = Status::SCRATCH_ALLOCATION_FAILED};
     }
 
-    DecodeResult result{.status = Status::OK};
-    if (!automation.present) {
-        result.automationStatus = ChunkStatus::MISSING;
-    } else if (automation.versionMajor != PROJECT_CONTROL_CHUNK_VERSION_MAJOR ||
-               automation.versionMinor !=
-                   PROJECT_AUTOMATION_CHUNK_VERSION_MINOR) {
-        result.automationStatus = ChunkStatus::UNSUPPORTED_VERSION;
-    } else {
+    {
         OC_PERF_SCOPE(
             perfAutomation,
             "persistence.project-control.decode.automation"
@@ -269,15 +291,7 @@ FLASHMEM DecodeResult decodeProjectControlPayloads(
             pending->automation.entryCount
         );
     }
-
-    if (!modulationView.present) {
-        result.modulationStatus = ChunkStatus::MISSING;
-    } else if (modulationView.versionMajor !=
-                   PROJECT_CONTROL_CHUNK_VERSION_MAJOR ||
-               modulationView.versionMinor !=
-                   PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR) {
-        result.modulationStatus = ChunkStatus::UNSUPPORTED_VERSION;
-    } else {
+    {
         OC_PERF_SCOPE(
             perfModulation,
             "persistence.project-control.decode.modulation"
@@ -291,13 +305,16 @@ FLASHMEM DecodeResult decodeProjectControlPayloads(
         );
     }
 
-    const bool bothMissing = !automation.present && !modulationView.present;
-    const bool bothCurrent =
+    const bool bothValid =
         result.automationStatus == ChunkStatus::CURRENT &&
         result.modulationStatus == ChunkStatus::CURRENT;
-    result.partial = !bothMissing && !bothCurrent;
-    result.overwriteSafe = !result.partial;
+    if (!bothValid) {
+        result.status = Status::INVALID_PAYLOAD;
+        return result;
+    }
+
     out = *pending;
+    result.status = Status::OK;
     OC_PERF_UNITS(
         perfDecode,
         automation.size + modulationView.size,

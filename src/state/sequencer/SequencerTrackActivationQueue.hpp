@@ -124,7 +124,7 @@ public:
     /**
      * Plans activation against canonical Project Track audibility. The caller
      * resolves structure, Mute and exclusive Solo before crossing this fixed
-     * realtime hand-off; the queue never consults compatibility mirrors.
+     * realtime hand-off; the queue never consults secondary state mirrors.
      */
     bool prepare(uint16_t trackMask,
                  uint16_t targetAudibleMask,

@@ -489,7 +489,7 @@ void test_history_admission_rejects_oversized_slot() {
     assert(!history.prepare(
         pages,
         kAddress,
-        macro::MacroHistoryActionKind::REMOVE_SLOT
+        macro::MacroHistoryActionKind::DELETE_SLOT
     ));
     assert(test_support::project_control::readSlot(pages.control, kAddress).present());
     std::cout << "[PASS] oversized Slot is rejected before mutation\n";
@@ -836,7 +836,7 @@ void test_sparse_macro_removal_purges_all_destination_state_atomically() {
     ));
     const auto pageBefore = pages.pageData(0U, 0U);
 
-    assert(history.removeMacroSlot(pages, kAddress));
+    assert(history.deleteMacroSlot(pages, kAddress));
     assert(history.undoCount() == 1U);
     const auto& removedPage = pages.pageData(0U, 0U);
     assert(!removedPage.isMacroActive(kAddress.macro));

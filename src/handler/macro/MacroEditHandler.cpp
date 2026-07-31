@@ -10,16 +10,16 @@
 #include "handler/macro/MacroAutomationTakeInputWorkflow.hpp"
 #include "handler/macro/MacroGuardedActionWorkflow.hpp"
 #include "state/macro/MacroEditMenuModel.hpp"
+#include "state/modulation/ModulationDepthParameterMapping.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
 
 namespace core::handler {
 
 namespace {
 
 namespace menu = core::state::macro;
-namespace depth_ui = core::ui::modulation::depth;
+namespace depth_parameter = core::state::modulation::depth;
 
 bool contextActionInProgress(const core::state::MacroEditState& state) {
     const auto phase = state.contextGuard.get().phase;
@@ -747,13 +747,13 @@ FLASHMEM int MacroEditHandler::contextValueCount() const {
                  rows.destination}
             );
             const auto scale = binding != nullptr
-                ? depth_ui::scaleFor(
+                ? depth_parameter::scaleFor(
                       pages_.control.authored.modulation,
                       pages_.control.authored.curves,
                       *binding
                   )
-                : depth_ui::Scale::STANDARD;
-            return depth_ui::stepCount(scale);
+                : depth_parameter::Scale::STANDARD;
+            return depth_parameter::stepCount(scale);
         }
         case menu::MacroContextAction::MODULATION_GLOBAL_DEPTH:
             return 201;
@@ -835,13 +835,16 @@ FLASHMEM int MacroEditHandler::contextValue() const {
              rows.destination}
         );
         if (binding != nullptr) {
-            const auto scale = depth_ui::scaleFor(
+            const auto scale = depth_parameter::scaleFor(
                 pages_.control.authored.modulation,
                 pages_.control.authored.curves,
                 *binding
             );
-            return depth_ui::amountQ15ToPercent(binding->amountQ15, scale) +
-                   depth_ui::maximumPercent(scale);
+            return depth_parameter::amountQ15ToPercent(
+                       binding->amountQ15,
+                       scale
+                   ) +
+                   depth_parameter::maximumPercent(scale);
         }
     }
     return std::clamp<int>(
@@ -988,12 +991,12 @@ FLASHMEM void MacroEditHandler::setContextValue(float normalized) {
              rows.destination}
         );
         if (binding == nullptr) return;
-        const auto scale = depth_ui::scaleFor(
+        const auto scale = depth_parameter::scaleFor(
             pages_.control.authored.modulation,
             pages_.control.authored.curves,
             *binding
         );
-        const int16_t amount = depth_ui::amountQ15AtNormalized(
+        const int16_t amount = depth_parameter::amountQ15AtNormalized(
             clamped,
             scale
         );
@@ -1186,7 +1189,7 @@ FLASHMEM void MacroEditHandler::commitGuardedAction(uint32_t nowMs) {
             macro::MacroGuardedActionWorkflow::complete(macro_edit_, false, nowMs);
             return;
         }
-        applied = services_.removeSlot(index);
+        applied = services_.deleteSlot(index);
         macro::MacroGuardedActionWorkflow::complete(macro_edit_, applied, nowMs);
         if (applied) closeOverlay();
         return;

@@ -90,8 +90,10 @@ FLASHMEM Result ensureProjectDoesNotExist(core::persistence::ProductFileService&
     return Result{.status = Status::LIST_FAILED};
 }
 
-FLASHMEM Result removeProjectFileIfExists(core::persistence::ProductFileService& files,
-                                          const char* projectId) {
+FLASHMEM Result deleteProjectFileIfExists(
+    core::persistence::ProductFileService& files,
+    const char* projectId
+) {
     char path[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
     if (!formatProjectFilePath(projectId, path, sizeof(path))) {
         return invalidArgument();
@@ -157,10 +159,6 @@ FLASHMEM bool ProjectLifecycleDomainServices::currentProjectHasSavedIdentity() c
     return state_ != nullptr && state_->project.metadata.hasSavedIdentity;
 }
 
-FLASHMEM bool ProjectLifecycleDomainServices::currentProjectOverwriteSafe() const {
-    return state_ == nullptr || state_->project.metadata.overwriteSafe;
-}
-
 FLASHMEM ProjectLifecycleDomainServices::Result
 ProjectLifecycleDomainServices::markProjectMutated() const {
     if (state_ == nullptr) {
@@ -180,11 +178,6 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
     if (projectId == nullptr || projectId[0] == '\0') {
         return invalidArgument();
     }
-    if (state_->project.metadata.hasSavedIdentity &&
-        !state_->project.metadata.overwriteSafe &&
-        std::strcmp(state_->project.metadata.id.data(), projectId) == 0) {
-        return Result{.status = Status::UNSAFE_OVERWRITE};
-    }
 
     auto snapshot = core::state::project::captureProjectSnapshotOwned(*state_);
     if (!snapshot) {
@@ -195,7 +188,6 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
     }
     snapshot->project.metadata.hasSavedIdentity = true;
     snapshot->project.metadata.dirty = false;
-    snapshot->project.metadata.overwriteSafe = true;
 
     core::persistence::ProjectFileStore store(*product_files_);
     auto saved = store.save(*snapshot);
@@ -241,7 +233,6 @@ ProjectLifecycleDomainServices::saveAsNextProject() const {
     }
     snapshot->project.metadata.hasSavedIdentity = true;
     snapshot->project.metadata.dirty = false;
-    snapshot->project.metadata.overwriteSafe = true;
 
     core::persistence::ProjectFileStore store(*product_files_);
     auto saved = store.save(*snapshot);
@@ -287,9 +278,6 @@ ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) cons
     if (hasCurrentIdentity && std::strcmp(currentId, projectId) == 0) {
         return Result{.status = Status::OK};
     }
-    if (hasCurrentIdentity && !state_->project.metadata.overwriteSafe) {
-        return Result{.status = Status::UNSAFE_OVERWRITE};
-    }
 
     const auto available = ensureProjectDoesNotExist(*product_files_, projectId);
     if (!available.success()) {
@@ -310,7 +298,6 @@ ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) cons
     }
     snapshot->project.metadata.hasSavedIdentity = true;
     snapshot->project.metadata.dirty = false;
-    snapshot->project.metadata.overwriteSafe = true;
 
     core::persistence::ProjectFileStore store(*product_files_);
     auto saved = store.save(*snapshot);
@@ -319,10 +306,11 @@ ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) cons
     }
 
     if (hasCurrentIdentity) {
-        const auto removed = removeProjectFileIfExists(*product_files_, previousId);
-        if (!removed.success()) {
-            removeProjectFileIfExists(*product_files_, projectId);
-            return removed;
+        const auto deleted =
+            deleteProjectFileIfExists(*product_files_, previousId);
+        if (!deleted.success()) {
+            deleteProjectFileIfExists(*product_files_, projectId);
+            return deleted;
         }
     }
 
@@ -363,16 +351,11 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
         return Result{.status = Status::LOAD_FAILED};
     }
 
-    const bool partial =
-        loaded.value().loadStatus == core::persistence::project_file::LoadStatus::PARTIAL;
-    state_->project.metadata.overwriteSafe = loaded.value().overwriteSafe;
     state_->requestProjectSessionSave();
     state_->projectNavigation.notifyContentChanged();
     return Result{
-        .status = partial ? Status::PARTIAL_LOAD : Status::OK,
+        .status = Status::OK,
         .bytes = loaded.value().bytesRead,
-        .loadStatus = loaded.value().loadStatus,
-        .overwriteSafe = loaded.value().overwriteSafe,
     };
 }
 

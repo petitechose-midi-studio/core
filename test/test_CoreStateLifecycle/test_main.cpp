@@ -91,7 +91,6 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     assert(!state.sequencer.patternQuickControls.selecting.get());
     assert(!state.macroUi.manualOverrides.activeFor(manualAddress));
     assert(state.macroRuntimeOwnerRevision.get() == beforeRuntimeOwnerRevision + 1U);
-    assert(std::strcmp(state.statusBar.pageName.get(), state.pages.activePageData().name) == 0);
     assert(
         state.configRevision.get() ==
         core::state::macro::nextMacroConfigRevision(

@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include "context/standalone/MacroOverlayPresenterFormatters.hpp"
-#include "ui/macro/MacroSourceDetailLayout.hpp"
+#include "state/macro/MacroSourceDetailPolicy.hpp"
 
 namespace core::context::standalone::macro_overlay_presenter::internal {
 
@@ -74,7 +74,7 @@ void formatModulationState(
     std::size_t outSize,
     const core::state::modulation::ProjectControlMacroDestinationView* slot
 );
-core::ui::macro::MacroSourceDetailContext sourceDetailContext(
+core::state::macro::MacroSourceDetailContext sourceDetailContext(
     const core::state::modulation::ProjectControlMacroDestinationView* slot,
     bool manual
 );

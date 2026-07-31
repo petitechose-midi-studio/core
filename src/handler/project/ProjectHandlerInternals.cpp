@@ -189,11 +189,8 @@ FLASHMEM const char* projectLifecycleFailureLabel(
             return "Load failed";
         case Status::LIST_FAILED:
             return "List failed";
-        case Status::UNSAFE_OVERWRITE:
-            return "Save As required";
         case Status::DRAFT_ACTIVE:
             return "Finish Step draft";
-        case Status::PARTIAL_LOAD:
         case Status::OK:
         default:
             return fallback;
@@ -203,21 +200,10 @@ FLASHMEM const char* projectLifecycleFailureLabel(
 FLASHMEM const char* projectLoadFeedbackLabel(
     const ProjectLifecycleDomainServices::Result& result
 ) {
-    namespace project_file = core::persistence::project_file;
     if (!result.success()) {
         return projectLifecycleFailureLabel(result.status, "Load failed");
     }
-    if (!result.overwriteSafe) {
-        return "Loaded read-only";
-    }
-    switch (result.loadStatus) {
-        case project_file::LoadStatus::PARTIAL:
-            return "Loaded partial";
-        case project_file::LoadStatus::OK:
-        case project_file::LoadStatus::FAILED:
-        default:
-            return "Loaded";
-    }
+    return "Loaded";
 }
 
 FLASHMEM void formatProjectLifecycleFeedback(

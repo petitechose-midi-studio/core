@@ -1,3 +1,4 @@
+#include <array>
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -1428,7 +1429,7 @@ void test_track_paste_refreshes_route_during_hold_and_freezes_queued_plan() {
                h.state
            ).setMidiChannel(1, 8));
     h.advance(1);
-    assert(h.state.sequencer.structureUi.trackPaste.plan.entry
+    assert(h.state.sequencer.structureUi.trackPaste.plan.entries[0]
                .targetMidiChannel == 8);
     h.advance(
         Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS -
@@ -1659,8 +1660,19 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
     h.state.sequencer.pattern.probability[3] = 64;
     h.state.sequencer.pattern.setEnabled(3, true);
     createRootMicroSequence(h, 3);
-    oc::note::sequencer::StepSequencerChordSpec selectedChord{};
-    selectedChord.voiceCount = 5;
+    auto selectedChord = oc::note::sequencer::StepSequencerChordSpec::semantic(
+        oc::note::sequencer::StepSequencerChordHarmony::Custom,
+        8U,
+        oc::note::sequencer::StepSequencerChordVoicing::Open,
+        1U,
+        oc::note::sequencer::StepSequencerChordIntervalBasis::ChromaticSemitones
+    );
+    constexpr std::array<uint8_t, 8> intervals{
+        0U, 3U, 5U, 8U, 12U, 17U, 24U, 31U,
+    };
+    for (uint8_t voice = 7U; voice > 0U; --voice) {
+        selectedChord.setCustomInterval(voice, intervals[voice]);
+    }
     assert(core::state::sequencer::setNodeChordSpec(
         h.state.sequencer.pattern,
         core::state::sequencer::rootStepNodeId(3),
@@ -1732,7 +1744,10 @@ void test_step_selection_copy_paste_extends_sparse_root_steps() {
     assert(pastedChordNode != nullptr);
     assert(pastedChordNode->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
     assert(pastedChordNode->chordMode == oc::note::sequencer::StepSequencerChordMode::Local);
-    assert(pastedChordNode->chordSpec.voiceCount == 5);
+    assert(oc::note::sequencer::chordSpecsEqual(
+        pastedChordNode->chordSpec,
+        selectedChord
+    ));
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.state.sequencer.structureUi.stepSelection.active.get());

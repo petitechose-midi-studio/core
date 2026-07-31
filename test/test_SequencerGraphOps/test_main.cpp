@@ -226,6 +226,44 @@ void test_runtime_signature_tracks_graph_revision() {
     std::cout << "[PASS] test_runtime_signature_tracks_graph_revision\n";
 }
 
+void test_pattern_pitch_context_syncs_directly_without_graph_rewrite() {
+    SequencerState state;
+    assert(core::state::sequencer::ensureGraphRoot(state.pattern));
+    const uint32_t graphRevision = state.pattern.graphRevision.get();
+
+    SequencerPatternSnapshot followSnapshot;
+    core::state::sequencer::captureSnapshot(
+        state.pattern,
+        followSnapshot
+    );
+    auto followSignature =
+        core::sequencer::captureRuntimeStateSignature(followSnapshot);
+    auto runtime = makeRuntime(followSnapshot);
+    assert(followSignature.pitchFollowsScale);
+    assert(runtime.pitchFollowsScale);
+
+    assert(state.setPitchEditMode(
+        core::state::sequencer::SequencerPitchEditMode::CHROMATIC
+    ));
+    assert(state.pattern.graphRevision.get() == graphRevision);
+
+    SequencerPatternSnapshot chromaticSnapshot;
+    core::state::sequencer::captureSnapshot(
+        state.pattern,
+        chromaticSnapshot
+    );
+    const auto chromaticSignature =
+        core::sequencer::captureRuntimeStateSignature(chromaticSnapshot);
+    runtime = makeRuntime(chromaticSnapshot);
+
+    assert(!chromaticSignature.pitchFollowsScale);
+    assert(!runtime.pitchFollowsScale);
+    assert(!followSignature.matches(chromaticSignature));
+
+    std::cout
+        << "[PASS] Pattern Pitch Context syncs without graph rewrite\n";
+}
+
 void test_create_micro_sequence_reuses_existing_child() {
     SequencerState state;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
@@ -654,7 +692,7 @@ void test_chord_state_is_explicit_and_resettable_per_node() {
 
     StepSequencerChordSpec spec{};
     spec.voiceCount = 99;
-    spec.harmonyData = 99;
+    spec.harmonyData = 0xFFU;
     spec.voicingData = 2;
     spec.inversionData = 99;
     spec.strum = 120;
@@ -669,10 +707,15 @@ void test_chord_state_is_explicit_and_resettable_per_node() {
     assert(node->has(STEP_NODE_CHORD_LOCAL));
     assert(node->chordMode == StepSequencerChordMode::Local);
     assert(node->chordSpec.voiceCount == StepSequencerChordSpec::MAX_VOICES);
-    const auto recipe = node->chordSpec.legacyRecipe();
-    assert(recipe.color == StepSequencerChordSpec::MAX_COLOR);
-    assert(recipe.variant == 2);
-    assert(recipe.spread == StepSequencerChordSpec::MAX_SPREAD);
+    assert(
+        node->chordSpec.harmony() ==
+        oc::note::sequencer::StepSequencerChordHarmony::DiatonicTriad
+    );
+    assert(
+        node->chordSpec.voicing() ==
+        oc::note::sequencer::StepSequencerChordVoicing::Wide
+    );
+    assert(node->chordSpec.inversion() == 3);
     assert(node->chordSpec.strum == StepSequencerChordSpec::MAX_STRUM);
     assert(node->chordSpec.velocityCurve == StepSequencerChordSpec::MIN_VELOCITY_CURVE);
 
@@ -716,6 +759,10 @@ void test_runtime_telemetry_sync_copies_expanded_variation() {
     runtime.expandedVariationTelemetry.valid = true;
     runtime.expandedVariationTelemetry.rootStepIndex = 2;
     runtime.expandedVariationTelemetry.cycleIndex = 5;
+    runtime.expandedVariationTelemetry.requestedNoteCount = 17;
+    runtime.expandedVariationTelemetry.noteBudgetExceeded = true;
+    runtime.runtimeDiagnostics.noteBudgetExceeded = true;
+    runtime.runtimeDiagnostics.noteBudgetExceededCount = 3;
     runtime.expandedVariationTelemetry.store(
         0,
         42,
@@ -735,6 +782,8 @@ void test_runtime_telemetry_sync_copies_expanded_variation() {
     assert(target.expandedVariationTelemetry.rootStepIndex == 2);
     assert(target.expandedVariationTelemetry.cycleIndex == 5);
     assert(target.expandedVariationTelemetry.count == 1);
+    assert(target.expandedVariationTelemetry.requestedNoteCount == 17);
+    assert(target.expandedVariationTelemetry.noteBudgetExceeded);
     assert(target.expandedVariationTelemetry.nodeId[0] == 42);
     assert(target.expandedVariationTelemetry.localTick[0] == 3);
     assert(target.expandedVariationTelemetry.spanTicks[0] == 6);
@@ -745,6 +794,8 @@ void test_runtime_telemetry_sync_copies_expanded_variation() {
     assert(target.expandedVariationTelemetry.chordVoiceCount[0] == 3);
     assert(target.expandedVariationTelemetry.chordInterval[0] == 4);
     assert(!target.expandedVariationTelemetry.chordIntervalUsesScaleDegrees[0]);
+    assert(target.runtimeDiagnostics.noteBudgetExceeded);
+    assert(target.runtimeDiagnostics.noteBudgetExceededCount == 3);
 
     std::cout << "[PASS] test_runtime_telemetry_sync_copies_expanded_variation\n";
 }
@@ -788,6 +839,7 @@ int main() {
     test_step_node_child_presence_helpers_validate_targets();
     test_pattern_copy_preserves_graph();
     test_runtime_signature_tracks_graph_revision();
+    test_pattern_pitch_context_syncs_directly_without_graph_rewrite();
     test_create_micro_sequence_reuses_existing_child();
     test_cycle_state_set_resizes_to_reserved_capacity();
     test_micro_sequence_rotation_wraps_step_nodes();

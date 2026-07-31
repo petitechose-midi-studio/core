@@ -370,8 +370,6 @@ struct ModulationTriggerBindingState {
 /**
  * Project-owned authored graph. Storage and availability are independent from
  * Track, Macro and UI context; only output bindings define where a source acts.
- * Historical Reach bytes exist solely at the persistence boundary and never
- * enter this live domain.
  */
 struct ProjectModulationState {
     uint32_t nextSourceId = 1;

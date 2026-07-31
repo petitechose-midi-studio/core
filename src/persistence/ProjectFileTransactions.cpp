@@ -58,8 +58,6 @@ FLASHMEM oc::type::Result<ProjectLoadResult> loadFromPath(
 
     ProjectLoadResult result{};
     result.bytesRead = static_cast<uint32_t>(read.value());
-    result.loadStatus = decoded.loadStatus;
-    result.overwriteSafe = decoded.overwriteSafe;
     std::strncpy(result.projectPath, path, sizeof(result.projectPath) - 1U);
     return oc::type::Result<ProjectLoadResult>::ok(result);
 }
@@ -74,8 +72,8 @@ FLASHMEM void restoreBackupAsCurrent(ProductFileService& files,
                                      const char* current,
                                      const char* backup,
                                      ProjectLoadResult& result) {
-    auto removed = removeProductFileIfExists(files, current);
-    if (!removed) return;
+    auto deleted = deleteProductFileIfExists(files, current);
+    if (!deleted) return;
     auto restored = files.rename(backup, current);
     if (!restored) return;
 

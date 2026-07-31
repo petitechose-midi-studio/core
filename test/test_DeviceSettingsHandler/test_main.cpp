@@ -13,7 +13,6 @@
 #include <config/InputIDs.hpp>
 #include "../../src/handler/settings/DeviceSettingsDomainServices.hpp"
 #include "../../src/handler/settings/DeviceSettingsHandler.hpp"
-#include "../../src/state/CoreSettings.hpp"
 #include "../../src/state/DeviceSettingsState.hpp"
 #include "../../src/state/MidiSyncState.hpp"
 #include "../../src/ui/OverlayTypes.hpp"
@@ -38,7 +37,7 @@ struct DeviceSettingsHarness {
 
     MemoryStorage storage;
     core::state::MidiSyncState midiSync;
-    core::state::CoreSettings settings;
+    core::persistence::DeviceSettingsStore settingsStore;
     core::state::DeviceSettingsState deviceSettings;
     core::handler::DeviceSettingsDomainServices services;
 
@@ -53,8 +52,11 @@ struct DeviceSettingsHarness {
     core::handler::DeviceSettingsHandler handler;
 
     DeviceSettingsHarness()
-        : settings(storage)
-        , services(core::handler::DeviceSettingsDomainServices::StateRefs{midiSync, settings})
+        : settingsStore(storage)
+        , services(core::handler::DeviceSettingsDomainServices::StateRefs{
+              midiSync,
+              settingsStore,
+          })
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
@@ -69,6 +71,7 @@ struct DeviceSettingsHarness {
                   SETTINGS_SCOPE,
                   SELECTOR_SCOPE) {
         storage.init();
+        assert(settingsStore.load(midiSync));
         overlayState.registerItem(
             core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR,
             deviceSettings.selector.visible

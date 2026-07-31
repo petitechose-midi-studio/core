@@ -122,6 +122,6 @@ bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t endStep);
 bool appendPage(SequencerState& target);
 bool insertPage(SequencerState& target, uint8_t pageIndex);
 bool ensurePageExists(SequencerState& target, uint8_t pageIndex);
-bool removePage(SequencerState& target, uint8_t pageIndex);
+bool deletePage(SequencerState& target, uint8_t pageIndex);
 
 }  // namespace core::state::sequencer

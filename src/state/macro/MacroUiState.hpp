@@ -230,8 +230,6 @@ struct MacroUiState {
     void resetInteraction();
     /** Clears runtime Manual only at a Project load/create/reset boundary. */
     void resetProjectRuntime();
-    /** Backward-compatible full reset; project lifecycle integration owns use. */
-    void reset();
     void refreshManualOverrideMask(uint8_t track, uint8_t page);
     void armPostTakeInputGuard(uint16_t macroMask, uint32_t nowMs);
     [[nodiscard]] bool blocksPostTakeInput(uint8_t macro, uint32_t nowMs);

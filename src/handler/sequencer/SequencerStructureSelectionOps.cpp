@@ -39,7 +39,7 @@ FLASHMEM uint16_t activeTrackSelectionMask(
     return static_cast<uint16_t>(selectedMask & enabledMask);
 }
 
-FLASHMEM core::state::shared::MaskMutation removeSelectedStructureTracks(
+FLASHMEM core::state::shared::MaskMutation deleteSelectedStructureTracks(
     uint16_t enabledMask,
     uint16_t selectedMask,
     uint8_t activeTrack
@@ -115,7 +115,7 @@ FLASHMEM bool resetSelectedActiveContentPages(
     return resetSelectedActiveContentSteps(sequencer, stepMask, depth);
 }
 
-FLASHMEM bool removeSelectedRootPages(
+FLASHMEM bool deleteSelectedRootPages(
     core::state::sequencer::SequencerState& sequencer,
     uint16_t selectedMask
 ) {
@@ -134,7 +134,7 @@ FLASHMEM bool removeSelectedRootPages(
         const auto pageIndex = static_cast<uint8_t>(page);
         if ((pageMask & structure_slots::slotBit(pageIndex)) == 0U) continue;
         changed =
-            core::state::sequencer::removePage(sequencer, pageIndex) ||
+            core::state::sequencer::deletePage(sequencer, pageIndex) ||
             changed;
     }
     return changed;

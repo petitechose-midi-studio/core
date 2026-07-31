@@ -136,10 +136,8 @@ FLASHMEM bool runProjectStoreSmoke(core::persistence::ProductFileService& produc
                      oc::type::errorCodeToString(loaded.error().code));
         return false;
     }
-    OC_LOG_INFO("[project-store-smoke] loaded {} bytes status={} overwriteSafe={}",
-                loaded.value().bytesRead,
-                static_cast<int>(loaded.value().loadStatus),
-                loaded.value().overwriteSafe ? 1 : 0);
+    OC_LOG_INFO("[project-store-smoke] loaded {} bytes",
+                loaded.value().bytesRead);
 
     if (!report.ok()) {
         OC_LOG_ERROR("[project-store-smoke] load report is not OK status={}",

@@ -303,8 +303,8 @@ public:
         const MacroAutomationSlotAddress& address
     );
 
-    /** Removes one physical Macro and every authored destination-owned value. */
-    [[nodiscard]] bool removeMacroSlot(
+    /** Deletes one physical Macro and every authored destination-owned value. */
+    [[nodiscard]] bool deleteMacroSlot(
         MacroPagesState& pages,
         const MacroAutomationSlotAddress& address
     );

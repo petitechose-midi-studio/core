@@ -222,9 +222,6 @@ FLASHMEM ClipboardTransferPlan buildSequencerTrackClipboardTransferPlan(
         missingRoute = missingRoute || destinationChannel > 15U;
     }
 
-    plan.hasEntry = plan.count > 0U;
-    if (plan.hasEntry) plan.entry = plan.entries[0];
-
     if (plan.inheritedLaneCount > 0U) {
         plan.bindingPolicy = static_cast<uint8_t>(
             plan.bindingPolicy | CLIPBOARD_TRANSFER_REBIND_INHERITED
@@ -277,8 +274,7 @@ FLASHMEM bool sameSequencerTrackClipboardTransferIdentity(
         lhs.lastTarget != rhs.lastTarget ||
         lhs.bindingPolicy != rhs.bindingPolicy ||
         lhs.inheritedLaneCount != rhs.inheritedLaneCount ||
-        lhs.pinnedLaneCount != rhs.pinnedLaneCount ||
-        lhs.hasEntry != rhs.hasEntry) {
+        lhs.pinnedLaneCount != rhs.pinnedLaneCount) {
         return false;
     }
     for (uint8_t index = 0; index < lhs.count; ++index) {

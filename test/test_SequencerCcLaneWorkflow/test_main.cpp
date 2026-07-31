@@ -21,7 +21,7 @@
 #include "handler/sequencer/SequencerCcLaneDomainServices.hpp"
 #include "handler/sequencer/SequencerCcLaneHandler.hpp"
 #include "handler/sequencer/SequencerCcLaneWorkflow.hpp"
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
@@ -743,7 +743,7 @@ void test_live_projection_requires_the_lane_in_committed_runtime_telemetry() {
     assert(!h.state.sequencer.ccLaneUi.hasResolvedValue);
 
     core::sequencer::RealtimeMidiQueue queue;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{queue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{queue};
     core::handler::SequencerCcLaneWorkflow liveWorkflow{
         {h.state.sequencer,
          h.state.sequencerTracks,

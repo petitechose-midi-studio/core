@@ -4,9 +4,11 @@
 
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
+#include <oc/time/Time.hpp>
 
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
+#include "handler/sequencer/SequencerChordProjectionFeedback.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 
 namespace core::handler {
@@ -140,7 +142,10 @@ FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
     const bool beforeValid =
         core::state::sequencer::captureHistorySnapshot(sequencer_, before);
 
-    services_.applyChoice(settings_.selector.editingRow.get(), settings_.selector.selectedIndex.get());
+    const auto projection = services_.applyChoice(
+        settings_.selector.editingRow.get(),
+        settings_.selector.selectedIndex.get()
+    );
 
     if (beforeValid) {
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
@@ -154,6 +159,11 @@ FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
             );
         }
     }
+    showChordProjectionFeedback(
+        sequencer_.historyFeedback,
+        projection,
+        oc::time::millis()
+    );
 
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR);
     settings_.closeSelector();

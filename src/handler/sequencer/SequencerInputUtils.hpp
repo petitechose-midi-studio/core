@@ -153,11 +153,11 @@ inline bool usesScaleDegreePitchEdit(
     core::state::sequencer::SequencerPitchEditMode mode,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
-    scaleSettings.clamp();
     return property == StepProperty::NOTE &&
-           (scaleSettings.isConstrained() ||
-            mode == core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES) &&
-           scaleSettings.type != oc::note::sequencer::StepSequencerScaleType::Chromatic;
+           core::state::sequencer::pitchContextUsesScaleDegrees(
+               mode,
+               scaleSettings
+           );
 }
 
 inline int countScaleNotes(oc::note::sequencer::StepSequencerScaleSettings scaleSettings) {

@@ -6,14 +6,7 @@ namespace core::state::sequencer {
 
 inline bool chordSpecEqualsSanitized(oc::note::sequencer::StepSequencerChordSpec lhs,
                                      oc::note::sequencer::StepSequencerChordSpec rhs) {
-    lhs.clamp();
-    rhs.clamp();
-    return lhs.voiceCount == rhs.voiceCount &&
-           lhs.harmonyData == rhs.harmonyData &&
-           lhs.voicingData == rhs.voicingData &&
-           lhs.inversionData == rhs.inversionData &&
-           lhs.strum == rhs.strum &&
-           lhs.velocityCurve == rhs.velocityCurve;
+    return oc::note::sequencer::chordSpecsEqualCanonical(lhs, rhs);
 }
 
 }  // namespace core::state::sequencer

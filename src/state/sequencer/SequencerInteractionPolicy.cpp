@@ -137,41 +137,91 @@ SequencerInteractionPolicy buildStepContentSelectorPolicy() {
 
 SequencerInteractionPolicy buildSelectionPolicy(const SequencerInteractionContext& context) {
     SequencerInteractionPolicy policy{};
+    const auto shared = core::state::buildStructureSelectionInteractionPolicy({
+        .entryAvailable = false,
+        .active = true,
+        .placing = context.selectionPlacementActive,
+        .selectedItemsAvailable = context.selectedItemsAvailable,
+        .pasteAvailable = context.selectionPasteAvailable,
+    });
+
     if (context.stepSelectionActive) {
         policy.scope = Scope::STEP_SELECTION;
         policy.bottomLeftTap = Action::RESET_STEP_SELECTION_SHALLOW;
         policy.bottomLeftHold = Action::RESET_STEP_SELECTION_DEEP;
-        policy.bottomRightTap = Action::COPY_STEP_SELECTION;
-        policy.bottomRightHold = Action::PASTE_STEP_SELECTION;
+        policy.bottomRightTap =
+            shared.bottomRightRelease ==
+                core::state::StructureSelectionInteractionAction::COPY_SELECTION
+            ? Action::COPY_STEP_SELECTION
+            : Action::NONE;
+        policy.bottomRightHold =
+            shared.bottomRightLongPress ==
+                core::state::StructureSelectionInteractionAction::PASTE_SELECTION
+            ? Action::PASTE_STEP_SELECTION
+            : Action::NONE;
     } else if (context.trackSelectionActive) {
         policy.scope = Scope::TRACK_SELECTION;
         policy.bottomLeftTap = Action::MUTE_TRACK_SELECTION;
         policy.bottomLeftHold = Action::DELETE_SELECTION;
-        policy.bottomRightTap = Action::NONE;
-        policy.bottomRightHold = Action::NONE;
+        policy.bottomRightTap =
+            shared.bottomRightRelease ==
+                core::state::StructureSelectionInteractionAction::COPY_SELECTION
+            ? Action::COPY_STRUCTURE_SELECTION
+            : Action::NONE;
+        policy.bottomRightHold =
+            shared.bottomRightLongPress ==
+                core::state::StructureSelectionInteractionAction::PASTE_SELECTION
+            ? Action::PASTE_STRUCTURE_SELECTION
+            : Action::NONE;
     } else {
         policy.scope = Scope::PATTERN_SELECTION;
         policy.bottomLeftTap = Action::CLEAR_SELECTION;
         policy.bottomLeftHold = Action::DELETE_SELECTION;
-        policy.bottomRightTap = Action::NONE;
-        policy.bottomRightHold = Action::NONE;
+        policy.bottomRightTap =
+            shared.bottomRightRelease ==
+                core::state::StructureSelectionInteractionAction::COPY_SELECTION
+            ? Action::COPY_STRUCTURE_SELECTION
+            : Action::NONE;
+        policy.bottomRightHold =
+            shared.bottomRightLongPress ==
+                core::state::StructureSelectionInteractionAction::PASTE_SELECTION
+            ? Action::PASTE_STRUCTURE_SELECTION
+            : Action::NONE;
     }
 
-    policy.navTurn = Action::MOVE_SELECTION_CURSOR;
-    policy.navTap = Action::TOGGLE_SELECTION;
+    policy.navTurn =
+        shared.navTurn ==
+            core::state::StructureSelectionInteractionAction::MOVE_CURSOR
+        ? Action::MOVE_SELECTION_CURSOR
+        : Action::NONE;
+    policy.navTap =
+        shared.navRelease ==
+            core::state::StructureSelectionInteractionAction::TOGGLE_ITEM
+        ? Action::TOGGLE_SELECTION
+        : Action::NONE;
     policy.navLongPress = Action::NONE;
     policy.optTurn = Action::NONE;
-    policy.leftTopTap = Action::CANCEL_TRANSIENT_CONTEXT;
+    policy.leftTopTap =
+        shared.leftTopRelease !=
+            core::state::StructureSelectionInteractionAction::NONE
+        ? Action::CANCEL_TRANSIENT_CONTEXT
+        : Action::NONE;
     policy.macroTap = Action::TOGGLE_SELECTION;
     policy.macroLongPress = Action::NONE;
     policy.macroTurn = Action::NONE;
     policy.bottomLeftVisibility = visibleIf(context.selectedItemsAvailable);
-    policy.bottomRightVisibility = context.stepSelectionActive
-        ? visibleIf(
-              context.selectedItemsAvailable ||
-              context.compatibleClipboardAvailable
-          )
-        : Visibility::HIDDEN;
+    switch (shared.bottomRightVisibility) {
+        case core::state::StructureSelectionInteractionVisibility::ACTIVE:
+            policy.bottomRightVisibility = Visibility::ACTIVE;
+            break;
+        case core::state::StructureSelectionInteractionVisibility::DISABLED:
+            policy.bottomRightVisibility = Visibility::DISABLED;
+            break;
+        case core::state::StructureSelectionInteractionVisibility::HIDDEN:
+        default:
+            policy.bottomRightVisibility = Visibility::HIDDEN;
+            break;
+    }
     hideLeftSelectors(policy);
     return policy;
 }

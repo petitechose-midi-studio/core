@@ -15,18 +15,18 @@
 #include "handler/macro/MacroGuardedActionWorkflow.hpp"
 #include "state/contextual/OperationFeedbackState.hpp"
 #include "state/macro/MacroEditMenuModel.hpp"
-#include "ui/macro/MacroSourceDetailLayout.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
+#include "state/macro/MacroSourceDetailPolicy.hpp"
+#include "state/modulation/ModulationDepthParameterMapping.hpp"
 
 namespace core::handler {
 
 namespace {
 
-namespace detail_ui = core::ui::macro;
+namespace detail_policy = core::state::macro;
 namespace menu = core::state::macro;
-namespace depth_ui = core::ui::modulation::depth;
+namespace depth_parameter = core::state::modulation::depth;
 
-FLASHMEM detail_ui::MacroSourceDetailContext detailContext(
+FLASHMEM detail_policy::MacroSourceDetailContext detailContext(
     const MacroEditDomainServices& services,
     uint8_t macroIndex
 ) {
@@ -281,7 +281,7 @@ FLASHMEM void MacroAutomationHandler::moveFocus(float delta) {
         count = modulationRows(pages_, macroIndex()).rowCount();
     } else {
         count = static_cast<int>(
-            detail_ui::buildAutomationDetailLayout(context).count
+            detail_policy::buildAutomationDetailPolicy(context).count
         );
     }
     const int next = nav::nextWrappedIndex(delta, current, count);
@@ -328,12 +328,12 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
             row
         );
         if (binding == nullptr) return;
-        const auto scale = depth_ui::scaleFor(
+        const auto scale = depth_parameter::scaleFor(
             pages_.control.authored.modulation,
             pages_.control.authored.curves,
             *binding
         );
-        const int16_t amount = depth_ui::amountQ15AtNormalized(
+        const int16_t amount = depth_parameter::amountQ15AtNormalized(
             clamped,
             scale
         );
@@ -345,13 +345,13 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
         return;
     }
     if (!automationDetailActive()) return;
-    const auto layout = detail_ui::buildAutomationDetailLayout(context);
-    const auto item = layout.at(macro_edit_.automationFocusedRow.get());
-    if (item == detail_ui::AutomationDetailItem::PLAYBACK) {
+    const auto policy = detail_policy::buildAutomationDetailPolicy(context);
+    const auto item = policy.at(macro_edit_.automationFocusedRow.get());
+    if (item == detail_policy::AutomationDetailItem::PLAYBACK) {
         (void)services_.setAutomationPlayback(index, clamped >= 0.5f);
         return;
     }
-    if (item == detail_ui::AutomationDetailItem::LENGTH) {
+    if (item == detail_policy::AutomationDetailItem::LENGTH) {
         const auto range = macroAutomationLengthEditRange(coarse_edit_active_);
         services_.setAutomationDurationBeats(
             index,
@@ -359,7 +359,7 @@ FLASHMEM void MacroAutomationHandler::editFocusedValue(float normalized) {
         );
         return;
     }
-    if (item == detail_ui::AutomationDetailItem::OFFSET) {
+    if (item == detail_policy::AutomationDetailItem::OFFSET) {
         const auto* slot = services_.controlDestination(index);
         const auto range = macroAutomationOffsetEditRange(
             slot != nullptr ? &slot->automation : nullptr,
@@ -406,13 +406,14 @@ FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
         );
         if (binding != nullptr) {
             (void)services_.focusModulationBinding(macroIndex(), binding->id);
-            const auto scale = depth_ui::scaleFor(
+            const auto scale = depth_parameter::scaleFor(
                 pages_.control.authored.modulation,
                 pages_.control.authored.curves,
                 *binding
             );
-            position = depth_ui::normalizedPosition(binding->amountQ15);
-            const int depthSteps = depth_ui::stepCount(scale);
+            position =
+                depth_parameter::normalizedPosition(binding->amountQ15);
+            const int depthSteps = depth_parameter::stepCount(scale);
             if (depthSteps > 255) {
                 encoders_.setContinuous(Config::EncoderID::OPT);
             } else {
@@ -428,12 +429,12 @@ FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
         encoders_.setPosition(Config::EncoderID::OPT, position);
         return;
     }
-    const auto layout = detail_ui::buildAutomationDetailLayout(context);
-    const auto item = layout.at(macro_edit_.automationFocusedRow.get());
-    if (item == detail_ui::AutomationDetailItem::PLAYBACK) {
+    const auto policy = detail_policy::buildAutomationDetailPolicy(context);
+    const auto item = policy.at(macro_edit_.automationFocusedRow.get());
+    if (item == detail_policy::AutomationDetailItem::PLAYBACK) {
         steps = 2;
         position = context.automationPlayback ? 1.0f : 0.0f;
-    } else if (item == detail_ui::AutomationDetailItem::LENGTH) {
+    } else if (item == detail_policy::AutomationDetailItem::LENGTH) {
         const auto range = macroAutomationLengthEditRange(coarse_edit_active_);
         steps = range.stepCount;
         const auto* slot = services_.controlDestination(macroIndex());
@@ -443,7 +444,7 @@ FLASHMEM void MacroAutomationHandler::configureOptForFocusedRow() {
                 range
             );
         }
-    } else if (item == detail_ui::AutomationDetailItem::OFFSET) {
+    } else if (item == detail_policy::AutomationDetailItem::OFFSET) {
         const auto* slot = services_.controlDestination(macroIndex());
         const auto range = macroAutomationOffsetEditRange(
             slot != nullptr ? &slot->automation : nullptr,
@@ -976,11 +977,15 @@ FLASHMEM void MacroAutomationHandler::activateFocusedRow() {
         }
         return;
     } else {
-        const auto layout = detail_ui::buildAutomationDetailLayout(context);
-        const auto item = layout.at(macro_edit_.automationFocusedRow.get());
-        resumeAutomation = item == detail_ui::AutomationDetailItem::RESUME;
+        const auto policy =
+            detail_policy::buildAutomationDetailPolicy(context);
+        const auto item =
+            policy.at(macro_edit_.automationFocusedRow.get());
+        resumeAutomation =
+            item == detail_policy::AutomationDetailItem::RESUME;
         convert =
-            item == detail_ui::AutomationDetailItem::CONVERT_TO_MODULATION;
+            item ==
+            detail_policy::AutomationDetailItem::CONVERT_TO_MODULATION;
     }
     if (resumeAutomation) {
         if (services_.resumeSources(macroIndex())) {

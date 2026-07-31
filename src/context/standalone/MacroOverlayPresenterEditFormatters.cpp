@@ -9,15 +9,13 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "state/macro/MacroEditMenuModel.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "ui/font/StandaloneIcons.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
-#include "ui/modulation/ModulatorLfoUiModel.hpp"
-#include "ui/macro/MacroSourceDetailLayout.hpp"
+#include "state/macro/MacroSourceDetailPolicy.hpp"
 #include "ui/modulation/ModulatorSparklineModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 

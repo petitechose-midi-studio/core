@@ -4,6 +4,7 @@
 #include <ms/ui/widget/VirtualListSelectorOverlay.hpp>
 
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
+#include "ui/sequencer/SequencerChordVoiceRail.hpp"
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
 
 namespace core::context::standalone {
@@ -14,14 +15,16 @@ FLASHMEM SequencerOverlayPresenter::SequencerOverlayPresenter(
     StateRefs stateRefs,
     core::ui::SequencerStepEditOverlay& stepEditOverlay,
     core::ui::ContextActionStrip& stepEditActionStrip,
-    ms::ui::VirtualListSelectorOverlay& stepPresetOverlay,
-    core::ui::ContextActionStrip& stepPresetActionStrip
+    ms::ui::VirtualListSelectorOverlay& presetLibraryOverlay,
+    core::ui::ContextActionStrip& presetLibraryActionStrip,
+    core::ui::SequencerChordVoiceRail& presetLibraryChordVoiceRail
 )
     : state_refs_(stateRefs)
     , step_edit_overlay_(stepEditOverlay)
     , step_edit_action_strip_(stepEditActionStrip)
-    , step_preset_overlay_(stepPresetOverlay)
-    , step_preset_action_strip_(stepPresetActionStrip)
+    , preset_library_overlay_(presetLibraryOverlay)
+    , preset_library_action_strip_(presetLibraryActionStrip)
+    , preset_library_chord_voice_rail_(presetLibraryChordVoiceRail)
     , render_scheduler_(
           core::ui::renderSchedulerDebugLabel("SequencerOverlay"),
           &SequencerOverlayPresenter::drainRenderQueue,
@@ -40,7 +43,8 @@ FLASHMEM bool SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.stepEdit.localVariationEditActive,
         state_refs_.sequencer.stepEdit.chordEditor.active,
         state_refs_.sequencer.stepEdit.chordEditor.focusedField,
-        state_refs_.sequencer.stepPresetPicker.visible,
+        state_refs_.sequencer.stepEdit.chordEditor.subEditor,
+        state_refs_.sequencer.presetLibrary.visible,
         state_refs_.sequencer.pattern.enabledMask,
         state_refs_.sequencer.pattern.stepDataRevision,
         state_refs_.sequencer.pattern.patternScaleRevision,
@@ -56,38 +60,38 @@ FLASHMEM bool SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.stepEdit.contextHold.action,
         state_refs_.sequencer.stepEdit.contextHold.startedAtMs
     ) && bound;
-    step_preset_watcher_.bind<&SequencerOverlayPresenter::requestStepPresetRender>(
-        *this, 2, "SequencerOverlay.stepPreset"
+    preset_library_watcher_.bind<&SequencerOverlayPresenter::requestPresetLibraryRender>(
+        *this, 2, "SequencerOverlay.presetLibrary"
     );
-    bound = step_preset_watcher_.watchAll(
-        state_refs_.sequencer.stepPresetPicker.visible,
-        state_refs_.sequencer.stepPresetPicker.mode,
-        state_refs_.sequencer.stepPresetPicker.selectedIndex,
-        state_refs_.sequencer.stepPresetPicker.entryCount,
-        state_refs_.sequencer.stepPresetPicker.truncated,
-        state_refs_.sequencer.stepPresetPicker.hasPreviousPage,
-        state_refs_.sequencer.stepPresetPicker.hasNextPage,
-        state_refs_.sequencer.stepPresetPicker.totalEntryCount,
-        state_refs_.sequencer.stepPresetPicker.detailVisible,
-        state_refs_.sequencer.stepPresetPicker.detailFocus,
-        state_refs_.sequencer.stepPresetPicker.feedback,
-        state_refs_.sequencer.stepPresetPicker.operationFeedback,
-        state_refs_.sequencer.stepPresetPicker.actionGuard,
-        state_refs_.sequencer.stepPresetPicker.revision,
-        state_refs_.sequencer.stepEdit.stepIndex
+    bound = preset_library_watcher_.watchAll(
+        state_refs_.sequencer.presetLibrary.visible,
+        state_refs_.sequencer.presetLibrary.libraryKind,
+        state_refs_.sequencer.presetLibrary.mode,
+        state_refs_.sequencer.presetLibrary.selectedIndex,
+        state_refs_.sequencer.presetLibrary.entryCount,
+        state_refs_.sequencer.presetLibrary.truncated,
+        state_refs_.sequencer.presetLibrary.hasPreviousPage,
+        state_refs_.sequencer.presetLibrary.hasNextPage,
+        state_refs_.sequencer.presetLibrary.totalEntryCount,
+        state_refs_.sequencer.presetLibrary.detailVisible,
+        state_refs_.sequencer.presetLibrary.detailFocus,
+        state_refs_.sequencer.presetLibrary.feedback,
+        state_refs_.sequencer.presetLibrary.operationFeedback,
+        state_refs_.sequencer.presetLibrary.actionGuard,
+        state_refs_.sequencer.presetLibrary.revision
     ) && bound;
-    step_preset_action_watcher_.bind<&SequencerOverlayPresenter::requestStepPresetActionsRender>(
-        *this, 3, "SequencerOverlay.stepPresetActions"
+    preset_library_action_watcher_.bind<&SequencerOverlayPresenter::requestPresetLibraryActionsRender>(
+        *this, 3, "SequencerOverlay.presetLibraryActions"
     );
-    bound = step_preset_action_watcher_.watchAll(
-        state_refs_.sequencer.stepPresetPicker.visible,
-        state_refs_.sequencer.stepPresetPicker.mode,
-        state_refs_.sequencer.stepPresetPicker.selectedIndex,
-        state_refs_.sequencer.stepPresetPicker.entryCount,
-        state_refs_.sequencer.stepPresetPicker.hasPreviousPage,
-        state_refs_.sequencer.stepPresetPicker.revision,
-        state_refs_.sequencer.stepPresetPicker.actionGuard,
-        state_refs_.sequencer.stepPresetPicker.operationFeedback
+    bound = preset_library_action_watcher_.watchAll(
+        state_refs_.sequencer.presetLibrary.visible,
+        state_refs_.sequencer.presetLibrary.mode,
+        state_refs_.sequencer.presetLibrary.selectedIndex,
+        state_refs_.sequencer.presetLibrary.entryCount,
+        state_refs_.sequencer.presetLibrary.hasPreviousPage,
+        state_refs_.sequencer.presetLibrary.revision,
+        state_refs_.sequencer.presetLibrary.actionGuard,
+        state_refs_.sequencer.presetLibrary.operationFeedback
     ) && bound;
     return bound;
 }
@@ -100,12 +104,12 @@ FLASHMEM void SequencerOverlayPresenter::requestStepEditActionsRender() {
     render_scheduler_.request(RENDER_STEP_EDIT_ACTIONS);
 }
 
-FLASHMEM void SequencerOverlayPresenter::requestStepPresetRender() {
-    render_scheduler_.request(RENDER_STEP_PRESET | RENDER_STEP_PRESET_ACTIONS);
+FLASHMEM void SequencerOverlayPresenter::requestPresetLibraryRender() {
+    render_scheduler_.request(RENDER_PRESET_LIBRARY | RENDER_PRESET_LIBRARY_ACTIONS);
 }
 
-FLASHMEM void SequencerOverlayPresenter::requestStepPresetActionsRender() {
-    render_scheduler_.request(RENDER_STEP_PRESET_ACTIONS);
+FLASHMEM void SequencerOverlayPresenter::requestPresetLibraryActionsRender() {
+    render_scheduler_.request(RENDER_PRESET_LIBRARY_ACTIONS);
 }
 
 FLASHMEM void SequencerOverlayPresenter::drainRenderQueue(void* context, uint32_t flags) {
@@ -116,8 +120,8 @@ FLASHMEM void SequencerOverlayPresenter::drainRenderQueue(void* context, uint32_
 FLASHMEM void SequencerOverlayPresenter::renderPending(uint32_t flags) {
     if ((flags & RENDER_STEP_EDIT) != 0) renderStepEdit();
     if ((flags & RENDER_STEP_EDIT_ACTIONS) != 0) renderStepEditActionStrip();
-    if ((flags & RENDER_STEP_PRESET) != 0) renderStepPresetPicker();
-    if ((flags & RENDER_STEP_PRESET_ACTIONS) != 0) renderStepPresetActionStrip();
+    if ((flags & RENDER_PRESET_LIBRARY) != 0) renderPresetLibrary();
+    if ((flags & RENDER_PRESET_LIBRARY_ACTIONS) != 0) renderPresetLibraryActionStrip();
 }
 
 FLASHMEM void SequencerOverlayPresenter::renderStepEdit() {
@@ -125,7 +129,7 @@ FLASHMEM void SequencerOverlayPresenter::renderStepEdit() {
         state_refs_.sequencer,
         state_refs_.tracks,
     });
-    if (!data.visible || state_refs_.sequencer.stepPresetPicker.visible.get()) {
+    if (!data.visible || state_refs_.sequencer.presetLibrary.visible.get()) {
         step_edit_overlay_.render({.visible = false});
     } else {
         step_edit_overlay_.render(data.overlayProps);
@@ -146,19 +150,20 @@ FLASHMEM void SequencerOverlayPresenter::renderStepEditActionStrip() {
     }
 }
 
-FLASHMEM void SequencerOverlayPresenter::renderStepPresetPicker() {
+FLASHMEM void SequencerOverlayPresenter::renderPresetLibrary() {
     const auto data =
         core::context::standalone::sequencer_overlay_presenter::
-            buildStepPresetPickerRenderData({
+            buildPresetLibraryRenderData({
                 state_refs_.sequencer,
                 state_refs_.tracks,
             });
     if (!data.visible) {
-        step_preset_overlay_.render({.visible = false});
+        preset_library_overlay_.render({.visible = false});
+        preset_library_chord_voice_rail_.render({.visible = false});
         return;
     }
 
-    step_preset_overlay_.render({
+    preset_library_overlay_.render({
         .title = data.title.data(),
         .meta = data.meta.data(),
         .items = data.items.data(),
@@ -169,17 +174,18 @@ FLASHMEM void SequencerOverlayPresenter::renderStepPresetPicker() {
         .visible = true,
         .dataRevision = data.dataRevision,
     });
+    preset_library_chord_voice_rail_.render(data.chordVoiceRail);
 }
 
-FLASHMEM void SequencerOverlayPresenter::renderStepPresetActionStrip() {
-    if (!state_refs_.sequencer.stepPresetPicker.visible.get()) {
-        step_preset_action_strip_.render({.visible = false});
+FLASHMEM void SequencerOverlayPresenter::renderPresetLibraryActionStrip() {
+    if (!state_refs_.sequencer.presetLibrary.visible.get()) {
+        preset_library_action_strip_.render({.visible = false});
         return;
     }
 
-    step_preset_action_strip_.render(
+    preset_library_action_strip_.render(
         core::context::standalone::sequencer_overlay_presenter::
-            buildStepPresetActionStripProps({
+            buildPresetLibraryActionStripProps({
                 state_refs_.sequencer,
                 state_refs_.tracks,
             })

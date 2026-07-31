@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include "config/Timing.hpp"
+#include "state/StructureSelectionInteractionPolicy.hpp"
 #include "state/macro/MacroInteractionContextBuilder.hpp"
 #include "state/macro/MacroInteractionPolicy.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
@@ -30,6 +31,22 @@ uint8_t bitCount(uint16_t mask) {
         mask = static_cast<uint16_t>(mask >> 1U);
     }
     return count;
+}
+
+ContextActionStripVisualState selectionVisual(
+    core::state::StructureSelectionInteractionVisibility visibility
+) {
+    using SelectionVisibility =
+        core::state::StructureSelectionInteractionVisibility;
+    switch (visibility) {
+        case SelectionVisibility::ACTIVE:
+            return ContextActionStripVisualState::ACTIVE;
+        case SelectionVisibility::DISABLED:
+            return ContextActionStripVisualState::DISABLED;
+        case SelectionVisibility::HIDDEN:
+        default:
+            return ContextActionStripVisualState::HIDDEN;
+    }
 }
 
 uint8_t clampTrackPreviewIndex(uint8_t index) {
@@ -349,16 +366,41 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
         const uint8_t overwriteCount = slotSelecting
             ? source.macroUi.slotSelection.overwriteCount
             : bitCount(overwriteMask);
+        bool destinationAvailable = !placing;
+        if (placing && slotSelecting) {
+            destinationAvailable = false;
+            for (const uint8_t mask :
+                 source.macroUi.slotSelection.destinationMasks) {
+                if (mask == 0U) continue;
+                destinationAvailable = true;
+                break;
+            }
+        } else if (placing) {
+            destinationAvailable = pageSelecting
+                ? source.macroUi.pageSelection.destinationMask.get() != 0U
+                : source.trackNavigation.selection.destinationMask.get() != 0U;
+        }
+        const bool pasteAvailable =
+            placing && !blocked && destinationAvailable;
+        const auto selectionPolicy =
+            core::state::buildStructureSelectionInteractionPolicy({
+                .entryAvailable = false,
+                .active = true,
+                .placing = placing,
+                .selectedItemsAvailable = selectedCount > 0U,
+                .pasteAvailable = pasteAvailable,
+            });
         const bool overwrite = overwriteCount > 0U;
         const bool pasteHold =
             source.macroUi.pageHold.action.get() ==
-                core::state::StructureHoldAction::PASTE;
+                core::state::StructureHoldAction::PASTE &&
+            selectionPolicy.bottomRightLongPress ==
+                core::state::StructureSelectionInteractionAction::
+                    PASTE_SELECTION;
         action.visualState = pasteHold
             ? ContextActionStripVisualState::ARMED
-            : blocked
-                ? ContextActionStripVisualState::DISABLED
-                : ContextActionStripVisualState::ACTIVE;
-        action.tone = blocked
+            : selectionVisual(selectionPolicy.bottomRightVisibility);
+        action.tone = placing && !pasteAvailable
             ? ContextActionStripTone::DESTRUCTIVE
             : overwrite
                 ? ContextActionStripTone::WARNING
@@ -383,7 +425,7 @@ FLASHMEM ContextActionStripProps buildMacroBottomActionStripProps(const MacroVie
                 action.labelText.data(),
                 action.labelText.size(),
                 "%s",
-                blocked ? "PST BLOCK" : "PST"
+                pasteAvailable ? "PST" : "PST BLOCK"
             );
         }
         action.holdActive = pasteHold;

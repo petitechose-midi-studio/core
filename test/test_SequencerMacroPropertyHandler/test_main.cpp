@@ -252,7 +252,7 @@ void test_direct_edit_retires_runtime_projection_before_authored_revision() {
     std::cout << "[PASS] test_direct_edit_retires_runtime_projection_before_authored_revision\n";
 }
 
-void test_constrained_scale_pitch_edit_writes_scale_degree_note() {
+void test_follow_scale_pitch_edit_writes_scale_degree_note() {
     SequencerMacroPropertyHarness h;
     h.state.sequencer.pattern.setContentLength(8);
     h.state.sequencer.activeStepProperty.set(StepProperty::NOTE);
@@ -267,7 +267,9 @@ void test_constrained_scale_pitch_edit_writes_scale_degree_note() {
     h.state.sequencer.setPatternScalePolicy(
         core::state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT
     );
-    h.state.sequencer.setPitchEditMode(core::state::sequencer::SequencerPitchEditMode::CHROMATIC);
+    h.state.sequencer.setPitchEditMode(
+        core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
+    );
 
     const float b4AsScaleDegree = input_utils::indexToNormalized(
         input_utils::scaleDegreeIndexForNote(71, settings),
@@ -278,7 +280,7 @@ void test_constrained_scale_pitch_edit_writes_scale_degree_note() {
 
     assert(h.state.sequencer.pattern.note[0] == 71);
 
-    std::cout << "[PASS] test_constrained_scale_pitch_edit_writes_scale_degree_note\n";
+    std::cout << "[PASS] test_follow_scale_pitch_edit_writes_scale_degree_note\n";
 }
 
 void test_macro_property_edits_are_blocked_by_modal_states() {
@@ -554,7 +556,7 @@ int main() {
     test_direct_state_edit_coalesces_as_state_history();
     test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step();
     test_direct_edit_retires_runtime_projection_before_authored_revision();
-    test_constrained_scale_pitch_edit_writes_scale_degree_note();
+    test_follow_scale_pitch_edit_writes_scale_degree_note();
     test_macro_property_edits_are_blocked_by_modal_states();
     test_left_bottom_selector_macro_edits_local_variation_range();
     test_left_bottom_selector_does_not_randomize_probability();

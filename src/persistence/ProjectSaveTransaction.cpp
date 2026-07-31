@@ -69,9 +69,9 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance()
                 return oc::type::Result<ProjectSaveProgress>::err(error);
             }
 
-            auto removeTmp = removeProductFileIfExists(files_, paths_.tmp);
-            if (!removeTmp) {
-                const auto error = removeTmp.error();
+            auto deleteTmp = deleteProductFileIfExists(files_, paths_.tmp);
+            if (!deleteTmp) {
+                const auto error = deleteTmp.error();
                 reset_();
                 return oc::type::Result<ProjectSaveProgress>::err(error);
             }
@@ -231,7 +231,7 @@ FLASHMEM void ProjectSaveTransaction::reset_() {
 
 FLASHMEM void ProjectSaveTransaction::cleanupTmp_() {
     if (tmp_prepared_ && paths_.tmp != nullptr) {
-        (void)removeProductFileIfExists(files_, paths_.tmp);
+        (void)deleteProductFileIfExists(files_, paths_.tmp);
     }
 }
 

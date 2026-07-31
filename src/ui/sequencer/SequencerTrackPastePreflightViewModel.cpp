@@ -43,16 +43,14 @@ FLASHMEM const char* reasonLabel(Reason reason) {
 FLASHMEM uint8_t effectivePlanCount(
     const core::state::ClipboardTransferPlan& plan
 ) {
-    return plan.count > 0U
-        ? plan.count
-        : (plan.hasEntry ? 1U : 0U);
+    return plan.count;
 }
 
 FLASHMEM const core::state::ClipboardTransferPlanEntry& planEntry(
     const core::state::ClipboardTransferPlan& plan,
     uint8_t index
 ) {
-    return plan.count > 0U ? plan.entries[index] : plan.entry;
+    return plan.entries[index];
 }
 
 FLASHMEM uint8_t countMaskBits(uint16_t mask) {

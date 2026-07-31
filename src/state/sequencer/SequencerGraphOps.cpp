@@ -92,17 +92,6 @@ FLASHMEM bool assignFlag(uint16_t& flags, uint16_t flag, bool enabled) {
     return true;
 }
 
-FLASHMEM bool initializeNodePitchPolicy(
-    StepSequencerStepNode& node,
-    SequencerPitchEditMode mode
-) {
-    return assignFlag(
-        node.flags,
-        STEP_NODE_PITCH_CHROMATIC,
-        mode == SequencerPitchEditMode::CHROMATIC
-    );
-}
-
 FLASHMEM uint16_t allocateStepNodes(StepSequencerGraph& graph, uint8_t count) {
     if (count == 0) return kInvalidId;
     const uint32_t nextCount = static_cast<uint32_t>(graph.stepNodeCount) + count;
@@ -655,9 +644,6 @@ FLASHMEM bool ensureGraphRoot(SequencerPatternState& pattern) {
         .length = SequencerPatternState::MAX_STEPS,
         .offset = 0,
     };
-    for (uint16_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
-        (void)initializeNodePitchPolicy(graph.stepNodes[i], pattern.pitchEditMode);
-    }
     pattern.bumpGraphRevision();
     return true;
 }

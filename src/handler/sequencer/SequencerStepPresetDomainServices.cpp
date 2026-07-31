@@ -6,26 +6,33 @@
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
+#include <oc/diagnostics/Performance.hpp>
 #include <oc/type/Result.hpp>
 
 #include "app/ExtmemAllocator.hpp"
 #include "persistence/ProductFileService.hpp"
+#include "persistence/SequencerGraphAssetCodec.hpp"
 #include "state/CoreState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerGraphAsset.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
-#include "state/sequencer/SequencerGraphPresetWorkflow.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerScaleCatalog.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::handler {
 
 namespace {
 
-using core::state::sequencer::STEP_GRAPH_PRESET_MAX_ENCODED_SIZE;
+namespace asset_codec =
+    core::persistence::sequencer_graph_asset_codec;
+
+constexpr uint16_t STEP_PRESET_MAX_ENCODED_SIZE =
+    asset_codec::MAX_ENCODED_SIZE;
 using core::state::sequencer::SequencerGraphAssetStatus;
 using core::state::sequencer::SequencerStepGraphPreset;
 using core::state::sequencer::SequencerStepPresetCompatibility;
@@ -41,7 +48,7 @@ using oc::note::sequencer::STEP_NODE_CYCLE_SET;
 using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
 
 struct StepPresetBuffer {
-    uint8_t bytes[STEP_GRAPH_PRESET_MAX_ENCODED_SIZE];
+    uint8_t bytes[STEP_PRESET_MAX_ENCODED_SIZE];
 };
 
 FLASHMEM uint32_t hashPresetPayload(
@@ -74,6 +81,28 @@ FLASHMEM bool sameScale(
     lhs.clamp();
     rhs.clamp();
     return lhs.root == rhs.root && lhs.type == rhs.type && lhs.mode == rhs.mode;
+}
+
+FLASHMEM bool destinationUsesScaleRelativePitch(
+    const core::state::CoreState& state,
+    oc::note::sequencer::StepSequencerScaleSettings scale
+) {
+    return core::state::sequencer::pitchContextUsesScaleDegrees(
+        state.sequencer.pattern.pitchEditMode,
+        scale
+    );
+}
+
+FLASHMEM bool presetPitchContextMatchesDestination(
+    const SequencerStepGraphPreset& preset,
+    const core::state::CoreState& state,
+    oc::note::sequencer::StepSequencerScaleSettings destinationScale
+) {
+    const bool presetScaleRelative =
+        preset.scalePolicy ==
+            SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE;
+    return presetScaleRelative ==
+           destinationUsesScaleRelativePitch(state, destinationScale);
 }
 
 FLASHMEM void formatScale(
@@ -163,7 +192,7 @@ FLASHMEM bool samePresetBytesOutsideSemanticName(
     uint16_t afterSize
 ) {
     constexpr uint16_t semanticOffset = static_cast<uint16_t>(
-        core::state::sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
+        asset_codec::BASE_HEADER_SIZE + 4U +
         SequencerStepGraphPreset::TECHNICAL_ID_SIZE
     );
     constexpr uint16_t semanticEnd = static_cast<uint16_t>(
@@ -482,6 +511,7 @@ SequencerStepPresetDomainServices::listPresetsPage(
     const char* anchorExclusive,
     core::persistence::StepPresetFilePageDirection direction
 ) const {
+    OC_PERF_SCOPE(perfList, "persistence.step-preset.list-page");
     SequencerStepPresetListResult result{};
     if (files_ == nullptr) {
         result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
@@ -502,6 +532,7 @@ SequencerStepPresetDomainServices::listPresetsPage(
     result.hasPrevious = listed.value().hasPrevious;
     result.hasNext = listed.value().hasNext;
     result.totalCount = listed.value().totalCount;
+    OC_PERF_UNITS(perfList, result.totalCount, result.count);
     return result;
 }
 
@@ -613,6 +644,29 @@ SequencerStepPresetDomainServices::inspectPreset(
     uint8_t previewStateIndex,
     uint32_t generation
 ) const {
+    auto buffer = makeStepPresetBuffer();
+    auto preset = core::app::makeExtmemUnique<SequencerStepGraphPreset>();
+    return inspectPresetPrepared(
+        presetId,
+        target,
+        previewStateIndex,
+        generation,
+        buffer ? buffer->bytes : nullptr,
+        preset.get()
+    );
+}
+
+FLASHMEM SequencerStepPresetInspectResult
+SequencerStepPresetDomainServices::inspectPresetPrepared(
+    const char* presetId,
+    const SequencerStepPresetTarget& target,
+    uint8_t previewStateIndex,
+    uint32_t generation,
+    uint8_t* encodedWorkspace,
+    SequencerStepGraphPreset* preparedPreset
+) const {
+    OC_PERF_SCOPE(perfInspect, "persistence.step-preset.inspect");
+    OC_PERF_UNITS(perfInspect, 0U, previewStateIndex);
     SequencerStepPresetInspectResult result{};
     auto& descriptor = result.descriptor;
     descriptor.valid = true;
@@ -640,9 +694,7 @@ SequencerStepPresetDomainServices::inspectPreset(
         return result;
     }
 
-    auto buffer = makeStepPresetBuffer();
-    auto preset = core::app::makeExtmemUnique<SequencerStepGraphPreset>();
-    if (!buffer || !preset) {
+    if (encodedWorkspace == nullptr || preparedPreset == nullptr) {
         result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::RESOURCE_EXHAUSTED;
         descriptor.compatibility =
@@ -655,8 +707,8 @@ SequencerStepPresetDomainServices::inspectPreset(
     uint16_t payloadSize = 0;
     auto loaded = store.load(
         presetId,
-        buffer->bytes,
-        STEP_GRAPH_PRESET_MAX_ENCODED_SIZE,
+        encodedWorkspace,
+        STEP_PRESET_MAX_ENCODED_SIZE,
         payloadSize
     );
     if (!loaded) {
@@ -671,15 +723,17 @@ SequencerStepPresetDomainServices::inspectPreset(
     }
     descriptor.previewKey.assetHash = hashPresetPayload(
         presetId,
-        buffer->bytes,
+        encodedWorkspace,
         payloadSize
     );
+    result.bytes = payloadSize;
+    OC_PERF_UNITS(perfInspect, payloadSize, previewStateIndex);
 
     core::state::sequencer::SequencerGraphAssetReport report{};
-    if (!core::state::sequencer::decodeStepGraphPreset(
-            buffer->bytes,
+    if (!asset_codec::decode(
+            encodedWorkspace,
             payloadSize,
-            *preset,
+            *preparedPreset,
             &report
         )) {
         result.assetStatus = report.status;
@@ -690,11 +744,11 @@ SequencerStepPresetDomainServices::inspectPreset(
     }
 
     if (!core::state::sequencer::validStepGraphPresetTechnicalId(
-            preset->technicalId
+            preparedPreset->technicalId
         ) ||
-        std::strcmp(preset->technicalId, presetId) != 0 ||
+        std::strcmp(preparedPreset->technicalId, presetId) != 0 ||
         !core::state::sequencer::validStepGraphPresetSemanticName(
-            preset->semanticName
+            preparedPreset->semanticName
         )) {
         result.status = SequencerStepPresetStatus::CORRUPT;
         result.assetStatus = SequencerGraphAssetStatus::INVALID_FORMAT;
@@ -705,28 +759,34 @@ SequencerStepPresetDomainServices::inspectPreset(
     copyText(
         descriptor.semanticName,
         sizeof(descriptor.semanticName),
-        preset->semanticName
+        preparedPreset->semanticName
     );
 
     descriptor.stepNodeCount = report.stepNodeCount;
     descriptor.sequenceCount = report.sequenceCount;
     descriptor.cycleSetCount = report.cycleSetCount;
-    fillContentFacts(*preset, descriptor);
+    fillContentFacts(*preparedPreset, descriptor);
     descriptor.footprint = targetPopulated(state_->sequencer, target)
         ? SequencerStepPresetFootprint::REPLACE
         : SequencerStepPresetFootprint::FREE;
 
     const auto destinationScale = effectiveScale(*state_);
-    const auto sourceScale = preset->sourceScale;
-    const bool scaleRelative = preset->scalePolicy ==
+    const auto sourceScale = preparedPreset->sourceScale;
+    const bool scaleRelative = preparedPreset->scalePolicy ==
         SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE;
+    const bool pitchContextMatches =
+        presetPitchContextMatchesDestination(
+            *preparedPreset,
+            *state_,
+            destinationScale
+        );
     descriptor.scalePolicy = scaleRelative
         ? core::state::sequencer::SequencerStepPresetScalePolicy::SCALE_RELATIVE
         : core::state::sequencer::SequencerStepPresetScalePolicy::CHROMATIC;
-    descriptor.mixedPitchPolicy = preset->mixedPitchPolicy;
     bool pitchAdapted = false;
-    if (!core::state::sequencer::adaptStepGraphPresetPitchToDestination(
-            *preset,
+    if (pitchContextMatches &&
+        !core::state::sequencer::adaptStepGraphPresetPitchToDestination(
+            *preparedPreset,
             destinationScale,
             &pitchAdapted
         )) {
@@ -736,7 +796,15 @@ SequencerStepPresetDomainServices::inspectPreset(
         setCompatibilityReason(descriptor);
         return result;
     }
-    if (scaleRelative) {
+    if (!pitchContextMatches) {
+        copyText(
+            descriptor.adaptationSummary,
+            sizeof(descriptor.adaptationSummary),
+            scaleRelative
+                ? "Requires Follow Scale"
+                : "Requires Chromatic"
+        );
+    } else if (scaleRelative) {
         char sourceLabel[20]{};
         char destinationLabel[20]{};
         formatScale(sourceScale, sourceLabel, sizeof(sourceLabel));
@@ -763,23 +831,34 @@ SequencerStepPresetDomainServices::inspectPreset(
     copyText(
         descriptor.replaceFacts,
         sizeof(descriptor.replaceFacts),
-        preset->rootContext ? "Step values + child graph" : "Child values + graph"
+        preparedPreset->rootContext
+            ? "Step values + child graph"
+            : "Child values + graph"
     );
     copyText(
         descriptor.preserveFacts,
         sizeof(descriptor.preserveFacts),
-        preset->rootContext ? "Track route, scale, other steps" : "Root step and track route"
+        preparedPreset->rootContext
+            ? "Track route, scale, other steps"
+            : "Root step and track route"
     );
 
     if (!targetMatches(target) || projectRevision() != target.projectRevision) {
         result.status = SequencerStepPresetStatus::STALE_TARGET;
         descriptor.compatibility = SequencerStepPresetCompatibility::STALE_TARGET;
-    } else if (preset->rootContext !=
+    } else if (preparedPreset->rootContext !=
                (target.contentContext == core::state::sequencer::
                 SequencerStepPresetTargetContext::ROOT)) {
         result.status = SequencerStepPresetStatus::INCOMPATIBLE;
         descriptor.compatibility = SequencerStepPresetCompatibility::BLOCKED_CONTEXT;
-    } else if (!graphCapacityAvailable(state_->sequencer, *preset)) {
+    } else if (!pitchContextMatches) {
+        result.status = SequencerStepPresetStatus::INCOMPATIBLE;
+        descriptor.compatibility =
+            SequencerStepPresetCompatibility::BLOCKED_PITCH_CONTEXT;
+    } else if (!graphCapacityAvailable(
+                   state_->sequencer,
+                   *preparedPreset
+               )) {
         result.status = SequencerStepPresetStatus::CAPACITY;
         descriptor.compatibility = SequencerStepPresetCompatibility::BLOCKED_CAPACITY;
     } else {
@@ -792,7 +871,7 @@ SequencerStepPresetDomainServices::inspectPreset(
         }
     }
     setCompatibilityReason(descriptor);
-    fillPreviewExample(*preset, descriptor);
+    fillPreviewExample(*preparedPreset, descriptor);
     return result;
 }
 
@@ -844,11 +923,11 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::save
         const auto loaded = store.load(
             presetId,
             buffer->bytes,
-            STEP_GRAPH_PRESET_MAX_ENCODED_SIZE,
+            STEP_PRESET_MAX_ENCODED_SIZE,
             existingSize
         );
         core::state::sequencer::SequencerGraphAssetReport existingReport{};
-        if (loaded && core::state::sequencer::decodeStepGraphPreset(
+        if (loaded && asset_codec::decode(
                 buffer->bytes,
                 existingSize,
                 *preset,
@@ -863,9 +942,11 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::save
     }
 
     core::state::sequencer::SequencerGraphAssetReport captureReport{};
+    const auto sourceScale = effectiveScale(*state_);
     if (!core::state::sequencer::captureStepGraphPreset(
             state_->sequencer,
             target.stepIndex,
+            sourceScale,
             *preset,
             &captureReport
         )) {
@@ -873,26 +954,22 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::save
         result.status = statusFromAsset(captureReport.status);
         return result;
     }
-    const auto scalePolicy = state_->sequencer.pattern.pitchEditMode ==
-            core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES
-        ? SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
-        : SequencerStepGraphPreset::ScalePolicy::CHROMATIC;
     if (!core::state::sequencer::setStepGraphPresetMetadata(
             *preset,
             presetId,
             semanticName,
-            scalePolicy,
-            effectiveScale(*state_)
+            preset->scalePolicy,
+            preset->sourceScale
         )) {
         result.status = SequencerStepPresetStatus::FAILED;
         result.assetStatus = SequencerGraphAssetStatus::INVALID_ARGUMENT;
         return result;
     }
 
-    const auto encoded = core::state::sequencer::encodeStepGraphPreset(
+    const auto encoded = asset_codec::encode(
         *preset,
         buffer->bytes,
-        STEP_GRAPH_PRESET_MAX_ENCODED_SIZE
+        STEP_PRESET_MAX_ENCODED_SIZE
     );
     result.assetStatus = encoded.status;
     result.bytes = encoded.bytesWritten;
@@ -940,12 +1017,22 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
         return result;
     }
 
-    const auto preflight = inspectPreset(
+    auto buffer = makeStepPresetBuffer();
+    auto preset = core::app::makeExtmemUnique<SequencerStepGraphPreset>();
+    if (!buffer || !preset) {
+        result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
+        result.fileError = oc::type::ErrorCode::RESOURCE_EXHAUSTED;
+        return result;
+    }
+    const auto preflight = inspectPresetPrepared(
         presetId,
         target,
         expectedPreview.stateIndex,
-        0
+        0,
+        buffer->bytes,
+        preset.get()
     );
+    result.bytes = preflight.bytes;
     if (preflight.descriptor.previewKey != expectedPreview ||
         !core::state::sequencer::sequencerStepPresetCanApply(
             preflight.descriptor.compatibility
@@ -958,55 +1045,43 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
         return result;
     }
 
-    auto buffer = makeStepPresetBuffer();
-    auto preset = core::app::makeExtmemUnique<SequencerStepGraphPreset>();
-    if (!buffer || !preset) {
-        result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
-        result.fileError = oc::type::ErrorCode::RESOURCE_EXHAUSTED;
-        return result;
-    }
-    core::persistence::StepPresetFileStore store(*files_);
-    uint16_t payloadSize = 0;
-    const auto loaded = store.load(
-        presetId,
-        buffer->bytes,
-        STEP_GRAPH_PRESET_MAX_ENCODED_SIZE,
-        payloadSize
-    );
-    if (!loaded) {
-        result.status = statusFromFileError(loaded.error().code);
-        result.fileError = loaded.error().code;
-        return result;
-    }
-    result.bytes = payloadSize;
-
-    if (hashPresetPayload(presetId, buffer->bytes, payloadSize) !=
-        expectedPreview.assetHash) {
-        result.status = SequencerStepPresetStatus::STALE_TARGET;
-        return result;
-    }
-
-    core::state::sequencer::SequencerGraphAssetReport decodeReport{};
-    if (!core::state::sequencer::decodeStepGraphPreset(
+    // Re-read only the encoded bytes before publication. This closes the
+    // storage TOCTOU window without paying for a second decode/adaptation:
+    // the prepared graph remains usable only while the payload fingerprint
+    // still matches the admitted preview.
+    {
+        OC_PERF_SCOPE(
+            perfVerify,
+            "persistence.step-preset.verify-payload"
+        );
+        core::persistence::StepPresetFileStore store(*files_);
+        uint16_t verifiedSize = 0;
+        const auto verified = store.load(
+            presetId,
             buffer->bytes,
-            payloadSize,
-            *preset,
-            &decodeReport
-        ) ||
-        (std::strcmp(preset->technicalId, presetId) != 0 ||
-         !core::state::sequencer::validStepGraphPresetSemanticName(
-             preset->semanticName
-         )) ||
-        !core::state::sequencer::adaptStepGraphPresetPitchToDestination(
-            *preset,
-            effectiveScale(*state_)
-        )) {
-        result.assetStatus = decodeReport.ok()
-            ? SequencerGraphAssetStatus::INVALID_FORMAT
-            : decodeReport.status;
-        result.status = statusFromAsset(result.assetStatus);
-        return result;
+            STEP_PRESET_MAX_ENCODED_SIZE,
+            verifiedSize
+        );
+        if (!verified) {
+            result.status = statusFromFileError(verified.error().code);
+            result.fileError = verified.error().code;
+            return result;
+        }
+        result.bytes = verifiedSize;
+        OC_PERF_UNITS(perfVerify, verifiedSize, 0U);
+        if (hashPresetPayload(
+                presetId,
+                buffer->bytes,
+                verifiedSize
+            ) != expectedPreview.assetHash) {
+            result.status = SequencerStepPresetStatus::STALE_TARGET;
+            return result;
+        }
     }
+
+    // Release the encoded workspace before allocating staging/history graphs,
+    // which lowers peak PSRAM while retaining the prepared decoded graph.
+    buffer.reset();
 
     auto change = core::app::makeExtmemUnique<
         core::state::sequencer::SequencerHistoryPatternChange
@@ -1211,7 +1286,7 @@ SequencerStepPresetDomainServices::renamePreset(
     const auto loaded = store.load(
         presetId,
         before->bytes,
-        STEP_GRAPH_PRESET_MAX_ENCODED_SIZE,
+        STEP_PRESET_MAX_ENCODED_SIZE,
         beforeSize
     );
     if (!loaded) {
@@ -1222,7 +1297,7 @@ SequencerStepPresetDomainServices::renamePreset(
     result.bytes = beforeSize;
 
     core::state::sequencer::SequencerGraphAssetReport report{};
-    if (!core::state::sequencer::decodeStepGraphPreset(
+    if (!asset_codec::decode(
             before->bytes,
             beforeSize,
             *preset,
@@ -1253,10 +1328,10 @@ SequencerStepPresetDomainServices::renamePreset(
         result.assetStatus = SequencerGraphAssetStatus::INVALID_ARGUMENT;
         return result;
     }
-    const auto encoded = core::state::sequencer::encodeStepGraphPreset(
+    const auto encoded = asset_codec::encode(
         *preset,
         after->bytes,
-        STEP_GRAPH_PRESET_MAX_ENCODED_SIZE
+        STEP_PRESET_MAX_ENCODED_SIZE
     );
     result.assetStatus = encoded.status;
     if (!encoded.ok()) {
@@ -1276,7 +1351,7 @@ SequencerStepPresetDomainServices::renamePreset(
 
     preset->reset();
     core::state::sequencer::SequencerGraphAssetReport verification{};
-    if (!core::state::sequencer::decodeStepGraphPreset(
+    if (!asset_codec::decode(
             after->bytes,
             encoded.bytesWritten,
             *preset,
@@ -1340,7 +1415,7 @@ SequencerStepPresetDomainServices::deletePreset(
     const auto loaded = store.load(
         presetId,
         buffer->bytes,
-        STEP_GRAPH_PRESET_MAX_ENCODED_SIZE,
+        STEP_PRESET_MAX_ENCODED_SIZE,
         payloadSize
     );
     if (!loaded) {
@@ -1351,7 +1426,7 @@ SequencerStepPresetDomainServices::deletePreset(
     result.bytes = payloadSize;
 
     core::state::sequencer::SequencerGraphAssetReport report{};
-    if (!core::state::sequencer::decodeStepGraphPreset(
+    if (!asset_codec::decode(
             buffer->bytes,
             payloadSize,
             *preset,

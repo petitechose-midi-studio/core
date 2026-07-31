@@ -13,8 +13,7 @@ FLASHMEM bool usesScaleDegreePitchEdit(
 ) {
     scaleSettings.clamp();
     return property == StepProperty::NOTE &&
-           (scaleSettings.isConstrained() || mode == SequencerPitchEditMode::SCALE_DEGREES) &&
-           scaleSettings.type != oc::note::sequencer::StepSequencerScaleType::Chromatic;
+           pitchContextUsesScaleDegrees(mode, scaleSettings);
 }
 
 FLASHMEM int countScaleNotes(oc::note::sequencer::StepSequencerScaleSettings scaleSettings) {

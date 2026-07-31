@@ -135,8 +135,9 @@ struct SequencerCcLaneMutationResult {
 [[nodiscard]] bool validSequencerCcLaneBank(const SequencerCcLaneBank& bank);
 
 /**
- * Strict decode boundary. Inactive lanes are canonicalized; occupied malformed
- * or future-version data is rejected without partially publishing `out`.
+ * Strict current-format boundary. Every lane, including inactive slots, must
+ * already have its single canonical representation. Invalid or future-version
+ * data is rejected without partially publishing `out`.
  */
 [[nodiscard]] bool decodeCanonicalSequencerCcLaneBank(
     const SequencerCcLaneBank& persisted,
@@ -201,7 +202,7 @@ SequencerCcLaneMutationResult setSequencerCcLaneTransition(
     SequencerCcLaneTransition transition
 );
 
-SequencerCcLaneMutationResult removeSequencerCcLane(
+SequencerCcLaneMutationResult deleteSequencerCcLane(
     SequencerCcLaneBank& bank,
     uint8_t laneIndex
 );

@@ -44,7 +44,7 @@ FLASHMEM SequencerTrackPasteProjection projectSequencerTrackPaste(
         projection.targetTrack = paste.plan.firstTarget <
                 core::state::sequencer::SequencerTrackBankState::TRACK_COUNT
             ? paste.plan.firstTarget
-            : paste.plan.entry.targetTrack;
+            : paste.plan.entries[0].targetTrack;
     }
     projection.guard = paste.guard;
     projection.feedback = paste.feedback;

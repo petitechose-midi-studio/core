@@ -181,8 +181,7 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
     if (node == ProjectNodeId::NEW_PROJECT_CONFIRM) {
         if (row == 0) {
             return saveAndResetProjectWithFeedback(
-                !lifecycle_.currentProjectHasSavedIdentity() ||
-                    !lifecycle_.currentProjectOverwriteSafe()
+                !lifecycle_.currentProjectHasSavedIdentity()
             );
         }
         if (row == 1) {
@@ -203,8 +202,7 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
             core::state::project::openProjectLoadConfirmation(
                 navigation_,
                 projectId,
-                lifecycle_.currentProjectHasSavedIdentity() &&
-                    lifecycle_.currentProjectOverwriteSafe()
+                lifecycle_.currentProjectHasSavedIdentity()
             );
             return true;
         }

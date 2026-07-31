@@ -8,13 +8,15 @@
 #include <sstream>
 #include <utility>
 
-#include "state/sequencer/SequencerGraphAssetCodec.hpp"
+#include "persistence/SequencerGraphAssetCodec.hpp"
 
 namespace core::tools::ms_core_file_tool {
 
 namespace {
 
 namespace sequencer = core::state::sequencer;
+namespace asset_codec =
+    core::persistence::sequencer_graph_asset_codec;
 
 const char* statusName(sequencer::SequencerGraphAssetStatus status) {
     using Status = sequencer::SequencerGraphAssetStatus;
@@ -40,29 +42,12 @@ const char* statusName(sequencer::SequencerGraphAssetStatus status) {
     }
 }
 
-const char* defaultScalePolicyName(
+const char* scalePolicyName(
     sequencer::SequencerStepGraphPreset::ScalePolicy policy
 ) {
     return policy == sequencer::SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
         ? "scale_relative"
         : "chromatic";
-}
-
-const char* scalePolicyName(const sequencer::SequencerStepGraphPreset& preset) {
-    return preset.mixedPitchPolicy
-        ? "mixed"
-        : defaultScalePolicyName(preset.scalePolicy);
-}
-
-const char* compatibilityName(
-    sequencer::SequencerGraphAssetStatus status,
-    const sequencer::SequencerStepGraphPreset& preset
-) {
-    if (status == sequencer::SequencerGraphAssetStatus::UNSUPPORTED_VERSION) {
-        return "unsupported_version";
-    }
-    if (status != sequencer::SequencerGraphAssetStatus::OK) return "blocked_invalid";
-    return preset.mixedPitchPolicy ? "ready_mixed" : "ready";
 }
 
 void printJsonString(const char* text) {
@@ -113,18 +98,13 @@ void printJsonReport(
     std::cout << ",";
     std::cout << "\"fileKind\":\"step_graph_preset\",";
     std::cout << "\"status\":\"" << statusName(status) << "\",";
-    std::cout << "\"compatibility\":\"" << compatibilityName(status, preset) << "\",";
     std::cout << "\"formatVersion\":" << static_cast<uint32_t>(preset.formatVersion) << ",";
     std::cout << "\"technicalId\":";
     printJsonString(preset.technicalId);
     std::cout << ",\"semanticName\":";
     printJsonString(preset.semanticName);
     std::cout << ",";
-    std::cout << "\"mixedPitchPolicy\":"
-              << (preset.mixedPitchPolicy ? "true" : "false") << ",";
-    std::cout << "\"scalePolicy\":\"" << scalePolicyName(preset) << "\",";
-    std::cout << "\"defaultScalePolicy\":\""
-              << defaultScalePolicyName(preset.scalePolicy) << "\",";
+    std::cout << "\"scalePolicy\":\"" << scalePolicyName(preset.scalePolicy) << "\",";
     std::cout << "\"sourceScale\":{";
     std::cout << "\"root\":" << static_cast<uint32_t>(preset.sourceScale.root) << ",";
     std::cout << "\"type\":"
@@ -151,13 +131,7 @@ void printJsonReport(
     std::cout << "\"overwrite\":"
               << (reportHas(report, sequencer::SEQUENCER_GRAPH_ASSET_REPORT_OVERWRITE)
                       ? "true"
-                      : "false")
-              << ",";
-    std::cout << "\"mixedPitchPolicy\":"
-              << (reportHas(
-                      report,
-                      sequencer::SEQUENCER_GRAPH_ASSET_REPORT_PITCH_POLICY_MIXED
-                  ) ? "true" : "false");
+                      : "false");
     std::cout << "}}\n";
 }
 
@@ -174,10 +148,7 @@ void printTextReport(
               << " formatVersion=" << static_cast<uint32_t>(preset.formatVersion)
               << " technicalId=\"" << preset.technicalId << "\""
               << " semanticName=\"" << preset.semanticName << "\""
-              << " compatibility=" << compatibilityName(status, preset)
-              << " scalePolicy=" << scalePolicyName(preset)
-              << " defaultScalePolicy=" << defaultScalePolicyName(preset.scalePolicy)
-              << " mixedPitchPolicy=" << (preset.mixedPitchPolicy ? "true" : "false")
+              << " scalePolicy=" << scalePolicyName(preset.scalePolicy)
               << " rootValues=" << (preset.rootValuesValid ? "true" : "false")
               << " stepNodes=" << report.stepNodeCount
               << " sequences=" << static_cast<uint32_t>(report.sequenceCount)
@@ -211,7 +182,7 @@ int runStepGraphPresetCommand(
     if (input.size() > std::numeric_limits<uint16_t>::max()) {
         status = sequencer::SequencerGraphAssetStatus::INVALID_ARGUMENT;
         report.status = status;
-    } else if (!sequencer::decodeStepGraphPreset(
+    } else if (!asset_codec::decode(
             input.data(),
             static_cast<uint16_t>(input.size()),
             preset,
@@ -240,10 +211,10 @@ int runStepGraphPresetCommand(
                 report.status = status;
             } else {
                 output->assign(
-                    sequencer::STEP_GRAPH_PRESET_MAX_ENCODED_SIZE,
+                    asset_codec::MAX_ENCODED_SIZE,
                     0
                 );
-                const auto encoded = sequencer::encodeStepGraphPreset(
+                const auto encoded = asset_codec::encode(
                     renamed,
                     output->data(),
                     static_cast<uint16_t>(output->size())
@@ -253,7 +224,7 @@ int runStepGraphPresetCommand(
                 if (encoded.ok()) {
                     output->resize(encoded.bytesWritten);
                     constexpr size_t semanticOffset =
-                        sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
+                        asset_codec::BASE_HEADER_SIZE + 4U +
                         sequencer::SequencerStepGraphPreset::TECHNICAL_ID_SIZE;
                     constexpr size_t semanticEnd = semanticOffset +
                         sequencer::SequencerStepGraphPreset::SEMANTIC_NAME_SIZE;
@@ -272,7 +243,7 @@ int runStepGraphPresetCommand(
                     sequencer::SequencerStepGraphPreset verified{};
                     sequencer::SequencerGraphAssetReport verifiedReport{};
                     const bool verifiedOk = unchangedOutsideName &&
-                        sequencer::decodeStepGraphPreset(
+                        asset_codec::decode(
                             output->data(),
                             static_cast<uint16_t>(output->size()),
                             verified,
@@ -280,8 +251,7 @@ int runStepGraphPresetCommand(
                         ) &&
                         std::strcmp(verified.technicalId, preset.technicalId) == 0 &&
                         std::strcmp(verified.semanticName, semanticName.c_str()) == 0 &&
-                        verified.scalePolicy == preset.scalePolicy &&
-                        verified.mixedPitchPolicy == preset.mixedPitchPolicy;
+                        verified.scalePolicy == preset.scalePolicy;
                     if (!verifiedOk) {
                         output->clear();
                         status = sequencer::SequencerGraphAssetStatus::INVALID_FORMAT;

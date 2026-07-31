@@ -10,6 +10,7 @@
 
 #include "state/sequencer/SequencerStepEditRows.hpp"
 #include "ui/font/StandaloneIcons.hpp"
+#include "ui/sequencer/SequencerChordVoiceRail.hpp"
 
 namespace core::ui {
 
@@ -18,6 +19,7 @@ struct SequencerStepEditPropertyChip {
     const char* value = "";
     const char* icon = "";
     uint32_t color = 0;
+    bool active = true;
 };
 
 struct SequencerStepEditActionChip {
@@ -63,13 +65,17 @@ enum class SequencerStepEditVisualSlot : uint8_t {
     ACTION_0,
     ACTION_1,
     ACTION_2,
-    CHORD_MODE,
-    CHORD_HARMONY,
-    CHORD_VOICES,
+    CHORD_SHAPE,
+    CHORD_FORMULA,
     CHORD_INVERSION,
     CHORD_VOICING,
     CHORD_STRUM,
     CHORD_VELOCITY,
+    CHORD_CONTEXT,
+    CHORD_FORMULA_RAIL,
+    CHORD_SOURCE_PARENT,
+    CHORD_SOURCE_SINGLE,
+    CHORD_SOURCE_LOCAL,
     AUTO = 255,
 };
 
@@ -79,7 +85,7 @@ struct SequencerStepEditOverlayProps {
     static constexpr size_t TRIGGER_COUNT = 2;
     static constexpr size_t MUSICAL_PROPERTY_COUNT = PROPERTY_COUNT - 1;
     static constexpr size_t ACTION_COUNT = 3;
-    static constexpr size_t CHORD_PERFORMANCE_COUNT = 3;
+    static constexpr size_t CHORD_PERFORMANCE_COUNT = 4;
 
     bool visible = false;
     const char* stepBadge = "";
@@ -89,6 +95,8 @@ struct SequencerStepEditOverlayProps {
     bool titleCentered = false;
     bool focusLabelVisible = true;
     bool chordDetailLayout = false;
+    bool chordFormulaLayout = false;
+    bool chordSourceLayout = false;
     bool enabled = false;
     bool microSequence = false;
     bool cycleStates = false;
@@ -99,11 +107,13 @@ struct SequencerStepEditOverlayProps {
     SequencerStepEditVisualSlot selectedVisualSlot = SequencerStepEditVisualSlot::AUTO;
     uint32_t focusColor = 0;
     uint32_t titleColor = 0;
+    uint32_t metaColor = 0;
     SequencerStepEditPropertyChip state{};
     std::array<SequencerStepEditPropertyChip, PROPERTY_COUNT> properties{};
     std::array<SequencerStepEditPropertyChip, CHORD_PERFORMANCE_COUNT> chordPerformance{};
     std::array<SequencerStepEditActionChip, ACTION_COUNT> actions{};
     SequencerChordPreviewProps chordPreview{};
+    SequencerChordVoiceRailProps chordVoiceRail{};
 };
 
 class SequencerStepEditOverlay : public oc::ui::lvgl::IWidget {
@@ -126,6 +136,10 @@ private:
     static constexpr size_t ACTION_COUNT = SequencerStepEditOverlayProps::ACTION_COUNT;
     static constexpr size_t CHORD_PERFORMANCE_COUNT =
         SequencerStepEditOverlayProps::CHORD_PERFORMANCE_COUNT;
+    static constexpr size_t ACTION_WIDGET_COUNT =
+        ACTION_COUNT > CHORD_PERFORMANCE_COUNT
+            ? ACTION_COUNT
+            : CHORD_PERFORMANCE_COUNT;
 
     struct ChipWidgets {
         lv_obj_t* box = nullptr;
@@ -169,9 +183,10 @@ private:
     lv_obj_t* property_row_ = nullptr;
     lv_obj_t* spacer_ = nullptr;
     lv_obj_t* action_row_ = nullptr;
+    SequencerChordVoiceRail chord_voice_rail_{};
     std::array<ChipWidgets, TRIGGER_COUNT> trigger_widgets_{};
     std::array<ChipWidgets, MUSICAL_PROPERTY_COUNT> property_widgets_{};
-    std::array<ActionWidgets, ACTION_COUNT> action_widgets_{};
+    std::array<ActionWidgets, ACTION_WIDGET_COUNT> action_widgets_{};
 
     struct LabelRenderCache {
         std::array<char, 32> text{};
@@ -210,6 +225,8 @@ private:
     bool title_centered_cache_ = false;
     bool focus_label_visible_cache_ = true;
     bool chord_detail_layout_cache_ = false;
+    bool chord_formula_layout_cache_ = false;
+    bool chord_source_layout_cache_ = false;
     SequencerStepEditVisualSlot selected_visual_slot_cache_ =
         SequencerStepEditVisualSlot::AUTO;
     uint32_t focus_color_cache_ = 0;
@@ -232,7 +249,7 @@ private:
         chord_preview_voice_cache_{};
     std::array<ChipRenderCache, TRIGGER_COUNT> trigger_cache_{};
     std::array<ChipRenderCache, MUSICAL_PROPERTY_COUNT> property_cache_{};
-    std::array<ChipRenderCache, ACTION_COUNT> action_cache_{};
+    std::array<ChipRenderCache, ACTION_WIDGET_COUNT> action_cache_{};
 };
 
 }  // namespace core::ui

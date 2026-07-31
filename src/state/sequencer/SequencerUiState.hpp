@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <variant>
 #include <cstring>
 
 #include <oc/note/sequencer/StepBitMask128.hpp>
@@ -16,6 +17,7 @@
 #include "state/project/ProjectState.hpp"
 #include "state/sequencer/SequencerPatternState.hpp"
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
+#include "state/sequencer/SequencerChordPresetModel.hpp"
 #include "state/sequencer/SequencerStepPresetModel.hpp"
 #include "state/sequencer/SequencerUiStateFwd.hpp"
 #include "state/sequencer/StepProperty.hpp"
@@ -39,19 +41,73 @@ enum class PatternQuickControlItem : uint8_t {
 };
 
 enum class SequencerChordEditField : uint8_t {
-    MODE = 0,
-    HARMONY,
-    VOICES,
+    SHAPE = 0,
+    FORMULA,
     INVERSION,
     VOICING,
     STRUM,
     VELOCITY_CONTOUR,
+    PITCH_CONTEXT,
     COUNT,
 };
 
+enum class SequencerChordSourceChoice : uint8_t {
+    PARENT_CHORD = 0,
+    SINGLE_NOTE,
+    LOCAL_CHORD,
+};
+
+struct SequencerChordAuthoringSnapshot {
+    static constexpr uint16_t INVALID_NODE = 0xFFFFU;
+
+    bool valid = false;
+    uint16_t nodeId = INVALID_NODE;
+    bool modePresent = false;
+    bool localPresent = false;
+    oc::note::sequencer::StepSequencerChordMode mode =
+        oc::note::sequencer::StepSequencerChordMode::Single;
+    oc::note::sequencer::StepSequencerChordSpec spec{};
+
+    void reset() {
+        valid = false;
+        nodeId = INVALID_NODE;
+        modePresent = false;
+        localPresent = false;
+        mode = oc::note::sequencer::StepSequencerChordMode::Single;
+        spec = {};
+    }
+};
+
+struct SequencerChordSubEditorState {
+    bool formulaEditorActive = false;
+    // Formula items use their zero-based voice index. Root (0) is never
+    // focusable. When the formula has fewer than eight voices, the current
+    // voice count identifies the trailing Add item.
+    uint8_t focusedFormulaItem = 1;
+    bool sourceSelectorActive = false;
+    SequencerChordSourceChoice focusedSourceChoice =
+        SequencerChordSourceChoice::SINGLE_NOTE;
+
+    bool operator==(const SequencerChordSubEditorState& other) const {
+        return formulaEditorActive == other.formulaEditorActive &&
+               focusedFormulaItem == other.focusedFormulaItem &&
+               sourceSelectorActive == other.sourceSelectorActive &&
+               focusedSourceChoice == other.focusedSourceChoice;
+    }
+};
+
 struct SequencerChordEditorState {
-    Signal<bool> active{false};
-    Signal<SequencerChordEditField> focusedField{SequencerChordEditField::MODE};
+    static constexpr uint8_t FIRST_FORMULA_ITEM = 1;
+
+    // One retained overlay presenter owns this editor projection. Keep the
+    // tightly coupled sub-editor fields in one single-subscriber signal: they
+    // always invalidate the same surface and must be observed atomically.
+    Signal<bool, 1> active{false};
+    Signal<SequencerChordEditField, 1> focusedField{
+        SequencerChordEditField::SHAPE
+    };
+    Signal<SequencerChordSubEditorState, 1> subEditor{};
+    SequencerChordAuthoringSnapshot formulaSnapshot{};
 
     void reset();
 };
@@ -162,15 +218,20 @@ struct SequencerContextSelectorState {
     void reset();
 };
 
-enum class SequencerStepPresetPickerMode : uint8_t {
+enum class SequencerPresetLibraryMode : uint8_t {
     LOAD = 0,
     SAVE,
 };
 
-enum class SequencerStepPresetFeedback : uint8_t {
+enum class SequencerPresetLibraryKind : uint8_t {
+    STEP = 0,
+    CHORD,
+};
+
+enum class SequencerPresetLibraryFeedback : uint8_t {
     NONE = 0,
     SAVED,
-    APPLIED,
+    LOADED,
     QUEUED,
     CANCELLED,
     EMPTY,
@@ -178,15 +239,35 @@ enum class SequencerStepPresetFeedback : uint8_t {
     FAILED,
 };
 
-struct SequencerStepPresetPickerState {
+struct SequencerStepPresetLibraryState {
+    SequencerStepPresetTarget target{};
+    SequencerStepPresetDescriptor descriptor{};
+    // Correlates QUEUED feedback with the exact LOADED/CANCELLED terminal
+    // activation owned by this Step-library session.
+    uint32_t activationGeneration = 0;
+};
+
+struct SequencerChordPresetLibraryState {
+    SequencerChordPresetTarget target{};
+    SequencerChordPresetDescriptor descriptor{};
+};
+
+using SequencerPresetLibraryPayload = std::variant<
+    SequencerStepPresetLibraryState,
+    SequencerChordPresetLibraryState>;
+
+struct SequencerPresetLibrarySessionState {
     static constexpr uint8_t ENTRY_CAPACITY = 15;
     static constexpr uint8_t ID_SIZE = core::state::project::ProjectMetadata::ID_SIZE;
     static constexpr uint8_t NAME_SIZE =
         SequencerStepPresetDescriptor::NAME_SIZE;
 
     Signal<bool> visible{false};
-    Signal<SequencerStepPresetPickerMode> mode{
-        SequencerStepPresetPickerMode::LOAD
+    Signal<SequencerPresetLibraryKind> libraryKind{
+        SequencerPresetLibraryKind::STEP
+    };
+    Signal<SequencerPresetLibraryMode> mode{
+        SequencerPresetLibraryMode::LOAD
     };
     Signal<uint8_t> selectedIndex{0};
     Signal<uint8_t> entryCount{0};
@@ -199,8 +280,8 @@ struct SequencerStepPresetPickerState {
     Signal<bool> inspecting{false};
     Signal<uint8_t> previewStateIndex{0};
     Signal<uint32_t> previewGeneration{0};
-    Signal<SequencerStepPresetFeedback> feedback{
-        SequencerStepPresetFeedback::NONE
+    Signal<SequencerPresetLibraryFeedback> feedback{
+        SequencerPresetLibraryFeedback::NONE
     };
     Signal<core::state::contextual::GuardedActionState, 4> actionGuard{};
     Signal<core::state::contextual::OperationFeedbackState, 4>
@@ -209,18 +290,19 @@ struct SequencerStepPresetPickerState {
     std::array<std::array<char, ID_SIZE>, ENTRY_CAPACITY> entryIds{};
     std::array<std::array<char, NAME_SIZE>, ENTRY_CAPACITY> entryNames{};
     std::array<bool, ENTRY_CAPACITY> entryMetadataReadable{};
-    SequencerStepPresetTarget frozenTarget{};
-    SequencerStepPresetDescriptor descriptor{};
-    // Correlates QUEUED feedback with its exact APPLIED/CANCELLED terminal
-    // state. Retained until the picker resets or another operation begins.
-    uint32_t operationActivationGeneration = 0;
+    // Exactly one domain payload is alive. This avoids retaining parallel
+    // Step and Chord descriptors and makes the active library authoritative.
+    SequencerPresetLibraryPayload payload{};
 
-    SequencerStepPresetPickerState();
-    ~SequencerStepPresetPickerState();
+    SequencerPresetLibrarySessionState();
+    ~SequencerPresetLibrarySessionState();
 
-    void open(SequencerStepPresetPickerMode nextMode);
+    void open(
+        SequencerPresetLibraryMode nextMode,
+        SequencerPresetLibraryKind kind = SequencerPresetLibraryKind::STEP
+    );
     void reset();
-    void setFeedback(SequencerStepPresetFeedback nextFeedback);
+    void setFeedback(SequencerPresetLibraryFeedback nextFeedback);
     void setEntry(
         uint8_t index,
         const char* id,
@@ -230,12 +312,20 @@ struct SequencerStepPresetPickerState {
     const char* entryId(uint8_t index) const;
     const char* entryName(uint8_t index) const;
     bool entryHasReadableMetadata(uint8_t index) const;
+    SequencerStepPresetLibraryState& step();
+    const SequencerStepPresetLibraryState& step() const;
+    SequencerChordPresetLibraryState& chord();
+    const SequencerChordPresetLibraryState& chord() const;
     uint8_t itemCount() const;
     uint8_t newAssetItemOffset() const;
     bool selectedItemIsNewAsset() const;
+    bool selectedItemIsExistingAsset() const;
     uint8_t existingEntryIndexForSelectedItem() const;
     void clampSelection();
     void bump();
+
+private:
+    void clearCatalog();
 };
 
 enum class SequencerCcLaneUiMode : uint8_t {

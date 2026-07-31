@@ -2,13 +2,13 @@
 #include <iostream>
 
 #include "state/macro/MacroEditMenuModel.hpp"
-#include "ui/macro/MacroSourceDetailLayout.hpp"
+#include "state/macro/MacroSourceDetailPolicy.hpp"
 
 namespace {
 
 namespace macro = core::state::macro;
 namespace modulation = core::state::modulation;
-namespace detail_ui = core::ui::macro;
+namespace detail_policy = core::state::macro;
 
 modulation::ModulationDestination destination(uint8_t macroIndex) {
     return {
@@ -41,44 +41,54 @@ void test_root_items_are_typed_at_the_ui_boundary() {
     std::cout << "[PASS] typed Macro root rows\n";
 }
 
-void test_source_detail_layout_indices_fail_closed() {
-    detail_ui::AutomationDetailLayout emptyAutomation{};
-    detail_ui::ModulationDetailLayout emptyModulation{};
+void test_source_detail_policy_indices_fail_closed() {
+    detail_policy::AutomationDetailPolicy emptyAutomation{};
+    detail_policy::ModulationDetailPolicy emptyModulation{};
     assert(emptyAutomation.at(0U) ==
-           detail_ui::AutomationDetailItem::INVALID);
+           detail_policy::AutomationDetailItem::INVALID);
     assert(emptyModulation.at(0U) ==
-           detail_ui::ModulationDetailItem::INVALID);
+           detail_policy::ModulationDetailItem::INVALID);
 
-    detail_ui::MacroSourceDetailContext context{};
+    detail_policy::MacroSourceDetailContext context{};
     context.automationStored = true;
     context.modulationStored = true;
     context.manualOverride = true;
 
-    const auto automation = detail_ui::buildAutomationDetailLayout(context);
+    const auto automation =
+        detail_policy::buildAutomationDetailPolicy(context);
     assert(automation.count == 5U);
-    assert(automation.at(0U) == detail_ui::AutomationDetailItem::PLAYBACK);
-    assert(automation.at(1U) == detail_ui::AutomationDetailItem::RESUME);
+    assert(automation.at(0U) ==
+           detail_policy::AutomationDetailItem::PLAYBACK);
+    assert(automation.at(1U) ==
+           detail_policy::AutomationDetailItem::RESUME);
     assert(automation.at(2U) ==
-           detail_ui::AutomationDetailItem::CONVERT_TO_MODULATION);
-    assert(automation.at(3U) == detail_ui::AutomationDetailItem::LENGTH);
-    assert(automation.at(4U) == detail_ui::AutomationDetailItem::OFFSET);
+           detail_policy::AutomationDetailItem::CONVERT_TO_MODULATION);
+    assert(automation.at(3U) ==
+           detail_policy::AutomationDetailItem::LENGTH);
+    assert(automation.at(4U) ==
+           detail_policy::AutomationDetailItem::OFFSET);
     assert(automation.at(automation.count) ==
-           detail_ui::AutomationDetailItem::INVALID);
+           detail_policy::AutomationDetailItem::INVALID);
     assert(automation.at(0xFFU) ==
-           detail_ui::AutomationDetailItem::INVALID);
+           detail_policy::AutomationDetailItem::INVALID);
 
-    const auto modulation = detail_ui::buildModulationDetailLayout(context);
+    const auto modulation =
+        detail_policy::buildModulationDetailPolicy(context);
     assert(modulation.count == 4U);
-    assert(modulation.at(0U) == detail_ui::ModulationDetailItem::PLAYBACK);
-    assert(modulation.at(1U) == detail_ui::ModulationDetailItem::DEPTH);
-    assert(modulation.at(2U) == detail_ui::ModulationDetailItem::SHAPE);
-    assert(modulation.at(3U) == detail_ui::ModulationDetailItem::ORIGIN);
+    assert(modulation.at(0U) ==
+           detail_policy::ModulationDetailItem::PLAYBACK);
+    assert(modulation.at(1U) ==
+           detail_policy::ModulationDetailItem::DEPTH);
+    assert(modulation.at(2U) ==
+           detail_policy::ModulationDetailItem::SHAPE);
+    assert(modulation.at(3U) ==
+           detail_policy::ModulationDetailItem::ORIGIN);
     assert(modulation.at(modulation.count) ==
-           detail_ui::ModulationDetailItem::INVALID);
+           detail_policy::ModulationDetailItem::INVALID);
     assert(modulation.at(0xFFU) ==
-           detail_ui::ModulationDetailItem::INVALID);
+           detail_policy::ModulationDetailItem::INVALID);
 
-    std::cout << "[PASS] Macro source detail layouts fail closed\n";
+    std::cout << "[PASS] Macro source detail policy fails closed\n";
 }
 
 void test_context_actions_replace_destination_and_automation_ordinals() {
@@ -268,7 +278,7 @@ void test_invalid_root_and_context_indices_are_inert() {
 
 int main() {
     test_root_items_are_typed_at_the_ui_boundary();
-    test_source_detail_layout_indices_fail_closed();
+    test_source_detail_policy_indices_fail_closed();
     test_context_actions_replace_destination_and_automation_ordinals();
     test_modulation_rows_carry_stable_binding_ids();
     test_invalid_and_stale_modulation_rows_fail_closed();

@@ -2,13 +2,13 @@
 
 #include <cstdint>
 
-#include "state/CoreSettings.hpp"
+#include "persistence/DeviceSettingsStore.hpp"
 #include "state/MidiSyncState.hpp"
 
 namespace core::handler {
 
 /**
- * Applies device settings choices to MidiSyncState and CoreSettings.
+ * Applies device settings choices to MidiSyncState and DeviceSettingsStore.
  *
  * The service owns row-to-choice mapping and persistence commits; UI handlers
  * only navigate/select rows.
@@ -17,7 +17,7 @@ class DeviceSettingsDomainServices {
 public:
     struct StateRefs {
         core::state::MidiSyncState& midiSync;
-        core::state::CoreSettings& settings;
+        core::persistence::DeviceSettingsStore& store;
     };
 
     explicit DeviceSettingsDomainServices(StateRefs state);
@@ -28,7 +28,7 @@ public:
 
 private:
     core::state::MidiSyncState* midi_sync_ = nullptr;
-    core::state::CoreSettings* settings_ = nullptr;
+    core::persistence::DeviceSettingsStore* store_ = nullptr;
 };
 
 }  // namespace core::handler

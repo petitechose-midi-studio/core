@@ -132,12 +132,12 @@ int main(int argc, char** argv) {
     }
 
     // 2. Create storages and state (specific to core)
-    oc::impl::FileStorage settingsStorage(kStorageFiles[0]);
-    if (!settingsStorage.init()) {
+    oc::impl::FileStorage deviceSettingsStorage(kStorageFiles[0]);
+    if (!deviceSettingsStorage.init()) {
         fprintf(stderr, "Failed to open storage files\n");
         return 1;
     }
-    core::state::CoreState coreState(settingsStorage);
+    core::state::CoreState coreState(deviceSettingsStorage);
 
     std::filesystem::path productFileRoot = uxScript
         ? std::filesystem::path(uxOutput) / "product-files"

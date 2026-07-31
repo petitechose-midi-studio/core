@@ -253,6 +253,7 @@ bool sameContentBadges(const TileContentBadgeState& lhs,
     return lhs.microSequence == rhs.microSequence &&
            lhs.cycleStates == rhs.cycleStates &&
            lhs.chord == rhs.chord &&
+           lhs.expansionLimitReached == rhs.expansionLimitReached &&
            lhs.chordVoiceCount == rhs.chordVoiceCount &&
            lhs.chordSource == rhs.chordSource;
 }

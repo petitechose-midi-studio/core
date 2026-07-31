@@ -20,6 +20,7 @@
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 #include "state/sequencer/SequencerState.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace theme = oc::ui::lvgl::base_theme;
 namespace grid = core::ui::sequencer::grid;
@@ -73,6 +74,8 @@ constexpr uint32_t CHORD_BADGE_COLOR =
     sequencer::semantic::color(sequencer::semantic::Tone::CHORD);
 constexpr uint32_t PROBABILITY_BADGE_COLOR =
     sequencer::semantic::color(sequencer::semantic::Tone::CHANCE);
+constexpr uint32_t EXPANSION_LIMIT_BADGE_COLOR =
+    ::standalone::theme::color::STEP_PITCH;
 constexpr lv_opa_t STEP_BADGE_OPA = LV_OPA_COVER;
 constexpr lv_opa_t STEP_BADGE_DISABLED_OPA = LV_OPA_50;
 
@@ -249,12 +252,24 @@ void drawSemanticBadges(lv_layer_t* layer,
     if (!cache.contentBadges.microSequence &&
         !cache.contentBadges.cycleStates &&
         !chordBadge &&
+        !cache.contentBadges.expansionLimitReached &&
         !probabilityBadge) {
         return;
     }
 
     lv_coord_t x = static_cast<lv_coord_t>(buttonArea.x1 + STEP_BADGE_LEFT_PAD);
     const lv_coord_t y = static_cast<lv_coord_t>(buttonArea.y1 + STEP_BADGE_TOP_PAD);
+    if (cache.contentBadges.expansionLimitReached) {
+        x = drawStepBadgeGlyph(
+            layer,
+            buttonArea,
+            x,
+            y,
+            standalone::icons::STATUS_WARNING,
+            EXPANSION_LIMIT_BADGE_COLOR,
+            cache.enabled
+        );
+    }
     if (cache.contentBadges.cycleStates) {
         x = drawStepBadgeGlyph(
             layer,

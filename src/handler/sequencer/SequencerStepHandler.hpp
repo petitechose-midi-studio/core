@@ -20,6 +20,7 @@
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/project/ProjectTrackState.hpp"
+#include "state/StructureSelectionInteractionPolicy.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/macro/MacroPagesState.hpp"
@@ -92,6 +93,8 @@ private:
 
     void toggleStep(uint8_t indexInPage);
     bool selectionHasItems() const;
+    core::state::StructureSelectionInteractionPolicy
+        selectionInteractionPolicy() const;
     bool childPatternContentActionsAvailable() const;
     bool currentStructureBottomActionsAvailable() const;
     bool focusedStepHasChildContent() const;

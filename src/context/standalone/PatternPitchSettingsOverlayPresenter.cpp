@@ -15,8 +15,13 @@ namespace {
 
 namespace catalog = core::state::sequencer::scale_catalog;
 
-constexpr const char* PITCH_CONTEXT_LABEL = "Pitch";
-constexpr const char* const ROW_KEYS[] PROGMEM = {"Scale", "Root", "Type", "Pitch Edit"};
+constexpr const char* PITCH_CONTEXT_LABEL = "Pitch Context";
+constexpr const char* const ROW_KEYS[] PROGMEM = {
+    "Scale",
+    "Root",
+    "Type",
+    "Interval Basis",
+};
 
 }  // namespace
 
@@ -87,9 +92,10 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
         return;
     }
 
+    const auto& pattern = state_refs_.sequencer.pattern;
     const bool override =
-        core::state::sequencer::isPatternScaleOverride(state_refs_.sequencer.pattern.scalePolicy);
-    auto effectiveScale = override ? state_refs_.sequencer.pattern.scaleOverride
+        core::state::sequencer::isPatternScaleOverride(pattern.scalePolicy);
+    auto effectiveScale = override ? pattern.scaleOverride
                                    : state_refs_.trackBank.projectScaleSettings();
     effectiveScale.clamp();
 
@@ -98,7 +104,7 @@ FLASHMEM void PatternPitchSettingsOverlayPresenter::renderOverlay() {
                                                 : catalog::PATTERN_SCALE_POLICY_LABELS[0]},
         {.key = ROW_KEYS[1], .value = catalog::rootLabel(effectiveScale.root)},
         {.key = ROW_KEYS[2], .value = catalog::scaleTypeLabel(effectiveScale.type)},
-        {.key = ROW_KEYS[3], .value = catalog::pitchEditModeLabel(state_refs_.sequencer.pattern.pitchEditMode)},
+        {.key = ROW_KEYS[3], .value = catalog::pitchEditModeLabel(pattern.pitchEditMode)},
     }};
 
     overlay_.render({

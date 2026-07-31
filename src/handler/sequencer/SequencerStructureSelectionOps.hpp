@@ -17,7 +17,7 @@ uint16_t activeTrackSelectionMask(
     uint16_t enabledMask
 );
 
-core::state::shared::MaskMutation removeSelectedStructureTracks(
+core::state::shared::MaskMutation deleteSelectedStructureTracks(
     uint16_t enabledMask,
     uint16_t selectedMask,
     uint8_t activeTrack
@@ -34,7 +34,7 @@ bool resetSelectedActiveContentPages(
     StepResetDepth depth
 );
 
-bool removeSelectedRootPages(
+bool deleteSelectedRootPages(
     core::state::sequencer::SequencerState& sequencer,
     uint16_t selectedMask
 );

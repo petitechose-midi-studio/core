@@ -219,24 +219,8 @@ FLASHMEM bool decodeCanonicalSequencerCcLaneBank(
     const SequencerCcLaneBank& persisted,
     SequencerCcLaneBank& out
 ) {
-    if (persisted.formatVersion != SequencerCcLaneBank::FORMAT_VERSION) {
-        return false;
-    }
-
-    SequencerCcLaneBank pending{};
-    pending.revision = persisted.revision;
-    for (uint8_t i = 0; i < persisted.lanes.size(); ++i) {
-        const auto& lane = persisted.lanes[i];
-        if (!lane.occupied) {
-            // Reserved bytes and dormant stale values are deliberately not
-            // forwarded. A decoded inactive slot has one canonical form.
-            pending.lanes[i] = SequencerCcLane{};
-            continue;
-        }
-        if (!validSequencerCcLane(lane)) return false;
-        pending.lanes[i] = lane;
-    }
-    out = pending;
+    if (!validSequencerCcLaneBank(persisted)) return false;
+    out = persisted;
     return true;
 }
 
@@ -476,7 +460,7 @@ FLASHMEM SequencerCcLaneMutationResult setSequencerCcLaneTransition(
     );
 }
 
-FLASHMEM SequencerCcLaneMutationResult removeSequencerCcLane(
+FLASHMEM SequencerCcLaneMutationResult deleteSequencerCcLane(
     SequencerCcLaneBank& bank,
     uint8_t laneIndex
 ) {

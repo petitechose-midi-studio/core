@@ -10,7 +10,7 @@ namespace core::state {
  * Session state for the device settings view.
  *
  * The view keeps selection/focus state here; durable settings live in the
- * domain states and CoreSettings-backed workflows.
+ * domain states and DeviceSettingsStore-backed workflows.
  */
 enum class DeviceSettingsFlowPhase : uint8_t {
     CLOSED = 0,

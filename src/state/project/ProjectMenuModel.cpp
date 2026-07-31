@@ -218,7 +218,7 @@ FLASHMEM void buildOverviewRows(ProjectMenuPage& page) {
 
 FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
                                          ProjectMenuContext context) {
-    if (context.projectHasSavedIdentity && context.projectOverwriteSafe) {
+    if (context.projectHasSavedIdentity) {
         auto saveAndReset = row(
             "Save & Reset",
             "",
@@ -234,9 +234,6 @@ FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
             ProjectMenuRowKind::Action,
             ProjectNodeId::NEW_PROJECT_CONFIRM
         );
-        if (context.projectHasSavedIdentity && !context.projectOverwriteSafe) {
-            copyRowValue(saveAsNew, projectIdentityLabel(context));
-        }
         addRow(page, saveAsNew);
     }
     addRow(page, row("Don't Save", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM));
@@ -477,8 +474,7 @@ FLASHMEM uint32_t revisionFor(const ProjectNavigationState& navigation,
         (navigation.patternsInheritScale ? 0x04u : 0u) |
         (navigation.clipsInheritScale ? 0x08u : 0u) |
         (context.projectDirty ? 0x10u : 0u) |
-        (context.projectHasSavedIdentity ? 0x20u : 0u) |
-        (context.projectOverwriteSafe ? 0x40u : 0u);
+        (context.projectHasSavedIdentity ? 0x20u : 0u);
     const uint32_t scaleBits =
         (static_cast<uint32_t>(context.projectScale.root & 0x0FU) << 8) |
         ((static_cast<uint32_t>(context.projectScale.type) & 0x0FU) << 12) |

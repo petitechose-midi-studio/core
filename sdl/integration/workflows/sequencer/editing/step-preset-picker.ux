@@ -5,8 +5,8 @@
 # Expect: semantic:step_preset_picker_saved:effect=save_step_preset, semantic:step_preset_picker_saved:outcome=applied, semantic:step_preset_picker_saved:mode=sequencer.step_preset.save, semantic:step_preset_picker_saved:source=*
 # Expect: semantic:step_preset_overwrite_pressed:outcome=pressed, semantic:step_preset_overwrite_armed:outcome=armed, semantic:step_preset_overwrite_cancelled:outcome=cancelled, semantic:step_preset_overwritten:outcome=applied
 # Expect: semantic:step_preset_overwrite_pressed:effect=save_step_preset, semantic:step_preset_overwrite_pressed:route_policy=preserve_destination, semantic:step_preset_overwrite_pressed:projection=preview, semantic:step_preset_overwrite_pressed:target_step=0
-# Expect: semantic:step_preset_applied_to_step_2:effect=apply_step_preset, semantic:step_preset_applied_to_step_2:outcome=applied, semantic:step_preset_applied_to_step_2:route_policy=preserve_destination, semantic:step_preset_applied_to_step_2:target_step=1
-# Expect: semantic:step_preset_queued_for_boundary:effect=apply_step_preset, semantic:step_preset_queued_for_boundary:outcome=queued, semantic:step_preset_queued_for_boundary:reason=pending, semantic:step_preset_queued_for_boundary:playing=true, semantic:step_preset_queued_for_boundary:target_step=2
+# Expect: semantic:step_preset_applied_to_step_2:effect=load_step_preset_into_editor, semantic:step_preset_applied_to_step_2:outcome=applied, semantic:step_preset_applied_to_step_2:route_policy=preserve_destination, semantic:step_preset_applied_to_step_2:target_step=1
+# Expect: semantic:step_preset_queued_for_boundary:effect=load_step_preset_into_editor, semantic:step_preset_queued_for_boundary:outcome=queued, semantic:step_preset_queued_for_boundary:reason=pending, semantic:step_preset_queued_for_boundary:playing=true, semantic:step_preset_queued_for_boundary:target_step=2
 
 0 scenario sequencer
 50 capture screen sequencer_ready

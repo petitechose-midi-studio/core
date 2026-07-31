@@ -19,12 +19,7 @@ FLASHMEM bool sameChordSpec(
     const oc::note::sequencer::StepSequencerChordSpec& lhs,
     const oc::note::sequencer::StepSequencerChordSpec& rhs
 ) {
-    return lhs.voiceCount == rhs.voiceCount &&
-           lhs.harmonyData == rhs.harmonyData &&
-           lhs.voicingData == rhs.voicingData &&
-           lhs.inversionData == rhs.inversionData &&
-           lhs.strum == rhs.strum &&
-           lhs.velocityCurve == rhs.velocityCurve;
+    return oc::note::sequencer::chordSpecsEqual(lhs, rhs);
 }
 
 FLASHMEM oc::note::sequencer::StepSequencerChordMode sanitizeChordMode(
@@ -89,10 +84,7 @@ FLASHMEM void assignFlag(uint16_t& flags, uint16_t flag, bool enabled) {
         : static_cast<uint16_t>(flags & ~flag);
 }
 
-FLASHMEM void initializeRootGraph(
-    Graph& graph,
-    SequencerPitchEditMode pitchMode
-) {
+FLASHMEM void initializeRootGraph(Graph& graph) {
     graph.reset();
     graph.enabled = true;
     graph.rootSequenceId = 0;
@@ -104,20 +96,11 @@ FLASHMEM void initializeRootGraph(
         .length = SequencerPatternState::MAX_STEPS,
         .offset = 0,
     };
-    const bool chromatic = pitchMode == SequencerPitchEditMode::CHROMATIC;
-    for (uint16_t i = 0; i < SequencerPatternState::MAX_STEPS; ++i) {
-        assignFlag(
-            graph.stepNodes[i].flags,
-            oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC,
-            chromatic
-        );
-    }
 }
 
 FLASHMEM bool applyChordDraft(
     Graph& graph,
-    const SequencerStepChordDraftState& chord,
-    SequencerPitchEditMode pitchMode
+    const SequencerStepChordDraftState& chord
 ) {
     if (chord.ownerNodeId >= graph.stepNodeCount ||
         chord.ownerNodeId >= graph.stepNodes.size()) {
@@ -125,11 +108,6 @@ FLASHMEM bool applyChordDraft(
     }
 
     auto& node = graph.stepNodes[chord.ownerNodeId];
-    assignFlag(
-        node.flags,
-        oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC,
-        pitchMode == SequencerPitchEditMode::CHROMATIC
-    );
     node.chordMode = chord.modePresent
         ? chord.mode
         : oc::note::sequencer::StepSequencerChordMode::Single;
@@ -312,12 +290,11 @@ FLASHMEM bool captureStepContentDraftAfterSnapshot(
         if (published != nullptr) {
             *out.graph = *published;
         } else {
-            initializeRootGraph(*out.graph, sequencer.pattern.pitchEditMode);
+            initializeRootGraph(*out.graph);
         }
         return applyChordDraft(
             *out.graph,
-            sequencer.stepContentDraft.chord,
-            sequencer.pattern.pitchEditMode
+            sequencer.stepContentDraft.chord
         );
     }
 
@@ -343,12 +320,11 @@ FLASHMEM bool captureStepContentDraftRuntimeGraph(
         if (const auto* published = graphView(sequencer.pattern)) {
             out = *published;
         } else {
-            initializeRootGraph(out, sequencer.pattern.pitchEditMode);
+            initializeRootGraph(out);
         }
         return applyChordDraft(
             out,
-            sequencer.stepContentDraft.chord,
-            sequencer.pattern.pitchEditMode
+            sequencer.stepContentDraft.chord
         );
     }
 
@@ -378,13 +354,12 @@ FLASHMEM bool publishStepContentDraft(SequencerState& sequencer) {
                 );
                 return false;
             }
-            initializeRootGraph(*prepared, sequencer.pattern.pitchEditMode);
+            initializeRootGraph(*prepared);
             destination = prepared.get();
         }
         if (!applyChordDraft(
                 *destination,
-                sequencer.stepContentDraft.chord,
-                sequencer.pattern.pitchEditMode
+                sequencer.stepContentDraft.chord
             )) {
             sequencer.stepContentDraft.noteFailure(
                 SequencerStepContentDraftFailure::PUBLISH_FAILED

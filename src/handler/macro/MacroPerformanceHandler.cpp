@@ -15,6 +15,8 @@ namespace {
 
 using MacroAction = core::state::macro::MacroInteractionAction;
 using MacroPolicy = core::state::macro::MacroInteractionPolicy;
+using SelectionAction =
+    core::state::StructureSelectionInteractionAction;
 
 }  // namespace
 
@@ -144,7 +146,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
                 return;
             }
             if (structure_workflow_.selectionActive()) {
-                structure_workflow_.toggleSelectionAtCursor();
+                if (structure_workflow_.selectionInteractionPolicy().navRelease ==
+                    SelectionAction::TOGGLE_ITEM) {
+                    structure_workflow_.toggleSelectionAtCursor();
+                }
                 return;
             }
             const auto action = MacroPolicy::navRelease(interactionContext());
@@ -198,7 +203,8 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .turn()
         .scope(scope_id_)
         .when([this]() {
-            return structure_workflow_.selectionActive();
+            return structure_workflow_.selectionInteractionPolicy().navTurn ==
+                   SelectionAction::MOVE_CURSOR;
         })
         .then([this](float delta) {
             structure_workflow_.navigateSelection(delta);
@@ -247,7 +253,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             // hold. Releasing early only cancels the pending hold; source-level
             // Clear remains an explicit action in the typed detail overlay.
             if (!clearAllowed) return;
-            structure_workflow_.eraseCurrentStructure();
+            structure_workflow_.applyCurrentStructureShortPress();
             performance_workflow_.refreshEncoders();
         });
 
@@ -347,8 +353,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .then([this]() {
             ignore_next_bottom_right_release_ = false;
             selection_paste_press_active_ = false;
-            if (structure_workflow_.selectionPlacementActive() &&
-                structure_workflow_.canPasteSelection()) {
+            if (structure_workflow_.selectionInteractionPolicy()
+                    .bottomRightLongPress ==
+                SelectionAction::PASTE_SELECTION) {
                 selection_paste_press_active_ = true;
                 selection_paste_anchor_ =
                     structure_workflow_.selectionCursor();
@@ -374,10 +381,11 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
                 ignore_next_bottom_right_release_ = false;
                 return;
             }
-            if (structure_workflow_.selectionPlacementActive()) {
-                return;
+            if (structure_workflow_.selectionInteractionPolicy()
+                    .bottomRightRelease ==
+                SelectionAction::COPY_SELECTION) {
+                (void)structure_workflow_.copySelection();
             }
-            (void)structure_workflow_.copySelection();
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
@@ -385,7 +393,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             return selection_paste_press_active_ &&
-                   structure_workflow_.selectionPlacementActive() &&
+                   structure_workflow_.selectionInteractionPolicy()
+                           .bottomRightLongPress ==
+                       SelectionAction::PASTE_SELECTION &&
                    selection_paste_anchor_ ==
                        structure_workflow_.selectionCursor() &&
                    selection_paste_clipboard_revision_ ==
@@ -418,16 +428,13 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() {
-            return structure_workflow_.selectionActive();
+            return structure_workflow_.selectionInteractionPolicy()
+                       .leftTopRelease != SelectionAction::NONE;
         })
         .then([this]() {
             (void)structure_workflow_.backSelectionMode();
             performance_workflow_.refreshEncoders();
         });
-}
-
-FLASHMEM void MacroPerformanceHandler::update(uint32_t nowMs) {
-    (void)nowMs;
 }
 
 FLASHMEM void MacroPerformanceHandler::attachEditors(

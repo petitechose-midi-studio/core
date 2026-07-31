@@ -7,7 +7,7 @@
 
 #include "persistence/StepPresetFileStore.hpp"
 #include "state/project/ProjectState.hpp"
-#include "state/sequencer/SequencerGraphAssetCodec.hpp"
+#include "state/sequencer/SequencerGraphAsset.hpp"
 #include "state/sequencer/SequencerStepPresetModel.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 
@@ -54,6 +54,7 @@ struct SequencerStepPresetInspectResult {
     core::state::sequencer::SequencerGraphAssetStatus assetStatus =
         core::state::sequencer::SequencerGraphAssetStatus::OK;
     oc::type::ErrorCode fileError = oc::type::ErrorCode::OK;
+    uint16_t bytes = 0;
     core::state::sequencer::SequencerStepPresetDescriptor descriptor{};
 
     bool inspected() const {
@@ -142,6 +143,15 @@ public:
     ) const;
 
 private:
+    SequencerStepPresetInspectResult inspectPresetPrepared(
+        const char* presetId,
+        const core::state::sequencer::SequencerStepPresetTarget& target,
+        uint8_t previewStateIndex,
+        uint32_t generation,
+        uint8_t* encodedWorkspace,
+        core::state::sequencer::SequencerStepGraphPreset* preparedPreset
+    ) const;
+
     core::state::CoreState* state_ = nullptr;
     core::persistence::ProductFileService* files_ = nullptr;
 };

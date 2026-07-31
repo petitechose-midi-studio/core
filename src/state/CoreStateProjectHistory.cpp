@@ -17,10 +17,10 @@
 #include "state/shared/SharedTrackCoordinator.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
-#include "sequencer/SequencerCcLanePatternOps.hpp"
-#include "sequencer/SequencerContentViewOps.hpp"
-#include "sequencer/SequencerStructureHistory.hpp"
-#include "sequencer/SequencerTrackBankOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStructureHistory.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 
@@ -37,7 +37,7 @@ constexpr bool macroHistoryResumesManualOverride(
         case macro::MacroHistoryActionKind::PASTE_DESTINATION:
         case macro::MacroHistoryActionKind::PASTE_AUTOMATION:
         case macro::MacroHistoryActionKind::CLEAR_AUTOMATION:
-        case macro::MacroHistoryActionKind::REMOVE_SLOT:
+        case macro::MacroHistoryActionKind::DELETE_SLOT:
         case macro::MacroHistoryActionKind::RECORD_AUTOMATION:
         case macro::MacroHistoryActionKind::CREATE_SLOT:
             return true;
@@ -125,7 +125,6 @@ FLASHMEM bool applyMacroProjectHistory(
         state.macros,
         state.pages
     );
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     state.macroUi.previewAddPageSlot.set(false);
     state.macroUi.syncPreviewPage(state.pages.currentActivePage());
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(

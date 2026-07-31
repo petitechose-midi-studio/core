@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "state/sequencer/SequencerContentViewInternal.hpp"
+#include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::state::sequencer {
@@ -14,6 +15,10 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
     scaleSettings.clamp();
+    const bool noteOffsetsUseScaleDegrees = pitchContextUsesScaleDegrees(
+        authoringPattern(sequencer).pitchEditMode,
+        scaleSettings
+    );
     SequencerContentStepProjection out{};
     out.localStep = step;
     out.rootContext = isRootContentView(sequencer);
@@ -28,7 +33,14 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
         const auto nodeId = rootStepNodeId(step);
         const auto* node = graph ? graph->stepNode(nodeId) : nullptr;
         ResolvedStep base = rootBase(sequencer, step);
-        ResolvedStep resolved = node ? applyNode(base, *node, scaleSettings) : base;
+        ResolvedStep resolved = node
+            ? applyNode(
+                  base,
+                  *node,
+                  scaleSettings,
+                  noteOffsetsUseScaleDegrees
+              )
+            : base;
         if (!resolved.valid) return out;
 
         out.valid = true;
@@ -66,9 +78,18 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentStepProjection(
     const auto* node = graph->stepNode(nodeId);
     if (node == nullptr) return out;
 
-    const ResolvedStep owner = resolveOwnerStep(sequencer, scaleSettings);
+    const ResolvedStep owner = resolveOwnerStep(
+        sequencer,
+        scaleSettings,
+        noteOffsetsUseScaleDegrees
+    );
     const ResolvedStep base = contentBaseForKind(owner, frame->kind, scaleSettings);
-    const ResolvedStep resolved = applyNode(base, *node, scaleSettings);
+    const ResolvedStep resolved = applyNode(
+        base,
+        *node,
+        scaleSettings,
+        noteOffsetsUseScaleDegrees
+    );
     if (!base.valid || !resolved.valid) return out;
 
     out.valid = true;
@@ -113,7 +134,15 @@ FLASHMEM SequencerContentStepProjection resolveActiveContentOwnerProjection(
     const auto* graph = graphView(authoringPattern(sequencer));
     if (frame == nullptr || graph == nullptr) return out;
 
-    const ResolvedStep owner = resolveOwnerStep(sequencer, scaleSettings);
+    const bool noteOffsetsUseScaleDegrees = pitchContextUsesScaleDegrees(
+        authoringPattern(sequencer).pitchEditMode,
+        scaleSettings
+    );
+    const ResolvedStep owner = resolveOwnerStep(
+        sequencer,
+        scaleSettings,
+        noteOffsetsUseScaleDegrees
+    );
     if (!owner.valid) return out;
 
     out.valid = true;
@@ -155,6 +184,10 @@ FLASHMEM SequencerContentStepProjection resolveContentFrameOwnerProjection(
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings
 ) {
     scaleSettings.clamp();
+    const bool noteOffsetsUseScaleDegrees = pitchContextUsesScaleDegrees(
+        authoringPattern(sequencer).pitchEditMode,
+        scaleSettings
+    );
 
     SequencerContentStepProjection out{};
     const auto& view = sequencer.contentView;
@@ -167,7 +200,12 @@ FLASHMEM SequencerContentStepProjection resolveContentFrameOwnerProjection(
     }
 
     const auto& frame = view.frames[frameDepth - 1U];
-    const ResolvedStep owner = resolveOwnerStepAtDepth(sequencer, scaleSettings, frameDepth);
+    const ResolvedStep owner = resolveOwnerStepAtDepth(
+        sequencer,
+        scaleSettings,
+        frameDepth,
+        noteOffsetsUseScaleDegrees
+    );
     if (!owner.valid) return out;
 
     out.valid = true;
@@ -514,6 +552,10 @@ FLASHMEM bool resolveRepresentativeChildContentSummary(
         runtimeCursor.cycleIndex,
         runtimeCursor.microPlayIndex,
         scaleSettings,
+        pitchContextUsesScaleDegrees(
+            authoringPattern(sequencer).pitchEditMode,
+            scaleSettings
+        ),
         &outSummary
     );
 

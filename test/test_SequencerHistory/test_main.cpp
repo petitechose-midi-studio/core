@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 
+#include <array>
 #include <cassert>
 #include <cstdlib>
 #include <cstdint>
@@ -217,6 +218,24 @@ void test_pattern_history_restores_graph_payload() {
     );
     assert(sequence.ok);
     assert(hasMicroSequence(state.pattern, 0));
+    auto chord = oc::note::sequencer::StepSequencerChordSpec::semantic(
+        oc::note::sequencer::StepSequencerChordHarmony::Custom,
+        8U,
+        oc::note::sequencer::StepSequencerChordVoicing::Open,
+        1U,
+        oc::note::sequencer::StepSequencerChordIntervalBasis::ChromaticSemitones
+    );
+    constexpr std::array<uint8_t, 8> intervals{
+        0U, 3U, 5U, 8U, 12U, 17U, 24U, 31U,
+    };
+    for (uint8_t voice = 7U; voice > 0U; --voice) {
+        chord.setCustomInterval(voice, intervals[voice]);
+    }
+    assert(core::state::sequencer::setNodeChordSpec(
+        state.pattern,
+        rootNode,
+        chord
+    ));
 
     SequencerHistoryPatternSnapshot after;
     assert(core::state::sequencer::captureHistorySnapshot(state, after));
@@ -236,6 +255,10 @@ void test_pattern_history_restores_graph_payload() {
     const auto* child = graph->sequence(childSequenceId);
     assert(child != nullptr);
     assert(child->length == 3);
+    assert(oc::note::sequencer::chordSpecsEqual(
+        graph->stepNodes[rootNode].chordSpec,
+        chord
+    ));
     assert(hasMicroSequence(bank.track(bank.activeTrackIndex()), 0));
 
     std::cout << "[PASS] test_pattern_history_restores_graph_payload\n";

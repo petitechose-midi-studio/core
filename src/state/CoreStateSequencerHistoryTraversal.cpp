@@ -17,10 +17,10 @@
 #include "state/shared/SharedTrackCoordinator.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
-#include "sequencer/SequencerCcLanePatternOps.hpp"
-#include "sequencer/SequencerContentViewOps.hpp"
-#include "sequencer/SequencerStructureHistory.hpp"
-#include "sequencer/SequencerTrackBankOps.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStructureHistory.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 
@@ -326,7 +326,6 @@ FLASHMEM void reconcileMacroTrackStructureFromRestoredHistory(
         state.macros,
         state.pages
     );
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(
         state.configRevision.get(),
         core::state::macro::kMacroConfigDirtyAll

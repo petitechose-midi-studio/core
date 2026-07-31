@@ -5,6 +5,8 @@
 #include <array>
 #include <type_traits>
 
+#include "../../src/state/sequencer/SequencerPresetLibraryEntryPolicy.hpp"
+#include "../../src/state/sequencer/SequencerState.hpp"
 #include "../../src/state/sequencer/SequencerUiState.hpp"
 
 namespace {
@@ -116,6 +118,35 @@ void test_context_selector_state_is_bounded_and_resettable() {
     assert(state.feedbackUntilMs == 0U);
 }
 
+void test_chord_sub_editor_has_one_atomic_observation_surface() {
+    using Editor =
+        core::state::sequencer::SequencerChordEditorState;
+    using SubEditor =
+        core::state::sequencer::SequencerChordSubEditorState;
+
+    static_assert(sizeof(SubEditor) == 4U);
+    static_assert(decltype(Editor::active)::maxSubscribers() == 1U);
+    static_assert(decltype(Editor::focusedField)::maxSubscribers() == 1U);
+    static_assert(decltype(Editor::subEditor)::maxSubscribers() == 1U);
+
+    Editor editor;
+    uint8_t notifications = 0;
+    auto subscription = editor.subEditor.subscribe(
+        [&notifications](const SubEditor&) { ++notifications; }
+    );
+    assert(subscription.isValid());
+
+    auto next = editor.subEditor.get();
+    next.formulaEditorActive = true;
+    next.focusedFormulaItem = 3;
+    editor.subEditor.set(next);
+    oc::state::NotificationQueue::instance().flush();
+
+    assert(notifications == 1);
+    assert(editor.subEditor.get().formulaEditorActive);
+    assert(editor.subEditor.get().focusedFormulaItem == 3);
+}
+
 void test_history_feedback_shows_and_expires() {
     core::state::sequencer::SequencerHistoryFeedbackState state;
 
@@ -158,12 +189,115 @@ void test_track_paste_has_one_bounded_revision_subscription_surface() {
     oc::state::NotificationQueue::instance().flush();
     assert(notifications == 8);
 
-    state.plan.hasEntry = true;
+    state.plan.count = 1;
     state.detailVisible = true;
     state.reset();
     assert(state.revision.subscriberCount() == 8);
-    assert(!state.plan.hasEntry);
+    assert(!state.plan.hasEntries());
     assert(!state.detailVisible);
+}
+
+void test_preset_library_keeps_only_the_active_domain_payload() {
+    namespace seq = core::state::sequencer;
+    using Library = seq::SequencerPresetLibrarySessionState;
+    using Payload = seq::SequencerPresetLibraryPayload;
+    using StepPayload = seq::SequencerStepPresetLibraryState;
+    using ChordPayload = seq::SequencerChordPresetLibraryState;
+
+    static_assert(
+        sizeof(Payload) < sizeof(StepPayload) + sizeof(ChordPayload),
+        "The shared preset library must not retain both domain descriptors"
+    );
+
+    Library library;
+    library.open(
+        seq::SequencerPresetLibraryMode::LOAD,
+        seq::SequencerPresetLibraryKind::STEP
+    );
+    assert(std::holds_alternative<StepPayload>(library.payload));
+    library.step().target.valid = true;
+    library.entryCount.set(1U);
+    library.setEntry(0U, "stale-step", "Stale Step", true);
+    library.hasPreviousPage.set(true);
+    library.hasNextPage.set(true);
+    library.totalEntryCount.set(17U);
+    library.selectedIndex.set(0U);
+    assert(library.selectedItemIsExistingAsset());
+    assert(!library.selectedItemIsNewAsset());
+
+    library.mode.set(seq::SequencerPresetLibraryMode::SAVE);
+    assert(library.selectedItemIsNewAsset());
+    assert(!library.selectedItemIsExistingAsset());
+    library.selectedIndex.set(1U);
+    assert(library.selectedItemIsExistingAsset());
+
+    library.open(
+        seq::SequencerPresetLibraryMode::SAVE,
+        seq::SequencerPresetLibraryKind::CHORD
+    );
+    assert(library.visible.get());
+    assert(
+        library.libraryKind.get() ==
+        seq::SequencerPresetLibraryKind::CHORD
+    );
+    assert(std::holds_alternative<ChordPayload>(library.payload));
+    assert(!library.chord().target.valid);
+    assert(library.entryCount.get() == 0U);
+    assert(library.totalEntryCount.get() == 0U);
+    assert(!library.hasPreviousPage.get());
+    assert(!library.hasNextPage.get());
+    assert(std::strcmp(library.entryId(0U), "") == 0);
+    assert(std::strcmp(library.entryName(0U), "") == 0);
+    assert(!library.entryHasReadableMetadata(0U));
+    library.chord().target.valid = true;
+
+    library.reset();
+    assert(!library.visible.get());
+    assert(
+        library.libraryKind.get() ==
+        seq::SequencerPresetLibraryKind::STEP
+    );
+    assert(std::holds_alternative<StepPayload>(library.payload));
+    assert(!library.step().target.valid);
+
+    std::cout
+        << "[PASS] preset library retains only its active domain payload\n";
+}
+
+void test_preset_library_entry_policy_matches_the_visible_editor_surface() {
+    namespace policy =
+        core::state::sequencer::preset_library_entry_policy;
+    core::state::sequencer::SequencerState sequencer;
+
+    assert(policy::entryKind(sequencer) == policy::EntryKind::NONE);
+    sequencer.stepEdit.visible.set(true);
+    assert(policy::canOpenStepPresets(sequencer));
+    assert(!policy::canOpenChordPresets(sequencer));
+
+    sequencer.stepContentDraft.active.set(true);
+    assert(policy::entryKind(sequencer) == policy::EntryKind::NONE);
+
+    sequencer.stepEdit.chordEditor.active.set(true);
+    assert(policy::canOpenChordPresets(sequencer));
+    assert(!policy::canOpenStepPresets(sequencer));
+
+    auto subEditor = sequencer.stepEdit.chordEditor.subEditor.get();
+    subEditor.formulaEditorActive = true;
+    sequencer.stepEdit.chordEditor.subEditor.set(subEditor);
+    assert(policy::entryKind(sequencer) == policy::EntryKind::NONE);
+
+    subEditor.formulaEditorActive = false;
+    subEditor.sourceSelectorActive = true;
+    sequencer.stepEdit.chordEditor.subEditor.set(subEditor);
+    assert(policy::entryKind(sequencer) == policy::EntryKind::NONE);
+
+    subEditor.sourceSelectorActive = false;
+    sequencer.stepEdit.chordEditor.subEditor.set(subEditor);
+    sequencer.stepContentDraft.exitPromptVisible.set(true);
+    assert(policy::entryKind(sequencer) == policy::EntryKind::NONE);
+
+    std::cout
+        << "[PASS] preset library entry policy follows the visible editor surface\n";
 }
 
 }  // namespace
@@ -174,8 +308,11 @@ int main() {
     test_pattern_quick_controls_reset_clears_transient_state();
     test_pattern_quick_controls_feedback_shows_and_expires();
     test_context_selector_state_is_bounded_and_resettable();
+    test_chord_sub_editor_has_one_atomic_observation_surface();
     test_history_feedback_shows_and_expires();
     test_track_paste_has_one_bounded_revision_subscription_surface();
+    test_preset_library_keeps_only_the_active_domain_payload();
+    test_preset_library_entry_policy_matches_the_visible_editor_surface();
 
     std::cout << "\nAll SequencerUiState tests passed.\n";
     return 0;

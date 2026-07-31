@@ -34,6 +34,8 @@ using SlotProps = core::ui::ContextActionStripSlotProps;
 using Visual = core::ui::ContextActionStripVisualState;
 using Tone = core::ui::ContextActionStripTone;
 using InteractionAction = core::state::sequencer::SequencerInteractionAction;
+using InteractionVisibility =
+    core::state::sequencer::SequencerInteractionVisibility;
 
 using TrackTransferProjection = SequencerTrackPasteProjection;
 
@@ -44,6 +46,18 @@ FLASHMEM uint8_t countSelectedItems(uint16_t mask) {
         mask >>= 1U;
     }
     return count;
+}
+
+Visual interactionVisual(InteractionVisibility visibility) {
+    switch (visibility) {
+        case InteractionVisibility::ACTIVE:
+            return Visual::ACTIVE;
+        case InteractionVisibility::DISABLED:
+            return Visual::DISABLED;
+        case InteractionVisibility::HIDDEN:
+        default:
+            return Visual::HIDDEN;
+    }
 }
 
 uint8_t countSelectedSteps(oc::note::sequencer::StepBitMask128 mask, uint8_t limit) {
@@ -182,9 +196,59 @@ bool canPasteStepContent(const SequencerViewModelSource& source) {
            );
 }
 
+struct StepSelectionPasteProjection {
+    core::state::sequencer::SequencerStepPastePreviewPlan plan{};
+    uint8_t overwriteCount = 0U;
+    bool compatibleClipboard = false;
+    bool canPaste = false;
+};
+
+StepSelectionPasteProjection stepSelectionPasteProjection(
+    const SequencerViewModelSource& source
+) {
+    StepSelectionPasteProjection projection{};
+    const auto& selection =
+        source.sequencer.structureUi.stepSelection;
+    projection.compatibleClipboard =
+        selection.placementActive() &&
+        selection.clipboardRevision.get() ==
+            source.structureClipboard.revision.get() &&
+        source.structureClipboard.hasSequencerSteps() &&
+        source.structureClipboard.sequencerSteps.rootContext ==
+            core::state::sequencer::isRootContentView(source.sequencer);
+    if (!projection.compatibleClipboard) return projection;
+
+    projection.plan =
+        core::state::sequencer::buildStepPastePreviewPlan(
+            source.structureClipboard.sequencerSteps,
+            core::state::sequencer::isRootContentView(source.sequencer),
+            selection.cursorStep.get(),
+            core::state::sequencer::activeContentLength(source.sequencer),
+            core::state::sequencer::maxStepCursorForPaste(source.sequencer),
+            core::state::project::sanitizeProjectStepPasteMode(
+                source.projectNavigation.stepPasteMode
+            )
+        );
+    for (uint8_t index = 0U;
+         index < projection.plan.count;
+         ++index) {
+        if (projection.plan.entries[index].valid &&
+            projection.plan.entries[index].preview ==
+                core::state::sequencer::
+                    SequencerStepPastePreview::OVERWRITE) {
+            ++projection.overwriteCount;
+        }
+    }
+    projection.canPaste =
+        !projection.plan.blocked &&
+        projection.plan.hasEntries();
+    return projection;
+}
+
 FLASHMEM core::state::sequencer::SequencerInteractionContext
 makeBottomInteractionContext(
-    const SequencerViewModelSource& source
+    const SequencerViewModelSource& source,
+    const StepSelectionPasteProjection* stepPaste = nullptr
 ) {
     auto context = core::state::sequencer::makeSequencerInteractionContext(
         source.sequencer,
@@ -198,7 +262,12 @@ makeBottomInteractionContext(
         context.selectedItemsAvailable =
             (source.trackNavigation.selection.selectedMask.get() &
              source.sharedTrackEnabledMask.get()) != 0U;
-        context.compatibleClipboardAvailable = false;
+        context.selectionPlacementActive =
+            source.trackNavigation.selection.placementActive();
+        context.selectionPasteAvailable =
+            context.selectionPlacementActive &&
+            !source.trackNavigation.selection.pasteBlocked.get() &&
+            source.trackNavigation.selection.destinationMask.get() != 0U;
         return context;
     }
     if (context.pageSelectionActive) {
@@ -209,7 +278,12 @@ makeBottomInteractionContext(
                      source.sequencer
                  )
              )) != 0U;
-        context.compatibleClipboardAvailable = false;
+        context.selectionPlacementActive =
+            source.sequencer.structureUi.pageSelection.placementActive();
+        context.selectionPasteAvailable =
+            context.selectionPlacementActive &&
+            !source.sequencer.structureUi.pageSelection.pasteBlocked.get() &&
+            source.sequencer.structureUi.pageSelection.destinationMask.get() != 0U;
         return context;
     }
     if (context.stepSelectionActive) {
@@ -218,11 +292,14 @@ makeBottomInteractionContext(
                 source.sequencer.structureUi.stepSelection.selectedMask.get(),
                 core::state::sequencer::activeContentLength(source.sequencer)
             ) > 0;
+        context.selectionPlacementActive =
+            source.sequencer.structureUi.stepSelection.placementActive();
+        context.selectionPasteAvailable =
+            stepPaste != nullptr
+            ? stepPaste->canPaste
+            : stepSelectionPasteProjection(source).canPaste;
         context.compatibleClipboardAvailable =
-            source.sequencer.structureUi.stepSelection.placementActive() &&
-            source.structureClipboard.hasSequencerSteps() &&
-            source.structureClipboard.sequencerSteps.rootContext ==
-                core::state::sequencer::isRootContentView(source.sequencer);
+            context.selectionPasteAvailable;
         return context;
     }
 
@@ -360,7 +437,11 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         return props;
     }
 
-    const auto bottomContext = makeBottomInteractionContext(source);
+    const auto stepPaste = selectingStep
+        ? stepSelectionPasteProjection(source)
+        : StepSelectionPasteProjection{};
+    const auto bottomContext =
+        makeBottomInteractionContext(source, &stepPaste);
     const auto interaction = core::state::sequencer::buildSequencerInteractionPolicy(
         bottomContext
     );
@@ -410,11 +491,11 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             props.slots[1] = makeSelectionCountSlot(selectedCount);
             props.slots[2] = core::ui::makeStandaloneIconStripSlot(
                 standalone::icons::ACTION_PASTE,
-                blocked
-                    ? Visual::DISABLED
-                    : ((trackHoldActive || pageHoldActive)
-                        ? Visual::ARMED
-                        : Visual::ACTIVE),
+                (trackHoldActive || pageHoldActive)
+                    ? Visual::ARMED
+                    : interactionVisual(
+                          interaction.bottomRightVisibility
+                      ),
                 blocked
                     ? Tone::DESTRUCTIVE
                     : (overwriteCount > 0U
@@ -475,12 +556,11 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         );
         applyHoldProgress(props.slots[0], holdState, holdActive);
         props.slots[1] = makeSelectionCountSlot(selectedCount);
-        const bool canCopy = selectedCount > 0U &&
-            (selectingTrack ||
-             core::state::sequencer::isRootContentView(source.sequencer));
         props.slots[2] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_COPY,
-            canCopy ? Visual::ACTIVE : Visual::DISABLED,
+            interactionActionIcon(
+                InteractionAction::COPY_STRUCTURE_SELECTION
+            ),
+            interactionVisual(interaction.bottomRightVisibility),
             Tone::NEUTRAL
         );
         return props;
@@ -495,47 +575,9 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
                 core::state::sequencer::activeContentLength(source.sequencer)
             );
         if (selection.placementActive()) {
-            const bool compatibleClipboard =
-                selection.clipboardRevision.get() ==
-                    source.structureClipboard.revision.get() &&
-                source.structureClipboard.hasSequencerSteps() &&
-                source.structureClipboard.sequencerSteps.rootContext ==
-                    core::state::sequencer::isRootContentView(
-                        source.sequencer
-                    );
-            core::state::sequencer::SequencerStepPastePreviewPlan plan{};
-            if (compatibleClipboard) {
-                plan =
-                    core::state::sequencer::buildStepPastePreviewPlan(
-                        source.structureClipboard.sequencerSteps,
-                        core::state::sequencer::isRootContentView(
-                            source.sequencer
-                        ),
-                        selection.cursorStep.get(),
-                        core::state::sequencer::activeContentLength(
-                            source.sequencer
-                        ),
-                        core::state::sequencer::maxStepCursorForPaste(
-                            source.sequencer
-                        ),
-                        core::state::project::sanitizeProjectStepPasteMode(
-                            source.projectNavigation.stepPasteMode
-                        )
-                    );
-            }
-
-            uint8_t overwriteCount = 0U;
-            for (uint8_t index = 0U; index < plan.count; ++index) {
-                if (plan.entries[index].valid &&
-                    plan.entries[index].preview ==
-                        core::state::sequencer::
-                            SequencerStepPastePreview::OVERWRITE) {
-                    ++overwriteCount;
-                }
-            }
-            const bool blocked =
-                !compatibleClipboard || plan.blocked ||
-                !plan.hasEntries();
+            const uint8_t overwriteCount =
+                stepPaste.overwriteCount;
+            const bool blocked = !stepPaste.canPaste;
             const auto& holdState =
                 source.sequencer.structureUi.pageHold;
             const bool pasteHoldActive =
@@ -547,11 +589,11 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             props.slots[1] = makeSelectionCountSlot(selectedCount);
             props.slots[2] = core::ui::makeStandaloneIconStripSlot(
                 standalone::icons::ACTION_PASTE,
-                blocked
-                    ? Visual::DISABLED
-                    : (pasteHoldActive
-                        ? Visual::ARMED
-                        : Visual::ACTIVE),
+                pasteHoldActive
+                    ? Visual::ARMED
+                    : interactionVisual(
+                          interaction.bottomRightVisibility
+                      ),
                 blocked
                     ? Tone::DESTRUCTIVE
                     : (overwriteCount > 0U
@@ -583,8 +625,12 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         }
 
         const bool canClear = selectedCount > 0;
-        const bool canPaste = false;
-        const bool canCopy = selectedCount > 0;
+        const bool canPaste =
+            interaction.bottomRightHold ==
+            InteractionAction::PASTE_STEP_SELECTION;
+        const bool canCopy =
+            interaction.bottomRightTap ==
+            InteractionAction::COPY_STEP_SELECTION;
         const bool pastePreviewActive = false;
         const auto& holdState = source.sequencer.structureUi.pageHold;
         const auto holdAction = holdState.action.get();
@@ -607,7 +653,7 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             interactionActionIcon(rightAction),
             pasteHoldActive
                 ? Visual::ARMED
-                : ((canCopy || canPaste) ? Visual::ACTIVE : Visual::DISABLED),
+                : interactionVisual(interaction.bottomRightVisibility),
             (pasteHoldActive || pastePreviewActive) ? Tone::POSITIVE : Tone::NEUTRAL
         );
         applyHoldProgress(props.slots[2], holdState, pasteHoldActive);

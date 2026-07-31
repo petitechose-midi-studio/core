@@ -4,6 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/sequencer/SequencerScaleState.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::state::sequencer {
@@ -481,7 +482,10 @@ FLASHMEM SequencerResolvedStepDisplayState buildSequencerResolvedStepDisplayStat
     step.childContentNoteOffsetUsesScaleDegrees =
         context.childContext &&
         context.activeProperty == StepProperty::NOTE &&
-        context.scaleSettings.isConstrained();
+        pitchContextUsesScaleDegrees(
+            authoringPattern(sequencer).pitchEditMode,
+            context.scaleSettings
+        );
     step.nodeId = projection.nodeId;
     step.runtimeNodeId = projection.nodeId;
 
