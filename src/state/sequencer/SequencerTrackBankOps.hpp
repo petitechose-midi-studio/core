@@ -50,13 +50,4 @@ void applyTrackBankSnapshot(
     const SequencerTrackBankSnapshot& snapshot
 );
 
-// Installs a fully decoded bank by transferring graph ownership. The staged
-// objects are consumed and no PSRAM allocation occurs during the commit.
-void installTrackBankState(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    SequencerTrackBankState& stagedBank,
-    SequencerState& stagedActive
-);
-
 }  // namespace core::state::sequencer

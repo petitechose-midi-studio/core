@@ -20,8 +20,6 @@
 #include "state/project/ProjectSettingsHistory.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
-#include "state/sequencer/SequencerState.hpp"
-#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
 
 #if defined(MS_UX_RECORDER)
@@ -36,8 +34,6 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::project::ProjectNavigationState& navigation;
-        core::state::sequencer::SequencerState& sequencer;
-        core::state::sequencer::SequencerTrackBankState& sequencerTracks;
         core::state::project::ProjectTrackState& projectTracks;
         core::state::project::ProjectTrackDomainServices trackDomain;
         core::state::StatusBarState& statusBar;

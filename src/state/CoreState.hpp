@@ -393,6 +393,11 @@ public:
     // prepared bank topology into shared UI/Macro projections and commits the
     // history plus dirty/autosave boundary without further allocation.
     void recordPreparedSequencerBankHistory(sequencer::SequencerHistoryFullBankChangePtr change);
+    sequencer::SequencerPreparedFullBankEditResult applyPreparedProjectScaleChoice(
+        sequencer::SequencerPreparedFullBankEditOwner owner,
+        uint8_t row,
+        int choiceIndex
+    );
     bool canRecordSequencerStructureHistory(
         const sequencer::SequencerHistoryTrackStructureChange& change) const;
     // Same immutable prepared contract as FullBank, including shared Track

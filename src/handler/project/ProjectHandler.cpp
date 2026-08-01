@@ -28,8 +28,6 @@ FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
     : overlays_(state.overlays)
     , active_view_(state.activeView)
     , navigation_(state.navigation)
-    , sequencer_(state.sequencer)
-    , sequencer_tracks_(state.sequencerTracks)
     , project_tracks_(state.projectTracks)
     , track_domain_(state.trackDomain)
     , status_bar_(state.statusBar)

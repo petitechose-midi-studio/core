@@ -372,6 +372,15 @@ FLASHMEM void restoreFocus(SequencerState& active, uint8_t focusedStep) {
     active.page.set(active.pageForStep(focus));
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM void restoreActiveStepProperty(SequencerState& active, StepProperty property) {
+    active.activeStepProperty.set(property);
+}
+
 FLASHMEM bool sameFlatTrackBankSnapshot(const SequencerTrackBankSnapshot& lhs,
                                         const SequencerTrackBankSnapshot& rhs) {
     if (lhs.activeTrack != rhs.activeTrack || lhs.enabledMask != rhs.enabledMask ||
@@ -809,11 +818,18 @@ FLASHMEM bool captureHistorySnapshot(const SequencerTrackBankState& bank,
 FLASHMEM bool reserveHistoryTrackBankSnapshotStorage(const SequencerTrackBankState& bank,
                                                      const SequencerState& active,
                                                      SequencerHistoryTrackBankSnapshot& snapshot) {
+    const uint8_t activeTrack = bank.activeTrackIndex();
+    snapshot.flat.activeTrack = activeTrack;
     if (!reservePatternPayloadStorage(active.pattern, snapshot.editorGraph,
                                       snapshot.editorCcLanes)) {
         return false;
     }
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if (i == activeTrack) {
+            snapshot.bankGraphs[i].reset();
+            snapshot.bankCcLanes[i].reset();
+            continue;
+        }
         if (!reservePatternPayloadStorage(bank.track(i), snapshot.bankGraphs[i],
                                           snapshot.bankCcLanes[i])) {
             return false;
@@ -825,11 +841,18 @@ FLASHMEM bool reserveHistoryTrackBankSnapshotStorage(const SequencerTrackBankSta
 FLASHMEM bool captureHistoryTrackBankSnapshotUsingReservedStorage(
     const SequencerTrackBankState& bank, const SequencerState& active,
     SequencerHistoryTrackBankSnapshot& out) {
+    const uint8_t activeTrack = bank.activeTrackIndex();
+    if (out.flat.activeTrack != activeTrack) return false;
     if (!capturePatternPayloadUsingReservedStorage(active.pattern, out.editorGraph,
                                                    out.editorCcLanes)) {
         return false;
     }
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if (i == activeTrack) {
+            out.bankGraphs[i].reset();
+            out.bankCcLanes[i].reset();
+            continue;
+        }
         if (!capturePatternPayloadUsingReservedStorage(bank.track(i), out.bankGraphs[i],
                                                        out.bankCcLanes[i])) {
             return false;
@@ -1046,6 +1069,12 @@ FLASHMEM bool applyHistorySnapshotToTrack(SequencerTrackBankState& bank, Sequenc
 
 FLASHMEM bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState& active,
                                    const SequencerHistoryTrackBankSnapshot& snapshot) {
+    if (active.stepContentDraft.active.get()) {
+        active.stepContentDraft.noteBlockedTransition(
+            SequencerStepContentDraftBlockedTransition::PROJECT_LOAD);
+        return false;
+    }
+
     std::array<GraphPtr, SequencerTrackBankState::TRACK_COUNT> bankGraphs{};
     GraphPtr editorGraph;
     std::array<SequencerHistoryCcLanePtr, SequencerTrackBankState::TRACK_COUNT> bankCcLanes{};
@@ -1057,26 +1086,33 @@ FLASHMEM bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState
     if (!cloneSequencerCcLaneBank(editorCcLanes, snapshot.editorCcLanes.get())) { return false; }
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        const GraphPtr& source = (i == activeTrack) ? snapshot.editorGraph : snapshot.bankGraphs[i];
-        if (!cloneGraph(source, bankGraphs[i])) { return false; }
-        const auto* sourceLanes =
-            i == activeTrack ? snapshot.editorCcLanes.get() : snapshot.bankCcLanes[i].get();
-        if (!cloneSequencerCcLaneBank(bankCcLanes[i], sourceLanes)) { return false; }
+        if (i == activeTrack) continue;
+        if (!cloneGraph(snapshot.bankGraphs[i], bankGraphs[i])) { return false; }
+        if (!cloneSequencerCcLaneBank(bankCcLanes[i], snapshot.bankCcLanes[i].get())) {
+            return false;
+        }
     }
 
     applyTrackBankSnapshot(bank, active, snapshot.flat);
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if (i == activeTrack) continue;
         installGraph(bank.track(i), std::move(bankGraphs[i]),
                      snapshot.flat.tracks[i].graphRevision);
         installSequencerCcLaneBank(bank.track(i), std::move(bankCcLanes[i]));
+        synchronizeHistoryPatternRevisionSignals(
+            bank.track(i), snapshot.flat.tracks[i], bank.track(i).ccLaneRevision.get());
     }
 
+    bank.track(activeTrack).graph.reset();
+    bank.track(activeTrack).ccLanes.reset();
     installGraph(active.pattern, std::move(editorGraph),
                  snapshot.flat.tracks[activeTrack].graphRevision);
     installSequencerCcLaneBank(active.pattern, std::move(editorCcLanes));
+    synchronizeHistoryPatternRevisionSignals(
+        active.pattern, snapshot.flat.tracks[activeTrack], active.pattern.ccLaneRevision.get());
     restoreFocus(active, snapshot.focusedStep);
-    active.activeStepProperty.set(snapshot.activeStepProperty);
+    restoreActiveStepProperty(active, snapshot.activeStepProperty);
     return true;
 }
 
@@ -1324,6 +1360,63 @@ FLASHMEM bool capturePreparedHistoryFullBankAfterUsingReservedStorage(
     return captureHistoryTrackBankSnapshotUsingReservedStorage(bank, active, change.after);
 }
 
+FLASHMEM bool populatePreparedHistoryFullBankStaging(
+    const SequencerTrackBankState& liveBank,
+    const SequencerState& liveActive,
+    const SequencerHistoryTrackBankSnapshot& before,
+    SequencerTrackBankState& stagedBank,
+    SequencerState& stagedActive
+) {
+    const uint8_t activeTrack = before.flat.activeTrack;
+    if (activeTrack >= SequencerTrackBankState::TRACK_COUNT ||
+        liveBank.activeTrackIndex() != activeTrack) {
+        return false;
+    }
+
+    applyTrackBankSnapshot(stagedBank, stagedActive, before.flat);
+    restoreFocus(stagedActive, before.focusedStep);
+    restoreActiveStepProperty(stagedActive, before.activeStepProperty);
+
+    if (!copyGraph(stagedActive.pattern, before.editorGraph.get(),
+                   before.flat.tracks[activeTrack].graphRevision)) {
+        return false;
+    }
+    SequencerCcLaneBankPtr editorCcLanes;
+    if (!cloneSequencerCcLaneBank(editorCcLanes, before.editorCcLanes.get())) {
+        return false;
+    }
+    installSequencerCcLaneBank(stagedActive.pattern, std::move(editorCcLanes));
+    synchronizeHistoryPatternRevisionSignals(
+        stagedActive.pattern,
+        before.flat.tracks[activeTrack],
+        liveActive.pattern.ccLaneRevision.get()
+    );
+
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if (i == activeTrack) continue;
+        auto& target = stagedBank.track(i);
+        if (!copyGraph(target, before.bankGraphs[i].get(),
+                       before.flat.tracks[i].graphRevision)) {
+            return false;
+        }
+        SequencerCcLaneBankPtr ccLanes;
+        if (!cloneSequencerCcLaneBank(ccLanes, before.bankCcLanes[i].get())) {
+            return false;
+        }
+        installSequencerCcLaneBank(target, std::move(ccLanes));
+        synchronizeHistoryPatternRevisionSignals(
+            target,
+            before.flat.tracks[i],
+            liveBank.track(i).ccLaneRevision.get()
+        );
+    }
+
+    auto& activeScratch = stagedBank.track(activeTrack);
+    activeScratch.graph.reset();
+    activeScratch.ccLanes.reset();
+    return true;
+}
+
 FLASHMEM bool SequencerHistoryService::recordPattern(uint8_t trackIndex,
                                                      SequencerHistoryPatternSnapshot before,
                                                      SequencerHistoryPatternSnapshot after,
@@ -1447,6 +1540,14 @@ FLASHMEM bool SequencerHistoryService::canRecordFullBank(
 FLASHMEM void SequencerHistoryService::recordPreparedFullBank(
     SequencerHistoryFullBankChangePtr change) {
     if (!change || !canRecordFullBank(*change)) return;
+
+    commitAdmittedFullBank(std::move(change));
+}
+
+FLASHMEM void SequencerHistoryService::commitAdmittedFullBank(
+    SequencerHistoryFullBankChangePtr change) {
+    assert(change);
+    if (!change) return;
 
     if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
         change->descriptor.kind = SequencerHistoryActionKind::FullBank;

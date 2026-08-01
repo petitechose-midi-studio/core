@@ -8,12 +8,15 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 
+#include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/settings/SequencerSettingsDomainServices.hpp"
 #include "../../src/handler/settings/SequencerSettingsHandler.hpp"
 #include "../../src/handler/sequencer/PatternPitchSettingsDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
+#include "../../src/state/sequencer/SequencerProjectScaleOps.hpp"
+#include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 
@@ -81,6 +84,27 @@ void authorScalePolicyChord(
     ));
 }
 
+core::state::sequencer::SequencerProjectScaleMutationResult
+applyProjectScaleChoice(
+    core::state::sequencer::SequencerTrackBankState& trackBank,
+    core::state::sequencer::SequencerState& sequencer,
+    uint8_t row,
+    int choiceIndex
+) {
+    const auto choice = core::state::sequencer::resolveProjectScaleChoice(
+        trackBank.projectScaleSettings(),
+        row,
+        choiceIndex
+    );
+    assert(choice.valid);
+    if (!choice.changes) return {};
+    return core::state::sequencer::applyProjectScaleTransition(
+        trackBank,
+        sequencer,
+        choice.target
+    );
+}
+
 struct SequencerSettingsHandlerHarness {
     static constexpr oc::type::ScopeID SETTINGS_SCOPE = 811;
     static constexpr oc::type::ScopeID SELECTOR_SCOPE = 812;
@@ -101,7 +125,6 @@ struct SequencerSettingsHandlerHarness {
     SequencerSettingsHandlerHarness()
         : state(storages.settings)
         , services(core::handler::SequencerSettingsDomainServices::StateRefs{
-              state.sequencer,
               state.sequencerTracks,
           })
         , inputBinding(eventBus, mockTimeMs)
@@ -112,7 +135,6 @@ struct SequencerSettingsHandlerHarness {
                       state.sequencerSettings,
                       state.viewSelector,
                       state.sequencer,
-                      state.sequencerTracks,
                       core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                   },
                   services,
@@ -162,7 +184,6 @@ void test_project_scale_choices_update_track_bank() {
     core::state::sequencer::SequencerTrackBankState trackBank;
     core::handler::SequencerSettingsDomainServices services{
         core::handler::SequencerSettingsDomainServices::StateRefs{
-            sequencer,
             trackBank,
         }
     };
@@ -174,9 +195,13 @@ void test_project_scale_choices_update_track_bank() {
     assert(services.currentChoiceIndex(1) == 3);
     assert(services.currentChoiceIndex(2) == 1);
 
-    services.applyChoice(0, 9);
-    services.applyChoice(1, 2);
-    services.applyChoice(2, 1);
+    const uint32_t projectRevisionBefore =
+        trackBank.projectScaleRevisionSignal().get();
+    const uint32_t activeScaleRevisionBefore =
+        sequencer.pattern.patternScaleRevision.get();
+    assert(applyProjectScaleChoice(trackBank, sequencer, 0, 9).changed);
+    assert(applyProjectScaleChoice(trackBank, sequencer, 1, 2).changed);
+    assert(!applyProjectScaleChoice(trackBank, sequencer, 2, 1).changed);
 
     const auto settings = trackBank.projectScaleSettings();
     assert(settings.root == 9);
@@ -185,6 +210,10 @@ void test_project_scale_choices_update_track_bank() {
     assert(services.currentChoiceIndex(0) == 9);
     assert(services.currentChoiceIndex(1) == 2);
     assert(services.currentChoiceIndex(2) == 1);
+    assert(trackBank.projectScaleRevisionSignal().get() ==
+           projectRevisionBefore + 2U);
+    assert(sequencer.pattern.patternScaleRevision.get() ==
+           activeScaleRevisionBefore + 2U);
 
     std::cout << "[PASS] test_project_scale_choices_update_track_bank\n";
 }
@@ -192,42 +221,86 @@ void test_project_scale_choices_update_track_bank() {
 void test_project_scale_choices_are_clamped() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::handler::SequencerSettingsDomainServices services{
-        core::handler::SequencerSettingsDomainServices::StateRefs{
-            sequencer,
-            trackBank,
-        }
-    };
 
-    services.applyChoice(0, 99);
-    services.applyChoice(1, 99);
-    services.applyChoice(2, 99);
+    const uint32_t projectRevisionBefore =
+        trackBank.projectScaleRevisionSignal().get();
+    const uint32_t activeScaleRevisionBefore =
+        sequencer.pattern.patternScaleRevision.get();
+    assert(applyProjectScaleChoice(trackBank, sequencer, 0, 99).changed);
+    assert(applyProjectScaleChoice(trackBank, sequencer, 1, 99).changed);
+    assert(applyProjectScaleChoice(trackBank, sequencer, 2, 99).changed);
 
     const auto settings = trackBank.projectScaleSettings();
     assert(settings.root == 11);
     assert(settings.type == StepSequencerScaleType::WholeTone);
     assert(settings.mode == StepSequencerScaleConstraintMode::ConstrainDown);
+    assert(trackBank.projectScaleRevisionSignal().get() ==
+           projectRevisionBefore + 3U);
+    assert(sequencer.pattern.patternScaleRevision.get() ==
+           activeScaleRevisionBefore + 3U);
 
     std::cout << "[PASS] test_project_scale_choices_are_clamped\n";
+}
+
+void test_project_scale_resolver_invalid_noop_and_clamp_contract() {
+    core::state::sequencer::SequencerTrackBankState trackBank;
+    const auto current = trackBank.projectScaleSettings();
+
+    const auto invalid = core::state::sequencer::resolveProjectScaleChoice(
+        current,
+        3,
+        0
+    );
+    assert(!invalid.valid);
+    assert(!invalid.changes);
+    assert(invalid.target.root == current.root);
+    assert(invalid.target.type == current.type);
+    assert(invalid.target.mode == current.mode);
+
+    const auto noop = core::state::sequencer::resolveProjectScaleChoice(
+        current,
+        0,
+        current.root
+    );
+    assert(noop.valid);
+    assert(!noop.changes);
+
+    const auto low = core::state::sequencer::resolveProjectScaleChoice(
+        current,
+        0,
+        -99
+    );
+    const auto high = core::state::sequencer::resolveProjectScaleChoice(
+        current,
+        0,
+        99
+    );
+    assert(low.valid && low.changes && low.target.root == 0);
+    assert(high.valid && high.changes && high.target.root == 11);
+
+    std::cout
+        << "[PASS] Project scale resolver invalid/no-op/clamp contract\n";
 }
 
 void test_project_scale_invalidates_inherited_active_telemetry() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::handler::SequencerSettingsDomainServices services{
-        core::handler::SequencerSettingsDomainServices::StateRefs{
-            sequencer,
-            trackBank,
-        }
-    };
 
     sequencer.cycleVariationTelemetry.validMask.setBit(0, true);
     const uint32_t before = sequencer.variationTelemetryRevision.get();
 
-    services.applyChoice(1, 1);
+    const uint32_t projectRevisionBefore =
+        trackBank.projectScaleRevisionSignal().get();
+    const uint32_t activeScaleRevisionBefore =
+        sequencer.pattern.patternScaleRevision.get();
+    assert(applyProjectScaleChoice(trackBank, sequencer, 1, 1).changed);
 
     assert(!sequencer.cycleVariationTelemetry.validMask.test(0));
     assert(sequencer.variationTelemetryRevision.get() == before + 1U);
+    assert(trackBank.projectScaleRevisionSignal().get() ==
+           projectRevisionBefore + 1U);
+    assert(sequencer.pattern.patternScaleRevision.get() ==
+           activeScaleRevisionBefore + 1U);
 
     std::cout << "[PASS] test_project_scale_invalidates_inherited_active_telemetry\n";
 }
@@ -235,21 +308,23 @@ void test_project_scale_invalidates_inherited_active_telemetry() {
 void test_project_scale_keeps_override_active_telemetry() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::handler::SequencerSettingsDomainServices services{
-        core::handler::SequencerSettingsDomainServices::StateRefs{
-            sequencer,
-            trackBank,
-        }
-    };
 
     sequencer.setPatternScalePolicy(core::state::sequencer::SequencerPatternScalePolicy::OVERRIDE);
     sequencer.cycleVariationTelemetry.validMask.setBit(0, true);
     const uint32_t before = sequencer.variationTelemetryRevision.get();
 
-    services.applyChoice(1, 1);
+    const uint32_t projectRevisionBefore =
+        trackBank.projectScaleRevisionSignal().get();
+    const uint32_t activeScaleRevisionBefore =
+        sequencer.pattern.patternScaleRevision.get();
+    assert(applyProjectScaleChoice(trackBank, sequencer, 1, 1).changed);
 
     assert(sequencer.cycleVariationTelemetry.validMask.test(0));
     assert(sequencer.variationTelemetryRevision.get() == before);
+    assert(trackBank.projectScaleRevisionSignal().get() ==
+           projectRevisionBefore + 1U);
+    assert(sequencer.pattern.patternScaleRevision.get() ==
+           activeScaleRevisionBefore);
 
     std::cout << "[PASS] test_project_scale_keeps_override_active_telemetry\n";
 }
@@ -257,21 +332,21 @@ void test_project_scale_keeps_override_active_telemetry() {
 void test_project_scale_boundary_projects_inherited_chords() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::handler::SequencerSettingsDomainServices services{
-        core::handler::SequencerSettingsDomainServices::StateRefs{
-            sequencer,
-            trackBank,
-        }
-    };
 
-    services.applyChoice(2, 0);
+    assert(applyProjectScaleChoice(trackBank, sequencer, 2, 0).changed);
     authorScalePolicyChord(
         sequencer.pattern,
         customChord(3, 5)
     );
 
-    const auto projection = services.applyChoice(2, 1);
+    const uint32_t projectRevisionBefore =
+        trackBank.projectScaleRevisionSignal().get();
+    const uint32_t activeScaleRevisionBefore =
+        sequencer.pattern.patternScaleRevision.get();
+    const auto mutation = applyProjectScaleChoice(trackBank, sequencer, 2, 1);
+    const auto projection = mutation.projection;
 
+    assert(mutation.changed);
     const auto& spec = rootChord(sequencer.pattern);
     assert(spec.intervalBasis() == ChordBasis::ScaleDegrees);
     assert(spec.customInterval(1) == 2);
@@ -279,6 +354,10 @@ void test_project_scale_boundary_projects_inherited_chords() {
     assert(projection.changed == 1);
     assert(projection.exact == 1);
     assert(!projection.hasAdaptations());
+    assert(trackBank.projectScaleRevisionSignal().get() ==
+           projectRevisionBefore + 1U);
+    assert(sequencer.pattern.patternScaleRevision.get() ==
+           activeScaleRevisionBefore + 1U);
 
     std::cout
         << "[PASS] Project scale boundary projects inherited chords\n";
@@ -287,12 +366,6 @@ void test_project_scale_boundary_projects_inherited_chords() {
 void test_pattern_pitch_settings_override_copies_project_before_local_edits() {
     core::state::sequencer::SequencerState sequencer;
     core::state::sequencer::SequencerTrackBankState trackBank;
-    core::handler::SequencerSettingsDomainServices projectServices{
-        core::handler::SequencerSettingsDomainServices::StateRefs{
-            sequencer,
-            trackBank,
-        }
-    };
     core::handler::PatternPitchSettingsDomainServices patternServices{
         core::handler::PatternPitchSettingsDomainServices::StateRefs{
             sequencer,
@@ -300,9 +373,9 @@ void test_pattern_pitch_settings_override_copies_project_before_local_edits() {
         }
     };
 
-    projectServices.applyChoice(0, 2);
-    projectServices.applyChoice(1, 2);
-    projectServices.applyChoice(2, 1);
+    assert(applyProjectScaleChoice(trackBank, sequencer, 0, 2).changed);
+    assert(applyProjectScaleChoice(trackBank, sequencer, 1, 2).changed);
+    assert(!applyProjectScaleChoice(trackBank, sequencer, 2, 1).changed);
     assert(patternServices.choiceCount(1) == 0);
 
     patternServices.applyChoice(0, 1);
@@ -444,9 +517,95 @@ void test_project_scale_settings_are_undoable_through_handler() {
     std::cout << "[PASS] test_project_scale_settings_are_undoable_through_handler\n";
 }
 
+void test_settings_no_change_closes_without_feedback_or_full_bank_allocation() {
+    SequencerSettingsHandlerHarness h;
+    h.openSettings();
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.sequencerSettings.flowPhase.get() ==
+           core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
+    const uint32_t feedbackRevision = h.state.sequencer.historyFeedback.revision.get();
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.tap(Config::ButtonID::NAV);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+
+    assert(h.state.sequencerSettings.flowPhase.get() !=
+           core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
+    assert(!h.state.sequencerSettings.selector.visible.get());
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
+    assert(h.state.sequencerHistory.undoCount(
+               core::state::sequencer::SequencerHistoryScope::FullBank) == 0U);
+
+    std::cout << "[PASS] Settings no-op closes without feedback or FullBank allocation\n";
+}
+
+void test_settings_failure_keeps_selector_open_without_feedback() {
+    SequencerSettingsHandlerHarness h;
+    h.openSettings();
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    const auto scaleBefore = h.state.sequencerTracks.projectScaleSettings();
+    const uint32_t feedbackRevision = h.state.sequencer.historyFeedback.revision.get();
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.tap(Config::ButtonID::NAV);
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+    }
+
+    assert(h.state.sequencerSettings.flowPhase.get() ==
+           core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
+    assert(h.state.sequencerSettings.selector.visible.get());
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
+    assert(h.state.sequencerTracks.projectScaleSettings().root == scaleBefore.root);
+    assert(h.state.sequencerHistory.undoCount(
+               core::state::sequencer::SequencerHistoryScope::FullBank) == 0U);
+
+    std::cout << "[PASS] Settings allocation failure keeps selector open and silent\n";
+}
+
+void test_settings_no_change_with_active_draft_rejects_before_allocation() {
+    SequencerSettingsHandlerHarness h;
+    h.openSettings();
+    h.tap(Config::ButtonID::NAV);
+    assert(core::state::sequencer::beginStepContentDraft(
+        h.state.sequencer,
+        core::state::sequencer::SequencerStepContentDraftKind::CHORD,
+        0U,
+        core::state::sequencer::rootStepNodeId(0U)
+    ));
+    const uint32_t feedbackRevision = h.state.sequencer.historyFeedback.revision.get();
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.tap(Config::ButtonID::NAV);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+
+    assert(h.state.sequencerSettings.flowPhase.get() ==
+           core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
+    assert(h.state.sequencerSettings.selector.visible.get());
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
+    assert(h.state.sequencer.stepContentDraft.failure ==
+           core::state::sequencer::SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
+    assert(h.state.sequencer.stepContentDraft.blockedTransition ==
+           core::state::sequencer::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD);
+    assert(h.state.sequencerHistory.undoCount(
+               core::state::sequencer::SequencerHistoryScope::FullBank) == 0U);
+
+    std::cout << "[PASS] Settings no-op draft rejection stays open before allocation\n";
+}
+
 void test_project_chord_projection_is_one_undoable_transaction() {
     SequencerSettingsHandlerHarness h;
-    h.services.applyChoice(2, 0);
+    assert(applyProjectScaleChoice(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        2,
+        0
+    ).changed);
     authorScalePolicyChord(
         h.state.sequencer.pattern,
         customChord(4, 7)
@@ -509,6 +668,7 @@ void test_project_chord_projection_is_one_undoable_transaction() {
 int main() {
     test_project_scale_choices_update_track_bank();
     test_project_scale_choices_are_clamped();
+    test_project_scale_resolver_invalid_noop_and_clamp_contract();
     test_project_scale_invalidates_inherited_active_telemetry();
     test_project_scale_keeps_override_active_telemetry();
     test_project_scale_boundary_projects_inherited_chords();
@@ -516,6 +676,9 @@ int main() {
     test_pattern_return_to_project_projects_local_chords();
     test_pattern_pitch_context_projects_formula_at_the_mode_boundary();
     test_project_scale_settings_are_undoable_through_handler();
+    test_settings_no_change_closes_without_feedback_or_full_bank_allocation();
+    test_settings_failure_keeps_selector_open_without_feedback();
+    test_settings_no_change_with_active_draft_rejects_before_allocation();
     test_project_chord_projection_is_one_undoable_transaction();
     std::cout << "All SequencerSettingsDomainServices tests passed\n";
     return 0;

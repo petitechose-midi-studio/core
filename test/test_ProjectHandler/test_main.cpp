@@ -14,6 +14,7 @@
 #include <oc/core/input/InputBinding.hpp>
 #include <oc/impl/HostFileSystem.hpp>
 
+#include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/project/ProjectHandler.hpp"
 #include "../../src/handler/common/ModulatorNavigationWorkflow.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
@@ -90,15 +91,12 @@ struct ProjectHandlerHarness {
         , encoders(inputBinding, encoderHw)
         , overlays(state.overlays, buttons)
         , sequencerSettings(core::handler::SequencerSettingsDomainServices::StateRefs{
-              state.sequencer,
               state.sequencerTracks,
           })
         , handler(core::handler::ProjectHandler::StateRefs{
                       state.overlays,
                       state.activeView,
                       state.projectNavigation,
-                      state.sequencer,
-                      state.sequencerTracks,
                       state.projectTracks,
                       core::state::project::ProjectTrackDomainServices::fromCoreState(
                           state
@@ -396,6 +394,56 @@ void test_music_scale_root_is_wired_and_undoable() {
     assert(h.state.sequencerTracks.projectScaleSettings().root == 5);
 
     std::cout << "[PASS] test_music_scale_root_is_wired_and_undoable\n";
+}
+
+void test_music_scale_normalized_surface_and_rejections_are_atomic() {
+    ProjectHandlerHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.advance(600);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::MUSIC_SCALE);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 11U);
+    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::FullBank) == 1U);
+    assert(h.state.undoProjectHistory());
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 5U);
+
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    const uint8_t redoBefore = h.state.sequencerHistory.redoCount();
+    const std::size_t retainedBefore = h.state.sequencerHistory.retainedBytes();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+
+    // NAV is the stepped Project surface. Its first FullBank allocation fails
+    // before any scale, History, redo-branch or dirty/save mutation.
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.tap(Config::ButtonID::NAV);
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+    }
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 5U);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(h.state.sequencerHistory.redoCount() == redoBefore);
+    assert(h.state.sequencerHistory.retainedBytes() == retainedBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+
+    // OPT is the normalized Project surface. An exact value is a pre-boundary
+    // no-op and therefore never probes FullBank allocation or consumes redo.
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.turn(Config::EncoderID::OPT, 5.0f / 11.0f);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 5U);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(h.state.sequencerHistory.redoCount() == redoBefore);
+    assert(h.state.sequencerHistory.retainedBytes() == retainedBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+
+    std::cout << "[PASS] Project NAV/OPT scale surfaces reject atomically and preserve no-op\n";
 }
 
 void test_project_cc_lane_defaults_are_direct_editable_values() {
@@ -2676,6 +2724,7 @@ int main() {
     test_left_top_does_not_back_at_project_tab_root();
     test_nav_press_activates_storage_autosave_only();
     test_music_scale_root_is_wired_and_undoable();
+    test_music_scale_normalized_surface_and_rejections_are_atomic();
     test_project_cc_lane_defaults_are_direct_editable_values();
     test_left_center_hold_switches_tabs();
     test_left_center_hold_respects_fast_tab_delta();

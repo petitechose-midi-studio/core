@@ -1,10 +1,8 @@
 #include <cmath>
 
 #include <config/PlatformCompat.hpp>
-#include <utility>
 
 #include "handler/project/ProjectHandlerInternals.hpp"
-#include "handler/sequencer/SequencerFullBankHistoryUtils.hpp"
 
 namespace core::handler {
 
@@ -107,22 +105,13 @@ FLASHMEM bool ProjectHandler::applyFocusedMusicScaleStep(int steps) {
     const int next = wrapIndex(current + steps, count);
     if (next == current) return true;
 
-    if (history_.commitCoalescedPatternEditOutcome() ==
-        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
-        return false;
-    }
-    auto change = captureSequencerFullBankHistoryBefore(sequencer_tracks_, sequencer_);
-
-    sequencer_settings_.applyChoice(row, next);
-
-    if (change && captureSequencerFullBankHistoryAfter(sequencer_tracks_, sequencer_, *change)) {
-        recordSequencerFullBankHistoryChange(
-            history_, std::move(change),
-            core::state::sequencer::SequencerHistoryDescriptor{
-                .kind = core::state::sequencer::SequencerHistoryActionKind::ProjectScaleSettings,
-            });
-    }
-    return true;
+    const auto result = history_.applyPreparedProjectScaleChoice(
+        core::state::sequencer::SequencerPreparedFullBankEditOwner::ProjectScale,
+        row,
+        next
+    );
+    return result.outcome !=
+        core::state::sequencer::SequencerPreparedFullBankEditOutcome::Failed;
 }
 
 FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
@@ -315,22 +304,13 @@ FLASHMEM bool ProjectHandler::setFocusedMusicScaleValue(float normalized) {
     const int next = normalizedToIndex(normalized, count);
     if (next == current) return true;
 
-    if (history_.commitCoalescedPatternEditOutcome() ==
-        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
-        return false;
-    }
-    auto change = captureSequencerFullBankHistoryBefore(sequencer_tracks_, sequencer_);
-
-    sequencer_settings_.applyChoice(row, next);
-
-    if (change && captureSequencerFullBankHistoryAfter(sequencer_tracks_, sequencer_, *change)) {
-        recordSequencerFullBankHistoryChange(
-            history_, std::move(change),
-            core::state::sequencer::SequencerHistoryDescriptor{
-                .kind = core::state::sequencer::SequencerHistoryActionKind::ProjectScaleSettings,
-            });
-    }
-    return true;
+    const auto result = history_.applyPreparedProjectScaleChoice(
+        core::state::sequencer::SequencerPreparedFullBankEditOwner::ProjectScale,
+        row,
+        next
+    );
+    return result.outcome !=
+        core::state::sequencer::SequencerPreparedFullBankEditOutcome::Failed;
 }
 
 FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {

@@ -10,6 +10,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/project/ProjectHistoryEventSink.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerChordContextProjection.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
@@ -113,6 +114,25 @@ enum class SequencerPreparedPatternEditOwner : uint8_t {
     StepEditSession,
     StepToggle,
     PatternEditor,
+};
+
+// FullBank edit ownership remains typed across the handler facade so Project
+// navigation and the Settings modal can retain distinct boundary semantics.
+enum class SequencerPreparedFullBankEditOwner : uint8_t {
+    ProjectScale = 0,
+    SequencerSettingsScale,
+};
+
+enum class SequencerPreparedFullBankEditOutcome : uint8_t {
+    Failed = 0,
+    NoChange,
+    Committed,
+};
+
+struct SequencerPreparedFullBankEditResult {
+    SequencerPreparedFullBankEditOutcome outcome =
+        SequencerPreparedFullBankEditOutcome::Failed;
+    SequencerChordContextProjectionStats projection{};
 };
 
 enum class SequencerPreparedPatternEditBeginOutcome : uint8_t {
@@ -334,6 +354,17 @@ bool capturePreparedHistoryFullBankAfterUsingReservedStorage(
     const SequencerTrackBankState& bank, const SequencerState& active,
     SequencerHistoryFullBankChange& change);
 
+// Populates two already allocated PSRAM roots from a captured FullBank Before.
+// Payload allocation order is editor Graph/CC followed by inactive Tracks in
+// ascending order. The active bank slot remains noncanonical scratch.
+bool populatePreparedHistoryFullBankStaging(
+    const SequencerTrackBankState& liveBank,
+    const SequencerState& liveActive,
+    const SequencerHistoryTrackBankSnapshot& before,
+    SequencerTrackBankState& stagedBank,
+    SequencerState& stagedActive
+);
+
 struct SequencerHistoryEntry {
     SequencerHistoryScope scope = SequencerHistoryScope::PatternOnly;
     core::app::ExtmemUniquePtr<SequencerHistoryPatternChange> pattern;
@@ -395,6 +426,10 @@ bool captureHistorySnapshot(const SequencerTrackBankState& bank, const Sequencer
 bool reserveHistoryTrackBankSnapshotStorage(const SequencerTrackBankState& bank,
                                             const SequencerState& active,
                                             SequencerHistoryTrackBankSnapshot& snapshot);
+// The active editor is canonical. These FullBank helpers freeze its Track
+// identity and deliberately keep the corresponding bank Graph/CC slots empty;
+// that slot is noncanonical scratch even when legacy synchronization has
+// temporarily populated it.
 bool captureHistoryTrackBankSnapshotUsingReservedStorage(const SequencerTrackBankState& bank,
                                                          const SequencerState& active,
                                                          SequencerHistoryTrackBankSnapshot& out);
@@ -505,6 +540,10 @@ public:
     // Precondition: canRecordFullBank(change) was true and change was not
     // modified afterwards. Under that contract this commit cannot fail.
     void recordPreparedFullBank(SequencerHistoryFullBankChangePtr change);
+    // Internal no-fail tail for a FullBank change whose immutable payload and
+    // retained-byte admission were proven before the first live write. This
+    // performs no allocation and no policy recheck.
+    void commitAdmittedFullBank(SequencerHistoryFullBankChangePtr change);
     // Side-effect-free admission check for a fully prepared change. Callers
     // must repeat it if snapshot graph ownership changes before recording.
     bool canRecordStructure(const SequencerHistoryTrackStructureChange& change) const;

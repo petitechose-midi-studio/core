@@ -3,12 +3,10 @@
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 #include <oc/time/Time.hpp>
-#include <utility>
 
 #include "handler/common/ModalSelectionUtils.hpp"
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/sequencer/SequencerChordProjectionFeedback.hpp"
-#include "handler/sequencer/SequencerFullBankHistoryUtils.hpp"
 #include "state/ViewSelectorItems.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 
@@ -23,8 +21,8 @@ FLASHMEM SequencerSettingsHandler::SequencerSettingsHandler(
     oc::api::ButtonAPI& buttons, oc::type::ScopeID settingsOverlayScope,
     oc::type::ScopeID selectorOverlayScope)
     : sequencer_settings_(state.sequencerSettings), view_selector_(state.viewSelector),
-      sequencer_(state.sequencer), sequencer_tracks_(state.sequencerTracks),
-      history_(state.history), services_(services), overlays_(overlays), encoders_(encoders),
+      sequencer_(state.sequencer), history_(state.history), services_(services),
+      overlays_(overlays), encoders_(encoders),
       buttons_(buttons), settings_overlay_scope_(settingsOverlayScope),
       selector_overlay_scope_(selectorOverlayScope) {
     setupBindings();
@@ -124,23 +122,20 @@ FLASHMEM void SequencerSettingsHandler::applySelectorAndClose() {
     const uint8_t row = selector.editingRow.get();
     const int choice = selector.selectedIndex.get();
 
-    if (history_.commitCoalescedPatternEditOutcome() ==
-        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+    const auto result = history_.applyPreparedProjectScaleChoice(
+        core::state::sequencer::SequencerPreparedFullBankEditOwner::SequencerSettingsScale,
+        row,
+        choice
+    );
+    if (result.outcome ==
+        core::state::sequencer::SequencerPreparedFullBankEditOutcome::Failed) {
         return;
     }
-
-    auto change = captureSequencerFullBankHistoryBefore(sequencer_tracks_, sequencer_);
-
-    const auto projection = services_.applyChoice(row, choice);
-
-    if (change && captureSequencerFullBankHistoryAfter(sequencer_tracks_, sequencer_, *change)) {
-        recordSequencerFullBankHistoryChange(
-            history_, std::move(change),
-            core::state::sequencer::SequencerHistoryDescriptor{
-                .kind = core::state::sequencer::SequencerHistoryActionKind::ProjectScaleSettings,
-            });
+    if (result.outcome ==
+        core::state::sequencer::SequencerPreparedFullBankEditOutcome::Committed) {
+        showChordProjectionFeedback(
+            sequencer_.historyFeedback, result.projection, oc::time::millis());
     }
-    showChordProjectionFeedback(sequencer_.historyFeedback, projection, oc::time::millis());
 
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::SEQUENCER_SETTINGS_SELECTOR);
     sequencer_settings_.closeSelector();

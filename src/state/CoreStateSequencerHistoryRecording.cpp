@@ -22,6 +22,8 @@
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerProjectScaleOps.hpp"
 #include "state/sequencer/SequencerStructureHistory.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/shared/SharedTrackCoordinator.hpp"
@@ -42,6 +44,42 @@ const char kPreparedFamilyRollbackFailed[] PROGMEM =
     "[CoreState] Failed allocation-free prepared-family rollback";
 const char kFamilyAdmissionRollbackFailed[] PROGMEM =
     "[CoreState] Failed allocation-free family admission rollback";
+
+FLASHMEM bool hasCanonicalCcPayload(
+    const sequencer::SequencerPatternState& pattern
+) {
+    const auto* lanes = sequencer::sequencerCcLaneView(pattern);
+    return lanes != nullptr && sequencer::sequencerCcLaneCount(*lanes) != 0U;
+}
+
+FLASHMEM bool preparedFullBankSourceTopologyMatches(
+    const sequencer::SequencerTrackBankState& bank,
+    const sequencer::SequencerState& active,
+    const sequencer::SequencerHistoryTrackBankSnapshot& before
+) {
+    const uint8_t activeTrack = before.flat.activeTrack;
+    if (activeTrack >= sequencer::SequencerTrackBankState::TRACK_COUNT ||
+        bank.activeTrackIndex() != activeTrack ||
+        bank.currentEnabledMask() != before.flat.enabledMask ||
+        (sequencer::graphView(active.pattern) != nullptr) !=
+            static_cast<bool>(before.editorGraph) ||
+        hasCanonicalCcPayload(active.pattern) !=
+            static_cast<bool>(before.editorCcLanes)) {
+        return false;
+    }
+
+    for (uint8_t i = 0; i < sequencer::SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if (i == activeTrack) continue;
+        const auto& pattern = bank.track(i);
+        if ((sequencer::graphView(pattern) != nullptr) !=
+                static_cast<bool>(before.bankGraphs[i]) ||
+            hasCanonicalCcPayload(pattern) !=
+                static_cast<bool>(before.bankCcLanes[i])) {
+            return false;
+        }
+    }
+    return true;
+}
 
 FLASHMEM int32_t
 sequencerHistoryValueForProperty(const sequencer::SequencerHistoryPatternSnapshot& snapshot,
@@ -255,10 +293,9 @@ FLASHMEM bool CoreState::recordSequencerBankHistory(
 
 FLASHMEM bool CoreState::canRecordSequencerBankHistory(
     const sequencer::SequencerHistoryFullBankChange& change) const {
-    // installTrackBankState rejects the complete bank install while a Step Draft
-    // is active, including content-only changes with unchanged topology. Keep
-    // admission identical to that live-write guard so History can never publish
-    // an `after` snapshot that was not installed.
+    // FullBank replay rejects while a Step Draft is active, including
+    // content-only changes with unchanged topology. Keep admission identical
+    // so History can never publish an `after` snapshot that cannot be applied.
     return !sequencer.stepContentDraft.active.get() && sequencerHistory.canRecordFullBank(change);
 }
 
@@ -270,6 +307,93 @@ FLASHMEM void CoreState::recordPreparedSequencerBankHistory(
     if (!publishPreparedSequencerTrackState(enabledMask, activeTrack)) return;
     sequencerHistory.recordPreparedFullBank(std::move(change));
     publishPreparedSequencerMutation();
+}
+
+FLASHMEM sequencer::SequencerPreparedFullBankEditResult
+CoreState::applyPreparedProjectScaleChoice(
+    sequencer::SequencerPreparedFullBankEditOwner owner,
+    uint8_t row,
+    int choiceIndex
+) {
+    using Owner = sequencer::SequencerPreparedFullBankEditOwner;
+    using Outcome = sequencer::SequencerPreparedFullBankEditOutcome;
+
+    sequencer::SequencerPreparedFullBankEditResult result{};
+    if (owner != Owner::ProjectScale && owner != Owner::SequencerSettingsScale) {
+        return result;
+    }
+
+    const auto choice = sequencer::resolveProjectScaleChoice(
+        sequencerTracks.projectScaleSettings(), row, choiceIndex);
+    if (!choice.valid) return result;
+
+    if (owner == Owner::ProjectScale && !choice.changes) {
+        result.outcome = Outcome::NoChange;
+        return result;
+    }
+
+    if (commitSequencerPatternHistoryCoalescing_() ==
+        SequencerPatternHistoryCommitOutcome::Failed) {
+        return result;
+    }
+
+    if (sequencer.stepContentDraft.active.get()) {
+        sequencer.stepContentDraft.noteBlockedTransition(
+            sequencer::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD);
+        return result;
+    }
+
+    if (!choice.changes) {
+        result.outcome = Outcome::NoChange;
+        return result;
+    }
+
+    auto change = sequencer::prepareHistoryFullBankChangeBefore(
+        sequencerTracks,
+        sequencer,
+        sequencer::SequencerHistoryDescriptor{
+            .kind = sequencer::SequencerHistoryActionKind::ProjectScaleSettings,
+        }
+    );
+    if (!change ||
+        !sequencer::reservePreparedHistoryFullBankAfter(
+            sequencerTracks, sequencer, *change)) {
+        return result;
+    }
+
+    auto stagedBank = core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
+    if (!stagedBank) return result;
+    auto stagedActive = core::app::makeExtmemUnique<sequencer::SequencerState>();
+    if (!stagedActive) return result;
+
+    if (!sequencer::populatePreparedHistoryFullBankStaging(
+            sequencerTracks, sequencer, change->before, *stagedBank, *stagedActive)) {
+        return result;
+    }
+
+    const auto stagedMutation = sequencer::applyProjectScaleTransition(
+        *stagedBank, *stagedActive, choice.target);
+    if (!stagedMutation.changed ||
+        !sequencer::capturePreparedHistoryFullBankAfterUsingReservedStorage(
+            *stagedBank, *stagedActive, *change) ||
+        !sequencerHistory.canRecordFullBank(*change) ||
+        !preparedFullBankSourceTopologyMatches(
+            sequencerTracks, sequencer, change->before)) {
+        return result;
+    }
+
+    result.projection = stagedMutation.projection;
+
+    // No fallible operation is permitted beyond this boundary. The same
+    // presence-preserving state operation runs on the still-unchanged live
+    // owners, followed immediately by the already-admitted ownership transfer.
+    (void)sequencer::applyProjectScaleTransition(
+        sequencerTracks, sequencer, choice.target);
+    sequencerHistory.commitAdmittedFullBank(std::move(change));
+    publishPreparedSequencerMutation();
+
+    result.outcome = Outcome::Committed;
+    return result;
 }
 
 FLASHMEM bool CoreState::recordSequencerStructureHistory(

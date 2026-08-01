@@ -78,7 +78,7 @@ struct SequencerPatternState : public oc::note::sequencer::StepSequencerState {
     SequencerPitchEditMode pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graph;
     // Four sparse lanes are materialized only when used. The editor and every
-    // bank Track live in EXTMEM, while each 648-byte bank is independently
+    // bank Track live in EXTMEM, while each 840-byte bank is independently
     // allocated so an empty Project pays only one pointer per Pattern.
     core::app::ExtmemUniquePtr<SequencerCcLaneBank> ccLanes;
 

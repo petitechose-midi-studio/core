@@ -22,8 +22,6 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
-#include "state/sequencer/SequencerState.hpp"
-#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/StructureClipboardState.hpp"
 
@@ -37,8 +35,6 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::project::ProjectNavigationState& navigation;
-        core::state::sequencer::SequencerState& sequencer;
-        core::state::sequencer::SequencerTrackBankState& sequencerTracks;
         core::state::project::ProjectTrackState& projectTracks;
         core::state::project::ProjectTrackDomainServices trackDomain;
         core::state::StatusBarState& statusBar;
@@ -167,8 +163,6 @@ private:
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::project::ProjectNavigationState& navigation_;
-    core::state::sequencer::SequencerState& sequencer_;
-    core::state::sequencer::SequencerTrackBankState& sequencer_tracks_;
     core::state::project::ProjectTrackState& project_tracks_;
     core::state::project::ProjectTrackDomainServices track_domain_;
     core::state::StatusBarState& status_bar_;

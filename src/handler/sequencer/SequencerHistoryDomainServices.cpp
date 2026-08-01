@@ -177,6 +177,18 @@ commitPreparedPatternEditFromCoreState(
     return static_cast<core::state::CoreState*>(context)->commitSequencerPreparedPatternEdit(owner);
 }
 
+FLASHMEM core::state::sequencer::SequencerPreparedFullBankEditResult
+applyPreparedProjectScaleChoiceFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
+    uint8_t row,
+    int choiceIndex
+) {
+    if (context == nullptr) return {};
+    return static_cast<core::state::CoreState*>(context)
+        ->applyPreparedProjectScaleChoice(owner, row, choiceIndex);
+}
+
 }  // namespace
 
 const SequencerHistoryDomainServices::Operations SequencerHistoryDomainServices::EMPTY_OPERATIONS
@@ -208,6 +220,7 @@ SequencerHistoryDomainServices::fromCoreState(core::state::CoreState& state) {
         .beginPreparedPatternEdit = beginPreparedPatternEditFromCoreState,
         .sealPreparedPatternEdit = sealPreparedPatternEditFromCoreState,
         .commitPreparedPatternEdit = commitPreparedPatternEditFromCoreState,
+        .applyPreparedProjectScaleChoice = applyPreparedProjectScaleChoiceFromCoreState,
     };
     return fromStaticOperations<operations>(&state);
 }
@@ -359,6 +372,17 @@ SequencerHistoryDomainServices::commitPreparedPatternEdit(
     return operations_->commitPreparedPatternEdit != nullptr
                ? operations_->commitPreparedPatternEdit(context_, owner)
                : Outcome::Failed;
+}
+
+FLASHMEM core::state::sequencer::SequencerPreparedFullBankEditResult
+SequencerHistoryDomainServices::applyPreparedProjectScaleChoice(
+    core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
+    uint8_t row,
+    int choiceIndex
+) const {
+    if (operations_->applyPreparedProjectScaleChoice == nullptr) return {};
+    return operations_->applyPreparedProjectScaleChoice(
+        context_, owner, row, choiceIndex);
 }
 
 }  // namespace core::handler

@@ -2,8 +2,6 @@
 
 #include <cstdint>
 
-#include "state/sequencer/SequencerState.hpp"
-#include "state/sequencer/SequencerChordContextProjection.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::handler {
@@ -11,7 +9,6 @@ namespace core::handler {
 class SequencerSettingsDomainServices {
 public:
     struct StateRefs {
-        core::state::sequencer::SequencerState& activeSequencer;
         core::state::sequencer::SequencerTrackBankState& trackBank;
     };
 
@@ -19,13 +16,8 @@ public:
 
     int currentChoiceIndex(uint8_t row) const;
     int choiceCount(uint8_t row) const;
-    core::state::sequencer::SequencerChordContextProjectionStats applyChoice(
-        uint8_t row,
-        int choiceIndex
-    ) const;
 
 private:
-    core::state::sequencer::SequencerState* active_sequencer_ = nullptr;
     core::state::sequencer::SequencerTrackBankState* track_bank_ = nullptr;
 };
 

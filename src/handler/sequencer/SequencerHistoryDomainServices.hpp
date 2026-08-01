@@ -55,6 +55,12 @@ public:
     using CommitPreparedPatternEditFn =
         core::state::sequencer::SequencerPreparedPatternEditCommitOutcome (*)(
             void* context, core::state::sequencer::SequencerPreparedPatternEditOwner owner);
+    using ApplyPreparedProjectScaleChoiceFn =
+        core::state::sequencer::SequencerPreparedFullBankEditResult (*)(
+            void* context,
+            core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
+            uint8_t row,
+            int choiceIndex);
 
     struct Operations {
         RecordPatternFn recordPattern = nullptr;
@@ -76,6 +82,7 @@ public:
         BeginPreparedPatternEditFn beginPreparedPatternEdit = nullptr;
         SealPreparedPatternEditFn sealPreparedPatternEdit = nullptr;
         CommitPreparedPatternEditFn commitPreparedPatternEdit = nullptr;
+        ApplyPreparedProjectScaleChoiceFn applyPreparedProjectScaleChoice = nullptr;
     };
 
     SequencerHistoryDomainServices() = default;
@@ -141,6 +148,12 @@ public:
         core::state::sequencer::SequencerHistoryDescriptor descriptor = {}) const;
     core::state::sequencer::SequencerPreparedPatternEditCommitOutcome commitPreparedPatternEdit(
         core::state::sequencer::SequencerPreparedPatternEditOwner owner) const;
+    core::state::sequencer::SequencerPreparedFullBankEditResult
+    applyPreparedProjectScaleChoice(
+        core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
+        uint8_t row,
+        int choiceIndex
+    ) const;
 private:
     SequencerHistoryDomainServices(void* context, const Operations* operations);
     static const Operations EMPTY_OPERATIONS;

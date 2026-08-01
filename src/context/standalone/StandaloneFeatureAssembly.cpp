@@ -141,8 +141,6 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                 state.overlays,
                 state.activeView,
                 state.projectNavigation,
-                state.sequencer,
-                state.sequencerTracks,
                 state.projectTracks,
                 core::state::project::ProjectTrackDomainServices::fromCoreState(
                     state
@@ -165,7 +163,6 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             },
             core::handler::SequencerSettingsDomainServices{
                 core::handler::SequencerSettingsDomainServices::StateRefs{
-                    state.sequencer,
                     state.sequencerTracks,
                 }
             },
@@ -200,7 +197,6 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         },
         core::handler::SequencerSettingsDomainServices{
             core::handler::SequencerSettingsDomainServices::StateRefs{
-                state.sequencer,
                 state.sequencerTracks,
             }
         },
