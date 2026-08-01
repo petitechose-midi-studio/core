@@ -188,19 +188,34 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
 FLASHMEM void SequencerPatternQuickControlsHandler::open() {
     history_.commitCoalescedPatternEdit();
 
+    discardModalSnapshots();
+    cancel_snapshot_valid_ =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, cancel_snapshot_);
+    if (!cancel_snapshot_valid_) {
+        discardModalSnapshots();
+        return;
+    }
+    if (!captureOffsetSnapshot()) {
+        discardModalSnapshots();
+        return;
+    }
+    history_snapshot_valid_ =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
+    if (!history_snapshot_valid_) {
+        discardModalSnapshots();
+        return;
+    }
+
     auto& quick = sequencer_.patternQuickControls;
     prepareQuickControlsForOpen();
     quick.selecting.set(true);
-    core::state::sequencer::captureHistorySnapshot(sequencer_, cancel_snapshot_);
-    core::state::sequencer::captureHistorySnapshot(sequencer_, offset_snapshot_);
-    history_snapshot_valid_ =
-        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
     configureOptForFocusedItem();
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::closeApply() {
     auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
+    if (cancel_retry_required_) return;
     if (history_snapshot_valid_) {
         core::state::sequencer::SequencerHistoryPatternSnapshot after;
         if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
@@ -213,7 +228,6 @@ FLASHMEM void SequencerPatternQuickControlsHandler::closeApply() {
             );
         }
     }
-    history_snapshot_valid_ = false;
     closeTransientQuickControlsState();
 }
 
@@ -221,12 +235,18 @@ FLASHMEM void SequencerPatternQuickControlsHandler::closeCancel() {
     auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
 
-    core::state::sequencer::applyHistorySnapshotToEditor(sequencer_, cancel_snapshot_);
+    if (!cancel_snapshot_valid_ ||
+        !core::state::sequencer::applyHistorySnapshotToEditor(
+            sequencer_,
+            cancel_snapshot_
+        )) {
+        cancel_retry_required_ = true;
+        return;
+    }
     core::state::sequencer::refreshContentView(sequencer_);
     clampFocusToLength();
 
     closeTransientQuickControlsState();
-    history_snapshot_valid_ = false;
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
@@ -236,11 +256,12 @@ FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
     if (core::state::sequencer::isChildContentView(sequencer_)) {
         const int current = childFocusedItemOrderIndex(sequencer_);
         const int next = nav::nextWrappedIndex(delta, current, CHILD_ITEM_COUNT);
-        sequencer_.patternQuickControls.focusedItem.set(childQuickControlAtOrderIndex(next));
-        if (sequencer_.patternQuickControls.focusedItem.get() == Item::OFFSET) {
-            core::state::sequencer::captureHistorySnapshot(sequencer_, offset_snapshot_);
+        const auto nextItem = childQuickControlAtOrderIndex(next);
+        if (nextItem == Item::OFFSET) {
+            if (!captureOffsetSnapshot()) return;
             sequencer_.patternQuickControls.offsetSteps.set(0);
         }
+        sequencer_.patternQuickControls.focusedItem.set(nextItem);
         configureOptForFocusedItem();
         return;
     }
@@ -248,11 +269,11 @@ FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
     const int current = focusedItemOrderIndex();
     const int next = nav::nextWrappedIndex(delta, current, ITEM_COUNT);
     const auto nextItem = core::state::sequencer::quickControlAtOrderIndex(static_cast<size_t>(next));
-    setFocusedItemByOrderIndex(next);
     if (nextItem == Item::OFFSET) {
-        core::state::sequencer::captureHistorySnapshot(sequencer_, offset_snapshot_);
+        if (!captureOffsetSnapshot()) return;
         sequencer_.patternQuickControls.offsetSteps.set(0);
     }
+    setFocusedItemByOrderIndex(next);
     configureOptForFocusedItem();
 }
 
@@ -275,8 +296,11 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedValue(float normal
             if (sequencer_.patternQuickControls.offsetSteps.get() == offsetSteps) {
                 return;
             }
-            sequencer_.patternQuickControls.offsetSteps.set(static_cast<int8_t>(offsetSteps));
-            applyOffsetFromSnapshot(offsetSteps);
+            if (applyOffsetFromSnapshot(offsetSteps)) {
+                sequencer_.patternQuickControls.offsetSteps.set(
+                    static_cast<int8_t>(offsetSteps)
+                );
+            }
         }
         return;
     }
@@ -286,8 +310,11 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedValue(float normal
         if (sequencer_.patternQuickControls.offsetSteps.get() == offsetSteps) {
             return;
         }
-        sequencer_.patternQuickControls.offsetSteps.set(static_cast<int8_t>(offsetSteps));
-        applyOffsetFromSnapshot(offsetSteps);
+        if (applyOffsetFromSnapshot(offsetSteps)) {
+            sequencer_.patternQuickControls.offsetSteps.set(
+                static_cast<int8_t>(offsetSteps)
+            );
+        }
         return;
     }
 
@@ -409,10 +436,32 @@ FLASHMEM void SequencerPatternQuickControlsHandler::prepareQuickControlsForOpen(
     }
 }
 
+FLASHMEM bool SequencerPatternQuickControlsHandler::captureOffsetSnapshot() {
+    offset_snapshot_valid_ = false;
+    offset_snapshot_.reset();
+    offset_snapshot_valid_ =
+        core::state::sequencer::captureHistorySnapshot(sequencer_, offset_snapshot_);
+    if (!offset_snapshot_valid_) {
+        offset_snapshot_.reset();
+    }
+    return offset_snapshot_valid_;
+}
+
+FLASHMEM void SequencerPatternQuickControlsHandler::discardModalSnapshots() {
+    cancel_snapshot_valid_ = false;
+    offset_snapshot_valid_ = false;
+    history_snapshot_valid_ = false;
+    cancel_retry_required_ = false;
+    cancel_snapshot_.reset();
+    offset_snapshot_.reset();
+    history_snapshot_.reset();
+}
+
 FLASHMEM void SequencerPatternQuickControlsHandler::closeTransientQuickControlsState() {
     auto& quick = sequencer_.patternQuickControls;
     quick.selecting.set(false);
     quick.offsetSteps.set(0);
+    discardModalSnapshots();
 }
 
 FLASHMEM int SequencerPatternQuickControlsHandler::focusedItemOrderIndex() const {
@@ -447,8 +496,14 @@ FLASHMEM int SequencerPatternQuickControlsHandler::normalizedToOffset(float norm
     return index - maxOffset;
 }
 
-FLASHMEM void SequencerPatternQuickControlsHandler::applyOffsetFromSnapshot(int offsetSteps) {
-    core::state::sequencer::applyHistorySnapshotToEditor(sequencer_, offset_snapshot_);
+FLASHMEM bool SequencerPatternQuickControlsHandler::applyOffsetFromSnapshot(int offsetSteps) {
+    if (!offset_snapshot_valid_ ||
+        !core::state::sequencer::applyHistorySnapshotToEditor(
+            sequencer_,
+            offset_snapshot_
+        )) {
+        return false;
+    }
     if (offsetSteps != 0) {
         if (core::state::sequencer::isChildContentView(sequencer_)) {
             core::state::sequencer::rotateActiveContentSteps(sequencer_, offsetSteps);
@@ -458,6 +513,7 @@ FLASHMEM void SequencerPatternQuickControlsHandler::applyOffsetFromSnapshot(int 
     }
     core::state::sequencer::refreshContentView(sequencer_);
     clampFocusToLength();
+    return true;
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::applyOffsetDelta(int offsetSteps) {

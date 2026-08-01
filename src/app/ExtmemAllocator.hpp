@@ -18,6 +18,47 @@
 
 namespace core::app {
 
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+namespace testing {
+
+inline std::size_t extmemAllocationFailureOrdinal = 0U;
+inline std::size_t extmemAllocationAttempt = 0U;
+
+inline void resetExtmemAllocationFailure() {
+    extmemAllocationFailureOrdinal = 0U;
+    extmemAllocationAttempt = 0U;
+}
+
+inline void failExtmemAllocationOn(std::size_t ordinal) {
+    extmemAllocationFailureOrdinal = ordinal;
+    extmemAllocationAttempt = 0U;
+}
+
+inline bool consumeExtmemAllocationFailure() {
+    if (extmemAllocationFailureOrdinal == 0U) return false;
+    ++extmemAllocationAttempt;
+    if (extmemAllocationAttempt != extmemAllocationFailureOrdinal) return false;
+    extmemAllocationFailureOrdinal = 0U;
+    return true;
+}
+
+class ScopedExtmemAllocationFailure {
+public:
+    explicit ScopedExtmemAllocationFailure(std::size_t ordinal) {
+        failExtmemAllocationOn(ordinal);
+    }
+
+    ~ScopedExtmemAllocationFailure() {
+        resetExtmemAllocationFailure();
+    }
+
+    ScopedExtmemAllocationFailure(const ScopedExtmemAllocationFailure&) = delete;
+    ScopedExtmemAllocationFailure& operator=(const ScopedExtmemAllocationFailure&) = delete;
+};
+
+}  // namespace testing
+#endif
+
 template <typename T>
 struct ExtmemDeleter {
     void operator()(T* ptr) const noexcept {
@@ -57,6 +98,9 @@ using ExtmemUniqueArray = std::unique_ptr<T[], ExtmemArrayDeleter<T>>;
 
 template <typename T, typename... Args>
 ExtmemUniquePtr<T> makeExtmemUnique(Args&&... args) {
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    if (testing::consumeExtmemAllocationFailure()) return ExtmemUniquePtr<T>(nullptr);
+#endif
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(T));
     if (!memory) return ExtmemUniquePtr<T>(nullptr);
@@ -81,6 +125,9 @@ ExtmemUniquePtr<T> makeExtmemUniqueCopy(const T& source) {
     static_assert(std::is_trivially_copyable_v<T>);
     static_assert(std::is_trivially_destructible_v<T>);
     static_assert(std::is_copy_constructible_v<T>);
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    if (testing::consumeExtmemAllocationFailure()) return ExtmemUniquePtr<T>(nullptr);
+#endif
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(T));
     if (!memory) return ExtmemUniquePtr<T>(nullptr);
@@ -104,6 +151,9 @@ template <typename T>
 ExtmemUniquePtr<T> makeExtmemUniqueForOverwrite() {
     static_assert(std::is_trivially_default_constructible_v<T>);
     static_assert(std::is_trivially_destructible_v<T>);
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    if (testing::consumeExtmemAllocationFailure()) return ExtmemUniquePtr<T>(nullptr);
+#endif
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(T));
     if (!memory) return ExtmemUniquePtr<T>(nullptr);
@@ -128,6 +178,9 @@ ExtmemUniqueArray<T> makeExtmemUniqueArrayForOverwrite(std::size_t count) {
     if (count == 0U || count > std::numeric_limits<std::size_t>::max() / sizeof(T)) {
         return ExtmemUniqueArray<T>(nullptr);
     }
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    if (testing::consumeExtmemAllocationFailure()) return ExtmemUniqueArray<T>(nullptr);
+#endif
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     void* memory = extmem_malloc(sizeof(T) * count);
     if (!memory) return ExtmemUniqueArray<T>(nullptr);

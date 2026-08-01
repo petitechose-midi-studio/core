@@ -81,6 +81,12 @@ option(
 if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+    # Native tests can fail one EXTMEM allocation deterministically. The hook
+    # is absent from firmware and from non-test native builds.
+    target_compile_definitions(
+        midi_studio_core_native
+        PUBLIC MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION=1)
+
     add_test(
         NAME check_ArchitectureContracts
         COMMAND "${Python3_EXECUTABLE}"

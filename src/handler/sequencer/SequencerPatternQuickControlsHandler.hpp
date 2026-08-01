@@ -55,13 +55,15 @@ private:
     void configureOptForFocusedItem();
     void clampFocusToLength();
     void prepareQuickControlsForOpen();
+    bool captureOffsetSnapshot();
+    void discardModalSnapshots();
     void closeTransientQuickControlsState();
     int focusedItemOrderIndex() const;
     void setFocusedItemByOrderIndex(int index);
     int currentOffsetMax() const;
     float offsetToNormalized(int offsetSteps) const;
     int normalizedToOffset(float normalized) const;
-    void applyOffsetFromSnapshot(int offsetSteps);
+    bool applyOffsetFromSnapshot(int offsetSteps);
     void applyOffsetDelta(int offsetSteps);
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
@@ -77,7 +79,10 @@ private:
     core::state::sequencer::SequencerHistoryPatternSnapshot offset_snapshot_{};
     core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     SequencerHistoryDomainServices history_;
+    bool cancel_snapshot_valid_ = false;
+    bool offset_snapshot_valid_ = false;
     bool history_snapshot_valid_ = false;
+    bool cancel_retry_required_ = false;
 };
 
 }  // namespace core::handler
