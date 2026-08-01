@@ -58,7 +58,12 @@ public:
         uint8_t step,
         core::state::sequencer::StepProperty property,
         uint32_t nowMs,
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
         bool stateProperty
+    );
+    using SealCoalescedPatternEditFn = bool (*)(
+        void* context,
+        bool mutationChanged
     );
     using BeginCoalescedCcLaneEventEditFn = bool (*)(
         void* context,
@@ -85,6 +90,7 @@ public:
         CanRecordFullBankFn canRecordFullBank = nullptr;
         RecordPreparedFullBankFn recordPreparedFullBank = nullptr;
         BeginCoalescedPatternEditFn beginCoalescedPatternEdit = nullptr;
+        SealCoalescedPatternEditFn sealCoalescedPatternEdit = nullptr;
         BeginCoalescedCcLaneEventEditFn beginCoalescedCcLaneEventEdit = nullptr;
         CommandFn commitCoalescedPatternEdit = nullptr;
     };
@@ -145,8 +151,10 @@ public:
         uint8_t step,
         core::state::sequencer::StepProperty property,
         uint32_t nowMs,
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
         bool stateProperty = false
     ) const;
+    bool sealCoalescedPatternEdit(bool mutationChanged) const;
     bool beginCoalescedCcLaneEventEdit(
         uint8_t lane,
         uint8_t step,

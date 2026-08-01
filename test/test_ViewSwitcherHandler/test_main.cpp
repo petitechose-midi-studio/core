@@ -503,9 +503,11 @@ void test_selector_commits_pending_step_edit_before_global_undo() {
     assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         0,
         core::state::sequencer::StepProperty::NOTE,
-        100U
+        100U,
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly
     ));
     assert(h.state.sequencer.setStepNoteAt(0, 72));
+    assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(!h.state.projectHistory.canUndo());
 

@@ -1,3 +1,8 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
+#include <array>
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -10,13 +15,22 @@
 #include <oc/core/input/InputBinding.hpp>
 #include <oc/state/NotificationQueue.hpp>
 
+#include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "../../src/handler/sequencer/SequencerInputUtils.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
+#include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
+#include "../support/SequencerHistoryTransactionAssertions.hpp"
+
+#if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+#error "This test requires native EXTMEM failure injection"
+#endif
 
 namespace {
 
@@ -30,6 +44,81 @@ using test_support::TestButtonHardware;
 using test_support::TestEncoderHardware;
 using StepProperty = core::state::sequencer::StepProperty;
 namespace input_utils = core::handler::sequencer::input_utils;
+namespace tx = test_support::sequencer_transaction;
+
+struct MacroUiInvariant {
+    bool feedbackVisible = false;
+    oc::note::sequencer::StepBitMask128 feedbackTouchedMask{};
+    StepProperty feedbackProperty = StepProperty::NOTE;
+    std::array<
+        uint32_t,
+        core::state::sequencer::SequencerStepInlineFeedbackState::MAX_STEPS>
+        feedbackHideAt{};
+    bool selectorSelecting = false;
+    bool selectorLocalVariationActive = false;
+    uint8_t selectorLocalVariationStep = 0U;
+    bool quickFeedbackVisible = false;
+    core::state::sequencer::PatternQuickControlItem quickFocusedItem =
+        core::state::sequencer::PatternQuickControlItem::LENGTH;
+    int8_t quickOffsetSteps = 0;
+    uint32_t quickHideAtMs = 0U;
+};
+
+MacroUiInvariant captureMacroUiInvariant(
+    const core::state::sequencer::SequencerState& sequencer
+) {
+    const auto& feedback = sequencer.stepInlineFeedback;
+    const auto& selector = sequencer.stepPropertyInlineSelector;
+    const auto& quick = sequencer.patternQuickControls;
+    MacroUiInvariant invariant{
+        .feedbackVisible = feedback.visible.get(),
+        .feedbackTouchedMask = feedback.touchedMask.get(),
+        .feedbackProperty = feedback.property.get(),
+        .selectorSelecting = selector.selecting.get(),
+        .selectorLocalVariationActive =
+            selector.macroLocalVariationEditActive.get(),
+        .selectorLocalVariationStep = selector.localVariationStepIndex,
+        .quickFeedbackVisible = quick.feedbackVisible.get(),
+        .quickFocusedItem = quick.focusedItem.get(),
+        .quickOffsetSteps = quick.offsetSteps.get(),
+        .quickHideAtMs = quick.hideAtMs,
+    };
+    std::memcpy(
+        invariant.feedbackHideAt.data(),
+        feedback.hideAtMs,
+        sizeof(feedback.hideAtMs)
+    );
+    return invariant;
+}
+
+void assertMacroUiInvariant(
+    const core::state::sequencer::SequencerState& sequencer,
+    const MacroUiInvariant& expected
+) {
+    const auto actual = captureMacroUiInvariant(sequencer);
+    assert(actual.feedbackVisible == expected.feedbackVisible);
+    for (uint8_t step = 0U; step < actual.feedbackHideAt.size(); ++step) {
+        assert(
+            actual.feedbackTouchedMask.test(step) ==
+            expected.feedbackTouchedMask.test(step)
+        );
+    }
+    assert(actual.feedbackProperty == expected.feedbackProperty);
+    assert(actual.feedbackHideAt == expected.feedbackHideAt);
+    assert(actual.selectorSelecting == expected.selectorSelecting);
+    assert(
+        actual.selectorLocalVariationActive ==
+        expected.selectorLocalVariationActive
+    );
+    assert(
+        actual.selectorLocalVariationStep ==
+        expected.selectorLocalVariationStep
+    );
+    assert(actual.quickFeedbackVisible == expected.quickFeedbackVisible);
+    assert(actual.quickFocusedItem == expected.quickFocusedItem);
+    assert(actual.quickOffsetSteps == expected.quickOffsetSteps);
+    assert(actual.quickHideAtMs == expected.quickHideAtMs);
+}
 
 struct SequencerMacroPropertyHarness {
     static constexpr oc::type::ScopeID SEQUENCER_SCOPE = 1101;
@@ -95,6 +184,258 @@ struct SequencerMacroPropertyHarness {
     }
 };
 
+enum class RejectedMacroCaller : uint8_t {
+    MacroLocalVariation = 0U,
+    MacroState,
+    MacroOrdinary,
+    OptState,
+    OptOrdinary,
+};
+
+void configureRejectedMacroCaller(
+    SequencerMacroPropertyHarness& h,
+    RejectedMacroCaller caller
+) {
+    auto& sequencer = h.state.sequencer;
+    sequencer.pattern.setContentLength(8U);
+    sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    sequencer.pattern.velocity[0U] = 10U;
+    sequencer.pattern.velocity[2U] = 20U;
+
+    switch (caller) {
+        case RejectedMacroCaller::MacroLocalVariation:
+            sequencer.activeStepProperty.set(StepProperty::NOTE);
+            sequencer.pattern.note[2U] = 60U;
+            sequencer.stepPropertyInlineSelector.selecting.set(true);
+            h.press(Config::ButtonID::LEFT_BOTTOM);
+            return;
+        case RejectedMacroCaller::MacroState:
+            sequencer.stepStatePropertyActive.set(true);
+            return;
+        case RejectedMacroCaller::MacroOrdinary:
+            return;
+        case RejectedMacroCaller::OptState:
+            sequencer.stepStatePropertyActive.set(true);
+            sequencer.focusedStep.set(2U);
+            h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+            return;
+        case RejectedMacroCaller::OptOrdinary:
+            sequencer.focusedStep.set(2U);
+            h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+            return;
+    }
+}
+
+void invokeRejectedMacroCaller(
+    SequencerMacroPropertyHarness& h,
+    RejectedMacroCaller caller
+) {
+    switch (caller) {
+        case RejectedMacroCaller::MacroLocalVariation:
+            h.turn(Config::EncoderID::MACRO_3, 1.0F);
+            return;
+        case RejectedMacroCaller::MacroState:
+        case RejectedMacroCaller::MacroOrdinary:
+            h.turn(Config::EncoderID::MACRO_1, 1.0F);
+            return;
+        case RejectedMacroCaller::OptState:
+        case RejectedMacroCaller::OptOrdinary:
+            h.turn(Config::EncoderID::OPT, 1.0F);
+            return;
+    }
+}
+
+void test_all_five_macro_and_opt_callers_reject_fail_one_atomically() {
+    constexpr std::array callers{
+        RejectedMacroCaller::MacroLocalVariation,
+        RejectedMacroCaller::MacroState,
+        RejectedMacroCaller::MacroOrdinary,
+        RejectedMacroCaller::OptState,
+        RejectedMacroCaller::OptOrdinary,
+    };
+
+    for (const auto caller : callers) {
+        SequencerMacroPropertyHarness h;
+        configureRejectedMacroCaller(h, caller);
+        g_now_ms = 100U;
+
+        const auto stateBefore = tx::captureStateInvariant(h.state);
+        core::state::sequencer::SequencerHistoryPatternSnapshot musicalBefore;
+        tx::captureMusicalSnapshot(h.state, musicalBefore);
+        const auto uiBefore = captureMacroUiInvariant(h.state.sequencer);
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            invokeRejectedMacroCaller(h, caller);
+            tx::assertFailureConsumed(1U);
+        }
+
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        tx::assertStateInvariant(h.state, stateBefore);
+        tx::assertMusicalSnapshot(h.state, musicalBefore);
+        assertMacroUiInvariant(h.state.sequencer, uiBefore);
+    }
+
+    std::cout
+        << "[PASS] all five Macro/OPT callers reject fail-1 atomically\n";
+}
+
+enum class ChildMacroCaller : uint8_t {
+    MacroState = 0U,
+    MacroOrdinary,
+    OptState,
+    OptOrdinary,
+};
+
+void prepareChildGraphAndCc(
+    SequencerMacroPropertyHarness& h,
+    ChildMacroCaller caller
+) {
+    auto& sequencer = h.state.sequencer;
+    sequencer.pattern.setContentLength(8U);
+    const auto micro = core::state::sequencer::createMicroSequence(
+        sequencer.pattern,
+        core::state::sequencer::rootStepNodeId(0U),
+        4U
+    );
+    assert(micro.ok);
+    assert(core::state::sequencer::enterMicroSequenceContentView(
+        sequencer,
+        core::state::sequencer::rootStepNodeId(0U),
+        micro.id
+    ));
+
+    const bool stateCaller =
+        caller == ChildMacroCaller::MacroState ||
+        caller == ChildMacroCaller::OptState;
+    sequencer.stepStatePropertyActive.set(stateCaller);
+    sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    sequencer.focusedStep.set(0U);
+    sequencer.page.set(0U);
+    if (stateCaller) {
+        (void)core::state::sequencer::setActiveContentStepEnabled(
+            sequencer,
+            0U,
+            false
+        );
+    }
+
+    auto* cc = core::state::sequencer::ensureSequencerCcLaneBank(
+        sequencer.pattern
+    );
+    assert(cc != nullptr);
+    core::state::sequencer::SequencerCcLaneDraft draft{};
+    draft.destination.controller = 74U;
+    assert(core::state::sequencer::createSequencerCcLane(*cc, 0U, draft).changed());
+    assert(core::state::sequencer::setSequencerCcLaneEvent(
+        *cc,
+        0U,
+        0U,
+        91U
+    ).changed());
+    sequencer.pattern.bumpCcLaneRevision();
+
+    if (caller == ChildMacroCaller::OptState ||
+        caller == ChildMacroCaller::OptOrdinary) {
+        h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    }
+    assert(core::state::sequencer::initializeTrackBankFromActive(
+        h.state.sequencerTracks,
+        sequencer
+    ));
+}
+
+void invokeChildMacroCaller(
+    SequencerMacroPropertyHarness& h,
+    ChildMacroCaller caller
+) {
+    const bool opt = caller == ChildMacroCaller::OptState ||
+                     caller == ChildMacroCaller::OptOrdinary;
+    h.turn(opt ? Config::EncoderID::OPT : Config::EncoderID::MACRO_1, 1.0F);
+}
+
+void assertChildEditorAndBankPayloadMatch(
+    const SequencerMacroPropertyHarness& h
+) {
+    const auto& editor = h.state.sequencer.pattern;
+    const auto& bank = h.state.sequencerTracks.track(0U);
+    const auto* editorGraph = core::state::sequencer::graphView(editor);
+    const auto* bankGraph = core::state::sequencer::graphView(bank);
+    const auto* editorCc = core::state::sequencer::sequencerCcLaneView(editor);
+    const auto* bankCc = core::state::sequencer::sequencerCcLaneView(bank);
+    assert(editorGraph != nullptr && bankGraph != nullptr);
+    assert(editorCc != nullptr && bankCc != nullptr);
+    assert(editorGraph != bankGraph);
+    assert(editorCc != bankCc);
+    assert(std::memcmp(editorGraph, bankGraph, sizeof(*editorGraph)) == 0);
+    assert(std::memcmp(editorCc, bankCc, sizeof(*editorCc)) == 0);
+    assert(editor.stepDataRevision.get() == bank.stepDataRevision.get());
+    assert(
+        editor.patternVariationRevision.get() ==
+        bank.patternVariationRevision.get()
+    );
+    assert(editor.patternScaleRevision.get() == bank.patternScaleRevision.get());
+    assert(
+        editor.patternTimingRevision.get() ==
+        bank.patternTimingRevision.get()
+    );
+    assert(editor.graphRevision.get() == bank.graphRevision.get());
+    assert(editor.ccLaneRevision.get() == bank.ccLaneRevision.get());
+}
+
+void test_child_macro_and_opt_callers_use_full_payload() {
+    constexpr std::array callers{
+        ChildMacroCaller::MacroState,
+        ChildMacroCaller::MacroOrdinary,
+        ChildMacroCaller::OptState,
+        ChildMacroCaller::OptOrdinary,
+    };
+
+    for (const auto caller : callers) {
+        SequencerMacroPropertyHarness h;
+        prepareChildGraphAndCc(h, caller);
+        g_now_ms = 200U;
+        const auto ownersBefore = tx::captureStateInvariant(h.state);
+        core::state::sequencer::SequencerHistoryPatternSnapshot before;
+        tx::captureMusicalSnapshot(h.state, before);
+
+        {
+            // Full Graph+CC owns exactly seven allocations. Seal and commit
+            // must leave the max+1 failure armed.
+            core::app::testing::ScopedExtmemAllocationFailure failure(8U);
+            invokeChildMacroCaller(h, caller);
+            tx::assertMaxPlusOneStillArmed(7U);
+            assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+            assert(h.state.commitSequencerPatternHistoryCoalescing());
+            tx::assertMaxPlusOneStillArmed(7U);
+        }
+
+        assert(h.state.sequencerHistory.undoCount() == 1U);
+        const auto ownersAfter = tx::captureStateInvariant(h.state);
+        assert(ownersAfter.editorGraphOwner == ownersBefore.editorGraphOwner);
+        assert(ownersAfter.editorCcOwner == ownersBefore.editorCcOwner);
+        assert(ownersAfter.bankGraphOwner != ownersBefore.bankGraphOwner);
+        assert(ownersAfter.bankCcOwner != ownersBefore.bankCcOwner);
+        assert(ownersAfter.bankGraphOwner != ownersAfter.editorGraphOwner);
+        assert(ownersAfter.bankCcOwner != ownersAfter.editorCcOwner);
+        assertChildEditorAndBankPayloadMatch(h);
+
+        core::state::sequencer::SequencerHistoryPatternSnapshot after;
+        tx::captureMusicalSnapshot(h.state, after);
+        assert(!core::state::sequencer::sameMusicalHistorySnapshot(before, after));
+        assert(h.state.undoSequencerHistory());
+        tx::assertMusicalSnapshot(h.state, before);
+        assertChildEditorAndBankPayloadMatch(h);
+        assert(h.state.redoSequencerHistory());
+        tx::assertMusicalSnapshot(h.state, after);
+        assertChildEditorAndBankPayloadMatch(h);
+    }
+
+    std::cout
+        << "[PASS] child Macro/OPT state and ordinary callers use Full payload\n";
+}
+
 void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
     SequencerMacroPropertyHarness h;
     h.state.sequencer.pattern.setContentLength(16);
@@ -109,6 +450,8 @@ void test_macro_encoder_edits_step_in_current_page_and_shows_feedback() {
     assert(h.state.sequencer.stepInlineFeedback.visible.get());
     assert(h.state.sequencer.stepInlineFeedback.touchedMask.get().test(step));
     assert(h.state.sequencer.stepInlineFeedback.property.get() == StepProperty::VELOCITY);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0U);
 
     std::cout << "[PASS] test_macro_encoder_edits_step_in_current_page_and_shows_feedback\n";
 }
@@ -141,8 +484,37 @@ void test_opt_encoder_edits_focused_step_in_step_focus() {
     assert(h.state.sequencer.stepInlineFeedback.visible.get());
     assert(h.state.sequencer.stepInlineFeedback.touchedMask.get().test(4));
     assert(h.state.sequencer.stepInlineFeedback.property.get() == StepProperty::VELOCITY);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.commitSequencerPatternHistoryCoalescing());
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1U);
 
     std::cout << "[PASS] test_opt_encoder_edits_focused_step_in_step_focus\n";
+}
+
+void test_opt_state_caller_seals_pending_edit_and_is_undoable() {
+    SequencerMacroPropertyHarness h;
+    h.state.sequencer.pattern.setContentLength(8U);
+    h.state.sequencer.focusedStep.set(3U);
+    h.state.sequencer.stepStatePropertyActive.set(true);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    g_now_ms = 3456U;
+
+    h.turn(Config::EncoderID::OPT, 1.0F);
+
+    assert(h.state.sequencer.pattern.isEnabled(3U));
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(h.state.commitSequencerPatternHistoryCoalescing());
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+    assert(h.state.undoSequencerHistory());
+    assert(!h.state.sequencer.pattern.isEnabled(3U));
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.isEnabled(3U));
+
+    std::cout
+        << "[PASS] OPT state caller seals pending edit and is undoable\n";
 }
 
 void test_direct_state_edit_coalesces_as_state_history() {
@@ -550,9 +922,12 @@ void test_macro_property_new_pending_edit_invalidates_redo_on_commit() {
 }  // namespace
 
 int main() {
+    test_all_five_macro_and_opt_callers_reject_fail_one_atomically();
+    test_child_macro_and_opt_callers_use_full_payload();
     test_macro_encoder_edits_step_in_current_page_and_shows_feedback();
     test_opt_encoder_does_not_edit_without_step_focus();
     test_opt_encoder_edits_focused_step_in_step_focus();
+    test_opt_state_caller_seals_pending_edit_and_is_undoable();
     test_direct_state_edit_coalesces_as_state_history();
     test_macro_encoder_invalidates_stale_runtime_telemetry_for_edited_step();
     test_direct_edit_retires_runtime_projection_before_authored_revision();

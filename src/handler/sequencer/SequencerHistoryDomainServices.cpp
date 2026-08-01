@@ -73,6 +73,10 @@ FLASHMEM void recordPreparedPatternFromCoreState(
 ) {
     if (context == nullptr || !change) return;
     auto* state = static_cast<core::state::CoreState*>(context);
+    // Public compatibility adapters remain defensive for callers that probe
+    // admission and may still transfer on rejection. The sealed Core
+    // coalescer publishes through its direct trusted path.
+    if (!state->sequencerHistory.canRecordPattern(*change)) return;
     state->sequencerHistory.recordPreparedPattern(std::move(change));
     state->markProjectMutated();
 }
@@ -156,6 +160,7 @@ FLASHMEM bool beginCoalescedPatternEditFromCoreState(
     uint8_t step,
     core::state::sequencer::StepProperty property,
     uint32_t nowMs,
+    core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
     bool stateProperty
 ) {
     if (context == nullptr) {
@@ -167,8 +172,21 @@ FLASHMEM bool beginCoalescedPatternEditFromCoreState(
         step,
         property,
         nowMs,
+        payloadPlan,
         stateProperty
     );
+}
+
+FLASHMEM bool sealCoalescedPatternEditFromCoreState(
+    void* context,
+    bool mutationChanged
+) {
+    if (context == nullptr) {
+        return false;
+    }
+
+    return static_cast<core::state::CoreState*>(context)
+        ->sealSequencerPatternHistoryCoalescing(mutationChanged);
 }
 
 FLASHMEM bool beginCoalescedCcLaneEventEditFromCoreState(
@@ -226,6 +244,7 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
             .canRecordFullBank = canRecordFullBankFromCoreState,
             .recordPreparedFullBank = recordPreparedFullBankFromCoreState,
             .beginCoalescedPatternEdit = beginCoalescedPatternEditFromCoreState,
+            .sealCoalescedPatternEdit = sealCoalescedPatternEditFromCoreState,
             .beginCoalescedCcLaneEventEdit =
                 beginCoalescedCcLaneEventEditFromCoreState,
             .commitCoalescedPatternEdit = commitCoalescedPatternEditFromCoreState,
@@ -355,6 +374,7 @@ FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedPatternEdit(
     uint8_t step,
     core::state::sequencer::StepProperty property,
     uint32_t nowMs,
+    core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
     bool stateProperty
 ) const {
     return operations_.beginCoalescedPatternEdit != nullptr &&
@@ -363,7 +383,18 @@ FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedPatternEdit(
                step,
                property,
                nowMs,
+               payloadPlan,
                stateProperty
+           );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::sealCoalescedPatternEdit(
+    bool mutationChanged
+) const {
+    return operations_.sealCoalescedPatternEdit != nullptr &&
+           operations_.sealCoalescedPatternEdit(
+               operations_.context,
+               mutationChanged
            );
 }
 

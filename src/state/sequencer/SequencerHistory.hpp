@@ -99,6 +99,16 @@ enum class SequencerHistoryPatternStorage : uint8_t {
     FlatOnly,
 };
 
+// Frozen payload plan for one coalesced Pattern edit. FullCurrentPayload
+// mirrors the currently-owned Graph/CC shape. FullWithProspectiveGraph also
+// reserves a post-edit Graph when the live source is still graphless; CC
+// presence always remains source-derived and may never grow through this plan.
+enum class SequencerCoalescedPatternPayloadPlan : uint8_t {
+    FlatOnly = 0,
+    FullCurrentPayload,
+    FullWithProspectiveGraph,
+};
+
 // Active editor-to-bank ownership prepared for one frozen Track identity.
 // Callers must revalidate matchesActiveTrack() immediately before their first
 // live write and abandon the entire object after any failed reservation.
@@ -247,10 +257,31 @@ SequencerHistoryPatternChangePtr prepareHistoryPatternChangeBefore(
     SequencerHistoryPatternStorage storage,
     SequencerHistoryDescriptor descriptor = {}
 );
+// Coalesced overload. Allocation order is final Change, before Graph or the
+// mutually-exclusive prospective Graph, then before CC. A prospective owner
+// is returned only when the plan requires a post-edit Graph and the live
+// source owns no Graph; the caller must discard it with a failed preparation.
+SequencerHistoryPatternChangePtr prepareHistoryPatternChangeBefore(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerCoalescedPatternPayloadPlan plan,
+    SequencerHistoryGraphPtr& prospectiveGraph,
+    SequencerHistoryDescriptor descriptor = {}
+);
 bool reservePreparedHistoryPatternAfter(
     const SequencerTrackBankState& bank,
     const SequencerState& active,
     SequencerHistoryPatternChange& change
+);
+// Reserves the exact declared post-edit shape. Only
+// FullWithProspectiveGraph may force a Graph owner absent from the current
+// source; CC ownership remains strictly current-source-derived.
+bool reservePreparedHistoryPatternAfter(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryPatternChange& change,
+    SequencerCoalescedPatternPayloadPlan plan
 );
 bool capturePreparedHistoryPatternAfterUsingReservedStorage(
     const SequencerTrackBankState& bank,
@@ -297,6 +328,14 @@ struct SequencerHistoryEntry {
 bool captureHistorySnapshot(
     const SequencerState& source,
     SequencerHistoryPatternSnapshot& out
+);
+// Restores the complete musical revision vector without copying payload data
+// or allocating. Used when exact prepared publication/no-op cancellation has
+// already proven the corresponding musical bytes.
+void synchronizeHistoryPatternRevisionSignals(
+    SequencerPatternState& target,
+    const SequencerPatternSnapshot& snapshot,
+    uint32_t ccLaneRevision
 );
 bool reserveHistoryPatternPayloadStorage(
     const SequencerPatternState& source,
@@ -385,6 +424,13 @@ bool reservePreparedActiveTrackSynchronization(
     SequencerHistoryPatternStorage storage,
     SequencerPreparedActiveTrackSynchronization& synchronization
 );
+bool reservePreparedActiveTrackSynchronization(
+    const SequencerTrackBankState& bank,
+    const SequencerState& after,
+    uint8_t trackIndex,
+    SequencerCoalescedPatternPayloadPlan plan,
+    SequencerPreparedActiveTrackSynchronization& synchronization
+);
 bool preparedActiveTrackSynchronizationMatches(
     const SequencerTrackBankState& bank,
     const SequencerPreparedActiveTrackSynchronization& synchronization
@@ -394,9 +440,25 @@ bool capturePreparedActiveTrackSynchronizationUsingReservedStorage(
     const SequencerState& after,
     SequencerPreparedActiveTrackSynchronization& synchronization
 );
+// Re-seals a continuation into the same reserved synchronization owners.
+// Unlike the one-shot capture above, this operation deliberately accepts an
+// already-captured bundle and never allocates missing storage.
+bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& after,
+    SequencerPreparedActiveTrackSynchronization& synchronization
+);
 void publishPreparedActiveTrackSynchronization(
     SequencerTrackBankState& bank,
     const SequencerState& active,
+    SequencerPreparedActiveTrackSynchronization synchronization
+);
+// Coalesced publication consumes the exact flat After captured at seal time;
+// the delayed boundary performs no live snapshot capture or allocation.
+void publishPreparedActiveTrackSynchronization(
+    SequencerTrackBankState& bank,
+    const SequencerState& active,
+    const SequencerHistoryPatternSnapshot& sealedAfter,
     SequencerPreparedActiveTrackSynchronization synchronization
 );
 

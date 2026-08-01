@@ -2961,8 +2961,11 @@ void test_blocked_preset_load_keeps_pending_history_coalescing() {
     assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         0U,
         core::state::sequencer::StepProperty::NOTE,
-        g_now_ms
+        g_now_ms,
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly
     ));
+    assert(h.state.sequencer.setStepNoteAt(0U, 72U));
+    assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
 
     h.tap(Config::ButtonID::BOTTOM_RIGHT);

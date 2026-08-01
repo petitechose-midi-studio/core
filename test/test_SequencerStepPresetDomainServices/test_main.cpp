@@ -749,9 +749,11 @@ void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
     assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         target.stepIndex,
         core::state::sequencer::StepProperty::VELOCITY,
-        100
+        100,
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly
     ));
     h.state.sequencer.pattern.velocity[target.stepIndex] = 77;
+    assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     const auto beforePendingEdit = captureInvariant(h.state);
     const auto pendingRejected = h.presets.applyPreset(
         "apply-source",

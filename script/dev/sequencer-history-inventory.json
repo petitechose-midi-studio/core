@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "scope": "L-R08-01 boundary with L-R08-02 additive provider forwards",
+  "scope": "L-R08-01 boundary with L-R08-02 providers and L-R08-03 prepared coalescing",
   "recordingBoundary": {
     "entryRecordingCallTotal": 44,
     "expectedProviderForwardTotal": 5,
-    "expectedTotal": 49,
+    "expectedCoalescedPreparedTotal": 1,
+    "expectedTotal": 50,
     "memberDispatch": {
       "methods": [
         "recordPattern",
@@ -17,9 +18,9 @@
         "recordPreparedStructure"
       ],
       "expectedMethodCount": 8,
-      "expectedTotal": 41,
+      "expectedTotal": 42,
       "expectedSinkTotal": 22,
-      "expectedServiceAdapterTotal": 19,
+      "expectedServiceAdapterTotal": 20,
       "expectedSinkClassifications": {
         "post-fallible": 15,
         "prepared": 5,
@@ -193,8 +194,9 @@
         {
           "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
           "method": "recordPreparedPattern",
-          "count": 1,
-          "role": "service-adapter"
+          "count": 2,
+          "role": "service-adapter",
+          "coalescedPreparedCount": 1
         },
         {
           "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
@@ -298,17 +300,33 @@
         }
       ]
     },
-    "explicitExclusions": [
-      {
-        "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
-        "method": "recordSequencerPatternHistory",
-        "expectedUnqualifiedCallCount": 1,
-        "reason": "The coalesced CoreState commit is outside the canonical SequencerHistoryService recording-call inventory."
-      }
-    ]
+    "explicitExclusions": []
   },
   "coalescedBegins": {
     "method": "beginCoalescedPatternEdit",
+    "expectedTotal": 7,
+    "expectedBusinessTotal": 6,
+    "expectedAdapterTotal": 1,
+    "groups": [
+      {
+        "path": "src/handler/sequencer/SequencerMacroPropertyHandler.cpp",
+        "count": 5,
+        "role": "business"
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
+        "count": 1,
+        "role": "business"
+      },
+      {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "count": 1,
+        "role": "adapter"
+      }
+    ]
+  },
+  "coalescedSeals": {
+    "method": "sealCoalescedPatternEdit",
     "expectedTotal": 7,
     "expectedBusinessTotal": 6,
     "expectedAdapterTotal": 1,
@@ -349,7 +367,9 @@
     ],
     "allowedTestUses": {
       "test/support/SequencerHistoryTransactionAssertions.hpp": 1,
+        "test/test_SequencerCoalescedPatternTransactions/test_main.cpp": 9,
       "test/test_SequencerHistoryQualification/test_main.cpp": 1,
+      "test/test_SequencerMacroPropertyHandler/test_main.cpp": 1,
       "test/test_SequencerQuickControlsContainment/test_main.cpp": 1
     }
   }

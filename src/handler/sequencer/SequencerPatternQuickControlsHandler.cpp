@@ -9,6 +9,7 @@
 #include "handler/common/NavigationUtils.hpp"
 #include "SequencerInputUtils.hpp"
 #include "SequencerInteractionPolicyAdapter.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
@@ -125,6 +126,16 @@ FLASHMEM int childFocusedItemOrderIndex(
 
 FLASHMEM Item childQuickControlAtOrderIndex(int index) {
     return index == 1 ? Item::OFFSET : Item::LENGTH;
+}
+
+FLASHMEM bool rootLengthEditRequiresFullPayload(
+    const core::state::sequencer::SequencerState& sequencer
+) {
+    // LENGTH can destructively trim CC events. Reserve the CC payload for the
+    // entire 500 ms gesture whenever the owner exists, so crossing an authored
+    // event does not change the transaction plan (and therefore split Undo).
+    return core::state::sequencer::sequencerCcLaneView(sequencer.pattern) !=
+           nullptr;
 }
 
 }  // namespace
@@ -277,62 +288,78 @@ FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
     configureOptForFocusedItem();
 }
 
-FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedValue(float normalized) {
+FLASHMEM bool SequencerPatternQuickControlsHandler::setFocusedValue(float normalized) {
     auto item = sequencer_.patternQuickControls.focusedItem.get();
     if (core::state::sequencer::isChildContentView(sequencer_)) {
         if (item == Item::LENGTH) {
             const uint8_t length = normalizedToChildLength(sequencer_, normalized);
+            bool changed = false;
             if (core::state::sequencer::isCycleStatesContentView(sequencer_)) {
-                core::state::sequencer::resizeActiveCycleStatesContent(sequencer_, length);
+                changed = core::state::sequencer::resizeActiveCycleStatesContent(
+                    sequencer_,
+                    length
+                );
             } else {
-                core::state::sequencer::resizeActiveMicroSequenceContent(sequencer_, length);
+                changed = core::state::sequencer::resizeActiveMicroSequenceContent(
+                    sequencer_,
+                    length
+                );
             }
             clampFocusToLength();
-            return;
+            return changed;
         }
 
         if (item == Item::OFFSET) {
             const int offsetSteps = normalizedToOffset(normalized);
             if (sequencer_.patternQuickControls.offsetSteps.get() == offsetSteps) {
-                return;
+                return false;
             }
             if (applyOffsetFromSnapshot(offsetSteps)) {
                 sequencer_.patternQuickControls.offsetSteps.set(
                     static_cast<int8_t>(offsetSteps)
                 );
+                return true;
             }
         }
-        return;
+        return false;
     }
 
     if (item == Item::OFFSET) {
         const int offsetSteps = normalizedToOffset(normalized);
         if (sequencer_.patternQuickControls.offsetSteps.get() == offsetSteps) {
-            return;
+            return false;
         }
         if (applyOffsetFromSnapshot(offsetSteps)) {
             sequencer_.patternQuickControls.offsetSteps.set(
                 static_cast<int8_t>(offsetSteps)
             );
+            return true;
         }
-        return;
+        return false;
     }
 
+    const float before = input_utils::quickControlToNormalized(sequencer_, item);
     input_utils::applyNormalizedToQuickControl(sequencer_, item, normalized);
     sequencer_.patternQuickControls.offsetSteps.set(0);
     if (item == Item::LENGTH) {
         clampFocusToLength();
     }
+    return input_utils::quickControlToNormalized(sequencer_, item) != before;
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedValueDirect(float normalized) {
     auto item = sequencer_.patternQuickControls.focusedItem.get();
-    if (core::state::sequencer::isChildContentView(sequencer_) &&
-        item != Item::LENGTH &&
-        item != Item::OFFSET) {
-        item = Item::LENGTH;
-        sequencer_.patternQuickControls.focusedItem.set(item);
-    }
+    const bool childContentView =
+        core::state::sequencer::isChildContentView(sequencer_);
+    const bool needsFullPayload =
+        childContentView || item == Item::OFFSET ||
+        (item == Item::LENGTH &&
+         rootLengthEditRequiresFullPayload(sequencer_));
+    const auto payloadPlan = needsFullPayload
+        ? core::state::sequencer::
+              SequencerCoalescedPatternPayloadPlan::FullCurrentPayload
+        : core::state::sequencer::
+              SequencerCoalescedPatternPayloadPlan::FlatOnly;
 
     const uint8_t len = core::state::sequencer::activeContentLength(sequencer_);
     const uint8_t focusedStep = len == 0
@@ -342,25 +369,36 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedValueDirect(float 
               static_cast<uint8_t>(len - 1U)
           );
     const uint32_t nowMs = core::time_compat::millis();
-    history_.beginCoalescedPatternEdit(
-        focusedStep,
-        core::state::sequencer::StepProperty::NOTE,
-        nowMs
-    );
-    sequencer_.patternQuickControls.showFeedback(nowMs);
-
-    if (item == Item::OFFSET) {
-        const int nextOffset = normalizedToOffset(normalized);
-        const int currentOffset = sequencer_.patternQuickControls.offsetSteps.get();
-        if (nextOffset == currentOffset) {
-            return;
-        }
-        sequencer_.patternQuickControls.offsetSteps.set(static_cast<int8_t>(nextOffset));
-        applyOffsetDelta(nextOffset - currentOffset);
+    if (!history_.beginCoalescedPatternEdit(
+            focusedStep,
+            core::state::sequencer::StepProperty::NOTE,
+            nowMs,
+            payloadPlan
+        )) {
         return;
     }
 
-    setFocusedValue(normalized);
+    if (childContentView && item != Item::LENGTH && item != Item::OFFSET) {
+        item = Item::LENGTH;
+        sequencer_.patternQuickControls.focusedItem.set(item);
+    }
+    sequencer_.patternQuickControls.showFeedback(nowMs);
+
+    bool changed = false;
+    if (item == Item::OFFSET) {
+        const int nextOffset = normalizedToOffset(normalized);
+        const int currentOffset = sequencer_.patternQuickControls.offsetSteps.get();
+        if (nextOffset != currentOffset) {
+            sequencer_.patternQuickControls.offsetSteps.set(
+                static_cast<int8_t>(nextOffset)
+            );
+            changed = applyOffsetDelta(nextOffset - currentOffset);
+        }
+    } else {
+        changed = setFocusedValue(normalized);
+    }
+
+    if (!history_.sealCoalescedPatternEdit(changed)) return;
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::configureOptForFocusedItem() {
@@ -516,15 +554,20 @@ FLASHMEM bool SequencerPatternQuickControlsHandler::applyOffsetFromSnapshot(int 
     return true;
 }
 
-FLASHMEM void SequencerPatternQuickControlsHandler::applyOffsetDelta(int offsetSteps) {
-    if (offsetSteps == 0) return;
+FLASHMEM bool SequencerPatternQuickControlsHandler::applyOffsetDelta(int offsetSteps) {
+    if (offsetSteps == 0) return false;
+    bool changed = false;
     if (core::state::sequencer::isChildContentView(sequencer_)) {
-        core::state::sequencer::rotateActiveContentSteps(sequencer_, offsetSteps);
+        changed = core::state::sequencer::rotateActiveContentSteps(
+            sequencer_,
+            offsetSteps
+        );
     } else {
-        core::state::sequencer::rotatePattern(sequencer_, offsetSteps);
+        changed = core::state::sequencer::rotatePattern(sequencer_, offsetSteps);
     }
     core::state::sequencer::refreshContentView(sequencer_);
     clampFocusToLength();
+    return changed;
 }
 
 }  // namespace core::handler

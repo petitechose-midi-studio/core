@@ -153,7 +153,14 @@ struct SequencerDomainState {
         bool stateProperty = false;
         uint8_t lane = sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
         uint32_t lastTouchedMs = 0;
-        sequencer::SequencerHistoryPatternSnapshot before{};
+        sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan =
+            sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly;
+        bool sealed = false;
+        bool hasChange = false;
+        bool prospectiveGraphInstalled = false;
+        bool genericMutationPendingAtBegin = false;
+        sequencer::SequencerHistoryPatternChangePtr preparedStepChange;
+        sequencer::SequencerPreparedActiveTrackSynchronization synchronization;
         sequencer::SequencerHistoryPatternChangePtr preparedCcLaneChange;
 
         bool matchesStepProperty(
@@ -182,18 +189,7 @@ struct SequencerDomainState {
                    step == nextStep;
         }
 
-        void clear() {
-            pending = false;
-            kind = Kind::StepProperty;
-            activeTrack = 0;
-            step = 0;
-            property = sequencer::StepProperty::NOTE;
-            stateProperty = false;
-            lane = sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
-            lastTouchedMs = 0;
-            before.reset();
-            preparedCcLaneChange.reset();
-        }
+        void clear();
     };
 
     core::app::ExtmemUniquePtr<sequencer::SequencerState> editor;
@@ -414,7 +410,9 @@ public:
     bool beginOrContinueSequencerPatternHistoryCoalescing(uint8_t step,
                                                           sequencer::StepProperty property,
                                                           uint32_t nowMs,
+                                                          sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
                                                           bool stateProperty = false);
+    bool sealSequencerPatternHistoryCoalescing(bool mutationChanged);
     bool beginOrContinueSequencerCcLaneEventHistoryCoalescing(
         uint8_t lane,
         uint8_t step,
@@ -464,6 +462,18 @@ public:
     persistence::PersistenceWriteStatus recoverSettingsFromRamAfterStorageReopen();
 
 private:
+    enum class SequencerPatternHistoryCommitOutcome : uint8_t {
+        NoPending = 0,
+        NoChange,
+        Committed,
+        Failed,
+    };
+
+    void consumePendingSequencerMutation_(bool* priorMutation = nullptr);
+    SequencerPatternHistoryCommitOutcome abandonUnsafeSequencerPatternHistory_(
+        const char* reason
+    );
+    SequencerPatternHistoryCommitOutcome commitSequencerPatternHistoryCoalescing_();
     [[nodiscard]] bool queueSequencerApply_(
         sequencer::SequencerState& staged,
         bool merge = false

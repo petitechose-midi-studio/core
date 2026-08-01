@@ -50,7 +50,7 @@ private:
     void closeApply();
     void closeCancel();
     void navigate(float delta);
-    void setFocusedValue(float normalized);
+    bool setFocusedValue(float normalized);
     void setFocusedValueDirect(float normalized);
     void configureOptForFocusedItem();
     void clampFocusToLength();
@@ -64,7 +64,7 @@ private:
     float offsetToNormalized(int offsetSteps) const;
     int normalizedToOffset(float normalized) const;
     bool applyOffsetFromSnapshot(int offsetSteps);
-    void applyOffsetDelta(int offsetSteps);
+    bool applyOffsetDelta(int offsetSteps);
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     core::state::sequencer::SequencerState& sequencer_;

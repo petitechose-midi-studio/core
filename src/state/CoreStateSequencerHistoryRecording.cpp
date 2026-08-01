@@ -6,6 +6,7 @@
 
 #include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
+#include <oc/state/NotificationQueue.hpp>
 #include <oc/time/Time.hpp>
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
@@ -103,6 +104,58 @@ FLASHMEM sequencer::SequencerHistoryDescriptor makeStepStateHistoryDescriptor(
 }
 
 }  // namespace
+
+FLASHMEM void SequencerDomainState::CoalescedPatternHistory::clear() {
+    pending = false;
+    kind = Kind::StepProperty;
+    activeTrack = 0;
+    step = 0;
+    property = sequencer::StepProperty::NOTE;
+    stateProperty = false;
+    lane = sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
+    lastTouchedMs = 0;
+    payloadPlan = sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly;
+    sealed = false;
+    hasChange = false;
+    prospectiveGraphInstalled = false;
+    genericMutationPendingAtBegin = false;
+    preparedStepChange.reset();
+    synchronization.reset();
+    preparedCcLaneChange.reset();
+}
+
+FLASHMEM void CoreState::consumePendingSequencerMutation_(bool* priorMutation) {
+    auto* coalescer = sequencerDomain_.mutationCoalescer.get();
+    if (coalescer == nullptr) return;
+
+    const bool hadArmedMutation =
+        priorMutation != nullptr && coalescer->hasPendingChanges();
+    std::size_t queuedBefore = 0U;
+    if (priorMutation != nullptr) {
+        queuedBefore = oc::state::NotificationQueue::instance().pendingCount();
+    }
+
+    coalescer->consumePendingChangesWithoutAction();
+
+    if (priorMutation != nullptr) {
+        const bool hadQueuedMutation =
+            oc::state::NotificationQueue::instance().pendingCount() < queuedBefore;
+        *priorMutation = *priorMutation || hadArmedMutation || hadQueuedMutation;
+    }
+}
+
+FLASHMEM CoreState::SequencerPatternHistoryCommitOutcome
+CoreState::abandonUnsafeSequencerPatternHistory_(const char* reason) {
+    OC_LOG_ERROR(
+        "[CoreState] Coalesced Sequencer history unavailable ({}); "
+        "clearing Project history boundary",
+        reason
+    );
+    if (!clearProjectHistory()) {
+        OC_LOG_ERROR("[CoreState] Failed to close Project history boundary");
+    }
+    return SequencerPatternHistoryCommitOutcome::Failed;
+}
 
 FLASHMEM bool CoreState::recordSequencerPatternHistory(
     sequencer::SequencerHistoryPatternSnapshot before,
@@ -258,14 +311,11 @@ FLASHMEM void CoreState::recordPreparedSequencerStructureHistory(
 }
 
 FLASHMEM void CoreState::publishPreparedSequencerMutation() {
-    auto* coalescer = sequencerDomain_.mutationCoalescer.get();
-    if (coalescer != nullptr) {
-        // The prepared transaction already performed the coalescer action's
-        // editor-to-bank synchronization. Cancel only this coalescer's queued
-        // callbacks (including later entries in an active notification wave)
-        // and consume an already-armed mark before publishing directly.
-        coalescer->consumePendingChangesWithoutAction();
-    }
+    // The prepared transaction already performed the coalescer action's
+    // editor-to-bank synchronization. Cancel only this coalescer's queued
+    // callbacks (including later entries in an active notification wave)
+    // and consume an already-armed mark before publishing directly.
+    consumePendingSequencerMutation_();
     markProjectMutated();
 }
 
@@ -273,8 +323,13 @@ FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     uint8_t step,
     sequencer::StepProperty property,
     uint32_t nowMs,
+    sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
     bool stateProperty
 ) {
+    if (step >= sequencer::SequencerPatternState::MAX_STEPS) {
+        return false;
+    }
+
     auto& pending = sequencerDomain_.coalescedPatternHistory;
     const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
 
@@ -284,17 +339,63 @@ FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
             property,
             stateProperty
         )) {
+        // The stable grouping key intentionally excludes storage policy. A
+        // plan drift is a caller-classification bug; reject it atomically
+        // rather than splitting one 500 ms gesture into two Undo entries.
+        if (pending.payloadPlan != payloadPlan ||
+            !pending.sealed || !pending.preparedStepChange ||
+            !sequencer::preparedActiveTrackSynchronizationMatches(
+                sequencerTracks,
+                pending.synchronization
+            )) {
+            return false;
+        }
+        consumePendingSequencerMutation_(
+            &pending.genericMutationPendingAtBegin
+        );
+        pending.sealed = false;
         pending.lastTouchedMs = nowMs;
         return true;
     }
 
     if (pending.pending) {
-        commitSequencerPatternHistoryCoalescing();
+        const auto outcome = commitSequencerPatternHistoryCoalescing_();
+        if (outcome == SequencerPatternHistoryCommitOutcome::Failed) {
+            return false;
+        }
     }
 
-    sequencer::SequencerHistoryPatternSnapshot before;
-    if (!sequencer::captureHistorySnapshot(sequencer, before)) {
-        pending.clear();
+    sequencer::SequencerHistoryGraphPtr prospectiveGraph;
+    auto change = sequencer::prepareHistoryPatternChangeBefore(
+        sequencerTracks,
+        sequencer,
+        activeTrack,
+        payloadPlan,
+        prospectiveGraph
+    );
+    if (!change ||
+        !sequencer::reservePreparedHistoryPatternAfter(
+            sequencerTracks,
+            sequencer,
+            *change,
+            payloadPlan
+        )) {
+        return false;
+    }
+
+    sequencer::SequencerPreparedActiveTrackSynchronization synchronization;
+    if (!sequencer::reservePreparedActiveTrackSynchronization(
+            sequencerTracks,
+            sequencer,
+            activeTrack,
+            payloadPlan,
+            synchronization
+        ) ||
+        activeTrack != sequencerTracks.activeTrackIndex() ||
+        !sequencer::preparedActiveTrackSynchronizationMatches(
+            sequencerTracks,
+            synchronization
+        )) {
         return false;
     }
 
@@ -306,7 +407,137 @@ FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     pending.property = property;
     pending.stateProperty = stateProperty;
     pending.lastTouchedMs = nowMs;
-    pending.before = std::move(before);
+    pending.payloadPlan = payloadPlan;
+    pending.sealed = false;
+    pending.hasChange = false;
+    pending.preparedStepChange = std::move(change);
+    pending.synchronization = std::move(synchronization);
+
+    if (prospectiveGraph) {
+        if (sequencer.pattern.graph) {
+            pending.clear();
+            return false;
+        }
+        sequencer.pattern.graph = std::move(prospectiveGraph);
+        pending.prospectiveGraphInstalled = true;
+    }
+    // Preparation is now irrevocably successful but the caller has not yet
+    // performed its live mutation. Isolate any earlier generic Sequencer mark
+    // (including a still-queued callback) so Step publication can subsume it,
+    // or restore it if this gesture later proves to be a no-op/net return.
+    consumePendingSequencerMutation_(&pending.genericMutationPendingAtBegin);
+    return true;
+}
+
+FLASHMEM bool CoreState::sealSequencerPatternHistoryCoalescing(
+    bool mutationChanged
+) {
+    auto& pending = sequencerDomain_.coalescedPatternHistory;
+    if (!pending.pending ||
+        pending.kind != SequencerDomainState::CoalescedPatternHistory::Kind::StepProperty ||
+        pending.sealed ||
+        !pending.preparedStepChange ||
+        pending.activeTrack != sequencerTracks.activeTrackIndex() ||
+        !sequencer::preparedActiveTrackSynchronizationMatches(
+            sequencerTracks,
+            pending.synchronization
+        )) {
+        return false;
+    }
+
+    if (!mutationChanged) {
+        if (pending.hasChange) {
+            // A prior changed seal owns the generic mutation mark and will
+            // publish it at the prepared 500 ms boundary.
+            consumePendingSequencerMutation_();
+            pending.sealed = true;
+            return true;
+        }
+
+        // A virgin no-op did not create an owned musical mutation. Preserve
+        // any generic Sequencer mark/callback that predates this transaction.
+        if (pending.genericMutationPendingAtBegin) {
+            auto* coalescer = sequencerDomain_.mutationCoalescer.get();
+            if (coalescer != nullptr) coalescer->markChanged();
+        }
+        if (pending.prospectiveGraphInstalled &&
+            sequencer.pattern.graph &&
+            !sequencer.pattern.graph->enabled &&
+            sequencer.pattern.graphRevision.get() ==
+                pending.preparedStepChange->before.flat.graphRevision) {
+            sequencer.pattern.graph.reset();
+        }
+        pending.clear();
+        return true;
+    }
+
+    auto& change = *pending.preparedStepChange;
+    if (!sequencer::capturePreparedHistoryPatternAfterUsingReservedStorage(
+            sequencerTracks,
+            sequencer,
+            change
+        ) ||
+        !sequencer::refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
+            sequencerTracks,
+            sequencer,
+            pending.synchronization
+        )) {
+        return false;
+    }
+
+    change.descriptor = pending.stateProperty
+        ? makeStepStateHistoryDescriptor(
+              pending.activeTrack,
+              pending.step,
+              change.before,
+              change.after
+          )
+        : makeStepPropertyHistoryDescriptor(
+              pending.activeTrack,
+              pending.step,
+              pending.property,
+              change.before,
+              change.after
+          );
+
+    if (sequencer::sameMusicalHistorySnapshot(change.before, change.after)) {
+        // The musical bytes returned to Before, but setters may have advanced
+        // editor-only revision counters on the round trip. The generic
+        // coalescer is intentionally cancelled below, so restore those exact
+        // counters and keep the still-unpublished bank byte-coherent. A Graph
+        // created prospectively for this session is not part of Before and
+        // must not survive an otherwise exact net return.
+        if (pending.prospectiveGraphInstalled &&
+            !change.before.graph &&
+            sequencer.pattern.graph) {
+            sequencer.pattern.graph.reset();
+        }
+        sequencer::synchronizeHistoryPatternRevisionSignals(
+            sequencer.pattern,
+            change.before.flat,
+            change.before.ccLaneRevision
+        );
+        // Cancel callbacks from the musical round trip. If the generic
+        // coalescer already owned an earlier mutation, re-arm that independent
+        // obligation after cancellation; a changed prepared commit would have
+        // subsumed it, but this net-zero transaction publishes nothing.
+        const bool restoreGenericMutation =
+            pending.genericMutationPendingAtBegin;
+        consumePendingSequencerMutation_();
+        if (restoreGenericMutation) {
+            auto* coalescer = sequencerDomain_.mutationCoalescer.get();
+            if (coalescer != nullptr) coalescer->markChanged();
+        }
+        pending.clear();
+        return true;
+    }
+    if (!sequencerHistory.canRecordPattern(change)) {
+        return false;
+    }
+
+    consumePendingSequencerMutation_();
+    pending.hasChange = true;
+    pending.sealed = true;
     return true;
 }
 
@@ -377,7 +608,10 @@ FLASHMEM bool CoreState::beginOrContinueSequencerCcLaneEventHistoryCoalescing(
     }
 
     if (pending.pending) {
-        commitSequencerPatternHistoryCoalescing();
+        const auto outcome = commitSequencerPatternHistoryCoalescing_();
+        if (outcome == SequencerPatternHistoryCommitOutcome::Failed) {
+            return false;
+        }
     }
 
     auto change = core::app::makeExtmemUnique<
@@ -416,43 +650,30 @@ FLASHMEM bool CoreState::beginOrContinueSequencerCcLaneEventHistoryCoalescing(
     return true;
 }
 
-FLASHMEM bool CoreState::commitSequencerPatternHistoryCoalescing() {
+FLASHMEM CoreState::SequencerPatternHistoryCommitOutcome
+CoreState::commitSequencerPatternHistoryCoalescing_() {
     auto& pending = sequencerDomain_.coalescedPatternHistory;
     if (!pending.pending) {
-        return false;
+        return SequencerPatternHistoryCommitOutcome::NoPending;
     }
-    const auto abandonUnsafeHistory = [this](const char* reason) {
-        OC_LOG_ERROR(
-            "[CoreState] Coalesced Sequencer history unavailable ({}); "
-            "clearing Project history boundary",
-            reason
-        );
-        if (!clearProjectHistory()) {
-            OC_LOG_ERROR("[CoreState] Failed to close Project history boundary");
-        }
-        return false;
-    };
 
     const uint8_t targetTrack = pending.activeTrack;
-    const uint8_t targetStep = pending.step;
-    const auto targetProperty = pending.property;
-    const bool targetStateProperty = pending.stateProperty;
-    const auto targetKind = pending.kind;
-
-    const bool ccLaneEvent = targetKind ==
+    const bool ccLaneEvent = pending.kind ==
         SequencerDomainState::CoalescedPatternHistory::Kind::CcLaneEvent;
     if (ccLaneEvent) {
         auto change = std::move(pending.preparedCcLaneChange);
         if (!change) {
             pending.clear();
-            return abandonUnsafeHistory("prepared CC Lane entry missing");
+            return abandonUnsafeSequencerPatternHistory_(
+                "prepared CC Lane entry missing"
+            );
         }
         if (sequencer::sameMusicalHistorySnapshot(
                 change->before,
                 change->after
             )) {
             pending.clear();
-            return false;
+            return SequencerPatternHistoryCommitOutcome::NoChange;
         }
         if (!sequencerHistory.canRecordPattern(*change)) {
             const bool restored = sequencer::applyHistorySnapshotToTrack(
@@ -463,80 +684,46 @@ FLASHMEM bool CoreState::commitSequencerPatternHistoryCoalescing() {
             );
             pending.clear();
             return restored
-                ? false
-                : abandonUnsafeHistory("CC Lane rollback failed");
+                ? SequencerPatternHistoryCommitOutcome::Failed
+                : abandonUnsafeSequencerPatternHistory_(
+                      "CC Lane rollback failed"
+                  );
         }
 
         pending.clear();
         sequencerHistory.recordPreparedPattern(std::move(change));
         markSequencerProjectMutated_();
-        return true;
+        return SequencerPatternHistoryCommitOutcome::Committed;
     }
 
-    sequencer::SequencerHistoryPatternStorage storage =
-        sequencer::SequencerHistoryPatternStorage::FullGraph;
-    const uint32_t currentGraphRevision =
-        targetTrack == sequencerTracks.activeTrackIndex()
-            ? sequencer.pattern.graphRevision.get()
-            : sequencerTracks.track(targetTrack).graphRevision.get();
-    storage = pending.before.flat.graphRevision == currentGraphRevision
-        ? sequencer::SequencerHistoryPatternStorage::FlatOnly
-        : sequencer::SequencerHistoryPatternStorage::FullGraph;
-
-    sequencer::SequencerHistoryPatternSnapshot after;
-    if (storage == sequencer::SequencerHistoryPatternStorage::FlatOnly) {
-        sequencer::captureFlatHistorySnapshot(sequencerTracks, sequencer, targetTrack, after);
-    } else if (!sequencer::captureHistorySnapshot(
-                   sequencerTracks,
-                   sequencer,
-                   targetTrack,
-                   after
-               )) {
-        return abandonUnsafeHistory("snapshot capture failed");
+    if (!pending.sealed || !pending.preparedStepChange ||
+        targetTrack != sequencerTracks.activeTrackIndex() ||
+        !sequencer::preparedActiveTrackSynchronizationMatches(
+            sequencerTracks,
+            pending.synchronization
+        )) {
+        return SequencerPatternHistoryCommitOutcome::Failed;
     }
 
-    auto change = core::app::makeExtmemUnique<
-        sequencer::SequencerHistoryPatternChange
-    >();
-    if (!change) return abandonUnsafeHistory("entry allocation failed");
-
-    change->trackIndex = targetTrack;
-    change->storage = storage;
-    change->before = std::move(pending.before);
-    change->after = std::move(after);
-
-    auto descriptor = targetStateProperty
-        ? makeStepStateHistoryDescriptor(
-              targetTrack,
-              targetStep,
-              change->before,
-              change->after
-          )
-        : makeStepPropertyHistoryDescriptor(
-              targetTrack,
-              targetStep,
-              targetProperty,
-              change->before,
-              change->after
-          );
-    change->descriptor = descriptor;
-
-    if (!sequencerHistory.canRecordPattern(*change)) {
-        const bool noChange = sequencer::sameMusicalHistorySnapshot(
-            change->before,
-            change->after
-        );
-        pending.before = std::move(change->before);
-        if (noChange) {
-            pending.clear();
-            return false;
-        }
-        return abandonUnsafeHistory("retained history budget exceeded");
-    }
-
+    auto change = std::move(pending.preparedStepChange);
+    auto synchronization = std::move(pending.synchronization);
     pending.clear();
-    if (recordSequencerPatternHistory(std::move(change))) return true;
-    return abandonUnsafeHistory("prepared entry commit failed");
+
+    sequencer::publishPreparedActiveTrackSynchronization(
+        sequencerTracks,
+        sequencer,
+        change->after,
+        std::move(synchronization)
+    );
+    sequencerHistory.recordPreparedPattern(std::move(change));
+    publishPreparedSequencerMutation();
+    (void)refreshSharedTrackStateFromSequencer();
+    return SequencerPatternHistoryCommitOutcome::Committed;
+}
+
+FLASHMEM bool CoreState::commitSequencerPatternHistoryCoalescing() {
+    return commitSequencerPatternHistoryCoalescing_() ==
+        SequencerPatternHistoryCommitOutcome::Committed;
 }
 
 FLASHMEM bool CoreState::updateSequencerPatternHistoryCoalescing(uint32_t nowMs) {

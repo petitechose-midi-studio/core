@@ -15,8 +15,16 @@ struct StateInvariant {
     const void* editorCcOwner = nullptr;
     const void* bankGraphOwner = nullptr;
     const void* bankCcOwner = nullptr;
+    uint32_t editorStepDataRevision = 0U;
+    uint32_t editorPatternVariationRevision = 0U;
+    uint32_t editorPatternScaleRevision = 0U;
+    uint32_t editorPatternTimingRevision = 0U;
     uint32_t editorGraphRevision = 0U;
     uint32_t editorCcRevision = 0U;
+    uint32_t bankStepDataRevision = 0U;
+    uint32_t bankPatternVariationRevision = 0U;
+    uint32_t bankPatternScaleRevision = 0U;
+    uint32_t bankPatternTimingRevision = 0U;
     uint32_t bankGraphRevision = 0U;
     uint32_t bankCcRevision = 0U;
     uint32_t modifiedCounter = 0U;
@@ -42,8 +50,16 @@ inline StateInvariant captureStateInvariant(const core::state::CoreState& state)
         .editorCcOwner = editor.ccLanes.get(),
         .bankGraphOwner = bank.graph.get(),
         .bankCcOwner = bank.ccLanes.get(),
+        .editorStepDataRevision = editor.stepDataRevision.get(),
+        .editorPatternVariationRevision = editor.patternVariationRevision.get(),
+        .editorPatternScaleRevision = editor.patternScaleRevision.get(),
+        .editorPatternTimingRevision = editor.patternTimingRevision.get(),
         .editorGraphRevision = editor.graphRevision.get(),
         .editorCcRevision = editor.ccLaneRevision.get(),
+        .bankStepDataRevision = bank.stepDataRevision.get(),
+        .bankPatternVariationRevision = bank.patternVariationRevision.get(),
+        .bankPatternScaleRevision = bank.patternScaleRevision.get(),
+        .bankPatternTimingRevision = bank.patternTimingRevision.get(),
         .bankGraphRevision = bank.graphRevision.get(),
         .bankCcRevision = bank.ccLaneRevision.get(),
         .modifiedCounter = state.project.metadata.modifiedCounter,
@@ -69,8 +85,22 @@ inline void assertStateInvariant(
     assert(actual.editorCcOwner == expected.editorCcOwner);
     assert(actual.bankGraphOwner == expected.bankGraphOwner);
     assert(actual.bankCcOwner == expected.bankCcOwner);
+    assert(actual.editorStepDataRevision == expected.editorStepDataRevision);
+    assert(
+        actual.editorPatternVariationRevision ==
+        expected.editorPatternVariationRevision
+    );
+    assert(actual.editorPatternScaleRevision == expected.editorPatternScaleRevision);
+    assert(actual.editorPatternTimingRevision == expected.editorPatternTimingRevision);
     assert(actual.editorGraphRevision == expected.editorGraphRevision);
     assert(actual.editorCcRevision == expected.editorCcRevision);
+    assert(actual.bankStepDataRevision == expected.bankStepDataRevision);
+    assert(
+        actual.bankPatternVariationRevision ==
+        expected.bankPatternVariationRevision
+    );
+    assert(actual.bankPatternScaleRevision == expected.bankPatternScaleRevision);
+    assert(actual.bankPatternTimingRevision == expected.bankPatternTimingRevision);
     assert(actual.bankGraphRevision == expected.bankGraphRevision);
     assert(actual.bankCcRevision == expected.bankCcRevision);
     assert(actual.modifiedCounter == expected.modifiedCounter);
