@@ -1,0 +1,324 @@
+{
+  "schemaVersion": 1,
+  "scope": "L-R08-01 Sequencer history recording boundary",
+  "recordingBoundary": {
+    "expectedTotal": 44,
+    "memberDispatch": {
+      "methods": [
+        "recordPattern",
+        "recordFlatPattern",
+        "recordFullBank",
+        "recordStructure",
+        "recordPreparedPattern",
+        "recordPreparedStructure"
+      ],
+      "expectedTotal": 37,
+      "expectedSinkTotal": 22,
+      "expectedServiceAdapterTotal": 15,
+      "expectedSinkClassifications": {
+        "post-fallible": 15,
+        "prepared": 5,
+        "rollback-aware": 2
+      },
+      "groups": [
+        {
+          "path": "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
+          "method": "recordPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerFullBankHistoryUtils.hpp",
+          "method": "recordFullBank",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerPatternEditorHandler.cpp",
+          "method": "recordPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
+          "method": "recordPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerPropertySelectorHandler.cpp",
+          "method": "recordPattern",
+          "count": 2,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStepContentActions.cpp",
+          "method": "recordPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStepEditHandler.cpp",
+          "method": "recordPattern",
+          "count": 2,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp",
+          "method": "recordFlatPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp",
+          "method": "recordPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStepHandler.cpp",
+          "method": "recordFlatPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStepHandler.cpp",
+          "method": "recordPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStructureHistoryUtils.hpp",
+          "method": "recordPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStructureHistoryUtils.hpp",
+          "method": "recordStructure",
+          "count": 1,
+          "role": "sink",
+          "classification": "post-fallible"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerCcLaneWorkflow.cpp",
+          "method": "recordPreparedPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "prepared"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerPatternEditorHandler.cpp",
+          "method": "recordPreparedPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "prepared"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStepContentDraftWorkflow.cpp",
+          "method": "recordPreparedPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "prepared"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp",
+          "method": "recordPreparedPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "prepared"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStructureTrackTransferTransaction.cpp",
+          "method": "recordPreparedStructure",
+          "count": 1,
+          "role": "sink",
+          "classification": "prepared"
+        },
+        {
+          "path": "src/handler/macro/MacroStructureDomainServices.cpp",
+          "method": "recordPreparedStructure",
+          "count": 1,
+          "role": "sink",
+          "classification": "rollback-aware"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStructureNavigationWorkflow.cpp",
+          "method": "recordPreparedStructure",
+          "count": 1,
+          "role": "sink",
+          "classification": "rollback-aware"
+        },
+        {
+          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+          "method": "recordFlatPattern",
+          "count": 1,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+          "method": "recordPattern",
+          "count": 2,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+          "method": "recordFullBank",
+          "count": 2,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+          "method": "recordStructure",
+          "count": 1,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+          "method": "recordPreparedPattern",
+          "count": 1,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+          "method": "recordPreparedStructure",
+          "count": 1,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "method": "recordPattern",
+          "count": 1,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "method": "recordFlatPattern",
+          "count": 1,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "method": "recordFullBank",
+          "count": 1,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "method": "recordStructure",
+          "count": 1,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "method": "recordPreparedPattern",
+          "count": 2,
+          "role": "service-adapter"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "method": "recordPreparedStructure",
+          "count": 1,
+          "role": "service-adapter"
+        }
+      ]
+    },
+    "coreStateAdapter": {
+      "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+      "method": "recordPreparedSequencerStructureHistory",
+      "expectedCount": 1
+    },
+    "internalForwards": {
+      "path": "src/state/sequencer/SequencerHistory.cpp",
+      "expectedTotal": 6,
+      "groups": [
+        {
+          "method": "recordPattern",
+          "count": 2
+        },
+        {
+          "method": "recordFlatPattern",
+          "count": 1
+        },
+        {
+          "method": "recordFullBank",
+          "count": 1
+        },
+        {
+          "method": "recordPreparedPattern",
+          "count": 1
+        },
+        {
+          "method": "recordPreparedStructure",
+          "count": 1
+        }
+      ]
+    },
+    "explicitExclusions": [
+      {
+        "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+        "method": "recordSequencerPatternHistory",
+        "expectedUnqualifiedCallCount": 1,
+        "reason": "The coalesced CoreState commit is outside the six-method SequencerHistoryService recording-call inventory."
+      }
+    ]
+  },
+  "coalescedBegins": {
+    "method": "beginCoalescedPatternEdit",
+    "expectedTotal": 7,
+    "expectedBusinessTotal": 6,
+    "expectedAdapterTotal": 1,
+    "groups": [
+      {
+        "path": "src/handler/sequencer/SequencerMacroPropertyHandler.cpp",
+        "count": 5,
+        "role": "business"
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
+        "count": 1,
+        "role": "business"
+      },
+      {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "count": 1,
+        "role": "adapter"
+      }
+    ]
+  },
+  "failureInjection": {
+    "macro": "MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION",
+    "cmakePath": "CMakeLists.txt",
+    "nativeTarget": "midi_studio_core_native",
+    "requiredCmakeGuards": [
+      "MS_CORE_BUILD_TESTS",
+      "BUILD_TESTING"
+    ],
+    "allocatorPath": "src/app/ExtmemAllocator.hpp",
+    "expectedAllocatorGuardCount": 5,
+    "expectedSeamNamespaceCount": 1,
+    "guardedHelpers": [
+      "makeExtmemUnique",
+      "makeExtmemUniqueCopy",
+      "makeExtmemUniqueForOverwrite",
+      "makeExtmemUniqueArrayForOverwrite"
+    ],
+    "allowedTestUses": {
+      "test/support/SequencerHistoryTransactionAssertions.hpp": 1,
+      "test/test_SequencerHistoryQualification/test_main.cpp": 1,
+      "test/test_SequencerQuickControlsContainment/test_main.cpp": 1
+    }
+  }
+}

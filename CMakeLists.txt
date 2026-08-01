@@ -101,6 +101,19 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     set_tests_properties(check_ArchitectureContractsSelfTest PROPERTIES LABELS core)
 
     add_test(
+        NAME check_SequencerHistoryInventory
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-sequencer-history-inventory.py")
+    set_tests_properties(check_SequencerHistoryInventory PROPERTIES LABELS core)
+
+    add_test(
+        NAME check_SequencerHistoryInventorySelfTest
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-sequencer-history-inventory.py"
+                "--self-test")
+    set_tests_properties(check_SequencerHistoryInventorySelfTest PROPERTIES LABELS core)
+
+    add_test(
         NAME check_TeensyMemoryBudgetParser
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-memory-budget.py")

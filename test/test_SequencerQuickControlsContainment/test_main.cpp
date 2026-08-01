@@ -25,6 +25,7 @@
 #include "state/sequencer/SequencerHistory.hpp"
 #include "support/CoreStorages.hpp"
 #include "support/InputTestHardware.hpp"
+#include "support/SequencerHistoryTransactionAssertions.hpp"
 
 #if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
 #error "This test requires native EXTMEM failure injection"
@@ -126,43 +127,17 @@ struct Harness {
     }
 };
 
-struct RejectionInvariant {
-    const void* graphOwner = nullptr;
-    const void* ccOwner = nullptr;
-    uint32_t graphRevision = 0U;
-    uint32_t ccLaneRevision = 0U;
-    uint32_t modifiedCounter = 0U;
-    bool dirty = false;
-    uint8_t undoCount = 0U;
-    uint8_t redoCount = 0U;
-};
+using RejectionInvariant = test_support::sequencer_transaction::StateInvariant;
 
 RejectionInvariant captureRejectionInvariant(const Harness& h) {
-    return {
-        .graphOwner = h.state.sequencer.pattern.graph.get(),
-        .ccOwner = h.state.sequencer.pattern.ccLanes.get(),
-        .graphRevision = h.state.sequencer.pattern.graphRevision.get(),
-        .ccLaneRevision = h.state.sequencer.pattern.ccLaneRevision.get(),
-        .modifiedCounter = h.state.project.metadata.modifiedCounter,
-        .dirty = h.state.project.metadata.dirty,
-        .undoCount = h.state.sequencerHistory.undoCount(),
-        .redoCount = h.state.sequencerHistory.redoCount(),
-    };
+    return test_support::sequencer_transaction::captureStateInvariant(h.state);
 }
 
 void assertRejectionInvariant(
     const Harness& h,
     const RejectionInvariant& expected
 ) {
-    const auto actual = captureRejectionInvariant(h);
-    assert(actual.graphOwner == expected.graphOwner);
-    assert(actual.ccOwner == expected.ccOwner);
-    assert(actual.graphRevision == expected.graphRevision);
-    assert(actual.ccLaneRevision == expected.ccLaneRevision);
-    assert(actual.modifiedCounter == expected.modifiedCounter);
-    assert(actual.dirty == expected.dirty);
-    assert(actual.undoCount == expected.undoCount);
-    assert(actual.redoCount == expected.redoCount);
+    test_support::sequencer_transaction::assertStateInvariant(h.state, expected);
 }
 
 void preparePayload(Harness& h, PayloadKind kind) {
@@ -204,16 +179,14 @@ void captureMusical(
     const Harness& h,
     seq::SequencerHistoryPatternSnapshot& out
 ) {
-    assert(seq::captureHistorySnapshot(h.state.sequencer, out));
+    test_support::sequencer_transaction::captureMusicalSnapshot(h.state, out);
 }
 
 void assertMusicalEquals(
     const Harness& h,
     const seq::SequencerHistoryPatternSnapshot& expected
 ) {
-    seq::SequencerHistoryPatternSnapshot actual;
-    captureMusical(h, actual);
-    assert(seq::sameMusicalHistorySnapshot(actual, expected));
+    test_support::sequencer_transaction::assertMusicalSnapshot(h.state, expected);
 }
 
 void assertPayloadAtOffset(
@@ -293,15 +266,12 @@ float normalizedOffsetForLength(int offsetSteps, uint8_t length) {
 }
 
 void assertFailureWasConsumed(std::size_t ordinal) {
-    assert(core::app::testing::extmemAllocationAttempt == ordinal);
-    assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+    test_support::sequencer_transaction::assertFailureConsumed(ordinal);
 }
 
 void assertAllocationRatchet(std::size_t expectedAttempts) {
-    assert(core::app::testing::extmemAllocationAttempt == expectedAttempts);
-    assert(
-        core::app::testing::extmemAllocationFailureOrdinal ==
-        expectedAttempts + 1U
+    test_support::sequencer_transaction::assertMaxPlusOneStillArmed(
+        expectedAttempts
     );
 }
 
