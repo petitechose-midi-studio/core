@@ -2,97 +2,111 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include <utility>
-
 #include "state/sequencer/SequencerContentViewOps.hpp"
 
 namespace core::handler {
 
+namespace {
+
+namespace seq = core::state::sequencer;
+
+constexpr auto kStepContentOwner = seq::SequencerPreparedPatternEditOwner::StepContent;
+constexpr uint8_t kPasteKeyFlag = 0x80U;
+static_assert(seq::SequencerPatternState::MAX_STEPS <= kPasteKeyFlag,
+              "Step Content action key must encode every Pattern step");
+
+FLASHMEM seq::SequencerHistoryDescriptor stepContentDescriptor(uint8_t step) {
+    return {
+        .kind = seq::SequencerHistoryActionKind::StepEdit,
+        .stepIndex = step,
+        .property = seq::StepProperty::NOTE,
+        .hasValue = false,
+    };
+}
+
+FLASHMEM bool preparedBeginAccepted(seq::SequencerPreparedPatternEditBeginOutcome outcome) {
+    return outcome != seq::SequencerPreparedPatternEditBeginOutcome::Failed;
+}
+
+FLASHMEM seq::SequencerCoalescedPatternPayloadPlan pastePayloadPlan(
+    const seq::SequencerState& sequencer) {
+    return seq::graphView(sequencer.pattern) != nullptr
+               ? seq::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload
+               : seq::SequencerCoalescedPatternPayloadPlan::FullWithProspectiveGraph;
+}
+
+}  // namespace
+
 FLASHMEM bool SequencerStepHandler::focusedStepHasChildContent() const {
-    const auto nodeId = core::state::sequencer::activeContentStepNodeId(
-        sequencer_,
-        sequencer_.focusedStep.get()
-    );
-    return core::state::sequencer::stepNodeHasAnyChildContent(
-        sequencer_.pattern,
-        nodeId
-    );
+    const auto nodeId =
+        core::state::sequencer::activeContentStepNodeId(sequencer_, sequencer_.focusedStep.get());
+    return core::state::sequencer::stepNodeHasAnyChildContent(sequencer_.pattern, nodeId);
 }
 
 FLASHMEM bool SequencerStepHandler::canPasteFocusedStepContent() const {
     return structure_clipboard_.hasSequencerStepContent(
-               core::state::SequencerStepContentClipboardKind::ALL
-           ) &&
+               core::state::SequencerStepContentClipboardKind::ALL) &&
            core::state::sequencer::activeContentStepCanReceiveChildContent(
-               sequencer_,
-               sequencer_.focusedStep.get()
-           );
-}
-
-FLASHMEM void SequencerStepHandler::recordFocusedContentEdit(
-    core::state::sequencer::SequencerHistoryPatternSnapshot before,
-    bool beforeCaptured
-) {
-    if (!beforeCaptured) return;
-
-    core::state::sequencer::SequencerHistoryPatternSnapshot after;
-    if (!core::state::sequencer::captureHistorySnapshot(sequencer_, after)) return;
-    if (core::state::sequencer::sameMusicalHistorySnapshot(before, after)) return;
-
-    history_.recordPattern(
-        std::move(before),
-        std::move(after),
-        core::state::sequencer::SequencerHistoryDescriptor{
-            .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
-            .stepIndex = sequencer_.focusedStep.get(),
-            .property = core::state::sequencer::StepProperty::NOTE,
-            .hasValue = false,
-        }
-    );
+               sequencer_, sequencer_.focusedStep.get());
 }
 
 FLASHMEM void SequencerStepHandler::clearFocusedStepContent() {
     if (!focusedStepHasChildContent()) return;
-    history_.commitCoalescedPatternEdit();
+    const uint8_t step = sequencer_.focusedStep.get();
 
-    core::state::sequencer::SequencerHistoryPatternSnapshot before;
-    const bool beforeCaptured =
-        core::state::sequencer::captureHistorySnapshot(sequencer_, before);
-
-    if (!core::state::sequencer::clearActiveContentChildren(
-            sequencer_,
-            sequencer_.focusedStep.get()
-        )) {
+    // A detached Micro/Cycle draft owns its own final prepared publication.
+    // Editing that scratch must neither allocate nor create an intermediate
+    // Pattern History entry.
+    if (sequencer_.stepContentDraft.pattern() != nullptr) {
+        (void)seq::clearActiveContentChildren(sequencer_, step);
         return;
     }
-    recordFocusedContentEdit(std::move(before), beforeCaptured);
+
+    const auto descriptor = stepContentDescriptor(step);
+    if (!preparedBeginAccepted(history_.beginPreparedPatternEdit(
+            kStepContentOwner, step, seq::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload,
+            descriptor, true))) {
+        return;
+    }
+
+    const bool changed = seq::clearActiveContentChildrenPreservingGraphOwner(sequencer_, step);
+    const auto seal =
+        history_.sealPreparedPatternEdit(kStepContentOwner, step, changed, descriptor);
+    if (seal != seq::SequencerPreparedPatternEditSealOutcome::Sealed) { return; }
+
+    const auto commit = history_.commitPreparedPatternEdit(kStepContentOwner);
+    if (commit != seq::SequencerPreparedPatternEditCommitOutcome::Committed) { return; }
 }
 
 FLASHMEM void SequencerStepHandler::copyFocusedStepContent() {
     if (!focusedStepHasChildContent()) return;
     (void)core::state::sequencer::copyActiveContentChildrenToClipboard(
-        sequencer_,
-        sequencer_.focusedStep.get(),
-        structure_clipboard_
-    );
+        sequencer_, sequencer_.focusedStep.get(), structure_clipboard_);
 }
 
 FLASHMEM void SequencerStepHandler::pasteFocusedStepContent() {
     if (!canPasteFocusedStepContent()) return;
-    history_.commitCoalescedPatternEdit();
+    const uint8_t step = sequencer_.focusedStep.get();
 
-    core::state::sequencer::SequencerHistoryPatternSnapshot before;
-    const bool beforeCaptured =
-        core::state::sequencer::captureHistorySnapshot(sequencer_, before);
-
-    if (!core::state::sequencer::pasteActiveContentChildrenFromClipboard(
-            sequencer_,
-            sequencer_.focusedStep.get(),
-            structure_clipboard_
-        )) {
+    if (sequencer_.stepContentDraft.pattern() != nullptr) {
+        (void)seq::pasteActiveContentChildrenFromClipboard(sequencer_, step, structure_clipboard_);
         return;
     }
-    recordFocusedContentEdit(std::move(before), beforeCaptured);
+
+    const uint8_t key = static_cast<uint8_t>(step | kPasteKeyFlag);
+    const auto descriptor = stepContentDescriptor(step);
+    if (!preparedBeginAccepted(history_.beginPreparedPatternEdit(
+            kStepContentOwner, key, pastePayloadPlan(sequencer_), descriptor, true))) {
+        return;
+    }
+
+    const bool changed = seq::pasteActiveContentChildrenFromClipboardPreservingGraphOwner(
+        sequencer_, step, structure_clipboard_);
+    const auto seal = history_.sealPreparedPatternEdit(kStepContentOwner, key, changed, descriptor);
+    if (seal != seq::SequencerPreparedPatternEditSealOutcome::Sealed) { return; }
+
+    const auto commit = history_.commitPreparedPatternEdit(kStepContentOwner);
+    if (commit != seq::SequencerPreparedPatternEditCommitOutcome::Committed) { return; }
 }
 
 }  // namespace core::handler

@@ -8,6 +8,8 @@
 #include "app/ExtmemAllocator.hpp"
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
+#include "state/sequencer/SequencerCcLaneDomain.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerPatternEditorOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 
@@ -18,78 +20,57 @@ namespace input_utils = core::handler::sequencer::input_utils;
 using Field = core::state::sequencer::SequencerPatternEditorField;
 using Mode = core::state::sequencer::SequencerPatternEditorNavigationMode;
 
-FLASHMEM int16_t normalizedToRange(
-    float normalized,
-    core::state::sequencer::SequencerPatternEditorValueRange range
-) {
+FLASHMEM int16_t normalizedToRange(float normalized,
+                                   core::state::sequencer::SequencerPatternEditorValueRange range) {
     if (!range.editable()) return 0;
-    const int index = input_utils::normalizedToIndex(
-        normalized,
-        static_cast<int>(range.count())
-    );
+    const int index = input_utils::normalizedToIndex(normalized, static_cast<int>(range.count()));
     return static_cast<int16_t>(range.minimum + index);
 }
 
 FLASHMEM float rangeValueToNormalized(
-    int16_t value,
-    core::state::sequencer::SequencerPatternEditorValueRange range
-) {
+    int16_t value, core::state::sequencer::SequencerPatternEditorValueRange range) {
     if (!range.editable()) return 0.0f;
     return input_utils::indexToNormalized(
         std::clamp<int>(value, range.minimum, range.maximum) - range.minimum,
-        static_cast<int>(range.count())
-    );
+        static_cast<int>(range.count()));
 }
 
-FLASHMEM bool requiresFullHistory(Field field) {
-    return field == Field::LENGTH;
+FLASHMEM core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlanForField(
+    const core::state::sequencer::SequencerState& sequencer, Field field) {
+    using Plan = core::state::sequencer::SequencerCoalescedPatternPayloadPlan;
+    if (field != Field::LENGTH) return Plan::FlatOnly;
+    const auto* lanes = core::state::sequencer::sequencerCcLaneView(sequencer.pattern);
+    return lanes != nullptr && core::state::sequencer::sequencerCcLaneCount(*lanes) != 0U
+               ? Plan::FullCurrentPayload
+               : Plan::FlatOnly;
 }
 
 FLASHMEM int32_t normalizedToRandomizeRange(
-    float normalized,
-    core::state::sequencer::SequencerPatternRandomizeValueRange range
-) {
+    float normalized, core::state::sequencer::SequencerPatternRandomizeValueRange range) {
     const uint32_t count = range.count();
     if (count == 0U) return range.minimum;
-    const int index = input_utils::normalizedToIndex(
-        normalized,
-        static_cast<int>(count)
-    );
+    const int index = input_utils::normalizedToIndex(normalized, static_cast<int>(count));
     return range.minimum + index;
 }
 
 FLASHMEM float randomizeValueToNormalized(
-    int32_t value,
-    core::state::sequencer::SequencerPatternRandomizeValueRange range
-) {
+    int32_t value, core::state::sequencer::SequencerPatternRandomizeValueRange range) {
     const uint32_t count = range.count();
     if (count == 0U) return 0.0f;
     return input_utils::indexToNormalized(
-        static_cast<int>(std::clamp(value, range.minimum, range.maximum) -
-                         range.minimum),
-        static_cast<int>(count)
-    );
+        static_cast<int>(std::clamp(value, range.minimum, range.maximum) - range.minimum),
+        static_cast<int>(count));
 }
 
 }  // namespace
 
 FLASHMEM SequencerPatternEditorHandler::SequencerPatternEditorHandler(
-    StateRefs state,
-    oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-    oc::api::EncoderAPI& encoders,
-    oc::api::ButtonAPI& buttons,
-    oc::type::ScopeID sequencerViewScope,
-    oc::type::ScopeID overlayScope
-)
-    : sequencer_(state.sequencer)
-    , tracks_(state.tracks)
-    , randomize_(state.randomize)
-    , history_(state.history)
-    , overlays_(overlays)
-    , encoders_(encoders)
-    , buttons_(buttons)
-    , sequencer_view_scope_(sequencerViewScope)
-    , overlay_scope_(overlayScope) {
+    StateRefs state, oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+    oc::api::EncoderAPI& encoders, oc::api::ButtonAPI& buttons,
+    oc::type::ScopeID sequencerViewScope, oc::type::ScopeID overlayScope)
+    : sequencer_(state.sequencer), tracks_(state.tracks), randomize_(state.randomize),
+      history_(state.history), overlays_(overlays), encoders_(encoders), buttons_(buttons),
+      sequencer_view_scope_(sequencerViewScope), overlay_scope_(overlayScope) {
     setupBindings();
 }
 
@@ -97,9 +78,7 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(overlay_scope_)
-        .when([this]() {
-            return sequencer_.patternEditor.active.get() && ownsActiveTrack();
-        })
+        .when([this]() { return sequencer_.patternEditor.active.get() && ownsActiveTrack(); })
         .then([this](float delta) { navigate(delta); });
 
     encoders_.encoder(Config::EncoderID::OPT)
@@ -107,8 +86,7 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
         .scope(overlay_scope_)
         .when([this]() {
             return sequencer_.patternEditor.active.get() && ownsActiveTrack() &&
-                   (randomize_.active ||
-                    sequencer_.patternEditor.navigationMode == Mode::FIELDS);
+                   (randomize_.active || sequencer_.patternEditor.navigationMode == Mode::FIELDS);
         })
         .then([this](float normalized) { setFocusedValue(normalized); });
 
@@ -117,8 +95,7 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
         .scope(overlay_scope_)
         .when([this]() {
             return sequencer_.patternEditor.active.get() && ownsActiveTrack() &&
-                   !randomize_.active &&
-                   sequencer_.patternEditor.navigationMode == Mode::FIELDS;
+                   !randomize_.active && sequencer_.patternEditor.navigationMode == Mode::FIELDS;
         })
         .then([this]() { beginWindowSelection(); });
 
@@ -136,8 +113,7 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
         .scope(overlay_scope_)
         .when([this]() {
             return sequencer_.patternEditor.active.get() && ownsActiveTrack() &&
-                   !randomize_.active &&
-                   sequencer_.patternEditor.navigationMode == Mode::FIELDS;
+                   !randomize_.active && sequencer_.patternEditor.navigationMode == Mode::FIELDS;
         })
         .then([this]() { beginLayerSelection(); });
 
@@ -167,8 +143,7 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
         .scope(overlay_scope_)
         .when([this]() {
             return sequencer_.patternEditor.active.get() && ownsActiveTrack() &&
-                   !randomize_.active &&
-                   sequencer_.patternEditor.navigationMode == Mode::FIELDS;
+                   !randomize_.active && sequencer_.patternEditor.navigationMode == Mode::FIELDS;
         })
         .then([this]() { openRandomize(); });
 
@@ -176,8 +151,7 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
         .release()
         .scope(overlay_scope_)
         .when([this]() {
-            return sequencer_.patternEditor.active.get() && ownsActiveTrack() &&
-                   randomize_.active;
+            return sequencer_.patternEditor.active.get() && ownsActiveTrack() && randomize_.active;
         })
         .then([this]() { rerollRandomize(); });
 
@@ -186,8 +160,7 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
         .scope(overlay_scope_)
         .when([this]() {
             return sequencer_.patternEditor.active.get() && ownsActiveTrack() &&
-                   ((randomize_.active &&
-                     randomize_.summary.changedCount > 0U) ||
+                   ((randomize_.active && randomize_.summary.changedCount > 0U) ||
                     (!randomize_.active &&
                      sequencer_.patternEditor.navigationMode == Mode::FIELDS &&
                      sequencer_.pattern.length.get() <
@@ -203,13 +176,9 @@ FLASHMEM void SequencerPatternEditorHandler::setupBindings() {
 }
 
 FLASHMEM bool SequencerPatternEditorHandler::openFromCurrentPage() {
-    history_.commitCoalescedPatternEdit();
-    discardPendingEdit();
+    if (!commitPendingEdit()) return false;
     randomize_.cancel();
-    if (!core::state::sequencer::openPatternEditor(
-            sequencer_,
-            tracks_.activeTrackIndex()
-        )) {
+    if (!core::state::sequencer::openPatternEditor(sequencer_, tracks_.activeTrackIndex())) {
         return false;
     }
     overlays_.show(core::ui::OverlayType::SEQ_PATTERN_EDIT);
@@ -219,30 +188,26 @@ FLASHMEM bool SequencerPatternEditorHandler::openFromCurrentPage() {
 
 FLASHMEM void SequencerPatternEditorHandler::close() {
     if (!sequencer_.patternEditor.active.get()) {
-        discardPendingEdit();
+        if (!commitPendingEdit()) return;
         randomize_.cancel();
         return;
     }
-    commitPendingEdit();
+    if (!commitPendingEdit()) return;
     randomize_.cancel();
     core::state::sequencer::closePatternEditor(sequencer_);
-    if (overlays_.isCurrent(core::ui::OverlayType::SEQ_PATTERN_EDIT)) {
-        overlays_.hide();
-    }
+    if (overlays_.isCurrent(core::ui::OverlayType::SEQ_PATTERN_EDIT)) { overlays_.hide(); }
 }
 
 FLASHMEM void SequencerPatternEditorHandler::update(uint32_t nowMs) {
     (void)nowMs;
     if (!sequencer_.patternEditor.active.get()) {
-        discardPendingEdit();
+        if (!commitPendingEdit()) return;
         randomize_.cancel();
-        if (overlays_.isCurrent(core::ui::OverlayType::SEQ_PATTERN_EDIT)) {
-            overlays_.hide();
-        }
+        if (overlays_.isCurrent(core::ui::OverlayType::SEQ_PATTERN_EDIT)) { overlays_.hide(); }
         return;
     }
     if (!overlays_.isCurrent(core::ui::OverlayType::SEQ_PATTERN_EDIT)) {
-        commitPendingEdit();
+        if (!commitPendingEdit()) return;
         randomize_.cancel();
         core::state::sequencer::closePatternEditor(sequencer_);
         return;
@@ -251,7 +216,7 @@ FLASHMEM void SequencerPatternEditorHandler::update(uint32_t nowMs) {
     // External Track navigation is authoritative.  Capture the old owner from
     // the bank (the Track switch transaction has already published it), close
     // the exact edit boundary, and never retarget the retained surface.
-    commitPendingEdit();
+    if (!commitPendingEdit()) return;
     randomize_.cancel();
     core::state::sequencer::closePatternEditor(sequencer_);
     overlays_.hide();
@@ -273,24 +238,15 @@ FLASHMEM void SequencerPatternEditorHandler::navigate(float delta) {
     }
     switch (sequencer_.patternEditor.navigationMode) {
         case Mode::WINDOWS:
-            (void)core::state::sequencer::movePatternEditorWindow(
-                sequencer_,
-                direction
-            );
+            (void)core::state::sequencer::movePatternEditorWindow(sequencer_, direction);
             return;
         case Mode::LAYERS:
-            (void)core::state::sequencer::movePatternEditorLayer(
-                sequencer_,
-                direction
-            );
+            (void)core::state::sequencer::movePatternEditorLayer(sequencer_, direction);
             return;
         case Mode::FIELDS:
         default:
-            commitPendingEdit();
-            if (core::state::sequencer::movePatternEditorField(
-                    sequencer_,
-                    direction
-                )) {
+            if (!commitPendingEdit()) return;
+            if (core::state::sequencer::movePatternEditorField(sequencer_, direction)) {
                 configureOptForFocusedField();
             }
             return;
@@ -299,36 +255,24 @@ FLASHMEM void SequencerPatternEditorHandler::navigate(float delta) {
 
 FLASHMEM void SequencerPatternEditorHandler::setFocusedValue(float normalized) {
     if (randomize_.active) {
-        const auto range = core::state::sequencer::patternRandomizeValueRange(
-            randomize_
-        );
-        if (randomize_.setFocusedValue(
-                normalizedToRandomizeRange(normalized, range)
-            )) {
+        const auto range = core::state::sequencer::patternRandomizeValueRange(randomize_);
+        if (randomize_.setFocusedValue(normalizedToRandomizeRange(normalized, range))) {
             sequencer_.patternEditor.bump();
             configureOptForFocusedField();
         }
         return;
     }
     const auto field = sequencer_.patternEditor.focusedField;
-    const auto range = core::state::sequencer::patternEditorValueRange(
-        sequencer_,
-        field
-    );
+    const auto range = core::state::sequencer::patternEditorValueRange(sequencer_, field);
     if (!range.editable()) return;
     const int16_t next = normalizedToRange(normalized, range);
-    if (next == core::state::sequencer::patternEditorFieldValue(
-                    sequencer_,
-                    field
-                )) {
-        return;
-    }
-    if (!beginPendingEdit()) return;
-    if (core::state::sequencer::setPatternEditorFieldValue(
-            sequencer_,
-            field,
-            next
-        )) {
+    const int16_t current = core::state::sequencer::patternEditorFieldValue(sequencer_, field);
+    if (next == current) { return; }
+    if (!beginPendingEdit(field, current, next)) return;
+    const bool changed =
+        core::state::sequencer::setPatternEditorFieldValue(sequencer_, field, next);
+    if (!sealPendingEdit(changed)) return;
+    if (changed) {
         // Length and marker edits change another field's legal range.  Keep the
         // physical encoder exact without recomputing any timeline geometry.
         configureOptForFocusedField();
@@ -336,95 +280,57 @@ FLASHMEM void SequencerPatternEditorHandler::setFocusedValue(float normalized) {
 }
 
 FLASHMEM void SequencerPatternEditorHandler::beginWindowSelection() {
-    commitPendingEdit();
-    (void)core::state::sequencer::setPatternEditorNavigationMode(
-        sequencer_,
-        Mode::WINDOWS
-    );
+    if (!commitPendingEdit()) return;
+    (void)core::state::sequencer::setPatternEditorNavigationMode(sequencer_, Mode::WINDOWS);
 }
 
 FLASHMEM void SequencerPatternEditorHandler::endWindowSelection() {
-    (void)core::state::sequencer::setPatternEditorNavigationMode(
-        sequencer_,
-        Mode::FIELDS
-    );
+    (void)core::state::sequencer::setPatternEditorNavigationMode(sequencer_, Mode::FIELDS);
     configureOptForFocusedField();
 }
 
 FLASHMEM void SequencerPatternEditorHandler::beginLayerSelection() {
-    commitPendingEdit();
-    (void)core::state::sequencer::setPatternEditorNavigationMode(
-        sequencer_,
-        Mode::LAYERS
-    );
+    if (!commitPendingEdit()) return;
+    (void)core::state::sequencer::setPatternEditorNavigationMode(sequencer_, Mode::LAYERS);
 }
 
 FLASHMEM void SequencerPatternEditorHandler::endLayerSelection() {
-    (void)core::state::sequencer::setPatternEditorNavigationMode(
-        sequencer_,
-        Mode::FIELDS
-    );
+    (void)core::state::sequencer::setPatternEditorNavigationMode(sequencer_, Mode::FIELDS);
     configureOptForFocusedField();
 }
 
 FLASHMEM void SequencerPatternEditorHandler::configureOptForFocusedField() {
     if (randomize_.active) {
-        const auto range = core::state::sequencer::patternRandomizeValueRange(
-            randomize_
-        );
+        const auto range = core::state::sequencer::patternRandomizeValueRange(randomize_);
         const uint32_t count = range.count();
-        encoders_.setDiscreteTicksPerStep(
-            Config::EncoderID::OPT,
-            input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
-        );
-        encoders_.setNormalizedTurns(
-            Config::EncoderID::OPT,
-            input_utils::DEFAULT_NORMALIZED_TURNS
-        );
-        encoders_.setDiscreteSteps(
-            Config::EncoderID::OPT,
-            static_cast<uint8_t>(std::min<uint32_t>(count, 255U))
-        );
+        encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT,
+                                          input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP);
+        encoders_.setNormalizedTurns(Config::EncoderID::OPT, input_utils::DEFAULT_NORMALIZED_TURNS);
+        encoders_.setDiscreteSteps(Config::EncoderID::OPT,
+                                   static_cast<uint8_t>(std::min<uint32_t>(count, 255U)));
         encoders_.setPosition(
             Config::EncoderID::OPT,
             randomizeValueToNormalized(
-                core::state::sequencer::patternRandomizeFocusedValue(randomize_),
-                range
-            )
-        );
+                core::state::sequencer::patternRandomizeFocusedValue(randomize_), range));
         return;
     }
     const auto field = sequencer_.patternEditor.focusedField;
-    const auto range = core::state::sequencer::patternEditorValueRange(
-        sequencer_,
-        field
-    );
+    const auto range = core::state::sequencer::patternEditorValueRange(sequencer_, field);
     const uint16_t count = range.count();
-    encoders_.setDiscreteTicksPerStep(
-        Config::EncoderID::OPT,
-        input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP
-    );
-    encoders_.setNormalizedTurns(
-        Config::EncoderID::OPT,
-        input_utils::DEFAULT_NORMALIZED_TURNS
-    );
-    encoders_.setDiscreteSteps(
-        Config::EncoderID::OPT,
-        static_cast<uint8_t>(std::min<uint16_t>(count, 255U))
-    );
+    encoders_.setDiscreteTicksPerStep(Config::EncoderID::OPT,
+                                      input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP);
+    encoders_.setNormalizedTurns(Config::EncoderID::OPT, input_utils::DEFAULT_NORMALIZED_TURNS);
+    encoders_.setDiscreteSteps(Config::EncoderID::OPT,
+                               static_cast<uint8_t>(std::min<uint16_t>(count, 255U)));
     encoders_.setPosition(
         Config::EncoderID::OPT,
-        rangeValueToNormalized(
-            core::state::sequencer::patternEditorFieldValue(sequencer_, field),
-            range
-        )
-    );
+        rangeValueToNormalized(core::state::sequencer::patternEditorFieldValue(sequencer_, field),
+                               range));
 }
 
 FLASHMEM void SequencerPatternEditorHandler::openRandomize() {
     if (randomize_.active || !ownsActiveTrack()) return;
-    commitPendingEdit();
-    history_.commitCoalescedPatternEdit();
+    if (!commitPendingEdit()) return;
     randomize_.begin(sequencer_.pattern, sequencer_.focusedStep.get());
     sequencer_.patternEditor.bump();
     configureOptForFocusedField();
@@ -443,19 +349,21 @@ FLASHMEM void SequencerPatternEditorHandler::rerollRandomize() {
 }
 
 FLASHMEM void SequencerPatternEditorHandler::applyRandomize() {
-    if (!randomize_.active || randomize_.summary.changedCount == 0U ||
-        !ownsActiveTrack()) {
+    if (!randomize_.active || randomize_.summary.changedCount == 0U || !ownsActiveTrack()) {
+        return;
+    }
+    if (history_.commitCoalescedPatternEditOutcome() ==
+        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
         return;
     }
 
-    auto change = core::app::makeExtmemUnique<
-        core::state::sequencer::SequencerHistoryPatternChange>();
+    auto change =
+        core::app::makeExtmemUnique<core::state::sequencer::SequencerHistoryPatternChange>();
     if (!change) return;
 
     const uint8_t owner = sequencer_.patternEditor.ownerTrack;
     change->trackIndex = owner;
-    change->storage =
-        core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly;
+    change->storage = core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly;
     change->descriptor = {
         .kind = core::state::sequencer::SequencerHistoryActionKind::PatternRandomize,
         .trackIndex = owner,
@@ -467,14 +375,8 @@ FLASHMEM void SequencerPatternEditorHandler::applyRandomize() {
 
     if (!history_.canRecordPattern(*change)) return;
 
-    core::state::sequencer::applySnapshotToEditorPreservingGraph(
-        sequencer_,
-        randomize_.preview
-    );
-    core::state::sequencer::applySnapshotPreservingGraph(
-        tracks_.track(owner),
-        randomize_.preview
-    );
+    core::state::sequencer::applySnapshotToEditorPreservingGraph(sequencer_, randomize_.preview);
+    core::state::sequencer::applySnapshotPreservingGraph(tracks_.track(owner), randomize_.preview);
     sequencer_.invalidateVariationTelemetry();
     history_.recordPreparedPattern(std::move(change));
 
@@ -484,146 +386,122 @@ FLASHMEM void SequencerPatternEditorHandler::applyRandomize() {
 }
 
 FLASHMEM void SequencerPatternEditorHandler::addPage() {
-    commitPendingEdit();
+    if (!commitPendingEdit()) return;
     const uint8_t current = sequencer_.pattern.length.get();
-    const uint8_t next = static_cast<uint8_t>(std::min<unsigned>(
-        core::state::sequencer::SequencerState::MAX_STEPS,
-        ((static_cast<unsigned>(current) +
-          core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1U) /
-             core::state::sequencer::SequencerState::STEPS_PER_PAGE +
-         1U) * core::state::sequencer::SequencerState::STEPS_PER_PAGE
-    ));
-    sequencer_.patternEditor.focusedField = Field::LENGTH;
-    if (!beginPendingEdit()) return;
-    if (core::state::sequencer::setPatternEditorFieldValue(
-            sequencer_, Field::LENGTH, next
-        )) {
-        const uint8_t newPage = static_cast<uint8_t>(
-            next / core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1U
-        );
-        sequencer_.patternEditor.windowStart = static_cast<uint8_t>(
-            newPage * core::state::sequencer::SequencerState::STEPS_PER_PAGE
-        );
-        sequencer_.page.set(newPage);
-        sequencer_.focusedStep.set(sequencer_.patternEditor.windowStart);
-        sequencer_.patternEditor.bump();
-        page_add_pending_ = true;
-        commitPendingEdit();
-        configureOptForFocusedField();
-    } else {
-        discardPendingEdit();
+    const uint8_t next = static_cast<uint8_t>(
+        std::min<unsigned>(core::state::sequencer::SequencerState::MAX_STEPS,
+                           ((static_cast<unsigned>(current) +
+                             core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1U) /
+                                core::state::sequencer::SequencerState::STEPS_PER_PAGE +
+                            1U) *
+                               core::state::sequencer::SequencerState::STEPS_PER_PAGE));
+    const int32_t beforePage = static_cast<int32_t>(
+        (current + core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1U) /
+        core::state::sequencer::SequencerState::STEPS_PER_PAGE);
+    const int32_t afterPage =
+        static_cast<int32_t>((next + core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1U) /
+                             core::state::sequencer::SequencerState::STEPS_PER_PAGE);
+    if (!beginPendingEdit(Field::LENGTH, beforePage, afterPage,
+                          core::state::sequencer::SequencerHistoryActionKind::PageStructure)) {
+        return;
     }
+    sequencer_.patternEditor.focusedField = Field::LENGTH;
+    const bool changed =
+        core::state::sequencer::setPatternEditorFieldValue(sequencer_, Field::LENGTH, next);
+    if (changed) {
+        const uint8_t newPage = static_cast<uint8_t>(
+            next / core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1U);
+        const uint8_t windowStart =
+            static_cast<uint8_t>(newPage * core::state::sequencer::SequencerState::STEPS_PER_PAGE);
+        sequencer_.page.set(newPage);
+        sequencer_.focusedStep.set(windowStart);
+        if (!sealPendingEdit(true)) return;
+        if (!commitPendingEdit()) return;
+        sequencer_.patternEditor.windowStart = windowStart;
+        sequencer_.patternEditor.bump();
+        configureOptForFocusedField();
+        return;
+    }
+    if (!sealPendingEdit(false)) return;
 }
 
-FLASHMEM bool SequencerPatternEditorHandler::beginPendingEdit() {
-    const auto field = sequencer_.patternEditor.focusedField;
-    if (edit_pending_) {
-        return edit_field_ == field;
-    }
+FLASHMEM bool SequencerPatternEditorHandler::beginPendingEdit(
+    Field field, int32_t beforeValue, int32_t afterValue,
+    core::state::sequencer::SequencerHistoryActionKind actionKind) {
     if (!ownsActiveTrack()) return false;
 
-    history_.commitCoalescedPatternEdit();
-    edit_storage_ = requiresFullHistory(field)
-        ? core::state::sequencer::SequencerHistoryPatternStorage::FullGraph
-        : core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly;
-    bool captured = true;
-    if (edit_storage_ ==
-        core::state::sequencer::SequencerHistoryPatternStorage::FullGraph) {
-        captured = core::state::sequencer::captureHistorySnapshot(
-            sequencer_,
-            edit_before_
-        );
-    } else {
-        core::state::sequencer::captureFlatHistorySnapshot(
-            sequencer_,
-            edit_before_
-        );
-    }
-    if (!captured) {
-        discardPendingEdit();
+    auto descriptor = core::state::sequencer::SequencerHistoryDescriptor{
+        .kind = actionKind,
+        .trackIndex = sequencer_.patternEditor.ownerTrack,
+        .hasValue = true,
+        .beforeValue = beforeValue,
+        .afterValue = afterValue,
+    };
+    const auto outcome = history_.beginPreparedPatternEdit(
+        core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor,
+        static_cast<uint8_t>(field), payloadPlanForField(sequencer_, field), descriptor);
+    using Outcome = core::state::sequencer::SequencerPreparedPatternEditBeginOutcome;
+    if (outcome == Outcome::Failed) return false;
+    if (outcome == Outcome::Started) {
+        edit_field_ = field;
+        edit_action_ = actionKind;
+        edit_before_value_ = beforeValue;
+    } else if (!edit_pending_ || edit_field_ != field || edit_action_ != actionKind) {
+        const auto sealOutcome = history_.sealPreparedPatternEdit(
+            core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor,
+            static_cast<uint8_t>(field), false, descriptor);
+        using SealOutcome = core::state::sequencer::SequencerPreparedPatternEditSealOutcome;
+        if (sealOutcome == SealOutcome::Failed) return false;
+        const auto commitOutcome = history_.commitPreparedPatternEdit(
+            core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor);
+        using CommitOutcome = core::state::sequencer::SequencerPreparedPatternEditCommitOutcome;
+        if (commitOutcome == CommitOutcome::Failed) return false;
+        resetPendingEditMetadata();
         return false;
     }
-    edit_field_ = field;
+    edit_after_value_ = afterValue;
     edit_pending_ = true;
     return true;
 }
 
-FLASHMEM void SequencerPatternEditorHandler::commitPendingEdit() {
-    if (!edit_pending_) return;
-
-    const uint8_t owner = sequencer_.patternEditor.ownerTrack;
-    // History payloads live in PSRAM. Capture directly into the final change
-    // object so this cold commit path never places a full Pattern snapshot on
-    // the RAM1 stack.
-    auto change = core::app::makeExtmemUnique<
-        core::state::sequencer::SequencerHistoryPatternChange
-    >();
-    if (!change) {
-        discardPendingEdit();
-        return;
-    }
-
-    bool captured = true;
-    if (edit_storage_ ==
-        core::state::sequencer::SequencerHistoryPatternStorage::FullGraph) {
-        captured = core::state::sequencer::captureHistorySnapshot(
-            tracks_,
-            sequencer_,
-            owner,
-            change->after
-        );
-    } else {
-        core::state::sequencer::captureFlatHistorySnapshot(
-            tracks_,
-            sequencer_,
-            owner,
-            change->after
-        );
-    }
-
-    if (!captured || core::state::sequencer::sameMusicalHistorySnapshot(
-            edit_before_,
-            change->after
-        )) {
-        discardPendingEdit();
-        return;
-    }
-
-    change->trackIndex = owner;
-    change->storage = edit_storage_;
-    change->descriptor = {
-        .kind = page_add_pending_
-            ? core::state::sequencer::SequencerHistoryActionKind::PageStructure
-            : core::state::sequencer::SequencerHistoryActionKind::PatternSettings,
-        .trackIndex = owner,
+FLASHMEM bool SequencerPatternEditorHandler::sealPendingEdit(bool changed) {
+    if (!edit_pending_) return false;
+    const auto descriptor = core::state::sequencer::SequencerHistoryDescriptor{
+        .kind = edit_action_,
+        .trackIndex = sequencer_.patternEditor.ownerTrack,
+        .hasValue = true,
+        .beforeValue = edit_before_value_,
+        .afterValue = edit_after_value_,
     };
-    if (page_add_pending_) {
-        change->descriptor.hasValue = true;
-        change->descriptor.beforeValue = static_cast<int32_t>(
-            (edit_before_.flat.length +
-             core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1U) /
-            core::state::sequencer::SequencerState::STEPS_PER_PAGE
-        );
-        change->descriptor.afterValue = static_cast<int32_t>(
-            (change->after.flat.length +
-             core::state::sequencer::SequencerState::STEPS_PER_PAGE - 1U) /
-            core::state::sequencer::SequencerState::STEPS_PER_PAGE
-        );
-    }
-    change->before = std::move(edit_before_);
-    edit_pending_ = false;
-    page_add_pending_ = false;
-    (void)history_.recordPattern(std::move(change));
-    edit_before_.reset();
+    const auto outcome = history_.sealPreparedPatternEdit(
+        core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor,
+        static_cast<uint8_t>(edit_field_), changed, descriptor);
+    using Outcome = core::state::sequencer::SequencerPreparedPatternEditSealOutcome;
+    if (outcome == Outcome::Failed) return false;
+    if (outcome == Outcome::Cleared) resetPendingEditMetadata();
+    return true;
 }
 
-FLASHMEM void SequencerPatternEditorHandler::discardPendingEdit() {
+FLASHMEM bool SequencerPatternEditorHandler::commitPendingEdit() {
+    const auto outcome = history_.commitPreparedPatternEdit(
+        core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor);
+    if (outcome == core::state::sequencer::SequencerPreparedPatternEditCommitOutcome::Failed) {
+        return false;
+    }
+    if (history_.commitCoalescedPatternEditOutcome() ==
+        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        return false;
+    }
+    resetPendingEditMetadata();
+    return true;
+}
+
+FLASHMEM void SequencerPatternEditorHandler::resetPendingEditMetadata() {
     edit_pending_ = false;
-    page_add_pending_ = false;
-    edit_storage_ =
-        core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly;
     edit_field_ = Field::LENGTH;
-    edit_before_.reset();
+    edit_action_ = core::state::sequencer::SequencerHistoryActionKind::PatternSettings;
+    edit_before_value_ = 0;
+    edit_after_value_ = 0;
 }
 
 }  // namespace core::handler

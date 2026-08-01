@@ -1,7 +1,6 @@
 #include "handler/sequencer/SequencerStepEditSessionWorkflow.hpp"
 
 #include <algorithm>
-#include <utility>
 
 #include <config/PlatformCompat.hpp>
 
@@ -11,111 +10,66 @@
 namespace core::handler::sequencer::step_edit_session_workflow {
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 
-FLASHMEM bool openForMacroInPage(
-    core::state::sequencer::SequencerState& sequencer,
-    SequencerHistoryDomainServices& history,
-    oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-    StepEditHistorySnapshot& historySnapshot,
-    bool& historySnapshotValid,
-    uint8_t indexInPage
-) {
-    history.commitCoalescedPatternEdit();
-
+FLASHMEM bool openForMacroInPage(core::state::sequencer::SequencerState& sequencer,
+                                 SequencerHistoryDomainServices& history,
+                                 oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                                 uint8_t indexInPage) {
     uint8_t abs = 0;
-    if (!core::state::sequencer::resolveActiveContentStepInPage(
-            sequencer,
-            sequencer.page.get(),
-            indexInPage,
-            abs
-        )) {
+    if (!core::state::sequencer::resolveActiveContentStepInPage(sequencer, sequencer.page.get(),
+                                                                indexInPage, abs)) {
         return false;
     }
 
-    historySnapshotValid =
-        core::state::sequencer::captureHistorySnapshot(sequencer, historySnapshot);
+    return openForStep(sequencer, history, overlays, abs);
+}
 
-    sequencer.focusedStep.set(abs);
+FLASHMEM bool openForStep(core::state::sequencer::SequencerState& sequencer,
+                          SequencerHistoryDomainServices& history,
+                          oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                          uint8_t step) {
+    if (step >= core::state::sequencer::activeContentLength(sequencer)) { return false; }
+    if (!commitHistory(history)) return false;
+
+    sequencer.focusedStep.set(step);
+    sequencer.page.set(core::state::sequencer::activeContentPageForStep(step));
 
     auto& edit = sequencer.stepEdit;
     edit.reset();
     edit.focusedRow.set(step_edit_rows::rowForNavigationIndex(0));
-    edit.stepIndex.set(abs);
+    edit.stepIndex.set(step);
 
     overlays.show(core::ui::OverlayType::SEQ_STEP_EDIT);
     return true;
 }
 
-FLASHMEM bool commitHistory(
-    core::state::sequencer::SequencerState& sequencer,
-    SequencerHistoryDomainServices& history,
-    StepEditHistorySnapshot& historySnapshot,
-    bool& historySnapshotValid
-) {
-    bool recorded = false;
-    if (historySnapshotValid) {
-        core::state::sequencer::SequencerHistoryPatternSnapshot after;
-        const bool graphUnchanged =
-            historySnapshot.flat.graphRevision == sequencer.pattern.graphRevision.get();
-        bool captured = true;
-        if (graphUnchanged) {
-            historySnapshot.graph.reset();
-            core::state::sequencer::captureFlatHistorySnapshot(sequencer, after);
-        } else {
-            captured = core::state::sequencer::captureHistorySnapshot(sequencer, after);
-        }
-
-        if (captured &&
-            !core::state::sequencer::sameMusicalHistorySnapshot(historySnapshot, after)) {
-            const auto descriptor = core::state::sequencer::SequencerHistoryDescriptor{
-                .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
-                .stepIndex = sequencer.stepEdit.stepIndex.get(),
-            };
-            recorded = graphUnchanged
-                ? history.recordFlatPattern(
-                      std::move(historySnapshot),
-                      std::move(after),
-                      descriptor
-                  )
-                : history.recordPattern(
-                      std::move(historySnapshot),
-                      std::move(after),
-                      descriptor
-                  );
-        }
-    }
-
-    historySnapshotValid = false;
-    return recorded;
-}
-
-FLASHMEM bool retargetRootStep(
-    core::state::sequencer::SequencerState& sequencer,
-    SequencerHistoryDomainServices& history,
-    StepEditHistorySnapshot& historySnapshot,
-    bool& historySnapshotValid,
-    int direction
-) {
-    if (direction == 0 ||
-        !core::state::sequencer::isRootContentView(sequencer)) {
+FLASHMEM bool commitHistory(SequencerHistoryDomainServices& history) {
+    const auto familyOutcome = history.commitPreparedPatternEdit(
+        core::state::sequencer::SequencerPreparedPatternEditOwner::StepEditSession);
+    if (familyOutcome ==
+        core::state::sequencer::SequencerPreparedPatternEditCommitOutcome::Failed) {
         return false;
     }
+    return history.commitCoalescedPatternEditOutcome() !=
+           core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed;
+}
+
+FLASHMEM bool retargetRootStep(core::state::sequencer::SequencerState& sequencer,
+                               SequencerHistoryDomainServices& history, int direction) {
+    if (direction == 0 || !core::state::sequencer::isRootContentView(sequencer)) { return false; }
     const uint8_t length = core::state::sequencer::activeContentLength(sequencer);
     if (length == 0U) return false;
 
-    const uint8_t current = std::min<uint8_t>(
-        sequencer.stepEdit.stepIndex.get(),
-        static_cast<uint8_t>(length - 1U)
-    );
+    const uint8_t current =
+        std::min<uint8_t>(sequencer.stepEdit.stepIndex.get(), static_cast<uint8_t>(length - 1U));
     const uint8_t next = direction > 0
-        ? static_cast<uint8_t>((static_cast<uint16_t>(current) + 1U) % length)
-        : (current == 0U ? static_cast<uint8_t>(length - 1U)
-                         : static_cast<uint8_t>(current - 1U));
+                             ? static_cast<uint8_t>((static_cast<uint16_t>(current) + 1U) % length)
+                             : (current == 0U ? static_cast<uint8_t>(length - 1U)
+                                              : static_cast<uint8_t>(current - 1U));
     if (next == current) return false;
 
     // Close both history aggregation layers before changing the target.  The
     // next snapshot therefore cannot absorb edits from the previous Step.
-    commitHistory(sequencer, history, historySnapshot, historySnapshotValid);
-    history.commitCoalescedPatternEdit();
+    if (!commitHistory(history)) return false;
 
     auto& edit = sequencer.stepEdit;
     edit.contextHold.clear();
@@ -124,17 +78,11 @@ FLASHMEM bool retargetRootStep(
     sequencer.focusedStep.set(next);
     sequencer.page.set(core::state::sequencer::activeContentPageForStep(next));
     edit.stepIndex.set(next);
-    historySnapshotValid =
-        core::state::sequencer::captureHistorySnapshot(sequencer, historySnapshot);
     return true;
 }
 
-FLASHMEM bool backToParentContent(
-    core::state::sequencer::SequencerState& sequencer,
-    SequencerHistoryDomainServices& history,
-    StepEditHistorySnapshot& historySnapshot,
-    bool& historySnapshotValid
-) {
+FLASHMEM bool backToParentContent(core::state::sequencer::SequencerState& sequencer,
+                                  SequencerHistoryDomainServices& history) {
     if (!core::state::sequencer::isChildContentView(sequencer)) return false;
 
     uint8_t parentContextRow = sequencer.stepEdit.focusedRow.get();
@@ -145,8 +93,7 @@ FLASHMEM bool backToParentContent(
                 : step_edit_rows::CYCLE_STATES;
     }
 
-    commitHistory(sequencer, history, historySnapshot, historySnapshotValid);
-    history.commitCoalescedPatternEdit();
+    if (!commitHistory(history)) return false;
     if (!core::state::sequencer::leaveContentView(sequencer)) return false;
 
     auto& edit = sequencer.stepEdit;
@@ -154,29 +101,22 @@ FLASHMEM bool backToParentContent(
     edit.localVariationEditActive.set(false);
     edit.stepIndex.set(sequencer.focusedStep.get());
     edit.focusedRow.set(parentContextRow);
-    historySnapshotValid =
-        core::state::sequencer::captureHistorySnapshot(sequencer, historySnapshot);
     return true;
 }
 
-FLASHMEM void close(
-    core::state::sequencer::SequencerState& sequencer,
-    SequencerHistoryDomainServices& history,
-    ButtonReleaseLatch<2>& contextReleaseLatch,
-    oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-    StepEditHistorySnapshot& historySnapshot,
-    bool& historySnapshotValid
-) {
-    commitHistory(sequencer, history, historySnapshot, historySnapshotValid);
+FLASHMEM bool close(core::state::sequencer::SequencerState& sequencer,
+                    SequencerHistoryDomainServices& history,
+                    ButtonReleaseLatch<2>& contextReleaseLatch,
+                    oc::context::OverlayManager<core::ui::OverlayType>& overlays) {
+    if (!commitHistory(history)) return false;
     contextReleaseLatch.clear();
     overlays.hide();
     sequencer.stepEdit.reset();
+    return true;
 }
 
-FLASHMEM bool editedStepInRange(
-    const core::state::sequencer::SequencerState& sequencer,
-    uint8_t& step
-) {
+FLASHMEM bool editedStepInRange(const core::state::sequencer::SequencerState& sequencer,
+                                uint8_t& step) {
     const uint8_t len = core::state::sequencer::activeContentLength(sequencer);
     if (len == 0) return false;
 
@@ -184,10 +124,8 @@ FLASHMEM bool editedStepInRange(
     return step < len;
 }
 
-FLASHMEM bool shouldCloseFromMacro(
-    const core::state::sequencer::SequencerState& sequencer,
-    uint8_t indexInPage
-) {
+FLASHMEM bool shouldCloseFromMacro(const core::state::sequencer::SequencerState& sequencer,
+                                   uint8_t indexInPage) {
     constexpr uint8_t stepsPerPage = core::state::sequencer::SequencerState::STEPS_PER_PAGE;
     const uint8_t currentIndexInPage =
         static_cast<uint8_t>(sequencer.stepEdit.stepIndex.get() % stepsPerPage);

@@ -13,6 +13,8 @@
 #include <oc/state/ExclusiveVisibilityStack.hpp>
 #include <oc/state/Signal.hpp>
 
+#include "app/OverlayTypes.hpp"
+#include "config/TimeCompat.hpp"
 #include "handler/common/ButtonReleaseLatch.hpp"
 #include "handler/sequencer/SequencerChordPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerChordPresetLibraryAdapter.hpp"
@@ -20,14 +22,12 @@
 #include "handler/sequencer/SequencerPresetLibraryWorkflow.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetLibraryAdapter.hpp"
+#include "state/PatternPitchSettingsState.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
-#include "state/PatternPitchSettingsState.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
-#include "app/OverlayTypes.hpp"
-#include "config/TimeCompat.hpp"
 
 namespace core::handler {
 
@@ -42,24 +42,19 @@ public:
         core::state::StructureClipboardState& structureClipboard;
         core::state::TrackNavigationState& trackNavigation;
         core::state::PatternPitchSettingsState& patternPitchSettings;
-        oc::state::Signal<
-            core::state::StructureNavigationFocus,
-            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
+        oc::state::Signal<core::state::StructureNavigationFocus,
+                          core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         SequencerHistoryDomainServices history;
         SequencerStepPresetDomainServices stepPresets;
         SequencerChordPresetDomainServices chordPresets;
     };
 
-    SequencerStepEditHandler(
-        StateRefs state,
-        oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-        oc::api::EncoderAPI& encoders,
-        oc::api::ButtonAPI& buttons,
-        oc::type::ScopeID sequencerViewScope,
-        oc::type::ScopeID overlayScope,
-        oc::type::ScopeID presetLibraryOverlayScope,
-        TimeProviderFn timeProvider = core::time_compat::millis
-    );
+    SequencerStepEditHandler(StateRefs state,
+                             oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                             oc::api::EncoderAPI& encoders, oc::api::ButtonAPI& buttons,
+                             oc::type::ScopeID sequencerViewScope, oc::type::ScopeID overlayScope,
+                             oc::type::ScopeID presetLibraryOverlayScope,
+                             TimeProviderFn timeProvider = core::time_compat::millis);
 
     // Non-copyable, non-movable
     SequencerStepEditHandler(const SequencerStepEditHandler&) = delete;
@@ -76,13 +71,12 @@ public:
      * focused Step, without leaving the generic Step Editor in-between.
      */
     bool openFocusedStepContentAtRow(uint8_t row);
-
 private:
     void setupBindings();
 
     void openForMacroInPage(uint8_t indexInPage);
     void backFromStepEdit();
-    void commitStepEditHistory();
+    bool commitStepEditHistory();
     void closeStepEdit();
 
     void moveFocus(float delta);
@@ -113,10 +107,16 @@ private:
     void clearFocusedContextChild();
     void copyFocusedStepContent();
     void pasteFocusedStepContent();
-    void recordContextMutation(
-        core::state::sequencer::SequencerHistoryPatternSnapshot before,
-        bool beforeCaptured
-    );
+    bool beginPreparedPatternMutation(
+        core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key,
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor,
+        bool compactGraphOnSeal = false);
+    bool sealPreparedPatternMutation(
+        core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key, bool changed,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor);
+    bool commitPreparedPatternMutation(
+        core::state::sequencer::SequencerPreparedPatternEditOwner owner);
     void openStepPresetLibrary();
     void openChordPresetLibrary();
     void closePresetLibrary();
@@ -128,24 +128,18 @@ private:
     void beginPresetLibraryActionGuard();
     void releasePresetLibraryAction();
     void commitPresetLibraryActionGuard();
-    void handlePresetLibraryResult(
-        const SequencerPresetLibraryResult& result
-    );
+    void handlePresetLibraryResult(const SequencerPresetLibraryResult& result);
 
     ButtonReleaseLatch<2> context_release_latch_;
     ButtonReleaseLatch<1> preset_open_release_latch_;
-    core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
-    bool history_snapshot_valid_ = false;
-
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlay_state_;
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
     core::state::StructureClipboardState& structure_clipboard_;
     core::state::TrackNavigationState& track_ui_;
     core::state::PatternPitchSettingsState& pattern_pitch_settings_;
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
+    oc::state::Signal<core::state::StructureNavigationFocus,
+                      core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     SequencerHistoryDomainServices history_;
     SequencerStepPresetDomainServices step_presets_;
     SequencerChordPresetDomainServices chord_presets_;

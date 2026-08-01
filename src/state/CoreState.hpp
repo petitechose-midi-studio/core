@@ -15,8 +15,20 @@
  * - ExclusiveVisibilityStack: Overlay visibility management
  */
 
-#include <array>
+#include "DeviceSettingsState.hpp"
+#include "MacroEditState.hpp"
+#include "MacroState.hpp"
+#include "MidiSyncState.hpp"
+#include "PatternPitchSettingsState.hpp"
+#include "SequencerSettingsState.hpp"
+#include "StatusBarState.hpp"
+#include "StructureClipboardState.hpp"
+#include "TrackNavigationState.hpp"
+#include "ViewSelectorState.hpp"
+
 #include <cstdint>
+
+#include <array>
 #include <memory>
 
 #include <oc/interface/IStorage.hpp>
@@ -26,35 +38,25 @@
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
-#include "DeviceSettingsState.hpp"
-#include "PatternPitchSettingsState.hpp"
-#include "SequencerSettingsState.hpp"
-#include "MidiSyncState.hpp"
-#include "MacroEditState.hpp"
-#include "MacroState.hpp"
-#include "StructureClipboardState.hpp"
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
-#include "StatusBarState.hpp"
-#include "TrackNavigationState.hpp"
-#include "ViewSelectorState.hpp"
-#include "persistence/PersistenceStatus.hpp"
-#include "persistence/DeviceSettingsStore.hpp"
-#include "macro/MacroPagesState.hpp"
 #include "macro/MacroHistory.hpp"
+#include "macro/MacroPagesState.hpp"
 #include "macro/MacroUiState.hpp"
-#include "state/sequencer/SequencerState.hpp"
+#include "persistence/DeviceSettingsStore.hpp"
+#include "persistence/PersistenceStatus.hpp"
+#include "state/project/ProjectHistoryCoordinator.hpp"
+#include "state/project/ProjectNavigationState.hpp"
+#include "state/project/ProjectSettingsHistory.hpp"
+#include "state/project/ProjectState.hpp"
+#include "state/project/ProjectTrackEditorState.hpp"
+#include "state/project/ProjectTrackHistory.hpp"
+#include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
+#include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
-#include "state/project/ProjectNavigationState.hpp"
-#include "state/project/ProjectHistoryCoordinator.hpp"
-#include "state/project/ProjectState.hpp"
-#include "state/project/ProjectSettingsHistory.hpp"
-#include "state/project/ProjectTrackHistory.hpp"
-#include "state/project/ProjectTrackEditorState.hpp"
-#include "state/project/ProjectTrackState.hpp"
 
 namespace core::sequencer {
 class MidiCcGlobalFrameCoordinator;
@@ -64,6 +66,10 @@ namespace core::state {
 
 struct CoreStateBootstrap;
 struct CoreStateLifecycle;
+
+namespace sequencer {
+struct SequencerGraphCompactionRemap;
+}
 
 /**
  * Owns the macro runtime, page bank, history, and projection state.
@@ -121,16 +127,13 @@ struct SequencerDomainState {
         core::app::ExtmemUniquePtr<sequencer::SequencerCcLaneBank> patternCcLanes;
         core::app::ExtmemUniquePtr<sequencer::SequencerCcLaneBank> activeTrackCcLanes;
         uint32_t patternCcLaneRevision = 0;
-        std::array<
-            core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>,
-            sequencer::SequencerTrackBankState::TRACK_COUNT
-        > bankGraphs{};
-        std::array<
-            core::app::ExtmemUniquePtr<sequencer::SequencerCcLaneBank>,
-            sequencer::SequencerTrackBankState::TRACK_COUNT
-        > bankCcLanes{};
-        std::array<uint32_t, sequencer::SequencerTrackBankState::TRACK_COUNT>
-            bankCcLaneRevisions{};
+        std::array<core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>,
+                   sequencer::SequencerTrackBankState::TRACK_COUNT>
+            bankGraphs{};
+        std::array<core::app::ExtmemUniquePtr<sequencer::SequencerCcLaneBank>,
+                   sequencer::SequencerTrackBankState::TRACK_COUNT>
+            bankCcLanes{};
+        std::array<uint32_t, sequencer::SequencerTrackBankState::TRACK_COUNT> bankCcLaneRevisions{};
     };
 
     struct PendingApplyDeleter {
@@ -143,15 +146,22 @@ struct SequencerDomainState {
         enum class Kind : uint8_t {
             StepProperty = 0,
             CcLaneEvent,
+            PreparedFamily,
         };
 
         bool pending = false;
         Kind kind = Kind::StepProperty;
         uint8_t activeTrack = 0;
         uint8_t step = 0;
-        sequencer::StepProperty property = sequencer::StepProperty::NOTE;
+        union {
+            sequencer::StepProperty property = sequencer::StepProperty::NOTE;
+            sequencer::SequencerPreparedPatternEditOwner familyOwner;
+        };
         bool stateProperty = false;
-        uint8_t lane = sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
+        union {
+            uint8_t lane = sequencer::SequencerHistoryDescriptor::INVALID_INDEX;
+            uint8_t familyKey;
+        };
         uint32_t lastTouchedMs = 0;
         sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan =
             sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly;
@@ -159,34 +169,30 @@ struct SequencerDomainState {
         bool hasChange = false;
         bool prospectiveGraphInstalled = false;
         bool genericMutationPendingAtBegin = false;
-        sequencer::SequencerHistoryPatternChangePtr preparedStepChange;
+        // Fits existing pointer-alignment padding on both supported ABIs.
+        bool compactGraphOnSeal = false;
+        sequencer::SequencerHistoryPatternChangePtr preparedPatternChange;
         sequencer::SequencerPreparedActiveTrackSynchronization synchronization;
         sequencer::SequencerHistoryPatternChangePtr preparedCcLaneChange;
 
-        bool matchesStepProperty(
-            uint8_t nextActiveTrack,
-            uint8_t nextStep,
-            sequencer::StepProperty nextProperty,
-            bool nextStateProperty
-        ) const {
-            return pending &&
-                   kind == Kind::StepProperty &&
-                   activeTrack == nextActiveTrack &&
-                   step == nextStep &&
-                   property == nextProperty &&
+        bool matchesStepProperty(uint8_t nextActiveTrack, uint8_t nextStep,
+                                 sequencer::StepProperty nextProperty,
+                                 bool nextStateProperty) const {
+            return pending && kind == Kind::StepProperty && activeTrack == nextActiveTrack &&
+                   step == nextStep && property == nextProperty &&
                    stateProperty == nextStateProperty;
         }
 
-        bool matchesCcLaneEvent(
-            uint8_t nextActiveTrack,
-            uint8_t nextLane,
-            uint8_t nextStep
-        ) const {
-            return pending &&
-                   kind == Kind::CcLaneEvent &&
-                   activeTrack == nextActiveTrack &&
-                   lane == nextLane &&
-                   step == nextStep;
+        bool matchesCcLaneEvent(uint8_t nextActiveTrack, uint8_t nextLane, uint8_t nextStep) const {
+            return pending && kind == Kind::CcLaneEvent && activeTrack == nextActiveTrack &&
+                   lane == nextLane && step == nextStep;
+        }
+
+        bool matchesPreparedFamily(uint8_t nextActiveTrack,
+                                   sequencer::SequencerPreparedPatternEditOwner nextOwner,
+                                   uint8_t nextKey) const {
+            return pending && kind == Kind::PreparedFamily && activeTrack == nextActiveTrack &&
+                   familyOwner == nextOwner && familyKey == nextKey;
         }
 
         void clear();
@@ -222,10 +228,9 @@ struct UiSystemState {
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType> overlays;
     oc::state::Signal<core::ui::ViewType, 8> activeView{core::ui::ViewType::MACRO};
-    oc::state::Signal<core::state::StructureNavigationFocus, kStructureNavigationFocusMaxSubscribers>
-        structureNavigationFocus{
-        core::state::StructureNavigationFocus::PAGE
-    };
+    oc::state::Signal<core::state::StructureNavigationFocus,
+                      kStructureNavigationFocusMaxSubscribers>
+        structureNavigationFocus{core::state::StructureNavigationFocus::PAGE};
     SharedTrackState sharedTracks;
     TrackNavigationState trackNavigation;
     StructureClipboardState structureClipboard;
@@ -254,24 +259,20 @@ struct UiSystemState {
 struct CoreState {
     friend struct CoreStateBootstrap;
     friend struct CoreStateLifecycle;
-
 public:
     static constexpr uint32_t PROJECT_SESSION_AUTOSAVE_DELAY_MS = 2000;
-
 private:
     MacroDomainState macroDomain_;
     SequencerDomainState sequencerDomain_;
     project::ProjectState project_;
     core::app::ExtmemUniquePtr<project::ProjectTrackState> projectTracks_;
     core::app::ExtmemUniquePtr<project::ProjectTrackHistoryService> projectTrackHistory_;
-    core::app::ExtmemUniquePtr<project::ProjectSettingsHistoryService>
-        projectSettingsHistory_;
+    core::app::ExtmemUniquePtr<project::ProjectSettingsHistoryService> projectSettingsHistory_;
     core::app::ExtmemUniquePtr<project::ProjectHistoryCoordinator> projectHistory_;
     core::app::ExtmemUniquePtr<UiSystemState> systemUi_;
     bool projectSessionTrackingEnabled_ = false;
     bool projectSessionSavePending_ = false;
     uint32_t projectSessionSaveTimestampMs_ = 0;
-
 public:
     /// Durable device settings only; musical content is file-based.
     persistence::DeviceSettingsStore deviceSettingsStore;
@@ -301,8 +302,8 @@ public:
     project::ProjectHistoryCoordinator& projectHistory;
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
     oc::state::Signal<core::ui::ViewType, 8>& activeView;
-    oc::state::Signal<core::state::StructureNavigationFocus, kStructureNavigationFocusMaxSubscribers>&
-        structureNavigationFocus;
+    oc::state::Signal<core::state::StructureNavigationFocus,
+                      kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
     oc::state::Signal<uint8_t, 8>& sharedTrackActive;
     oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
     TrackNavigationState& trackNavigation;
@@ -358,11 +359,8 @@ public:
     void requestSequencerRuntimeProjectReset();
     void markMacroValueEdited(uint8_t index);
     [[nodiscard]] bool setMacroValueWithHistory(uint8_t index, float value);
-    [[nodiscard]] bool takeMacroManualControlWithHistory(
-        uint8_t index,
-        float value,
-        bool coalesceValue
-    );
+    [[nodiscard]] bool takeMacroManualControlWithHistory(uint8_t index, float value,
+                                                         bool coalesceValue);
     [[nodiscard]] bool resumeMacroComputedSourcesWithHistory(uint8_t index);
     void updateMacroValueHistoryCoalescing(uint32_t nowMs);
     void flushMacroValueHistoryCoalescing();
@@ -383,44 +381,43 @@ public:
                                        sequencer::SequencerHistoryPatternSnapshot after,
                                        sequencer::SequencerHistoryDescriptor descriptor = {},
                                        sequencer::SequencerHistoryPatternStorage storage =
-                                            sequencer::SequencerHistoryPatternStorage::FullGraph);
+                                           sequencer::SequencerHistoryPatternStorage::FullGraph);
     bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternChangePtr change);
     bool recordSequencerBankHistory(sequencer::SequencerHistoryTrackBankSnapshot before,
                                     sequencer::SequencerHistoryTrackBankSnapshot after,
                                     sequencer::SequencerHistoryDescriptor descriptor = {});
     bool recordSequencerBankHistory(sequencer::SequencerHistoryFullBankChangePtr change);
     bool canRecordSequencerBankHistory(
-        const sequencer::SequencerHistoryFullBankChange& change
-    ) const;
+        const sequencer::SequencerHistoryFullBankChange& change) const;
     // Requires an unchanged change accepted by canRecord*. Publishes the
     // prepared bank topology into shared UI/Macro projections and commits the
     // history plus dirty/autosave boundary without further allocation.
-    void recordPreparedSequencerBankHistory(
-        sequencer::SequencerHistoryFullBankChangePtr change
-    );
+    void recordPreparedSequencerBankHistory(sequencer::SequencerHistoryFullBankChangePtr change);
     bool canRecordSequencerStructureHistory(
-        const sequencer::SequencerHistoryTrackStructureChange& change
-    ) const;
+        const sequencer::SequencerHistoryTrackStructureChange& change) const;
     // Same immutable prepared contract as FullBank, including shared Track
     // projection publication before the no-fail history boundary.
     void recordPreparedSequencerStructureHistory(
-        sequencer::SequencerHistoryTrackStructureChangePtr change
-    );
+        sequencer::SequencerHistoryTrackStructureChangePtr change);
     bool recordSequencerStructureHistory(sequencer::SequencerHistoryTrackStructureChangePtr change);
-    bool beginOrContinueSequencerPatternHistoryCoalescing(uint8_t step,
-                                                          sequencer::StepProperty property,
-                                                          uint32_t nowMs,
-                                                          sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
-                                                          bool stateProperty = false);
+    bool beginOrContinueSequencerPatternHistoryCoalescing(
+        uint8_t step, sequencer::StepProperty property, uint32_t nowMs,
+        sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan, bool stateProperty = false);
     bool sealSequencerPatternHistoryCoalescing(bool mutationChanged);
+    sequencer::SequencerPreparedPatternEditBeginOutcome beginOrContinueSequencerPreparedPatternEdit(
+        sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key,
+        sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
+        sequencer::SequencerHistoryDescriptor descriptor, bool compactGraphOnSeal = false);
+    sequencer::SequencerPreparedPatternEditSealOutcome sealSequencerPreparedPatternEdit(
+        sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key, bool mutationChanged,
+        sequencer::SequencerHistoryDescriptor descriptor);
+    sequencer::SequencerPreparedPatternEditCommitOutcome commitSequencerPreparedPatternEdit(
+        sequencer::SequencerPreparedPatternEditOwner owner);
     bool beginOrContinueSequencerCcLaneEventHistoryCoalescing(
-        uint8_t lane,
-        uint8_t step,
-        int32_t beforeValue,
-        int32_t afterValue,
-        const sequencer::SequencerCcLaneBank* afterBank,
-        uint32_t nowMs
-    );
+        uint8_t lane, uint8_t step, int32_t beforeValue, int32_t afterValue,
+        const sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs);
+    sequencer::SequencerPatternHistoryCommitOutcome
+    commitSequencerPatternHistoryCoalescingOutcome();
     bool commitSequencerPatternHistoryCoalescing();
     bool updateSequencerPatternHistoryCoalescing(uint32_t nowMs);
     bool hasPendingSequencerPatternHistoryCoalescing() const;
@@ -431,23 +428,17 @@ public:
     bool undoProjectHistory();
     bool redoProjectHistory();
     [[nodiscard]] bool clearProjectHistory();
-    [[nodiscard]] bool queuePendingSequencerApply(
-        sequencer::SequencerState& staged,
-        bool merge = false
-    );
+    [[nodiscard]] bool queuePendingSequencerApply(sequencer::SequencerState& staged,
+                                                  bool merge = false);
     [[nodiscard]] bool queuePendingSequencerBankApply(
-        sequencer::SequencerTrackBankState& stagedBank,
-        sequencer::SequencerState& staged
-    );
+        sequencer::SequencerTrackBankState& stagedBank, sequencer::SequencerState& staged);
     void clearPendingSequencerApply();
     bool hasPendingSequencerApply() const;
     uint16_t currentSharedTrackEnabledMask() const;
     uint8_t currentSharedActiveTrack() const;
     bool setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack);
-    [[nodiscard]] bool publishPreparedSequencerTrackState(
-        uint16_t enabledMask,
-        uint8_t activeTrack
-    );
+    [[nodiscard]] bool publishPreparedSequencerTrackState(uint16_t enabledMask,
+                                                          uint8_t activeTrack);
     /** Reconciles transient Macro/UI state after one atomic global Track paste. */
     void reconcilePreparedMacroTrackTransfer(uint16_t capturedTrackMask);
     bool refreshSharedTrackStateFromMacroPages();
@@ -460,35 +451,28 @@ public:
      * are not rewritten by this recovery path.
      */
     persistence::PersistenceWriteStatus recoverSettingsFromRamAfterStorageReopen();
-
 private:
-    enum class SequencerPatternHistoryCommitOutcome : uint8_t {
-        NoPending = 0,
-        NoChange,
-        Committed,
-        Failed,
-    };
+    using SequencerPatternHistoryCommitOutcome = sequencer::SequencerPatternHistoryCommitOutcome;
 
     void consumePendingSequencerMutation_(bool* priorMutation = nullptr);
-    SequencerPatternHistoryCommitOutcome abandonUnsafeSequencerPatternHistory_(
-        const char* reason
-    );
+    bool rollbackPreparedSequencerPatternEdit_();
+    sequencer::SequencerPreparedPatternEditSealOutcome
+    sealSequencerPreparedPatternEditWithGraphCompaction_(
+        sequencer::SequencerHistoryDescriptor descriptor);
+    sequencer::SequencerPreparedPatternEditSealOutcome finishSequencerPreparedPatternEdit_(
+        sequencer::SequencerHistoryDescriptor descriptor,
+        const sequencer::SequencerGraphCompactionRemap* compactionRemap, bool graphCompacted);
+    SequencerPatternHistoryCommitOutcome abandonUnsafeSequencerPatternHistory_(const char* reason);
     SequencerPatternHistoryCommitOutcome commitSequencerPatternHistoryCoalescing_();
-    [[nodiscard]] bool queueSequencerApply_(
-        sequencer::SequencerState& staged,
-        bool merge = false
-    );
-    [[nodiscard]] bool queueSequencerBankApply_(
-        sequencer::SequencerTrackBankState& stagedBank,
-        sequencer::SequencerState& staged
-    );
+    [[nodiscard]] bool queueSequencerApply_(sequencer::SequencerState& staged, bool merge = false);
+    [[nodiscard]] bool queueSequencerBankApply_(sequencer::SequencerTrackBankState& stagedBank,
+                                                sequencer::SequencerState& staged);
     void requestProjectSessionSave_();
     void markSequencerProjectMutated_();
     void clearPendingSequencerApply_();
     bool refreshSharedTrackStateFromMacroPages_();
     bool refreshSharedTrackStateFromSequencer_();
     bool setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack);
-
 };
 
 }  // namespace core::state

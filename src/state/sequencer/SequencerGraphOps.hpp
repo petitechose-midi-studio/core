@@ -1,7 +1,8 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
+
+#include <array>
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
@@ -39,76 +40,45 @@ struct SequencerGraphCompactionResult {
 
 bool ensureGraphRoot(SequencerPatternState& pattern);
 void clearGraph(SequencerPatternState& pattern);
+[[nodiscard]] bool copyGraph(SequencerPatternState& target, const SequencerPatternState& source);
 [[nodiscard]] bool copyGraph(SequencerPatternState& target,
-                             const SequencerPatternState& source);
-[[nodiscard]] bool copyGraph(
-    SequencerPatternState& target,
-    const oc::note::sequencer::StepSequencerGraph* source,
-    uint32_t revision
-);
-SequencerGraphCompactionResult compactGraph(
-    SequencerPatternState& pattern,
-    SequencerGraphCompactionRemap* remap = nullptr
-);
+                             const oc::note::sequencer::StepSequencerGraph* source,
+                             uint32_t revision);
+SequencerGraphCompactionResult compactGraph(SequencerPatternState& pattern,
+                                            SequencerGraphCompactionRemap& remap);
+SequencerGraphCompactionResult compactGraph(SequencerPatternState& pattern);
+// Uses an owner reserved before a surrounding transaction's first live write.
+// The live Graph owner is preserved; only its bytes are replaced when the
+// canonical graph differs. No allocation occurs.
+SequencerGraphCompactionResult compactGraphUsingReservedStorage(
+    SequencerPatternState& pattern, oc::note::sequencer::StepSequencerGraph& reservedGraph,
+    SequencerGraphCompactionRemap& remap);
 
 const oc::note::sequencer::StepSequencerGraph* graphView(const SequencerPatternState& pattern);
 
 SequencerGraphNodeId rootStepNodeId(uint8_t step);
-bool stepNodeHasMicroSequence(
-    const SequencerPatternState& pattern,
-    SequencerGraphNodeId nodeId
-);
-bool stepNodeHasCycleStateSet(
-    const SequencerPatternState& pattern,
-    SequencerGraphNodeId nodeId
-);
-bool stepNodeHasAnyChildContent(
-    const SequencerPatternState& pattern,
-    SequencerGraphNodeId nodeId
-);
+bool stepNodeHasMicroSequence(const SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
+bool stepNodeHasCycleStateSet(const SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
+bool stepNodeHasAnyChildContent(const SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
 
-SequencerGraphCreateResult createMicroSequence(
-    SequencerPatternState& pattern,
-    SequencerGraphNodeId parentNodeId,
-    uint8_t length
-);
-bool resizeMicroSequence(
-    SequencerPatternState& pattern,
-    SequencerGraphSequenceId sequenceId,
-    uint8_t length
-);
-bool resizeCycleStateSet(
-    SequencerPatternState& pattern,
-    SequencerGraphCycleSetId cycleSetId,
-    uint8_t length
-);
-bool setMicroSequenceOffset(
-    SequencerPatternState& pattern,
-    SequencerGraphSequenceId sequenceId,
-    int8_t offset
-);
-bool setCycleStateSetOffset(
-    SequencerPatternState& pattern,
-    SequencerGraphCycleSetId cycleSetId,
-    int8_t offset
-);
+SequencerGraphCreateResult createMicroSequence(SequencerPatternState& pattern,
+                                               SequencerGraphNodeId parentNodeId, uint8_t length);
+bool resizeMicroSequence(SequencerPatternState& pattern, SequencerGraphSequenceId sequenceId,
+                         uint8_t length);
+bool resizeCycleStateSet(SequencerPatternState& pattern, SequencerGraphCycleSetId cycleSetId,
+                         uint8_t length);
+bool setMicroSequenceOffset(SequencerPatternState& pattern, SequencerGraphSequenceId sequenceId,
+                            int8_t offset);
+bool setCycleStateSetOffset(SequencerPatternState& pattern, SequencerGraphCycleSetId cycleSetId,
+                            int8_t offset);
 bool rotateRootStepNodes(SequencerPatternState& pattern, int offsetSteps);
-bool rotateMicroSequenceSteps(
-    SequencerPatternState& pattern,
-    SequencerGraphSequenceId sequenceId,
-    int offsetSteps
-);
-bool rotateCycleStateSetSteps(
-    SequencerPatternState& pattern,
-    SequencerGraphCycleSetId cycleSetId,
-    int offsetSteps
-);
+bool rotateMicroSequenceSteps(SequencerPatternState& pattern, SequencerGraphSequenceId sequenceId,
+                              int offsetSteps);
+bool rotateCycleStateSetSteps(SequencerPatternState& pattern, SequencerGraphCycleSetId cycleSetId,
+                              int offsetSteps);
 
-SequencerGraphCreateResult createCycleStateSet(
-    SequencerPatternState& pattern,
-    SequencerGraphNodeId parentNodeId,
-    uint8_t length
-);
+SequencerGraphCreateResult createCycleStateSet(SequencerPatternState& pattern,
+                                               SequencerGraphNodeId parentNodeId, uint8_t length);
 
 bool clearNodeChildren(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
 bool clearNodeChildSequence(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
@@ -119,66 +89,46 @@ enum class SequencerGraphNodeResetMode : uint8_t {
     DISABLED_OVERRIDE,
 };
 
-bool resetStepNodePayload(
-    SequencerPatternState& pattern,
-    SequencerGraphNodeId nodeId,
-    SequencerGraphNodeResetMode mode = SequencerGraphNodeResetMode::DEFAULT
-);
+bool resetStepNodePayload(SequencerPatternState& pattern, SequencerGraphNodeId nodeId,
+                          SequencerGraphNodeResetMode mode = SequencerGraphNodeResetMode::DEFAULT);
 bool resetStepNodePayloadPreservingChildren(
-    SequencerPatternState& pattern,
-    SequencerGraphNodeId nodeId,
-    SequencerGraphNodeResetMode mode = SequencerGraphNodeResetMode::DEFAULT
-);
-bool copyStepNodePayloadFromGraph(
-    SequencerPatternState& targetPattern,
-    SequencerGraphNodeId targetNodeId,
-    const oc::note::sequencer::StepSequencerGraph& sourceGraph,
-    SequencerGraphNodeId sourceNodeId
-);
-bool copyNodeChildrenFromGraph(
-    SequencerPatternState& targetPattern,
-    SequencerGraphNodeId targetNodeId,
-    const oc::note::sequencer::StepSequencerGraph& sourceGraph,
-    SequencerGraphNodeId sourceNodeId
-);
-bool copyNodeChildSequenceFromGraph(
-    SequencerPatternState& targetPattern,
-    SequencerGraphNodeId targetNodeId,
-    const oc::note::sequencer::StepSequencerGraph& sourceGraph,
-    SequencerGraphNodeId sourceNodeId
-);
-bool copyNodeCycleStateSetFromGraph(
-    SequencerPatternState& targetPattern,
-    SequencerGraphNodeId targetNodeId,
-    const oc::note::sequencer::StepSequencerGraph& sourceGraph,
-    SequencerGraphNodeId sourceNodeId
-);
+    SequencerPatternState& pattern, SequencerGraphNodeId nodeId,
+    SequencerGraphNodeResetMode mode = SequencerGraphNodeResetMode::DEFAULT);
+bool copyStepNodePayloadFromGraph(SequencerPatternState& targetPattern,
+                                  SequencerGraphNodeId targetNodeId,
+                                  const oc::note::sequencer::StepSequencerGraph& sourceGraph,
+                                  SequencerGraphNodeId sourceNodeId);
+bool copyNodeChildrenFromGraph(SequencerPatternState& targetPattern,
+                               SequencerGraphNodeId targetNodeId,
+                               const oc::note::sequencer::StepSequencerGraph& sourceGraph,
+                               SequencerGraphNodeId sourceNodeId);
+bool copyNodeChildSequenceFromGraph(SequencerPatternState& targetPattern,
+                                    SequencerGraphNodeId targetNodeId,
+                                    const oc::note::sequencer::StepSequencerGraph& sourceGraph,
+                                    SequencerGraphNodeId sourceNodeId);
+bool copyNodeCycleStateSetFromGraph(SequencerPatternState& targetPattern,
+                                    SequencerGraphNodeId targetNodeId,
+                                    const oc::note::sequencer::StepSequencerGraph& sourceGraph,
+                                    SequencerGraphNodeId sourceNodeId);
 
-bool setNodeEnabledOverride(SequencerPatternState& pattern,
-                            SequencerGraphNodeId nodeId,
+bool setNodeEnabledOverride(SequencerPatternState& pattern, SequencerGraphNodeId nodeId,
                             bool enabled);
 bool clearNodeEnabledOverride(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
 bool setNodeNoteOffset(SequencerPatternState& pattern, SequencerGraphNodeId nodeId, int8_t offset);
-bool setNodeVelocityOffset(SequencerPatternState& pattern,
-                           SequencerGraphNodeId nodeId,
+bool setNodeVelocityOffset(SequencerPatternState& pattern, SequencerGraphNodeId nodeId,
                            int16_t offset);
 bool setNodeGateOffset(SequencerPatternState& pattern, SequencerGraphNodeId nodeId, int16_t offset);
 bool setNodeNudgeOffset(SequencerPatternState& pattern, SequencerGraphNodeId nodeId, int8_t offset);
-bool setNodeProbabilityOffset(SequencerPatternState& pattern,
-                              SequencerGraphNodeId nodeId,
+bool setNodeProbabilityOffset(SequencerPatternState& pattern, SequencerGraphNodeId nodeId,
                               int16_t offset);
-bool setNodeChordMode(SequencerPatternState& pattern,
-                      SequencerGraphNodeId nodeId,
+bool setNodeChordMode(SequencerPatternState& pattern, SequencerGraphNodeId nodeId,
                       oc::note::sequencer::StepSequencerChordMode mode);
-bool setNodeChordSpec(SequencerPatternState& pattern,
-                      SequencerGraphNodeId nodeId,
+bool setNodeChordSpec(SequencerPatternState& pattern, SequencerGraphNodeId nodeId,
                       oc::note::sequencer::StepSequencerChordSpec spec);
 bool clearNodeChordState(SequencerPatternState& pattern, SequencerGraphNodeId nodeId);
 uint8_t nodeLocalVariationRange(const oc::note::sequencer::StepSequencerStepNode& node,
                                 StepProperty property);
-bool setNodeLocalVariationRange(SequencerPatternState& pattern,
-                                SequencerGraphNodeId nodeId,
-                                StepProperty property,
-                                uint8_t range);
+bool setNodeLocalVariationRange(SequencerPatternState& pattern, SequencerGraphNodeId nodeId,
+                                StepProperty property, uint8_t range);
 
 }  // namespace core::state::sequencer

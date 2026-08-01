@@ -1,12 +1,12 @@
 #include "state/CoreState.hpp"
 
-#include <new>
 #include <cstdio>
-#include <utility>
 
 #include <config/PlatformCompat.hpp>
+#include <new>
 #include <oc/log/Log.hpp>
 #include <oc/time/Time.hpp>
+#include <utility>
 
 #if OC_ENABLE_STATS
 #include "diagnostics/MemoryFootprintReporter.hpp"
@@ -16,17 +16,17 @@
 #include <wiring.h>
 #endif
 
-#include "state/CoreStateBootstrap.hpp"
-#include "state/CoreStateLifecycle.hpp"
-#include "state/shared/SharedTrackCoordinator.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
+#include "state/CoreStateBootstrap.hpp"
+#include "state/CoreStateLifecycle.hpp"
+#include "state/project/ProjectMenuModel.hpp"
+#include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerStructureHistory.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
-#include "state/project/ProjectMenuModel.hpp"
-#include "state/project/ProjectTrackDomainServices.hpp"
+#include "state/shared/SharedTrackCoordinator.hpp"
 
 namespace core::state {
 
@@ -44,7 +44,7 @@ FLASHMEM SequencerDomainState::PendingApply* createPendingApply() {
 #if OC_ENABLE_STATS
     core::diagnostics::trackExtmemAllocation(memory);
 #endif
-    return new(memory) SequencerDomainState::PendingApply();
+    return new (memory) SequencerDomainState::PendingApply();
 #else
     return new SequencerDomainState::PendingApply();
 #endif
@@ -65,24 +65,19 @@ createProjectHistoryCoordinator() {
 
 FLASHMEM core::app::ExtmemUniquePtr<project::ProjectSettingsHistoryService>
 createProjectSettingsHistory() {
-    auto history = core::app::makeExtmemUnique<
-        project::ProjectSettingsHistoryService
-    >();
+    auto history = core::app::makeExtmemUnique<project::ProjectSettingsHistoryService>();
     if (!history) failCoreStateAllocation("Project settings history");
     return history;
 }
 
 FLASHMEM core::app::ExtmemUniquePtr<project::ProjectTrackHistoryService>
 createProjectTrackHistory() {
-    auto history = core::app::makeExtmemUnique<
-        project::ProjectTrackHistoryService
-    >();
+    auto history = core::app::makeExtmemUnique<project::ProjectTrackHistoryService>();
     if (!history) failCoreStateAllocation("Project Track history");
     return history;
 }
 
-FLASHMEM core::app::ExtmemUniquePtr<project::ProjectTrackState>
-createProjectTrackState() {
+FLASHMEM core::app::ExtmemUniquePtr<project::ProjectTrackState> createProjectTrackState() {
     auto tracks = core::app::makeExtmemUnique<project::ProjectTrackState>();
     if (!tracks) failCoreStateAllocation("Project Track state");
     return tracks;
@@ -94,7 +89,8 @@ FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerState> createSequencerEd
     return state;
 }
 
-FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState> createSequencerTrackBankState() {
+FLASHMEM core::app::ExtmemUniquePtr<sequencer::SequencerTrackBankState>
+createSequencerTrackBankState() {
     auto state = core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
     if (!state) failCoreStateAllocation("sequencer track bank");
     return state;
@@ -117,8 +113,8 @@ constexpr uint32_t nextNonZeroRuntimeRevision(uint32_t current) {
 }  // namespace
 
 FLASHMEM MacroDomainState::MacroDomainState()
-    : runtime(core::app::makeExtmemUnique<MacroState>())
-    , pages(core::app::makeExtmemUnique<macro::MacroPagesState>()) {
+    : runtime(core::app::makeExtmemUnique<MacroState>()),
+      pages(core::app::makeExtmemUnique<macro::MacroPagesState>()) {
     if (!runtime) failCoreStateAllocation("macro runtime state");
     if (!pages) failCoreStateAllocation("macro pages state");
 }
@@ -126,16 +122,16 @@ FLASHMEM MacroDomainState::MacroDomainState()
 FLASHMEM MacroDomainState::~MacroDomainState() = default;
 
 FLASHMEM SequencerDomainState::SequencerDomainState()
-    : editor(createSequencerEditorState())
-    , tracks(createSequencerTrackBankState())
-    , history(core::app::makeExtmemUnique<sequencer::SequencerHistoryService>())
-    , pendingApply(nullptr) {
+    : editor(createSequencerEditorState()), tracks(createSequencerTrackBankState()),
+      history(core::app::makeExtmemUnique<sequencer::SequencerHistoryService>()),
+      pendingApply(nullptr) {
     if (!history) failCoreStateAllocation("sequencer history service");
 }
 
 FLASHMEM SequencerDomainState::~SequencerDomainState() = default;
 
-FLASHMEM void SequencerDomainState::PendingApplyDeleter::operator()(PendingApply* ptr) const noexcept {
+FLASHMEM void SequencerDomainState::PendingApplyDeleter::operator()(
+    PendingApply* ptr) const noexcept {
     if (!ptr) return;
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     ptr->~PendingApply();
@@ -149,56 +145,35 @@ FLASHMEM void SequencerDomainState::PendingApplyDeleter::operator()(PendingApply
 }
 
 FLASHMEM CoreState::CoreState(oc::interface::IStorage& deviceSettingsStorage)
-    : macroDomain_()
-    , sequencerDomain_()
-    , projectTracks_(createProjectTrackState())
-    , projectTrackHistory_(createProjectTrackHistory())
-    , projectSettingsHistory_(createProjectSettingsHistory())
-    , projectHistory_(createProjectHistoryCoordinator())
-    , systemUi_(createUiSystemState())
-    , deviceSettingsStore(deviceSettingsStorage)
-    , macros(*macroDomain_.runtime)
-    , pages(*macroDomain_.pages)
-    , macroHistory(macroDomain_.history)
-    , macroRuntimeOwnerRevision(macroDomain_.runtimeOwnerRevision)
-    , configRevision(macroDomain_.configRevision)
-    , sequencer(*sequencerDomain_.editor)
-    , sequencerTracks(*sequencerDomain_.tracks)
-    , sequencerHistory(*sequencerDomain_.history)
-    , sequencerTrackActivations(sequencerDomain_.trackActivations)
-    , sequencerRuntimeProjectRevision(sequencerDomain_.runtimeProjectRevision)
-    , project(project_)
-    , projectTracks(*projectTracks_)
-    , projectTrackHistory(*projectTrackHistory_)
-    , projectSettingsHistory(*projectSettingsHistory_)
-    , projectHistory(*projectHistory_)
-    , overlays(systemUi_->overlays)
-    , activeView(systemUi_->activeView)
-    , structureNavigationFocus(systemUi_->structureNavigationFocus)
-    , sharedTrackActive(systemUi_->sharedTracks.activeIndex)
-    , sharedTrackEnabledMask(systemUi_->sharedTracks.enabledMask)
-    , trackNavigation(systemUi_->trackNavigation)
-    , structureClipboard(systemUi_->structureClipboard)
-    , viewSelector(systemUi_->viewSelector)
-    , statusBar(systemUi_->statusBar)
-    , midiSync(systemUi_->midiSync)
-    , deviceSettings(systemUi_->deviceSettings)
-    , sequencerSettings(systemUi_->sequencerSettings)
-    , patternPitchSettings(systemUi_->patternPitchSettings)
-    , macroEdit(systemUi_->macroEdit)
-    , macroUi(systemUi_->macroUi)
-    , projectNavigation(systemUi_->projectNavigation)
-    , projectTrackEditor(systemUi_->projectTrackEditor) {
-    projectHistory.setBranchInvalidatedCallback(
-        this,
-        &discardGlobalRedoBranches
-    );
+    : macroDomain_(), sequencerDomain_(), projectTracks_(createProjectTrackState()),
+      projectTrackHistory_(createProjectTrackHistory()),
+      projectSettingsHistory_(createProjectSettingsHistory()),
+      projectHistory_(createProjectHistoryCoordinator()), systemUi_(createUiSystemState()),
+      deviceSettingsStore(deviceSettingsStorage), macros(*macroDomain_.runtime),
+      pages(*macroDomain_.pages), macroHistory(macroDomain_.history),
+      macroRuntimeOwnerRevision(macroDomain_.runtimeOwnerRevision),
+      configRevision(macroDomain_.configRevision), sequencer(*sequencerDomain_.editor),
+      sequencerTracks(*sequencerDomain_.tracks), sequencerHistory(*sequencerDomain_.history),
+      sequencerTrackActivations(sequencerDomain_.trackActivations),
+      sequencerRuntimeProjectRevision(sequencerDomain_.runtimeProjectRevision), project(project_),
+      projectTracks(*projectTracks_), projectTrackHistory(*projectTrackHistory_),
+      projectSettingsHistory(*projectSettingsHistory_), projectHistory(*projectHistory_),
+      overlays(systemUi_->overlays), activeView(systemUi_->activeView),
+      structureNavigationFocus(systemUi_->structureNavigationFocus),
+      sharedTrackActive(systemUi_->sharedTracks.activeIndex),
+      sharedTrackEnabledMask(systemUi_->sharedTracks.enabledMask),
+      trackNavigation(systemUi_->trackNavigation),
+      structureClipboard(systemUi_->structureClipboard), viewSelector(systemUi_->viewSelector),
+      statusBar(systemUi_->statusBar), midiSync(systemUi_->midiSync),
+      deviceSettings(systemUi_->deviceSettings), sequencerSettings(systemUi_->sequencerSettings),
+      patternPitchSettings(systemUi_->patternPitchSettings), macroEdit(systemUi_->macroEdit),
+      macroUi(systemUi_->macroUi), projectNavigation(systemUi_->projectNavigation),
+      projectTrackEditor(systemUi_->projectTrackEditor) {
+    projectHistory.setBranchInvalidatedCallback(this, &discardGlobalRedoBranches);
     macroHistory.setProjectHistoryEventSink(&projectHistory.eventSink());
     sequencerHistory.setProjectHistoryEventSink(&projectHistory.eventSink());
     projectTrackHistory.setProjectHistoryEventSink(&projectHistory.eventSink());
-    projectSettingsHistory.setProjectHistoryEventSink(
-        &projectHistory.eventSink()
-    );
+    projectSettingsHistory.setProjectHistoryEventSink(&projectHistory.eventSink());
     sequencerDomain_.pendingApply.reset(createPendingApply());
     if (!sequencerDomain_.pendingApply) {
         failCoreStateAllocation("sequencer pending apply buffer");
@@ -208,16 +183,15 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& deviceSettingsStorage)
 
 FLASHMEM CoreState::~CoreState() = default;
 
-void CoreState::update() {
-    CoreStateLifecycle::update(*this);
-}
+void CoreState::update() { CoreStateLifecycle::update(*this); }
 
-FLASHMEM void CoreState::factoryReset() {
-    CoreStateLifecycle::factoryReset(*this);
-}
+FLASHMEM void CoreState::factoryReset() { CoreStateLifecycle::factoryReset(*this); }
 
 FLASHMEM void CoreState::flush() {
-    commitSequencerPatternHistoryCoalescing();
+    if (commitSequencerPatternHistoryCoalescingOutcome() ==
+        sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        return;
+    }
     CoreStateLifecycle::flush(*this);
 }
 
@@ -226,12 +200,18 @@ FLASHMEM void CoreState::flushProjectMutationCoalescing() {
 }
 
 FLASHMEM void CoreState::resetStandaloneTransientUi() {
-    commitSequencerPatternHistoryCoalescing();
+    if (commitSequencerPatternHistoryCoalescingOutcome() ==
+        sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        return;
+    }
     CoreStateLifecycle::resetStandaloneTransientUi(*this);
 }
 
 FLASHMEM void CoreState::resetMusicalProject() {
-    commitSequencerPatternHistoryCoalescing();
+    if (commitSequencerPatternHistoryCoalescingOutcome() ==
+        sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        return;
+    }
     CoreStateLifecycle::resetMusicalProject(*this);
 }
 
@@ -242,8 +222,7 @@ FLASHMEM void CoreState::requestMacroRuntimeOwnerActivation() {
 FLASHMEM void CoreState::requestSequencerRuntimeProjectReset() {
     sequencerTrackActivations.reset();
     sequencerRuntimeProjectRevision.set(
-        nextNonZeroRuntimeRevision(sequencerRuntimeProjectRevision.get())
-    );
+        nextNonZeroRuntimeRevision(sequencerRuntimeProjectRevision.get()));
 }
 
 void CoreState::markMacroValueEdited(uint8_t index) {
@@ -263,13 +242,10 @@ bool CoreState::setMacroValueWithHistory(uint8_t index, float value) {
         .macro = index,
     };
     auto& pending = macroDomain_.coalescedValueHistory;
-    if (pending.pending &&
-        !macro::macroAutomationAddressEquals(pending.address, address)) {
+    if (pending.pending && !macro::macroAutomationAddressEquals(pending.address, address)) {
         flushMacroValueHistoryCoalescing();
     }
-    if (!macroHistory.setMacroValueCoalesced(pages, address, value)) {
-        return false;
-    }
+    if (!macroHistory.setMacroValueCoalesced(pages, address, value)) { return false; }
     pending.pending = true;
     pending.address = address;
     pending.lastTouchedMs = oc::time::millis();
@@ -277,11 +253,7 @@ bool CoreState::setMacroValueWithHistory(uint8_t index, float value) {
     return true;
 }
 
-bool CoreState::takeMacroManualControlWithHistory(
-    uint8_t index,
-    float value,
-    bool coalesceValue
-) {
+bool CoreState::takeMacroManualControlWithHistory(uint8_t index, float value, bool coalesceValue) {
     if (index >= MACRO_COUNT) return false;
     const macro::MacroAutomationSlotAddress address{
         .track = pages.currentActiveTrack(),
@@ -290,19 +262,12 @@ bool CoreState::takeMacroManualControlWithHistory(
     };
     auto& pending = macroDomain_.coalescedValueHistory;
     if (!coalesceValue ||
-        (pending.pending &&
-         !macro::macroAutomationAddressEquals(pending.address, address))) {
+        (pending.pending && !macro::macroAutomationAddressEquals(pending.address, address))) {
         flushMacroValueHistoryCoalescing();
     }
-    const float beforeBase = pages.pageData(address.track, address.page)
-        .values[address.macro];
-    if (!macroHistory.setManualOverrideCoalesced(
-            pages,
-            macroUi.manualOverrides,
-            address,
-            value,
-            coalesceValue
-        )) {
+    const float beforeBase = pages.pageData(address.track, address.page).values[address.macro];
+    if (!macroHistory.setManualOverrideCoalesced(pages, macroUi.manualOverrides, address, value,
+                                                 coalesceValue)) {
         return false;
     }
     if (coalesceValue) {
@@ -310,8 +275,7 @@ bool CoreState::takeMacroManualControlWithHistory(
         pending.address = address;
         pending.lastTouchedMs = oc::time::millis();
     }
-    if (beforeBase != pages.pageData(address.track, address.page)
-                          .values[address.macro]) {
+    if (beforeBase != pages.pageData(address.track, address.page).values[address.macro]) {
         markMacroValueEdited(index);
     }
     return true;
@@ -325,18 +289,13 @@ bool CoreState::resumeMacroComputedSourcesWithHistory(uint8_t index) {
         .page = pages.currentActivePage(),
         .macro = index,
     };
-    return macroHistory.resumeManualOverride(
-        pages,
-        macroUi.manualOverrides,
-        address
-    );
+    return macroHistory.resumeManualOverride(pages, macroUi.manualOverrides, address);
 }
 
 void CoreState::updateMacroValueHistoryCoalescing(uint32_t nowMs) {
     auto& pending = macroDomain_.coalescedValueHistory;
     if (!pending.pending ||
-        (nowMs - pending.lastTouchedMs) <
-            MacroDomainState::COALESCED_VALUE_HISTORY_IDLE_MS) {
+        (nowMs - pending.lastTouchedMs) < MacroDomainState::COALESCED_VALUE_HISTORY_IDLE_MS) {
         return;
     }
     flushMacroValueHistoryCoalescing();
@@ -349,17 +308,13 @@ FLASHMEM void CoreState::flushMacroValueHistoryCoalescing() {
 
 FLASHMEM void CoreState::markProjectMutated() {
     ++project.metadata.modifiedCounter;
-    if (project.metadata.modifiedCounter == 0) {
-        project.metadata.modifiedCounter = 1;
-    }
+    if (project.metadata.modifiedCounter == 0) { project.metadata.modifiedCounter = 1; }
     project.metadata.dirty = true;
     requestProjectSessionSave_();
     projectNavigation.notifyContentChanged();
 }
 
-FLASHMEM void CoreState::requestProjectSessionSave() {
-    requestProjectSessionSave_();
-}
+FLASHMEM void CoreState::requestProjectSessionSave() { requestProjectSessionSave_(); }
 
 FLASHMEM void CoreState::acknowledgeProjectSessionSave(uint32_t savedModifiedCounter) {
     if (project.metadata.modifiedCounter != savedModifiedCounter) {
@@ -371,22 +326,16 @@ FLASHMEM void CoreState::acknowledgeProjectSessionSave(uint32_t savedModifiedCou
     projectSessionSaveTimestampMs_ = 0;
 }
 
-bool CoreState::hasPendingProjectSessionSave() const {
-    return projectSessionSavePending_;
-}
+bool CoreState::hasPendingProjectSessionSave() const { return projectSessionSavePending_; }
 
-uint32_t CoreState::projectSessionSaveTimestampMs() const {
-    return projectSessionSaveTimestampMs_;
-}
+uint32_t CoreState::projectSessionSaveTimestampMs() const { return projectSessionSaveTimestampMs_; }
 
 bool CoreState::hasPendingProjectMutationCoalescing() const {
     const bool macroPending =
         macroDomain_.mutationCoalescer && macroDomain_.mutationCoalescer->hasPendingChanges();
-    const bool sequencerPending =
-        sequencerDomain_.mutationCoalescer &&
-        sequencerDomain_.mutationCoalescer->hasPendingChanges();
-    return macroPending || sequencerPending ||
-           hasPendingSequencerPatternHistoryCoalescing();
+    const bool sequencerPending = sequencerDomain_.mutationCoalescer &&
+                                  sequencerDomain_.mutationCoalescer->hasPendingChanges();
+    return macroPending || sequencerPending || hasPendingSequencerPatternHistoryCoalescing();
 }
 
 bool CoreState::hasPendingProjectTransaction() const {
@@ -395,8 +344,6 @@ bool CoreState::hasPendingProjectTransaction() const {
            projectTrackHistory.hasPendingGesture();
 }
 
-FLASHMEM void CoreState::markSequencerProjectMutated() {
-    markSequencerProjectMutated_();
-}
+FLASHMEM void CoreState::markSequencerProjectMutated() { markSequencerProjectMutated_(); }
 
 }  // namespace core::state

@@ -25,14 +25,11 @@ public:
         SequencerHistoryDomainServices history;
     };
 
-    SequencerPatternEditorHandler(
-        StateRefs state,
-        oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-        oc::api::EncoderAPI& encoders,
-        oc::api::ButtonAPI& buttons,
-        oc::type::ScopeID sequencerViewScope,
-        oc::type::ScopeID overlayScope
-    );
+    SequencerPatternEditorHandler(StateRefs state,
+                                  oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+                                  oc::api::EncoderAPI& encoders, oc::api::ButtonAPI& buttons,
+                                  oc::type::ScopeID sequencerViewScope,
+                                  oc::type::ScopeID overlayScope);
 
     SequencerPatternEditorHandler(const SequencerPatternEditorHandler&) = delete;
     SequencerPatternEditorHandler& operator=(const SequencerPatternEditorHandler&) = delete;
@@ -42,7 +39,6 @@ public:
     void close();
     /** Closes a stale session as soon as another Track owns the editor. */
     void update(uint32_t nowMs);
-
 private:
     void setupBindings();
     bool ownsActiveTrack() const;
@@ -58,9 +54,13 @@ private:
     void rerollRandomize();
     void applyRandomize();
     void addPage();
-    bool beginPendingEdit();
-    void commitPendingEdit();
-    void discardPendingEdit();
+    bool beginPendingEdit(core::state::sequencer::SequencerPatternEditorField field,
+                          int32_t beforeValue, int32_t afterValue,
+                          core::state::sequencer::SequencerHistoryActionKind actionKind =
+                              core::state::sequencer::SequencerHistoryActionKind::PatternSettings);
+    bool sealPendingEdit(bool changed);
+    bool commitPendingEdit();
+    void resetPendingEditMetadata();
 
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
@@ -71,13 +71,13 @@ private:
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID sequencer_view_scope_ = 0;
     oc::type::ScopeID overlay_scope_ = 0;
-    core::state::sequencer::SequencerHistoryPatternSnapshot edit_before_{};
-    core::state::sequencer::SequencerHistoryPatternStorage edit_storage_ =
-        core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly;
     core::state::sequencer::SequencerPatternEditorField edit_field_ =
         core::state::sequencer::SequencerPatternEditorField::LENGTH;
+    core::state::sequencer::SequencerHistoryActionKind edit_action_ =
+        core::state::sequencer::SequencerHistoryActionKind::PatternSettings;
+    int32_t edit_before_value_ = 0;
+    int32_t edit_after_value_ = 0;
     bool edit_pending_ = false;
-    bool page_add_pending_ = false;
 };
 
 }  // namespace core::handler

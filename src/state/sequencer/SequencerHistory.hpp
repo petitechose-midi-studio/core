@@ -1,18 +1,19 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
+
+#include <array>
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
 #include "app/ExtmemAllocator.hpp"
+#include "state/project/ProjectHistoryEventSink.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
-#include "state/project/ProjectHistoryEventSink.hpp"
 
 namespace core::state::sequencer {
 
@@ -29,18 +30,12 @@ struct SequencerHistoryPatternPayloadStorage {
 
     SequencerHistoryPatternPayloadStorage();
     ~SequencerHistoryPatternPayloadStorage();
-    SequencerHistoryPatternPayloadStorage(
-        const SequencerHistoryPatternPayloadStorage&
-    ) = delete;
+    SequencerHistoryPatternPayloadStorage(const SequencerHistoryPatternPayloadStorage&) = delete;
+    SequencerHistoryPatternPayloadStorage& operator=(const SequencerHistoryPatternPayloadStorage&) =
+        delete;
+    SequencerHistoryPatternPayloadStorage(SequencerHistoryPatternPayloadStorage&&) noexcept;
     SequencerHistoryPatternPayloadStorage& operator=(
-        const SequencerHistoryPatternPayloadStorage&
-    ) = delete;
-    SequencerHistoryPatternPayloadStorage(
-        SequencerHistoryPatternPayloadStorage&&
-    ) noexcept;
-    SequencerHistoryPatternPayloadStorage& operator=(
-        SequencerHistoryPatternPayloadStorage&&
-    ) noexcept;
+        SequencerHistoryPatternPayloadStorage&&) noexcept;
     void reset();
 };
 
@@ -71,8 +66,7 @@ struct SequencerHistoryTrackBankSnapshot {
     SequencerHistoryGraphPtr editorGraph;
     std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT> bankGraphs{};
     SequencerHistoryCcLanePtr editorCcLanes;
-    std::array<SequencerHistoryCcLanePtr, SequencerTrackBankState::TRACK_COUNT>
-        bankCcLanes{};
+    std::array<SequencerHistoryCcLanePtr, SequencerTrackBankState::TRACK_COUNT> bankCcLanes{};
 
     SequencerHistoryTrackBankSnapshot();
     ~SequencerHistoryTrackBankSnapshot();
@@ -109,13 +103,48 @@ enum class SequencerCoalescedPatternPayloadPlan : uint8_t {
     FullWithProspectiveGraph,
 };
 
+// Retained non-Quick-Control Pattern edits share the same prepared owner set
+// as the coalesced Step-property path. The owner/key pair is deliberately
+// scalar: all Graph/CC/Change ownership remains in CoreState.
+enum class SequencerPreparedPatternEditOwner : uint8_t {
+    PatternPitch = 0,
+    PropertySelector,
+    StepContent,
+    StepEditSession,
+    StepToggle,
+    PatternEditor,
+};
+
+enum class SequencerPreparedPatternEditBeginOutcome : uint8_t {
+    Failed = 0,
+    Started,
+    Continued,
+};
+
+enum class SequencerPreparedPatternEditSealOutcome : uint8_t {
+    Failed = 0,
+    Cleared,
+    Sealed,
+};
+
+// Typed result shared by generic and family-owned Pattern commit barriers.
+// Callers that are about to retarget or publish another history entry must
+// distinguish a harmless empty boundary from a rollback/admission failure.
+enum class SequencerPatternHistoryCommitOutcome : uint8_t {
+    Failed = 0,
+    NoPending,
+    NoChange,
+    Committed,
+};
+
+using SequencerPreparedPatternEditCommitOutcome = SequencerPatternHistoryCommitOutcome;
+
 // Active editor-to-bank ownership prepared for one frozen Track identity.
 // Callers must revalidate matchesActiveTrack() immediately before their first
 // live write and abandon the entire object after any failed reservation.
 struct SequencerPreparedActiveTrackSynchronization {
     uint8_t trackIndex = SequencerTrackBankState::TRACK_COUNT;
-    SequencerHistoryPatternStorage storage =
-        SequencerHistoryPatternStorage::FullGraph;
+    SequencerHistoryPatternStorage storage = SequencerHistoryPatternStorage::FullGraph;
     bool reserved = false;
     bool captured = false;
     SequencerHistoryPatternPayloadStorage payload;
@@ -123,17 +152,13 @@ struct SequencerPreparedActiveTrackSynchronization {
     SequencerPreparedActiveTrackSynchronization();
     ~SequencerPreparedActiveTrackSynchronization();
     SequencerPreparedActiveTrackSynchronization(
-        const SequencerPreparedActiveTrackSynchronization&
-    ) = delete;
+        const SequencerPreparedActiveTrackSynchronization&) = delete;
     SequencerPreparedActiveTrackSynchronization& operator=(
-        const SequencerPreparedActiveTrackSynchronization&
-    ) = delete;
+        const SequencerPreparedActiveTrackSynchronization&) = delete;
     SequencerPreparedActiveTrackSynchronization(
-        SequencerPreparedActiveTrackSynchronization&&
-    ) noexcept;
+        SequencerPreparedActiveTrackSynchronization&&) noexcept;
     SequencerPreparedActiveTrackSynchronization& operator=(
-        SequencerPreparedActiveTrackSynchronization&&
-    ) noexcept;
+        SequencerPreparedActiveTrackSynchronization&&) noexcept;
     void reset();
 };
 
@@ -183,6 +208,31 @@ struct SequencerHistoryApplyResult {
     SequencerHistoryDescriptor descriptor{};
 };
 
+struct SequencerHistoryPatternActivationMetadata {
+    SequencerTrackActivationHistoryRef reference{};
+    uint16_t targetAudibleMask = 0;
+};
+
+struct SequencerPreparedPatternPayloadOwnerProof {
+    uintptr_t graphOwner = 0;
+    uintptr_t ccLaneOwner = 0;
+};
+
+// Activation metadata is needed only after a change becomes a retained entry;
+// exact live-owner proof is needed only while a prepared family is pending.
+// Overlay them in the existing cold Pattern-change span so neither RAM1 nor
+// the LOCK-P PSRAM allocation size grows.
+union SequencerHistoryPatternAuxiliary {
+    SequencerHistoryPatternActivationMetadata activation;
+    SequencerPreparedPatternPayloadOwnerProof preparedOwners;
+
+    constexpr SequencerHistoryPatternAuxiliary() : activation{} {}
+};
+
+static_assert(sizeof(SequencerPreparedPatternPayloadOwnerProof) <=
+                  sizeof(SequencerHistoryPatternActivationMetadata),
+              "Exact prepared owner proof must reuse existing activation storage");
+
 struct SequencerHistoryPatternChange {
     uint8_t trackIndex = 0;
     SequencerHistoryPatternStorage storage = SequencerHistoryPatternStorage::FullGraph;
@@ -191,8 +241,7 @@ struct SequencerHistoryPatternChange {
     // snapshots do not carry canonical Project Track audibility, so the
     // unchanged target mask is retained explicitly for safe Undo/Redo boundary
     // planning (including exclusive Solo selection).
-    SequencerTrackActivationHistoryRef activation{};
-    uint16_t activationTargetAudibleMask = 0;
+    SequencerHistoryPatternAuxiliary auxiliary{};
     SequencerHistoryPatternSnapshot before;
     SequencerHistoryPatternSnapshot after;
 
@@ -202,10 +251,12 @@ struct SequencerHistoryPatternChange {
     SequencerHistoryPatternChange& operator=(const SequencerHistoryPatternChange&) = delete;
     SequencerHistoryPatternChange(SequencerHistoryPatternChange&&) noexcept;
     SequencerHistoryPatternChange& operator=(SequencerHistoryPatternChange&&) noexcept;
+    void setPreparedPayloadOwnerProof(const SequencerPatternState& pattern);
+    bool preparedPayloadOwnerProofMatches(const SequencerPatternState& pattern) const;
+    void clearPreparedPayloadOwnerProof();
 };
 
-using SequencerHistoryPatternChangePtr =
-    core::app::ExtmemUniquePtr<SequencerHistoryPatternChange>;
+using SequencerHistoryPatternChangePtr = core::app::ExtmemUniquePtr<SequencerHistoryPatternChange>;
 
 struct SequencerHistoryFullBankChange {
     SequencerHistoryDescriptor descriptor{};
@@ -221,22 +272,14 @@ struct SequencerHistoryFullBankChange {
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(
-    sizeof(SequencerHistoryPatternChange) == 1736U,
-    "LOCK-P: ARM Pattern History transaction ABI changed"
-);
-static_assert(
-    sizeof(SequencerHistoryFullBankChange) == 26960U,
-    "LOCK-P: ARM FullBank History transaction ABI changed"
-);
-static_assert(
-    sizeof(oc::note::sequencer::StepSequencerGraph) == 14792U,
-    "LOCK-P: ARM Sequencer Graph allocation span changed"
-);
-static_assert(
-    sizeof(SequencerCcLaneBank) == 840U,
-    "LOCK-P: ARM Sequencer CC allocation span changed"
-);
+static_assert(sizeof(SequencerHistoryPatternChange) == 1736U,
+              "LOCK-P: ARM Pattern History transaction ABI changed");
+static_assert(sizeof(SequencerHistoryFullBankChange) == 26960U,
+              "LOCK-P: ARM FullBank History transaction ABI changed");
+static_assert(sizeof(oc::note::sequencer::StepSequencerGraph) == 14792U,
+              "LOCK-P: ARM Sequencer Graph allocation span changed");
+static_assert(sizeof(SequencerCcLaneBank) == 840U,
+              "LOCK-P: ARM Sequencer CC allocation span changed");
 #endif
 
 using SequencerHistoryFullBankChangePtr =
@@ -251,59 +294,45 @@ using SequencerHistoryTrackStructureChangePtr =
 //    Track identity immediately before the first live write; 4. capture After,
 //    call canRecord*, then keep the change immutable until recordPrepared*.
 SequencerHistoryPatternChangePtr prepareHistoryPatternChangeBefore(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    uint8_t trackIndex,
-    SequencerHistoryPatternStorage storage,
-    SequencerHistoryDescriptor descriptor = {}
-);
+    const SequencerTrackBankState& bank, const SequencerState& active, uint8_t trackIndex,
+    SequencerHistoryPatternStorage storage, SequencerHistoryDescriptor descriptor = {});
 // Coalesced overload. Allocation order is final Change, before Graph or the
 // mutually-exclusive prospective Graph, then before CC. A prospective owner
 // is returned only when the plan requires a post-edit Graph and the live
 // source owns no Graph; the caller must discard it with a failed preparation.
 SequencerHistoryPatternChangePtr prepareHistoryPatternChangeBefore(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    uint8_t trackIndex,
-    SequencerCoalescedPatternPayloadPlan plan,
-    SequencerHistoryGraphPtr& prospectiveGraph,
-    SequencerHistoryDescriptor descriptor = {}
-);
-bool reservePreparedHistoryPatternAfter(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    SequencerHistoryPatternChange& change
-);
+    const SequencerTrackBankState& bank, const SequencerState& active, uint8_t trackIndex,
+    SequencerCoalescedPatternPayloadPlan plan, SequencerHistoryGraphPtr& prospectiveGraph,
+    SequencerHistoryDescriptor descriptor = {});
+bool reservePreparedHistoryPatternAfter(const SequencerTrackBankState& bank,
+                                        const SequencerState& active,
+                                        SequencerHistoryPatternChange& change);
 // Reserves the exact declared post-edit shape. Only
 // FullWithProspectiveGraph may force a Graph owner absent from the current
 // source; CC ownership remains strictly current-source-derived.
-bool reservePreparedHistoryPatternAfter(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    SequencerHistoryPatternChange& change,
-    SequencerCoalescedPatternPayloadPlan plan
-);
-bool capturePreparedHistoryPatternAfterUsingReservedStorage(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    SequencerHistoryPatternChange& change
-);
+bool reservePreparedHistoryPatternAfter(const SequencerTrackBankState& bank,
+                                        const SequencerState& active,
+                                        SequencerHistoryPatternChange& change,
+                                        SequencerCoalescedPatternPayloadPlan plan);
+bool capturePreparedHistoryPatternAfterUsingReservedStorage(const SequencerTrackBankState& bank,
+                                                            const SequencerState& active,
+                                                            SequencerHistoryPatternChange& change);
+// Allocation-free emergency rollback for a prepared active-Track edit. This
+// consumes Full before-payload ownership; callers must destroy the transaction
+// after success rather than attempting to publish it.
+bool restorePreparedHistoryPatternBeforeToActiveEditor(const SequencerTrackBankState& bank,
+                                                       SequencerState& active,
+                                                       SequencerHistoryPatternChange& change);
 
 SequencerHistoryFullBankChangePtr prepareHistoryFullBankChangeBefore(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    SequencerHistoryDescriptor descriptor = {}
-);
-bool reservePreparedHistoryFullBankAfter(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    SequencerHistoryFullBankChange& change
-);
+    const SequencerTrackBankState& bank, const SequencerState& active,
+    SequencerHistoryDescriptor descriptor = {});
+bool reservePreparedHistoryFullBankAfter(const SequencerTrackBankState& bank,
+                                         const SequencerState& active,
+                                         SequencerHistoryFullBankChange& change);
 bool capturePreparedHistoryFullBankAfterUsingReservedStorage(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    SequencerHistoryFullBankChange& change
-);
+    const SequencerTrackBankState& bank, const SequencerState& active,
+    SequencerHistoryFullBankChange& change);
 
 struct SequencerHistoryEntry {
     SequencerHistoryScope scope = SequencerHistoryScope::PatternOnly;
@@ -325,92 +354,50 @@ struct SequencerHistoryEntry {
     }
 };
 
-bool captureHistorySnapshot(
-    const SequencerState& source,
-    SequencerHistoryPatternSnapshot& out
-);
+bool captureHistorySnapshot(const SequencerState& source, SequencerHistoryPatternSnapshot& out);
 // Restores the complete musical revision vector without copying payload data
 // or allocating. Used when exact prepared publication/no-op cancellation has
 // already proven the corresponding musical bytes.
-void synchronizeHistoryPatternRevisionSignals(
-    SequencerPatternState& target,
-    const SequencerPatternSnapshot& snapshot,
-    uint32_t ccLaneRevision
-);
-bool reserveHistoryPatternPayloadStorage(
-    const SequencerPatternState& source,
-    SequencerHistoryPatternPayloadStorage& storage
-);
+void synchronizeHistoryPatternRevisionSignals(SequencerPatternState& target,
+                                              const SequencerPatternSnapshot& snapshot,
+                                              uint32_t ccLaneRevision);
+bool reserveHistoryPatternPayloadStorage(const SequencerPatternState& source,
+                                         SequencerHistoryPatternPayloadStorage& storage);
 bool captureHistoryPatternPayloadUsingReservedStorage(
-    const SequencerPatternState& source,
-    SequencerHistoryPatternPayloadStorage& storage
-);
-bool reserveHistorySnapshotStorage(
-    const SequencerState& source,
-    SequencerHistoryPatternSnapshot& snapshot
-);
-bool captureHistorySnapshotUsingReservedStorage(
-    const SequencerState& source,
-    SequencerHistoryPatternSnapshot& out
-);
+    const SequencerPatternState& source, SequencerHistoryPatternPayloadStorage& storage);
+bool reserveHistorySnapshotStorage(const SequencerState& source,
+                                   SequencerHistoryPatternSnapshot& snapshot);
+bool captureHistorySnapshotUsingReservedStorage(const SequencerState& source,
+                                                SequencerHistoryPatternSnapshot& out);
 bool reserveHistorySnapshotGraphStorage(SequencerHistoryPatternSnapshot& snapshot);
-bool captureHistorySnapshotUsingReservedGraph(
-    const SequencerState& source,
-    SequencerHistoryPatternSnapshot& out
-);
+bool captureHistorySnapshotUsingReservedGraph(const SequencerState& source,
+                                              SequencerHistoryPatternSnapshot& out);
 
-void captureFlatHistorySnapshot(
-    const SequencerState& source,
-    SequencerHistoryPatternSnapshot& out
-);
+void captureFlatHistorySnapshot(const SequencerState& source, SequencerHistoryPatternSnapshot& out);
 
-bool captureHistorySnapshot(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    uint8_t trackIndex,
-    SequencerHistoryPatternSnapshot& out
-);
-bool reserveHistorySnapshotStorage(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    uint8_t trackIndex,
-    SequencerHistoryPatternSnapshot& snapshot
-);
-bool captureHistorySnapshotUsingReservedStorage(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    uint8_t trackIndex,
-    SequencerHistoryPatternSnapshot& out
-);
-bool captureHistorySnapshotUsingReservedGraph(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    uint8_t trackIndex,
-    SequencerHistoryPatternSnapshot& out
-);
+bool captureHistorySnapshot(const SequencerTrackBankState& bank, const SequencerState& active,
+                            uint8_t trackIndex, SequencerHistoryPatternSnapshot& out);
+bool reserveHistorySnapshotStorage(const SequencerTrackBankState& bank,
+                                   const SequencerState& active, uint8_t trackIndex,
+                                   SequencerHistoryPatternSnapshot& snapshot);
+bool captureHistorySnapshotUsingReservedStorage(const SequencerTrackBankState& bank,
+                                                const SequencerState& active, uint8_t trackIndex,
+                                                SequencerHistoryPatternSnapshot& out);
+bool captureHistorySnapshotUsingReservedGraph(const SequencerTrackBankState& bank,
+                                              const SequencerState& active, uint8_t trackIndex,
+                                              SequencerHistoryPatternSnapshot& out);
 
-void captureFlatHistorySnapshot(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    uint8_t trackIndex,
-    SequencerHistoryPatternSnapshot& out
-);
+void captureFlatHistorySnapshot(const SequencerTrackBankState& bank, const SequencerState& active,
+                                uint8_t trackIndex, SequencerHistoryPatternSnapshot& out);
 
-bool captureHistorySnapshot(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    SequencerHistoryTrackBankSnapshot& out
-);
-bool reserveHistoryTrackBankSnapshotStorage(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    SequencerHistoryTrackBankSnapshot& snapshot
-);
-bool captureHistoryTrackBankSnapshotUsingReservedStorage(
-    const SequencerTrackBankState& bank,
-    const SequencerState& active,
-    SequencerHistoryTrackBankSnapshot& out
-);
+bool captureHistorySnapshot(const SequencerTrackBankState& bank, const SequencerState& active,
+                            SequencerHistoryTrackBankSnapshot& out);
+bool reserveHistoryTrackBankSnapshotStorage(const SequencerTrackBankState& bank,
+                                            const SequencerState& active,
+                                            SequencerHistoryTrackBankSnapshot& snapshot);
+bool captureHistoryTrackBankSnapshotUsingReservedStorage(const SequencerTrackBankState& bank,
+                                                         const SequencerState& active,
+                                                         SequencerHistoryTrackBankSnapshot& out);
 
 // Reserves ownership for one frozen active Track before the live write. A
 // failed reservation leaves a discardable, possibly partial object and must
@@ -418,82 +405,59 @@ bool captureHistoryTrackBankSnapshotUsingReservedStorage(
 // capture afterwards, then transfer the captured payload exactly once. A
 // reserved-but-not-captured synchronization is never publishable.
 bool reservePreparedActiveTrackSynchronization(
-    const SequencerTrackBankState& bank,
-    const SequencerState& after,
-    uint8_t trackIndex,
+    const SequencerTrackBankState& bank, const SequencerState& after, uint8_t trackIndex,
     SequencerHistoryPatternStorage storage,
-    SequencerPreparedActiveTrackSynchronization& synchronization
-);
+    SequencerPreparedActiveTrackSynchronization& synchronization);
 bool reservePreparedActiveTrackSynchronization(
-    const SequencerTrackBankState& bank,
-    const SequencerState& after,
-    uint8_t trackIndex,
+    const SequencerTrackBankState& bank, const SequencerState& after, uint8_t trackIndex,
     SequencerCoalescedPatternPayloadPlan plan,
-    SequencerPreparedActiveTrackSynchronization& synchronization
-);
+    SequencerPreparedActiveTrackSynchronization& synchronization);
 bool preparedActiveTrackSynchronizationMatches(
     const SequencerTrackBankState& bank,
-    const SequencerPreparedActiveTrackSynchronization& synchronization
-);
+    const SequencerPreparedActiveTrackSynchronization& synchronization);
 bool capturePreparedActiveTrackSynchronizationUsingReservedStorage(
-    const SequencerTrackBankState& bank,
-    const SequencerState& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization
-);
+    const SequencerTrackBankState& bank, const SequencerState& after,
+    SequencerPreparedActiveTrackSynchronization& synchronization);
 // Re-seals a continuation into the same reserved synchronization owners.
 // Unlike the one-shot capture above, this operation deliberately accepts an
 // already-captured bundle and never allocates missing storage.
 bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
-    const SequencerTrackBankState& bank,
-    const SequencerState& after,
-    SequencerPreparedActiveTrackSynchronization& synchronization
-);
+    const SequencerTrackBankState& bank, const SequencerState& after,
+    SequencerPreparedActiveTrackSynchronization& synchronization);
 void publishPreparedActiveTrackSynchronization(
-    SequencerTrackBankState& bank,
-    const SequencerState& active,
-    SequencerPreparedActiveTrackSynchronization synchronization
-);
+    SequencerTrackBankState& bank, const SequencerState& active,
+    SequencerPreparedActiveTrackSynchronization synchronization);
 // Coalesced publication consumes the exact flat After captured at seal time;
 // the delayed boundary performs no live snapshot capture or allocation.
 void publishPreparedActiveTrackSynchronization(
-    SequencerTrackBankState& bank,
-    const SequencerState& active,
+    SequencerTrackBankState& bank, const SequencerState& active,
     const SequencerHistoryPatternSnapshot& sealedAfter,
-    SequencerPreparedActiveTrackSynchronization synchronization
-);
+    SequencerPreparedActiveTrackSynchronization synchronization);
 
-bool applyHistorySnapshot(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    const SequencerHistoryPatternSnapshot& snapshot
-);
-bool applyHistorySnapshotToEditor(
-    SequencerState& active,
-    const SequencerHistoryPatternSnapshot& snapshot
-);
+bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState& active,
+                          const SequencerHistoryPatternSnapshot& snapshot);
+bool applyHistorySnapshotToEditor(SequencerState& active,
+                                  const SequencerHistoryPatternSnapshot& snapshot);
 
-bool applyHistorySnapshotToTrack(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    uint8_t trackIndex,
-    const SequencerHistoryPatternSnapshot& snapshot
-);
+bool applyHistorySnapshotToTrack(SequencerTrackBankState& bank, SequencerState& active,
+                                 uint8_t trackIndex,
+                                 const SequencerHistoryPatternSnapshot& snapshot);
 
-bool applyHistorySnapshot(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    const SequencerHistoryTrackBankSnapshot& snapshot
-);
+bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState& active,
+                          const SequencerHistoryTrackBankSnapshot& snapshot);
 
-bool sameMusicalHistorySnapshot(
-    const SequencerHistoryPatternSnapshot& lhs,
-    const SequencerHistoryPatternSnapshot& rhs
-);
+bool sameMusicalHistorySnapshot(const SequencerHistoryPatternSnapshot& lhs,
+                                const SequencerHistoryPatternSnapshot& rhs);
 
-bool sameMusicalHistorySnapshot(
-    const SequencerHistoryTrackBankSnapshot& lhs,
-    const SequencerHistoryTrackBankSnapshot& rhs
-);
+// Allocation-free identity proof for a sealed prepared After. Focus is
+// intentionally excluded for an inactive Track because it is editor-only.
+bool preparedHistoryPatternAfterMatchesTrack(const SequencerTrackBankState& bank,
+                                             const SequencerState& active, uint8_t trackIndex,
+                                             const SequencerHistoryPatternSnapshot& after,
+                                             SequencerHistoryPatternStorage storage);
+
+bool sameMusicalHistorySnapshot(const SequencerHistoryTrackBankSnapshot& lhs,
+                                const SequencerHistoryTrackBankSnapshot& rhs);
 
 class SequencerHistoryService {
 public:
@@ -507,18 +471,13 @@ public:
     SequencerHistoryService();
     ~SequencerHistoryService();
 
-    void setProjectHistoryEventSink(
-        const core::state::project::ProjectHistoryEventSink* sink
-    ) {
+    void setProjectHistoryEventSink(const core::state::project::ProjectHistoryEventSink* sink) {
         project_history_sink_ = sink;
     }
 
-    bool recordPattern(
-        uint8_t trackIndex,
-        SequencerHistoryPatternSnapshot before,
-        SequencerHistoryPatternSnapshot after,
-        SequencerHistoryDescriptor descriptor = {}
-    );
+    bool recordPattern(uint8_t trackIndex, SequencerHistoryPatternSnapshot before,
+                       SequencerHistoryPatternSnapshot after,
+                       SequencerHistoryDescriptor descriptor = {});
     bool recordPattern(SequencerHistoryPatternChangePtr change);
     // Side-effect-free admission check for a fully prepared Pattern change.
     bool canRecordPattern(const SequencerHistoryPatternChange& change) const;
@@ -526,30 +485,21 @@ public:
     // modified afterwards. Under that contract this commit cannot fail.
     void recordPreparedPattern(SequencerHistoryPatternChangePtr change);
 
-    bool recordFlatPattern(
-        uint8_t trackIndex,
-        SequencerHistoryPatternSnapshot before,
-        SequencerHistoryPatternSnapshot after,
-        SequencerHistoryDescriptor descriptor = {}
-    );
+    bool recordFlatPattern(uint8_t trackIndex, SequencerHistoryPatternSnapshot before,
+                           SequencerHistoryPatternSnapshot after,
+                           SequencerHistoryDescriptor descriptor = {});
 
-    bool recordPattern(
-        SequencerHistoryPatternSnapshot before,
-        SequencerHistoryPatternSnapshot after,
-        SequencerHistoryDescriptor descriptor = {}
-    );
+    bool recordPattern(SequencerHistoryPatternSnapshot before,
+                       SequencerHistoryPatternSnapshot after,
+                       SequencerHistoryDescriptor descriptor = {});
 
-    bool recordFlatPattern(
-        SequencerHistoryPatternSnapshot before,
-        SequencerHistoryPatternSnapshot after,
-        SequencerHistoryDescriptor descriptor = {}
-    );
+    bool recordFlatPattern(SequencerHistoryPatternSnapshot before,
+                           SequencerHistoryPatternSnapshot after,
+                           SequencerHistoryDescriptor descriptor = {});
 
-    bool recordFullBank(
-        SequencerHistoryTrackBankSnapshot before,
-        SequencerHistoryTrackBankSnapshot after,
-        SequencerHistoryDescriptor descriptor = {}
-    );
+    bool recordFullBank(SequencerHistoryTrackBankSnapshot before,
+                        SequencerHistoryTrackBankSnapshot after,
+                        SequencerHistoryDescriptor descriptor = {});
     bool recordFullBank(SequencerHistoryFullBankChangePtr change);
     bool canRecordFullBank(const SequencerHistoryFullBankChange& change) const;
     // Precondition: canRecordFullBank(change) was true and change was not
@@ -574,10 +524,8 @@ public:
                                                SequencerState& active);
     bool peekUndoTrackActivation(SequencerTrackActivationHistoryPlan& out) const;
     bool peekRedoTrackActivation(SequencerTrackActivationHistoryPlan& out) const;
-    const SequencerHistoryMacroTrackStructurePayload*
-        peekUndoMacroTrackStructure() const;
-    const SequencerHistoryMacroTrackStructurePayload*
-        peekRedoMacroTrackStructure() const;
+    const SequencerHistoryMacroTrackStructurePayload* peekUndoMacroTrackStructure() const;
+    const SequencerHistoryMacroTrackStructurePayload* peekRedoMacroTrackStructure() const;
 
     void clear();
     void discardRedoBranch();
@@ -589,7 +537,6 @@ public:
     uint8_t undoCount(SequencerHistoryScope scope) const;
     uint8_t redoCount(SequencerHistoryScope scope) const;
     size_t retainedBytes() const;
-
 private:
     std::array<SequencerHistoryEntry, ENTRY_LIMIT> undo_{};
     std::array<SequencerHistoryEntry, ENTRY_LIMIT> redo_{};
@@ -600,13 +547,10 @@ private:
     bool pushUndo(SequencerHistoryEntry entry);
     bool pushRedo(SequencerHistoryEntry entry);
     void commitPreparedEntry(SequencerHistoryEntry entry);
-    bool recordPatternWithStorage(
-        uint8_t trackIndex,
-        SequencerHistoryPatternSnapshot before,
-        SequencerHistoryPatternSnapshot after,
-        SequencerHistoryDescriptor descriptor,
-        SequencerHistoryPatternStorage storage
-    );
+    bool recordPatternWithStorage(uint8_t trackIndex, SequencerHistoryPatternSnapshot before,
+                                  SequencerHistoryPatternSnapshot after,
+                                  SequencerHistoryDescriptor descriptor,
+                                  SequencerHistoryPatternStorage storage);
 };
 
 }  // namespace core::state::sequencer

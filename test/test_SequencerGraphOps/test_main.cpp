@@ -4,11 +4,12 @@
 
 #include <cassert>
 #include <cstdint>
-#include <iostream>
 
+#include <iostream>
 #include <oc/note/sequencer/StepSequencerExpander.hpp>
 #include <oc/note/sequencer/StepSequencerRuntimeState.hpp>
 
+#include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/sequencer/SequencerRuntimeStateSync.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerSnapshotOps.hpp"
@@ -87,11 +88,7 @@ void test_micro_sequence_exports_to_open_control_graph() {
     enableStep(state, 0);
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
-    const auto sequence = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        rootNode,
-        2
-    );
+    const auto sequence = core::state::sequencer::createMicroSequence(state.pattern, rootNode, 2);
     assert(sequence.ok);
 
     const auto* graph = core::state::sequencer::graphView(state.pattern);
@@ -109,15 +106,8 @@ void test_micro_sequence_exports_to_open_control_graph() {
     core::state::sequencer::captureSnapshot(state.pattern, snapshot);
     auto runtime = makeRuntime(snapshot);
 
-    const auto expansion = StepSequencerExpander::expandRootStep(
-        runtime,
-        *graph,
-        0,
-        0,
-        24,
-        0,
-        true
-    );
+    const auto expansion =
+        StepSequencerExpander::expandRootStep(runtime, *graph, 0, 0, 24, 0, true);
 
     assert(expansion.count == 2);
     assert(expansion.notes[0].localTick == 0);
@@ -138,21 +128,13 @@ void test_step_node_child_presence_helpers_validate_targets() {
     assert(!core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
     assert(!core::state::sequencer::stepNodeHasAnyChildContent(state.pattern, rootNode));
 
-    const auto sequence = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        rootNode,
-        2
-    );
+    const auto sequence = core::state::sequencer::createMicroSequence(state.pattern, rootNode, 2);
     assert(sequence.ok);
     assert(core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
     assert(!core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
     assert(core::state::sequencer::stepNodeHasAnyChildContent(state.pattern, rootNode));
 
-    const auto cycleSet = core::state::sequencer::createCycleStateSet(
-        state.pattern,
-        rootNode,
-        3
-    );
+    const auto cycleSet = core::state::sequencer::createCycleStateSet(state.pattern, rootNode, 3);
     assert(cycleSet.ok);
     assert(core::state::sequencer::stepNodeHasMicroSequence(state.pattern, rootNode));
     assert(core::state::sequencer::stepNodeHasCycleStateSet(state.pattern, rootNode));
@@ -174,19 +156,12 @@ void test_step_node_child_presence_helpers_validate_targets() {
 void test_pattern_copy_preserves_graph() {
     SequencerState source;
     const auto rootNode = core::state::sequencer::rootStepNodeId(3);
-    const auto cycleSet = core::state::sequencer::createCycleStateSet(
-        source.pattern,
-        rootNode,
-        3
-    );
+    const auto cycleSet = core::state::sequencer::createCycleStateSet(source.pattern, rootNode, 3);
     assert(cycleSet.ok);
     const auto* sourceGraph = core::state::sequencer::graphView(source.pattern);
     assert(sourceGraph != nullptr);
     assert(core::state::sequencer::setNodeEnabledOverride(
-        source.pattern,
-        sourceGraph->cycleSets[cycleSet.id].firstStateNode + 1,
-        false
-    ));
+        source.pattern, sourceGraph->cycleSets[cycleSet.id].firstStateNode + 1, false));
 
     SequencerState target;
     assert(core::state::sequencer::copyPatternState(target.pattern, source.pattern));
@@ -209,11 +184,7 @@ void test_runtime_signature_tracks_graph_revision() {
     auto beforeSignature = core::sequencer::captureRuntimeStateSignature(before);
 
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
-    const auto sequence = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        rootNode,
-        2
-    );
+    const auto sequence = core::state::sequencer::createMicroSequence(state.pattern, rootNode, 2);
     assert(sequence.ok);
 
     SequencerPatternSnapshot after;
@@ -232,26 +203,17 @@ void test_pattern_pitch_context_syncs_directly_without_graph_rewrite() {
     const uint32_t graphRevision = state.pattern.graphRevision.get();
 
     SequencerPatternSnapshot followSnapshot;
-    core::state::sequencer::captureSnapshot(
-        state.pattern,
-        followSnapshot
-    );
-    auto followSignature =
-        core::sequencer::captureRuntimeStateSignature(followSnapshot);
+    core::state::sequencer::captureSnapshot(state.pattern, followSnapshot);
+    auto followSignature = core::sequencer::captureRuntimeStateSignature(followSnapshot);
     auto runtime = makeRuntime(followSnapshot);
     assert(followSignature.pitchFollowsScale);
     assert(runtime.pitchFollowsScale);
 
-    assert(state.setPitchEditMode(
-        core::state::sequencer::SequencerPitchEditMode::CHROMATIC
-    ));
+    assert(state.setPitchEditMode(core::state::sequencer::SequencerPitchEditMode::CHROMATIC));
     assert(state.pattern.graphRevision.get() == graphRevision);
 
     SequencerPatternSnapshot chromaticSnapshot;
-    core::state::sequencer::captureSnapshot(
-        state.pattern,
-        chromaticSnapshot
-    );
+    core::state::sequencer::captureSnapshot(state.pattern, chromaticSnapshot);
     const auto chromaticSignature =
         core::sequencer::captureRuntimeStateSignature(chromaticSnapshot);
     runtime = makeRuntime(chromaticSnapshot);
@@ -260,28 +222,19 @@ void test_pattern_pitch_context_syncs_directly_without_graph_rewrite() {
     assert(!runtime.pitchFollowsScale);
     assert(!followSignature.matches(chromaticSignature));
 
-    std::cout
-        << "[PASS] Pattern Pitch Context syncs without graph rewrite\n";
+    std::cout << "[PASS] Pattern Pitch Context syncs without graph rewrite\n";
 }
 
 void test_create_micro_sequence_reuses_existing_child() {
     SequencerState state;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
-    const auto first = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        rootNode,
-        2
-    );
+    const auto first = core::state::sequencer::createMicroSequence(state.pattern, rootNode, 2);
     assert(first.ok);
     const auto* graph = core::state::sequencer::graphView(state.pattern);
     assert(graph != nullptr);
     const uint16_t stepNodeCount = graph->stepNodeCount;
 
-    const auto second = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        rootNode,
-        4
-    );
+    const auto second = core::state::sequencer::createMicroSequence(state.pattern, rootNode, 4);
     assert(second.ok);
     assert(second.id == first.id);
     assert(core::state::sequencer::graphView(state.pattern)->stepNodeCount == stepNodeCount);
@@ -292,11 +245,7 @@ void test_create_micro_sequence_reuses_existing_child() {
 void test_cycle_state_set_resizes_to_reserved_capacity() {
     SequencerState state;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
-    const auto cycleSet = core::state::sequencer::createCycleStateSet(
-        state.pattern,
-        rootNode,
-        4
-    );
+    const auto cycleSet = core::state::sequencer::createCycleStateSet(state.pattern, rootNode, 4);
     assert(cycleSet.ok);
 
     auto* graph = state.pattern.graph.get();
@@ -304,8 +253,8 @@ void test_cycle_state_set_resizes_to_reserved_capacity() {
     const auto* set = graph->cycleSet(cycleSet.id);
     assert(set != nullptr);
     assert(set->length == 4);
-    assert(graph->stepNodeCount == SequencerState::MAX_STEPS +
-                                       StepSequencerGraphLimits::MAX_CYCLE_STATES_PER_SET);
+    assert(graph->stepNodeCount ==
+           SequencerState::MAX_STEPS + StepSequencerGraphLimits::MAX_CYCLE_STATES_PER_SET);
 
     const uint16_t firstState = set->firstStateNode;
     assert(core::state::sequencer::setNodeNoteOffset(state.pattern, firstState + 3U, 5));
@@ -328,11 +277,7 @@ void test_cycle_state_set_resizes_to_reserved_capacity() {
 void test_micro_sequence_rotation_wraps_step_nodes() {
     SequencerState state;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
-    const auto sequence = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        rootNode,
-        4
-    );
+    const auto sequence = core::state::sequencer::createMicroSequence(state.pattern, rootNode, 4);
     assert(sequence.ok);
 
     auto* graph = state.pattern.graph.get();
@@ -357,11 +302,7 @@ void test_micro_sequence_rotation_wraps_step_nodes() {
 void test_cycle_state_rotation_wraps_state_nodes() {
     SequencerState state;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
-    const auto cycleSet = core::state::sequencer::createCycleStateSet(
-        state.pattern,
-        rootNode,
-        4
-    );
+    const auto cycleSet = core::state::sequencer::createCycleStateSet(state.pattern, rootNode, 4);
     assert(cycleSet.ok);
 
     auto* graph = state.pattern.graph.get();
@@ -387,10 +328,7 @@ void test_root_pattern_rotation_wraps_graph_step_nodes() {
     SequencerState state;
     state.pattern.setContentLength(4);
     const auto sequence = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        core::state::sequencer::rootStepNodeId(0),
-        2
-    );
+        state.pattern, core::state::sequencer::rootStepNodeId(0), 2);
     assert(sequence.ok);
 
     assert(core::state::sequencer::rotatePattern(state, 1));
@@ -407,17 +345,9 @@ void test_root_pattern_rotation_wraps_graph_step_nodes() {
 void test_clear_node_children_detaches_links_and_bumps_revision_once() {
     SequencerState state;
     const auto rootNode = core::state::sequencer::rootStepNodeId(0);
-    const auto sequence = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        rootNode,
-        2
-    );
+    const auto sequence = core::state::sequencer::createMicroSequence(state.pattern, rootNode, 2);
     assert(sequence.ok);
-    const auto cycleSet = core::state::sequencer::createCycleStateSet(
-        state.pattern,
-        rootNode,
-        2
-    );
+    const auto cycleSet = core::state::sequencer::createCycleStateSet(state.pattern, rootNode, 2);
     assert(cycleSet.ok);
 
     const uint32_t revisionBeforeClear = state.pattern.graphRevision.get();
@@ -441,17 +371,9 @@ void test_compact_graph_reclaims_detached_child_content() {
     const auto firstRoot = core::state::sequencer::rootStepNodeId(0);
     const auto secondRoot = core::state::sequencer::rootStepNodeId(1);
 
-    const auto first = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        firstRoot,
-        2
-    );
+    const auto first = core::state::sequencer::createMicroSequence(state.pattern, firstRoot, 2);
     assert(first.ok);
-    const auto second = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        secondRoot,
-        2
-    );
+    const auto second = core::state::sequencer::createMicroSequence(state.pattern, secondRoot, 2);
     assert(second.ok);
 
     auto* graph = state.pattern.graph.get();
@@ -471,7 +393,7 @@ void test_compact_graph_reclaims_detached_child_content() {
     assert(graph->sequenceCount == 3);
 
     core::state::sequencer::SequencerGraphCompactionRemap remap;
-    const auto result = core::state::sequencer::compactGraph(state.pattern, &remap);
+    const auto result = core::state::sequencer::compactGraph(state.pattern, remap);
     assert(result.ok);
     assert(result.compacted);
 
@@ -479,8 +401,7 @@ void test_compact_graph_reclaims_detached_child_content() {
     assert(graph != nullptr);
     assert(graph->sequenceCount == 2);
     assert(graph->stepNodeCount ==
-           SequencerState::MAX_STEPS +
-               StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP);
+           SequencerState::MAX_STEPS + StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP);
     assert(remap.sequence(second.id) == 1);
     assert(graph->stepNodes[secondRoot].childSequenceId == 1);
 
@@ -498,46 +419,76 @@ void test_compact_graph_reclaims_detached_child_content() {
     std::cout << "[PASS] test_compact_graph_reclaims_detached_child_content\n";
 }
 
+void test_reserved_compaction_preserves_owner_and_allocates_zero() {
+    SequencerState state;
+    const auto firstRoot = core::state::sequencer::rootStepNodeId(0);
+    const auto secondRoot = core::state::sequencer::rootStepNodeId(1);
+    const auto first = core::state::sequencer::createMicroSequence(state.pattern, firstRoot, 2);
+    const auto second = core::state::sequencer::createMicroSequence(state.pattern, secondRoot, 2);
+    assert(first.ok);
+    assert(second.ok);
+    assert(core::state::sequencer::clearNodeChildSequence(state.pattern, firstRoot));
+
+    auto reserved = core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
+    assert(reserved);
+    auto* const liveOwner = state.pattern.graph.get();
+    assert(liveOwner != nullptr);
+
+    core::state::sequencer::SequencerGraphCompactionRemap remap;
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        const auto result = core::state::sequencer::compactGraphUsingReservedStorage(
+            state.pattern, *reserved, remap);
+        assert(result.ok);
+        assert(result.compacted);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
+    }
+
+    assert(state.pattern.graph.get() == liveOwner);
+    assert(liveOwner->sequenceCount == 2U);
+    assert(liveOwner->stepNodeCount ==
+           SequencerState::MAX_STEPS + StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP);
+    assert(liveOwner->stepNodes[secondRoot].childSequenceId == 1U);
+
+    const auto revisionBeforeAliasAttempt = state.pattern.graphRevision.get();
+    const auto sequenceCountBeforeAliasAttempt = liveOwner->sequenceCount;
+    const auto stepNodeCountBeforeAliasAttempt = liveOwner->stepNodeCount;
+    const auto aliasResult =
+        core::state::sequencer::compactGraphUsingReservedStorage(state.pattern, *liveOwner, remap);
+    assert(!aliasResult.ok);
+    assert(!aliasResult.compacted);
+    assert(state.pattern.graph.get() == liveOwner);
+    assert(state.pattern.graphRevision.get() == revisionBeforeAliasAttempt);
+    assert(liveOwner->sequenceCount == sequenceCountBeforeAliasAttempt);
+    assert(liveOwner->stepNodeCount == stepNodeCountBeforeAliasAttempt);
+
+    std::cout << "[PASS] reserved compaction preserves owner and allocates zero\n";
+}
+
 void test_copy_node_children_remaps_nested_graph_content() {
     SequencerState source;
     const auto sourceRoot = core::state::sequencer::rootStepNodeId(0);
-    const auto sourceMicro = core::state::sequencer::createMicroSequence(
-        source.pattern,
-        sourceRoot,
-        2
-    );
+    const auto sourceMicro =
+        core::state::sequencer::createMicroSequence(source.pattern, sourceRoot, 2);
     assert(sourceMicro.ok);
-    const auto sourceCycle = core::state::sequencer::createCycleStateSet(
-        source.pattern,
-        sourceRoot,
-        2
-    );
+    const auto sourceCycle =
+        core::state::sequencer::createCycleStateSet(source.pattern, sourceRoot, 2);
     assert(sourceCycle.ok);
 
     const auto* sourceGraph = core::state::sequencer::graphView(source.pattern);
     assert(sourceGraph != nullptr);
     const auto sourceMicroNode = sourceGraph->sequences[sourceMicro.id].firstStepNode;
     assert(core::state::sequencer::setNodeNoteOffset(source.pattern, sourceMicroNode, 3));
-    const auto nestedCycle = core::state::sequencer::createCycleStateSet(
-        source.pattern,
-        sourceMicroNode,
-        2
-    );
+    const auto nestedCycle =
+        core::state::sequencer::createCycleStateSet(source.pattern, sourceMicroNode, 2);
     assert(nestedCycle.ok);
     assert(core::state::sequencer::setNodeVelocityOffset(
-        source.pattern,
-        sourceGraph->cycleSets[nestedCycle.id].firstStateNode,
-        12
-    ));
+        source.pattern, sourceGraph->cycleSets[nestedCycle.id].firstStateNode, 12));
 
     SequencerState target;
     const auto targetRoot = core::state::sequencer::rootStepNodeId(3);
-    assert(core::state::sequencer::copyNodeChildrenFromGraph(
-        target.pattern,
-        targetRoot,
-        *sourceGraph,
-        sourceRoot
-    ));
+    assert(core::state::sequencer::copyNodeChildrenFromGraph(target.pattern, targetRoot,
+                                                             *sourceGraph, sourceRoot));
 
     const auto* targetGraph = core::state::sequencer::graphView(target.pattern);
     assert(targetGraph != nullptr);
@@ -583,10 +534,7 @@ void test_graph_limits_are_reported() {
     uint8_t created = 0;
     for (; created < SequencerState::MAX_STEPS; ++created) {
         const auto result = core::state::sequencer::createMicroSequence(
-            state.pattern,
-            core::state::sequencer::rootStepNodeId(created),
-            1
-        );
+            state.pattern, core::state::sequencer::rootStepNodeId(created), 1);
         if (!result.ok) {
             assert(result.limitReached);
             break;
@@ -595,10 +543,7 @@ void test_graph_limits_are_reported() {
     assert(created > 0);
 
     const auto rejected = core::state::sequencer::createMicroSequence(
-        state.pattern,
-        core::state::sequencer::rootStepNodeId(created),
-        1
-    );
+        state.pattern, core::state::sequencer::rootStepNodeId(created), 1);
     assert(!rejected.ok);
     assert(rejected.limitReached);
 
@@ -611,77 +556,39 @@ void test_local_variation_ranges_are_per_node_and_clamped() {
 
     assert(core::state::sequencer::graphView(state.pattern) == nullptr);
     assert(!core::state::sequencer::setNodeLocalVariationRange(
-        state.pattern,
-        rootNode,
-        core::state::sequencer::StepProperty::NOTE,
-        0
-    ));
+        state.pattern, rootNode, core::state::sequencer::StepProperty::NOTE, 0));
     assert(core::state::sequencer::graphView(state.pattern) == nullptr);
 
     assert(core::state::sequencer::setNodeLocalVariationRange(
-        state.pattern,
-        rootNode,
-        core::state::sequencer::StepProperty::NOTE,
-        200
-    ));
+        state.pattern, rootNode, core::state::sequencer::StepProperty::NOTE, 200));
     const uint32_t revisionAfterPitch = state.pattern.graphRevision.get();
     assert(!core::state::sequencer::setNodeLocalVariationRange(
-        state.pattern,
-        rootNode,
-        core::state::sequencer::StepProperty::NOTE,
-        255
-    ));
+        state.pattern, rootNode, core::state::sequencer::StepProperty::NOTE, 255));
     assert(state.pattern.graphRevision.get() == revisionAfterPitch);
 
     assert(core::state::sequencer::setNodeLocalVariationRange(
-        state.pattern,
-        rootNode,
-        core::state::sequencer::StepProperty::VELOCITY,
-        250
-    ));
+        state.pattern, rootNode, core::state::sequencer::StepProperty::VELOCITY, 250));
     assert(core::state::sequencer::setNodeLocalVariationRange(
-        state.pattern,
-        rootNode,
-        core::state::sequencer::StepProperty::GATE,
-        150
-    ));
+        state.pattern, rootNode, core::state::sequencer::StepProperty::GATE, 150));
     assert(core::state::sequencer::setNodeLocalVariationRange(
-        state.pattern,
-        rootNode,
-        core::state::sequencer::StepProperty::NUDGE,
-        90
-    ));
+        state.pattern, rootNode, core::state::sequencer::StepProperty::NUDGE, 90));
     assert(!core::state::sequencer::setNodeLocalVariationRange(
-        state.pattern,
-        rootNode,
-        core::state::sequencer::StepProperty::PROBABILITY,
-        50
-    ));
+        state.pattern, rootNode, core::state::sequencer::StepProperty::PROBABILITY, 50));
 
     const auto* graph = core::state::sequencer::graphView(state.pattern);
     assert(graph != nullptr);
     const auto* node = graph->stepNode(rootNode);
     assert(node != nullptr);
     assert(core::state::sequencer::nodeLocalVariationRange(
-               *node,
-               core::state::sequencer::StepProperty::NOTE
-           ) == 36);
+               *node, core::state::sequencer::StepProperty::NOTE) == 36);
     assert(core::state::sequencer::nodeLocalVariationRange(
-               *node,
-               core::state::sequencer::StepProperty::VELOCITY
-           ) == 127);
+               *node, core::state::sequencer::StepProperty::VELOCITY) == 127);
     assert(core::state::sequencer::nodeLocalVariationRange(
-               *node,
-               core::state::sequencer::StepProperty::GATE
-           ) == 100);
+               *node, core::state::sequencer::StepProperty::GATE) == 100);
     assert(core::state::sequencer::nodeLocalVariationRange(
-               *node,
-               core::state::sequencer::StepProperty::NUDGE
-           ) == 50);
+               *node, core::state::sequencer::StepProperty::NUDGE) == 50);
     assert(core::state::sequencer::nodeLocalVariationRange(
-               *node,
-               core::state::sequencer::StepProperty::PROBABILITY
-           ) == 0);
+               *node, core::state::sequencer::StepProperty::PROBABILITY) == 0);
 
     std::cout << "[PASS] test_local_variation_ranges_are_per_node_and_clamped\n";
 }
@@ -707,14 +614,9 @@ void test_chord_state_is_explicit_and_resettable_per_node() {
     assert(node->has(STEP_NODE_CHORD_LOCAL));
     assert(node->chordMode == StepSequencerChordMode::Local);
     assert(node->chordSpec.voiceCount == StepSequencerChordSpec::MAX_VOICES);
-    assert(
-        node->chordSpec.harmony() ==
-        oc::note::sequencer::StepSequencerChordHarmony::DiatonicTriad
-    );
-    assert(
-        node->chordSpec.voicing() ==
-        oc::note::sequencer::StepSequencerChordVoicing::Wide
-    );
+    assert(node->chordSpec.harmony() ==
+           oc::note::sequencer::StepSequencerChordHarmony::DiatonicTriad);
+    assert(node->chordSpec.voicing() == oc::note::sequencer::StepSequencerChordVoicing::Wide);
     assert(node->chordSpec.inversion() == 3);
     assert(node->chordSpec.strum == StepSequencerChordSpec::MAX_STRUM);
     assert(node->chordSpec.velocityCurve == StepSequencerChordSpec::MIN_VELOCITY_CURVE);
@@ -723,11 +625,8 @@ void test_chord_state_is_explicit_and_resettable_per_node() {
     assert(!core::state::sequencer::setNodeChordSpec(state.pattern, rootNode, node->chordSpec));
     assert(state.pattern.graphRevision.get() == revisionAfterSpec);
 
-    assert(core::state::sequencer::setNodeChordMode(
-        state.pattern,
-        rootNode,
-        StepSequencerChordMode::Single
-    ));
+    assert(core::state::sequencer::setNodeChordMode(state.pattern, rootNode,
+                                                    StepSequencerChordMode::Single));
     graph = core::state::sequencer::graphView(state.pattern);
     node = graph->stepNode(rootNode);
     assert(node->has(STEP_NODE_CHORD_MODE));
@@ -763,18 +662,8 @@ void test_runtime_telemetry_sync_copies_expanded_variation() {
     runtime.expandedVariationTelemetry.noteBudgetExceeded = true;
     runtime.runtimeDiagnostics.noteBudgetExceeded = true;
     runtime.runtimeDiagnostics.noteBudgetExceededCount = 3;
-    runtime.expandedVariationTelemetry.store(
-        0,
-        42,
-        3,
-        6,
-        variation,
-        StepSequencerChordSource::Local,
-        1,
-        3,
-        4,
-        false
-    );
+    runtime.expandedVariationTelemetry.store(0, 42, 3, 6, variation,
+                                             StepSequencerChordSource::Local, 1, 3, 4, false);
 
     core::sequencer::publishRuntimeTelemetry(target, runtime);
 
@@ -847,6 +736,7 @@ int main() {
     test_root_pattern_rotation_wraps_graph_step_nodes();
     test_clear_node_children_detaches_links_and_bumps_revision_once();
     test_compact_graph_reclaims_detached_child_content();
+    test_reserved_compaction_preserves_owner_and_allocates_zero();
     test_copy_node_children_remaps_nested_graph_content();
     test_clear_graph_releases_allocation_and_bumps_revision_once();
     test_graph_limits_are_reported();

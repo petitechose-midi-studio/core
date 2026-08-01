@@ -1,11 +1,12 @@
 {
   "schemaVersion": 1,
-  "scope": "L-R08-01 boundary with L-R08-02 providers and L-R08-03 prepared coalescing",
+  "scope": "L-R08-04 prepared non-Quick-Control Pattern families",
   "recordingBoundary": {
     "entryRecordingCallTotal": 44,
+    "expectedMigratedRemovalTotal": 11,
     "expectedProviderForwardTotal": 5,
     "expectedCoalescedPreparedTotal": 1,
-    "expectedTotal": 50,
+    "expectedTotal": 39,
     "memberDispatch": {
       "methods": [
         "recordPattern",
@@ -18,22 +19,15 @@
         "recordPreparedStructure"
       ],
       "expectedMethodCount": 8,
-      "expectedTotal": 42,
-      "expectedSinkTotal": 22,
+      "expectedTotal": 31,
+      "expectedSinkTotal": 11,
       "expectedServiceAdapterTotal": 20,
       "expectedSinkClassifications": {
-        "post-fallible": 15,
+        "post-fallible": 4,
         "prepared": 5,
         "rollback-aware": 2
       },
       "groups": [
-        {
-          "path": "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
-          "method": "recordPattern",
-          "count": 1,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
         {
           "path": "src/handler/sequencer/SequencerFullBankHistoryUtils.hpp",
           "method": "recordFullBank",
@@ -42,63 +36,7 @@
           "classification": "post-fallible"
         },
         {
-          "path": "src/handler/sequencer/SequencerPatternEditorHandler.cpp",
-          "method": "recordPattern",
-          "count": 1,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
-        {
           "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
-          "method": "recordPattern",
-          "count": 1,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerPropertySelectorHandler.cpp",
-          "method": "recordPattern",
-          "count": 2,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerStepContentActions.cpp",
-          "method": "recordPattern",
-          "count": 1,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerStepEditHandler.cpp",
-          "method": "recordPattern",
-          "count": 2,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp",
-          "method": "recordFlatPattern",
-          "count": 1,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp",
-          "method": "recordPattern",
-          "count": 1,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerStepHandler.cpp",
-          "method": "recordFlatPattern",
-          "count": 1,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerStepHandler.cpp",
           "method": "recordPattern",
           "count": 1,
           "role": "sink",
@@ -302,6 +240,141 @@
     },
     "explicitExclusions": []
   },
+  "preparedPatternLifecycle": {
+    "ownerDeclaration": {
+      "path": "src/state/sequencer/SequencerHistory.hpp",
+      "enum": "SequencerPreparedPatternEditOwner",
+      "expectedCount": 6,
+      "owners": [
+        "PatternPitch",
+        "PropertySelector",
+        "StepContent",
+        "StepEditSession",
+        "StepToggle",
+        "PatternEditor"
+      ]
+    },
+    "methods": [
+      "beginPreparedPatternEdit",
+      "sealPreparedPatternEdit",
+      "commitPreparedPatternEdit"
+    ],
+    "centralAuthority": {
+      "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+      "qualifier": "CoreState",
+      "definitions": {
+        "beginOrContinueSequencerPreparedPatternEdit": 1,
+        "sealSequencerPreparedPatternEdit": 1,
+        "commitSequencerPreparedPatternEdit": 1
+      }
+    },
+    "serviceAdapter": {
+      "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+      "calls": {
+        "beginPreparedPatternEdit": 1,
+        "sealPreparedPatternEdit": 1,
+        "commitPreparedPatternEdit": 1
+      }
+    },
+    "expectedSurfaceCount": 7,
+    "expectedSurfaceCallTotals": {
+      "beginPreparedPatternEdit": 8,
+      "sealPreparedPatternEdit": 9,
+      "commitPreparedPatternEdit": 9
+    },
+    "expectedCallTotals": {
+      "beginPreparedPatternEdit": 9,
+      "sealPreparedPatternEdit": 10,
+      "commitPreparedPatternEdit": 10
+    },
+    "forbiddenRawMethods": [
+      "captureHistorySnapshot",
+      "captureFlatHistorySnapshot",
+      "recordPattern",
+      "recordFlatPattern"
+    ],
+    "expectedForbiddenRawCallTotal": 0,
+    "surfaces": [
+      {
+        "path": "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
+        "ownerReferences": {
+          "PatternPitch": 3
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "sealPreparedPatternEdit": 1,
+          "commitPreparedPatternEdit": 1
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPropertySelectorHandler.cpp",
+        "ownerReferences": {
+          "PropertySelector": 5
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 2,
+          "sealPreparedPatternEdit": 2,
+          "commitPreparedPatternEdit": 1
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerStepContentActions.cpp",
+        "ownerReferences": {
+          "StepContent": 1
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 2,
+          "sealPreparedPatternEdit": 2,
+          "commitPreparedPatternEdit": 2
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerStepEditHandler.cpp",
+        "ownerReferences": {
+          "StepEditSession": 3,
+          "StepContent": 2
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "sealPreparedPatternEdit": 1,
+          "commitPreparedPatternEdit": 1
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp",
+        "ownerReferences": {
+          "StepEditSession": 1
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 0,
+          "sealPreparedPatternEdit": 0,
+          "commitPreparedPatternEdit": 1
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerStepHandler.cpp",
+        "ownerReferences": {
+          "StepToggle": 1
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "sealPreparedPatternEdit": 1,
+          "commitPreparedPatternEdit": 1
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPatternEditorHandler.cpp",
+        "ownerReferences": {
+          "PatternEditor": 5
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "sealPreparedPatternEdit": 2,
+          "commitPreparedPatternEdit": 2
+        }
+      }
+    ]
+  },
   "coalescedBegins": {
     "method": "beginCoalescedPatternEdit",
     "expectedTotal": 7,
@@ -367,9 +440,10 @@
     ],
     "allowedTestUses": {
       "test/support/SequencerHistoryTransactionAssertions.hpp": 1,
-        "test/test_SequencerCoalescedPatternTransactions/test_main.cpp": 9,
+      "test/test_SequencerCoalescedPatternTransactions/test_main.cpp": 10,
       "test/test_SequencerHistoryQualification/test_main.cpp": 1,
       "test/test_SequencerMacroPropertyHandler/test_main.cpp": 1,
+      "test/test_SequencerPatternEditorHandler/test_main.cpp": 3,
       "test/test_SequencerQuickControlsContainment/test_main.cpp": 1
     }
   }
