@@ -379,6 +379,10 @@ public:
     bool hasPendingProjectTransaction() const;
 
     void markSequencerProjectMutated();
+    // Prepared transactions have already synchronized editor and bank. Consume
+    // only this coalescer's watched notifications, then publish dirty/save once
+    // without cloning a cold payload or draining unrelated callbacks.
+    void publishPreparedSequencerMutation();
     bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternSnapshot before,
                                        sequencer::SequencerHistoryPatternSnapshot after,
                                        sequencer::SequencerHistoryDescriptor descriptor = {},
@@ -389,9 +393,20 @@ public:
                                     sequencer::SequencerHistoryTrackBankSnapshot after,
                                     sequencer::SequencerHistoryDescriptor descriptor = {});
     bool recordSequencerBankHistory(sequencer::SequencerHistoryFullBankChangePtr change);
+    bool canRecordSequencerBankHistory(
+        const sequencer::SequencerHistoryFullBankChange& change
+    ) const;
+    // Requires an unchanged change accepted by canRecord*. Publishes the
+    // prepared bank topology into shared UI/Macro projections and commits the
+    // history plus dirty/autosave boundary without further allocation.
+    void recordPreparedSequencerBankHistory(
+        sequencer::SequencerHistoryFullBankChangePtr change
+    );
     bool canRecordSequencerStructureHistory(
         const sequencer::SequencerHistoryTrackStructureChange& change
     ) const;
+    // Same immutable prepared contract as FullBank, including shared Track
+    // projection publication before the no-fail history boundary.
     void recordPreparedSequencerStructureHistory(
         sequencer::SequencerHistoryTrackStructureChangePtr change
     );
@@ -431,7 +446,10 @@ public:
     uint16_t currentSharedTrackEnabledMask() const;
     uint8_t currentSharedActiveTrack() const;
     bool setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack);
-    void publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t activeTrack);
+    [[nodiscard]] bool publishPreparedSequencerTrackState(
+        uint16_t enabledMask,
+        uint8_t activeTrack
+    );
     /** Reconciles transient Macro/UI state after one atomic global Track paste. */
     void reconcilePreparedMacroTrackTransfer(uint16_t capturedTrackMask);
     bool refreshSharedTrackStateFromMacroPages();

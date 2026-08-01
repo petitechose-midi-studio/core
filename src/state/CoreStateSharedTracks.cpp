@@ -74,21 +74,24 @@ bool CoreState::setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack) {
     return setSharedTrackState_(enabledMask, activeTrack);
 }
 
-void CoreState::publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t activeTrack) {
+bool CoreState::publishPreparedSequencerTrackState(
+    uint16_t enabledMask,
+    uint8_t activeTrack
+) {
     if (sequencer.stepContentDraft.active.get() &&
         (enabledMask != sharedTrackEnabledMask.get() ||
          activeTrack != sharedTrackActive.get())) {
         sequencer.stepContentDraft.noteBlockedTransition(
             sequencer::SequencerStepContentDraftBlockedTransition::TRACK
         );
-        return;
+        return false;
     }
     const auto result = shared::SharedTrackCoordinator::publishPreparedSequencerState(
         sharedTrackRefs(*this),
         enabledMask,
         activeTrack
     );
-    (void)result;
+    return result.ok;
 }
 
 FLASHMEM void CoreState::reconcilePreparedMacroTrackTransfer(

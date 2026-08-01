@@ -21,6 +21,8 @@ struct StateInvariant {
     uint32_t bankCcRevision = 0U;
     uint32_t modifiedCounter = 0U;
     bool dirty = false;
+    bool sessionSavePending = false;
+    uint32_t sessionSaveTimestampMs = 0U;
     uint8_t sequencerUndoCount = 0U;
     uint8_t sequencerRedoCount = 0U;
     uint8_t projectUndoCount = 0U;
@@ -46,6 +48,8 @@ inline StateInvariant captureStateInvariant(const core::state::CoreState& state)
         .bankCcRevision = bank.ccLaneRevision.get(),
         .modifiedCounter = state.project.metadata.modifiedCounter,
         .dirty = state.project.metadata.dirty,
+        .sessionSavePending = state.hasPendingProjectSessionSave(),
+        .sessionSaveTimestampMs = state.projectSessionSaveTimestampMs(),
         .sequencerUndoCount = state.sequencerHistory.undoCount(),
         .sequencerRedoCount = state.sequencerHistory.redoCount(),
         .projectUndoCount = state.projectHistory.undoCount(),
@@ -71,6 +75,8 @@ inline void assertStateInvariant(
     assert(actual.bankCcRevision == expected.bankCcRevision);
     assert(actual.modifiedCounter == expected.modifiedCounter);
     assert(actual.dirty == expected.dirty);
+    assert(actual.sessionSavePending == expected.sessionSavePending);
+    assert(actual.sessionSaveTimestampMs == expected.sessionSaveTimestampMs);
     assert(actual.sequencerUndoCount == expected.sequencerUndoCount);
     assert(actual.sequencerRedoCount == expected.sequencerRedoCount);
     assert(actual.projectUndoCount == expected.projectUndoCount);
@@ -120,9 +126,12 @@ inline void assertSingleCommittedPublication(
     if (projectMutationExpected) {
         assert(after.modifiedCounter == before.modifiedCounter + 1U);
         assert(after.dirty);
+        assert(after.sessionSavePending);
     } else {
         assert(after.modifiedCounter == before.modifiedCounter);
         assert(after.dirty == before.dirty);
+        assert(after.sessionSavePending == before.sessionSavePending);
+        assert(after.sessionSaveTimestampMs == before.sessionSaveTimestampMs);
     }
 }
 

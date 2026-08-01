@@ -24,8 +24,9 @@ namespace core::state::sequencer {
     const SequencerState& active
 );
 
-// Avoids graph cloning when the active editor and bank track already own the
-// same graph revision; falls back to a full copy if that contract is not met.
+// Avoids a Graph allocation when graph revisions are already synchronized.
+// Pattern-owned CC lanes are still copied so a switched Track's spare bank
+// payload can never be mistaken for the active editor merely by revision.
 [[nodiscard]] bool storeActiveTrackPreservingGraph(
     SequencerTrackBankState& bank,
     const SequencerState& active

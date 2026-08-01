@@ -16,6 +16,43 @@
 
 namespace core::state::sequencer {
 
+FLASHMEM SequencerHistoryPatternPayloadStorage::
+    SequencerHistoryPatternPayloadStorage() = default;
+FLASHMEM SequencerHistoryPatternPayloadStorage::
+    ~SequencerHistoryPatternPayloadStorage() = default;
+FLASHMEM SequencerHistoryPatternPayloadStorage::
+    SequencerHistoryPatternPayloadStorage(
+        SequencerHistoryPatternPayloadStorage&&
+    ) noexcept = default;
+FLASHMEM SequencerHistoryPatternPayloadStorage&
+    SequencerHistoryPatternPayloadStorage::operator=(
+        SequencerHistoryPatternPayloadStorage&&
+    ) noexcept = default;
+FLASHMEM void SequencerHistoryPatternPayloadStorage::reset() {
+    graph.reset();
+    ccLanes.reset();
+}
+
+FLASHMEM SequencerPreparedActiveTrackSynchronization::
+    SequencerPreparedActiveTrackSynchronization() = default;
+FLASHMEM SequencerPreparedActiveTrackSynchronization::
+    ~SequencerPreparedActiveTrackSynchronization() = default;
+FLASHMEM SequencerPreparedActiveTrackSynchronization::
+    SequencerPreparedActiveTrackSynchronization(
+        SequencerPreparedActiveTrackSynchronization&&
+    ) noexcept = default;
+FLASHMEM SequencerPreparedActiveTrackSynchronization&
+    SequencerPreparedActiveTrackSynchronization::operator=(
+        SequencerPreparedActiveTrackSynchronization&&
+    ) noexcept = default;
+FLASHMEM void SequencerPreparedActiveTrackSynchronization::reset() {
+    trackIndex = SequencerTrackBankState::TRACK_COUNT;
+    storage = SequencerHistoryPatternStorage::FullGraph;
+    reserved = false;
+    captured = false;
+    payload.reset();
+}
+
 FLASHMEM SequencerHistoryPatternSnapshot::SequencerHistoryPatternSnapshot() = default;
 FLASHMEM SequencerHistoryPatternSnapshot::~SequencerHistoryPatternSnapshot() = default;
 FLASHMEM SequencerHistoryPatternSnapshot::SequencerHistoryPatternSnapshot(
@@ -226,6 +263,60 @@ FLASHMEM bool captureGraphUsingReservedStorage(const Graph* source, GraphPtr& ou
     return true;
 }
 
+FLASHMEM bool reservePatternPayloadStorage(
+    const SequencerPatternState& source,
+    GraphPtr& graph,
+    SequencerHistoryCcLanePtr& ccLanes
+) {
+    const auto* sourceGraph = graphView(source);
+    if (sourceGraph == nullptr) {
+        graph.reset();
+    } else if (!graph) {
+        graph = core::app::makeExtmemUnique<Graph>();
+        if (!graph) return false;
+    }
+
+    const auto* sourceCcLanes = source.ccLanes.get();
+    const bool needsCcLanes = sourceCcLanes != nullptr &&
+        sequencerCcLaneCount(*sourceCcLanes) != 0U;
+    if (!needsCcLanes) {
+        ccLanes.reset();
+    } else if (!ccLanes) {
+        ccLanes = core::app::makeExtmemUnique<SequencerCcLaneBank>();
+        if (!ccLanes) return false;
+    }
+    return true;
+}
+
+FLASHMEM bool capturePatternPayloadUsingReservedStorage(
+    const SequencerPatternState& source,
+    GraphPtr& graph,
+    SequencerHistoryCcLanePtr& ccLanes
+) {
+    const auto* sourceGraph = graphView(source);
+    if (sourceGraph == nullptr) {
+        graph.reset();
+    } else {
+        if (!graph) return false;
+        *graph = *sourceGraph;
+    }
+
+    const auto* sourceCcLanes = source.ccLanes.get();
+    if (sourceCcLanes == nullptr ||
+        sequencerCcLaneCount(*sourceCcLanes) == 0U) {
+        ccLanes.reset();
+        return true;
+    }
+    if (!ccLanes) return false;
+
+    SequencerCcLaneBank canonical{};
+    if (!decodeCanonicalSequencerCcLaneBank(*sourceCcLanes, canonical)) {
+        return false;
+    }
+    *ccLanes = canonical;
+    return true;
+}
+
 FLASHMEM void installGraph(
     SequencerPatternState& target,
     GraphPtr graph,
@@ -334,6 +425,15 @@ FLASHMEM size_t trackBankSnapshotRetainedBytes(
     return bytes;
 }
 
+FLASHMEM size_t fullBankChangeRetainedBytes(
+    const SequencerHistoryFullBankChange& change
+) {
+    return sizeof(SequencerHistoryFullBankChange) +
+           kExtmemAllocationOverheadEstimate +
+           trackBankSnapshotRetainedBytes(change.before) +
+           trackBankSnapshotRetainedBytes(change.after);
+}
+
 FLASHMEM size_t structureSnapshotRetainedBytes(
     const SequencerHistoryTrackStructureSnapshot& snapshot
 ) {
@@ -390,8 +490,8 @@ FLASHMEM size_t patternChangeAdmissionBytes(
 }
 
 FLASHMEM bool incomingEntryFitsRetainedBudget(size_t incomingBytes) {
-    // recordEntry may evict every retained entry, so admission depends only on
-    // whether the incoming entry itself fits the total retained-byte budget.
+    // commitPreparedEntry may evict every retained entry, so admission depends
+    // only on whether the incoming entry fits the total retained-byte budget.
     return incomingBytes <= SequencerHistoryService::RETAINED_BYTE_BUDGET;
 }
 
@@ -405,10 +505,7 @@ FLASHMEM size_t entryRetainedBytes(const SequencerHistoryEntry& entry) {
             return structureChangeRetainedBytes(*entry.structure);
         case SequencerHistoryScope::FullBank:
             if (!entry.fullBank) return 0;
-            return sizeof(SequencerHistoryFullBankChange) +
-                   kExtmemAllocationOverheadEstimate +
-                   trackBankSnapshotRetainedBytes(entry.fullBank->before) +
-                   trackBankSnapshotRetainedBytes(entry.fullBank->after);
+            return fullBankChangeRetainedBytes(*entry.fullBank);
         default:
             return 0;
     }
@@ -603,7 +700,55 @@ FLASHMEM bool captureHistorySnapshot(
     SequencerHistoryPatternSnapshot& out
 ) {
     out.reset();
-    return captureHistorySnapshotUsingReservedGraph(source, out);
+    return reserveHistorySnapshotStorage(source, out) &&
+           captureHistorySnapshotUsingReservedStorage(source, out);
+}
+
+FLASHMEM bool reserveHistoryPatternPayloadStorage(
+    const SequencerPatternState& source,
+    SequencerHistoryPatternPayloadStorage& storage
+) {
+    return reservePatternPayloadStorage(source, storage.graph, storage.ccLanes);
+}
+
+FLASHMEM bool captureHistoryPatternPayloadUsingReservedStorage(
+    const SequencerPatternState& source,
+    SequencerHistoryPatternPayloadStorage& storage
+) {
+    return capturePatternPayloadUsingReservedStorage(
+        source,
+        storage.graph,
+        storage.ccLanes
+    );
+}
+
+FLASHMEM bool reserveHistorySnapshotStorage(
+    const SequencerState& source,
+    SequencerHistoryPatternSnapshot& snapshot
+) {
+    return reservePatternPayloadStorage(
+        source.pattern,
+        snapshot.graph,
+        snapshot.ccLanes
+    );
+}
+
+FLASHMEM bool captureHistorySnapshotUsingReservedStorage(
+    const SequencerState& source,
+    SequencerHistoryPatternSnapshot& out
+) {
+    if (!capturePatternPayloadUsingReservedStorage(
+            source.pattern,
+            out.graph,
+            out.ccLanes
+        )) {
+        return false;
+    }
+    captureSnapshot(source.pattern, out.flat);
+    out.ccLaneRevision = source.pattern.ccLaneRevision.get();
+    out.focusedStep = source.focusedStep.get();
+    out.ccLanesCaptured = true;
+    return true;
 }
 
 FLASHMEM bool reserveHistorySnapshotGraphStorage(
@@ -619,6 +764,7 @@ FLASHMEM bool captureHistorySnapshotUsingReservedGraph(
     SequencerHistoryPatternSnapshot& out
 ) {
     captureSnapshot(source.pattern, out.flat);
+    out.ccLaneRevision = source.pattern.ccLaneRevision.get();
     out.focusedStep = source.focusedStep.get();
     if (!captureGraphUsingReservedStorage(graphView(source.pattern), out.graph) ||
         !captureSequencerCcLaneBankUsingReservedStorage(
@@ -637,6 +783,7 @@ FLASHMEM void captureFlatHistorySnapshot(
 ) {
     out.reset();
     captureSnapshot(source.pattern, out.flat);
+    out.ccLaneRevision = source.pattern.ccLaneRevision.get();
     out.focusedStep = source.focusedStep.get();
     out.ccLanesCaptured = false;
 }
@@ -653,7 +800,56 @@ FLASHMEM bool captureHistorySnapshot(
     }
 
     out.reset();
-    return captureHistorySnapshotUsingReservedGraph(bank, active, targetTrack, out);
+    return reserveHistorySnapshotStorage(bank, active, targetTrack, out) &&
+           captureHistorySnapshotUsingReservedStorage(
+               bank,
+               active,
+               targetTrack,
+               out
+           );
+}
+
+FLASHMEM bool reserveHistorySnapshotStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryPatternSnapshot& snapshot
+) {
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    const auto& source = targetTrack == bank.activeTrackIndex()
+        ? active.pattern
+        : bank.track(targetTrack);
+    return reservePatternPayloadStorage(
+        source,
+        snapshot.graph,
+        snapshot.ccLanes
+    );
+}
+
+FLASHMEM bool captureHistorySnapshotUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryPatternSnapshot& out
+) {
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    if (targetTrack == bank.activeTrackIndex()) {
+        return captureHistorySnapshotUsingReservedStorage(active, out);
+    }
+
+    const auto& source = bank.track(targetTrack);
+    if (!capturePatternPayloadUsingReservedStorage(
+            source,
+            out.graph,
+            out.ccLanes
+        )) {
+        return false;
+    }
+    captureSnapshot(source, out.flat);
+    out.ccLaneRevision = source.ccLaneRevision.get();
+    out.focusedStep = active.focusedStep.get();
+    out.ccLanesCaptured = true;
+    return true;
 }
 
 FLASHMEM bool captureHistorySnapshotUsingReservedGraph(
@@ -669,6 +865,7 @@ FLASHMEM bool captureHistorySnapshotUsingReservedGraph(
 
     const auto& source = bank.track(targetTrack);
     captureSnapshot(source, out.flat);
+    out.ccLaneRevision = source.ccLaneRevision.get();
     out.focusedStep = active.focusedStep.get();
     if (!captureGraphUsingReservedStorage(graphView(source), out.graph) ||
         !captureSequencerCcLaneBankUsingReservedStorage(
@@ -695,6 +892,7 @@ FLASHMEM void captureFlatHistorySnapshot(
 
     out.reset();
     captureSnapshot(bank.track(targetTrack), out.flat);
+    out.ccLaneRevision = bank.track(targetTrack).ccLaneRevision.get();
     out.focusedStep = active.focusedStep.get();
     out.ccLanesCaptured = false;
 }
@@ -705,33 +903,163 @@ FLASHMEM bool captureHistorySnapshot(
     SequencerHistoryTrackBankSnapshot& out
 ) {
     out.reset();
-    captureTrackBankSnapshot(bank, active, out.flat);
-    out.focusedStep = active.focusedStep.get();
-    out.activeStepProperty = active.activeStepProperty.get();
+    return reserveHistoryTrackBankSnapshotStorage(bank, active, out) &&
+           captureHistoryTrackBankSnapshotUsingReservedStorage(bank, active, out);
+}
 
-    if (!cloneGraph(graphView(active.pattern), out.editorGraph)) {
-        return false;
-    }
-    if (!cloneSequencerCcLaneBank(
-            out.editorCcLanes,
-            active.pattern.ccLanes.get()
+FLASHMEM bool reserveHistoryTrackBankSnapshotStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryTrackBankSnapshot& snapshot
+) {
+    if (!reservePatternPayloadStorage(
+            active.pattern,
+            snapshot.editorGraph,
+            snapshot.editorCcLanes
         )) {
         return false;
     }
-
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if (!cloneGraph(graphView(bank.track(i)), out.bankGraphs[i])) {
+        if (!reservePatternPayloadStorage(
+                bank.track(i),
+                snapshot.bankGraphs[i],
+                snapshot.bankCcLanes[i]
+            )) {
             return false;
         }
-        if (!cloneSequencerCcLaneBank(
-                out.bankCcLanes[i],
-                bank.track(i).ccLanes.get()
+    }
+    return true;
+}
+
+FLASHMEM bool captureHistoryTrackBankSnapshotUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryTrackBankSnapshot& out
+) {
+    if (!capturePatternPayloadUsingReservedStorage(
+            active.pattern,
+            out.editorGraph,
+            out.editorCcLanes
+        )) {
+        return false;
+    }
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if (!capturePatternPayloadUsingReservedStorage(
+                bank.track(i),
+                out.bankGraphs[i],
+                out.bankCcLanes[i]
             )) {
             return false;
         }
     }
 
+    captureTrackBankSnapshot(bank, active, out.flat);
+    out.focusedStep = active.focusedStep.get();
+    out.activeStepProperty = active.activeStepProperty.get();
     return true;
+}
+
+FLASHMEM bool reservePreparedActiveTrackSynchronization(
+    const SequencerTrackBankState& bank,
+    const SequencerState& after,
+    uint8_t trackIndex,
+    SequencerHistoryPatternStorage storage,
+    SequencerPreparedActiveTrackSynchronization& synchronization
+) {
+    synchronization.reset();
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(
+        trackIndex
+    );
+    synchronization.trackIndex = targetTrack;
+    synchronization.storage = storage;
+    if (targetTrack != bank.activeTrackIndex()) return false;
+    if (storage == SequencerHistoryPatternStorage::FlatOnly) {
+        const auto& target = bank.track(targetTrack);
+        synchronization.reserved =
+            sameGraph(graphView(target), graphView(after.pattern)) &&
+            sameOptionalSequencerCcLaneBank(
+                sequencerCcLaneView(target),
+                sequencerCcLaneView(after.pattern)
+            );
+        return synchronization.reserved;
+    }
+    synchronization.reserved = reserveHistoryPatternPayloadStorage(
+        after.pattern,
+        synchronization.payload
+    );
+    return synchronization.reserved;
+}
+
+FLASHMEM bool preparedActiveTrackSynchronizationMatches(
+    const SequencerTrackBankState& bank,
+    const SequencerPreparedActiveTrackSynchronization& synchronization
+) {
+    return synchronization.reserved &&
+           synchronization.trackIndex < SequencerTrackBankState::TRACK_COUNT &&
+           synchronization.trackIndex == bank.activeTrackIndex();
+}
+
+FLASHMEM bool capturePreparedActiveTrackSynchronizationUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& after,
+    SequencerPreparedActiveTrackSynchronization& synchronization
+) {
+    if (!preparedActiveTrackSynchronizationMatches(bank, synchronization)) {
+        return false;
+    }
+    if (synchronization.captured) return false;
+    if (synchronization.storage == SequencerHistoryPatternStorage::FlatOnly) {
+        const auto& target = bank.track(synchronization.trackIndex);
+        if (!sameGraph(graphView(target), graphView(after.pattern)) ||
+            !sameOptionalSequencerCcLaneBank(
+                sequencerCcLaneView(target),
+                sequencerCcLaneView(after.pattern)
+            )) {
+            return false;
+        }
+        synchronization.payload.reset();
+        synchronization.captured = true;
+        return true;
+    }
+    synchronization.captured = captureHistoryPatternPayloadUsingReservedStorage(
+        after.pattern,
+        synchronization.payload
+    );
+    return synchronization.captured;
+}
+
+FLASHMEM void publishPreparedActiveTrackSynchronization(
+    SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerPreparedActiveTrackSynchronization synchronization
+) {
+    if (!synchronization.captured ||
+        !preparedActiveTrackSynchronizationMatches(bank, synchronization)) {
+        return;
+    }
+    auto& target = bank.track(synchronization.trackIndex);
+    SequencerPatternSnapshot flat{};
+    captureSnapshot(active.pattern, flat);
+    if (synchronization.storage == SequencerHistoryPatternStorage::FlatOnly) {
+        if (!sameGraph(graphView(target), graphView(active.pattern)) ||
+            !sameOptionalSequencerCcLaneBank(
+                sequencerCcLaneView(target),
+                sequencerCcLaneView(active.pattern)
+            )) {
+            return;
+        }
+        applySnapshotPreservingGraph(target, flat);
+        target.ccLaneRevision.set(active.pattern.ccLaneRevision.get());
+        return;
+    }
+
+    installTrackContentSnapshotWithOwnedPayload(
+        target,
+        flat,
+        std::move(synchronization.payload.graph),
+        std::move(synchronization.payload.ccLanes)
+    );
+    target.ccLaneRevision.set(active.pattern.ccLaneRevision.get());
 }
 
 FLASHMEM bool applyHistorySnapshot(
@@ -917,6 +1245,116 @@ FLASHMEM bool sameMusicalHistorySnapshot(
     return true;
 }
 
+FLASHMEM SequencerHistoryPatternChangePtr prepareHistoryPatternChangeBefore(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryPatternStorage storage,
+    SequencerHistoryDescriptor descriptor
+) {
+    auto change = core::app::makeExtmemUnique<SequencerHistoryPatternChange>();
+    if (!change) return nullptr;
+
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    change->trackIndex = targetTrack;
+    change->storage = storage;
+    descriptor.trackIndex = targetTrack;
+    change->descriptor = descriptor;
+
+    bool captured = true;
+    if (storage == SequencerHistoryPatternStorage::FlatOnly) {
+        captureFlatHistorySnapshot(bank, active, targetTrack, change->before);
+    } else {
+        captured = captureHistorySnapshot(
+            bank,
+            active,
+            targetTrack,
+            change->before
+        );
+    }
+    return captured ? std::move(change) : SequencerHistoryPatternChangePtr{};
+}
+
+FLASHMEM bool reservePreparedHistoryPatternAfter(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryPatternChange& change
+) {
+    if (change.trackIndex >= SequencerTrackBankState::TRACK_COUNT ||
+        change.descriptor.trackIndex != change.trackIndex) {
+        return false;
+    }
+    if (change.storage == SequencerHistoryPatternStorage::FlatOnly) {
+        change.after.reset();
+        return true;
+    }
+    return reserveHistorySnapshotStorage(
+        bank,
+        active,
+        change.trackIndex,
+        change.after
+    );
+}
+
+FLASHMEM bool capturePreparedHistoryPatternAfterUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryPatternChange& change
+) {
+    if (change.trackIndex >= SequencerTrackBankState::TRACK_COUNT ||
+        change.descriptor.trackIndex != change.trackIndex) {
+        return false;
+    }
+    if (change.storage == SequencerHistoryPatternStorage::FlatOnly) {
+        captureFlatHistorySnapshot(
+            bank,
+            active,
+            change.trackIndex,
+            change.after
+        );
+        return true;
+    }
+    return captureHistorySnapshotUsingReservedStorage(
+        bank,
+        active,
+        change.trackIndex,
+        change.after
+    );
+}
+
+FLASHMEM SequencerHistoryFullBankChangePtr prepareHistoryFullBankChangeBefore(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryDescriptor descriptor
+) {
+    auto change = core::app::makeExtmemUnique<SequencerHistoryFullBankChange>();
+    if (!change || !captureHistorySnapshot(bank, active, change->before)) {
+        return nullptr;
+    }
+    change->descriptor = descriptor;
+    return change;
+}
+
+FLASHMEM bool reservePreparedHistoryFullBankAfter(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryFullBankChange& change
+) {
+    return reserveHistoryTrackBankSnapshotStorage(bank, active, change.after);
+}
+
+FLASHMEM bool capturePreparedHistoryFullBankAfterUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryFullBankChange& change
+) {
+    return captureHistoryTrackBankSnapshotUsingReservedStorage(
+        bank,
+        active,
+        change.after
+    );
+}
+
 FLASHMEM bool SequencerHistoryService::recordPattern(
     uint8_t trackIndex,
     SequencerHistoryPatternSnapshot before,
@@ -986,6 +1424,7 @@ FLASHMEM bool SequencerHistoryService::canRecordPattern(
 ) const {
     if (change.storage == SequencerHistoryPatternStorage::FlatOnly) {
         if (change.before.flat.graphRevision != change.after.flat.graphRevision ||
+            change.before.ccLaneRevision != change.after.ccLaneRevision ||
             sameFlatPatternSnapshot(change.before.flat, change.after.flat)) {
             return false;
         }
@@ -999,8 +1438,7 @@ FLASHMEM bool SequencerHistoryService::canRecordPattern(
 FLASHMEM void SequencerHistoryService::recordPreparedPattern(
     SequencerHistoryPatternChangePtr change
 ) {
-    assert(change && canRecordPattern(*change));
-    if (!change) return;
+    if (!change || !canRecordPattern(*change)) return;
 
     if (change->storage == SequencerHistoryPatternStorage::FlatOnly) {
         change->before.graph.reset();
@@ -1056,13 +1494,22 @@ FLASHMEM bool SequencerHistoryService::recordFullBank(
 FLASHMEM bool SequencerHistoryService::recordFullBank(
     SequencerHistoryFullBankChangePtr change
 ) {
-    if (!change) {
-        return false;
-    }
+    if (!change || !canRecordFullBank(*change)) return false;
+    recordPreparedFullBank(std::move(change));
+    return true;
+}
 
-    if (sameMusicalHistorySnapshot(change->before, change->after)) {
-        return false;
-    }
+FLASHMEM bool SequencerHistoryService::canRecordFullBank(
+    const SequencerHistoryFullBankChange& change
+) const {
+    return !sameMusicalHistorySnapshot(change.before, change.after) &&
+           incomingEntryFitsRetainedBudget(fullBankChangeRetainedBytes(change));
+}
+
+FLASHMEM void SequencerHistoryService::recordPreparedFullBank(
+    SequencerHistoryFullBankChangePtr change
+) {
+    if (!change || !canRecordFullBank(*change)) return;
 
     if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
         change->descriptor.kind = SequencerHistoryActionKind::FullBank;
@@ -1071,8 +1518,7 @@ FLASHMEM bool SequencerHistoryService::recordFullBank(
     SequencerHistoryEntry entry;
     entry.scope = SequencerHistoryScope::FullBank;
     entry.fullBank = std::move(change);
-
-    return recordEntry(std::move(entry));
+    commitPreparedEntry(std::move(entry));
 }
 
 FLASHMEM bool SequencerHistoryService::recordStructure(
@@ -1089,8 +1535,7 @@ FLASHMEM bool SequencerHistoryService::recordStructure(
 FLASHMEM void SequencerHistoryService::recordPreparedStructure(
     SequencerHistoryTrackStructureChangePtr change
 ) {
-    assert(change && canRecordStructure(*change));
-    if (!change) return;
+    if (!change || !canRecordStructure(*change)) return;
 
     if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
         change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;
@@ -1335,16 +1780,6 @@ FLASHMEM void SequencerHistoryService::commitPreparedEntry(SequencerHistoryEntry
             actionKind
         );
     }
-}
-
-FLASHMEM bool SequencerHistoryService::recordEntry(SequencerHistoryEntry entry) {
-    if (!entry.valid()) return false;
-
-    const size_t incomingBytes = entryRetainedBytes(entry);
-    if (!incomingEntryFitsRetainedBudget(incomingBytes)) return false;
-
-    commitPreparedEntry(std::move(entry));
-    return true;
 }
 
 }  // namespace core::state::sequencer

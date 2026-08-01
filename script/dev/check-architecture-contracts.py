@@ -440,6 +440,10 @@ def main(show_inventory: bool = False) -> int:
         for selector in (
             "*(.text.*_M_manager*)",
             "*(.text.*9subscribe*)",
+            "*(.text._ZN2oc5state12Subscription5resetEv*)",
+            "*(.text._ZNSt5arrayIN2oc5state12SubscriptionE*D*Ev)",
+            "*(.text._ZN4core3app16makeExtmemUniqueINS_5state9sequencer30SequencerHistoryFullBankChangeE*)",
+            "*(.text._ZNSt15__uniq_ptr_implIN4core5state9sequencer30SequencerHistoryFullBankChangeE*)",
             "*lv_binfont_loader.c.o(.text* .rodata*)",
             "*lv_draw_sw_box_shadow.c.o(.text* .rodata*)",
             "*lz4.c.o(.text* .rodata*)",

@@ -120,6 +120,59 @@ FLASHMEM bool captureHistoryStructureSnapshot(
     return captureStructureSnapshot(bank, active, trackMask, out, false);
 }
 
+FLASHMEM bool reserveHistoryStructureSnapshotStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint16_t trackMask,
+    SequencerHistoryTrackStructureSnapshot& out
+) {
+    const uint16_t capturedMask = sequencerHistorySanitizeTrackMask(
+        static_cast<uint16_t>(trackMask | activeTrackBit(bank))
+    );
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if ((capturedMask & sequencerHistoryTrackBit(i)) == 0U) {
+            out.tracks[i].reset();
+            continue;
+        }
+        if (!reserveHistorySnapshotStorage(bank, active, i, out.tracks[i])) {
+            return false;
+        }
+    }
+    out.capturedTrackMask = capturedMask;
+    return true;
+}
+
+FLASHMEM bool captureHistoryStructureSnapshotUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint16_t trackMask,
+    SequencerHistoryTrackStructureSnapshot& out
+) {
+    const uint16_t capturedMask = sequencerHistorySanitizeTrackMask(
+        static_cast<uint16_t>(trackMask | activeTrackBit(bank))
+    );
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if ((capturedMask & sequencerHistoryTrackBit(i)) == 0U) {
+            out.tracks[i].reset();
+            continue;
+        }
+        if (!captureHistorySnapshotUsingReservedStorage(
+                bank,
+                active,
+                i,
+                out.tracks[i]
+            )) {
+            return false;
+        }
+    }
+    out.enabledMask = bank.currentEnabledMask();
+    out.activeTrack = bank.activeTrackIndex();
+    out.focusedStep = active.focusedStep.get();
+    out.page = active.page.get();
+    out.capturedTrackMask = capturedMask;
+    return true;
+}
+
 FLASHMEM bool captureHistoryStructureSnapshotUsingReservedGraphs(
     const SequencerTrackBankState& bank,
     const SequencerState& active,
@@ -127,6 +180,66 @@ FLASHMEM bool captureHistoryStructureSnapshotUsingReservedGraphs(
     SequencerHistoryTrackStructureSnapshot& out
 ) {
     return captureStructureSnapshot(bank, active, trackMask, out, true);
+}
+
+FLASHMEM SequencerHistoryTrackStructureChangePtr prepareHistoryStructureChangeBefore(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint16_t trackMask,
+    SequencerHistoryDescriptor descriptor
+) {
+    auto change = core::app::makeExtmemUnique<
+        SequencerHistoryTrackStructureChange
+    >();
+    if (!change || !captureHistoryStructureSnapshot(
+            bank,
+            active,
+            trackMask,
+            change->before
+        )) {
+        return nullptr;
+    }
+    change->descriptor = descriptor;
+    return change;
+}
+
+FLASHMEM bool reservePreparedHistoryStructureAfter(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryTrackStructureChange& change
+) {
+    const uint16_t frozenMask = change.before.capturedTrackMask;
+    if ((frozenMask & activeTrackBit(bank)) == 0U) return false;
+    if (!reserveHistoryStructureSnapshotStorage(
+        bank,
+        active,
+        frozenMask,
+        change.after
+    )) {
+        return false;
+    }
+    return change.after.capturedTrackMask == frozenMask;
+}
+
+FLASHMEM bool capturePreparedHistoryStructureAfterUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryTrackStructureChange& change
+) {
+    const uint16_t frozenMask = change.before.capturedTrackMask;
+    if (change.after.capturedTrackMask != frozenMask ||
+        (frozenMask & activeTrackBit(bank)) == 0U) {
+        return false;
+    }
+    if (!captureHistoryStructureSnapshotUsingReservedStorage(
+        bank,
+        active,
+        frozenMask,
+        change.after
+    )) {
+        return false;
+    }
+    return change.after.capturedTrackMask == frozenMask;
 }
 
 FLASHMEM bool applyHistoryStructureSnapshot(

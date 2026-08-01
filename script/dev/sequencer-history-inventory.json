@@ -1,8 +1,10 @@
 {
   "schemaVersion": 1,
-  "scope": "L-R08-01 Sequencer history recording boundary",
+  "scope": "L-R08-01 boundary with L-R08-02 additive provider forwards",
   "recordingBoundary": {
-    "expectedTotal": 44,
+    "entryRecordingCallTotal": 44,
+    "expectedProviderForwardTotal": 5,
+    "expectedTotal": 49,
     "memberDispatch": {
       "methods": [
         "recordPattern",
@@ -10,11 +12,14 @@
         "recordFullBank",
         "recordStructure",
         "recordPreparedPattern",
+        "recordPreparedSynchronizedPattern",
+        "recordPreparedFullBank",
         "recordPreparedStructure"
       ],
-      "expectedTotal": 37,
+      "expectedMethodCount": 8,
+      "expectedTotal": 41,
       "expectedSinkTotal": 22,
-      "expectedServiceAdapterTotal": 15,
+      "expectedServiceAdapterTotal": 19,
       "expectedSinkClassifications": {
         "post-fallible": 15,
         "prepared": 5,
@@ -193,6 +198,13 @@
         },
         {
           "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+          "method": "recordPreparedFullBank",
+          "count": 1,
+          "role": "service-adapter",
+          "providerForwardCount": 1
+        },
+        {
+          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
           "method": "recordPreparedStructure",
           "count": 1,
           "role": "service-adapter"
@@ -224,8 +236,23 @@
         {
           "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
           "method": "recordPreparedPattern",
-          "count": 2,
-          "role": "service-adapter"
+          "count": 3,
+          "role": "service-adapter",
+          "providerForwardCount": 1
+        },
+        {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "method": "recordPreparedSynchronizedPattern",
+          "count": 1,
+          "role": "service-adapter",
+          "providerForwardCount": 1
+        },
+        {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "method": "recordPreparedFullBank",
+          "count": 1,
+          "role": "service-adapter",
+          "providerForwardCount": 1
         },
         {
           "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
@@ -242,7 +269,7 @@
     },
     "internalForwards": {
       "path": "src/state/sequencer/SequencerHistory.cpp",
-      "expectedTotal": 6,
+      "expectedTotal": 7,
       "groups": [
         {
           "method": "recordPattern",
@@ -261,6 +288,11 @@
           "count": 1
         },
         {
+          "method": "recordPreparedFullBank",
+          "count": 1,
+          "providerForwardCount": 1
+        },
+        {
           "method": "recordPreparedStructure",
           "count": 1
         }
@@ -271,7 +303,7 @@
         "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
         "method": "recordSequencerPatternHistory",
         "expectedUnqualifiedCallCount": 1,
-        "reason": "The coalesced CoreState commit is outside the six-method SequencerHistoryService recording-call inventory."
+        "reason": "The coalesced CoreState commit is outside the canonical SequencerHistoryService recording-call inventory."
       }
     ]
   },

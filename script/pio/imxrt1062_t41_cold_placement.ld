@@ -11,6 +11,18 @@
 *(.text.*_M_manager*)
 *(.text.*9subscribe*)
 
+/* Subscription teardown is lifecycle-only.  Cancellation made reset() large
+ * enough for GCC to emit standalone std::array destructors for the retained
+ * subscription banks; keep both the primitive and those loops out of ITCM. */
+*(.text._ZN2oc5state12Subscription5resetEv*)
+*(.text._ZNSt5arrayIN2oc5state12SubscriptionE*D*Ev)
+
+/* Prepared FullBank History owners are created and destroyed only around
+ * authored transactions.  Template helpers emitted outside their FLASHMEM
+ * callers belong beside the cold provider, not in realtime code RAM. */
+*(.text._ZN4core3app16makeExtmemUniqueINS_5state9sequencer30SequencerHistoryFullBankChangeE*)
+*(.text._ZNSt15__uniq_ptr_implIN4core5state9sequencer30SequencerHistoryFullBankChangeE*)
+
 /* Logging formatting is an error/diagnostic path, never a realtime path. */
 *(.text._ZN2oc3log6detail*)
 *(.rodata._ZN2oc3log6detail*)

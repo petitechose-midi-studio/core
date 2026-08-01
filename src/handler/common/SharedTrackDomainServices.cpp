@@ -29,7 +29,7 @@ FLASHMEM void publishPreparedSequencerStateFromCoreState(
     if (context == nullptr) return;
 
     auto* state = static_cast<core::state::CoreState*>(context);
-    state->publishPreparedSequencerTrackState(enabledMask, activeTrack);
+    (void)state->publishPreparedSequencerTrackState(enabledMask, activeTrack);
 }
 
 FLASHMEM void reconcilePreparedMacroTrackTransferFromCoreState(

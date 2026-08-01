@@ -205,6 +205,28 @@ FLASHMEM bool CoreState::recordSequencerBankHistory(
     return true;
 }
 
+FLASHMEM bool CoreState::canRecordSequencerBankHistory(
+    const sequencer::SequencerHistoryFullBankChange& change
+) const {
+    // installTrackBankState rejects the complete bank install while a Step Draft
+    // is active, including content-only changes with unchanged topology. Keep
+    // admission identical to that live-write guard so History can never publish
+    // an `after` snapshot that was not installed.
+    return !sequencer.stepContentDraft.active.get() &&
+        sequencerHistory.canRecordFullBank(change);
+}
+
+FLASHMEM void CoreState::recordPreparedSequencerBankHistory(
+    sequencer::SequencerHistoryFullBankChangePtr change
+) {
+    if (!change || !canRecordSequencerBankHistory(*change)) return;
+    const uint16_t enabledMask = change->after.flat.enabledMask;
+    const uint8_t activeTrack = change->after.flat.activeTrack;
+    if (!publishPreparedSequencerTrackState(enabledMask, activeTrack)) return;
+    sequencerHistory.recordPreparedFullBank(std::move(change));
+    publishPreparedSequencerMutation();
+}
+
 FLASHMEM bool CoreState::recordSequencerStructureHistory(
     sequencer::SequencerHistoryTrackStructureChangePtr change
 ) {
@@ -220,16 +242,30 @@ FLASHMEM bool CoreState::recordSequencerStructureHistory(
 FLASHMEM bool CoreState::canRecordSequencerStructureHistory(
     const sequencer::SequencerHistoryTrackStructureChange& change
 ) const {
-    return sequencerHistory.canRecordStructure(change);
+    return !sequencer.stepContentDraft.active.get() &&
+        sequencerHistory.canRecordStructure(change);
 }
 
 FLASHMEM void CoreState::recordPreparedSequencerStructureHistory(
     sequencer::SequencerHistoryTrackStructureChangePtr change
 ) {
+    if (!change || !canRecordSequencerStructureHistory(*change)) return;
+    const uint16_t enabledMask = change->after.enabledMask;
+    const uint8_t activeTrack = change->after.activeTrack;
+    if (!publishPreparedSequencerTrackState(enabledMask, activeTrack)) return;
     sequencerHistory.recordPreparedStructure(std::move(change));
-    // The prepared Track transaction has already synchronized its bank/editor
-    // state. Marking the project dirty is allocation-free and deliberately
-    // avoids markSequencerProjectMutated_()/refreshSharedTrackStateFromSequencer().
+    publishPreparedSequencerMutation();
+}
+
+FLASHMEM void CoreState::publishPreparedSequencerMutation() {
+    auto* coalescer = sequencerDomain_.mutationCoalescer.get();
+    if (coalescer != nullptr) {
+        // The prepared transaction already performed the coalescer action's
+        // editor-to-bank synchronization. Cancel only this coalescer's queued
+        // callbacks (including later entries in an active notification wave)
+        // and consume an already-armed mark before publishing directly.
+        coalescer->consumePendingChangesWithoutAction();
+    }
     markProjectMutated();
 }
 

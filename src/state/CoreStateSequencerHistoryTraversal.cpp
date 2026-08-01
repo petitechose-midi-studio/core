@@ -386,7 +386,10 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
     if (hasActivation) {
         sequencerTrackActivations.commitHistoryTransition(activationTransition);
     }
-    markSequencerProjectMutated_();
+    // History application has already restored editor and bank atomically.
+    // Consume its deferred watched-signal notifications at the same prepared
+    // boundary so Undo publishes dirty/save exactly once without recloning.
+    publishPreparedSequencerMutation();
     sequencer::refreshContentView(sequencer);
     sequencer.contentView.bump();
     const bool trackPaste = hasActivation &&
@@ -464,7 +467,7 @@ FLASHMEM bool CoreState::redoSequencerHistory() {
     if (hasActivation) {
         sequencerTrackActivations.commitHistoryTransition(activationTransition);
     }
-    markSequencerProjectMutated_();
+    publishPreparedSequencerMutation();
     sequencer::refreshContentView(sequencer);
     sequencer.contentView.bump();
     const bool trackPaste = hasActivation &&

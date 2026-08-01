@@ -1219,7 +1219,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
         std::move(bankGraph)
     );
     state_->sequencerHistory.recordPreparedPattern(std::move(change));
-    state_->markProjectMutated();
+    state_->publishPreparedSequencerMutation();
     state_->sequencerTrackActivations.publishPrepared(activationBatch);
 
     result.activationGeneration = activationBatch.generation;

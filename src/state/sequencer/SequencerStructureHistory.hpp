@@ -75,6 +75,13 @@ struct SequencerHistoryTrackStructureChange {
     ) noexcept;
 };
 
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+static_assert(
+    sizeof(SequencerHistoryTrackStructureChange) == 27192U,
+    "LOCK-P: ARM Structure History transaction ABI changed"
+);
+#endif
+
 uint16_t sequencerHistoryTrackBit(uint8_t trackIndex);
 uint16_t sequencerHistorySanitizeTrackMask(uint16_t trackMask);
 uint8_t sequencerHistoryEnabledTrackCount(uint16_t enabledMask);
@@ -85,11 +92,43 @@ bool captureHistoryStructureSnapshot(
     uint16_t trackMask,
     SequencerHistoryTrackStructureSnapshot& out
 );
+bool reserveHistoryStructureSnapshotStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint16_t trackMask,
+    SequencerHistoryTrackStructureSnapshot& out
+);
+bool captureHistoryStructureSnapshotUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint16_t trackMask,
+    SequencerHistoryTrackStructureSnapshot& out
+);
 bool captureHistoryStructureSnapshotUsingReservedGraphs(
     const SequencerTrackBankState& bank,
     const SequencerState& active,
     uint16_t trackMask,
     SequencerHistoryTrackStructureSnapshot& out
+);
+
+SequencerHistoryTrackStructureChangePtr prepareHistoryStructureChangeBefore(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint16_t trackMask,
+    SequencerHistoryDescriptor descriptor = {}
+);
+// The before.capturedTrackMask is the immutable union of every Track needed by
+// both states, including any future active Track. Failed/partial reservations
+// are discard-only; capture rejects an active Track outside that frozen union.
+bool reservePreparedHistoryStructureAfter(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryTrackStructureChange& change
+);
+bool capturePreparedHistoryStructureAfterUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    SequencerHistoryTrackStructureChange& change
 );
 
 bool applyHistoryStructureSnapshot(

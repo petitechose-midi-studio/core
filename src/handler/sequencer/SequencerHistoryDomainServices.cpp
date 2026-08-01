@@ -77,6 +77,17 @@ FLASHMEM void recordPreparedPatternFromCoreState(
     state->markProjectMutated();
 }
 
+FLASHMEM void recordPreparedSynchronizedPatternFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerHistoryPatternChangePtr change
+) {
+    if (context == nullptr || !change) return;
+    auto* state = static_cast<core::state::CoreState*>(context);
+    if (!state->sequencerHistory.canRecordPattern(*change)) return;
+    state->sequencerHistory.recordPreparedPattern(std::move(change));
+    state->publishPreparedSequencerMutation();
+}
+
 FLASHMEM bool recordFullBankFromCoreState(
     void* context,
     core::state::sequencer::SequencerHistoryFullBankChangePtr change
@@ -87,6 +98,24 @@ FLASHMEM bool recordFullBankFromCoreState(
 
     auto* state = static_cast<core::state::CoreState*>(context);
     return state->recordSequencerBankHistory(std::move(change));
+}
+
+FLASHMEM bool canRecordFullBankFromCoreState(
+    void* context,
+    const core::state::sequencer::SequencerHistoryFullBankChange& change
+) {
+    if (context == nullptr) return false;
+    return static_cast<const core::state::CoreState*>(context)
+        ->canRecordSequencerBankHistory(change);
+}
+
+FLASHMEM void recordPreparedFullBankFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerHistoryFullBankChangePtr change
+) {
+    if (context == nullptr || !change) return;
+    static_cast<core::state::CoreState*>(context)
+        ->recordPreparedSequencerBankHistory(std::move(change));
 }
 
 FLASHMEM bool recordStructureFromCoreState(
@@ -188,10 +217,14 @@ FLASHMEM SequencerHistoryDomainServices SequencerHistoryDomainServices::fromCore
             .recordPatternChange = recordPatternChangeFromCoreState,
             .canRecordPattern = canRecordPatternFromCoreState,
             .recordPreparedPattern = recordPreparedPatternFromCoreState,
+            .recordPreparedSynchronizedPattern =
+                recordPreparedSynchronizedPatternFromCoreState,
             .recordStructure = recordStructureFromCoreState,
             .canRecordStructure = canRecordStructureFromCoreState,
             .recordPreparedStructure = recordPreparedStructureFromCoreState,
             .recordFullBank = recordFullBankFromCoreState,
+            .canRecordFullBank = canRecordFullBankFromCoreState,
+            .recordPreparedFullBank = recordPreparedFullBankFromCoreState,
             .beginCoalescedPatternEdit = beginCoalescedPatternEditFromCoreState,
             .beginCoalescedCcLaneEventEdit =
                 beginCoalescedCcLaneEventEditFromCoreState,
@@ -227,6 +260,24 @@ FLASHMEM void SequencerHistoryDomainServices::recordPreparedPattern(
 ) const {
     if (operations_.recordPreparedPattern == nullptr) return;
     operations_.recordPreparedPattern(operations_.context, std::move(change));
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::canRecordSynchronizedPattern(
+    const core::state::sequencer::SequencerHistoryPatternChange& change
+) const {
+    return operations_.canRecordPattern != nullptr &&
+           operations_.recordPreparedSynchronizedPattern != nullptr &&
+           operations_.canRecordPattern(operations_.context, change);
+}
+
+FLASHMEM void SequencerHistoryDomainServices::recordPreparedSynchronizedPattern(
+    core::state::sequencer::SequencerHistoryPatternChangePtr change
+) const {
+    if (operations_.recordPreparedSynchronizedPattern == nullptr) return;
+    operations_.recordPreparedSynchronizedPattern(
+        operations_.context,
+        std::move(change)
+    );
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::recordFlatPattern(
@@ -283,6 +334,21 @@ FLASHMEM bool SequencerHistoryDomainServices::recordFullBank(
                operations_.context,
                std::move(change)
            );
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::canRecordFullBank(
+    const core::state::sequencer::SequencerHistoryFullBankChange& change
+) const {
+    return operations_.canRecordFullBank != nullptr &&
+           operations_.recordPreparedFullBank != nullptr &&
+           operations_.canRecordFullBank(operations_.context, change);
+}
+
+FLASHMEM void SequencerHistoryDomainServices::recordPreparedFullBank(
+    core::state::sequencer::SequencerHistoryFullBankChangePtr change
+) const {
+    if (operations_.recordPreparedFullBank == nullptr) return;
+    operations_.recordPreparedFullBank(operations_.context, std::move(change));
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedPatternEdit(

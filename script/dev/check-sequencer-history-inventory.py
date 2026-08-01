@@ -16,6 +16,18 @@ SOURCE_SUFFIXES = frozenset((".c", ".cc", ".cpp", ".h", ".hpp"))
 BUILD_SUFFIXES = frozenset(
     (".cmake", ".ini", ".py", ".ps1", ".sh", ".toml", ".yaml", ".yml")
 )
+CANONICAL_RECORDING_METHODS = (
+    "recordPattern",
+    "recordFlatPattern",
+    "recordFullBank",
+    "recordStructure",
+    "recordPreparedPattern",
+    "recordPreparedSynchronizedPattern",
+    "recordPreparedFullBank",
+    "recordPreparedStructure",
+)
+ENTRY_RECORDING_CALL_TOTAL = 44
+EXPECTED_PROVIDER_FORWARD_TOTAL = 5
 
 
 def sanitize_cpp(source: str) -> str:
@@ -177,12 +189,15 @@ def manifest_errors(manifest) -> list[str]:
         return errors + ["manifest is missing the recordingBoundary member inventory"]
 
     methods = members.get("methods", [])
-    if len(methods) != 6 or len(set(methods)) != 6:
-        errors.append("member-dispatch method set must contain six unique methods")
+    if tuple(methods) != CANONICAL_RECORDING_METHODS:
+        errors.append("member-dispatch methods must match the canonical eight-method boundary")
+    if members.get("expectedMethodCount") != len(CANONICAL_RECORDING_METHODS):
+        errors.append("member-dispatch expectedMethodCount must remain 8")
 
     seen = set()
     sink_total = 0
     service_total = 0
+    provider_forward_total = 0
     classifications = Counter()
     for group in groups:
         key = (group.get("path"), group.get("method"))
@@ -195,6 +210,14 @@ def manifest_errors(manifest) -> list[str]:
         if not isinstance(count, int) or count <= 0:
             errors.append(f"{key[0]}:{key[1]} must have a positive integer count")
             continue
+        provider_count = group.get("providerForwardCount", 0)
+        if (type(provider_count) is not int or
+                provider_count < 0 or provider_count > count):
+            errors.append(
+                f"{key[0]}:{key[1]} has invalid providerForwardCount"
+            )
+            provider_count = 0
+        provider_forward_total += provider_count
         role = group.get("role")
         if role == "sink":
             classification = group.get("classification")
@@ -208,6 +231,10 @@ def manifest_errors(manifest) -> list[str]:
             service_total += count
         else:
             errors.append(f"{key[0]}:{key[1]} has invalid role {role!r}")
+        if provider_count and role != "service-adapter":
+            errors.append(
+                f"{key[0]}:{key[1]} provider forwards must be service adapters"
+            )
 
     member_total = sum(group.get("count", 0) for group in groups)
     if member_total != members.get("expectedTotal"):
@@ -238,8 +265,34 @@ def manifest_errors(manifest) -> list[str]:
             f"internal-forward manifest total is {forward_total}, "
             f"expected {forwards.get('expectedTotal')}"
         )
-    if any(group.get("method") not in methods for group in forward_groups):
-        errors.append("internal forwards must use the six-method recording boundary")
+    forward_methods = set()
+    for group in forward_groups:
+        method = group.get("method")
+        count = group.get("count")
+        if method in forward_methods:
+            errors.append(f"duplicate internal-forward method: {method}")
+        forward_methods.add(method)
+        if method not in CANONICAL_RECORDING_METHODS:
+            errors.append("internal forwards must use the canonical eight-method boundary")
+        if not isinstance(count, int) or count <= 0:
+            errors.append(f"internal forward {method} must have a positive integer count")
+            continue
+        provider_count = group.get("providerForwardCount", 0)
+        if (type(provider_count) is not int or
+                provider_count < 0 or provider_count > count):
+            errors.append(f"internal forward {method} has invalid providerForwardCount")
+        else:
+            provider_forward_total += provider_count
+
+    if boundary.get("entryRecordingCallTotal") != ENTRY_RECORDING_CALL_TOTAL:
+        errors.append("entry recording-call total must remain 44")
+    if boundary.get("expectedProviderForwardTotal") != EXPECTED_PROVIDER_FORWARD_TOTAL:
+        errors.append("expected provider-forward total must remain 5")
+    if provider_forward_total != EXPECTED_PROVIDER_FORWARD_TOTAL:
+        errors.append(
+            f"provider-forward manifest total is {provider_forward_total}, "
+            f"expected {EXPECTED_PROVIDER_FORWARD_TOTAL}"
+        )
 
     adapter = boundary.get("coreStateAdapter", {})
     recording_total = (
@@ -251,6 +304,11 @@ def manifest_errors(manifest) -> list[str]:
         errors.append(
             f"recording boundary total is {recording_total}, "
             f"expected {boundary.get('expectedTotal')}"
+        )
+    if recording_total != ENTRY_RECORDING_CALL_TOTAL + provider_forward_total:
+        errors.append(
+            "recording boundary must equal the 44-call entry plus five "
+            "explicitly classified provider forwards"
         )
 
     exclusions = boundary.get("explicitExclusions", [])
@@ -702,6 +760,23 @@ def run_self_tests(manifest) -> list[str]:
     if not any("sink classification totals differ" in error for error in classification_errors):
         failures.append("wrong sink classification was not rejected")
 
+    method_drift = copy.deepcopy(manifest)
+    method_drift["recordingBoundary"]["memberDispatch"]["methods"][-1] = (
+        "recordUnexpected"
+    )
+    method_errors = manifest_errors(method_drift)
+    if not any("canonical eight-method boundary" in error for error in method_errors):
+        failures.append("recording-method set drift was not rejected")
+
+    provider_drift = copy.deepcopy(manifest)
+    for group in provider_drift["recordingBoundary"]["memberDispatch"]["groups"]:
+        if group.get("providerForwardCount", 0) > 0:
+            group["providerForwardCount"] -= 1
+            break
+    provider_errors = manifest_errors(provider_drift)
+    if not any("provider-forward manifest total" in error for error in provider_errors):
+        failures.append("unclassified provider-forward drift was not rejected")
+
     if not scanner_self_test(manifest):
         failures.append("source scanner/sanitizer fixture was not classified exactly")
     if not non_member_topology_self_test(manifest):
@@ -718,7 +793,7 @@ def load_manifest(path: Path):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Check the L-R08-01 Sequencer history inventory ratchet."
+        description="Check the L-R08 Sequencer history inventory ratchet."
     )
     parser.add_argument("--root", type=Path, default=ROOT, help="Core repository root")
     parser.add_argument(
@@ -749,7 +824,7 @@ def main() -> int:
             for failure in failures:
                 print(f"[FAIL] {failure}", file=sys.stderr)
             return 1
-        print("Sequencer history inventory self-tests: OK (6/6)")
+        print("Sequencer history inventory self-tests: OK (8/8)")
         return 0
 
     root = args.root.resolve()
