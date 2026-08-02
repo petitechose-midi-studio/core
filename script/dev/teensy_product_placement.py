@@ -53,6 +53,7 @@ PAGE_STRUCTURE_FLASH_MARKERS = (
 TRACK_STRUCTURE_ADAPTER_FLASH_MARKERS = (
     "executeSequencerCreateTrackStructure(",
     "executeSequencerRemoveCurrentTrackStructure(",
+    "executeSequencerRemoveSelectionTrackStructure(",
     "(anonymous namespace)::captureIntent(",
     "(anonymous namespace)::executeDirect(",
     "(anonymous namespace)::intentStillMatches(",

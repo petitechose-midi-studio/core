@@ -229,14 +229,7 @@ struct TrackHoldBoundaryDriftHistory {
     uint16_t nextSelectionMask = 0U;
     std::size_t boundaryCount = 0U;
 
-    static seq::SequencerPatternHistoryCommitOutcome boundary(void* context) {
-        auto& self = *static_cast<TrackHoldBoundaryDriftHistory*>(context);
-        ++self.boundaryCount;
-        const auto outcome =
-            self.state->commitSequencerPatternHistoryCoalescingOutcome();
-        if (outcome == seq::SequencerPatternHistoryCommitOutcome::Failed) {
-            return outcome;
-        }
+    static void applyDrift(TrackHoldBoundaryDriftHistory& self) {
         switch (self.drift) {
             case TrackHoldBoundaryDrift::ActiveTrack:
                 assert(self.state->setSharedTrackState(
@@ -250,12 +243,39 @@ struct TrackHoldBoundaryDriftHistory {
                 );
                 break;
         }
+    }
+
+    static seq::SequencerPatternHistoryCommitOutcome boundary(void* context) {
+        auto& self = *static_cast<TrackHoldBoundaryDriftHistory*>(context);
+        ++self.boundaryCount;
+        const auto outcome =
+            self.state->commitSequencerPatternHistoryCoalescingOutcome();
+        if (outcome == seq::SequencerPatternHistoryCommitOutcome::Failed) {
+            return outcome;
+        }
+        applyDrift(self);
         return outcome;
+    }
+
+    static seq::SequencerTrackStructureChronologyResult trackBoundary(
+        void* context
+    ) {
+        auto& self = *static_cast<TrackHoldBoundaryDriftHistory*>(context);
+        ++self.boundaryCount;
+        const auto result =
+            self.state->openSequencerTrackStructureChronologyBoundary();
+        if (result.status ==
+            seq::SequencerTrackStructureChronologyStatus::Opened) {
+            applyDrift(self);
+        }
+        return result;
     }
 };
 
 constexpr HistoryServices::Operations kTrackHoldBoundaryDriftHistoryOperations{
     .commitCoalescedPatternEdit = &TrackHoldBoundaryDriftHistory::boundary,
+    .openTrackStructureChronologyBoundary =
+        &TrackHoldBoundaryDriftHistory::trackBoundary,
 };
 
 struct DirectTrackChronologyCounter {
@@ -1100,6 +1120,21 @@ void installTrackColdOwners(seq::SequencerPatternState& pattern, uint8_t tag) {
     pattern.ccLaneRevision.set(pattern.ccLanes->revision);
 }
 
+void retainTrackColdOwnerKinds(
+    seq::SequencerPatternState& pattern,
+    bool retainGraph,
+    bool retainCc
+) {
+    if (!retainGraph) {
+        pattern.graph.reset();
+        pattern.graphRevision.set(0U);
+    }
+    if (!retainCc) {
+        pattern.ccLanes.reset();
+        pattern.ccLaneRevision.set(0U);
+    }
+}
+
 struct TrackPatternPhysicalInvariant {
     static constexpr std::size_t COUNT = TrackBank::TRACK_COUNT + 1U;
     std::array<const void*, COUNT> graphOwners{};
@@ -1107,6 +1142,7 @@ struct TrackPatternPhysicalInvariant {
     std::array<uint64_t, COUNT> flatHashes{};
     std::array<uint64_t, COUNT> graphHashes{};
     std::array<uint64_t, COUNT> ccHashes{};
+    std::array<std::array<uint32_t, 6U>, COUNT> revisions{};
 };
 
 void captureTrackPatternPhysical(
@@ -1119,6 +1155,14 @@ void captureTrackPatternPhysical(
     out.flatHashes[index] = trackFlatHash(pattern);
     out.graphHashes[index] = objectHash(pattern.graph.get());
     out.ccHashes[index] = objectHash(pattern.ccLanes.get());
+    out.revisions[index] = {
+        pattern.stepDataRevision.get(),
+        pattern.patternVariationRevision.get(),
+        pattern.patternScaleRevision.get(),
+        pattern.patternTimingRevision.get(),
+        pattern.graphRevision.get(),
+        pattern.ccLaneRevision.get(),
+    };
 }
 
 TrackPatternPhysicalInvariant captureTrackPatternPhysicalInvariant(
@@ -1589,6 +1633,55 @@ DirectTrackFixture configureDirectTrackFixture(
         .incoming = trackColdOwners(state.sequencerTracks.track(target)),
         .selectorRevision = state.sequencer.contextSelector.revision.get(),
     };
+}
+
+DirectTrackFixture configureSelectionRemoveFixture(
+    SequencerStepHarness& h,
+    uint16_t enabledMask,
+    uint16_t selectedMask
+) {
+    auto fixture = configureDirectTrackFixture(
+        h,
+        DirectTrackFixtureKind::RemoveCurrent
+    );
+    if (enabledMask != kDirectTrackSparseMask) {
+        assert(h.state.setSharedTrackState(
+            enabledMask,
+            kDirectTrackOldActive
+        ));
+        test_support::drainNotifications();
+        core::handler::SharedTrackDomainServices::fromCoreState(h.state)
+            .reconcilePreparedSequencerActiveTrackPresentation();
+    }
+
+    auto& selection = h.state.trackNavigation.selection;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.state.trackNavigation.previewAddSlot.set(false);
+    h.state.trackNavigation.syncPreviewTrack(kDirectTrackOldActive);
+    selection.active.set(true);
+    selection.scope.set(core::state::StructureSelectionScope::TRACK);
+    selection.placing.set(false);
+    selection.cursorIndex.set(kDirectTrackOldActive);
+    selection.selectedMask.set(selectedMask);
+    selection.destinationMask.set(0x0240U);
+    selection.overwriteMask.set(0x0040U);
+    selection.pasteBlocked.set(true);
+    selection.clipboardRevision.set(93U);
+    test_support::drainNotifications();
+    return fixture;
+}
+
+void assertTrackPatternPhysicalInvariant(
+    const SequencerStepHarness& h,
+    const TrackPatternPhysicalInvariant& expected
+) {
+    const auto actual = captureTrackPatternPhysicalInvariant(h);
+    assert(actual.graphOwners == expected.graphOwners);
+    assert(actual.ccOwners == expected.ccOwners);
+    assert(actual.flatHashes == expected.flatHashes);
+    assert(actual.graphHashes == expected.graphHashes);
+    assert(actual.ccHashes == expected.ccHashes);
+    assert(actual.revisions == expected.revisions);
 }
 
 core::handler::SequencerDirectTrackStructureStateRefs directTrackRefs(
@@ -4251,6 +4344,500 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
     std::cout << "[PASS] failed PageClear/PageDelete commits restore editor state\n";
 }
 
+void test_direct_track_selection_remove_sparse_and_max_masks_replay_exactly() {
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+    constexpr uint16_t oldActiveBit =
+        static_cast<uint16_t>(1U << kDirectTrackOldActive);
+    constexpr uint16_t incomingBit =
+        static_cast<uint16_t>(1U << kDirectTrackIncoming);
+
+    {
+        SequencerStepHarness h;
+        const auto fixture = configureSelectionRemoveFixture(
+            h,
+            kDirectTrackSparseMask,
+            static_cast<uint16_t>(oldActiveBit | 0x0001U)
+        );
+        installTrackColdOwners(h.state.sequencerTracks.track(0U), 9U);
+        const auto untouchedGraph =
+            h.state.sequencerTracks.track(0U).graph.get();
+        const auto untouchedCc =
+            h.state.sequencerTracks.track(0U).ccLanes.get();
+        const uint64_t untouchedFlat =
+            trackFlatHash(h.state.sequencerTracks.track(0U));
+        const uint64_t untouchedGraphHash = objectHash(untouchedGraph);
+        const uint64_t untouchedCcHash = objectHash(untouchedCc);
+        const auto beforeLogical = captureCanonicalTrackLogicalProof(h);
+        const auto beforePublication = tx::captureStateInvariant(h.state);
+        const auto beforeMacros = captureTrackMacroInvariant(h);
+        const uint64_t projectTracksBefore = byteHash(
+            &h.state.projectTracks.authored,
+            sizeof(h.state.projectTracks.authored)
+        );
+
+        auto workflow = makeStructureEditWorkflow(
+            h,
+            HistoryServices::fromCoreState(h.state)
+        );
+        workflow.beginSelectionHoldAction(
+            core::state::StructureHoldAction::REMOVE
+        );
+        workflow.applyLatchedTrackSelectionLongPress();
+        test_support::drainNotifications();
+
+        assert(h.state.sequencerTracks.currentEnabledMask() == incomingBit);
+        assert(h.state.sharedTrackEnabledMask.get() == incomingBit);
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackIncoming);
+        assert(h.state.sharedTrackActive.get() == kDirectTrackIncoming);
+        assert(!h.state.trackNavigation.selection.active.get());
+        assert(!h.state.trackNavigation.selection.placing.get());
+        assert(h.state.trackNavigation.selection.scope.get() ==
+               core::state::StructureSelectionScope::TRACK);
+        assert(h.state.trackNavigation.selection.cursorIndex.get() ==
+               kDirectTrackIncoming);
+        assert(h.state.trackNavigation.selection.selectedMask.get() == 0U);
+        assert(h.navigationFocus.get() ==
+               core::state::StructureNavigationFocus::TRACK);
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackIncoming);
+        assert(!h.state.trackNavigation.previewAddSlot.get());
+        assert(h.state.sequencer.focusedStep.get() == 4U);
+        assert(h.state.sequencer.page.get() == 0U);
+        assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0U);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+
+        const auto& untouched = h.state.sequencerTracks.track(0U);
+        assert(untouched.graph.get() == untouchedGraph);
+        assert(untouched.ccLanes.get() == untouchedCc);
+        assert(trackFlatHash(untouched) == untouchedFlat);
+        assert(objectHash(untouched.graph.get()) == untouchedGraphHash);
+        assert(objectHash(untouched.ccLanes.get()) == untouchedCcHash);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackOldActive)).graph ==
+               fixture.editor.graph);
+        assert(trackColdOwners(h.state.sequencer.pattern).graph ==
+               fixture.incoming.graph);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackIncoming)).graph ==
+               fixture.scratch.graph);
+        assert(byteHash(
+                   &h.state.projectTracks.authored,
+                   sizeof(h.state.projectTracks.authored)
+               ) == projectTracksBefore);
+
+        assertActiveMacroPresentation(h);
+        const auto afterMacros = captureTrackMacroInvariant(h);
+        assert(afterMacros.tracksHash == beforeMacros.tracksHash);
+        assert(afterMacros.controlAuthoredHash ==
+               beforeMacros.controlAuthoredHash);
+        assert(afterMacros.manualOverridesHash ==
+               beforeMacros.manualOverridesHash);
+        assert(afterMacros.controlAuthoredRevision ==
+               beforeMacros.controlAuthoredRevision);
+        assert(afterMacros.configRevision == beforeMacros.configRevision);
+        assert(afterMacros.automationEditRevision ==
+               beforeMacros.automationEditRevision);
+        assert(afterMacros.runtimeProjectionRevision ==
+               beforeMacros.runtimeProjectionRevision);
+        assert(afterMacros.runtimeOwnerRevision ==
+               beforeMacros.runtimeOwnerRevision);
+        assertSingleTrackStructurePublication(h, beforePublication);
+
+        const auto afterLogical = captureCanonicalTrackLogicalProof(h);
+        assert(h.state.undoProjectHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, beforeLogical);
+        assertActiveMacroPresentation(h);
+        assert(h.state.redoProjectHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, afterLogical);
+        assertActiveMacroPresentation(h);
+    }
+
+    {
+        SequencerStepHarness h;
+        configureSelectionRemoveFixture(
+            h,
+            kDirectTrackSparseMask,
+            0x0001U
+        );
+        h.state.sequencer.pattern.setContentLength(40U);
+        h.state.sequencerTracks.track(
+            kDirectTrackOldActive
+        ).setContentLength(11U);
+        h.state.sequencer.focusedStep.set(31U);
+        h.state.sequencer.page.set(3U);
+        h.state.sequencer.structureUi.previewPageIndex.set(3U);
+        installTrackColdOwners(h.state.sequencerTracks.track(0U), 10U);
+        const auto beforePhysical = captureTrackPatternPhysicalInvariant(h);
+        const auto beforePublication = tx::captureStateInvariant(h.state);
+        const auto beforeMacros = captureTrackMacroInvariant(h);
+
+        const auto result =
+            core::handler::executeSequencerRemoveSelectionTrackStructure(
+                directTrackRefs(h),
+                kDirectTrackOldActive
+            );
+        assert(result.status == Status::Committed);
+        test_support::drainNotifications();
+
+        assert(h.state.sequencerTracks.currentEnabledMask() == 0x0024U);
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackOldActive);
+        assert(h.state.sequencer.focusedStep.get() == 31U);
+        assert(h.state.sequencer.page.get() == 3U);
+        assert(h.state.sequencer.structureUi.previewPageIndex.get() == 3U);
+        assertTrackPatternPhysicalInvariant(h, beforePhysical);
+        const auto afterMacros = captureTrackMacroInvariant(h);
+        assert(afterMacros.activeTrack == beforeMacros.activeTrack);
+        assert(afterMacros.activePage == beforeMacros.activePage);
+        assert(afterMacros.tracksHash == beforeMacros.tracksHash);
+        assert(afterMacros.controlAuthoredHash ==
+               beforeMacros.controlAuthoredHash);
+        assert(afterMacros.manualOverridesHash ==
+               beforeMacros.manualOverridesHash);
+        assert(afterMacros.runtimeOwnerRevision ==
+               beforeMacros.runtimeOwnerRevision);
+        assert(afterMacros.configRevision == beforeMacros.configRevision);
+        assert(afterMacros.automationEditRevision ==
+               beforeMacros.automationEditRevision);
+        assert(afterMacros.runtimeProjectionRevision ==
+               beforeMacros.runtimeProjectionRevision);
+        assertSingleTrackStructurePublication(h, beforePublication);
+    }
+
+    {
+        SequencerStepHarness h;
+        constexpr uint16_t allTracks = 0xFFFFU;
+        constexpr uint16_t selected = static_cast<uint16_t>(
+            allTracks & static_cast<uint16_t>(~incomingBit)
+        );
+        configureSelectionRemoveFixture(h, allTracks, selected);
+        for (const uint8_t track : std::array<uint8_t, 3U>{0U, 7U, 15U}) {
+            auto& pattern = h.state.sequencerTracks.track(track);
+            pattern.setContentLength(static_cast<uint8_t>(8U + track));
+            installTrackColdOwners(pattern, static_cast<uint8_t>(11U + track));
+        }
+        const auto beforeLogical = captureCanonicalTrackLogicalProof(h);
+        const auto beforePhysical = captureTrackPatternPhysicalInvariant(h);
+
+        const auto result =
+            core::handler::executeSequencerRemoveSelectionTrackStructure(
+                directTrackRefs(h),
+                kDirectTrackOldActive
+            );
+        assert(result.status == Status::Committed);
+        test_support::drainNotifications();
+        assert(h.state.sequencerTracks.currentEnabledMask() == incomingBit);
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackIncoming);
+        const auto afterPhysical = captureTrackPatternPhysicalInvariant(h);
+        for (const uint8_t track : std::array<uint8_t, 3U>{0U, 7U, 15U}) {
+            const std::size_t index = static_cast<std::size_t>(track) + 1U;
+            assert(afterPhysical.graphOwners[index] ==
+                   beforePhysical.graphOwners[index]);
+            assert(afterPhysical.ccOwners[index] ==
+                   beforePhysical.ccOwners[index]);
+            assert(afterPhysical.flatHashes[index] ==
+                   beforePhysical.flatHashes[index]);
+            assert(afterPhysical.graphHashes[index] ==
+                   beforePhysical.graphHashes[index]);
+            assert(afterPhysical.ccHashes[index] ==
+                   beforePhysical.ccHashes[index]);
+        }
+        const auto afterLogical = captureCanonicalTrackLogicalProof(h);
+        assert(h.state.undoSequencerHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, beforeLogical);
+        assert(h.state.redoSequencerHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, afterLogical);
+    }
+
+    std::cout
+        << "[PASS] direct Track selection sparse/max removal and replay are exact\n";
+}
+
+void test_direct_track_selection_remove_preserves_optional_owner_pairs() {
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+    struct OwnerMode {
+        bool graph = false;
+        bool cc = false;
+    };
+    constexpr std::array<OwnerMode, 4U> modes{{
+        {false, false},
+        {true, false},
+        {false, true},
+        {true, true},
+    }};
+    constexpr uint16_t selectedMask = static_cast<uint16_t>(
+        (1U << kDirectTrackOldActive) | 0x0001U
+    );
+
+    for (const auto mode : modes) {
+        SequencerStepHarness h;
+        configureSelectionRemoveFixture(
+            h,
+            kDirectTrackSparseMask,
+            selectedMask
+        );
+        retainTrackColdOwnerKinds(h.state.sequencer.pattern, mode.graph, mode.cc);
+        retainTrackColdOwnerKinds(
+            h.state.sequencerTracks.track(kDirectTrackOldActive),
+            mode.graph,
+            mode.cc
+        );
+        retainTrackColdOwnerKinds(
+            h.state.sequencerTracks.track(kDirectTrackIncoming),
+            mode.graph,
+            mode.cc
+        );
+        const auto editor = trackColdOwners(h.state.sequencer.pattern);
+        const auto scratch = trackColdOwners(
+            h.state.sequencerTracks.track(kDirectTrackOldActive)
+        );
+        const auto incoming = trackColdOwners(
+            h.state.sequencerTracks.track(kDirectTrackIncoming)
+        );
+        const auto beforeLogical = captureCanonicalTrackLogicalProof(h);
+        const auto beforePhysical = captureTrackPatternPhysicalInvariant(h);
+        const auto assertSelectedNonActiveExact = [&]() {
+            constexpr std::size_t selectedTrackIndex = 1U;
+            const auto actual = captureTrackPatternPhysicalInvariant(h);
+            assert(actual.graphOwners[selectedTrackIndex] ==
+                   beforePhysical.graphOwners[selectedTrackIndex]);
+            assert(actual.ccOwners[selectedTrackIndex] ==
+                   beforePhysical.ccOwners[selectedTrackIndex]);
+            assert(actual.flatHashes[selectedTrackIndex] ==
+                   beforePhysical.flatHashes[selectedTrackIndex]);
+            assert(actual.graphHashes[selectedTrackIndex] ==
+                   beforePhysical.graphHashes[selectedTrackIndex]);
+            assert(actual.ccHashes[selectedTrackIndex] ==
+                   beforePhysical.ccHashes[selectedTrackIndex]);
+            assert(actual.revisions[selectedTrackIndex] ==
+                   beforePhysical.revisions[selectedTrackIndex]);
+        };
+
+        const auto result =
+            core::handler::executeSequencerRemoveSelectionTrackStructure(
+                directTrackRefs(h),
+                kDirectTrackOldActive
+            );
+        assert(result.status == Status::Committed);
+        test_support::drainNotifications();
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackOldActive)).graph ==
+               editor.graph);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackOldActive)).cc ==
+               editor.cc);
+        assert(trackColdOwners(h.state.sequencer.pattern).graph == incoming.graph);
+        assert(trackColdOwners(h.state.sequencer.pattern).cc == incoming.cc);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackIncoming)).graph ==
+               scratch.graph);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackIncoming)).cc ==
+               scratch.cc);
+        assertSelectedNonActiveExact();
+        const auto afterLogical = captureCanonicalTrackLogicalProof(h);
+
+        assert(h.state.undoSequencerHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, beforeLogical);
+        assertSelectedNonActiveExact();
+        assert(h.state.redoSequencerHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, afterLogical);
+        assertSelectedNonActiveExact();
+        assertActiveMacroPresentation(h);
+    }
+
+    std::cout
+        << "[PASS] direct Track selection optional owner pairs replay exactly\n";
+}
+
+void test_direct_track_selection_invalid_masks_skip_chronology() {
+    using ChronologyStatus =
+        seq::SequencerTrackStructureChronologyStatus;
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+    constexpr std::array<uint16_t, 3U> invalidSelections{
+        0U,
+        kDirectTrackSparseMask,
+        0x0040U,
+    };
+
+    for (const uint16_t selectedMask : invalidSelections) {
+        SequencerStepHarness h;
+        configureSelectionRemoveFixture(
+            h,
+            kDirectTrackSparseMask,
+            selectedMask
+        );
+        preparePendingTrackPatternEdit(h.state);
+        test_support::drainNotifications();
+        const auto expected = captureTrackTransactionInvariant(h);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            const auto result =
+                core::handler::executeSequencerRemoveSelectionTrackStructure(
+                    directTrackRefs(h),
+                    kDirectTrackOldActive
+                );
+            assert(result.status == Status::Invalid);
+            assert(result.chronology.status == ChronologyStatus::Unavailable);
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+        assertTrackTransactionInvariant(h, expected, true);
+        tx::assertFailureInjectionReset();
+    }
+
+    {
+        SequencerStepHarness h;
+        configureSelectionRemoveFixture(
+            h,
+            kDirectTrackSparseMask,
+            static_cast<uint16_t>(
+                (1U << kDirectTrackOldActive) | 0x0040U
+            )
+        );
+        const auto disabledBefore =
+            captureTrackPatternPhysicalInvariant(h);
+        const auto result =
+            core::handler::executeSequencerRemoveSelectionTrackStructure(
+                directTrackRefs(h),
+                kDirectTrackOldActive
+            );
+        assert(result.status == Status::Committed);
+        assert(h.state.sequencerTracks.currentEnabledMask() == 0x0021U);
+        const auto disabledAfter = captureTrackPatternPhysicalInvariant(h);
+        constexpr std::size_t disabledIndex = 6U + 1U;
+        assert(disabledAfter.graphOwners[disabledIndex] ==
+               disabledBefore.graphOwners[disabledIndex]);
+        assert(disabledAfter.ccOwners[disabledIndex] ==
+               disabledBefore.ccOwners[disabledIndex]);
+        assert(disabledAfter.flatHashes[disabledIndex] ==
+               disabledBefore.flatHashes[disabledIndex]);
+    }
+
+    std::cout
+        << "[PASS] direct Track selection invalid/outside masks are exact\n";
+}
+
+void test_direct_track_selection_fail_nth_is_atomic() {
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+    constexpr uint16_t selected = static_cast<uint16_t>(
+        (1U << kDirectTrackOldActive) | 0x0001U
+    );
+
+    for (std::size_t ordinal = 1U; ordinal <= 9U; ++ordinal) {
+        SequencerStepHarness h;
+        configureSelectionRemoveFixture(
+            h,
+            kDirectTrackSparseMask,
+            selected
+        );
+        const auto expected = captureTrackTransactionInvariant(h);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            const auto result =
+                core::handler::executeSequencerRemoveSelectionTrackStructure(
+                    directTrackRefs(h),
+                    kDirectTrackOldActive
+                );
+            assert(result.status == Status::AllocationUnavailable);
+            tx::assertFailureConsumed(ordinal);
+        }
+        test_support::drainNotifications();
+        assertTrackTransactionInvariant(h, expected);
+        tx::assertFailureInjectionReset();
+    }
+
+    {
+        SequencerStepHarness h;
+        configureSelectionRemoveFixture(
+            h,
+            kDirectTrackSparseMask,
+            selected
+        );
+        core::app::testing::ScopedExtmemAllocationFailure failure(10U);
+        const auto result =
+            core::handler::executeSequencerRemoveSelectionTrackStructure(
+                directTrackRefs(h),
+                kDirectTrackOldActive
+            );
+        assert(result.status == Status::Committed);
+        tx::assertMaxPlusOneStillArmed(9U);
+    }
+    tx::assertFailureInjectionReset();
+
+    std::cout
+        << "[PASS] direct Track selection fail-Nth 1..9 and success 10 are exact\n";
+}
+
+void test_direct_track_selection_activation_collisions_are_atomic() {
+    using ChronologyStatus =
+        seq::SequencerTrackStructureChronologyStatus;
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+    constexpr uint16_t selected = static_cast<uint16_t>(
+        (1U << kDirectTrackOldActive) | 0x0001U
+    );
+
+    for (const bool playing : std::array<bool, 2U>{false, true}) {
+        for (const uint16_t collision : std::array<uint16_t, 3U>{
+                 0x0001U,
+                 static_cast<uint16_t>(1U << kDirectTrackOldActive),
+                 static_cast<uint16_t>(1U << kDirectTrackIncoming),
+             }) {
+            SequencerStepHarness h;
+            configureSelectionRemoveFixture(
+                h,
+                kDirectTrackSparseMask,
+                selected
+            );
+            h.state.statusBar.playing.set(playing);
+            armTrackActivation(
+                h.state.sequencerTrackActivations,
+                collision,
+                playing
+            );
+            const auto activationBefore = captureActivationQueueGuard(
+                h.state.sequencerTrackActivations,
+                collision
+            );
+            const auto expected = captureTrackTransactionInvariant(h);
+            {
+                core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+                const auto result = core::handler::
+                    executeSequencerRemoveSelectionTrackStructure(
+                        directTrackRefs(h),
+                        kDirectTrackOldActive
+                    );
+                assert(result.status == Status::Stale);
+                assert(result.chronology.status == ChronologyStatus::Opened);
+                tx::assertMaxPlusOneStillArmed(0U);
+            }
+            test_support::drainNotifications();
+            assertTrackTransactionInvariant(h, expected);
+            const auto activationAfter = captureActivationQueueGuard(
+                h.state.sequencerTrackActivations,
+                collision
+            );
+            assertSameActivationQueueGuard(
+                activationAfter,
+                activationBefore
+            );
+            tx::assertFailureInjectionReset();
+        }
+    }
+
+    std::cout
+        << "[PASS] direct Track selection activation collisions are atomic\n";
+}
+
 void test_direct_track_create_remove_are_atomic_and_replay_exactly() {
     using Status = core::handler::SequencerPreparedTrackStructureStatus;
 
@@ -4537,6 +5124,68 @@ void test_direct_track_global_history_and_redo_branch_are_exact() {
         assertUndoDescriptor();
     }
 
+    {
+        constexpr uint16_t selectedMask = static_cast<uint16_t>(
+            (1U << kDirectTrackOldActive) | 0x0001U
+        );
+        SequencerStepHarness h;
+        configureSelectionRemoveFixture(
+            h,
+            kDirectTrackSparseMask,
+            selectedMask
+        );
+        const auto beforeLogical = captureCanonicalTrackLogicalProof(h);
+        const auto commit = [&]() {
+            return core::handler::executeSequencerRemoveSelectionTrackStructure(
+                directTrackRefs(h),
+                kDirectTrackOldActive
+            );
+        };
+
+        assert(commit().status == Status::Committed);
+        test_support::drainNotifications();
+        const auto afterLogical = captureCanonicalTrackLogicalProof(h);
+        assert(h.state.sequencerHistory.undoCount(Scope::Structure) == 1U);
+        assert(h.state.projectHistory.redoCount() == 0U);
+        const auto* firstUndo = h.state.projectHistory.peekUndo();
+        assert(firstUndo != nullptr);
+        assert(firstUndo->domain == Domain::Sequencer);
+        assert(firstUndo->actionKind ==
+               static_cast<uint8_t>(ActionKind::TrackStructure));
+
+        assert(h.state.undoProjectHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, beforeLogical);
+        assert(h.state.projectHistory.redoCount() == 1U);
+
+        auto& selection = h.state.trackNavigation.selection;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+        h.state.trackNavigation.previewAddSlot.set(false);
+        h.state.trackNavigation.syncPreviewTrack(kDirectTrackOldActive);
+        selection.active.set(true);
+        selection.scope.set(core::state::StructureSelectionScope::TRACK);
+        selection.placing.set(false);
+        selection.cursorIndex.set(kDirectTrackOldActive);
+        selection.selectedMask.set(selectedMask);
+        test_support::drainNotifications();
+
+        assert(commit().status == Status::Committed);
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, afterLogical);
+        assert(h.state.sequencerHistory.redoCount(Scope::Structure) == 0U);
+        assert(h.state.projectHistory.redoCount() == 0U);
+        assert(h.state.projectHistory.peekRedo() == nullptr);
+        assert(!h.state.redoProjectHistory());
+
+        assert(h.state.undoProjectHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, beforeLogical);
+        assert(h.state.redoProjectHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, afterLogical);
+        assertActiveMacroPresentation(h);
+    }
+
     std::cout
         << "[PASS] direct Track global history and redo truncation are exact\n";
 }
@@ -4806,6 +5455,55 @@ void test_direct_track_pattern_chronology_is_single_and_ordered() {
         assertActiveMacroPresentation(h);
     }
 
+    {
+        SequencerStepHarness h;
+        constexpr uint16_t selectedMask = static_cast<uint16_t>(
+            (1U << kDirectTrackOldActive) | 0x0001U
+        );
+        configureSelectionRemoveFixture(
+            h,
+            kDirectTrackSparseMask,
+            selectedMask
+        );
+        const uint8_t noteBefore = h.state.sequencer.pattern.note[0U];
+        preparePendingTrackPatternEdit(h.state);
+        const uint8_t editedNote = h.state.sequencer.pattern.note[0U];
+        const uint8_t sequencerUndoBefore = h.state.sequencerHistory.undoCount();
+        const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
+        const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+
+        const auto result =
+            core::handler::executeSequencerRemoveSelectionTrackStructure(
+                directTrackRefs(h),
+                kDirectTrackOldActive
+            );
+        assert(result.committed());
+        assert(result.chronology.predecessorPattern ==
+               seq::SequencerPatternHistoryCommitOutcome::Committed);
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.sequencerHistory.undoCount() ==
+               sequencerUndoBefore + 2U);
+        assert(h.state.projectHistory.undoCount() == projectUndoBefore + 2U);
+        assert(h.state.sequencerHistory.undoCount(
+                   seq::SequencerHistoryScope::PatternOnly) == 1U);
+        assert(h.state.sequencerHistory.undoCount(
+                   seq::SequencerHistoryScope::Structure) == 1U);
+        assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 2U);
+
+        assert(h.state.undoSequencerHistory());
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackOldActive);
+        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.undoSequencerHistory());
+        assert(h.state.sequencer.pattern.note[0U] == noteBefore);
+        assert(h.state.redoSequencerHistory());
+        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.redoSequencerHistory());
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackIncoming);
+        assertActiveMacroPresentation(h);
+    }
+
     std::cout
         << "[PASS] direct Track Pattern chronology is single and ordered\n";
 }
@@ -4925,6 +5623,52 @@ void test_direct_track_draft_priority_precedes_adapter_validation() {
     assert(h.state.sequencerTracks.currentEnabledMask() ==
            kDirectTrackSparseMask);
     tx::assertFailureInjectionReset();
+
+    {
+        SequencerStepHarness selectionHarness;
+        configureSelectionRemoveFixture(
+            selectionHarness,
+            kDirectTrackSparseMask,
+            static_cast<uint16_t>(
+                (1U << kDirectTrackOldActive) | 0x0001U
+            )
+        );
+        assert(selectionHarness.state.sequencer.stepContentDraft.begin(
+            selectionHarness.state.sequencer.pattern,
+            seq::SequencerStepContentDraftKind::MICRO_SEQUENCE,
+            0U
+        ));
+        const uint32_t selectionDraftRevision =
+            selectionHarness.state.sequencer.stepContentDraft.revision.get();
+        const uint32_t selectionContentRevision =
+            selectionHarness.state.sequencer.contentView.revision.get();
+        const uint8_t selectionUndoBefore =
+            selectionHarness.state.sequencerHistory.undoCount();
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            const auto result = core::handler::
+                executeSequencerRemoveSelectionTrackStructure(
+                    directTrackRefs(selectionHarness),
+                    kDirectTrackOldActive
+                );
+            assert(result.status == Status::DraftBlocked);
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        assert(selectionHarness.state.sequencer.stepContentDraft.failure ==
+               seq::SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
+        assert(selectionHarness.state.sequencer.stepContentDraft.
+                   blockedTransition ==
+               seq::SequencerStepContentDraftBlockedTransition::TRACK);
+        assert(selectionHarness.state.sequencer.stepContentDraft.revision.get() ==
+               selectionDraftRevision + 1U);
+        assert(selectionHarness.state.sequencer.contentView.revision.get() ==
+               selectionContentRevision + 1U);
+        assert(selectionHarness.state.sequencerHistory.undoCount() ==
+               selectionUndoBefore);
+        assert(selectionHarness.state.sequencerTracks.currentEnabledMask() ==
+               kDirectTrackSparseMask);
+        tx::assertFailureInjectionReset();
+    }
 
     std::cout
         << "[PASS] direct Track Draft priority precedes adapter validation\n";
@@ -5054,6 +5798,48 @@ void test_direct_track_missing_presentation_capability_is_preflight_atomic() {
                       refs,
                       kDirectTrackOldActive
                   );
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+
+        assert(result.status == Status::PublicationUnavailable);
+        assert(result.chronology.status == ChronologyStatus::Unavailable);
+        assert(chronology.boundaryCount == 0U);
+        assertTrackTransactionInvariant(h, expected);
+        tx::assertFailureInjectionReset();
+    }
+
+    {
+        SequencerStepHarness h;
+        configureSelectionRemoveFixture(
+            h,
+            kDirectTrackSparseMask,
+            static_cast<uint16_t>(
+                (1U << kDirectTrackOldActive) | 0x0001U
+            )
+        );
+        DirectTrackChronologyCounter chronology{.state = &h.state};
+        auto refs = directTrackRefs(h);
+        refs.history = HistoryServices::fromStaticOperations<
+            kDirectTrackChronologyCounterOperations>(&chronology);
+        refs.sharedTracks = core::handler::SharedTrackDomainServices{
+            core::handler::SharedTrackDomainServices::StateRefs{
+                h.state.sharedTrackActive,
+                h.state.sharedTrackEnabledMask,
+            },
+        };
+        assert(!refs.sharedTracks.
+            canReconcilePreparedSequencerActiveTrackPresentation());
+        const auto expected = captureTrackTransactionInvariant(h);
+
+        core::handler::SequencerPreparedTrackStructureResult result{};
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            result = core::handler::
+                executeSequencerRemoveSelectionTrackStructure(
+                    refs,
+                    kDirectTrackOldActive
+                );
             tx::assertMaxPlusOneStillArmed(0U);
         }
         test_support::drainNotifications();
@@ -7293,6 +8079,11 @@ int main() {
     test_page_delete_oom_keeps_hold_until_latched_release();
     test_page_delete_single_page_nochange_preserves_ui_until_release();
     test_page_clear_and_delete_failed_commits_restore_editor_state();
+    test_direct_track_selection_remove_sparse_and_max_masks_replay_exactly();
+    test_direct_track_selection_remove_preserves_optional_owner_pairs();
+    test_direct_track_selection_invalid_masks_skip_chronology();
+    test_direct_track_selection_fail_nth_is_atomic();
+    test_direct_track_selection_activation_collisions_are_atomic();
     test_direct_track_create_remove_are_atomic_and_replay_exactly();
     test_direct_track_global_history_and_redo_branch_are_exact();
     test_direct_track_fail_nth_failures_restore_exact_state();

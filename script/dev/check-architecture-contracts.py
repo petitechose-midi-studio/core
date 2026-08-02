@@ -1545,6 +1545,21 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require_in_function(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executeSequencerRemoveSelectionTrackStructure",
+        r"\bexecuteDirect\s*\(\s*state\s*,\s*"
+        r"Action::SequencerRemoveSelection\s*,\s*latchedActiveTrack\s*\)",
+        "SelectionRemove wrapper must route the frozen SequencerRemoveSelection action",
+    )
+    require(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION_HEADER,
+        r"\[\[nodiscard\]\]\s*SequencerPreparedTrackStructureResult\s*"
+        r"executeSequencerRemoveSelectionTrackStructure\s*\(\s*"
+        r"SequencerDirectTrackStructureStateRefs\s+state\s*,\s*"
+        r"uint8_t\s+latchedActiveTrack\s*\)",
+        "SelectionRemove direct adapter must remain a typed public cold route",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
         "executeDirect",
         r"^\s*if\s*\(\s*"
         r"state\.sequencer\.stepContentDraft\.rejectTransitionIfActive\s*\(\s*"
@@ -1741,6 +1756,18 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     require_in_function(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
         "FLASHMEM bool validIntent",
+        r"action\s*==\s*Action::SequencerRemoveSelection.*?"
+        r"token\.trackSelection\.active\s*&&\s*"
+        r"token\.trackSelection\.scope\s*==\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*StructureSelectionScope::TRACK\s*&&\s*"
+        r"!\s*token\.trackSelection\.placing\s*&&\s*"
+        r"!\s*token\.previewAddTrack\s*&&\s*"
+        r"token\.activeTrack\s*==\s*token\.targetTrack",
+        "SelectionRemove intent must retain Track scope, placement and active latch",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "FLASHMEM bool validIntent",
         r"\bcommitConsumed\b",
         "terminal consumed-paste state must not invalidate an unrelated Track action",
         count=0,
@@ -1763,6 +1790,53 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"\s*>\s*1U\s*\?\s*InitialTopologyOutcome::Ready\s*"
         r":\s*InitialTopologyOutcome::Invalid",
         "Remove preflight must reject stale target and last-Track no-op",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "FLASHMEM InitialTopologyOutcome validateInitialTopology",
+        r"action\s*==\s*Action::SequencerRemoveSelection.*?"
+        r"targetTrack\s*!=\s*activeTrack.*?"
+        r"activeTrackSelectionMask\s*\(\s*"
+        r"context\.token\.trackSelection\.selectedMask\s*,\s*enabledMask\s*\).*?"
+        r"deleteSelectedStructureTracks\s*\(\s*"
+        r"enabledMask\s*,\s*selectedMask\s*,\s*activeTrack\s*\)\.changed\s*"
+        r"\?\s*InitialTopologyOutcome::Ready\s*"
+        r":\s*InitialTopologyOutcome::Invalid",
+        "SelectionRemove preflight must sanitize selection and reject empty/all deletion",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "FLASHMEM PlanOutcome buildPlan",
+        r"action\s*==\s*Action::SequencerRemoveSelection.*?"
+        r"plan\.targetTrack\s*=\s*TrackBank::TRACK_COUNT\s*;.*?"
+        r"plan\.afterEnabledMask\s*=\s*mutation\.nextMask\s*;.*?"
+        r"plan\.afterActiveTrack\s*=\s*mutation\.nextActive\s*;.*?"
+        r"plan\.affectedTrackMask\s*=\s*selectedMask\s*;.*?"
+        r"plan\.capturedTrackMask\s*=\s*static_cast<uint16_t>\s*\(\s*"
+        r"oldActiveBit\s*\|\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*slotBit\s*\(\s*mutation\.nextActive\s*\)\s*"
+        r"\)\s*;.*?"
+        r"SequencerActiveTrackIncomingOwnerPolicy::Preserve",
+        "SelectionRemove plan must affect S while capturing only the old/new active pair",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "FLASHMEM PlanOutcome buildPlan",
+        r"action\s*==\s*Action::SequencerRemoveSelection.*?"
+        r"const\s+uint8_t\s+incomingLength\s*=\s*"
+        r"mutation\.nextActive\s*==\s*beforeActive\s*\?\s*"
+        r"context\.state\.sequencer\.pattern\.length\.get\s*\(\s*\)\s*:\s*"
+        r"context\.state\.tracks\.track\s*\(\s*mutation\.nextActive\s*\)"
+        r"\.length\.get\s*\(\s*\)\s*;.*?"
+        r"fillActiveChangeFocus\s*\(\s*context\s*,\s*incomingLength\s*,\s*plan\s*\)",
+        "SelectionRemove focus must use the active editor when the active Track survives",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "FLASHMEM PlanOutcome buildPlan",
+        r"\bcanonicalResetTrackMask\s*=",
+        "only Track Create may request canonical owner reset",
+        count=1,
     )
     require_in_function(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
@@ -1842,6 +1916,17 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"\bsyncSequencerPagePreviewToVisible\s*\(",
         "successful Track settlement must reconcile the visible Page preview",
     )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "settleSuccessful",
+        r"if\s*\(\s*plan\.action\s*==\s*Action::SequencerRemoveSelection\s*\)\s*\{\s*"
+        r"context\.state\.trackNavigation\.selection\.reset\s*\(\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*StructureSelectionScope::TRACK\s*,\s*"
+        r"plan\.afterActiveTrack\s*\)\s*;\s*"
+        r"context\.state\.navigationFocus\.set\s*\(\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*StructureNavigationFocus::TRACK\s*\)\s*;\s*\}",
+        "SelectionRemove UI reset must remain success-only inside direct settlement",
+    )
     require(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
         r"\b(?:recordStructure|recordPreparedStructure|captureTrackHistoryBefore|"
@@ -1891,6 +1976,57 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "RemoveCurrent workflow must leave preview settlement to typed success",
         count=0,
     )
+    require_in_function(
+        PAGE_STRUCTURE_SELECTION_WORKFLOW,
+        "SequencerStructureEditWorkflow::applySelectionBottomLeftHold",
+        r"if\s*\(\s*track_ui_\.selection\.active\.get\s*\(\s*\)\s*\)\s*\{.*?"
+        r"track_activations_\s*==\s*nullptr.*?"
+        r"const\s+auto\s+result\s*=\s*"
+        r"executeSequencerRemoveSelectionTrackStructure\s*\(\s*\{.*?"
+        r"\}\s*,\s*currentActiveTrack\s*\(\s*\)\s*\)\s*;\s*"
+        r"if\s*\(\s*!\s*result\.settled\s*\(\s*\)\s*\)\s*return\s*;\s*"
+        r"return\s*;\s*\}",
+        "SelectionRemove workflow must delegate once and consume the typed result",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_SELECTION_WORKFLOW,
+        "SequencerStructureEditWorkflow::applySelectionBottomLeftHold",
+        r"\b(?:captureTrackHistoryBefore|recordTrackHistoryAfter|applyTrackState|"
+        r"recordStructure|recordPreparedStructure)\s*\(",
+        "SelectionRemove workflow must not retain raw capture, mutation or recording",
+        count=0,
+    )
+    require_in_function(
+        PAGE_STRUCTURE_SELECTION_WORKFLOW,
+        "SequencerStructureEditWorkflow::applySelectionBottomLeftHold",
+        r"\btrack_ui_\.selection\.reset\s*\(",
+        "SelectionRemove workflow must leave Track selection settlement to typed success",
+        count=0,
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::applyLatchedTrackSelectionLongPress",
+        r"\b(?:commitPatternHistoryBarrier|commitCoalescedPatternEditOutcome)\s*\(",
+        "SelectionRemove caller must not own a duplicate Pattern boundary",
+        count=0,
+    )
+    for retired_selection_helper in (
+        "captureTrackHistoryBefore",
+        "recordTrackHistoryAfter",
+        "applyTrackState",
+    ):
+        require(
+            PAGE_STRUCTURE_EDIT_WORKFLOW,
+            rf"\b{retired_selection_helper}\b",
+            f"retired SelectionRemove helper {retired_selection_helper} must remain absent",
+            count=0,
+        )
+        require(
+            PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+            rf"\b{retired_selection_helper}\b",
+            f"retired SelectionRemove declaration {retired_selection_helper} must remain absent",
+            count=0,
+        )
     require(
         PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
         r"enum\s+class\s+TrackHoldIntent\s*:\s*uint8_t\s*\{\s*"
@@ -2178,7 +2314,6 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"const\s+uint8_t\s+targetTrack\s*=\s*track_hold_target_\s*;\s*"
         r"if\s*\(\s*trackRemoveHoldOwnsSharedState\s*\(\s*\)\s*\)\s*"
         r"track_ui_\.hold\.clear\s*\(\s*\)\s*;.*?"
-        r"commitCoalescedPatternEditOutcome\s*\(\s*\).*?"
         r"track_ui_\.hold\.active\s*\(\s*\)\s*\|\|\s*"
         r"!\s*selectionTrackRemoveIntentMatches\s*"
         r"\(\s*token\s*,\s*targetTrack\s*\).*?"
@@ -2918,7 +3053,8 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"\(\s*\)\s*\)\s*\{\s*"
         r"edit_workflow_\.applyLatchedTrackSelectionLongPress\s*\(\s*\)\s*;\s*"
         r"return\s*;\s*\}.*?"
-        r"commitPatternHistoryBarrier\s*\(\s*history_\s*\).*?"
+        r"if\s*\(\s*track_ui_\.selection\.active\.get\s*\(\s*\)\s*\)\s*\{\s*"
+        r"edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*\}.*?"
         r"applySelectionBottomLeftHold\s*\(\s*\)",
         "selection BottomLeft hold must route tokenized Track provenance before legacy Page/Step",
     )
@@ -3396,6 +3532,13 @@ def self_test() -> int:
         "        Action::SequencerCreate,\n"
         "        latchedTargetTrack",
     )
+    miswired_selection_action = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "        Action::SequencerRemoveSelection,\n"
+        "        latchedActiveTrack",
+        "        Action::SequencerRemoveCurrent,\n"
+        "        latchedActiveTrack",
+    )
     miswired_create_workflow = mutate(
         PAGE_STRUCTURE_EDIT_WORKFLOW,
         "executeSequencerCreateTrackStructure({",
@@ -3405,6 +3548,83 @@ def self_test() -> int:
         PAGE_STRUCTURE_EDIT_WORKFLOW,
         "executeSequencerRemoveCurrentTrackStructure({",
         "executeSequencerCreateTrackStructure({",
+    )
+    miswired_selection_workflow = mutate(
+        PAGE_STRUCTURE_SELECTION_WORKFLOW,
+        "executeSequencerRemoveSelectionTrackStructure({",
+        "executeSequencerRemoveCurrentTrackStructure({",
+    )
+    ignored_selection_result = mutate(
+        PAGE_STRUCTURE_SELECTION_WORKFLOW,
+        "        if (!result.settled()) return;\n"
+        "        return;",
+        "        (void)result;\n"
+        "        return;",
+    )
+    premature_selection_settlement = mutate(
+        PAGE_STRUCTURE_SELECTION_WORKFLOW,
+        "        const auto result = executeSequencerRemoveSelectionTrackStructure({",
+        "        track_ui_.selection.reset(\n"
+        "            core::state::StructureSelectionScope::TRACK,\n"
+        "            currentActiveTrack()\n"
+        "        );\n"
+        "        const auto result = executeSequencerRemoveSelectionTrackStructure({",
+    )
+    restored_selection_raw_history = mutate(
+        PAGE_STRUCTURE_SELECTION_WORKFLOW,
+        "        const auto result = executeSequencerRemoveSelectionTrackStructure({",
+        "        captureTrackHistoryBefore();\n"
+        "        const auto result = executeSequencerRemoveSelectionTrackStructure({",
+    )
+    residual_selection_boundary = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "    applySelectionBottomLeftHold();\n"
+        "}",
+        "    (void)history_.commitCoalescedPatternEditOutcome();\n"
+        "    applySelectionBottomLeftHold();\n"
+        "}",
+    )
+    incomplete_selection_remove_intent = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "        return token.trackSelection.active &&\n"
+        "               token.trackSelection.scope ==\n"
+        "                   core::state::StructureSelectionScope::TRACK &&",
+        "        return token.trackSelection.active &&",
+    )
+    unsanitized_selection_topology = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "        const uint16_t selectedMask = activeTrackSelectionMask(\n"
+        "            context.token.trackSelection.selectedMask,\n"
+        "            enabledMask\n"
+        "        );",
+        "        const uint16_t selectedMask =\n"
+        "            context.token.trackSelection.selectedMask;",
+    )
+    active_survivor_uses_cold_length = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "        const uint8_t incomingLength = mutation.nextActive == beforeActive\n"
+        "            ? context.state.sequencer.pattern.length.get()\n"
+        "            : context.state.tracks.track(mutation.nextActive).length.get();",
+        "        const uint8_t incomingLength =\n"
+        "            context.state.tracks.track(mutation.nextActive).length.get();",
+    )
+    widened_selection_capture_mask = mutate_pattern(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"(else\s+if\s*\(\s*action\s*==\s*Action::SequencerRemoveSelection.*?"
+        r"plan\.affectedTrackMask\s*=\s*selectedMask\s*;)\s*"
+        r"plan\.capturedTrackMask\s*=\s*static_cast<uint16_t>\s*\(.*?\)\s*;",
+        r"\g<1>\n        plan.capturedTrackMask = beforeMask;",
+    )
+    reconstructive_selection_reset = mutate_pattern(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"(else\s+if\s*\(\s*action\s*==\s*Action::SequencerRemoveSelection.*?"
+        r"plan\.affectedTrackMask\s*=\s*selectedMask\s*;)",
+        r"\g<1>\n        plan.canonicalResetTrackMask = selectedMask;",
+    )
+    unconditional_selection_settlement = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "    if (plan.action == Action::SequencerRemoveSelection) {",
+        "    if (true) {",
     )
     missing_track_presentation_reconciliation = mutate(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
@@ -4015,6 +4235,14 @@ def self_test() -> int:
             "miswired SequencerRemoveCurrent action is rejected",
         ),
         (
+            miswired_selection_action[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                miswired_selection_action
+            )),
+            "miswired SequencerRemoveSelection action is rejected",
+        ),
+        (
             miswired_create_workflow[PAGE_STRUCTURE_EDIT_WORKFLOW]
             != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
             and bool(step_draft_transition_contract_errors(
@@ -4029,6 +4257,102 @@ def self_test() -> int:
                 miswired_remove_workflow
             )),
             "miswired RemoveCurrent workflow is rejected",
+        ),
+        (
+            miswired_selection_workflow[PAGE_STRUCTURE_SELECTION_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_SELECTION_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                miswired_selection_workflow
+            )),
+            "miswired SelectionRemove workflow is rejected",
+        ),
+        (
+            ignored_selection_result[PAGE_STRUCTURE_SELECTION_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_SELECTION_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                ignored_selection_result
+            )),
+            "ignored SelectionRemove typed result is rejected",
+        ),
+        (
+            premature_selection_settlement[
+                PAGE_STRUCTURE_SELECTION_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_SELECTION_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                premature_selection_settlement
+            )),
+            "premature SelectionRemove UI settlement is rejected",
+        ),
+        (
+            restored_selection_raw_history[
+                PAGE_STRUCTURE_SELECTION_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_SELECTION_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                restored_selection_raw_history
+            )),
+            "restored SelectionRemove raw History path is rejected",
+        ),
+        (
+            residual_selection_boundary[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                residual_selection_boundary
+            )),
+            "residual SelectionRemove caller boundary is rejected",
+        ),
+        (
+            incomplete_selection_remove_intent[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                incomplete_selection_remove_intent
+            )),
+            "incomplete SelectionRemove direct intent is rejected",
+        ),
+        (
+            unsanitized_selection_topology[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                unsanitized_selection_topology
+            )),
+            "unsanitized SelectionRemove topology is rejected",
+        ),
+        (
+            active_survivor_uses_cold_length[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                active_survivor_uses_cold_length
+            )),
+            "SelectionRemove active-survivor cold-length focus clamp is rejected",
+        ),
+        (
+            widened_selection_capture_mask[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                widened_selection_capture_mask
+            )),
+            "widened SelectionRemove capture mask is rejected",
+        ),
+        (
+            reconstructive_selection_reset[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                reconstructive_selection_reset
+            )),
+            "reconstructive SelectionRemove canonical reset is rejected",
+        ),
+        (
+            unconditional_selection_settlement[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                unconditional_selection_settlement
+            )),
+            "unconditional SelectionRemove settlement is rejected",
         ),
         (
             missing_track_presentation_reconciliation[

@@ -8,7 +8,6 @@
 #include "handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
 #include "handler/sequencer/SequencerPreparedPageStructureMutationPlan.hpp"
 #include "handler/sequencer/SequencerPreparedPageStructureTransaction.hpp"
-#include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructurePageClipboardOps.hpp"
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
 #include "handler/sequencer/SequencerStructureSelectionOps.hpp"
@@ -827,10 +826,6 @@ SequencerStructureEditWorkflow::applyLatchedTrackSelectionLongPress() {
     const auto token = track_selection_hold_token_;
     const uint8_t targetTrack = track_hold_target_;
     if (trackRemoveHoldOwnsSharedState()) track_ui_.hold.clear();
-    if (history_.commitCoalescedPatternEditOutcome() ==
-        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
-        return;
-    }
     if (track_ui_.hold.active() ||
         !selectionTrackRemoveIntentMatches(token, targetTrack)) {
         return;
@@ -1252,22 +1247,6 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepSelection() {
     pasteStepClipboardAt(selection.cursorStep.get(), true);
 }
 
-FLASHMEM SequencerStructureEditWorkflow::HistoryTrackStructureChangePtr
-SequencerStructureEditWorkflow::captureTrackHistoryBefore(uint16_t trackMask) const {
-    return captureSequencerTrackStructureHistoryBefore(tracks_, sequencer_, trackMask);
-}
-
-FLASHMEM bool SequencerStructureEditWorkflow::recordTrackHistoryAfter(
-    HistoryTrackStructureChangePtr change, uint16_t trackMask) {
-    if (!change) return false;
-
-    if (!captureSequencerTrackStructureHistoryAfter(tracks_, sequencer_, trackMask, *change)) {
-        return false;
-    }
-
-    return recordSequencerTrackStructureHistoryChange(history_, std::move(change));
-}
-
 FLASHMEM void SequencerStructureEditWorkflow::syncPreviewToFocus(
     core::state::StructureNavigationFocus focus) {
     track_ui_.previewAddSlot.set(false);
@@ -1378,11 +1357,6 @@ FLASHMEM uint16_t SequencerStructureEditWorkflow::currentTrackEnabledMask() cons
 
 FLASHMEM uint8_t SequencerStructureEditWorkflow::currentActiveTrack() const {
     return shared_tracks_.activeTrack();
-}
-
-FLASHMEM bool SequencerStructureEditWorkflow::applyTrackState(uint16_t enabledMask,
-                                                              uint8_t activeTrack) {
-    return shared_tracks_.setState(enabledMask, activeTrack);
 }
 
 }  // namespace core::handler

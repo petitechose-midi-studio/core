@@ -49,4 +49,10 @@ executeSequencerRemoveCurrentTrackStructure(
     uint8_t latchedTargetTrack
 );
 
+[[nodiscard]] SequencerPreparedTrackStructureResult
+executeSequencerRemoveSelectionTrackStructure(
+    SequencerDirectTrackStructureStateRefs state,
+    uint8_t latchedActiveTrack
+);
+
 }  // namespace core::handler

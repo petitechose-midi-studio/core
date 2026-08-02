@@ -47,6 +47,7 @@ def main() -> int:
 1610632300 96 T oc::note::sequencer::StepSequencerGraph::cycleSet(unsigned short) const
 1610632900 96 T core::handler::executeSequencerCreateTrackStructure(core::handler::SequencerDirectTrackStructureStateRefs)
 1610633500 96 T core::handler::executeSequencerRemoveCurrentTrackStructure(core::handler::SequencerDirectTrackStructureStateRefs, unsigned char)
+1610633800 96 T core::handler::executeSequencerRemoveSelectionTrackStructure(core::handler::SequencerDirectTrackStructureStateRefs, unsigned char)
 1610634100 256 t core::handler::(anonymous namespace)::captureIntent(core::handler::SequencerDirectTrackStructureStateRefs const&, core::handler::SequencerPreparedTrackStructureAction, unsigned char)
 1610634700 256 t core::handler::(anonymous namespace)::executeDirect(core::handler::SequencerDirectTrackStructureStateRefs const&, core::handler::SequencerPreparedTrackStructureAction, unsigned char)
 1610635300 256 t core::handler::(anonymous namespace)::intentStillMatches(core::handler::(anonymous namespace)::DirectContext const&, core::handler::SequencerPreparedTrackStructureAction)
@@ -82,11 +83,11 @@ def main() -> int:
     assert len(PAGE_STRUCTURE_GRAPH_FLASH_MARKERS) == 2
     assert len(PAGE_STRUCTURE_FLASH_MARKERS) == 22
     assert len(set(PAGE_STRUCTURE_FLASH_MARKERS)) == 22
-    assert len(TRACK_STRUCTURE_ADAPTER_FLASH_MARKERS) == 9
+    assert len(TRACK_STRUCTURE_ADAPTER_FLASH_MARKERS) == 10
     assert len(TRACK_STRUCTURE_WORKFLOW_FLASH_MARKERS) == 7
     assert len(TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS) == 7
-    assert len(TRACK_STRUCTURE_FLASH_MARKERS) == 23
-    assert len(set(TRACK_STRUCTURE_FLASH_MARKERS)) == 23
+    assert len(TRACK_STRUCTURE_FLASH_MARKERS) == 24
+    assert len(set(TRACK_STRUCTURE_FLASH_MARKERS)) == 24
     assert product_placement_violations(valid) == ()
 
     invalid = valid.replace(

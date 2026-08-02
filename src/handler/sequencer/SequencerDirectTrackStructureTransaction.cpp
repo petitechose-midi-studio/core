@@ -5,6 +5,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
+#include "handler/sequencer/SequencerStructureSelectionOps.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
 namespace core::handler {
@@ -268,7 +269,6 @@ FLASHMEM bool validIntent(
         token.focus != core::state::StructureNavigationFocus::TRACK ||
         token.targetTrack >= TrackBank::TRACK_COUNT ||
         token.previewTrack >= TrackBank::TRACK_COUNT ||
-        token.trackSelection.active || token.trackSelection.placing ||
         token.pageSelection.active ||
         token.pageSelection.placing || token.stepSelection.active ||
         token.stepSelection.placing || token.trackPaste.gestureActive ||
@@ -276,13 +276,22 @@ FLASHMEM bool validIntent(
         return false;
     }
     if (action == Action::SequencerCreate) {
-        return token.previewAddTrack &&
+        return !token.trackSelection.active &&
+               !token.trackSelection.placing && token.previewAddTrack &&
                token.previewTrack == token.targetTrack;
     }
     if (action == Action::SequencerRemoveCurrent) {
-        return !token.previewAddTrack &&
+        return !token.trackSelection.active &&
+               !token.trackSelection.placing && !token.previewAddTrack &&
                token.activeTrack == token.targetTrack &&
                token.previewTrack == token.targetTrack;
+    }
+    if (action == Action::SequencerRemoveSelection) {
+        return token.trackSelection.active &&
+               token.trackSelection.scope ==
+                   core::state::StructureSelectionScope::TRACK &&
+               !token.trackSelection.placing && !token.previewAddTrack &&
+               token.activeTrack == token.targetTrack;
     }
     return false;
 }
@@ -330,6 +339,22 @@ FLASHMEM InitialTopologyOutcome validateInitialTopology(
                    enabledMask,
                    TrackBank::TRACK_COUNT
                ) > 1U
+            ? InitialTopologyOutcome::Ready
+            : InitialTopologyOutcome::Invalid;
+    }
+    if (action == Action::SequencerRemoveSelection) {
+        if (targetTrack != activeTrack) {
+            return InitialTopologyOutcome::Stale;
+        }
+        const uint16_t selectedMask = activeTrackSelectionMask(
+            context.token.trackSelection.selectedMask,
+            enabledMask
+        );
+        return deleteSelectedStructureTracks(
+                   enabledMask,
+                   selectedMask,
+                   activeTrack
+               ).changed
             ? InitialTopologyOutcome::Ready
             : InitialTopologyOutcome::Invalid;
     }
@@ -434,6 +459,38 @@ FLASHMEM PlanOutcome buildPlan(
             )) {
             return PlanOutcome::Invalid;
         }
+    } else if (action == Action::SequencerRemoveSelection) {
+        if (plan.targetTrack != beforeActive) return PlanOutcome::Stale;
+        const uint16_t selectedMask = activeTrackSelectionMask(
+            context.token.trackSelection.selectedMask,
+            beforeMask
+        );
+        const auto mutation = deleteSelectedStructureTracks(
+            beforeMask,
+            selectedMask,
+            beforeActive
+        );
+        if (!mutation.changed) return PlanOutcome::Invalid;
+        plan.targetTrack = TrackBank::TRACK_COUNT;
+        plan.afterEnabledMask = mutation.nextMask;
+        plan.afterActiveTrack = mutation.nextActive;
+        plan.affectedTrackMask = selectedMask;
+        plan.capturedTrackMask = static_cast<uint16_t>(
+            oldActiveBit |
+            core::state::shared::slotBit(mutation.nextActive)
+        );
+        plan.incomingOwnerPolicy = core::state::sequencer::
+            SequencerActiveTrackIncomingOwnerPolicy::Preserve;
+        const uint8_t incomingLength = mutation.nextActive == beforeActive
+            ? context.state.sequencer.pattern.length.get()
+            : context.state.tracks.track(mutation.nextActive).length.get();
+        if (!fillActiveChangeFocus(
+                context,
+                incomingLength,
+                plan
+            )) {
+            return PlanOutcome::Invalid;
+        }
     } else {
         return PlanOutcome::Invalid;
     }
@@ -469,6 +526,15 @@ FLASHMEM void reconcileCommitted(
 
 FLASHMEM void settleSuccessful(void* opaque, const Plan& plan) noexcept {
     auto& context = *static_cast<DirectContext*>(opaque);
+    if (plan.action == Action::SequencerRemoveSelection) {
+        context.state.trackNavigation.selection.reset(
+            core::state::StructureSelectionScope::TRACK,
+            plan.afterActiveTrack
+        );
+        context.state.navigationFocus.set(
+            core::state::StructureNavigationFocus::TRACK
+        );
+    }
     context.state.trackNavigation.previewAddSlot.set(false);
     context.state.trackNavigation.syncPreviewTrack(plan.afterActiveTrack);
     syncSequencerPagePreviewToVisible(
@@ -517,7 +583,7 @@ FLASHMEM Result executeDirect(
     };
     if (!validIntent(context, action)) {
         return {
-            action == Action::SequencerRemoveCurrent
+            action != Action::SequencerCreate
                 ? Status::Stale
                 : Status::Invalid,
             {},
@@ -567,6 +633,17 @@ FLASHMEM Result executeSequencerRemoveCurrentTrackStructure(
         state,
         Action::SequencerRemoveCurrent,
         latchedTargetTrack
+    );
+}
+
+FLASHMEM Result executeSequencerRemoveSelectionTrackStructure(
+    SequencerDirectTrackStructureStateRefs state,
+    uint8_t latchedActiveTrack
+) {
+    return executeDirect(
+        state,
+        Action::SequencerRemoveSelection,
+        latchedActiveTrack
     );
 }
 

@@ -498,7 +498,6 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             }
             if (track_ui_.selection.active.get()) {
                 edit_workflow_.clearHoldAction();
-                if (!commitPatternHistoryBarrier(history_)) return;
             }
             edit_workflow_.applySelectionBottomLeftHold();
         });

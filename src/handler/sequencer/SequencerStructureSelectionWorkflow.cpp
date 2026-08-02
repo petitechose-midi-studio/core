@@ -1,12 +1,10 @@
 #include "handler/sequencer/SequencerStructureEditWorkflow.hpp"
 
-#include <utility>
-
 #include <config/PlatformCompat.hpp>
 
+#include "handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
 #include "handler/sequencer/SequencerPreparedPageStructureMutationPlan.hpp"
 #include "handler/sequencer/SequencerPreparedPageStructureTransaction.hpp"
-#include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructureSelectionOps.hpp"
 
 namespace core::handler {
@@ -113,33 +111,19 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftHold() {
             track_ui_.previewAddSlot.get()) {
             return;
         }
-        const uint16_t selectedMask = activeTrackSelectionMask(
-            track_ui_.selection.selectedMask.get(),
-            currentTrackEnabledMask()
-        );
-        const auto mutation = deleteSelectedStructureTracks(
-            currentTrackEnabledMask(),
-            selectedMask,
-            currentActiveTrack()
-        );
-        if (!mutation.changed) return;
-
-        const uint16_t historyMask = static_cast<uint16_t>(
-            selectedMask |
-            sequencerStructureHistoryTrackBit(currentActiveTrack()) |
-            sequencerStructureHistoryTrackBit(mutation.nextActive)
-        );
-        auto change = captureTrackHistoryBefore(historyMask);
-        if (!change) return;
-        if (!applyTrackState(mutation.nextMask, mutation.nextActive)) return;
-
-        track_ui_.selection.reset(
-            core::state::StructureSelectionScope::TRACK,
-            mutation.nextActive
-        );
-        navigation_focus_.set(core::state::StructureNavigationFocus::TRACK);
-        syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
-        recordTrackHistoryAfter(std::move(change), historyMask);
+        if (track_activations_ == nullptr) return;
+        const auto result = executeSequencerRemoveSelectionTrackStructure({
+            tracks_,
+            sequencer_,
+            navigation_focus_,
+            track_ui_,
+            structure_clipboard_,
+            macro_pages_,
+            *track_activations_,
+            shared_tracks_,
+            history_,
+        }, currentActiveTrack());
+        if (!result.settled()) return;
         return;
     }
 

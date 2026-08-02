@@ -123,11 +123,6 @@ private:
         "Track selection hold token must remain compact"
     );
 
-    using HistoryTrackStructureChangePtr =
-        core::state::sequencer::SequencerHistoryTrackStructureChangePtr;
-
-    HistoryTrackStructureChangePtr captureTrackHistoryBefore(uint16_t trackMask) const;
-    bool recordTrackHistoryAfter(HistoryTrackStructureChangePtr change, uint16_t trackMask);
     void invalidateTrackRemoveHoldIntent();
     void clearTrackRemoveHoldIntent();
     bool trackRemoveHoldOwnsSharedState() const;
@@ -178,7 +173,6 @@ private:
     );
     uint16_t currentTrackEnabledMask() const;
     uint8_t currentActiveTrack() const;
-    bool applyTrackState(uint16_t enabledMask, uint8_t activeTrack);
     uint8_t trackPasteTarget() const;
     core::state::ClipboardTransferPlan buildTrackPastePlan() const;
     bool beginTrackPasteAction(uint32_t nowMs);
