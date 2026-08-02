@@ -396,6 +396,20 @@ FLASHMEM bool clearTracks(
     );
 }
 
+FLASHMEM bool clearTracksInDomain(
+    modulation::ProjectControlDomainState& domain,
+    uint16_t trackMask
+) {
+    if (trackMask == 0U) return false;
+    return clearProjectSelectionInDomain(
+        domain,
+        ProjectScopeSelection{
+            .kind = ScopeKind::TRACK,
+            .mask = trackMask,
+        }
+    );
+}
+
 FLASHMEM bool clearMacroSlot(
     modulation::ProjectControlState& control,
     const macro::MacroAutomationSlotAddress& address
@@ -446,6 +460,18 @@ FLASHMEM bool replaceTrackFromClipboard(
                 clipboard
             );
         }
+    );
+}
+
+FLASHMEM bool replaceTrackFromClipboardInDomain(
+    modulation::ProjectControlDomainState& domain,
+    uint8_t destTrack,
+    const core::state::MacroAutomationClipboard* clipboard
+) {
+    return replaceProjectScopeFromClipboardInDomain(
+        domain,
+        Scope{.kind = ScopeKind::TRACK, .track = destTrack},
+        clipboard
     );
 }
 

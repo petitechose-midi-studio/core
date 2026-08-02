@@ -230,6 +230,17 @@ struct MacroAutomationClipboard {
                 bool includeModulation = true);
 };
 
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+static_assert(
+    sizeof(SequencerTrackSelectionClipboard) == 29072U,
+    "LOCK-P: ARM Track-selection clipboard ABI changed"
+);
+static_assert(
+    sizeof(MacroAutomationClipboard) == 137748U,
+    "LOCK-P: ARM Macro automation clipboard ABI changed"
+);
+#endif
+
 /**
  * Detached edge payload. The Project source remains shared and is referenced
  * by stable ID; Paste only creates or updates an assignment on the target.

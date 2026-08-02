@@ -36,6 +36,8 @@ public:
         void* context, const core::state::sequencer::SequencerHistoryTrackStructureChange& change);
     using RecordPreparedStructureFn = void (*)(
         void* context, core::state::sequencer::SequencerHistoryTrackStructureChangePtr change);
+    using CommitAdmittedStructureFn = void (*)(
+        void* context, core::state::sequencer::SequencerHistoryTrackStructureChangePtr change);
     using BeginCoalescedPatternEditFn = bool (*)(
         void* context, uint8_t step, core::state::sequencer::StepProperty property, uint32_t nowMs,
         core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
@@ -92,6 +94,7 @@ public:
         RecordStructureFn recordStructure = nullptr;
         CanRecordStructureFn canRecordStructure = nullptr;
         RecordPreparedStructureFn recordPreparedStructure = nullptr;
+        CommitAdmittedStructureFn commitAdmittedStructure = nullptr;
         RecordFullBankFn recordFullBank = nullptr;
         CanRecordFullBankFn canRecordFullBank = nullptr;
         RecordPreparedFullBankFn recordPreparedFullBank = nullptr;
@@ -146,6 +149,14 @@ public:
         const core::state::sequencer::SequencerHistoryTrackStructureChange& change) const;
     // Precondition: canRecordStructure(change) was true and change is unchanged.
     void recordPreparedStructure(
+        core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const;
+    // Trusted Track transaction gate. A true result admits the unchanged
+    // payload and proves the no-fail Core commit sink is installed.
+    bool canCommitAdmittedStructure(
+        const core::state::sequencer::SequencerHistoryTrackStructureChange& change) const;
+    // Precondition: canCommitAdmittedStructure(change) was true and change is
+    // unchanged. Missing authority is an invariant failure, never a soft tail.
+    void commitAdmittedStructure(
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const;
     bool recordStructure(
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const;

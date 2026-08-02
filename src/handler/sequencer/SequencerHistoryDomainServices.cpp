@@ -10,6 +10,14 @@ namespace core::handler {
 
 namespace {
 
+[[noreturn]] FLASHMEM void failAdmittedStructureInvariant() {
+#if defined(__GNUC__) || defined(__clang__)
+    __builtin_trap();
+#else
+    for (;;) {}
+#endif
+}
+
 FLASHMEM bool recordPatternFromCoreState(
     void* context, core::state::sequencer::SequencerHistoryPatternSnapshot before,
     core::state::sequencer::SequencerHistoryPatternSnapshot after,
@@ -110,6 +118,13 @@ FLASHMEM void recordPreparedStructureFromCoreState(
     if (context == nullptr) return;
     auto* state = static_cast<core::state::CoreState*>(context);
     state->recordPreparedSequencerStructureHistory(std::move(change));
+}
+
+FLASHMEM void commitAdmittedStructureFromCoreState(
+    void* context, core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) {
+    if (context == nullptr || !change) failAdmittedStructureInvariant();
+    static_cast<core::state::CoreState*>(context)
+        ->commitAdmittedSequencerStructureHistory(std::move(change));
 }
 
 FLASHMEM bool beginCoalescedPatternEditFromCoreState(
@@ -250,6 +265,7 @@ SequencerHistoryDomainServices::fromCoreState(core::state::CoreState& state) {
         .recordStructure = recordStructureFromCoreState,
         .canRecordStructure = canRecordStructureFromCoreState,
         .recordPreparedStructure = recordPreparedStructureFromCoreState,
+        .commitAdmittedStructure = commitAdmittedStructureFromCoreState,
         .recordFullBank = recordFullBankFromCoreState,
         .canRecordFullBank = canRecordFullBankFromCoreState,
         .recordPreparedFullBank = recordPreparedFullBankFromCoreState,
@@ -335,6 +351,21 @@ FLASHMEM void SequencerHistoryDomainServices::recordPreparedStructure(
     core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const {
     if (operations_->recordPreparedStructure == nullptr) return;
     operations_->recordPreparedStructure(context_, std::move(change));
+}
+
+FLASHMEM bool SequencerHistoryDomainServices::canCommitAdmittedStructure(
+    const core::state::sequencer::SequencerHistoryTrackStructureChange& change) const {
+    return operations_->canRecordStructure != nullptr &&
+           operations_->commitAdmittedStructure != nullptr &&
+           operations_->canRecordStructure(context_, change);
+}
+
+FLASHMEM void SequencerHistoryDomainServices::commitAdmittedStructure(
+    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const {
+    if (operations_->commitAdmittedStructure == nullptr || !change) {
+        failAdmittedStructureInvariant();
+    }
+    operations_->commitAdmittedStructure(context_, std::move(change));
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::recordFullBank(

@@ -523,6 +523,14 @@ bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState& active,
 bool sameMusicalHistorySnapshot(const SequencerHistoryPatternSnapshot& lhs,
                                 const SequencerHistoryPatternSnapshot& rhs);
 
+// Allocation-free exact revalidation of one full captured Pattern payload.
+// Focus is owned by the enclosing editor/Structure snapshot and is therefore
+// intentionally excluded here.
+bool liveHistoryPatternSnapshotMatches(
+    const SequencerPatternState& live,
+    const SequencerHistoryPatternSnapshot& snapshot
+);
+
 // Allocation-free identity proof for a sealed prepared After. Focus is
 // intentionally excluded for an inactive Track because it is editor-only.
 bool preparedHistoryPatternAfterMatchesTrack(const SequencerTrackBankState& bank,
@@ -589,6 +597,9 @@ public:
     // Precondition: canRecordStructure(change) was true and change was not
     // modified afterwards. Under that contract this commit cannot fail.
     void recordPreparedStructure(SequencerHistoryTrackStructureChangePtr change);
+    // Internal no-fail tail for an immutable Structure change admitted before
+    // the first live write. This performs no equality or policy recheck.
+    void commitAdmittedStructure(SequencerHistoryTrackStructureChangePtr change);
     bool recordStructure(SequencerHistoryTrackStructureChangePtr change);
 
     bool canUndo() const { return undo_count_ > 0; }

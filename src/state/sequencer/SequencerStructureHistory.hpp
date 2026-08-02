@@ -11,8 +11,14 @@
 namespace core::state::sequencer {
 
 struct SequencerHistoryMacroTrackStructurePayload {
+    static constexpr uint8_t INVALID_AFFECTED_TRACK = macro::TRACK_COUNT;
+
     uint16_t capturedTrackMask = 0U;
     bool afterCaptured = false;
+    // Reuses the ARM padding byte that previously followed afterCaptured.
+    // Direct Macro actions set one exact target; multi-Track transfers retain
+    // INVALID_AFFECTED_TRACK and use their activation Track mask.
+    uint8_t affectedTrackIndex = INVALID_AFFECTED_TRACK;
     std::array<core::state::macro::MacroTrackData, macro::TRACK_COUNT>
         beforeTracks{};
     std::array<core::state::macro::MacroTrackData, macro::TRACK_COUNT>
@@ -43,6 +49,7 @@ struct SequencerHistoryTrackStructureSnapshot {
     SequencerHistoryTrackStructureSnapshot& operator=(
         SequencerHistoryTrackStructureSnapshot&&
     ) noexcept;
+    void reset();
 };
 
 struct SequencerHistoryTrackStructureChange {
@@ -76,6 +83,14 @@ struct SequencerHistoryTrackStructureChange {
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+static_assert(
+    sizeof(SequencerHistoryTrackStructureSnapshot) == 13576U,
+    "LOCK-P: ARM Structure snapshot ABI changed"
+);
+static_assert(
+    sizeof(SequencerHistoryMacroTrackStructurePayload) == 30860U,
+    "LOCK-P: ARM Macro Structure payload ABI changed"
+);
 static_assert(
     sizeof(SequencerHistoryTrackStructureChange) == 27192U,
     "LOCK-P: ARM Structure History transaction ABI changed"
@@ -131,6 +146,28 @@ bool capturePreparedHistoryStructureAfterUsingReservedStorage(
     SequencerHistoryTrackStructureChange& change
 );
 
+// Constructs the final immutable After directly from Before. Preserved Tracks
+// clone Graph then CC owners in ascending Track order; reset Tracks reproduce
+// exactly SequencerPatternState::reset(), including its revision transitions,
+// and retain no payload owner. A failed allocation leaves only a discardable
+// detached After; Before and live state remain untouched.
+bool buildHistoryStructureSnapshotAfterFromBefore(
+    SequencerHistoryTrackStructureChange& change,
+    uint16_t enabledMask,
+    uint8_t activeTrack,
+    uint8_t focusedStep,
+    uint8_t page,
+    uint16_t canonicalResetTrackMask = 0U
+);
+
+// Allocation-free byte/revision/payload revalidation. Pointer-owner identity
+// is intentionally supplied by the transaction's scalar sidecar.
+bool liveHistoryStructureSnapshotMatches(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    const SequencerHistoryTrackStructureSnapshot& snapshot
+);
+
 bool applyHistoryStructureSnapshot(
     SequencerTrackBankState& bank,
     SequencerState& active,
@@ -145,7 +182,9 @@ bool sameMusicalHistoryStructureSnapshot(
 bool captureMacroTrackStructureHistoryBefore(
     const core::state::macro::MacroPagesState& pages,
     uint16_t trackMask,
-    SequencerHistoryTrackStructureChange& change
+    SequencerHistoryTrackStructureChange& change,
+    uint8_t affectedTrackIndex =
+        SequencerHistoryMacroTrackStructurePayload::INVALID_AFFECTED_TRACK
 );
 bool captureMacroTrackStructureHistoryAfter(
     const core::state::macro::MacroPagesState& pages,
@@ -156,6 +195,20 @@ bool macroTrackStructureHistoryChanged(
 );
 bool liveMacroTrackStructureMatches(
     const core::state::macro::MacroPagesState& pages,
+    const SequencerHistoryMacroTrackStructurePayload& payload,
+    bool after
+);
+bool validateMacroTrackStructureHistoryReplay(
+    const core::state::macro::MacroPagesState& pages,
+    const SequencerHistoryMacroTrackStructurePayload& payload,
+    bool after
+);
+// Precondition: validateMacroTrackStructureHistoryReplay() succeeded and the
+// payload/live source remained immutable. This durable-only commit allocates
+// nothing, cannot report a recoverable failure and deliberately leaves Macro
+// cache/runtime publication to the coordinated caller's final boundary.
+void commitMacroTrackStructureHistoryReplay(
+    core::state::macro::MacroPagesState& pages,
     const SequencerHistoryMacroTrackStructurePayload& payload,
     bool after
 );

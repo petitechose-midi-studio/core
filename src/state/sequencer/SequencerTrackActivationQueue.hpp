@@ -42,6 +42,43 @@ struct SequencerTrackActivationBatch {
     }
 };
 
+struct SequencerTrackActivationEntrySnapshot {
+    uint8_t phase = 0;
+    uint8_t requiresLocalLoopBoundary = 0;
+    SequencerTrackActivationTarget target = SequencerTrackActivationTarget::AFTER;
+    SequencerTrackActivationOrigin origin =
+        SequencerTrackActivationOrigin::UNSPECIFIED;
+    uint32_t generation = 0;
+    uint32_t operationId = 0;
+};
+
+/** Exact queue state captured by a pure activation plan. */
+struct SequencerTrackActivationExpectedState {
+    std::array<
+        SequencerTrackActivationEntrySnapshot,
+        SequencerTrackBankState::TRACK_COUNT
+    > entries{};
+    uint32_t nextGeneration = 0;
+    uint32_t nextOperationId = 0;
+    uint32_t telemetryRevision = 0;
+};
+
+/**
+ * Pure normal-activation plan. Building this object reserves no identifier and
+ * changes no queue state. The identifiers become official only when the plan
+ * passes the atomic arm gate.
+ */
+struct SequencerTrackActivationPlan {
+    SequencerTrackActivationBatch batch{};
+    SequencerTrackActivationExpectedState expected{};
+
+    bool valid() const { return batch.valid(); }
+};
+static_assert(
+    sizeof(SequencerTrackActivationPlan) <= 256,
+    "normal activation plan must remain within the planner frame target"
+);
+
 struct SequencerTrackActivationHistoryRef {
     uint16_t trackMask = 0;
     uint32_t operationId = 0;
@@ -61,15 +98,7 @@ struct SequencerTrackActivationHistoryPlan {
 };
 
 struct SequencerTrackActivationHistoryTransition {
-    struct EntrySnapshot {
-        uint8_t phase = 0;
-        uint8_t requiresLocalLoopBoundary = 0;
-        SequencerTrackActivationTarget target = SequencerTrackActivationTarget::AFTER;
-        SequencerTrackActivationOrigin origin =
-            SequencerTrackActivationOrigin::UNSPECIFIED;
-        uint32_t generation = 0;
-        uint32_t operationId = 0;
-    };
+    using EntrySnapshot = SequencerTrackActivationEntrySnapshot;
 
     SequencerTrackActivationHistoryRef reference{};
     SequencerTrackActivationTarget desiredTarget =
@@ -81,6 +110,28 @@ struct SequencerTrackActivationHistoryTransition {
 
     bool valid() const { return reference.valid() && touchedMask != 0; }
 };
+
+/**
+ * Pure Undo/Redo activation plan. It retains the exact queue state against
+ * which queued/cancelled masks were derived, but does not freeze any slot.
+ */
+struct SequencerTrackActivationHistoryTransitionPlan {
+    SequencerTrackActivationHistoryRef reference{};
+    SequencerTrackActivationTarget desiredTarget =
+        SequencerTrackActivationTarget::BEFORE;
+    uint16_t touchedMask = 0;
+    uint16_t queuedMask = 0;
+    uint16_t cancelledMask = 0;
+    uint16_t localLoopBoundaryMask = 0;
+    uint32_t generation = 0;
+    SequencerTrackActivationExpectedState expected{};
+
+    bool valid() const { return reference.valid() && touchedMask != 0; }
+};
+static_assert(
+    sizeof(SequencerTrackActivationHistoryTransitionPlan) <= 256,
+    "History activation plan must remain within the planner frame target"
+);
 
 struct SequencerTrackActivationRuntimePublication {
     uint16_t queuedMask = 0;
@@ -135,6 +186,23 @@ public:
     bool armPrepared(const SequencerTrackActivationBatch& batch);
     void publishPrepared(const SequencerTrackActivationBatch& batch);
 
+    /**
+     * Builds a scalar activation plan without reserving counters or touching
+     * queue slots. Arbitrary fallible work may occur before the atomic gate.
+     */
+    bool planActivation(
+        uint16_t trackMask,
+        uint16_t targetAudibleMask,
+        bool transportPlaying,
+        SequencerTrackActivationPlan& out,
+        SequencerTrackActivationOrigin origin =
+            SequencerTrackActivationOrigin::UNSPECIFIED
+    ) const;
+    bool tryArmPlannedActivation(
+        const SequencerTrackActivationPlan& plan,
+        SequencerTrackActivationBatch& out
+    );
+
     uint16_t pendingTrackMask() const;
     SequencerTrackActivationTelemetry telemetry(uint8_t trackIndex) const;
     oc::state::Signal<uint32_t, 4>& telemetryRevision() { return telemetry_revision_; }
@@ -156,6 +224,19 @@ public:
     bool publishRealtimeTelemetry();
 
     /** Replans Undo/Redo against the canonical audible mask of its target. */
+    bool planHistoryTransition(
+        const SequencerTrackActivationHistoryRef& reference,
+        SequencerTrackActivationTarget desiredTarget,
+        uint16_t targetAudibleMask,
+        bool transportPlaying,
+        SequencerTrackActivationHistoryTransitionPlan& out
+    ) const;
+    bool tryArmPlannedHistoryTransition(
+        const SequencerTrackActivationHistoryTransitionPlan& plan,
+        SequencerTrackActivationHistoryTransition& out
+    );
+
+    /** Legacy prepare-and-arm compatibility API for unmigrated callers. */
     bool prepareHistoryTransition(
         const SequencerTrackActivationHistoryRef& reference,
         SequencerTrackActivationTarget desiredTarget,
@@ -201,7 +282,31 @@ private:
     static bool runtimeIsTarget_(InternalPhase phase);
     static SequencerTrackActivationStatus telemetryStatus_(InternalPhase phase);
     static uint16_t sanitizeMask_(uint16_t trackMask);
+    static uint32_t nextNonZeroIdentifier_(uint32_t current);
+    static bool sameEntry_(
+        const Entry& entry,
+        const SequencerTrackActivationEntrySnapshot& expected
+    );
+    void captureExpectedStateLocked_(
+        SequencerTrackActivationExpectedState& out
+    ) const;
+    bool expectedStateMatchesLocked_(
+        const SequencerTrackActivationExpectedState& expected
+    ) const;
+    bool buildHistoryTransitionPlanLocked_(
+        const SequencerTrackActivationHistoryRef& reference,
+        SequencerTrackActivationTarget desiredTarget,
+        uint16_t targetAudibleMask,
+        bool transportPlaying,
+        SequencerTrackActivationHistoryTransitionPlan& out
+    ) const;
+    bool tryArmPlannedHistoryTransitionLocked_(
+        const SequencerTrackActivationHistoryTransitionPlan& plan,
+        SequencerTrackActivationHistoryTransition& out
+    );
     void bumpTelemetryRevision_();
+
+    friend struct SequencerTrackActivationQueueTestAccess;
 
     std::array<Entry, TRACK_COUNT> entries_{};
     uint32_t next_generation_ = 0;

@@ -421,6 +421,10 @@ public:
     // projection publication before the no-fail history boundary.
     void recordPreparedSequencerStructureHistory(
         sequencer::SequencerHistoryTrackStructureChangePtr change);
+    // Trusted no-fail tail for an unchanged, admitted Track Structure entry.
+    // Shared topology has already been published by the owning transaction.
+    void commitAdmittedSequencerStructureHistory(
+        sequencer::SequencerHistoryTrackStructureChangePtr change);
     bool recordSequencerStructureHistory(sequencer::SequencerHistoryTrackStructureChangePtr change);
     bool beginOrContinueSequencerPatternHistoryCoalescing(
         uint8_t step, sequencer::StepProperty property, uint32_t nowMs,

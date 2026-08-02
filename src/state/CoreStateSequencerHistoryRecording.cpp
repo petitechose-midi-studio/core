@@ -423,6 +423,12 @@ FLASHMEM void CoreState::recordPreparedSequencerStructureHistory(
     publishPreparedSequencerMutation();
 }
 
+FLASHMEM void CoreState::commitAdmittedSequencerStructureHistory(
+    sequencer::SequencerHistoryTrackStructureChangePtr change) {
+    sequencerHistory.commitAdmittedStructure(std::move(change));
+    publishPreparedSequencerMutation();
+}
+
 FLASHMEM void CoreState::publishPreparedSequencerMutation() {
     // The prepared transaction already performed the coalescer action's
     // editor-to-bank synchronization. Cancel only this coalescer's queued

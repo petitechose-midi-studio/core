@@ -215,6 +215,138 @@ FLASHMEM bool sameGraph(const Graph* lhs, const Graph* rhs) {
     return true;
 }
 
+FLASHMEM bool sameScaleSettingsExact(
+    const oc::note::sequencer::StepSequencerScaleSettings& lhs,
+    const oc::note::sequencer::StepSequencerScaleSettings& rhs
+) {
+    return lhs.root == rhs.root && lhs.type == rhs.type && lhs.mode == rhs.mode;
+}
+
+FLASHMEM bool sameVariationRangesExact(
+    const oc::note::sequencer::StepSequencerVariationRanges& lhs,
+    const oc::note::sequencer::StepSequencerVariationRanges& rhs
+) {
+    return lhs.pitchSemitones == rhs.pitchSemitones &&
+           lhs.velocity == rhs.velocity &&
+           lhs.gatePercent == rhs.gatePercent &&
+           lhs.nudge == rhs.nudge;
+}
+
+FLASHMEM bool sameChordSpecExact(
+    const oc::note::sequencer::StepSequencerChordSpec& lhs,
+    const oc::note::sequencer::StepSequencerChordSpec& rhs
+) {
+    return lhs.voiceCount == rhs.voiceCount &&
+           lhs.harmonyData == rhs.harmonyData &&
+           lhs.voicingData == rhs.voicingData &&
+           lhs.inversionData == rhs.inversionData &&
+           lhs.strum == rhs.strum &&
+           lhs.velocityCurve == rhs.velocityCurve &&
+           lhs.customIntervalExtension == rhs.customIntervalExtension;
+}
+
+FLASHMEM bool sameStepNodeExact(
+    const StepSequencerStepNode& lhs,
+    const StepSequencerStepNode& rhs
+) {
+    return lhs.flags == rhs.flags &&
+           lhs.velocityOffset == rhs.velocityOffset &&
+           lhs.gateOffset == rhs.gateOffset &&
+           lhs.probabilityOffset == rhs.probabilityOffset &&
+           lhs.childSequenceId == rhs.childSequenceId &&
+           lhs.cycleSetId == rhs.cycleSetId &&
+           sameVariationRangesExact(lhs.localVariation, rhs.localVariation) &&
+           sameChordSpecExact(lhs.chordSpec, rhs.chordSpec) &&
+           lhs.chordMode == rhs.chordMode &&
+           lhs.noteOffset == rhs.noteOffset &&
+           lhs.nudgeOffset == rhs.nudgeOffset;
+}
+
+// Prepared Structure revalidation is stricter than musical History equality:
+// every declared Graph field, including unused capacity, must still match the
+// detached checkpoint when owner identity and revision alone are unchanged.
+FLASHMEM bool sameGraphExact(const Graph* lhs, const Graph* rhs) {
+    const bool lhsEnabled = lhs != nullptr && lhs->enabled;
+    const bool rhsEnabled = rhs != nullptr && rhs->enabled;
+    if (!lhsEnabled || !rhsEnabled) return lhsEnabled == rhsEnabled;
+    if (lhs->rootSequenceId != rhs->rootSequenceId ||
+        lhs->stepNodeCount != rhs->stepNodeCount ||
+        lhs->sequenceCount != rhs->sequenceCount ||
+        lhs->cycleSetCount != rhs->cycleSetCount ||
+        lhs->stepNodeCount > lhs->stepNodes.size() ||
+        rhs->stepNodeCount > rhs->stepNodes.size() ||
+        lhs->sequenceCount > lhs->sequences.size() ||
+        rhs->sequenceCount > rhs->sequences.size() ||
+        lhs->cycleSetCount > lhs->cycleSets.size() ||
+        rhs->cycleSetCount > rhs->cycleSets.size()) {
+        return false;
+    }
+    for (uint16_t index = 0U; index < lhs->stepNodes.size(); ++index) {
+        if (!sameStepNodeExact(lhs->stepNodes[index], rhs->stepNodes[index])) {
+            return false;
+        }
+    }
+    for (uint8_t index = 0U; index < lhs->sequences.size(); ++index) {
+        if (!sameSequence(lhs->sequences[index], rhs->sequences[index])) {
+            return false;
+        }
+    }
+    for (uint8_t index = 0U; index < lhs->cycleSets.size(); ++index) {
+        if (!sameCycleSet(lhs->cycleSets[index], rhs->cycleSets[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool sameCcLaneDestinationExact(
+    const SequencerCcLaneDestination& lhs,
+    const SequencerCcLaneDestination& rhs
+) {
+    return lhs.controller == rhs.controller &&
+           lhs.minimum == rhs.minimum &&
+           lhs.maximum == rhs.maximum &&
+           lhs.routePolicy == rhs.routePolicy &&
+           lhs.pinnedPort == rhs.pinnedPort &&
+           lhs.pinnedChannel == rhs.pinnedChannel;
+}
+
+FLASHMEM bool sameCcLaneExact(
+    const SequencerCcLane& lhs,
+    const SequencerCcLane& rhs
+) {
+    return lhs.occupied == rhs.occupied &&
+           lhs.acceptedMacroConflict == rhs.acceptedMacroConflict &&
+           lhs.conflictPolicy == rhs.conflictPolicy &&
+           lhs.initialValue == rhs.initialValue &&
+           lhs.lifecycleGeneration == rhs.lifecycleGeneration &&
+           sameCcLaneDestinationExact(lhs.destination, rhs.destination) &&
+           lhs.activeMask == rhs.activeMask &&
+           lhs.values == rhs.values &&
+           lhs.transitions == rhs.transitions;
+}
+
+FLASHMEM bool sameOptionalCcLaneBankExact(
+    const SequencerCcLaneBank* lhs,
+    const SequencerCcLaneBank* rhs
+) {
+    if ((lhs != nullptr && !validSequencerCcLaneBank(*lhs)) ||
+        (rhs != nullptr && !validSequencerCcLaneBank(*rhs))) {
+        return false;
+    }
+    const bool lhsEmpty = lhs == nullptr || sequencerCcLaneCount(*lhs) == 0U;
+    const bool rhsEmpty = rhs == nullptr || sequencerCcLaneCount(*rhs) == 0U;
+    if (lhsEmpty || rhsEmpty) return lhsEmpty == rhsEmpty;
+    if (lhs->formatVersion != rhs->formatVersion ||
+        lhs->revision != rhs->revision) {
+        return false;
+    }
+    for (uint8_t lane = 0U; lane < lhs->lanes.size(); ++lane) {
+        if (!sameCcLaneExact(lhs->lanes[lane], rhs->lanes[lane])) return false;
+    }
+    return true;
+}
+
 FLASHMEM bool cloneGraph(const Graph* source, GraphPtr& out) {
     out.reset();
     if (source == nullptr || !source->enabled) { return true; }
@@ -272,26 +404,28 @@ FLASHMEM bool reservePatternPayloadStorage(const SequencerPatternState& source, 
 }
 
 FLASHMEM bool capturePatternPayloadUsingReservedStorage(const SequencerPatternState& source,
-                                                        GraphPtr& graph,
-                                                        SequencerHistoryCcLanePtr& ccLanes) {
+                                                         GraphPtr& graph,
+                                                         SequencerHistoryCcLanePtr& ccLanes) {
     const auto* sourceGraph = graphView(source);
-    if (sourceGraph == nullptr) {
-        graph.reset();
-    } else {
-        if (!graph) return false;
-        *graph = *sourceGraph;
-    }
-
     const auto* sourceCcLanes = source.ccLanes.get();
-    if (sourceCcLanes == nullptr || sequencerCcLaneCount(*sourceCcLanes) == 0U) {
+    if (sourceGraph != nullptr && !graph) return false;
+    if (sourceCcLanes != nullptr && !validSequencerCcLaneBank(*sourceCcLanes)) {
+        return false;
+    }
+    const bool sourceCcLanesEmpty = sourceCcLanes == nullptr ||
+        sequencerCcLaneCount(*sourceCcLanes) == 0U;
+    if (!sourceCcLanesEmpty && !ccLanes) return false;
+
+    // All fallible validation is complete. The reserved-owner publication
+    // below is a direct, allocation-free write with a strong failure guarantee.
+    if (sourceGraph == nullptr) graph.reset();
+    else *graph = *sourceGraph;
+
+    if (sourceCcLanesEmpty) {
         ccLanes.reset();
         return true;
     }
-    if (!ccLanes) return false;
-
-    SequencerCcLaneBank canonical{};
-    if (!decodeCanonicalSequencerCcLaneBank(*sourceCcLanes, canonical)) { return false; }
-    *ccLanes = canonical;
+    *ccLanes = *sourceCcLanes;
     return true;
 }
 
@@ -1188,11 +1322,59 @@ FLASHMEM bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState
 }
 
 FLASHMEM bool sameMusicalHistorySnapshot(const SequencerHistoryPatternSnapshot& lhs,
-                                         const SequencerHistoryPatternSnapshot& rhs) {
+                                          const SequencerHistoryPatternSnapshot& rhs) {
     return sameFlatPatternSnapshot(lhs.flat, rhs.flat) &&
            sameGraph(lhs.graph.get(), rhs.graph.get()) &&
            (!lhs.ccLanesCaptured || !rhs.ccLanesCaptured ||
             sameOptionalSequencerCcLaneBank(lhs.ccLanes.get(), rhs.ccLanes.get()));
+}
+
+FLASHMEM bool liveHistoryPatternSnapshotMatches(
+    const SequencerPatternState& live,
+    const SequencerHistoryPatternSnapshot& snapshot
+) {
+    const auto& flat = snapshot.flat;
+    if (live.length.get() != flat.length ||
+        live.playStart != flat.playStart ||
+        live.loopStart != flat.loopStart ||
+        live.loopEnd != flat.loopEnd ||
+        live.stepsPerBeat.get() != flat.stepsPerBeat ||
+        live.enabledMask.get() != flat.enabledMask ||
+        live.stepDataRevision.get() != flat.stepDataRevision ||
+        live.patternVariationRevision.get() != flat.patternVariationRevision ||
+        live.patternScaleRevision.get() != flat.patternScaleRevision ||
+        live.patternTimingRevision.get() != flat.patternTimingRevision ||
+        live.graphRevision.get() != flat.graphRevision ||
+        live.ccLaneRevision.get() != snapshot.ccLaneRevision ||
+        live.swingOffsetPercent.get() != flat.swingOffsetPercent ||
+        live.patternNudgePercent.get() != flat.patternNudgePercent ||
+        live.effectiveSwingPercent(0U) != flat.effectiveSwingPercent ||
+        !sameVariationRangesExact(live.variationRanges, flat.variationRanges) ||
+        live.scalePolicy != flat.scalePolicy ||
+        !sameScaleSettingsExact(live.scaleOverride, flat.scaleOverride) ||
+        live.pitchEditMode != flat.pitchEditMode ||
+        live.note != flat.note ||
+        live.velocity != flat.velocity ||
+        live.gate != flat.gate ||
+        live.nudge != flat.nudge ||
+        live.probability != flat.probability) {
+        return false;
+    }
+
+    const auto effectiveScale = resolveEffectiveScaleSettings(
+        {},
+        live.scalePolicy,
+        live.scaleOverride
+    );
+    if (!sameScaleSettingsExact(effectiveScale, flat.effectiveScaleSettings) ||
+        !sameGraphExact(graphView(live), snapshot.graph.get())) {
+        return false;
+    }
+    if (!snapshot.ccLanesCaptured) return false;
+    return sameOptionalCcLaneBankExact(
+        sequencerCcLaneView(live),
+        snapshot.ccLanes.get()
+    );
 }
 
 FLASHMEM bool preparedHistoryPatternAfterMatchesTrack(const SequencerTrackBankState& bank,
@@ -1734,6 +1916,14 @@ FLASHMEM bool SequencerHistoryService::recordStructure(
 FLASHMEM void SequencerHistoryService::recordPreparedStructure(
     SequencerHistoryTrackStructureChangePtr change) {
     if (!change || !canRecordStructure(*change)) return;
+
+    commitAdmittedStructure(std::move(change));
+}
+
+FLASHMEM void SequencerHistoryService::commitAdmittedStructure(
+    SequencerHistoryTrackStructureChangePtr change) {
+    assert(change);
+    if (!change) return;
 
     if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
         change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;

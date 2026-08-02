@@ -2933,6 +2933,396 @@ void test_presence_growth_is_rejected_by_strict_capture() {
     std::cout << "[PASS] strict capture rejects post-reservation owner growth\n";
 }
 
+void test_cc_capture_validation_preserves_detached_owners() {
+    seq::SequencerState source;
+    source.reset();
+    authorPayload(source.pattern, PayloadKind::GraphAndCc);
+
+    seq::SequencerHistoryPatternPayloadStorage storage;
+    assert(seq::reserveHistoryPatternPayloadStorage(source.pattern, storage));
+    assert(seq::captureHistoryPatternPayloadUsingReservedStorage(
+        source.pattern,
+        storage
+    ));
+    auto* const graphOwner = storage.graph.get();
+    auto* const ccOwner = storage.ccLanes.get();
+    assert(graphOwner != nullptr);
+    assert(ccOwner != nullptr);
+    const auto node = seq::rootStepNodeId(0U);
+    const int8_t capturedOffset = graphOwner->stepNodes[node].noteOffset;
+    const uint8_t capturedController = ccOwner->lanes[0].destination.controller;
+
+    assert(seq::setNodeNoteOffset(
+        source.pattern,
+        node,
+        static_cast<int8_t>(capturedOffset + 1)
+    ));
+    source.pattern.ccLanes->formatVersion = 0U;
+    assert(!seq::captureHistoryPatternPayloadUsingReservedStorage(
+        source.pattern,
+        storage
+    ));
+    assert(storage.graph.get() == graphOwner);
+    assert(storage.ccLanes.get() == ccOwner);
+    assert(graphOwner->stepNodes[node].noteOffset == capturedOffset);
+    assert(ccOwner->lanes[0].destination.controller == capturedController);
+
+    seq::SequencerCcLaneBankPtr detached;
+    assert(seq::cloneSequencerCcLaneBank(detached, ccOwner));
+    auto* const detachedOwner = detached.get();
+    assert(!seq::cloneSequencerCcLaneBank(
+        detached,
+        source.pattern.ccLanes.get()
+    ));
+    assert(detached.get() == detachedOwner);
+    assert(detached->lanes[0].destination.controller == capturedController);
+    assert(!seq::captureSequencerCcLaneBankUsingReservedStorage(
+        source.pattern.ccLanes.get(),
+        detached
+    ));
+    assert(detached.get() == detachedOwner);
+    assert(detached->lanes[0].destination.controller == capturedController);
+
+    source.pattern.ccLanes->formatVersion = seq::SequencerCcLaneBank::FORMAT_VERSION;
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(!seq::cloneSequencerCcLaneBank(
+            detached,
+            source.pattern.ccLanes.get()
+        ));
+        tx::assertFailureConsumed(1U);
+        assert(detached.get() == detachedOwner);
+    }
+
+    std::cout << "[PASS] CC capture validates before detached/reserved writes\n";
+}
+
+void test_structure_after_builder_and_live_revalidation_are_exact() {
+    Harness h;
+    initializeCapturedTracks(h, PayloadKind::GraphAndCc, 0x0003U);
+    auto change = seq::prepareHistoryStructureChangeBefore(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        0x0003U
+    );
+    assert(change);
+
+    ExpectedAllocationRequests expected;
+    appendPayloadRequests(expected, PayloadKind::GraphAndCc);
+    {
+        allocation_trace::Scope trace;
+        assert(seq::buildHistoryStructureSnapshotAfterFromBefore(
+            *change,
+            0x0001U,
+            0U,
+            h.state.sequencer.focusedStep.get(),
+            h.state.sequencer.page.get(),
+            seq::sequencerHistoryTrackBit(1U)
+        ));
+        assertAllocationRequests(expected);
+    }
+    assert(change->after.tracks[0U].graph);
+    assert(change->after.tracks[0U].ccLanes);
+    assert(!change->after.tracks[1U].graph);
+    assert(!change->after.tracks[1U].ccLanes);
+    assert(
+        change->after.tracks[1U].flat.stepDataRevision ==
+        change->before.tracks[1U].flat.stepDataRevision + 1U
+    );
+    assert(
+        change->after.tracks[1U].flat.graphRevision ==
+        change->before.tracks[1U].flat.graphRevision + 1U
+    );
+    assert(
+        change->after.tracks[1U].ccLaneRevision ==
+        change->before.tracks[1U].ccLaneRevision + 1U
+    );
+
+    h.state.sequencerTracks.track(1U).reset();
+    assert(seq::liveHistoryStructureSnapshotMatches(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        change->after
+    ));
+
+    auto* const liveGraph = h.state.sequencer.pattern.graph.get();
+    assert(liveGraph != nullptr);
+    assert(liveGraph->stepNodeCount != 0U);
+    const int8_t activeNodeOffset = liveGraph->stepNodes[0U].noteOffset;
+    liveGraph->stepNodes[0U].noteOffset =
+        static_cast<int8_t>(activeNodeOffset + 1);
+    assert(!seq::liveHistoryStructureSnapshotMatches(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        change->after
+    ));
+    liveGraph->stepNodes[0U].noteOffset = activeNodeOffset;
+
+    const std::size_t unusedNode = liveGraph->stepNodes.size() - 1U;
+    assert(unusedNode >= liveGraph->stepNodeCount);
+    const uint16_t unusedFlags = liveGraph->stepNodes[unusedNode].flags;
+    liveGraph->stepNodes[unusedNode].flags = static_cast<uint16_t>(
+        unusedFlags ^ oc::note::sequencer::STEP_NODE_NOTE_OFFSET
+    );
+    assert(!seq::liveHistoryStructureSnapshotMatches(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        change->after
+    ));
+    liveGraph->stepNodes[unusedNode].flags = unusedFlags;
+    assert(seq::liveHistoryStructureSnapshotMatches(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        change->after
+    ));
+
+    auto* const liveCc = h.state.sequencer.pattern.ccLanes.get();
+    assert(liveCc != nullptr);
+    ++liveCc->revision;
+    assert(!seq::liveHistoryStructureSnapshotMatches(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        change->after
+    ));
+    --liveCc->revision;
+    assert(seq::liveHistoryStructureSnapshotMatches(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        change->after
+    ));
+
+    for (std::size_t ordinal = 1U; ordinal <= 4U; ++ordinal) {
+        Harness failed;
+        initializeCapturedTracks(failed, PayloadKind::GraphAndCc, 0x0003U);
+        auto partial = seq::prepareHistoryStructureChangeBefore(
+            failed.state.sequencerTracks,
+            failed.state.sequencer,
+            0x0003U
+        );
+        assert(partial);
+        auto* const beforeGraph = partial->before.tracks[0U].graph.get();
+        auto* const beforeCc = partial->before.tracks[0U].ccLanes.get();
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            assert(!seq::buildHistoryStructureSnapshotAfterFromBefore(
+                *partial,
+                0x0001U,
+                0U,
+                failed.state.sequencer.focusedStep.get(),
+                failed.state.sequencer.page.get()
+            ));
+            tx::assertFailureConsumed(ordinal);
+        }
+        assert(partial->before.tracks[0U].graph.get() == beforeGraph);
+        assert(partial->before.tracks[0U].ccLanes.get() == beforeCc);
+        assert(seq::liveHistoryStructureSnapshotMatches(
+            failed.state.sequencerTracks,
+            failed.state.sequencer,
+            partial->before
+        ));
+    }
+
+    std::cout << "[PASS] Structure After builder/reset/revalidation are exact\n";
+}
+
+void test_trusted_structure_commit_does_not_recheck_admission() {
+    Harness h;
+    initializeActivePayload(h, PayloadKind::None);
+    auto change = seq::prepareHistoryStructureChangeBefore(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        0x0001U
+    );
+    assert(change);
+    assert(seq::buildHistoryStructureSnapshotAfterFromBefore(
+        *change,
+        0x0003U,
+        0U,
+        h.state.sequencer.focusedStep.get(),
+        h.state.sequencer.page.get()
+    ));
+    assert(h.state.sequencerHistory.canRecordStructure(*change));
+
+    // Deliberately break the public precondition after proving admission. The
+    // trusted sink must remain a pure ownership transfer with no second policy
+    // decision; production callers keep the payload immutable instead.
+    change->after.enabledMask = change->before.enabledMask;
+    assert(!h.state.sequencerHistory.canRecordStructure(*change));
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.state.sequencerHistory.commitAdmittedStructure(std::move(change));
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
+    assert(h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::Structure) == 1U);
+
+    std::cout << "[PASS] admitted Structure commit has no defensive recheck\n";
+}
+
+void test_trusted_structure_facade_requires_and_uses_admitted_sink() {
+    Harness h;
+    initializeActivePayload(h, PayloadKind::None);
+    auto change = seq::prepareHistoryStructureChangeBefore(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        0x0001U
+    );
+    assert(change);
+    assert(seq::buildHistoryStructureSnapshotAfterFromBefore(
+        *change,
+        0x0003U,
+        0U,
+        h.state.sequencer.focusedStep.get(),
+        h.state.sequencer.page.get()
+    ));
+
+    const core::handler::SequencerHistoryDomainServices empty;
+    assert(!empty.canCommitAdmittedStructure(*change));
+    const auto history =
+        core::handler::SequencerHistoryDomainServices::fromCoreState(h.state);
+    assert(history.canCommitAdmittedStructure(*change));
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        history.commitAdmittedStructure(std::move(change));
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
+    assert(
+        h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::Structure) ==
+        1U
+    );
+
+    std::cout << "[PASS] admitted Structure facade requires the trusted sink\n";
+}
+
+void test_macro_replay_validation_and_commit_revision_policy() {
+    Harness h;
+    auto& pages = h.state.pages;
+    const uint16_t trackMask = seq::sequencerHistoryTrackBit(2U);
+
+    auto equalControl = core::app::makeExtmemUnique<
+        seq::SequencerHistoryTrackStructureChange
+    >();
+    assert(equalControl);
+    assert(seq::captureMacroTrackStructureHistoryBefore(
+        pages,
+        trackMask,
+        *equalControl,
+        2U
+    ));
+    auto* equalPayload = equalControl->macroStructure.get();
+    assert(equalPayload != nullptr);
+    assert(equalPayload->affectedTrackIndex == 2U);
+    pages.tracks[2U].activePage = 1U;
+    assert(seq::captureMacroTrackStructureHistoryAfter(pages, *equalControl));
+    assert(!equalPayload->afterControl);
+
+    const uint32_t equalRevision = pages.control.authoredRevision;
+    const uint8_t afterPage = pages.tracks[2U].activePage;
+    assert(seq::validateMacroTrackStructureHistoryReplay(
+        pages,
+        *equalPayload,
+        false
+    ));
+    assert(pages.control.authoredRevision == equalRevision);
+    assert(pages.tracks[2U].activePage == afterPage);
+    seq::commitMacroTrackStructureHistoryReplay(pages, *equalPayload, false);
+    assert(pages.control.authoredRevision == equalRevision);
+    assert(pages.tracks[2U].activePage == equalPayload->beforeTracks[2U].activePage);
+    assert(seq::applyMacroTrackStructureHistory(pages, *equalPayload, true));
+    assert(pages.control.authoredRevision == equalRevision);
+    assert(pages.tracks[2U].activePage == afterPage);
+
+    auto distinctControl = core::app::makeExtmemUnique<
+        seq::SequencerHistoryTrackStructureChange
+    >();
+    assert(distinctControl);
+    assert(seq::captureMacroTrackStructureHistoryBefore(
+        pages,
+        trackMask,
+        *distinctControl,
+        2U
+    ));
+    auto* distinctPayload = distinctControl->macroStructure.get();
+    assert(distinctPayload != nullptr);
+    ++pages.control.authored.curves.nextCurveId;
+    assert(seq::captureMacroTrackStructureHistoryAfter(pages, *distinctControl));
+    assert(distinctPayload->afterControl);
+    const uint32_t distinctRevision = pages.control.authoredRevision;
+    assert(seq::validateMacroTrackStructureHistoryReplay(
+        pages,
+        *distinctPayload,
+        false
+    ));
+    seq::commitMacroTrackStructureHistoryReplay(pages, *distinctPayload, false);
+    assert(pages.control.authoredRevision == distinctRevision + 1U);
+    assert(seq::validateMacroTrackStructureHistoryReplay(
+        pages,
+        *distinctPayload,
+        true
+    ));
+    seq::commitMacroTrackStructureHistoryReplay(pages, *distinctPayload, true);
+    assert(pages.control.authoredRevision == distinctRevision + 2U);
+
+    auto cacheBoundary = core::app::makeExtmemUnique<
+        seq::SequencerHistoryTrackStructureChange
+    >();
+    assert(cacheBoundary);
+    const uint16_t activeTrackMask = seq::sequencerHistoryTrackBit(0U);
+    assert(seq::captureMacroTrackStructureHistoryBefore(
+        pages,
+        activeTrackMask,
+        *cacheBoundary,
+        0U
+    ));
+    auto* cachePayload = cacheBoundary->macroStructure.get();
+    assert(cachePayload != nullptr);
+    const uint8_t beforeCc =
+        cachePayload->beforeTracks[0U].pages[0U].cc[0U];
+    pages.tracks[0U].activePage = 1U;
+    pages.tracks[0U].enabledPageMask = 0x0003U;
+    pages.tracks[0U].pages[1U].cc[0U] = 99U;
+    assert(seq::captureMacroTrackStructureHistoryAfter(pages, *cacheBoundary));
+    pages.syncActiveTrackCache();
+    pages.updateActiveConfigs();
+    assert(pages.currentActivePage() == 1U);
+    assert(pages.currentEnabledPageMask() == 0x0003U);
+    assert(pages.activeConfigs[0U].cc == 99U);
+
+    assert(seq::validateMacroTrackStructureHistoryReplay(
+        pages,
+        *cachePayload,
+        false
+    ));
+    seq::commitMacroTrackStructureHistoryReplay(pages, *cachePayload, false);
+    assert(pages.tracks[0U].activePage == 0U);
+    assert(pages.tracks[0U].enabledPageMask == 0x0001U);
+    assert(pages.currentActivePage() == 1U);
+    assert(pages.currentEnabledPageMask() == 0x0003U);
+    assert(pages.activeConfigs[0U].cc == 99U);
+
+    assert(seq::applyMacroTrackStructureHistory(pages, *cachePayload, true));
+    assert(pages.currentActivePage() == 1U);
+    assert(pages.currentEnabledPageMask() == 0x0003U);
+    assert(pages.activeConfigs[0U].cc == 99U);
+    assert(seq::applyMacroTrackStructureHistory(pages, *cachePayload, false));
+    assert(pages.currentActivePage() == 0U);
+    assert(pages.currentEnabledPageMask() == 0x0001U);
+    assert(pages.activeConfigs[0U].cc == beforeCc);
+
+    auto invalidAffected = core::app::makeExtmemUnique<
+        seq::SequencerHistoryTrackStructureChange
+    >();
+    assert(invalidAffected);
+    assert(!seq::captureMacroTrackStructureHistoryBefore(
+        pages,
+        trackMask,
+        *invalidAffected,
+        3U
+    ));
+    assert(!invalidAffected->macroStructure);
+
+    std::cout << "[PASS] Macro replay validates first and advances control revision conditionally\n";
+}
+
 }  // namespace
 
 int main() {
@@ -2959,6 +3349,11 @@ int main() {
     test_structure_frozen_mask_requires_active_track_union();
     test_prepared_bank_admission_rejects_active_step_draft();
     test_presence_growth_is_rejected_by_strict_capture();
+    test_cc_capture_validation_preserves_detached_owners();
+    test_structure_after_builder_and_live_revalidation_are_exact();
+    test_trusted_structure_commit_does_not_recheck_admission();
+    test_trusted_structure_facade_requires_and_uses_admitted_sink();
+    test_macro_replay_validation_and_commit_revision_policy();
     std::cout << "Sequencer prepared History transaction tests passed\n";
     return 0;
 }

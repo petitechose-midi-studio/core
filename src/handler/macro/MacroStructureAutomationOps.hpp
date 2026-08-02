@@ -31,6 +31,11 @@ bool clearTracks(
     core::state::modulation::ProjectControlState& control,
     uint16_t trackMask
 );
+/** Detached-domain variant for an enclosing prepared Track transaction. */
+bool clearTracksInDomain(
+    core::state::modulation::ProjectControlDomainState& domain,
+    uint16_t trackMask
+);
 bool clearMacroSlot(
     core::state::modulation::ProjectControlState& control,
     const core::state::macro::MacroAutomationSlotAddress& address
@@ -44,6 +49,12 @@ bool replacePageFromClipboard(
 
 bool replaceTrackFromClipboard(
     core::state::modulation::ProjectControlState& control,
+    uint8_t destTrack,
+    const core::state::MacroAutomationClipboard* clipboard
+);
+/** Detached-domain variant; partial failure is discard-only for the caller. */
+bool replaceTrackFromClipboardInDomain(
+    core::state::modulation::ProjectControlDomainState& domain,
     uint8_t destTrack,
     const core::state::MacroAutomationClipboard* clipboard
 );
