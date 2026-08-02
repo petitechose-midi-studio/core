@@ -826,9 +826,7 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
         }
 
         const bool postDispatchRelease =
-            !sequencer_.contextSelector.visible ||
-            sequencer_.contextSelector.feedback !=
-                core::state::sequencer::SequencerContextSelectorFeedback::NONE;
+            !sequencer_.contextSelector.visible;
         if (postDispatchRelease && context_selector_rotated_) {
             context_selector_target_ = navigation_focus_.get();
         }
@@ -1717,9 +1715,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
             : "existing";
     } else {
         index = sequencer_.structureUi.previewPageIndex.get();
-        out.property = sequencer_.structureUi.previewAddPageSlot.get()
-            ? "add_slot"
-            : "existing";
+        out.property = "existing";
     }
     out.targetIndex = static_cast<int16_t>(index);
     copyIndexLabel(out.valueLabel, index);

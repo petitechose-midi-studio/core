@@ -116,8 +116,6 @@ void seedTransientTrackState(seq::SequencerState& active) {
 
     active.contextSelector.visible = true;
     active.contextSelector.previewFocus = core::state::StructureNavigationFocus::TRACK;
-    active.contextSelector.feedback = seq::SequencerContextSelectorFeedback::EDITOR_UNAVAILABLE;
-    active.contextSelector.feedbackUntilMs = 1234U;
 
     active.ccLaneUi.overlayVisible.set(true);
     active.ccLaneUi.mode = seq::SequencerCcLaneUiMode::LANE_GRID;
@@ -169,8 +167,6 @@ void assertTransientTrackStateReset(
     assert(!active.contextSelector.visible);
     assert(active.contextSelector.previewFocus ==
            core::state::StructureNavigationFocus::PAGE);
-    assert(active.contextSelector.feedback == seq::SequencerContextSelectorFeedback::NONE);
-    assert(active.contextSelector.feedbackUntilMs == 0U);
 
     assert(!active.ccLaneUi.overlayVisible.get());
     assert(active.ccLaneUi.mode == seq::SequencerCcLaneUiMode::CLOSED);

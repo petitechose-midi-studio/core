@@ -22,9 +22,7 @@ FLASHMEM SequencerInteractionContext makeSequencerInteractionContext(
                              sequencer.patternEditor.active.get();
     context.previewingAddSlot =
         context.navigationFocus == core::state::StructureNavigationFocus::TRACK
-        ? trackUi.previewAddSlot.get()
-        : context.navigationFocus == core::state::StructureNavigationFocus::PAGE
-            ? sequencer.structureUi.previewAddPageSlot.get()
+            ? trackUi.previewAddSlot.get()
             : false;
     context.trackSelectionActive = trackUi.selection.active.get();
     context.pageSelectionActive = sequencer.structureUi.pageSelection.active.get();

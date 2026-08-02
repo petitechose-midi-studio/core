@@ -109,13 +109,23 @@ FLASHMEM void publishPreparedSequencerStateFromCoreState(
     }
 }
 
-FLASHMEM void reconcilePreparedMacroTrackTransferFromCoreState(
+FLASHMEM void reconcilePreparedTrackPresentationFromCoreState(
     void* context,
+    PreparedTrackPresentationKind kind,
     uint16_t capturedTrackMask
-) {
-    if (context == nullptr) return;
-    static_cast<core::state::CoreState*>(context)
-        ->reconcilePreparedMacroTrackTransfer(capturedTrackMask);
+) noexcept {
+    if (context == nullptr) failPreparedTrackPublicationInvariant();
+    auto& state = *static_cast<core::state::CoreState*>(context);
+    switch (kind) {
+        case PreparedTrackPresentationKind::MacroTrackTransfer:
+            state.reconcilePreparedMacroTrackTransfer(capturedTrackMask);
+            return;
+        case PreparedTrackPresentationKind::SequencerActiveTrack:
+            state.reconcilePreparedSequencerActiveTrackPresentation();
+            return;
+        default:
+            failPreparedTrackPublicationInvariant();
+    }
 }
 
 FLASHMEM bool capturePreparedTrackStructureSettlementCheckpointFromCoreState(
@@ -182,7 +192,7 @@ FLASHMEM SharedTrackDomainServices SharedTrackDomainServices::fromCoreState(
             &state,
             setSharedTrackStateFromCoreState,
             publishPreparedSequencerStateFromCoreState,
-            reconcilePreparedMacroTrackTransferFromCoreState,
+            reconcilePreparedTrackPresentationFromCoreState,
             capturePreparedTrackStructureSettlementCheckpointFromCoreState,
         },
     };
@@ -221,11 +231,13 @@ FLASHMEM void
 SharedTrackDomainServices::reconcilePreparedMacroTrackTransfer(
     uint16_t capturedTrackMask
 ) const {
-    if (operations_.reconcilePreparedMacroTrackTransfer == nullptr) {
+    if (operations_.context == nullptr ||
+        operations_.reconcilePreparedTrackPresentation == nullptr) {
         return;
     }
-    operations_.reconcilePreparedMacroTrackTransfer(
+    operations_.reconcilePreparedTrackPresentation(
         operations_.context,
+        PreparedTrackPresentationKind::MacroTrackTransfer,
         capturedTrackMask
     );
 }
@@ -250,6 +262,22 @@ SharedTrackDomainServices::preparedTrackStructureSettlementCheckpointMatches(
     PreparedTrackStructureSettlementCheckpoint actual{};
     return capturePreparedTrackStructureSettlementCheckpoint(actual) &&
            samePreparedTrackStructureSettlementCheckpoint(actual, expected);
+}
+
+FLASHMEM bool SharedTrackDomainServices::
+canReconcilePreparedSequencerActiveTrackPresentation() const {
+    return operations_.context != nullptr &&
+           operations_.reconcilePreparedTrackPresentation != nullptr;
+}
+
+FLASHMEM void
+SharedTrackDomainServices::reconcilePreparedSequencerActiveTrackPresentation()
+    const noexcept {
+    operations_.reconcilePreparedTrackPresentation(
+        operations_.context,
+        PreparedTrackPresentationKind::SequencerActiveTrack,
+        0U
+    );
 }
 
 }  // namespace core::handler

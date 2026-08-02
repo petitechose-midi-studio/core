@@ -13,7 +13,7 @@ namespace core::handler {
 // Stable one-shot keys for the complete Page/Step structure command surface.
 // Keep the declaration order synchronized with the frozen Page inventory.
 enum class SequencerPreparedPageStructureAction : uint8_t {
-    PageCreate = 0,
+    Invalid = 0,
     PageSelectionPaste,
     PageClear,
     PageDelete,
@@ -53,7 +53,7 @@ struct SequencerPreparedPageStructureExecution {
     core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan =
         core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly;
     SequencerPreparedPageStructureAction action =
-        SequencerPreparedPageStructureAction::PageCreate;
+        SequencerPreparedPageStructureAction::Invalid;
     uint8_t expectedTrack =
         core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
     int32_t beforePageCount = 0;

@@ -21,6 +21,7 @@ ATTENTION_SUFFIXES = frozenset((".c", ".cc", ".cpp", ".h", ".hpp", ".ux"))
 COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*SequencerPreparedPageStructureMutationPlan.cpp.o(.text* .rodata*)",
     "*SequencerPreparedPageStructureTransaction.cpp.o(.text* .rodata*)",
+    "*SequencerDirectTrackStructureTransaction.cpp.o(.text* .rodata*)",
     "*SequencerPreparedTrackStructurePlanValidation.cpp.o(.text* .rodata*)",
     "*SequencerPreparedTrackStructureTransaction.cpp.o(.text* .rodata*)",
     "*SharedTrackDomainServices.cpp.o(.text* .rodata*)",
@@ -169,13 +170,56 @@ PAGE_STRUCTURE_MUTATION_PLAN = (
 PAGE_STRUCTURE_EDIT_WORKFLOW = (
     "src/handler/sequencer/SequencerStructureEditWorkflow.cpp"
 )
+PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER = (
+    "src/handler/sequencer/SequencerStructureEditWorkflow.hpp"
+)
 PAGE_STRUCTURE_SELECTION_WORKFLOW = (
     "src/handler/sequencer/SequencerStructureSelectionWorkflow.cpp"
 )
 PAGE_STRUCTURE_NAVIGATION_WORKFLOW = (
     "src/handler/sequencer/SequencerStructureNavigationWorkflow.cpp"
 )
+PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER = (
+    "src/handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
+)
+CONTEXT_SELECTOR_WORKFLOW = (
+    "src/handler/sequencer/SequencerContextSelectorWorkflow.cpp"
+)
+CONTEXT_SELECTOR_WORKFLOW_HEADER = (
+    "src/handler/sequencer/SequencerContextSelectorWorkflow.hpp"
+)
+PRESS_HOLD_TURN_RELEASE_GESTURE_HEADER = (
+    "src/handler/common/PressHoldTurnReleaseGesture.hpp"
+)
+MACRO_STRUCTURE_WORKFLOW = "src/handler/macro/MacroStructureWorkflow.cpp"
+MACRO_STRUCTURE_WORKFLOW_HEADER = "src/handler/macro/MacroStructureWorkflow.hpp"
+MACRO_PERFORMANCE_HANDLER = "src/handler/macro/MacroPerformanceHandler.cpp"
+MACRO_VIEW = "src/ui/view/MacroView.cpp"
+STRUCTURE_NAVIGATION_STATE = "src/state/StructureNavigationState.cpp"
+STRUCTURE_NAVIGATION_STATE_HEADER = "src/state/StructureNavigationState.hpp"
+DIRECT_TRACK_STRUCTURE_TRANSACTION = (
+    "src/handler/sequencer/SequencerDirectTrackStructureTransaction.cpp"
+)
+DIRECT_TRACK_STRUCTURE_TRANSACTION_HEADER = (
+    "src/handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
+)
+SHARED_TRACK_DOMAIN_SERVICES_HEADER = (
+    "src/handler/common/SharedTrackDomainServices.hpp"
+)
+SHARED_TRACK_DOMAIN_SERVICES = (
+    "src/handler/common/SharedTrackDomainServices.cpp"
+)
+CORE_SEQUENCER_HISTORY_TRAVERSAL = (
+    "src/state/CoreStateSequencerHistoryTraversal.cpp"
+)
 SEQUENCER_STEP_HANDLER = "src/handler/sequencer/SequencerStepHandler.cpp"
+SEQUENCER_STEP_HANDLER_HEADER = "src/handler/sequencer/SequencerStepHandler.hpp"
+SEQUENCER_VIEW = "src/ui/view/SequencerView.cpp"
+SEQUENCER_VIEW_HEADER = "src/ui/view/SequencerView.hpp"
+SEQUENCER_OVERLAY_PRESENTER = (
+    "src/context/standalone/SequencerOverlayPresenter.cpp"
+)
+BUTTON_RELEASE_LATCH_HEADER = "src/handler/common/ButtonReleaseLatch.hpp"
 RETIRED_RAW_PAGE_SYMBOLS = (
     "pastePageClipboard",
     "pastePageSelectionClipboard",
@@ -199,8 +243,12 @@ RETIRED_RAW_PAGE_SYMBOLS = (
     "sequencerHistoryPageCount",
     "makeSequencerPageStructureHistoryDescriptor",
 )
+RETIRED_RAW_TRACK_SYMBOLS = (
+    "createSequencerStructureTrack",
+    "rollbackTrackCreation",
+)
 PAGE_STRUCTURE_ACTIONS = (
-    "PageCreate",
+    "Invalid",
     "PageSelectionPaste",
     "PageClear",
     "PageDelete",
@@ -910,6 +958,18 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         if found != count:
             errors.append(f"{rel}: {description} (expected {count}, found {found})")
 
+    def require_across_files(
+        pattern: str, description: str, count: int
+    ) -> None:
+        found = sum(
+            len(re.findall(pattern, masked_file(rel), flags=re.DOTALL))
+            for rel in files
+        )
+        if found != count:
+            errors.append(
+                f"source set: {description} (expected {count}, found {found})"
+            )
+
     function_body_cache: dict[tuple[str, str], list[str]] = {}
 
     def function_bodies(rel: str, qualified_name: str) -> list[str]:
@@ -938,6 +998,37 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         if found != count:
             errors.append(
                 f"{rel}: {description} in {qualified_name} "
+                f"(expected {count}, found {found})"
+            )
+
+    type_body_cache: dict[tuple[str, str], list[str]] = {}
+
+    def type_bodies(rel: str, type_name: str) -> list[str]:
+        key = (rel, type_name)
+        if key not in type_body_cache:
+            type_body_cache[key] = cpp_type_bodies(
+                files.get(rel, ""), type_name
+            )
+        return type_body_cache[key]
+
+    def require_in_type(
+        rel: str,
+        type_name: str,
+        pattern: str,
+        description: str,
+        count: int = 1,
+    ) -> None:
+        bodies = type_bodies(rel, type_name)
+        if len(bodies) != 1:
+            errors.append(
+                f"{rel}: {type_name} must have exactly one balanced definition "
+                f"(found {len(bodies)})"
+            )
+            return
+        found = len(re.findall(pattern, bodies[0], flags=re.DOTALL))
+        if found != count:
+            errors.append(
+                f"{rel}: {description} in {type_name} "
                 f"(expected {count}, found {found})"
             )
 
@@ -1115,7 +1206,64 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         PAGE_STRUCTURE_TRANSACTION_HEADER,
         r"\benum\s+class\s+SequencerPreparedPageStructureAction\s*:\s*"
         rf"uint8_t\s*\{{\s*{exact_action_members}\s*,?\s*\}}\s*;",
-        "Page Structure action enum must contain exactly the ten frozen actions",
+        "Page Structure action enum must contain one invalid sentinel and exactly nine frozen actions",
+    )
+    for retired_symbol in (
+        "PageCreate",
+        "buildSequencerPageCreateMutationPlan",
+        "createPreviewedPageAfterBoundary",
+        "createPreviewedStructure",
+    ):
+        observed = sum(
+            len(re.findall(rf"\b{re.escape(retired_symbol)}\b", masked_file(rel)))
+            for rel in files
+            if rel.startswith("src/handler/sequencer/")
+        )
+        if observed != 0:
+            errors.append(
+                "src/handler/sequencer: retired Navigation Page-create symbol "
+                f"{retired_symbol} restored (found {observed})"
+            )
+    sequencer_add_slot_signal_count = sum(
+        len(re.findall(r"\bpreviewAddPageSlot\b", masked_file(rel)))
+        for rel in files
+        if rel.startswith("src/") and "sequencer" in rel.lower()
+    )
+    if sequencer_add_slot_signal_count != 0:
+        errors.append(
+            "src: retired Sequencer previewAddPageSlot signal restored "
+            f"(found {sequencer_add_slot_signal_count})"
+        )
+    for retired_selector_symbol in (
+        "SequencerContextSelectorFeedback",
+        "feedbackUntilMs",
+        "UNAVAILABLE_FEEDBACK_MS",
+        "EDITOR_UNAVAILABLE",
+    ):
+        observed = sum(
+            len(re.findall(
+                rf"\b{re.escape(retired_selector_symbol)}\b",
+                masked_file(rel),
+            ))
+            for rel in files
+            if rel.startswith("src/") and "sequencer" in rel.lower()
+        )
+        if observed != 0:
+            errors.append(
+                "src: retired unproducible Sequencer selector feedback symbol "
+                f"{retired_selector_symbol} restored (found {observed})"
+            )
+    require(
+        CONTEXT_SELECTOR_WORKFLOW_HEADER,
+        r"\brotated\s*\(",
+        "context selector must not restore its unused rotated accessor",
+        count=0,
+    )
+    require(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        r"\btrackPasteDetailsVisible\s*\(",
+        "Edit workflow must not restore its unused Track-paste detail accessor",
+        count=0,
     )
     public_block = re.search(
         r"\bclass\s+SequencerPreparedPageStructureTransaction\b.*?"
@@ -1174,6 +1322,18 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
             errors.append(
                 f"src: retired raw Page mutation {symbol} must remain absent "
                 f"(found {observed})"
+            )
+
+    for symbol in RETIRED_RAW_TRACK_SYMBOLS:
+        observed = sum(
+            len(re.findall(rf"\b{re.escape(symbol)}\b", content))
+            for rel, content in files.items()
+            if rel.startswith("src/")
+        )
+        if observed != 0:
+            errors.append(
+                f"src: retired raw Track Structure symbol {symbol} "
+                f"must remain absent (found {observed})"
             )
 
     for symbol in LEASED_TEST_VERSIONED_PAGE_WRITERS:
@@ -1258,12 +1418,6 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
 
     prepared_structure_routes = (
         (
-            PAGE_STRUCTURE_NAVIGATION_WORKFLOW,
-            "SequencerStructureNavigationWorkflow::createPreviewedStructure",
-            "PageCreate",
-            "createPreviewedPageAfterBoundary",
-        ),
-        (
             PAGE_STRUCTURE_EDIT_WORKFLOW,
             "SequencerStructureEditWorkflow::applyCurrentStructureShortPress",
             "PageClear",
@@ -1320,11 +1474,6 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
 
     prepared_structure_helpers = (
         (
-            PAGE_STRUCTURE_NAVIGATION_WORKFLOW,
-            "SequencerStructureNavigationWorkflow::createPreviewedPageAfterBoundary",
-            "buildSequencerPageCreateMutationPlan",
-        ),
-        (
             PAGE_STRUCTURE_EDIT_WORKFLOW,
             "SequencerStructureEditWorkflow::clearCurrentPageAfterBoundary",
             "buildSequencerPageClearMutationPlan",
@@ -1373,6 +1522,1314 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
             r"\bexecuteSequencerPreparedPageStructureMutationPlan\s*\(",
             f"{function} must execute exactly one prepared plan",
         )
+
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executeDirect",
+        r"\bexecuteSequencerTrackStructureTransaction\s*\(",
+        "direct Track adapter must own exactly one common kernel call",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executeSequencerCreateTrackStructure",
+        r"\bexecuteDirect\s*\(\s*state\s*,\s*Action::SequencerCreate\s*,\s*"
+        r"TrackBank::TRACK_COUNT\s*\)",
+        "Create wrapper must route the frozen SequencerCreate action",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executeSequencerRemoveCurrentTrackStructure",
+        r"\bexecuteDirect\s*\(\s*state\s*,\s*"
+        r"Action::SequencerRemoveCurrent\s*,\s*latchedTargetTrack\s*\)",
+        "RemoveCurrent wrapper must route the frozen SequencerRemoveCurrent action",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executeDirect",
+        r"^\s*if\s*\(\s*"
+        r"state\.sequencer\.stepContentDraft\.rejectTransitionIfActive\s*\(\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::\s*)*"
+        r"SequencerStepContentDraftBlockedTransition::TRACK\s*\)\s*\)",
+        "direct Track adapter must give Draft rejection first executable priority",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "reconcileCommitted",
+        r"\breconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\)",
+        "committed Track tail must reconcile Macro presentation exactly once",
+    )
+    for history_function in (
+        "CoreState::undoSequencerHistory",
+        "CoreState::redoSequencerHistory",
+    ):
+        require_in_function(
+            CORE_SEQUENCER_HISTORY_TRAVERSAL,
+            history_function,
+            r"else\s+if\s*\(\s*result\.descriptor\.kind\s*==\s*"
+            r"(?:[A-Za-z_][A-Za-z0-9_]*::)*"
+            r"SequencerHistoryActionKind::TrackStructure\s*&&\s*"
+            r"activeTrackBefore\s*!=\s*"
+            r"sequencerTracks\.activeTrackIndex\s*\(\s*\)\s*\)\s*\{\s*"
+            r"reconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\)",
+            "pure Track Structure replay must reconcile presentation only on active-Track change",
+        )
+        traversal = "undoWithResult" if "undo" in history_function else "redoWithResult"
+        require_in_function(
+            CORE_SEQUENCER_HISTORY_TRAVERSAL,
+            history_function,
+            r"const\s+uint8_t\s+activeTrackBefore\s*=\s*"
+            r"sequencerTracks\.activeTrackIndex\s*\(\s*\)\s*;.*?"
+            rf"sequencerHistory\.{traversal}\s*\(",
+            "Track replay must capture the active Track before applying history",
+        )
+
+    selection_intent_fields = (
+        ("clipboardRevision", r"uint32_t", r"selection\.clipboardRevision\.get\s*\(\s*\)"),
+        ("selectedMask", r"uint16_t", r"selection\.selectedMask\.get\s*\(\s*\)"),
+        ("destinationMask", r"uint16_t", r"selection\.destinationMask\.get\s*\(\s*\)"),
+        ("overwriteMask", r"uint16_t", r"selection\.overwriteMask\.get\s*\(\s*\)"),
+        ("cursor", r"uint8_t", r"selection\.cursorIndex\.get\s*\(\s*\)"),
+    )
+    for field, field_type, source in selection_intent_fields:
+        require_in_type(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "SelectionIntentToken",
+            rf"\b{field_type}\s+{field}\b",
+            f"selection intent must retain {field}",
+        )
+        require_in_type(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "SelectionIntentToken",
+            rf"\b{field}\s*==\s*other\.{field}\b",
+            f"selection intent equality must include {field}",
+        )
+        require_in_function(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "captureSelectionIntent",
+            rf"\.{field}\s*=\s*{source}",
+            f"selection intent capture must include {field}",
+        )
+
+    step_selection_intent_fields = (
+        (
+            "selectedMask",
+            r"oc::note::sequencer::StepBitMask128",
+            r"selection\.selectedMask\.get\s*\(\s*\)",
+        ),
+        (
+            "clipboardRevision",
+            r"uint32_t",
+            r"selection\.clipboardRevision\.get\s*\(\s*\)",
+        ),
+        (
+            "cursor",
+            r"uint8_t",
+            r"selection\.cursorStep\.get\s*\(\s*\)",
+        ),
+    )
+    for field, field_type, source in step_selection_intent_fields:
+        require_in_type(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "StepSelectionIntentToken",
+            rf"\b{field_type}\s+{field}\b",
+            f"Step selection intent must retain {field}",
+        )
+        require_in_type(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "StepSelectionIntentToken",
+            rf"\b{field}\s*==\s*other\.{field}\b",
+            f"Step selection intent equality must include {field}",
+        )
+        require_in_function(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "captureStepSelectionIntent",
+            rf"\.{field}\s*=\s*{source}",
+            f"Step selection intent capture must include {field}",
+        )
+
+    clipboard_owner_fields = (
+        ("macroAutomation", "macroAutomationSet"),
+        ("macroModulationAssignment", "macroModulationAssignment"),
+        ("sequencerGraph", "sequencerGraph"),
+        ("sequencerCcLanes", "sequencerCcLanes"),
+        ("sequencerTrackSelection", "sequencerTrackSelection"),
+        ("macroPageSelection", "macroPageSelection"),
+    )
+    for field, source_field in clipboard_owner_fields:
+        require_in_type(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "ClipboardIntentToken",
+            rf"\bconst\s+void\s*\*\s*{field}\b",
+            f"clipboard intent must retain {field} owner identity",
+        )
+        require_in_type(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "ClipboardIntentToken",
+            rf"\b{field}\s*==\s*other\.{field}\b",
+            f"clipboard intent equality must include {field}",
+        )
+        require_in_function(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "captureClipboardIntent",
+            rf"\.{field}\s*=\s*clipboard\.{source_field}\s*\.get\s*\(\s*\)",
+            f"clipboard intent capture must include {field}",
+        )
+
+    track_paste_intent_fields = (
+        ("revision", r"uint32_t", r"paste\.revision\.get\s*\(\s*\)"),
+        ("clipboardRevision", r"uint32_t", r"paste\.clipboardRevision"),
+        ("interactionGeneration", r"uint32_t", r"paste\.interactionGeneration"),
+        ("operationGeneration", r"uint32_t", r"paste\.operationGeneration"),
+        ("activationGeneration", r"uint32_t", r"paste\.activationGeneration"),
+        ("gestureActive", r"bool", r"paste\.gestureActive\s*\(\s*\)"),
+        ("detailVisible", r"bool", r"paste\.detailVisible"),
+        ("buttonOwned", r"bool", r"paste\.buttonOwned"),
+        ("commitConsumed", r"bool", r"paste\.commitConsumed"),
+    )
+    for field, field_type, source in track_paste_intent_fields:
+        require_in_type(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "TrackPasteIntentToken",
+            rf"\b{field_type}\s+{field}\b",
+            f"Track-paste intent must retain {field}",
+        )
+        require_in_type(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "TrackPasteIntentToken",
+            rf"\b{field}\s*==\s*other\.{field}\b",
+            f"Track-paste intent equality must include {field}",
+        )
+        require_in_function(
+            DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "captureTrackPasteIntent",
+            rf"\.{field}\s*=\s*{source}",
+            f"Track-paste intent capture must include {field}",
+        )
+
+    require_in_type(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "IntentToken",
+        r"\buint8_t\s+activeTrack\b",
+        "direct intent must retain the observed live active Track",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "captureIntent",
+        r"token\.activeTrack\s*=\s*state\.sharedTracks\.activeTrack\s*\(\s*\)",
+        "direct intent must capture the observed live active Track",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "sameIntent",
+        r"lhs\.activeTrack\s*==\s*rhs\.activeTrack",
+        "direct intent equality must include the observed live active Track",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "captureIntent",
+        r"token\.targetTrack\s*=\s*action\s*==\s*Action::SequencerCreate\s*"
+        r"\?\s*token\.previewTrack\s*:\s*latchedTargetTrack",
+        "Remove intent must use the immutable dispatch target",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "FLASHMEM bool validIntent",
+        r"token\.activeTrack\s*==\s*token\.targetTrack\s*&&\s*"
+        r"token\.previewTrack\s*==\s*token\.targetTrack",
+        "Remove intent must reject live active/preview drift from its latch",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "FLASHMEM bool validIntent",
+        r"\bcommitConsumed\b",
+        "terminal consumed-paste state must not invalidate an unrelated Track action",
+        count=0,
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "FLASHMEM InitialTopologyOutcome validateInitialTopology",
+        r"action\s*==\s*Action::SequencerCreate.*?"
+        r"enabledMask\s*&\s*targetBit\s*\)\s*==\s*0U\s*"
+        r"\?\s*InitialTopologyOutcome::Ready\s*"
+        r":\s*InitialTopologyOutcome::Invalid",
+        "Create preflight must reject an already-enabled target",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "FLASHMEM InitialTopologyOutcome validateInitialTopology",
+        r"action\s*==\s*Action::SequencerRemoveCurrent.*?"
+        r"targetTrack\s*!=\s*activeTrack.*?"
+        r"countEnabled\s*\(\s*enabledMask\s*,\s*TrackBank::TRACK_COUNT\s*\)"
+        r"\s*>\s*1U\s*\?\s*InitialTopologyOutcome::Ready\s*"
+        r":\s*InitialTopologyOutcome::Invalid",
+        "Remove preflight must reject stale target and last-Track no-op",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executeDirect",
+        r"canReconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\).*?"
+        r"Status::PublicationUnavailable.*?DirectContext\s+context\s*\{.*?"
+        r"executeSequencerTrackStructureTransaction\s*\(",
+        "presentation capability must fail before intent capture, chronology and allocation",
+    )
+    require_in_type(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "SelectionIntentToken",
+        r"static_assert",
+        "selection intent compactness assertion must remain outside the token body",
+        count=0,
+    )
+    require(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"static_assert\s*\(\s*sizeof\s*\(\s*SelectionIntentToken\s*\)\s*"
+        r"==\s*16U",
+        "direct selection intent must retain its 16-byte ABI lock",
+    )
+    require_in_type(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "DirectContext",
+        r"^\s*const\s+SequencerDirectTrackStructureStateRefs\s*&\s*state\s*;\s*"
+        r"IntentToken\s+token\s*;\s*$",
+        "direct context must reference the synchronous adapter state instead of copying it",
+    )
+    require(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"sizeof\s*\(\s*void\s*\*\s*\)\s*!=\s*4U\s*\|\|\s*"
+        r"sizeof\s*\(\s*DirectContext\s*\)\s*<=\s*160U",
+        "direct context must retain its ARM stack ceiling",
+    )
+    require(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"sizeof\s*\(\s*void\s*\*\s*\)\s*!=\s*8U\s*\|\|\s*"
+        r"sizeof\s*\(\s*DirectContext\s*\)\s*<=\s*168U",
+        "direct context must retain its native stack ceiling",
+    )
+    require(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"FLASHMEM\s+Result\s+executeDirect\s*\(\s*const\s+"
+        r"SequencerDirectTrackStructureStateRefs\s*&\s*state",
+        "private direct execution must avoid a second StateRefs copy",
+    )
+    require(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION_HEADER,
+        r"sizeof\s*\(\s*SequencerDirectTrackStructureStateRefs\s*\)\s*"
+        r"==\s*64U",
+        "direct Track StateRefs must retain their ARM stack ABI lock",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executeDirect",
+        r"validIntent\s*\(\s*context\s*,\s*action\s*\).*?"
+        r"validateInitialTopology\s*\(\s*context\s*,\s*action\s*\).*?"
+        r"executeSequencerTrackStructureTransaction\s*\(",
+        "obvious intent/topology rejection must precede chronology",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "settleSuccessful",
+        r"\bpreviewAddSlot\.set\s*\(\s*false\s*\)",
+        "successful Track settlement must close the add preview exactly once",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "settleSuccessful",
+        r"\bsyncPreviewTrack\s*\(\s*plan\.afterActiveTrack\s*\)",
+        "successful Track settlement must publish the committed Track preview",
+    )
+    require_in_function(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "settleSuccessful",
+        r"\bsyncSequencerPagePreviewToVisible\s*\(",
+        "successful Track settlement must reconcile the visible Page preview",
+    )
+    require(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"\b(?:recordStructure|recordPreparedStructure|captureTrackHistoryBefore|"
+        r"recordTrackHistoryAfter|applyTrackState)\s*\(",
+        "direct Track adapter must not restore raw capture/record/apply paths",
+        count=0,
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::createPreviewedTrackStructure",
+        r"\bexecuteSequencerCreateTrackStructure\s*\(",
+        "Track Create edit workflow must delegate exactly once to the direct adapter",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::createPreviewedTrackStructure",
+        r"\b(?:captureSequencerTrackStructureHistoryBefore|"
+        r"captureSequencerTrackStructureHistoryAfter|recordPreparedStructure|"
+        r"createSequencerStructureTrack|rollbackTrackCreation)\s*\(",
+        "Track Create edit workflow must not retain raw mutation or rollback",
+        count=0,
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::createPreviewedTrackStructure",
+        r"\btrack_ui_\.previewAddSlot\.set\s*\(",
+        "Track Create edit workflow must leave preview settlement to typed success",
+        count=0,
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::applyCurrentStructureLongPress",
+        r"\bexecuteSequencerRemoveCurrentTrackStructure\s*\(",
+        "RemoveCurrent workflow must delegate exactly once to the direct adapter",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::applyCurrentStructureLongPress",
+        r"\b(?:captureTrackHistoryBefore|recordTrackHistoryAfter|applyTrackState)\s*\(",
+        "RemoveCurrent workflow must not retain raw capture/record/apply",
+        count=0,
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::applyCurrentStructureLongPress",
+        r"\btrack_ui_\.(?:previewAddSlot\.set|syncPreviewTrack)\s*\(",
+        "RemoveCurrent workflow must leave preview settlement to typed success",
+        count=0,
+    )
+    require(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        r"enum\s+class\s+TrackHoldIntent\s*:\s*uint8_t\s*\{\s*"
+        r"None\s*=\s*0U\s*,\s*CurrentRemove\s*,\s*SelectionRemove\s*,\s*\}"
+        r".*?TrackHoldIntent\s+track_hold_intent_\s*=\s*"
+        r"TrackHoldIntent::None\s*;.*?"
+        r"\buint8_t\s+track_hold_target_\s*=\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*SequencerTrackBankState::TRACK_COUNT\s*;.*?"
+        r"\buint32_t\s+track_hold_acquisition_id_\s*=\s*0U\s*;",
+        "Remove hold must retain distinct intent, target and shared-hold generation",
+    )
+    require_in_type(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        "TrackSelectionHoldToken",
+        r"^\s*uint32_t\s+clipboardRevision\s*=\s*0U\s*;\s*"
+        r"uint16_t\s+selectedMask\s*=\s*0U\s*;\s*"
+        r"uint16_t\s+enabledMask\s*=\s*0U\s*;\s*"
+        r"uint16_t\s+destinationMask\s*=\s*0U\s*;\s*"
+        r"uint16_t\s+overwriteMask\s*=\s*0U\s*;\s*"
+        r"uint8_t\s+cursor\s*=\s*0U\s*;\s*"
+        r"uint8_t\s+previewTrack\s*=\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*SequencerTrackBankState::TRACK_COUNT\s*;\s*"
+        r"uint8_t\s+flags\s*=\s*0U\s*;\s*$",
+        "SelectionRemove token must retain the complete immutable selection intent",
+    )
+    require(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        r"static_assert\s*\(\s*sizeof\s*\(\s*TrackSelectionHoldToken\s*\)\s*"
+        r"==\s*16U",
+        "SelectionRemove token must retain its compact ARM ABI lock",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "packTrackSelectionHoldFlags",
+        r"scope\s*==\s*(?:[A-Za-z_][A-Za-z0-9_]*::)*"
+        r"StructureSelectionScope::TRACK.*?placing.*?pasteBlocked.*?previewAddTrack",
+        "packed SelectionRemove flags must retain scope, placement, block and add-preview",
+    )
+    for source, flag in (
+        (
+            r"scope\s*==\s*(?:[A-Za-z_][A-Za-z0-9_]*::)*"
+            r"StructureSelectionScope::TRACK",
+            "TRACK_SELECTION_HOLD_SCOPE_TRACK",
+        ),
+        (r"placing", "TRACK_SELECTION_HOLD_PLACING"),
+        (r"pasteBlocked", "TRACK_SELECTION_HOLD_PASTE_BLOCKED"),
+        (r"previewAddTrack", "TRACK_SELECTION_HOLD_PREVIEW_ADD"),
+    ):
+        require_in_function(
+            PAGE_STRUCTURE_EDIT_WORKFLOW,
+            "packTrackSelectionHoldFlags",
+            rf"{source}.*?\?\s*{flag}\s*:\s*0U",
+            f"packed SelectionRemove flags must encode {flag}",
+        )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::beginHoldAction",
+        r"action\s*!=\s*(?:[A-Za-z_][A-Za-z0-9_]*::)*"
+        r"StructureHoldAction::REMOVE\s*\|\|\s*"
+        r"track_ui_\.selection\.active\.get\s*\(\s*\).*?"
+        r"track_hold_intent_\s*=\s*TrackHoldIntent::CurrentRemove\s*;\s*"
+        r"track_hold_target_\s*=\s*currentActiveTrack\s*\(\s*\)\s*;.*?"
+        r"track_ui_\.hold\.begin\s*\(.*?"
+        r"track_hold_acquisition_id_\s*=\s*"
+        r"track_ui_\.hold\.acquisitionId\s*\(\s*\)",
+        "current Remove hold must reject Selection ownership and capture provenance",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::beginSelectionHoldAction",
+        r"action\s*!=\s*(?:[A-Za-z_][A-Za-z0-9_]*::)*"
+        r"StructureHoldAction::REMOVE\s*\|\|\s*!\s*"
+        r"track_ui_\.selection\.active\.get\s*\(\s*\)\s*\|\|\s*"
+        r"track_ui_\.selection\.scope\.get\s*\(\s*\)\s*!=\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*StructureSelectionScope::TRACK\s*\|\|\s*"
+        r"track_ui_\.previewAddSlot\.get\s*\(\s*\).*?"
+        r"track_hold_intent_\s*=\s*TrackHoldIntent::SelectionRemove\s*;\s*"
+        r"track_hold_target_\s*=\s*currentActiveTrack\s*\(\s*\)\s*;.*?"
+        r"track_selection_hold_token_\s*=\s*\{\s*"
+        r"\.clipboardRevision\s*=\s*track_ui_\.selection\.clipboardRevision\.get\s*\(\s*\)\s*,\s*"
+        r"\.selectedMask\s*=\s*track_ui_\.selection\.selectedMask\.get\s*\(\s*\)\s*,\s*"
+        r"\.enabledMask\s*=\s*currentTrackEnabledMask\s*\(\s*\)\s*,\s*"
+        r"\.destinationMask\s*=\s*track_ui_\.selection\.destinationMask\.get\s*\(\s*\)\s*,\s*"
+        r"\.overwriteMask\s*=\s*track_ui_\.selection\.overwriteMask\.get\s*\(\s*\)\s*,\s*"
+        r"\.cursor\s*=\s*track_ui_\.selection\.cursorIndex\.get\s*\(\s*\)\s*,\s*"
+        r"\.previewTrack\s*=\s*track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*,\s*"
+        r"\.flags\s*=\s*packTrackSelectionHoldFlags\s*\(\s*"
+        r"track_ui_\.selection\.scope\.get\s*\(\s*\)\s*,\s*"
+        r"track_ui_\.selection\.placing\.get\s*\(\s*\)\s*,\s*"
+        r"track_ui_\.selection\.pasteBlocked\.get\s*\(\s*\)\s*,\s*"
+        r"track_ui_\.previewAddSlot\.get\s*\(\s*\)\s*\)\s*,\s*"
+        r"\}\s*;.*?"
+        r"track_ui_\.hold\.begin\s*\(.*?"
+        r"track_hold_acquisition_id_\s*=\s*"
+        r"track_ui_\.hold\.acquisitionId\s*\(\s*\)",
+        "Selection Remove hold must capture its complete immutable provenance",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::applyCurrentStructureLongPress",
+        r"^\s*if\s*\(\s*trackRemoveHoldPending\s*\(\s*\)\s*\)\s*\{.*?"
+        r"const\s+bool\s+holdStillMatches\s*=\s*"
+        r"currentTrackRemoveHoldStillMatches\s*\(\s*\)\s*;\s*"
+        r"const\s+uint8_t\s+latchedTarget\s*=\s*track_hold_target_\s*;.*?"
+        r"if\s*\(\s*trackRemoveHoldOwnsSharedState\s*\(\s*\)\s*\)\s*"
+        r"track_ui_\.hold\.clear\s*\(\s*\)\s*;.*?"
+        r"!\s*holdStillMatches.*?"
+        r"const\s+auto\s+result\s*=\s*"
+        r"executeSequencerRemoveCurrentTrackStructure\s*\(\s*\{.*?\}\s*,\s*"
+        r"latchedTarget\s*\)\s*;.*?!\s*result\.settled\s*\(\s*\).*?"
+        r"return\s*;\s*\}\s*if\s*\(\s*navigation_focus_\.get",
+        "Track provenance must dispatch and consume its typed result before live-focus branches",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::clearHoldAction",
+        r"^\s*clearTrackRemoveHoldIntent\s*\(\s*\)\s*;\s*"
+        r"sequencer_\.structureUi\.pageHold\.clear\s*\(\s*\)\s*;\s*$",
+        "explicit hold cancellation must clear both owned hold channels",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::invalidateTrackRemoveHoldIntent",
+        r"track_hold_intent_\s*=\s*TrackHoldIntent::None\s*;.*?"
+        r"track_hold_target_\s*=\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*SequencerTrackBankState::TRACK_COUNT\s*;.*?"
+        r"track_hold_acquisition_id_\s*=\s*0U\s*;.*?"
+        r"track_selection_hold_token_\s*=\s*\{\s*\}\s*;",
+        "private Remove invalidation must retire every captured provenance field",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::clearTrackRemoveHoldIntent",
+        r"^\s*track_ui_\.hold\.clear\s*\(\s*\)\s*;\s*"
+        r"invalidateTrackRemoveHoldIntent\s*\(\s*\)\s*;\s*$",
+        "owned Track Remove cancellation must clear shared state then private provenance",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::trackRemoveHoldOwnsSharedState",
+        r"^\s*return\s+trackRemoveHoldPending\s*\(\s*\)\s*&&\s*"
+        r"track_ui_\.hold\.action\.get\s*\(\s*\)\s*==\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*StructureHoldAction::REMOVE\s*&&\s*"
+        r"track_ui_\.hold\.acquisitionId\s*\(\s*\)\s*==\s*"
+        r"track_hold_acquisition_id_\s*;\s*$",
+        "shared Track hold ownership must match action and exact acquisition ID",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::settleConsumedBottomLeftRelease",
+        r"!\s*trackRemoveHoldPending\s*\(\s*\).*?clearHoldAction\s*\(\s*\).*?"
+        r"if\s*\(\s*trackRemoveHoldOwnsSharedState\s*\(\s*\)\s*\)\s*"
+        r"track_ui_\.hold\.clear\s*\(\s*\)\s*;\s*"
+        r"invalidateTrackRemoveHoldIntent\s*\(\s*\)\s*;",
+        "physical release must preserve a foreign replacement hold",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::trackPasteNavigationBlocked",
+        r"\bhold\b",
+        "Track Remove hold must not broaden paste-owned release blocking",
+        count=0,
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::trackRemoveNavigationBlocked",
+        r"^\s*return\s+trackRemoveHoldPending\s*\(\s*\)\s*;\s*$",
+        "Track Remove NAV blocker must follow immutable provenance",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::currentTrackRemoveHoldPending",
+        r"^\s*return\s+track_hold_intent_\s*==\s*"
+        r"TrackHoldIntent::CurrentRemove\s*;\s*$",
+        "current Track Remove provenance must remain distinct",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::currentTrackRemoveHoldStillMatches",
+        r"^\s*return\s+currentTrackRemoveHoldPending\s*\(\s*\)\s*&&\s*"
+        r"trackRemoveHoldOwnsSharedState\s*\(\s*\)\s*&&\s*"
+        r"currentTrackRemoveIntentMatches\s*\(\s*track_hold_target_\s*\)\s*;\s*$",
+        "CurrentRemove must delegate exact matching with its latched owner",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::currentTrackRemoveIntentMatches",
+        r"^\s*return\s+navigation_focus_\.get\s*\(\s*\)\s*==\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*StructureNavigationFocus::TRACK\s*&&\s*"
+        r"!\s*track_ui_\.selection\.active\.get\s*\(\s*\)\s*&&\s*"
+        r"!\s*track_ui_\.previewAddSlot\.get\s*\(\s*\)\s*&&\s*"
+        r"track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*==\s*"
+        r"targetTrack\s*&&\s*currentActiveTrack\s*\(\s*\)\s*==\s*"
+        r"targetTrack\s*;\s*$",
+        "CurrentRemove must revalidate focus, mode, preview and latched owner exactly",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::selectionTrackRemoveHoldPending",
+        r"^\s*return\s+track_hold_intent_\s*==\s*"
+        r"TrackHoldIntent::SelectionRemove\s*;\s*$",
+        "selection Track Remove provenance must remain distinct",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::selectionTrackRemoveHoldStillMatches",
+        r"^\s*return\s+selectionTrackRemoveHoldPending\s*\(\s*\)\s*&&\s*"
+        r"trackRemoveHoldOwnsSharedState\s*\(\s*\)\s*&&\s*"
+        r"selectionTrackRemoveIntentMatches\s*\(\s*"
+        r"track_selection_hold_token_\s*,\s*track_hold_target_\s*\)\s*;\s*$",
+        "SelectionRemove must delegate exact matching with its immutable token",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::selectionTrackRemoveIntentMatches",
+        r"^\s*return\s+navigation_focus_\.get\s*\(\s*\)\s*==\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*StructureNavigationFocus::TRACK\s*&&\s*"
+        r"track_ui_\.selection\.active\.get\s*\(\s*\)\s*&&\s*"
+        r"track_ui_\.selection\.clipboardRevision\.get\s*\(\s*\)\s*==\s*"
+        r"token\.clipboardRevision\s*&&\s*"
+        r"track_ui_\.selection\.selectedMask\.get\s*\(\s*\)\s*==\s*"
+        r"token\.selectedMask\s*&&\s*"
+        r"track_ui_\.selection\.destinationMask\.get\s*\(\s*\)\s*==\s*"
+        r"token\.destinationMask\s*&&\s*"
+        r"track_ui_\.selection\.overwriteMask\.get\s*\(\s*\)\s*==\s*"
+        r"token\.overwriteMask\s*&&\s*"
+        r"track_ui_\.selection\.cursorIndex\.get\s*\(\s*\)\s*==\s*"
+        r"token\.cursor\s*&&\s*"
+        r"track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*==\s*"
+        r"token\.previewTrack\s*&&\s*"
+        r"packTrackSelectionHoldFlags\s*\(\s*"
+        r"track_ui_\.selection\.scope\.get\s*\(\s*\)\s*,\s*"
+        r"track_ui_\.selection\.placing\.get\s*\(\s*\)\s*,\s*"
+        r"track_ui_\.selection\.pasteBlocked\.get\s*\(\s*\)\s*,\s*"
+        r"track_ui_\.previewAddSlot\.get\s*\(\s*\)\s*\)\s*==\s*"
+        r"token\.flags\s*&&\s*"
+        r"currentTrackEnabledMask\s*\(\s*\)\s*==\s*"
+        r"token\.enabledMask\s*&&\s*"
+        r"currentActiveTrack\s*\(\s*\)\s*==\s*targetTrack\s*;\s*$",
+        "SelectionRemove must revalidate its complete token, topology and owner exactly",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::settleRejectedSelectionTrackRemoveLongPress",
+        r"^\s*if\s*\(\s*trackRemoveHoldOwnsSharedState\s*\(\s*\)\s*\)\s*"
+        r"track_ui_\.hold\.clear\s*\(\s*\)\s*;\s*$",
+        "rejected Selection hold must clear only its owned shared state",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::applyLatchedCurrentTrackShortPress",
+        r"^\s*if\s*\(\s*!\s*currentTrackRemoveHoldStillMatches\s*"
+        r"\(\s*\)\s*\).*?if\s*\(\s*trackRemoveHoldOwnsSharedState\s*"
+        r"\(\s*\)\s*\)\s*track_ui_\.hold\.clear\s*\(\s*\)\s*;\s*"
+        r"invalidateTrackRemoveHoldIntent\s*\(\s*\)\s*;\s*return\s*;.*?"
+        r"const\s+uint8_t\s+targetTrack\s*=\s*track_hold_target_\s*;\s*"
+        r"clearTrackRemoveHoldIntent\s*\(\s*\)\s*;.*?"
+        r"commitCoalescedPatternEditOutcome\s*\(\s*\).*?"
+        r"track_ui_\.hold\.active\s*\(\s*\)\s*\|\|\s*"
+        r"!\s*currentTrackRemoveIntentMatches\s*\(\s*targetTrack\s*\).*?"
+        r"toggleSequencerStructureTrackMute\s*\(.*?targetTrack\s*\)\s*;\s*$",
+        "Current Track tap must settle only its owned hold and revalidate its target",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::applyLatchedTrackSelectionShortPress",
+        r"if\s*\(\s*!\s*selectionTrackRemoveHoldStillMatches\s*"
+        r"\(\s*\)\s*\).*?if\s*\(\s*trackRemoveHoldOwnsSharedState\s*"
+        r"\(\s*\)\s*\)\s*track_ui_\.hold\.clear\s*\(\s*\)\s*;\s*"
+        r"invalidateTrackRemoveHoldIntent\s*\(\s*\).*?"
+        r"track_selection_hold_token_\s*;\s*"
+        r"const\s+uint8_t\s+targetTrack\s*=\s*track_hold_target_\s*;\s*"
+        r"clearTrackRemoveHoldIntent\s*\(\s*\)\s*;.*?"
+        r"commitCoalescedPatternEditOutcome\s*\(\s*\).*?"
+        r"track_ui_\.hold\.active\s*\(\s*\)\s*\|\|\s*"
+        r"!\s*selectionTrackRemoveIntentMatches\s*"
+        r"\(\s*token\s*,\s*targetTrack\s*\).*?"
+        r"applySelectionBottomLeftTap\s*\(\s*\)\s*;\s*$",
+        "Track Selection tap must settle only its owned hold and revalidate after its boundary",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::applyLatchedTrackSelectionLongPress",
+        r"track_selection_hold_token_\s*;\s*"
+        r"const\s+uint8_t\s+targetTrack\s*=\s*track_hold_target_\s*;\s*"
+        r"if\s*\(\s*trackRemoveHoldOwnsSharedState\s*\(\s*\)\s*\)\s*"
+        r"track_ui_\.hold\.clear\s*\(\s*\)\s*;.*?"
+        r"commitCoalescedPatternEditOutcome\s*\(\s*\).*?"
+        r"track_ui_\.hold\.active\s*\(\s*\)\s*\|\|\s*"
+        r"!\s*selectionTrackRemoveIntentMatches\s*"
+        r"\(\s*token\s*,\s*targetTrack\s*\).*?"
+        r"applySelectionBottomLeftHold\s*\(\s*\)\s*;\s*$",
+        "Track Selection hold must preserve provenance through physical release",
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::setupBindings",
+        r"\bbeginSelectionHoldAction\s*\(\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*StructureHoldAction::REMOVE\s*\)",
+        "Selection press must arm SelectionRemove rather than CurrentRemove",
+    )
+    require(
+        BUTTON_RELEASE_LATCH_HEADER,
+        r"template\s*<\s*typename\s+ButtonIdT\s*>\s*"
+        r"bool\s+isArmed\s*\(\s*ButtonIdT\s+button\s*\)\s+const\s*\{\s*"
+        r"return\s+isArmedId\s*\(\s*static_cast\s*<\s*"
+        r"oc::type::ButtonID\s*>\s*\(\s*button\s*\)\s*\)\s*;\s*\}",
+        "release latch must expose a storage-neutral const armed query",
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::setupBindings",
+        r"bottom_action_release_latch_\.isArmed\s*\(\s*"
+        r"Config::ButtonID::BOTTOM_LEFT\s*\)",
+        "both BottomLeft release routes must stay eligible to consume an armed latch",
+        count=2,
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::setupBindings",
+        r"\.button\s*\(\s*Config::ButtonID::NAV\s*\)\s*"
+        r"\.press\s*\(\s*\).*?"
+        r"!\s*edit_workflow_\.trackPasteNavigationBlocked\s*\(\s*\)\s*&&\s*"
+        r"!\s*edit_workflow_\.trackRemoveNavigationBlocked\s*\(\s*\).*?"
+        r"context_selector_workflow_\.press\s*\(",
+        "new NAV selector acquisition must be rejected during Track Remove",
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::setupBindings",
+        r"\btrackRemoveNavigationBlocked\s*\(\s*\)",
+        "Track Remove must block one NAV press and the three NAV turn routes",
+        count=4,
+    )
+    require_in_function(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW,
+        "SequencerStructureNavigationWorkflow::bindStateSync",
+        r"tracks_\.activeTrackSignal\s*\(\s*\)\.subscribe\s*\(\s*"
+        r"\[this\]\s*\(\s*uint8_t\s+activeTrack\s*\)\s*\{\s*"
+        r"syncTrackPreviewFromActive\s*\(\s*activeTrack\s*\)\s*;\s*\}",
+        "active-Track subscription thunk must delegate to the cold sync helper",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW,
+        "SequencerStructureNavigationWorkflow::syncTrackPreviewFromActive",
+        r"^\s*if\s*\(\s*track_ui_\.hold\.active\s*\(\s*\)\s*\)\s*return\s*;\s*"
+        r"track_ui_\.syncPreviewTrack\s*\(\s*activeTrack\s*\)",
+        "cold active-Track sync must not rewrite preview during a hold",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::createPreviewedTrackStructure",
+        r"track_activations_\s*==\s*nullptr.*?"
+        r"executeSequencerCreateTrackStructure\s*\(\s*\{\s*tracks_\s*,\s*"
+        r"sequencer_\s*,\s*navigation_focus_\s*,\s*track_ui_\s*,\s*"
+        r"structure_clipboard_\s*,\s*macro_pages_\s*,\s*\*track_activations_\s*,\s*"
+        r"shared_tracks_\s*,\s*history_\s*,\s*\}\s*\)",
+        "Track Create edit workflow must validate activation ownership and pass every intent source",
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::handleContextSelectorRelease",
+        r"case\s+SequencerContextSelectorAction::OPEN_TRACK_EDITOR\s*:"
+        r".*?outcome\.focus\s*!=\s*"
+        r"core::state::StructureNavigationFocus::TRACK.*?"
+        r"track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*!=\s*"
+        r"outcome\.previewTarget.*?"
+        r"if\s*\(\s*outcome\.previewAddSlot\s*\).*?"
+        r"track_ui_\.previewAddSlot\.get\s*\(\s*\).*?"
+        r"edit_workflow_\.createPreviewedTrackStructure\s*\(\s*\)"
+        r"\.settled\s*\(\s*\)",
+        "Track Create binding must delegate without a duplicate Pattern barrier",
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::handleContextSelectorRelease",
+        r"\bcommitPatternHistoryBarrier\s*\(",
+        "context release must retain exactly one boundary for context changes only",
+        count=1,
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::handleContextSelectorRelease",
+        r"case\s+SequencerContextSelectorAction::OPEN_STEP_EDITOR\s*:"
+        r".*?outcome\.focus\s*!=\s*"
+        r"core::state::StructureNavigationFocus::STEP.*?"
+        r"navigation_focus_\.get\s*\(\s*\)\s*!=\s*"
+        r"core::state::StructureNavigationFocus::STEP.*?"
+        r"sequencer_\.focusedStep\.get\s*\(\s*\)\s*!=\s*"
+        r"outcome\.previewTarget.*?"
+        r"step_edit_handler_->openFocusedStepAtRow\s*\(",
+        "Step Editor release must revalidate its complete press target",
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::handleContextSelectorRelease",
+        r"case\s+SequencerContextSelectorAction::OPEN_PATTERN_EDITOR\s*:"
+        r".*?outcome\.focus\s*!=\s*"
+        r"core::state::StructureNavigationFocus::PAGE.*?"
+        r"navigation_focus_\.get\s*\(\s*\)\s*!=\s*"
+        r"core::state::StructureNavigationFocus::PAGE.*?"
+        r"sequencer_\.structureUi\.previewPageIndex\.get\s*\(\s*\)\s*!=\s*"
+        r"outcome\.previewTarget\s*\|\|\s*outcome\.previewAddSlot.*?"
+        r"pattern_editor_handler_->openFromCurrentPage\s*\(\s*\)",
+        "Pattern Editor release must revalidate Page focus/target and reject add provenance",
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::setupBindings",
+        r"const\s+bool\s+previewAddSlot\s*=\s*"
+        r"focus\s*==\s*core::state::StructureNavigationFocus::TRACK\s*&&\s*"
+        r"track_ui_\.previewAddSlot\.get\s*\(\s*\)\s*;",
+        "NAV press and hold must derive add provenance from Track only",
+        count=2,
+    )
+    require_in_function(
+        SEQUENCER_STEP_HANDLER,
+        "SequencerStepHandler::setupBindings",
+        r"const\s+uint8_t\s+previewTarget\s*=\s*"
+        r"focus\s*==\s*core::state::StructureNavigationFocus::TRACK\s*"
+        r"\?\s*track_ui_\.previewTrackIndex\.get\s*\(\s*\)\s*"
+        r":\s*focus\s*==\s*core::state::StructureNavigationFocus::STEP\s*"
+        r"\?\s*sequencer_\.focusedStep\.get\s*\(\s*\)\s*"
+        r":\s*sequencer_\.structureUi\.previewPageIndex\.get\s*\(\s*\)",
+        "NAV press and hold must latch the exact Track/Page/Step target",
+        count=2,
+    )
+    require_in_function(
+        MACRO_STRUCTURE_WORKFLOW,
+        "MacroStructureWorkflow::bindStateSync",
+        r"shared_track_active_\.subscribe\s*\(.*?"
+        r"if\s*\(\s*!\s*track_ui_\.hold\.active\s*\(\s*\)\s*\)\s*"
+        r"\{\s*track_ui_\.syncPreviewTrack\s*\(\s*activeTrack\s*\)\s*;\s*\}",
+        "Macro active-Track sync must preserve a shared hold's exact preview",
+    )
+    require_in_function(
+        MACRO_STRUCTURE_WORKFLOW,
+        "MacroStructureWorkflow::commitHoldAction",
+        r"settleCapturedHoldAction\s*\(\s*action\s*,\s*true\s*\)",
+        "Macro long release must settle exact captured provenance",
+    )
+    require_in_function(
+        MACRO_STRUCTURE_WORKFLOW,
+        "MacroStructureWorkflow::beginHoldAction",
+        r"hold_target_\.action\s*\(\s*\)\s*!=\s*"
+        r"core::state::StructureHoldAction::NONE\s*\|\|\s*"
+        r"track_ui_\.hold\.active\s*\(\s*\)\s*\|\|\s*"
+        r"macro_ui_\.pageHold\.active\s*\(\s*\).*?"
+        r"return\s+false\s*;.*?"
+        r"captureHoldTarget\s*\(\s*action\s*\)\s*;\s*"
+        r"hold_target_\.setVisualHold\s*\(\s*armVisualHold\s*\)\s*;\s*"
+        r"if\s*\(\s*!\s*armVisualHold\s*\)\s*return\s+true\s*;.*?"
+        r"track_ui_\.hold\.begin\s*\(\s*action\s*,.*?\)\s*;\s*"
+        r"hold_target_\.acquisitionId\s*=\s*"
+        r"track_ui_\.hold\.acquisitionId\s*\(\s*\).*?"
+        r"macro_ui_\.pageHold\.begin\s*\(\s*action\s*,.*?\)\s*;\s*"
+        r"hold_target_\.acquisitionId\s*=\s*"
+        r"macro_ui_\.pageHold\.acquisitionId\s*\(\s*\)",
+        "Macro every press must capture a target and retain visual-hold identity",
+    )
+    require_in_function(
+        MACRO_STRUCTURE_WORKFLOW,
+        "MacroStructureWorkflow::hasCapturedAction",
+        r"hold_target_\.action\s*\(\s*\)\s*==\s*action",
+        "Macro release routing must include non-visual captured presses",
+    )
+    require_in_function(
+        MACRO_STRUCTURE_WORKFLOW,
+        "MacroStructureWorkflow::releaseShortHoldAction",
+        r"return\s+settleCapturedHoldAction\s*\(\s*action\s*,\s*false\s*\)",
+        "Macro short release must settle exact captured provenance",
+    )
+    require_in_function(
+        MACRO_STRUCTURE_WORKFLOW,
+        "MacroStructureWorkflow::settleCapturedHoldAction",
+        r"hold_target_\.action\s*\(\s*\)\s*==\s*"
+        r"core::state::StructureHoldAction::NONE.*?"
+        r"return\s+false\s*;.*?"
+        r"hold_target_\.action\s*\(\s*\)\s*!=\s*action\s*\)\s*"
+        r"return\s+false\s*;.*?"
+        r"const\s+bool\s+capturedVisualHold\s*=\s*"
+        r"hold_target_\.visualHold\s*\(\s*\).*?"
+        r"const\s+bool\s+ownsAcquisition\s*=.*?"
+        r"!\s*requireVisualHold\s*\|\|\s*capturedVisualHold.*?"
+        r"visualHold\.acquisitionId\s*\(\s*\)\s*==\s*"
+        r"hold_target_\.acquisitionId.*?"
+        r"!\s*track_ui_\.hold\.active\s*\(\s*\)\s*&&\s*"
+        r"!\s*macro_ui_\.pageHold\.active\s*\(\s*\).*?"
+        r"const\s+bool\s+noVisualHoldActive\s*=\s*"
+        r"!\s*track_ui_\.hold\.active\s*\(\s*\)\s*&&\s*"
+        r"!\s*macro_ui_\.pageHold\.active\s*\(\s*\).*?"
+        r"const\s+bool\s+matches\s*=\s*"
+        r"ownsAcquisition\s*&&\s*"
+        r"capturedTargetStillMatches\s*\(\s*\).*?"
+        r"if\s*\(\s*ownsAcquisition\s*&&\s*capturedVisualHold\s*\).*?"
+        r"track_ui_\.hold\.clear\s*\(\s*\).*?"
+        r"macro_ui_\.pageHold\.clear\s*\(\s*\).*?"
+        r"hold_target_\s*=\s*\{\s*\}\s*;.*?"
+        r"!\s*matches\s*&&\s*\(\s*ownsAcquisition\s*\|\|\s*"
+        r"noVisualHoldActive\s*\).*?"
+        r"syncPreviewToCurrentContext\s*\(\s*\)",
+        "Macro hold settlement must be owner-exact, target-exact and reconcile rejection",
+    )
+    require(
+        MACRO_STRUCTURE_WORKFLOW_HEADER,
+        r"VISUAL_HOLD\s*=\s*0x20U\s*;.*?"
+        r"uint32_t\s+acquisitionId\s*=\s*0U\s*;\s*"
+        r"uint8_t\s+track\s*=\s*0xFFU\s*;\s*"
+        r"uint8_t\s+page\s*=\s*0xFFU\s*;\s*"
+        r"uint8_t\s+macro\s*=\s*0xFFU\s*;\s*"
+        r"uint8_t\s+flags\s*=\s*0U\s*;.*?"
+        r"bool\s+visualHold\s*\(\s*\)\s*const.*?"
+        r"void\s+setVisualHold\s*\(\s*bool\s+value\s*\).*?"
+        r"static_assert\s*\(\s*sizeof\s*\(\s*HoldTarget\s*\)\s*==\s*8U\s*\)",
+        "Macro hold target must pack exact identity and target into eight bytes",
+    )
+    require(
+        MACRO_STRUCTURE_WORKFLOW_HEADER,
+        r"StructureHoldAction::COUNT\s*\)\s*-\s*1U\s*<=\s*"
+        r"HoldTarget::ACTION_MASK.*?"
+        r"StructureNavigationFocus::COUNT\s*\)\s*-\s*1U\s*\)\s*<<\s*"
+        r"HoldTarget::FOCUS_SHIFT\s*\)\s*<=\s*HoldTarget::FOCUS_MASK",
+        "Macro packed provenance must validate the closed enum sentinels",
+    )
+    require(
+        MACRO_STRUCTURE_WORKFLOW_HEADER,
+        r"sizeof\s*\(\s*void\s*\*\s*\)\s*!=\s*4U\s*\|\|\s*"
+        r"sizeof\s*\(\s*MacroStructureWorkflow\s*\)\s*==\s*120U",
+        "Macro Structure workflow must retain its ARM PSRAM envelope",
+    )
+    require_in_type(
+        MACRO_STRUCTURE_WORKFLOW_HEADER,
+        "MacroStructureWorkflow",
+        r"toggleSlotSelectionAtPageIndex\s*\(\s*uint8_t\s+macroIndex\s*\)\s*;\s*"
+        r"private\s*:\s*"
+        r"void\s+applyCurrentStructureLongPress\s*\(\s*\)\s*;\s*"
+        r"void\s+pasteCurrentStructure\s*\(\s*\)\s*;\s*"
+        r"(?:\[\[nodiscard\]\]\s*)?bool\s+selectionPlacementActive\s*\(\s*\)\s*const\s*;\s*"
+        r"(?:\[\[nodiscard\]\]\s*)?bool\s+selectionHasItems\s*\(\s*\)\s*const\s*;\s*"
+        r"void\s+enterSlotSelection\s*\(\s*\)\s*;\s*"
+        r"(?:\[\[nodiscard\]\]\s*)?bool\s+slotSelectionPlacementActive\s*\(\s*\)\s*const\s*;\s*"
+        r"void\s+navigateSlotSelection\s*\(\s*float\s+delta\s*\)\s*;\s*"
+        r"void\s+toggleSlotSelectionAtCursor\s*\(\s*\)\s*;\s*"
+        r"(?:\[\[nodiscard\]\]\s*)?bool\s+copySlotSelection\s*\(\s*\)\s*;\s*"
+        r"(?:\[\[nodiscard\]\]\s*)?bool\s+canPasteSlotSelection\s*\(\s*\)\s*const\s*;\s*"
+        r"(?:\[\[nodiscard\]\]\s*)?bool\s+pasteSlotSelection\s*\(\s*\)\s*;\s*"
+        r"void\s+refreshSlotSelectionPastePreview\s*\(\s*\)\s*;",
+        "Macro implementation-only structure helpers must remain private",
+    )
+    require_in_function(
+        MACRO_PERFORMANCE_HANDLER,
+        "MacroPerformanceHandler::setupBindings",
+        r"beginHoldAction\s*\(\s*"
+        r"core::state::StructureHoldAction::REMOVE\s*,\s*"
+        r"structure_workflow_\.canRemoveCurrentStructure\s*\(\s*\)\s*\).*?"
+        r"beginHoldAction\s*\(\s*"
+        r"core::state::StructureHoldAction::PASTE\s*,\s*canPaste\s*\)",
+        "Macro accepted Clear/Copy presses must capture with or without visual hold",
+    )
+    require_in_function(
+        MACRO_PERFORMANCE_HANDLER,
+        "MacroPerformanceHandler::setupBindings",
+        r"ignore_next_bottom_left_release_\s*\|\|\s*"
+        r"structure_workflow_\.hasCapturedAction\s*\(\s*"
+        r"core::state::StructureHoldAction::REMOVE\s*\).*?"
+        r"ignore_next_bottom_right_release_\s*\|\|\s*"
+        r"structure_workflow_\.hasCapturedAction\s*\(\s*"
+        r"core::state::StructureHoldAction::PASTE\s*\)",
+        "Macro releases must route captured non-visual actions to settlement",
+    )
+    require_in_function(
+        STRUCTURE_NAVIGATION_STATE,
+        "StructureHoldState::begin",
+        r"\+\+\s*acquisition_id_\s*;\s*"
+        r"if\s*\(\s*acquisition_id_\s*==\s*0U\s*\)\s*"
+        r"\+\+\s*acquisition_id_\s*;\s*"
+        r"startedAtMs\.set\s*\(\s*nowMs\s*\)\s*;\s*"
+        r"action\.set\s*\(\s*nextAction\s*\)",
+        "Structure holds must issue a distinct nonzero acquisition ID",
+    )
+    require(
+        STRUCTURE_NAVIGATION_STATE_HEADER,
+        r"enum\s+class\s+StructureNavigationFocus\s*:\s*uint8_t\s*\{\s*"
+        r"PAGE\s*=\s*0\s*,\s*TRACK\s*=\s*1\s*,\s*STEP\s*=\s*2\s*,\s*"
+        r"COUNT\s*=\s*3\s*,\s*\}\s*;.*?"
+        r"enum\s+class\s+StructureHoldAction\s*:\s*uint8_t\s*\{\s*"
+        r"NONE\s*=\s*0\s*,\s*REMOVE\s*=\s*1\s*,\s*PASTE\s*=\s*2\s*,\s*"
+        r"COUNT\s*=\s*3\s*,\s*\}\s*;",
+        "Structure focus and hold enums must retain explicit packed sentinels",
+    )
+    require(
+        STRUCTURE_NAVIGATION_STATE_HEADER,
+        r"Signal\s*<\s*uint32_t\s*,\s*2\s*>\s+startedAtMs\s*\{\s*0\s*\}\s*;.*?"
+        r"uint32_t\s+acquisitionId\s*\(\s*\)\s*const.*?"
+        r"uint32_t\s+acquisition_id_\s*=\s*0U\s*;.*?"
+        r"sizeof\s*\(\s*StructureHoldState\s*\)\s*==\s*108U",
+        "Structure hold identity must fit the reduced ARM signal envelope",
+    )
+    require_in_function(
+        STRUCTURE_NAVIGATION_STATE,
+        "StructureHoldState::clear",
+        r"action\.set\s*\(\s*StructureHoldAction::NONE\s*\)\s*;\s*"
+        r"startedAtMs\.set\s*\(\s*0U\s*\)",
+        "Structure hold clear must reset presentation without recycling identity",
+    )
+    require_in_function(
+        MACRO_VIEW,
+        "MacroView::bindToState",
+        r"trackNavigation\.hold\.startedAtMs\.subscribe\s*\(.*?"
+        r"macroUi\.pageHold\.startedAtMs\.subscribe\s*\(",
+        "Macro view must own exactly one Track and one Macro Page progress subscription",
+    )
+    require_in_function(
+        SEQUENCER_VIEW,
+        "SequencerView::bindBottomActionStripState",
+        r"trackNavigation\.hold\.startedAtMs\s*,.*?"
+        r"sequencer\.structureUi\.pageHold\.startedAtMs\s*,",
+        "Sequencer bottom strip must own its Track and Page progress subscriptions",
+    )
+    require_in_function(
+        SEQUENCER_OVERLAY_PRESENTER,
+        "SequencerOverlayPresenter::bind",
+        r"sequencer\.stepEdit\.contextHold\.startedAtMs",
+        "Sequencer overlay must own its Context progress subscription",
+    )
+    require_across_files(
+        r"\btrackNavigation\.hold\.startedAtMs\b",
+        "Track hold progress topology must remain two product references",
+        2,
+    )
+    require_across_files(
+        r"\bmacroUi\.pageHold\.startedAtMs\b",
+        "Macro Page hold progress topology must remain one observer plus one read",
+        2,
+    )
+    require_across_files(
+        r"\bsequencer\.structureUi\.pageHold\.startedAtMs\b",
+        "Sequencer Page hold progress topology must remain one product reference",
+        1,
+    )
+    require_across_files(
+        r"\bsequencer\.stepEdit\.contextHold\.startedAtMs\b",
+        "Context hold progress topology must remain one observer plus three reads",
+        4,
+    )
+    for retired_selection_cancel_owner in (
+        MACRO_STRUCTURE_WORKFLOW,
+        MACRO_STRUCTURE_WORKFLOW_HEADER,
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW,
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+    ):
+        require(
+            retired_selection_cancel_owner,
+            r"\bcancelSelectionMode\b",
+            "caller-zero bulk selection cancellation must remain retired",
+            count=0,
+        )
+    require_in_function(
+        MACRO_PERFORMANCE_HANDLER,
+        "MacroPerformanceHandler::setupBindings",
+        r"releaseShortHoldAction\s*\(\s*"
+        r"core::state::StructureHoldAction::REMOVE\s*\).*?"
+        r"applyCurrentStructureShortPress\s*\(\s*\)",
+        "Macro short Clear must validate captured Remove provenance before mutation",
+    )
+    require_in_function(
+        MACRO_PERFORMANCE_HANDLER,
+        "MacroPerformanceHandler::setupBindings",
+        r"releaseShortHoldAction\s*\(\s*"
+        r"core::state::StructureHoldAction::PASTE\s*\).*?"
+        r"copyCurrentStructure\s*\(\s*\)",
+        "Macro short Copy must validate captured Paste provenance before capture",
+    )
+    require(
+        SEQUENCER_VIEW_HEADER,
+        r"StaticWatchGroup\s*<\s*13\s*>\s+header_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*13\s*>\s+header_strip_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*41\s*>\s+grid_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*23\s*>\s+bottom_action_strip_watcher_\s*;",
+        "Sequencer UI watcher capacities must retain the post-PageCreate compact locks",
+    )
+
+    require_in_type(
+        CONTEXT_SELECTOR_WORKFLOW_HEADER,
+        "SequencerContextSelectorWorkflow",
+        r"uint8_t\s+press_context_\s*=\s*0U\s*;\s*"
+        r"uint8_t\s+press_target_\s*=\s*0U\s*;",
+        "context selector must retain compact context and exact-target provenance",
+    )
+    require(
+        CONTEXT_SELECTOR_WORKFLOW_HEADER,
+        r"sizeof\s*\(\s*void\s*\*\s*\)\s*!=\s*4U\s*\|\|\s*"
+        r"sizeof\s*\(\s*SequencerContextSelectorWorkflow\s*\)\s*==\s*8U",
+        "context selector must retain its 8-byte ARM RAM lock",
+    )
+    require(
+        PRESS_HOLD_TURN_RELEASE_GESTURE_HEADER,
+        r"static_assert\s*\(\s*sizeof\s*\(\s*PressHoldTurnReleaseGesture\s*\)"
+        r"\s*==\s*1U\s*\)",
+        "shared press/hold/turn gesture must remain one packed byte",
+    )
+    require_in_function(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "SequencerContextSelectorWorkflow::press",
+        r"press_target_\s*=\s*previewTarget\s*;.*?"
+        r"static_cast<uint8_t>\s*\(\s*state_\.previewFocus\s*\)\s*&\s*0x03U.*?"
+        r"previewAddSlot\s*\?\s*0x04U\s*:\s*0U.*?"
+        r"includeTrack\s*\?\s*0x08U\s*:\s*0U",
+        "context press must retain an exact target and packed context provenance",
+    )
+    require_in_function(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "SequencerContextSelectorWorkflow::holdForSelection",
+        r"^\s*if\s*\(\s*!\s*state_\.visible\s*\)\s*\{\s*"
+        r"gesture_\.cancel\s*\(\s*\)\s*;\s*press_context_\s*=\s*0U\s*;\s*"
+        r"press_target_\s*=\s*0U\s*;\s*"
+        r"return\s+false\s*;\s*\}.*?"
+        r"current\s*==\s*origin\s*&&\s*"
+        r"previewTarget\s*==\s*press_target_\s*&&\s*"
+        r"previewAddSlot\s*==\s*"
+        r"\(\s*\(\s*press_context_\s*&\s*0x04U\s*\)\s*!=\s*0U\s*\).*?"
+        r"if\s*\(\s*!\s*pressMatches\s*\)\s*\{\s*cancel\s*\(\s*\)",
+        "context selection hold must fail closed on exact press provenance drift",
+    )
+    require_in_function(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "SequencerContextSelectorWorkflow::holdForSelection",
+        r"gesture_\.cancel\s*\(\s*\)\s*;\s*"
+        r"press_context_\s*=\s*0U\s*;\s*press_target_\s*=\s*0U\s*;\s*"
+        r"state_\.visible\s*=\s*false",
+        "successful context selection transfer must clear private provenance",
+    )
+    require_in_function(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "SequencerContextSelectorWorkflow::holdForSelection",
+        r"gesture_\.hold\s*\(",
+        "selection transfer must not set dead held state before cancellation",
+        count=0,
+    )
+    require_in_function(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "SequencerContextSelectorWorkflow::turn",
+        r"^\s*if\s*\(\s*!\s*state_\.visible\s*\)\s*\{\s*"
+        r"gesture_\.cancel\s*\(\s*\)\s*;\s*press_context_\s*=\s*0U\s*;\s*"
+        r"press_target_\s*=\s*0U\s*;\s*return\s+false\s*;\s*\}.*?"
+        r"press_context_\s*&\s*0x08U",
+        "context turn must fail closed after external presentation reset",
+    )
+    require_in_function(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "SequencerContextSelectorWorkflow::release",
+        r"^\s*if\s*\(\s*!\s*state_\.visible\s*\)\s*\{\s*"
+        r"gesture_\.cancel\s*\(\s*\)\s*;\s*press_context_\s*=\s*0U\s*;\s*"
+        r"press_target_\s*=\s*0U\s*;\s*return\s*\{\s*\}\s*;\s*\}.*?"
+        r"const\s+uint8_t\s+previewTarget\s*=\s*press_target_\s*;.*?"
+        r"press_context_\s*=\s*0U\s*;\s*press_target_\s*=\s*0U\s*;",
+        "context release must fail closed after external presentation reset",
+    )
+    require_in_function(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "SequencerContextSelectorWorkflow::update",
+        r"gesture_\.active\s*\(\s*\)\s*&&\s*!\s*state_\.visible.*?"
+        r"gesture_\.cancel\s*\(\s*\)\s*;\s*press_context_\s*=\s*0U\s*;\s*"
+        r"press_target_\s*=\s*0U\s*;",
+        "context update must retire hidden gesture provenance",
+    )
+    require_in_function(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "SequencerContextSelectorWorkflow::cancel",
+        r"gesture_\.cancel\s*\(\s*\)\s*;\s*"
+        r"press_context_\s*=\s*0U\s*;\s*press_target_\s*=\s*0U\s*;\s*"
+        r"state_\.reset\s*\(\s*\)\s*;",
+        "context cancellation must clear gesture, provenance and presentation",
+    )
+
+    require_in_type(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+        "StateRefs",
+        r"std::reference_wrapper\s*<\s*const\s+SharedTrackDomainServices\s*>\s*"
+        r"sharedTracks\s*;",
+        "Navigation StateRefs must reject temporary shared Track facades",
+    )
+    require(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+        r"const\s+SharedTrackDomainServices\s*&\s*shared_tracks_\s*;",
+        "Navigation workflow must retain only a shared Track facade reference",
+    )
+    require(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+        r"(?:MacroPagesState|SequencerTrackActivationQueue|StructureClipboardState|"
+        r"SequencerHistoryDomainServices)\s*\*",
+        "Navigation workflow must not reacquire mutation ownership pointers",
+        count=0,
+    )
+    require_in_type(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+        "SequencerStructureNavigationWorkflow",
+        r"\b(?:MacroPagesState|SequencerTrackActivationQueue|StructureClipboardState|"
+        r"SequencerHistoryDomainServices)\b",
+        "Navigation workflow must not retain mutation owner types in any form",
+        count=0,
+    )
+    require_in_type(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        "StateRefs",
+        r"\bSharedTrackDomainServices\s+sharedTracks\s*;",
+        "Edit StateRefs must transfer the shared Track facade by value",
+    )
+    require(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        r"\bSharedTrackDomainServices\s+shared_tracks_\s*;",
+        "Edit workflow must remain the unique shared Track facade owner",
+    )
+    require(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+        r"sizeof\s*\(\s*SequencerStructureNavigationWorkflow\s*\)\s*"
+        r"==\s*48U",
+        "Navigation workflow must retain its ARM RAM lock",
+    )
+    require(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        r"sizeof\s*\(\s*SequencerStructureEditWorkflow\s*\)\s*==\s*116U",
+        "Edit workflow must retain its ARM RAM lock",
+    )
+    require(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        r"const\s+SharedTrackDomainServices\s*&\s*sharedTrackServices\s*"
+        r"\(\s*\)\s+const\s+noexcept\s*\{\s*return\s+shared_tracks_\s*;\s*\}",
+        "Edit workflow must expose its owned shared Track facade as a const reference",
+    )
+    require(
+        SEQUENCER_STEP_HANDLER_HEADER,
+        r"SequencerStructureEditWorkflow\s+edit_workflow_\s*;\s*"
+        r"SequencerStructureNavigationWorkflow\s+navigation_workflow_\s*;",
+        "StepHandler must construct and destroy Edit around its borrowing Navigation workflow",
+    )
+    require(
+        SEQUENCER_STEP_HANDLER_HEADER,
+        r"sizeof\s*\(\s*SequencerStepHandler\s*\)\s*==\s*256U",
+        "StepHandler must retain its zero-growth ARM PSRAM lock",
+    )
+    require(
+        SEQUENCER_STEP_HANDLER,
+        r"edit_workflow_\s*\(.*?\)\s*,\s*navigation_workflow_\s*\(\s*"
+        r"SequencerStructureNavigationWorkflow::StateRefs\s*\{.*?"
+        r"edit_workflow_\.sharedTrackServices\s*\(\s*\).*?\}\s*\)",
+        "StepHandler must wire Navigation from the fully constructed Edit owner",
+    )
+    require(
+        SEQUENCER_STEP_HANDLER,
+        r"navigation_workflow_\s*\(.*?state\.sharedTracks",
+        "Navigation must never borrow the by-value StepHandler StateRefs facade",
+        count=0,
+    )
+    require(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW,
+        r"\bexecuteSequencerCreateTrackStructure\s*\(",
+        "Navigation must not retain a second Track Create adapter route",
+        count=0,
+    )
+
+    require(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        r"enum\s+class\s+PreparedTrackPresentationKind\s*:\s*uint8_t\s*\{\s*"
+        r"MacroTrackTransfer\s*=\s*0U\s*,\s*SequencerActiveTrack\s*,\s*\}",
+        "shared Track presentation dispatch must remain typed and exhaustive",
+    )
+    require_in_type(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        "Operations",
+        r"ReconcilePreparedTrackPresentationFn\s*"
+        r"reconcilePreparedTrackPresentation\s*=\s*nullptr\s*;",
+        "shared Track operations must retain one typed presentation callback",
+    )
+    require_in_type(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        "Operations",
+        r"^\s*void\s*\*\s*context\s*=\s*nullptr\s*;\s*"
+        r"SetSharedTrackStateFn\s+setSharedTrackState\s*=\s*nullptr\s*;\s*"
+        r"PublishPreparedSequencerStateFn\s+publishPreparedSequencerState\s*=\s*nullptr\s*;\s*"
+        r"ReconcilePreparedTrackPresentationFn\s*"
+        r"reconcilePreparedTrackPresentation\s*=\s*nullptr\s*;\s*"
+        r"CapturePreparedTrackStructureSettlementCheckpointFn\s*"
+        r"capturePreparedTrackStructureSettlementCheckpoint\s*=\s*nullptr\s*;\s*$",
+        "shared Track operations layout must retain exactly five callback words",
+    )
+    require(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        r"ReconcilePrepared(?:MacroTrackTransfer|SequencerActiveTrackPresentation)Fn|"
+        r"reconcilePrepared(?:MacroTrackTransfer|SequencerActiveTrackPresentation)\s*=",
+        "shared Track facade must not restore split presentation callbacks",
+        count=0,
+    )
+    require(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        r"sizeof\s*\(\s*SharedTrackDomainServices::Operations\s*\)\s*==\s*20U",
+        "shared Track operations must retain their ARM ABI lock",
+    )
+    require(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        r"sizeof\s*\(\s*SharedTrackDomainServices::Operations\s*\)\s*==\s*40U",
+        "shared Track operations must retain their native ABI lock",
+    )
+    require(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        r"sizeof\s*\(\s*SharedTrackDomainServices\s*\)\s*==\s*28U",
+        "shared Track facade must retain its ARM ABI lock",
+    )
+    require(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        r"sizeof\s*\(\s*SharedTrackDomainServices\s*\)\s*==\s*56U",
+        "shared Track facade must retain its native ABI lock",
+    )
+    require_in_function(
+        SHARED_TRACK_DOMAIN_SERVICES,
+        "reconcilePreparedTrackPresentationFromCoreState",
+        r"switch\s*\(\s*kind\s*\)\s*\{\s*"
+        r"case\s+PreparedTrackPresentationKind::MacroTrackTransfer\s*:"
+        r"\s*state\.reconcilePreparedMacroTrackTransfer\s*\(\s*capturedTrackMask\s*\)\s*;"
+        r"\s*return\s*;\s*"
+        r"case\s+PreparedTrackPresentationKind::SequencerActiveTrack\s*:"
+        r"\s*state\.reconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\)\s*;"
+        r"\s*return\s*;\s*default\s*:\s*failPreparedTrackPublicationInvariant\s*\(",
+        "production shared Track presentation dispatch must preserve both typed routes",
+    )
+    require_in_function(
+        SHARED_TRACK_DOMAIN_SERVICES,
+        "SharedTrackDomainServices::reconcilePreparedMacroTrackTransfer",
+        r"reconcilePreparedTrackPresentation\s*\(\s*operations_\.context\s*,\s*"
+        r"PreparedTrackPresentationKind::MacroTrackTransfer\s*,\s*capturedTrackMask\s*\)",
+        "Macro presentation reconciliation must dispatch its typed kind and mask",
+    )
+    require_in_function(
+        SHARED_TRACK_DOMAIN_SERVICES,
+        "SharedTrackDomainServices::reconcilePreparedSequencerActiveTrackPresentation",
+        r"reconcilePreparedTrackPresentation\s*\(\s*operations_\.context\s*,\s*"
+        r"PreparedTrackPresentationKind::SequencerActiveTrack\s*,\s*0U\s*\)",
+        "Sequencer presentation reconciliation must dispatch its typed kind without a mask",
+    )
 
     direct_pattern_boundary = (
         r"\b(?:commitCoalescedPatternEditOutcome|commitPatternHistoryBarrier)\s*\("
@@ -1453,46 +2910,50 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require(
         SEQUENCER_STEP_HANDLER,
-        r"\.button\s*\(\s*Config::ButtonID::BOTTOM_LEFT\s*\)\s*"
-        r"\.longPress\s*\([^;]*\)\s*\.scope\s*\([^;]*\)\s*\.when\s*"
-        r"\(\s*\[this\]\s*\(\s*\)\s*\{.*?"
-        r"navigation_workflow_\.selectionActive\s*\(\s*\).*?"
-        r"selectionHoldActionAvailable\s*\(\s*\).*?\.then\s*"
-        r"\(\s*\[this\]\s*\(\s*\)\s*\{\s*"
+        r"if\s*\(\s*edit_workflow_\.selectionTrackRemoveHoldPending\s*"
+        r"\(\s*\)\s*\)\s*return\s+true\s*;.*?"
         r"bottom_action_release_latch_\.arm\s*\(\s*"
-        r"Config::ButtonID::BOTTOM_LEFT\s*\)\s*;.*?#endif\s*"
-        r"if\s*\(\s*track_ui_\.selection\.active\.get\s*\(\s*\)\s*\)\s*"
-        r"\{\s*edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*"
-        r"if\s*\(\s*!commitPatternHistoryBarrier\s*\(\s*history_\s*\)\s*\)\s*"
-        r"return\s*;\s*\}\s*edit_workflow_\.applySelectionBottomLeftHold\s*"
-        r"\(\s*\)\s*;",
-        "selection BottomLeft hold must keep the old boundary Track-only after the latch",
+        r"Config::ButtonID::BOTTOM_LEFT\s*\)\s*;.*?"
+        r"if\s*\(\s*edit_workflow_\.selectionTrackRemoveHoldPending\s*"
+        r"\(\s*\)\s*\)\s*\{\s*"
+        r"edit_workflow_\.applyLatchedTrackSelectionLongPress\s*\(\s*\)\s*;\s*"
+        r"return\s*;\s*\}.*?"
+        r"commitPatternHistoryBarrier\s*\(\s*history_\s*\).*?"
+        r"applySelectionBottomLeftHold\s*\(\s*\)",
+        "selection BottomLeft hold must route tokenized Track provenance before legacy Page/Step",
     )
     require(
         SEQUENCER_STEP_HANDLER,
-        r"\.button\s*\(\s*Config::ButtonID::BOTTOM_LEFT\s*\)\s*"
-        r"\.release\s*\(\s*\)\s*\.scope\s*\([^;]*\)\s*\.when\s*"
-        r"\(\s*\[this\]\s*\(\s*\)\s*\{\s*return\s+"
-        r"navigation_workflow_\.selectionActive\s*\(\s*\)\s*;\s*\}\s*\)"
-        r".*?if\s*\(\s*track_ui_\.selection\.active\.get\s*\(\s*\)\s*\)\s*"
-        r"\{\s*edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*"
-        r"if\s*\(\s*!commitPatternHistoryBarrier\s*\(\s*history_\s*\)\s*\)\s*"
-        r"return\s*;\s*\}\s*edit_workflow_\.applySelectionBottomLeftTap\s*"
-        r"\(\s*\)\s*;",
-        "selection BottomLeft tap must keep the old boundary Track-only",
+        r"return\s+bottom_action_release_latch_\.isArmed\s*\(.*?"
+        r"\)\s*\|\|\s*edit_workflow_\.selectionTrackRemoveHoldPending\s*"
+        r"\(\s*\)\s*\|\|.*?"
+        r"bottom_action_release_latch_\.consume\s*\(\s*"
+        r"Config::ButtonID::BOTTOM_LEFT\s*\).*?"
+        r"if\s*\(\s*edit_workflow_\.selectionTrackRemoveHoldPending\s*"
+        r"\(\s*\)\s*\)\s*\{\s*"
+        r"edit_workflow_\.applyLatchedTrackSelectionShortPress\s*\(\s*\)\s*;\s*"
+        r"return\s*;\s*\}.*?"
+        r"commitPatternHistoryBarrier\s*\(\s*history_\s*\).*?"
+        r"applySelectionBottomLeftTap\s*\(\s*\)",
+        "selection BottomLeft tap must route tokenized Track provenance before legacy Page/Step",
     )
     require(
         SEQUENCER_STEP_HANDLER,
-        r"\.button\s*\(\s*Config::ButtonID::BOTTOM_LEFT\s*\)\s*"
-        r"\.release\s*\(\s*\)\s*\.scope\s*\([^;]*\)\s*\.when\s*"
-        r"\(\s*\[this\]\s*\(\s*\)\s*\{\s*return\s+"
-        r"currentStructureBottomActionsAvailable\s*\(\s*\)\s*;\s*\}\s*\)"
-        r".*?if\s*\(\s*trackFocusActive\s*\(\s*\)\s*\)\s*\{\s*"
-        r"edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*if\s*\(\s*"
-        r"!commitPatternHistoryBarrier\s*\(\s*history_\s*\)\s*\)\s*"
-        r"return\s*;\s*\}\s*edit_workflow_\.applyCurrentStructureShortPress\s*"
-        r"\(\s*\)\s*;",
-        "current BottomLeft tap must keep the old boundary Track-only",
+        r"if\s*\(\s*edit_workflow_\.currentTrackRemoveHoldPending\s*"
+        r"\(\s*\)\s*\)\s*return\s+true\s*;.*?"
+        r"bottom_action_release_latch_\.consume\s*\(\s*"
+        r"Config::ButtonID::BOTTOM_LEFT\s*\).*?"
+        r"if\s*\(\s*edit_workflow_\.currentTrackRemoveHoldPending\s*"
+        r"\(\s*\)\s*\)\s*\{\s*"
+        r"edit_workflow_\.applyLatchedCurrentTrackShortPress\s*\(\s*\)\s*;\s*"
+        r"return\s*;\s*\}.*?"
+        r"if\s*\(\s*edit_workflow_\.trackRemoveHoldPending\s*\(\s*\)\s*\)"
+        r"\s*\{\s*edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*"
+        r"return\s*;\s*\}.*?"
+        r"if\s*\(\s*trackFocusActive\s*\(\s*\)\s*\).*?"
+        r"commitPatternHistoryBarrier\s*\(\s*history_\s*\).*?"
+        r"applyCurrentStructureShortPress\s*\(\s*\)",
+        "current BottomLeft tap must route tokenized Track provenance before legacy Page/Step",
     )
     require(
         SEQUENCER_STEP_HANDLER,
@@ -1504,12 +2965,9 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"\(\s*\[this\]\s*\(\s*\)\s*\{\s*"
         r"bottom_action_release_latch_\.arm\s*\(\s*"
         r"Config::ButtonID::BOTTOM_LEFT\s*\)\s*;.*?#endif\s*"
-        r"if\s*\(\s*trackFocusActive\s*\(\s*\)\s*\)\s*\{\s*"
-        r"edit_workflow_\.clearHoldAction\s*\(\s*\)\s*;\s*if\s*\(\s*"
-        r"!commitPatternHistoryBarrier\s*\(\s*history_\s*\)\s*\)\s*"
-        r"return\s*;\s*\}\s*edit_workflow_\.applyCurrentStructureLongPress\s*"
+        r"edit_workflow_\.applyCurrentStructureLongPress\s*"
         r"\(\s*\)\s*;",
-        "current BottomLeft hold must keep the old boundary Track-only after the latch",
+        "current BottomLeft hold must latch then delegate without an old barrier",
     )
 
     project_snapshot = "src/state/project/ProjectSnapshot.cpp"
@@ -1700,6 +3158,184 @@ def self_test() -> int:
     restored_page_create_raw[PAGE_STRUCTURE_EDIT_WORKFLOW] += (
         "\nvoid injectedRawPageCreate() { createSequencerStructurePage(); }\n"
     )
+    restored_prepared_page_create = dict(step_draft_fixture)
+    restored_prepared_page_create[PAGE_STRUCTURE_NAVIGATION_WORKFLOW] += (
+        "\nvoid injectedPreparedPageCreate() { (void)PageCreate; }\n"
+    )
+    restored_sequencer_page_add_signal = dict(step_draft_fixture)
+    restored_sequencer_page_add_signal[
+        "src/state/sequencer/SequencerUiState.hpp"
+    ] += "\nstruct InjectedPageAddState { bool previewAddPageSlot; };\n"
+    missing_pattern_editor_add_rejection = mutate(
+        SEQUENCER_STEP_HANDLER,
+        "                    outcome.previewTarget || outcome.previewAddSlot) {",
+        "                    outcome.previewTarget) {",
+    )
+    broadened_nav_add_capture = mutate(
+        SEQUENCER_STEP_HANDLER,
+        "                focus == core::state::StructureNavigationFocus::TRACK &&\n"
+        "                track_ui_.previewAddSlot.get();",
+        "                focus != core::state::StructureNavigationFocus::STEP &&\n"
+        "                track_ui_.previewAddSlot.get();",
+    )
+    missing_step_target_capture = mutate(
+        SEQUENCER_STEP_HANDLER,
+        "                    : focus == core::state::StructureNavigationFocus::STEP\n"
+        "                        ? sequencer_.focusedStep.get()\n"
+        "                        : sequencer_.structureUi.previewPageIndex.get();",
+        "                    : sequencer_.structureUi.previewPageIndex.get();",
+    )
+    missing_step_release_revalidation = mutate(
+        SEQUENCER_STEP_HANDLER,
+        "                    core::state::StructureNavigationFocus::STEP ||\n"
+        "                sequencer_.focusedStep.get() != outcome.previewTarget) {",
+        "                    core::state::StructureNavigationFocus::STEP) {",
+    )
+    truncated_selector_target = mutate(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "    press_target_ = previewTarget;",
+        "    press_target_ = static_cast<uint8_t>(previewTarget & 0x0FU);",
+    )
+    missing_hidden_selector_target_clear = mutate_pattern(
+        CONTEXT_SELECTOR_WORKFLOW,
+        r"(SequencerContextSelectorWorkflow::release\s*\(\s*\)\s*\{\s*"
+        r"if\s*\(\s*!\s*state_\.visible\s*\)\s*\{\s*"
+        r"gesture_\.cancel\s*\(\s*\)\s*;\s*"
+        r"press_context_\s*=\s*0U\s*;)\s*press_target_\s*=\s*0U\s*;",
+        r"\g<1>",
+    )
+    restored_selector_feedback = dict(step_draft_fixture)
+    restored_selector_feedback[CONTEXT_SELECTOR_WORKFLOW_HEADER] += (
+        "\nenum class SequencerContextSelectorFeedback : uint8_t { NONE = 0 };\n"
+    )
+    widened_selector_gesture = mutate(
+        PRESS_HOLD_TURN_RELEASE_GESTURE_HEADER,
+        "sizeof(PressHoldTurnReleaseGesture) == 1U",
+        "sizeof(PressHoldTurnReleaseGesture) == 2U",
+    )
+    widened_context_selector_arm_ram = mutate(
+        CONTEXT_SELECTOR_WORKFLOW_HEADER,
+        "sizeof(SequencerContextSelectorWorkflow) == 8U",
+        "sizeof(SequencerContextSelectorWorkflow) == 12U",
+    )
+    unguarded_macro_track_preview_sync = mutate(
+        MACRO_STRUCTURE_WORKFLOW,
+        "            if (!track_ui_.hold.active()) {\n"
+        "                track_ui_.syncPreviewTrack(activeTrack);\n"
+        "            }",
+        "            track_ui_.syncPreviewTrack(activeTrack);",
+    )
+    missing_macro_short_clear_provenance = mutate(
+        MACRO_PERFORMANCE_HANDLER,
+        "            if (!structure_workflow_.releaseShortHoldAction(\n"
+        "                    core::state::StructureHoldAction::REMOVE\n"
+        "                )) {",
+        "            if (false) {",
+    )
+    missing_macro_short_copy_provenance = mutate(
+        MACRO_PERFORMANCE_HANDLER,
+        "            if (!structure_workflow_.releaseShortHoldAction(\n"
+        "                    core::state::StructureHoldAction::PASTE\n"
+        "                )) {",
+        "            if (false) {",
+    )
+    missing_macro_hold_acquisition_identity = mutate(
+        MACRO_STRUCTURE_WORKFLOW,
+        "                visualHold.acquisitionId() == hold_target_.acquisitionId",
+        "                true",
+    )
+    missing_macro_external_clear_reconcile = mutate(
+        MACRO_STRUCTURE_WORKFLOW,
+        "    if (!matches && (ownsAcquisition || noVisualHoldActive)) {",
+        "    if (ownsAcquisition && !matches) {",
+    )
+    missing_macro_nonvisual_press_capture = mutate(
+        MACRO_PERFORMANCE_HANDLER,
+        "                structure_workflow_.canRemoveCurrentStructure()",
+        "                true",
+    )
+    missing_macro_captured_release_routing = mutate(
+        MACRO_PERFORMANCE_HANDLER,
+        "structure_workflow_.hasCapturedAction(",
+        "false && structure_workflow_.hasCapturedAction(",
+    )
+    missing_macro_chord_exclusion = mutate_pattern(
+        MACRO_STRUCTURE_WORKFLOW,
+        r"\s*if\s*\(hold_target_\.action\(\)\s*!=\s*"
+        r"core::state::StructureHoldAction::NONE\s*\|\|\s*"
+        r"track_ui_\.hold\.active\(\)\s*\|\|\s*"
+        r"macro_ui_\.pageHold\.active\(\)\)\s*\{\s*"
+        r"return\s+false;\s*\}",
+        "",
+    )
+    consumed_macro_mismatched_release = mutate(
+        MACRO_STRUCTURE_WORKFLOW,
+        "    if (hold_target_.action() != action) return false;",
+        "",
+    )
+    missing_structure_hold_acquisition_id = mutate(
+        STRUCTURE_NAVIGATION_STATE,
+        "    ++acquisition_id_;",
+        "",
+    )
+    widened_structure_hold_progress_signal = mutate(
+        STRUCTURE_NAVIGATION_STATE_HEADER,
+        "Signal<uint32_t, 2> startedAtMs",
+        "Signal<uint32_t, 4> startedAtMs",
+    )
+    widened_macro_hold_target = mutate(
+        MACRO_STRUCTURE_WORKFLOW_HEADER,
+        "sizeof(HoldTarget) == 8U",
+        "sizeof(HoldTarget) == 12U",
+    )
+    widened_macro_structure_workflow = mutate(
+        MACRO_STRUCTURE_WORKFLOW_HEADER,
+        "sizeof(MacroStructureWorkflow) == 120U",
+        "sizeof(MacroStructureWorkflow) == 124U",
+    )
+    restored_public_macro_structure_helper = mutate(
+        MACRO_STRUCTURE_WORKFLOW_HEADER,
+        "    void toggleSlotSelectionAtPageIndex(uint8_t macroIndex);\n\n"
+        "private:\n"
+        "    void applyCurrentStructureLongPress();",
+        "    void toggleSlotSelectionAtPageIndex(uint8_t macroIndex);\n"
+        "    void applyCurrentStructureLongPress();\n\n"
+        "private:",
+    )
+    extra_track_hold_progress_observer = dict(step_draft_fixture)
+    extra_track_hold_progress_observer[MACRO_VIEW] += (
+        "\nvoid injectedThirdTrackHoldProgressObserver() {\n"
+        "    (void)state_refs_.trackNavigation.hold.startedAtMs;\n"
+        "}\n"
+    )
+    stale_context_selection_provenance = mutate(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "    gesture_.cancel();\n"
+        "    press_context_ = 0U;\n"
+        "    press_target_ = 0U;",
+        "    gesture_.cancel();",
+    )
+    restored_selector_dead_hold = mutate(
+        CONTEXT_SELECTOR_WORKFLOW,
+        "    gesture_.cancel();\n"
+        "    press_context_ = 0U;\n"
+        "    press_target_ = 0U;\n"
+        "    state_.visible = false;",
+        "    gesture_.hold();\n"
+        "    gesture_.cancel();\n"
+        "    press_context_ = 0U;\n"
+        "    press_target_ = 0U;\n"
+        "    state_.visible = false;",
+    )
+    restored_bulk_selection_cancel = dict(step_draft_fixture)
+    restored_bulk_selection_cancel[MACRO_STRUCTURE_WORKFLOW_HEADER] += (
+        "\nvoid cancelSelectionMode();\n"
+    )
+    widened_sequencer_header_watcher = mutate(
+        SEQUENCER_VIEW_HEADER,
+        "StaticWatchGroup<13> header_watcher_;",
+        "StaticWatchGroup<14> header_watcher_;",
+    )
     restored_page_ensure_raw = dict(step_draft_fixture)
     restored_page_ensure_raw[PAGE_STRUCTURE_EDIT_WORKFLOW] += (
         "\nvoid injectedRawPageEnsure() { ensurePageExists(); }\n"
@@ -1734,11 +3370,379 @@ def self_test() -> int:
             "makeSequencerPageStructureHistoryDescriptor",
         )
     )
-    added_eleventh_page_action = mutate(
+    restored_track_raw_symbols = tuple(
+        (
+            symbol,
+            {
+                **step_draft_fixture,
+                PAGE_STRUCTURE_EDIT_WORKFLOW:
+                    step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+                    + f"\nvoid injectedRetiredTrackSymbol() {{ {symbol}(); }}\n",
+            },
+        )
+        for symbol in RETIRED_RAW_TRACK_SYMBOLS
+    )
+    miswired_create_action = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "        Action::SequencerCreate,\n"
+        "        TrackBank::TRACK_COUNT",
+        "        Action::SequencerRemoveCurrent,\n"
+        "        TrackBank::TRACK_COUNT",
+    )
+    miswired_remove_action = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "        Action::SequencerRemoveCurrent,\n"
+        "        latchedTargetTrack",
+        "        Action::SequencerCreate,\n"
+        "        latchedTargetTrack",
+    )
+    miswired_create_workflow = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "executeSequencerCreateTrackStructure({",
+        "executeSequencerRemoveCurrentTrackStructure({",
+    )
+    miswired_remove_workflow = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "executeSequencerRemoveCurrentTrackStructure({",
+        "executeSequencerCreateTrackStructure({",
+    )
+    missing_track_presentation_reconciliation = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "reconcilePreparedSequencerActiveTrackPresentation();",
+        "skipPreparedSequencerActiveTrackPresentation();",
+    )
+    missing_track_undo_presentation_reconciliation = mutate_pattern(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        r"(\bCoreState::undoSequencerHistory\s*\(\s*\)\s*\{.*?)"
+        r"\breconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\)",
+        r"\g<1>skipPreparedSequencerActiveTrackPresentation()",
+    )
+    missing_track_redo_presentation_reconciliation = mutate_pattern(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        r"(\bCoreState::redoSequencerHistory\s*\(\s*\)\s*\{.*?)"
+        r"\breconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\)",
+        r"\g<1>skipPreparedSequencerActiveTrackPresentation()",
+    )
+    active_change_condition = (
+        "result.descriptor.kind ==\n"
+        "                   sequencer::SequencerHistoryActionKind::TrackStructure &&\n"
+        "               activeTrackBefore != sequencerTracks.activeTrackIndex()"
+    )
+    unconditional_track_undo_presentation = mutate(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        active_change_condition,
+        "result.descriptor.kind ==\n"
+        "                   sequencer::SequencerHistoryActionKind::TrackStructure",
+    )
+    unconditional_track_redo_presentation = dict(step_draft_fixture)
+    undo_condition_end = unconditional_track_redo_presentation[
+        CORE_SEQUENCER_HISTORY_TRAVERSAL
+    ].find(active_change_condition)
+    redo_condition_start = unconditional_track_redo_presentation[
+        CORE_SEQUENCER_HISTORY_TRAVERSAL
+    ].find(active_change_condition, undo_condition_end + 1)
+    if redo_condition_start >= 0:
+        content = unconditional_track_redo_presentation[
+            CORE_SEQUENCER_HISTORY_TRAVERSAL
+        ]
+        unconditional_track_redo_presentation[
+            CORE_SEQUENCER_HISTORY_TRAVERSAL
+        ] = (
+            content[:redo_condition_start]
+            + "result.descriptor.kind ==\n"
+            "                   sequencer::SequencerHistoryActionKind::TrackStructure"
+            + content[redo_condition_start + len(active_change_condition):]
+        )
+    validation_before_draft_priority = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "    // Draft owns Track transition priority",
+        "    if (latchedTargetTrack > TrackBank::TRACK_COUNT) {\n"
+        "        return {Status::Invalid, {}};\n"
+        "    }\n"
+        "    // Draft owns Track transition priority",
+    )
+    incomplete_selection_intent = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        ".destinationMask = selection.destinationMask.get(),",
+        ".destinationMask = 0U,",
+    )
+    bypassed_initial_topology_preflight = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "switch (validateInitialTopology(context, action)) {",
+        "switch (InitialTopologyOutcome::Ready) {",
+    )
+    missing_presentation_capability_pregate = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "    if (!state.sharedTracks.\n"
+        "            canReconcilePreparedSequencerActiveTrackPresentation()) {\n"
+        "        return {Status::PublicationUnavailable, {}};\n"
+        "    }",
+        "    if (false) {\n"
+        "        return {Status::PublicationUnavailable, {}};\n"
+        "    }",
+    )
+    merged_track_hold_provenance = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        "        SelectionRemove,\n",
+        "        SelectionRemove = CurrentRemove,\n",
+    )
+    selection_press_uses_current_hold_path = mutate(
+        SEQUENCER_STEP_HANDLER,
+        "edit_workflow_.beginSelectionHoldAction(",
+        "edit_workflow_.beginHoldAction(",
+    )
+    live_focus_first_track_remove_dispatch = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "    if (trackRemoveHoldPending()) {\n"
+        "        const bool holdStillMatches = currentTrackRemoveHoldStillMatches();",
+        "    if (navigation_focus_.get() ==\n"
+        "        core::state::StructureNavigationFocus::TRACK) {\n"
+        "        const bool holdStillMatches = currentTrackRemoveHoldStillMatches();",
+    )
+    incomplete_track_selection_hold_token = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        "        uint16_t destinationMask = 0U;",
+        "        uint16_t destinationMaskIgnored = 0U;",
+    )
+    missing_selection_hold_capture = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "                track_ui_.selection.scope.get(),",
+        "                core::state::StructureSelectionScope::TRACK,",
+    )
+    missing_selection_hold_focus_revalidation = mutate_pattern(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        r"(SequencerStructureEditWorkflow::selectionTrackRemoveIntentMatches\s*"
+        r"\([^)]*\)\s*const\s*\{\s*return\s+)"
+        r"navigation_focus_\.get\s*\(\s*\)\s*==\s*"
+        r"core::state::StructureNavigationFocus::TRACK\s*&&",
+        r"\g<1>true &&",
+    )
+    missing_selection_hold_token_revalidation = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "           ) == token.flags &&",
+        "           ) == 0U &&",
+    )
+    missing_current_hold_owner_revalidation = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "           currentActiveTrack() == targetTrack;",
+        "           currentActiveTrack() < TrackBank::TRACK_COUNT;",
+    )
+    missing_current_post_boundary_revalidation = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "    if (track_ui_.hold.active() ||\n"
+        "        !currentTrackRemoveIntentMatches(targetTrack)) {",
+        "    if (track_ui_.hold.active()) {",
+    )
+    missing_selection_post_boundary_revalidation = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "    if (track_ui_.hold.active() ||\n"
+        "        !selectionTrackRemoveIntentMatches(token, targetTrack)) {",
+        "    if (track_ui_.hold.active()) {",
+    )
+    missing_current_rejected_hold_settlement = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::applyLatchedCurrentTrackShortPress() {\n"
+        "    if (!currentTrackRemoveHoldStillMatches()) {\n"
+        "        if (trackRemoveHoldOwnsSharedState()) track_ui_.hold.clear();",
+        "SequencerStructureEditWorkflow::applyLatchedCurrentTrackShortPress() {\n"
+        "    if (!currentTrackRemoveHoldStillMatches()) {",
+    )
+    missing_selection_rejected_hold_settlement = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::applyLatchedTrackSelectionShortPress() {\n"
+        "    if (!selectionTrackRemoveHoldStillMatches()) {\n"
+        "        if (trackRemoveHoldOwnsSharedState()) track_ui_.hold.clear();",
+        "SequencerStructureEditWorkflow::applyLatchedTrackSelectionShortPress() {\n"
+        "    if (!selectionTrackRemoveHoldStillMatches()) {",
+    )
+    missing_selection_scope_entry_guard = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "            !track_ui_.selection.active.get() ||\n"
+        "            track_ui_.selection.scope.get() !=\n"
+        "                core::state::StructureSelectionScope::TRACK ||\n"
+        "            track_ui_.previewAddSlot.get()) {",
+        "            !track_ui_.selection.active.get() ||\n"
+        "            track_ui_.previewAddSlot.get()) {",
+    )
+    missing_release_latch_eligibility = mutate(
+        SEQUENCER_STEP_HANDLER,
+        "return bottom_action_release_latch_.isArmed(",
+        "return bottom_action_release_latch_.consume(",
+    )
+    missing_nav_press_hold_blocker = mutate_pattern(
+        SEQUENCER_STEP_HANDLER,
+        r"(\.button\s*\(\s*Config::ButtonID::NAV\s*\)\s*"
+        r"\.press\s*\(\s*\).*?"
+        r"!edit_workflow_\.trackPasteNavigationBlocked\s*\(\s*\))\s*&&\s*"
+        r"!edit_workflow_\.trackRemoveNavigationBlocked\s*\(\s*\)",
+        r"\g<1>",
+    )
+    live_recomputed_remove_target = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "const uint8_t latchedTarget = track_hold_target_;",
+        "const uint8_t latchedTarget = currentActiveTrack();",
+    )
+    broad_remove_hold_release_block = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "return paste.buttonOwned || paste.gestureActive() || paste.detailVisible;",
+        "return track_ui_.hold.active() || paste.buttonOwned || "
+        "paste.gestureActive() || paste.detailVisible;",
+    )
+    missing_create_clipboard_wiring = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "        structure_clipboard_,\n"
+        "        macro_pages_,",
+        "        macro_pages_,\n"
+        "        macro_pages_,",
+    )
+    missing_cold_track_preview_hold_guard = mutate(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW,
+        "    if (track_ui_.hold.active()) return;\n"
+        "    track_ui_.syncPreviewTrack(activeTrack);",
+        "    track_ui_.syncPreviewTrack(activeTrack);",
+    )
+    premature_create_preview_settlement = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "    return executeSequencerCreateTrackStructure({",
+        "    track_ui_.previewAddSlot.set(false);\n"
+        "    return executeSequencerCreateTrackStructure({",
+    )
+    premature_remove_preview_settlement = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "        const auto result = executeSequencerRemoveCurrentTrackStructure({",
+        "        track_ui_.syncPreviewTrack(currentActiveTrack());\n"
+        "        const auto result = executeSequencerRemoveCurrentTrackStructure({",
+    )
+    residual_track_create_boundary = mutate(
+        SEQUENCER_STEP_HANDLER,
+        "                if (!edit_workflow_.createPreviewedTrackStructure().settled()) {",
+        "                if (!commitPatternHistoryBarrier(history_)) return;\n"
+        "                if (!edit_workflow_.createPreviewedTrackStructure().settled()) {",
+    )
+    dangling_navigation_shared_facade = mutate(
+        SEQUENCER_STEP_HANDLER,
+        "          edit_workflow_.sharedTrackServices(),",
+        "          state.sharedTracks,",
+    )
+    navigation_owns_duplicate_shared_facade = mutate(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+        "    const SharedTrackDomainServices& shared_tracks_;",
+        "    SharedTrackDomainServices shared_tracks_;",
+    )
+    navigation_state_refs_accepts_temporary_facade = mutate(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+        "        std::reference_wrapper<const SharedTrackDomainServices> sharedTracks;",
+        "        const SharedTrackDomainServices& sharedTracks;",
+    )
+    navigation_reacquires_create_owner = mutate(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+        "        std::reference_wrapper<const SharedTrackDomainServices> sharedTracks;",
+        "        std::reference_wrapper<const SharedTrackDomainServices> sharedTracks;\n"
+        "        core::state::macro::MacroPagesState* macroPages = nullptr;",
+    )
+    split_shared_presentation_callback = mutate(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        "ReconcilePreparedTrackPresentationFn\n"
+        "            reconcilePreparedTrackPresentation = nullptr;",
+        "ReconcilePreparedMacroTrackTransferFn\n"
+        "            reconcilePreparedMacroTrackTransfer = nullptr;",
+    )
+    widened_shared_facade_arm_abi = mutate(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        "sizeof(SharedTrackDomainServices) == 28U",
+        "sizeof(SharedTrackDomainServices) == 32U",
+    )
+    copied_direct_context_state = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "    const SequencerDirectTrackStructureStateRefs& state;",
+        "    SequencerDirectTrackStructureStateRefs state;",
+    )
+    widened_direct_context_arm_stack = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "sizeof(DirectContext) <= 160U",
+        "sizeof(DirectContext) <= 216U",
+    )
+    widened_track_selection_hold_token = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        "sizeof(TrackSelectionHoldToken) == 16U",
+        "sizeof(TrackSelectionHoldToken) == 20U",
+    )
+    widened_direct_selection_intent = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "sizeof(SelectionIntentToken) == 16U",
+        "sizeof(SelectionIntentToken) == 20U",
+    )
+    edit_drops_shared_facade_ownership = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        "    SharedTrackDomainServices shared_tracks_;",
+        "    const SharedTrackDomainServices& shared_tracks_;",
+    )
+    edit_state_refs_borrows_shared_facade = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        "        SharedTrackDomainServices sharedTracks;",
+        "        const SharedTrackDomainServices& sharedTracks;",
+    )
+    misrouted_sequencer_presentation_kind = mutate(
+        SHARED_TRACK_DOMAIN_SERVICES,
+        "        PreparedTrackPresentationKind::SequencerActiveTrack,\n"
+        "        0U",
+        "        PreparedTrackPresentationKind::MacroTrackTransfer,\n"
+        "        0U",
+    )
+    duplicate_shared_presentation_slot = mutate(
+        SHARED_TRACK_DOMAIN_SERVICES_HEADER,
+        "            reconcilePreparedTrackPresentation = nullptr;",
+        "            reconcilePreparedTrackPresentation = nullptr;\n"
+        "        ReconcilePreparedTrackPresentationFn\n"
+        "            duplicateTrackPresentation = nullptr;",
+    )
+    widened_direct_context_native_stack = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "sizeof(DirectContext) <= 168U",
+        "sizeof(DirectContext) <= 176U",
+    )
+    navigation_reacquires_create_owner_by_reference = mutate(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+        "        std::reference_wrapper<const SharedTrackDomainServices> sharedTracks;",
+        "        std::reference_wrapper<const SharedTrackDomainServices> sharedTracks;\n"
+        "        const core::state::StructureClipboardState& clipboard;",
+    )
+    dropped_paste_blocked_hold_flag = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "(pasteBlocked ? TRACK_SELECTION_HOLD_PASTE_BLOCKED : 0U)",
+        "(pasteBlocked ? 0U : 0U)",
+    )
+    widened_navigation_workflow_arm_ram = mutate(
+        PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER,
+        "sizeof(SequencerStructureNavigationWorkflow) == 48U",
+        "sizeof(SequencerStructureNavigationWorkflow) == 52U",
+    )
+    widened_edit_workflow_arm_ram = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER,
+        "sizeof(SequencerStructureEditWorkflow) == 116U",
+        "sizeof(SequencerStructureEditWorkflow) == 120U",
+    )
+    widened_step_handler_arm_psram = mutate(
+        SEQUENCER_STEP_HANDLER_HEADER,
+        "sizeof(SequencerStepHandler) == 256U",
+        "sizeof(SequencerStepHandler) == 260U",
+    )
+    widened_direct_state_refs_arm_stack = mutate(
+        DIRECT_TRACK_STRUCTURE_TRANSACTION_HEADER,
+        "sizeof(SequencerDirectTrackStructureStateRefs) == 64U",
+        "sizeof(SequencerDirectTrackStructureStateRefs) == 68U",
+    )
+    residual_remove_current_boundary = mutate(
+        SEQUENCER_STEP_HANDLER,
+        "#endif\n            edit_workflow_.applyCurrentStructureLongPress();",
+        "#endif\n            if (!commitPatternHistoryBarrier(history_)) return;\n"
+        "            edit_workflow_.applyCurrentStructureLongPress();",
+    )
+    added_tenth_page_action = mutate(
         PAGE_STRUCTURE_TRANSACTION_HEADER,
         "    PageSelectionDeleteOrDeepReset,\n};",
         "    PageSelectionDeleteOrDeepReset,\n"
-        "    ExperimentalEleventhAction,\n};",
+        "    ExperimentalTenthAction,\n};",
     )
     miswired_page_selection_builder = mutate(
         PAGE_STRUCTURE_EDIT_WORKFLOW,
@@ -1995,6 +3999,498 @@ def self_test() -> int:
             "valid Step-draft transition contract is accepted",
         ),
         (
+            miswired_create_action[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                miswired_create_action
+            )),
+            "miswired SequencerCreate action is rejected",
+        ),
+        (
+            miswired_remove_action[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                miswired_remove_action
+            )),
+            "miswired SequencerRemoveCurrent action is rejected",
+        ),
+        (
+            miswired_create_workflow[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                miswired_create_workflow
+            )),
+            "miswired Track Create workflow is rejected",
+        ),
+        (
+            miswired_remove_workflow[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                miswired_remove_workflow
+            )),
+            "miswired RemoveCurrent workflow is rejected",
+        ),
+        (
+            missing_track_presentation_reconciliation[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                missing_track_presentation_reconciliation
+            )),
+            "missing committed Track presentation reconciliation is rejected",
+        ),
+        (
+            missing_track_undo_presentation_reconciliation[
+                CORE_SEQUENCER_HISTORY_TRAVERSAL
+            ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_TRAVERSAL]
+            and bool(step_draft_transition_contract_errors(
+                missing_track_undo_presentation_reconciliation
+            )),
+            "missing Track Structure Undo presentation reconciliation is rejected",
+        ),
+        (
+            missing_track_redo_presentation_reconciliation[
+                CORE_SEQUENCER_HISTORY_TRAVERSAL
+            ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_TRAVERSAL]
+            and bool(step_draft_transition_contract_errors(
+                missing_track_redo_presentation_reconciliation
+            )),
+            "missing Track Structure Redo presentation reconciliation is rejected",
+        ),
+        (
+            unconditional_track_undo_presentation[
+                CORE_SEQUENCER_HISTORY_TRAVERSAL
+            ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_TRAVERSAL]
+            and bool(step_draft_transition_contract_errors(
+                unconditional_track_undo_presentation
+            )),
+            "unconditional Track Structure Undo presentation reconciliation is rejected",
+        ),
+        (
+            unconditional_track_redo_presentation[
+                CORE_SEQUENCER_HISTORY_TRAVERSAL
+            ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_TRAVERSAL]
+            and bool(step_draft_transition_contract_errors(
+                unconditional_track_redo_presentation
+            )),
+            "unconditional Track Structure Redo presentation reconciliation is rejected",
+        ),
+        (
+            validation_before_draft_priority[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                validation_before_draft_priority
+            )),
+            "adapter-local validation before Draft rejection is rejected",
+        ),
+        (
+            incomplete_selection_intent[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                incomplete_selection_intent
+            )),
+            "incomplete direct Track selection-intent capture is rejected",
+        ),
+        (
+            bypassed_initial_topology_preflight[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                bypassed_initial_topology_preflight
+            )),
+            "bypassed direct Track initial-topology preflight is rejected",
+        ),
+        (
+            missing_presentation_capability_pregate[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                missing_presentation_capability_pregate
+            )),
+            "missing direct Track presentation-capability pre-gate is rejected",
+        ),
+        (
+            merged_track_hold_provenance[PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                merged_track_hold_provenance
+            )),
+            "merged CurrentRemove/SelectionRemove provenance is rejected",
+        ),
+        (
+            selection_press_uses_current_hold_path[SEQUENCER_STEP_HANDLER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                selection_press_uses_current_hold_path
+            )),
+            "Selection press routed through CurrentRemove is rejected",
+        ),
+        (
+            live_focus_first_track_remove_dispatch[
+                PAGE_STRUCTURE_EDIT_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                live_focus_first_track_remove_dispatch
+            )),
+            "live-focus-first Track Remove dispatch is rejected",
+        ),
+        (
+            incomplete_track_selection_hold_token[
+                PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                incomplete_track_selection_hold_token
+            )),
+            "incomplete SelectionRemove hold token storage is rejected",
+        ),
+        (
+            missing_selection_hold_capture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_selection_hold_capture
+            )),
+            "incomplete SelectionRemove hold token capture is rejected",
+        ),
+        (
+            missing_selection_hold_focus_revalidation[
+                PAGE_STRUCTURE_EDIT_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_selection_hold_focus_revalidation
+            )),
+            "missing SelectionRemove focus revalidation is rejected",
+        ),
+        (
+            missing_selection_hold_token_revalidation[
+                PAGE_STRUCTURE_EDIT_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_selection_hold_token_revalidation
+            )),
+            "missing SelectionRemove exact-token revalidation is rejected",
+        ),
+        (
+            missing_current_hold_owner_revalidation[
+                PAGE_STRUCTURE_EDIT_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_current_hold_owner_revalidation
+            )),
+            "missing CurrentRemove owner revalidation is rejected",
+        ),
+        (
+            missing_current_post_boundary_revalidation[
+                PAGE_STRUCTURE_EDIT_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_current_post_boundary_revalidation
+            )),
+            "missing Current Track post-boundary target revalidation is rejected",
+        ),
+        (
+            missing_selection_post_boundary_revalidation[
+                PAGE_STRUCTURE_EDIT_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_selection_post_boundary_revalidation
+            )),
+            "missing SelectionRemove post-boundary token revalidation is rejected",
+        ),
+        (
+            missing_current_rejected_hold_settlement[
+                PAGE_STRUCTURE_EDIT_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_current_rejected_hold_settlement
+            )),
+            "CurrentRemove rejection that leaves its owned hold active is rejected",
+        ),
+        (
+            missing_selection_rejected_hold_settlement[
+                PAGE_STRUCTURE_EDIT_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_selection_rejected_hold_settlement
+            )),
+            "SelectionRemove rejection that leaves its owned hold active is rejected",
+        ),
+        (
+            missing_selection_scope_entry_guard[
+                PAGE_STRUCTURE_EDIT_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_selection_scope_entry_guard
+            )),
+            "missing SelectionRemove initial scope guard is rejected",
+        ),
+        (
+            missing_release_latch_eligibility[SEQUENCER_STEP_HANDLER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                missing_release_latch_eligibility
+            )),
+            "BottomLeft release route without armed-latch eligibility is rejected",
+        ),
+        (
+            missing_nav_press_hold_blocker[SEQUENCER_STEP_HANDLER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                missing_nav_press_hold_blocker
+            )),
+            "new NAV selector press admitted during Track Remove is rejected",
+        ),
+        (
+            live_recomputed_remove_target[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                live_recomputed_remove_target
+            )),
+            "live-recomputed Remove hold target is rejected",
+        ),
+        (
+            broad_remove_hold_release_block[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                broad_remove_hold_release_block
+            )),
+            "Remove hold broadening paste-owned release blocking is rejected",
+        ),
+        (
+            missing_create_clipboard_wiring[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_create_clipboard_wiring
+            )),
+            "missing Track Create clipboard intent wiring is rejected",
+        ),
+        (
+            missing_cold_track_preview_hold_guard[
+                PAGE_STRUCTURE_NAVIGATION_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_NAVIGATION_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_cold_track_preview_hold_guard
+            )),
+            "missing cold active-Track preview hold guard is rejected",
+        ),
+        (
+            premature_create_preview_settlement[
+                PAGE_STRUCTURE_EDIT_WORKFLOW
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                premature_create_preview_settlement
+            )),
+            "premature Track Create preview settlement is rejected",
+        ),
+        (
+            premature_remove_preview_settlement[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                premature_remove_preview_settlement
+            )),
+            "premature RemoveCurrent preview settlement is rejected",
+        ),
+        (
+            residual_track_create_boundary[SEQUENCER_STEP_HANDLER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                residual_track_create_boundary
+            )),
+            "residual Track Create caller barrier is rejected",
+        ),
+        (
+            dangling_navigation_shared_facade[SEQUENCER_STEP_HANDLER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                dangling_navigation_shared_facade
+            )),
+            "dangling Navigation shared Track facade reference is rejected",
+        ),
+        (
+            navigation_owns_duplicate_shared_facade[
+                PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER
+            ] != step_draft_fixture[PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                navigation_owns_duplicate_shared_facade
+            )),
+            "duplicate Navigation shared Track facade ownership is rejected",
+        ),
+        (
+            navigation_state_refs_accepts_temporary_facade[
+                PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER
+            ] != step_draft_fixture[PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                navigation_state_refs_accepts_temporary_facade
+            )),
+            "temporary-capable Navigation shared facade references are rejected",
+        ),
+        (
+            navigation_reacquires_create_owner[
+                PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER
+            ] != step_draft_fixture[PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                navigation_reacquires_create_owner
+            )),
+            "Navigation reacquisition of Track Create ownership is rejected",
+        ),
+        (
+            split_shared_presentation_callback[
+                SHARED_TRACK_DOMAIN_SERVICES_HEADER
+            ] != step_draft_fixture[SHARED_TRACK_DOMAIN_SERVICES_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                split_shared_presentation_callback
+            )),
+            "split shared Track presentation callbacks are rejected",
+        ),
+        (
+            widened_shared_facade_arm_abi[
+                SHARED_TRACK_DOMAIN_SERVICES_HEADER
+            ] != step_draft_fixture[SHARED_TRACK_DOMAIN_SERVICES_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_shared_facade_arm_abi
+            )),
+            "widened shared Track facade ARM ABI is rejected",
+        ),
+        (
+            copied_direct_context_state[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                copied_direct_context_state
+            )),
+            "copied direct Track context StateRefs are rejected",
+        ),
+        (
+            widened_direct_context_arm_stack[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                widened_direct_context_arm_stack
+            )),
+            "widened direct Track context ARM stack ceiling is rejected",
+        ),
+        (
+            widened_track_selection_hold_token[
+                PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_track_selection_hold_token
+            )),
+            "widened Track Selection hold token ABI is rejected",
+        ),
+        (
+            widened_direct_selection_intent[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                widened_direct_selection_intent
+            )),
+            "widened direct Selection intent ABI is rejected",
+        ),
+        (
+            edit_drops_shared_facade_ownership[
+                PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                edit_drops_shared_facade_ownership
+            )),
+            "Edit dropping shared Track facade ownership is rejected",
+        ),
+        (
+            edit_state_refs_borrows_shared_facade[
+                PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                edit_state_refs_borrows_shared_facade
+            )),
+            "Edit StateRefs borrowing a temporary shared facade is rejected",
+        ),
+        (
+            misrouted_sequencer_presentation_kind[
+                SHARED_TRACK_DOMAIN_SERVICES
+            ] != step_draft_fixture[SHARED_TRACK_DOMAIN_SERVICES]
+            and bool(step_draft_transition_contract_errors(
+                misrouted_sequencer_presentation_kind
+            )),
+            "misrouted Sequencer presentation kind is rejected",
+        ),
+        (
+            duplicate_shared_presentation_slot[
+                SHARED_TRACK_DOMAIN_SERVICES_HEADER
+            ] != step_draft_fixture[SHARED_TRACK_DOMAIN_SERVICES_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                duplicate_shared_presentation_slot
+            )),
+            "duplicate shared Track presentation callback slot is rejected",
+        ),
+        (
+            widened_direct_context_native_stack[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                widened_direct_context_native_stack
+            )),
+            "widened direct Track context native stack ceiling is rejected",
+        ),
+        (
+            navigation_reacquires_create_owner_by_reference[
+                PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER
+            ] != step_draft_fixture[PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                navigation_reacquires_create_owner_by_reference
+            )),
+            "Navigation reacquisition of Create ownership by reference is rejected",
+        ),
+        (
+            dropped_paste_blocked_hold_flag[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                dropped_paste_blocked_hold_flag
+            )),
+            "dropped SelectionRemove paste-blocked flag is rejected",
+        ),
+        (
+            widened_navigation_workflow_arm_ram[
+                PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER
+            ] != step_draft_fixture[PAGE_STRUCTURE_NAVIGATION_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_navigation_workflow_arm_ram
+            )),
+            "widened Navigation workflow ARM RAM lock is rejected",
+        ),
+        (
+            widened_edit_workflow_arm_ram[
+                PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER
+            ] != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_edit_workflow_arm_ram
+            )),
+            "widened Edit workflow ARM RAM lock is rejected",
+        ),
+        (
+            widened_step_handler_arm_psram[SEQUENCER_STEP_HANDLER_HEADER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_step_handler_arm_psram
+            )),
+            "widened StepHandler ARM PSRAM lock is rejected",
+        ),
+        (
+            widened_direct_state_refs_arm_stack[
+                DIRECT_TRACK_STRUCTURE_TRANSACTION_HEADER
+            ] != step_draft_fixture[DIRECT_TRACK_STRUCTURE_TRANSACTION_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_direct_state_refs_arm_stack
+            )),
+            "widened direct StateRefs ARM stack lock is rejected",
+        ),
+        (
+            residual_remove_current_boundary[SEQUENCER_STEP_HANDLER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                residual_remove_current_boundary
+            )),
+            "residual RemoveCurrent caller barrier is rejected",
+        ),
+        (
             bool(step_draft_transition_contract_errors(changed_label)),
             "changed Step-draft frozen label is rejected",
         ),
@@ -2039,12 +4535,12 @@ def self_test() -> int:
             "removed Page invariant trap is rejected",
         ),
         (
-            added_eleventh_page_action[PAGE_STRUCTURE_TRANSACTION_HEADER]
+            added_tenth_page_action[PAGE_STRUCTURE_TRANSACTION_HEADER]
             != step_draft_fixture[PAGE_STRUCTURE_TRANSACTION_HEADER]
             and bool(step_draft_transition_contract_errors(
-                added_eleventh_page_action
+                added_tenth_page_action
             )),
-            "an eleventh Page Structure action is rejected",
+            "a tenth live Page Structure action is rejected",
         ),
         (
             bool(step_draft_transition_contract_errors(restored_page_paste_raw)),
@@ -2057,6 +4553,240 @@ def self_test() -> int:
         (
             bool(step_draft_transition_contract_errors(restored_page_create_raw)),
             "restored raw Page-create helper is rejected",
+        ),
+        (
+            bool(step_draft_transition_contract_errors(
+                restored_prepared_page_create
+            )),
+            "restored prepared Navigation PageCreate symbol is rejected",
+        ),
+        (
+            bool(step_draft_transition_contract_errors(
+                restored_sequencer_page_add_signal
+            )),
+            "restored Sequencer Page add-preview signal is rejected",
+        ),
+        (
+            missing_pattern_editor_add_rejection[SEQUENCER_STEP_HANDLER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                missing_pattern_editor_add_rejection
+            )),
+            "Pattern Editor release without add-provenance rejection is rejected",
+        ),
+        (
+            broadened_nav_add_capture[SEQUENCER_STEP_HANDLER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                broadened_nav_add_capture
+            )),
+            "NAV add provenance outside Track focus is rejected",
+        ),
+        (
+            missing_step_target_capture[SEQUENCER_STEP_HANDLER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                missing_step_target_capture
+            )),
+            "NAV selector without exact Step target capture is rejected",
+        ),
+        (
+            missing_step_release_revalidation[SEQUENCER_STEP_HANDLER]
+            != step_draft_fixture[SEQUENCER_STEP_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                missing_step_release_revalidation
+            )),
+            "Step Editor release without target revalidation is rejected",
+        ),
+        (
+            truncated_selector_target[CONTEXT_SELECTOR_WORKFLOW]
+            != step_draft_fixture[CONTEXT_SELECTOR_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                truncated_selector_target
+            )),
+            "truncated selector target provenance is rejected",
+        ),
+        (
+            missing_hidden_selector_target_clear[CONTEXT_SELECTOR_WORKFLOW]
+            != step_draft_fixture[CONTEXT_SELECTOR_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_hidden_selector_target_clear
+            )),
+            "hidden selector release retaining target provenance is rejected",
+        ),
+        (
+            bool(step_draft_transition_contract_errors(
+                restored_selector_feedback
+            )),
+            "restored unproducible selector feedback is rejected",
+        ),
+        (
+            widened_selector_gesture[PRESS_HOLD_TURN_RELEASE_GESTURE_HEADER]
+            != step_draft_fixture[PRESS_HOLD_TURN_RELEASE_GESTURE_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_selector_gesture
+            )),
+            "widened selector gesture storage is rejected",
+        ),
+        (
+            widened_context_selector_arm_ram[CONTEXT_SELECTOR_WORKFLOW_HEADER]
+            != step_draft_fixture[CONTEXT_SELECTOR_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_context_selector_arm_ram
+            )),
+            "widened context selector ARM RAM lock is rejected",
+        ),
+        (
+            unguarded_macro_track_preview_sync[MACRO_STRUCTURE_WORKFLOW]
+            != step_draft_fixture[MACRO_STRUCTURE_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                unguarded_macro_track_preview_sync
+            )),
+            "Macro subscriber rewriting a held Track preview is rejected",
+        ),
+        (
+            missing_macro_short_clear_provenance[MACRO_PERFORMANCE_HANDLER]
+            != step_draft_fixture[MACRO_PERFORMANCE_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                missing_macro_short_clear_provenance
+            )),
+            "Macro short Clear without exact hold provenance is rejected",
+        ),
+        (
+            missing_macro_short_copy_provenance[MACRO_PERFORMANCE_HANDLER]
+            != step_draft_fixture[MACRO_PERFORMANCE_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                missing_macro_short_copy_provenance
+            )),
+            "Macro short Copy without exact hold provenance is rejected",
+        ),
+        (
+            missing_macro_hold_acquisition_identity[MACRO_STRUCTURE_WORKFLOW]
+            != step_draft_fixture[MACRO_STRUCTURE_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_macro_hold_acquisition_identity
+            )),
+            "Macro hold settlement without acquisition identity is rejected",
+        ),
+        (
+            missing_macro_external_clear_reconcile[MACRO_STRUCTURE_WORKFLOW]
+            != step_draft_fixture[MACRO_STRUCTURE_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_macro_external_clear_reconcile
+            )),
+            "Macro release after external hold clear without preview reconciliation is rejected",
+        ),
+        (
+            missing_macro_nonvisual_press_capture[MACRO_PERFORMANCE_HANDLER]
+            != step_draft_fixture[MACRO_PERFORMANCE_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                missing_macro_nonvisual_press_capture
+            )),
+            "Macro short press without exact non-visual capture is rejected",
+        ),
+        (
+            missing_macro_captured_release_routing[MACRO_PERFORMANCE_HANDLER]
+            != step_draft_fixture[MACRO_PERFORMANCE_HANDLER]
+            and bool(step_draft_transition_contract_errors(
+                missing_macro_captured_release_routing
+            )),
+            "Macro release routing that drops non-visual capture is rejected",
+        ),
+        (
+            missing_macro_chord_exclusion[MACRO_STRUCTURE_WORKFLOW]
+            != step_draft_fixture[MACRO_STRUCTURE_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                missing_macro_chord_exclusion
+            )),
+            "Macro cross-button provenance replacement is rejected",
+        ),
+        (
+            consumed_macro_mismatched_release[MACRO_STRUCTURE_WORKFLOW]
+            != step_draft_fixture[MACRO_STRUCTURE_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                consumed_macro_mismatched_release
+            )),
+            "Macro mismatched release consuming another action is rejected",
+        ),
+        (
+            missing_structure_hold_acquisition_id[STRUCTURE_NAVIGATION_STATE]
+            != step_draft_fixture[STRUCTURE_NAVIGATION_STATE]
+            and bool(step_draft_transition_contract_errors(
+                missing_structure_hold_acquisition_id
+            )),
+            "Structure hold without a unique acquisition ID is rejected",
+        ),
+        (
+            widened_structure_hold_progress_signal[
+                STRUCTURE_NAVIGATION_STATE_HEADER
+            ] != step_draft_fixture[STRUCTURE_NAVIGATION_STATE_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_structure_hold_progress_signal
+            )),
+            "widened Structure hold progress signal is rejected",
+        ),
+        (
+            widened_macro_hold_target[MACRO_STRUCTURE_WORKFLOW_HEADER]
+            != step_draft_fixture[MACRO_STRUCTURE_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_macro_hold_target
+            )),
+            "widened Macro hold target ARM RAM lock is rejected",
+        ),
+        (
+            widened_macro_structure_workflow[MACRO_STRUCTURE_WORKFLOW_HEADER]
+            != step_draft_fixture[MACRO_STRUCTURE_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_macro_structure_workflow
+            )),
+            "widened Macro Structure workflow ARM PSRAM lock is rejected",
+        ),
+        (
+            restored_public_macro_structure_helper[
+                MACRO_STRUCTURE_WORKFLOW_HEADER
+            ] != step_draft_fixture[MACRO_STRUCTURE_WORKFLOW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                restored_public_macro_structure_helper
+            )),
+            "restored public Macro implementation helper is rejected",
+        ),
+        (
+            extra_track_hold_progress_observer[MACRO_VIEW]
+            != step_draft_fixture[MACRO_VIEW]
+            and bool(step_draft_transition_contract_errors(
+                extra_track_hold_progress_observer
+            )),
+            "third Track hold progress observer is rejected",
+        ),
+        (
+            stale_context_selection_provenance[CONTEXT_SELECTOR_WORKFLOW]
+            != step_draft_fixture[CONTEXT_SELECTOR_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                stale_context_selection_provenance
+            )),
+            "stale selector provenance after selection transfer is rejected",
+        ),
+        (
+            restored_selector_dead_hold[CONTEXT_SELECTOR_WORKFLOW]
+            != step_draft_fixture[CONTEXT_SELECTOR_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                restored_selector_dead_hold
+            )),
+            "dead selector held state before cancellation is rejected",
+        ),
+        (
+            bool(step_draft_transition_contract_errors(
+                restored_bulk_selection_cancel
+            )),
+            "caller-zero bulk selection cancellation is rejected",
+        ),
+        (
+            widened_sequencer_header_watcher[SEQUENCER_VIEW_HEADER]
+            != step_draft_fixture[SEQUENCER_VIEW_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                widened_sequencer_header_watcher
+            )),
+            "widened Sequencer header watcher lock is rejected",
         ),
         (
             bool(step_draft_transition_contract_errors(restored_page_ensure_raw)),
@@ -2196,6 +4926,12 @@ def self_test() -> int:
             f"restored retired raw Page symbol is rejected: {symbol}",
         )
         for symbol, fixture in restored_additional_raw_symbols
+    ) + tuple(
+        (
+            bool(step_draft_transition_contract_errors(fixture)),
+            f"restored retired raw Track symbol is rejected: {symbol}",
+        )
+        for symbol, fixture in restored_track_raw_symbols
     ) + tuple(
         (
             selector not in fixture

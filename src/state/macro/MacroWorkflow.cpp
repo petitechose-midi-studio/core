@@ -7,6 +7,7 @@
 
 #include "state/CoreState.hpp"
 #include "state/macro/MacroAutomationDomain.hpp"
+#include "state/macro/MacroUiState.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 
@@ -49,6 +50,27 @@ FLASHMEM void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& 
         oc::type::text::terminate(label, sizeof(label), pos);
         macros.slots[i].label.set(label);
         setRuntimeValue(macros, i, pageData.values[i]);
+    }
+}
+
+FLASHMEM void MacroWorkflow::syncActivePagePresentation(
+    core::state::MacroState& macros,
+    const MacroPagesState& pages,
+    MacroUiState& macroUi
+) noexcept {
+    syncRuntimeFromActivePage(macros, pages);
+    const uint8_t track = pages.currentActiveTrack();
+    const uint8_t page = pages.currentActivePage();
+    macroUi.refreshManualOverrideMask(track, page);
+    for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+        float manualValue = 0.0f;
+        if (!macroUi.manualOverrides.valueFor(
+                MacroAutomationSlotAddress{track, page, macro},
+                manualValue
+            )) {
+            continue;
+        }
+        setRuntimeValue(macros, macro, manualValue);
     }
 }
 

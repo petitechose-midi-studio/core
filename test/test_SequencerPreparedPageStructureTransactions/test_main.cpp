@@ -182,7 +182,7 @@ static_assert(!std::is_copy_assignable_v<Transaction>);
 static_assert(!std::is_move_constructible_v<Transaction>);
 static_assert(!std::is_move_assignable_v<Transaction>);
 
-static_assert(static_cast<uint8_t>(Action::PageCreate) == 0U);
+static_assert(static_cast<uint8_t>(Action::Invalid) == 0U);
 static_assert(static_cast<uint8_t>(Action::PageSelectionPaste) == 1U);
 static_assert(static_cast<uint8_t>(Action::PageClear) == 2U);
 static_assert(static_cast<uint8_t>(Action::PageDelete) == 3U);
@@ -382,8 +382,7 @@ struct Harness {
         : history(services(script)) {}
 };
 
-constexpr std::array<Action, 10U> kActions{
-    Action::PageCreate,
+constexpr std::array<Action, 9U> kActions{
     Action::PageSelectionPaste,
     Action::PageClear,
     Action::PageDelete,
@@ -445,7 +444,7 @@ Execution execution(
     uint8_t track = 3U,
     int32_t beforePages = 2,
     int32_t afterPages = 4,
-    Action action = Action::PageCreate
+    Action action = Action::PageClear
 ) {
     return {
         .payloadPlan = plan,
@@ -461,7 +460,7 @@ Execution execution(
     };
 }
 
-void test_exact_ten_actions_forward_stable_owner_keys() {
+void test_exact_nine_actions_forward_stable_owner_keys() {
     for (std::size_t index = 0U; index < kActions.size(); ++index) {
         Harness h;
         h.script.sealOutcome = SealOutcome::Cleared;
@@ -487,10 +486,11 @@ void test_exact_ten_actions_forward_stable_owner_keys() {
         assert(h.script.beginOwner == Owner::PageStructure);
         assert(h.script.readyOwner == Owner::PageStructure);
         assert(h.script.sealOwner == Owner::PageStructure);
-        assert(h.script.beginKey == index);
-        assert(h.script.readyKey == index);
+        const auto expectedKey = static_cast<uint8_t>(kActions[index]);
+        assert(h.script.beginKey == expectedKey);
+        assert(h.script.readyKey == expectedKey);
         assert(h.script.readyTrack == 3U);
-        assert(h.script.sealKey == index);
+        assert(h.script.sealKey == expectedKey);
         assert(h.script.payloadPlan == Plan::FullCurrentPayload);
         assert(h.script.compactGraphOnSeal);
         assert(!h.script.mutationChanged);
@@ -508,7 +508,7 @@ void test_exact_ten_actions_forward_stable_owner_keys() {
         assert(h.script.abortCount == 0U);
     }
 
-    std::cout << "[PASS] exact ten Page actions forward stable owner/key identities\n";
+    std::cout << "[PASS] exact nine Page actions forward stable owner/key identities\n";
 }
 
 void test_draft_rejects_before_the_only_boundary() {
@@ -517,7 +517,7 @@ void test_draft_rejects_before_the_only_boundary() {
     const uint32_t revisionBefore = h.sequencer.stepContentDraft.revision.get();
     const uint32_t contentRevisionBefore = h.sequencer.contentView.revision.get();
     {
-        Transaction transaction(h.sequencer, h.history, Action::PageCreate);
+        Transaction transaction(h.sequencer, h.history, Action::PageClear);
         assert(!transaction.openBoundary());
     }
 
@@ -558,7 +558,7 @@ void test_boundary_failure_and_one_shot_protocol_stop_before_begin() {
         Transaction invalidAction(
             h.sequencer,
             h.history,
-            static_cast<Action>(10U)
+            Action::Invalid
         );
         assert(invalidAction.openBoundary());
         assert(invalidAction.execute(
@@ -569,7 +569,7 @@ void test_boundary_failure_and_one_shot_protocol_stop_before_begin() {
                        0U,
                        1,
                        1,
-                       static_cast<Action>(10U))) ==
+                       Action::Invalid)) ==
                Result::Failed);
         assertCallSequence(h.script, {Call::Boundary});
     }
@@ -977,7 +977,7 @@ Execution coreExecution(
     uint8_t track = 0U,
     int32_t beforePages = 1,
     int32_t afterPages = 1,
-    Action action = Action::PageCreate
+    Action action = Action::PageClear
 ) {
     return {
         .payloadPlan = plan,
@@ -1258,7 +1258,7 @@ void test_core_flat_rollback_preserves_disabled_graph_and_empty_cc_owners() {
         Transaction transaction(
             h.state.sequencer,
             h.history,
-            Action::PageCreate
+            Action::PageClear
         );
         assert(transaction.openBoundary());
         core::app::testing::ScopedExtmemAllocationFailure failure(2U);
@@ -1723,13 +1723,23 @@ void test_core_track_drift_removes_prospective_graph_exactly() {
     auto history = probeServices(probe);
     CoreMutation mutation{.note = 74U};
 
-    Transaction transaction(h.state.sequencer, history, Action::PageCreate);
+    Transaction transaction(
+        h.state.sequencer,
+        history,
+        Action::PageSelectionPaste
+    );
     assert(transaction.openBoundary());
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(5U);
         allocation_trace::Scope allocationTrace;
         assert(transaction.execute(coreExecution(
-                   mutation, Plan::FullWithProspectiveGraph, false)) == Result::Failed);
+                   mutation,
+                   Plan::FullWithProspectiveGraph,
+                   false,
+                   0U,
+                   1,
+                   1,
+                   Action::PageSelectionPaste)) == Result::Failed);
         assertAllocationCount(4U);
         tx::assertMaxPlusOneStillArmed(4U);
     }
@@ -1919,7 +1929,7 @@ int main(int argc, char** argv) {
     if (argc == 2) return runFatalInvariantCase(argv[1]);
     executablePath = argv[0];
 
-    test_exact_ten_actions_forward_stable_owner_keys();
+    test_exact_nine_actions_forward_stable_owner_keys();
     test_draft_rejects_before_the_only_boundary();
     test_boundary_failure_and_one_shot_protocol_stop_before_begin();
     test_begin_accepts_started_only_and_closes_continued();

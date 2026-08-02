@@ -27,19 +27,19 @@ CANONICAL_RECORDING_METHODS = (
     "recordPreparedStructure",
 )
 ENTRY_RECORDING_CALL_TOTAL = 44
-EXPECTED_MIGRATED_REMOVAL_TOTAL = 13
+EXPECTED_MIGRATED_REMOVAL_TOTAL = 14
 EXPECTED_PROVIDER_FORWARD_TOTAL = 5
 EXPECTED_COALESCED_PREPARED_TOTAL = 1
-EXPECTED_MEMBER_DISPATCH_TOTAL = 29
+EXPECTED_MEMBER_DISPATCH_TOTAL = 28
 EXPECTED_CORE_STATE_ADAPTER_TOTAL = 1
 EXPECTED_INTERNAL_FORWARD_TOTAL = 7
-EXPECTED_RECORDING_CALL_TOTAL = 37
-EXPECTED_SINK_TOTAL = 9
+EXPECTED_RECORDING_CALL_TOTAL = 36
+EXPECTED_SINK_TOTAL = 8
 EXPECTED_SERVICE_ADAPTER_TOTAL = 20
 EXPECTED_SINK_CLASSIFICATIONS = {
     "post-fallible": 2,
     "prepared": 5,
-    "rollback-aware": 2,
+    "rollback-aware": 1,
 }
 PREPARED_PATTERN_LIFECYCLE_METHODS = (
     "beginPreparedPatternEdit",
@@ -719,13 +719,13 @@ def manifest_errors(manifest) -> list[str]:
             f"member manifest total is {member_total}, expected {members.get('expectedTotal')}"
         )
     if members.get("expectedTotal") != EXPECTED_MEMBER_DISPATCH_TOTAL:
-        errors.append("member-dispatch total must remain 29 after L-R08-06")
+        errors.append("member-dispatch total must remain 28 after L-R08-07 slice 3")
     if sink_total != members.get("expectedSinkTotal"):
         errors.append(
             f"sink manifest total is {sink_total}, expected {members.get('expectedSinkTotal')}"
         )
     if members.get("expectedSinkTotal") != EXPECTED_SINK_TOTAL:
-        errors.append("mutation-sink total must remain 9 after L-R08-06")
+        errors.append("mutation-sink total must remain 8 after L-R08-07 slice 3")
     if service_total != members.get("expectedServiceAdapterTotal"):
         errors.append(
             "service/adapter manifest total is "
@@ -740,7 +740,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {dict(expected_classifications)}, observed {dict(classifications)}"
         )
     if dict(expected_classifications) != EXPECTED_SINK_CLASSIFICATIONS:
-        errors.append("sink classifications must remain 2 post-fallible, 5 prepared and 2 rollback-aware")
+        errors.append("sink classifications must remain 2 post-fallible, 5 prepared and 1 rollback-aware")
 
     forwards = boundary.get("internalForwards", {})
     forward_groups = forwards.get("groups", [])
@@ -774,7 +774,7 @@ def manifest_errors(manifest) -> list[str]:
     if boundary.get("entryRecordingCallTotal") != ENTRY_RECORDING_CALL_TOTAL:
         errors.append("entry recording-call total must remain 44")
     if boundary.get("expectedMigratedRemovalTotal") != EXPECTED_MIGRATED_REMOVAL_TOTAL:
-        errors.append("migrated recording-call removal total must remain 13")
+        errors.append("migrated recording-call removal total must remain 14")
     if boundary.get("expectedProviderForwardTotal") != EXPECTED_PROVIDER_FORWARD_TOTAL:
         errors.append("expected provider-forward total must remain 5")
     if provider_forward_total != EXPECTED_PROVIDER_FORWARD_TOTAL:
@@ -804,7 +804,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {boundary.get('expectedTotal')}"
         )
     if boundary.get("expectedTotal") != EXPECTED_RECORDING_CALL_TOTAL:
-        errors.append("recording boundary total must remain 37 after L-R08-06")
+        errors.append("recording boundary total must remain 36 after L-R08-07 slice 3")
     if recording_total != (
         ENTRY_RECORDING_CALL_TOTAL -
         EXPECTED_MIGRATED_REMOVAL_TOTAL +
@@ -812,7 +812,7 @@ def manifest_errors(manifest) -> list[str]:
         coalesced_prepared_total
     ):
         errors.append(
-            "recording boundary must equal the 44-call entry minus thirteen "
+            "recording boundary must equal the 44-call entry minus fourteen "
             "migrated calls plus five provider forwards and one prepared "
             "coalesced boundary"
         )
@@ -2894,8 +2894,8 @@ def run_self_tests(manifest) -> list[str]:
     removal_drift = copy.deepcopy(manifest)
     removal_drift["recordingBoundary"]["expectedMigratedRemovalTotal"] -= 1
     removal_errors = manifest_errors(removal_drift)
-    if not any("removal total must remain 13" in error for error in removal_errors):
-        failures.append("L-R08-06 migrated-removal drift was not rejected")
+    if not any("removal total must remain 14" in error for error in removal_errors):
+        failures.append("L-R08-07 slice-3 migrated-removal drift was not rejected")
 
     if not scanner_self_test(manifest):
         failures.append("source scanner/sanitizer fixture was not classified exactly")

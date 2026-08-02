@@ -58,8 +58,6 @@ FLASHMEM void SequencerContextSelectorState::bump() {
 FLASHMEM void SequencerContextSelectorState::reset() {
     visible = false;
     previewFocus = core::state::StructureNavigationFocus::PAGE;
-    feedback = SequencerContextSelectorFeedback::NONE;
-    feedbackUntilMs = 0;
     bump();
 }
 
@@ -407,7 +405,6 @@ FLASHMEM SequencerStructureUiState::SequencerStructureUiState() = default;
 FLASHMEM SequencerStructureUiState::~SequencerStructureUiState() = default;
 
 FLASHMEM void SequencerStructureUiState::reset() {
-    previewAddPageSlot.set(false);
     previewPageIndex.set(0);
     pageHold.clear();
     pageSelection.reset(core::state::StructureSelectionScope::PAGE);

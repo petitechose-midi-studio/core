@@ -14,13 +14,14 @@ enum class SequencerContextSelectorAction : uint8_t {
     OPEN_TRACK_EDITOR,
     OPEN_PATTERN_EDITOR,
     OPEN_STEP_EDITOR,
-    EDITOR_UNAVAILABLE,
 };
 
 struct SequencerContextSelectorOutcome {
     SequencerContextSelectorAction action = SequencerContextSelectorAction::NONE;
     core::state::StructureNavigationFocus focus =
         core::state::StructureNavigationFocus::PAGE;
+    uint8_t previewTarget = 0U;
+    bool previewAddSlot = false;
 };
 
 /**
@@ -32,14 +33,14 @@ struct SequencerContextSelectorOutcome {
  */
 class SequencerContextSelectorWorkflow {
 public:
-    static constexpr uint32_t UNAVAILABLE_FEEDBACK_MS = 900U;
-
     explicit SequencerContextSelectorWorkflow(
         core::state::sequencer::SequencerContextSelectorState& state
     );
 
     void press(core::state::StructureNavigationFocus current,
-               bool includeTrack = true);
+               bool includeTrack = true,
+               uint8_t previewTarget = 0U,
+               bool previewAddSlot = false);
     /**
      * Claims an unrotated hold for context-local selection.
      *
@@ -47,14 +48,15 @@ public:
      * the caller can enter selection immediately and consume the paired NAV
      * release. A meaningful rotation permanently keeps selector ownership.
      */
-    bool holdForSelection();
+    bool holdForSelection(core::state::StructureNavigationFocus current,
+                          uint8_t previewTarget,
+                          bool previewAddSlot);
     bool turn(float delta);
-    SequencerContextSelectorOutcome release(uint32_t nowMs);
-    void update(uint32_t nowMs);
+    SequencerContextSelectorOutcome release();
+    void update();
     void cancel();
 
     [[nodiscard]] bool active() const { return gesture_.active(); }
-    [[nodiscard]] bool rotated() const { return gesture_.turned(); }
 
 private:
     static core::state::StructureNavigationFocus adjacent(
@@ -65,7 +67,16 @@ private:
 
     core::state::sequencer::SequencerContextSelectorState& state_;
     PressHoldTurnReleaseGesture gesture_{};
-    bool include_track_ = true;
+    // Two compact bytes preserve exact press provenance without growing the
+    // ARM workflow: origin focus[0..1], add intent[2], Track availability[3],
+    // plus the complete Track/Page/Step target.
+    uint8_t press_context_ = 0U;
+    uint8_t press_target_ = 0U;
 };
+
+static_assert(
+    sizeof(void*) != 4U || sizeof(SequencerContextSelectorWorkflow) == 8U,
+    "Sequencer context selector exceeds its ARM RAM contract"
+);
 
 }  // namespace core::handler

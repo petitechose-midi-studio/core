@@ -104,18 +104,10 @@ void test_context_selector_state_is_bounded_and_resettable() {
     State state;
     state.visible = true;
     state.previewFocus = core::state::StructureNavigationFocus::TRACK;
-    state.feedback =
-        core::state::sequencer::SequencerContextSelectorFeedback::EDITOR_UNAVAILABLE;
-    state.feedbackUntilMs = 123U;
     state.reset();
 
     assert(!state.visible);
     assert(state.previewFocus == core::state::StructureNavigationFocus::PAGE);
-    assert(
-        state.feedback ==
-        core::state::sequencer::SequencerContextSelectorFeedback::NONE
-    );
-    assert(state.feedbackUntilMs == 0U);
 }
 
 void test_chord_sub_editor_has_one_atomic_observation_surface() {

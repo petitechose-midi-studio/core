@@ -198,25 +198,16 @@ struct SequencerStepEditOverlayState {
     void reset();
 };
 
-enum class SequencerContextSelectorFeedback : uint8_t {
-    NONE = 0,
-    EDITOR_UNAVAILABLE,
-};
-
 /**
  * Temporary presentation state for the Sequencer NAV context selector.
  *
  * Gesture ownership (press/hold/turn/release) deliberately remains in the
- * bounded workflow.  The retained UI observes one compact revision surface;
- * the plain presentation fields and feedback deadline stay allocation-free.
+ * bounded workflow. The retained UI observes one compact revision surface.
  */
 struct SequencerContextSelectorState {
     bool visible = false;
     core::state::StructureNavigationFocus previewFocus =
         core::state::StructureNavigationFocus::PAGE;
-    SequencerContextSelectorFeedback feedback =
-        SequencerContextSelectorFeedback::NONE;
-    uint32_t feedbackUntilMs = 0;
     Signal<uint32_t, 2> revision{0};
 
     void bump();
@@ -645,7 +636,6 @@ struct SequencerTrackPasteUiState {
 };
 
 struct SequencerStructureUiState {
-    Signal<bool, 4> previewAddPageSlot{false};
     Signal<uint8_t, 4> previewPageIndex{0};
     core::state::StructureHoldState pageHold;
     core::state::StructureSelectionState pageSelection;

@@ -5,6 +5,7 @@
 #include <config/Timing.hpp>
 #include <utility>
 
+#include "handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
 #include "handler/sequencer/SequencerPreparedPageStructureMutationPlan.hpp"
 #include "handler/sequencer/SequencerPreparedPageStructureTransaction.hpp"
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
@@ -31,6 +32,27 @@ namespace {
 
 constexpr uint32_t TRACK_PASTE_CANCELLED_MS = 700;
 constexpr uint32_t TRACK_PASTE_APPLIED_MS = 1200;
+
+constexpr uint8_t TRACK_SELECTION_HOLD_SCOPE_TRACK = 1U << 0U;
+constexpr uint8_t TRACK_SELECTION_HOLD_PLACING = 1U << 1U;
+constexpr uint8_t TRACK_SELECTION_HOLD_PASTE_BLOCKED = 1U << 2U;
+constexpr uint8_t TRACK_SELECTION_HOLD_PREVIEW_ADD = 1U << 3U;
+
+constexpr uint8_t packTrackSelectionHoldFlags(
+    core::state::StructureSelectionScope scope,
+    bool placing,
+    bool pasteBlocked,
+    bool previewAddTrack
+) noexcept {
+    return static_cast<uint8_t>(
+        (scope == core::state::StructureSelectionScope::TRACK
+             ? TRACK_SELECTION_HOLD_SCOPE_TRACK
+             : 0U) |
+        (placing ? TRACK_SELECTION_HOLD_PLACING : 0U) |
+        (pasteBlocked ? TRACK_SELECTION_HOLD_PASTE_BLOCKED : 0U) |
+        (previewAddTrack ? TRACK_SELECTION_HOLD_PREVIEW_ADD : 0U)
+    );
+}
 
 enum class PreparedStructureSettlement : uint8_t {
     Failed = 0U,
@@ -68,6 +90,25 @@ FLASHMEM SequencerStructureEditWorkflow::SequencerStructureEditWorkflow(StateRef
       history_(state.history), macro_pages_(state.macroPages),
       track_activations_(state.trackActivations), status_bar_(state.statusBar) {}
 
+FLASHMEM SequencerPreparedTrackStructureResult
+SequencerStructureEditWorkflow::createPreviewedTrackStructure() {
+    using Status = SequencerPreparedTrackStructureStatus;
+    if (track_activations_ == nullptr) {
+        return {Status::HistoryUnavailable, {}};
+    }
+    return executeSequencerCreateTrackStructure({
+        tracks_,
+        sequencer_,
+        navigation_focus_,
+        track_ui_,
+        structure_clipboard_,
+        macro_pages_,
+        *track_activations_,
+        shared_tracks_,
+        history_,
+    });
+}
+
 FLASHMEM bool SequencerStructureEditWorkflow::canRemoveCurrentStructure() const {
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
         if (track_ui_.previewAddSlot.get()) return false;
@@ -79,7 +120,6 @@ FLASHMEM bool SequencerStructureEditWorkflow::canRemoveCurrentStructure() const 
         return sequencer_.focusedStep.get() <
                core::state::sequencer::activeContentLength(sequencer_);
     }
-    if (sequencer_.structureUi.previewAddPageSlot.get()) return false;
     return sequencer_.activePageCount() > 1U;
 }
 
@@ -100,15 +140,93 @@ FLASHMEM void SequencerStructureEditWorkflow::beginHoldAction(
             beginTrackPasteAction(core::time_compat::millis());
             return;
         }
+        if (action != core::state::StructureHoldAction::REMOVE ||
+            track_ui_.selection.active.get()) {
+            return;
+        }
+        // The physical hold owns an immutable local target. Shared preview
+        // state is presentation only: history restore and other global paths
+        // may legitimately rewrite it before the long-press callback fires.
+        track_hold_intent_ = TrackHoldIntent::CurrentRemove;
+        track_hold_target_ = currentActiveTrack();
+        track_selection_hold_token_ = {};
+        track_ui_.syncPreviewTrack(track_hold_target_);
         track_ui_.hold.begin(action, core::time_compat::millis());
+        track_hold_acquisition_id_ = track_ui_.hold.acquisitionId();
+        return;
+    }
+    sequencer_.structureUi.pageHold.begin(action, core::time_compat::millis());
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::beginSelectionHoldAction(
+    core::state::StructureHoldAction action
+) {
+    if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
+        if (action != core::state::StructureHoldAction::REMOVE ||
+            !track_ui_.selection.active.get() ||
+            track_ui_.selection.scope.get() !=
+                core::state::StructureSelectionScope::TRACK ||
+            track_ui_.previewAddSlot.get()) {
+            return;
+        }
+        track_hold_intent_ = TrackHoldIntent::SelectionRemove;
+        track_hold_target_ = currentActiveTrack();
+        track_selection_hold_token_ = {
+            .clipboardRevision = track_ui_.selection.clipboardRevision.get(),
+            .selectedMask = track_ui_.selection.selectedMask.get(),
+            .enabledMask = currentTrackEnabledMask(),
+            .destinationMask = track_ui_.selection.destinationMask.get(),
+            .overwriteMask = track_ui_.selection.overwriteMask.get(),
+            .cursor = track_ui_.selection.cursorIndex.get(),
+            .previewTrack = track_ui_.previewTrackIndex.get(),
+            .flags = packTrackSelectionHoldFlags(
+                track_ui_.selection.scope.get(),
+                track_ui_.selection.placing.get(),
+                track_ui_.selection.pasteBlocked.get(),
+                track_ui_.previewAddSlot.get()
+            ),
+        };
+        track_ui_.hold.begin(action, core::time_compat::millis());
+        track_hold_acquisition_id_ = track_ui_.hold.acquisitionId();
         return;
     }
     sequencer_.structureUi.pageHold.begin(action, core::time_compat::millis());
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::clearHoldAction() {
-    track_ui_.hold.clear();
+    clearTrackRemoveHoldIntent();
     sequencer_.structureUi.pageHold.clear();
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::invalidateTrackRemoveHoldIntent() {
+    track_hold_intent_ = TrackHoldIntent::None;
+    track_hold_target_ =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+    track_hold_acquisition_id_ = 0U;
+    track_selection_hold_token_ = {};
+}
+
+FLASHMEM void SequencerStructureEditWorkflow::clearTrackRemoveHoldIntent() {
+    track_ui_.hold.clear();
+    invalidateTrackRemoveHoldIntent();
+}
+
+FLASHMEM bool
+SequencerStructureEditWorkflow::trackRemoveHoldOwnsSharedState() const {
+    return trackRemoveHoldPending() &&
+           track_ui_.hold.action.get() ==
+               core::state::StructureHoldAction::REMOVE &&
+           track_ui_.hold.acquisitionId() == track_hold_acquisition_id_;
+}
+
+FLASHMEM void
+SequencerStructureEditWorkflow::settleConsumedBottomLeftRelease() {
+    if (!trackRemoveHoldPending()) {
+        clearHoldAction();
+        return;
+    }
+    if (trackRemoveHoldOwnsSharedState()) track_ui_.hold.clear();
+    invalidateTrackRemoveHoldIntent();
 }
 
 FLASHMEM uint8_t SequencerStructureEditWorkflow::trackPasteTarget() const {
@@ -561,13 +679,87 @@ FLASHMEM bool SequencerStructureEditWorkflow::trackPasteNavigationBlocked() cons
     return paste.buttonOwned || paste.gestureActive() || paste.detailVisible;
 }
 
+FLASHMEM bool SequencerStructureEditWorkflow::trackRemoveNavigationBlocked() const {
+    return trackRemoveHoldPending();
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::trackRemoveHoldPending() const {
+    return track_hold_intent_ != TrackHoldIntent::None;
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::currentTrackRemoveHoldPending() const {
+    return track_hold_intent_ == TrackHoldIntent::CurrentRemove;
+}
+
+FLASHMEM bool
+SequencerStructureEditWorkflow::currentTrackRemoveHoldStillMatches() const {
+    return currentTrackRemoveHoldPending() &&
+           trackRemoveHoldOwnsSharedState() &&
+           currentTrackRemoveIntentMatches(track_hold_target_);
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::currentTrackRemoveIntentMatches(
+    uint8_t targetTrack
+) const {
+    return navigation_focus_.get() ==
+               core::state::StructureNavigationFocus::TRACK &&
+           !track_ui_.selection.active.get() &&
+           !track_ui_.previewAddSlot.get() &&
+           track_ui_.previewTrackIndex.get() == targetTrack &&
+           currentActiveTrack() == targetTrack;
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::selectionTrackRemoveHoldPending() const {
+    return track_hold_intent_ == TrackHoldIntent::SelectionRemove;
+}
+
+FLASHMEM bool
+SequencerStructureEditWorkflow::selectionTrackRemoveHoldStillMatches() const {
+    return selectionTrackRemoveHoldPending() &&
+           trackRemoveHoldOwnsSharedState() &&
+           selectionTrackRemoveIntentMatches(
+               track_selection_hold_token_,
+               track_hold_target_
+           );
+}
+
+FLASHMEM bool SequencerStructureEditWorkflow::selectionTrackRemoveIntentMatches(
+    const TrackSelectionHoldToken& token,
+    uint8_t targetTrack
+) const {
+    return navigation_focus_.get() ==
+               core::state::StructureNavigationFocus::TRACK &&
+           track_ui_.selection.active.get() &&
+           track_ui_.selection.clipboardRevision.get() ==
+               token.clipboardRevision &&
+           track_ui_.selection.selectedMask.get() ==
+               token.selectedMask &&
+           track_ui_.selection.destinationMask.get() ==
+               token.destinationMask &&
+           track_ui_.selection.overwriteMask.get() ==
+               token.overwriteMask &&
+           track_ui_.selection.cursorIndex.get() ==
+               token.cursor &&
+           track_ui_.previewTrackIndex.get() == token.previewTrack &&
+           packTrackSelectionHoldFlags(
+               track_ui_.selection.scope.get(),
+               track_ui_.selection.placing.get(),
+               track_ui_.selection.pasteBlocked.get(),
+               track_ui_.previewAddSlot.get()
+           ) == token.flags &&
+           currentTrackEnabledMask() ==
+               token.enabledMask &&
+           currentActiveTrack() == targetTrack;
+}
+
+FLASHMEM void
+SequencerStructureEditWorkflow::settleRejectedSelectionTrackRemoveLongPress() {
+    if (trackRemoveHoldOwnsSharedState()) track_ui_.hold.clear();
+}
+
 FLASHMEM bool SequencerStructureEditWorkflow::trackPastePlanInspectable() const {
     const auto& paste = sequencer_.structureUi.trackPaste;
     return paste.inspectable() && paste.plan.canCommit() && paste.feedback.active;
-}
-
-FLASHMEM bool SequencerStructureEditWorkflow::trackPasteDetailsVisible() const {
-    return sequencer_.structureUi.trackPaste.detailVisible;
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::toggleTrackPasteDetails() {
@@ -575,6 +767,75 @@ FLASHMEM void SequencerStructureEditWorkflow::toggleTrackPasteDetails() {
     if (!trackPastePlanInspectable()) return;
     paste.detailVisible = !paste.detailVisible;
     paste.bump();
+}
+
+FLASHMEM void
+SequencerStructureEditWorkflow::applyLatchedCurrentTrackShortPress() {
+    if (!currentTrackRemoveHoldStillMatches()) {
+        if (trackRemoveHoldOwnsSharedState()) track_ui_.hold.clear();
+        invalidateTrackRemoveHoldIntent();
+        return;
+    }
+
+    const uint8_t targetTrack = track_hold_target_;
+    clearTrackRemoveHoldIntent();
+    if (history_.commitCoalescedPatternEditOutcome() ==
+        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        return;
+    }
+    if (track_ui_.hold.active() ||
+        !currentTrackRemoveIntentMatches(targetTrack)) {
+        return;
+    }
+    (void)toggleSequencerStructureTrackMute(
+        project_tracks_,
+        project_track_domain_,
+        targetTrack
+    );
+}
+
+FLASHMEM void
+SequencerStructureEditWorkflow::applyLatchedTrackSelectionShortPress() {
+    if (!selectionTrackRemoveHoldStillMatches()) {
+        if (trackRemoveHoldOwnsSharedState()) track_ui_.hold.clear();
+        invalidateTrackRemoveHoldIntent();
+        return;
+    }
+
+    const auto token = track_selection_hold_token_;
+    const uint8_t targetTrack = track_hold_target_;
+    clearTrackRemoveHoldIntent();
+    if (history_.commitCoalescedPatternEditOutcome() ==
+        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        return;
+    }
+    if (track_ui_.hold.active() ||
+        !selectionTrackRemoveIntentMatches(token, targetTrack)) {
+        return;
+    }
+    applySelectionBottomLeftTap();
+}
+
+FLASHMEM void
+SequencerStructureEditWorkflow::applyLatchedTrackSelectionLongPress() {
+    if (!selectionTrackRemoveHoldStillMatches() ||
+        !selectionHoldActionAvailable()) {
+        settleRejectedSelectionTrackRemoveLongPress();
+        return;
+    }
+
+    const auto token = track_selection_hold_token_;
+    const uint8_t targetTrack = track_hold_target_;
+    if (trackRemoveHoldOwnsSharedState()) track_ui_.hold.clear();
+    if (history_.commitCoalescedPatternEditOutcome() ==
+        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        return;
+    }
+    if (track_ui_.hold.active() ||
+        !selectionTrackRemoveIntentMatches(token, targetTrack)) {
+        return;
+    }
+    applySelectionBottomLeftHold();
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::applyCurrentStructureShortPress() {
@@ -641,19 +902,29 @@ FLASHMEM void SequencerStructureEditWorkflow::clearCurrentPageAfterBoundary(
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::applyCurrentStructureLongPress() {
+    if (trackRemoveHoldPending()) {
+        const bool holdStillMatches = currentTrackRemoveHoldStillMatches();
+        const uint8_t latchedTarget = track_hold_target_;
+        if (trackRemoveHoldOwnsSharedState()) track_ui_.hold.clear();
+        if (!holdStillMatches || track_activations_ == nullptr) {
+            return;
+        }
+        const auto result = executeSequencerRemoveCurrentTrackStructure({
+            tracks_,
+            sequencer_,
+            navigation_focus_,
+            track_ui_,
+            structure_clipboard_,
+            macro_pages_,
+            *track_activations_,
+            shared_tracks_,
+            history_,
+        }, latchedTarget);
+        if (!result.settled()) return;
+        return;
+    }
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
-        if (track_ui_.previewAddSlot.get()) return;
-        const auto mutation = structure_slots::removeIndex(
-            currentTrackEnabledMask(), currentActiveTrack(),
-            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT);
-        if (!mutation.changed) return;
-        const uint16_t historyMask =
-            static_cast<uint16_t>(sequencerStructureHistoryTrackBit(currentActiveTrack()) |
-                                  sequencerStructureHistoryTrackBit(mutation.nextActive));
-        auto change = captureTrackHistoryBefore(historyMask);
-        if (!change) return;
-        if (!applyTrackState(mutation.nextMask, mutation.nextActive)) return;
-        recordTrackHistoryAfter(std::move(change), historyMask);
+        track_ui_.hold.clear();
         return;
     }
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
@@ -723,7 +994,6 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
         return;
     }
 
-    if (sequencer_.structureUi.previewAddPageSlot.get()) return;
     core::state::SequencerPageClipboard clipboard;
     const uint8_t page = sequencer_.visiblePage();
     if (!capturePageClipboard(sequencer_, page, clipboard)) return;
@@ -782,9 +1052,7 @@ FLASHMEM uint16_t SequencerStructureEditWorkflow::pasteCurrentPageAfterBoundary(
         sequencer_, structure_clipboard_,
         makeSequencerPreparedPageStructureTarget(
             currentActiveTrack(),
-            sequencer_.structureUi.previewAddPageSlot.get()
-                ? sequencer_.structureUi.previewPageIndex.get()
-                : sequencer_.visiblePage()),
+            sequencer_.visiblePage()),
         plan)) {
         case Preflight::Rejected:
             return packPreparedStructureSettlement(

@@ -110,36 +110,48 @@ FLASHMEM bool MacroStructureWorkflow::canPasteCurrentStructure() const {
     return core::state::macro::macroInteractionCanPasteStructure(interactionContextSource());
 }
 
-FLASHMEM void MacroStructureWorkflow::beginHoldAction(core::state::StructureHoldAction action) {
+FLASHMEM bool MacroStructureWorkflow::beginHoldAction(
+    core::state::StructureHoldAction action,
+    bool armVisualHold
+) {
+    // Destructive structure buttons are exclusive. A chorded second press
+    // must not replace the provenance or visual state owned by the first.
+    if (hold_target_.action() != core::state::StructureHoldAction::NONE ||
+        track_ui_.hold.active() || macro_ui_.pageHold.active()) {
+        return false;
+    }
     captureHoldTarget(action);
+    hold_target_.setVisualHold(armVisualHold);
+    if (!armVisualHold) return true;
+
     if (effectiveFocus() == core::state::StructureNavigationFocus::TRACK) {
         track_ui_.hold.begin(action, core::time_compat::millis());
-        return;
+        hold_target_.acquisitionId = track_ui_.hold.acquisitionId();
+        return true;
     }
     macro_ui_.pageHold.begin(action, core::time_compat::millis());
+    hold_target_.acquisitionId = macro_ui_.pageHold.acquisitionId();
+    return true;
 }
 
-FLASHMEM bool MacroStructureWorkflow::hasHoldAction(
+FLASHMEM bool MacroStructureWorkflow::hasCapturedAction(
     core::state::StructureHoldAction action
 ) const {
-    // Inspect both owners so a physical release still closes the gesture if
-    // another input changed focus while the button was held.
-    return track_ui_.hold.action.get() == action ||
+    // Route release through settlement even for a non-visual short press or
+    // when another input changed focus/policy while the button was held.
+    return hold_target_.action() == action ||
+           track_ui_.hold.action.get() == action ||
            macro_ui_.pageHold.action.get() == action;
 }
 
 FLASHMEM bool MacroStructureWorkflow::commitHoldAction(
     core::state::StructureHoldAction action
 ) {
-    if (!hasHoldAction(action) || !holdTargetStillMatches(action)) {
-        clearHoldAction();
-        return false;
-    }
+    if (!settleCapturedHoldAction(action, true)) return false;
 
     // Validation and mutation run on the same UI thread. Clear the visual hold
     // before applying the operation, while the validated target is still the
     // effective target, so callbacks cannot reuse this physical gesture.
-    clearHoldAction();
     if (action == core::state::StructureHoldAction::REMOVE) {
         applyCurrentStructureLongPress();
         return true;
@@ -149,6 +161,54 @@ FLASHMEM bool MacroStructureWorkflow::commitHoldAction(
         return true;
     }
     return false;
+}
+
+FLASHMEM bool MacroStructureWorkflow::releaseShortHoldAction(
+    core::state::StructureHoldAction action
+) {
+    return settleCapturedHoldAction(action, false);
+}
+
+FLASHMEM bool MacroStructureWorkflow::settleCapturedHoldAction(
+    core::state::StructureHoldAction action,
+    bool requireVisualHold
+) {
+    if (hold_target_.action() == core::state::StructureHoldAction::NONE) {
+        return false;
+    }
+    if (hold_target_.action() != action) return false;
+
+    const bool capturedTrack =
+        hold_target_.focus() == core::state::StructureNavigationFocus::TRACK;
+    const bool capturedVisualHold = hold_target_.visualHold();
+    const auto& visualHold = capturedTrack
+        ? track_ui_.hold
+        : macro_ui_.pageHold;
+    const bool ownsAcquisition =
+        (!requireVisualHold || capturedVisualHold) &&
+        (capturedVisualHold
+            ? visualHold.action.get() == action &&
+                visualHold.acquisitionId() == hold_target_.acquisitionId
+            : !track_ui_.hold.active() && !macro_ui_.pageHold.active());
+    const bool noVisualHoldActive =
+        !track_ui_.hold.active() && !macro_ui_.pageHold.active();
+    const bool matches =
+        ownsAcquisition && capturedTargetStillMatches();
+
+    // Clear only the presentation owned by this captured gesture. A foreign
+    // replacement hold must survive this stale physical release.
+    if (ownsAcquisition && capturedVisualHold) {
+        if (capturedTrack) {
+            track_ui_.hold.clear();
+        } else {
+            macro_ui_.pageHold.clear();
+        }
+    }
+    hold_target_ = {};
+    if (!matches && (ownsAcquisition || noVisualHoldActive)) {
+        syncPreviewToCurrentContext();
+    }
+    return matches;
 }
 
 FLASHMEM void MacroStructureWorkflow::clearHoldAction() {
@@ -162,59 +222,59 @@ FLASHMEM void MacroStructureWorkflow::captureHoldTarget(
 ) {
     constexpr uint8_t kUnused = 0xFFU;
     hold_target_ = {};
-    hold_target_.action = action;
-    hold_target_.focus = effectiveFocus();
+    hold_target_.setAction(action);
+    hold_target_.setFocus(effectiveFocus());
     hold_target_.track = pages_.currentActiveTrack();
     hold_target_.page = kUnused;
     hold_target_.macro = kUnused;
 
-    switch (hold_target_.focus) {
+    switch (hold_target_.focus()) {
         case core::state::StructureNavigationFocus::TRACK:
-            hold_target_.addSlot = track_ui_.previewAddSlot.get();
-            hold_target_.track = hold_target_.addSlot
+            hold_target_.setAddSlot(track_ui_.previewAddSlot.get());
+            hold_target_.track = hold_target_.addSlot()
                 ? track_ui_.previewTrackIndex.get()
                 : services_.activeTrack();
             break;
         case core::state::StructureNavigationFocus::STEP:
             hold_target_.page = pages_.currentActivePage();
             hold_target_.macro = macro_ui_.focusedMacroSlot.get();
-            hold_target_.addSlot = pages_.isMacroAddSlot(hold_target_.macro);
+            hold_target_.setAddSlot(
+                pages_.isMacroAddSlot(hold_target_.macro)
+            );
             break;
         case core::state::StructureNavigationFocus::PAGE:
         default:
             hold_target_.page = macro_ui_.previewPageIndex.get();
-            hold_target_.addSlot = macro_ui_.previewAddPageSlot.get();
+            hold_target_.setAddSlot(macro_ui_.previewAddPageSlot.get());
             break;
     }
 }
 
-FLASHMEM bool MacroStructureWorkflow::holdTargetStillMatches(
-    core::state::StructureHoldAction action
-) const {
-    if (action == core::state::StructureHoldAction::NONE ||
-        hold_target_.action != action ||
-        hold_target_.focus != effectiveFocus()) {
+FLASHMEM bool MacroStructureWorkflow::capturedTargetStillMatches() const {
+    if (hold_target_.focus() != effectiveFocus()) {
         return false;
     }
 
-    switch (hold_target_.focus) {
+    switch (hold_target_.focus()) {
         case core::state::StructureNavigationFocus::TRACK: {
             const bool addSlot = track_ui_.previewAddSlot.get();
             const uint8_t track = addSlot
                 ? track_ui_.previewTrackIndex.get()
                 : services_.activeTrack();
-            return addSlot == hold_target_.addSlot && track == hold_target_.track;
+            return addSlot == hold_target_.addSlot() &&
+                   track == hold_target_.track;
         }
         case core::state::StructureNavigationFocus::STEP:
             return pages_.currentActiveTrack() == hold_target_.track &&
                    pages_.currentActivePage() == hold_target_.page &&
                    macro_ui_.focusedMacroSlot.get() == hold_target_.macro &&
-                   pages_.isMacroAddSlot(hold_target_.macro) == hold_target_.addSlot;
+                   pages_.isMacroAddSlot(hold_target_.macro) ==
+                       hold_target_.addSlot();
         case core::state::StructureNavigationFocus::PAGE:
         default:
             return pages_.currentActiveTrack() == hold_target_.track &&
                    macro_ui_.previewPageIndex.get() == hold_target_.page &&
-                   macro_ui_.previewAddPageSlot.get() == hold_target_.addSlot;
+                   macro_ui_.previewAddPageSlot.get() == hold_target_.addSlot();
     }
 }
 
@@ -423,27 +483,6 @@ FLASHMEM bool MacroStructureWorkflow::backSelectionMode() {
         return true;
     }
     return false;
-}
-
-FLASHMEM void MacroStructureWorkflow::cancelSelectionMode() {
-    if (track_ui_.selection.active.get()) {
-        track_ui_.selection.reset(
-            core::state::StructureSelectionScope::TRACK,
-            services_.activeTrack()
-        );
-    }
-    if (macro_ui_.pageSelection.active.get()) {
-        macro_ui_.pageSelection.reset(
-            core::state::StructureSelectionScope::PAGE,
-            pages_.currentActivePage()
-        );
-    }
-    if (slotSelectionActive()) {
-        cancelSlotSelection();
-        return;
-    }
-    clearHoldAction();
-    syncPreviewToCurrentContext();
 }
 
 FLASHMEM bool MacroStructureWorkflow::selectionActive() const {
@@ -996,7 +1035,13 @@ FLASHMEM void MacroStructureWorkflow::bindStateSync() {
                     pages_.currentActivePage()
                 );
             }
-            track_ui_.syncPreviewTrack(activeTrack);
+            // The shared preview is also the exact-target oracle for an
+            // in-flight Track hold. Preserve it until that gesture settles;
+            // rejection or the next active-Track publication resumes normal
+            // projection.
+            if (!track_ui_.hold.active()) {
+                track_ui_.syncPreviewTrack(activeTrack);
+            }
             macro_ui_.syncPreviewPage(pages_.currentActivePage());
             clampFocusedMacroSlot();
         })

@@ -580,7 +580,6 @@ FLASHMEM bool pushFrame(
     syncPublicViewFields(view);
     sequencer.page.set(0);
     sequencer.focusedStep.set(0);
-    sequencer.structureUi.previewAddPageSlot.set(false);
     sequencer.structureUi.stepSelection.reset();
     view.bump();
     return true;

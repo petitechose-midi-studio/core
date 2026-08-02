@@ -48,28 +48,11 @@ FLASHMEM bool setSharedTrackState(Operations operations, uint16_t enabledMask, u
 }
 
 FLASHMEM void syncActivePagePresentation(StateRefs state) {
-    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
-    state.macroUi.refreshManualOverrideMask(
-        state.pages.currentActiveTrack(),
-        state.pages.currentActivePage()
+    core::state::macro::MacroWorkflow::syncActivePagePresentation(
+        state.macros,
+        state.pages,
+        state.macroUi
     );
-    for (uint8_t i = 0; i < core::state::macro::MACRO_COUNT; ++i) {
-        float manualValue = 0.0f;
-        if (state.macroUi.manualOverrides.valueFor(
-                core::state::macro::MacroAutomationSlotAddress{
-                    .track = state.pages.currentActiveTrack(),
-                    .page = state.pages.currentActivePage(),
-                    .macro = i,
-                },
-                manualValue
-            )) {
-            core::state::macro::MacroWorkflow::setRuntimeValue(
-                state.macros,
-                i,
-                manualValue
-            );
-        }
-    }
 }
 
 FLASHMEM void finalizeStructureChange(StateRefs state, Operations operations) {

@@ -10,7 +10,6 @@ RGB565_FRAME_BYTES = 320 * 240 * 2
 _NM_SYMBOL_RE = re.compile(r"^(\d+)\s+(\d+)\s+([A-Za-z])\s+(.+)$")
 
 PAGE_STRUCTURE_BUILDER_FLASH_MARKERS = (
-    "buildSequencerPageCreateMutationPlan(",
     "buildSequencerPageSelectionPasteMutationPlan(",
     "buildSequencerPageClearMutationPlan(",
     "buildSequencerPageDeleteMutationPlan(",
@@ -23,7 +22,6 @@ PAGE_STRUCTURE_BUILDER_FLASH_MARKERS = (
 )
 
 PAGE_STRUCTURE_HELPER_FLASH_MARKERS = (
-    "SequencerStructureNavigationWorkflow::createPreviewedPageAfterBoundary(",
     "SequencerStructureEditWorkflow::pastePageSelectionAfterBoundary(",
     "SequencerStructureEditWorkflow::clearCurrentPageAfterBoundary(",
     "SequencerStructureEditWorkflow::deleteCurrentPageAfterBoundary(",
@@ -50,6 +48,44 @@ PAGE_STRUCTURE_FLASH_MARKERS = (
     *PAGE_STRUCTURE_HELPER_FLASH_MARKERS,
     *PAGE_STRUCTURE_TRANSACTION_FLASH_MARKERS,
     *PAGE_STRUCTURE_GRAPH_FLASH_MARKERS,
+)
+
+TRACK_STRUCTURE_ADAPTER_FLASH_MARKERS = (
+    "executeSequencerCreateTrackStructure(",
+    "executeSequencerRemoveCurrentTrackStructure(",
+    "(anonymous namespace)::captureIntent(",
+    "(anonymous namespace)::executeDirect(",
+    "(anonymous namespace)::intentStillMatches(",
+    "(anonymous namespace)::buildPlan(void const*, core::handler::SequencerPreparedTrackStructureAction",
+    "(anonymous namespace)::revalidate(void const*, core::handler::SequencerPreparedTrackStructurePlan const&",
+    "(anonymous namespace)::reconcileCommitted(void*, core::handler::SequencerPreparedTrackStructurePlan const&",
+    "(anonymous namespace)::settleSuccessful(void*, core::handler::SequencerPreparedTrackStructurePlan const&",
+)
+
+TRACK_STRUCTURE_WORKFLOW_FLASH_MARKERS = (
+    "SequencerStructureEditWorkflow::createPreviewedTrackStructure(",
+    "SequencerStructureEditWorkflow::beginSelectionHoldAction(",
+    "SequencerStructureEditWorkflow::currentTrackRemoveIntentMatches(",
+    "SequencerStructureEditWorkflow::selectionTrackRemoveIntentMatches(",
+    "SequencerStructureEditWorkflow::applyLatchedCurrentTrackShortPress(",
+    "SequencerStructureEditWorkflow::applyLatchedTrackSelectionShortPress(",
+    "SequencerStructureEditWorkflow::applyLatchedTrackSelectionLongPress(",
+)
+
+TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS = (
+    "(anonymous namespace)::reconcilePreparedTrackPresentationFromCoreState(",
+    "SharedTrackDomainServices::reconcilePreparedMacroTrackTransfer(",
+    "SharedTrackDomainServices::canReconcilePreparedSequencerActiveTrackPresentation(",
+    "SharedTrackDomainServices::reconcilePreparedSequencerActiveTrackPresentation(",
+    "CoreState::reconcilePreparedSequencerActiveTrackPresentation(",
+    "CoreState::reconcilePreparedMacroTrackTransfer(",
+    "MacroWorkflow::syncActivePagePresentation(",
+)
+
+TRACK_STRUCTURE_FLASH_MARKERS = (
+    *TRACK_STRUCTURE_ADAPTER_FLASH_MARKERS,
+    *TRACK_STRUCTURE_WORKFLOW_FLASH_MARKERS,
+    *TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS,
 )
 
 
@@ -99,6 +135,7 @@ def product_placement_violations(nm_output: str) -> tuple[str, ...]:
     flash_markers = (
         "FatFormatter::makeFat32(",
         *PAGE_STRUCTURE_FLASH_MARKERS,
+        *TRACK_STRUCTURE_FLASH_MARKERS,
     )
     for marker in flash_markers:
         matches = _code_addresses(symbols, marker)

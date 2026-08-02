@@ -173,9 +173,6 @@ struct SequencerState {
     }
 
     uint8_t visiblePage() const {
-        if (structureUi.previewAddPageSlot.get()) {
-            return clampPage(page.get());
-        }
         return normalizePage(page.get());
     }
 

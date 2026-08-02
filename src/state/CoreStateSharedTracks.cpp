@@ -72,6 +72,11 @@ bool CoreState::publishPreparedSequencerTrackState(uint16_t enabledMask, uint8_t
     return result.ok;
 }
 
+FLASHMEM void CoreState::
+reconcilePreparedSequencerActiveTrackPresentation() noexcept {
+    macro::MacroWorkflow::syncActivePagePresentation(macros, pages, macroUi);
+}
+
 FLASHMEM void CoreState::reconcilePreparedMacroTrackTransfer(uint16_t capturedTrackMask) {
     for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
         if ((capturedTrackMask & static_cast<uint16_t>(1U << track)) == 0U) { continue; }

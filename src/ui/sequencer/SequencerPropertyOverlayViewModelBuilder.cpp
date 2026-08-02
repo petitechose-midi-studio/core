@@ -356,10 +356,7 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
             .customContent = true,
             .icon = sequencerContextIcon(focus),
             .label = sequencerContextLabel(focus),
-            .value = sequencer.contextSelector.feedback ==
-                    core::state::sequencer::SequencerContextSelectorFeedback::EDITOR_UNAVAILABLE
-                ? "No editor yet"
-                : "Turn NAV · release",
+            .value = "Turn NAV · release",
             .color = standalone::theme::color::STEP_STATE,
         };
     }

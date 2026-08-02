@@ -14,7 +14,14 @@ namespace core::handler {
 FLASHMEM bool
 SequencerStructureEditWorkflow::selectionHoldActionAvailable() const {
     if (track_ui_.selection.active.get()) {
-        if (track_ui_.selection.placing.get()) return false;
+        if (navigation_focus_.get() !=
+                core::state::StructureNavigationFocus::TRACK ||
+            track_ui_.selection.scope.get() !=
+                core::state::StructureSelectionScope::TRACK ||
+            track_ui_.selection.placing.get() ||
+            track_ui_.previewAddSlot.get()) {
+            return false;
+        }
         const uint16_t enabledMask = currentTrackEnabledMask();
         const uint16_t selectedMask = activeTrackSelectionMask(
             track_ui_.selection.selectedMask.get(),
@@ -50,7 +57,14 @@ SequencerStructureEditWorkflow::selectionHoldActionAvailable() const {
 
 FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftTap() {
     if (track_ui_.selection.active.get()) {
-        if (track_ui_.selection.placing.get()) return;
+        if (navigation_focus_.get() !=
+                core::state::StructureNavigationFocus::TRACK ||
+            track_ui_.selection.scope.get() !=
+                core::state::StructureSelectionScope::TRACK ||
+            track_ui_.selection.placing.get() ||
+            track_ui_.previewAddSlot.get()) {
+            return;
+        }
         const uint16_t selectedMask = activeTrackSelectionMask(
             track_ui_.selection.selectedMask.get(),
             currentTrackEnabledMask()
@@ -91,7 +105,14 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftTap() {
 
 FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftHold() {
     if (track_ui_.selection.active.get()) {
-        if (track_ui_.selection.placing.get()) return;
+        if (navigation_focus_.get() !=
+                core::state::StructureNavigationFocus::TRACK ||
+            track_ui_.selection.scope.get() !=
+                core::state::StructureSelectionScope::TRACK ||
+            track_ui_.selection.placing.get() ||
+            track_ui_.previewAddSlot.get()) {
+            return;
+        }
         const uint16_t selectedMask = activeTrackSelectionMask(
             track_ui_.selection.selectedMask.get(),
             currentTrackEnabledMask()

@@ -337,17 +337,7 @@ void assertReady(
     assert(plan.expectedTrack == 0U);
 }
 
-void test_exact_ten_builders_and_stable_keys() {
-    {
-        seq::SequencerState sequencer;
-        setLength(sequencer, 8U);
-        MutationPlan plan;
-        assertReady(
-            core::handler::buildSequencerPageCreateMutationPlan(
-                sequencer, 0U, 1U, plan),
-            plan,
-            Action::PageCreate);
-    }
+void test_exact_nine_builders_and_stable_keys() {
     {
         seq::SequencerState sequencer;
         setLength(sequencer, 8U);
@@ -467,30 +457,10 @@ void test_exact_ten_builders_and_stable_keys() {
             Action::PageSelectionDeleteOrDeepReset);
     }
 
-    std::cout << "[PASS] exact ten Page/Step builders freeze stable action keys\n";
+    std::cout << "[PASS] exact nine Page/Step builders freeze stable action keys\n";
 }
 
 void test_rejected_and_semantic_no_change_preflights() {
-    {
-        seq::SequencerState sequencer;
-        setLength(sequencer, 8U);
-        MutationPlan plan;
-        // Structure Page creation is append-only: an already-existing Page is
-        // a stale target, not a semantic create no-op.
-        assert(core::handler::buildSequencerPageCreateMutationPlan(
-                   sequencer, 0U, 0U, plan) == Preflight::Rejected);
-    }
-    {
-        seq::SequencerState sequencer;
-        setLength(sequencer, seq::SequencerState::MAX_STEPS);
-        MutationPlan plan;
-        assert(core::handler::buildSequencerPageCreateMutationPlan(
-                   sequencer,
-                   0U,
-                   seq::SequencerState::PAGE_COUNT,
-                   plan) == Preflight::NoChange);
-        assert(plan.targetCount == 0U);
-    }
     {
         seq::SequencerState sequencer;
         setLength(sequencer, 8U);
@@ -537,37 +507,10 @@ void test_rejected_and_semantic_no_change_preflights() {
     }
     {
         seq::SequencerState sequencer;
-        setLength(sequencer, 8U);
-        dirtyRootStep(sequencer);
-        sequencer.structureUi.previewAddPageSlot.set(true);
-        MutationPlan plan;
-        assert(core::handler::buildSequencerPageClearMutationPlan(
-                   sequencer, 0U, 0U, plan) == Preflight::Rejected);
-    }
-    {
-        seq::SequencerState sequencer;
         setLength(sequencer, 16U);
         MutationPlan plan;
         assert(core::handler::buildSequencerPageDeleteMutationPlan(
                    sequencer, 0U, 1U, plan) == Preflight::Rejected);
-    }
-    {
-        seq::SequencerState sequencer;
-        setLength(sequencer, 8U);
-        sequencer.structureUi.previewAddPageSlot.set(true);
-        sequencer.structureUi.previewPageIndex.set(0U);
-        MutationPlan plan;
-        assert(core::handler::buildSequencerPageCreateMutationPlan(
-                   sequencer, 0U, 0U, plan) == Preflight::Rejected);
-    }
-    {
-        seq::SequencerState sequencer;
-        setLength(sequencer, 16U);
-        sequencer.structureUi.previewAddPageSlot.set(true);
-        sequencer.structureUi.previewPageIndex.set(3U);
-        MutationPlan plan;
-        assert(core::handler::buildSequencerPageCreateMutationPlan(
-                   sequencer, 0U, 3U, plan) == Preflight::Rejected);
     }
     {
         seq::SequencerState sequencer;
@@ -579,29 +522,6 @@ void test_rejected_and_semantic_no_change_preflights() {
                    sequencer, clipboard,
                    makeSequencerPreparedPageStructureTarget(0U, 1U), plan) ==
                Preflight::Rejected);
-    }
-    {
-        seq::SequencerState sequencer;
-        setLength(sequencer, seq::SequencerState::MAX_STEPS);
-        sequencer.structureUi.previewAddPageSlot.set(true);
-        sequencer.structureUi.previewPageIndex.set(
-            seq::SequencerState::PAGE_COUNT);
-        core::state::StructureClipboardState clipboard;
-        fillPageClipboard(clipboard);
-        const uint64_t before = byteHash(
-            &sequencer.pattern, sizeof(sequencer.pattern));
-        MutationPlan plan;
-        assert(core::handler::buildSequencerPagePasteMutationPlan(
-                   sequencer,
-                   clipboard,
-                   makeSequencerPreparedPageStructureTarget(
-                       0U,
-                       static_cast<uint8_t>(
-                           seq::SequencerState::PAGE_COUNT - 1U)),
-                   plan) == Preflight::Rejected);
-        assert(plan.targetCount == 0U);
-        assert(byteHash(&sequencer.pattern, sizeof(sequencer.pattern)) ==
-               before);
     }
     {
         seq::SequencerState sequencer;
@@ -1554,7 +1474,7 @@ void test_child_offset_extension_commit_failure_rolls_back_exactly() {
     std::cout << "[PASS] child offset extension abort restores exact Before state\n";
 }
 
-void test_root_extension_keeps_cold_cc_exact_under_flat_history() {
+void test_root_step_extension_keeps_cold_cc_exact_under_flat_history() {
     CoreHarness harness;
     auto& pattern = harness.state.sequencer.pattern;
     auto* editorCc = seq::ensureSequencerCcLaneBank(pattern);
@@ -1591,15 +1511,24 @@ void test_root_extension_keeps_cold_cc_exact_under_flat_history() {
         assert(pattern.ccLanes->lanes[0U].values[127U] == 101U);
     };
 
+    core::state::StructureClipboardState clipboard;
+    fillStepsClipboard(clipboard);
     Transaction transaction(
-        harness.state.sequencer, harness.history, Action::PageCreate);
+        harness.state.sequencer, harness.history, Action::StepPaste);
     assert(transaction.openBoundary());
     MutationPlan plan;
     assertReady(
-        core::handler::buildSequencerPageCreateMutationPlan(
-            harness.state.sequencer, 0U, 1U, plan),
+        core::handler::buildSequencerStepPasteMutationPlan(
+            harness.state.sequencer,
+            clipboard,
+            makeSequencerPreparedStepPasteTarget(
+                0U,
+                project::ProjectStepPasteMode::PAGE,
+                8U),
+            plan),
         plan,
-        Action::PageCreate);
+        Action::StepPaste);
+    assert(plan.resultingContentLength == 16U);
     assert(plan.payloadPlan == PayloadPlan::FlatOnly);
     assert(transaction.execute(
                core::handler::makeSequencerPreparedPageStructureExecution(
@@ -1614,7 +1543,8 @@ void test_root_extension_keeps_cold_cc_exact_under_flat_history() {
     assert(pattern.length.get() == 16U);
     assertColdCcExact();
 
-    std::cout << "[PASS] root extension keeps cold CC byte/pointer exact via FlatOnly\n";
+    std::cout <<
+        "[PASS] root Step extension keeps cold CC byte/pointer exact via FlatOnly\n";
 }
 
 void test_page_delete_keeps_empty_cc_owner_exact_under_flat_history() {
@@ -1734,7 +1664,7 @@ void test_full_graph_page_history_preserves_empty_cc_owners() {
         "[PASS] Full Page Graph history preserves empty CC owners exactly\n";
 }
 
-void test_page_extension_reclaims_matching_cold_descendants_near_capacity() {
+void test_step_extension_reclaims_matching_cold_descendants_near_capacity() {
     CoreHarness harness;
     auto& sequencer = harness.state.sequencer;
     const auto cold = seq::createMicroSequence(
@@ -1751,23 +1681,26 @@ void test_page_extension_reclaims_matching_cold_descendants_near_capacity() {
     harness.synchronizeActiveTrack();
 
     core::state::StructureClipboardState clipboard;
-    fillPageClipboard(clipboard);
+    fillStepsClipboard(clipboard);
     attachMicroSequenceSourceGraph(clipboard, 1U);
-    sequencer.structureUi.previewAddPageSlot.set(true);
-    sequencer.structureUi.previewPageIndex.set(1U);
 
     const uint64_t beforeHash = byteHash(
         sequencer.pattern.graph.get(), sizeof(Graph));
-    Transaction transaction(sequencer, harness.history, Action::PagePaste);
+    Transaction transaction(sequencer, harness.history, Action::StepPaste);
     assert(transaction.openBoundary());
     MutationPlan plan;
     assertReady(
-        core::handler::buildSequencerPagePasteMutationPlan(
-            sequencer, clipboard,
-            makeSequencerPreparedPageStructureTarget(0U, 1U), plan),
+        core::handler::buildSequencerStepPasteMutationPlan(
+            sequencer,
+            clipboard,
+            makeSequencerPreparedStepPasteTarget(
+                0U,
+                project::ProjectStepPasteMode::EXTEND,
+                8U),
+            plan),
         plan,
-        Action::PagePaste);
-    assert(plan.resultingContentLength == 16U);
+        Action::StepPaste);
+    assert(plan.resultingContentLength == 9U);
     assert(plan.payloadPlan == PayloadPlan::FullCurrentPayload);
     assert(plan.compactGraphOnSeal());
     assert(plan.graphBudget.stepNodes != 0U);
@@ -1794,11 +1727,11 @@ void test_page_extension_reclaims_matching_cold_descendants_near_capacity() {
     assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
            beforeHash);
     assert(harness.state.redoSequencerHistory());
-    assert(sequencer.pattern.length.get() == 16U);
+    assert(sequencer.pattern.length.get() == 9U);
     assert(byteHash(sequencer.pattern.graph.get(), sizeof(Graph)) ==
            afterHash);
 
-    std::cout << "[PASS] Page extension reclaims/rebuilds matching cold descendants\n";
+    std::cout << "[PASS] Step extension reclaims/rebuilds matching cold descendants\n";
 }
 
 void test_step_extension_capacity_failure_restores_matching_cold_target() {
@@ -2251,7 +2184,7 @@ void test_reused_plan_is_reconstructed_before_early_rejection() {
     plan.flags = 0xFFU;
 
     constexpr uint8_t invalidTrack = seq::SequencerTrackBankState::TRACK_COUNT;
-    assert(core::handler::buildSequencerPageCreateMutationPlan(
+    assert(core::handler::buildSequencerPageClearMutationPlan(
                sequencer, invalidTrack, 0U, plan) == Preflight::Rejected);
 
     for (const auto source : plan.targetToSource) {
@@ -2282,7 +2215,7 @@ void test_reused_plan_is_reconstructed_before_early_rejection() {
     assert(plan.graphBudget.sequences == 0U);
     assert(plan.graphBudget.cycleSets == 0U);
     assert(plan.pageMask == 0U);
-    assert(plan.action == Action::PageCreate);
+    assert(plan.action == Action::PageClear);
     assert(plan.outcome == Preflight::Rejected);
     assert(plan.payloadPlan == PayloadPlan::FlatOnly);
     assert(plan.expectedTrack == invalidTrack);
@@ -2302,7 +2235,7 @@ void test_reused_plan_is_reconstructed_before_early_rejection() {
 }  // namespace
 
 int main() {
-    test_exact_ten_builders_and_stable_keys();
+    test_exact_nine_builders_and_stable_keys();
     test_rejected_and_semantic_no_change_preflights();
     test_pattern_clipboard_and_content_path_staleness();
     test_graph_budget_is_aggregate_exact_and_malformed_source_rejects();
@@ -2312,10 +2245,10 @@ int main() {
     test_child_extensions_preserve_logical_content_across_offsets();
     test_child_resize_analysis_uses_old_logical_projection();
     test_child_offset_extension_commit_failure_rolls_back_exactly();
-    test_root_extension_keeps_cold_cc_exact_under_flat_history();
+    test_root_step_extension_keeps_cold_cc_exact_under_flat_history();
     test_page_delete_keeps_empty_cc_owner_exact_under_flat_history();
     test_full_graph_page_history_preserves_empty_cc_owners();
-    test_page_extension_reclaims_matching_cold_descendants_near_capacity();
+    test_step_extension_reclaims_matching_cold_descendants_near_capacity();
     test_step_extension_capacity_failure_restores_matching_cold_target();
     test_root_extension_from_graphless_and_disabled_destinations();
     test_prospective_graph_commit_undo_and_redo_are_exact();

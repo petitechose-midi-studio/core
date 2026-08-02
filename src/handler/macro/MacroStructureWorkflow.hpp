@@ -50,23 +50,31 @@ public:
     void moveByFocus(float delta);
     bool canRemoveCurrentStructure() const;
     bool canPasteCurrentStructure() const;
-    void beginHoldAction(core::state::StructureHoldAction action);
-    [[nodiscard]] bool hasHoldAction(core::state::StructureHoldAction action) const;
+    /** Captures every accepted press; armVisualHold selects long-action UI. */
+    [[nodiscard]] bool beginHoldAction(
+        core::state::StructureHoldAction action,
+        bool armVisualHold
+    );
+    [[nodiscard]] bool hasCapturedAction(
+        core::state::StructureHoldAction action
+    ) const;
     [[nodiscard]] bool commitHoldAction(core::state::StructureHoldAction action);
-    void clearHoldAction();
+    /**
+     * Settles an early release and returns true only when an owned captured
+     * press still owns its acquisition and exact current structure. Presses
+     * without a visual long-action hold retain the same target provenance.
+     */
+    [[nodiscard]] bool releaseShortHoldAction(
+        core::state::StructureHoldAction action
+    );
     void applyCurrentStructureShortPress();
-    void applyCurrentStructureLongPress();
     void copyCurrentStructure();
-    void pasteCurrentStructure();
     void createPreviewedStructure();
 
     void enterSelectionModeForCurrentFocus();
     /** Handles one local Back tier; returns true when a selection owned it. */
     bool backSelectionMode();
-    void cancelSelectionMode();
     [[nodiscard]] bool selectionActive() const;
-    [[nodiscard]] bool selectionPlacementActive() const;
-    [[nodiscard]] bool selectionHasItems() const;
     [[nodiscard]] core::state::StructureSelectionInteractionPolicy
         selectionInteractionPolicy() const;
     void navigateSelection(float delta);
@@ -77,19 +85,22 @@ public:
     [[nodiscard]] uint8_t selectionCursor() const;
     [[nodiscard]] uint32_t selectionClipboardRevision() const;
 
-    void enterSlotSelection();
-    void cancelSlotSelection();
     [[nodiscard]] bool slotSelectionActive() const;
+    void toggleSlotSelectionAtPageIndex(uint8_t macroIndex);
+
+private:
+    void applyCurrentStructureLongPress();
+    void pasteCurrentStructure();
+    [[nodiscard]] bool selectionPlacementActive() const;
+    [[nodiscard]] bool selectionHasItems() const;
+    void enterSlotSelection();
     [[nodiscard]] bool slotSelectionPlacementActive() const;
     void navigateSlotSelection(float delta);
     void toggleSlotSelectionAtCursor();
-    void toggleSlotSelectionAtPageIndex(uint8_t macroIndex);
     [[nodiscard]] bool copySlotSelection();
     [[nodiscard]] bool canPasteSlotSelection() const;
     [[nodiscard]] bool pasteSlotSelection();
     void refreshSlotSelectionPastePreview();
-
-private:
     void bindStateSync();
     core::state::StructureNavigationFocus effectiveFocus() const;
     void movePage(float delta);
@@ -111,20 +122,79 @@ private:
     void syncPageSelectionCursorPresentation();
     [[nodiscard]] uint8_t slotSelectionNavigationPageCount() const;
     void syncSlotSelectionCursorPresentation();
+    void cancelSlotSelection();
+    void clearHoldAction();
     void captureHoldTarget(core::state::StructureHoldAction action);
-    [[nodiscard]] bool holdTargetStillMatches(
-        core::state::StructureHoldAction action
-    ) const;
+    [[nodiscard]] bool capturedTargetStillMatches() const;
+    [[nodiscard]] bool settleCapturedHoldAction(
+        core::state::StructureHoldAction action,
+        bool requireVisualHold
+    );
 
     struct HoldTarget {
-        core::state::StructureHoldAction action = core::state::StructureHoldAction::NONE;
-        core::state::StructureNavigationFocus focus =
-            core::state::StructureNavigationFocus::PAGE;
+        static constexpr uint8_t ACTION_MASK = 0x03U;
+        static constexpr uint8_t FOCUS_MASK = 0x0CU;
+        static constexpr uint8_t FOCUS_SHIFT = 2U;
+        static constexpr uint8_t ADD_SLOT = 0x10U;
+        static constexpr uint8_t VISUAL_HOLD = 0x20U;
+
+        uint32_t acquisitionId = 0U;
         uint8_t track = 0xFFU;
         uint8_t page = 0xFFU;
         uint8_t macro = 0xFFU;
-        bool addSlot = false;
+        uint8_t flags = 0U;
+
+        [[nodiscard]] core::state::StructureHoldAction action() const {
+            return static_cast<core::state::StructureHoldAction>(
+                flags & ACTION_MASK
+            );
+        }
+        void setAction(core::state::StructureHoldAction value) {
+            flags = static_cast<uint8_t>(
+                (flags & static_cast<uint8_t>(~ACTION_MASK)) |
+                (static_cast<uint8_t>(value) & ACTION_MASK)
+            );
+        }
+        [[nodiscard]] core::state::StructureNavigationFocus focus() const {
+            return static_cast<core::state::StructureNavigationFocus>(
+                (flags & FOCUS_MASK) >> FOCUS_SHIFT
+            );
+        }
+        void setFocus(core::state::StructureNavigationFocus value) {
+            flags = static_cast<uint8_t>(
+                (flags & static_cast<uint8_t>(~FOCUS_MASK)) |
+                ((static_cast<uint8_t>(value) << FOCUS_SHIFT) & FOCUS_MASK)
+            );
+        }
+        [[nodiscard]] bool addSlot() const {
+            return (flags & ADD_SLOT) != 0U;
+        }
+        void setAddSlot(bool value) {
+            flags = value
+                ? static_cast<uint8_t>(flags | ADD_SLOT)
+                : static_cast<uint8_t>(flags & static_cast<uint8_t>(~ADD_SLOT));
+        }
+        [[nodiscard]] bool visualHold() const {
+            return (flags & VISUAL_HOLD) != 0U;
+        }
+        void setVisualHold(bool value) {
+            flags = value
+                ? static_cast<uint8_t>(flags | VISUAL_HOLD)
+                : static_cast<uint8_t>(
+                    flags & static_cast<uint8_t>(~VISUAL_HOLD)
+                );
+        }
     };
+    static_assert(sizeof(HoldTarget) == 8U);
+    static_assert(
+        static_cast<uint8_t>(core::state::StructureHoldAction::COUNT) - 1U <=
+        HoldTarget::ACTION_MASK
+    );
+    static_assert(
+        ((static_cast<uint8_t>(core::state::StructureNavigationFocus::COUNT) -
+          1U) <<
+         HoldTarget::FOCUS_SHIFT) <= HoldTarget::FOCUS_MASK
+    );
 
     core::state::macro::MacroUiState& macro_ui_;
     core::state::macro::MacroPagesState& pages_;
@@ -138,5 +208,10 @@ private:
     HoldTarget hold_target_{};
     oc::state::FixedSubscriptionList<2> subscriptions_;
 };
+
+static_assert(
+    sizeof(void*) != 4U || sizeof(MacroStructureWorkflow) == 120U,
+    "Macro Structure workflow must remain in its 120-byte ARM PSRAM envelope"
+);
 
 }  // namespace core::handler

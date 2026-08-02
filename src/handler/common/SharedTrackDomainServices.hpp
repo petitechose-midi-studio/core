@@ -10,6 +10,11 @@ struct CoreState;
 
 namespace core::handler {
 
+enum class PreparedTrackPresentationKind : uint8_t {
+    MacroTrackTransfer = 0U,
+    SequencerActiveTrack,
+};
+
 /**
  * Exact Core-derived settlement state captured immediately after the common
  * Track Structure chronology boundary. UI callbacks may retain their own
@@ -54,21 +59,21 @@ public:
         uint16_t enabledMask,
         uint8_t activeTrack
     ) noexcept;
-    using ReconcilePreparedMacroTrackTransferFn = void (*)(
+    using ReconcilePreparedTrackPresentationFn = void (*)(
         void* context,
+        PreparedTrackPresentationKind kind,
         uint16_t capturedTrackMask
-    );
+    ) noexcept;
     using CapturePreparedTrackStructureSettlementCheckpointFn = bool (*)(
         const void* context,
         PreparedTrackStructureSettlementCheckpoint& out
     ) noexcept;
-
     struct Operations {
         void* context = nullptr;
         SetSharedTrackStateFn setSharedTrackState = nullptr;
         PublishPreparedSequencerStateFn publishPreparedSequencerState = nullptr;
-        ReconcilePreparedMacroTrackTransferFn
-            reconcilePreparedMacroTrackTransfer = nullptr;
+        ReconcilePreparedTrackPresentationFn
+            reconcilePreparedTrackPresentation = nullptr;
         CapturePreparedTrackStructureSettlementCheckpointFn
             capturePreparedTrackStructureSettlementCheckpoint = nullptr;
     };
@@ -94,11 +99,33 @@ public:
     [[nodiscard]] bool preparedTrackStructureSettlementCheckpointMatches(
         const PreparedTrackStructureSettlementCheckpoint& expected
     ) const;
+    [[nodiscard]] bool
+    canReconcilePreparedSequencerActiveTrackPresentation() const;
+    void reconcilePreparedSequencerActiveTrackPresentation() const noexcept;
 
 private:
     oc::state::Signal<uint8_t, 8>* active_track_ = nullptr;
     oc::state::Signal<uint16_t, 16>* enabled_mask_ = nullptr;
     Operations operations_{};
 };
+
+static_assert(
+    sizeof(void*) != 4U ||
+        sizeof(SharedTrackDomainServices::Operations) == 20U,
+    "shared Track operations exceed their ARM ABI contract"
+);
+static_assert(
+    sizeof(void*) != 8U ||
+        sizeof(SharedTrackDomainServices::Operations) == 40U,
+    "shared Track operations exceed their native ABI contract"
+);
+static_assert(
+    sizeof(void*) != 4U || sizeof(SharedTrackDomainServices) == 28U,
+    "shared Track facade exceeds its ARM ABI contract"
+);
+static_assert(
+    sizeof(void*) != 8U || sizeof(SharedTrackDomainServices) == 56U,
+    "shared Track facade exceeds its native ABI contract"
+);
 
 }  // namespace core::handler

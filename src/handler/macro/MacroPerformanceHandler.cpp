@@ -223,9 +223,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
 #endif
-            if (structure_workflow_.canRemoveCurrentStructure()) {
-                structure_workflow_.beginHoldAction(core::state::StructureHoldAction::REMOVE);
-            }
+            (void)structure_workflow_.beginHoldAction(
+                core::state::StructureHoldAction::REMOVE,
+                structure_workflow_.canRemoveCurrentStructure()
+            );
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
@@ -234,19 +235,23 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .when([this]() {
             return !structure_workflow_.selectionActive() &&
                    (ignore_next_bottom_left_release_ ||
-                   structure_workflow_.hasHoldAction(
+                   structure_workflow_.hasCapturedAction(
                        core::state::StructureHoldAction::REMOVE
                    ) ||
                    policyAllows(MacroAction::CLEAR_STRUCTURE));
         })
         .then([this]() {
             const bool clearAllowed = policyAllows(MacroAction::CLEAR_STRUCTURE);
-            structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_left_release_) {
                 ignore_next_bottom_left_release_ = false;
 #if defined(MS_UX_RECORDER)
                 if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
 #endif
+                return;
+            }
+            if (!structure_workflow_.releaseShortHoldAction(
+                    core::state::StructureHoldAction::REMOVE
+                )) {
                 return;
             }
             // Macro Slot scope reserves this gesture for the guarded Remove
@@ -289,11 +294,14 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
 #endif
             paste_only_press_active_ = false;
-            if (structure_workflow_.canPasteCurrentStructure()) {
-                paste_only_press_active_ =
-                    !policyAllows(MacroAction::COPY_STRUCTURE);
-                structure_workflow_.beginHoldAction(core::state::StructureHoldAction::PASTE);
-            }
+            const bool canPaste =
+                structure_workflow_.canPasteCurrentStructure();
+            const bool captured = structure_workflow_.beginHoldAction(
+                core::state::StructureHoldAction::PASTE,
+                canPaste
+            );
+            paste_only_press_active_ = captured && canPaste &&
+                !policyAllows(MacroAction::COPY_STRUCTURE);
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
@@ -302,7 +310,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .when([this]() {
             return !structure_workflow_.selectionActive() &&
                    (ignore_next_bottom_right_release_ ||
-                   structure_workflow_.hasHoldAction(
+                   structure_workflow_.hasCapturedAction(
                        core::state::StructureHoldAction::PASTE
                    ) ||
                    policyAllows(MacroAction::COPY_STRUCTURE));
@@ -311,12 +319,16 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             const bool copyAllowed = policyAllows(MacroAction::COPY_STRUCTURE);
             const bool pasteOnlyPress = paste_only_press_active_;
             paste_only_press_active_ = false;
-            structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_right_release_) {
                 ignore_next_bottom_right_release_ = false;
 #if defined(MS_UX_RECORDER)
                 if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
 #endif
+                return;
+            }
+            if (!structure_workflow_.releaseShortHoldAction(
+                    core::state::StructureHoldAction::PASTE
+                )) {
                 return;
             }
             // An early release while Paste is armed only cancels the guarded

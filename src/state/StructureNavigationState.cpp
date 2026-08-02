@@ -36,13 +36,15 @@ FLASHMEM void StructureHoldState::begin(
     StructureHoldAction nextAction,
     uint32_t nowMs
 ) {
-    action.set(nextAction);
+    ++acquisition_id_;
+    if (acquisition_id_ == 0U) ++acquisition_id_;
     startedAtMs.set(nowMs);
+    action.set(nextAction);
 }
 
 FLASHMEM void StructureHoldState::clear() {
     action.set(StructureHoldAction::NONE);
-    startedAtMs.set(0);
+    startedAtMs.set(0U);
 }
 
 }  // namespace core::state

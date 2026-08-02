@@ -216,7 +216,6 @@ FLASHMEM void syncSequencerStructureUiFromRestoredHistory(CoreState& state) {
     state.trackNavigation.previewAddSlot.set(false);
     state.trackNavigation.syncPreviewTrack(state.sharedTrackActive.get());
 
-    state.sequencer.structureUi.previewAddPageSlot.set(false);
     state.sequencer.structureUi.syncPreviewPage(state.sequencer.visiblePage());
     reconcileSequencerCcLaneUiFromRestoredHistory(state.sequencer);
 }
@@ -268,6 +267,7 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
             activation.targetAudibleMask, statusBar.playing.get(), activationTransition)) {
         return false;
     }
+    const uint8_t activeTrackBefore = sequencerTracks.activeTrackIndex();
     const auto result = sequencerHistory.undoWithResult(sequencerTracks, sequencer);
     if (!result.applied) {
         if (hasActivation) {
@@ -304,6 +304,10 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
     refreshSharedTrackStateFromSequencer();
     if (macroStructure != nullptr) {
         reconcileMacroTrackStructureFromRestoredHistory(*this, *macroStructure);
+    } else if (result.descriptor.kind ==
+                   sequencer::SequencerHistoryActionKind::TrackStructure &&
+               activeTrackBefore != sequencerTracks.activeTrackIndex()) {
+        reconcilePreparedSequencerActiveTrackPresentation();
     }
     syncSequencerStructureUiFromRestoredHistory(*this);
     return true;
@@ -334,6 +338,7 @@ FLASHMEM bool CoreState::redoSequencerHistory() {
             activation.targetAudibleMask, statusBar.playing.get(), activationTransition)) {
         return false;
     }
+    const uint8_t activeTrackBefore = sequencerTracks.activeTrackIndex();
     const auto result = sequencerHistory.redoWithResult(sequencerTracks, sequencer);
     if (!result.applied) {
         if (hasActivation) {
@@ -367,6 +372,10 @@ FLASHMEM bool CoreState::redoSequencerHistory() {
     refreshSharedTrackStateFromSequencer();
     if (macroStructure != nullptr) {
         reconcileMacroTrackStructureFromRestoredHistory(*this, *macroStructure);
+    } else if (result.descriptor.kind ==
+                   sequencer::SequencerHistoryActionKind::TrackStructure &&
+               activeTrackBefore != sequencerTracks.activeTrackIndex()) {
+        reconcilePreparedSequencerActiveTrackPresentation();
     }
     syncSequencerStructureUiFromRestoredHistory(*this);
     return true;

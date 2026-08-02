@@ -94,20 +94,10 @@ constexpr uint8_t pageCountForLength(uint8_t length) noexcept {
               seq::SequencerState::STEPS_PER_PAGE);
 }
 
-FLASHMEM uint8_t pageCreateTargetFor(
-    const seq::SequencerState& sequencer
-) noexcept {
-    return sequencer.structureUi.previewAddPageSlot.get()
-        ? sequencer.structureUi.previewPageIndex.get()
-        : sequencer.activePageCount();
-}
-
 FLASHMEM uint8_t pagePasteTargetFor(
     const seq::SequencerState& sequencer
 ) noexcept {
-    return sequencer.structureUi.previewAddPageSlot.get()
-        ? sequencer.structureUi.previewPageIndex.get()
-        : sequencer.visiblePage();
+    return sequencer.visiblePage();
 }
 
 constexpr bool flag(const Plan& plan, uint8_t value) noexcept {
@@ -1556,7 +1546,6 @@ FLASHMEM void publishReplayableFocus(
 ) noexcept {
     uint8_t finalPage = plan.initialPage;
     switch (plan.action) {
-        case SequencerPreparedPageStructureAction::PageCreate:
         case SequencerPreparedPageStructureAction::PageSelectionPaste:
         case SequencerPreparedPageStructureAction::PageClear:
         case SequencerPreparedPageStructureAction::PageDelete:
@@ -1574,6 +1563,8 @@ FLASHMEM void publishReplayableFocus(
                 finalPage = seq::activeContentPageForStep(plan.finalFocus);
             }
             break;
+        case SequencerPreparedPageStructureAction::Invalid:
+            return;
     }
     sequencer.page.set(finalPage);
     sequencer.focusedStep.set(plan.finalFocus);
@@ -1662,45 +1653,6 @@ FLASHMEM bool SequencerPreparedPageStructureMutationPlan::
     return flag(*this, kFlagRequiresCompaction);
 }
 
-FLASHMEM Preflight buildSequencerPageCreateMutationPlan(
-    const seq::SequencerState& sequencer,
-    uint8_t expectedTrack,
-    uint8_t targetPage,
-    Plan& out
-) noexcept {
-    if (!beginPlan(
-            sequencer,
-            expectedTrack,
-            SequencerPreparedPageStructureAction::PageCreate,
-            out) ||
-        !rootContextOnly(out) ||
-        targetPage != pageCreateTargetFor(sequencer) ||
-        targetPage != sequencer.activePageCount()) {
-        return out.outcome;
-    }
-    if (targetPage == seq::SequencerState::PAGE_COUNT &&
-        sequencer.activePageCount() == seq::SequencerState::PAGE_COUNT) {
-        out.outcome = Preflight::NoChange;
-        return out.outcome;
-    }
-    if (targetPage >= seq::SequencerState::PAGE_COUNT) return out.outcome;
-    const uint8_t required = static_cast<uint8_t>(std::min<uint16_t>(
-        seq::SequencerState::MAX_STEPS,
-        static_cast<uint16_t>(targetPage + 1U) *
-            seq::SequencerState::STEPS_PER_PAGE));
-    if (required <= out.contentLength) {
-        out.outcome = Preflight::NoChange;
-        return out.outcome;
-    }
-    out.resultingContentLength = required;
-    out.finalFocus = static_cast<uint8_t>(
-        targetPage * seq::SequencerState::STEPS_PER_PAGE);
-    if (!assignDefaultRange(out, out.contentLength, required)) {
-        return out.outcome;
-    }
-    return finishMappedPlan(sequencer, out, true);
-}
-
 FLASHMEM Preflight buildSequencerPageSelectionPasteMutationPlan(
     const seq::SequencerState& sequencer,
     const core::state::StructureClipboardState& clipboard,
@@ -1770,7 +1722,6 @@ FLASHMEM Preflight buildSequencerPageClearMutationPlan(
             SequencerPreparedPageStructureAction::PageClear,
             out) ||
         !rootContextOnly(out) ||
-        sequencer.structureUi.previewAddPageSlot.get() ||
         page != sequencer.page.get() || page != sequencer.visiblePage() ||
         page >= sequencer.activePageCount()) {
         return out.outcome;
@@ -1797,7 +1748,6 @@ FLASHMEM Preflight buildSequencerPageDeleteMutationPlan(
             SequencerPreparedPageStructureAction::PageDelete,
             out) ||
         !rootContextOnly(out) ||
-        sequencer.structureUi.previewAddPageSlot.get() ||
         page != sequencer.page.get() || page != sequencer.visiblePage() ||
         page >= sequencer.activePageCount()) {
         return out.outcome;
@@ -1838,10 +1788,7 @@ FLASHMEM Preflight buildSequencerPagePasteMutationPlan(
         return out.outcome;
     }
     const uint8_t derivedTarget = pagePasteTargetFor(sequencer);
-    if ((sequencer.structureUi.previewAddPageSlot.get() &&
-         (derivedTarget != sequencer.activePageCount() ||
-          derivedTarget >= seq::SequencerState::PAGE_COUNT)) ||
-        targetPage >= seq::SequencerState::PAGE_COUNT ||
+    if (targetPage >= seq::SequencerState::PAGE_COUNT ||
         targetPage != derivedTarget) {
         return out.outcome;
     }

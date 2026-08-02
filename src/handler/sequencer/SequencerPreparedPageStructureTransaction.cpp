@@ -31,7 +31,6 @@ constexpr bool validPageStructureAction(
     SequencerPreparedPageStructureAction action
 ) {
     switch (action) {
-        case SequencerPreparedPageStructureAction::PageCreate:
         case SequencerPreparedPageStructureAction::PageSelectionPaste:
         case SequencerPreparedPageStructureAction::PageClear:
         case SequencerPreparedPageStructureAction::PageDelete:
@@ -42,6 +41,8 @@ constexpr bool validPageStructureAction(
         case SequencerPreparedPageStructureAction::PageSelectionReset:
         case SequencerPreparedPageStructureAction::PageSelectionDeleteOrDeepReset:
             return true;
+        case SequencerPreparedPageStructureAction::Invalid:
+            return false;
     }
     return false;
 }

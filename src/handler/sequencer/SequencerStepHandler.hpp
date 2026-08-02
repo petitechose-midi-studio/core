@@ -103,7 +103,7 @@ private:
     void moveStepContentDraftExitChoice(float delta);
     void confirmStepContentDraftExitChoice();
     void continueStepContentDraft();
-    void handleContextSelectorRelease(uint32_t nowMs);
+    void handleContextSelectorRelease();
 
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
@@ -111,8 +111,8 @@ private:
     oc::state::Signal<core::state::StructureNavigationFocus,
                       core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     core::state::TrackNavigationState& track_ui_;
-    SequencerStructureNavigationWorkflow navigation_workflow_;
     SequencerStructureEditWorkflow edit_workflow_;
+    SequencerStructureNavigationWorkflow navigation_workflow_;
     SequencerHistoryDomainServices history_;
     SequencerContextSelectorWorkflow context_selector_workflow_;
     oc::api::EncoderAPI& encoders_;
@@ -127,5 +127,10 @@ private:
     core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
 #endif
 };
+
+static_assert(
+    sizeof(void*) != 4U || sizeof(SequencerStepHandler) == 256U,
+    "Sequencer Step handler exceeds its ARM PSRAM contract"
+);
 
 }  // namespace core::handler

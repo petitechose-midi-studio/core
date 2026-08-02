@@ -76,7 +76,7 @@ struct SequencerPreparedPageStructureMutationPlan {
     SequencerPreparedPageStructureGraphBudget graphBudget{};
     uint16_t pageMask = 0U;
     SequencerPreparedPageStructureAction action =
-        SequencerPreparedPageStructureAction::PageCreate;
+        SequencerPreparedPageStructureAction::Invalid;
     SequencerPreparedPageStructurePreflightOutcome outcome =
         SequencerPreparedPageStructurePreflightOutcome::Rejected;
     core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan =
@@ -252,14 +252,6 @@ sequencerPreparedStepSelectionResetTargetDepth(
     return static_cast<StepResetDepth>(
         static_cast<uint8_t>(static_cast<uint16_t>(target) >> 8U));
 }
-
-[[nodiscard]] SequencerPreparedPageStructurePreflightOutcome
-buildSequencerPageCreateMutationPlan(
-    const core::state::sequencer::SequencerState& sequencer,
-    uint8_t expectedTrack,
-    uint8_t targetPage,
-    SequencerPreparedPageStructureMutationPlan& out
-) noexcept;
 
 [[nodiscard]] SequencerPreparedPageStructurePreflightOutcome
 buildSequencerPageSelectionPasteMutationPlan(

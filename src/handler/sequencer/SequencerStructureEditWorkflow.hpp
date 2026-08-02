@@ -6,6 +6,7 @@
 
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerPreparedTrackStructureTransaction.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/StatusBarState.hpp"
@@ -53,20 +54,33 @@ public:
     SequencerStructureEditWorkflow(const SequencerStructureEditWorkflow&) = delete;
     SequencerStructureEditWorkflow& operator=(const SequencerStructureEditWorkflow&) = delete;
 
+    const SharedTrackDomainServices& sharedTrackServices() const noexcept {
+        return shared_tracks_;
+    }
+    SequencerPreparedTrackStructureResult createPreviewedTrackStructure();
+
     bool canRemoveCurrentStructure() const;
     bool canPasteCurrentStructure() const;
 
     void update(uint32_t nowMs);
     void beginHoldAction(core::state::StructureHoldAction action);
+    void beginSelectionHoldAction(core::state::StructureHoldAction action);
     void clearHoldAction();
+    void settleConsumedBottomLeftRelease();
     core::state::contextual::GuardedActionRelease releaseTrackPasteAction(
         uint32_t nowMs
     );
     bool cancelTrackPasteAction(uint32_t nowMs);
     bool trackPasteNavigationBlocked() const;
+    bool trackRemoveNavigationBlocked() const;
+    bool trackRemoveHoldPending() const;
+    bool currentTrackRemoveHoldPending() const;
+    bool selectionTrackRemoveHoldPending() const;
     bool trackPastePlanInspectable() const;
-    bool trackPasteDetailsVisible() const;
     void toggleTrackPasteDetails();
+    void applyLatchedCurrentTrackShortPress();
+    void applyLatchedTrackSelectionShortPress();
+    void applyLatchedTrackSelectionLongPress();
     void applyCurrentStructureShortPress();
     bool selectionHoldActionAvailable() const;
     void applySelectionBottomLeftTap();
@@ -86,11 +100,45 @@ public:
     void pasteStepSelection();
 
 private:
+    enum class TrackHoldIntent : uint8_t {
+        None = 0U,
+        CurrentRemove,
+        SelectionRemove,
+    };
+
+    struct TrackSelectionHoldToken {
+        uint32_t clipboardRevision = 0U;
+        uint16_t selectedMask = 0U;
+        uint16_t enabledMask = 0U;
+        uint16_t destinationMask = 0U;
+        uint16_t overwriteMask = 0U;
+        uint8_t cursor = 0U;
+        uint8_t previewTrack =
+            core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+        uint8_t flags = 0U;
+    };
+
+    static_assert(
+        sizeof(TrackSelectionHoldToken) == 16U,
+        "Track selection hold token must remain compact"
+    );
+
     using HistoryTrackStructureChangePtr =
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr;
 
     HistoryTrackStructureChangePtr captureTrackHistoryBefore(uint16_t trackMask) const;
     bool recordTrackHistoryAfter(HistoryTrackStructureChangePtr change, uint16_t trackMask);
+    void invalidateTrackRemoveHoldIntent();
+    void clearTrackRemoveHoldIntent();
+    bool trackRemoveHoldOwnsSharedState() const;
+    bool currentTrackRemoveHoldStillMatches() const;
+    bool currentTrackRemoveIntentMatches(uint8_t targetTrack) const;
+    bool selectionTrackRemoveHoldStillMatches() const;
+    bool selectionTrackRemoveIntentMatches(
+        const TrackSelectionHoldToken& token,
+        uint8_t targetTrack
+    ) const;
+    void settleRejectedSelectionTrackRemoveLongPress();
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
     bool canPasteFocusedStep() const;
     void copyFocusedStep();
@@ -161,6 +209,16 @@ private:
     core::state::macro::MacroPagesState& macro_pages_;
     core::state::sequencer::SequencerTrackActivationQueue* track_activations_ = nullptr;
     core::state::StatusBarState* status_bar_ = nullptr;
+    TrackHoldIntent track_hold_intent_ = TrackHoldIntent::None;
+    uint8_t track_hold_target_ =
+        core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+    uint32_t track_hold_acquisition_id_ = 0U;
+    TrackSelectionHoldToken track_selection_hold_token_{};
 };
+
+static_assert(
+    sizeof(void*) != 4U || sizeof(SequencerStructureEditWorkflow) == 116U,
+    "Sequencer Structure edit workflow exceeds its ARM RAM contract"
+);
 
 }  // namespace core::handler

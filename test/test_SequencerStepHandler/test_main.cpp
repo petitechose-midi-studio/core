@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include <array>
+#include <utility>
 
 #include <config/App.hpp>
 #include <config/Timing.hpp>
@@ -17,9 +18,11 @@
 
 #include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/common/SharedTrackDomainServices.hpp"
+#include "../../src/handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
+#include "../../src/handler/sequencer/SequencerStepEditHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStepHandler.hpp"
 #include "../../src/handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
 #include "../../src/handler/transport/TransportHandler.hpp"
@@ -146,9 +149,138 @@ constexpr HistoryServices::Operations kFailingPageCommitHistoryOperations{
     .abortPreparedPatternEdit = &FailingPageCommitHistory::abort,
 };
 
+enum class DirectTrackIntentDrift : uint8_t {
+    TrackSelectionCursor = 0U,
+    PageSelectionMask,
+    StepSelectionClipboardRevision,
+    ClipboardRevision,
+    ClipboardOwner,
+    TrackPasteGeneration,
+    TrackPasteCommitConsumed,
+};
+
+struct DirectTrackIntentDriftHistory {
+    core::state::CoreState* state = nullptr;
+    DirectTrackIntentDrift drift =
+        DirectTrackIntentDrift::TrackSelectionCursor;
+    core::app::ExtmemUniquePtr<
+        oc::note::sequencer::StepSequencerGraph
+    > replacementGraph;
+
+    static seq::SequencerTrackStructureChronologyResult boundary(
+        void* context
+    ) {
+        auto& self = *static_cast<DirectTrackIntentDriftHistory*>(context);
+        const auto result =
+            self.state->openSequencerTrackStructureChronologyBoundary();
+        if (result.status !=
+            seq::SequencerTrackStructureChronologyStatus::Opened) {
+            return result;
+        }
+        switch (self.drift) {
+            case DirectTrackIntentDrift::TrackSelectionCursor:
+                self.state->trackNavigation.selection.cursorIndex.set(10U);
+                break;
+            case DirectTrackIntentDrift::PageSelectionMask:
+                self.state->sequencer.structureUi.pageSelection.
+                    selectedMask.set(0x0040U);
+                break;
+            case DirectTrackIntentDrift::StepSelectionClipboardRevision:
+                self.state->sequencer.structureUi.stepSelection.
+                    clipboardRevision.set(83U);
+                break;
+            case DirectTrackIntentDrift::ClipboardRevision:
+                self.state->structureClipboard.revision.set(
+                    self.state->structureClipboard.revision.get() + 1U
+                );
+                break;
+            case DirectTrackIntentDrift::ClipboardOwner:
+                self.state->structureClipboard.sequencerGraph =
+                    std::move(self.replacementGraph);
+                break;
+            case DirectTrackIntentDrift::TrackPasteGeneration:
+                ++self.state->sequencer.structureUi.trackPaste.
+                    interactionGeneration;
+                break;
+            case DirectTrackIntentDrift::TrackPasteCommitConsumed:
+                self.state->sequencer.structureUi.trackPaste.commitConsumed =
+                    !self.state->sequencer.structureUi.trackPaste.
+                        commitConsumed;
+                break;
+        }
+        return result;
+    }
+};
+
+constexpr HistoryServices::Operations kDirectTrackIntentDriftHistoryOperations{
+    .openTrackStructureChronologyBoundary =
+        &DirectTrackIntentDriftHistory::boundary,
+};
+
+enum class TrackHoldBoundaryDrift : uint8_t {
+    ActiveTrack = 0U,
+    SelectionMask,
+};
+
+struct TrackHoldBoundaryDriftHistory {
+    core::state::CoreState* state = nullptr;
+    TrackHoldBoundaryDrift drift = TrackHoldBoundaryDrift::ActiveTrack;
+    uint8_t nextActiveTrack = 0U;
+    uint16_t nextSelectionMask = 0U;
+    std::size_t boundaryCount = 0U;
+
+    static seq::SequencerPatternHistoryCommitOutcome boundary(void* context) {
+        auto& self = *static_cast<TrackHoldBoundaryDriftHistory*>(context);
+        ++self.boundaryCount;
+        const auto outcome =
+            self.state->commitSequencerPatternHistoryCoalescingOutcome();
+        if (outcome == seq::SequencerPatternHistoryCommitOutcome::Failed) {
+            return outcome;
+        }
+        switch (self.drift) {
+            case TrackHoldBoundaryDrift::ActiveTrack:
+                assert(self.state->setSharedTrackState(
+                    self.state->sharedTrackEnabledMask.get(),
+                    self.nextActiveTrack
+                ));
+                break;
+            case TrackHoldBoundaryDrift::SelectionMask:
+                self.state->trackNavigation.selection.selectedMask.set(
+                    self.nextSelectionMask
+                );
+                break;
+        }
+        return outcome;
+    }
+};
+
+constexpr HistoryServices::Operations kTrackHoldBoundaryDriftHistoryOperations{
+    .commitCoalescedPatternEdit = &TrackHoldBoundaryDriftHistory::boundary,
+};
+
+struct DirectTrackChronologyCounter {
+    core::state::CoreState* state = nullptr;
+    std::size_t boundaryCount = 0U;
+
+    static seq::SequencerTrackStructureChronologyResult boundary(
+        void* context
+    ) {
+        auto& self = *static_cast<DirectTrackChronologyCounter*>(context);
+        ++self.boundaryCount;
+        return self.state->openSequencerTrackStructureChronologyBoundary();
+    }
+};
+
+constexpr HistoryServices::Operations kDirectTrackChronologyCounterOperations{
+    .openTrackStructureChronologyBoundary =
+        &DirectTrackChronologyCounter::boundary,
+};
+
 struct SequencerStepHarness {
     static constexpr oc::type::ScopeID SEQUENCER_SCOPE = 501;
     static constexpr oc::type::ScopeID PATTERN_EDITOR_SCOPE = 502;
+    static constexpr oc::type::ScopeID STEP_EDITOR_SCOPE = 503;
+    static constexpr oc::type::ScopeID PRESET_LIBRARY_SCOPE = 504;
 
     test_support::CoreStorages storages;
     core::state::CoreState state;
@@ -168,6 +300,9 @@ struct SequencerStepHarness {
     core::handler::SequencerStepHandler handler;
     core::handler::TransportHandler transportHandler;
     core::handler::SequencerPatternQuickControlsHandler quickControlsHandler;
+    // Construct last so this integration probe cannot consume binding slots
+    // ahead of the handler under test.
+    core::handler::SequencerStepEditHandler stepEditHandler;
 
     SequencerStepHarness()
         : state(storages.settings), navigationFocus(core::state::StructureNavigationFocus::PAGE),
@@ -208,12 +343,38 @@ struct SequencerStepHarness {
                   navigationFocus,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
-              encoders, buttons, SEQUENCER_SCOPE) {
+              encoders, buttons, SEQUENCER_SCOPE),
+          stepEditHandler(
+              core::handler::SequencerStepEditHandler::StateRefs{
+                  state.overlays,
+                  state.sequencer,
+                  state.sequencerTracks,
+                  state.structureClipboard,
+                  state.trackNavigation,
+                  state.patternPitchSettings,
+                  navigationFocus,
+                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+                  {},
+                  {},
+              },
+              overlays,
+              encoders,
+              buttons,
+              SEQUENCER_SCOPE,
+              STEP_EDITOR_SCOPE,
+              PRESET_LIBRARY_SCOPE,
+              mockTimeMs) {
         g_now_ms = 0;
         oc::time::setProvider(mockTimeMs);
         overlays.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
         overlays.registerCleanup(core::ui::OverlayType::SEQ_PATTERN_EDIT, PATTERN_EDITOR_SCOPE);
+        overlays.registerCleanup(core::ui::OverlayType::SEQ_STEP_EDIT, STEP_EDITOR_SCOPE);
+        overlays.registerCleanup(
+            core::ui::OverlayType::PRESET_LIBRARY,
+            PRESET_LIBRARY_SCOPE
+        );
         handler.attachPatternEditorHandler(patternEditorHandler);
+        handler.attachStepEditHandler(stepEditHandler);
         handler.update(g_now_ms);
     }
 
@@ -222,6 +383,7 @@ struct SequencerStepHarness {
         inputBinding.processTick();
         handler.update(g_now_ms);
         patternEditorHandler.update(g_now_ms);
+        stepEditHandler.update(g_now_ms);
     }
 
     void press(Config::ButtonID id) {
@@ -246,6 +408,7 @@ struct SequencerStepHarness {
         inputBinding.processTick();
         handler.update(g_now_ms);
         patternEditorHandler.update(g_now_ms);
+        stepEditHandler.update(g_now_ms);
     }
 
     void turn(Config::EncoderID id, float value) {
@@ -308,7 +471,6 @@ struct PreparedEditorUiInvariant {
     uint8_t navigationFocus = 0U;
     uint8_t page = 0U;
     uint8_t focusedStep = 0U;
-    bool previewAddPageSlot = false;
     uint8_t previewPageIndex = 0U;
     uint8_t holdAction = 0U;
     uint32_t holdStartedAtMs = 0U;
@@ -359,7 +521,6 @@ PreparedEditorUiInvariant capturePreparedEditorUiInvariant(
     out.navigationFocus = static_cast<uint8_t>(h.navigationFocus.get());
     out.page = sequencer.page.get();
     out.focusedStep = sequencer.focusedStep.get();
-    out.previewAddPageSlot = ui.previewAddPageSlot.get();
     out.previewPageIndex = ui.previewPageIndex.get();
     out.holdAction = static_cast<uint8_t>(ui.pageHold.action.get());
     out.holdStartedAtMs = ui.pageHold.startedAtMs.get();
@@ -406,7 +567,6 @@ void assertPageSelectionNavigationInvariant(
     assert(actual.navigationFocus == expected.navigationFocus);
     assert(actual.page == expected.page);
     assert(actual.focusedStep == expected.focusedStep);
-    assert(actual.previewAddPageSlot == expected.previewAddPageSlot);
     assert(actual.previewPageIndex == expected.previewPageIndex);
     assert(actual.pageSelectionActive == expected.pageSelectionActive);
     assert(actual.pageSelectionPlacing == expected.pageSelectionPlacing);
@@ -866,6 +1026,678 @@ void focusTrackNavigation(SequencerStepHarness& h) {
     h.state.trackNavigation.syncPreviewTrack(h.state.sequencerTracks.activeTrackIndex());
 }
 
+using TrackGraph = oc::note::sequencer::StepSequencerGraph;
+using TrackCcBank = seq::SequencerCcLaneBank;
+using TrackBank = seq::SequencerTrackBankState;
+
+constexpr uint16_t kDirectTrackSparseMask = 0x0025U;
+constexpr uint8_t kDirectTrackOldActive = 2U;
+constexpr uint8_t kDirectTrackIncoming = 5U;
+constexpr uint8_t kDirectTrackCreateTarget = 6U;
+
+enum class DirectTrackFixtureKind : uint8_t {
+    Create = 0U,
+    RemoveCurrent,
+};
+
+struct TrackColdOwners {
+    const TrackGraph* graph = nullptr;
+    const TrackCcBank* cc = nullptr;
+};
+
+TrackColdOwners trackColdOwners(const seq::SequencerPatternState& pattern) {
+    return {pattern.graph.get(), pattern.ccLanes.get()};
+}
+
+uint64_t trackFlatHash(const seq::SequencerPatternState& pattern) {
+    seq::SequencerPatternSnapshot flat{};
+    seq::captureSnapshot(pattern, flat);
+    const std::array<uint32_t, 6U> revisions{
+        pattern.stepDataRevision.get(),
+        pattern.patternVariationRevision.get(),
+        pattern.patternScaleRevision.get(),
+        pattern.patternTimingRevision.get(),
+        pattern.graphRevision.get(),
+        pattern.ccLaneRevision.get(),
+    };
+    uint64_t hash = byteHash(&flat, sizeof(flat));
+    hash ^= byteHash(revisions.data(), sizeof(revisions));
+    hash *= 1099511628211ULL;
+    return hash;
+}
+
+uint64_t trackMusicalHash(const seq::SequencerPatternState& pattern) {
+    seq::SequencerPatternSnapshot flat{};
+    seq::captureSnapshot(pattern, flat);
+    flat.stepDataRevision = 0U;
+    flat.patternVariationRevision = 0U;
+    flat.patternScaleRevision = 0U;
+    flat.patternTimingRevision = 0U;
+    flat.graphRevision = 0U;
+    return byteHash(&flat, sizeof(flat));
+}
+
+void installTrackColdOwners(seq::SequencerPatternState& pattern, uint8_t tag) {
+    pattern.graph = core::app::makeExtmemUnique<TrackGraph>();
+    pattern.ccLanes = core::app::makeExtmemUnique<TrackCcBank>();
+    assert(pattern.graph);
+    assert(pattern.ccLanes);
+    pattern.graph->enabled = true;
+    pattern.note[0U] = static_cast<uint8_t>(48U + tag);
+    pattern.velocity[0U] = static_cast<uint8_t>(80U + tag);
+    pattern.setEnabled(0U, true);
+    pattern.stepDataRevision.set(100U + tag);
+    pattern.graphRevision.set(200U + tag);
+    seq::SequencerCcLaneDraft draft{};
+    draft.destination.controller = static_cast<uint8_t>(70U + tag);
+    assert(seq::createSequencerCcLane(*pattern.ccLanes, 0U, draft).changed());
+    assert(seq::setSequencerCcLaneEvent(
+               *pattern.ccLanes,
+               0U,
+               0U,
+               static_cast<uint8_t>(90U + tag)
+           ).changed());
+    pattern.ccLaneRevision.set(pattern.ccLanes->revision);
+}
+
+struct TrackPatternPhysicalInvariant {
+    static constexpr std::size_t COUNT = TrackBank::TRACK_COUNT + 1U;
+    std::array<const void*, COUNT> graphOwners{};
+    std::array<const void*, COUNT> ccOwners{};
+    std::array<uint64_t, COUNT> flatHashes{};
+    std::array<uint64_t, COUNT> graphHashes{};
+    std::array<uint64_t, COUNT> ccHashes{};
+};
+
+void captureTrackPatternPhysical(
+    const seq::SequencerPatternState& pattern,
+    std::size_t index,
+    TrackPatternPhysicalInvariant& out
+) {
+    out.graphOwners[index] = pattern.graph.get();
+    out.ccOwners[index] = pattern.ccLanes.get();
+    out.flatHashes[index] = trackFlatHash(pattern);
+    out.graphHashes[index] = objectHash(pattern.graph.get());
+    out.ccHashes[index] = objectHash(pattern.ccLanes.get());
+}
+
+TrackPatternPhysicalInvariant captureTrackPatternPhysicalInvariant(
+    const SequencerStepHarness& h
+) {
+    TrackPatternPhysicalInvariant out{};
+    captureTrackPatternPhysical(h.state.sequencer.pattern, 0U, out);
+    for (uint8_t track = 0U; track < TrackBank::TRACK_COUNT; ++track) {
+        captureTrackPatternPhysical(
+            h.state.sequencerTracks.track(track),
+            static_cast<std::size_t>(track) + 1U,
+            out
+        );
+    }
+    return out;
+}
+
+struct TrackUiInvariant {
+    bool previewAdd = false;
+    uint8_t previewTrack = 0U;
+    uint8_t holdAction = 0U;
+    uint32_t holdStartedAtMs = 0U;
+    bool selectionActive = false;
+    bool selectionPlacing = false;
+    uint8_t selectionScope = 0U;
+    uint8_t selectionCursor = 0U;
+    uint16_t selectionMask = 0U;
+    uint16_t destinationMask = 0U;
+    uint16_t overwriteMask = 0U;
+    bool pasteBlocked = false;
+    uint32_t clipboardRevision = 0U;
+};
+
+TrackUiInvariant captureTrackUiInvariant(const SequencerStepHarness& h) {
+    const auto& ui = h.state.trackNavigation;
+    return {
+        .previewAdd = ui.previewAddSlot.get(),
+        .previewTrack = ui.previewTrackIndex.get(),
+        .holdAction = static_cast<uint8_t>(ui.hold.action.get()),
+        .holdStartedAtMs = ui.hold.startedAtMs.get(),
+        .selectionActive = ui.selection.active.get(),
+        .selectionPlacing = ui.selection.placing.get(),
+        .selectionScope = static_cast<uint8_t>(ui.selection.scope.get()),
+        .selectionCursor = ui.selection.cursorIndex.get(),
+        .selectionMask = ui.selection.selectedMask.get(),
+        .destinationMask = ui.selection.destinationMask.get(),
+        .overwriteMask = ui.selection.overwriteMask.get(),
+        .pasteBlocked = ui.selection.pasteBlocked.get(),
+        .clipboardRevision = ui.selection.clipboardRevision.get(),
+    };
+}
+
+struct TrackTransientUiInvariant {
+    bool contextVisible = false;
+    uint8_t contextFocus = 0U;
+    uint32_t contextRevision = 0U;
+    uint64_t stepEditHash = 0U;
+    uint64_t ccLaneUiHash = 0U;
+    uint64_t stepPropertySelectorHash = 0U;
+    uint64_t stepInlineFeedbackHash = 0U;
+    uint64_t quickControlsHash = 0U;
+    uint64_t contentViewHash = 0U;
+    uint64_t stepDraftHash = 0U;
+    uint64_t trackPasteHash = 0U;
+};
+
+TrackTransientUiInvariant captureTrackTransientUiInvariant(
+    const SequencerStepHarness& h
+) {
+    const auto& sequencer = h.state.sequencer;
+    return {
+        .contextVisible = sequencer.contextSelector.visible,
+        .contextFocus = static_cast<uint8_t>(
+            sequencer.contextSelector.previewFocus),
+        .contextRevision = sequencer.contextSelector.revision.get(),
+        .stepEditHash = byteHash(&sequencer.stepEdit, sizeof(sequencer.stepEdit)),
+        .ccLaneUiHash = byteHash(&sequencer.ccLaneUi, sizeof(sequencer.ccLaneUi)),
+        .stepPropertySelectorHash = byteHash(
+            &sequencer.stepPropertyInlineSelector,
+            sizeof(sequencer.stepPropertyInlineSelector)),
+        .stepInlineFeedbackHash = byteHash(
+            &sequencer.stepInlineFeedback,
+            sizeof(sequencer.stepInlineFeedback)),
+        .quickControlsHash = byteHash(
+            &sequencer.patternQuickControls,
+            sizeof(sequencer.patternQuickControls)),
+        .contentViewHash = byteHash(
+            &sequencer.contentView,
+            sizeof(sequencer.contentView)),
+        .stepDraftHash = byteHash(
+            &sequencer.stepContentDraft,
+            sizeof(sequencer.stepContentDraft)),
+        .trackPasteHash = byteHash(
+            &sequencer.structureUi.trackPaste,
+            sizeof(sequencer.structureUi.trackPaste)),
+    };
+}
+
+struct TrackMacroInvariant {
+    uint64_t tracksHash = 0U;
+    uint64_t activeConfigsHash = 0U;
+    uint64_t controlAuthoredHash = 0U;
+    uint64_t manualOverridesHash = 0U;
+    uint64_t contextSelectorHash = 0U;
+    std::array<float, core::state::macro::MACRO_COUNT> runtimeValues{};
+    uint16_t enabledTrackMask = 0U;
+    uint16_t enabledPageMask = 0U;
+    uint16_t manualMask = 0U;
+    uint8_t activeTrack = 0U;
+    uint8_t activePage = 0U;
+    uint32_t manualRevision = 0U;
+    uint32_t rejectedActivationCount = 0U;
+    uint32_t controlAuthoredRevision = 0U;
+    uint32_t configRevision = 0U;
+    uint32_t automationEditRevision = 0U;
+    uint32_t runtimeProjectionRevision = 0U;
+    uint32_t runtimeOwnerRevision = 0U;
+};
+
+TrackMacroInvariant captureTrackMacroInvariant(const SequencerStepHarness& h) {
+    TrackMacroInvariant out{};
+    out.tracksHash = byteHash(
+        h.state.pages.tracks.data(), sizeof(h.state.pages.tracks));
+    out.activeConfigsHash = byteHash(
+        h.state.pages.activeConfigs.data(), sizeof(h.state.pages.activeConfigs));
+    out.controlAuthoredHash = byteHash(
+        &h.state.pages.control.authored,
+        sizeof(h.state.pages.control.authored));
+    out.manualOverridesHash = byteHash(
+        &h.state.macroUi.manualOverrides,
+        sizeof(h.state.macroUi.manualOverrides));
+    out.contextSelectorHash = byteHash(
+        &h.state.macroUi.contextSelector,
+        sizeof(h.state.macroUi.contextSelector));
+    for (uint8_t macro = 0U;
+         macro < core::state::macro::MACRO_COUNT;
+         ++macro) {
+        out.runtimeValues[macro] = h.state.macros.slots[macro].value.get();
+    }
+    out.enabledTrackMask = h.state.pages.currentTrackEnabledMask();
+    out.enabledPageMask = h.state.pages.currentEnabledPageMask();
+    out.manualMask = h.state.macroUi.automationManualOverrideMask.get();
+    out.activeTrack = h.state.pages.currentActiveTrack();
+    out.activePage = h.state.pages.currentActivePage();
+    out.manualRevision = h.state.macroUi.manualOverrides.revision;
+    out.rejectedActivationCount =
+        h.state.macroUi.manualOverrides.rejectedActivationCount;
+    out.controlAuthoredRevision = h.state.pages.control.authoredRevision;
+    out.configRevision = h.state.configRevision.get();
+    out.automationEditRevision = h.state.macroUi.automationEditRevision.get();
+    out.runtimeProjectionRevision =
+        h.state.macroUi.runtimeProjectionRevision.get();
+    out.runtimeOwnerRevision = h.state.macroRuntimeOwnerRevision.get();
+    return out;
+}
+
+struct TrackTransactionInvariant {
+    TrackPatternPhysicalInvariant patterns{};
+    TrackUiInvariant trackUi{};
+    TrackTransientUiInvariant transientUi{};
+    TrackMacroInvariant macros{};
+    PreparedEditorUiInvariant editorUi{};
+    PreparedClipboardInvariant clipboard{};
+    PreparedProductInvariant product{};
+    tx::StateInvariant publication{};
+    uint64_t projectTracksHash = 0U;
+};
+
+TrackTransactionInvariant captureTrackTransactionInvariant(
+    const SequencerStepHarness& h
+) {
+    return {
+        .patterns = captureTrackPatternPhysicalInvariant(h),
+        .trackUi = captureTrackUiInvariant(h),
+        .transientUi = captureTrackTransientUiInvariant(h),
+        .macros = captureTrackMacroInvariant(h),
+        .editorUi = capturePreparedEditorUiInvariant(h),
+        .clipboard = capturePreparedClipboardInvariant(h.state.structureClipboard),
+        .product = capturePreparedProductInvariant(h),
+        .publication = tx::captureStateInvariant(h.state),
+        .projectTracksHash = byteHash(
+            &h.state.projectTracks.authored,
+            sizeof(h.state.projectTracks.authored)),
+    };
+}
+
+void assertTrackTransactionInvariant(
+    const SequencerStepHarness& h,
+    const TrackTransactionInvariant& expected,
+    bool expectedPatternCoalescing = false
+) {
+    const auto actual = captureTrackTransactionInvariant(h);
+    assert(actual.patterns.graphOwners == expected.patterns.graphOwners);
+    assert(actual.patterns.ccOwners == expected.patterns.ccOwners);
+    assert(actual.patterns.flatHashes == expected.patterns.flatHashes);
+    assert(actual.patterns.graphHashes == expected.patterns.graphHashes);
+    assert(actual.patterns.ccHashes == expected.patterns.ccHashes);
+    assert(actual.trackUi.previewAdd == expected.trackUi.previewAdd);
+    assert(actual.trackUi.previewTrack == expected.trackUi.previewTrack);
+    assert(actual.trackUi.holdAction == expected.trackUi.holdAction);
+    assert(actual.trackUi.holdStartedAtMs ==
+           expected.trackUi.holdStartedAtMs);
+    assert(actual.trackUi.selectionActive ==
+           expected.trackUi.selectionActive);
+    assert(actual.trackUi.selectionPlacing ==
+           expected.trackUi.selectionPlacing);
+    assert(actual.trackUi.selectionScope ==
+           expected.trackUi.selectionScope);
+    assert(actual.trackUi.selectionCursor ==
+           expected.trackUi.selectionCursor);
+    assert(actual.trackUi.selectionMask == expected.trackUi.selectionMask);
+    assert(actual.trackUi.destinationMask ==
+           expected.trackUi.destinationMask);
+    assert(actual.trackUi.overwriteMask == expected.trackUi.overwriteMask);
+    assert(actual.trackUi.pasteBlocked == expected.trackUi.pasteBlocked);
+    assert(actual.trackUi.clipboardRevision ==
+           expected.trackUi.clipboardRevision);
+    assert(actual.transientUi.contextVisible ==
+           expected.transientUi.contextVisible);
+    assert(actual.transientUi.contextFocus ==
+           expected.transientUi.contextFocus);
+    assert(actual.transientUi.contextRevision ==
+           expected.transientUi.contextRevision);
+    assert(actual.transientUi.stepEditHash ==
+           expected.transientUi.stepEditHash);
+    assert(actual.transientUi.ccLaneUiHash ==
+           expected.transientUi.ccLaneUiHash);
+    assert(actual.transientUi.stepPropertySelectorHash ==
+           expected.transientUi.stepPropertySelectorHash);
+    assert(actual.transientUi.stepInlineFeedbackHash ==
+           expected.transientUi.stepInlineFeedbackHash);
+    assert(actual.transientUi.quickControlsHash ==
+           expected.transientUi.quickControlsHash);
+    assert(actual.transientUi.contentViewHash ==
+           expected.transientUi.contentViewHash);
+    assert(actual.transientUi.stepDraftHash ==
+           expected.transientUi.stepDraftHash);
+    assert(actual.transientUi.trackPasteHash ==
+           expected.transientUi.trackPasteHash);
+    assert(byteHash(&actual.macros, sizeof(actual.macros)) ==
+           byteHash(&expected.macros, sizeof(expected.macros)));
+    assert(byteHash(&actual.editorUi, sizeof(actual.editorUi)) ==
+           byteHash(&expected.editorUi, sizeof(expected.editorUi)));
+    assert(byteHash(&actual.clipboard, sizeof(actual.clipboard)) ==
+           byteHash(&expected.clipboard, sizeof(expected.clipboard)));
+    assert(byteHash(&actual.product, sizeof(actual.product)) ==
+           byteHash(&expected.product, sizeof(expected.product)));
+    tx::assertStateInvariant(h.state, expected.publication);
+    assert(actual.projectTracksHash == expected.projectTracksHash);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing() ==
+           expectedPatternCoalescing);
+}
+
+struct CanonicalTrackLogicalProof {
+    std::array<uint64_t, TrackBank::TRACK_COUNT> flatHashes{};
+    std::array<uint64_t, TrackBank::TRACK_COUNT> graphHashes{};
+    std::array<uint64_t, TrackBank::TRACK_COUNT> ccHashes{};
+    std::array<bool, TrackBank::TRACK_COUNT> hasGraph{};
+    std::array<bool, TrackBank::TRACK_COUNT> hasCc{};
+    TrackMacroInvariant macros{};
+    uint16_t trackMask = 0U;
+    uint16_t sharedMask = 0U;
+    uint8_t trackActive = 0U;
+    uint8_t sharedActive = 0U;
+    uint8_t focusedStep = 0U;
+    uint8_t page = 0U;
+    uint64_t projectTracksHash = 0U;
+};
+
+CanonicalTrackLogicalProof captureCanonicalTrackLogicalProof(
+    const SequencerStepHarness& h
+) {
+    CanonicalTrackLogicalProof out{};
+    const uint8_t active = h.state.sequencerTracks.activeTrackIndex();
+    for (uint8_t track = 0U; track < TrackBank::TRACK_COUNT; ++track) {
+        const auto& pattern = track == active
+            ? h.state.sequencer.pattern
+            : h.state.sequencerTracks.track(track);
+        out.flatHashes[track] = trackMusicalHash(pattern);
+        out.graphHashes[track] = objectHash(pattern.graph.get());
+        out.ccHashes[track] = objectHash(pattern.ccLanes.get());
+        out.hasGraph[track] = pattern.graph != nullptr;
+        out.hasCc[track] = pattern.ccLanes != nullptr;
+    }
+    out.macros = captureTrackMacroInvariant(h);
+    out.trackMask = h.state.sequencerTracks.currentEnabledMask();
+    out.sharedMask = h.state.sharedTrackEnabledMask.get();
+    out.trackActive = active;
+    out.sharedActive = h.state.sharedTrackActive.get();
+    out.focusedStep = h.state.sequencer.focusedStep.get();
+    out.page = h.state.sequencer.page.get();
+    out.projectTracksHash = byteHash(
+        &h.state.projectTracks.authored,
+        sizeof(h.state.projectTracks.authored));
+    return out;
+}
+
+void assertCanonicalTrackLogicalProof(
+    const SequencerStepHarness& h,
+    const CanonicalTrackLogicalProof& expected
+) {
+    const auto actual = captureCanonicalTrackLogicalProof(h);
+    assert(actual.flatHashes == expected.flatHashes);
+    assert(actual.graphHashes == expected.graphHashes);
+    assert(actual.ccHashes == expected.ccHashes);
+    assert(actual.hasGraph == expected.hasGraph);
+    assert(actual.hasCc == expected.hasCc);
+    assert(byteHash(&actual.macros, sizeof(actual.macros)) ==
+           byteHash(&expected.macros, sizeof(expected.macros)));
+    assert(actual.trackMask == expected.trackMask);
+    assert(actual.sharedMask == expected.sharedMask);
+    assert(actual.trackActive == expected.trackActive);
+    assert(actual.sharedActive == expected.sharedActive);
+    assert(actual.focusedStep == expected.focusedStep);
+    assert(actual.page == expected.page);
+    assert(actual.projectTracksHash == expected.projectTracksHash);
+}
+
+void configureMacroTrackFixture(
+    core::state::CoreState& state,
+    uint8_t track,
+    uint8_t page,
+    float base,
+    uint8_t manualMacro,
+    float manualValue
+) {
+    auto& trackData = state.pages.tracks[track];
+    trackData.activePage = page;
+    trackData.enabledPageMask = static_cast<uint16_t>(
+        0x0001U | static_cast<uint16_t>(1U << page));
+    auto& pageData = trackData.pages[page];
+    pageData.activeMacroMask = 0xFFU;
+    for (uint8_t macro = 0U;
+         macro < core::state::macro::MACRO_COUNT;
+         ++macro) {
+        pageData.values[macro] = base + static_cast<float>(macro) * 0.01f;
+        pageData.cc[macro] = static_cast<uint8_t>(20U + track + macro);
+    }
+    using ActivateStatus =
+        core::state::macro::MacroManualOverrideState::ActivateStatus;
+    assert(state.macroUi.manualOverrides.activate(
+               core::state::macro::MacroAutomationSlotAddress{
+                   .track = track,
+                   .page = page,
+                   .macro = manualMacro,
+               },
+               manualValue
+           ) == ActivateStatus::ACTIVATED);
+}
+
+void assertActiveMacroPresentation(const SequencerStepHarness& h) {
+    const uint8_t track = h.state.pages.currentActiveTrack();
+    const uint8_t page = h.state.pages.currentActivePage();
+    const auto& pageData = h.state.pages.activePageData();
+    uint16_t expectedManualMask = 0U;
+    for (uint8_t macro = 0U;
+         macro < core::state::macro::MACRO_COUNT;
+         ++macro) {
+        float expected = pageData.values[macro];
+        float manual = 0.0f;
+        if (h.state.macroUi.manualOverrides.valueFor(
+                core::state::macro::MacroAutomationSlotAddress{
+                    .track = track,
+                    .page = page,
+                    .macro = macro,
+                },
+                manual
+            )) {
+            expected = manual;
+            expectedManualMask |= static_cast<uint16_t>(1U << macro);
+        }
+        assert(h.state.macros.slots[macro].value.get() == expected);
+    }
+    assert(h.state.macroUi.automationManualOverrideMask.get() ==
+           expectedManualMask);
+}
+
+struct DirectTrackFixture {
+    TrackColdOwners editor{};
+    TrackColdOwners scratch{};
+    TrackColdOwners incoming{};
+    uint32_t selectorRevision = 0U;
+};
+
+DirectTrackFixture configureDirectTrackFixture(
+    SequencerStepHarness& h,
+    DirectTrackFixtureKind kind
+) {
+    auto& state = h.state;
+    state.sequencerTracks.reset();
+    assert(state.setSharedTrackState(
+        kDirectTrackSparseMask,
+        kDirectTrackOldActive));
+    test_support::drainNotifications();
+
+    const uint8_t target = kind == DirectTrackFixtureKind::Create
+        ? kDirectTrackCreateTarget
+        : kDirectTrackIncoming;
+    state.sequencer.pattern.setContentLength(40U);
+    state.sequencerTracks.track(kDirectTrackOldActive).setContentLength(11U);
+    state.sequencerTracks.track(target).setContentLength(
+        kind == DirectTrackFixtureKind::Create ? 24U : 5U);
+    installTrackColdOwners(state.sequencer.pattern, 1U);
+    installTrackColdOwners(
+        state.sequencerTracks.track(kDirectTrackOldActive), 2U);
+    installTrackColdOwners(state.sequencerTracks.track(target), 3U);
+
+    configureMacroTrackFixture(
+        state, kDirectTrackOldActive, 1U, 0.21f, 2U, 0.72f);
+    configureMacroTrackFixture(
+        state,
+        target,
+        kind == DirectTrackFixtureKind::Create ? 3U : 2U,
+        kind == DirectTrackFixtureKind::Create ? 0.41f : 0.31f,
+        kind == DirectTrackFixtureKind::Create ? 1U : 6U,
+        kind == DirectTrackFixtureKind::Create ? 0.86f : 0.16f);
+    state.pages.syncSharedTrackState(
+        kDirectTrackSparseMask,
+        kDirectTrackOldActive);
+    auto shared = core::handler::SharedTrackDomainServices::fromCoreState(state);
+    assert(shared.canReconcilePreparedSequencerActiveTrackPresentation());
+    shared.reconcilePreparedSequencerActiveTrackPresentation();
+    state.macroUi.contextSelector.show(
+        core::state::StructureNavigationFocus::TRACK);
+
+    state.sequencer.focusedStep.set(31U);
+    state.sequencer.page.set(3U);
+    focusTrackNavigation(h);
+    state.trackNavigation.previewAddSlot.set(
+        kind == DirectTrackFixtureKind::Create);
+    state.trackNavigation.previewTrackIndex.set(
+        kind == DirectTrackFixtureKind::Create
+            ? kDirectTrackCreateTarget
+            : kDirectTrackOldActive);
+    state.trackNavigation.selection.active.set(false);
+    state.trackNavigation.selection.placing.set(false);
+    state.trackNavigation.selection.scope.set(
+        core::state::StructureSelectionScope::TRACK);
+    state.trackNavigation.selection.cursorIndex.set(9U);
+    state.trackNavigation.selection.selectedMask.set(0x0080U);
+    state.trackNavigation.selection.destinationMask.set(0x0100U);
+    state.trackNavigation.selection.overwriteMask.set(0x0200U);
+    state.trackNavigation.selection.pasteBlocked.set(true);
+    state.trackNavigation.selection.clipboardRevision.set(71U);
+    state.sequencer.structureUi.previewPageIndex.set(3U);
+    state.sequencer.contextSelector.visible = true;
+    state.sequencer.contextSelector.previewFocus =
+        core::state::StructureNavigationFocus::TRACK;
+    state.sequencer.contextSelector.revision.set(40U);
+    state.sequencer.patternQuickControls.selecting.set(true);
+    state.sequencer.stepInlineFeedback.show(
+        3U,
+        seq::StepProperty::VELOCITY,
+        1000U);
+    test_support::drainNotifications();
+    const auto settledBoundary =
+        state.openSequencerTrackStructureChronologyBoundary();
+    assert(settledBoundary.status ==
+           seq::SequencerTrackStructureChronologyStatus::Opened);
+    assert(settledBoundary.predecessorPattern ==
+           seq::SequencerPatternHistoryCommitOutcome::NoPending);
+    test_support::drainNotifications();
+
+    return {
+        .editor = trackColdOwners(state.sequencer.pattern),
+        .scratch = trackColdOwners(
+            state.sequencerTracks.track(kDirectTrackOldActive)),
+        .incoming = trackColdOwners(state.sequencerTracks.track(target)),
+        .selectorRevision = state.sequencer.contextSelector.revision.get(),
+    };
+}
+
+core::handler::SequencerDirectTrackStructureStateRefs directTrackRefs(
+    SequencerStepHarness& h
+) {
+    return {
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        h.navigationFocus,
+        h.state.trackNavigation,
+        h.state.structureClipboard,
+        h.state.pages,
+        h.state.sequencerTrackActivations,
+        core::handler::SharedTrackDomainServices::fromCoreState(h.state),
+        HistoryServices::fromCoreState(h.state),
+    };
+}
+
+void armTrackActivation(
+    seq::SequencerTrackActivationQueue& queue,
+    uint16_t trackMask,
+    bool transportPlaying
+) {
+    seq::SequencerTrackActivationBatch batch{};
+    assert(queue.prepare(
+        trackMask,
+        0xFFFFU,
+        transportPlaying,
+        batch,
+        seq::SequencerTrackActivationOrigin::TRACK_PASTE));
+    assert(queue.armPrepared(batch));
+    queue.publishPrepared(batch);
+}
+
+seq::SequencerTrackActivationMutationGuard captureActivationQueueGuard(
+    const seq::SequencerTrackActivationQueue& queue,
+    uint16_t pendingTrackMask
+) {
+    // captureMutationGuard records every queue entry and every monotonic
+    // counter. Its protected mask must exclude the deliberately pending
+    // collision, so use an otherwise idle Track solely as the validity bit.
+    uint16_t guardTrack = 0x8000U;
+    if ((pendingTrackMask & guardTrack) != 0U) {
+        guardTrack = 0x4000U;
+    }
+    assert((pendingTrackMask & guardTrack) == 0U);
+    seq::SequencerTrackActivationMutationGuard guard{};
+    assert(queue.captureMutationGuard(guardTrack, guard));
+    assert(guard.valid());
+    return guard;
+}
+
+void assertSameActivationQueueGuard(
+    const seq::SequencerTrackActivationMutationGuard& actual,
+    const seq::SequencerTrackActivationMutationGuard& expected
+) {
+    assert(actual.generations == expected.generations);
+    assert(actual.operationIds == expected.operationIds);
+    assert(actual.nextGeneration == expected.nextGeneration);
+    assert(actual.nextOperationId == expected.nextOperationId);
+    assert(actual.telemetryRevision == expected.telemetryRevision);
+    assert(actual.packedEntries == expected.packedEntries);
+    assert(actual.protectedTrackMask == expected.protectedTrackMask);
+}
+
+void preparePendingTrackPatternEdit(core::state::CoreState& state) {
+    constexpr auto owner =
+        seq::SequencerPreparedPatternEditOwner::PatternEditor;
+    constexpr uint8_t key = 91U;
+    const auto descriptor = seq::SequencerHistoryDescriptor{
+        .kind = seq::SequencerHistoryActionKind::StepEdit,
+        .stepIndex = 0U,
+    };
+    assert(state.beginOrContinueSequencerPreparedPatternEdit(
+               owner,
+               key,
+               seq::SequencerCoalescedPatternPayloadPlan::FlatOnly,
+               descriptor) ==
+           seq::SequencerPreparedPatternEditBeginOutcome::Started);
+    const uint8_t nextNote = state.sequencer.pattern.note[0U] == 73U
+        ? 74U
+        : 73U;
+    assert(state.sequencer.setStepNoteAt(0U, nextNote));
+    assert(state.sealSequencerPreparedPatternEdit(
+               owner,
+               key,
+               true,
+               descriptor) ==
+           seq::SequencerPreparedPatternEditSealOutcome::Sealed);
+    assert(state.hasPendingSequencerPatternHistoryCoalescing());
+}
+
+void assertSingleTrackStructurePublication(
+    const SequencerStepHarness& h,
+    const tx::StateInvariant& before
+) {
+    const auto after = tx::captureStateInvariant(h.state);
+    assert(after.sequencerUndoCount == before.sequencerUndoCount + 1U);
+    assert(after.sequencerRedoCount == 0U);
+    assert(after.projectUndoCount == before.projectUndoCount + 1U);
+    assert(after.projectRedoCount == 0U);
+    assert(after.sequencerUndoIdentity != 0U);
+    assert(after.sequencerUndoIdentity != before.sequencerUndoIdentity);
+    assert(after.retainedBytes > before.retainedBytes);
+    assert(after.modifiedCounter == before.modifiedCounter + 1U);
+    assert(after.dirty);
+    assert(after.sessionSavePending);
+}
+
 void openPatternEditor(SequencerStepHarness& h) {
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     h.tap(Config::ButtonID::NAV);
@@ -911,6 +1743,324 @@ void test_nav_context_selector_previews_and_applies_all_three_contexts() {
     assert(h.overlays.current() == core::ui::OverlayType::SEQ_PATTERN_EDIT);
 
     std::cout << "[PASS] test_nav_context_selector_previews_and_applies_all_three_contexts\n";
+}
+
+void test_latched_track_editor_release_cannot_cross_into_page_editor() {
+    SequencerStepHarness h;
+    h.state.sequencer.pattern.setContentLength(8U);
+    h.state.sequencerTracks.reset();
+    h.state.setSharedTrackState(0x0001U, 0U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.state.trackNavigation.syncPreviewTrack(1U);
+    h.state.trackNavigation.previewAddSlot.set(true);
+    test_support::drainNotifications();
+
+    h.press(Config::ButtonID::NAV);
+    assert(h.state.sequencer.contextSelector.visible);
+
+    // The physical release remains a latched OPEN_TRACK_EDITOR action. A
+    // concurrent focus rewrite must fail closed rather than reinterpret it as
+    // an OPEN_PATTERN_EDITOR action.
+    h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+    h.state.sequencer.structureUi.syncPreviewPage(0U);
+    test_support::drainNotifications();
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.release(Config::ButtonID::NAV);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    test_support::drainNotifications();
+
+    assert(!h.state.sequencer.contextSelector.visible);
+    assert(h.state.sequencer.pattern.length.get() == 8U);
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(h.state.sharedTrackEnabledMask.get() == 0x0001U);
+    assert(h.state.sharedTrackActive.get() == 0U);
+    assert(!h.state.sequencer.patternEditor.active.get());
+    assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0U);
+
+    std::cout
+        << "[PASS] latched Track editor release cannot open Page editor after focus drift\n";
+}
+
+void test_page_navigation_is_cyclic_and_tap_opens_pattern_editor() {
+    {
+        SequencerStepHarness h;
+        h.state.sequencer.pattern.setContentLength(24U);
+        h.state.sequencer.page.set(0U);
+        h.state.sequencer.focusedStep.set(0U);
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        test_support::drainNotifications();
+
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            h.turn(Config::EncoderID::NAV, -1.0f);
+            assert(core::app::testing::extmemAllocationAttempt == 0U);
+        }
+        assert(h.state.sequencer.page.get() == 2U);
+        assert(h.state.sequencer.focusedStep.get() == 16U);
+        assert(h.state.sequencer.structureUi.previewPageIndex.get() == 2U);
+
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        assert(h.state.sequencer.page.get() == 0U);
+        assert(h.state.sequencer.focusedStep.get() == 0U);
+        assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0U);
+
+        h.tap(Config::ButtonID::NAV);
+        test_support::drainNotifications();
+
+        assert(h.state.sequencer.pattern.length.get() == 24U);
+        assert(h.state.sequencer.patternEditor.active.get());
+        assert(h.overlays.current() == core::ui::OverlayType::SEQ_PATTERN_EDIT);
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+    }
+
+    {
+        SequencerStepHarness h;
+        h.state.sequencer.pattern.setContentLength(8U);
+        h.state.sequencerTracks.reset();
+        (void)h.state.setSharedTrackState(0x0001U, 0U);
+        assert(h.state.sharedTrackEnabledMask.get() == 0x0001U);
+        assert(h.state.sharedTrackActive.get() == 0U);
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        h.state.sequencer.structureUi.syncPreviewPage(0U);
+        test_support::drainNotifications();
+
+        h.press(Config::ButtonID::NAV);
+        assert(h.state.sequencer.contextSelector.visible);
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+        h.state.trackNavigation.syncPreviewTrack(1U);
+        h.state.trackNavigation.previewAddSlot.set(true);
+        test_support::drainNotifications();
+
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            h.release(Config::ButtonID::NAV);
+            assert(core::app::testing::extmemAllocationAttempt == 0U);
+        }
+        test_support::drainNotifications();
+
+        assert(!h.state.sequencer.contextSelector.visible);
+        assert(h.state.sequencer.pattern.length.get() == 8U);
+        assert(h.state.sharedTrackEnabledMask.get() == 0x0001U);
+        assert(h.state.sharedTrackActive.get() == 0U);
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+        assert(h.state.projectHistory.undoCount() == 0U);
+        assert(h.state.trackNavigation.previewAddSlot.get());
+        assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
+        assert(!h.state.sequencer.patternEditor.active.get());
+        assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0U);
+    }
+
+    std::cout
+        << "[PASS] Page NAV is cyclic and its latched editor cannot create a Track\n";
+}
+
+void test_latched_editor_target_drift_fails_closed() {
+    {
+        SequencerStepHarness h;
+        h.state.sequencer.pattern.setContentLength(16U);
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        h.state.sequencer.structureUi.syncPreviewPage(0U);
+        test_support::drainNotifications();
+
+        h.press(Config::ButtonID::NAV);
+        h.state.sequencer.structureUi.syncPreviewPage(1U);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            h.release(Config::ButtonID::NAV);
+            assert(core::app::testing::extmemAllocationAttempt == 0U);
+        }
+        test_support::drainNotifications();
+
+        assert(h.state.sequencer.pattern.length.get() == 16U);
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+        assert(h.state.projectHistory.undoCount() == 0U);
+        assert(!h.state.sequencer.patternEditor.active.get());
+        assert(h.state.sequencer.structureUi.previewPageIndex.get() == 1U);
+    }
+
+    {
+        SequencerStepHarness h;
+        h.state.sequencerTracks.reset();
+        (void)h.state.setSharedTrackState(0x0001U, 0U);
+        assert(h.state.sharedTrackEnabledMask.get() == 0x0001U);
+        assert(h.state.sharedTrackActive.get() == 0U);
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+        h.state.trackNavigation.syncPreviewTrack(1U);
+        h.state.trackNavigation.previewAddSlot.set(true);
+        test_support::drainNotifications();
+
+        h.press(Config::ButtonID::NAV);
+        h.state.trackNavigation.syncPreviewTrack(2U);
+        h.state.trackNavigation.previewAddSlot.set(true);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            h.release(Config::ButtonID::NAV);
+            assert(core::app::testing::extmemAllocationAttempt == 0U);
+        }
+        test_support::drainNotifications();
+
+        assert(h.state.sharedTrackEnabledMask.get() == 0x0001U);
+        assert(h.state.sharedTrackActive.get() == 0U);
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+        assert(h.state.projectHistory.undoCount() == 0U);
+        assert(h.state.trackNavigation.previewAddSlot.get());
+        assert(h.state.trackNavigation.previewTrackIndex.get() == 2U);
+    }
+
+    std::cout << "[PASS] latched Page/Track editor actions reject target drift\n";
+}
+
+void test_step_editor_uses_the_exact_latched_target() {
+    {
+        SequencerStepHarness h;
+        h.state.sequencer.pattern.setContentLength(128U);
+        h.state.sequencer.focusedStep.set(97U);
+        h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+        test_support::drainNotifications();
+
+        h.tap(Config::ButtonID::NAV);
+        test_support::drainNotifications();
+
+        assert(!h.state.sequencer.contextSelector.visible);
+        assert(h.state.sequencer.stepEdit.visible.get());
+        assert(h.state.sequencer.stepEdit.stepIndex.get() == 97U);
+        assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+    }
+
+    {
+        SequencerStepHarness h;
+        h.state.sequencer.pattern.setContentLength(128U);
+        h.state.sequencer.focusedStep.set(97U);
+        h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+        test_support::drainNotifications();
+
+        h.press(Config::ButtonID::NAV);
+        h.state.sequencer.focusedStep.set(96U);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            h.release(Config::ButtonID::NAV);
+            assert(core::app::testing::extmemAllocationAttempt == 0U);
+        }
+        test_support::drainNotifications();
+
+        assert(!h.state.sequencer.contextSelector.visible);
+        assert(!h.state.sequencer.stepEdit.visible.get());
+        assert(h.state.sequencer.focusedStep.get() == 96U);
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+        assert(h.state.projectHistory.undoCount() == 0U);
+    }
+
+    std::cout << "[PASS] Step editor uses its exact latched target\n";
+}
+
+void test_hidden_context_selector_cannot_complete_an_old_gesture() {
+    {
+        SequencerStepHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        h.press(Config::ButtonID::NAV);
+        assert(h.state.sequencer.contextSelector.visible);
+        seq::resetTransientTrackState(h.state.sequencer);
+
+        h.release(Config::ButtonID::NAV);
+        test_support::drainNotifications();
+
+        assert(!h.state.sequencer.patternEditor.active.get());
+        assert(!h.state.sequencer.stepEdit.visible.get());
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+        assert(h.state.projectHistory.undoCount() == 0U);
+    }
+
+    {
+        SequencerStepHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        h.press(Config::ButtonID::NAV);
+        assert(h.state.sequencer.contextSelector.visible);
+        seq::resetTransientTrackState(h.state.sequencer);
+
+        h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        h.release(Config::ButtonID::NAV);
+        test_support::drainNotifications();
+
+        assert(!h.state.sequencer.structureUi.pageSelection.active.get());
+        assert(!h.state.sequencer.structureUi.stepSelection.active.get());
+        assert(!h.state.trackNavigation.selection.active.get());
+        assert(!h.state.sequencer.patternEditor.active.get());
+        assert(!h.state.sequencer.stepEdit.visible.get());
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+        assert(h.state.projectHistory.undoCount() == 0U);
+    }
+
+    {
+        SequencerStepHarness h;
+        h.state.sequencer.pattern.setContentLength(16U);
+        h.state.sequencer.page.set(0U);
+        h.state.sequencer.focusedStep.set(0U);
+        h.state.sequencer.structureUi.syncPreviewPage(0U);
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        h.press(Config::ButtonID::NAV);
+        assert(h.state.sequencer.contextSelector.visible);
+        seq::resetTransientTrackState(h.state.sequencer);
+
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        h.release(Config::ButtonID::NAV);
+        test_support::drainNotifications();
+
+        assert(h.navigationFocus.get() ==
+               core::state::StructureNavigationFocus::PAGE);
+        assert(h.state.sequencer.page.get() == 0U);
+        assert(h.state.sequencer.focusedStep.get() == 0U);
+        assert(!h.state.sequencer.patternEditor.active.get());
+        assert(!h.state.sequencer.stepEdit.visible.get());
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+        assert(h.state.projectHistory.undoCount() == 0U);
+    }
+
+    std::cout << "[PASS] hidden selector cannot complete an old NAV gesture\n";
+}
+
+void test_latched_nav_hold_cannot_cross_selection_context() {
+    using Focus = core::state::StructureNavigationFocus;
+    for (const auto route : std::array<std::pair<Focus, Focus>, 2U>{
+             std::pair{Focus::TRACK, Focus::PAGE},
+             std::pair{Focus::PAGE, Focus::TRACK},
+         }) {
+        SequencerStepHarness h;
+        h.state.sequencerTracks.reset();
+        (void)h.state.setSharedTrackState(0x0001U, 0U);
+        assert(h.state.sharedTrackEnabledMask.get() == 0x0001U);
+        assert(h.state.sharedTrackActive.get() == 0U);
+        h.navigationFocus.set(route.first);
+        h.state.trackNavigation.syncPreviewTrack(0U);
+        h.state.trackNavigation.previewAddSlot.set(false);
+        h.state.sequencer.structureUi.syncPreviewPage(0U);
+        test_support::drainNotifications();
+
+        h.press(Config::ButtonID::NAV);
+        assert(h.state.sequencer.contextSelector.visible);
+        h.navigationFocus.set(route.second);
+        test_support::drainNotifications();
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+            h.release(Config::ButtonID::NAV);
+            assert(core::app::testing::extmemAllocationAttempt == 0U);
+        }
+        test_support::drainNotifications();
+
+        assert(!h.state.sequencer.contextSelector.visible);
+        assert(!h.state.trackNavigation.selection.active.get());
+        assert(!h.state.sequencer.structureUi.pageSelection.active.get());
+        assert(!h.state.sequencer.structureUi.stepSelection.active.get());
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+        assert(h.state.projectHistory.undoCount() == 0U);
+    }
+
+    std::cout
+        << "[PASS] latched NAV hold cannot cross Track/Page selection context\n";
 }
 
 void test_child_context_selector_cycles_pattern_and_step_only() {
@@ -1523,7 +2673,6 @@ void test_pattern_editor_adds_only_the_next_page() {
     openPatternEditor(h);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
 
-    assert(!h.state.sequencer.structureUi.previewAddPageSlot.get());
     assert(h.state.sequencer.patternEditor.active.get());
     assert(h.state.sequencer.pattern.length.get() == 32);
     assert(h.state.sequencer.page.get() == 3);
@@ -1629,11 +2778,11 @@ void test_sequencer_page_copy_and_long_press_paste() {
     std::cout << "[PASS] test_sequencer_page_copy_and_long_press_paste\n";
 }
 
-void test_page_paste_add_slot_prospective_graph_oom_and_replay() {
+void test_page_paste_existing_target_graph_oom_and_replay() {
     SequencerStepHarness h;
     auto& sequencer = h.state.sequencer;
     h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
-    sequencer.pattern.setContentLength(8U);
+    sequencer.pattern.setContentLength(16U);
     sequencer.pattern.note[0U] = 72U;
     sequencer.pattern.velocity[0U] = 101U;
     sequencer.pattern.setEnabled(0U, true);
@@ -1646,7 +2795,7 @@ void test_page_paste_add_slot_prospective_graph_oom_and_replay() {
     assert(seq::setSequencerCcLaneEvent(*cc, 0U, 2U, 55U).changed());
     sequencer.pattern.bumpCcLaneRevision();
     assert(seq::setPatternPlaybackRegion(
-        sequencer.pattern, {8U, 1U, 2U, 6U}));
+        sequencer.pattern, {16U, 1U, 2U, 6U}));
     const void* const ccOwner = sequencer.pattern.ccLanes.get();
     const uint64_t ccHash = byteHash(
         ccOwner, sizeof(*sequencer.pattern.ccLanes));
@@ -1667,8 +2816,9 @@ void test_page_paste_add_slot_prospective_graph_oom_and_replay() {
     }
     sequencer.pattern.bumpGraphRevision();
     assert(sequencer.pattern.graph == nullptr);
+    sequencer.page.set(1U);
+    sequencer.focusedStep.set(8U);
     sequencer.structureUi.syncPreviewPage(1U);
-    sequencer.structureUi.previewAddPageSlot.set(true);
     assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
     workflow.beginHoldAction(core::state::StructureHoldAction::PASTE);
     const auto graphRevision = sequencer.pattern.graphRevision.get();
@@ -1682,8 +2832,9 @@ void test_page_paste_add_slot_prospective_graph_oom_and_replay() {
         assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
     }
     test_support::drainNotifications();
-    assert(sequencer.pattern.length.get() == 8U);
+    assert(sequencer.pattern.length.get() == 16U);
     assert(sequencer.pattern.note[0U] == 72U);
+    assert(sequencer.pattern.note[8U] == seq::SequencerState::DEFAULT_NOTE);
     assert(sequencer.pattern.graph == nullptr);
     assert(sequencer.pattern.graphRevision.get() == graphRevision);
     assert(sequencer.pattern.ccLanes != nullptr);
@@ -1695,9 +2846,8 @@ void test_page_paste_add_slot_prospective_graph_oom_and_replay() {
     assert(sequencer.pattern.ccLanes->lanes[0U].values[2U] == 55U);
     assert(sequencer.pattern.ccLaneRevision.get() == ccRevision);
     assert(sequencer.pattern.patternTimingRevision.get() == timingRevision);
-    assert(sequencer.page.get() == 0U);
-    assert(sequencer.focusedStep.get() == 0U);
-    assert(sequencer.structureUi.previewAddPageSlot.get());
+    assert(sequencer.page.get() == 1U);
+    assert(sequencer.focusedStep.get() == 8U);
     assert(sequencer.structureUi.previewPageIndex.get() == 1U);
     assert(sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::PASTE);
@@ -1727,7 +2877,6 @@ void test_page_paste_add_slot_prospective_graph_oom_and_replay() {
     assert(committedRegion.loopEnd == 6U);
     assert(sequencer.page.get() == 1U);
     assert(sequencer.focusedStep.get() == 8U);
-    assert(!sequencer.structureUi.previewAddPageSlot.get());
     assert(sequencer.structureUi.previewPageIndex.get() == 1U);
     assert(sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
@@ -1736,17 +2885,17 @@ void test_page_paste_add_slot_prospective_graph_oom_and_replay() {
                seq::SequencerHistoryScope::PatternOnly) == 1U);
 
     assert(h.state.undoSequencerHistory());
-    assert(sequencer.pattern.length.get() == 8U);
+    assert(sequencer.pattern.length.get() == 16U);
     assert(sequencer.pattern.graph == nullptr);
     assert(sequencer.pattern.ccLanes != nullptr);
     assert(byteHash(
                sequencer.pattern.ccLanes.get(),
                sizeof(*sequencer.pattern.ccLanes)) == ccHash);
     assert(sequencer.pattern.ccLanes->lanes[0U].activeMask.test(2U));
-    assert(sequencer.page.get() == 0U);
-    assert(sequencer.focusedStep.get() == 0U);
+    assert(sequencer.page.get() == 1U);
+    assert(sequencer.focusedStep.get() == 8U);
     const auto undoRegion = seq::patternPlaybackRegion(sequencer.pattern);
-    assert(undoRegion.contentLength == 8U);
+    assert(undoRegion.contentLength == 16U);
     assert(undoRegion.playStart == 1U);
     assert(undoRegion.loopStart == 2U);
     assert(undoRegion.loopEnd == 6U);
@@ -1785,15 +2934,15 @@ void test_page_paste_add_slot_prospective_graph_oom_and_replay() {
     assert(h.state.sequencerHistory.undoCount() == undoCount);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 
-    std::cout << "[PASS] PagePaste prospective Graph OOM/commit/replay/NoChange\n";
+    std::cout << "[PASS] PagePaste existing-target Graph OOM/commit/replay/NoChange\n";
 }
 
-void test_page_paste_failures_restore_add_and_selection_ui() {
+void test_page_paste_failures_restore_current_and_selection_ui() {
     {
         SequencerStepHarness h;
         auto& sequencer = h.state.sequencer;
         h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
-        sequencer.pattern.setContentLength(8U);
+        sequencer.pattern.setContentLength(16U);
         sequencer.pattern.note[0U] = 76U;
         sequencer.pattern.setEnabled(0U, true);
         sequencer.page.set(0U);
@@ -1805,8 +2954,9 @@ void test_page_paste_failures_restore_add_and_selection_ui() {
         copyWorkflow.copyCurrentStructure();
         assert(h.state.structureClipboard.hasSequencerPage());
         const auto clipboardRevision = h.state.structureClipboard.revision.get();
+        sequencer.page.set(1U);
+        sequencer.focusedStep.set(8U);
         sequencer.structureUi.syncPreviewPage(1U);
-        sequencer.structureUi.previewAddPageSlot.set(true);
         assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
 
         FailingPageCommitHistory failing{.state = &h.state};
@@ -1822,14 +2972,14 @@ void test_page_paste_failures_restore_add_and_selection_ui() {
 
         assert(failing.commitCount == 1U);
         assert(failing.abortCount == 1U);
-        assert(sequencer.pattern.length.get() == 8U);
+        assert(sequencer.pattern.length.get() == 16U);
         assert(sequencer.pattern.note[0U] == 76U);
         assert(sequencer.pattern.isEnabled(0U));
-        assert(h.state.sequencerTracks.track(0U).length.get() == 8U);
+        assert(sequencer.pattern.note[8U] == seq::SequencerState::DEFAULT_NOTE);
+        assert(h.state.sequencerTracks.track(0U).length.get() == 16U);
         assert(h.state.sequencerTracks.track(0U).note[0U] == 76U);
-        assert(sequencer.page.get() == 0U);
-        assert(sequencer.focusedStep.get() == 0U);
-        assert(sequencer.structureUi.previewAddPageSlot.get());
+        assert(sequencer.page.get() == 1U);
+        assert(sequencer.focusedStep.get() == 8U);
         assert(sequencer.structureUi.previewPageIndex.get() == 1U);
         assert(sequencer.structureUi.pageHold.action.get() ==
                core::state::StructureHoldAction::PASTE);
@@ -1919,7 +3069,6 @@ void test_page_paste_failures_restore_add_and_selection_ui() {
         assert(h.state.sequencerTracks.track(0U).length.get() == 16U);
         assert(sequencer.page.get() == 0U);
         assert(sequencer.focusedStep.get() == 0U);
-        assert(!sequencer.structureUi.previewAddPageSlot.get());
         assert(sequencer.structureUi.previewPageIndex.get() == 2U);
         assert(selection.active.get());
         assert(selection.placementActive());
@@ -1937,7 +3086,7 @@ void test_page_paste_failures_restore_add_and_selection_ui() {
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     }
 
-    std::cout << "[PASS] PagePaste failures restore add-slot/selection UI exactly\n";
+    std::cout << "[PASS] PagePaste failures restore current/selection UI exactly\n";
 }
 
 void test_child_content_clear_copy_and_paste_are_undoable() {
@@ -2659,7 +3808,6 @@ void test_created_page_is_undoable_and_redoable() {
     assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.length.get() == 8);
     assert(h.state.sequencer.page.get() == 0);
-    assert(!h.state.sequencer.structureUi.previewAddPageSlot.get());
     assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0);
     assert(h.state.sequencerHistory.redoCount() == 1);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "UNDO T01") == 0);
@@ -2669,189 +3817,11 @@ void test_created_page_is_undoable_and_redoable() {
     assert(h.state.redoSequencerHistory());
     assert(h.state.sequencer.pattern.length.get() == 16);
     assert(h.state.sequencer.page.get() == 1);
-    assert(!h.state.sequencer.structureUi.previewAddPageSlot.get());
     assert(h.state.sequencer.structureUi.previewPageIndex.get() == 1);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "REDO T01") == 0);
     assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "1 page -> 2 pages") == 0);
 
     std::cout << "[PASS] test_created_page_is_undoable_and_redoable\n";
-}
-
-void test_page_create_prepared_workflow_commits_and_replays() {
-    test_support::CoreStorages storages;
-    core::state::CoreState state(storages.settings);
-    oc::state::Signal<core::state::StructureNavigationFocus,
-                      core::state::kStructureNavigationFocusMaxSubscribers>
-        navigationFocus{core::state::StructureNavigationFocus::PAGE};
-    assert(seq::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer));
-
-    core::handler::SequencerStructureNavigationWorkflow workflow({
-        state.sequencer,
-        state.sequencerTracks,
-        navigationFocus,
-        state.trackNavigation,
-        core::handler::SharedTrackDomainServices::fromCoreState(state),
-        HistoryServices::fromCoreState(state),
-    });
-    state.sequencer.pattern.setContentLength(8U);
-    state.sequencer.page.set(0U);
-    state.sequencer.focusedStep.set(0U);
-    state.sequencer.structureUi.syncPreviewPage(1U);
-    state.sequencer.structureUi.previewAddPageSlot.set(true);
-    test_support::drainNotifications();
-
-    const auto result = workflow.createPreviewedStructure();
-
-    assert(result == core::handler::SequencerStructureNavigationWorkflow::CreationResult::APPLIED);
-    assert(state.sequencer.pattern.length.get() == 16U);
-    assert(state.sequencer.page.get() == 1U);
-    assert(state.sequencer.focusedStep.get() == 8U);
-    assert(!state.sequencer.structureUi.previewAddPageSlot.get());
-    assert(state.sequencer.structureUi.previewPageIndex.get() == 1U);
-    assert(state.sequencerHistory.undoCount() == 1U);
-    assert(state.sequencerHistory.undoCount(seq::SequencerHistoryScope::PatternOnly) == 1U);
-
-    assert(state.undoSequencerHistory());
-    assert(state.sequencer.pattern.length.get() == 8U);
-    assert(state.sequencer.page.get() == 0U);
-    assert(state.sequencer.focusedStep.get() == 0U);
-    assert(state.redoSequencerHistory());
-    assert(state.sequencer.pattern.length.get() == 16U);
-    assert(state.sequencer.page.get() == 1U);
-    assert(state.sequencer.focusedStep.get() == 8U);
-
-    std::cout << "[PASS] prepared PageCreate commits and replays\n";
-}
-
-void test_page_create_full_and_stale_targets_settle_without_history() {
-    test_support::CoreStorages storages;
-    core::state::CoreState state(storages.settings);
-    oc::state::Signal<core::state::StructureNavigationFocus,
-                      core::state::kStructureNavigationFocusMaxSubscribers>
-        navigationFocus{core::state::StructureNavigationFocus::PAGE};
-    assert(seq::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer));
-
-    core::handler::SequencerStructureNavigationWorkflow workflow({
-        state.sequencer,
-        state.sequencerTracks,
-        navigationFocus,
-        state.trackNavigation,
-        core::handler::SharedTrackDomainServices::fromCoreState(state),
-        HistoryServices::fromCoreState(state),
-    });
-
-    state.sequencer.pattern.setContentLength(seq::SequencerState::MAX_STEPS);
-    state.sequencer.page.set(15U);
-    state.sequencer.focusedStep.set(120U);
-    state.sequencer.structureUi.syncPreviewPage(15U);
-    test_support::drainNotifications();
-    const auto fullResult = workflow.createPreviewedStructure();
-    assert(fullResult ==
-           core::handler::SequencerStructureNavigationWorkflow::CreationResult::NO_CHANGE);
-    assert(state.sequencer.pattern.length.get() == seq::SequencerState::MAX_STEPS);
-    assert(state.sequencer.page.get() == 15U);
-    assert(state.sequencer.focusedStep.get() == 120U);
-    assert(state.sequencerHistory.undoCount() == 0U);
-
-    state.sequencer.pattern.setContentLength(8U);
-    state.sequencer.page.set(0U);
-    state.sequencer.focusedStep.set(0U);
-    state.sequencer.structureUi.syncPreviewPage(2U);
-    state.sequencer.structureUi.previewAddPageSlot.set(true);
-    test_support::drainNotifications();
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        const auto gapResult = workflow.createPreviewedStructure();
-        assert(gapResult ==
-               core::handler::SequencerStructureNavigationWorkflow::CreationResult::MUTATION_FAILED);
-        assert(core::app::testing::extmemAllocationAttempt == 0U);
-    }
-    assert(state.sequencer.pattern.length.get() == 8U);
-    assert(state.sequencer.page.get() == 0U);
-    assert(state.sequencer.focusedStep.get() == 0U);
-    assert(state.sequencer.structureUi.previewAddPageSlot.get());
-    assert(state.sequencer.structureUi.previewPageIndex.get() == 2U);
-    assert(state.sequencerHistory.undoCount() == 0U);
-
-    state.sequencer.structureUi.syncPreviewPage(0U);
-    const auto staleResult = workflow.createPreviewedStructure();
-    assert(staleResult ==
-           core::handler::SequencerStructureNavigationWorkflow::CreationResult::MUTATION_FAILED);
-    assert(state.sequencer.structureUi.previewAddPageSlot.get());
-    assert(state.sequencer.structureUi.previewPageIndex.get() == 0U);
-    assert(state.sequencerHistory.undoCount() == 0U);
-
-    state.sequencer.structureUi.syncPreviewPage(1U);
-    state.sequencer.structureUi.previewAddPageSlot.set(true);
-    test_support::drainNotifications();
-    {
-        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        const auto oomResult = workflow.createPreviewedStructure();
-        assert(oomResult ==
-               core::handler::SequencerStructureNavigationWorkflow::
-                   CreationResult::HISTORY_UNAVAILABLE);
-        assert(core::app::testing::extmemAllocationAttempt == 1U);
-        assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
-    }
-    test_support::drainNotifications();
-    assert(state.sequencer.pattern.length.get() == 8U);
-    assert(state.sequencer.page.get() == 0U);
-    assert(state.sequencer.focusedStep.get() == 0U);
-    assert(state.sequencer.structureUi.previewAddPageSlot.get());
-    assert(state.sequencer.structureUi.previewPageIndex.get() == 1U);
-    assert(state.sequencerHistory.undoCount() == 0U);
-    assert(!state.hasPendingSequencerPatternHistoryCoalescing());
-
-    std::cout << "[PASS] full/stale/OOM PageCreate outcomes preserve exact state\n";
-}
-
-void test_page_create_failed_commit_restores_add_preview_after_notifications() {
-    test_support::CoreStorages storages;
-    core::state::CoreState state(storages.settings);
-    oc::state::Signal<core::state::StructureNavigationFocus,
-                      core::state::kStructureNavigationFocusMaxSubscribers>
-        navigationFocus{core::state::StructureNavigationFocus::PAGE};
-    assert(seq::initializeTrackBankFromActive(state.sequencerTracks, state.sequencer));
-
-    FailingPageCommitHistory failing{.state = &state};
-    const auto history = HistoryServices::fromStaticOperations<
-        kFailingPageCommitHistoryOperations>(&failing);
-    core::handler::SequencerStructureNavigationWorkflow workflow({
-        state.sequencer,
-        state.sequencerTracks,
-        navigationFocus,
-        state.trackNavigation,
-        core::handler::SharedTrackDomainServices::fromCoreState(state),
-        history,
-    });
-    state.sequencer.pattern.setContentLength(8U);
-    state.sequencer.page.set(0U);
-    state.sequencer.focusedStep.set(0U);
-    state.sequencer.structureUi.syncPreviewPage(1U);
-    state.sequencer.structureUi.previewAddPageSlot.set(true);
-    test_support::drainNotifications();
-
-    const auto result = workflow.createPreviewedStructure();
-    assert(result ==
-           core::handler::SequencerStructureNavigationWorkflow::CreationResult::HISTORY_UNAVAILABLE);
-    assert(failing.commitCount == 1U);
-    assert(failing.abortCount == 1U);
-    assert(state.sequencer.pattern.length.get() == 8U);
-    assert(state.sequencerTracks.track(0U).length.get() == 8U);
-    assert(state.sequencer.page.get() == 0U);
-    assert(state.sequencer.focusedStep.get() == 0U);
-    assert(state.sequencer.structureUi.previewAddPageSlot.get());
-    assert(state.sequencer.structureUi.previewPageIndex.get() == 1U);
-    assert(state.sequencerHistory.undoCount() == 0U);
-    assert(!state.hasPendingSequencerPatternHistoryCoalescing());
-
-    test_support::drainNotifications();
-    assert(state.sequencer.structureUi.previewAddPageSlot.get());
-    assert(state.sequencer.structureUi.previewPageIndex.get() == 1U);
-    assert(state.sequencer.page.get() == 0U);
-    assert(state.sequencer.focusedStep.get() == 0U);
-
-    std::cout << "[PASS] failed PageCreate keeps add preview through notification drain\n";
 }
 
 void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
@@ -2984,7 +3954,6 @@ void test_page_delete_prepared_workflow_shifts_cc_and_replays() {
     assert(sequencer.pattern.isEnabled(8U));
     assert(sequencer.page.get() == 1U);
     assert(sequencer.focusedStep.get() == 8U);
-    assert(!sequencer.structureUi.previewAddPageSlot.get());
     assert(sequencer.structureUi.previewPageIndex.get() == 1U);
     assert(sequencer.structureUi.pageHold.action.get() ==
            core::state::StructureHoldAction::NONE);
@@ -3179,7 +4148,6 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
         assert(h.state.sequencerTracks.track(0U).note[8U] == 77U);
         assert(sequencer.page.get() == 1U);
         assert(sequencer.focusedStep.get() == 12U);
-        assert(!sequencer.structureUi.previewAddPageSlot.get());
         assert(sequencer.structureUi.previewPageIndex.get() == 1U);
         assert(sequencer.structureUi.pageHold.action.get() ==
                core::state::StructureHoldAction::REMOVE);
@@ -3266,7 +4234,6 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
         assert(h.state.sequencerTracks.track(0U).note[8U] == 73U);
         assert(sequencer.page.get() == 1U);
         assert(sequencer.focusedStep.get() == 10U);
-        assert(!sequencer.structureUi.previewAddPageSlot.get());
         assert(sequencer.structureUi.previewPageIndex.get() == 1U);
         assert(sequencer.structureUi.pageHold.action.get() ==
                core::state::StructureHoldAction::REMOVE);
@@ -3282,6 +4249,1637 @@ void test_page_clear_and_delete_failed_commits_restore_editor_state() {
     }
 
     std::cout << "[PASS] failed PageClear/PageDelete commits restore editor state\n";
+}
+
+void test_direct_track_create_remove_are_atomic_and_replay_exactly() {
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+
+    {
+        SequencerStepHarness h;
+        const auto fixture = configureDirectTrackFixture(
+            h, DirectTrackFixtureKind::Create);
+        const auto beforeLogical = captureCanonicalTrackLogicalProof(h);
+        const auto beforePublication = tx::captureStateInvariant(h.state);
+        const auto beforeMacros = captureTrackMacroInvariant(h);
+
+        assert(fixture.editor.graph != fixture.scratch.graph);
+        assert(fixture.editor.graph != fixture.incoming.graph);
+        assert(fixture.scratch.graph != fixture.incoming.graph);
+        assert(fixture.editor.cc != fixture.scratch.cc);
+        assert(fixture.editor.cc != fixture.incoming.cc);
+        assert(fixture.scratch.cc != fixture.incoming.cc);
+
+        const auto result =
+            core::handler::executeSequencerCreateTrackStructure(
+                directTrackRefs(h));
+        assert(result.status == Status::Committed);
+        assert(result.committed());
+        assert(result.settled());
+        test_support::drainNotifications();
+
+        assert(h.state.sequencerTracks.currentEnabledMask() == 0x0065U);
+        assert(h.state.sharedTrackEnabledMask.get() == 0x0065U);
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackCreateTarget);
+        assert(h.state.sharedTrackActive.get() == kDirectTrackCreateTarget);
+        assert(h.state.sequencer.focusedStep.get() == 7U);
+        assert(h.state.sequencer.page.get() == 0U);
+        assert(!h.state.trackNavigation.previewAddSlot.get());
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackCreateTarget);
+        assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0U);
+
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackOldActive)).graph ==
+               fixture.editor.graph);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackOldActive)).cc ==
+               fixture.editor.cc);
+        assert(h.state.sequencer.pattern.graph == nullptr);
+        assert(h.state.sequencer.pattern.ccLanes == nullptr);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackCreateTarget)).graph ==
+               fixture.scratch.graph);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackCreateTarget)).cc ==
+               fixture.scratch.cc);
+
+        assert(!h.state.sequencer.contextSelector.visible);
+        assert(h.state.sequencer.contextSelector.previewFocus ==
+               core::state::StructureNavigationFocus::PAGE);
+        assert(h.state.sequencer.contextSelector.revision.get() ==
+               fixture.selectorRevision + 1U);
+        assert(!h.state.sequencer.patternQuickControls.selecting.get());
+        assert(!h.state.sequencer.stepInlineFeedback.visible.get());
+
+        assertActiveMacroPresentation(h);
+        const auto afterMacros = captureTrackMacroInvariant(h);
+        assert(afterMacros.activeTrack == kDirectTrackCreateTarget);
+        assert(afterMacros.activePage == 3U);
+        assert(afterMacros.manualRevision == beforeMacros.manualRevision);
+        assert(afterMacros.rejectedActivationCount ==
+               beforeMacros.rejectedActivationCount);
+        assert(afterMacros.controlAuthoredRevision ==
+               beforeMacros.controlAuthoredRevision);
+        assert(afterMacros.configRevision == beforeMacros.configRevision);
+        assert(afterMacros.automationEditRevision ==
+               beforeMacros.automationEditRevision);
+        assert(afterMacros.runtimeProjectionRevision ==
+               beforeMacros.runtimeProjectionRevision);
+        assert(afterMacros.runtimeOwnerRevision ==
+               beforeMacros.runtimeOwnerRevision);
+        assert(afterMacros.contextSelectorHash ==
+               beforeMacros.contextSelectorHash);
+        assertSingleTrackStructurePublication(h, beforePublication);
+
+        const auto afterLogical = captureCanonicalTrackLogicalProof(h);
+        assert(h.state.undoSequencerHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, beforeLogical);
+        assertActiveMacroPresentation(h);
+        assert(h.state.redoSequencerHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, afterLogical);
+        assertActiveMacroPresentation(h);
+    }
+
+    {
+        SequencerStepHarness h;
+        const auto fixture = configureDirectTrackFixture(
+            h, DirectTrackFixtureKind::RemoveCurrent);
+        const auto beforeLogical = captureCanonicalTrackLogicalProof(h);
+        const auto beforePublication = tx::captureStateInvariant(h.state);
+        const auto beforeMacros = captureTrackMacroInvariant(h);
+        auto workflow = makeStructureEditWorkflow(
+            h, HistoryServices::fromCoreState(h.state));
+        workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+
+        workflow.applyCurrentStructureLongPress();
+        test_support::drainNotifications();
+
+        assert(h.state.sequencerTracks.currentEnabledMask() == 0x0021U);
+        assert(h.state.sharedTrackEnabledMask.get() == 0x0021U);
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackIncoming);
+        assert(h.state.sharedTrackActive.get() == kDirectTrackIncoming);
+        assert(h.state.sequencer.focusedStep.get() == 4U);
+        assert(h.state.sequencer.page.get() == 0U);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+        assert(h.state.trackNavigation.hold.startedAtMs.get() == 0U);
+        assert(!h.state.trackNavigation.previewAddSlot.get());
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackIncoming);
+        assert(h.state.sequencer.structureUi.previewPageIndex.get() == 0U);
+
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackOldActive)).graph ==
+               fixture.editor.graph);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackOldActive)).cc ==
+               fixture.editor.cc);
+        assert(trackColdOwners(h.state.sequencer.pattern).graph ==
+               fixture.incoming.graph);
+        assert(trackColdOwners(h.state.sequencer.pattern).cc ==
+               fixture.incoming.cc);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackIncoming)).graph ==
+               fixture.scratch.graph);
+        assert(trackColdOwners(
+                   h.state.sequencerTracks.track(kDirectTrackIncoming)).cc ==
+               fixture.scratch.cc);
+
+        assert(!h.state.sequencer.contextSelector.visible);
+        assert(h.state.sequencer.contextSelector.revision.get() ==
+               fixture.selectorRevision + 1U);
+        assert(!h.state.sequencer.patternQuickControls.selecting.get());
+        assert(!h.state.sequencer.stepInlineFeedback.visible.get());
+
+        assertActiveMacroPresentation(h);
+        const auto afterMacros = captureTrackMacroInvariant(h);
+        assert(afterMacros.activeTrack == kDirectTrackIncoming);
+        assert(afterMacros.activePage == 2U);
+        assert(afterMacros.manualRevision == beforeMacros.manualRevision);
+        assert(afterMacros.rejectedActivationCount ==
+               beforeMacros.rejectedActivationCount);
+        assert(afterMacros.controlAuthoredRevision ==
+               beforeMacros.controlAuthoredRevision);
+        assert(afterMacros.configRevision == beforeMacros.configRevision);
+        assert(afterMacros.automationEditRevision ==
+               beforeMacros.automationEditRevision);
+        assert(afterMacros.runtimeProjectionRevision ==
+               beforeMacros.runtimeProjectionRevision);
+        assert(afterMacros.runtimeOwnerRevision ==
+               beforeMacros.runtimeOwnerRevision);
+        assert(afterMacros.contextSelectorHash ==
+               beforeMacros.contextSelectorHash);
+        assertSingleTrackStructurePublication(h, beforePublication);
+
+        const auto afterLogical = captureCanonicalTrackLogicalProof(h);
+        assert(h.state.undoSequencerHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, beforeLogical);
+        assertActiveMacroPresentation(h);
+        assert(h.state.redoSequencerHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, afterLogical);
+        assertActiveMacroPresentation(h);
+    }
+
+    std::cout
+        << "[PASS] direct Track Create/Remove are atomic and replay exactly\n";
+}
+
+void test_direct_track_global_history_and_redo_branch_are_exact() {
+    using ActionKind = seq::SequencerHistoryActionKind;
+    using Domain = core::state::project::ProjectHistoryDomain;
+    using Scope = seq::SequencerHistoryScope;
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+
+    for (const auto kind : std::array<DirectTrackFixtureKind, 2U>{
+             DirectTrackFixtureKind::Create,
+             DirectTrackFixtureKind::RemoveCurrent,
+         }) {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, kind);
+        const auto beforeLogical = captureCanonicalTrackLogicalProof(h);
+
+        const auto commit = [&]() {
+            auto refs = directTrackRefs(h);
+            return kind == DirectTrackFixtureKind::Create
+                ? core::handler::executeSequencerCreateTrackStructure(refs)
+                : core::handler::executeSequencerRemoveCurrentTrackStructure(
+                      refs,
+                      kDirectTrackOldActive
+                  );
+        };
+        const auto assertUndoDescriptor = [&]() {
+            const auto* entry = h.state.projectHistory.peekUndo();
+            assert(entry != nullptr);
+            assert(entry->domain == Domain::Sequencer);
+            assert(entry->actionKind ==
+                   static_cast<uint8_t>(ActionKind::TrackStructure));
+            assert(entry->identity ==
+                   h.state.sequencerHistory.projectHistoryUndoIdentity());
+        };
+        const auto assertRedoDescriptor = [&]() {
+            const auto* entry = h.state.projectHistory.peekRedo();
+            assert(entry != nullptr);
+            assert(entry->domain == Domain::Sequencer);
+            assert(entry->actionKind ==
+                   static_cast<uint8_t>(ActionKind::TrackStructure));
+            assert(entry->identity ==
+                   h.state.sequencerHistory.projectHistoryRedoIdentity());
+        };
+
+        const auto first = commit();
+        assert(first.status == Status::Committed);
+        test_support::drainNotifications();
+        const auto afterLogical = captureCanonicalTrackLogicalProof(h);
+        assert(h.state.sequencerHistory.undoCount() == 1U);
+        assert(h.state.sequencerHistory.redoCount() == 0U);
+        assert(h.state.sequencerHistory.undoCount(Scope::Structure) == 1U);
+        assert(h.state.projectHistory.undoCount() == 1U);
+        assert(h.state.projectHistory.redoCount() == 0U);
+        assertUndoDescriptor();
+
+        assert(h.state.undoProjectHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, beforeLogical);
+        assertActiveMacroPresentation(h);
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+        assert(h.state.sequencerHistory.redoCount() == 1U);
+        assert(h.state.sequencerHistory.redoCount(Scope::Structure) == 1U);
+        assert(h.state.projectHistory.undoCount() == 0U);
+        assert(h.state.projectHistory.redoCount() == 1U);
+        assertRedoDescriptor();
+
+        if (kind == DirectTrackFixtureKind::Create) {
+            h.navigationFocus.set(
+                core::state::StructureNavigationFocus::TRACK
+            );
+            h.state.trackNavigation.previewAddSlot.set(true);
+            h.state.trackNavigation.previewTrackIndex.set(
+                kDirectTrackCreateTarget
+            );
+            test_support::drainNotifications();
+        }
+        const auto second = commit();
+        assert(second.status == Status::Committed);
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, afterLogical);
+        assertActiveMacroPresentation(h);
+        assert(h.state.sequencerHistory.undoCount() == 1U);
+        assert(h.state.sequencerHistory.redoCount() == 0U);
+        assert(h.state.sequencerHistory.undoCount(Scope::Structure) == 1U);
+        assert(h.state.sequencerHistory.redoCount(Scope::Structure) == 0U);
+        assert(h.state.projectHistory.undoCount() == 1U);
+        assert(h.state.projectHistory.redoCount() == 0U);
+        assert(h.state.projectHistory.peekRedo() == nullptr);
+        assert(h.state.macroHistory.redoCount() == 0U);
+        assert(h.state.projectTrackHistory.redoCount() == 0U);
+        assert(h.state.projectSettingsHistory.projectHistoryRedoIdentity() ==
+               0U);
+        assertUndoDescriptor();
+        assert(!h.state.redoProjectHistory());
+
+        assert(h.state.undoProjectHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, beforeLogical);
+        assertActiveMacroPresentation(h);
+        assertRedoDescriptor();
+        assert(h.state.redoProjectHistory());
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, afterLogical);
+        assertActiveMacroPresentation(h);
+        assertUndoDescriptor();
+    }
+
+    std::cout
+        << "[PASS] direct Track global history and redo truncation are exact\n";
+}
+
+void test_direct_track_fail_nth_failures_restore_exact_state() {
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+
+    for (std::size_t ordinal = 1U; ordinal <= 7U; ++ordinal) {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
+        const auto expected = captureTrackTransactionInvariant(h);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            const auto result =
+                core::handler::executeSequencerCreateTrackStructure(
+                    directTrackRefs(h));
+            assert(result.status == Status::AllocationUnavailable);
+            tx::assertFailureConsumed(ordinal);
+        }
+        test_support::drainNotifications();
+        assertTrackTransactionInvariant(h, expected);
+        assert(h.state.trackNavigation.previewAddSlot.get());
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackCreateTarget);
+        tx::assertFailureInjectionReset();
+    }
+
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(8U);
+            const auto result =
+                core::handler::executeSequencerCreateTrackStructure(
+                    directTrackRefs(h));
+            assert(result.status == Status::Committed);
+            tx::assertMaxPlusOneStillArmed(7U);
+        }
+        assert(h.state.sequencerTracks.currentEnabledMask() == 0x0065U);
+        tx::assertFailureInjectionReset();
+    }
+
+    for (std::size_t ordinal = 1U; ordinal <= 9U; ++ordinal) {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(
+            h, DirectTrackFixtureKind::RemoveCurrent);
+        auto workflow = makeStructureEditWorkflow(
+            h, HistoryServices::fromCoreState(h.state));
+        workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
+        auto expected = captureTrackTransactionInvariant(h);
+        expected.trackUi.holdAction = static_cast<uint8_t>(
+            core::state::StructureHoldAction::NONE);
+        expected.trackUi.holdStartedAtMs = 0U;
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            workflow.applyCurrentStructureLongPress();
+            tx::assertFailureConsumed(ordinal);
+        }
+        test_support::drainNotifications();
+        assertTrackTransactionInvariant(h, expected);
+        assert(!h.state.trackNavigation.previewAddSlot.get());
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackOldActive);
+        tx::assertFailureInjectionReset();
+    }
+
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(
+            h, DirectTrackFixtureKind::RemoveCurrent);
+        auto workflow = makeStructureEditWorkflow(
+            h, HistoryServices::fromCoreState(h.state));
+        workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(10U);
+            workflow.applyCurrentStructureLongPress();
+            tx::assertMaxPlusOneStillArmed(9U);
+        }
+        assert(h.state.sequencerTracks.currentEnabledMask() == 0x0021U);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+        tx::assertFailureInjectionReset();
+    }
+
+    std::cout
+        << "[PASS] direct Track Create/Remove fail-Nth matrices are exact\n";
+}
+
+void test_direct_track_activation_collisions_are_atomic() {
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+    using ChronologyStatus =
+        seq::SequencerTrackStructureChronologyStatus;
+
+    for (const bool playing : std::array<bool, 2U>{false, true}) {
+        for (const uint16_t collision : {
+                 static_cast<uint16_t>(1U << kDirectTrackOldActive),
+                 static_cast<uint16_t>(1U << kDirectTrackCreateTarget),
+             }) {
+            SequencerStepHarness h;
+            configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
+            h.state.statusBar.playing.set(playing);
+            armTrackActivation(
+                h.state.sequencerTrackActivations,
+                collision,
+                playing
+            );
+            const auto activationBefore = captureActivationQueueGuard(
+                h.state.sequencerTrackActivations,
+                collision
+            );
+            const auto expected = captureTrackTransactionInvariant(h);
+            {
+                core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+                const auto result =
+                    core::handler::executeSequencerCreateTrackStructure(
+                        directTrackRefs(h));
+                assert(result.status == Status::Stale);
+                assert(result.chronology.status == ChronologyStatus::Opened);
+                tx::assertMaxPlusOneStillArmed(0U);
+            }
+            test_support::drainNotifications();
+            assertTrackTransactionInvariant(h, expected);
+            const auto activationAfter = captureActivationQueueGuard(
+                h.state.sequencerTrackActivations,
+                collision
+            );
+            assertSameActivationQueueGuard(
+                activationAfter,
+                activationBefore
+            );
+            assert(h.state.sequencerTrackActivations.mutationGuardMatches(
+                activationBefore
+            ));
+            tx::assertFailureInjectionReset();
+        }
+    }
+
+    for (const bool playing : std::array<bool, 2U>{false, true}) {
+        for (const uint16_t collision : {
+                 static_cast<uint16_t>(1U << kDirectTrackOldActive),
+                 static_cast<uint16_t>(1U << kDirectTrackIncoming),
+             }) {
+            SequencerStepHarness h;
+            configureDirectTrackFixture(
+                h, DirectTrackFixtureKind::RemoveCurrent);
+            h.state.statusBar.playing.set(playing);
+            armTrackActivation(
+                h.state.sequencerTrackActivations,
+                collision,
+                playing
+            );
+            const auto activationBefore = captureActivationQueueGuard(
+                h.state.sequencerTrackActivations,
+                collision
+            );
+            const auto expected = captureTrackTransactionInvariant(h);
+            {
+                core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+                const auto result =
+                    core::handler::executeSequencerRemoveCurrentTrackStructure(
+                        directTrackRefs(h),
+                        kDirectTrackOldActive);
+                assert(result.status == Status::Stale);
+                assert(result.chronology.status == ChronologyStatus::Opened);
+                tx::assertMaxPlusOneStillArmed(0U);
+            }
+            test_support::drainNotifications();
+            assertTrackTransactionInvariant(h, expected);
+            const auto activationAfter = captureActivationQueueGuard(
+                h.state.sequencerTrackActivations,
+                collision
+            );
+            assertSameActivationQueueGuard(
+                activationAfter,
+                activationBefore
+            );
+            assert(h.state.sequencerTrackActivations.mutationGuardMatches(
+                activationBefore
+            ));
+            tx::assertFailureInjectionReset();
+        }
+    }
+
+    std::cout
+        << "[PASS] direct Track activation collisions are atomic\n";
+}
+
+void test_direct_track_pattern_chronology_is_single_and_ordered() {
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
+        const uint8_t noteBefore = h.state.sequencer.pattern.note[0U];
+        preparePendingTrackPatternEdit(h.state);
+        const uint8_t editedNote = h.state.sequencer.pattern.note[0U];
+        const uint8_t sequencerUndoBefore = h.state.sequencerHistory.undoCount();
+        const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
+        const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+
+        const auto result =
+            core::handler::executeSequencerCreateTrackStructure(
+                directTrackRefs(h));
+        assert(result.committed());
+        assert(result.chronology.predecessorPattern ==
+               seq::SequencerPatternHistoryCommitOutcome::Committed);
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.sequencerHistory.undoCount() ==
+               sequencerUndoBefore + 2U);
+        assert(h.state.projectHistory.undoCount() == projectUndoBefore + 2U);
+        assert(h.state.sequencerHistory.undoCount(
+                   seq::SequencerHistoryScope::PatternOnly) == 1U);
+        assert(h.state.sequencerHistory.undoCount(
+                   seq::SequencerHistoryScope::Structure) == 1U);
+        assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 2U);
+
+        assert(h.state.undoSequencerHistory());
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackOldActive);
+        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.undoSequencerHistory());
+        assert(h.state.sequencer.pattern.note[0U] == noteBefore);
+        assert(h.state.redoSequencerHistory());
+        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.redoSequencerHistory());
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackCreateTarget);
+        assertActiveMacroPresentation(h);
+    }
+
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(
+            h, DirectTrackFixtureKind::RemoveCurrent);
+        const uint8_t noteBefore = h.state.sequencer.pattern.note[0U];
+        preparePendingTrackPatternEdit(h.state);
+        const uint8_t editedNote = h.state.sequencer.pattern.note[0U];
+        const uint8_t sequencerUndoBefore = h.state.sequencerHistory.undoCount();
+        const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
+        const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+        auto workflow = makeStructureEditWorkflow(
+            h, HistoryServices::fromCoreState(h.state));
+        workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
+        workflow.applyCurrentStructureLongPress();
+
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.sequencerHistory.undoCount() ==
+               sequencerUndoBefore + 2U);
+        assert(h.state.projectHistory.undoCount() == projectUndoBefore + 2U);
+        assert(h.state.sequencerHistory.undoCount(
+                   seq::SequencerHistoryScope::PatternOnly) == 1U);
+        assert(h.state.sequencerHistory.undoCount(
+                   seq::SequencerHistoryScope::Structure) == 1U);
+        assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 2U);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+
+        assert(h.state.undoSequencerHistory());
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackOldActive);
+        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.undoSequencerHistory());
+        assert(h.state.sequencer.pattern.note[0U] == noteBefore);
+        assert(h.state.redoSequencerHistory());
+        assert(h.state.sequencer.pattern.note[0U] == editedNote);
+        assert(h.state.redoSequencerHistory());
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackIncoming);
+        assertActiveMacroPresentation(h);
+    }
+
+    std::cout
+        << "[PASS] direct Track Pattern chronology is single and ordered\n";
+}
+
+void test_direct_track_exact_intent_drift_is_stale_before_allocation() {
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+    constexpr std::array<DirectTrackIntentDrift, 7U> drifts{
+        DirectTrackIntentDrift::TrackSelectionCursor,
+        DirectTrackIntentDrift::PageSelectionMask,
+        DirectTrackIntentDrift::StepSelectionClipboardRevision,
+        DirectTrackIntentDrift::ClipboardRevision,
+        DirectTrackIntentDrift::ClipboardOwner,
+        DirectTrackIntentDrift::TrackPasteGeneration,
+        DirectTrackIntentDrift::TrackPasteCommitConsumed,
+    };
+
+    for (const auto drift : drifts) {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
+        DirectTrackIntentDriftHistory history{
+            .state = &h.state,
+            .drift = drift,
+        };
+        if (drift == DirectTrackIntentDrift::ClipboardOwner) {
+            history.replacementGraph =
+                core::app::makeExtmemUnique<TrackGraph>();
+            assert(history.replacementGraph);
+        }
+        const auto before = captureCanonicalTrackLogicalProof(h);
+        const uint8_t sequencerUndoBefore =
+            h.state.sequencerHistory.undoCount();
+        const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
+        auto refs = directTrackRefs(h);
+        refs.history = HistoryServices::fromStaticOperations<
+            kDirectTrackIntentDriftHistoryOperations>(&history);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            const auto result =
+                core::handler::executeSequencerCreateTrackStructure(refs);
+            assert(result.status == Status::Stale);
+            assert(result.chronology.status ==
+                   seq::SequencerTrackStructureChronologyStatus::Opened);
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+        assertCanonicalTrackLogicalProof(h, before);
+        assert(h.state.sequencerHistory.undoCount() ==
+               sequencerUndoBefore);
+        assert(h.state.projectHistory.undoCount() == projectUndoBefore);
+        assert(h.state.trackNavigation.previewAddSlot.get());
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackCreateTarget);
+        tx::assertFailureInjectionReset();
+    }
+
+    std::cout
+        << "[PASS] direct Track exact-intent drift is stale before allocation\n";
+}
+
+void test_direct_track_accepts_terminal_consumed_paste_state() {
+    SequencerStepHarness h;
+    configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
+    auto& paste = h.state.sequencer.structureUi.trackPaste;
+    paste.commitConsumed = true;
+    paste.buttonOwned = false;
+    paste.detailVisible = false;
+    paste.guard = {};
+
+    const auto result =
+        core::handler::executeSequencerCreateTrackStructure(
+            directTrackRefs(h)
+        );
+    assert(result.committed());
+    assert(h.state.sequencerTracks.activeTrackIndex() ==
+           kDirectTrackCreateTarget);
+
+    std::cout
+        << "[PASS] direct Track accepts terminal consumed-paste state\n";
+}
+
+void test_direct_track_draft_priority_precedes_adapter_validation() {
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+    SequencerStepHarness h;
+    configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
+    assert(h.state.sequencer.stepContentDraft.begin(
+        h.state.sequencer.pattern,
+        seq::SequencerStepContentDraftKind::MICRO_SEQUENCE,
+        0U
+    ));
+    h.state.trackNavigation.hold.begin(
+        core::state::StructureHoldAction::REMOVE,
+        17U
+    );
+    const uint32_t draftRevision =
+        h.state.sequencer.stepContentDraft.revision.get();
+    const uint32_t contentRevision =
+        h.state.sequencer.contentView.revision.get();
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        const auto result =
+            core::handler::executeSequencerCreateTrackStructure(
+                directTrackRefs(h)
+            );
+        assert(result.status == Status::DraftBlocked);
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
+    assert(h.state.sequencer.stepContentDraft.failure ==
+           seq::SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
+    assert(h.state.sequencer.stepContentDraft.blockedTransition ==
+           seq::SequencerStepContentDraftBlockedTransition::TRACK);
+    assert(h.state.sequencer.stepContentDraft.revision.get() ==
+           draftRevision + 1U);
+    assert(h.state.sequencer.contentView.revision.get() ==
+           contentRevision + 1U);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(h.state.sequencerTracks.currentEnabledMask() ==
+           kDirectTrackSparseMask);
+    tx::assertFailureInjectionReset();
+
+    std::cout
+        << "[PASS] direct Track Draft priority precedes adapter validation\n";
+}
+
+void test_direct_track_obvious_invalid_topology_skips_chronology() {
+    using Status = core::handler::SequencerPreparedTrackStructureStatus;
+    using ChronologyStatus =
+        seq::SequencerTrackStructureChronologyStatus;
+    using PatternOutcome =
+        seq::SequencerPatternHistoryCommitOutcome;
+
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
+        const uint16_t enabledMask = static_cast<uint16_t>(
+            kDirectTrackSparseMask |
+            static_cast<uint16_t>(1U << kDirectTrackCreateTarget)
+        );
+        assert(h.state.setSharedTrackState(
+            enabledMask,
+            kDirectTrackOldActive
+        ));
+        test_support::drainNotifications();
+        h.state.trackNavigation.previewAddSlot.set(true);
+        h.state.trackNavigation.previewTrackIndex.set(
+            kDirectTrackCreateTarget
+        );
+        preparePendingTrackPatternEdit(h.state);
+        test_support::drainNotifications();
+        assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+        const auto expected = captureTrackTransactionInvariant(h);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            const auto result =
+                core::handler::executeSequencerCreateTrackStructure(
+                    directTrackRefs(h)
+                );
+            assert(result.status == Status::Invalid);
+            assert(result.chronology.status == ChronologyStatus::Unavailable);
+            assert(result.chronology.predecessorPattern ==
+                   PatternOutcome::NoPending);
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+        assertTrackTransactionInvariant(h, expected, true);
+        assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+        tx::assertFailureInjectionReset();
+    }
+
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(
+            h,
+            DirectTrackFixtureKind::RemoveCurrent
+        );
+        const uint16_t onlyActive =
+            static_cast<uint16_t>(1U << kDirectTrackOldActive);
+        assert(h.state.setSharedTrackState(
+            onlyActive,
+            kDirectTrackOldActive
+        ));
+        test_support::drainNotifications();
+        h.state.trackNavigation.previewAddSlot.set(false);
+        h.state.trackNavigation.previewTrackIndex.set(
+            kDirectTrackOldActive
+        );
+        preparePendingTrackPatternEdit(h.state);
+        test_support::drainNotifications();
+        assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+        const auto expected = captureTrackTransactionInvariant(h);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            const auto result =
+                core::handler::executeSequencerRemoveCurrentTrackStructure(
+                    directTrackRefs(h),
+                    kDirectTrackOldActive
+                );
+            assert(result.status == Status::Invalid);
+            assert(result.chronology.status == ChronologyStatus::Unavailable);
+            assert(result.chronology.predecessorPattern ==
+                   PatternOutcome::NoPending);
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+        assertTrackTransactionInvariant(h, expected, true);
+        assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+        tx::assertFailureInjectionReset();
+    }
+
+    std::cout
+        << "[PASS] direct Track invalid topology skips chronology\n";
+}
+
+void test_direct_track_missing_presentation_capability_is_preflight_atomic() {
+    using Status =
+        core::handler::SequencerPreparedTrackStructureStatus;
+    using ChronologyStatus =
+        seq::SequencerTrackStructureChronologyStatus;
+
+    for (const auto kind : std::array<DirectTrackFixtureKind, 2U>{
+             DirectTrackFixtureKind::Create,
+             DirectTrackFixtureKind::RemoveCurrent,
+         }) {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, kind);
+        DirectTrackChronologyCounter chronology{.state = &h.state};
+        auto refs = directTrackRefs(h);
+        refs.history = HistoryServices::fromStaticOperations<
+            kDirectTrackChronologyCounterOperations>(&chronology);
+        refs.sharedTracks = core::handler::SharedTrackDomainServices{
+            core::handler::SharedTrackDomainServices::StateRefs{
+                h.state.sharedTrackActive,
+                h.state.sharedTrackEnabledMask,
+            },
+        };
+        assert(!refs.sharedTracks.
+            canReconcilePreparedSequencerActiveTrackPresentation());
+        const auto expected = captureTrackTransactionInvariant(h);
+
+        core::handler::SequencerPreparedTrackStructureResult result{};
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            result = kind == DirectTrackFixtureKind::Create
+                ? core::handler::executeSequencerCreateTrackStructure(refs)
+                : core::handler::executeSequencerRemoveCurrentTrackStructure(
+                      refs,
+                      kDirectTrackOldActive
+                  );
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+
+        assert(result.status == Status::PublicationUnavailable);
+        assert(result.chronology.status == ChronologyStatus::Unavailable);
+        assert(chronology.boundaryCount == 0U);
+        assertTrackTransactionInvariant(h, expected);
+        tx::assertFailureInjectionReset();
+    }
+
+    std::cout
+        << "[PASS] missing direct Track presentation capability is preflight-atomic\n";
+}
+
+void test_track_remove_hold_latches_target_and_rejects_external_drift() {
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
+        seq::resetTransientTrackState(h.state.sequencer);
+        test_support::drainNotifications();
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackOldActive);
+
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackOldActive);
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackOldActive);
+
+        assert(h.state.setSharedTrackState(
+            kDirectTrackSparseMask,
+            kDirectTrackIncoming
+        ));
+        test_support::drainNotifications();
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackIncoming);
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackOldActive);
+        const uint8_t sequencerUndoBefore =
+            h.state.sequencerHistory.undoCount();
+        const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
+        const uint16_t maskBefore =
+            h.state.sequencerTracks.currentEnabledMask();
+
+        h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+        assert(h.state.sequencerTracks.currentEnabledMask() == maskBefore);
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackIncoming);
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackOldActive);
+        assert(h.state.sequencerHistory.undoCount() == sequencerUndoBefore);
+        assert(h.state.projectHistory.undoCount() == projectUndoBefore);
+
+        const uint16_t mutedBefore = h.state.projectTracks.authored.mutedMask;
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.projectTracks.authored.mutedMask == mutedBefore);
+    }
+
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::Create);
+        const auto create =
+            core::handler::executeSequencerCreateTrackStructure(
+                directTrackRefs(h)
+            );
+        assert(create.committed());
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackCreateTarget);
+
+        auto workflow = makeStructureEditWorkflow(
+            h,
+            HistoryServices::fromCoreState(h.state)
+        );
+        workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackCreateTarget);
+        assert(h.state.undoSequencerHistory());
+        test_support::drainNotifications();
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackOldActive);
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackOldActive);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+
+        auto expected = captureTrackTransactionInvariant(h);
+        expected.trackUi.holdAction = static_cast<uint8_t>(
+            core::state::StructureHoldAction::NONE
+        );
+        expected.trackUi.holdStartedAtMs = 0U;
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            workflow.applyCurrentStructureLongPress();
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+        assertTrackTransactionInvariant(h, expected);
+        assert(h.state.sequencerTracks.activeTrackIndex() ==
+               kDirectTrackOldActive);
+        assert(h.state.trackNavigation.previewTrackIndex.get() ==
+               kDirectTrackOldActive);
+        tx::assertFailureInjectionReset();
+    }
+
+    std::cout
+        << "[PASS] Track Remove hold latches target and rejects external drift\n";
+}
+
+void test_track_remove_hold_does_not_block_acquired_nav_release() {
+    SequencerStepHarness h;
+    configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
+    seq::resetTransientTrackState(h.state.sequencer);
+    test_support::drainNotifications();
+
+    h.press(Config::ButtonID::NAV);
+    assert(h.state.sequencer.contextSelector.visible);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.trackNavigation.hold.action.get() ==
+           core::state::StructureHoldAction::REMOVE);
+    h.release(Config::ButtonID::NAV);
+    assert(!h.state.sequencer.contextSelector.visible);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.trackNavigation.hold.action.get() ==
+           core::state::StructureHoldAction::NONE);
+
+    std::cout
+        << "[PASS] Track Remove hold preserves acquired NAV release\n";
+}
+
+void test_track_remove_hold_rejects_new_nav_press_without_hiding_action() {
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
+        seq::resetTransientTrackState(h.state.sequencer);
+        test_support::drainNotifications();
+
+        const uint16_t maskBefore =
+            h.state.sequencerTracks.currentEnabledMask();
+        const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS - 1U);
+        h.press(Config::ButtonID::NAV);
+        assert(!h.state.sequencer.contextSelector.visible);
+        h.advance(1U);
+        test_support::drainNotifications();
+
+        assert(!h.state.sequencer.contextSelector.visible);
+        assert(h.state.sequencerTracks.currentEnabledMask() != maskBefore);
+        assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+        h.release(Config::ButtonID::NAV);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+        assert(!h.state.sequencer.contextSelector.visible);
+    }
+
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
+        seq::resetTransientTrackState(h.state.sequencer);
+        test_support::drainNotifications();
+
+        const uint16_t mutedBefore =
+            h.state.projectTracks.authored.mutedMask;
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.press(Config::ButtonID::NAV);
+        assert(!h.state.sequencer.contextSelector.visible);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+        h.release(Config::ButtonID::NAV);
+        assert(!h.state.sequencer.contextSelector.visible);
+        assert(h.state.projectTracks.authored.mutedMask != mutedBefore);
+    }
+
+    std::cout
+        << "[PASS] acquired Track Remove rejects a new NAV selector press\n";
+}
+
+void test_track_hold_boundary_drift_cannot_retarget_mutation() {
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
+        seq::resetTransientTrackState(h.state.sequencer);
+        test_support::drainNotifications();
+
+        TrackHoldBoundaryDriftHistory drift{
+            .state = &h.state,
+            .drift = TrackHoldBoundaryDrift::ActiveTrack,
+            .nextActiveTrack = kDirectTrackIncoming,
+        };
+        auto workflow = makeStructureEditWorkflow(
+            h,
+            HistoryServices::fromStaticOperations<
+                kTrackHoldBoundaryDriftHistoryOperations>(&drift)
+        );
+        workflow.beginHoldAction(core::state::StructureHoldAction::REMOVE);
+        const uint16_t mutedBefore =
+            h.state.projectTracks.authored.mutedMask;
+        const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            workflow.applyLatchedCurrentTrackShortPress();
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+
+        assert(drift.boundaryCount == 1U);
+        assert(h.state.sharedTrackActive.get() == kDirectTrackIncoming);
+        assert(h.state.projectTracks.authored.mutedMask == mutedBefore);
+        assert(h.state.sequencerHistory.undoCount() == undoBefore);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+        tx::assertFailureInjectionReset();
+    }
+
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(h, DirectTrackFixtureKind::RemoveCurrent);
+        seq::resetTransientTrackState(h.state.sequencer);
+        auto& selection = h.state.trackNavigation.selection;
+        selection.active.set(true);
+        selection.scope.set(core::state::StructureSelectionScope::TRACK);
+        selection.placing.set(false);
+        selection.cursorIndex.set(kDirectTrackOldActive);
+        selection.selectedMask.set(
+            static_cast<uint16_t>(1U << kDirectTrackOldActive)
+        );
+        h.state.trackNavigation.syncPreviewTrack(kDirectTrackOldActive);
+        test_support::drainNotifications();
+
+        TrackHoldBoundaryDriftHistory drift{
+            .state = &h.state,
+            .drift = TrackHoldBoundaryDrift::SelectionMask,
+            .nextSelectionMask =
+                static_cast<uint16_t>(1U << kDirectTrackIncoming),
+        };
+        auto workflow = makeStructureEditWorkflow(
+            h,
+            HistoryServices::fromStaticOperations<
+                kTrackHoldBoundaryDriftHistoryOperations>(&drift)
+        );
+        workflow.beginSelectionHoldAction(
+            core::state::StructureHoldAction::REMOVE
+        );
+        const uint16_t enabledBefore =
+            h.state.sequencerTracks.currentEnabledMask();
+        const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            workflow.applyLatchedTrackSelectionLongPress();
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+
+        assert(drift.boundaryCount == 1U);
+        assert(selection.selectedMask.get() == drift.nextSelectionMask);
+        assert(h.state.sequencerTracks.currentEnabledMask() == enabledBefore);
+        assert(h.state.sequencerHistory.undoCount() == undoBefore);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+        tx::assertFailureInjectionReset();
+    }
+
+    std::cout
+        << "[PASS] Track hold boundary drift cannot retarget mute or delete\n";
+}
+
+void test_track_remove_hold_provenance_cannot_cross_context_or_selection() {
+    using Focus = core::state::StructureNavigationFocus;
+    const auto assertNextTrackTapWorks = [](SequencerStepHarness& h) {
+        h.navigationFocus.set(Focus::TRACK);
+        h.state.trackNavigation.selection.active.set(false);
+        h.state.trackNavigation.selection.placing.set(false);
+        h.state.trackNavigation.selection.scope.set(
+            core::state::StructureSelectionScope::TRACK
+        );
+        h.state.trackNavigation.previewAddSlot.set(false);
+        h.state.trackNavigation.syncPreviewTrack(
+            h.state.sharedTrackActive.get()
+        );
+        h.advance(0U);
+        test_support::drainNotifications();
+        const uint16_t mutedBefore =
+            h.state.projectTracks.authored.mutedMask;
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.projectTracks.authored.mutedMask != mutedBefore);
+    };
+
+    for (const auto focus : std::array<Focus, 2U>{Focus::PAGE, Focus::STEP}) {
+        for (const bool longPress : std::array<bool, 2U>{false, true}) {
+            SequencerStepHarness h;
+            configureDirectTrackFixture(
+                h,
+                DirectTrackFixtureKind::RemoveCurrent
+            );
+            seq::resetTransientTrackState(h.state.sequencer);
+            test_support::drainNotifications();
+
+            h.press(Config::ButtonID::BOTTOM_LEFT);
+            assert(h.state.trackNavigation.hold.action.get() ==
+                   core::state::StructureHoldAction::REMOVE);
+            h.navigationFocus.set(focus);
+            if (focus == Focus::PAGE) {
+                h.state.sequencer.pattern.setContentLength(8U);
+                h.state.sequencer.page.set(0U);
+                h.state.sequencer.structureUi.syncPreviewPage(0U);
+            } else {
+                h.state.sequencer.focusedStep.set(
+                    seq::SequencerState::MAX_STEPS
+                );
+            }
+            h.advance(0U);
+            test_support::drainNotifications();
+
+            auto expected = captureTrackTransactionInvariant(h);
+            expected.trackUi.holdAction = static_cast<uint8_t>(
+                core::state::StructureHoldAction::NONE
+            );
+            expected.trackUi.holdStartedAtMs = 0U;
+            {
+                core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+                if (longPress) {
+                    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+                } else {
+                    h.release(Config::ButtonID::BOTTOM_LEFT);
+                }
+                tx::assertMaxPlusOneStillArmed(0U);
+            }
+            test_support::drainNotifications();
+            assertTrackTransactionInvariant(h, expected);
+            if (longPress) {
+                h.release(Config::ButtonID::BOTTOM_LEFT);
+                test_support::drainNotifications();
+                assertTrackTransactionInvariant(h, expected);
+            }
+            tx::assertFailureInjectionReset();
+            assertNextTrackTapWorks(h);
+        }
+    }
+
+    for (const bool longPress : std::array<bool, 2U>{false, true}) {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(
+            h,
+            DirectTrackFixtureKind::RemoveCurrent
+        );
+        seq::resetTransientTrackState(h.state.sequencer);
+        auto& selection = h.state.trackNavigation.selection;
+        selection.active.set(true);
+        selection.placing.set(false);
+        selection.selectedMask.set(0x0001U);
+        test_support::drainNotifications();
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        selection.active.set(false);
+        h.advance(0U);
+        test_support::drainNotifications();
+
+        auto expected = captureTrackTransactionInvariant(h);
+        expected.trackUi.holdAction = static_cast<uint8_t>(
+            core::state::StructureHoldAction::NONE
+        );
+        expected.trackUi.holdStartedAtMs = 0U;
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            if (longPress) {
+                h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+            } else {
+                h.release(Config::ButtonID::BOTTOM_LEFT);
+            }
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+        assertTrackTransactionInvariant(h, expected);
+        if (longPress) {
+            h.release(Config::ButtonID::BOTTOM_LEFT);
+            test_support::drainNotifications();
+            assertTrackTransactionInvariant(h, expected);
+        }
+        tx::assertFailureInjectionReset();
+        assertNextTrackTapWorks(h);
+    }
+
+    enum class InvalidInitialSelection : uint8_t {
+        Scope = 0U,
+        AddPreview,
+    };
+    for (const auto invalid :
+         std::array<InvalidInitialSelection, 2U>{
+             InvalidInitialSelection::Scope,
+             InvalidInitialSelection::AddPreview,
+         }) {
+        for (const bool longPress : std::array<bool, 2U>{false, true}) {
+            SequencerStepHarness h;
+            configureDirectTrackFixture(
+                h,
+                DirectTrackFixtureKind::RemoveCurrent
+            );
+            seq::resetTransientTrackState(h.state.sequencer);
+            auto& selection = h.state.trackNavigation.selection;
+            selection.active.set(true);
+            selection.scope.set(core::state::StructureSelectionScope::TRACK);
+            selection.placing.set(false);
+            selection.selectedMask.set(0x0001U);
+            if (invalid == InvalidInitialSelection::Scope) {
+                selection.scope.set(
+                    core::state::StructureSelectionScope::PAGE
+                );
+            } else {
+                h.state.trackNavigation.previewAddSlot.set(true);
+            }
+            h.advance(0U);
+            test_support::drainNotifications();
+            const auto expected = captureTrackTransactionInvariant(h);
+
+            h.press(Config::ButtonID::BOTTOM_LEFT);
+            assert(h.state.trackNavigation.hold.action.get() ==
+                   core::state::StructureHoldAction::NONE);
+            {
+                core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+                if (longPress) {
+                    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+                    h.release(Config::ButtonID::BOTTOM_LEFT);
+                } else {
+                    h.release(Config::ButtonID::BOTTOM_LEFT);
+                }
+                tx::assertMaxPlusOneStillArmed(0U);
+            }
+            test_support::drainNotifications();
+            assertTrackTransactionInvariant(h, expected);
+            tx::assertFailureInjectionReset();
+
+            selection.scope.set(core::state::StructureSelectionScope::TRACK);
+            h.state.trackNavigation.previewAddSlot.set(false);
+            assertNextTrackTapWorks(h);
+        }
+    }
+
+    enum class SelectionDrift : uint8_t {
+        FocusPage = 0U,
+        FocusStep,
+        ClipboardRevision,
+        SelectedMask,
+        DestinationMask,
+        OverwriteMask,
+        Cursor,
+        Scope,
+        Placing,
+        PasteBlocked,
+        PreviewTrack,
+        PreviewAddTrack,
+        EnabledMask,
+        ActiveTrack,
+    };
+    for (const auto drift : std::array<SelectionDrift, 14U>{
+             SelectionDrift::FocusPage,
+             SelectionDrift::FocusStep,
+             SelectionDrift::ClipboardRevision,
+             SelectionDrift::SelectedMask,
+             SelectionDrift::DestinationMask,
+             SelectionDrift::OverwriteMask,
+             SelectionDrift::Cursor,
+             SelectionDrift::Scope,
+             SelectionDrift::Placing,
+             SelectionDrift::PasteBlocked,
+             SelectionDrift::PreviewTrack,
+             SelectionDrift::PreviewAddTrack,
+             SelectionDrift::EnabledMask,
+             SelectionDrift::ActiveTrack,
+         }) {
+        for (const bool longPress : std::array<bool, 2U>{false, true}) {
+            SequencerStepHarness h;
+            configureDirectTrackFixture(
+                h,
+                DirectTrackFixtureKind::RemoveCurrent
+            );
+            seq::resetTransientTrackState(h.state.sequencer);
+            auto& selection = h.state.trackNavigation.selection;
+            selection.active.set(true);
+            selection.placing.set(false);
+            selection.selectedMask.set(0x0001U);
+            selection.cursorIndex.set(0U);
+            test_support::drainNotifications();
+
+            h.press(Config::ButtonID::BOTTOM_LEFT);
+            assert(h.state.trackNavigation.hold.action.get() ==
+                   core::state::StructureHoldAction::REMOVE);
+            switch (drift) {
+                case SelectionDrift::FocusPage:
+                    h.navigationFocus.set(Focus::PAGE);
+                    break;
+                case SelectionDrift::FocusStep:
+                    h.navigationFocus.set(Focus::STEP);
+                    break;
+                case SelectionDrift::ClipboardRevision:
+                    selection.clipboardRevision.set(
+                        selection.clipboardRevision.get() + 1U
+                    );
+                    break;
+                case SelectionDrift::SelectedMask:
+                    selection.selectedMask.set(0x0020U);
+                    break;
+                case SelectionDrift::DestinationMask:
+                    selection.destinationMask.set(0x0004U);
+                    break;
+                case SelectionDrift::OverwriteMask:
+                    selection.overwriteMask.set(0x0020U);
+                    break;
+                case SelectionDrift::Cursor:
+                    selection.cursorIndex.set(5U);
+                    break;
+                case SelectionDrift::Scope:
+                    selection.scope.set(
+                        core::state::StructureSelectionScope::PAGE
+                    );
+                    break;
+                case SelectionDrift::Placing:
+                    selection.placing.set(true);
+                    break;
+                case SelectionDrift::PasteBlocked:
+                    selection.pasteBlocked.set(!selection.pasteBlocked.get());
+                    break;
+                case SelectionDrift::PreviewTrack:
+                    h.state.trackNavigation.previewTrackIndex.set(
+                        kDirectTrackIncoming
+                    );
+                    break;
+                case SelectionDrift::PreviewAddTrack:
+                    h.state.trackNavigation.previewAddSlot.set(true);
+                    break;
+                case SelectionDrift::EnabledMask:
+                    h.state.sharedTrackEnabledMask.set(
+                        static_cast<uint16_t>(kDirectTrackSparseMask | 0x0002U)
+                    );
+                    break;
+                case SelectionDrift::ActiveTrack:
+                    h.state.sharedTrackActive.set(kDirectTrackIncoming);
+                    break;
+            }
+            h.advance(0U);
+            test_support::drainNotifications();
+
+            auto expected = captureTrackTransactionInvariant(h);
+            expected.trackUi.holdAction = static_cast<uint8_t>(
+                core::state::StructureHoldAction::NONE
+            );
+            expected.trackUi.holdStartedAtMs = 0U;
+            {
+                core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+                if (longPress) {
+                    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+                } else {
+                    h.release(Config::ButtonID::BOTTOM_LEFT);
+                }
+                tx::assertMaxPlusOneStillArmed(0U);
+            }
+            test_support::drainNotifications();
+            assertTrackTransactionInvariant(h, expected);
+            if (longPress) {
+                h.release(Config::ButtonID::BOTTOM_LEFT);
+                test_support::drainNotifications();
+                assertTrackTransactionInvariant(h, expected);
+            }
+            tx::assertFailureInjectionReset();
+            assertNextTrackTapWorks(h);
+        }
+    }
+
+    for (const bool longPress : std::array<bool, 2U>{false, true}) {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(
+            h,
+            DirectTrackFixtureKind::RemoveCurrent
+        );
+        seq::resetTransientTrackState(h.state.sequencer);
+        test_support::drainNotifications();
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        auto& selection = h.state.trackNavigation.selection;
+        selection.active.set(true);
+        selection.placing.set(false);
+        selection.selectedMask.set(0x0001U);
+        h.advance(0U);
+        test_support::drainNotifications();
+
+        auto expected = captureTrackTransactionInvariant(h);
+        expected.trackUi.holdAction = static_cast<uint8_t>(
+            core::state::StructureHoldAction::NONE
+        );
+        expected.trackUi.holdStartedAtMs = 0U;
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            if (longPress) {
+                h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+            } else {
+                h.release(Config::ButtonID::BOTTOM_LEFT);
+            }
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+        assertTrackTransactionInvariant(h, expected);
+        if (longPress) {
+            h.release(Config::ButtonID::BOTTOM_LEFT);
+            test_support::drainNotifications();
+            assertTrackTransactionInvariant(h, expected);
+        }
+        tx::assertFailureInjectionReset();
+        assertNextTrackTapWorks(h);
+    }
+
+    {
+        SequencerStepHarness h;
+        configureDirectTrackFixture(
+            h,
+            DirectTrackFixtureKind::RemoveCurrent
+        );
+        seq::resetTransientTrackState(h.state.sequencer);
+        test_support::drainNotifications();
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.setSharedTrackState(
+            kDirectTrackSparseMask,
+            kDirectTrackIncoming
+        ));
+        h.advance(0U);
+        test_support::drainNotifications();
+
+        auto expected = captureTrackTransactionInvariant(h);
+        expected.trackUi.holdAction = static_cast<uint8_t>(
+            core::state::StructureHoldAction::NONE
+        );
+        expected.trackUi.holdStartedAtMs = 0U;
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            h.release(Config::ButtonID::BOTTOM_LEFT);
+            tx::assertMaxPlusOneStillArmed(0U);
+        }
+        test_support::drainNotifications();
+        assertTrackTransactionInvariant(h, expected);
+        tx::assertFailureInjectionReset();
+        assertNextTrackTapWorks(h);
+    }
+
+    std::cout
+        << "[PASS] Track Remove hold provenance cannot cross context or selection\n";
+}
+
+void test_track_remove_hold_rejects_shared_hold_replacement() {
+    enum class Replacement : uint8_t {
+        Clear = 0U,
+        Paste,
+        NewRemove,
+    };
+
+    for (const bool selectionGesture : std::array<bool, 2U>{false, true}) {
+        for (const bool longPress : std::array<bool, 2U>{false, true}) {
+            for (const auto replacement : std::array<Replacement, 3U>{
+                     Replacement::Clear,
+                     Replacement::Paste,
+                     Replacement::NewRemove,
+                 }) {
+                SequencerStepHarness h;
+                configureDirectTrackFixture(
+                    h,
+                    DirectTrackFixtureKind::RemoveCurrent
+                );
+                seq::resetTransientTrackState(h.state.sequencer);
+                auto& selection = h.state.trackNavigation.selection;
+                if (selectionGesture) {
+                    selection.active.set(true);
+                    selection.scope.set(
+                        core::state::StructureSelectionScope::TRACK
+                    );
+                    selection.placing.set(false);
+                    selection.cursorIndex.set(kDirectTrackOldActive);
+                    selection.selectedMask.set(static_cast<uint16_t>(
+                        1U << kDirectTrackOldActive
+                    ));
+                }
+                h.state.trackNavigation.syncPreviewTrack(
+                    kDirectTrackOldActive
+                );
+                test_support::drainNotifications();
+
+                h.press(Config::ButtonID::BOTTOM_LEFT);
+                auto& hold = h.state.trackNavigation.hold;
+                assert(hold.action.get() ==
+                       core::state::StructureHoldAction::REMOVE);
+                const uint32_t acquiredAt = hold.startedAtMs.get();
+                auto expectedHoldAction =
+                    core::state::StructureHoldAction::NONE;
+                uint32_t expectedHoldStartedAt = 0U;
+                switch (replacement) {
+                    case Replacement::Clear:
+                        hold.clear();
+                        break;
+                    case Replacement::Paste:
+                        expectedHoldAction =
+                            core::state::StructureHoldAction::PASTE;
+                        expectedHoldStartedAt = acquiredAt + 1U;
+                        hold.begin(
+                            expectedHoldAction,
+                            expectedHoldStartedAt
+                        );
+                        break;
+                    case Replacement::NewRemove:
+                        expectedHoldAction =
+                            core::state::StructureHoldAction::REMOVE;
+                        expectedHoldStartedAt = acquiredAt + 1U;
+                        hold.begin(
+                            expectedHoldAction,
+                            expectedHoldStartedAt
+                        );
+                        break;
+                }
+                test_support::drainNotifications();
+
+                const uint16_t mutedBefore =
+                    h.state.projectTracks.authored.mutedMask;
+                const uint16_t enabledBefore =
+                    h.state.sequencerTracks.currentEnabledMask();
+                const uint8_t sequencerUndoBefore =
+                    h.state.sequencerHistory.undoCount();
+                const uint8_t projectUndoBefore =
+                    h.state.projectHistory.undoCount();
+                {
+                    core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+                    if (longPress) {
+                        h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+                        h.release(Config::ButtonID::BOTTOM_LEFT);
+                    } else {
+                        h.release(Config::ButtonID::BOTTOM_LEFT);
+                    }
+                    tx::assertMaxPlusOneStillArmed(0U);
+                }
+                test_support::drainNotifications();
+
+                assert(h.state.projectTracks.authored.mutedMask == mutedBefore);
+                assert(h.state.sequencerTracks.currentEnabledMask() ==
+                       enabledBefore);
+                assert(h.state.sequencerHistory.undoCount() ==
+                       sequencerUndoBefore);
+                assert(h.state.projectHistory.undoCount() == projectUndoBefore);
+                assert(hold.action.get() == expectedHoldAction);
+                assert(hold.startedAtMs.get() == expectedHoldStartedAt);
+                tx::assertFailureInjectionReset();
+            }
+        }
+    }
+
+    std::cout
+        << "[PASS] Track Remove rejects cleared, replaced and re-armed shared holds\n";
+}
+
+void test_track_structure_replay_preserves_runtime_when_active_is_unchanged() {
+    SequencerStepHarness h;
+    h.state.sequencerTracks.reset();
+    assert(h.state.setSharedTrackState(0x0007U, 0U));
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    test_support::drainNotifications();
+
+    h.press(Config::ButtonID::NAV);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.tap(Config::ButtonID::NAV);
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0005U);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 0U);
+
+    std::array<float, core::state::macro::MACRO_COUNT> undoProjection{};
+    for (uint8_t macro = 0U;
+         macro < core::state::macro::MACRO_COUNT;
+         ++macro) {
+        undoProjection[macro] = 0.91f - static_cast<float>(macro) * 0.01f;
+        h.state.macros.slots[macro].value.set(undoProjection[macro]);
+    }
+    h.state.macroUi.automationManualOverrideMask.set(0x00A5U);
+    const uint32_t projectionRevision =
+        h.state.macroUi.runtimeProjectionRevision.get();
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0007U);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 0U);
+    for (uint8_t macro = 0U;
+         macro < core::state::macro::MACRO_COUNT;
+         ++macro) {
+        assert(h.state.macros.slots[macro].value.get() ==
+               undoProjection[macro]);
+    }
+    assert(h.state.macroUi.automationManualOverrideMask.get() == 0x00A5U);
+    assert(h.state.macroUi.runtimeProjectionRevision.get() ==
+           projectionRevision);
+
+    std::array<float, core::state::macro::MACRO_COUNT> redoProjection{};
+    for (uint8_t macro = 0U;
+         macro < core::state::macro::MACRO_COUNT;
+         ++macro) {
+        redoProjection[macro] = 0.11f + static_cast<float>(macro) * 0.01f;
+        h.state.macros.slots[macro].value.set(redoProjection[macro]);
+    }
+    h.state.macroUi.automationManualOverrideMask.set(0x005AU);
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencerTracks.currentEnabledMask() == 0x0005U);
+    assert(h.state.sequencerTracks.activeTrackIndex() == 0U);
+    for (uint8_t macro = 0U;
+         macro < core::state::macro::MACRO_COUNT;
+         ++macro) {
+        assert(h.state.macros.slots[macro].value.get() ==
+               redoProjection[macro]);
+    }
+    assert(h.state.macroUi.automationManualOverrideMask.get() == 0x005AU);
+    assert(h.state.macroUi.runtimeProjectionRevision.get() ==
+           projectionRevision);
+
+    std::cout
+        << "[PASS] unchanged-active Track replay preserves runtime projection\n";
 }
 
 void test_created_track_is_undoable_and_redoable() {
@@ -3333,7 +5931,7 @@ void test_created_track_is_undoable_and_redoable() {
     std::cout << "[PASS] test_created_track_is_undoable_and_redoable\n";
 }
 
-void test_track_creation_history_failure_rolls_back_and_keeps_add_slot_open() {
+void test_track_creation_history_unavailable_is_atomic_and_keeps_add_slot_open() {
     test_support::CoreStorages storages;
     core::state::CoreState state(storages.settings);
     oc::state::Signal<core::state::StructureNavigationFocus,
@@ -3345,23 +5943,39 @@ void test_track_creation_history_failure_rolls_back_and_keeps_add_slot_open() {
     state.sequencerTracks.track(1).note[0] = 77;
     state.sequencerTracks.track(1).setEnabled(0, true);
 
+    auto sharedTracks =
+        core::handler::SharedTrackDomainServices::fromCoreState(state);
     core::handler::SequencerStructureNavigationWorkflow workflow({
         state.sequencer,
         state.sequencerTracks,
         navigationFocus,
         state.trackNavigation,
-        core::handler::SharedTrackDomainServices::fromCoreState(state),
-        core::handler::SequencerHistoryDomainServices{},
+        sharedTracks,
     });
     workflow.moveByFocus(1.0f);
     assert(state.trackNavigation.previewAddSlot.get());
     assert(state.trackNavigation.previewTrackIndex.get() == 1);
 
-    const auto result = workflow.createPreviewedStructure();
+    core::handler::SequencerStructureEditWorkflow edit({
+        state.sequencer,
+        state.sequencerTracks,
+        navigationFocus,
+        state.trackNavigation,
+        state.projectNavigation,
+        state.projectTracks,
+        core::state::project::ProjectTrackDomainServices::fromCoreState(state),
+        state.structureClipboard,
+        sharedTracks,
+        core::handler::SequencerHistoryDomainServices{},
+        state.pages,
+        &state.sequencerTrackActivations,
+        &state.statusBar,
+    });
+    const auto result = edit.createPreviewedTrackStructure();
 
     assert(
-        result ==
-        core::handler::SequencerStructureNavigationWorkflow::CreationResult::HISTORY_UNAVAILABLE);
+        result.status == core::handler::
+            SequencerPreparedTrackStructureStatus::HistoryUnavailable);
     assert(state.sequencerTracks.currentEnabledMask() == 0x0001);
     assert(state.sequencerTracks.activeTrackIndex() == 0);
     assert(state.sharedTrackEnabledMask.get() == 0x0001);
@@ -3371,7 +5985,8 @@ void test_track_creation_history_failure_rolls_back_and_keeps_add_slot_open() {
     assert(state.trackNavigation.previewAddSlot.get());
     assert(state.sequencerHistory.undoCount() == 0);
 
-    std::cout << "[PASS] test_track_creation_history_failure_rolls_back_and_keeps_add_slot_open\n";
+    std::cout
+        << "[PASS] Track creation HistoryUnavailable is atomic and keeps add preview\n";
 }
 
 void test_step_selection_copy_paste_extends_sparse_root_steps() {
@@ -4637,6 +7252,12 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
 int main() {
     test_child_creation_draft_apply_and_back_decisions();
     test_nav_context_selector_previews_and_applies_all_three_contexts();
+    test_latched_track_editor_release_cannot_cross_into_page_editor();
+    test_page_navigation_is_cyclic_and_tap_opens_pattern_editor();
+    test_latched_editor_target_drift_fails_closed();
+    test_step_editor_uses_the_exact_latched_target();
+    test_hidden_context_selector_cannot_complete_an_old_gesture();
+    test_latched_nav_hold_cannot_cross_selection_context();
     test_child_context_selector_cycles_pattern_and_step_only();
     test_track_selection_skips_gaps_and_mutes_atomically();
     test_track_selection_delete_is_undoable_and_keeps_one_track();
@@ -4651,8 +7272,8 @@ int main() {
     test_pattern_editor_adds_only_the_next_page();
     test_track_focus_bottom_left_mutes_without_clearing_payload();
     test_sequencer_page_copy_and_long_press_paste();
-    test_page_paste_add_slot_prospective_graph_oom_and_replay();
-    test_page_paste_failures_restore_add_and_selection_ui();
+    test_page_paste_existing_target_graph_oom_and_replay();
+    test_page_paste_failures_restore_current_and_selection_ui();
     test_child_content_clear_copy_and_paste_are_undoable();
     test_child_content_clear_and_paste_preflight_failures_are_atomic();
     test_graphless_child_content_paste_uses_prospective_compacted_owner();
@@ -4667,16 +7288,30 @@ int main() {
     test_track_paste_refreshes_route_during_hold_and_freezes_queued_plan();
     test_deleted_track_slot_can_be_recreated_at_any_gap();
     test_created_page_is_undoable_and_redoable();
-    test_page_create_prepared_workflow_commits_and_replays();
-    test_page_create_full_and_stale_targets_settle_without_history();
-    test_page_create_failed_commit_restores_add_preview_after_notifications();
     test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic();
     test_page_delete_prepared_workflow_shifts_cc_and_replays();
     test_page_delete_oom_keeps_hold_until_latched_release();
     test_page_delete_single_page_nochange_preserves_ui_until_release();
     test_page_clear_and_delete_failed_commits_restore_editor_state();
+    test_direct_track_create_remove_are_atomic_and_replay_exactly();
+    test_direct_track_global_history_and_redo_branch_are_exact();
+    test_direct_track_fail_nth_failures_restore_exact_state();
+    test_direct_track_activation_collisions_are_atomic();
+    test_direct_track_pattern_chronology_is_single_and_ordered();
+    test_direct_track_exact_intent_drift_is_stale_before_allocation();
+    test_direct_track_accepts_terminal_consumed_paste_state();
+    test_direct_track_draft_priority_precedes_adapter_validation();
+    test_direct_track_obvious_invalid_topology_skips_chronology();
+    test_direct_track_missing_presentation_capability_is_preflight_atomic();
+    test_track_remove_hold_latches_target_and_rejects_external_drift();
+    test_track_remove_hold_does_not_block_acquired_nav_release();
+    test_track_remove_hold_rejects_new_nav_press_without_hiding_action();
+    test_track_hold_boundary_drift_cannot_retarget_mutation();
+    test_track_remove_hold_provenance_cannot_cross_context_or_selection();
+    test_track_remove_hold_rejects_shared_hold_replacement();
+    test_track_structure_replay_preserves_runtime_when_active_is_unchanged();
     test_created_track_is_undoable_and_redoable();
-    test_track_creation_history_failure_rolls_back_and_keeps_add_slot_open();
+    test_track_creation_history_unavailable_is_atomic_and_keeps_add_slot_open();
     test_macro_press_on_future_page_does_not_wrap_to_existing_step();
     test_step_focus_bottom_left_resets_focused_step_only();
     test_step_focus_copy_paste_copies_complete_step_without_selection();

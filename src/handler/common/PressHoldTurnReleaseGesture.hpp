@@ -19,45 +19,42 @@ public:
     };
 
     void press() {
-        pressed_ = true;
-        held_ = false;
-        turned_ = false;
+        state_ = PRESSED;
     }
 
     void hold() {
-        if (pressed_) held_ = true;
+        if (active()) state_ |= HELD;
     }
 
     [[nodiscard]] bool turn(bool meaningful) {
-        if (!pressed_ || !meaningful) return false;
-        turned_ = true;
+        if (!active() || !meaningful) return false;
+        state_ |= TURNED;
         return true;
     }
 
     [[nodiscard]] Release release() {
-        if (!pressed_) return Release::NONE;
-        const Release result = turned_
+        if (!active()) return Release::NONE;
+        const Release result = turned()
             ? Release::TURN
-            : held_ ? Release::HOLD : Release::TAP;
+            : (state_ & HELD) != 0U ? Release::HOLD : Release::TAP;
         cancel();
         return result;
     }
 
     void cancel() {
-        pressed_ = false;
-        held_ = false;
-        turned_ = false;
+        state_ = 0U;
     }
 
-    [[nodiscard]] bool active() const { return pressed_; }
-    [[nodiscard]] bool turned() const { return turned_; }
+    [[nodiscard]] bool active() const { return (state_ & PRESSED) != 0U; }
+    [[nodiscard]] bool turned() const { return (state_ & TURNED) != 0U; }
 
 private:
-    bool pressed_ = false;
-    bool held_ = false;
-    bool turned_ = false;
+    static constexpr uint8_t PRESSED = 1U << 0U;
+    static constexpr uint8_t HELD = 1U << 1U;
+    static constexpr uint8_t TURNED = 1U << 2U;
+    uint8_t state_ = 0U;
 };
 
-static_assert(sizeof(PressHoldTurnReleaseGesture) <= 3U);
+static_assert(sizeof(PressHoldTurnReleaseGesture) == 1U);
 
 }  // namespace core::handler

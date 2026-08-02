@@ -492,6 +492,8 @@ public:
     bool setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack);
     [[nodiscard]] bool publishPreparedSequencerTrackState(uint16_t enabledMask,
                                                           uint8_t activeTrack);
+    /** Finalizes Macro presentation after a prepared Sequencer active-Track change. */
+    void reconcilePreparedSequencerActiveTrackPresentation() noexcept;
     /** Reconciles transient Macro/UI state after one atomic global Track paste. */
     void reconcilePreparedMacroTrackTransfer(uint16_t capturedTrackMask);
     bool refreshSharedTrackStateFromMacroPages();
