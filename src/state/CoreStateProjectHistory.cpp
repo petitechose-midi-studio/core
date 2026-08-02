@@ -125,6 +125,35 @@ FLASHMEM bool CoreState::prepareProjectHistoryInteraction() {
     return true;
 }
 
+FLASHMEM sequencer::SequencerTrackStructureChronologyResult
+CoreState::openSequencerTrackStructureChronologyBoundary() {
+    using BoundaryStatus =
+        sequencer::SequencerTrackStructureChronologyStatus;
+    using Outcome = sequencer::SequencerPatternHistoryCommitOutcome;
+
+    // Neither transient owner may be reordered or implicitly cancelled by a
+    // Track topology command. Malformed audition pairs are rejected by the
+    // same fail-closed predicate.
+    if (macroHistory.hasPendingModulatorAuditionTransaction(pages)) {
+        return {BoundaryStatus::MacroAuditionBlocked, Outcome::NoPending};
+    }
+    if (projectTrackHistory.hasPendingGesture()) {
+        return {BoundaryStatus::ProjectTrackGestureBlocked, Outcome::NoPending};
+    }
+
+    const auto patternOutcome =
+        commitSequencerPatternHistoryCoalescingOutcome();
+    if (patternOutcome == Outcome::Failed) {
+        return {BoundaryStatus::PatternFailed, Outcome::Failed};
+    }
+
+    // This is the canonical lifecycle authority for Macro value, Settings and
+    // both generic Macro/Sequencer mutation coalescers. Their publications are
+    // complete before the Track transaction captures its failure checkpoint.
+    CoreStateLifecycle::flushProjectMutationCoalescing(*this);
+    return {BoundaryStatus::Opened, patternOutcome};
+}
+
 FLASHMEM bool CoreState::undoProjectHistory() {
     if (sequencer.stepContentDraft.rejectTransitionIfActive(
             sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {

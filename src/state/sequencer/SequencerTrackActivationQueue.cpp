@@ -241,6 +241,82 @@ FLASHMEM bool SequencerTrackActivationQueue::tryArmPlannedActivation(
     return true;
 }
 
+FLASHMEM bool SequencerTrackActivationQueue::captureMutationGuard(
+    uint16_t protectedTrackMask,
+    SequencerTrackActivationMutationGuard& out
+) const {
+    out = {};
+    const uint16_t sanitized = sanitizeMask_(protectedTrackMask);
+    if (sanitized == 0U || sanitized != protectedTrackMask) return false;
+
+    oc::realtime::InterruptGuard lock;
+    for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((sanitized & bit) != 0U && isPending_(entries_[track].phase)) {
+            return false;
+        }
+        const auto& entry = entries_[track];
+        if (!packMutationGuardEntry_(entry, out.packedEntries[track])) {
+            return false;
+        }
+        out.generations[track] = entry.generation;
+        out.operationIds[track] = entry.operationId;
+    }
+    out.nextGeneration = next_generation_;
+    out.nextOperationId = next_operation_id_;
+    out.telemetryRevision = telemetry_revision_.get();
+    out.protectedTrackMask = sanitized;
+    return true;
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::mutationGuardMatches(
+    const SequencerTrackActivationMutationGuard& guard
+) const {
+    const uint16_t sanitized = sanitizeMask_(guard.protectedTrackMask);
+    if (!guard.valid() || sanitized != guard.protectedTrackMask) return false;
+
+    oc::realtime::InterruptGuard lock;
+    if (next_generation_ != guard.nextGeneration ||
+        next_operation_id_ != guard.nextOperationId ||
+        telemetry_revision_.get() != guard.telemetryRevision) {
+        return false;
+    }
+    for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        const auto& entry = entries_[track];
+        uint8_t packed = 0U;
+        if (!packMutationGuardEntry_(entry, packed)) return false;
+        if (guard.generations[track] != entry.generation ||
+            guard.operationIds[track] != entry.operationId ||
+            guard.packedEntries[track] != packed ||
+            ((sanitized & bit) != 0U && isPending_(entry.phase))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::packMutationGuardEntry_(
+    const Entry& entry,
+    uint8_t& out
+) {
+    const uint8_t phase = static_cast<uint8_t>(entry.phase);
+    const uint8_t localBoundary = entry.requiresLocalLoopBoundary;
+    const uint8_t target = static_cast<uint8_t>(entry.target);
+    const uint8_t origin = static_cast<uint8_t>(entry.origin);
+    if (phase > 0x07U || localBoundary > 0x01U || target > 0x01U ||
+        origin > 0x03U) {
+        return false;
+    }
+    out = static_cast<uint8_t>(
+        phase |
+        (localBoundary << 3U) |
+        (target << 4U) |
+        (origin << 5U)
+    );
+    return true;
+}
+
 FLASHMEM bool SequencerTrackActivationQueue::armPrepared(
     const SequencerTrackActivationBatch& batch
 ) {

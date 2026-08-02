@@ -30,6 +30,7 @@ using core::state::sequencer::SequencerTrackActivationEntrySnapshot;
 using core::state::sequencer::SequencerTrackActivationExpectedState;
 using core::state::sequencer::SequencerTrackActivationHistoryTransition;
 using core::state::sequencer::SequencerTrackActivationHistoryTransitionPlan;
+using core::state::sequencer::SequencerTrackActivationMutationGuard;
 using core::state::sequencer::SequencerTrackActivationOrigin;
 using core::state::sequencer::SequencerTrackActivationPlan;
 using core::state::sequencer::SequencerTrackActivationQueue;
@@ -1048,6 +1049,110 @@ void test_project_boundary_reset_clears_pending_and_realtime_disposition() {
         << "[PASS] test_project_boundary_reset_clears_pending_and_realtime_disposition\n";
 }
 
+void test_direct_mutation_guard_capture_is_validated_and_pure() {
+    SequencerTrackActivationQueue queue;
+    SequencerTrackActivationMutationGuard invalid;
+    invalid.protectedTrackMask = 0xFFFFU;
+    assert(!queue.captureMutationGuard(0U, invalid));
+    assert(!invalid.valid());
+
+    const auto before = observePublicState(queue);
+    SequencerTrackActivationMutationGuard guard;
+    assert(queue.captureMutationGuard(0x0003U, guard));
+    assert(guard.valid());
+    assert(guard.protectedTrackMask == 0x0003U);
+    assert(queue.mutationGuardMatches(guard));
+    assertPublicStateEqual(before, observePublicState(queue));
+
+    // Planning is deliberately read-only and therefore cannot stale a guard.
+    SequencerTrackActivationPlan plan;
+    assert(queue.planActivation(
+        0x000CU,
+        0x0004U,
+        true,
+        plan,
+        SequencerTrackActivationOrigin::TRACK_PASTE
+    ));
+    assert(queue.mutationGuardMatches(guard));
+    assertPublicStateEqual(before, observePublicState(queue));
+
+    std::cout
+        << "[PASS] test_direct_mutation_guard_capture_is_validated_and_pure\n";
+}
+
+void test_direct_mutation_guard_rejects_only_pending_protected_tracks() {
+    for (const bool transportPlaying : {false, true}) {
+        SequencerTrackActivationQueue queue;
+        SequencerTrackActivationBatch pending;
+        assert(queue.prepare(
+            0x0001U,
+            0x0001U,
+            transportPlaying,
+            pending,
+            SequencerTrackActivationOrigin::TRACK_PASTE
+        ));
+        assert(queue.armPrepared(pending));
+
+        SequencerTrackActivationMutationGuard protectedCollision;
+        assert(!queue.captureMutationGuard(
+            0x0001U,
+            protectedCollision
+        ));
+        assert(!protectedCollision.valid());
+
+        SequencerTrackActivationMutationGuard unrelated;
+        assert(queue.captureMutationGuard(0x0002U, unrelated));
+        assert(unrelated.valid());
+        assert(queue.mutationGuardMatches(unrelated));
+    }
+
+    std::cout
+        << "[PASS] test_direct_mutation_guard_rejects_only_pending_protected_tracks\n";
+}
+
+void test_direct_mutation_guard_detects_representative_queue_changes() {
+    {
+        SequencerTrackActivationQueue queue;
+        SequencerTrackActivationMutationGuard guard;
+        assert(queue.captureMutationGuard(0x0001U, guard));
+
+        // Legacy prepare changes only the queue identifier counters.
+        SequencerTrackActivationBatch reservation;
+        assert(queue.prepare(0x0002U, 0U, false, reservation));
+        assert(!queue.mutationGuardMatches(guard));
+    }
+
+    {
+        SequencerTrackActivationQueue queue;
+        SequencerTrackActivationBatch batch;
+        assert(queue.prepare(0x0002U, 0x0002U, true, batch));
+        assert(queue.armPrepared(batch));
+
+        SequencerTrackActivationMutationGuard guard;
+        assert(queue.captureMutationGuard(0x0001U, guard));
+        assert(queue.mutationGuardMatches(guard));
+
+        // Publication changes both the slot phase and telemetry revision.
+        queue.publishPrepared(batch);
+        assert(!queue.mutationGuardMatches(guard));
+    }
+
+    {
+        SequencerTrackActivationQueue queue;
+        SequencerTrackActivationMutationGuard guard;
+        assert(queue.captureMutationGuard(0x0001U, guard));
+
+        SequencerTrackActivationPlan plan;
+        assert(queue.planActivation(0x0002U, 0U, false, plan));
+        SequencerTrackActivationBatch armed;
+        assert(queue.tryArmPlannedActivation(plan, armed));
+        assert(!queue.mutationGuardMatches(guard));
+    }
+
+    std::cout
+        << "[PASS] test_direct_mutation_guard_detects_representative_queue_changes\n";
+}
+
 }  // namespace
 
 int main() {
@@ -1070,6 +1175,9 @@ int main() {
     test_stacked_operations_rebind_before_intermediate_boundaries();
     test_stacked_operations_rebind_after_each_boundary();
     test_project_boundary_reset_clears_pending_and_realtime_disposition();
+    test_direct_mutation_guard_capture_is_validated_and_pure();
+    test_direct_mutation_guard_rejects_only_pending_protected_tracks();
+    test_direct_mutation_guard_detects_representative_queue_changes();
     std::cout << "All SequencerTrackActivationQueue tests passed\n";
     return 0;
 }

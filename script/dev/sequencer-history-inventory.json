@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "scope": "L-R08-06 prepared PageStructure sink retirement",
+  "scope": "L-R08-07 Track Structure transaction kernel slice 2",
   "recordingBoundary": {
     "entryRecordingCallTotal": 44,
     "expectedMigratedRemovalTotal": 13,
@@ -513,6 +513,115 @@
       ]
     }
   },
+  "preparedTrackStructureLifecycle": {
+    "transactionPath": "src/handler/sequencer/SequencerPreparedTrackStructureTransaction.cpp",
+    "forbiddenRawMethods": [
+      "recordStructure",
+      "recordPreparedStructure"
+    ],
+    "expectedForbiddenRawCallTotal": 0,
+    "admissionGate": {
+      "method": "canCommitAdmittedStructure",
+      "declaration": {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
+        "expectedCount": 1
+      },
+      "implementation": {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "qualifier": "SequencerHistoryDomainServices",
+        "expectedDefinitionCount": 1
+      },
+      "memberDispatch": {
+        "path": "src",
+        "expectedTotal": 2,
+        "groups": [
+          {
+            "path": "src/handler/sequencer/SequencerPreparedTrackStructureTransaction.cpp",
+            "count": 2
+          }
+        ]
+      }
+    },
+    "trustedCommit": {
+      "method": "commitAdmittedStructure",
+      "memberDispatch": {
+        "path": "src",
+        "expectedTotal": 3,
+        "groups": [
+          {
+            "path": "src/handler/sequencer/SequencerPreparedTrackStructureTransaction.cpp",
+            "count": 1
+          },
+          {
+            "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+            "count": 1
+          },
+          {
+            "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+            "count": 1
+          }
+        ]
+      },
+      "stateDeclaration": {
+        "path": "src/state/sequencer/SequencerHistory.hpp",
+        "expectedCount": 1
+      },
+      "stateImplementation": {
+        "path": "src/state/sequencer/SequencerHistory.cpp",
+        "qualifier": "SequencerHistoryService",
+        "expectedDefinitionCount": 1
+      },
+      "defensiveForward": {
+        "path": "src/state/sequencer/SequencerHistory.cpp",
+        "function": "recordPreparedStructure",
+        "expectedCallCount": 1
+      },
+      "stateSourceCalls": {
+        "path": "src/state",
+        "expectedCallCount": 2
+      },
+      "coreAuthority": {
+        "method": "commitAdmittedSequencerStructureHistory",
+        "declaration": {
+          "path": "src/state/CoreState.hpp",
+          "expectedCount": 1
+        },
+        "implementation": {
+          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+          "qualifier": "CoreState",
+          "expectedDefinitionCount": 1
+        },
+        "expectedSinkCallCount": 1
+      },
+      "serviceFacade": {
+        "declaration": {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
+          "expectedCount": 1
+        },
+        "implementation": {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "qualifier": "SequencerHistoryDomainServices",
+          "expectedDefinitionCount": 1
+        }
+      },
+      "coreAdapter": {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "function": "commitAdmittedStructureFromCoreState",
+        "expectedDefinitionCount": 1,
+        "downstreamMethod": "commitAdmittedSequencerStructureHistory",
+        "expectedDownstreamCallCount": 1,
+        "binding": "commitAdmittedStructureFromCoreState",
+        "expectedBindingCount": 1
+      },
+      "transactionGateway": {
+        "function": "commitAdmittedStructure",
+        "expectedUnqualifiedOccurrenceCount": 2,
+        "expectedMemberForwardCount": 1,
+        "tailFunction": "commitPreparedSequencerTrackStructureTransaction",
+        "expectedTailCallCount": 1
+      }
+    }
+  },
   "coalescedBegins": {
     "method": "beginCoalescedPatternEdit",
     "expectedTotal": 7,
@@ -586,7 +695,9 @@
       "test/test_SequencerHistoryQualification/test_main.cpp": 1,
       "test/test_SequencerMacroPropertyHandler/test_main.cpp": 1,
       "test/test_SequencerPatternEditorHandler/test_main.cpp": 3,
-      "test/test_SequencerQuickControlsContainment/test_main.cpp": 1
+      "test/test_SequencerPreparedTrackStructureTransaction/test_main.cpp": 1,
+      "test/test_SequencerQuickControlsContainment/test_main.cpp": 1,
+      "test/test_SequencerTrackBankOps/test_main.cpp": 1
     }
   }
 }

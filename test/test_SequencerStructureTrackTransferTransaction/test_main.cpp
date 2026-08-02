@@ -26,7 +26,11 @@ struct PublishRecorder {
     uint8_t activeTrack = 0;
 };
 
-void recordPreparedPublish(void* context, uint16_t enabledMask, uint8_t activeTrack) {
+void recordPreparedPublish(
+    void* context,
+    uint16_t enabledMask,
+    uint8_t activeTrack
+) noexcept {
     auto* recorder = static_cast<PublishRecorder*>(context);
     assert(recorder != nullptr);
     recorder->called = true;
@@ -35,8 +39,10 @@ void recordPreparedPublish(void* context, uint16_t enabledMask, uint8_t activeTr
 }
 
 bool canRecordPreparedHistory(
-    void* context, const core::state::sequencer::SequencerHistoryTrackStructureChange& change) {
-    auto* history = static_cast<core::state::sequencer::SequencerHistoryService*>(context);
+    const void* context,
+    const core::state::sequencer::SequencerHistoryTrackStructureChange& change) {
+    const auto* history = static_cast<
+        const core::state::sequencer::SequencerHistoryService*>(context);
     return history != nullptr && history->canRecordStructure(change);
 }
 

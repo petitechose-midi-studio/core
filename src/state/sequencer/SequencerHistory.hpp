@@ -191,6 +191,22 @@ enum class SequencerPatternHistoryCommitOutcome : uint8_t {
     Committed,
 };
 
+enum class SequencerTrackStructureChronologyStatus : uint8_t {
+    Unavailable = 0,
+    MacroAuditionBlocked,
+    ProjectTrackGestureBlocked,
+    PatternFailed,
+    Opened,
+};
+
+/** Exact result of the central Track Structure predecessor boundary. */
+struct SequencerTrackStructureChronologyResult {
+    SequencerTrackStructureChronologyStatus status =
+        SequencerTrackStructureChronologyStatus::Unavailable;
+    SequencerPatternHistoryCommitOutcome predecessorPattern =
+        SequencerPatternHistoryCommitOutcome::NoPending;
+};
+
 using SequencerPreparedPatternEditCommitOutcome = SequencerPatternHistoryCommitOutcome;
 
 // Active editor-to-bank ownership prepared for one frozen Track identity.
@@ -599,7 +615,9 @@ public:
     void recordPreparedStructure(SequencerHistoryTrackStructureChangePtr change);
     // Internal no-fail tail for an immutable Structure change admitted before
     // the first live write. This performs no equality or policy recheck.
-    void commitAdmittedStructure(SequencerHistoryTrackStructureChangePtr change);
+    void commitAdmittedStructure(
+        SequencerHistoryTrackStructureChangePtr change
+    ) noexcept;
     bool recordStructure(SequencerHistoryTrackStructureChangePtr change);
 
     bool canUndo() const { return undo_count_ > 0; }

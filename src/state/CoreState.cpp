@@ -12,10 +12,6 @@
 #include "diagnostics/MemoryFootprintReporter.hpp"
 #endif
 
-#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-#include <wiring.h>
-#endif
-
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
 #include "state/CoreStateBootstrap.hpp"
@@ -39,7 +35,9 @@ namespace {
 
 FLASHMEM SequencerDomainState::PendingApply* createPendingApply() {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    void* memory = extmem_malloc(sizeof(SequencerDomainState::PendingApply));
+    void* memory = core::app::allocateExtmemStrict(
+        sizeof(SequencerDomainState::PendingApply)
+    );
     if (!memory) return nullptr;
 #if OC_ENABLE_STATS
     core::diagnostics::trackExtmemAllocation(memory);
@@ -138,7 +136,7 @@ FLASHMEM void SequencerDomainState::PendingApplyDeleter::operator()(
 #if OC_ENABLE_STATS
     core::diagnostics::trackExtmemFree(ptr);
 #endif
-    extmem_free(ptr);
+    core::app::freeExtmemStrict(ptr);
 #else
     delete ptr;
 #endif

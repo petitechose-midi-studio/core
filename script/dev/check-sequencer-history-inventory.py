@@ -182,6 +182,37 @@ PREPARED_FULL_BANK_PROVIDER_ANCHORS = {
     ),
 }
 
+PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH = (
+    "src/handler/sequencer/SequencerPreparedTrackStructureTransaction.cpp"
+)
+PREPARED_TRACK_STRUCTURE_SERVICE_HEADER = (
+    "src/handler/sequencer/SequencerHistoryDomainServices.hpp"
+)
+PREPARED_TRACK_STRUCTURE_SERVICE_SOURCE = (
+    "src/handler/sequencer/SequencerHistoryDomainServices.cpp"
+)
+PREPARED_TRACK_STRUCTURE_STATE_HEADER = "src/state/sequencer/SequencerHistory.hpp"
+PREPARED_TRACK_STRUCTURE_STATE_SOURCE = "src/state/sequencer/SequencerHistory.cpp"
+PREPARED_TRACK_STRUCTURE_CORE_HEADER = "src/state/CoreState.hpp"
+PREPARED_TRACK_STRUCTURE_CORE_SOURCE = (
+    "src/state/CoreStateSequencerHistoryRecording.cpp"
+)
+PREPARED_TRACK_STRUCTURE_ADMISSION_METHOD = "canCommitAdmittedStructure"
+PREPARED_TRACK_STRUCTURE_TRUSTED_METHOD = "commitAdmittedStructure"
+PREPARED_TRACK_STRUCTURE_CORE_METHOD = (
+    "commitAdmittedSequencerStructureHistory"
+)
+PREPARED_TRACK_STRUCTURE_ADAPTER_FUNCTION = (
+    "commitAdmittedStructureFromCoreState"
+)
+PREPARED_TRACK_STRUCTURE_TAIL_FUNCTION = (
+    "commitPreparedSequencerTrackStructureTransaction"
+)
+PREPARED_TRACK_STRUCTURE_FORBIDDEN_RAW_METHODS = (
+    "recordStructure",
+    "recordPreparedStructure",
+)
+
 
 def sanitize_cpp(source: str) -> str:
     """Remove comments and literals while preserving offsets and newlines."""
@@ -461,6 +492,135 @@ def expected_prepared_full_bank_trusted_commit_counter(manifest) -> Counter:
                 global_source["expectedCallCount"],
         }
     )
+
+
+def expected_prepared_track_structure_admission_counter(manifest) -> Counter:
+    gate = manifest["preparedTrackStructureLifecycle"]["admissionGate"]
+    method = gate["method"]
+    declaration = gate["declaration"]
+    implementation = gate["implementation"]
+    dispatch = gate["memberDispatch"]
+    expected = Counter(
+        {
+            ("declaration", declaration["path"], method):
+                declaration["expectedCount"],
+            (
+                "definition",
+                implementation["path"],
+                implementation["qualifier"],
+                method,
+            ): implementation["expectedDefinitionCount"],
+            ("member-dispatch-total", dispatch["path"], method):
+                dispatch["expectedTotal"],
+        }
+    )
+    for group in dispatch["groups"]:
+        expected[("member-dispatch", group["path"], method)] = group["count"]
+    return expected
+
+
+def expected_prepared_track_structure_trusted_commit_counter(
+    manifest,
+) -> Counter:
+    trusted = manifest["preparedTrackStructureLifecycle"]["trustedCommit"]
+    method = trusted["method"]
+    dispatch = trusted["memberDispatch"]
+    state_declaration = trusted["stateDeclaration"]
+    state_implementation = trusted["stateImplementation"]
+    defensive = trusted["defensiveForward"]
+    state_calls = trusted["stateSourceCalls"]
+    core_authority = trusted["coreAuthority"]
+    core_declaration = core_authority["declaration"]
+    core_implementation = core_authority["implementation"]
+    facade = trusted["serviceFacade"]
+    facade_declaration = facade["declaration"]
+    facade_implementation = facade["implementation"]
+    adapter = trusted["coreAdapter"]
+    gateway = trusted["transactionGateway"]
+    expected = Counter(
+        {
+            ("member-dispatch-total", dispatch["path"], method):
+                dispatch["expectedTotal"],
+            ("state-declaration", state_declaration["path"], method):
+                state_declaration["expectedCount"],
+            (
+                "state-definition",
+                state_implementation["path"],
+                state_implementation["qualifier"],
+                method,
+            ): state_implementation["expectedDefinitionCount"],
+            (
+                "defensive-forward",
+                defensive["path"],
+                defensive["function"],
+                method,
+            ): defensive["expectedCallCount"],
+            ("state-source-calls", state_calls["path"], method):
+                state_calls["expectedCallCount"],
+            (
+                "core-declaration",
+                core_declaration["path"],
+                core_authority["method"],
+            ): core_declaration["expectedCount"],
+            (
+                "core-definition",
+                core_implementation["path"],
+                core_implementation["qualifier"],
+                core_authority["method"],
+            ): core_implementation["expectedDefinitionCount"],
+            (
+                "core-sink-call",
+                core_implementation["path"],
+                core_authority["method"],
+                method,
+            ): core_authority["expectedSinkCallCount"],
+            ("facade-declaration", facade_declaration["path"], method):
+                facade_declaration["expectedCount"],
+            (
+                "facade-definition",
+                facade_implementation["path"],
+                facade_implementation["qualifier"],
+                method,
+            ): facade_implementation["expectedDefinitionCount"],
+            (
+                "adapter-definition",
+                adapter["path"],
+                adapter["function"],
+            ): adapter["expectedDefinitionCount"],
+            (
+                "adapter-downstream",
+                adapter["path"],
+                adapter["function"],
+                adapter["downstreamMethod"],
+            ): adapter["expectedDownstreamCallCount"],
+            (
+                "adapter-binding",
+                adapter["path"],
+                method,
+                adapter["binding"],
+            ): adapter["expectedBindingCount"],
+            (
+                "gateway-occurrences",
+                PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH,
+                gateway["function"],
+            ): gateway["expectedUnqualifiedOccurrenceCount"],
+            (
+                "gateway-member-forward",
+                PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH,
+                gateway["function"],
+                method,
+            ): gateway["expectedMemberForwardCount"],
+            (
+                "gateway-tail-call",
+                PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH,
+                gateway["tailFunction"],
+                gateway["function"],
+            ): gateway["expectedTailCallCount"],
+        }
+    )
+    for group in dispatch["groups"]:
+        expected[("member-dispatch", group["path"], method)] = group["count"]
+    return expected
 
 
 def walk_manifest(value, path="root"):
@@ -982,6 +1142,134 @@ def manifest_errors(manifest) -> list[str]:
                 if type(count) is not int or count < 0:
                     errors.append(f"{function}:{field} must be a non-negative integer")
 
+    track_structure = manifest.get("preparedTrackStructureLifecycle")
+    if not isinstance(track_structure, dict):
+        errors.append(
+            "manifest is missing the prepared Track Structure lifecycle ratchet"
+        )
+    else:
+        if track_structure.get("transactionPath") != \
+                PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH:
+            errors.append("prepared Track Structure transaction path must remain canonical")
+        if tuple(track_structure.get("forbiddenRawMethods", [])) != \
+                PREPARED_TRACK_STRUCTURE_FORBIDDEN_RAW_METHODS:
+            errors.append("prepared Track Structure raw recording denylist must remain exact")
+        if track_structure.get("expectedForbiddenRawCallTotal") != 0:
+            errors.append("prepared Track Structure transaction must retain zero raw recording calls")
+
+        admission = track_structure.get("admissionGate", {})
+        if admission.get("method") != PREPARED_TRACK_STRUCTURE_ADMISSION_METHOD:
+            errors.append("prepared Track Structure admission method must remain canonical")
+        admission_declaration = admission.get("declaration", {})
+        if admission_declaration.get("path") != \
+                PREPARED_TRACK_STRUCTURE_SERVICE_HEADER or \
+                admission_declaration.get("expectedCount") != 1:
+            errors.append("prepared Track Structure admission declaration must remain unique")
+        admission_implementation = admission.get("implementation", {})
+        if admission_implementation.get("path") != \
+                PREPARED_TRACK_STRUCTURE_SERVICE_SOURCE or \
+                admission_implementation.get("qualifier") != \
+                    "SequencerHistoryDomainServices" or \
+                admission_implementation.get("expectedDefinitionCount") != 1:
+            errors.append("prepared Track Structure admission definition must remain unique")
+        admission_dispatch = admission.get("memberDispatch", {})
+        admission_groups = tuple(
+            (group.get("path"), group.get("count"))
+            for group in admission_dispatch.get("groups", [])
+        )
+        if admission_dispatch.get("path") != "src" or \
+                admission_dispatch.get("expectedTotal") != 2 or \
+                admission_groups != ((PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH, 2),):
+            errors.append("prepared Track Structure admission calls must remain transaction-only 2")
+
+        trusted = track_structure.get("trustedCommit", {})
+        if trusted.get("method") != PREPARED_TRACK_STRUCTURE_TRUSTED_METHOD:
+            errors.append("prepared Track Structure trusted commit method must remain canonical")
+        trusted_dispatch = trusted.get("memberDispatch", {})
+        trusted_groups = tuple(
+            (group.get("path"), group.get("count"))
+            for group in trusted_dispatch.get("groups", [])
+        )
+        expected_trusted_groups = (
+            (PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH, 1),
+            (PREPARED_TRACK_STRUCTURE_SERVICE_SOURCE, 1),
+            (PREPARED_TRACK_STRUCTURE_CORE_SOURCE, 1),
+        )
+        if trusted_dispatch.get("path") != "src" or \
+                trusted_dispatch.get("expectedTotal") != 3 or \
+                trusted_groups != expected_trusted_groups:
+            errors.append("prepared Track Structure trusted member dispatch must remain exact 3")
+
+        state_declaration = trusted.get("stateDeclaration", {})
+        if state_declaration.get("path") != \
+                PREPARED_TRACK_STRUCTURE_STATE_HEADER or \
+                state_declaration.get("expectedCount") != 1:
+            errors.append("prepared Track Structure state declaration must remain unique")
+        state_implementation = trusted.get("stateImplementation", {})
+        if state_implementation.get("path") != \
+                PREPARED_TRACK_STRUCTURE_STATE_SOURCE or \
+                state_implementation.get("qualifier") != "SequencerHistoryService" or \
+                state_implementation.get("expectedDefinitionCount") != 1:
+            errors.append("prepared Track Structure state sink definition must remain unique")
+        defensive = trusted.get("defensiveForward", {})
+        if defensive.get("path") != PREPARED_TRACK_STRUCTURE_STATE_SOURCE or \
+                defensive.get("function") != "recordPreparedStructure" or \
+                defensive.get("expectedCallCount") != 1:
+            errors.append("prepared Track Structure defensive forward must remain unique")
+        state_calls = trusted.get("stateSourceCalls", {})
+        if state_calls.get("path") != "src/state" or \
+                state_calls.get("expectedCallCount") != 2:
+            errors.append("prepared Track Structure state source call total must remain 2")
+
+        core_authority = trusted.get("coreAuthority", {})
+        if core_authority.get("method") != PREPARED_TRACK_STRUCTURE_CORE_METHOD:
+            errors.append("prepared Track Structure Core authority method must remain canonical")
+        core_declaration = core_authority.get("declaration", {})
+        if core_declaration.get("path") != PREPARED_TRACK_STRUCTURE_CORE_HEADER or \
+                core_declaration.get("expectedCount") != 1:
+            errors.append("prepared Track Structure Core declaration must remain unique")
+        core_implementation = core_authority.get("implementation", {})
+        if core_implementation.get("path") != PREPARED_TRACK_STRUCTURE_CORE_SOURCE or \
+                core_implementation.get("qualifier") != "CoreState" or \
+                core_implementation.get("expectedDefinitionCount") != 1 or \
+                core_authority.get("expectedSinkCallCount") != 1:
+            errors.append("prepared Track Structure Core authority must remain unique")
+
+        facade = trusted.get("serviceFacade", {})
+        facade_declaration = facade.get("declaration", {})
+        facade_implementation = facade.get("implementation", {})
+        if facade_declaration.get("path") != \
+                PREPARED_TRACK_STRUCTURE_SERVICE_HEADER or \
+                facade_declaration.get("expectedCount") != 1 or \
+                facade_implementation.get("path") != \
+                    PREPARED_TRACK_STRUCTURE_SERVICE_SOURCE or \
+                facade_implementation.get("qualifier") != \
+                    "SequencerHistoryDomainServices" or \
+                facade_implementation.get("expectedDefinitionCount") != 1:
+            errors.append("prepared Track Structure service facade must remain unique")
+
+        adapter = trusted.get("coreAdapter", {})
+        if adapter.get("path") != PREPARED_TRACK_STRUCTURE_SERVICE_SOURCE or \
+                adapter.get("function") != \
+                    PREPARED_TRACK_STRUCTURE_ADAPTER_FUNCTION or \
+                adapter.get("expectedDefinitionCount") != 1 or \
+                adapter.get("downstreamMethod") != \
+                    PREPARED_TRACK_STRUCTURE_CORE_METHOD or \
+                adapter.get("expectedDownstreamCallCount") != 1 or \
+                adapter.get("binding") != \
+                    PREPARED_TRACK_STRUCTURE_ADAPTER_FUNCTION or \
+                adapter.get("expectedBindingCount") != 1:
+            errors.append("prepared Track Structure Core adapter must remain exact")
+
+        gateway = trusted.get("transactionGateway", {})
+        if gateway.get("function") != PREPARED_TRACK_STRUCTURE_TRUSTED_METHOD or \
+                gateway.get("expectedUnqualifiedOccurrenceCount") != 2 or \
+                gateway.get("expectedMemberForwardCount") != 1 or \
+                gateway.get("tailFunction") != \
+                    PREPARED_TRACK_STRUCTURE_TAIL_FUNCTION or \
+                gateway.get("expectedTailCallCount") != 1:
+            errors.append("prepared Track Structure transaction gateway must remain exact")
+
     seam = manifest.get("failureInjection", {})
     helpers = seam.get("guardedHelpers", [])
     if len(helpers) != 4 or len(set(helpers)) != 4:
@@ -989,6 +1277,225 @@ def manifest_errors(manifest) -> list[str]:
     if seam.get("expectedAllocatorGuardCount") != len(helpers) + 1:
         errors.append("allocator guard count must be one seam guard plus four helper guards")
     return errors
+
+
+def collect_prepared_track_structure_observation(root: Path, manifest):
+    lifecycle = manifest["preparedTrackStructureLifecycle"]
+    transaction_path = lifecycle["transactionPath"]
+    transaction_file = root / transaction_path
+
+    admission = lifecycle["admissionGate"]
+    admission_method = admission["method"]
+    admission_declaration = admission["declaration"]
+    admission_implementation = admission["implementation"]
+    admission_dispatch = admission["memberDispatch"]
+    admission_calls = count_member_dispatch(root, (admission_method,))
+    admission_observed = Counter(
+        {
+            (
+                "declaration",
+                admission_declaration["path"],
+                admission_method,
+            ): count_unqualified_calls(
+                root / admission_declaration["path"],
+                (admission_method,),
+            )[admission_method],
+            (
+                "definition",
+                admission_implementation["path"],
+                admission_implementation["qualifier"],
+                admission_method,
+            ): count_qualified_calls(
+                root / admission_implementation["path"],
+                admission_implementation["qualifier"],
+                (admission_method,),
+            )[admission_method],
+            (
+                "member-dispatch-total",
+                admission_dispatch["path"],
+                admission_method,
+            ): sum(admission_calls.values()),
+        }
+    )
+    for (path, _), count in admission_calls.items():
+        admission_observed[("member-dispatch", path, admission_method)] = count
+
+    trusted = lifecycle["trustedCommit"]
+    trusted_method = trusted["method"]
+    trusted_dispatch = trusted["memberDispatch"]
+    trusted_calls = count_member_dispatch(root, (trusted_method,))
+    state_declaration = trusted["stateDeclaration"]
+    state_implementation = trusted["stateImplementation"]
+    defensive = trusted["defensiveForward"]
+    state_source = trusted["stateSourceCalls"]
+    core_authority = trusted["coreAuthority"]
+    core_declaration = core_authority["declaration"]
+    core_implementation = core_authority["implementation"]
+    facade = trusted["serviceFacade"]
+    facade_declaration = facade["declaration"]
+    facade_implementation = facade["implementation"]
+    adapter = trusted["coreAdapter"]
+    gateway = trusted["transactionGateway"]
+
+    state_declaration_count = count_unqualified_calls(
+        root / state_declaration["path"],
+        (trusted_method,),
+    )[trusted_method]
+    adapter_text = sanitize_cpp(
+        (root / adapter["path"]).read_text(encoding="utf-8")
+    )
+    binding_pattern = re.compile(
+        r"\.\s*" + re.escape(trusted_method) + r"\s*=\s*" +
+        re.escape(adapter["binding"]) + r"\b"
+    )
+    trusted_observed = Counter(
+        {
+            (
+                "member-dispatch-total",
+                trusted_dispatch["path"],
+                trusted_method,
+            ): sum(trusted_calls.values()),
+            (
+                "state-declaration",
+                state_declaration["path"],
+                trusted_method,
+            ): state_declaration_count,
+            (
+                "state-definition",
+                state_implementation["path"],
+                state_implementation["qualifier"],
+                trusted_method,
+            ): count_qualified_calls(
+                root / state_implementation["path"],
+                state_implementation["qualifier"],
+                (trusted_method,),
+            )[trusted_method],
+            (
+                "defensive-forward",
+                defensive["path"],
+                defensive["function"],
+                trusted_method,
+            ): count_calls_in_function(
+                root / defensive["path"],
+                defensive["function"],
+                (trusted_method,),
+            )[trusted_method],
+            (
+                "state-source-calls",
+                state_source["path"],
+                trusted_method,
+            ): count_invocations_under(
+                root,
+                state_source["path"],
+                (trusted_method,),
+            )[trusted_method] - state_declaration_count,
+            (
+                "core-declaration",
+                core_declaration["path"],
+                core_authority["method"],
+            ): count_unqualified_calls(
+                root / core_declaration["path"],
+                (core_authority["method"],),
+            )[core_authority["method"]],
+            (
+                "core-definition",
+                core_implementation["path"],
+                core_implementation["qualifier"],
+                core_authority["method"],
+            ): count_qualified_calls(
+                root / core_implementation["path"],
+                core_implementation["qualifier"],
+                (core_authority["method"],),
+            )[core_authority["method"]],
+            (
+                "core-sink-call",
+                core_implementation["path"],
+                core_authority["method"],
+                trusted_method,
+            ): count_calls_in_function(
+                root / core_implementation["path"],
+                core_authority["method"],
+                (trusted_method,),
+            )[trusted_method],
+            (
+                "facade-declaration",
+                facade_declaration["path"],
+                trusted_method,
+            ): count_unqualified_calls(
+                root / facade_declaration["path"],
+                (trusted_method,),
+            )[trusted_method],
+            (
+                "facade-definition",
+                facade_implementation["path"],
+                facade_implementation["qualifier"],
+                trusted_method,
+            ): count_qualified_calls(
+                root / facade_implementation["path"],
+                facade_implementation["qualifier"],
+                (trusted_method,),
+            )[trusted_method],
+            (
+                "adapter-definition",
+                adapter["path"],
+                adapter["function"],
+            ): count_unqualified_calls(
+                root / adapter["path"],
+                (adapter["function"],),
+            )[adapter["function"]],
+            (
+                "adapter-downstream",
+                adapter["path"],
+                adapter["function"],
+                adapter["downstreamMethod"],
+            ): count_calls_in_function(
+                root / adapter["path"],
+                adapter["function"],
+                (adapter["downstreamMethod"],),
+            )[adapter["downstreamMethod"]],
+            (
+                "adapter-binding",
+                adapter["path"],
+                trusted_method,
+                adapter["binding"],
+            ): len(binding_pattern.findall(adapter_text)),
+            (
+                "gateway-occurrences",
+                transaction_path,
+                gateway["function"],
+            ): count_unqualified_calls(
+                transaction_file,
+                (gateway["function"],),
+            )[gateway["function"]],
+            (
+                "gateway-member-forward",
+                transaction_path,
+                gateway["function"],
+                trusted_method,
+            ): count_member_method(transaction_file, trusted_method),
+            (
+                "gateway-tail-call",
+                transaction_path,
+                gateway["tailFunction"],
+                gateway["function"],
+            ): count_calls_in_function(
+                transaction_file,
+                gateway["tailFunction"],
+                (gateway["function"],),
+            )[gateway["function"]],
+        }
+    )
+    for (path, _), count in trusted_calls.items():
+        trusted_observed[("member-dispatch", path, trusted_method)] = count
+
+    forbidden_raw_calls = Counter()
+    raw_counts = count_any_calls(
+        transaction_file,
+        lifecycle["forbiddenRawMethods"],
+    )
+    for method, count in raw_counts.items():
+        forbidden_raw_calls[(transaction_path, method)] = count
+    return admission_observed, trusted_observed, forbidden_raw_calls
 
 
 def collect_observation(root: Path, manifest):
@@ -1142,6 +1649,12 @@ def collect_observation(root: Path, manifest):
         - trusted_declaration["expectedCount"]
     )
 
+    (
+        prepared_track_structure_admission,
+        prepared_track_structure_trusted_commit,
+        prepared_track_structure_forbidden_raw_calls,
+    ) = collect_prepared_track_structure_observation(root, manifest)
+
     return {
         "members": count_member_dispatch(root, methods),
         "forwards": count_unqualified_calls(forward_path, methods),
@@ -1200,6 +1713,12 @@ def collect_observation(root: Path, manifest):
             trusted["forbiddenHandlerRoot"]["path"],
             (trusted_method,),
         ),
+        "preparedTrackStructureAdmissionGate":
+            prepared_track_structure_admission,
+        "preparedTrackStructureTrustedCommit":
+            prepared_track_structure_trusted_commit,
+        "preparedTrackStructureForbiddenRawCalls":
+            prepared_track_structure_forbidden_raw_calls,
     }
 
 
@@ -1351,6 +1870,21 @@ def observation_errors(manifest, observed) -> list[str]:
         Counter(),
         observed["preparedFullBankTrustedCommitHandlerCalls"],
     )
+    errors += counter_errors(
+        "prepared Track Structure admission gate",
+        expected_prepared_track_structure_admission_counter(manifest),
+        observed["preparedTrackStructureAdmissionGate"],
+    )
+    errors += counter_errors(
+        "prepared Track Structure trusted commit",
+        expected_prepared_track_structure_trusted_commit_counter(manifest),
+        observed["preparedTrackStructureTrustedCommit"],
+    )
+    errors += counter_errors(
+        "forbidden prepared Track Structure raw call",
+        Counter(),
+        observed["preparedTrackStructureForbiddenRawCalls"],
+    )
 
     member_total = sum(observed["members"].values())
     forward_total = sum(observed["forwards"].values())
@@ -1401,6 +1935,21 @@ def helper_bodies(
         cursor = close_paren + 1
         while cursor < len(text) and text[cursor].isspace():
             cursor += 1
+        while cursor < len(text):
+            qualifier = re.match(r"(?:const|noexcept)\b", text[cursor:])
+            if qualifier is None:
+                break
+            token = qualifier.group(0)
+            cursor += len(token)
+            while cursor < len(text) and text[cursor].isspace():
+                cursor += 1
+            if token == "noexcept" and cursor < len(text) and text[cursor] == "(":
+                close_noexcept = find_matching(text, cursor, "(", ")")
+                if close_noexcept is None:
+                    break
+                cursor = close_noexcept + 1
+                while cursor < len(text) and text[cursor].isspace():
+                    cursor += 1
         if cursor >= len(text) or text[cursor] != "{":
             continue
         close_brace = find_matching(text, cursor, "{", "}")
@@ -1664,6 +2213,13 @@ def synthetic_observation(manifest):
             expected_prepared_full_bank_trusted_commit_counter(manifest)
         ),
         "preparedFullBankTrustedCommitHandlerCalls": Counter(),
+        "preparedTrackStructureAdmissionGate": (
+            expected_prepared_track_structure_admission_counter(manifest)
+        ),
+        "preparedTrackStructureTrustedCommit": (
+            expected_prepared_track_structure_trusted_commit_counter(manifest)
+        ),
+        "preparedTrackStructureForbiddenRawCalls": Counter(),
     }
 
 def scanner_self_test(manifest) -> bool:
@@ -2097,6 +2653,131 @@ def prepared_full_bank_provider_self_test(manifest) -> bool:
         for error in errors
     )
 
+
+def prepared_track_structure_lifecycle_self_test(manifest) -> bool:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+
+        def write(relative_path: str, content: str) -> None:
+            path = root / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+
+        write(
+            PREPARED_TRACK_STRUCTURE_STATE_HEADER,
+            "class SequencerHistoryService {\n"
+            "  void commitAdmittedStructure();\n"
+            "};\n",
+        )
+        write(
+            PREPARED_TRACK_STRUCTURE_STATE_SOURCE,
+            "void SequencerHistoryService::recordPreparedStructure() {\n"
+            "  commitAdmittedStructure();\n"
+            "}\n"
+            "void SequencerHistoryService::commitAdmittedStructure() {}\n",
+        )
+        write(
+            PREPARED_TRACK_STRUCTURE_CORE_HEADER,
+            "class CoreState {\n"
+            "  void commitAdmittedSequencerStructureHistory();\n"
+            "};\n",
+        )
+        write(
+            PREPARED_TRACK_STRUCTURE_CORE_SOURCE,
+            "void CoreState::commitAdmittedSequencerStructureHistory() noexcept {\n"
+            "  history.commitAdmittedStructure();\n"
+            "}\n",
+        )
+        write(
+            PREPARED_TRACK_STRUCTURE_SERVICE_HEADER,
+            "class SequencerHistoryDomainServices {\n"
+            "  bool canCommitAdmittedStructure() const;\n"
+            "  void commitAdmittedStructure();\n"
+            "};\n",
+        )
+        write(
+            PREPARED_TRACK_STRUCTURE_SERVICE_SOURCE,
+            "void commitAdmittedStructureFromCoreState() noexcept {\n"
+            "  state->commitAdmittedSequencerStructureHistory();\n"
+            "}\n"
+            "bool SequencerHistoryDomainServices::"
+            "canCommitAdmittedStructure() const { return true; }\n"
+            "void SequencerHistoryDomainServices::"
+            "commitAdmittedStructure() noexcept {\n"
+            "  operations_->commitAdmittedStructure();\n"
+            "}\n"
+            "Ops operations{\n"
+            "  .commitAdmittedStructure = "
+            "commitAdmittedStructureFromCoreState,\n"
+            "};\n",
+        )
+        write(
+            PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH,
+            "void commitAdmittedStructure() noexcept {\n"
+            "  history.commitAdmittedStructure();\n"
+            "}\n"
+            "void commitPreparedSequencerTrackStructureTransaction() {\n"
+            "  history.canCommitAdmittedStructure();\n"
+            "  prepared.history_.canCommitAdmittedStructure();\n"
+            "  commitAdmittedStructure();\n"
+            "}\n",
+        )
+        admission, trusted, forbidden = (
+            collect_prepared_track_structure_observation(root, manifest)
+        )
+        if admission != expected_prepared_track_structure_admission_counter(
+                manifest):
+            return False
+        if trusted != expected_prepared_track_structure_trusted_commit_counter(
+                manifest):
+            return False
+        if forbidden:
+            return False
+
+    unexpected = synthetic_observation(manifest)
+    unexpected["preparedTrackStructureTrustedCommit"][(
+        "member-dispatch",
+        "src/handler/sequencer/Unexpected.cpp",
+        PREPARED_TRACK_STRUCTURE_TRUSTED_METHOD,
+    )] += 1
+    if not any(
+        "prepared Track Structure trusted commit mismatch" in error
+        for error in observation_errors(manifest, unexpected)
+    ):
+        return False
+
+    missing_gate = synthetic_observation(manifest)
+    gate_key = next(iter(missing_gate["preparedTrackStructureAdmissionGate"]))
+    missing_gate["preparedTrackStructureAdmissionGate"][gate_key] -= 1
+    if not any(
+        "prepared Track Structure admission gate mismatch" in error
+        for error in observation_errors(manifest, missing_gate)
+    ):
+        return False
+
+    raw_call = synthetic_observation(manifest)
+    raw_call["preparedTrackStructureForbiddenRawCalls"][(
+        PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH,
+        "recordPreparedStructure",
+    )] = 1
+    if not any(
+        "forbidden prepared Track Structure raw call mismatch" in error
+        for error in observation_errors(manifest, raw_call)
+    ):
+        return False
+
+    missing_binding = synthetic_observation(manifest)
+    binding_key = next(
+        key for key in missing_binding["preparedTrackStructureTrustedCommit"]
+        if key[0] == "adapter-binding"
+    )
+    missing_binding["preparedTrackStructureTrustedCommit"][binding_key] -= 1
+    return any(
+        "prepared Track Structure trusted commit mismatch" in error
+        for error in observation_errors(manifest, missing_binding)
+    )
+
+
 def seam_self_test(manifest) -> bool:
     seam = manifest["failureInjection"]
     macro = seam["macro"]
@@ -2226,6 +2907,8 @@ def run_self_tests(manifest) -> list[str]:
         failures.append("prepared FullBank lifecycle scanner or topology drift was not rejected")
     if not prepared_full_bank_provider_self_test(manifest):
         failures.append("prepared FullBank active-spare provider drift was not rejected")
+    if not prepared_track_structure_lifecycle_self_test(manifest):
+        failures.append("prepared Track Structure lifecycle drift was not rejected")
     if not seam_self_test(manifest):
         failures.append("failure-seam fixture or broken-helper mutation was not detected")
     return failures
@@ -2238,7 +2921,7 @@ def load_manifest(path: Path):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Check the L-R08-06 Sequencer history inventory ratchet."
+        description="Check the L-R08-07 Sequencer history inventory ratchet."
     )
     parser.add_argument("--root", type=Path, default=ROOT, help="Core repository root")
     parser.add_argument(
@@ -2269,7 +2952,7 @@ def main() -> int:
             for failure in failures:
                 print(f"[FAIL] {failure}", file=sys.stderr)
             return 1
-        print("Sequencer history inventory self-tests: OK (12/12)")
+        print("Sequencer history inventory self-tests: OK (13/13)")
         return 0
 
     root = args.root.resolve()
@@ -2328,6 +3011,15 @@ def main() -> int:
         f"{trusted['defensiveForward']['expectedCallCount']} defensive forward; "
         f"{trusted['globalSourceCalls']['expectedCallCount']} total source calls; "
         "zero handler calls"
+    )
+    track_structure = manifest["preparedTrackStructureLifecycle"]
+    track_trusted = track_structure["trustedCommit"]
+    print(
+        "  prepared Track Structure lifecycle: "
+        f"{track_structure['admissionGate']['memberDispatch']['expectedTotal']} "
+        "admission checks / "
+        f"{track_trusted['memberDispatch']['expectedTotal']} trusted edges; "
+        "zero raw recording calls"
     )
     providers = full_bank["activeSpareProviders"]["providers"]
     print(

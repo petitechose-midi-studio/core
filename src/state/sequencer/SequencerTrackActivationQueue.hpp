@@ -28,6 +28,15 @@ enum class SequencerTrackActivationTarget : uint8_t {
     AFTER,
 };
 
+static_assert(
+    static_cast<uint8_t>(SequencerTrackActivationOrigin::HISTORY) <= 0x03U,
+    "activation guard packs origin in two bits"
+);
+static_assert(
+    static_cast<uint8_t>(SequencerTrackActivationTarget::AFTER) <= 0x01U,
+    "activation guard packs target in one bit"
+);
+
 struct SequencerTrackActivationBatch {
     uint16_t trackMask = 0;
     uint16_t localLoopBoundaryMask = 0;
@@ -77,6 +86,31 @@ struct SequencerTrackActivationPlan {
 static_assert(
     sizeof(SequencerTrackActivationPlan) <= 256,
     "normal activation plan must remain within the planner frame target"
+);
+
+/**
+ * Exact, non-mutating guard for a direct Track Structure action.
+ *
+ * Direct create/remove/Macro topology commands never reserve an activation
+ * slot. They capture the complete queue state and reject when another pending
+ * activation intersects their affected/old/new Track mask. Final validation
+ * repeats both checks without cancelling or replacing the other transaction.
+ */
+struct SequencerTrackActivationMutationGuard {
+    std::array<uint32_t, SequencerTrackBankState::TRACK_COUNT> generations{};
+    std::array<uint32_t, SequencerTrackBankState::TRACK_COUNT> operationIds{};
+    uint32_t nextGeneration = 0U;
+    uint32_t nextOperationId = 0U;
+    uint32_t telemetryRevision = 0U;
+    // phase[0..2], local-boundary[3], target[4], origin[5..6].
+    std::array<uint8_t, SequencerTrackBankState::TRACK_COUNT> packedEntries{};
+    uint16_t protectedTrackMask = 0U;
+
+    [[nodiscard]] bool valid() const { return protectedTrackMask != 0U; }
+};
+static_assert(
+    sizeof(SequencerTrackActivationMutationGuard) <= 160U,
+    "direct activation guard must remain within the planner frame target"
 );
 
 struct SequencerTrackActivationHistoryRef {
@@ -203,9 +237,22 @@ public:
         SequencerTrackActivationBatch& out
     );
 
+    /** Captures an exact direct-mutation guard without changing queue state. */
+    [[nodiscard]] bool captureMutationGuard(
+        uint16_t protectedTrackMask,
+        SequencerTrackActivationMutationGuard& out
+    ) const;
+    /** Exact final match plus repeated pending-intersection rejection. */
+    [[nodiscard]] bool mutationGuardMatches(
+        const SequencerTrackActivationMutationGuard& guard
+    ) const;
+
     uint16_t pendingTrackMask() const;
     SequencerTrackActivationTelemetry telemetry(uint8_t trackIndex) const;
     oc::state::Signal<uint32_t, 4>& telemetryRevision() { return telemetry_revision_; }
+    const oc::state::Signal<uint32_t, 4>& telemetryRevision() const {
+        return telemetry_revision_;
+    }
 
     SequencerTrackActivationRuntimePublication captureRuntimePublication() const;
 
@@ -262,6 +309,10 @@ private:
         CANCELLED_FROZEN,
         CANCELLED,
     };
+    static_assert(
+        static_cast<uint8_t>(InternalPhase::CANCELLED) <= 0x07U,
+        "activation guard packs phase in three bits"
+    );
 
     struct Entry {
         volatile InternalPhase phase = InternalPhase::IDLE;
@@ -286,6 +337,10 @@ private:
     static bool sameEntry_(
         const Entry& entry,
         const SequencerTrackActivationEntrySnapshot& expected
+    );
+    static bool packMutationGuardEntry_(
+        const Entry& entry,
+        uint8_t& out
     );
     void captureExpectedStateLocked_(
         SequencerTrackActivationExpectedState& out

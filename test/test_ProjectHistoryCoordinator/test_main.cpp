@@ -372,6 +372,98 @@ void test_pending_track_gesture_blocks_global_history_boundary() {
     std::cout << "[PASS] pending Track gestures are fail-closed global transactions\n";
 }
 
+void test_track_structure_boundary_reports_and_commits_pattern_predecessor() {
+    Harness h;
+    const auto noPending =
+        h.state.openSequencerTrackStructureChronologyBoundary();
+    assert(noPending.status ==
+           seq::SequencerTrackStructureChronologyStatus::Opened);
+    assert(noPending.predecessorPattern ==
+           seq::SequencerPatternHistoryCommitOutcome::NoPending);
+
+    preparePendingPatternEdit(h.state);
+    const std::size_t undoBefore = h.state.sequencerHistory.undoCount();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const auto committed =
+        h.state.openSequencerTrackStructureChronologyBoundary();
+    assert(committed.status ==
+           seq::SequencerTrackStructureChronologyStatus::Opened);
+    assert(committed.predecessorPattern ==
+           seq::SequencerPatternHistoryCommitOutcome::Committed);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == undoBefore + 1U);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 1U);
+    assert(h.state.project.metadata.dirty);
+    assert(h.state.hasPendingProjectSessionSave());
+
+    std::cout
+        << "[PASS] Track Structure boundary commits and reports Pattern predecessor\n";
+}
+
+void test_track_structure_boundary_preserves_exclusive_transaction_owners() {
+    {
+        Harness h;
+        modulation::ModulatorLfoDraft source{};
+        source.name = "Boundary LFO";
+        source.parameters.periodTicks =
+            modulation::PROJECT_CONTROL_TICKS_PER_BEAT;
+        source.parameters.shape = modulation::ModulatorLfoShape::SINE;
+        source.parameters.retrigger =
+            modulation::ModulatorRetriggerPolicy::TRANSPORT;
+        source.parameters.timing = modulation::ModulatorTimingMode::SYNC;
+        modulation::ModulationBindingDraft binding{};
+        binding.destination = modulation::projectControlDestination(kMacro);
+        binding.amountQ15 = 8192;
+        binding.application =
+            modulation::ModulationApplication::AROUND_BASE;
+
+        assert(h.state.macroHistory.beginLfoModulatorAudition(
+                   h.state.pages,
+                   kMacro,
+                   source,
+                   binding
+               ).changed());
+        const auto result =
+            h.state.openSequencerTrackStructureChronologyBoundary();
+        assert(result.status ==
+               seq::SequencerTrackStructureChronologyStatus::
+                   MacroAuditionBlocked);
+        assert(result.predecessorPattern ==
+               seq::SequencerPatternHistoryCommitOutcome::NoPending);
+        assert(h.state.macroHistory.hasPendingModulatorAuditionTransaction(
+            h.state.pages
+        ));
+        assert(h.state.macroHistory.cancelModulatorAudition(
+            h.state.pages,
+            kMacro
+        ));
+    }
+
+    {
+        Harness h;
+        auto tracks = project::ProjectTrackDomainServices::fromCoreState(
+            h.state
+        );
+        assert(tracks.beginGesture(
+            project::ProjectTrackHistoryActionKind::Delay,
+            0U
+        ));
+        assert(tracks.setDelayMs(0U, 23));
+        const auto result =
+            h.state.openSequencerTrackStructureChronologyBoundary();
+        assert(result.status ==
+               seq::SequencerTrackStructureChronologyStatus::
+                   ProjectTrackGestureBlocked);
+        assert(result.predecessorPattern ==
+               seq::SequencerPatternHistoryCommitOutcome::NoPending);
+        assert(h.state.projectTrackHistory.hasPendingGesture());
+        assert(tracks.cancelGesture());
+    }
+
+    std::cout
+        << "[PASS] Track Structure boundary preserves exclusive transaction owners\n";
+}
+
 void test_new_cross_domain_mutation_cuts_every_redo_branch() {
     Harness h;
     recordMacroDestination(h.state, 71);
@@ -655,6 +747,8 @@ int main() {
     test_track_mutation_cuts_macro_and_sequencer_redo_branches();
     test_track_boundary_publishes_runtime_revisions();
     test_pending_track_gesture_blocks_global_history_boundary();
+    test_track_structure_boundary_reports_and_commits_pattern_predecessor();
+    test_track_structure_boundary_preserves_exclusive_transaction_owners();
     test_new_cross_domain_mutation_cuts_every_redo_branch();
     test_macro_domain_eviction_establishes_an_exact_history_barrier();
     test_domain_clear_is_a_global_history_boundary();

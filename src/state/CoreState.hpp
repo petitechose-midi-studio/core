@@ -424,7 +424,8 @@ public:
     // Trusted no-fail tail for an unchanged, admitted Track Structure entry.
     // Shared topology has already been published by the owning transaction.
     void commitAdmittedSequencerStructureHistory(
-        sequencer::SequencerHistoryTrackStructureChangePtr change);
+        sequencer::SequencerHistoryTrackStructureChangePtr change
+    ) noexcept;
     bool recordSequencerStructureHistory(sequencer::SequencerHistoryTrackStructureChangePtr change);
     bool beginOrContinueSequencerPatternHistoryCoalescing(
         uint8_t step, sequencer::StepProperty property, uint32_t nowMs,
@@ -459,6 +460,17 @@ public:
         const sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs);
     sequencer::SequencerPatternHistoryCommitOutcome
     commitSequencerPatternHistoryCoalescingOutcome();
+    /**
+     * Opens the single Track Structure chronology boundary.
+     *
+     * Pending Macro auditions and Project-Track gestures reject the boundary.
+     * A pending Sequencer Pattern owner is then committed with a checked
+     * outcome before the remaining Project mutation coalescers are closed by
+     * CoreStateLifecycle. The returned Pattern outcome lets the Track
+     * transaction report that predecessor publication independently.
+     */
+    [[nodiscard]] sequencer::SequencerTrackStructureChronologyResult
+    openSequencerTrackStructureChronologyBoundary();
     bool commitSequencerPatternHistoryCoalescing();
     bool updateSequencerPatternHistoryCoalescing(uint32_t nowMs);
     bool hasPendingSequencerPatternHistoryCoalescing() const;

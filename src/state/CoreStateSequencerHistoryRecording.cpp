@@ -424,7 +424,8 @@ FLASHMEM void CoreState::recordPreparedSequencerStructureHistory(
 }
 
 FLASHMEM void CoreState::commitAdmittedSequencerStructureHistory(
-    sequencer::SequencerHistoryTrackStructureChangePtr change) {
+    sequencer::SequencerHistoryTrackStructureChangePtr change
+) noexcept {
     sequencerHistory.commitAdmittedStructure(std::move(change));
     publishPreparedSequencerMutation();
 }

@@ -18,9 +18,16 @@ MEMORY_GATE = ROOT / "script" / "pio" / "check_memory_budget.py"
 ATTENTION_LINE_THRESHOLD = 800
 ATTENTION_SUFFIXES = frozenset((".c", ".cc", ".cpp", ".h", ".hpp", ".ux"))
 
-PAGE_STRUCTURE_COLD_PLACEMENT_SELECTORS = (
+COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*SequencerPreparedPageStructureMutationPlan.cpp.o(.text* .rodata*)",
     "*SequencerPreparedPageStructureTransaction.cpp.o(.text* .rodata*)",
+    "*SequencerPreparedTrackStructurePlanValidation.cpp.o(.text* .rodata*)",
+    "*SequencerPreparedTrackStructureTransaction.cpp.o(.text* .rodata*)",
+    "*SharedTrackDomainServices.cpp.o(.text* .rodata*)",
+    "*SequencerHistory.cpp.o(.text* .rodata*)",
+    "*SequencerStructureHistory.cpp.o(.text* .rodata*)",
+    "*SequencerTrackBankOps.cpp.o(.text* .rodata*)",
+    "*(.text._ZN4core11persistence20ProjectFileWorkspace7prepareEv*)",
     "*SequencerSnapshotOps.cpp.o(.text* .rodata*)",
     "*(.text._ZNK2oc4note9sequencer18StepSequencerGraph8sequenceEt*)",
     "*(.text._ZNK2oc4note9sequencer18StepSequencerGraph8cycleSetEt*)",
@@ -86,7 +93,18 @@ FORBIDDEN_HEAP_REACTIVE_STORAGE = (
 
 DIRECT_EXTMEM_OWNERS = (
     "app/ExtmemAllocator.hpp",
-    "state/CoreState.cpp",
+)
+
+EXTMEM_ALLOCATOR_SOURCE = "src/app/ExtmemAllocator.hpp"
+CORE_STATE_SOURCE = "src/state/CoreState.cpp"
+CORE_STATE_HEADER = "src/state/CoreState.hpp"
+STRICT_EXTMEM_OWNER_SOURCES = frozenset((
+    EXTMEM_ALLOCATOR_SOURCE,
+    CORE_STATE_SOURCE,
+))
+
+STRICT_EXTMEM_CALL = re.compile(
+    r"\b(?:allocate|free)ExtmemStrict\s*\("
 )
 
 RETAINED_VIEW_CONSTRUCTION = re.compile(
@@ -95,6 +113,10 @@ RETAINED_VIEW_CONSTRUCTION = re.compile(
 
 DIRECT_EXTMEM_CALL = re.compile(
     r"\bextmem_(?:malloc|calloc|realloc|free)\s*\("
+)
+
+DIRECT_SMALLOC_MUTATION_CALL = re.compile(
+    r"\bsm_(?:malloc|calloc|realloc|free)_pool\s*\("
 )
 
 HOT_UI_FLASHMEM = re.compile(
@@ -245,11 +267,11 @@ def relative(path: Path) -> str:
 
 def cold_placement_contract_errors(cold_placement: str) -> list[str]:
     errors: list[str] = []
-    for selector in PAGE_STRUCTURE_COLD_PLACEMENT_SELECTORS:
+    for selector in COLD_PLACEMENT_CONTRACT_SELECTORS:
         if selector not in cold_placement:
             errors.append(
                 "script/pio/imxrt1062_t41_cold_placement.ld: "
-                f"missing Page Structure selector {selector}"
+                f"missing contracted cold-placement selector {selector}"
             )
     return errors
 
@@ -355,6 +377,366 @@ def cpp_function_bodies(content: str, qualified_name: str) -> list[str]:
             continue
         bodies.append(masked[terminator_index + 1 : closing_brace])
     return bodies
+
+
+def cpp_type_bodies(content: str, type_name: str) -> list[str]:
+    """Return balanced, comment/literal-masked class or struct bodies."""
+    masked = cpp_code_mask(content)
+    bodies: list[str] = []
+    signature = re.compile(
+        rf"\b(?:class|struct)\s+{re.escape(type_name)}\b"
+    )
+    for match in signature.finditer(masked):
+        opening = masked.find("{", match.end())
+        declaration_end = masked.find(";", match.end())
+        if opening < 0 or (0 <= declaration_end < opening):
+            continue
+        closing = matching_cpp_delimiter(masked, opening, "{", "}")
+        if closing is not None:
+            bodies.append(masked[opening + 1 : closing])
+    return bodies
+
+
+def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
+    """Prove strict PSRAM allocation, ownership, and matching release paths."""
+    errors: list[str] = []
+    allocator = files.get(EXTMEM_ALLOCATOR_SOURCE, "")
+    core_state = files.get(CORE_STATE_SOURCE, "")
+    core_header_code = cpp_code_mask(files.get(CORE_STATE_HEADER, ""))
+    allocator_code = cpp_code_mask(allocator)
+    core_state_code = cpp_code_mask(core_state)
+
+    def single_function_body(
+        content: str,
+        rel: str,
+        qualified_name: str,
+    ) -> str | None:
+        bodies = cpp_function_bodies(content, qualified_name)
+        if len(bodies) != 1:
+            errors.append(
+                f"{rel}: {qualified_name} must have exactly one balanced "
+                f"definition (found {len(bodies)})"
+            )
+            return None
+        return bodies[0]
+
+    def require_once(
+        body: str | None,
+        rel: str,
+        qualified_name: str,
+        pattern: str,
+        description: str,
+    ) -> None:
+        if body is None:
+            return
+        found = len(re.findall(pattern, body, flags=re.DOTALL))
+        if found != 1:
+            errors.append(
+                f"{rel}: {description} in {qualified_name} "
+                f"(expected 1, found {found})"
+            )
+
+    strict_allocate = single_function_body(
+        allocator,
+        EXTMEM_ALLOCATOR_SOURCE,
+        "allocateExtmemStrict",
+    )
+    strict_free = single_function_body(
+        allocator,
+        EXTMEM_ALLOCATOR_SOURCE,
+        "freeExtmemStrict",
+    )
+
+    require_once(
+        strict_allocate,
+        EXTMEM_ALLOCATOR_SOURCE,
+        "allocateExtmemStrict",
+        r"\breturn\s+sm_malloc_pool\s*\(\s*&\s*extmem_smalloc_pool\s*,"
+        r"\s*bytes\s*\)\s*;",
+        "strict allocation must return the canonical PSRAM pool sink",
+    )
+    require_once(
+        strict_free,
+        EXTMEM_ALLOCATOR_SOURCE,
+        "freeExtmemStrict",
+        r"\bsm_free_pool\s*\(\s*&\s*extmem_smalloc_pool\s*,"
+        r"\s*ptr\s*\)\s*;",
+        "strict free must use the matching canonical PSRAM pool sink",
+    )
+
+    for name, body in (
+        ("allocateExtmemStrict", strict_allocate),
+        ("freeExtmemStrict", strict_free),
+    ):
+        if body is None:
+            continue
+        found = len(DIRECT_SMALLOC_MUTATION_CALL.findall(body))
+        if found != 1:
+            errors.append(
+                f"{EXTMEM_ALLOCATOR_SOURCE}: {name} must contain exactly "
+                f"one smalloc pool mutation (found {found})"
+            )
+
+    if strict_allocate is not None and re.search(
+        r"\b(?:extmem_(?:malloc|calloc|realloc)|malloc|calloc|realloc)\s*\("
+        r"|\b(?:operator\s+)?new\b",
+        strict_allocate,
+    ):
+        errors.append(
+            f"{EXTMEM_ALLOCATOR_SOURCE}: allocateExtmemStrict must not "
+            "contain an internal-RAM fallback"
+        )
+
+    if strict_free is not None and re.search(
+        r"\b(?:extmem_free|free)\s*\(|\bdelete\b",
+        strict_free,
+    ):
+        errors.append(
+            f"{EXTMEM_ALLOCATOR_SOURCE}: freeExtmemStrict must not "
+            "contain a non-PSRAM fallback"
+        )
+
+    pool_mutation_count = len(
+        DIRECT_SMALLOC_MUTATION_CALL.findall(allocator_code)
+    )
+    if pool_mutation_count != 2:
+        errors.append(
+            f"{EXTMEM_ALLOCATOR_SOURCE}: expected only the canonical "
+            "smalloc allocation/free pair "
+            f"(found {pool_mutation_count} pool mutations)"
+        )
+
+    if DIRECT_EXTMEM_CALL.search(allocator_code):
+        errors.append(
+            f"{EXTMEM_ALLOCATOR_SOURCE}: strict owners must not use "
+            "Teensy's fallback-capable extmem allocator"
+        )
+
+    for helper in (
+        "makeExtmemUnique",
+        "makeExtmemUniqueCopy",
+        "makeExtmemUniqueForOverwrite",
+        "makeExtmemUniqueArrayForOverwrite",
+    ):
+        body = single_function_body(
+            allocator,
+            EXTMEM_ALLOCATOR_SOURCE,
+            helper,
+        )
+        require_once(
+            body,
+            EXTMEM_ALLOCATOR_SOURCE,
+            helper,
+            r"\ballocateExtmemStrict\s*\(",
+            "EXTMEM helper must allocate through allocateExtmemStrict",
+        )
+        require_once(
+            body,
+            EXTMEM_ALLOCATOR_SOURCE,
+            helper,
+            r"\bcore::diagnostics::trackExtmemAllocation\s*\(\s*memory\s*\)",
+            "EXTMEM helper must track its product allocation",
+        )
+
+    for deleter_name in ("ExtmemDeleter", "ExtmemArrayDeleter"):
+        type_bodies = cpp_type_bodies(allocator, deleter_name)
+        if len(type_bodies) != 1:
+            errors.append(
+                f"{EXTMEM_ALLOCATOR_SOURCE}: {deleter_name} must have "
+                f"exactly one balanced definition (found {len(type_bodies)})"
+            )
+            continue
+
+        operator_bodies = cpp_function_bodies(
+            type_bodies[0],
+            "operator()",
+        )
+        if len(operator_bodies) != 1:
+            errors.append(
+                f"{EXTMEM_ALLOCATOR_SOURCE}: {deleter_name}::operator() "
+                "must have exactly one balanced definition "
+                f"(found {len(operator_bodies)})"
+            )
+            continue
+
+        body = operator_bodies[0]
+        require_once(
+            body,
+            EXTMEM_ALLOCATOR_SOURCE,
+            f"{deleter_name}::operator()",
+            r"\bfreeExtmemStrict\s*\(\s*ptr\s*\)",
+            "EXTMEM deleter must pair allocation with freeExtmemStrict",
+        )
+        require_once(
+            body,
+            EXTMEM_ALLOCATOR_SOURCE,
+            f"{deleter_name}::operator()",
+            r"\bcore::diagnostics::trackExtmemFree\s*\(\s*ptr\s*\)",
+            "EXTMEM deleter must track its product free",
+        )
+
+        if deleter_name == "ExtmemDeleter":
+            require_once(
+                body,
+                EXTMEM_ALLOCATOR_SOURCE,
+                f"{deleter_name}::operator()",
+                r"\bptr\s*->\s*~T\s*\(\s*\)",
+                "object deleter must destroy before releasing PSRAM",
+            )
+
+    alias_contracts = (
+        (
+            r"\busing\s+ExtmemUniquePtr\s*=\s*std::unique_ptr\s*<\s*T\s*,"
+            r"\s*ExtmemDeleter\s*<\s*T\s*>\s*>\s*;",
+            "ExtmemUniquePtr must retain ExtmemDeleter",
+        ),
+        (
+            r"\busing\s+ExtmemUniqueArray\s*=\s*std::unique_ptr\s*<\s*T"
+            r"\s*\[\s*\]\s*,\s*ExtmemArrayDeleter\s*<\s*T\s*>\s*>\s*;",
+            "ExtmemUniqueArray must retain ExtmemArrayDeleter",
+        ),
+    )
+    for pattern, description in alias_contracts:
+        found = len(re.findall(pattern, allocator_code, flags=re.DOTALL))
+        if found != 1:
+            errors.append(
+                f"{EXTMEM_ALLOCATOR_SOURCE}: {description} "
+                f"(expected 1, found {found})"
+            )
+
+    for symbol, expected in (
+        ("allocateExtmemStrict", 5),
+        ("freeExtmemStrict", 3),
+    ):
+        found = len(re.findall(
+            rf"\b{symbol}\s*\(",
+            allocator_code,
+        ))
+        if found != expected:
+            errors.append(
+                f"{EXTMEM_ALLOCATOR_SOURCE}: canonical {symbol} inventory "
+                f"changed (expected {expected}, found {found})"
+            )
+
+    create_pending = single_function_body(
+        core_state,
+        CORE_STATE_SOURCE,
+        "createPendingApply",
+    )
+    pending_deleter = single_function_body(
+        core_state,
+        CORE_STATE_SOURCE,
+        "SequencerDomainState::PendingApplyDeleter::operator()",
+    )
+    core_constructor = single_function_body(
+        core_state,
+        CORE_STATE_SOURCE,
+        "CoreState::CoreState",
+    )
+
+    require_once(
+        create_pending,
+        CORE_STATE_SOURCE,
+        "createPendingApply",
+        r"\bcore::app::allocateExtmemStrict\s*\(\s*sizeof\s*\(\s*"
+        r"SequencerDomainState::PendingApply\s*\)\s*\)",
+        "PendingApply must use strict PSRAM allocation",
+    )
+    require_once(
+        create_pending,
+        CORE_STATE_SOURCE,
+        "createPendingApply",
+        r"\bif\s*\(\s*!\s*memory\s*\)\s*return\s+nullptr\s*;",
+        "PendingApply must fail closed on PSRAM exhaustion",
+    )
+    require_once(
+        create_pending,
+        CORE_STATE_SOURCE,
+        "createPendingApply",
+        r"\bcore::diagnostics::trackExtmemAllocation\s*\(\s*memory\s*\)",
+        "PendingApply must track its allocation",
+    )
+    require_once(
+        create_pending,
+        CORE_STATE_SOURCE,
+        "createPendingApply",
+        r"\bnew\s*\(\s*memory\s*\)\s*"
+        r"SequencerDomainState::PendingApply\s*\(\s*\)",
+        "PendingApply must be constructed in the strict allocation",
+    )
+
+    require_once(
+        pending_deleter,
+        CORE_STATE_SOURCE,
+        "SequencerDomainState::PendingApplyDeleter::operator()",
+        r"\bptr\s*->\s*~PendingApply\s*\(\s*\)",
+        "PendingApply must be destroyed before release",
+    )
+    require_once(
+        pending_deleter,
+        CORE_STATE_SOURCE,
+        "SequencerDomainState::PendingApplyDeleter::operator()",
+        r"\bcore::diagnostics::trackExtmemFree\s*\(\s*ptr\s*\)",
+        "PendingApply must track its free",
+    )
+    require_once(
+        pending_deleter,
+        CORE_STATE_SOURCE,
+        "SequencerDomainState::PendingApplyDeleter::operator()",
+        r"\bcore::app::freeExtmemStrict\s*\(\s*ptr\s*\)",
+        "PendingApply must use strict PSRAM release",
+    )
+    require_once(
+        core_constructor,
+        CORE_STATE_SOURCE,
+        "CoreState::CoreState",
+        r"\bsequencerDomain_\.pendingApply\.reset\s*\(\s*"
+        r"createPendingApply\s*\(\s*\)\s*\)",
+        "CoreState must adopt PendingApply into its custom-deleter owner",
+    )
+
+    pending_header_contracts = (
+        (
+            r"\busing\s+PendingApplyPtr\s*=\s*std::unique_ptr\s*<\s*"
+            r"PendingApply\s*,\s*PendingApplyDeleter\s*>\s*;",
+            "PendingApplyPtr must retain PendingApplyDeleter",
+        ),
+        (
+            r"\bPendingApplyPtr\s+pendingApply\s*;",
+            "pendingApply must retain its custom owner type",
+        ),
+    )
+    for pattern, description in pending_header_contracts:
+        found = len(re.findall(pattern, core_header_code, flags=re.DOTALL))
+        if found != 1:
+            errors.append(
+                f"{CORE_STATE_HEADER}: {description} "
+                f"(expected 1, found {found})"
+            )
+
+    for symbol, expected in (
+        ("allocateExtmemStrict", 1),
+        ("freeExtmemStrict", 1),
+    ):
+        found = len(re.findall(
+            rf"\bcore::app::{symbol}\s*\(",
+            core_state_code,
+        ))
+        if found != expected:
+            errors.append(
+                f"{CORE_STATE_SOURCE}: PendingApply {symbol} inventory "
+                f"changed (expected {expected}, found {found})"
+            )
+
+    for rel, content in files.items():
+        if rel in STRICT_EXTMEM_OWNER_SOURCES:
+            continue
+        if STRICT_EXTMEM_CALL.search(cpp_code_mask(content)):
+            errors.append(
+                f"{rel}: strict EXTMEM primitive escaped its canonical owners"
+            )
+
+    return errors
 
 
 def layer_dependency_error(rel: str, include: str) -> str | None:
@@ -1161,9 +1543,9 @@ def self_test() -> int:
         for path in source_files()
     }
     cold_placement_fixture = COLD_PLACEMENT.read_text(encoding="utf-8")
-    missing_page_cold_selector_fixtures = tuple(
+    missing_structure_cold_selector_fixtures = tuple(
         (selector, cold_placement_fixture.replace(selector, "", 1))
-        for selector in PAGE_STRUCTURE_COLD_PLACEMENT_SELECTORS
+        for selector in COLD_PLACEMENT_CONTRACT_SELECTORS
     )
 
     def mutate(rel: str, before: str, after: str) -> dict[str, str]:
@@ -1185,6 +1567,62 @@ def self_test() -> int:
             flags=re.DOTALL,
         )
         return result
+
+    extmem_fixture = {
+        rel: step_draft_fixture[rel]
+        for rel in (
+            EXTMEM_ALLOCATOR_SOURCE,
+            CORE_STATE_SOURCE,
+            CORE_STATE_HEADER,
+        )
+    }
+
+    def mutate_extmem(rel: str, before: str, after: str) -> dict[str, str]:
+        result = dict(extmem_fixture)
+        result[rel] = result[rel].replace(before, after, 1)
+        return result
+
+    wrong_strict_allocate_pool = mutate_extmem(
+        EXTMEM_ALLOCATOR_SOURCE,
+        "return sm_malloc_pool(&extmem_smalloc_pool, bytes);",
+        "return sm_malloc_pool(&other_smalloc_pool, bytes);",
+    )
+    wrong_strict_free_pool = mutate_extmem(
+        EXTMEM_ALLOCATOR_SOURCE,
+        "sm_free_pool(&extmem_smalloc_pool, ptr);",
+        "sm_free_pool(&other_smalloc_pool, ptr);",
+    )
+    unpaired_extmem_deleter = mutate_extmem(
+        EXTMEM_ALLOCATOR_SOURCE,
+        "        freeExtmemStrict(ptr);",
+        "        freeExtmemFallback(ptr);",
+    )
+    pending_apply_non_strict_allocation = mutate_extmem(
+        CORE_STATE_SOURCE,
+        "core::app::allocateExtmemStrict(",
+        "core::app::allocateExtmemFallback(",
+    )
+    pending_apply_non_strict_free = mutate_extmem(
+        CORE_STATE_SOURCE,
+        "core::app::freeExtmemStrict(ptr);",
+        "core::app::freeExtmemFallback(ptr);",
+    )
+    pending_apply_default_deleter = mutate_extmem(
+        CORE_STATE_HEADER,
+        "using PendingApplyPtr = std::unique_ptr<PendingApply, PendingApplyDeleter>;",
+        "using PendingApplyPtr = std::unique_ptr<PendingApply>;",
+    )
+    pending_apply_not_adopted = mutate_extmem(
+        CORE_STATE_SOURCE,
+        "sequencerDomain_.pendingApply.reset(createPendingApply());",
+        "(void)createPendingApply();",
+    )
+    escaped_strict_extmem_call = dict(extmem_fixture)
+    escaped_strict_extmem_call["src/state/CoreStateProjectHistory.cpp"] = (
+        "\nvoid* escapedStrictExtmemCall() {\n"
+        "    return core::app::allocateExtmemStrict(32U);\n"
+        "}\n"
+    )
 
     changed_label = mutate(
         STEP_DRAFT_LABELS_SOURCE,
@@ -1422,6 +1860,44 @@ def self_test() -> int:
         "    constexpr auto action = Action::StepPaste;",
     )
     checks = (
+        (
+            not extmem_lifetime_contract_errors(extmem_fixture),
+            "valid strict EXTMEM lifetime contract is accepted",
+        ),
+        (
+            bool(extmem_lifetime_contract_errors(wrong_strict_allocate_pool)),
+            "mismatched strict EXTMEM allocation pool is rejected",
+        ),
+        (
+            bool(extmem_lifetime_contract_errors(wrong_strict_free_pool)),
+            "mismatched strict EXTMEM free pool is rejected",
+        ),
+        (
+            bool(extmem_lifetime_contract_errors(unpaired_extmem_deleter)),
+            "EXTMEM deleter bypassing freeExtmemStrict is rejected",
+        ),
+        (
+            bool(extmem_lifetime_contract_errors(
+                pending_apply_non_strict_allocation
+            )),
+            "PendingApply non-strict allocation is rejected",
+        ),
+        (
+            bool(extmem_lifetime_contract_errors(pending_apply_non_strict_free)),
+            "PendingApply non-strict free is rejected",
+        ),
+        (
+            bool(extmem_lifetime_contract_errors(pending_apply_default_deleter)),
+            "PendingApply default deleter is rejected",
+        ),
+        (
+            bool(extmem_lifetime_contract_errors(pending_apply_not_adopted)),
+            "unowned PendingApply allocation is rejected",
+        ),
+        (
+            bool(extmem_lifetime_contract_errors(escaped_strict_extmem_call)),
+            "strict EXTMEM primitive escaping canonical owners is rejected",
+        ),
         (
             layer_dependency_error(
                 "handler/macro/Example.cpp",
@@ -1724,9 +2200,9 @@ def self_test() -> int:
         (
             selector not in fixture
             and bool(cold_placement_contract_errors(fixture)),
-            f"missing Page Structure cold selector is rejected: {selector}",
+            f"missing contracted cold selector is rejected: {selector}",
         )
-        for selector, fixture in missing_page_cold_selector_fixtures
+        for selector, fixture in missing_structure_cold_selector_fixtures
     )
     failures = [description for ok, description in checks if not ok]
     if failures:
@@ -1746,6 +2222,7 @@ def main(show_inventory: bool = False) -> int:
         for path in source_files()
     }
     errors.extend(step_draft_transition_contract_errors(contract_sources))
+    errors.extend(extmem_lifetime_contract_errors(contract_sources))
 
     platformio = PLATFORMIO.read_text(encoding="utf-8")
     if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
@@ -1867,32 +2344,6 @@ def main(show_inventory: bool = False) -> int:
             "diagnostics/MemoryFootprintReporter.cpp: memory counters must stay in RAM2"
         )
 
-    extmem_allocator = (
-        SOURCE_ROOT / "app" / "ExtmemAllocator.hpp"
-    ).read_text(encoding="utf-8")
-    for marker in (
-        "trackExtmemAllocation",
-        "trackExtmemFree",
-    ):
-        if marker not in extmem_allocator:
-            errors.append(
-                "app/ExtmemAllocator.hpp: diagnostics must track every "
-                f"product EXTMEM lifetime via {marker}"
-            )
-
-    core_state = (SOURCE_ROOT / "state" / "CoreState.cpp").read_text(
-        encoding="utf-8"
-    )
-    for marker in (
-        "trackExtmemAllocation",
-        "trackExtmemFree",
-    ):
-        if marker not in core_state:
-            errors.append(
-                "state/CoreState.cpp: custom PendingApply EXTMEM lifetime "
-                f"must call {marker}"
-            )
-
     state_diagnostics = (
         SOURCE_ROOT / "state" / "CoreStateDiagnostics.cpp"
     ).read_text(encoding="utf-8")
@@ -1907,6 +2358,7 @@ def main(show_inventory: bool = False) -> int:
 
     for path in source_files():
         content = path.read_text(encoding="utf-8")
+        content_code = cpp_code_mask(content)
         rel = relative(path)
 
         for include in INCLUDE_DIRECTIVE.findall(content):
@@ -1926,9 +2378,14 @@ def main(show_inventory: bool = False) -> int:
                     f"{rel}: fixed UI signal topology must not allocate via {marker}"
                 )
 
-        if DIRECT_EXTMEM_CALL.search(content) and rel not in DIRECT_EXTMEM_OWNERS:
+        if DIRECT_EXTMEM_CALL.search(content_code) and rel not in DIRECT_EXTMEM_OWNERS:
             errors.append(
                 f"{rel}: direct EXTMEM allocation bypasses the tracked owners"
+            )
+        if (DIRECT_SMALLOC_MUTATION_CALL.search(content_code) and
+                rel != "app/ExtmemAllocator.hpp"):
+            errors.append(
+                f"{rel}: direct smalloc mutation bypasses the strict EXTMEM owner"
             )
 
         if not rel.startswith("diagnostics/") and "[Perf]" in content:

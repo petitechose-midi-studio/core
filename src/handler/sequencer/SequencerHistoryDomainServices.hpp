@@ -33,11 +33,14 @@ public:
     using RecordStructureFn = bool (*)(
         void* context, core::state::sequencer::SequencerHistoryTrackStructureChangePtr change);
     using CanRecordStructureFn = bool (*)(
-        void* context, const core::state::sequencer::SequencerHistoryTrackStructureChange& change);
+        const void* context,
+        const core::state::sequencer::SequencerHistoryTrackStructureChange& change);
     using RecordPreparedStructureFn = void (*)(
         void* context, core::state::sequencer::SequencerHistoryTrackStructureChangePtr change);
     using CommitAdmittedStructureFn = void (*)(
-        void* context, core::state::sequencer::SequencerHistoryTrackStructureChangePtr change);
+        void* context,
+        core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+    ) noexcept;
     using BeginCoalescedPatternEditFn = bool (*)(
         void* context, uint8_t step, core::state::sequencer::StepProperty property, uint32_t nowMs,
         core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
@@ -48,6 +51,9 @@ public:
                  const core::state::sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs);
     using CommitCoalescedPatternEditFn =
         core::state::sequencer::SequencerPatternHistoryCommitOutcome (*)(void* context);
+    using OpenTrackStructureChronologyBoundaryFn =
+        core::state::sequencer::SequencerTrackStructureChronologyResult (*)(
+            void* context);
     using BeginPreparedPatternEditFn =
         core::state::sequencer::SequencerPreparedPatternEditBeginOutcome (*)(
             void* context, core::state::sequencer::SequencerPreparedPatternEditOwner owner,
@@ -102,6 +108,8 @@ public:
         SealCoalescedPatternEditFn sealCoalescedPatternEdit = nullptr;
         BeginCoalescedCcLaneEventEditFn beginCoalescedCcLaneEventEdit = nullptr;
         CommitCoalescedPatternEditFn commitCoalescedPatternEdit = nullptr;
+        OpenTrackStructureChronologyBoundaryFn
+            openTrackStructureChronologyBoundary = nullptr;
         BeginPreparedPatternEditFn beginPreparedPatternEdit = nullptr;
         PreparedPatternEditReadyFn preparedPatternEditReady = nullptr;
         PrecompactPreparedPatternEditGraphFn precompactPreparedPatternEditGraph = nullptr;
@@ -145,19 +153,20 @@ public:
     // Precondition: canRecordFullBank(change) was true and change is unchanged.
     void recordPreparedFullBank(
         core::state::sequencer::SequencerHistoryFullBankChangePtr change) const;
-    bool canRecordStructure(
+    [[nodiscard]] bool canRecordStructure(
         const core::state::sequencer::SequencerHistoryTrackStructureChange& change) const;
     // Precondition: canRecordStructure(change) was true and change is unchanged.
     void recordPreparedStructure(
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const;
     // Trusted Track transaction gate. A true result admits the unchanged
     // payload and proves the no-fail Core commit sink is installed.
-    bool canCommitAdmittedStructure(
+    [[nodiscard]] bool canCommitAdmittedStructure(
         const core::state::sequencer::SequencerHistoryTrackStructureChange& change) const;
     // Precondition: canCommitAdmittedStructure(change) was true and change is
     // unchanged. Missing authority is an invariant failure, never a soft tail.
     void commitAdmittedStructure(
-        core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const;
+        core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+    ) const noexcept;
     bool recordStructure(
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const;
     bool beginCoalescedPatternEdit(
@@ -171,6 +180,8 @@ public:
                                        uint32_t nowMs) const;
     core::state::sequencer::SequencerPatternHistoryCommitOutcome commitCoalescedPatternEditOutcome()
         const;
+    [[nodiscard]] core::state::sequencer::SequencerTrackStructureChronologyResult
+    openTrackStructureChronologyBoundary() const;
     core::state::sequencer::SequencerPreparedPatternEditBeginOutcome beginPreparedPatternEdit(
         core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key,
         core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,

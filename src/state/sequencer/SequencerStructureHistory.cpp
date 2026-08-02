@@ -1,6 +1,5 @@
 #include "state/sequencer/SequencerStructureHistory.hpp"
 
-#include <cassert>
 #include <cstring>
 #include <utility>
 
@@ -14,6 +13,14 @@
 namespace core::state::sequencer {
 
 namespace {
+
+[[noreturn]] FLASHMEM void failStructureHistoryInvariant() noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+    __builtin_trap();
+#else
+    for (;;) {}
+#endif
+}
 
 constexpr uint16_t kTrackMaskAll =
     static_cast<uint16_t>((1U << SequencerTrackBankState::TRACK_COUNT) - 1U);
@@ -547,10 +554,11 @@ FLASHMEM bool captureMacroTrackStructureHistoryBefore(
     payload->beforeControl = core::app::makeExtmemUnique<
         core::state::modulation::ProjectControlDomainState
     >(pages.control.authored);
+    if (!payload->beforeControl) return false;
     payload->afterControl = core::app::makeExtmemUnique<
         core::state::modulation::ProjectControlDomainState
     >();
-    if (!payload->beforeControl || !payload->afterControl) return false;
+    if (!payload->afterControl) return false;
     payload->capturedTrackMask = sanitized;
     payload->affectedTrackIndex = affectedTrackIndex;
     for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
@@ -686,16 +694,15 @@ FLASHMEM void commitMacroTrackStructureHistoryReplay(
     const SequencerHistoryMacroTrackStructurePayload& payload,
     bool after
 ) {
-    assert(payload.afterCaptured);
-    assert(payload.capturedTrackMask != 0U);
-    assert(
-        payload.capturedTrackMask ==
-        sequencerHistorySanitizeTrackMask(payload.capturedTrackMask)
-    );
+    if (!payload.afterCaptured || payload.capturedTrackMask == 0U ||
+        payload.capturedTrackMask !=
+            sequencerHistorySanitizeTrackMask(payload.capturedTrackMask)) {
+        failStructureHistoryInvariant();
+    }
     const auto* control = after && payload.afterControl
         ? payload.afterControl.get()
         : payload.beforeControl.get();
-    assert(control != nullptr);
+    if (control == nullptr) failStructureHistoryInvariant();
     if (std::memcmp(
             &pages.control.authored,
             control,
@@ -710,6 +717,28 @@ FLASHMEM void commitMacroTrackStructureHistoryReplay(
             continue;
         }
         pages.tracks[track] = tracks[track];
+    }
+}
+
+FLASHMEM void commitAdmittedMacroTrackStructureHistoryAfter(
+    core::state::macro::MacroPagesState& pages,
+    const SequencerHistoryMacroTrackStructurePayload& payload
+) noexcept {
+    if (!payload.afterCaptured || payload.capturedTrackMask == 0U ||
+        payload.capturedTrackMask !=
+            sequencerHistorySanitizeTrackMask(payload.capturedTrackMask) ||
+        payload.beforeControl == nullptr) {
+        failStructureHistoryInvariant();
+    }
+    if (payload.afterControl) {
+        pages.control.authored = *payload.afterControl;
+        pages.control.markAuthoredMutation();
+    }
+    for (uint8_t track = 0U; track < macro::TRACK_COUNT; ++track) {
+        if ((payload.capturedTrackMask & sequencerHistoryTrackBit(track)) !=
+            0U) {
+            pages.tracks[track] = payload.afterTracks[track];
+        }
     }
 }
 

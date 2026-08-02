@@ -212,6 +212,15 @@ void commitMacroTrackStructureHistoryReplay(
     const SequencerHistoryMacroTrackStructurePayload& payload,
     bool after
 );
+// Preconditions: the coordinated transaction already proved that live state
+// matches `before`, admitted this normalized payload, and crossed its final
+// no-fail boundary. A null afterControl means byte-identical control state;
+// a non-null afterControl is known distinct and is installed without another
+// full-domain comparison.
+void commitAdmittedMacroTrackStructureHistoryAfter(
+    core::state::macro::MacroPagesState& pages,
+    const SequencerHistoryMacroTrackStructurePayload& payload
+) noexcept;
 bool applyMacroTrackStructureHistory(
     core::state::macro::MacroPagesState& pages,
     const SequencerHistoryMacroTrackStructurePayload& payload,

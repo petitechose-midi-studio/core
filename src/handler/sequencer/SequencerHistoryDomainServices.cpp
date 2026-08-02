@@ -106,7 +106,8 @@ FLASHMEM bool recordStructureFromCoreState(
 }
 
 FLASHMEM bool canRecordStructureFromCoreState(
-    void* context, const core::state::sequencer::SequencerHistoryTrackStructureChange& change) {
+    const void* context,
+    const core::state::sequencer::SequencerHistoryTrackStructureChange& change) {
     if (context == nullptr) { return false; }
 
     const auto* state = static_cast<const core::state::CoreState*>(context);
@@ -121,7 +122,9 @@ FLASHMEM void recordPreparedStructureFromCoreState(
 }
 
 FLASHMEM void commitAdmittedStructureFromCoreState(
-    void* context, core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) {
+    void* context,
+    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+) noexcept {
     if (context == nullptr || !change) failAdmittedStructureInvariant();
     static_cast<core::state::CoreState*>(context)
         ->commitAdmittedSequencerStructureHistory(std::move(change));
@@ -160,6 +163,13 @@ commitCoalescedPatternEditFromCoreState(void* context) {
 
     auto* state = static_cast<core::state::CoreState*>(context);
     return state->commitSequencerPatternHistoryCoalescingOutcome();
+}
+
+FLASHMEM core::state::sequencer::SequencerTrackStructureChronologyResult
+openTrackStructureChronologyBoundaryFromCoreState(void* context) {
+    if (context == nullptr) return {};
+    return static_cast<core::state::CoreState*>(context)
+        ->openSequencerTrackStructureChronologyBoundary();
 }
 
 FLASHMEM core::state::sequencer::SequencerPreparedPatternEditBeginOutcome
@@ -273,6 +283,8 @@ SequencerHistoryDomainServices::fromCoreState(core::state::CoreState& state) {
         .sealCoalescedPatternEdit = sealCoalescedPatternEditFromCoreState,
         .beginCoalescedCcLaneEventEdit = beginCoalescedCcLaneEventEditFromCoreState,
         .commitCoalescedPatternEdit = commitCoalescedPatternEditFromCoreState,
+        .openTrackStructureChronologyBoundary =
+            openTrackStructureChronologyBoundaryFromCoreState,
         .beginPreparedPatternEdit = beginPreparedPatternEditFromCoreState,
         .preparedPatternEditReady = preparedPatternEditReadyFromCoreState,
         .precompactPreparedPatternEditGraph =
@@ -361,7 +373,8 @@ FLASHMEM bool SequencerHistoryDomainServices::canCommitAdmittedStructure(
 }
 
 FLASHMEM void SequencerHistoryDomainServices::commitAdmittedStructure(
-    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const {
+    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+) const noexcept {
     if (operations_->commitAdmittedStructure == nullptr || !change) {
         failAdmittedStructureInvariant();
     }
@@ -415,6 +428,13 @@ SequencerHistoryDomainServices::commitCoalescedPatternEditOutcome() const {
     return operations_->commitCoalescedPatternEdit != nullptr
                ? operations_->commitCoalescedPatternEdit(context_)
                : Outcome::Failed;
+}
+
+FLASHMEM core::state::sequencer::SequencerTrackStructureChronologyResult
+SequencerHistoryDomainServices::openTrackStructureChronologyBoundary() const {
+    return operations_->openTrackStructureChronologyBoundary != nullptr
+        ? operations_->openTrackStructureChronologyBoundary(context_)
+        : core::state::sequencer::SequencerTrackStructureChronologyResult{};
 }
 
 FLASHMEM core::state::sequencer::SequencerPreparedPatternEditBeginOutcome

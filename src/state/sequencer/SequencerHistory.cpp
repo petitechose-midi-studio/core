@@ -1921,9 +1921,15 @@ FLASHMEM void SequencerHistoryService::recordPreparedStructure(
 }
 
 FLASHMEM void SequencerHistoryService::commitAdmittedStructure(
-    SequencerHistoryTrackStructureChangePtr change) {
-    assert(change);
-    if (!change) return;
+    SequencerHistoryTrackStructureChangePtr change
+) noexcept {
+    if (!change) {
+#if defined(__GNUC__) || defined(__clang__)
+        __builtin_trap();
+#else
+        for (;;) {}
+#endif
+    }
 
     if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
         change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;

@@ -1,7 +1,6 @@
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -13,6 +12,14 @@
 namespace core::state::sequencer {
 
 namespace {
+
+[[noreturn]] FLASHMEM void failPreparedTrackRotationInvariant() noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+    __builtin_trap();
+#else
+    for (;;) {}
+#endif
+}
 
 FLASHMEM bool sameVariationRangesExact(
     const oc::note::sequencer::StepSequencerVariationRanges& lhs,
@@ -104,7 +111,7 @@ FLASHMEM void installPreparedFlat(
     SequencerPatternState& target,
     SequencerTrackFlatSnapshotView prepared
 ) noexcept {
-    assert(prepared.snapshot != nullptr);
+    if (prepared.snapshot == nullptr) failPreparedTrackRotationInvariant();
     applySnapshotPreservingGraph(target, *prepared.snapshot);
 
     // Snapshot projection setters intentionally maintain their own live
@@ -298,7 +305,9 @@ FLASHMEM void rotateActiveTrackOwnersNoPublish(
     SequencerState& active,
     const SequencerPreparedActiveTrackRotation& prepared
 ) noexcept {
-    assert(preparedActiveTrackOwnerRotationMatches(bank, active, prepared));
+    if (!preparedActiveTrackOwnerRotationMatches(bank, active, prepared)) {
+        failPreparedTrackRotationInvariant();
+    }
 
     auto& outgoing = bank.track(prepared.outgoingTrack);
     auto& incoming = bank.track(prepared.incomingTrack);

@@ -23,11 +23,27 @@
 *(.text._ZN4core3app16makeExtmemUniqueINS_5state9sequencer30SequencerHistoryFullBankChangeE*)
 *(.text._ZNSt15__uniq_ptr_implIN4core5state9sequencer30SequencerHistoryFullBankChangeE*)
 
-/* Page/Step Structure plans are human-rate authored transactions. Select the
- * ordinary per-function sections by object so dead action families remain
+/* Page/Step/Track Structure plans are human-rate authored transactions.
+ * Select ordinary per-function sections by object so dead action families remain
  * eligible for --gc-sections instead of sharing one monolithic .flashmem. */
 *SequencerPreparedPageStructureMutationPlan.cpp.o(.text* .rodata*)
 *SequencerPreparedPageStructureTransaction.cpp.o(.text* .rodata*)
+*SequencerPreparedTrackStructurePlanValidation.cpp.o(.text* .rodata*)
+*SequencerPreparedTrackStructureTransaction.cpp.o(.text* .rodata*)
+
+/* Track Structure coordination, exact History snapshots, and owner rotation
+ * execute only at authored transaction/replay boundaries. Their explicitly
+ * FLASHMEM entry points can cause GCC to emit lambdas, Signal setters, array
+ * comparisons, and fill clones back into ordinary sections; keep the whole
+ * cold ownership surface together in cached Flash. */
+*SharedTrackDomainServices.cpp.o(.text* .rodata*)
+*SequencerHistory.cpp.o(.text* .rodata*)
+*SequencerStructureHistory.cpp.o(.text* .rodata*)
+*SequencerTrackBankOps.cpp.o(.text* .rodata*)
+
+/* Project workspace allocation is a save/load boundary operation. This
+ * inline helper may be emitted by more than one persistence translation unit. */
+*(.text._ZN4core11persistence20ProjectFileWorkspace7prepareEv*)
 
 /* Snapshot batches and their compiler-emitted Graph/Signal helpers are used by
  * authored History transactions, never playback. Keep COMDAT selection from
