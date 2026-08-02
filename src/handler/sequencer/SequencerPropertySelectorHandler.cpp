@@ -323,8 +323,10 @@ FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float no
             makeStateHistoryDescriptor(
                 step, prepared_segment_before_value_,
                 core::state::sequencer::activeContentStepEnabled(sequencer_, step) ? 1 : 0));
-        if (sealOutcome == PreparedSealOutcome::Failed) return;
-        if (sealOutcome == PreparedSealOutcome::Cleared) { clearPreparedSegment(); }
+        if (core::state::sequencer::sequencerPreparedPatternEditSealClosed(sealOutcome)) {
+            clearPreparedSegment();
+        }
+        if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(sealOutcome)) return;
         return;
     }
     if (sequencer_.stepPropertyInlineSelector.selectedIndex.get() >=
@@ -355,8 +357,10 @@ FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float no
         PreparedOwner::PropertySelector, key, changed,
         makeVariationHistoryDescriptor(property, prepared_segment_before_value_,
                                        sequencer_.variationRangeForProperty(property)));
-    if (sealOutcome == PreparedSealOutcome::Failed) return;
-    if (sealOutcome == PreparedSealOutcome::Cleared) { clearPreparedSegment(); }
+    if (core::state::sequencer::sequencerPreparedPatternEditSealClosed(sealOutcome)) {
+        clearPreparedSegment();
+    }
+    if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(sealOutcome)) return;
     if (changed) {
         sequencer_.patternVariationFeedback.show(property, now_provider_ ? now_provider_() : 0);
     }

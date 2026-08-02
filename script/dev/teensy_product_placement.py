@@ -9,6 +9,49 @@ RGB565_FRAME_BYTES = 320 * 240 * 2
 
 _NM_SYMBOL_RE = re.compile(r"^(\d+)\s+(\d+)\s+([A-Za-z])\s+(.+)$")
 
+PAGE_STRUCTURE_BUILDER_FLASH_MARKERS = (
+    "buildSequencerPageCreateMutationPlan(",
+    "buildSequencerPageSelectionPasteMutationPlan(",
+    "buildSequencerPageClearMutationPlan(",
+    "buildSequencerPageDeleteMutationPlan(",
+    "buildSequencerPagePasteMutationPlan(",
+    "buildSequencerStepPasteMutationPlan(",
+    "buildSequencerFocusedStepResetMutationPlan(",
+    "buildSequencerStepSelectionResetMutationPlan(",
+    "buildSequencerPageSelectionResetMutationPlan(",
+    "buildSequencerPageSelectionDeleteOrDeepResetMutationPlan(",
+)
+
+PAGE_STRUCTURE_HELPER_FLASH_MARKERS = (
+    "SequencerStructureNavigationWorkflow::createPreviewedPageAfterBoundary(",
+    "SequencerStructureEditWorkflow::pastePageSelectionAfterBoundary(",
+    "SequencerStructureEditWorkflow::clearCurrentPageAfterBoundary(",
+    "SequencerStructureEditWorkflow::deleteCurrentPageAfterBoundary(",
+    "SequencerStructureEditWorkflow::pasteCurrentPageAfterBoundary(",
+    "SequencerStructureEditWorkflow::pasteStepClipboardAfterBoundary(",
+    "SequencerStructureEditWorkflow::resetFocusedStepAfterBoundary(",
+    "SequencerStructureEditWorkflow::resetStepSelectionAfterBoundary(",
+    "SequencerStructureEditWorkflow::resetPageSelectionAfterBoundary(",
+    "SequencerStructureEditWorkflow::deleteOrResetPageSelectionAfterBoundary(",
+)
+
+PAGE_STRUCTURE_TRANSACTION_FLASH_MARKERS = (
+    "SequencerPreparedPageStructureTransaction::openBoundary()",
+    "SequencerPreparedPageStructureTransaction::execute(",
+)
+
+PAGE_STRUCTURE_GRAPH_FLASH_MARKERS = (
+    "oc::note::sequencer::StepSequencerGraph::sequence(",
+    "oc::note::sequencer::StepSequencerGraph::cycleSet(",
+)
+
+PAGE_STRUCTURE_FLASH_MARKERS = (
+    *PAGE_STRUCTURE_BUILDER_FLASH_MARKERS,
+    *PAGE_STRUCTURE_HELPER_FLASH_MARKERS,
+    *PAGE_STRUCTURE_TRANSACTION_FLASH_MARKERS,
+    *PAGE_STRUCTURE_GRAPH_FLASH_MARKERS,
+)
+
 
 def _symbols(nm_output: str) -> tuple[tuple[int, int, str, str], ...]:
     symbols: list[tuple[int, int, str, str]] = []
@@ -53,7 +96,10 @@ def product_placement_violations(nm_output: str) -> tuple[str, ...]:
     symbols = _symbols(nm_output)
     violations: list[str] = []
 
-    flash_markers = ("FatFormatter::makeFat32(",)
+    flash_markers = (
+        "FatFormatter::makeFat32(",
+        *PAGE_STRUCTURE_FLASH_MARKERS,
+    )
     for marker in flash_markers:
         matches = _code_addresses(symbols, marker)
         if not matches:

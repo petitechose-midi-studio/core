@@ -180,8 +180,9 @@ FLASHMEM bool SequencerStepEditHandler::sealPreparedPatternMutation(
     core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key, bool changed,
     core::state::sequencer::SequencerHistoryDescriptor descriptor) {
     if (sequencer_.stepContentDraft.active.get()) return true;
-    return history_.sealPreparedPatternEdit(owner, key, changed, descriptor) !=
-           core::state::sequencer::SequencerPreparedPatternEditSealOutcome::Failed;
+    return !core::state::sequencer::sequencerPreparedPatternEditSealFailed(
+        history_.sealPreparedPatternEdit(owner, key, changed, descriptor)
+    );
 }
 
 FLASHMEM bool SequencerStepEditHandler::commitPreparedPatternMutation(

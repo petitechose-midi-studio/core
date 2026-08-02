@@ -17,6 +17,7 @@
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/sequencer/SequencerQuickControlVisuals.hpp"
+#include "ui/sequencer/SequencerStepContentDraftTransitionLabels.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/font/StandaloneIcons.hpp"
@@ -88,8 +89,6 @@ FLASHMEM const char* stepContentDraftFailureValue(
     const core::state::sequencer::SequencerStepContentDraftSession& draft
 ) {
     using Failure = core::state::sequencer::SequencerStepContentDraftFailure;
-    using Transition =
-        core::state::sequencer::SequencerStepContentDraftBlockedTransition;
     switch (draft.failure) {
         case Failure::OUT_OF_MEMORY:
             return "Out of memory";
@@ -100,14 +99,7 @@ FLASHMEM const char* stepContentDraftFailureValue(
         case Failure::UNPUBLISHABLE_MUTATION:
             return "Unsupported edit";
         case Failure::TRANSITION_BLOCKED:
-            switch (draft.blockedTransition) {
-                case Transition::TRACK: return "Apply before track";
-                case Transition::VIEW: return "Apply before view";
-                case Transition::PROJECT_LOAD: return "Apply before load";
-                case Transition::RESET: return "Apply before reset";
-                case Transition::NONE:
-                default: return "Apply or discard";
-            }
+            return propertyOverlayStepContentDraftTransitionLabel(draft.blockedTransition);
         case Failure::NONE:
         default:
             return "";

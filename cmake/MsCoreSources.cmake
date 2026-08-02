@@ -29,6 +29,7 @@ set(MS_CORE_NATIVE_EXTRA_SOURCES
     "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerChordPresetPresentation.cpp"
     "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerPresetLibraryPresentation.cpp"
     "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerPatternTimelineModel.cpp"
+    "${MS_CORE_SOURCE_ROOT}/ui/sequencer/SequencerStepContentDraftTransitionLabels.cpp"
     "${MS_CORE_SOURCE_ROOT}/ui/sequencer/StepContentBadgeProjection.cpp")
 list(APPEND MS_CORE_NATIVE_EXTRA_SOURCES
     "${MS_CORE_SOURCE_ROOT}/ui/project/ProjectTrackEditorViewModel.cpp"

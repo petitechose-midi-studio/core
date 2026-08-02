@@ -4,7 +4,7 @@
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
-#include "state/sequencer/SequencerPatternState.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 
 namespace core::state::sequencer::graph_ops_internal {
 
@@ -29,13 +29,6 @@ using oc::note::sequencer::StepSequencerStepNodeFlags;
 
 inline constexpr uint16_t kInvalidId = StepSequencerGraphLimits::INVALID_ID;
 
-struct GraphCopyBudget {
-    uint16_t stepNodes = 0;
-    uint8_t sequences = 0;
-    uint8_t cycleSets = 0;
-    bool valid = true;
-};
-
 FLASHMEM bool hasStepNode(const StepSequencerGraph& graph, uint16_t nodeId);
 FLASHMEM StepSequencerGraph* mutableGraph(SequencerPatternState& pattern);
 FLASHMEM StepSequencerSequence* mutableMicroSequence(
@@ -58,13 +51,21 @@ FLASHMEM uint16_t allocateSequence(
 FLASHMEM uint8_t sequenceReservedCapacity(const StepSequencerGraph& graph, uint16_t sequenceId);
 FLASHMEM uint8_t cycleSetReservedCapacity(const StepSequencerGraph& graph, uint16_t cycleSetId);
 FLASHMEM uint16_t allocateCycleSet(StepSequencerGraph& graph, uint8_t length);
-FLASHMEM bool appendBudget(GraphCopyBudget& target, const GraphCopyBudget& source);
-FLASHMEM GraphCopyBudget childCopyBudget(
+FLASHMEM SequencerGraphPayloadInspection inspectGraphChildrenForCopy(
     const StepSequencerGraph& source,
-    const StepSequencerStepNode& node
-);
-FLASHMEM GraphCopyBudget sequenceCopyBudget(const StepSequencerGraph& source, uint16_t sequenceId);
-FLASHMEM GraphCopyBudget cycleSetCopyBudget(const StepSequencerGraph& source, uint16_t cycleSetId);
+    uint16_t nodeId,
+    uint8_t targetDepth
+) noexcept;
+FLASHMEM SequencerGraphPayloadInspection inspectGraphSequenceForCopy(
+    const StepSequencerGraph& source,
+    uint16_t sequenceId,
+    uint8_t targetDepth
+) noexcept;
+FLASHMEM SequencerGraphPayloadInspection inspectGraphCycleSetForCopy(
+    const StepSequencerGraph& source,
+    uint16_t cycleSetId,
+    uint8_t targetDepth
+) noexcept;
 FLASHMEM void copyStepNodeValuesWithoutChildren(
     StepSequencerStepNode& target,
     const StepSequencerStepNode& source

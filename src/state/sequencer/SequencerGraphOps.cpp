@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 
 #include <config/PlatformCompat.hpp>
 #include <utility>
 
+#include "state/sequencer/SequencerGraphCanonicalPolicy.hpp"
 #include "state/sequencer/SequencerGraphOpsInternal.hpp"
 
 namespace core::state::sequencer {
@@ -27,6 +29,652 @@ FLASHMEM uint16_t SequencerGraphCompactionRemap::sequence(uint16_t id) const {
 FLASHMEM uint16_t SequencerGraphCompactionRemap::cycleSet(uint16_t id) const {
     return id < cycleSets.size() ? cycleSets[id] : Limits::INVALID_ID;
 }
+
+namespace {
+
+using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
+using oc::note::sequencer::STEP_NODE_CYCLE_SET;
+using oc::note::sequencer::StepSequencerChordSpec;
+using oc::note::sequencer::StepSequencerCycleStateSet;
+using oc::note::sequencer::StepSequencerGraph;
+using oc::note::sequencer::StepSequencerGraphLimits;
+using oc::note::sequencer::StepSequencerSequence;
+using oc::note::sequencer::StepSequencerSequenceKind;
+using oc::note::sequencer::StepSequencerStepNode;
+using oc::note::sequencer::StepSequencerVariationRanges;
+
+constexpr uint16_t kCyclePathTag = 0x8000U;
+
+enum class GraphInspectionScope : uint8_t {
+    FullNode = 0,
+    Children,
+    Sequence,
+    CycleSet,
+};
+
+struct GraphInspectionContext {
+    const StepSequencerGraph& source;
+    SequencerGraphCopyBudget budget{};
+    SequencerGraphPayloadInspectionStatus status =
+        SequencerGraphPayloadInspectionStatus::Ok;
+    std::array<uint16_t, StepSequencerGraphLimits::MAX_DEPTH>
+        activeContainers{};
+    uint8_t activeContainerCount = 0;
+};
+
+static_assert(sizeof(GraphInspectionContext) <= 32U);
+
+FLASHMEM bool sameVariationExact(
+    const StepSequencerVariationRanges& lhs,
+    const StepSequencerVariationRanges& rhs
+) noexcept {
+    return lhs.pitchSemitones == rhs.pitchSemitones &&
+           lhs.velocity == rhs.velocity &&
+           lhs.gatePercent == rhs.gatePercent &&
+           lhs.nudge == rhs.nudge;
+}
+
+FLASHMEM bool sameChordExact(
+    const StepSequencerChordSpec& lhs,
+    const StepSequencerChordSpec& rhs
+) noexcept {
+    return lhs.voiceCount == rhs.voiceCount &&
+           lhs.harmonyData == rhs.harmonyData &&
+           lhs.voicingData == rhs.voicingData &&
+           lhs.inversionData == rhs.inversionData &&
+           lhs.strum == rhs.strum &&
+           lhs.velocityCurve == rhs.velocityCurve &&
+           lhs.customIntervalExtension == rhs.customIntervalExtension;
+}
+
+FLASHMEM bool sameStepNodeExact(
+    const StepSequencerStepNode& lhs,
+    const StepSequencerStepNode& rhs
+) noexcept {
+    return lhs.flags == rhs.flags &&
+           lhs.velocityOffset == rhs.velocityOffset &&
+           lhs.gateOffset == rhs.gateOffset &&
+           lhs.probabilityOffset == rhs.probabilityOffset &&
+           lhs.childSequenceId == rhs.childSequenceId &&
+           lhs.cycleSetId == rhs.cycleSetId &&
+           sameVariationExact(lhs.localVariation, rhs.localVariation) &&
+           sameChordExact(lhs.chordSpec, rhs.chordSpec) &&
+           lhs.chordMode == rhs.chordMode &&
+           lhs.noteOffset == rhs.noteOffset &&
+           lhs.nudgeOffset == rhs.nudgeOffset;
+}
+
+FLASHMEM bool sameSequenceExact(
+    const StepSequencerSequence& lhs,
+    const StepSequencerSequence& rhs
+) noexcept {
+    return lhs.kind == rhs.kind &&
+           lhs.firstStepNode == rhs.firstStepNode &&
+           lhs.length == rhs.length &&
+           lhs.offset == rhs.offset;
+}
+
+FLASHMEM bool sameCycleSetExact(
+    const StepSequencerCycleStateSet& lhs,
+    const StepSequencerCycleStateSet& rhs
+) noexcept {
+    return lhs.firstStateNode == rhs.firstStateNode &&
+           lhs.length == rhs.length &&
+           lhs.offset == rhs.offset;
+}
+
+FLASHMEM bool copiedNodePayloadPresent(
+    const StepSequencerStepNode& node
+) noexcept {
+    const StepSequencerStepNode empty{};
+    return node.flags != empty.flags ||
+           node.velocityOffset != empty.velocityOffset ||
+           node.gateOffset != empty.gateOffset ||
+           node.probabilityOffset != empty.probabilityOffset ||
+           !sameVariationExact(node.localVariation, empty.localVariation) ||
+           !sameChordExact(node.chordSpec, empty.chordSpec) ||
+           node.chordMode != empty.chordMode ||
+           node.noteOffset != empty.noteOffset ||
+           node.nudgeOffset != empty.nudgeOffset;
+}
+
+FLASHMEM bool sourceGraphShapeValid(
+    const StepSequencerGraph& source
+) noexcept {
+    return source.enabled &&
+           source.stepNodeCount <= source.stepNodes.size() &&
+           source.sequenceCount <= source.sequences.size() &&
+           source.cycleSetCount <= source.cycleSets.size();
+}
+
+FLASHMEM bool initializedPatternGraphShapeValid(
+    const StepSequencerGraph& graph
+) noexcept {
+    if (!sourceGraphShapeValid(graph) ||
+        graph.rootSequenceId != 0U ||
+        graph.sequenceCount < 1U ||
+        graph.stepNodeCount < SequencerPatternState::MAX_STEPS) {
+        return false;
+    }
+
+    const auto& root = graph.sequences[0];
+    return root.kind == StepSequencerSequenceKind::RootPattern &&
+           root.firstStepNode == 0U &&
+           root.length == SequencerPatternState::MAX_STEPS;
+}
+
+FLASHMEM bool failInspection(
+    GraphInspectionContext& context,
+    SequencerGraphPayloadInspectionStatus status
+) noexcept {
+    context.status = status;
+    return false;
+}
+
+FLASHMEM bool pushActiveContainer(
+    GraphInspectionContext& context,
+    uint16_t token
+) noexcept {
+    for (uint8_t index = 0; index < context.activeContainerCount; ++index) {
+        if (context.activeContainers[index] == token) {
+            return failInspection(
+                context,
+                SequencerGraphPayloadInspectionStatus::CycleDetected
+            );
+        }
+    }
+    if (context.activeContainerCount >= context.activeContainers.size()) {
+        return failInspection(
+            context,
+            SequencerGraphPayloadInspectionStatus::DepthExceeded
+        );
+    }
+    context.activeContainers[context.activeContainerCount++] = token;
+    return true;
+}
+
+FLASHMEM void popActiveContainer(GraphInspectionContext& context) noexcept {
+    if (context.activeContainerCount > 0U) {
+        --context.activeContainerCount;
+    }
+}
+
+FLASHMEM bool inspectGraphNode(
+    GraphInspectionContext& context,
+    uint16_t nodeId,
+    uint8_t depth
+) noexcept;
+
+FLASHMEM bool inspectGraphSequence(
+    GraphInspectionContext& context,
+    uint16_t sequenceId,
+    uint8_t childDepth
+) noexcept {
+    if (sequenceId >= context.source.sequenceCount ||
+        sequenceId >= context.source.sequences.size()) {
+        return failInspection(
+            context,
+            SequencerGraphPayloadInspectionStatus::MalformedGraph
+        );
+    }
+
+    const auto& sequence = context.source.sequences[sequenceId];
+    const uint32_t end = static_cast<uint32_t>(sequence.firstStepNode) +
+                         sequence.length;
+    if (sequence.kind != StepSequencerSequenceKind::MicroSequence ||
+        sequence.length == 0U ||
+        sequence.length >
+            StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP ||
+        sequence.firstStepNode == StepSequencerGraphLimits::INVALID_ID ||
+        sequence.firstStepNode >= context.source.stepNodeCount ||
+        sequence.firstStepNode >= context.source.stepNodes.size() ||
+        end > context.source.stepNodeCount ||
+        end > context.source.stepNodes.size()) {
+        return failInspection(
+            context,
+            SequencerGraphPayloadInspectionStatus::MalformedGraph
+        );
+    }
+
+    if (!pushActiveContainer(context, sequenceId)) return false;
+    const SequencerGraphCopyBudget addition{
+        .stepNodes =
+            StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP,
+        .sequences = 1U,
+        .cycleSets = 0U,
+    };
+    if (!appendSequencerGraphCopyBudget(context.budget, addition)) {
+        popActiveContainer(context);
+        return failInspection(
+            context,
+            SequencerGraphPayloadInspectionStatus::ArithmeticOverflow
+        );
+    }
+
+    for (uint8_t index = 0; index < sequence.length; ++index) {
+        const auto nodeId = static_cast<uint16_t>(
+            sequence.firstStepNode + index
+        );
+        if (!inspectGraphNode(context, nodeId, childDepth)) {
+            popActiveContainer(context);
+            return false;
+        }
+    }
+    popActiveContainer(context);
+    return true;
+}
+
+FLASHMEM bool inspectGraphCycleSet(
+    GraphInspectionContext& context,
+    uint16_t cycleSetId,
+    uint8_t childDepth
+) noexcept {
+    if (cycleSetId >= context.source.cycleSetCount ||
+        cycleSetId >= context.source.cycleSets.size()) {
+        return failInspection(
+            context,
+            SequencerGraphPayloadInspectionStatus::MalformedGraph
+        );
+    }
+
+    const auto& cycleSet = context.source.cycleSets[cycleSetId];
+    const uint32_t end = static_cast<uint32_t>(cycleSet.firstStateNode) +
+                         cycleSet.length;
+    if (cycleSet.length == 0U ||
+        cycleSet.length > StepSequencerGraphLimits::MAX_CYCLE_STATES_PER_SET ||
+        cycleSet.firstStateNode == StepSequencerGraphLimits::INVALID_ID ||
+        cycleSet.firstStateNode >= context.source.stepNodeCount ||
+        cycleSet.firstStateNode >= context.source.stepNodes.size() ||
+        end > context.source.stepNodeCount ||
+        end > context.source.stepNodes.size()) {
+        return failInspection(
+            context,
+            SequencerGraphPayloadInspectionStatus::MalformedGraph
+        );
+    }
+
+    const uint16_t token = static_cast<uint16_t>(kCyclePathTag | cycleSetId);
+    if (!pushActiveContainer(context, token)) return false;
+    const SequencerGraphCopyBudget addition{
+        .stepNodes = StepSequencerGraphLimits::MAX_CYCLE_STATES_PER_SET,
+        .sequences = 0U,
+        .cycleSets = 1U,
+    };
+    if (!appendSequencerGraphCopyBudget(context.budget, addition)) {
+        popActiveContainer(context);
+        return failInspection(
+            context,
+            SequencerGraphPayloadInspectionStatus::ArithmeticOverflow
+        );
+    }
+
+    for (uint8_t index = 0; index < cycleSet.length; ++index) {
+        const auto nodeId = static_cast<uint16_t>(
+            cycleSet.firstStateNode + index
+        );
+        if (!inspectGraphNode(context, nodeId, childDepth)) {
+            popActiveContainer(context);
+            return false;
+        }
+    }
+    popActiveContainer(context);
+    return true;
+}
+
+FLASHMEM bool inspectGraphNode(
+    GraphInspectionContext& context,
+    uint16_t nodeId,
+    uint8_t depth
+) noexcept {
+    const auto* node = context.source.stepNode(nodeId);
+    if (node == nullptr ||
+        !graph_canonical_policy::stepNodeIsCanonical(*node)) {
+        return failInspection(
+            context,
+            SequencerGraphPayloadInspectionStatus::MalformedGraph
+        );
+    }
+
+    const bool hasSequence = node->has(STEP_NODE_CHILD_SEQUENCE);
+    const bool hasCycleSet = node->has(STEP_NODE_CYCLE_SET);
+    if ((hasSequence || hasCycleSet) &&
+        depth >= StepSequencerGraphLimits::MAX_DEPTH - 1U) {
+        return failInspection(
+            context,
+            SequencerGraphPayloadInspectionStatus::DepthExceeded
+        );
+    }
+
+    const uint8_t childDepth = static_cast<uint8_t>(depth + 1U);
+    if (hasSequence &&
+        !inspectGraphSequence(context, node->childSequenceId, childDepth)) {
+        return false;
+    }
+    if (hasCycleSet &&
+        !inspectGraphCycleSet(context, node->cycleSetId, childDepth)) {
+        return false;
+    }
+    return true;
+}
+
+FLASHMEM SequencerGraphPayloadInspection inspectGraphPayload(
+    const StepSequencerGraph& source,
+    uint16_t nodeId,
+    uint16_t containerId,
+    uint8_t targetDepth,
+    GraphInspectionScope scope
+) noexcept {
+    if (!sourceGraphShapeValid(source) ||
+        targetDepth >= StepSequencerGraphLimits::MAX_DEPTH) {
+        return {
+            .status = SequencerGraphPayloadInspectionStatus::InvalidArgument,
+        };
+    }
+
+    GraphInspectionContext context{.source = source};
+    bool valid = false;
+    bool payloadPresent = false;
+    switch (scope) {
+        case GraphInspectionScope::FullNode:
+        case GraphInspectionScope::Children: {
+            const auto* node = source.stepNode(nodeId);
+            if (node == nullptr ||
+                !graph_canonical_policy::stepNodeIsCanonical(*node)) {
+                return {
+                    .status =
+                        SequencerGraphPayloadInspectionStatus::MalformedGraph,
+                };
+            }
+            payloadPresent = scope == GraphInspectionScope::FullNode
+                ? copiedNodePayloadPresent(*node)
+                : node->has(STEP_NODE_CHILD_SEQUENCE) ||
+                      node->has(STEP_NODE_CYCLE_SET);
+            valid = inspectGraphNode(
+                context,
+                nodeId,
+                targetDepth
+            );
+            break;
+        }
+        case GraphInspectionScope::Sequence:
+            if (targetDepth >= StepSequencerGraphLimits::MAX_DEPTH - 1U) {
+                return {
+                    .status =
+                        SequencerGraphPayloadInspectionStatus::DepthExceeded,
+                };
+            }
+            payloadPresent = true;
+            valid = inspectGraphSequence(
+                context,
+                containerId,
+                static_cast<uint8_t>(targetDepth + 1U)
+            );
+            break;
+        case GraphInspectionScope::CycleSet:
+            if (targetDepth >= StepSequencerGraphLimits::MAX_DEPTH - 1U) {
+                return {
+                    .status =
+                        SequencerGraphPayloadInspectionStatus::DepthExceeded,
+                };
+            }
+            payloadPresent = true;
+            valid = inspectGraphCycleSet(
+                context,
+                containerId,
+                static_cast<uint8_t>(targetDepth + 1U)
+            );
+            break;
+    }
+
+    if (!valid) {
+        return {
+            .status = context.status,
+        };
+    }
+    return {
+        .budget = context.budget,
+        .status = SequencerGraphPayloadInspectionStatus::Ok,
+        .payloadPresent = payloadPresent,
+    };
+}
+
+FLASHMEM bool sameGraphNodePayloadRecursive(
+    const StepSequencerGraph& lhs,
+    uint16_t lhsNodeId,
+    const StepSequencerGraph& rhs,
+    uint16_t rhsNodeId,
+    uint8_t depth
+) noexcept {
+    if (depth >= StepSequencerGraphLimits::MAX_DEPTH) return false;
+
+    const auto* lhsNode = lhs.stepNode(lhsNodeId);
+    const auto* rhsNode = rhs.stepNode(rhsNodeId);
+    if (lhsNode == nullptr || rhsNode == nullptr ||
+        !sameSequencerGraphNodePayload(*lhsNode, *rhsNode)) {
+        return false;
+    }
+
+    if (lhsNode->has(STEP_NODE_CHILD_SEQUENCE)) {
+        const auto* lhsSequence = lhs.sequence(lhsNode->childSequenceId);
+        const auto* rhsSequence = rhs.sequence(rhsNode->childSequenceId);
+        if (lhsSequence == nullptr || rhsSequence == nullptr ||
+            lhsSequence->kind != rhsSequence->kind ||
+            lhsSequence->length != rhsSequence->length ||
+            lhsSequence->offset != rhsSequence->offset) {
+            return false;
+        }
+        for (uint8_t index = 0; index < lhsSequence->length; ++index) {
+            if (!sameGraphNodePayloadRecursive(
+                    lhs,
+                    static_cast<uint16_t>(lhsSequence->firstStepNode + index),
+                    rhs,
+                    static_cast<uint16_t>(rhsSequence->firstStepNode + index),
+                    static_cast<uint8_t>(depth + 1U))) {
+                return false;
+            }
+        }
+    }
+
+    if (lhsNode->has(STEP_NODE_CYCLE_SET)) {
+        const auto* lhsSet = lhs.cycleSet(lhsNode->cycleSetId);
+        const auto* rhsSet = rhs.cycleSet(rhsNode->cycleSetId);
+        if (lhsSet == nullptr || rhsSet == nullptr ||
+            lhsSet->length != rhsSet->length ||
+            lhsSet->offset != rhsSet->offset) {
+            return false;
+        }
+        for (uint8_t index = 0; index < lhsSet->length; ++index) {
+            if (!sameGraphNodePayloadRecursive(
+                    lhs,
+                    static_cast<uint16_t>(lhsSet->firstStateNode + index),
+                    rhs,
+                    static_cast<uint16_t>(rhsSet->firstStateNode + index),
+                    static_cast<uint8_t>(depth + 1U))) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+struct GlobalGraphValidationContext {
+    static constexpr std::size_t NODE_WORD_COUNT =
+        (StepSequencerGraphLimits::MAX_STEP_NODES + 63U) / 64U;
+
+    const StepSequencerGraph& graph;
+    std::array<uint64_t, NODE_WORD_COUNT> ownedNodes{};
+    uint32_t seenSequences = 0U;
+    uint64_t seenCycleSets = 0U;
+};
+
+static_assert(
+    sizeof(GlobalGraphValidationContext) <= 96U,
+    "global Graph validation must remain a bounded scalar frame"
+);
+
+FLASHMEM bool claimGlobalGraphNode(
+    GlobalGraphValidationContext& context,
+    uint16_t nodeId
+) noexcept {
+    if (nodeId >= context.graph.stepNodeCount ||
+        nodeId >= StepSequencerGraphLimits::MAX_STEP_NODES) {
+        return false;
+    }
+    const std::size_t word = nodeId / 64U;
+    const uint64_t bit = uint64_t{1} << (nodeId % 64U);
+    if ((context.ownedNodes[word] & bit) != 0U) return false;
+    context.ownedNodes[word] |= bit;
+    return true;
+}
+
+FLASHMEM bool validateGlobalGraphNode(
+    GlobalGraphValidationContext& context,
+    uint16_t nodeId,
+    uint8_t depth
+) noexcept;
+
+FLASHMEM bool validateGlobalGraphSequence(
+    GlobalGraphValidationContext& context,
+    uint16_t sequenceId,
+    uint8_t depth
+) noexcept {
+    if (sequenceId == context.graph.rootSequenceId ||
+        sequenceId >= context.graph.sequenceCount ||
+        sequenceId >= StepSequencerGraphLimits::MAX_SEQUENCES) {
+        return false;
+    }
+    const uint32_t bit = uint32_t{1} << sequenceId;
+    if ((context.seenSequences & bit) != 0U) return false;
+
+    const auto& sequence = context.graph.sequences[sequenceId];
+    const uint32_t end = static_cast<uint32_t>(sequence.firstStepNode) +
+                         sequence.length;
+    const int minimumOffset = -static_cast<int>(sequence.length - 1U);
+    const int maximumOffset = static_cast<int>(sequence.length - 1U);
+    if (sequence.kind != StepSequencerSequenceKind::MicroSequence ||
+        sequence.length == 0U ||
+        sequence.length >
+            StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP ||
+        sequence.firstStepNode == StepSequencerGraphLimits::INVALID_ID ||
+        end > context.graph.stepNodeCount ||
+        end > context.graph.stepNodes.size() ||
+        sequence.offset < minimumOffset || sequence.offset > maximumOffset) {
+        return false;
+    }
+
+    context.seenSequences |= bit;
+    for (uint16_t node = sequence.firstStepNode; node < end; ++node) {
+        if (!claimGlobalGraphNode(context, node)) return false;
+    }
+    for (uint16_t node = sequence.firstStepNode; node < end; ++node) {
+        if (!validateGlobalGraphNode(context, node, depth)) return false;
+    }
+    return true;
+}
+
+FLASHMEM bool validateGlobalGraphCycleSet(
+    GlobalGraphValidationContext& context,
+    uint16_t cycleSetId,
+    uint8_t depth
+) noexcept {
+    if (cycleSetId >= context.graph.cycleSetCount ||
+        cycleSetId >= StepSequencerGraphLimits::MAX_CYCLE_SETS) {
+        return false;
+    }
+    const uint64_t bit = uint64_t{1} << cycleSetId;
+    if ((context.seenCycleSets & bit) != 0U) return false;
+
+    const auto& cycleSet = context.graph.cycleSets[cycleSetId];
+    const uint32_t end = static_cast<uint32_t>(cycleSet.firstStateNode) +
+                         cycleSet.length;
+    const int minimumOffset = -static_cast<int>(cycleSet.length - 1U);
+    const int maximumOffset = static_cast<int>(cycleSet.length - 1U);
+    if (cycleSet.length == 0U ||
+        cycleSet.length > StepSequencerGraphLimits::MAX_CYCLE_STATES_PER_SET ||
+        cycleSet.firstStateNode == StepSequencerGraphLimits::INVALID_ID ||
+        end > context.graph.stepNodeCount ||
+        end > context.graph.stepNodes.size() ||
+        cycleSet.offset < minimumOffset || cycleSet.offset > maximumOffset) {
+        return false;
+    }
+
+    context.seenCycleSets |= bit;
+    for (uint16_t node = cycleSet.firstStateNode; node < end; ++node) {
+        if (!claimGlobalGraphNode(context, node)) return false;
+    }
+    for (uint16_t node = cycleSet.firstStateNode; node < end; ++node) {
+        if (!validateGlobalGraphNode(context, node, depth)) return false;
+    }
+    return true;
+}
+
+FLASHMEM bool validateGlobalGraphNode(
+    GlobalGraphValidationContext& context,
+    uint16_t nodeId,
+    uint8_t depth
+) noexcept {
+    if (depth >= StepSequencerGraphLimits::MAX_DEPTH) return false;
+    const auto* node = context.graph.stepNode(nodeId);
+    if (node == nullptr ||
+        !graph_canonical_policy::stepNodeIsCanonical(*node)) {
+        return false;
+    }
+
+    const bool hasSequence = node->has(STEP_NODE_CHILD_SEQUENCE);
+    const bool hasCycleSet = node->has(STEP_NODE_CYCLE_SET);
+    if ((!hasSequence &&
+         node->childSequenceId != StepSequencerGraphLimits::INVALID_ID) ||
+        (!hasCycleSet &&
+         node->cycleSetId != StepSequencerGraphLimits::INVALID_ID) ||
+        ((hasSequence || hasCycleSet) &&
+         depth >= StepSequencerGraphLimits::MAX_DEPTH - 1U)) {
+        return false;
+    }
+
+    const uint8_t childDepth = static_cast<uint8_t>(depth + 1U);
+    if (hasSequence &&
+        !validateGlobalGraphSequence(
+            context, node->childSequenceId, childDepth)) {
+        return false;
+    }
+    if (hasCycleSet &&
+        !validateGlobalGraphCycleSet(
+            context, node->cycleSetId, childDepth)) {
+        return false;
+    }
+    return true;
+}
+
+FLASHMEM bool validateGlobalGraphTopology(
+    const StepSequencerGraph& graph
+) noexcept {
+    if (!initializedPatternGraphShapeValid(graph)) return false;
+
+    const auto& root = graph.sequences[graph.rootSequenceId];
+    const int minimumOffset = -static_cast<int>(root.length - 1U);
+    const int maximumOffset = static_cast<int>(root.length - 1U);
+    if (!graph_canonical_policy::sequenceIsCanonical(root) ||
+        root.offset < minimumOffset || root.offset > maximumOffset) {
+        return false;
+    }
+
+    GlobalGraphValidationContext context{.graph = graph};
+    context.seenSequences = uint32_t{1} << graph.rootSequenceId;
+    for (uint16_t node = 0U;
+         node < SequencerPatternState::MAX_STEPS;
+         ++node) {
+        if (!claimGlobalGraphNode(context, node)) return false;
+    }
+    for (uint16_t node = 0U;
+         node < SequencerPatternState::MAX_STEPS;
+         ++node) {
+        if (!validateGlobalGraphNode(context, node, 0U)) return false;
+    }
+    return true;
+}
+
+}  // namespace
 
 namespace graph_ops_internal {
 
@@ -187,68 +835,46 @@ FLASHMEM uint16_t allocateCycleSet(StepSequencerGraph& graph, uint8_t length) {
     return id;
 }
 
-FLASHMEM bool appendBudget(GraphCopyBudget& target, const GraphCopyBudget& source) {
-    if (!source.valid) {
-        target.valid = false;
-        return false;
-    }
-    target.stepNodes = static_cast<uint16_t>(target.stepNodes + source.stepNodes);
-    target.sequences = static_cast<uint8_t>(target.sequences + source.sequences);
-    target.cycleSets = static_cast<uint8_t>(target.cycleSets + source.cycleSets);
-    return true;
+FLASHMEM SequencerGraphPayloadInspection inspectGraphChildrenForCopy(
+    const StepSequencerGraph& source,
+    uint16_t nodeId,
+    uint8_t targetDepth
+) noexcept {
+    return inspectGraphPayload(
+        source,
+        nodeId,
+        kInvalidId,
+        targetDepth,
+        GraphInspectionScope::Children
+    );
 }
 
-FLASHMEM GraphCopyBudget childCopyBudget(const StepSequencerGraph& source,
-                                         const StepSequencerStepNode& node);
-
-FLASHMEM GraphCopyBudget sequenceCopyBudget(const StepSequencerGraph& source, uint16_t sequenceId) {
-    const auto* sequence = source.sequence(sequenceId);
-    if (sequence == nullptr || sequence->kind != StepSequencerSequenceKind::MicroSequence) {
-        return {.valid = false};
-    }
-
-    GraphCopyBudget budget{
-        .stepNodes = StepSequencerGraphLimits::MAX_EXPANDED_NOTES_PER_ROOT_STEP,
-        .sequences = 1,
-        .cycleSets = 0,
-        .valid = true,
-    };
-    for (uint8_t i = 0; i < sequence->length; ++i) {
-        const auto* child = source.stepNode(static_cast<uint16_t>(sequence->firstStepNode + i));
-        if (child == nullptr) return {.valid = false};
-        appendBudget(budget, childCopyBudget(source, *child));
-    }
-    return budget;
+FLASHMEM SequencerGraphPayloadInspection inspectGraphSequenceForCopy(
+    const StepSequencerGraph& source,
+    uint16_t sequenceId,
+    uint8_t targetDepth
+) noexcept {
+    return inspectGraphPayload(
+        source,
+        kInvalidId,
+        sequenceId,
+        targetDepth,
+        GraphInspectionScope::Sequence
+    );
 }
 
-FLASHMEM GraphCopyBudget cycleSetCopyBudget(const StepSequencerGraph& source, uint16_t cycleSetId) {
-    const auto* set = source.cycleSet(cycleSetId);
-    if (set == nullptr) return {.valid = false};
-
-    GraphCopyBudget budget{
-        .stepNodes = StepSequencerGraphLimits::MAX_CYCLE_STATES_PER_SET,
-        .sequences = 0,
-        .cycleSets = 1,
-        .valid = true,
-    };
-    for (uint8_t i = 0; i < set->length; ++i) {
-        const auto* child = source.stepNode(static_cast<uint16_t>(set->firstStateNode + i));
-        if (child == nullptr) return {.valid = false};
-        appendBudget(budget, childCopyBudget(source, *child));
-    }
-    return budget;
-}
-
-FLASHMEM GraphCopyBudget childCopyBudget(const StepSequencerGraph& source,
-                                         const StepSequencerStepNode& node) {
-    GraphCopyBudget budget{};
-    if (node.has(STEP_NODE_CHILD_SEQUENCE)) {
-        appendBudget(budget, sequenceCopyBudget(source, node.childSequenceId));
-    }
-    if (node.has(STEP_NODE_CYCLE_SET)) {
-        appendBudget(budget, cycleSetCopyBudget(source, node.cycleSetId));
-    }
-    return budget;
+FLASHMEM SequencerGraphPayloadInspection inspectGraphCycleSetForCopy(
+    const StepSequencerGraph& source,
+    uint16_t cycleSetId,
+    uint8_t targetDepth
+) noexcept {
+    return inspectGraphPayload(
+        source,
+        kInvalidId,
+        cycleSetId,
+        targetDepth,
+        GraphInspectionScope::CycleSet
+    );
 }
 
 FLASHMEM void copyStepNodeValuesWithoutChildren(StepSequencerStepNode& target,
@@ -557,27 +1183,158 @@ FLASHMEM bool rotateStepNodeSegment(StepSequencerGraph& graph, uint16_t firstNod
 
 using namespace graph_ops_internal;
 
+FLASHMEM bool appendSequencerGraphCopyBudget(
+    SequencerGraphCopyBudget& aggregate,
+    const SequencerGraphCopyBudget& addition
+) noexcept {
+    constexpr uint32_t kMax = std::numeric_limits<uint32_t>::max();
+    if (addition.stepNodes > kMax - aggregate.stepNodes ||
+        addition.sequences > kMax - aggregate.sequences ||
+        addition.cycleSets > kMax - aggregate.cycleSets) {
+        return false;
+    }
+
+    aggregate.stepNodes += addition.stepNodes;
+    aggregate.sequences += addition.sequences;
+    aggregate.cycleSets += addition.cycleSets;
+    return true;
+}
+
+FLASHMEM SequencerGraphPayloadInspection inspectSequencerGraphPayload(
+    const StepSequencerGraph& source,
+    SequencerGraphNodeId sourceNodeId,
+    uint8_t targetDepth
+) noexcept {
+    return inspectGraphPayload(
+        source,
+        sourceNodeId,
+        kInvalidId,
+        targetDepth,
+        GraphInspectionScope::FullNode
+    );
+}
+
+FLASHMEM bool validInitializedSequencerGraph(
+    const StepSequencerGraph& graph
+) noexcept {
+    return validateGlobalGraphTopology(graph);
+}
+
+FLASHMEM bool sequencerGraphHasCopyCapacity(
+    const StepSequencerGraph& target,
+    const SequencerGraphCopyBudget& budget
+) noexcept {
+    if (!initializedPatternGraphShapeValid(target)) return false;
+
+    return budget.stepNodes <= target.stepNodes.size() - target.stepNodeCount &&
+           budget.sequences <= target.sequences.size() - target.sequenceCount &&
+           budget.cycleSets <= target.cycleSets.size() - target.cycleSetCount;
+}
+
+FLASHMEM bool isCanonicalDisabledSequencerGraph(
+    const StepSequencerGraph& graph
+) noexcept {
+    if (graph.enabled ||
+        graph.rootSequenceId != StepSequencerGraphLimits::INVALID_ID ||
+        graph.stepNodeCount != 0U ||
+        graph.sequenceCount != 0U ||
+        graph.cycleSetCount != 0U) {
+        return false;
+    }
+
+    const StepSequencerStepNode emptyNode{};
+    for (const auto& node : graph.stepNodes) {
+        if (!sameStepNodeExact(node, emptyNode)) return false;
+    }
+
+    const StepSequencerSequence emptySequence{};
+    for (const auto& sequence : graph.sequences) {
+        if (!sameSequenceExact(sequence, emptySequence)) return false;
+    }
+
+    const StepSequencerCycleStateSet emptyCycleSet{};
+    for (const auto& cycleSet : graph.cycleSets) {
+        if (!sameCycleSetExact(cycleSet, emptyCycleSet)) return false;
+    }
+    return true;
+}
+
+FLASHMEM bool initializeSequencerGraphRootUnversioned(
+    StepSequencerGraph& graph
+) noexcept {
+    if (graph.enabled) return validInitializedSequencerGraph(graph);
+    if (!isCanonicalDisabledSequencerGraph(graph)) return false;
+
+    graph.enabled = true;
+    graph.rootSequenceId = 0U;
+    graph.stepNodeCount = SequencerPatternState::MAX_STEPS;
+    graph.sequenceCount = 1U;
+    graph.cycleSetCount = 0U;
+    graph.sequences[0] = StepSequencerSequence{
+        .kind = StepSequencerSequenceKind::RootPattern,
+        .firstStepNode = 0U,
+        .length = SequencerPatternState::MAX_STEPS,
+        .offset = 0,
+    };
+    return true;
+}
+
+FLASHMEM bool sameSequencerGraphNodePayload(
+    const StepSequencerStepNode& lhs,
+    const StepSequencerStepNode& rhs
+) noexcept {
+    return lhs.flags == rhs.flags &&
+           lhs.velocityOffset == rhs.velocityOffset &&
+           lhs.gateOffset == rhs.gateOffset &&
+           lhs.probabilityOffset == rhs.probabilityOffset &&
+           sameVariationExact(lhs.localVariation, rhs.localVariation) &&
+           sameChordExact(lhs.chordSpec, rhs.chordSpec) &&
+           lhs.chordMode == rhs.chordMode &&
+           lhs.noteOffset == rhs.noteOffset &&
+           lhs.nudgeOffset == rhs.nudgeOffset;
+}
+
+FLASHMEM bool isDefaultSequencerGraphNodePayload(
+    const StepSequencerStepNode& node
+) noexcept {
+    const StepSequencerStepNode empty{};
+    return graph_canonical_policy::stepNodeIsCanonical(node) &&
+           sameSequencerGraphNodePayload(node, empty);
+}
+
+FLASHMEM SequencerGraphPayloadComparison compareSequencerGraphPayloads(
+    const StepSequencerGraph& lhs,
+    SequencerGraphNodeId lhsNodeId,
+    const StepSequencerGraph& rhs,
+    SequencerGraphNodeId rhsNodeId,
+    uint8_t targetDepth
+) noexcept {
+    const auto lhsInspection =
+        inspectSequencerGraphPayload(lhs, lhsNodeId, targetDepth);
+    if (!lhsInspection.ok()) {
+        return {.status = lhsInspection.status, .same = false};
+    }
+
+    const auto rhsInspection =
+        inspectSequencerGraphPayload(rhs, rhsNodeId, targetDepth);
+    if (!rhsInspection.ok()) {
+        return {.status = rhsInspection.status, .same = false};
+    }
+
+    return {
+        .status = SequencerGraphPayloadInspectionStatus::Ok,
+        .same = sameGraphNodePayloadRecursive(
+            lhs, lhsNodeId, rhs, rhsNodeId, targetDepth),
+    };
+}
+
 FLASHMEM bool ensureGraphRoot(SequencerPatternState& pattern) {
     if (!ensureGraphAllocated(pattern)) return false;
 
     auto& graph = *pattern.graph;
-    const bool validRoot = graph.enabled && graph.rootSequenceId == 0 && graph.sequenceCount >= 1 &&
-                           graph.stepNodeCount >= SequencerPatternState::MAX_STEPS &&
-                           graph.sequences[0].firstStepNode == 0 &&
-                           graph.sequences[0].length == SequencerPatternState::MAX_STEPS;
-    if (validRoot) { return true; }
-
-    graph.reset();
-    graph.enabled = true;
-    graph.rootSequenceId = 0;
-    graph.sequenceCount = 1;
-    graph.stepNodeCount = SequencerPatternState::MAX_STEPS;
-    graph.sequences[0] = StepSequencerSequence{
-        .kind = StepSequencerSequenceKind::RootPattern,
-        .firstStepNode = 0,
-        .length = SequencerPatternState::MAX_STEPS,
-        .offset = 0,
-    };
+    if (graph.enabled) return validInitializedSequencerGraph(graph);
+    if (!isCanonicalDisabledSequencerGraph(graph)) return false;
+    if (!initializeSequencerGraphRootUnversioned(graph)) return false;
     pattern.bumpGraphRevision();
     return true;
 }
@@ -620,7 +1377,9 @@ FLASHMEM const StepSequencerGraph* graphView(const SequencerPatternState& patter
 FLASHMEM SequencerGraphCompactionResult compactGraph(SequencerPatternState& pattern,
                                                      SequencerGraphCompactionRemap& remap) {
     if (!pattern.graph || !pattern.graph->enabled) { return {.ok = true, .compacted = false}; }
-    if (!ensureGraphRoot(pattern)) { return {.ok = false, .compacted = false}; }
+    if (!validInitializedSequencerGraph(*pattern.graph)) {
+        return {.ok = false, .compacted = false};
+    }
 
     const auto* source = pattern.graph.get();
     if (source == nullptr || !source->enabled) { return {.ok = true, .compacted = false}; }
@@ -642,7 +1401,9 @@ compactGraphUsingReservedStorage(SequencerPatternState& pattern, StepSequencerGr
     remap.reset();
 
     if (!pattern.graph || !pattern.graph->enabled) { return {.ok = true, .compacted = false}; }
-    if (!ensureGraphRoot(pattern)) { return {.ok = false, .compacted = false}; }
+    if (!validInitializedSequencerGraph(*pattern.graph)) {
+        return {.ok = false, .compacted = false};
+    }
 
     const auto* source = pattern.graph.get();
     if (source == nullptr || !source->enabled) { return {.ok = true, .compacted = false}; }

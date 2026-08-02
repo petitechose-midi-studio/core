@@ -23,6 +23,19 @@
 *(.text._ZN4core3app16makeExtmemUniqueINS_5state9sequencer30SequencerHistoryFullBankChangeE*)
 *(.text._ZNSt15__uniq_ptr_implIN4core5state9sequencer30SequencerHistoryFullBankChangeE*)
 
+/* Page/Step Structure plans are human-rate authored transactions. Select the
+ * ordinary per-function sections by object so dead action families remain
+ * eligible for --gc-sections instead of sharing one monolithic .flashmem. */
+*SequencerPreparedPageStructureMutationPlan.cpp.o(.text* .rodata*)
+*SequencerPreparedPageStructureTransaction.cpp.o(.text* .rodata*)
+
+/* Snapshot batches and their compiler-emitted Graph/Signal helpers are used by
+ * authored History transactions, never playback. Keep COMDAT selection from
+ * moving these cold accessors into ITCM as callsites evolve. */
+*SequencerSnapshotOps.cpp.o(.text* .rodata*)
+*(.text._ZNK2oc4note9sequencer18StepSequencerGraph8sequenceEt*)
+*(.text._ZNK2oc4note9sequencer18StepSequencerGraph8cycleSetEt*)
+
 /* Logging formatting is an error/diagnostic path, never a realtime path. */
 *(.text._ZN2oc3log6detail*)
 *(.rodata._ZN2oc3log6detail*)

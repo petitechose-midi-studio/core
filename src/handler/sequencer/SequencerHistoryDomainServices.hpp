@@ -6,6 +6,10 @@ namespace core::state {
 struct CoreState;
 }
 
+namespace core::state::sequencer {
+struct SequencerPreparedGraphContentPath;
+}
+
 namespace core::handler {
 
 class SequencerHistoryDomainServices {
@@ -47,6 +51,18 @@ public:
             void* context, core::state::sequencer::SequencerPreparedPatternEditOwner owner,
             uint8_t key, core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
             core::state::sequencer::SequencerHistoryDescriptor descriptor, bool compactGraphOnSeal);
+    using PreparedPatternEditReadyFn = bool (*)(
+        void* context,
+        core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+        uint8_t key,
+        uint8_t expectedTrack);
+    using PrecompactPreparedPatternEditGraphFn =
+        core::state::sequencer::SequencerPreparedPatternGraphPrecompactionOutcome (*)(
+            void* context,
+            core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+            uint8_t key,
+            uint8_t expectedTrack,
+            core::state::sequencer::SequencerPreparedGraphContentPath& contentPath);
     using SealPreparedPatternEditFn =
         core::state::sequencer::SequencerPreparedPatternEditSealOutcome (*)(
             void* context, core::state::sequencer::SequencerPreparedPatternEditOwner owner,
@@ -55,6 +71,10 @@ public:
     using CommitPreparedPatternEditFn =
         core::state::sequencer::SequencerPreparedPatternEditCommitOutcome (*)(
             void* context, core::state::sequencer::SequencerPreparedPatternEditOwner owner);
+    using AbortPreparedPatternEditFn =
+        core::state::sequencer::SequencerPreparedPatternEditAbortOutcome (*)(
+            void* context, core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+            uint8_t key);
     using ApplyPreparedProjectScaleChoiceFn =
         core::state::sequencer::SequencerPreparedFullBankEditResult (*)(
             void* context,
@@ -80,8 +100,11 @@ public:
         BeginCoalescedCcLaneEventEditFn beginCoalescedCcLaneEventEdit = nullptr;
         CommitCoalescedPatternEditFn commitCoalescedPatternEdit = nullptr;
         BeginPreparedPatternEditFn beginPreparedPatternEdit = nullptr;
+        PreparedPatternEditReadyFn preparedPatternEditReady = nullptr;
+        PrecompactPreparedPatternEditGraphFn precompactPreparedPatternEditGraph = nullptr;
         SealPreparedPatternEditFn sealPreparedPatternEdit = nullptr;
         CommitPreparedPatternEditFn commitPreparedPatternEdit = nullptr;
+        AbortPreparedPatternEditFn abortPreparedPatternEdit = nullptr;
         ApplyPreparedProjectScaleChoiceFn applyPreparedProjectScaleChoice = nullptr;
     };
 
@@ -142,12 +165,26 @@ public:
         core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
         core::state::sequencer::SequencerHistoryDescriptor descriptor = {},
         bool compactGraphOnSeal = false) const;
+    [[nodiscard]] bool preparedPatternEditReady(
+        core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+        uint8_t key,
+        uint8_t expectedTrack) const;
+    [[nodiscard]] core::state::sequencer::
+        SequencerPreparedPatternGraphPrecompactionOutcome
+    precompactPreparedPatternEditGraph(
+        core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+        uint8_t key,
+        uint8_t expectedTrack,
+        core::state::sequencer::SequencerPreparedGraphContentPath& contentPath) const;
     core::state::sequencer::SequencerPreparedPatternEditSealOutcome sealPreparedPatternEdit(
         core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key,
         bool mutationChanged,
         core::state::sequencer::SequencerHistoryDescriptor descriptor = {}) const;
     core::state::sequencer::SequencerPreparedPatternEditCommitOutcome commitPreparedPatternEdit(
         core::state::sequencer::SequencerPreparedPatternEditOwner owner) const;
+    [[nodiscard]] core::state::sequencer::SequencerPreparedPatternEditAbortOutcome
+    abortPreparedPatternEdit(
+        core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key) const;
     core::state::sequencer::SequencerPreparedFullBankEditResult
     applyPreparedProjectScaleChoice(
         core::state::sequencer::SequencerPreparedFullBankEditOwner owner,

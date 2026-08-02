@@ -3,6 +3,7 @@
 #endif
 
 #include <cassert>
+#include <cstring>
 
 #include <iostream>
 #include <utility>
@@ -13,6 +14,7 @@
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#include "ui/sequencer/SequencerStepContentDraftTransitionLabels.hpp"
 
 namespace {
 
@@ -232,6 +234,60 @@ void test_chord_draft_sanitizes_invalid_mode_without_allocating_graph_scratch() 
     seq::abandonStepContentDraft(sequencer);
 }
 
+void test_transition_rejection_is_active_only_idempotent_and_exactly_labelled() {
+    using Transition = seq::SequencerStepContentDraftBlockedTransition;
+
+    seq::SequencerState sequencer;
+    const uint32_t inactiveRevision = sequencer.stepContentDraft.revision.get();
+    const uint32_t inactiveContentRevision = sequencer.contentView.revision.get();
+    assert(!sequencer.stepContentDraft.rejectTransitionIfActive(Transition::HISTORY));
+    assert(sequencer.stepContentDraft.revision.get() == inactiveRevision);
+    assert(sequencer.contentView.revision.get() == inactiveContentRevision);
+    assert(sequencer.stepContentDraft.failure == seq::SequencerStepContentDraftFailure::NONE);
+
+    assert(seq::beginStepContentDraft(
+        sequencer,
+        seq::SequencerStepContentDraftKind::CHORD,
+        0U,
+        seq::rootStepNodeId(0U)
+    ));
+    const uint32_t activeRevision = sequencer.stepContentDraft.revision.get();
+    const uint32_t activeContentRevision = sequencer.contentView.revision.get();
+
+    assert(sequencer.stepContentDraft.rejectTransitionIfActive(Transition::STRUCTURE_EDIT));
+    assert(sequencer.stepContentDraft.failure ==
+           seq::SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
+    assert(sequencer.stepContentDraft.blockedTransition == Transition::STRUCTURE_EDIT);
+    assert(sequencer.stepContentDraft.revision.get() == activeRevision + 1U);
+    assert(sequencer.contentView.revision.get() == activeContentRevision + 1U);
+
+    assert(sequencer.stepContentDraft.rejectTransitionIfActive(Transition::STRUCTURE_EDIT));
+    assert(sequencer.stepContentDraft.revision.get() == activeRevision + 1U);
+    assert(sequencer.contentView.revision.get() == activeContentRevision + 1U);
+
+    assert(sequencer.stepContentDraft.rejectTransitionIfActive(Transition::HISTORY));
+    assert(sequencer.stepContentDraft.blockedTransition == Transition::HISTORY);
+    assert(sequencer.stepContentDraft.revision.get() == activeRevision + 2U);
+    assert(sequencer.contentView.revision.get() == activeContentRevision + 2U);
+
+    assert(std::strcmp(
+               core::ui::sequencer::standaloneStepContentDraftTransitionLabel(
+                   Transition::STRUCTURE_EDIT),
+               "APPLY BEFORE STRUCTURE EDIT") == 0);
+    assert(std::strcmp(
+               core::ui::sequencer::standaloneStepContentDraftTransitionLabel(
+                   Transition::HISTORY),
+               "APPLY BEFORE UNDO/REDO") == 0);
+    assert(std::strcmp(
+               core::ui::sequencer::propertyOverlayStepContentDraftTransitionLabel(
+                   Transition::STRUCTURE_EDIT),
+               "Apply before structure edit") == 0);
+    assert(std::strcmp(
+               core::ui::sequencer::propertyOverlayStepContentDraftTransitionLabel(
+                   Transition::HISTORY),
+               "Apply before undo/redo") == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -242,6 +298,7 @@ int main() {
     test_track_switch_is_blocked_without_losing_the_active_draft();
     test_unpublishable_flat_draft_mutation_is_rejected_explicitly();
     test_chord_draft_sanitizes_invalid_mode_without_allocating_graph_scratch();
+    test_transition_rejection_is_active_only_idempotent_and_exactly_labelled();
     std::cout << "All SequencerStepContentDraftWorkflow tests passed.\n";
     return 0;
 }

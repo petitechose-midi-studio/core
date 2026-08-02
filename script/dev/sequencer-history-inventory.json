@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "scope": "L-R08-05 prepared FullBank Project-scale transaction",
+  "scope": "L-R08-06 prepared PageStructure sink retirement",
   "recordingBoundary": {
     "entryRecordingCallTotal": 44,
-    "expectedMigratedRemovalTotal": 12,
+    "expectedMigratedRemovalTotal": 13,
     "expectedProviderForwardTotal": 5,
     "expectedCoalescedPreparedTotal": 1,
-    "expectedTotal": 38,
+    "expectedTotal": 37,
     "memberDispatch": {
       "methods": [
         "recordPattern",
@@ -19,24 +19,17 @@
         "recordPreparedStructure"
       ],
       "expectedMethodCount": 8,
-      "expectedTotal": 30,
-      "expectedSinkTotal": 10,
+      "expectedTotal": 29,
+      "expectedSinkTotal": 9,
       "expectedServiceAdapterTotal": 20,
       "expectedSinkClassifications": {
-        "post-fallible": 3,
+        "post-fallible": 2,
         "prepared": 5,
         "rollback-aware": 2
       },
       "groups": [
         {
           "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
-          "method": "recordPattern",
-          "count": 1,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerStructureHistoryUtils.hpp",
           "method": "recordPattern",
           "count": 1,
           "role": "sink",
@@ -237,48 +230,59 @@
     "ownerDeclaration": {
       "path": "src/state/sequencer/SequencerHistory.hpp",
       "enum": "SequencerPreparedPatternEditOwner",
-      "expectedCount": 6,
+      "expectedCount": 7,
       "owners": [
         "PatternPitch",
         "PropertySelector",
         "StepContent",
         "StepEditSession",
         "StepToggle",
-        "PatternEditor"
+        "PatternEditor",
+        "PageStructure"
       ]
     },
     "methods": [
       "beginPreparedPatternEdit",
+      "preparedPatternEditReady",
       "sealPreparedPatternEdit",
-      "commitPreparedPatternEdit"
+      "commitPreparedPatternEdit",
+      "abortPreparedPatternEdit"
     ],
     "centralAuthority": {
       "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
       "qualifier": "CoreState",
       "definitions": {
         "beginOrContinueSequencerPreparedPatternEdit": 1,
+        "sequencerPreparedPatternEditReady": 1,
         "sealSequencerPreparedPatternEdit": 1,
-        "commitSequencerPreparedPatternEdit": 1
+        "commitSequencerPreparedPatternEdit": 1,
+        "abortSequencerPreparedPatternEdit": 1
       }
     },
     "serviceAdapter": {
       "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
       "calls": {
         "beginPreparedPatternEdit": 1,
+        "preparedPatternEditReady": 1,
         "sealPreparedPatternEdit": 1,
-        "commitPreparedPatternEdit": 1
+        "commitPreparedPatternEdit": 1,
+        "abortPreparedPatternEdit": 1
       }
     },
-    "expectedSurfaceCount": 7,
+    "expectedSurfaceCount": 8,
     "expectedSurfaceCallTotals": {
-      "beginPreparedPatternEdit": 8,
-      "sealPreparedPatternEdit": 9,
-      "commitPreparedPatternEdit": 9
+      "beginPreparedPatternEdit": 9,
+      "preparedPatternEditReady": 1,
+      "sealPreparedPatternEdit": 10,
+      "commitPreparedPatternEdit": 10,
+      "abortPreparedPatternEdit": 1
     },
     "expectedCallTotals": {
-      "beginPreparedPatternEdit": 9,
-      "sealPreparedPatternEdit": 10,
-      "commitPreparedPatternEdit": 10
+      "beginPreparedPatternEdit": 10,
+      "preparedPatternEditReady": 2,
+      "sealPreparedPatternEdit": 11,
+      "commitPreparedPatternEdit": 11,
+      "abortPreparedPatternEdit": 2
     },
     "forbiddenRawMethods": [
       "captureHistorySnapshot",
@@ -295,8 +299,10 @@
         },
         "calls": {
           "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 1,
-          "commitPreparedPatternEdit": 1
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 0
         }
       },
       {
@@ -306,8 +312,10 @@
         },
         "calls": {
           "beginPreparedPatternEdit": 2,
+          "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 2,
-          "commitPreparedPatternEdit": 1
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 0
         }
       },
       {
@@ -317,8 +325,10 @@
         },
         "calls": {
           "beginPreparedPatternEdit": 2,
+          "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 2,
-          "commitPreparedPatternEdit": 2
+          "commitPreparedPatternEdit": 2,
+          "abortPreparedPatternEdit": 0
         }
       },
       {
@@ -329,8 +339,10 @@
         },
         "calls": {
           "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 1,
-          "commitPreparedPatternEdit": 1
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 0
         }
       },
       {
@@ -340,8 +352,10 @@
         },
         "calls": {
           "beginPreparedPatternEdit": 0,
+          "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 0,
-          "commitPreparedPatternEdit": 1
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 0
         }
       },
       {
@@ -351,8 +365,10 @@
         },
         "calls": {
           "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 1,
-          "commitPreparedPatternEdit": 1
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 0
         }
       },
       {
@@ -362,8 +378,23 @@
         },
         "calls": {
           "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 2,
-          "commitPreparedPatternEdit": 2
+          "commitPreparedPatternEdit": 2,
+          "abortPreparedPatternEdit": 0
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPreparedPageStructureTransaction.cpp",
+        "ownerReferences": {
+          "PageStructure": 1
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 1,
+          "sealPreparedPatternEdit": 1,
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 1
         }
       }
     ]
@@ -477,7 +508,7 @@
           "expectedGraphResetCount": 0,
           "expectedCcResetCount": 0,
           "expectedActiveScratchClearCount": 2,
-          "expectedDraftGuardCount": 1
+          "expectedDraftGuardCount": 0
         }
       ]
     }
@@ -531,6 +562,8 @@
   "failureInjection": {
     "macro": "MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION",
     "cmakePath": "CMakeLists.txt",
+    "platformioPath": "platformio.ini",
+    "platformioEnvironment": "native",
     "nativeTarget": "midi_studio_core_native",
     "requiredCmakeGuards": [
       "MS_CORE_BUILD_TESTS",
@@ -547,7 +580,9 @@
     ],
     "allowedTestUses": {
       "test/support/SequencerHistoryTransactionAssertions.hpp": 1,
+      "test/test_ProjectHistoryCoordinator/test_main.cpp": 1,
       "test/test_SequencerCoalescedPatternTransactions/test_main.cpp": 10,
+      "test/test_SequencerHistory/test_main.cpp": 1,
       "test/test_SequencerHistoryQualification/test_main.cpp": 1,
       "test/test_SequencerMacroPropertyHandler/test_main.cpp": 1,
       "test/test_SequencerPatternEditorHandler/test_main.cpp": 3,

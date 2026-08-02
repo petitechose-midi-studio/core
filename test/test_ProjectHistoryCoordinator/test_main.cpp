@@ -3,12 +3,15 @@
 #include <iostream>
 #include <utility>
 
+#include "app/ExtmemAllocator.hpp"
 #include "state/CoreState.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "support/CoreStorages.hpp"
+#include "support/SequencerHistoryTransactionAssertions.hpp"
 
 namespace {
 
@@ -16,6 +19,7 @@ namespace macro = core::state::macro;
 namespace modulation = core::state::modulation;
 namespace project = core::state::project;
 namespace seq = core::state::sequencer;
+namespace tx = test_support::sequencer_transaction;
 
 struct Harness {
     test_support::CoreStorages storages;
@@ -69,6 +73,93 @@ void recordStepPitch(core::state::CoreState& state, uint8_t pitch) {
             .afterValue = pitch,
         }
     ));
+}
+
+void preparePendingPatternEdit(core::state::CoreState& state) {
+    constexpr auto owner = seq::SequencerPreparedPatternEditOwner::PatternEditor;
+    constexpr uint8_t key = 91U;
+    const auto descriptor = seq::SequencerHistoryDescriptor{
+        .kind = seq::SequencerHistoryActionKind::StepEdit,
+        .stepIndex = 0U,
+    };
+    assert(state.beginOrContinueSequencerPreparedPatternEdit(
+               owner,
+               key,
+               seq::SequencerCoalescedPatternPayloadPlan::FlatOnly,
+               descriptor) == seq::SequencerPreparedPatternEditBeginOutcome::Started);
+    const uint8_t nextNote = state.sequencer.pattern.note[0] == 73U ? 74U : 73U;
+    assert(state.sequencer.setStepNoteAt(0U, nextNote));
+    assert(state.sealSequencerPreparedPatternEdit(owner, key, true, descriptor) ==
+           seq::SequencerPreparedPatternEditSealOutcome::Sealed);
+    assert(state.hasPendingSequencerPatternHistoryCoalescing());
+}
+
+void beginHistoryDraft(core::state::CoreState& state) {
+    assert(seq::beginStepContentDraft(
+        state.sequencer,
+        seq::SequencerStepContentDraftKind::CHORD,
+        0U,
+        seq::rootStepNodeId(0U)
+    ));
+}
+
+using CoreHistoryTraversal = bool (core::state::CoreState::*)();
+
+void assertCoreHistoryBlockedBeforeBoundary(
+    Harness& h,
+    CoreHistoryTraversal traversal
+) {
+    assert(h.state.sequencer.stepContentDraft.active.get());
+    const auto before = tx::captureStateInvariant(h.state);
+    const bool pendingBefore = h.state.hasPendingSequencerPatternHistoryCoalescing();
+    const uint8_t noteBefore = h.state.sequencer.pattern.note[0];
+    const uint32_t draftRevision = h.state.sequencer.stepContentDraft.revision.get();
+    const uint32_t contentRevision = h.state.sequencer.contentView.revision.get();
+    const uint8_t focusedStep = h.state.sequencer.focusedStep.get();
+    const uint8_t page = h.state.sequencer.page.get();
+    const seq::StepProperty activeStepProperty =
+        h.state.sequencer.activeStepProperty.get();
+    const auto* projectUndo = h.state.projectHistory.peekUndo();
+    const auto* projectRedo = h.state.projectHistory.peekRedo();
+    const uintptr_t projectUndoIdentity = projectUndo != nullptr ? projectUndo->identity : 0U;
+    const uintptr_t projectRedoIdentity = projectRedo != nullptr ? projectRedo->identity : 0U;
+
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(!(h.state.*traversal)());
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+#else
+    assert(!(h.state.*traversal)());
+#endif
+
+    tx::assertStateInvariant(h.state, before);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing() == pendingBefore);
+    assert(h.state.sequencer.pattern.note[0] == noteBefore);
+    assert(h.state.sequencer.focusedStep.get() == focusedStep);
+    assert(h.state.sequencer.page.get() == page);
+    assert(h.state.sequencer.activeStepProperty.get() == activeStepProperty);
+    assert((h.state.projectHistory.peekUndo() != nullptr
+                ? h.state.projectHistory.peekUndo()->identity
+                : 0U) == projectUndoIdentity);
+    assert((h.state.projectHistory.peekRedo() != nullptr
+                ? h.state.projectHistory.peekRedo()->identity
+                : 0U) == projectRedoIdentity);
+    assert(h.state.sequencer.stepContentDraft.failure ==
+           seq::SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
+    assert(h.state.sequencer.stepContentDraft.blockedTransition ==
+           seq::SequencerStepContentDraftBlockedTransition::HISTORY);
+    assert(h.state.sequencer.stepContentDraft.revision.get() == draftRevision + 1U);
+    assert(h.state.sequencer.contentView.revision.get() == contentRevision + 1U);
+
+    const uint32_t blockedRevision = h.state.sequencer.stepContentDraft.revision.get();
+    const uint32_t blockedContentRevision =
+        h.state.sequencer.contentView.revision.get();
+    assert(!(h.state.*traversal)());
+    assert(h.state.sequencer.stepContentDraft.revision.get() == blockedRevision);
+    assert(h.state.sequencer.contentView.revision.get() == blockedContentRevision);
+    tx::assertStateInvariant(h.state, before);
 }
 
 void recordCcLane(core::state::CoreState& state) {
@@ -485,6 +576,77 @@ void test_empty_and_typed_labels_follow_history_revision() {
     std::cout << "[PASS] empty and typed labels track the public revision\n";
 }
 
+void test_active_step_draft_blocks_local_and_global_history_before_boundaries() {
+    {
+        Harness h;
+        recordStepPitch(h.state, 72U);
+        preparePendingPatternEdit(h.state);
+        beginHistoryDraft(h.state);
+
+        assertCoreHistoryBlockedBeforeBoundary(
+            h,
+            &core::state::CoreState::undoSequencerHistory
+        );
+        assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+        seq::abandonStepContentDraft(h.state.sequencer);
+        assert(h.state.undoSequencerHistory());
+    }
+
+    {
+        Harness h;
+        recordStepPitch(h.state, 72U);
+        assert(h.state.undoSequencerHistory());
+        assert(h.state.sequencerHistory.redoCount() == 1U);
+        preparePendingPatternEdit(h.state);
+        beginHistoryDraft(h.state);
+
+        assertCoreHistoryBlockedBeforeBoundary(
+            h,
+            &core::state::CoreState::redoSequencerHistory
+        );
+        assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.sequencerHistory.redoCount() == 1U);
+        seq::abandonStepContentDraft(h.state.sequencer);
+    }
+
+    {
+        Harness h;
+        recordMacroDestination(h.state, 74U);
+        preparePendingPatternEdit(h.state);
+        assert(h.state.projectHistory.undoCount() == 1U);
+        beginHistoryDraft(h.state);
+
+        assertCoreHistoryBlockedBeforeBoundary(
+            h,
+            &core::state::CoreState::undoProjectHistory
+        );
+        assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.projectHistory.undoCount() == 1U);
+        seq::abandonStepContentDraft(h.state.sequencer);
+        assert(h.state.undoProjectHistory());
+    }
+
+    {
+        Harness h;
+        recordMacroDestination(h.state, 75U);
+        assert(h.state.undoProjectHistory());
+        assert(h.state.projectHistory.redoCount() == 1U);
+        preparePendingPatternEdit(h.state);
+        beginHistoryDraft(h.state);
+
+        assertCoreHistoryBlockedBeforeBoundary(
+            h,
+            &core::state::CoreState::redoProjectHistory
+        );
+        assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.projectHistory.redoCount() == 1U);
+        seq::abandonStepContentDraft(h.state.sequencer);
+    }
+
+    std::cout
+        << "[PASS] active Step Draft blocks local/global History before boundaries\n";
+}
+
 }  // namespace
 
 int main() {
@@ -500,6 +662,7 @@ int main() {
     test_sequencer_scope_eviction_prunes_a_cross_domain_middle_entry();
     test_redo_eviction_keeps_only_the_reachable_prefix();
     test_empty_and_typed_labels_follow_history_revision();
+    test_active_step_draft_blocks_local_and_global_history_before_boundaries();
 
     std::cout << "\nAll ProjectHistoryCoordinator tests passed.\n";
     return 0;

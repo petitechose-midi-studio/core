@@ -2,8 +2,6 @@
 #include <cstdint>
 #include <iostream>
 
-#include "handler/sequencer/SequencerStructurePageClipboardOps.hpp"
-#include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerPatternRegionOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -168,22 +166,6 @@ void test_page_transforms_keep_region_and_cc_lane_in_lockstep() {
     assert(bank->lanes[0].values[11] == 91);
 }
 
-void test_page_clipboard_never_imports_or_moves_root_markers() {
-    core::state::sequencer::SequencerState source;
-    assert(setPatternPlaybackRegion(source.pattern, {16, 2, 6, 14}));
-    source.pattern.note[0] = 72;
-    source.pattern.setEnabled(0, true);
-    core::state::SequencerPageClipboard clipboard{};
-    assert(core::handler::capturePageClipboard(source, 0, clipboard));
-
-    core::state::sequencer::SequencerState destination;
-    assert(setPatternPlaybackRegion(destination.pattern, {16, 1, 4, 12}));
-    core::handler::pastePageClipboard(destination, clipboard, nullptr, 2);
-    expectRegion(patternPlaybackRegion(destination.pattern), 24, 1, 4, 12);
-    assert(destination.pattern.note[16] == 72);
-    assert(destination.pattern.isEnabled(16));
-}
-
 }  // namespace
 
 int main() {
@@ -193,7 +175,6 @@ int main() {
     test_insert_and_remove_shift_or_collapse_each_boundary();
     test_snapshot_round_trip_preserves_region_exactly();
     test_page_transforms_keep_region_and_cc_lane_in_lockstep();
-    test_page_clipboard_never_imports_or_moves_root_markers();
     std::cout << "SequencerPatternRegionOps tests passed\n";
     return 0;
 }

@@ -4,10 +4,10 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "handler/sequencer/SequencerPreparedPageStructureMutationPlan.hpp"
+#include "handler/sequencer/SequencerPreparedPageStructureTransaction.hpp"
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructureSelectionOps.hpp"
-#include "state/sequencer/SequencerContentViewOps.hpp"
-#include "state/sequencer/SequencerGraphOps.hpp"
 
 namespace core::handler {
 
@@ -74,25 +74,15 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftTap() {
 
     if (sequencer_.structureUi.pageSelection.active.get()) {
         if (sequencer_.structureUi.pageSelection.placing.get()) return;
-        const uint16_t selectedMask =
-            sequencer_.structureUi.pageSelection.selectedMask.get();
-        auto historyChange = capturePageHistoryBefore();
-        if (!historyChange) return;
-        const bool rootContent =
-            core::state::sequencer::isRootContentView(sequencer_);
-        if (!resetSelectedActiveContentPages(
-                sequencer_,
-                selectedMask,
-                rootContent ? StepResetDepth::Deep : StepResetDepth::Shallow
-            )) {
-            return;
+        using Action = SequencerPreparedPageStructureAction;
+        constexpr auto action = Action::PageSelectionReset;
+        SequencerPreparedPageStructureTransaction transaction(
+            sequencer_, history_, action);
+        if (!transaction.openBoundary()) return;
+        if (resetPageSelectionAfterBoundary(transaction) ==
+            SequencerPreparedPageStructureResult::Committed) {
+            sequencer_.structureUi.pageHold.clear();
         }
-        if (!rootContent ||
-            !core::state::sequencer::compactSequencerGraph(sequencer_)) {
-            core::state::sequencer::refreshContentView(sequencer_);
-        }
-        sequencer_.pattern.bumpStepDataRevision();
-        recordPageHistoryAfter(std::move(historyChange));
         return;
     }
 
@@ -134,13 +124,19 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftHold() {
 
     if (sequencer_.structureUi.pageSelection.active.get()) {
         if (sequencer_.structureUi.pageSelection.placing.get()) return;
-        auto& selection = sequencer_.structureUi.pageSelection;
-        const uint16_t selectedMask = selection.selectedMask.get();
-        auto historyChange = capturePageHistoryBefore();
-        if (!historyChange) return;
-
-        if (core::state::sequencer::isRootContentView(sequencer_)) {
-            if (!deleteSelectedRootPages(sequencer_, selectedMask)) return;
+        using Action = SequencerPreparedPageStructureAction;
+        constexpr auto action =
+            Action::PageSelectionDeleteOrDeepReset;
+        SequencerPreparedPageStructureTransaction transaction(
+            sequencer_, history_, action);
+        if (!transaction.openBoundary()) return;
+        if (deleteOrResetPageSelectionAfterBoundary(transaction) ==
+            SequencerPreparedPageStructureResult::Committed) {
+            sequencer_.structureUi.pageHold.clear();
+            if (!core::state::sequencer::isRootContentView(sequencer_)) {
+                return;
+            }
+            auto& selection = sequencer_.structureUi.pageSelection;
             const uint8_t cursor = sequencer_.visiblePage();
             selection.reset(
                 core::state::StructureSelectionScope::PAGE,
@@ -148,26 +144,73 @@ FLASHMEM void SequencerStructureEditWorkflow::applySelectionBottomLeftHold() {
             );
             navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
             syncPreviewToFocus(core::state::StructureNavigationFocus::PAGE);
-        } else {
-            if (!resetSelectedActiveContentPages(
-                    sequencer_,
-                    selectedMask,
-                    StepResetDepth::Deep
-                )) {
-                return;
-            }
-            const bool compacted =
-                core::state::sequencer::compactSequencerGraph(sequencer_);
-            if (!compacted) {
-                core::state::sequencer::refreshContentView(sequencer_);
-            }
-            sequencer_.pattern.bumpStepDataRevision();
         }
-        recordPageHistoryAfter(std::move(historyChange));
         return;
     }
 
     resetStepSelectionDeep();
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM SequencerPreparedPageStructureResult
+SequencerStructureEditWorkflow::resetPageSelectionAfterBoundary(
+    SequencerPreparedPageStructureTransaction& transaction
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
+
+    SequencerPreparedPageStructureMutationPlan plan;
+    switch (buildSequencerPageSelectionResetMutationPlan(
+        sequencer_,
+        currentActiveTrack(),
+        sequencer_.structureUi.pageSelection.selectedMask.get(),
+        plan)) {
+        case Preflight::Rejected:
+            return Result::Failed;
+        case Preflight::NoChange:
+            return Result::NoChange;
+        case Preflight::Ready:
+            break;
+        default:
+            return Result::Failed;
+    }
+    return executeSequencerPreparedPageStructureMutationPlan(
+        transaction, plan);
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM SequencerPreparedPageStructureResult
+SequencerStructureEditWorkflow::deleteOrResetPageSelectionAfterBoundary(
+    SequencerPreparedPageStructureTransaction& transaction
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
+
+    SequencerPreparedPageStructureMutationPlan plan;
+    switch (buildSequencerPageSelectionDeleteOrDeepResetMutationPlan(
+        sequencer_,
+        currentActiveTrack(),
+        sequencer_.structureUi.pageSelection.selectedMask.get(),
+        plan)) {
+        case Preflight::Rejected:
+            return Result::Failed;
+        case Preflight::NoChange:
+            return Result::NoChange;
+        case Preflight::Ready:
+            break;
+        default:
+            return Result::Failed;
+    }
+    return executeSequencerPreparedPageStructureMutationPlan(
+        transaction, plan);
 }
 
 }  // namespace core::handler

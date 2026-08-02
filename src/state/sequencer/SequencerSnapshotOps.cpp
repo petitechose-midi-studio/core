@@ -109,6 +109,8 @@ FLASHMEM bool sameStep(const StepPayload& lhs, const StepPayload& rhs) {
 }
 
 using StepNode = oc::note::sequencer::StepSequencerStepNode;
+using StepGraph = oc::note::sequencer::StepSequencerGraph;
+using StepSequenceKind = oc::note::sequencer::StepSequencerSequenceKind;
 
 FLASHMEM bool sameRootNode(const StepNode& lhs, const StepNode& rhs) {
     return lhs.flags == rhs.flags &&
@@ -151,6 +153,50 @@ FLASHMEM bool assignRootNode(SequencerPatternState& pattern,
 
 FLASHMEM bool clearRootNode(SequencerPatternState& pattern, uint8_t step) {
     return assignRootNode(pattern, step, StepNode{});
+}
+
+FLASHMEM bool validBatchPatternState(const SequencerPatternState& pattern) {
+    const uint8_t length = pattern.length.get();
+    if (length == 0U || length > SequencerPatternState::MAX_STEPS ||
+        !patternPlaybackRegion(pattern).isValid()) {
+        return false;
+    }
+    return (pattern.enabledMask.get() & ~lengthMask(length)) ==
+           oc::note::sequencer::StepBitMask128{};
+}
+
+FLASHMEM bool validBatchRootGraph(const SequencerPatternState& pattern) {
+    const StepGraph* graph = graphView(pattern);
+    return graph == nullptr || validInitializedSequencerGraph(*graph);
+}
+
+FLASHMEM void applyBatchPlaybackRegion(
+    SequencerPatternState& pattern,
+    const SequencerPatternPlaybackRegion& region,
+    const oc::note::sequencer::StepBitMask128& enabledMask
+) {
+    // Internal callers validate the complete region before the first live
+    // write; keep this leaf free of firmware assert strings in scarce DTCM.
+    pattern.playStart = region.playStart;
+    pattern.loopStart = region.loopStart;
+    pattern.loopEnd = region.loopEnd;
+    pattern.enabledMask.set(enabledMask & lengthMask(region.contentLength));
+    // Length is observable and therefore published after its dependent bytes.
+    pattern.length.set(region.contentLength);
+}
+
+FLASHMEM SequencerSnapshotBatchMutationResult batchResult(
+    SequencerSnapshotBatchMutationStatus status,
+    uint8_t previousLength,
+    uint8_t resultingLength,
+    SequencerSnapshotBatchDomains domains = {}
+) {
+    return {
+        .status = status,
+        .domains = domains,
+        .previousLength = previousLength,
+        .resultingLength = resultingLength,
+    };
 }
 
 FLASHMEM void writeStep(SequencerPatternState& target, uint8_t step, const StepPayload& payload) {
@@ -611,6 +657,336 @@ FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
     return true;
 }
 
+FLASHMEM SequencerSnapshotBatchMutationResult
+resizeSequencerRootContentUnversioned(
+    SequencerState& target,
+    uint8_t requiredLength
+) noexcept {
+    const uint8_t oldLength = target.pattern.length.get();
+    if (requiredLength == 0U ||
+        requiredLength > SequencerState::MAX_STEPS ||
+        requiredLength < oldLength) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_ARGUMENT,
+            oldLength,
+            oldLength
+        );
+    }
+    if (!validBatchPatternState(target.pattern)) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_PATTERN_STATE,
+            oldLength,
+            oldLength
+        );
+    }
+    if (!validBatchRootGraph(target.pattern)) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_GRAPH,
+            oldLength,
+            oldLength
+        );
+    }
+    if (requiredLength == oldLength) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::NO_CHANGE,
+            oldLength,
+            oldLength
+        );
+    }
+
+    const auto nextRegion = resizedPatternPlaybackRegion(
+        patternPlaybackRegion(target.pattern),
+        requiredLength
+    );
+    if (!nextRegion.isValid()) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_PATTERN_STATE,
+            oldLength,
+            oldLength
+        );
+    }
+
+    bool graphChanged = false;
+    auto enabledMask = target.pattern.enabledMask.get();
+    for (uint16_t step = oldLength; step < requiredLength; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
+        writeStep(target.pattern, stepIndex, defaultStep());
+        enabledMask.setBit(stepIndex, false);
+        graphChanged = clearRootNode(target.pattern, stepIndex) || graphChanged;
+    }
+    applyBatchPlaybackRegion(target.pattern, nextRegion, enabledMask);
+
+    const SequencerSnapshotBatchDomains domains{
+        .stepData = true,
+        .graph = graphChanged,
+        // Page creation and Step-paste extension never reinterpret or erase
+        // Pattern-owned CC events, including cold events beyond the former
+        // Content Length. Only Page deletion owns a CC shift/removal.
+        .ccLanes = false,
+        .timing = true,
+    };
+    return batchResult(
+        SequencerSnapshotBatchMutationStatus::APPLIED,
+        oldLength,
+        requiredLength,
+        domains
+    );
+}
+
+FLASHMEM SequencerSnapshotBatchMutationResult
+extendSequencerPageRootUnversioned(
+    SequencerState& target,
+    uint8_t pageIndex
+) noexcept {
+    if (pageIndex >= SequencerState::PAGE_COUNT) {
+        const uint8_t length = target.pattern.length.get();
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_ARGUMENT,
+            length,
+            length
+        );
+    }
+    const uint8_t requiredLength = static_cast<uint8_t>(
+        static_cast<uint16_t>(pageIndex + 1U) * SequencerState::STEPS_PER_PAGE
+    );
+    return resizeSequencerRootContentUnversioned(
+        target,
+        std::max(requiredLength, target.pattern.length.get())
+    );
+}
+
+FLASHMEM SequencerSnapshotBatchMutationResult
+clearSequencerRootStepSpanUnversioned(
+    SequencerState& target,
+    uint8_t startStep,
+    uint8_t stepCount
+) noexcept {
+    const uint8_t length = target.pattern.length.get();
+    const uint16_t end = static_cast<uint16_t>(startStep) + stepCount;
+    if (stepCount == 0U || end > length || end > SequencerState::MAX_STEPS) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_ARGUMENT,
+            length,
+            length
+        );
+    }
+    if (!validBatchPatternState(target.pattern)) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_PATTERN_STATE,
+            length,
+            length
+        );
+    }
+    if (!validBatchRootGraph(target.pattern)) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_GRAPH,
+            length,
+            length
+        );
+    }
+
+    auto enabledMask = target.pattern.enabledMask.get();
+    bool stepChanged = false;
+    bool graphChanged = false;
+    for (uint16_t step = startStep; step < end; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
+        if (enabledMask.test(stepIndex)) {
+            enabledMask.setBit(stepIndex, false);
+            stepChanged = true;
+        }
+        if (!sameStep(readStep(target.pattern, stepIndex), defaultStep())) {
+            writeStep(target.pattern, stepIndex, defaultStep());
+            stepChanged = true;
+        }
+        graphChanged = clearRootNode(target.pattern, stepIndex) || graphChanged;
+    }
+    if (stepChanged) {
+        target.pattern.enabledMask.set(enabledMask);
+    }
+
+    const SequencerSnapshotBatchDomains domains{
+        .stepData = stepChanged,
+        .graph = graphChanged,
+        .ccLanes = false,
+        .timing = false,
+    };
+    return batchResult(
+        domains.any()
+            ? SequencerSnapshotBatchMutationStatus::APPLIED
+            : SequencerSnapshotBatchMutationStatus::NO_CHANGE,
+        length,
+        length,
+        domains
+    );
+}
+
+FLASHMEM SequencerSnapshotBatchMutationResult
+deleteSequencerRootPagesUnversioned(
+    SequencerState& target,
+    uint16_t pageMask
+) noexcept {
+    const uint8_t oldLength = target.pattern.length.get();
+    if (!validBatchPatternState(target.pattern)) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_PATTERN_STATE,
+            oldLength,
+            oldLength
+        );
+    }
+    if (!validBatchRootGraph(target.pattern)) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_GRAPH,
+            oldLength,
+            oldLength
+        );
+    }
+
+    const uint8_t pageCount = target.pattern.activePageCount();
+    const uint16_t activePageMask = pageCount >= 16U
+        ? UINT16_MAX
+        : static_cast<uint16_t>((uint16_t{1} << pageCount) - 1U);
+    if (pageMask == 0U) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::NO_CHANGE,
+            oldLength,
+            oldLength
+        );
+    }
+    if ((pageMask & static_cast<uint16_t>(~activePageMask)) != 0U) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_ARGUMENT,
+            oldLength,
+            oldLength
+        );
+    }
+
+    auto nextRegion = patternPlaybackRegion(target.pattern);
+    oc::note::sequencer::StepBitMask128 removalMask{};
+    uint8_t removedSteps = 0U;
+    for (int page = static_cast<int>(pageCount) - 1; page >= 0; --page) {
+        const uint16_t pageBit = static_cast<uint16_t>(uint16_t{1} << page);
+        if ((pageMask & pageBit) == 0U) continue;
+
+        const uint8_t removeAt = static_cast<uint8_t>(
+            static_cast<uint16_t>(page) * SequencerState::STEPS_PER_PAGE
+        );
+        const uint8_t removeLength = static_cast<uint8_t>(std::min<uint16_t>(
+            SequencerState::STEPS_PER_PAGE,
+            static_cast<uint16_t>(oldLength - removeAt)
+        ));
+        for (uint16_t step = removeAt;
+             step < static_cast<uint16_t>(removeAt) + removeLength;
+             ++step) {
+            removalMask.setBit(static_cast<uint8_t>(step));
+        }
+        removedSteps = static_cast<uint8_t>(removedSteps + removeLength);
+        nextRegion = removedPatternPlaybackRegion(
+            nextRegion,
+            removeAt,
+            removeLength
+        );
+        if (!nextRegion.isValid()) {
+            return batchResult(
+                SequencerSnapshotBatchMutationStatus::INVALID_ARGUMENT,
+                oldLength,
+                oldLength
+            );
+        }
+    }
+
+    if (removedSteps == 0U || removedSteps >= oldLength) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_ARGUMENT,
+            oldLength,
+            oldLength
+        );
+    }
+    const uint8_t newLength = static_cast<uint8_t>(oldLength - removedSteps);
+    if (nextRegion.contentLength != newLength) {
+        return batchResult(
+            SequencerSnapshotBatchMutationStatus::INVALID_PATTERN_STATE,
+            oldLength,
+            oldLength
+        );
+    }
+
+    bool ccChanged = false;
+    if (target.pattern.ccLanes) {
+        const auto ccResult = removeSequencerCcLaneBankStepsUnversioned(
+            *target.pattern.ccLanes,
+            oldLength,
+            removalMask
+        );
+        if (!ccResult.accepted()) {
+            return batchResult(
+                ccResult.status == SequencerCcLaneBatchMutationStatus::INVALID_BANK
+                    ? SequencerSnapshotBatchMutationStatus::INVALID_CC_LANE_BANK
+                    : SequencerSnapshotBatchMutationStatus::INVALID_ARGUMENT,
+                oldLength,
+                oldLength
+            );
+        }
+        ccChanged = ccResult.changed();
+    }
+
+    const auto sourceEnabledMask = target.pattern.enabledMask.get();
+    oc::note::sequencer::StepBitMask128 nextEnabledMask{};
+    bool graphChanged = false;
+    uint8_t destination = 0U;
+    for (uint16_t source = 0; source < oldLength; ++source) {
+        const auto sourceStep = static_cast<uint8_t>(source);
+        if (removalMask.test(sourceStep)) continue;
+
+        if (destination != sourceStep) {
+            writeStep(target.pattern, destination, readStep(target.pattern, sourceStep));
+            if (canEditRootNodes(target.pattern)) {
+                graphChanged = assignRootNode(
+                    target.pattern,
+                    destination,
+                    target.pattern.graph->stepNodes[sourceStep]
+                ) || graphChanged;
+            }
+        }
+        nextEnabledMask.setBit(destination, sourceEnabledMask.test(sourceStep));
+        ++destination;
+    }
+    // The validated, non-overlapping Page mask makes this identity exact:
+    // every unmasked source contributes one destination.
+
+    for (uint16_t step = newLength; step < SequencerState::MAX_STEPS; ++step) {
+        const auto stepIndex = static_cast<uint8_t>(step);
+        writeStep(target.pattern, stepIndex, defaultStep());
+        graphChanged = clearRootNode(target.pattern, stepIndex) || graphChanged;
+    }
+    applyBatchPlaybackRegion(target.pattern, nextRegion, nextEnabledMask);
+
+    const SequencerSnapshotBatchDomains domains{
+        .stepData = true,
+        .graph = graphChanged,
+        .ccLanes = ccChanged,
+        .timing = true,
+    };
+    return batchResult(
+        SequencerSnapshotBatchMutationStatus::APPLIED,
+        oldLength,
+        newLength,
+        domains
+    );
+}
+
+FLASHMEM void publishSequencerSnapshotBatchRevisions(
+    SequencerPatternState& pattern,
+    const SequencerSnapshotBatchDomains& domains
+) noexcept {
+    if (domains.stepData) pattern.bumpStepDataRevision();
+    if (domains.graph) pattern.bumpGraphRevision();
+    if (domains.ccLanes && pattern.ccLanes) {
+        ++pattern.ccLanes->revision;
+        pattern.bumpCcLaneRevision();
+    }
+    if (domains.timing) pattern.bumpPatternTimingRevision();
+}
+
 FLASHMEM bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t endStep) {
     const uint8_t len = target.pattern.length.get();
     if (len == 0) return false;
@@ -764,35 +1140,6 @@ FLASHMEM bool insertPage(SequencerState& target, uint8_t pageIndex) {
         target.pattern.bumpGraphRevision();
         compactSequencerGraph(target);
     }
-    return true;
-}
-
-FLASHMEM bool ensurePageExists(SequencerState& target, uint8_t pageIndex) {
-    if (pageIndex >= SequencerState::PAGE_COUNT) return false;
-
-    const uint8_t requiredLength = static_cast<uint8_t>(std::min<uint16_t>(
-        SequencerState::MAX_STEPS,
-        static_cast<uint16_t>((static_cast<uint16_t>(pageIndex) + 1U) * SequencerState::STEPS_PER_PAGE)
-    ));
-    const uint8_t currentLength = target.pattern.length.get();
-    if (requiredLength <= currentLength) {
-        target.page.set(pageIndex);
-        target.focusedStep.set(static_cast<uint8_t>(pageIndex * SequencerState::STEPS_PER_PAGE));
-        return true;
-    }
-
-    auto mask = target.pattern.enabledMask.get();
-    for (uint16_t step = currentLength; step < requiredLength; ++step) {
-        const auto stepIndex = static_cast<uint8_t>(step);
-        writeStep(target.pattern, stepIndex, defaultStep());
-        mask.setBit(stepIndex, false);
-    }
-
-    target.pattern.setContentLength(requiredLength);
-    target.pattern.enabledMask.set(mask & lengthMask(requiredLength));
-    target.page.set(pageIndex);
-    target.focusedStep.set(static_cast<uint8_t>(pageIndex * SequencerState::STEPS_PER_PAGE));
-    target.pattern.bumpStepDataRevision();
     return true;
 }
 

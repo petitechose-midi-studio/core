@@ -12,6 +12,8 @@
 
 namespace core::handler {
 
+class SequencerPreparedPageStructureTransaction;
+
 /**
  * Owns sequencer page/track navigation and contextual selection state.
  *
@@ -68,6 +70,9 @@ private:
     void movePage(float delta);
     void moveTrack(float delta);
     void moveStep(float delta);
+    CreationResult createPreviewedPageAfterBoundary(
+        SequencerPreparedPageStructureTransaction& transaction
+    );
     bool rollbackTrackCreation(
         const core::state::sequencer::SequencerHistoryTrackStructureSnapshot& before
     );

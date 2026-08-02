@@ -567,10 +567,10 @@ FLASHMEM bool pushFrame(
         .ownerLocalStep = sequencer.focusedStep.get(),
         .pageSnapshot = sequencer.page.get(),
         .focusSnapshot = sequencer.focusedStep.get(),
+        .length = length,
         .ownerNodeId = ownerNodeId,
         .sequenceId = sequenceId,
         .cycleSetId = cycleSetId,
-        .length = length,
     };
     if (index == 0) {
         view.rootPageSnapshot = sequencer.page.get();

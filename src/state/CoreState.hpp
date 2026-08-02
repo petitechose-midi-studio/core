@@ -69,6 +69,7 @@ struct CoreStateLifecycle;
 
 namespace sequencer {
 struct SequencerGraphCompactionRemap;
+struct SequencerPreparedGraphContentPath;
 }
 
 /**
@@ -149,6 +150,13 @@ struct SequencerDomainState {
             PreparedFamily,
         };
 
+        enum class GraphCompactionState : uint8_t {
+            Disabled = 0,
+            SealPending,
+            PrecompactedUnchanged,
+            Precompacted,
+        };
+
         bool pending = false;
         Kind kind = Kind::StepProperty;
         uint8_t activeTrack = 0;
@@ -170,7 +178,7 @@ struct SequencerDomainState {
         bool prospectiveGraphInstalled = false;
         bool genericMutationPendingAtBegin = false;
         // Fits existing pointer-alignment padding on both supported ABIs.
-        bool compactGraphOnSeal = false;
+        GraphCompactionState graphCompaction = GraphCompactionState::Disabled;
         sequencer::SequencerHistoryPatternChangePtr preparedPatternChange;
         sequencer::SequencerPreparedActiveTrackSynchronization synchronization;
         sequencer::SequencerHistoryPatternChangePtr preparedCcLaneChange;
@@ -193,6 +201,15 @@ struct SequencerDomainState {
                                    uint8_t nextKey) const {
             return pending && kind == Kind::PreparedFamily && activeTrack == nextActiveTrack &&
                    familyOwner == nextOwner && familyKey == nextKey;
+        }
+
+        bool graphCompactionRequested() const {
+            return graphCompaction != GraphCompactionState::Disabled;
+        }
+
+        bool graphWasPrecompacted() const {
+            return graphCompaction == GraphCompactionState::PrecompactedUnchanged ||
+                   graphCompaction == GraphCompactionState::Precompacted;
         }
 
         void clear();
@@ -413,11 +430,26 @@ public:
         sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key,
         sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
         sequencer::SequencerHistoryDescriptor descriptor, bool compactGraphOnSeal = false);
+    [[nodiscard]] bool sequencerPreparedPatternEditReady(
+        sequencer::SequencerPreparedPatternEditOwner owner,
+        uint8_t key,
+        uint8_t expectedTrack) const;
+    [[nodiscard]] sequencer::SequencerPreparedPatternGraphPrecompactionOutcome
+    precompactSequencerPreparedPatternEditGraph(
+        sequencer::SequencerPreparedPatternEditOwner owner,
+        uint8_t key,
+        uint8_t expectedTrack,
+        sequencer::SequencerPreparedGraphContentPath& contentPath);
     sequencer::SequencerPreparedPatternEditSealOutcome sealSequencerPreparedPatternEdit(
         sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key, bool mutationChanged,
         sequencer::SequencerHistoryDescriptor descriptor);
     sequencer::SequencerPreparedPatternEditCommitOutcome commitSequencerPreparedPatternEdit(
         sequencer::SequencerPreparedPatternEditOwner owner);
+    // Matching prepared-family owners are restored through the single
+    // allocation-free rollback primitive, before or after seal.
+    [[nodiscard]] sequencer::SequencerPreparedPatternEditAbortOutcome
+    abortSequencerPreparedPatternEdit(
+        sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key);
     bool beginOrContinueSequencerCcLaneEventHistoryCoalescing(
         uint8_t lane, uint8_t step, int32_t beforeValue, int32_t afterValue,
         const sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs);

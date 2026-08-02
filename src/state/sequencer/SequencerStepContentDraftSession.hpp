@@ -48,6 +48,8 @@ enum class SequencerStepContentDraftBlockedTransition : uint8_t {
     VIEW,
     PROJECT_LOAD,
     RESET,
+    STRUCTURE_EDIT,
+    HISTORY,
 };
 
 /** Hot, bounded authoring payload for a new Chord. */
@@ -141,6 +143,9 @@ struct SequencerStepContentDraftSession
     void clearFailure();
     void noteFailure(SequencerStepContentDraftFailure nextFailure);
     void noteBlockedTransition(
+        SequencerStepContentDraftBlockedTransition transition
+    );
+    [[nodiscard]] bool rejectTransitionIfActive(
         SequencerStepContentDraftBlockedTransition transition
     );
     void resetSession();

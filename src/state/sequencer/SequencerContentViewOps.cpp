@@ -463,6 +463,108 @@ FLASHMEM bool compactSequencerGraph(SequencerState& sequencer) {
     return true;
 }
 
+FLASHMEM SequencerPreparedGraphContentPath
+capturePreparedSequencerGraphContentPath(const SequencerState& sequencer) {
+    SequencerPreparedGraphContentPath path;
+    const auto& view = sequencer.contentView;
+    if (view.stackDepth > view.frames.size()) return path;
+
+    path.stackDepth = view.stackDepth;
+    for (uint8_t i = 0; i < path.stackDepth; ++i) {
+        path.frames[i] = view.frames[i];
+        if (!validateFrame(sequencer, path.frames[i])) return {};
+    }
+    path.valid = true;
+    return path;
+}
+
+FLASHMEM bool remapPreparedSequencerGraphContentPath(
+    SequencerPreparedGraphContentPath& path,
+    const SequencerGraphCompactionRemap& remap,
+    bool compacted
+) {
+    if (!path.valid || path.stackDepth > path.frames.size()) return false;
+    path.compacted = compacted;
+    if (!compacted) return true;
+
+    for (uint8_t i = 0; i < path.stackDepth; ++i) {
+        auto& frame = path.frames[i];
+        const uint16_t ownerNodeId = remap.stepNode(frame.ownerNodeId);
+        if (ownerNodeId == kInvalidId) return false;
+        frame.ownerNodeId = ownerNodeId;
+
+        if (frame.kind == SequencerContentViewKind::MICRO_SEQUENCE) {
+            const uint16_t sequenceId = remap.sequence(frame.sequenceId);
+            if (sequenceId == kInvalidId) return false;
+            frame.sequenceId = sequenceId;
+        } else if (frame.kind == SequencerContentViewKind::CYCLE_STATES) {
+            const uint16_t cycleSetId = remap.cycleSet(frame.cycleSetId);
+            if (cycleSetId == kInvalidId) return false;
+            frame.cycleSetId = cycleSetId;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM uint8_t preparedSequencerContentLength(
+    const SequencerState& sequencer,
+    const SequencerPreparedGraphContentPath& path
+) {
+    if (!path.valid || path.stackDepth > path.frames.size()) return 0U;
+    if (path.stackDepth == 0U) return sequencer.pattern.length.get();
+    return path.frames[path.stackDepth - 1U].length;
+}
+
+FLASHMEM SequencerGraphNodeId preparedSequencerContentStepNodeId(
+    const SequencerState& sequencer,
+    const SequencerPreparedGraphContentPath& path,
+    uint8_t step
+) {
+    if (!path.valid || path.stackDepth > path.frames.size()) return kInvalidId;
+    if (path.stackDepth == 0U) return rootStepNodeId(step);
+
+    const auto& frame = path.frames[path.stackDepth - 1U];
+    const auto* graph = graphView(authoringPattern(sequencer));
+    if (graph == nullptr || step >= frame.length) return kInvalidId;
+
+    if (frame.kind == SequencerContentViewKind::MICRO_SEQUENCE) {
+        const auto* sequence = graph->sequence(frame.sequenceId);
+        if (sequence == nullptr || step >= sequence->length) return kInvalidId;
+        const uint8_t sourceIndex = normalizeSequenceIndex(
+            step, sequence->offset, sequence->length);
+        return static_cast<uint16_t>(sequence->firstStepNode + sourceIndex);
+    }
+    if (frame.kind == SequencerContentViewKind::CYCLE_STATES) {
+        const auto* cycleSet = graph->cycleSet(frame.cycleSetId);
+        if (cycleSet == nullptr || step >= cycleSet->length) return kInvalidId;
+        const uint8_t sourceIndex = normalizeSequenceIndex(
+            step, cycleSet->offset, cycleSet->length);
+        return static_cast<uint16_t>(cycleSet->firstStateNode + sourceIndex);
+    }
+    return kInvalidId;
+}
+
+FLASHMEM void publishPreparedSequencerGraphContentPath(
+    SequencerState& sequencer,
+    const SequencerPreparedGraphContentPath& path
+) {
+    if (!path.valid || path.stackDepth > path.frames.size()) return;
+
+    auto& view = sequencer.contentView;
+    for (uint8_t i = 0; i < path.stackDepth; ++i) {
+        view.frames[i] = path.frames[i];
+    }
+    for (uint8_t i = path.stackDepth; i < view.frames.size(); ++i) {
+        view.frames[i] = {};
+    }
+    view.stackDepth = path.stackDepth;
+    refreshContentView(sequencer);
+    view.bump();
+    notifyStepContentDraftMutation(sequencer);
+}
+
 FLASHMEM void finalizePreparedSequencerGraphMutation(SequencerState& sequencer,
                                                      const SequencerGraphCompactionRemap& remap,
                                                      bool compacted) {

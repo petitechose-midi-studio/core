@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerChord.hpp>
@@ -168,6 +169,45 @@ bool enterCycleStatesContentView(SequencerState& sequencer, SequencerGraphNodeId
 bool leaveContentView(SequencerState& sequencer);
 void refreshContentView(SequencerState& sequencer);
 bool compactSequencerGraph(SequencerState& sequencer);
+
+// Small, non-owning snapshot of the active Graph navigation path. A prepared
+// transaction may compact live Graph storage before it copies replacement
+// payloads; keeping the remapped path here lets it defer every observable UI
+// write until after the musical transaction has committed.
+struct SequencerPreparedGraphContentPath {
+    bool valid = false;
+    bool compacted = false;
+    uint8_t stackDepth = 0;
+    std::array<
+        SequencerContentViewFrame,
+        SequencerContentViewState::MAX_CHILD_DEPTH
+    > frames{};
+};
+
+static_assert(
+    sizeof(SequencerPreparedGraphContentPath) <= 64U,
+    "prepared Graph path must remain a bounded scalar transaction sidecar"
+);
+
+[[nodiscard]] SequencerPreparedGraphContentPath
+capturePreparedSequencerGraphContentPath(const SequencerState& sequencer);
+[[nodiscard]] bool remapPreparedSequencerGraphContentPath(
+    SequencerPreparedGraphContentPath& path,
+    const SequencerGraphCompactionRemap& remap,
+    bool compacted);
+[[nodiscard]] uint8_t preparedSequencerContentLength(
+    const SequencerState& sequencer,
+    const SequencerPreparedGraphContentPath& path);
+[[nodiscard]] SequencerGraphNodeId preparedSequencerContentStepNodeId(
+    const SequencerState& sequencer,
+    const SequencerPreparedGraphContentPath& path,
+    uint8_t step);
+// Called only after the prepared History commit has crossed its no-fail
+// publication boundary. It allocates nothing and publishes one view revision.
+void publishPreparedSequencerGraphContentPath(
+    SequencerState& sequencer,
+    const SequencerPreparedGraphContentPath& path);
+
 // Completes view remapping only after the prepared transaction has captured,
 // synchronized and admitted its compacted Graph. It never allocates.
 void finalizePreparedSequencerGraphMutation(SequencerState& sequencer,

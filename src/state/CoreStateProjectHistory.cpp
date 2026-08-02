@@ -126,6 +126,10 @@ FLASHMEM bool CoreState::prepareProjectHistoryInteraction() {
 }
 
 FLASHMEM bool CoreState::undoProjectHistory() {
+    if (sequencer.stepContentDraft.rejectTransitionIfActive(
+            sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {
+        return false;
+    }
     if (!prepareProjectHistoryInteraction()) return false;
     const auto* entry = projectHistory.peekUndo();
     if (entry == nullptr) return false;
@@ -152,6 +156,10 @@ FLASHMEM bool CoreState::undoProjectHistory() {
 }
 
 FLASHMEM bool CoreState::redoProjectHistory() {
+    if (sequencer.stepContentDraft.rejectTransitionIfActive(
+            sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {
+        return false;
+    }
     if (!prepareProjectHistoryInteraction()) return false;
     const auto* entry = projectHistory.peekRedo();
     if (entry == nullptr) return false;

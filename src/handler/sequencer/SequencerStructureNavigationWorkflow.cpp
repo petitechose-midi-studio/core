@@ -7,6 +7,8 @@
 
 #include "handler/common/NavigationUtils.hpp"
 #include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
+#include "handler/sequencer/SequencerPreparedPageStructureMutationPlan.hpp"
+#include "handler/sequencer/SequencerPreparedPageStructureTransaction.hpp"
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackOps.hpp"
@@ -445,24 +447,59 @@ SequencerStructureNavigationWorkflow::createPreviewedStructure() {
         }
         case core::state::StructureNavigationFocus::PAGE:
         default: {
-            auto change = captureSequencerPageStructureHistoryBefore(sequencer_);
-            if (!change) return CreationResult::HISTORY_UNAVAILABLE;
-            const bool changed = createSequencerStructurePage(sequencer_);
-            if (changed) {
-                const bool recorded = recordSequencerPageStructureHistoryChange(
-                    history_,
-                    sequencer_,
-                    std::move(change),
-                    currentActiveTrack()
-                );
-                syncPreviewToFocus(focus);
-                return recorded
-                    ? CreationResult::APPLIED
-                    : CreationResult::HISTORY_UNAVAILABLE;
+            using Action = SequencerPreparedPageStructureAction;
+            constexpr auto action = Action::PageCreate;
+            SequencerPreparedPageStructureTransaction transaction(
+                sequencer_, history_, action);
+            if (!transaction.openBoundary()) {
+                return CreationResult::HISTORY_UNAVAILABLE;
             }
-            syncPreviewToFocus(focus);
-            return CreationResult::NO_CHANGE;
+            return createPreviewedPageAfterBoundary(transaction);
         }
+    }
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM SequencerStructureNavigationWorkflow::CreationResult
+SequencerStructureNavigationWorkflow::createPreviewedPageAfterBoundary(
+    SequencerPreparedPageStructureTransaction& transaction
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
+
+    const uint8_t targetPage =
+        sequencer_.structureUi.previewAddPageSlot.get()
+            ? sequencer_.structureUi.previewPageIndex.get()
+            : sequencer_.activePageCount();
+    SequencerPreparedPageStructureMutationPlan plan;
+    switch (buildSequencerPageCreateMutationPlan(
+        sequencer_, currentActiveTrack(), targetPage, plan)) {
+        case Preflight::Rejected:
+            return CreationResult::MUTATION_FAILED;
+        case Preflight::NoChange:
+            syncPreviewToFocus(core::state::StructureNavigationFocus::PAGE);
+            return CreationResult::NO_CHANGE;
+        case Preflight::Ready:
+            break;
+        default:
+            return CreationResult::MUTATION_FAILED;
+    }
+
+    switch (executeSequencerPreparedPageStructureMutationPlan(
+        transaction, plan)) {
+        case Result::Committed:
+            syncPreviewToFocus(core::state::StructureNavigationFocus::PAGE);
+            return CreationResult::APPLIED;
+        case Result::NoChange:
+            syncPreviewToFocus(core::state::StructureNavigationFocus::PAGE);
+            return CreationResult::NO_CHANGE;
+        case Result::Failed:
+        default:
+            return CreationResult::HISTORY_UNAVAILABLE;
     }
 }
 
@@ -475,6 +512,10 @@ FLASHMEM void SequencerStructureNavigationWorkflow::bindStateSync() {
 
     subscriptions_.push_back(
         sequencer_.page.subscribe([this](uint8_t pageIndex) {
+            if (sequencer_.structureUi.previewAddPageSlot.get() ||
+                sequencer_.structureUi.pageSelection.placementActive()) {
+                return;
+            }
             sequencer_.structureUi.syncPreviewPage(sequencer_.clampPage(pageIndex));
         })
     );

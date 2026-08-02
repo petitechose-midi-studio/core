@@ -645,6 +645,79 @@ FLASHMEM bool removeSequencerCcLaneBankSpan(
     return changed;
 }
 
+FLASHMEM SequencerCcLaneBatchMutationResult
+removeSequencerCcLaneBankStepsUnversioned(
+    SequencerCcLaneBank& bank,
+    uint8_t oldContentLength,
+    const oc::note::sequencer::StepBitMask128& removalMask
+) noexcept {
+    if (oldContentLength == 0U ||
+        oldContentLength > SequencerCcLaneBank::MAX_STEPS ||
+        (removalMask &
+         ~oc::note::sequencer::StepBitMask128::prefixMask(oldContentLength)) !=
+            oc::note::sequencer::StepBitMask128{}) {
+        return {.status = SequencerCcLaneBatchMutationStatus::INVALID_ARGUMENT};
+    }
+
+    uint8_t removedCount = 0U;
+    for (uint16_t step = 0; step < oldContentLength; ++step) {
+        if (removalMask.test(static_cast<uint8_t>(step))) {
+            ++removedCount;
+        }
+    }
+    if (removedCount == 0U || removedCount >= oldContentLength) {
+        return {.status = SequencerCcLaneBatchMutationStatus::INVALID_ARGUMENT};
+    }
+    if (!validSequencerCcLaneBank(bank)) {
+        return {.status = SequencerCcLaneBatchMutationStatus::INVALID_BANK};
+    }
+
+    const uint8_t newContentLength =
+        static_cast<uint8_t>(oldContentLength - removedCount);
+    bool changed = false;
+    for (auto& lane : bank.lanes) {
+        if (!lane.occupied) continue;
+
+        uint8_t destination = 0U;
+        for (uint16_t source = 0; source < oldContentLength; ++source) {
+            const auto sourceStep = static_cast<uint8_t>(source);
+            if (removalMask.test(sourceStep)) continue;
+            if (destination != sourceStep) {
+                // destination is always lower than source. Reading and writing
+                // the same lane is therefore stable without a lane-sized copy.
+                changed = assignLaneStepFrom(
+                    lane,
+                    destination,
+                    lane,
+                    sourceStep
+                ) || changed;
+            }
+            ++destination;
+        }
+
+        // Match the established span-removal contract: only the former active
+        // range is structurally shifted/cleared. Authored cold events beyond
+        // oldContentLength remain byte-for-byte available for a later extend.
+        for (uint16_t step = newContentLength;
+             step < oldContentLength;
+             ++step) {
+            changed = assignLaneStep(
+                lane,
+                static_cast<uint8_t>(step),
+                false,
+                0,
+                SequencerCcLaneTransition::HOLD
+            ) || changed;
+        }
+    }
+
+    return {
+        .status = changed
+            ? SequencerCcLaneBatchMutationStatus::APPLIED
+            : SequencerCcLaneBatchMutationStatus::NO_CHANGE,
+    };
+}
+
 FLASHMEM uint8_t proposedSequencerCcLaneEventValue(
     const SequencerCcLane& lane,
     uint8_t step,

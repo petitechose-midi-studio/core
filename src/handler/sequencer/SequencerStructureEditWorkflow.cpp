@@ -5,6 +5,8 @@
 #include <config/Timing.hpp>
 #include <utility>
 
+#include "handler/sequencer/SequencerPreparedPageStructureMutationPlan.hpp"
+#include "handler/sequencer/SequencerPreparedPageStructureTransaction.hpp"
 #include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
 #include "handler/sequencer/SequencerStructurePageClipboardOps.hpp"
 #include "handler/sequencer/SequencerStructurePageOps.hpp"
@@ -17,7 +19,6 @@
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
-#include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "state/sequencer/SequencerTrackTransferAction.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 
@@ -30,6 +31,32 @@ namespace {
 
 constexpr uint32_t TRACK_PASTE_CANCELLED_MS = 700;
 constexpr uint32_t TRACK_PASTE_APPLIED_MS = 1200;
+
+enum class PreparedStructureSettlement : uint8_t {
+    Failed = 0U,
+    NoChange,
+    Committed,
+};
+
+constexpr uint16_t packPreparedStructureSettlement(
+    PreparedStructureSettlement outcome,
+    uint8_t finalFocus = 0U
+) noexcept {
+    return static_cast<uint16_t>(
+        (static_cast<uint16_t>(outcome) << 8U) | finalFocus);
+}
+
+constexpr PreparedStructureSettlement preparedStructureSettlementOutcome(
+    uint16_t settlement
+) noexcept {
+    return static_cast<PreparedStructureSettlement>(settlement >> 8U);
+}
+
+constexpr uint8_t preparedStructureSettlementFocus(
+    uint16_t settlement
+) noexcept {
+    return static_cast<uint8_t>(settlement & 0xFFU);
+}
 
 }  // namespace
 
@@ -406,38 +433,79 @@ FLASHMEM void SequencerStructureEditWorkflow::copyStructureSelection() {
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::pasteStructureSelection() {
-    if (track_ui_.selection.placementActive()) {
-        const auto result = executeSequencerTrackTransfer(
-            tracks_, project_tracks_, sequencer_, structure_clipboard_, shared_tracks_, history_,
-            track_ui_.selection.cursorIndex.get(), 0, track_activations_,
-            status_bar_ != nullptr && status_bar_->playing.get(), &macro_pages_);
-        if (!result.applied()) {
+    const auto& selection = sequencer_.structureUi.pageSelection;
+    if (!selection.placementActive()) return;
+    using Action = SequencerPreparedPageStructureAction;
+    constexpr auto action = Action::PageSelectionPaste;
+    SequencerPreparedPageStructureTransaction transaction(sequencer_, history_, action);
+    if (!transaction.openBoundary()) return;
+    const uint16_t settlement = pastePageSelectionAfterBoundary(transaction);
+    switch (preparedStructureSettlementOutcome(settlement)) {
+        case PreparedStructureSettlement::Committed:
+            sequencer_.structureUi.pageHold.clear();
+            sequencer_.structureUi.syncPreviewPage(sequencer_.page.get());
+            refreshStructureSelectionPastePreview();
+            return;
+        case PreparedStructureSettlement::NoChange: {
+            const uint8_t finalFocus =
+                preparedStructureSettlementFocus(settlement);
+            sequencer_.page.set(sequencer_.pageForStep(finalFocus));
+            sequencer_.focusedStep.set(finalFocus);
+            sequencer_.structureUi.pageHold.clear();
+            sequencer_.structureUi.syncPreviewPage(sequencer_.page.get());
             refreshStructureSelectionPastePreview();
             return;
         }
-        navigation_focus_.set(core::state::StructureNavigationFocus::TRACK);
-        refreshStructureSelectionPastePreview();
-        return;
+        case PreparedStructureSettlement::Failed:
+        default:
+            return;
+    }
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM uint16_t SequencerStructureEditWorkflow::pastePageSelectionAfterBoundary(
+    SequencerPreparedPageStructureTransaction& transaction
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
+
+    SequencerPreparedPageStructureMutationPlan plan;
+    switch (buildSequencerPageSelectionPasteMutationPlan(
+        sequencer_, structure_clipboard_,
+        makeSequencerPreparedPageStructureTarget(
+            currentActiveTrack(),
+            sequencer_.structureUi.pageSelection.cursorIndex.get()),
+        plan)) {
+        case Preflight::Rejected:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Failed);
+        case Preflight::NoChange:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::NoChange, plan.finalFocus);
+        case Preflight::Ready:
+            break;
+        default:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Failed);
     }
 
-    auto& selection = sequencer_.structureUi.pageSelection;
-    if (!selection.placementActive()) return;
-    const auto plan =
-        buildPageSelectionPastePlan(sequencer_, structure_clipboard_, selection.cursorIndex.get());
-    if (!plan.canCommit()) {
-        refreshStructureSelectionPastePreview();
-        return;
+    switch (executeSequencerPreparedPageStructureMutationPlan(
+        transaction, plan)) {
+        case Result::Committed:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Committed);
+        case Result::NoChange:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::NoChange, plan.finalFocus);
+        case Result::Failed:
+        default:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Failed);
     }
-
-    auto historyChange = capturePageHistoryBefore();
-    if (!historyChange) return;
-    if (!pastePageSelectionClipboard(sequencer_, structure_clipboard_, plan)) { return; }
-    sequencer_.pattern.bumpStepDataRevision();
-    sequencer_.page.set(plan.firstDestinationPage);
-    sequencer_.focusedStep.set(sequencer_.pageStartStep(plan.firstDestinationPage));
-    sequencer_.structureUi.syncPreviewPage(plan.firstDestinationPage);
-    (void)recordPageHistoryAfter(std::move(historyChange));
-    refreshStructureSelectionPastePreview();
 }
 
 FLASHMEM contextual::GuardedActionRelease SequencerStructureEditWorkflow::releaseTrackPasteAction(
@@ -522,10 +590,53 @@ FLASHMEM void SequencerStructureEditWorkflow::applyCurrentStructureShortPress() 
         return;
     }
 
-    auto historyChange = capturePageHistoryBefore();
-    if (!historyChange) return;
-    if (clearCurrentSequencerStructurePage(sequencer_)) {
-        recordPageHistoryAfter(std::move(historyChange));
+    using Action = SequencerPreparedPageStructureAction;
+    constexpr auto action = Action::PageClear;
+    SequencerPreparedPageStructureTransaction transaction(sequencer_, history_, action);
+    if (!transaction.openBoundary()) return;
+    clearCurrentPageAfterBoundary(transaction);
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM void SequencerStructureEditWorkflow::clearCurrentPageAfterBoundary(
+    SequencerPreparedPageStructureTransaction& transaction
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
+
+    SequencerPreparedPageStructureMutationPlan plan;
+    switch (buildSequencerPageClearMutationPlan(
+        sequencer_, currentActiveTrack(), sequencer_.visiblePage(), plan)) {
+        case Preflight::Rejected:
+            return;
+        case Preflight::NoChange:
+            sequencer_.page.set(sequencer_.pageForStep(plan.finalFocus));
+            sequencer_.focusedStep.set(plan.finalFocus);
+            sequencer_.structureUi.pageHold.clear();
+            return;
+        case Preflight::Ready:
+            break;
+        default:
+            return;
+    }
+
+    switch (executeSequencerPreparedPageStructureMutationPlan(
+        transaction, plan)) {
+        case Result::Committed:
+            sequencer_.structureUi.pageHold.clear();
+            return;
+        case Result::NoChange:
+            sequencer_.page.set(sequencer_.pageForStep(plan.finalFocus));
+            sequencer_.focusedStep.set(plan.finalFocus);
+            sequencer_.structureUi.pageHold.clear();
+            return;
+        case Result::Failed:
+        default:
+            return;
     }
 }
 
@@ -550,10 +661,46 @@ FLASHMEM void SequencerStructureEditWorkflow::applyCurrentStructureLongPress() {
         return;
     }
 
-    auto historyChange = capturePageHistoryBefore();
-    if (!historyChange) return;
-    if (deleteCurrentSequencerStructurePage(sequencer_)) {
-        recordPageHistoryAfter(std::move(historyChange));
+    using Action = SequencerPreparedPageStructureAction;
+    constexpr auto action = Action::PageDelete;
+    SequencerPreparedPageStructureTransaction transaction(sequencer_, history_, action);
+    if (!transaction.openBoundary()) return;
+    deleteCurrentPageAfterBoundary(transaction);
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM void SequencerStructureEditWorkflow::deleteCurrentPageAfterBoundary(
+    SequencerPreparedPageStructureTransaction& transaction
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
+
+    SequencerPreparedPageStructureMutationPlan plan;
+    switch (buildSequencerPageDeleteMutationPlan(
+        sequencer_, currentActiveTrack(), sequencer_.visiblePage(), plan)) {
+        case Preflight::Rejected:
+        case Preflight::NoChange:
+            return;
+        case Preflight::Ready:
+            break;
+        default:
+            return;
+    }
+
+    switch (executeSequencerPreparedPageStructureMutationPlan(
+        transaction, plan)) {
+        case Result::Committed:
+            sequencer_.structureUi.pageHold.clear();
+            syncSequencerPagePreviewToVisible(sequencer_, false);
+            return;
+        case Result::NoChange:
+        case Result::Failed:
+        default:
+            return;
     }
 }
 
@@ -587,41 +734,84 @@ FLASHMEM void SequencerStructureEditWorkflow::copyCurrentStructure() {
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::pasteCurrentStructure() {
-    if (navigation_focus_.get() == core::state::StructureNavigationFocus::TRACK) {
-        if (!structure_clipboard_.hasSequencerTrack()) return;
-        const uint8_t targetTrack = sequencerStructureTrackTarget(track_ui_, currentActiveTrack());
-        const auto result = executeSequencerTrackTransfer(
-            tracks_, project_tracks_, sequencer_, structure_clipboard_, shared_tracks_, history_,
-            targetTrack, 0, track_activations_,
-            status_bar_ != nullptr && status_bar_->playing.get());
-        if (!result.applied()) return;
-        syncPreviewToFocus(core::state::StructureNavigationFocus::TRACK);
-        return;
-    }
-
     if (navigation_focus_.get() == core::state::StructureNavigationFocus::STEP) {
         pasteFocusedStep();
         return;
     }
 
-    if (!structure_clipboard_.hasSequencerPage()) return;
-    auto historyChange = capturePageHistoryBefore();
-    if (!historyChange) return;
-    uint8_t targetPage = sequencer_.visiblePage();
-    if (sequencer_.structureUi.previewAddPageSlot.get()) {
-        targetPage = sequencer_.clampPage(sequencer_.structureUi.previewPageIndex.get());
-        if (!createSequencerStructurePage(sequencer_)) return;
+    if (navigation_focus_.get() != core::state::StructureNavigationFocus::PAGE) return;
+
+    using Action = SequencerPreparedPageStructureAction;
+    constexpr auto action = Action::PagePaste;
+    SequencerPreparedPageStructureTransaction transaction(sequencer_, history_, action);
+    if (!transaction.openBoundary()) return;
+    const uint16_t settlement = pasteCurrentPageAfterBoundary(transaction);
+    switch (preparedStructureSettlementOutcome(settlement)) {
+        case PreparedStructureSettlement::Committed:
+            sequencer_.structureUi.pageHold.clear();
+            syncSequencerPagePreviewToVisible(sequencer_, false);
+            return;
+        case PreparedStructureSettlement::NoChange: {
+            const uint8_t finalFocus =
+                preparedStructureSettlementFocus(settlement);
+            sequencer_.page.set(sequencer_.pageForStep(finalFocus));
+            sequencer_.focusedStep.set(finalFocus);
+            sequencer_.structureUi.pageHold.clear();
+            syncSequencerPagePreviewToVisible(sequencer_, false);
+            return;
+        }
+        case PreparedStructureSettlement::Failed:
+        default:
+            return;
+    }
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM uint16_t SequencerStructureEditWorkflow::pasteCurrentPageAfterBoundary(
+    SequencerPreparedPageStructureTransaction& transaction
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
+
+    SequencerPreparedPageStructureMutationPlan plan;
+    switch (buildSequencerPagePasteMutationPlan(
+        sequencer_, structure_clipboard_,
+        makeSequencerPreparedPageStructureTarget(
+            currentActiveTrack(),
+            sequencer_.structureUi.previewAddPageSlot.get()
+                ? sequencer_.structureUi.previewPageIndex.get()
+                : sequencer_.visiblePage()),
+        plan)) {
+        case Preflight::Rejected:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Failed);
+        case Preflight::NoChange:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::NoChange, plan.finalFocus);
+        case Preflight::Ready:
+            break;
+        default:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Failed);
     }
 
-    const auto& clipboard = structure_clipboard_.sequencerPage;
-    pastePageClipboard(sequencer_, clipboard, structure_clipboard_.sequencerGraph.get(),
-                       targetPage);
-    sequencer_.pattern.bumpStepDataRevision();
-    sequencer_.structureUi.syncPreviewPage(targetPage);
-    sequencer_.page.set(targetPage);
-    sequencer_.structureUi.previewAddPageSlot.set(false);
-    sequencer_.focusedStep.set(sequencer_.pageStartStep(targetPage));
-    recordPageHistoryAfter(std::move(historyChange));
+    switch (executeSequencerPreparedPageStructureMutationPlan(
+        transaction, plan)) {
+        case Result::Committed:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Committed);
+        case Result::NoChange:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::NoChange, plan.finalFocus);
+        case Result::Failed:
+        default:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Failed);
+    }
 }
 
 FLASHMEM bool SequencerStructureEditWorkflow::canPasteFocusedStep() const {
@@ -699,33 +889,90 @@ FLASHMEM void SequencerStructureEditWorkflow::clearStepPastePreview() {
 FLASHMEM void SequencerStructureEditWorkflow::pasteStepClipboardAt(uint8_t cursorStep,
                                                                    bool selectionPaste) {
     if (!structure_clipboard_.hasSequencerSteps()) return;
-
-    const auto mode = structureStepPasteMode(project_navigation_);
-    const auto plan = buildStructureStepPastePlan(sequencer_, structure_clipboard_.sequencerSteps,
-                                                  mode, cursorStep);
-    if (plan.blocked || !plan.hasEntries()) {
-        clearStepPastePreview();
-        return;
-    }
-    auto historyChange = capturePageHistoryBefore();
-    if (!historyChange) return;
-
-    if (!commitStructureStepPastePlan(sequencer_, structure_clipboard_, mode, plan)) {
-        clearStepPastePreview();
+    if (selectionPaste) {
+        const auto& selection = sequencer_.structureUi.stepSelection;
+        if (!selection.placementActive() ||
+            selection.cursorStep.get() != cursorStep) {
+            return;
+        }
+    } else if (sequencer_.focusedStep.get() != cursorStep) {
         return;
     }
 
-    core::state::sequencer::refreshContentView(sequencer_);
-    sequencer_.pattern.bumpStepDataRevision();
+    using Action = SequencerPreparedPageStructureAction;
+    constexpr auto action = Action::StepPaste;
+    SequencerPreparedPageStructureTransaction transaction(
+        sequencer_, history_, action);
+    if (!transaction.openBoundary()) return;
+    const uint16_t settlement = pasteStepClipboardAfterBoundary(transaction);
+    const auto outcome = preparedStructureSettlementOutcome(settlement);
+    if (outcome == PreparedStructureSettlement::Failed) return;
+
+    const uint8_t finalFocus =
+        preparedStructureSettlementFocus(settlement);
+    if (outcome == PreparedStructureSettlement::NoChange) {
+        sequencer_.page.set(
+            core::state::sequencer::activeContentPageForStep(finalFocus));
+        sequencer_.focusedStep.set(finalFocus);
+    }
     if (selectionPaste) {
         auto& selection = sequencer_.structureUi.stepSelection;
-        selection.cursorStep.set(plan.firstTarget);
+        selection.cursorStep.set(finalFocus);
         clearStepPastePreview();
     }
-    sequencer_.focusedStep.set(plan.firstTarget);
-    sequencer_.page.set(core::state::sequencer::activeContentPageForStep(plan.firstTarget));
     navigation_focus_.set(core::state::StructureNavigationFocus::STEP);
-    recordPageHistoryAfter(std::move(historyChange));
+    sequencer_.structureUi.pageHold.clear();
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM uint16_t
+SequencerStructureEditWorkflow::pasteStepClipboardAfterBoundary(
+    SequencerPreparedPageStructureTransaction& transaction
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
+
+    SequencerPreparedPageStructureMutationPlan plan;
+    switch (buildSequencerStepPasteMutationPlan(
+        sequencer_,
+        structure_clipboard_,
+        makeSequencerPreparedStepPasteTarget(
+            currentActiveTrack(),
+            structureStepPasteMode(project_navigation_),
+            sequencer_.structureUi.stepSelection.placementActive()
+                ? sequencer_.structureUi.stepSelection.cursorStep.get()
+                : sequencer_.focusedStep.get()),
+        plan)) {
+        case Preflight::Rejected:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Failed);
+        case Preflight::NoChange:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::NoChange, plan.finalFocus);
+        case Preflight::Ready:
+            break;
+        default:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Failed);
+    }
+
+    switch (executeSequencerPreparedPageStructureMutationPlan(
+        transaction, plan)) {
+        case Result::Committed:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Committed, plan.finalFocus);
+        case Result::NoChange:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::NoChange, plan.finalFocus);
+        case Result::Failed:
+        default:
+            return packPreparedStructureSettlement(
+                PreparedStructureSettlement::Failed);
+    }
 }
 
 FLASHMEM void SequencerStructureEditWorkflow::pasteStepSelection() {
@@ -735,17 +982,6 @@ FLASHMEM void SequencerStructureEditWorkflow::pasteStepSelection() {
         return;
     }
     pasteStepClipboardAt(selection.cursorStep.get(), true);
-}
-
-FLASHMEM SequencerStructureEditWorkflow::HistoryPatternChangePtr
-SequencerStructureEditWorkflow::capturePageHistoryBefore() const {
-    return captureSequencerPageStructureHistoryBefore(sequencer_);
-}
-
-FLASHMEM bool SequencerStructureEditWorkflow::recordPageHistoryAfter(
-    HistoryPatternChangePtr change) {
-    return recordSequencerPageStructureHistoryChange(history_, sequencer_, std::move(change),
-                                                     currentActiveTrack());
 }
 
 FLASHMEM SequencerStructureEditWorkflow::HistoryTrackStructureChangePtr
@@ -776,34 +1012,96 @@ FLASHMEM void SequencerStructureEditWorkflow::resetFocusedStep(StepResetDepth de
     const uint8_t step = sequencer_.focusedStep.get();
     if (step >= core::state::sequencer::activeContentLength(sequencer_)) return;
 
-    auto historyChange = capturePageHistoryBefore();
-    if (!historyChange) return;
-
-    if (!resetActiveContentStep(sequencer_, step, depth)) return;
-    const bool compacted =
-        depth == StepResetDepth::Deep && core::state::sequencer::compactSequencerGraph(sequencer_);
-    if (!compacted) core::state::sequencer::refreshContentView(sequencer_);
-    sequencer_.pattern.bumpStepDataRevision();
-    sequencer_.focusedStep.set(step);
-    sequencer_.page.set(core::state::sequencer::activeContentPageForStep(step));
-    recordPageHistoryAfter(std::move(historyChange));
+    using Action = SequencerPreparedPageStructureAction;
+    constexpr auto action = Action::FocusedStepReset;
+    SequencerPreparedPageStructureTransaction transaction(
+        sequencer_, history_, action);
+    if (!transaction.openBoundary()) return;
+    if (resetFocusedStepAfterBoundary(transaction, depth) ==
+        SequencerPreparedPageStructureResult::Committed) {
+        sequencer_.structureUi.pageHold.clear();
+    }
 }
 
-FLASHMEM void SequencerStructureEditWorkflow::resetStepSelection(StepResetDepth depth) {
-    auto& selection = sequencer_.structureUi.stepSelection;
-    if (!selection.active.get()) return;
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM SequencerPreparedPageStructureResult
+SequencerStructureEditWorkflow::resetFocusedStepAfterBoundary(
+    SequencerPreparedPageStructureTransaction& transaction,
+    StepResetDepth depth
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
 
-    const auto selectedMask = selection.selectedMask.get();
+    SequencerPreparedPageStructureMutationPlan plan;
+    switch (buildSequencerFocusedStepResetMutationPlan(
+        sequencer_,
+        makeSequencerPreparedFocusedStepResetTarget(
+            currentActiveTrack(), sequencer_.focusedStep.get(), depth),
+        plan)) {
+        case Preflight::Rejected:
+            return Result::Failed;
+        case Preflight::NoChange:
+            return Result::NoChange;
+        case Preflight::Ready:
+            break;
+        default:
+            return Result::Failed;
+    }
+    return executeSequencerPreparedPageStructureMutationPlan(
+        transaction, plan);
+}
 
-    auto historyChange = capturePageHistoryBefore();
-    if (!historyChange) return;
+FLASHMEM void SequencerStructureEditWorkflow::resetStepSelection(
+    StepResetDepth depth
+) {
+    if (!sequencer_.structureUi.stepSelection.active.get()) return;
 
-    if (!resetSelectedActiveContentSteps(sequencer_, selectedMask, depth)) return;
-    const bool compacted =
-        depth == StepResetDepth::Deep && core::state::sequencer::compactSequencerGraph(sequencer_);
-    if (!compacted) core::state::sequencer::refreshContentView(sequencer_);
-    sequencer_.pattern.bumpStepDataRevision();
-    recordPageHistoryAfter(std::move(historyChange));
+    using Action = SequencerPreparedPageStructureAction;
+    constexpr auto action = Action::StepSelectionReset;
+    SequencerPreparedPageStructureTransaction transaction(
+        sequencer_, history_, action);
+    if (!transaction.openBoundary()) return;
+    if (resetStepSelectionAfterBoundary(transaction, depth) ==
+        SequencerPreparedPageStructureResult::Committed) {
+        sequencer_.structureUi.pageHold.clear();
+    }
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM SequencerPreparedPageStructureResult
+SequencerStructureEditWorkflow::resetStepSelectionAfterBoundary(
+    SequencerPreparedPageStructureTransaction& transaction,
+    StepResetDepth depth
+) {
+    using Preflight = SequencerPreparedPageStructurePreflightOutcome;
+    using Result = SequencerPreparedPageStructureResult;
+
+    SequencerPreparedPageStructureMutationPlan plan;
+    switch (buildSequencerStepSelectionResetMutationPlan(
+        sequencer_,
+        sequencer_.structureUi.stepSelection.selectedMask.get(),
+        makeSequencerPreparedStepSelectionResetTarget(
+            currentActiveTrack(), depth),
+        plan)) {
+        case Preflight::Rejected:
+            return Result::Failed;
+        case Preflight::NoChange:
+            return Result::NoChange;
+        case Preflight::Ready:
+            break;
+        default:
+            return Result::Failed;
+    }
+    return executeSequencerPreparedPageStructureMutationPlan(
+        transaction, plan);
 }
 
 FLASHMEM uint16_t SequencerStructureEditWorkflow::currentTrackEnabledMask() const {

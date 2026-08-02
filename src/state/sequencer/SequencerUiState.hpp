@@ -120,11 +120,16 @@ struct SequencerContentViewFrame {
     uint8_t ownerLocalStep = 0;
     uint8_t pageSnapshot = 0;
     uint8_t focusSnapshot = 0;
+    uint8_t length = 0;
     uint16_t ownerNodeId = GraphLimits::INVALID_ID;
     uint16_t sequenceId = GraphLimits::INVALID_ID;
     uint16_t cycleSetId = GraphLimits::INVALID_ID;
-    uint8_t length = 0;
 };
+
+static_assert(
+    sizeof(SequencerContentViewFrame) == 12U,
+    "content-view frame layout is part of the bounded Page planner contract"
+);
 
 struct SequencerContentViewState {
     using GraphLimits = oc::note::sequencer::StepSequencerGraphLimits;

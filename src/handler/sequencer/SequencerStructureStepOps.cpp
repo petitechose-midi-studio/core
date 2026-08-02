@@ -3,7 +3,6 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
-#include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerScaleState.hpp"
 
 namespace core::handler {
@@ -81,71 +80,6 @@ FLASHMEM bool appendStepClipboardEntry(
 
 }  // namespace
 
-FLASHMEM bool resetActiveContentStep(
-    core::state::sequencer::SequencerState& sequencer,
-    uint8_t step,
-    StepResetDepth depth
-) {
-    if (step >= core::state::sequencer::activeContentLength(sequencer)) return false;
-
-    bool changed = false;
-    const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer, step);
-    if (core::state::sequencer::isRootContentView(sequencer)) {
-        changed = sequencer.pattern.isEnabled(step) || changed;
-        sequencer.pattern.setEnabled(step, false);
-        changed = sequencer.setStepDataAt(
-            step,
-            core::state::sequencer::SequencerState::DEFAULT_NOTE,
-            core::state::sequencer::SequencerState::DEFAULT_VELOCITY,
-            core::state::sequencer::SequencerState::DEFAULT_GATE_PERCENT,
-            0,
-            core::state::sequencer::SequencerState::DEFAULT_PROBABILITY
-        ) || changed;
-        changed = (depth == StepResetDepth::Shallow
-            ? core::state::sequencer::resetStepNodePayloadPreservingChildren(
-                  sequencer.pattern,
-                  nodeId
-              )
-            : core::state::sequencer::resetStepNodePayload(
-                  sequencer.pattern,
-                  nodeId
-              )) || changed;
-        return changed;
-    }
-
-    changed = (depth == StepResetDepth::Shallow
-        ? core::state::sequencer::resetStepNodePayloadPreservingChildren(
-              sequencer.pattern,
-              nodeId,
-              core::state::sequencer::SequencerGraphNodeResetMode::DISABLED_OVERRIDE
-          )
-        : core::state::sequencer::resetStepNodePayload(
-              sequencer.pattern,
-              nodeId,
-              core::state::sequencer::SequencerGraphNodeResetMode::DISABLED_OVERRIDE
-          )) || changed;
-    if (changed) sequencer.contentView.bump();
-    return changed;
-}
-
-FLASHMEM bool resetSelectedActiveContentSteps(
-    core::state::sequencer::SequencerState& sequencer,
-    const oc::note::sequencer::StepBitMask128& selectedMask,
-    StepResetDepth depth
-) {
-    const uint8_t activeLength = core::state::sequencer::activeContentLength(sequencer);
-    uint8_t first = 0;
-    uint8_t last = 0;
-    if (!selectedStepRange(selectedMask, activeLength, first, last)) return false;
-
-    bool changed = false;
-    for (uint8_t step = first; step <= last; ++step) {
-        if (!selectedMask.test(step)) continue;
-        changed = resetActiveContentStep(sequencer, step, depth) || changed;
-    }
-    return changed;
-}
-
 FLASHMEM bool captureFocusedStepClipboard(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::sequencer::SequencerTrackBankState& tracks,
@@ -193,64 +127,6 @@ FLASHMEM bool captureStepSelectionClipboard(
     }
 
     return clipboard.count > 0;
-}
-
-FLASHMEM bool writeRootStepFromClipboardEntry(
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::SequencerStepClipboardEntry& entry,
-    const oc::note::sequencer::StepSequencerGraph* sourceGraph,
-    uint8_t targetStep
-) {
-    if (targetStep >= core::state::sequencer::SequencerState::MAX_STEPS) return false;
-
-    sequencer.pattern.setEnabled(targetStep, entry.enabled);
-    (void)sequencer.setStepDataAt(
-        targetStep,
-        entry.note,
-        entry.velocity,
-        entry.gate,
-        entry.nudge,
-        entry.probability
-    );
-
-    const auto targetNode = core::state::sequencer::rootStepNodeId(targetStep);
-    if (sourceGraph != nullptr &&
-        entry.sourceNodeId != oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID) {
-        return core::state::sequencer::copyStepNodePayloadFromGraph(
-            sequencer.pattern,
-            targetNode,
-            *sourceGraph,
-            entry.sourceNodeId
-        );
-    }
-
-    (void)core::state::sequencer::resetStepNodePayload(sequencer.pattern, targetNode);
-    return true;
-}
-
-FLASHMEM bool writeChildStepFromClipboardEntry(
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::SequencerStepClipboardEntry& entry,
-    const oc::note::sequencer::StepSequencerGraph* sourceGraph,
-    uint8_t targetStep
-) {
-    if (sourceGraph == nullptr ||
-        entry.sourceNodeId == oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID ||
-        targetStep >= core::state::sequencer::activeContentLength(sequencer)) {
-        return false;
-    }
-
-    const auto targetNode = core::state::sequencer::activeContentStepNodeId(sequencer, targetStep);
-    if (!core::state::sequencer::copyStepNodePayloadFromGraph(
-            sequencer.pattern,
-            targetNode,
-            *sourceGraph,
-            entry.sourceNodeId
-        )) {
-        return false;
-    }
-    sequencer.contentView.bump();
-    return true;
 }
 
 }  // namespace core::handler

@@ -23,6 +23,7 @@
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerActionStripVisuals.hpp"
+#include "ui/sequencer/SequencerStepContentDraftTransitionLabels.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -69,22 +70,15 @@ FLASHMEM const char* draftFailureLabel(
     const core::state::sequencer::SequencerStepContentDraftSession& draft
 ) {
     using Failure = core::state::sequencer::SequencerStepContentDraftFailure;
-    using Transition =
-        core::state::sequencer::SequencerStepContentDraftBlockedTransition;
     switch (draft.failure) {
         case Failure::OUT_OF_MEMORY: return "APPLY FAILED · OUT OF MEMORY";
         case Failure::HISTORY_UNAVAILABLE: return "APPLY FAILED · HISTORY FULL";
         case Failure::PUBLISH_FAILED: return "APPLY FAILED · PUBLISH";
         case Failure::UNPUBLISHABLE_MUTATION: return "APPLY FAILED · INVALID EDIT";
         case Failure::TRANSITION_BLOCKED:
-            switch (draft.blockedTransition) {
-                case Transition::TRACK: return "APPLY BEFORE CHANGING TRACK";
-                case Transition::VIEW: return "APPLY BEFORE CHANGING VIEW";
-                case Transition::PROJECT_LOAD: return "APPLY BEFORE LOADING";
-                case Transition::RESET: return "APPLY BEFORE RESET";
-                case Transition::NONE:
-                default: return "APPLY OR DISCARD DRAFT";
-            }
+            return core::ui::sequencer::standaloneStepContentDraftTransitionLabel(
+                draft.blockedTransition
+            );
         case Failure::NONE:
         default: return nullptr;
     }

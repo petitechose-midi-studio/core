@@ -19,6 +19,8 @@
 namespace core::handler {
 
 enum class StepResetDepth : uint8_t;
+enum class SequencerPreparedPageStructureResult : uint8_t;
+class SequencerPreparedPageStructureTransaction;
 
 /**
  * Owns sequencer page/track structure edit actions.
@@ -84,13 +86,9 @@ public:
     void pasteStepSelection();
 
 private:
-    using HistoryPatternChangePtr =
-        core::state::sequencer::SequencerHistoryPatternChangePtr;
     using HistoryTrackStructureChangePtr =
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr;
 
-    HistoryPatternChangePtr capturePageHistoryBefore() const;
-    bool recordPageHistoryAfter(HistoryPatternChangePtr change);
     HistoryTrackStructureChangePtr captureTrackHistoryBefore(uint16_t trackMask) const;
     bool recordTrackHistoryAfter(HistoryTrackStructureChangePtr change, uint16_t trackMask);
     void syncPreviewToFocus(core::state::StructureNavigationFocus focus);
@@ -99,7 +97,37 @@ private:
     void pasteFocusedStep();
     void resetFocusedStep(StepResetDepth depth);
     void resetStepSelection(StepResetDepth depth);
+    void clearCurrentPageAfterBoundary(
+        SequencerPreparedPageStructureTransaction& transaction
+    );
+    void deleteCurrentPageAfterBoundary(
+        SequencerPreparedPageStructureTransaction& transaction
+    );
+    uint16_t pastePageSelectionAfterBoundary(
+        SequencerPreparedPageStructureTransaction& transaction
+    );
+    uint16_t pasteCurrentPageAfterBoundary(
+        SequencerPreparedPageStructureTransaction& transaction
+    );
     void pasteStepClipboardAt(uint8_t cursorStep, bool selectionPaste);
+    uint16_t pasteStepClipboardAfterBoundary(
+        SequencerPreparedPageStructureTransaction& transaction
+    );
+    SequencerPreparedPageStructureResult resetFocusedStepAfterBoundary(
+        SequencerPreparedPageStructureTransaction& transaction,
+        StepResetDepth depth
+    );
+    SequencerPreparedPageStructureResult resetStepSelectionAfterBoundary(
+        SequencerPreparedPageStructureTransaction& transaction,
+        StepResetDepth depth
+    );
+    SequencerPreparedPageStructureResult resetPageSelectionAfterBoundary(
+        SequencerPreparedPageStructureTransaction& transaction
+    );
+    SequencerPreparedPageStructureResult
+    deleteOrResetPageSelectionAfterBoundary(
+        SequencerPreparedPageStructureTransaction& transaction
+    );
     uint16_t currentTrackEnabledMask() const;
     uint8_t currentActiveTrack() const;
     bool applyTrackState(uint16_t enabledMask, uint8_t activeTrack);

@@ -59,8 +59,9 @@ void applyRootStepEdit(SessionHarness& h, uint8_t step, Mutation mutation) {
                descriptor) !=
            core::state::sequencer::SequencerPreparedPatternEditBeginOutcome::Failed);
     const bool changed = mutation();
-    assert(h.history.sealPreparedPatternEdit(owner, step, changed, descriptor) !=
-           core::state::sequencer::SequencerPreparedPatternEditSealOutcome::Failed);
+    assert(!core::state::sequencer::sequencerPreparedPatternEditSealFailed(
+        h.history.sealPreparedPatternEdit(owner, step, changed, descriptor)
+    ));
 }
 
 void test_open_session_resolves_page_step() {

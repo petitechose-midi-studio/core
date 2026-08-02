@@ -30,11 +30,4 @@ void clearStructureStepPastePreview(
     core::state::sequencer::SequencerState& sequencer
 );
 
-bool commitStructureStepPastePlan(
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::StructureClipboardState& structureClipboard,
-    core::state::project::ProjectStepPasteMode mode,
-    const core::state::sequencer::SequencerStepPastePreviewPlan& plan
-);
-
 }  // namespace core::handler

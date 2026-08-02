@@ -1,6 +1,5 @@
 #include "handler/sequencer/SequencerStructureSelectionOps.hpp"
 
-#include <algorithm>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -90,54 +89,6 @@ FLASHMEM uint16_t activeContentPageSelectionMask(
             core::state::sequencer::activeContentPageCount(sequencer)
         )
     );
-}
-
-FLASHMEM bool resetSelectedActiveContentPages(
-    core::state::sequencer::SequencerState& sequencer,
-    uint16_t selectedMask,
-    StepResetDepth depth
-) {
-    const uint16_t pageMask =
-        activeContentPageSelectionMask(sequencer, selectedMask);
-    if (pageMask == 0U) return false;
-
-    oc::note::sequencer::StepBitMask128 stepMask{};
-    const uint8_t activeLength =
-        core::state::sequencer::activeContentLength(sequencer);
-    for (uint16_t step = 0; step < activeLength; ++step) {
-        const auto stepIndex = static_cast<uint8_t>(step);
-        const uint8_t page =
-            core::state::sequencer::activeContentPageForStep(stepIndex);
-        if ((pageMask & structure_slots::slotBit(page)) != 0U) {
-            stepMask.setBit(stepIndex, true);
-        }
-    }
-    return resetSelectedActiveContentSteps(sequencer, stepMask, depth);
-}
-
-FLASHMEM bool deleteSelectedRootPages(
-    core::state::sequencer::SequencerState& sequencer,
-    uint16_t selectedMask
-) {
-    if (!core::state::sequencer::isRootContentView(sequencer)) return false;
-
-    const uint8_t pageCount = sequencer.activePageCount();
-    const uint16_t pageMask = static_cast<uint16_t>(
-        selectedMask & structure_slots::prefixMask(pageCount)
-    );
-    const uint8_t deleteCount =
-        structure_slots::countEnabled(pageMask, pageCount);
-    if (deleteCount == 0U || deleteCount >= pageCount) return false;
-
-    bool changed = false;
-    for (int page = static_cast<int>(pageCount) - 1; page >= 0; --page) {
-        const auto pageIndex = static_cast<uint8_t>(page);
-        if ((pageMask & structure_slots::slotBit(pageIndex)) == 0U) continue;
-        changed =
-            core::state::sequencer::deletePage(sequencer, pageIndex) ||
-            changed;
-    }
-    return changed;
 }
 
 FLASHMEM core::app::ExtmemUniquePtr<
@@ -259,57 +210,6 @@ buildPageSelectionPastePlan(
         cursorPage,
         sequencer.activePageCount()
     );
-}
-
-FLASHMEM bool pastePageSelectionClipboard(
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::StructureClipboardState& structureClipboard,
-    const core::state::SequencerPageSelectionPastePlan& plan
-) {
-    using Pattern =
-        core::state::sequencer::SequencerPatternState;
-    if (!plan.canCommit() ||
-        !structureClipboard.hasSequencerPageSelection()) {
-        return false;
-    }
-
-    const uint8_t oldLength = sequencer.pattern.length.get();
-    const auto& clipboard = structureClipboard.sequencerPageSelection;
-    const auto& lastTarget = plan.entries[plan.count - 1U];
-    if (lastTarget.clipboardIndex >= clipboard.count) return false;
-    const auto& lastSource =
-        clipboard.pages[lastTarget.clipboardIndex];
-    const uint16_t requiredLengthWide =
-        static_cast<uint16_t>(lastTarget.destinationPage) *
-            Pattern::STEPS_PER_PAGE +
-        std::max<uint8_t>(lastSource.count, 1U);
-    const uint8_t requiredLength = static_cast<uint8_t>(
-        std::min<uint16_t>(requiredLengthWide, Pattern::MAX_STEPS)
-    );
-
-    if (requiredLength > oldLength) {
-        sequencer.pattern.setContentLength(requiredLength);
-        (void)core::state::sequencer::clearStepRange(
-            sequencer,
-            oldLength,
-            static_cast<uint8_t>(requiredLength - 1U)
-        );
-    }
-
-    for (uint8_t index = 0; index < plan.count; ++index) {
-        const auto& target = plan.entries[index];
-        if (target.clipboardIndex >= clipboard.count ||
-            target.destinationPage >= Pattern::PAGE_COUNT) {
-            return false;
-        }
-        pastePageClipboard(
-            sequencer,
-            clipboard.pages[target.clipboardIndex],
-            structureClipboard.sequencerGraph.get(),
-            target.destinationPage
-        );
-    }
-    return true;
 }
 
 }  // namespace core::handler

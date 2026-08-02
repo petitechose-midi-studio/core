@@ -129,7 +129,7 @@ FLASHMEM void SequencerStepHandler::handleContextSelectorRelease(uint32_t nowMs)
             return;
         case SequencerContextSelectorAction::OPEN_TRACK_EDITOR:
             if (navigation_workflow_.previewingAddSlot()) {
-                if (!commitPatternHistoryBarrier(history_)) return;
+                if (trackFocusActive() && !commitPatternHistoryBarrier(history_)) return;
                 (void)navigation_workflow_.createPreviewedStructure();
                 return;
             }
@@ -427,12 +427,14 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                    edit_workflow_.selectionHoldActionAvailable();
         })
         .then([this]() {
-            edit_workflow_.clearHoldAction();
             bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_LEFT);
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = true;
 #endif
-            if (!commitPatternHistoryBarrier(history_)) return;
+            if (track_ui_.selection.active.get()) {
+                edit_workflow_.clearHoldAction();
+                if (!commitPatternHistoryBarrier(history_)) return;
+            }
             edit_workflow_.applySelectionBottomLeftHold();
         });
 
@@ -454,14 +456,17 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return navigation_workflow_.selectionActive(); })
         .then([this]() {
-            edit_workflow_.clearHoldAction();
             if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
+                edit_workflow_.clearHoldAction();
 #if defined(MS_UX_RECORDER)
                 if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
 #endif
                 return;
             }
-            if (!commitPatternHistoryBarrier(history_)) return;
+            if (track_ui_.selection.active.get()) {
+                edit_workflow_.clearHoldAction();
+                if (!commitPatternHistoryBarrier(history_)) return;
+            }
             edit_workflow_.applySelectionBottomLeftTap();
         });
 
@@ -470,14 +475,17 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return currentStructureBottomActionsAvailable(); })
         .then([this]() {
-            edit_workflow_.clearHoldAction();
             if (bottom_action_release_latch_.consume(Config::ButtonID::BOTTOM_LEFT)) {
+                edit_workflow_.clearHoldAction();
 #if defined(MS_UX_RECORDER)
                 if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
 #endif
                 return;
             }
-            if (!commitPatternHistoryBarrier(history_)) return;
+            if (trackFocusActive()) {
+                edit_workflow_.clearHoldAction();
+                if (!commitPatternHistoryBarrier(history_)) return;
+            }
             edit_workflow_.applyCurrentStructureShortPress();
         });
 
@@ -489,12 +497,14 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                    edit_workflow_.canRemoveCurrentStructure();
         })
         .then([this]() {
-            edit_workflow_.clearHoldAction();
             bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_LEFT);
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = true;
 #endif
-            if (!commitPatternHistoryBarrier(history_)) return;
+            if (trackFocusActive()) {
+                edit_workflow_.clearHoldAction();
+                if (!commitPatternHistoryBarrier(history_)) return;
+            }
             edit_workflow_.applyCurrentStructureLongPress();
         });
 
@@ -623,12 +633,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                        SelectionAction::PASTE_SELECTION;
         })
         .then([this]() {
-            edit_workflow_.clearHoldAction();
             bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) { ux_trace_state_->ignoreNextBottomRightRelease = true; }
 #endif
-            if (!commitPatternHistoryBarrier(history_)) return;
             edit_workflow_.pasteStructureSelection();
         });
 
@@ -641,13 +649,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                        SelectionAction::PASTE_SELECTION;
         })
         .then([this]() {
-            edit_workflow_.clearStepPastePreview();
-            edit_workflow_.clearHoldAction();
             bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = true;
 #endif
-            if (!commitPatternHistoryBarrier(history_)) return;
             edit_workflow_.pasteStepSelection();
         });
 
@@ -656,12 +661,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() { return currentStructureBottomActionsAvailable() && !trackFocusActive(); })
         .then([this]() {
-            edit_workflow_.clearHoldAction();
             bottom_action_release_latch_.arm(Config::ButtonID::BOTTOM_RIGHT);
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = true;
 #endif
-            if (!commitPatternHistoryBarrier(history_)) return;
             edit_workflow_.pasteCurrentStructure();
         });
 }

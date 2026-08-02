@@ -926,6 +926,372 @@ void test_pattern_commits_are_nofail_and_exactly_once() {
     std::cout << "[PASS] Pattern prepared commits are no-fail and exactly once\n";
 }
 
+enum class PatternTraversalDirection : uint8_t {
+    Undo,
+    Redo,
+};
+
+constexpr std::size_t ACTIVE_PATTERN_TRAVERSAL_ALLOCATION_ATTEMPTS = 4U;
+constexpr std::size_t INACTIVE_PATTERN_TRAVERSAL_ALLOCATION_ATTEMPTS = 2U;
+
+struct PatternTraversalInteractionInvariant {
+    uint8_t focusedStep = 0U;
+    uint8_t page = 0U;
+    seq::StepProperty activeStepProperty = seq::StepProperty::NOTE;
+    seq::SequencerContentViewKind contentKind = seq::SequencerContentViewKind::ROOT;
+    uint8_t contentParentStep = 0U;
+    uint16_t contentOwnerNodeId = 0U;
+    uint16_t contentSequenceId = 0U;
+    uint16_t contentCycleSetId = 0U;
+    uint8_t contentLength = 0U;
+    uint8_t contentDepth = 0U;
+    uint32_t contentRevision = 0U;
+    uint8_t contentRootPageSnapshot = 0U;
+    uint8_t contentRootFocusSnapshot = 0U;
+    uint8_t contentStackDepth = 0U;
+    bool historyFeedbackVisible = false;
+    uint32_t historyFeedbackRevision = 0U;
+    std::array<char, seq::SequencerHistoryFeedbackState::LINE_SIZE> historyLine1{};
+    std::array<char, seq::SequencerHistoryFeedbackState::LINE_SIZE> historyLine2{};
+    std::array<char, seq::SequencerHistoryFeedbackState::LINE_SIZE> historyLine3{};
+    uint32_t historyFeedbackHideAtMs = 0U;
+};
+
+PatternTraversalInteractionInvariant capturePatternTraversalInteractionInvariant(
+    const Harness& h
+) {
+    const auto& content = h.state.sequencer.contentView;
+    const auto& feedback = h.state.sequencer.historyFeedback;
+    return {
+        .focusedStep = h.state.sequencer.focusedStep.get(),
+        .page = h.state.sequencer.page.get(),
+        .activeStepProperty = h.state.sequencer.activeStepProperty.get(),
+        .contentKind = content.kind.get(),
+        .contentParentStep = content.parentStep.get(),
+        .contentOwnerNodeId = content.ownerNodeId.get(),
+        .contentSequenceId = content.sequenceId.get(),
+        .contentCycleSetId = content.cycleSetId.get(),
+        .contentLength = content.length.get(),
+        .contentDepth = content.depth.get(),
+        .contentRevision = content.revision.get(),
+        .contentRootPageSnapshot = content.rootPageSnapshot,
+        .contentRootFocusSnapshot = content.rootFocusSnapshot,
+        .contentStackDepth = content.stackDepth,
+        .historyFeedbackVisible = feedback.visible.get(),
+        .historyFeedbackRevision = feedback.revision.get(),
+        .historyLine1 = feedback.line1,
+        .historyLine2 = feedback.line2,
+        .historyLine3 = feedback.line3,
+        .historyFeedbackHideAtMs = feedback.hideAtMs,
+    };
+}
+
+void assertPatternTraversalInteractionInvariant(
+    const Harness& h,
+    const PatternTraversalInteractionInvariant& expected
+) {
+    const auto actual = capturePatternTraversalInteractionInvariant(h);
+    assert(actual.focusedStep == expected.focusedStep);
+    assert(actual.page == expected.page);
+    assert(actual.activeStepProperty == expected.activeStepProperty);
+    assert(actual.contentKind == expected.contentKind);
+    assert(actual.contentParentStep == expected.contentParentStep);
+    assert(actual.contentOwnerNodeId == expected.contentOwnerNodeId);
+    assert(actual.contentSequenceId == expected.contentSequenceId);
+    assert(actual.contentCycleSetId == expected.contentCycleSetId);
+    assert(actual.contentLength == expected.contentLength);
+    assert(actual.contentDepth == expected.contentDepth);
+    assert(actual.contentRevision == expected.contentRevision);
+    assert(actual.contentRootPageSnapshot == expected.contentRootPageSnapshot);
+    assert(actual.contentRootFocusSnapshot == expected.contentRootFocusSnapshot);
+    assert(actual.contentStackDepth == expected.contentStackDepth);
+    assert(actual.historyFeedbackVisible == expected.historyFeedbackVisible);
+    assert(actual.historyFeedbackRevision == expected.historyFeedbackRevision);
+    assert(actual.historyLine1 == expected.historyLine1);
+    assert(actual.historyLine2 == expected.historyLine2);
+    assert(actual.historyLine3 == expected.historyLine3);
+    assert(actual.historyFeedbackHideAtMs == expected.historyFeedbackHideAtMs);
+}
+
+bool applyPatternTraversal(Harness& h, PatternTraversalDirection direction) {
+    return direction == PatternTraversalDirection::Undo
+        ? h.state.undoSequencerHistory()
+        : h.state.redoSequencerHistory();
+}
+
+void prepareGraphCcPatternTraversalEntry(Harness& h, bool targetActive) {
+    initializeActivePayload(h, PayloadKind::GraphAndCc);
+    authorPayload(
+        h.state.sequencerTracks.track(1U),
+        PayloadKind::GraphAndCc,
+        3U
+    );
+    settleSetup(h);
+
+    PreparedPattern prepared;
+    assert(preparePattern(
+        h,
+        seq::SequencerHistoryPatternStorage::FullGraph,
+        prepared
+    ));
+    seq::SequencerState staged;
+    stageActivePattern(h, staged);
+    staged.pattern.setEnabled(1U, true);
+    assert(seq::setNodeNoteOffset(
+        staged.pattern,
+        seq::rootStepNodeId(0U),
+        11
+    ));
+    assert(staged.pattern.ccLanes != nullptr);
+    assert(seq::setSequencerCcLaneEvent(
+        *staged.pattern.ccLanes,
+        0U,
+        0U,
+        42U
+    ).changed());
+    staged.pattern.bumpCcLaneRevision();
+    assert(seq::capturePreparedHistoryPatternAfterUsingReservedStorage(
+        h.state.sequencerTracks,
+        staged,
+        *prepared.change
+    ));
+    assert(seq::capturePreparedActiveTrackSynchronizationUsingReservedStorage(
+        h.state.sequencerTracks,
+        staged,
+        prepared.synchronization
+    ));
+
+    auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
+        h.state
+    );
+    assert(history.canRecordSynchronizedPattern(*prepared.change));
+    assert(seq::preparedActiveTrackSynchronizationMatches(
+        h.state.sequencerTracks,
+        prepared.synchronization
+    ));
+    seq::installPatternStateToEditor(h.state.sequencer, staged.pattern);
+    seq::publishPreparedActiveTrackSynchronization(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        std::move(prepared.synchronization)
+    );
+    history.recordPreparedSynchronizedPattern(std::move(prepared.change));
+    settleSetup(h);
+
+    if (!targetActive) {
+        assert(h.state.setSharedTrackState(0x0003U, 1U));
+        settleSetup(h);
+    }
+
+    assert(
+        h.state.sequencerHistory.undoCount(
+            seq::SequencerHistoryScope::PatternOnly
+        ) == 1U
+    );
+    assert(h.state.sequencerHistory.redoCount() == 0U);
+    assert(h.state.projectHistory.undoCount() == 1U);
+    assertSharedTrackProjection(h, targetActive ? 0x0001U : 0x0003U, targetActive ? 0U : 1U);
+}
+
+void positionPatternTraversalEntry(
+    Harness& h,
+    PatternTraversalDirection direction
+) {
+    if (direction == PatternTraversalDirection::Undo) return;
+    assert(h.state.undoSequencerHistory());
+    settleSetup(h);
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(
+        h.state.sequencerHistory.redoCount(
+            seq::SequencerHistoryScope::PatternOnly
+        ) == 1U
+    );
+    assert(h.state.projectHistory.undoCount() == 0U);
+    assert(h.state.projectHistory.redoCount() == 1U);
+}
+
+void assertSuccessfulPatternTraversalState(
+    const Harness& h,
+    const tx::StateInvariant& before,
+    PatternTraversalDirection direction
+) {
+    const auto after = tx::captureStateInvariant(h.state);
+    assert(after.retainedBytes == before.retainedBytes);
+    assert(after.modifiedCounter == before.modifiedCounter + 1U);
+    assert(after.dirty);
+    assert(after.sessionSavePending);
+
+    if (direction == PatternTraversalDirection::Undo) {
+        assert(before.sequencerUndoCount == 1U);
+        assert(before.sequencerRedoCount == 0U);
+        assert(before.projectUndoCount == 1U);
+        assert(before.projectRedoCount == 0U);
+        assert(before.sequencerUndoIdentity != 0U);
+        assert(after.sequencerUndoCount == 0U);
+        assert(after.sequencerRedoCount == 1U);
+        assert(after.projectUndoCount == 0U);
+        assert(after.projectRedoCount == 1U);
+        assert(after.sequencerUndoIdentity == 0U);
+        assert(after.sequencerRedoIdentity == before.sequencerUndoIdentity);
+        return;
+    }
+
+    assert(before.sequencerUndoCount == 0U);
+    assert(before.sequencerRedoCount == 1U);
+    assert(before.projectUndoCount == 0U);
+    assert(before.projectRedoCount == 1U);
+    assert(before.sequencerRedoIdentity != 0U);
+    assert(after.sequencerUndoCount == 1U);
+    assert(after.sequencerRedoCount == 0U);
+    assert(after.projectUndoCount == 1U);
+    assert(after.projectRedoCount == 0U);
+    assert(after.sequencerUndoIdentity == before.sequencerRedoIdentity);
+    assert(after.sequencerRedoIdentity == 0U);
+}
+
+void assertSuccessfulPatternTraversalOwners(
+    const Harness& h,
+    const BankOwnerInvariant& before,
+    bool targetActive
+) {
+    const auto after = captureBankOwners(h);
+    assert(after.editorGraph != nullptr);
+    assert(after.editorCc != nullptr);
+    assert(after.graphs[0U] != nullptr);
+    assert(after.cc[0U] != nullptr);
+
+    if (targetActive) {
+        assert(after.editorGraph != before.editorGraph);
+        assert(after.editorCc != before.editorCc);
+        assert(after.graphs[0U] != before.graphs[0U]);
+        assert(after.cc[0U] != before.cc[0U]);
+        assert(after.editorGraph != after.graphs[0U]);
+        assert(after.editorCc != after.cc[0U]);
+    } else {
+        assert(after.editorGraph == before.editorGraph);
+        assert(after.editorCc == before.editorCc);
+        assert(after.graphs[0U] != before.graphs[0U]);
+        assert(after.cc[0U] != before.cc[0U]);
+    }
+
+    for (uint8_t track = 1U;
+         track < seq::SequencerTrackBankState::TRACK_COUNT;
+         ++track) {
+        assert(after.graphs[track] == before.graphs[track]);
+        assert(after.cc[track] == before.cc[track]);
+        assert(after.graphRevisions[track] == before.graphRevisions[track]);
+        assert(after.ccRevisions[track] == before.ccRevisions[track]);
+    }
+}
+
+void verifyPatternTraversalAllocationFailure(
+    bool targetActive,
+    PatternTraversalDirection direction,
+    std::size_t ordinal
+) {
+    Harness h;
+    prepareGraphCcPatternTraversalEntry(h, targetActive);
+    positionPatternTraversalEntry(h, direction);
+
+    const auto before = tx::captureStateInvariant(h.state);
+    const auto owners = captureBankOwners(h);
+    const auto musical = captureFullBankMusicalProof(h);
+    const auto interaction = capturePatternTraversalInteractionInvariant(h);
+    assert(
+        direction == PatternTraversalDirection::Undo
+            ? before.sequencerUndoIdentity != 0U
+            : before.sequencerRedoIdentity != 0U
+    );
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+        assert(!applyPatternTraversal(h, direction));
+        tx::assertFailureConsumed(ordinal);
+        tx::assertStateInvariant(h.state, before);
+        assertBankOwners(h, owners);
+        assertPatternTraversalInteractionInvariant(h, interaction);
+    }
+
+    assertFullBankMusicalProof(h, musical);
+    assertSharedTrackProjection(h, targetActive ? 0x0001U : 0x0003U, targetActive ? 0U : 1U);
+    assertNoDeferredPublication(h);
+    tx::assertStateInvariant(h.state, before);
+    assertBankOwners(h, owners);
+    assertPatternTraversalInteractionInvariant(h, interaction);
+}
+
+void verifyPatternTraversalAllocationRatchet(
+    bool targetActive,
+    PatternTraversalDirection direction,
+    std::size_t expectedAttempts
+) {
+    Harness h;
+    prepareGraphCcPatternTraversalEntry(h, targetActive);
+
+    FullBankMusicalProof expected;
+    if (direction == PatternTraversalDirection::Undo) {
+        assert(h.state.undoSequencerHistory());
+        settleSetup(h);
+        expected = captureFullBankMusicalProof(h);
+        assert(h.state.redoSequencerHistory());
+        settleSetup(h);
+    } else {
+        expected = captureFullBankMusicalProof(h);
+        positionPatternTraversalEntry(h, direction);
+    }
+
+    const auto before = tx::captureStateInvariant(h.state);
+    const auto owners = captureBankOwners(h);
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(
+            expectedAttempts + 1U
+        );
+        assert(applyPatternTraversal(h, direction));
+        tx::assertMaxPlusOneStillArmed(expectedAttempts);
+        assertSuccessfulPatternTraversalState(h, before, direction);
+        assertSuccessfulPatternTraversalOwners(h, owners, targetActive);
+        assertNoDeferredPublication(h);
+        tx::assertMaxPlusOneStillArmed(expectedAttempts);
+    }
+
+    assertFullBankMusicalProof(h, expected);
+    assertSharedTrackProjection(h, targetActive ? 0x0001U : 0x0003U, targetActive ? 0U : 1U);
+}
+
+void test_pattern_traversal_allocation_failures_are_atomic() {
+    constexpr std::array<PatternTraversalDirection, 2U> directions{{
+        PatternTraversalDirection::Undo,
+        PatternTraversalDirection::Redo,
+    }};
+
+    for (const auto direction : directions) {
+        for (std::size_t ordinal = 1U;
+             ordinal <= ACTIVE_PATTERN_TRAVERSAL_ALLOCATION_ATTEMPTS;
+             ++ordinal) {
+            verifyPatternTraversalAllocationFailure(true, direction, ordinal);
+        }
+        verifyPatternTraversalAllocationRatchet(
+            true,
+            direction,
+            ACTIVE_PATTERN_TRAVERSAL_ALLOCATION_ATTEMPTS
+        );
+
+        for (std::size_t ordinal = 1U;
+             ordinal <= INACTIVE_PATTERN_TRAVERSAL_ALLOCATION_ATTEMPTS;
+             ++ordinal) {
+            verifyPatternTraversalAllocationFailure(false, direction, ordinal);
+        }
+        verifyPatternTraversalAllocationRatchet(
+            false,
+            direction,
+            INACTIVE_PATTERN_TRAVERSAL_ALLOCATION_ATTEMPTS
+        );
+    }
+
+    std::cout
+        << "[PASS] active/inactive Pattern Undo/Redo allocation failures are atomic\n";
+}
+
 void test_pattern_noop_admission_preserves_live_state() {
     Harness h;
     initializeActivePayload(h, PayloadKind::GraphAndCc);
@@ -1534,13 +1900,13 @@ void beginModifiedChordDraft(Harness& h) {
     test_support::drainNotifications();
 }
 
-void assertProjectLoadBlockedDraft(
+void assertHistoryBlockedDraft(
     const Harness& h,
     DraftInvariant before
 ) {
     before.failure = seq::SequencerStepContentDraftFailure::TRANSITION_BLOCKED;
     before.blockedTransition =
-        seq::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD;
+        seq::SequencerStepContentDraftBlockedTransition::HISTORY;
     ++before.revision;
     assertDraftInvariant(h, before);
 }
@@ -1718,7 +2084,7 @@ void test_full_bank_traversal_rejects_active_step_draft_before_allocation() {
         tx::assertStateInvariant(h.state, before);
         assertBankOwners(h, owners);
         assertFullBankMusicalProof(h, musical);
-        assertProjectLoadBlockedDraft(h, draft);
+        assertHistoryBlockedDraft(h, draft);
     }
 
     {
@@ -1754,7 +2120,7 @@ void test_full_bank_traversal_rejects_active_step_draft_before_allocation() {
         tx::assertStateInvariant(h.state, before);
         assertBankOwners(h, owners);
         assertFullBankMusicalProof(h, musical);
-        assertProjectLoadBlockedDraft(h, draft);
+        assertHistoryBlockedDraft(h, draft);
     }
 
     std::cout
@@ -2573,6 +2939,7 @@ int main() {
     test_pattern_preparation_allocation_matrix();
     test_pattern_staged_provider_overlap_contract();
     test_pattern_commits_are_nofail_and_exactly_once();
+    test_pattern_traversal_allocation_failures_are_atomic();
     test_pattern_noop_admission_preserves_live_state();
     test_pattern_identity_and_flat_cc_drift_are_rejected();
     test_partial_pattern_reservation_is_discardable();

@@ -151,7 +151,7 @@ FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
 
     const auto sealOutcome = history_.sealPreparedPatternEdit(PreparedOwner::PatternPitch, editKey,
                                                               choiceChanged, descriptor);
-    if (sealOutcome == PreparedSealOutcome::Failed) return;
+    if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(sealOutcome)) return;
 
     const auto commitOutcome = history_.commitPreparedPatternEdit(PreparedOwner::PatternPitch);
     if ((sealOutcome == PreparedSealOutcome::Sealed &&

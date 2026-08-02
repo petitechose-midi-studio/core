@@ -27,24 +27,26 @@ CANONICAL_RECORDING_METHODS = (
     "recordPreparedStructure",
 )
 ENTRY_RECORDING_CALL_TOTAL = 44
-EXPECTED_MIGRATED_REMOVAL_TOTAL = 12
+EXPECTED_MIGRATED_REMOVAL_TOTAL = 13
 EXPECTED_PROVIDER_FORWARD_TOTAL = 5
 EXPECTED_COALESCED_PREPARED_TOTAL = 1
-EXPECTED_MEMBER_DISPATCH_TOTAL = 30
+EXPECTED_MEMBER_DISPATCH_TOTAL = 29
 EXPECTED_CORE_STATE_ADAPTER_TOTAL = 1
 EXPECTED_INTERNAL_FORWARD_TOTAL = 7
-EXPECTED_RECORDING_CALL_TOTAL = 38
-EXPECTED_SINK_TOTAL = 10
+EXPECTED_RECORDING_CALL_TOTAL = 37
+EXPECTED_SINK_TOTAL = 9
 EXPECTED_SERVICE_ADAPTER_TOTAL = 20
 EXPECTED_SINK_CLASSIFICATIONS = {
-    "post-fallible": 3,
+    "post-fallible": 2,
     "prepared": 5,
     "rollback-aware": 2,
 }
 PREPARED_PATTERN_LIFECYCLE_METHODS = (
     "beginPreparedPatternEdit",
+    "preparedPatternEditReady",
     "sealPreparedPatternEdit",
     "commitPreparedPatternEdit",
+    "abortPreparedPatternEdit",
 )
 PREPARED_PATTERN_OWNERS = (
     "PatternPitch",
@@ -53,6 +55,7 @@ PREPARED_PATTERN_OWNERS = (
     "StepEditSession",
     "StepToggle",
     "PatternEditor",
+    "PageStructure",
 )
 PREPARED_PATTERN_OWNER_PATH = "src/state/sequencer/SequencerHistory.hpp"
 PREPARED_PATTERN_OWNER_ENUM = "SequencerPreparedPatternEditOwner"
@@ -64,11 +67,14 @@ PREPARED_PATTERN_SURFACES = (
     "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp",
     "src/handler/sequencer/SequencerStepHandler.cpp",
     "src/handler/sequencer/SequencerPatternEditorHandler.cpp",
+    "src/handler/sequencer/SequencerPreparedPageStructureTransaction.cpp",
 )
 PREPARED_PATTERN_CENTRAL_METHODS = (
     "beginOrContinueSequencerPreparedPatternEdit",
+    "sequencerPreparedPatternEditReady",
     "sealSequencerPreparedPatternEdit",
     "commitSequencerPreparedPatternEdit",
+    "abortSequencerPreparedPatternEdit",
 )
 PREPARED_PATTERN_CENTRAL_PATH = "src/state/CoreStateSequencerHistoryRecording.cpp"
 PREPARED_PATTERN_CENTRAL_QUALIFIER = "CoreState"
@@ -82,14 +88,18 @@ PREPARED_PATTERN_FORBIDDEN_RAW_METHODS = (
     "recordFlatPattern",
 )
 EXPECTED_PREPARED_SURFACE_CALL_TOTALS = {
-    "beginPreparedPatternEdit": 8,
-    "sealPreparedPatternEdit": 9,
-    "commitPreparedPatternEdit": 9,
-}
-EXPECTED_PREPARED_CALL_TOTALS = {
     "beginPreparedPatternEdit": 9,
+    "preparedPatternEditReady": 1,
     "sealPreparedPatternEdit": 10,
     "commitPreparedPatternEdit": 10,
+    "abortPreparedPatternEdit": 1,
+}
+EXPECTED_PREPARED_CALL_TOTALS = {
+    "beginPreparedPatternEdit": 10,
+    "preparedPatternEditReady": 2,
+    "sealPreparedPatternEdit": 11,
+    "commitPreparedPatternEdit": 11,
+    "abortPreparedPatternEdit": 2,
 }
 PREPARED_FULL_BANK_OWNER_PATH = "src/state/sequencer/SequencerHistory.hpp"
 PREPARED_FULL_BANK_OWNER_ENUM = "SequencerPreparedFullBankEditOwner"
@@ -549,13 +559,13 @@ def manifest_errors(manifest) -> list[str]:
             f"member manifest total is {member_total}, expected {members.get('expectedTotal')}"
         )
     if members.get("expectedTotal") != EXPECTED_MEMBER_DISPATCH_TOTAL:
-        errors.append("member-dispatch total must remain 30 after L-R08-05")
+        errors.append("member-dispatch total must remain 29 after L-R08-06")
     if sink_total != members.get("expectedSinkTotal"):
         errors.append(
             f"sink manifest total is {sink_total}, expected {members.get('expectedSinkTotal')}"
         )
     if members.get("expectedSinkTotal") != EXPECTED_SINK_TOTAL:
-        errors.append("mutation-sink total must remain 10 after L-R08-05")
+        errors.append("mutation-sink total must remain 9 after L-R08-06")
     if service_total != members.get("expectedServiceAdapterTotal"):
         errors.append(
             "service/adapter manifest total is "
@@ -570,7 +580,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {dict(expected_classifications)}, observed {dict(classifications)}"
         )
     if dict(expected_classifications) != EXPECTED_SINK_CLASSIFICATIONS:
-        errors.append("sink classifications must remain 3 post-fallible, 5 prepared and 2 rollback-aware")
+        errors.append("sink classifications must remain 2 post-fallible, 5 prepared and 2 rollback-aware")
 
     forwards = boundary.get("internalForwards", {})
     forward_groups = forwards.get("groups", [])
@@ -604,7 +614,7 @@ def manifest_errors(manifest) -> list[str]:
     if boundary.get("entryRecordingCallTotal") != ENTRY_RECORDING_CALL_TOTAL:
         errors.append("entry recording-call total must remain 44")
     if boundary.get("expectedMigratedRemovalTotal") != EXPECTED_MIGRATED_REMOVAL_TOTAL:
-        errors.append("migrated recording-call removal total must remain 12")
+        errors.append("migrated recording-call removal total must remain 13")
     if boundary.get("expectedProviderForwardTotal") != EXPECTED_PROVIDER_FORWARD_TOTAL:
         errors.append("expected provider-forward total must remain 5")
     if provider_forward_total != EXPECTED_PROVIDER_FORWARD_TOTAL:
@@ -634,7 +644,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {boundary.get('expectedTotal')}"
         )
     if boundary.get("expectedTotal") != EXPECTED_RECORDING_CALL_TOTAL:
-        errors.append("recording boundary total must remain 38 after L-R08-05")
+        errors.append("recording boundary total must remain 37 after L-R08-06")
     if recording_total != (
         ENTRY_RECORDING_CALL_TOTAL -
         EXPECTED_MIGRATED_REMOVAL_TOTAL +
@@ -642,7 +652,7 @@ def manifest_errors(manifest) -> list[str]:
         coalesced_prepared_total
     ):
         errors.append(
-            "recording boundary must equal the 44-call entry minus twelve "
+            "recording boundary must equal the 44-call entry minus thirteen "
             "migrated calls plus five provider forwards and one prepared "
             "coalesced boundary"
         )
@@ -704,13 +714,13 @@ def manifest_errors(manifest) -> list[str]:
             errors.append("prepared owner enum name must remain canonical")
         declared_owners = tuple(declaration.get("owners", []))
         if declared_owners != PREPARED_PATTERN_OWNERS:
-            errors.append("prepared Pattern owners must enumerate the canonical six")
+            errors.append("prepared Pattern owners must enumerate the canonical seven")
         if declaration.get("expectedCount") != len(PREPARED_PATTERN_OWNERS):
-            errors.append("prepared Pattern owner count must remain 6")
+            errors.append("prepared Pattern owner count must remain 7")
 
         methods = tuple(lifecycle.get("methods", []))
         if methods != PREPARED_PATTERN_LIFECYCLE_METHODS:
-            errors.append("prepared Pattern lifecycle methods must remain begin/seal/commit")
+            errors.append("prepared Pattern lifecycle methods must remain begin/seal/commit/abort")
 
         central = lifecycle.get("centralAuthority", {})
         if central.get("path") != PREPARED_PATTERN_CENTRAL_PATH:
@@ -728,7 +738,7 @@ def manifest_errors(manifest) -> list[str]:
             errors.append("prepared Pattern lifecycle service adapter path must remain canonical")
         adapter_calls = adapter.get("calls", {})
         if tuple(adapter_calls) != PREPARED_PATTERN_LIFECYCLE_METHODS:
-            errors.append("prepared Pattern service adapter must expose begin/seal/commit")
+            errors.append("prepared Pattern service adapter must expose begin/seal/commit/abort")
         elif any(type(count) is not int or count != 1 for count in adapter_calls.values()):
             errors.append("prepared Pattern service adapter calls must each remain exact at one")
 
@@ -737,9 +747,9 @@ def manifest_errors(manifest) -> list[str]:
             surface.get("path") for surface in surfaces if isinstance(surface, dict)
         )
         if lifecycle.get("expectedSurfaceCount") != len(PREPARED_PATTERN_SURFACES):
-            errors.append("prepared Pattern migrated surface count must remain 7")
+            errors.append("prepared Pattern lifecycle surface count must remain 8")
         if surface_paths != PREPARED_PATTERN_SURFACES:
-            errors.append("prepared Pattern lifecycle must enumerate the canonical seven surfaces")
+            errors.append("prepared Pattern lifecycle must enumerate the canonical eight surfaces")
 
         surface_call_totals = Counter()
         manifest_owner_set = set()
@@ -750,7 +760,9 @@ def manifest_errors(manifest) -> list[str]:
             path = surface.get("path")
             calls = surface.get("calls", {})
             if tuple(calls) != PREPARED_PATTERN_LIFECYCLE_METHODS:
-                errors.append(f"{path}: prepared lifecycle calls must enumerate begin/seal/commit")
+                errors.append(
+                    f"{path}: prepared lifecycle calls must enumerate begin/seal/commit/abort"
+                )
             for method, count in calls.items():
                 if type(count) is not int or count < 0:
                     errors.append(f"{path}:{method} must have a non-negative integer count")
@@ -774,9 +786,11 @@ def manifest_errors(manifest) -> list[str]:
                 f"expected {expected_surface_totals}, observed {dict(surface_call_totals)}"
             )
         if expected_surface_totals != EXPECTED_PREPARED_SURFACE_CALL_TOTALS:
-            errors.append("prepared Pattern surface lifecycle totals must remain 8/9/9")
+            errors.append(
+                "prepared Pattern surface lifecycle totals must remain 9/1/10/10/1"
+            )
         if manifest_owner_set != set(PREPARED_PATTERN_OWNERS):
-            errors.append("prepared Pattern surfaces must cover all six owners")
+            errors.append("prepared Pattern surfaces must cover all seven owners")
 
         expected_call_totals = lifecycle.get("expectedCallTotals", {})
         combined_call_totals = Counter(surface_call_totals)
@@ -789,7 +803,9 @@ def manifest_errors(manifest) -> list[str]:
                 f"expected {expected_call_totals}, observed {dict(combined_call_totals)}"
             )
         if expected_call_totals != EXPECTED_PREPARED_CALL_TOTALS:
-            errors.append("prepared Pattern global lifecycle totals must remain 9/10/10")
+            errors.append(
+                "prepared Pattern global lifecycle totals must remain 10/2/11/11/2"
+            )
 
         forbidden_methods = tuple(lifecycle.get("forbiddenRawMethods", []))
         if forbidden_methods != PREPARED_PATTERN_FORBIDDEN_RAW_METHODS:
@@ -1477,7 +1493,10 @@ def seam_errors(root: Path, manifest) -> list[str]:
         count = path.read_text(encoding="utf-8", errors="replace").count(macro)
         if count:
             build_uses[relative(root, path)] = count
-    expected_build_uses = Counter({seam["cmakePath"]: 1})
+    expected_build_uses = Counter({
+        seam["cmakePath"]: 1,
+        seam["platformioPath"]: 1,
+    })
     errors += counter_errors("build macro use", expected_build_uses, build_uses)
 
     cmake = (root / seam["cmakePath"]).read_text(encoding="utf-8")
@@ -1498,6 +1517,20 @@ def seam_errors(root: Path, manifest) -> list[str]:
     )
     if len(target_definition.findall(cmake)) != 1:
         errors.append("expected one test-native failure-injection compile definition")
+
+    platformio = (root / seam["platformioPath"]).read_text(encoding="utf-8")
+    environment = re.search(
+        r"^\[env:" + re.escape(seam["platformioEnvironment"]) +
+        r"\]\s*(?P<body>.*?)(?=^\[|\Z)",
+        platformio,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    native_define = re.compile(
+        r"^\s*-D\s+" + re.escape(macro) + r"\s*=\s*1\s*$",
+        flags=re.MULTILINE,
+    )
+    if environment is None or len(native_define.findall(environment.group("body"))) != 1:
+        errors.append("expected one PlatformIO native-only failure-injection definition")
 
     allocator_path = root / seam["allocatorPath"]
     allocator = sanitize_cpp(allocator_path.read_text(encoding="utf-8"))
@@ -1701,7 +1734,7 @@ def prepared_lifecycle_self_test(manifest) -> bool:
         owner_path.write_text(
             "enum class SequencerPreparedPatternEditOwner : unsigned char {\n"
             "  PatternPitch = 0, PropertySelector, StepContent,\n"
-            "  StepEditSession, StepToggle, PatternEditor,\n"
+            "  StepEditSession, StepToggle, PatternEditor, PageStructure,\n"
             "};\n",
             encoding="utf-8",
         )
@@ -1710,9 +1743,11 @@ def prepared_lifecycle_self_test(manifest) -> bool:
             "using PreparedOwner = ns::SequencerPreparedPatternEditOwner;\n"
             "void scan() {\n"
             "  history.beginPreparedPatternEdit(PreparedOwner::PatternPitch);\n"
+            "  history.preparedPatternEditReady(PreparedOwner::PatternPitch);\n"
             "  history.sealPreparedPatternEdit(\n"
             "      PreparedOwner::PatternPitch);\n"
             "  history.commitPreparedPatternEdit(PreparedOwner::PatternPitch);\n"
+            "  history.abortPreparedPatternEdit(PreparedOwner::PatternPitch);\n"
             "  // history.recordPattern();\n"
             "  const char* raw = \"captureHistorySnapshot(\";\n"
             "}\n",
@@ -1721,8 +1756,10 @@ def prepared_lifecycle_self_test(manifest) -> bool:
         central_path = root / "Central.cpp"
         central_path.write_text(
             "void CoreState::beginOrContinueSequencerPreparedPatternEdit() {}\n"
+            "void CoreState::sequencerPreparedPatternEditReady() {}\n"
             "void CoreState::sealSequencerPreparedPatternEdit() {}\n"
-            "void CoreState::commitSequencerPreparedPatternEdit() {}\n",
+            "void CoreState::commitSequencerPreparedPatternEdit() {}\n"
+            "void CoreState::abortSequencerPreparedPatternEdit() {}\n",
             encoding="utf-8",
         )
         if enum_members(owner_path, declaration["enum"]) != PREPARED_PATTERN_OWNERS:
@@ -1733,7 +1770,7 @@ def prepared_lifecycle_self_test(manifest) -> bool:
             surface_path,
             declaration["enum"],
             declaration["owners"],
-        ) != Counter({"PatternPitch": 3}):
+        ) != Counter({"PatternPitch": 5}):
             return False
         if count_any_calls(surface_path, lifecycle["forbiddenRawMethods"]):
             return False
@@ -1759,9 +1796,9 @@ def prepared_lifecycle_self_test(manifest) -> bool:
     drift["preparedOwners"] = drift["preparedOwners"][:-1]
     drift["preparedLifecycleCalls"][
         ("src/handler/sequencer/UnexpectedPreparedSurface.cpp",
-         "beginPreparedPatternEdit")
+         "abortPreparedPatternEdit")
     ] += 1
-    central_method = PREPARED_PATTERN_CENTRAL_METHODS[0]
+    central_method = PREPARED_PATTERN_CENTRAL_METHODS[-1]
     drift["preparedCentralDefinitions"][central_method] -= 1
     owner_key = next(iter(drift["preparedOwnerReferences"]))
     drift["preparedOwnerReferences"][owner_key] -= 1
@@ -2021,7 +2058,6 @@ def prepared_full_bank_provider_self_test(manifest) -> bool:
         "  return true;\n"
         "}\n"
         "bool applyHistorySnapshot(const SequencerHistoryTrackBankSnapshot& snapshot) {\n"
-        "  if (active.stepContentDraft.active.get()) return false;\n"
         "  const uint8_t activeTrack = snapshot.flat.activeTrack;\n"
         "  if (i == activeTrack) continue;\n"
         "  if (i == activeTrack) continue;\n"
@@ -2088,6 +2124,13 @@ def seam_self_test(manifest) -> bool:
         f"    {seam['nativeTarget']} PUBLIC {macro}=1)\n"
         "endif()\n"
     )
+    platformio = (
+        f"[env:{seam['platformioEnvironment']}]\n"
+        "build_flags =\n"
+        f"    -D {macro}=1\n"
+        "[env:dev]\n"
+        "build_flags =\n"
+    )
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -2095,6 +2138,7 @@ def seam_self_test(manifest) -> bool:
         allocator_path.parent.mkdir(parents=True)
         allocator_path.write_text(allocator, encoding="utf-8")
         (root / seam["cmakePath"]).write_text(cmake, encoding="utf-8")
+        (root / seam["platformioPath"]).write_text(platformio, encoding="utf-8")
         for rel, expected_count in seam["allowedTestUses"].items():
             path = root / rel
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -2169,8 +2213,8 @@ def run_self_tests(manifest) -> list[str]:
     removal_drift = copy.deepcopy(manifest)
     removal_drift["recordingBoundary"]["expectedMigratedRemovalTotal"] -= 1
     removal_errors = manifest_errors(removal_drift)
-    if not any("removal total must remain 12" in error for error in removal_errors):
-        failures.append("L-R08-05 migrated-removal drift was not rejected")
+    if not any("removal total must remain 13" in error for error in removal_errors):
+        failures.append("L-R08-06 migrated-removal drift was not rejected")
 
     if not scanner_self_test(manifest):
         failures.append("source scanner/sanitizer fixture was not classified exactly")
@@ -2194,7 +2238,7 @@ def load_manifest(path: Path):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Check the L-R08-05 Sequencer history inventory ratchet."
+        description="Check the L-R08-06 Sequencer history inventory ratchet."
     )
     parser.add_argument("--root", type=Path, default=ROOT, help="Core repository root")
     parser.add_argument(
@@ -2266,7 +2310,7 @@ def main() -> int:
     print(
         "  prepared Pattern lifecycle: "
         f"{lifecycle['ownerDeclaration']['expectedCount']} owners / "
-        f"{lifecycle['expectedSurfaceCount']} migrated surfaces; "
+        f"{lifecycle['expectedSurfaceCount']} lifecycle surfaces; "
         "zero raw capture/record calls"
     )
     full_bank = manifest["preparedFullBankLifecycle"]

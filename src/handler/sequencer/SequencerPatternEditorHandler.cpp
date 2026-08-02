@@ -450,8 +450,12 @@ FLASHMEM bool SequencerPatternEditorHandler::beginPendingEdit(
         const auto sealOutcome = history_.sealPreparedPatternEdit(
             core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor,
             static_cast<uint8_t>(field), false, descriptor);
-        using SealOutcome = core::state::sequencer::SequencerPreparedPatternEditSealOutcome;
-        if (sealOutcome == SealOutcome::Failed) return false;
+        if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(sealOutcome)) {
+            if (core::state::sequencer::sequencerPreparedPatternEditSealClosed(sealOutcome)) {
+                resetPendingEditMetadata();
+            }
+            return false;
+        }
         const auto commitOutcome = history_.commitPreparedPatternEdit(
             core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor);
         using CommitOutcome = core::state::sequencer::SequencerPreparedPatternEditCommitOutcome;
@@ -476,9 +480,10 @@ FLASHMEM bool SequencerPatternEditorHandler::sealPendingEdit(bool changed) {
     const auto outcome = history_.sealPreparedPatternEdit(
         core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor,
         static_cast<uint8_t>(edit_field_), changed, descriptor);
-    using Outcome = core::state::sequencer::SequencerPreparedPatternEditSealOutcome;
-    if (outcome == Outcome::Failed) return false;
-    if (outcome == Outcome::Cleared) resetPendingEditMetadata();
+    if (core::state::sequencer::sequencerPreparedPatternEditSealClosed(outcome)) {
+        resetPendingEditMetadata();
+    }
+    if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(outcome)) return false;
     return true;
 }
 

@@ -159,6 +159,34 @@ beginPreparedPatternEditFromCoreState(
                                                       compactGraphOnSeal);
 }
 
+FLASHMEM bool preparedPatternEditReadyFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+    uint8_t key,
+    uint8_t expectedTrack
+) {
+    if (context == nullptr) return false;
+    return static_cast<const core::state::CoreState*>(context)
+        ->sequencerPreparedPatternEditReady(owner, key, expectedTrack);
+}
+
+FLASHMEM core::state::sequencer::
+    SequencerPreparedPatternGraphPrecompactionOutcome
+precompactPreparedPatternEditGraphFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+    uint8_t key,
+    uint8_t expectedTrack,
+    core::state::sequencer::SequencerPreparedGraphContentPath& contentPath
+) {
+    using Outcome = core::state::sequencer::
+        SequencerPreparedPatternGraphPrecompactionOutcome;
+    if (context == nullptr) return Outcome::Failed;
+    return static_cast<core::state::CoreState*>(context)
+        ->precompactSequencerPreparedPatternEditGraph(
+            owner, key, expectedTrack, contentPath);
+}
+
 FLASHMEM core::state::sequencer::SequencerPreparedPatternEditSealOutcome
 sealPreparedPatternEditFromCoreState(
     void* context, core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key,
@@ -175,6 +203,18 @@ commitPreparedPatternEditFromCoreState(
     using Outcome = core::state::sequencer::SequencerPreparedPatternEditCommitOutcome;
     if (context == nullptr) return Outcome::Failed;
     return static_cast<core::state::CoreState*>(context)->commitSequencerPreparedPatternEdit(owner);
+}
+
+FLASHMEM core::state::sequencer::SequencerPreparedPatternEditAbortOutcome
+abortPreparedPatternEditFromCoreState(
+    void* context,
+    core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+    uint8_t key
+) {
+    using Outcome = core::state::sequencer::SequencerPreparedPatternEditAbortOutcome;
+    if (context == nullptr) return Outcome::Failed;
+    return static_cast<core::state::CoreState*>(context)
+        ->abortSequencerPreparedPatternEdit(owner, key);
 }
 
 FLASHMEM core::state::sequencer::SequencerPreparedFullBankEditResult
@@ -218,8 +258,12 @@ SequencerHistoryDomainServices::fromCoreState(core::state::CoreState& state) {
         .beginCoalescedCcLaneEventEdit = beginCoalescedCcLaneEventEditFromCoreState,
         .commitCoalescedPatternEdit = commitCoalescedPatternEditFromCoreState,
         .beginPreparedPatternEdit = beginPreparedPatternEditFromCoreState,
+        .preparedPatternEditReady = preparedPatternEditReadyFromCoreState,
+        .precompactPreparedPatternEditGraph =
+            precompactPreparedPatternEditGraphFromCoreState,
         .sealPreparedPatternEdit = sealPreparedPatternEditFromCoreState,
         .commitPreparedPatternEdit = commitPreparedPatternEditFromCoreState,
+        .abortPreparedPatternEdit = abortPreparedPatternEditFromCoreState,
         .applyPreparedProjectScaleChoice = applyPreparedProjectScaleChoiceFromCoreState,
     };
     return fromStaticOperations<operations>(&state);
@@ -354,6 +398,32 @@ SequencerHistoryDomainServices::beginPreparedPatternEdit(
                : Outcome::Failed;
 }
 
+FLASHMEM bool SequencerHistoryDomainServices::preparedPatternEditReady(
+    core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+    uint8_t key,
+    uint8_t expectedTrack
+) const {
+    return operations_->preparedPatternEditReady != nullptr &&
+           operations_->preparedPatternEditReady(
+               context_, owner, key, expectedTrack);
+}
+
+FLASHMEM core::state::sequencer::
+    SequencerPreparedPatternGraphPrecompactionOutcome
+SequencerHistoryDomainServices::precompactPreparedPatternEditGraph(
+    core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+    uint8_t key,
+    uint8_t expectedTrack,
+    core::state::sequencer::SequencerPreparedGraphContentPath& contentPath
+) const {
+    using Outcome = core::state::sequencer::
+        SequencerPreparedPatternGraphPrecompactionOutcome;
+    return operations_->precompactPreparedPatternEditGraph != nullptr
+        ? operations_->precompactPreparedPatternEditGraph(
+              context_, owner, key, expectedTrack, contentPath)
+        : Outcome::Failed;
+}
+
 FLASHMEM core::state::sequencer::SequencerPreparedPatternEditSealOutcome
 SequencerHistoryDomainServices::sealPreparedPatternEdit(
     core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key,
@@ -371,6 +441,17 @@ SequencerHistoryDomainServices::commitPreparedPatternEdit(
     using Outcome = core::state::sequencer::SequencerPreparedPatternEditCommitOutcome;
     return operations_->commitPreparedPatternEdit != nullptr
                ? operations_->commitPreparedPatternEdit(context_, owner)
+               : Outcome::Failed;
+}
+
+FLASHMEM core::state::sequencer::SequencerPreparedPatternEditAbortOutcome
+SequencerHistoryDomainServices::abortPreparedPatternEdit(
+    core::state::sequencer::SequencerPreparedPatternEditOwner owner,
+    uint8_t key
+) const {
+    using Outcome = core::state::sequencer::SequencerPreparedPatternEditAbortOutcome;
+    return operations_->abortPreparedPatternEdit != nullptr
+               ? operations_->abortPreparedPatternEdit(context_, owner, key)
                : Outcome::Failed;
 }
 

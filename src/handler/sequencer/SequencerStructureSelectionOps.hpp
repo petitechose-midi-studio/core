@@ -3,7 +3,6 @@
 #include <cstdint>
 
 #include "app/ExtmemAllocator.hpp"
-#include "handler/sequencer/SequencerStructureStepOps.hpp"
 #include "state/StructureClipboardPastePlan.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -28,17 +27,6 @@ uint16_t activeContentPageSelectionMask(
     uint16_t selectedMask
 );
 
-bool resetSelectedActiveContentPages(
-    core::state::sequencer::SequencerState& sequencer,
-    uint16_t selectedMask,
-    StepResetDepth depth
-);
-
-bool deleteSelectedRootPages(
-    core::state::sequencer::SequencerState& sequencer,
-    uint16_t selectedMask
-);
-
 core::app::ExtmemUniquePtr<
     core::state::SequencerTrackSelectionClipboard
 > captureTrackSelectionClipboard(
@@ -59,12 +47,6 @@ buildPageSelectionPastePlan(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& structureClipboard,
     uint8_t cursorPage
-);
-
-bool pastePageSelectionClipboard(
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::StructureClipboardState& structureClipboard,
-    const core::state::SequencerPageSelectionPastePlan& plan
 );
 
 }  // namespace core::handler

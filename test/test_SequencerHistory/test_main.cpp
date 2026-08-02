@@ -11,10 +11,12 @@
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
+#include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerHistory.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerPatternRegionOps.hpp"
+#include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../../src/state/sequencer/SequencerStructureHistory.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 
@@ -38,6 +40,87 @@ using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
 void setStep(SequencerPatternState& pattern, uint8_t step, uint8_t note) {
     pattern.setStepDataAt(step, note, 96, SequencerPatternState::DEFAULT_GATE_PERCENT);
     pattern.setEnabled(step, true);
+}
+
+uint64_t byteHash(const void* data, size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    uint64_t hash = 1469598103934665603ULL;
+    for (size_t index = 0U; index < size; ++index) {
+        hash ^= bytes[index];
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+void assertActiveDraftBlocksDirectHistory(
+    SequencerHistoryService& history,
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    bool redo
+) {
+    namespace seq = core::state::sequencer;
+
+    assert(seq::beginStepContentDraft(
+        active,
+        seq::SequencerStepContentDraftKind::CHORD,
+        0U,
+        seq::rootStepNodeId(0U)
+    ));
+    const uint32_t draftRevision = active.stepContentDraft.revision.get();
+    const uint32_t contentRevision = active.contentView.revision.get();
+    const uint8_t undoCount = history.undoCount();
+    const uint8_t redoCount = history.redoCount();
+    const uintptr_t undoIdentity = history.projectHistoryUndoIdentity();
+    const uintptr_t redoIdentity = history.projectHistoryRedoIdentity();
+    const uint8_t note = active.pattern.note[0];
+    const uint8_t focusedStep = active.focusedStep.get();
+    const uint8_t page = active.page.get();
+    const StepProperty activeStepProperty = active.activeStepProperty.get();
+    const uint16_t enabledMask = bank.currentEnabledMask();
+    const uint8_t activeTrack = bank.activeTrackIndex();
+
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        const auto result = redo ? history.redoWithResult(bank, active)
+                                 : history.undoWithResult(bank, active);
+        assert(!result.applied);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+#else
+    const auto result = redo ? history.redoWithResult(bank, active)
+                             : history.undoWithResult(bank, active);
+    assert(!result.applied);
+#endif
+
+    assert(history.undoCount() == undoCount);
+    assert(history.redoCount() == redoCount);
+    assert(history.projectHistoryUndoIdentity() == undoIdentity);
+    assert(history.projectHistoryRedoIdentity() == redoIdentity);
+    assert(active.pattern.note[0] == note);
+    assert(active.focusedStep.get() == focusedStep);
+    assert(active.page.get() == page);
+    assert(active.activeStepProperty.get() == activeStepProperty);
+    assert(bank.currentEnabledMask() == enabledMask);
+    assert(bank.activeTrackIndex() == activeTrack);
+    assert(active.stepContentDraft.failure ==
+           seq::SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
+    assert(active.stepContentDraft.blockedTransition ==
+           seq::SequencerStepContentDraftBlockedTransition::HISTORY);
+    assert(active.stepContentDraft.revision.get() == draftRevision + 1U);
+    assert(active.contentView.revision.get() == contentRevision + 1U);
+
+    const uint32_t blockedRevision = active.stepContentDraft.revision.get();
+    const uint32_t blockedContentRevision = active.contentView.revision.get();
+    const auto repeated = redo ? history.redoWithResult(bank, active)
+                               : history.undoWithResult(bank, active);
+    assert(!repeated.applied);
+    assert(active.stepContentDraft.revision.get() == blockedRevision);
+    assert(active.contentView.revision.get() == blockedContentRevision);
+    assert(history.undoCount() == undoCount);
+    assert(history.redoCount() == redoCount);
+
+    seq::abandonStepContentDraft(active);
 }
 
 core::state::sequencer::SequencerHistoryTrackStructureChangePtr
@@ -155,11 +238,13 @@ void test_pattern_history_undo_redo_restores_flat_data_and_focus() {
     assert(history.recordPattern(std::move(before), std::move(after)));
     assert(history.undoCount() == 1);
 
+    assertActiveDraftBlocksDirectHistory(history, bank, state, false);
     assert(history.undo(bank, state));
     assert(state.pattern.note[0] == 60);
     assert(state.focusedStep.get() == 0);
     assert(bank.track(bank.activeTrackIndex()).note[0] == 60);
 
+    assertActiveDraftBlocksDirectHistory(history, bank, state, true);
     assert(history.redo(bank, state));
     assert(state.pattern.note[0] == 72);
     assert(state.focusedStep.get() == 9);
@@ -319,6 +404,9 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     SequencerState state;
     assert(core::state::sequencer::initializeTrackBankFromActive(bank, state));
     assert(core::state::sequencer::ensureGraphRoot(state.pattern));
+    if (state.pattern.length.get() != 8U) {
+        assert(state.pattern.setContentLength(8U));
+    }
 
     if (withCcLane) {
         auto* ccLanes = core::state::sequencer::ensureSequencerCcLaneBank(state.pattern);
@@ -336,6 +424,12 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
             3U,
             91U
         ).changed());
+        assert(core::state::sequencer::setSequencerCcLaneEvent(
+            *ccLanes,
+            0U,
+            100U,
+            37U
+        ).changed());
     }
     assert(core::state::sequencer::storeActiveTrack(bank, state));
 
@@ -348,11 +442,21 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     assert(editorGraph != nullptr && bankGraph != nullptr);
     assert((editorCcLanes != nullptr) == withCcLane);
     assert((bankCcLanes != nullptr) == withCcLane);
+    const uint64_t editorCcHash = withCcLane
+        ? byteHash(editorCcLanes, sizeof(*editorCcLanes))
+        : 0U;
+    const uint64_t bankCcHash = withCcLane
+        ? byteHash(bankCcLanes, sizeof(*bankCcLanes))
+        : 0U;
+    const uint32_t editorCcRevision = state.pattern.ccLaneRevision.get();
+    const uint32_t bankCcRevision = bank.track(0U).ccLaneRevision.get();
 
     // This reproduces the central Step coalescer shape: a complete `before`
     // snapshot followed by a FlatOnly `after` snapshot.
     SequencerHistoryPatternSnapshot before;
     assert(core::state::sequencer::captureHistorySnapshot(state, before));
+    assert(state.pattern.length.get() == 8U);
+    assert(state.pattern.setContentLength(16U));
     state.pattern.setEnabled(0U, true);
     SequencerHistoryPatternSnapshot after;
     core::state::sequencer::captureFlatHistorySnapshot(state, after);
@@ -363,6 +467,7 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     assert(retainedBytes > 0U);
 
     assert(history.undo(bank, state));
+    assert(state.pattern.length.get() == 8U);
     assert(!state.pattern.isEnabled(0U));
     assert(core::state::sequencer::graphView(state.pattern) == editorGraph);
     assert(core::state::sequencer::graphView(bank.track(0U)) == bankGraph);
@@ -370,8 +475,15 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
            editorCcLanes);
     assert(core::state::sequencer::sequencerCcLaneView(bank.track(0U)) ==
            bankCcLanes);
+    assert(state.pattern.ccLaneRevision.get() == editorCcRevision);
+    assert(bank.track(0U).ccLaneRevision.get() == bankCcRevision);
+    if (withCcLane) {
+        assert(byteHash(editorCcLanes, sizeof(*editorCcLanes)) == editorCcHash);
+        assert(byteHash(bankCcLanes, sizeof(*bankCcLanes)) == bankCcHash);
+    }
 
     assert(history.redo(bank, state));
+    assert(state.pattern.length.get() == 16U);
     assert(state.pattern.isEnabled(0U));
     assert(core::state::sequencer::graphView(state.pattern) == editorGraph);
     assert(core::state::sequencer::graphView(bank.track(0U)) == bankGraph);
@@ -383,9 +495,15 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
         assert(editorCcLanes->lanes[0].occupied);
         assert(editorCcLanes->lanes[0].activeMask.test(3U));
         assert(editorCcLanes->lanes[0].values[3U] == 91U);
+        assert(editorCcLanes->lanes[0].activeMask.test(100U));
+        assert(editorCcLanes->lanes[0].values[100U] == 37U);
         assert(bankCcLanes->lanes[0].occupied);
         assert(bankCcLanes->lanes[0].activeMask.test(3U));
         assert(bankCcLanes->lanes[0].values[3U] == 91U);
+        assert(bankCcLanes->lanes[0].activeMask.test(100U));
+        assert(bankCcLanes->lanes[0].values[100U] == 37U);
+        assert(byteHash(editorCcLanes, sizeof(*editorCcLanes)) == editorCcHash);
+        assert(byteHash(bankCcLanes, sizeof(*bankCcLanes)) == bankCcHash);
     }
 
     return retainedBytes;
@@ -612,6 +730,7 @@ void test_full_bank_history_restores_active_track_and_graphs() {
     SequencerHistoryService history;
     assert(history.recordFullBank(std::move(before), std::move(after)));
 
+    assertActiveDraftBlocksDirectHistory(history, bank, active, false);
     assert(history.undo(bank, active));
     assert(bank.activeTrackIndex() == 0);
     assert(bank.currentEnabledMask() == 0x0003);
@@ -620,6 +739,7 @@ void test_full_bank_history_restores_active_track_and_graphs() {
     assert(bank.track(1).note[0] == 72);
     assert(hasCycleStateSet(bank.track(1), 0));
 
+    assertActiveDraftBlocksDirectHistory(history, bank, active, true);
     assert(history.redo(bank, active));
     assert(bank.activeTrackIndex() == 1);
     assert(bank.currentEnabledMask() == 0x0002);
@@ -682,6 +802,7 @@ void test_structure_history_restores_track_mask_active_track_and_graphs() {
     assert(history.undoCount(SequencerHistoryScope::Structure) == 1);
     assert(history.undoCount(SequencerHistoryScope::FullBank) == 0);
 
+    assertActiveDraftBlocksDirectHistory(history, bank, active, false);
     assert(history.undo(bank, active));
     assert(bank.activeTrackIndex() == 0);
     assert(bank.currentEnabledMask() == 0x0003);
@@ -690,6 +811,7 @@ void test_structure_history_restores_track_mask_active_track_and_graphs() {
     assert(bank.track(1).note[0] == 72);
     assert(hasCycleStateSet(bank.track(1), 0));
 
+    assertActiveDraftBlocksDirectHistory(history, bank, active, true);
     assert(history.redo(bank, active));
     assert(bank.activeTrackIndex() == 1);
     assert(bank.currentEnabledMask() == 0x0002);

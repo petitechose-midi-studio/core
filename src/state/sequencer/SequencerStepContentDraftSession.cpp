@@ -240,6 +240,14 @@ FLASHMEM void SequencerStepContentDraftSession::noteBlockedTransition(
     touch();
 }
 
+FLASHMEM bool SequencerStepContentDraftSession::rejectTransitionIfActive(
+    SequencerStepContentDraftBlockedTransition transition
+) {
+    if (!active.get()) return false;
+    noteBlockedTransition(transition);
+    return true;
+}
+
 FLASHMEM void SequencerStepContentDraftSession::resetSession() {
     active.set(false);
     kind.set(SequencerStepContentDraftKind::NONE);

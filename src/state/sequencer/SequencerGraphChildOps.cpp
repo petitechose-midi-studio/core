@@ -2,7 +2,6 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "state/sequencer/SequencerChordState.hpp"
 #include "state/sequencer/SequencerGraphOpsInternal.hpp"
 
 namespace core::state::sequencer {
@@ -11,54 +10,80 @@ using namespace graph_ops_internal;
 
 namespace {
 
-FLASHMEM bool sameLocalVariation(
-    const oc::note::sequencer::StepSequencerVariationRanges& lhs,
-    const oc::note::sequencer::StepSequencerVariationRanges& rhs
-) {
-    return lhs.pitchSemitones == rhs.pitchSemitones &&
-           lhs.velocity == rhs.velocity &&
-           lhs.gatePercent == rhs.gatePercent &&
-           lhs.nudge == rhs.nudge;
-}
-
-FLASHMEM bool sameStepNodePayload(
+FLASHMEM bool sameStoredStepNodePayload(
     const StepSequencerStepNode& lhs,
     const StepSequencerStepNode& rhs
 ) {
-    return lhs.flags == rhs.flags &&
+    return sameSequencerGraphNodePayload(lhs, rhs) &&
            lhs.childSequenceId == rhs.childSequenceId &&
-           lhs.cycleSetId == rhs.cycleSetId &&
-           lhs.noteOffset == rhs.noteOffset &&
-           lhs.velocityOffset == rhs.velocityOffset &&
-           lhs.gateOffset == rhs.gateOffset &&
-           lhs.nudgeOffset == rhs.nudgeOffset &&
-           lhs.probabilityOffset == rhs.probabilityOffset &&
-           lhs.chordMode == rhs.chordMode &&
-           chordSpecEqualsSanitized(lhs.chordSpec, rhs.chordSpec) &&
-           sameLocalVariation(lhs.localVariation, rhs.localVariation);
+           lhs.cycleSetId == rhs.cycleSetId;
 }
 
-FLASHMEM bool hasValidChildren(
-    const StepSequencerGraph& graph,
-    const StepSequencerStepNode& node
+FLASHMEM bool budgetFitsFreshPatternGraph(
+    const SequencerGraphCopyBudget& budget
 ) {
-    return (node.has(STEP_NODE_CHILD_SEQUENCE) &&
-            graph.sequence(node.childSequenceId) != nullptr) ||
-           (node.has(STEP_NODE_CYCLE_SET) &&
-            graph.cycleSet(node.cycleSetId) != nullptr);
+    return budget.stepNodes <=
+               StepSequencerGraphLimits::MAX_STEP_NODES -
+                   SequencerPatternState::MAX_STEPS &&
+           budget.sequences <= StepSequencerGraphLimits::MAX_SEQUENCES - 1U &&
+           budget.cycleSets <= StepSequencerGraphLimits::MAX_CYCLE_SETS;
 }
 
-FLASHMEM bool graphHasBudgetFor(
-    const StepSequencerGraph& target,
-    const GraphCopyBudget& budget
+FLASHMEM bool validGraphCopyTargetBeforeEnsure(
+    const SequencerPatternState& targetPattern,
+    SequencerGraphNodeId targetNodeId,
+    const StepSequencerGraph& sourceGraph,
+    const SequencerGraphCopyBudget& budget
+) noexcept {
+    // A source can be either a complete Pattern graph or a compact asset graph.
+    // Its reachable payload has already been validated by the caller's
+    // inspection; only a self-copy must be rejected here.
+    if (targetPattern.graph.get() == &sourceGraph) {
+        return false;
+    }
+
+    const auto* targetGraph = targetPattern.graph.get();
+    if (targetGraph == nullptr) {
+        return targetNodeId < SequencerPatternState::MAX_STEPS &&
+               budgetFitsFreshPatternGraph(budget);
+    }
+    if (!targetGraph->enabled) {
+        return isCanonicalDisabledSequencerGraph(*targetGraph) &&
+               targetNodeId < SequencerPatternState::MAX_STEPS &&
+               budgetFitsFreshPatternGraph(budget);
+    }
+    return validInitializedSequencerGraph(*targetGraph) &&
+           hasStepNode(*targetGraph, targetNodeId) &&
+           sequencerGraphHasCopyCapacity(*targetGraph, budget);
+}
+
+FLASHMEM void publishGraphCopyRevision(
+    SequencerPatternState& targetPattern,
+    bool targetWasInitialized
+) noexcept {
+    // ensureGraphRoot() publishes the disabled/null -> initialized transition.
+    // An already initialized target still needs the payload-copy publication.
+    if (targetWasInitialized) targetPattern.bumpGraphRevision();
+}
+
+FLASHMEM bool copyStepNodePayloadPrevalidated(
+    StepSequencerGraph& targetGraph,
+    SequencerGraphNodeId targetNodeId,
+    const StepSequencerGraph& sourceGraph,
+    SequencerGraphNodeId sourceNodeId,
+    const SequencerGraphCopyBudget& budget
 ) {
-    return budget.valid &&
-           static_cast<uint32_t>(target.stepNodeCount) + budget.stepNodes <=
-               target.stepNodes.size() &&
-           static_cast<uint32_t>(target.sequenceCount) + budget.sequences <=
-               target.sequences.size() &&
-           static_cast<uint32_t>(target.cycleSetCount) + budget.cycleSets <=
-               target.cycleSets.size();
+    if (&targetGraph == &sourceGraph ||
+        !hasStepNode(targetGraph, targetNodeId) ||
+        !hasStepNode(sourceGraph, sourceNodeId) ||
+        !sequencerGraphHasCopyCapacity(targetGraph, budget)) {
+        return false;
+    }
+
+    auto& targetNode = targetGraph.stepNodes[targetNodeId];
+    const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
+    copyStepNodeValuesWithoutChildren(targetNode, sourceNode);
+    return copyChildrenIntoNode(targetGraph, targetNode, sourceGraph, sourceNode);
 }
 
 }  // namespace
@@ -127,34 +152,37 @@ FLASHMEM bool resetStepNodePayload(
     SequencerGraphNodeResetMode mode
 ) {
     auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !graph->enabled || !hasStepNode(*graph, nodeId)) {
-        return false;
-    }
+    if (graph == nullptr || !resetStepNodePayloadUnversioned(*graph, nodeId, mode)) return false;
+    pattern.bumpGraphRevision();
+    return true;
+}
+
+FLASHMEM bool resetStepNodePayloadUnversioned(
+    StepSequencerGraph& graph,
+    SequencerGraphNodeId nodeId,
+    SequencerGraphNodeResetMode mode
+) noexcept {
+    if (!graph.enabled || !hasStepNode(graph, nodeId)) return false;
 
     StepSequencerStepNode reset{};
     if (mode == SequencerGraphNodeResetMode::DISABLED_OVERRIDE) {
         reset.flags = STEP_NODE_ENABLED_OVERRIDE;
     }
 
-    auto& node = graph->stepNodes[nodeId];
-    if (sameStepNodePayload(node, reset)) return false;
-
+    auto& node = graph.stepNodes[nodeId];
+    if (sameStoredStepNodePayload(node, reset)) return false;
     node = reset;
-    pattern.bumpGraphRevision();
     return true;
 }
 
-FLASHMEM bool resetStepNodePayloadPreservingChildren(
-    SequencerPatternState& pattern,
+FLASHMEM bool resetStepNodePayloadPreservingChildrenUnversioned(
+    StepSequencerGraph& graph,
     SequencerGraphNodeId nodeId,
     SequencerGraphNodeResetMode mode
-) {
-    auto* graph = mutableGraph(pattern);
-    if (graph == nullptr || !graph->enabled || !hasStepNode(*graph, nodeId)) {
-        return false;
-    }
+) noexcept {
+    if (!graph.enabled || !hasStepNode(graph, nodeId)) return false;
 
-    auto& node = graph->stepNodes[nodeId];
+    auto& node = graph.stepNodes[nodeId];
     StepSequencerStepNode reset{};
     if (mode == SequencerGraphNodeResetMode::DISABLED_OVERRIDE) {
         reset.flags = STEP_NODE_ENABLED_OVERRIDE;
@@ -165,11 +193,29 @@ FLASHMEM bool resetStepNodePayloadPreservingChildren(
     reset.childSequenceId = node.childSequenceId;
     reset.cycleSetId = node.cycleSetId;
 
-    if (sameStepNodePayload(node, reset)) return false;
-
+    if (sameStoredStepNodePayload(node, reset)) return false;
     node = reset;
-    pattern.bumpGraphRevision();
     return true;
+}
+
+FLASHMEM bool copyStepNodePayloadFromGraphUnversioned(
+    StepSequencerGraph& targetGraph,
+    SequencerGraphNodeId targetNodeId,
+    const StepSequencerGraph& sourceGraph,
+    SequencerGraphNodeId sourceNodeId,
+    uint8_t targetDepth
+) noexcept {
+    if (&targetGraph == &sourceGraph) return false;
+    const auto inspection =
+        inspectSequencerGraphPayload(sourceGraph, sourceNodeId, targetDepth);
+    if (!inspection.ok()) return false;
+    return copyStepNodePayloadPrevalidated(
+        targetGraph,
+        targetNodeId,
+        sourceGraph,
+        sourceNodeId,
+        inspection.budget
+    );
 }
 
 FLASHMEM bool copyStepNodePayloadFromGraph(
@@ -178,27 +224,30 @@ FLASHMEM bool copyStepNodePayloadFromGraph(
     const StepSequencerGraph& sourceGraph,
     SequencerGraphNodeId sourceNodeId
 ) {
+    const auto inspection =
+        inspectSequencerGraphPayload(sourceGraph, sourceNodeId, 0U);
+    if (!inspection.ok() ||
+        !validGraphCopyTargetBeforeEnsure(
+            targetPattern,
+            targetNodeId,
+            sourceGraph,
+            inspection.budget)) {
+        return false;
+    }
+    const bool targetWasInitialized = graphView(targetPattern) != nullptr;
     if (!ensureGraphRoot(targetPattern)) return false;
     auto* targetGraph = mutableGraph(targetPattern);
     if (targetGraph == nullptr ||
-        !hasStepNode(*targetGraph, targetNodeId) ||
-        !hasStepNode(sourceGraph, sourceNodeId)) {
+        !copyStepNodePayloadPrevalidated(
+            *targetGraph,
+            targetNodeId,
+            sourceGraph,
+            sourceNodeId,
+            inspection.budget)) {
         return false;
     }
 
-    const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
-    if (hasValidChildren(sourceGraph, sourceNode)) {
-        const GraphCopyBudget budget = childCopyBudget(sourceGraph, sourceNode);
-        if (!graphHasBudgetFor(*targetGraph, budget)) return false;
-    }
-
-    auto& targetNode = targetGraph->stepNodes[targetNodeId];
-    copyStepNodeValuesWithoutChildren(targetNode, sourceNode);
-    if (!copyChildrenIntoNode(*targetGraph, targetNode, sourceGraph, sourceNode)) {
-        return false;
-    }
-
-    targetPattern.bumpGraphRevision();
+    publishGraphCopyRevision(targetPattern, targetWasInitialized);
     return true;
 }
 
@@ -208,6 +257,16 @@ FLASHMEM bool copyNodeChildrenFromGraph(
     const StepSequencerGraph& sourceGraph,
     SequencerGraphNodeId sourceNodeId
 ) {
+    const auto inspection = inspectGraphChildrenForCopy(sourceGraph, sourceNodeId, 0U);
+    if (!inspection.ok() || !inspection.payloadPresent ||
+        !validGraphCopyTargetBeforeEnsure(
+            targetPattern,
+            targetNodeId,
+            sourceGraph,
+            inspection.budget)) {
+        return false;
+    }
+    const bool targetWasInitialized = graphView(targetPattern) != nullptr;
     if (!ensureGraphRoot(targetPattern)) return false;
     auto* targetGraph = mutableGraph(targetPattern);
     if (targetGraph == nullptr ||
@@ -217,10 +276,7 @@ FLASHMEM bool copyNodeChildrenFromGraph(
     }
 
     const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
-    if (!hasValidChildren(sourceGraph, sourceNode)) return false;
-
-    const GraphCopyBudget budget = childCopyBudget(sourceGraph, sourceNode);
-    if (!graphHasBudgetFor(*targetGraph, budget)) return false;
+    if (!sequencerGraphHasCopyCapacity(*targetGraph, inspection.budget)) return false;
 
     auto& targetNode = targetGraph->stepNodes[targetNodeId];
     targetNode.childSequenceId = kInvalidId;
@@ -233,7 +289,7 @@ FLASHMEM bool copyNodeChildrenFromGraph(
         return false;
     }
 
-    targetPattern.bumpGraphRevision();
+    publishGraphCopyRevision(targetPattern, targetWasInitialized);
     return true;
 }
 
@@ -243,6 +299,20 @@ FLASHMEM bool copyNodeChildSequenceFromGraph(
     const StepSequencerGraph& sourceGraph,
     SequencerGraphNodeId sourceNodeId
 ) {
+    if (!sourceGraph.enabled || !hasStepNode(sourceGraph, sourceNodeId)) return false;
+    const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
+    if (!sourceNode.has(STEP_NODE_CHILD_SEQUENCE)) return false;
+    const auto inspection = inspectGraphSequenceForCopy(
+        sourceGraph, sourceNode.childSequenceId, 0U);
+    if (!inspection.ok() ||
+        !validGraphCopyTargetBeforeEnsure(
+            targetPattern,
+            targetNodeId,
+            sourceGraph,
+            inspection.budget)) {
+        return false;
+    }
+    const bool targetWasInitialized = graphView(targetPattern) != nullptr;
     if (!ensureGraphRoot(targetPattern)) return false;
     auto* targetGraph = mutableGraph(targetPattern);
     if (targetGraph == nullptr ||
@@ -251,22 +321,7 @@ FLASHMEM bool copyNodeChildSequenceFromGraph(
         return false;
     }
 
-    const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
-    if (!sourceNode.has(STEP_NODE_CHILD_SEQUENCE) ||
-        sourceGraph.sequence(sourceNode.childSequenceId) == nullptr) {
-        return false;
-    }
-
-    const GraphCopyBudget budget = sequenceCopyBudget(sourceGraph, sourceNode.childSequenceId);
-    if (!budget.valid) return false;
-    if (static_cast<uint32_t>(targetGraph->stepNodeCount) + budget.stepNodes >
-            targetGraph->stepNodes.size() ||
-        static_cast<uint32_t>(targetGraph->sequenceCount) + budget.sequences >
-            targetGraph->sequences.size() ||
-        static_cast<uint32_t>(targetGraph->cycleSetCount) + budget.cycleSets >
-            targetGraph->cycleSets.size()) {
-        return false;
-    }
+    if (!sequencerGraphHasCopyCapacity(*targetGraph, inspection.budget)) return false;
 
     auto& targetNode = targetGraph->stepNodes[targetNodeId];
     targetNode.childSequenceId = kInvalidId;
@@ -276,7 +331,7 @@ FLASHMEM bool copyNodeChildSequenceFromGraph(
         return false;
     }
 
-    targetPattern.bumpGraphRevision();
+    publishGraphCopyRevision(targetPattern, targetWasInitialized);
     return true;
 }
 
@@ -286,6 +341,20 @@ FLASHMEM bool copyNodeCycleStateSetFromGraph(
     const StepSequencerGraph& sourceGraph,
     SequencerGraphNodeId sourceNodeId
 ) {
+    if (!sourceGraph.enabled || !hasStepNode(sourceGraph, sourceNodeId)) return false;
+    const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
+    if (!sourceNode.has(STEP_NODE_CYCLE_SET)) return false;
+    const auto inspection = inspectGraphCycleSetForCopy(
+        sourceGraph, sourceNode.cycleSetId, 0U);
+    if (!inspection.ok() ||
+        !validGraphCopyTargetBeforeEnsure(
+            targetPattern,
+            targetNodeId,
+            sourceGraph,
+            inspection.budget)) {
+        return false;
+    }
+    const bool targetWasInitialized = graphView(targetPattern) != nullptr;
     if (!ensureGraphRoot(targetPattern)) return false;
     auto* targetGraph = mutableGraph(targetPattern);
     if (targetGraph == nullptr ||
@@ -294,22 +363,7 @@ FLASHMEM bool copyNodeCycleStateSetFromGraph(
         return false;
     }
 
-    const auto& sourceNode = sourceGraph.stepNodes[sourceNodeId];
-    if (!sourceNode.has(STEP_NODE_CYCLE_SET) ||
-        sourceGraph.cycleSet(sourceNode.cycleSetId) == nullptr) {
-        return false;
-    }
-
-    const GraphCopyBudget budget = cycleSetCopyBudget(sourceGraph, sourceNode.cycleSetId);
-    if (!budget.valid) return false;
-    if (static_cast<uint32_t>(targetGraph->stepNodeCount) + budget.stepNodes >
-            targetGraph->stepNodes.size() ||
-        static_cast<uint32_t>(targetGraph->sequenceCount) + budget.sequences >
-            targetGraph->sequences.size() ||
-        static_cast<uint32_t>(targetGraph->cycleSetCount) + budget.cycleSets >
-            targetGraph->cycleSets.size()) {
-        return false;
-    }
+    if (!sequencerGraphHasCopyCapacity(*targetGraph, inspection.budget)) return false;
 
     auto& targetNode = targetGraph->stepNodes[targetNodeId];
     targetNode.cycleSetId = kInvalidId;
@@ -319,7 +373,7 @@ FLASHMEM bool copyNodeCycleStateSetFromGraph(
         return false;
     }
 
-    targetPattern.bumpGraphRevision();
+    publishGraphCopyRevision(targetPattern, targetWasInitialized);
     return true;
 }
 

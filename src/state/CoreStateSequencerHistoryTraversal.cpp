@@ -244,6 +244,10 @@ FLASHMEM void reconcileMacroTrackStructureFromRestoredHistory(
 }  // namespace
 
 FLASHMEM bool CoreState::undoSequencerHistory() {
+    if (sequencer.stepContentDraft.rejectTransitionIfActive(
+            sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {
+        return false;
+    }
     if (commitSequencerPatternHistoryCoalescingOutcome() ==
         sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
         return false;
@@ -306,6 +310,10 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
 }
 
 FLASHMEM bool CoreState::redoSequencerHistory() {
+    if (sequencer.stepContentDraft.rejectTransitionIfActive(
+            sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {
+        return false;
+    }
     if (commitSequencerPatternHistoryCoalescingOutcome() ==
         sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
         return false;

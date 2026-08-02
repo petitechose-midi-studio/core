@@ -350,11 +350,41 @@ void test_flat_begin_seal_commit_is_exact_and_undoable() {
 void test_typed_domain_commit_adapter_distinguishes_failure_from_empty_boundary() {
     Harness h;
     using Outcome = seq::SequencerPatternHistoryCommitOutcome;
+    using AbortOutcome = seq::SequencerPreparedPatternEditAbortOutcome;
     auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(h.state);
 
     assert(history.commitCoalescedPatternEditOutcome() == Outcome::NoPending);
     assert(core::handler::SequencerHistoryDomainServices{}.commitCoalescedPatternEditOutcome() ==
            Outcome::Failed);
+    assert(core::handler::SequencerHistoryDomainServices{}.abortPreparedPatternEdit(
+               seq::SequencerPreparedPatternEditOwner::PageStructure, 21U) ==
+           AbortOutcome::Failed);
+    assert(history.abortPreparedPatternEdit(
+               seq::SequencerPreparedPatternEditOwner::PageStructure, 21U) ==
+           AbortOutcome::NoPending);
+
+    const auto beforeAbort = tx::captureStateInvariant(h.state);
+    const auto pageDescriptor = seq::SequencerHistoryDescriptor{
+        .kind = seq::SequencerHistoryActionKind::PageStructure,
+    };
+    assert(history.beginPreparedPatternEdit(
+               seq::SequencerPreparedPatternEditOwner::PageStructure,
+               21U,
+               seq::SequencerCoalescedPatternPayloadPlan::FlatOnly,
+               pageDescriptor) == seq::SequencerPreparedPatternEditBeginOutcome::Started);
+    assert(h.state.sequencer.setStepNoteAt(kStep, 69U));
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        allocation_trace::Scope allocations;
+        assert(history.abortPreparedPatternEdit(
+                   seq::SequencerPreparedPatternEditOwner::PageStructure, 21U) ==
+               AbortOutcome::Aborted);
+        assert(allocation_trace::count == 0U);
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
+    tx::assertFailureInjectionReset();
+    tx::assertStateInvariant(h.state, beforeAbort);
+    assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
 
     // An interrupted begin is a deterministic malformed boundary. Committing
     // it must report Failed, retain the pending owner for recovery, and perform

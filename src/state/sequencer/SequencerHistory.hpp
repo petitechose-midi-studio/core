@@ -42,9 +42,10 @@ struct SequencerHistoryPatternPayloadStorage {
 
 struct SequencerHistoryPatternSnapshot {
     SequencerPatternSnapshot flat{};
-    // FlatOnly does not retain a CC payload, but it must still prove that no
-    // CC mutation was misclassified between before and after. This field uses
-    // the snapshot's existing scalar/pointer alignment padding on ARM.
+    // FlatOnly does not retain a CC payload. Prepared Page FullGraph also sets
+    // ccLanesCaptured=false for an already-allocated, musically empty owner so
+    // commit/rollback/traversal preserve that live owner instead of replaying
+    // nullptr. This field uses existing scalar/pointer alignment padding on ARM.
     uint32_t ccLaneRevision = 0;
     uint8_t focusedStep = 0;
     bool ccLanesCaptured = false;
@@ -114,6 +115,7 @@ enum class SequencerPreparedPatternEditOwner : uint8_t {
     StepEditSession,
     StepToggle,
     PatternEditor,
+    PageStructure,
 };
 
 // FullBank edit ownership remains typed across the handler facade so Project
@@ -145,6 +147,38 @@ enum class SequencerPreparedPatternEditSealOutcome : uint8_t {
     Failed = 0,
     Cleared,
     Sealed,
+    // Seal rejected the mutation after proving exact rollback and consuming
+    // the pending owner. Callers report failure but must not abort again.
+    FailedClosed,
+};
+
+constexpr bool sequencerPreparedPatternEditSealFailed(
+    SequencerPreparedPatternEditSealOutcome outcome
+) {
+    return outcome == SequencerPreparedPatternEditSealOutcome::Failed ||
+           outcome == SequencerPreparedPatternEditSealOutcome::FailedClosed;
+}
+
+// True only when seal consumed the pending bundle without publishing it.
+// A successful Sealed outcome remains pending until commit or abort.
+constexpr bool sequencerPreparedPatternEditSealClosed(
+    SequencerPreparedPatternEditSealOutcome outcome
+) {
+    return outcome == SequencerPreparedPatternEditSealOutcome::Cleared ||
+           outcome == SequencerPreparedPatternEditSealOutcome::FailedClosed;
+}
+
+enum class SequencerPreparedPatternEditAbortOutcome : uint8_t {
+    Failed = 0,
+    NoPending,
+    // Matching owner/key restored exact Before and consumed the bundle.
+    Aborted,
+};
+
+enum class SequencerPreparedPatternGraphPrecompactionOutcome : uint8_t {
+    Failed = 0,
+    Unchanged,
+    Compacted,
 };
 
 // Typed result shared by generic and family-owned Pattern commit barriers.
@@ -273,6 +307,10 @@ struct SequencerHistoryPatternChange {
     SequencerHistoryPatternChange& operator=(SequencerHistoryPatternChange&&) noexcept;
     void setPreparedPayloadOwnerProof(const SequencerPatternState& pattern);
     bool preparedPayloadOwnerProofMatches(const SequencerPatternState& pattern) const;
+    bool preparedGraphOwnerProofMatches(const SequencerPatternState& pattern) const;
+    bool preparedCcLaneOwnerProofMatches(const SequencerPatternState& pattern) const;
+    bool preparedGraphOwnerProofPresent() const;
+    bool preparedCcLaneOwnerProofPresent() const;
     void clearPreparedPayloadOwnerProof();
 };
 
@@ -337,12 +375,13 @@ bool reservePreparedHistoryPatternAfter(const SequencerTrackBankState& bank,
 bool capturePreparedHistoryPatternAfterUsingReservedStorage(const SequencerTrackBankState& bank,
                                                             const SequencerState& active,
                                                             SequencerHistoryPatternChange& change);
-// Allocation-free emergency rollback for a prepared active-Track edit. This
-// consumes Full before-payload ownership; callers must destroy the transaction
-// after success rather than attempting to publish it.
-bool restorePreparedHistoryPatternBeforeToActiveEditor(const SequencerTrackBankState& bank,
-                                                       SequencerState& active,
-                                                       SequencerHistoryPatternChange& change);
+// Allocation-free emergency rollback for a prepared frozen-Track edit,
+// including when that Track became inactive before abort. This consumes Full
+// before-payload ownership; callers destroy the transaction after success.
+bool restorePreparedHistoryPatternBefore(SequencerTrackBankState& bank,
+                                         SequencerState& active,
+                                         SequencerHistoryPatternChange& change,
+                                         bool prospectiveGraphInstalled);
 
 SequencerHistoryFullBankChangePtr prepareHistoryFullBankChangeBefore(
     const SequencerTrackBankState& bank, const SequencerState& active,

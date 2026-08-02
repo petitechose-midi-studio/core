@@ -4,21 +4,6 @@
 
 namespace core::handler {
 
-FLASHMEM SequencerPageStructureHistoryChangePtr captureSequencerPageStructureHistoryBefore(
-    const core::state::sequencer::SequencerState& sequencer
-) {
-    auto change = core::app::makeExtmemUnique<
-        core::state::sequencer::SequencerHistoryPatternChange
-    >();
-    if (!change ||
-        !core::state::sequencer::captureHistorySnapshot(sequencer, change->before) ||
-        !core::state::sequencer::reserveHistorySnapshotGraphStorage(change->after)) {
-        return nullptr;
-    }
-    change->storage = core::state::sequencer::SequencerHistoryPatternStorage::FullGraph;
-    return change;
-}
-
 FLASHMEM core::state::sequencer::SequencerHistoryTrackStructureChangePtr
 captureSequencerTrackStructureHistoryBefore(
     const core::state::sequencer::SequencerTrackBankState& tracks,
