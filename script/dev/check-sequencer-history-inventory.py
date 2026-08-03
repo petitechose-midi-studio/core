@@ -27,17 +27,17 @@ CANONICAL_RECORDING_METHODS = (
     "recordPreparedStructure",
 )
 ENTRY_RECORDING_CALL_TOTAL = 44
-EXPECTED_MIGRATED_REMOVAL_TOTAL = 19
+EXPECTED_MIGRATED_REMOVAL_TOTAL = 20
 EXPECTED_PROVIDER_FORWARD_TOTAL = 5
 EXPECTED_COALESCED_PREPARED_TOTAL = 1
-EXPECTED_MEMBER_DISPATCH_TOTAL = 24
+EXPECTED_MEMBER_DISPATCH_TOTAL = 23
 EXPECTED_CORE_STATE_ADAPTER_TOTAL = 0
 EXPECTED_INTERNAL_FORWARD_TOTAL = 7
-EXPECTED_RECORDING_CALL_TOTAL = 31
-EXPECTED_SINK_TOTAL = 6
+EXPECTED_RECORDING_CALL_TOTAL = 30
+EXPECTED_SINK_TOTAL = 5
 EXPECTED_SERVICE_ADAPTER_TOTAL = 18
 EXPECTED_SINK_CLASSIFICATIONS = {
-    "post-fallible": 2,
+    "post-fallible": 1,
     "prepared": 4,
     "rollback-aware": 0,
 }
@@ -56,6 +56,7 @@ PREPARED_PATTERN_OWNERS = (
     "StepToggle",
     "PatternEditor",
     "PageStructure",
+    "QuickControls",
 )
 PREPARED_PATTERN_OWNER_PATH = "src/state/sequencer/SequencerHistory.hpp"
 PREPARED_PATTERN_OWNER_ENUM = "SequencerPreparedPatternEditOwner"
@@ -68,6 +69,7 @@ PREPARED_PATTERN_SURFACES = (
     "src/handler/sequencer/SequencerStepHandler.cpp",
     "src/handler/sequencer/SequencerPatternEditorHandler.cpp",
     "src/handler/sequencer/SequencerPreparedPageStructureTransaction.cpp",
+    "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
 )
 PREPARED_PATTERN_CENTRAL_METHODS = (
     "beginOrContinueSequencerPreparedPatternEdit",
@@ -87,19 +89,25 @@ PREPARED_PATTERN_FORBIDDEN_RAW_METHODS = (
     "recordPattern",
     "recordFlatPattern",
 )
-EXPECTED_PREPARED_SURFACE_CALL_TOTALS = {
-    "beginPreparedPatternEdit": 9,
-    "preparedPatternEditReady": 1,
-    "sealPreparedPatternEdit": 10,
-    "commitPreparedPatternEdit": 10,
-    "abortPreparedPatternEdit": 1,
+PREPARED_PATTERN_RAW_CALL_EXEMPTIONS = {
+    (
+        "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
+        "captureHistorySnapshot",
+    ): 2,
 }
-EXPECTED_PREPARED_CALL_TOTALS = {
+EXPECTED_PREPARED_SURFACE_CALL_TOTALS = {
     "beginPreparedPatternEdit": 10,
-    "preparedPatternEditReady": 2,
+    "preparedPatternEditReady": 1,
     "sealPreparedPatternEdit": 11,
     "commitPreparedPatternEdit": 11,
     "abortPreparedPatternEdit": 2,
+}
+EXPECTED_PREPARED_CALL_TOTALS = {
+    "beginPreparedPatternEdit": 11,
+    "preparedPatternEditReady": 2,
+    "sealPreparedPatternEdit": 12,
+    "commitPreparedPatternEdit": 12,
+    "abortPreparedPatternEdit": 3,
 }
 PREPARED_FULL_BANK_OWNER_PATH = "src/state/sequencer/SequencerHistory.hpp"
 PREPARED_FULL_BANK_OWNER_ENUM = "SequencerPreparedFullBankEditOwner"
@@ -438,6 +446,16 @@ def expected_prepared_owner_reference_counter(manifest) -> Counter:
     return expected
 
 
+def expected_prepared_raw_call_counter(manifest) -> Counter:
+    lifecycle = manifest["preparedPatternLifecycle"]
+    return Counter(
+        {
+            (exception["path"], exception["method"]): exception["count"]
+            for exception in lifecycle["rawCallExemptions"]
+        }
+    )
+
+
 def expected_prepared_central_counter(manifest) -> Counter:
     central = manifest["preparedPatternLifecycle"]["centralAuthority"]
     return Counter(central["definitions"])
@@ -722,20 +740,20 @@ def manifest_errors(manifest) -> list[str]:
             f"member manifest total is {member_total}, expected {members.get('expectedTotal')}"
         )
     if members.get("expectedTotal") != EXPECTED_MEMBER_DISPATCH_TOTAL:
-        errors.append("member-dispatch total must remain 24 after L-R08-07 slice 7")
+        errors.append("member-dispatch total must remain 23 after L-R08-08 slice 1")
     if sink_total != members.get("expectedSinkTotal"):
         errors.append(
             f"sink manifest total is {sink_total}, expected {members.get('expectedSinkTotal')}"
         )
     if members.get("expectedSinkTotal") != EXPECTED_SINK_TOTAL:
-        errors.append("mutation-sink total must remain 6 after L-R08-07 slice 7")
+        errors.append("mutation-sink total must remain 5 after L-R08-08 slice 1")
     if service_total != members.get("expectedServiceAdapterTotal"):
         errors.append(
             "service/adapter manifest total is "
             f"{service_total}, expected {members.get('expectedServiceAdapterTotal')}"
         )
     if members.get("expectedServiceAdapterTotal") != EXPECTED_SERVICE_ADAPTER_TOTAL:
-        errors.append("service/adapter total must remain 18 after L-R08-07 slice 7")
+        errors.append("service/adapter total must remain 18 after L-R08-08 slice 1")
     expected_classifications = Counter(members.get("expectedSinkClassifications", {}))
     if classifications != expected_classifications:
         errors.append(
@@ -743,7 +761,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {dict(expected_classifications)}, observed {dict(classifications)}"
         )
     if dict(expected_classifications) != EXPECTED_SINK_CLASSIFICATIONS:
-        errors.append("sink classifications must remain 2 post-fallible, 4 prepared and 0 rollback-aware")
+        errors.append("sink classifications must remain 1 post-fallible, 4 prepared and 0 rollback-aware")
 
     forwards = boundary.get("internalForwards", {})
     forward_groups = forwards.get("groups", [])
@@ -777,7 +795,7 @@ def manifest_errors(manifest) -> list[str]:
     if boundary.get("entryRecordingCallTotal") != ENTRY_RECORDING_CALL_TOTAL:
         errors.append("entry recording-call total must remain 44")
     if boundary.get("expectedMigratedRemovalTotal") != EXPECTED_MIGRATED_REMOVAL_TOTAL:
-        errors.append("migrated recording-call removal total must remain 19")
+        errors.append("migrated recording-call removal total must remain 20")
     if boundary.get("expectedProviderForwardTotal") != EXPECTED_PROVIDER_FORWARD_TOTAL:
         errors.append("expected provider-forward total must remain 5")
     if provider_forward_total != EXPECTED_PROVIDER_FORWARD_TOTAL:
@@ -807,7 +825,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {boundary.get('expectedTotal')}"
         )
     if boundary.get("expectedTotal") != EXPECTED_RECORDING_CALL_TOTAL:
-        errors.append("recording boundary total must remain 31 after L-R08-07 slice 7")
+        errors.append("recording boundary total must remain 30 after L-R08-08 slice 1")
     if recording_total != (
         ENTRY_RECORDING_CALL_TOTAL -
         EXPECTED_MIGRATED_REMOVAL_TOTAL +
@@ -815,7 +833,7 @@ def manifest_errors(manifest) -> list[str]:
         coalesced_prepared_total
     ):
         errors.append(
-            "recording boundary must equal the 44-call entry minus nineteen "
+            "recording boundary must equal the 44-call entry minus twenty "
             "migrated calls plus five provider forwards and one prepared "
             "coalesced boundary"
         )
@@ -877,9 +895,9 @@ def manifest_errors(manifest) -> list[str]:
             errors.append("prepared owner enum name must remain canonical")
         declared_owners = tuple(declaration.get("owners", []))
         if declared_owners != PREPARED_PATTERN_OWNERS:
-            errors.append("prepared Pattern owners must enumerate the canonical seven")
+            errors.append("prepared Pattern owners must enumerate the canonical eight")
         if declaration.get("expectedCount") != len(PREPARED_PATTERN_OWNERS):
-            errors.append("prepared Pattern owner count must remain 7")
+            errors.append("prepared Pattern owner count must remain 8")
 
         methods = tuple(lifecycle.get("methods", []))
         if methods != PREPARED_PATTERN_LIFECYCLE_METHODS:
@@ -910,9 +928,9 @@ def manifest_errors(manifest) -> list[str]:
             surface.get("path") for surface in surfaces if isinstance(surface, dict)
         )
         if lifecycle.get("expectedSurfaceCount") != len(PREPARED_PATTERN_SURFACES):
-            errors.append("prepared Pattern lifecycle surface count must remain 8")
+            errors.append("prepared Pattern lifecycle surface count must remain 9")
         if surface_paths != PREPARED_PATTERN_SURFACES:
-            errors.append("prepared Pattern lifecycle must enumerate the canonical eight surfaces")
+            errors.append("prepared Pattern lifecycle must enumerate the canonical nine surfaces")
 
         surface_call_totals = Counter()
         manifest_owner_set = set()
@@ -950,10 +968,10 @@ def manifest_errors(manifest) -> list[str]:
             )
         if expected_surface_totals != EXPECTED_PREPARED_SURFACE_CALL_TOTALS:
             errors.append(
-                "prepared Pattern surface lifecycle totals must remain 9/1/10/10/1"
+                "prepared Pattern surface lifecycle totals must remain 10/1/11/11/2"
             )
         if manifest_owner_set != set(PREPARED_PATTERN_OWNERS):
-            errors.append("prepared Pattern surfaces must cover all seven owners")
+            errors.append("prepared Pattern surfaces must cover all eight owners")
 
         expected_call_totals = lifecycle.get("expectedCallTotals", {})
         combined_call_totals = Counter(surface_call_totals)
@@ -967,14 +985,41 @@ def manifest_errors(manifest) -> list[str]:
             )
         if expected_call_totals != EXPECTED_PREPARED_CALL_TOTALS:
             errors.append(
-                "prepared Pattern global lifecycle totals must remain 10/2/11/11/2"
+                "prepared Pattern global lifecycle totals must remain 11/2/12/12/3"
             )
 
         forbidden_methods = tuple(lifecycle.get("forbiddenRawMethods", []))
         if forbidden_methods != PREPARED_PATTERN_FORBIDDEN_RAW_METHODS:
             errors.append("prepared Pattern raw capture/record denylist must remain exact")
+        raw_exemptions = lifecycle.get("rawCallExemptions", [])
+        raw_exemption_counter = Counter()
+        for exception in raw_exemptions:
+            if not isinstance(exception, dict):
+                errors.append("prepared Pattern raw-call exemptions must be objects")
+                continue
+            key = (exception.get("path"), exception.get("method"))
+            count = exception.get("count")
+            if key in raw_exemption_counter:
+                errors.append(f"duplicate prepared Pattern raw-call exemption: {key}")
+            if key[0] not in PREPARED_PATTERN_SURFACES:
+                errors.append(f"prepared Pattern raw-call exemption has unknown surface: {key[0]}")
+            if key[1] not in PREPARED_PATTERN_FORBIDDEN_RAW_METHODS:
+                errors.append(f"prepared Pattern raw-call exemption has unknown method: {key[1]}")
+            if type(count) is not int or count <= 0:
+                errors.append(f"prepared Pattern raw-call exemption must be positive: {key}")
+                continue
+            raw_exemption_counter[key] = count
+        if dict(raw_exemption_counter) != PREPARED_PATTERN_RAW_CALL_EXEMPTIONS:
+            errors.append("prepared Pattern raw-call exemptions must remain the two R-09 captures")
         if lifecycle.get("expectedForbiddenRawCallTotal") != 0:
-            errors.append("migrated surfaces must retain zero raw capture/record calls")
+            errors.append("prepared Pattern unapproved raw-call total must remain zero")
+        expected_raw_exemption_total = lifecycle.get("expectedRawCallExemptionTotal")
+        if expected_raw_exemption_total != sum(
+            PREPARED_PATTERN_RAW_CALL_EXEMPTIONS.values()
+        ):
+            errors.append("prepared Pattern approved raw-call total must remain exactly two")
+        if sum(raw_exemption_counter.values()) != expected_raw_exemption_total:
+            errors.append("prepared Pattern raw-call exemption total differs from its declaration")
 
     full_bank = manifest.get("preparedFullBankLifecycle")
     if not isinstance(full_bank, dict):
@@ -1816,7 +1861,7 @@ def observation_errors(manifest, observed) -> list[str]:
     )
     errors += counter_errors(
         "forbidden prepared-surface raw call",
-        Counter(),
+        expected_prepared_raw_call_counter(manifest),
         observed["preparedForbiddenRawCalls"],
     )
 
@@ -2193,7 +2238,7 @@ def synthetic_observation(manifest):
         "preparedLifecycleCalls": expected_prepared_lifecycle_counter(manifest),
         "preparedCentralDefinitions": expected_prepared_central_counter(manifest),
         "preparedOwnerReferences": expected_prepared_owner_reference_counter(manifest),
-        "preparedForbiddenRawCalls": Counter(),
+        "preparedForbiddenRawCalls": expected_prepared_raw_call_counter(manifest),
         "preparedFullBankOwners": tuple(full_bank["ownerDeclaration"]["owners"]),
         "preparedFullBankSurfaceCalls": (
             expected_prepared_full_bank_surface_call_counter(manifest)
@@ -2299,6 +2344,7 @@ def prepared_lifecycle_self_test(manifest) -> bool:
             "enum class SequencerPreparedPatternEditOwner : unsigned char {\n"
             "  PatternPitch = 0, PropertySelector, StepContent,\n"
             "  StepEditSession, StepToggle, PatternEditor, PageStructure,\n"
+            "  QuickControls,\n"
             "};\n",
             encoding="utf-8",
         )
@@ -2910,8 +2956,8 @@ def run_self_tests(manifest) -> list[str]:
     removal_drift = copy.deepcopy(manifest)
     removal_drift["recordingBoundary"]["expectedMigratedRemovalTotal"] -= 1
     removal_errors = manifest_errors(removal_drift)
-    if not any("removal total must remain 19" in error for error in removal_errors):
-        failures.append("L-R08-07 slice-7 migrated-removal drift was not rejected")
+    if not any("removal total must remain 20" in error for error in removal_errors):
+        failures.append("L-R08-08 slice-1 migrated-removal drift was not rejected")
 
     if not scanner_self_test(manifest):
         failures.append("source scanner/sanitizer fixture was not classified exactly")
@@ -2937,7 +2983,7 @@ def load_manifest(path: Path):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Check the L-R08-07 Sequencer history inventory ratchet."
+        description="Check the L-R08-08 Sequencer history inventory ratchet."
     )
     parser.add_argument("--root", type=Path, default=ROOT, help="Core repository root")
     parser.add_argument(
@@ -3010,7 +3056,7 @@ def main() -> int:
         "  prepared Pattern lifecycle: "
         f"{lifecycle['ownerDeclaration']['expectedCount']} owners / "
         f"{lifecycle['expectedSurfaceCount']} lifecycle surfaces; "
-        "zero raw capture/record calls"
+        "two retained R-09 raw captures; zero raw record calls"
     )
     full_bank = manifest["preparedFullBankLifecycle"]
     print(

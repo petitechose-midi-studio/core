@@ -56,6 +56,7 @@ private:
     void clampFocusToLength();
     void prepareQuickControlsForOpen();
     bool captureOffsetSnapshot();
+    bool abortPreparedQuickControlsHistory();
     void discardModalSnapshots();
     void closeTransientQuickControlsState();
     int focusedItemOrderIndex() const;
@@ -77,11 +78,9 @@ private:
     oc::type::ScopeID scope_id_ = 0;
     core::state::sequencer::SequencerHistoryPatternSnapshot cancel_snapshot_{};
     core::state::sequencer::SequencerHistoryPatternSnapshot offset_snapshot_{};
-    core::state::sequencer::SequencerHistoryPatternSnapshot history_snapshot_{};
     SequencerHistoryDomainServices history_;
     bool cancel_snapshot_valid_ = false;
     bool offset_snapshot_valid_ = false;
-    bool history_snapshot_valid_ = false;
     bool cancel_retry_required_ = false;
 };
 

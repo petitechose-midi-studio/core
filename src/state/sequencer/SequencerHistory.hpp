@@ -111,9 +111,9 @@ enum class SequencerCoalescedPatternPayloadPlan : uint8_t {
     FullWithProspectiveGraph,
 };
 
-// Retained non-Quick-Control Pattern edits share the same prepared owner set
-// as the coalesced Step-property path. The owner/key pair is deliberately
-// scalar: all Graph/CC/Change ownership remains in CoreState.
+// Retained Pattern edits share the same prepared owner set as the coalesced
+// Step-property path. The owner/key pair is deliberately scalar: all
+// Graph/CC/Change ownership remains in CoreState.
 enum class SequencerPreparedPatternEditOwner : uint8_t {
     PatternPitch = 0,
     PropertySelector,
@@ -122,6 +122,7 @@ enum class SequencerPreparedPatternEditOwner : uint8_t {
     StepToggle,
     PatternEditor,
     PageStructure,
+    QuickControls,
 };
 
 // FullBank edit ownership remains typed across the handler facade so Project

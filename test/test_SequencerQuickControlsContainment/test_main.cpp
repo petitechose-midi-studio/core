@@ -3,9 +3,12 @@
 #endif
 
 #include <cassert>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
+#include <new>
 
 #include <config/InputIDs.hpp>
 #include <oc/api/ButtonAPI.hpp>
@@ -26,11 +29,67 @@
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 #include "support/CoreStorages.hpp"
 #include "support/InputTestHardware.hpp"
+#include "support/NotificationTestUtils.hpp"
 #include "support/SequencerHistoryTransactionAssertions.hpp"
 
 #if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
 #error "This test requires native EXTMEM failure injection"
 #endif
+
+namespace allocation_trace {
+
+constexpr std::size_t MAX_REQUESTS = 12U;
+bool enabled = false;
+std::array<std::size_t, MAX_REQUESTS> requests{};
+std::size_t count = 0U;
+bool overflow = false;
+
+void record(std::size_t bytes) {
+    if (!enabled) return;
+    const bool transactionRequest =
+        bytes == sizeof(core::state::sequencer::SequencerHistoryPatternChange) ||
+        bytes == sizeof(oc::note::sequencer::StepSequencerGraph) ||
+        bytes == sizeof(core::state::sequencer::SequencerCcLaneBank);
+    if (!transactionRequest) return;
+    if (count >= requests.size()) {
+        overflow = true;
+        return;
+    }
+    requests[count++] = bytes;
+}
+
+class Scope {
+public:
+    Scope() {
+        requests.fill(0U);
+        count = 0U;
+        overflow = false;
+        enabled = true;
+    }
+
+    ~Scope() { enabled = false; }
+
+    Scope(const Scope&) = delete;
+    Scope& operator=(const Scope&) = delete;
+};
+
+}  // namespace allocation_trace
+
+void* operator new(std::size_t bytes) {
+    allocation_trace::record(bytes);
+    if (void* memory = std::malloc(bytes)) return memory;
+    throw std::bad_alloc{};
+}
+
+void* operator new[](std::size_t bytes) { return ::operator new(bytes); }
+
+void operator delete(void* memory) noexcept { std::free(memory); }
+
+void operator delete[](void* memory) noexcept { ::operator delete(memory); }
+
+void operator delete(void* memory, std::size_t) noexcept { ::operator delete(memory); }
+
+void operator delete[](void* memory, std::size_t) noexcept { ::operator delete[](memory); }
 
 namespace {
 
@@ -58,6 +117,56 @@ constexpr bool hasGraph(PayloadKind kind) {
 
 constexpr bool hasCc(PayloadKind kind) {
     return kind == PayloadKind::CcOnly || kind == PayloadKind::GraphAndCc;
+}
+
+struct ExpectedAllocationRequests {
+    std::array<std::size_t, allocation_trace::MAX_REQUESTS> bytes{};
+    std::size_t count = 0U;
+
+    void push(std::size_t bytesToAllocate) {
+        assert(count < bytes.size());
+        bytes[count++] = bytesToAllocate;
+    }
+};
+
+ExpectedAllocationRequests expectedModalOpenAllocationRequests(PayloadKind kind) {
+    ExpectedAllocationRequests expected;
+    const auto appendSnapshotPayload = [&]() {
+        if (hasGraph(kind)) {
+            expected.push(sizeof(oc::note::sequencer::StepSequencerGraph));
+        }
+        if (hasCc(kind)) { expected.push(sizeof(seq::SequencerCcLaneBank)); }
+    };
+
+    appendSnapshotPayload();  // R-09 Cancel.
+    appendSnapshotPayload();  // R-09 Offset.
+    expected.push(sizeof(seq::SequencerHistoryPatternChange));
+    appendSnapshotPayload();  // Prepared Before.
+    appendSnapshotPayload();  // Reserved After.
+    appendSnapshotPayload();  // Reserved bank synchronization.
+    return expected;
+}
+
+void assertModalOpenAllocationRequests(PayloadKind kind) {
+    const auto expected = expectedModalOpenAllocationRequests(kind);
+    assert(!allocation_trace::overflow);
+    if (allocation_trace::count != expected.count) {
+        std::cerr << "modal Open allocation count mismatch: expected="
+                  << expected.count << " actual=" << allocation_trace::count << '\n';
+        for (std::size_t index = 0U; index < allocation_trace::count; ++index) {
+            std::cerr << "  request[" << index << "]="
+                      << allocation_trace::requests[index] << '\n';
+        }
+    }
+    assert(allocation_trace::count == expected.count);
+    for (std::size_t index = 0U; index < expected.count; ++index) {
+        if (allocation_trace::requests[index] != expected.bytes[index]) {
+            std::cerr << "modal Open allocation request mismatch at " << index
+                      << ": expected=" << expected.bytes[index]
+                      << " actual=" << allocation_trace::requests[index] << '\n';
+        }
+        assert(allocation_trace::requests[index] == expected.bytes[index]);
+    }
 }
 
 struct Harness {
@@ -221,6 +330,16 @@ void preparePayload(Harness& h, PayloadKind kind) {
         assert(seq::setSequencerCcLaneEvent(*bank, 0U, 0U, 99U).changed());
         pattern.bumpCcLaneRevision();
     }
+}
+
+void settlePreparedFixture(Harness& h) {
+    test_support::drainNotifications();
+    h.state.flushProjectMutationCoalescing();
+    test_support::drainNotifications();
+    h.state.flushProjectMutationCoalescing();
+    h.state.acknowledgeProjectSessionSave(h.state.project.metadata.modifiedCounter);
+    assert(!h.state.hasPendingProjectSessionSave());
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 }
 
 void captureMusical(
@@ -491,27 +610,59 @@ void test_quick_direct_root_length_preserves_trimmed_cc_history() {
         << "[PASS] Quick direct root Length captures destructive CC trim\n";
 }
 
-void test_graphless_open_performs_no_extmem_allocation() {
-    Harness h;
-    preparePayload(h, PayloadKind::FlatOnly);
-    seq::SequencerHistoryPatternSnapshot baseline;
-    captureMusical(h, baseline);
-
+void test_graphless_open_prepares_one_history_owner() {
     {
+        Harness h;
+        preparePayload(h, PayloadKind::FlatOnly);
+        const auto invariant = captureRejectionInvariant(h);
+
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
         h.press(Config::ButtonID::LEFT_CENTER);
         h.advance(1000U);
-        assert(h.state.sequencer.patternQuickControls.selecting.get());
-        assert(core::app::testing::extmemAllocationAttempt == 0U);
-        assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
+        assert(!h.state.sequencer.patternQuickControls.selecting.get());
+        assertFailureWasConsumed(1U);
+        assertRejectionInvariant(h, invariant);
     }
 
-    h.release(Config::ButtonID::LEFT_CENTER);
-    assert(!h.state.sequencer.patternQuickControls.selecting.get());
-    assertMusicalEquals(h, baseline);
-    assert(h.state.sequencerHistory.undoCount() == 0U);
+    {
+        Harness h;
+        preparePayload(h, PayloadKind::FlatOnly);
+        seq::SequencerHistoryPatternSnapshot baseline;
+        captureMusical(h, baseline);
 
-    std::cout << "[PASS] graphless open performs zero EXTMEM allocations\n";
+        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        h.press(Config::ButtonID::LEFT_CENTER);
+        h.advance(1000U);
+        assert(h.state.sequencer.patternQuickControls.selecting.get());
+        assertAllocationRatchet(1U);
+        h.release(Config::ButtonID::LEFT_CENTER);
+        assert(!h.state.sequencer.patternQuickControls.selecting.get());
+        assertAllocationRatchet(1U);
+        assertMusicalEquals(h, baseline);
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+    }
+
+    std::cout << "[PASS] graphless open prepares exactly one History owner\n";
+}
+
+void test_modal_open_allocation_request_sequence_is_exact() {
+    for (const auto kind : {PayloadKind::FlatOnly, PayloadKind::GraphOnly,
+                            PayloadKind::CcOnly, PayloadKind::GraphAndCc}) {
+        Harness h;
+        preparePayload(h, kind);
+        {
+            allocation_trace::Scope trace;
+            h.press(Config::ButtonID::LEFT_CENTER);
+            h.advance(1000U);
+            assert(h.state.sequencer.patternQuickControls.selecting.get());
+            assertModalOpenAllocationRequests(kind);
+        }
+        h.release(Config::ButtonID::LEFT_CENTER);
+        assert(!h.state.sequencer.patternQuickControls.selecting.get());
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+    }
+
+    std::cout << "[PASS] modal Open request sequence matches the frozen payload equation\n";
 }
 
 void test_graphless_offset_cancel_and_apply_are_allocation_free() {
@@ -520,10 +671,10 @@ void test_graphless_offset_cancel_and_apply_are_allocation_free() {
         preparePayload(h, PayloadKind::FlatOnly);
         seq::SequencerHistoryPatternSnapshot baseline;
         captureMusical(h, baseline);
+        holdOpen(h);
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            holdOpen(h);
             navigateToOffset(h);
             h.turn(Config::EncoderID::OPT, normalizedOffset(1));
             assert(h.state.sequencer.patternQuickControls.offsetSteps.get() == 1);
@@ -534,14 +685,12 @@ void test_graphless_offset_cancel_and_apply_are_allocation_free() {
             assertMusicalEquals(h, baseline);
             h.turn(Config::EncoderID::OPT, normalizedOffset(2));
             assertPayloadAtOffset(h, PayloadKind::FlatOnly, 2U);
+            h.release(Config::ButtonID::LEFT_CENTER);
+            assert(!h.state.sequencer.patternQuickControls.selecting.get());
             assert(core::app::testing::extmemAllocationAttempt == 0U);
             assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
         }
 
-        // Apply's normal History record is outside the zero-allocation restore
-        // assertion and remains owned by L-R08-08.
-        h.release(Config::ButtonID::LEFT_CENTER);
-        assert(!h.state.sequencer.patternQuickControls.selecting.get());
         assertPayloadAtOffset(h, PayloadKind::FlatOnly, 2U);
         assert(h.state.sequencerHistory.undoCount() == 1U);
     }
@@ -551,10 +700,10 @@ void test_graphless_offset_cancel_and_apply_are_allocation_free() {
         preparePayload(h, PayloadKind::FlatOnly);
         seq::SequencerHistoryPatternSnapshot baseline;
         captureMusical(h, baseline);
+        holdOpen(h);
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            holdOpen(h);
             navigateToOffset(h);
             h.turn(Config::EncoderID::OPT, normalizedOffset(1));
             assertPayloadAtOffset(h, PayloadKind::FlatOnly, 1U);
@@ -570,7 +719,179 @@ void test_graphless_offset_cancel_and_apply_are_allocation_free() {
         assert(h.state.sequencerHistory.undoCount() == 0U);
     }
 
-    std::cout << "[PASS] graphless Offset, Cancel, and Apply preserve zero-allocation semantics\n";
+    std::cout << "[PASS] graphless Offset, Cancel, and Apply tails allocate zero\n";
+}
+
+void test_modal_graph_cc_offset_apply_is_prepared_and_undoable() {
+    Harness h;
+    preparePayload(h, PayloadKind::GraphAndCc);
+    assert(seq::initializeTrackBankFromActive(
+        h.state.sequencerTracks,
+        h.state.sequencer
+    ));
+    settlePreparedFixture(h);
+
+    seq::SequencerHistoryPatternSnapshot before;
+    captureMusical(h, before);
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
+
+    holdOpen(h);
+    navigateToOffset(h);
+    h.turn(Config::EncoderID::OPT, normalizedOffset(1));
+    assertPayloadAtOffset(h, PayloadKind::GraphAndCc, 1U);
+    h.turn(Config::EncoderID::OPT, normalizedOffset(-2));
+    assertPayloadAtOffset(h, PayloadKind::GraphAndCc, 6U);
+    h.turn(Config::EncoderID::OPT, normalizedOffset(0));
+    assertPayloadAtOffset(h, PayloadKind::GraphAndCc, 0U);
+    h.turn(Config::EncoderID::OPT, normalizedOffset(2));
+    assertPayloadAtOffset(h, PayloadKind::GraphAndCc, 2U);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.release(Config::ButtonID::LEFT_CENTER);
+        assert(!h.state.sequencer.patternQuickControls.selecting.get());
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
+    }
+
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+    assert(h.state.projectHistory.undoCount() == projectUndoBefore + 1U);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 1U);
+    assert(h.state.project.metadata.dirty);
+    assert(h.state.hasPendingProjectSessionSave());
+    assertPatternPayloadAtOffset(
+        h.state.sequencerTracks.track(0U),
+        PayloadKind::GraphAndCc,
+        2U
+    );
+
+    assert(h.state.undoSequencerHistory());
+    assertMusicalEquals(h, before);
+    assertPatternPayloadAtOffset(
+        h.state.sequencerTracks.track(0U),
+        PayloadKind::GraphAndCc,
+        0U
+    );
+    assert(h.state.redoSequencerHistory());
+    assertPayloadAtOffset(h, PayloadKind::GraphAndCc, 2U);
+    assertPatternPayloadAtOffset(
+        h.state.sequencerTracks.track(0U),
+        PayloadKind::GraphAndCc,
+        2U
+    );
+
+    std::cout << "[PASS] modal Graph+CC Offset Apply is prepared, allocation-free, and undoable\n";
+}
+
+void test_modal_length_and_division_publish_one_exact_boundary() {
+    struct Case {
+        seq::PatternQuickControlItem item;
+        float normalized;
+    };
+    const std::array cases{
+        Case{seq::PatternQuickControlItem::LENGTH, normalizedRootLength(4U)},
+        Case{seq::PatternQuickControlItem::DIVISION, 1.0F},
+    };
+
+    for (const auto& testCase : cases) {
+        Harness h;
+        preparePayload(h, PayloadKind::GraphAndCc);
+        assert(seq::initializeTrackBankFromActive(
+            h.state.sequencerTracks,
+            h.state.sequencer
+        ));
+        settlePreparedFixture(h);
+
+        seq::SequencerHistoryPatternSnapshot before;
+        captureMusical(h, before);
+        const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+        const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
+        const uint8_t lengthBefore = h.state.sequencer.pattern.length.get();
+        const auto divisionBefore = h.state.sequencer.pattern.stepsPerBeat.get();
+
+        holdOpen(h);
+        if (testCase.item == seq::PatternQuickControlItem::DIVISION) {
+            navigateToDivision(h);
+        }
+        h.turn(Config::EncoderID::OPT, testCase.normalized);
+        if (testCase.item == seq::PatternQuickControlItem::LENGTH) {
+            assert(h.state.sequencer.pattern.length.get() != lengthBefore);
+        } else {
+            assert(h.state.sequencer.pattern.stepsPerBeat.get() != divisionBefore);
+        }
+
+        seq::SequencerHistoryPatternSnapshot after;
+        captureMusical(h, after);
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            h.release(Config::ButtonID::LEFT_CENTER);
+            assert(!h.state.sequencer.patternQuickControls.selecting.get());
+            assert(core::app::testing::extmemAllocationAttempt == 0U);
+            assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
+        }
+
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.sequencerHistory.undoCount() == 1U);
+        assert(h.state.projectHistory.undoCount() == projectUndoBefore + 1U);
+        assert(h.state.project.metadata.modifiedCounter == modifiedBefore + 1U);
+        assert(h.state.project.metadata.dirty);
+        assert(h.state.hasPendingProjectSessionSave());
+        assert(
+            h.state.sequencerTracks.track(0U).length.get() ==
+            h.state.sequencer.pattern.length.get()
+        );
+        assert(
+            h.state.sequencerTracks.track(0U).stepsPerBeat.get() ==
+            h.state.sequencer.pattern.stepsPerBeat.get()
+        );
+
+        assert(h.state.undoSequencerHistory());
+        assertMusicalEquals(h, before);
+        assert(h.state.redoSequencerHistory());
+        assertMusicalEquals(h, after);
+    }
+
+    std::cout << "[PASS] modal Length and Division each publish one exact boundary\n";
+}
+
+void test_modal_graph_cc_net_return_publishes_nothing() {
+    Harness h;
+    preparePayload(h, PayloadKind::GraphAndCc);
+    assert(seq::initializeTrackBankFromActive(
+        h.state.sequencerTracks,
+        h.state.sequencer
+    ));
+    settlePreparedFixture(h);
+
+    seq::SequencerHistoryPatternSnapshot before;
+    captureMusical(h, before);
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const uint8_t projectUndoBefore = h.state.projectHistory.undoCount();
+
+    holdOpen(h);
+    navigateToOffset(h);
+    h.turn(Config::EncoderID::OPT, normalizedOffset(1));
+    h.turn(Config::EncoderID::OPT, normalizedOffset(0));
+    assertMusicalEquals(h, before);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.release(Config::ButtonID::LEFT_CENTER);
+        assert(!h.state.sequencer.patternQuickControls.selecting.get());
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
+    }
+
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(h.state.projectHistory.undoCount() == projectUndoBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(!h.state.hasPendingProjectSessionSave());
+    assertMusicalEquals(h, before);
+
+    std::cout << "[PASS] modal Graph+CC net return publishes no History or dirty/save\n";
 }
 
 void verifyOpenFailure(PayloadKind kind, std::size_t ordinal) {
@@ -606,24 +927,27 @@ void verifyOpenAllocationRatchet(PayloadKind kind, std::size_t expectedAttempts)
         h.advance(1000U);
         assert(h.state.sequencer.patternQuickControls.selecting.get());
         assertAllocationRatchet(expectedAttempts);
+        h.release(Config::ButtonID::LEFT_CENTER);
+        assert(!h.state.sequencer.patternQuickControls.selecting.get());
+        assertAllocationRatchet(expectedAttempts);
     }
 
-    h.release(Config::ButtonID::LEFT_CENTER);
-    assert(!h.state.sequencer.patternQuickControls.selecting.get());
     assert(h.state.sequencerHistory.undoCount() == 0U);
 }
 
 void test_open_failure_matrix_is_atomic() {
-    for (std::size_t ordinal = 1U; ordinal <= 3U; ++ordinal) {
+    verifyOpenFailure(PayloadKind::FlatOnly, 1U);
+    for (std::size_t ordinal = 1U; ordinal <= 6U; ++ordinal) {
         verifyOpenFailure(PayloadKind::GraphOnly, ordinal);
         verifyOpenFailure(PayloadKind::CcOnly, ordinal);
     }
-    for (std::size_t ordinal = 1U; ordinal <= 6U; ++ordinal) {
+    for (std::size_t ordinal = 1U; ordinal <= 11U; ++ordinal) {
         verifyOpenFailure(PayloadKind::GraphAndCc, ordinal);
     }
-    verifyOpenAllocationRatchet(PayloadKind::GraphOnly, 3U);
-    verifyOpenAllocationRatchet(PayloadKind::CcOnly, 3U);
-    verifyOpenAllocationRatchet(PayloadKind::GraphAndCc, 6U);
+    verifyOpenAllocationRatchet(PayloadKind::FlatOnly, 1U);
+    verifyOpenAllocationRatchet(PayloadKind::GraphOnly, 6U);
+    verifyOpenAllocationRatchet(PayloadKind::CcOnly, 6U);
+    verifyOpenAllocationRatchet(PayloadKind::GraphAndCc, 11U);
 
     std::cout << "[PASS] open failure matrix is atomic at every allocation ordinal\n";
 }
@@ -1062,8 +1386,12 @@ int main() {
     test_quick_direct_caller_rejects_fail_one_atomically();
     test_quick_direct_root_offset_graph_cc_is_full_and_undoable();
     test_quick_direct_root_length_preserves_trimmed_cc_history();
-    test_graphless_open_performs_no_extmem_allocation();
+    test_graphless_open_prepares_one_history_owner();
+    test_modal_open_allocation_request_sequence_is_exact();
     test_graphless_offset_cancel_and_apply_are_allocation_free();
+    test_modal_graph_cc_offset_apply_is_prepared_and_undoable();
+    test_modal_length_and_division_publish_one_exact_boundary();
+    test_modal_graph_cc_net_return_publishes_nothing();
     test_open_failure_matrix_is_atomic();
     test_offset_entry_failure_matrix_is_retryable();
     test_cancel_failure_matrix_preserves_retry_contract();

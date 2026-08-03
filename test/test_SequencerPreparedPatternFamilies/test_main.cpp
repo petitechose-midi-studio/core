@@ -101,11 +101,11 @@ void assertEditorRevisionVector(const Harness& h, const tx::StateInvariant& expe
     assert(pattern.ccLaneRevision.get() == expected.editorCcRevision);
 }
 
-void test_all_seven_owners_publish_one_exact_undo() {
+void test_all_eight_owners_publish_one_exact_undo() {
     constexpr std::array owners{
         Owner::PatternPitch,    Owner::PropertySelector, Owner::StepContent,
         Owner::StepEditSession, Owner::StepToggle,       Owner::PatternEditor,
-        Owner::PageStructure,
+        Owner::PageStructure,   Owner::QuickControls,
     };
 
     for (uint8_t index = 0U; index < owners.size(); ++index) {
@@ -125,7 +125,7 @@ void test_all_seven_owners_publish_one_exact_undo() {
         assert(h.state.sequencer.pattern.note[kStep] == note);
     }
 
-    std::cout << "[PASS] all seven prepared owners publish one exact Undo\n";
+    std::cout << "[PASS] all eight prepared owners publish one exact Undo\n";
 }
 
 void assert_typed_abort_restores_exact_before(Plan plan, bool afterSeal) {
@@ -733,6 +733,40 @@ void test_pattern_editor_track_index_aba_requires_exact_payload_owner() {
     std::cout << "[PASS] Track index ABA retains exact payload identity\n";
 }
 
+void test_quick_controls_owner_replacement_keeps_identity_guards_strict() {
+    constexpr auto owner = Owner::QuickControls;
+    constexpr uint8_t key = 0U;
+
+    {
+        Harness h;
+        assert(begin(h, owner, key, Plan::FullCurrentPayload) == BeginOutcome::Started);
+        assert(seq::ensureGraphRoot(h.state.sequencer.pattern));
+        assert(h.state.sequencer.setStepNoteAt(kStep, 79U));
+        assert(h.state.sealSequencerPreparedPatternEdit(
+                   owner, key, true, descriptor()) == SealOutcome::FailedClosed);
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
+        assert(h.state.sequencer.pattern.note[kStep] == kInitialNote);
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+    }
+
+    {
+        Harness h;
+        prepareTwoTrackFullPayloadPatternEditorHarness(h);
+        assert(begin(h, owner, key, Plan::FullCurrentPayload) == BeginOutcome::Started);
+        assert(h.state.sequencer.setStepNoteAt(kStep, 79U));
+        assert(seq::switchActiveTrack(h.state.sequencerTracks, h.state.sequencer, 1U));
+        assert(h.state.sealSequencerPreparedPatternEdit(
+                   owner, key, true, descriptor()) == SealOutcome::FailedClosed);
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.sequencer.pattern.note[kStep] == 48U);
+        assert(h.state.sequencerTracks.track(0U).note[kStep] == kInitialNote);
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+    }
+
+    std::cout << "[PASS] Quick owner replacement keeps topology and Track identity strict\n";
+}
+
 void test_post_write_plan_failure_rolls_back_and_unwedges_owner() {
     Harness h;
     constexpr auto owner = Owner::StepEditSession;
@@ -956,7 +990,7 @@ void test_unused_prospective_graph_is_released_before_publication() {
 }  // namespace
 
 int main() {
-    test_all_seven_owners_publish_one_exact_undo();
+    test_all_eight_owners_publish_one_exact_undo();
     test_typed_abort_is_exact_before_and_after_seal();
     test_failed_full_abort_is_write_atomic_and_retryable();
     test_typed_abort_rearms_preexisting_generic_mutation();
@@ -974,6 +1008,7 @@ int main() {
     test_inactive_commit_preserves_new_track_generic_obligation();
     test_pattern_editor_rejects_inactive_payload_owner_substitution();
     test_pattern_editor_track_index_aba_requires_exact_payload_owner();
+    test_quick_controls_owner_replacement_keeps_identity_guards_strict();
     test_post_write_plan_failure_rolls_back_and_unwedges_owner();
     test_full_post_write_failure_rolls_back_without_allocation();
     test_full_continuation_failure_rolls_back_whole_transaction();

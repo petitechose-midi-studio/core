@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "scope": "L-R08-07 prepared Track-transfer convergence slice 7",
+  "scope": "L-R08-08 normal Quick Controls prepared migration slice 1",
   "recordingBoundary": {
     "entryRecordingCallTotal": 44,
-    "expectedMigratedRemovalTotal": 19,
+    "expectedMigratedRemovalTotal": 20,
     "expectedProviderForwardTotal": 5,
     "expectedCoalescedPreparedTotal": 1,
-    "expectedTotal": 31,
+    "expectedTotal": 30,
     "memberDispatch": {
       "methods": [
         "recordPattern",
@@ -19,22 +19,15 @@
         "recordPreparedStructure"
       ],
       "expectedMethodCount": 8,
-      "expectedTotal": 24,
-      "expectedSinkTotal": 6,
+      "expectedTotal": 23,
+      "expectedSinkTotal": 5,
       "expectedServiceAdapterTotal": 18,
       "expectedSinkClassifications": {
-        "post-fallible": 2,
+        "post-fallible": 1,
         "prepared": 4,
         "rollback-aware": 0
       },
       "groups": [
-        {
-          "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
-          "method": "recordPattern",
-          "count": 1,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
         {
           "path": "src/handler/sequencer/SequencerStructureHistoryUtils.hpp",
           "method": "recordStructure",
@@ -197,7 +190,7 @@
     "ownerDeclaration": {
       "path": "src/state/sequencer/SequencerHistory.hpp",
       "enum": "SequencerPreparedPatternEditOwner",
-      "expectedCount": 7,
+      "expectedCount": 8,
       "owners": [
         "PatternPitch",
         "PropertySelector",
@@ -205,7 +198,8 @@
         "StepEditSession",
         "StepToggle",
         "PatternEditor",
-        "PageStructure"
+        "PageStructure",
+        "QuickControls"
       ]
     },
     "methods": [
@@ -236,20 +230,20 @@
         "abortPreparedPatternEdit": 1
       }
     },
-    "expectedSurfaceCount": 8,
+    "expectedSurfaceCount": 9,
     "expectedSurfaceCallTotals": {
-      "beginPreparedPatternEdit": 9,
-      "preparedPatternEditReady": 1,
-      "sealPreparedPatternEdit": 10,
-      "commitPreparedPatternEdit": 10,
-      "abortPreparedPatternEdit": 1
-    },
-    "expectedCallTotals": {
       "beginPreparedPatternEdit": 10,
-      "preparedPatternEditReady": 2,
+      "preparedPatternEditReady": 1,
       "sealPreparedPatternEdit": 11,
       "commitPreparedPatternEdit": 11,
       "abortPreparedPatternEdit": 2
+    },
+    "expectedCallTotals": {
+      "beginPreparedPatternEdit": 11,
+      "preparedPatternEditReady": 2,
+      "sealPreparedPatternEdit": 12,
+      "commitPreparedPatternEdit": 12,
+      "abortPreparedPatternEdit": 3
     },
     "forbiddenRawMethods": [
       "captureHistorySnapshot",
@@ -258,6 +252,15 @@
       "recordFlatPattern"
     ],
     "expectedForbiddenRawCallTotal": 0,
+    "expectedRawCallExemptionTotal": 2,
+    "rawCallExemptions": [
+      {
+        "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
+        "method": "captureHistorySnapshot",
+        "count": 2,
+        "reason": "Retained R-09 Cancel and Offset transactional snapshots"
+      }
+    ],
     "surfaces": [
       {
         "path": "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
@@ -359,6 +362,19 @@
         "calls": {
           "beginPreparedPatternEdit": 1,
           "preparedPatternEditReady": 1,
+          "sealPreparedPatternEdit": 1,
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 1
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
+        "ownerReferences": {
+          "QuickControls": 1
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 1,
           "commitPreparedPatternEdit": 1,
           "abortPreparedPatternEdit": 1

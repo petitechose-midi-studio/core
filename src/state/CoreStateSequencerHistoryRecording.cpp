@@ -52,6 +52,16 @@ FLASHMEM bool hasCanonicalCcPayload(
     return lanes != nullptr && sequencer::sequencerCcLaneCount(*lanes) != 0U;
 }
 
+FLASHMEM bool preparedPayloadOwnerPresenceMatches(
+    const sequencer::SequencerHistoryPatternChange& change,
+    const sequencer::SequencerPatternState& pattern
+) {
+    return change.preparedGraphOwnerProofPresent() ==
+               static_cast<bool>(pattern.graph) &&
+           change.preparedCcLaneOwnerProofPresent() ==
+               static_cast<bool>(pattern.ccLanes);
+}
+
 FLASHMEM bool preparedFullBankSourceTopologyMatches(
     const sequencer::SequencerTrackBankState& bank,
     const sequencer::SequencerState& active,
@@ -759,8 +769,8 @@ FLASHMEM bool CoreState::sealSequencerPatternHistoryCoalescing(bool mutationChan
 
 FLASHMEM sequencer::SequencerPreparedPatternEditSealOutcome
 CoreState::sealSequencerPreparedPatternEdit(sequencer::SequencerPreparedPatternEditOwner owner,
-                                            uint8_t key, bool mutationChanged,
-                                            sequencer::SequencerHistoryDescriptor descriptor) {
+                                             uint8_t key, bool mutationChanged,
+                                             sequencer::SequencerHistoryDescriptor descriptor) {
     using Outcome = sequencer::SequencerPreparedPatternEditSealOutcome;
 
     auto& pending = sequencerDomain_.coalescedPatternHistory;
@@ -770,12 +780,30 @@ CoreState::sealSequencerPreparedPatternEdit(sequencer::SequencerPreparedPatternE
         pending.sealed || !pending.preparedPatternChange) {
         return Outcome::Failed;
     }
-    if (!sequencer::preparedActiveTrackSynchronizationMatches(sequencerTracks,
-                                                              pending.synchronization) ||
-        !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(sequencer.pattern)) {
+    const bool synchronizationMatches =
+        sequencer::preparedActiveTrackSynchronizationMatches(sequencerTracks,
+                                                              pending.synchronization);
+    const bool payloadOwnerProofMatches =
+        pending.preparedPatternChange->preparedPayloadOwnerProofMatches(sequencer.pattern);
+    const bool quickControlsPayloadReplacement =
+        owner == sequencer::SequencerPreparedPatternEditOwner::QuickControls &&
+        pending.payloadPlan ==
+            sequencer::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload &&
+        !pending.graphCompactionRequested() &&
+        preparedPayloadOwnerPresenceMatches(*pending.preparedPatternChange,
+                                            sequencer.pattern);
+    if (!synchronizationMatches ||
+        (!payloadOwnerProofMatches && !quickControlsPayloadReplacement)) {
         if (rollbackPreparedSequencerPatternEdit_()) return Outcome::FailedClosed;
         OC_LOG_ERROR(kPreparedFamilyIdentityRollbackFailed);
         return Outcome::Failed;
+    }
+    if (!payloadOwnerProofMatches) {
+        // R-09 Offset restoration intentionally replaces the live Graph/CC
+        // owners while preserving the prepared presence topology. Only the
+        // typed Quick Controls family may acknowledge that replacement; the
+        // reserved capture below remains the authoritative payload check.
+        pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern);
     }
 
     if (!mutationChanged) {
@@ -1114,11 +1142,28 @@ CoreState::abortSequencerPreparedPatternEdit(
 ) {
     using Outcome = sequencer::SequencerPreparedPatternEditAbortOutcome;
 
-    const auto& pending = sequencerDomain_.coalescedPatternHistory;
+    auto& pending = sequencerDomain_.coalescedPatternHistory;
     if (!pending.pending) return Outcome::NoPending;
     if (pending.kind != SequencerDomainState::CoalescedPatternHistory::Kind::PreparedFamily ||
         pending.familyOwner != owner || pending.familyKey != key) {
         return Outcome::Failed;
+    }
+    if (owner == sequencer::SequencerPreparedPatternEditOwner::QuickControls &&
+        pending.payloadPlan ==
+            sequencer::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload &&
+        !pending.graphCompactionRequested() && pending.preparedPatternChange &&
+        sequencer::preparedActiveTrackSynchronizationMatches(sequencerTracks,
+                                                              pending.synchronization) &&
+        preparedPayloadOwnerPresenceMatches(*pending.preparedPatternChange,
+                                            sequencer.pattern) &&
+        !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
+            sequencer.pattern)) {
+        // A successful R-09 Cancel restores the exact opening payload but
+        // intentionally replaces its Graph/CC owners. Accept that replacement
+        // only for the typed Quick Controls family and unchanged active Track;
+        // the allocation-free rollback below still validates the full owner
+        // presence topology before consuming the prepared bundle.
+        pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern);
     }
     return rollbackPreparedSequencerPatternEdit_() ? Outcome::Aborted : Outcome::Failed;
 }

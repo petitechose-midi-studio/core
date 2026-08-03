@@ -6,7 +6,6 @@
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
 #include <config/TimeCompat.hpp>
-#include <utility>
 
 #include "handler/common/NavigationUtils.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
@@ -21,6 +20,14 @@ using EncoderID = Config::EncoderID;
 namespace input_utils = core::handler::sequencer::input_utils;
 namespace interaction_policy = core::handler::sequencer::interaction_policy;
 using Item = core::state::sequencer::PatternQuickControlItem;
+using PreparedAbortOutcome =
+    core::state::sequencer::SequencerPreparedPatternEditAbortOutcome;
+using PreparedBeginOutcome =
+    core::state::sequencer::SequencerPreparedPatternEditBeginOutcome;
+using PreparedCommitOutcome =
+    core::state::sequencer::SequencerPreparedPatternEditCommitOutcome;
+using PreparedSealOutcome =
+    core::state::sequencer::SequencerPreparedPatternEditSealOutcome;
 
 namespace {
 
@@ -33,6 +40,15 @@ constexpr uint8_t CYCLE_LENGTH_MIN = 1;
 constexpr uint8_t CYCLE_LENGTH_MAX =
     oc::note::sequencer::StepSequencerGraphLimits::MAX_CYCLE_STATES_PER_SET;
 constexpr int CHILD_ITEM_COUNT = 2;
+constexpr auto QUICK_CONTROLS_HISTORY_OWNER =
+    core::state::sequencer::SequencerPreparedPatternEditOwner::QuickControls;
+constexpr uint8_t QUICK_CONTROLS_HISTORY_KEY = 0U;
+
+constexpr core::state::sequencer::SequencerHistoryDescriptor quickControlsHistoryDescriptor() {
+    return {
+        .kind = core::state::sequencer::SequencerHistoryActionKind::QuickControls,
+    };
+}
 
 inline oc::type::IsActiveFn selectingPredicate(core::state::sequencer::SequencerState& sequencer) {
     return [&sequencer]() { return sequencer.patternQuickControls.selecting.get(); };
@@ -180,9 +196,11 @@ FLASHMEM void SequencerPatternQuickControlsHandler::open() {
         discardModalSnapshots();
         return;
     }
-    history_snapshot_valid_ =
-        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
-    if (!history_snapshot_valid_) {
+    const auto beginOutcome = history_.beginPreparedPatternEdit(
+        QUICK_CONTROLS_HISTORY_OWNER, QUICK_CONTROLS_HISTORY_KEY,
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload,
+        quickControlsHistoryDescriptor());
+    if (beginOutcome != PreparedBeginOutcome::Started) {
         discardModalSnapshots();
         return;
     }
@@ -197,17 +215,29 @@ FLASHMEM void SequencerPatternQuickControlsHandler::closeApply() {
     auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
     if (cancel_retry_required_) return;
-    if (history_snapshot_valid_) {
-        core::state::sequencer::SequencerHistoryPatternSnapshot after;
-        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after)) {
-            history_.recordPattern(
-                std::move(history_snapshot_), std::move(after),
-                core::state::sequencer::SequencerHistoryDescriptor{
-                    .kind = core::state::sequencer::SequencerHistoryActionKind::QuickControls,
-                });
+
+    const auto sealOutcome = history_.sealPreparedPatternEdit(
+        QUICK_CONTROLS_HISTORY_OWNER, QUICK_CONTROLS_HISTORY_KEY, true,
+        quickControlsHistoryDescriptor());
+    if (sealOutcome == PreparedSealOutcome::Cleared ||
+        sealOutcome == PreparedSealOutcome::FailedClosed) {
+        closeTransientQuickControlsState();
+        return;
+    }
+    if (sealOutcome == PreparedSealOutcome::Sealed) {
+        const auto commitOutcome =
+            history_.commitPreparedPatternEdit(QUICK_CONTROLS_HISTORY_OWNER);
+        if (commitOutcome == PreparedCommitOutcome::Committed) {
+            closeTransientQuickControlsState();
+            return;
         }
     }
-    closeTransientQuickControlsState();
+
+    if (abortPreparedQuickControlsHistory()) {
+        closeTransientQuickControlsState();
+    } else {
+        cancel_retry_required_ = true;
+    }
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::closeCancel() {
@@ -222,7 +252,11 @@ FLASHMEM void SequencerPatternQuickControlsHandler::closeCancel() {
     core::state::sequencer::refreshContentView(sequencer_);
     clampFocusToLength();
 
-    closeTransientQuickControlsState();
+    if (abortPreparedQuickControlsHistory()) {
+        closeTransientQuickControlsState();
+    } else {
+        cancel_retry_required_ = true;
+    }
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
@@ -415,14 +449,19 @@ FLASHMEM bool SequencerPatternQuickControlsHandler::captureOffsetSnapshot() {
     return offset_snapshot_valid_;
 }
 
+FLASHMEM bool SequencerPatternQuickControlsHandler::abortPreparedQuickControlsHistory() {
+    const auto outcome = history_.abortPreparedPatternEdit(
+        QUICK_CONTROLS_HISTORY_OWNER, QUICK_CONTROLS_HISTORY_KEY);
+    return outcome == PreparedAbortOutcome::Aborted ||
+           outcome == PreparedAbortOutcome::NoPending;
+}
+
 FLASHMEM void SequencerPatternQuickControlsHandler::discardModalSnapshots() {
     cancel_snapshot_valid_ = false;
     offset_snapshot_valid_ = false;
-    history_snapshot_valid_ = false;
     cancel_retry_required_ = false;
     cancel_snapshot_.reset();
     offset_snapshot_.reset();
-    history_snapshot_.reset();
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::closeTransientQuickControlsState() {
