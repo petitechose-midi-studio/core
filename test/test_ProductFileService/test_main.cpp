@@ -11,6 +11,7 @@
 
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/persistence/ProductPersistenceCoordinator.hpp"
+#include "../../src/persistence/ProductPersistenceJobCoordinator.hpp"
 
 namespace {
 
@@ -19,6 +20,7 @@ using core::persistence::ProductMutationLease;
 using core::persistence::ProductMutationOwner;
 using core::persistence::ProductPersistenceCoordinator;
 using core::persistence::ProductPersistenceCoordinatorSeed;
+using core::persistence::ProductPersistenceJobOwner;
 using core::persistence::ProductStorageIdentity;
 using core::persistence::ProductStorageState;
 
@@ -375,9 +377,24 @@ void test_service_removal_invalidates_prepare_and_open_stream_leases() {
     auto prepareLease = std::move(prepareResult.value());
     assert(service.owns(prepareLease, ProductMutationOwner::PROJECT));
 
+    auto jobResult = service.persistenceJobs().admit({
+        .owner = ProductPersistenceJobOwner::PROJECT_CATALOG,
+        .nowMs = 10U,
+        .quota = core::persistence::PRODUCT_PERSISTENCE_QUOTA_RAW_CATALOG,
+    });
+    assert(jobResult);
+    auto job = std::move(jobResult.value());
+    assert(service.persistenceJobs().owns(job));
+
     service.markMediaUnavailable();
     assert(service.storageState() == ProductStorageState::ABSENT);
     assert(!service.owns(prepareLease));
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(!service.persistenceJobs().owns(job));
+    assert(hasErrorCode(
+        service.persistenceJobs().cancel(job),
+        oc::type::ErrorCode::INVALID_STATE
+    ));
     assert(hasErrorCode(
         service.createDirectory(prepareLease, "projects/prepared"),
         oc::type::ErrorCode::INVALID_STATE

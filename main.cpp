@@ -66,6 +66,8 @@ static core::app::ExtmemUniquePtr<core::sequencer::SequencerRuntimeService>
 namespace {
 
 constexpr uint32_t STORAGE_RECOVERY_SAMPLE_MS = 500;
+const char kPersistenceTurnRejected[] PROGMEM =
+    "[Persistence] Foreground turn rejected: {}";
 
 struct StorageBackendRef {
     const char* label;
@@ -575,11 +577,35 @@ void loop() {
             app->update();
         }
 
+        // State maintenance is unconditional. Persistence jobs are admitted
+        // only after coalescers, transient state and pending applies advance.
+        {
+            OC_PERF_SCOPE(perfCoreState, "main.core-state");
+            coreState->update();
+        }
+
+        const uint32_t persistenceNowMs = millis();
+        bool persistenceTurnReady = false;
+        if (productFileService) {
+            const auto turn =
+                productFileService->persistenceJobs().beginTurn(persistenceNowMs);
+            persistenceTurnReady = static_cast<bool>(turn);
+            if (!turn) {
+                OC_LOG_ERROR(
+                    kPersistenceTurnRejected,
+                    oc::type::errorCodeToString(turn.error().code)
+                );
+            }
+        }
+
         // Sampling never pauses for an open stream: observed removal must
         // invalidate its lease and abort the backend handle immediately.
         {
             OC_PERF_SCOPE(perfStorageRecovery, "main.storage-recovery");
-            storageRecovery.update(millis(), coreState->statusBar.playing.get());
+            storageRecovery.update(
+                persistenceNowMs,
+                coreState->statusBar.playing.get()
+            );
         }
 
         const bool productFileWriteActive =
@@ -589,21 +615,14 @@ void loop() {
             projectSessionAutosaveService->writeSessionActive();
         const bool externalProductFileWriteActive =
             productFileWriteActive && !autosaveWriteActive;
-        // Update state-side coalescing before evaluating the project autosave.
-        if (!externalProductFileWriteActive) {
-            {
-                OC_PERF_SCOPE(perfCoreState, "main.core-state");
-                coreState->update();
-            }
-
-            if (projectSessionAutosaveService && productFileService &&
-                productFileService->available()) {
-                OC_PERF_SCOPE(perfAutosave, "main.autosave");
-                projectSessionAutosaveService->update(
-                    *coreState,
-                    millis()
-                );
-            }
+        if (persistenceTurnReady && !externalProductFileWriteActive &&
+            projectSessionAutosaveService && productFileService &&
+            productFileService->available()) {
+            OC_PERF_SCOPE(perfAutosave, "main.autosave");
+            projectSessionAutosaveService->update(
+                *coreState,
+                persistenceNowMs
+            );
         }
 
 #if defined(MS_UX_RECORDER)

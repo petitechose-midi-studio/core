@@ -2,6 +2,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <utility>
 
 #include <oc/impl/HostFileSystem.hpp>
 #include <oc/time/Time.hpp>
@@ -78,19 +79,39 @@ void test_restore_and_firmware_ordered_autosave() {
         configureProject(state, 67);
         assert(state.hasPendingProjectSessionSave());
 
-        // Match firmware ownership gating: an external product-file transfer
-        // blocks both CoreState persistence work and project autosave.
+        // An external transfer blocks autosave, but state maintenance and the
+        // single foreground scheduling boundary continue every pass.
         {
             core::test::ProductFileTestMutation externalWrite(productFiles);
             assert(productFiles.beginWrite(
                 externalWrite.lease(), "tmp/external-write.tmp", 1
             ));
-            nowMs = 20;
+            auto scheduledResult = productFiles.persistenceJobs().admit({
+                .owner = core::persistence::ProductPersistenceJobOwner::PROJECT_CATALOG,
+                .nowMs = 20U,
+                .quota = core::persistence::PRODUCT_PERSISTENCE_QUOTA_RAW_CATALOG,
+            });
+            assert(scheduledResult);
+            auto scheduled = std::move(scheduledResult.value());
+
+            state.statusBar.pulseNoteIn(20U);
+            assert(state.statusBar.noteInActive.get());
+            nowMs = 1000U;
             runtime.update();
+            assert(!state.statusBar.noteInActive.get());
             assert(state.hasPendingProjectSessionSave());
             assert(!std::filesystem::exists(
                 testRoot() / "midi-studio" / "session" / "current.mspj"
             ));
+
+            auto& jobs = productFiles.persistenceJobs();
+            assert(jobs.claimAdvance(scheduled, nowMs));
+            const auto duplicateClaim = jobs.claimAdvance(scheduled, nowMs);
+            assert(!duplicateClaim);
+            assert(duplicateClaim.error().code == oc::type::ErrorCode::INVALID_STATE);
+            assert(jobs.finishAdvance(scheduled, {}, true));
+            assert(jobs.cancel(scheduled));
+
             assert(productFiles.abortWrite(externalWrite.lease()));
             assert(externalWrite.release());
         }

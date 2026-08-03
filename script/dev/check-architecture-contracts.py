@@ -934,6 +934,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
             errors.append(f"{rel}: {description} (wrong order)")
 
     coordinator = "src/persistence/ProductPersistenceCoordinator.hpp"
+    job_coordinator = "src/persistence/ProductPersistenceJobCoordinator.hpp"
     service_header = "src/persistence/ProductFileService.hpp"
     service_source = "src/persistence/ProductFileService.cpp"
     save_header = "src/persistence/ProjectSaveTransaction.hpp"
@@ -955,17 +956,21 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     cmake_source = "CMakeLists.txt"
     machine_source = "src/persistence/StorageRecoveryMachine.cpp"
     main_source = "main.cpp"
+    sdl_runtime = "sdl/entry/SdlProjectSessionRuntime.hpp"
 
     for rel, pattern, description in (
         (coordinator, r"sizeof\(ProductStorageIdentity\)\s*==\s*8", "storage identity must remain 8 B"),
         (coordinator, r"sizeof\(ProductMutationLease\)\s*==\s*4", "lease must remain 4 B"),
         (coordinator, r"sizeof\(ProductPersistenceCoordinator\)\s*==\s*20", "coordinator must remain 20 B"),
-        (service_header, r"sizeof\(ProductFileService\)\s*==\s*28U", "file service must remain 28 B on ARM"),
+        (job_coordinator, r"sizeof\(ProductPersistenceJobCoordinator\)\s*<=\s*128U", "job coordinator must remain at most 128 B"),
+        (service_header, r"sizeof\(ProductFileService\)\s*==\s*156U", "file service must remain 156 B on ARM"),
         (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*48U", "Project save must remain 48 B on ARM"),
         (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*60U", "session store must remain 60 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*276U", "RPC write session must remain 276 B on ARM"),
         (rpc_header, r"sizeof\(FileSystemRpcHandler\)\s*==\s*300U", "RPC handler must remain 300 B on ARM"),
         (service_header, r"ProductPersistenceCoordinator\s+coordinator_\s*\{\s*\}", "file service must embed exactly one coordinator"),
+        (service_header, r"ProductPersistenceJobCoordinator\s+job_coordinator_\s*\{\s*\}", "file service must own exactly one job coordinator"),
+        (service_source, r"job_coordinator_\.invalidateAll\s*\(\s*\)", "media removal must invalidate every persistence job"),
         (recovery_header, r"static\s+ProductStorageRecoveryResult\s+reconcile\s*\(", "recovery service must remain stateless"),
         (atomic_header, r"PRODUCT_FILE_JOURNAL_SLOT_A\s*=.*?tmp/rpc-product-file-a\.journal", "ordinary journal slot A must remain fixed"),
         (atomic_header, r"PRODUCT_FILE_JOURNAL_SLOT_B\s*=.*?tmp/rpc-product-file-b\.journal", "ordinary journal slot B must remain fixed"),
@@ -1006,6 +1011,43 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         r"storageRecovery\.reconcileBoot\s*\(",
         "firmware boot and its retry must use unified recovery",
         count=2,
+    )
+    require(
+        main_source,
+        r"coreState->update\s*\(\s*\)",
+        "firmware foreground must advance CoreState exactly once",
+        count=1,
+    )
+    require_ordered_function(
+        main_source,
+        "loop",
+        (
+            r"coreState->update\s*\(\s*\)",
+            r"persistenceJobs\s*\(\s*\)\.beginTurn\s*\(",
+            r"storageRecovery\.update\s*\(",
+            r"projectSessionAutosaveService->update\s*\(",
+        ),
+        "foreground must maintain state before its one persistence turn and storage work",
+    )
+    require_ordered_function(
+        sdl_runtime,
+        "update",
+        (
+            r"state_\.update\s*\(\s*\)",
+            r"persistenceJobs\s*\(\s*\)\.beginTurn\s*\(",
+            r"autosave_->update\s*\(",
+        ),
+        "SDL must mirror state-before-persistence foreground order",
+    )
+    require_ordered_function(
+        service_source,
+        "markMediaUnavailable",
+        (
+            r"job_coordinator_\.invalidateAll\s*\(\s*\)",
+            r"filesystem_\.abortWrite\s*\(\s*\)",
+            r"coordinator_\.markMediaUnavailable\s*\(\s*\)",
+        ),
+        "media removal must invalidate jobs before stream and lease teardown",
     )
 
     service_bodies = cpp_type_bodies(files.get(service_header, ""), "ProductFileService")
@@ -1149,6 +1191,15 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     if re.search(r"if\s*\(\s*!productFileWriteActive\s*\)", main):
         errors.append(
             "main.cpp: media sampling must not pause while a product stream is active"
+        )
+    if re.search(
+        r"if\s*\(\s*!\s*externalProductFileWriteActive\s*\)\s*\{[^{}]*?"
+        r"coreState->update\s*\(\s*\)",
+        main,
+        flags=re.DOTALL,
+    ):
+        errors.append(
+            "main.cpp: external product writes must not suppress CoreState update"
         )
     if "projectSessionRestoreService->restore(" in main:
         errors.append(
@@ -4147,6 +4198,7 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
     fixture["main.cpp"] = (ROOT / "main.cpp").read_text(encoding="utf-8")
     for rel in (
         "CMakeLists.txt",
+        "sdl/entry/SdlProjectSessionRuntime.hpp",
         "test/test_AtomicProductFile/test_main.cpp",
     ):
         fixture[rel] = (ROOT / rel).read_text(encoding="utf-8")
@@ -4169,11 +4221,23 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
     )
     recovery_sampling_paused_by_stream = mutate(
         "main.cpp",
-        "storageRecovery.update(millis(), coreState->statusBar.playing.get());",
-        "if (!productFileWriteActive) {\n"
+        "            storageRecovery.update(\n"
+        "                persistenceNowMs,\n"
+        "                coreState->statusBar.playing.get()\n"
+        "            );",
+        "            if (!productFileWriteActive) {\n"
         "                storageRecovery.update(\n"
-        "                    millis(), coreState->statusBar.playing.get());\n"
-            "            }",
+        "                    persistenceNowMs,\n"
+        "                    coreState->statusBar.playing.get()\n"
+        "                );\n"
+        "            }",
+    )
+    external_write_suppresses_state = mutate(
+        "main.cpp",
+        "            coreState->update();",
+        "            if (!externalProductFileWriteActive) {\n"
+        "                coreState->update();\n"
+        "            }",
     )
     rpc_completes_partial_recovery = mutate(
         "src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp",
@@ -4238,6 +4302,12 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
                 recovery_sampling_paused_by_stream
             )),
             "media sampling paused by a product stream is rejected",
+        ),
+        (
+            bool(persistence_lease_contract_errors(
+                external_write_suppresses_state
+            )),
+            "external product write suppressing CoreState update is rejected",
         ),
         (
             bool(persistence_lease_contract_errors(
@@ -6749,6 +6819,7 @@ def main(show_inventory: bool = False) -> int:
     contract_sources["main.cpp"] = (ROOT / "main.cpp").read_text(encoding="utf-8")
     for rel in (
         "CMakeLists.txt",
+        "sdl/entry/SdlProjectSessionRuntime.hpp",
         "test/test_AtomicProductFile/test_main.cpp",
     ):
         contract_sources[rel] = (ROOT / rel).read_text(encoding="utf-8")

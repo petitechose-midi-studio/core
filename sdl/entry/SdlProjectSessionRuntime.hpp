@@ -17,9 +17,10 @@ namespace ms::entry {
  * Desktop project-session lifecycle matching the firmware boot and loop order.
  *
  * Construction restores the current session before autosave starts. update()
- * is called after OpenControlApp::update(); it advances CoreState coalescing,
- * then project autosave, unless an external product-file write owns the file
- * service. An autosave-owned write is allowed to keep advancing.
+ * is called after OpenControlApp::update(); it always advances CoreState
+ * coalescing, then opens the one persistence turn. An external product-file
+ * write blocks project autosave only. An autosave-owned write may keep
+ * advancing.
  */
 class SdlProjectSessionRuntime {
 public:
@@ -46,20 +47,22 @@ public:
     }
 
     void update() {
+        state_.update();
+        const uint32_t nowMs = oc::time::millis();
+        const auto turn = product_files_.persistenceJobs().beginTurn(nowMs);
+        if (!turn) return;
+
         const bool productFileWriteActive = product_files_.writeSessionActive();
         const bool autosaveWriteActive = autosave_ && autosave_->writeSessionActive();
         const bool externalProductFileWriteActive =
             productFileWriteActive && !autosaveWriteActive;
 
-        if (externalProductFileWriteActive) {
-            return;
-        }
+        if (externalProductFileWriteActive) return;
 
-        state_.update();
         if (autosave_) {
             autosave_->update(
                 state_,
-                oc::time::millis()
+                nowMs
             );
         }
     }

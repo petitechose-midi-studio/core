@@ -180,6 +180,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::requireRecovery(
 }
 
 FLASHMEM void ProductFileService::markMediaUnavailable() {
+    job_coordinator_.invalidateAll();
     if (write_lease_id_ != 0) {
         filesystem_.abortWrite();
         write_lease_id_ = 0;

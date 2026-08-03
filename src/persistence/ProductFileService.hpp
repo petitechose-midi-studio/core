@@ -7,6 +7,7 @@
 #include <oc/type/Result.hpp>
 
 #include "persistence/ProductPersistenceCoordinator.hpp"
+#include "persistence/ProductPersistenceJobCoordinator.hpp"
 
 namespace core::persistence {
 
@@ -64,6 +65,10 @@ public:
     bool owns(const ProductMutationLease& lease) const { return coordinator_.owns(lease); }
     bool owns(const ProductMutationLease& lease, ProductMutationOwner owner) const {
         return coordinator_.owns(lease, owner);
+    }
+    ProductPersistenceJobCoordinator& persistenceJobs() { return job_coordinator_; }
+    const ProductPersistenceJobCoordinator& persistenceJobs() const {
+        return job_coordinator_;
     }
 
     oc::type::Result<void> ensureLayout(const ProductMutationLease& lease);
@@ -148,11 +153,12 @@ private:
 
     oc::interface::IFileSystem& filesystem_;
     ProductPersistenceCoordinator coordinator_{};
+    ProductPersistenceJobCoordinator job_coordinator_{};
     uint32_t write_lease_id_ = 0;
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(ProductFileService) == 28U, "product file service exceeds LOCK-S");
+static_assert(sizeof(ProductFileService) == 156U, "product file service exceeds LOCK-S");
 static_assert(alignof(ProductFileService) == 4U, "product file service alignment drift");
 #endif
 

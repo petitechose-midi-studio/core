@@ -10,6 +10,30 @@ namespace {
 
 using oc::type::ErrorCode;
 
+const char kInvalidOwner[] PROGMEM = "invalid persistence job owner";
+const char kDeadlineRangeExceeded[] PROGMEM =
+    "persistence job deadline exceeds rollover-safe range";
+const char kQuotaRangeExceeded[] PROGMEM =
+    "persistence job quota exceeds compact range";
+const char kQueueFull[] PROGMEM = "persistence job queue full";
+const char kIdentityExhausted[] PROGMEM = "persistence job identity exhausted";
+const char kQueueStateCorrupt[] PROGMEM = "persistence job queue state corrupt";
+const char kAdvanceUsageMissing[] PROGMEM =
+    "persistence advance has no usage record";
+const char kTurnAlreadyConsumed[] PROGMEM = "persistence turn already consumed";
+const char kJobNotActive[] PROGMEM = "persistence job is not active";
+const char kQuotaAlreadyExceeded[] PROGMEM =
+    "persistence job quota already exceeded";
+const char kDeadlineExpired[] PROGMEM = "persistence job deadline expired";
+const char kAdvanceNotClaimed[] PROGMEM = "persistence advance was not claimed";
+const char kAdvanceQuotaExceeded[] PROGMEM =
+    "persistence advance exceeded hard quota";
+const char kStaleToken[] PROGMEM = "stale persistence job token";
+const char kNotTerminalSafe[] PROGMEM = "persistence job is not terminal-safe";
+const char kNotCancelSafe[] PROGMEM = "persistence job is not cancel-safe";
+const char kDeadlineNotExpired[] PROGMEM =
+    "persistence job deadline has not expired";
+
 template <typename T>
 FLASHMEM oc::type::Result<T> error(ErrorCode code, const char* context) {
     return oc::type::Result<T>::err({code, context});
@@ -49,31 +73,31 @@ ProductPersistenceJobCoordinator::admit(
         priority == ProductPersistenceJobPriority::NONE) {
         return error<ProductPersistenceJobToken>(
             ErrorCode::INVALID_ARGUMENT,
-            "invalid persistence job owner"
+            kInvalidOwner
         );
     }
     if (admission.deadlineAfterMs > PRODUCT_PERSISTENCE_MAX_DEADLINE_DURATION_MS) {
         return error<ProductPersistenceJobToken>(
             ErrorCode::INVALID_ARGUMENT,
-            "persistence job deadline exceeds rollover-safe range"
+            kDeadlineRangeExceeded
         );
     }
     if (!admission.quota.valid()) {
         return error<ProductPersistenceJobToken>(
             ErrorCode::INVALID_ARGUMENT,
-            "persistence job quota exceeds compact range"
+            kQuotaRangeExceeded
         );
     }
     if (depth_ >= 2U) {
         return error<ProductPersistenceJobToken>(
             ErrorCode::HARDWARE_BUSY,
-            "persistence job queue full"
+            kQueueFull
         );
     }
     if (next_job_id_ == 0U) {
         return error<ProductPersistenceJobToken>(
             ErrorCode::RESOURCE_EXHAUSTED,
-            "persistence job identity exhausted"
+            kIdentityExhausted
         );
     }
 
@@ -81,7 +105,7 @@ ProductPersistenceJobCoordinator::admit(
     if (slot == INVALID_SLOT) {
         return error<ProductPersistenceJobToken>(
             ErrorCode::INVALID_STATE,
-            "persistence job queue state corrupt"
+            kQueueStateCorrupt
         );
     }
 
@@ -120,7 +144,7 @@ ProductPersistenceJobCoordinator::admit(
 oc::type::Result<void> ProductPersistenceJobCoordinator::beginTurn(uint32_t nowMs) {
     if (turn_state_ == TurnState::CLAIMED) {
         return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "persistence advance has no usage record"}
+            {ErrorCode::INVALID_STATE, kAdvanceUsageMissing}
         );
     }
     turn_state_ = TurnState::OPEN;
@@ -134,25 +158,25 @@ oc::type::Result<void> ProductPersistenceJobCoordinator::claimAdvance(
 ) {
     if (turn_state_ != TurnState::OPEN) {
         return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "persistence turn already consumed"}
+            {ErrorCode::INVALID_STATE, kTurnAlreadyConsumed}
         );
     }
 
     Record* record = recordFor_(token);
     if (!record || record->state != ProductPersistenceJobState::ACTIVE) {
         return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "persistence job is not active"}
+            {ErrorCode::INVALID_STATE, kJobNotActive}
         );
     }
     if (quotaExceeded_(*record)) {
         return oc::type::Result<void>::err(
-            {ErrorCode::RESOURCE_EXHAUSTED, "persistence job quota already exceeded"}
+            {ErrorCode::RESOURCE_EXHAUSTED, kQuotaAlreadyExceeded}
         );
     }
     if (hasDeadline_(*record) && deadlineReached(nowMs, record->deadlineAtMs) &&
         safeYield_(*record)) {
         return oc::type::Result<void>::err(
-            {ErrorCode::HARDWARE_TIMEOUT, "persistence job deadline expired"}
+            {ErrorCode::HARDWARE_TIMEOUT, kDeadlineExpired}
         );
     }
 
@@ -170,7 +194,7 @@ oc::type::Result<void> ProductPersistenceJobCoordinator::finishAdvance(
     if (turn_state_ != TurnState::CLAIMED || !record ||
         record->state != ProductPersistenceJobState::ACTIVE) {
         return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "persistence advance was not claimed"}
+            {ErrorCode::INVALID_STATE, kAdvanceNotClaimed}
         );
     }
 
@@ -189,7 +213,7 @@ oc::type::Result<void> ProductPersistenceJobCoordinator::finishAdvance(
     turn_state_ = TurnState::RECORDED;
     if (!withinQuota) {
         return oc::type::Result<void>::err(
-            {ErrorCode::RESOURCE_EXHAUSTED, "persistence advance exceeded hard quota"}
+            {ErrorCode::RESOURCE_EXHAUSTED, kAdvanceQuotaExceeded}
         );
     }
     return oc::type::Result<void>::ok();
@@ -202,13 +226,13 @@ FLASHMEM oc::type::Result<void> ProductPersistenceJobCoordinator::complete(
     if (!record) {
         token.invalidate_();
         return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "stale persistence job token"}
+            {ErrorCode::INVALID_STATE, kStaleToken}
         );
     }
     if (record->state != ProductPersistenceJobState::ACTIVE ||
         turn_state_ == TurnState::CLAIMED || !safeYield_(*record)) {
         return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "persistence job is not terminal-safe"}
+            {ErrorCode::INVALID_STATE, kNotTerminalSafe}
         );
     }
 
@@ -224,13 +248,13 @@ FLASHMEM oc::type::Result<void> ProductPersistenceJobCoordinator::cancel(
     if (!record) {
         token.invalidate_();
         return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "stale persistence job token"}
+            {ErrorCode::INVALID_STATE, kStaleToken}
         );
     }
     if (record->state == ProductPersistenceJobState::ACTIVE &&
         (turn_state_ == TurnState::CLAIMED || !safeYield_(*record))) {
         return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "persistence job is not cancel-safe"}
+            {ErrorCode::INVALID_STATE, kNotCancelSafe}
         );
     }
 
@@ -247,12 +271,12 @@ FLASHMEM oc::type::Result<void> ProductPersistenceJobCoordinator::expire(
     if (!record) {
         token.invalidate_();
         return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "stale persistence job token"}
+            {ErrorCode::INVALID_STATE, kStaleToken}
         );
     }
     if (!hasDeadline_(*record) || !deadlineReached(nowMs, record->deadlineAtMs)) {
         return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "persistence job deadline has not expired"}
+            {ErrorCode::INVALID_STATE, kDeadlineNotExpired}
         );
     }
     return cancel(token);
