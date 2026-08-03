@@ -93,12 +93,14 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
                 "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-architecture-contracts.py")
     set_tests_properties(check_ArchitectureContracts PROPERTIES LABELS core)
 
-    add_test(
-        NAME check_ArchitectureContractsSelfTest
+    # The 202-case architecture-checker mutation suite is a tooling meta-test,
+    # not a product regression test. Keep it explicit so `ms test core` stays
+    # interactive; run this target only when the checker itself changes.
+    add_custom_target(check-architecture-contracts-self-test
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-architecture-contracts.py"
-                "--self-test")
-    set_tests_properties(check_ArchitectureContractsSelfTest PROPERTIES LABELS core)
+                "--self-test"
+        USES_TERMINAL)
 
     add_test(
         NAME check_SequencerHistoryInventory
