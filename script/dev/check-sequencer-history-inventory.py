@@ -26,18 +26,84 @@ CANONICAL_RECORDING_METHODS = (
     "recordPreparedFullBank",
     "recordPreparedStructure",
 )
+RETIRED_RAW_API_IDENTIFIERS = (
+    "RecordPatternFn",
+    "RecordPatternChangeFn",
+    "RecordFullBankFn",
+    "CanRecordFullBankFn",
+    "RecordPreparedFullBankFn",
+    "RecordStructureFn",
+    "recordPattern",
+    "recordFlatPattern",
+    "recordPatternChange",
+    "recordPatternWithStorage",
+    "recordFullBank",
+    "recordStructure",
+    "canRecordSynchronizedPattern",
+    "recordPreparedSynchronizedPattern",
+    "recordPreparedFullBank",
+    "recordPreparedStructure",
+    "recordSequencerPatternHistory",
+    "recordSequencerBankHistory",
+    "canRecordSequencerBankHistory",
+    "recordPreparedSequencerBankHistory",
+    "recordSequencerStructureHistory",
+    "recordSequencerTrackStructureHistoryChange",
+    "recordPatternFromCoreState",
+    "recordFlatPatternFromCoreState",
+    "recordPatternChangeFromCoreState",
+    "recordPreparedSynchronizedPatternFromCoreState",
+    "recordFullBankFromCoreState",
+    "canRecordFullBankFromCoreState",
+    "recordPreparedFullBankFromCoreState",
+    "recordStructureFromCoreState",
+)
+RETIRED_RAW_API_ROOTS = ("src", "test")
+RETIRED_RAW_API_TARGETED_IDENTIFIERS = (
+    (
+        "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
+        "canRecordFullBank",
+    ),
+    (
+        "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "canRecordFullBank",
+    ),
+)
+RETIRED_RAW_API_MUTATION_LAYERS = (
+    (
+        "domain-facade",
+        "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
+        "canRecordFullBank",
+    ),
+    (
+        "core-state",
+        "src/state/CoreState.hpp",
+        "recordSequencerPatternHistory",
+    ),
+    (
+        "history-service",
+        "src/state/sequencer/SequencerHistory.cpp",
+        "recordPatternWithStorage",
+    ),
+    (
+        "structure-helper",
+        "src/handler/sequencer/SequencerStructureHistoryUtils.hpp",
+        "recordSequencerTrackStructureHistoryChange",
+    ),
+    ("test-clients", "test/Regression.cpp", "recordPattern"),
+)
 ENTRY_RECORDING_CALL_TOTAL = 44
-EXPECTED_MIGRATED_REMOVAL_TOTAL = 20
-EXPECTED_PROVIDER_FORWARD_TOTAL = 5
+EXPECTED_MIGRATED_REMOVAL_TOTAL = 38
+EXPECTED_PROVIDER_FORWARD_TOTAL = 1
 EXPECTED_COALESCED_PREPARED_TOTAL = 1
-EXPECTED_MEMBER_DISPATCH_TOTAL = 23
+EXPECTED_MEMBER_DISPATCH_TOTAL = 8
 EXPECTED_CORE_STATE_ADAPTER_TOTAL = 0
-EXPECTED_INTERNAL_FORWARD_TOTAL = 7
-EXPECTED_RECORDING_CALL_TOTAL = 30
-EXPECTED_SINK_TOTAL = 5
-EXPECTED_SERVICE_ADAPTER_TOTAL = 18
+EXPECTED_INTERNAL_FORWARD_TOTAL = 0
+EXPECTED_RECORDING_CALL_TOTAL = 8
+EXPECTED_SINK_TOTAL = 4
+EXPECTED_SERVICE_ADAPTER_TOTAL = 4
 EXPECTED_SINK_CLASSIFICATIONS = {
-    "post-fallible": 1,
+    "post-fallible": 0,
     "prepared": 4,
     "rollback-aware": 0,
 }
@@ -126,7 +192,7 @@ PREPARED_FULL_BANK_TRUSTED_COMMIT_METHOD = "commitAdmittedFullBank"
 PREPARED_FULL_BANK_TRUSTED_COMMIT_QUALIFIER = "SequencerHistoryService"
 PREPARED_FULL_BANK_TRUSTED_COMMIT_FORWARD = "recordPreparedFullBank"
 PREPARED_FULL_BANK_TRUSTED_COMMIT_SOURCE_ROOT = "src"
-PREPARED_FULL_BANK_TRUSTED_COMMIT_SOURCE_CALL_TOTAL = 2
+PREPARED_FULL_BANK_TRUSTED_COMMIT_SOURCE_CALL_TOTAL = 1
 PREPARED_FULL_BANK_TRUSTED_COMMIT_HANDLER_ROOT = "src/handler"
 PREPARED_FULL_BANK_SURFACE_FILES = (
     "src/handler/project/ProjectHandlerValueEditing.cpp",
@@ -740,20 +806,20 @@ def manifest_errors(manifest) -> list[str]:
             f"member manifest total is {member_total}, expected {members.get('expectedTotal')}"
         )
     if members.get("expectedTotal") != EXPECTED_MEMBER_DISPATCH_TOTAL:
-        errors.append("member-dispatch total must remain 23 after L-R08-08 slice 1")
+        errors.append("member-dispatch total must remain 8 after L-R08-09 slice 1")
     if sink_total != members.get("expectedSinkTotal"):
         errors.append(
             f"sink manifest total is {sink_total}, expected {members.get('expectedSinkTotal')}"
         )
     if members.get("expectedSinkTotal") != EXPECTED_SINK_TOTAL:
-        errors.append("mutation-sink total must remain 5 after L-R08-08 slice 1")
+        errors.append("mutation-sink total must remain 4 after L-R08-09 slice 1")
     if service_total != members.get("expectedServiceAdapterTotal"):
         errors.append(
             "service/adapter manifest total is "
             f"{service_total}, expected {members.get('expectedServiceAdapterTotal')}"
         )
     if members.get("expectedServiceAdapterTotal") != EXPECTED_SERVICE_ADAPTER_TOTAL:
-        errors.append("service/adapter total must remain 18 after L-R08-08 slice 1")
+        errors.append("service/adapter total must remain 4 after L-R08-09 slice 1")
     expected_classifications = Counter(members.get("expectedSinkClassifications", {}))
     if classifications != expected_classifications:
         errors.append(
@@ -761,7 +827,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {dict(expected_classifications)}, observed {dict(classifications)}"
         )
     if dict(expected_classifications) != EXPECTED_SINK_CLASSIFICATIONS:
-        errors.append("sink classifications must remain 1 post-fallible, 4 prepared and 0 rollback-aware")
+        errors.append("sink classifications must remain 0 post-fallible, 4 prepared and 0 rollback-aware")
 
     forwards = boundary.get("internalForwards", {})
     forward_groups = forwards.get("groups", [])
@@ -772,7 +838,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {forwards.get('expectedTotal')}"
         )
     if forwards.get("expectedTotal") != EXPECTED_INTERNAL_FORWARD_TOTAL:
-        errors.append("internal-forward total must remain 7")
+        errors.append("internal-forward total must remain 0")
     forward_methods = set()
     for group in forward_groups:
         method = group.get("method")
@@ -795,9 +861,9 @@ def manifest_errors(manifest) -> list[str]:
     if boundary.get("entryRecordingCallTotal") != ENTRY_RECORDING_CALL_TOTAL:
         errors.append("entry recording-call total must remain 44")
     if boundary.get("expectedMigratedRemovalTotal") != EXPECTED_MIGRATED_REMOVAL_TOTAL:
-        errors.append("migrated recording-call removal total must remain 20")
+        errors.append("migrated recording-call removal total must remain 38")
     if boundary.get("expectedProviderForwardTotal") != EXPECTED_PROVIDER_FORWARD_TOTAL:
-        errors.append("expected provider-forward total must remain 5")
+        errors.append("expected provider-forward total must remain 1")
     if provider_forward_total != EXPECTED_PROVIDER_FORWARD_TOTAL:
         errors.append(
             f"provider-forward manifest total is {provider_forward_total}, "
@@ -825,7 +891,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {boundary.get('expectedTotal')}"
         )
     if boundary.get("expectedTotal") != EXPECTED_RECORDING_CALL_TOTAL:
-        errors.append("recording boundary total must remain 30 after L-R08-08 slice 1")
+        errors.append("recording boundary total must remain 8 after L-R08-09 slice 1")
     if recording_total != (
         ENTRY_RECORDING_CALL_TOTAL -
         EXPECTED_MIGRATED_REMOVAL_TOTAL +
@@ -833,14 +899,36 @@ def manifest_errors(manifest) -> list[str]:
         coalesced_prepared_total
     ):
         errors.append(
-            "recording boundary must equal the 44-call entry minus twenty "
-            "migrated calls plus five provider forwards and one prepared "
+            "recording boundary must equal the 44-call entry minus thirty-eight "
+            "migrated calls plus one provider forward and one prepared "
             "coalesced boundary"
         )
 
     exclusions = boundary.get("explicitExclusions", [])
     if exclusions:
         errors.append("the Sequencer history boundary must leave no recording-call exclusion")
+
+    retired = manifest.get("retiredRawApi", {})
+    if tuple(retired.get("roots", ())) != RETIRED_RAW_API_ROOTS:
+        errors.append("retired raw API scan roots must remain src and test")
+    if tuple(retired.get("identifiers", ())) != RETIRED_RAW_API_IDENTIFIERS:
+        errors.append("retired raw API identifier set must remain canonical")
+    targeted_identifiers = tuple(
+        (item.get("path"), item.get("identifier"))
+        for item in retired.get("targetedIdentifiers", ())
+        if isinstance(item, dict)
+    )
+    if targeted_identifiers != RETIRED_RAW_API_TARGETED_IDENTIFIERS:
+        errors.append("retired raw API targeted identifier set must remain canonical")
+    mutation_layers = tuple(
+        (item.get("name"), item.get("path"), item.get("identifier"))
+        for item in retired.get("mutationLayers", ())
+        if isinstance(item, dict)
+    )
+    if mutation_layers != RETIRED_RAW_API_MUTATION_LAYERS:
+        errors.append("retired raw API mutation layers must remain canonical")
+    if retired.get("expectedTotal") != 0:
+        errors.append("retired raw API occurrence total must remain 0")
 
     begins = manifest.get("coalescedBegins", {})
     begin_groups = begins.get("groups", [])
@@ -1086,14 +1174,14 @@ def manifest_errors(manifest) -> list[str]:
             errors.append("prepared FullBank defensive-forward path must remain canonical")
         if defensive.get("function") != PREPARED_FULL_BANK_TRUSTED_COMMIT_FORWARD:
             errors.append("prepared FullBank defensive-forward function must remain canonical")
-        if defensive.get("expectedCallCount") != 1:
-            errors.append("prepared FullBank defensive forward count must remain 1")
+        if defensive.get("expectedCallCount") != 0:
+            errors.append("prepared FullBank defensive forward count must remain 0")
         global_source = trusted.get("globalSourceCalls", {})
         if global_source.get("path") != PREPARED_FULL_BANK_TRUSTED_COMMIT_SOURCE_ROOT:
             errors.append("prepared FullBank trusted commit source root must remain canonical")
         if (global_source.get("expectedCallCount") !=
                 PREPARED_FULL_BANK_TRUSTED_COMMIT_SOURCE_CALL_TOTAL):
-            errors.append("prepared FullBank trusted source call total must remain 2")
+            errors.append("prepared FullBank trusted source call total must remain 1")
         handler_root = trusted.get("forbiddenHandlerRoot", {})
         if handler_root.get("path") != PREPARED_FULL_BANK_TRUSTED_COMMIT_HANDLER_ROOT:
             errors.append("prepared FullBank trusted commit handler root must remain canonical")
@@ -1267,12 +1355,12 @@ def manifest_errors(manifest) -> list[str]:
         defensive = trusted.get("defensiveForward", {})
         if defensive.get("path") != PREPARED_TRACK_STRUCTURE_STATE_SOURCE or \
                 defensive.get("function") != "recordPreparedStructure" or \
-                defensive.get("expectedCallCount") != 1:
-            errors.append("prepared Track Structure defensive forward must remain unique")
+                defensive.get("expectedCallCount") != 0:
+            errors.append("prepared Track Structure defensive forward must remain absent")
         state_calls = trusted.get("stateSourceCalls", {})
         if state_calls.get("path") != "src/state" or \
-                state_calls.get("expectedCallCount") != 2:
-            errors.append("prepared Track Structure state source call total must remain 2")
+                state_calls.get("expectedCallCount") != 1:
+            errors.append("prepared Track Structure state source call total must remain 1")
 
         core_authority = trusted.get("coreAuthority", {})
         if core_authority.get("method") != PREPARED_TRACK_STRUCTURE_CORE_METHOD:
@@ -1551,6 +1639,26 @@ def collect_prepared_track_structure_observation(root: Path, manifest):
     return admission_observed, trusted_observed, forbidden_raw_calls
 
 
+def collect_retired_raw_api_observation(root: Path, manifest) -> Counter:
+    retired = manifest["retiredRawApi"]
+    observed = Counter()
+    for scan_root in retired["roots"]:
+        path = root / scan_root
+        if path.exists():
+            observed.update(
+                count_identifiers_under(root, scan_root, retired["identifiers"])
+            )
+    for targeted in retired["targetedIdentifiers"]:
+        path = root / targeted["path"]
+        if not path.is_file():
+            continue
+        identifier = targeted["identifier"]
+        count = count_identifier_occurrences(path, (identifier,))[identifier]
+        if count:
+            observed[(targeted["path"], identifier)] += count
+    return observed
+
+
 def collect_observation(root: Path, manifest):
     boundary = manifest["recordingBoundary"]
     members = boundary["memberDispatch"]
@@ -1708,6 +1816,8 @@ def collect_observation(root: Path, manifest):
         prepared_track_structure_forbidden_raw_calls,
     ) = collect_prepared_track_structure_observation(root, manifest)
 
+    retired_raw_api_calls = collect_retired_raw_api_observation(root, manifest)
+
     return {
         "members": count_member_dispatch(root, methods),
         "forwards": count_unqualified_calls(forward_path, methods),
@@ -1720,6 +1830,7 @@ def collect_observation(root: Path, manifest):
             }
         ),
         "exclusions": exclusions,
+        "retiredRawApiCalls": retired_raw_api_calls,
         "begins": begins,
         "authoritativeBegins": authoritative_begins,
         "seals": seals,
@@ -1816,6 +1927,11 @@ def observation_errors(manifest, observed) -> list[str]:
         "explicit exclusion",
         expected_exclusions,
         observed["exclusions"],
+    )
+    errors += counter_errors(
+        "retired raw API occurrence",
+        Counter(),
+        observed["retiredRawApiCalls"],
     )
     errors += counter_errors(
         "coalesced begin",
@@ -2038,6 +2154,36 @@ def count_calls_under(root: Path, relative_root: str, methods) -> Counter:
     return observed
 
 
+def identifier_pattern(identifiers) -> re.Pattern[str]:
+    alternatives = "|".join(
+        re.escape(identifier) for identifier in sorted(identifiers)
+    )
+    return re.compile(r"\b(" + alternatives + r")\b")
+
+
+def count_identifier_occurrences(path: Path, identifiers) -> Counter:
+    text = sanitize_cpp(path.read_text(encoding="utf-8"))
+    pattern = identifier_pattern(identifiers)
+    return Counter(match.group(1) for match in pattern.finditer(text))
+
+
+def count_identifiers_under(
+    root: Path,
+    relative_root: str,
+    identifiers,
+) -> Counter:
+    path_root = root / relative_root
+    pattern = identifier_pattern(identifiers)
+    observed = Counter()
+    for path in sorted(path_root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in SOURCE_SUFFIXES:
+            continue
+        text = sanitize_cpp(path.read_text(encoding="utf-8"))
+        for match in pattern.finditer(text):
+            observed[(relative(root, path), match.group(1))] += 1
+    return observed
+
+
 def count_invocations_under(root: Path, relative_root: str, methods) -> Counter:
     path_root = root / relative_root
     member_pattern = member_call_pattern(methods)
@@ -2226,6 +2372,7 @@ def synthetic_observation(manifest):
                 for item in boundary["explicitExclusions"]
             }
         ),
+        "retiredRawApiCalls": Counter(),
         "begins": expected_begin_counter(manifest),
         "authoritativeBegins": expected_business_counter(
             manifest["coalescedBegins"]
@@ -2274,6 +2421,46 @@ def synthetic_observation(manifest):
         ),
         "preparedTrackStructureForbiddenRawCalls": Counter(),
     }
+
+
+def retired_raw_api_self_test(manifest) -> bool:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        for scan_root in manifest["retiredRawApi"]["roots"]:
+            (root / scan_root).mkdir(parents=True, exist_ok=True)
+        for targeted in manifest["retiredRawApi"]["targetedIdentifiers"]:
+            path = root / targeted["path"]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("// clean candidate\n", encoding="utf-8")
+
+        positive = root / "src/Positive.cpp"
+        positive.write_text(
+            "// recordPattern RecordPatternFn\n"
+            'const char* text = "recordFullBank canRecordFullBank";\n',
+            encoding="utf-8",
+        )
+        if collect_retired_raw_api_observation(root, manifest):
+            return False
+
+        for _, relative_path, identifier in RETIRED_RAW_API_MUTATION_LAYERS:
+            path = root / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            baseline = path.read_text(encoding="utf-8") if path.exists() else ""
+            path.write_text(
+                baseline + f"int {identifier};\n",
+                encoding="utf-8",
+            )
+            observed = collect_retired_raw_api_observation(root, manifest)
+            candidate = synthetic_observation(manifest)
+            candidate["retiredRawApiCalls"] = observed
+            if not any(
+                "retired raw API occurrence mismatch" in error
+                for error in observation_errors(manifest, candidate)
+            ):
+                return False
+            path.write_text(baseline, encoding="utf-8")
+    return True
+
 
 def scanner_self_test(manifest) -> bool:
     methods = manifest["recordingBoundary"]["memberDispatch"]["methods"]
@@ -2725,9 +2912,6 @@ def prepared_track_structure_lifecycle_self_test(manifest) -> bool:
         )
         write(
             PREPARED_TRACK_STRUCTURE_STATE_SOURCE,
-            "void SequencerHistoryService::recordPreparedStructure() {\n"
-            "  commitAdmittedStructure();\n"
-            "}\n"
             "void SequencerHistoryService::commitAdmittedStructure() {}\n",
         )
         write(
@@ -2929,8 +3113,8 @@ def run_self_tests(manifest) -> list[str]:
 
     misclassified = copy.deepcopy(manifest)
     for group in misclassified["recordingBoundary"]["memberDispatch"]["groups"]:
-        if group.get("role") == "sink" and group.get("classification") == "post-fallible":
-            group["classification"] = "prepared"
+        if group.get("role") == "sink" and group.get("classification") == "prepared":
+            group["classification"] = "post-fallible"
             break
     classification_errors = manifest_errors(misclassified)
     if not any("sink classification totals differ" in error for error in classification_errors):
@@ -2956,8 +3140,11 @@ def run_self_tests(manifest) -> list[str]:
     removal_drift = copy.deepcopy(manifest)
     removal_drift["recordingBoundary"]["expectedMigratedRemovalTotal"] -= 1
     removal_errors = manifest_errors(removal_drift)
-    if not any("removal total must remain 20" in error for error in removal_errors):
-        failures.append("L-R08-08 slice-1 migrated-removal drift was not rejected")
+    if not any("removal total must remain 38" in error for error in removal_errors):
+        failures.append("L-R08-09 slice-1 migrated-removal drift was not rejected")
+
+    if not retired_raw_api_self_test(manifest):
+        failures.append("retired raw API layer scanner or mutation was not rejected")
 
     if not scanner_self_test(manifest):
         failures.append("source scanner/sanitizer fixture was not classified exactly")
@@ -2983,7 +3170,7 @@ def load_manifest(path: Path):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Check the L-R08-08 Sequencer history inventory ratchet."
+        description="Check the L-R08-09 Sequencer history inventory ratchet."
     )
     parser.add_argument("--root", type=Path, default=ROOT, help="Core repository root")
     parser.add_argument(
@@ -3050,6 +3237,12 @@ def main() -> int:
         f"({classifications['post-fallible']} post-fallible + "
         f"{classifications['prepared']} prepared + "
         f"{classifications['rollback-aware']} rollback-aware)"
+    )
+    retired = manifest["retiredRawApi"]
+    print(
+        "  retired raw APIs: "
+        f"{retired['expectedTotal']} occurrences across "
+        f"{' + '.join(retired['roots'])}"
     )
     lifecycle = manifest["preparedPatternLifecycle"]
     print(

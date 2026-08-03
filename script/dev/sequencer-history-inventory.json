@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "scope": "L-R08-08 normal Quick Controls prepared migration slice 1",
+  "scope": "L-R08-09 raw Sequencer History API retirement slice 1",
   "recordingBoundary": {
     "entryRecordingCallTotal": 44,
-    "expectedMigratedRemovalTotal": 20,
-    "expectedProviderForwardTotal": 5,
+    "expectedMigratedRemovalTotal": 38,
+    "expectedProviderForwardTotal": 1,
     "expectedCoalescedPreparedTotal": 1,
-    "expectedTotal": 30,
+    "expectedTotal": 8,
     "memberDispatch": {
       "methods": [
         "recordPattern",
@@ -19,22 +19,15 @@
         "recordPreparedStructure"
       ],
       "expectedMethodCount": 8,
-      "expectedTotal": 23,
-      "expectedSinkTotal": 5,
-      "expectedServiceAdapterTotal": 18,
+      "expectedTotal": 8,
+      "expectedSinkTotal": 4,
+      "expectedServiceAdapterTotal": 4,
       "expectedSinkClassifications": {
-        "post-fallible": 1,
+        "post-fallible": 0,
         "prepared": 4,
         "rollback-aware": 0
       },
       "groups": [
-        {
-          "path": "src/handler/sequencer/SequencerStructureHistoryUtils.hpp",
-          "method": "recordStructure",
-          "count": 1,
-          "role": "sink",
-          "classification": "post-fallible"
-        },
         {
           "path": "src/handler/sequencer/SequencerCcLaneWorkflow.cpp",
           "method": "recordPreparedPattern",
@@ -65,84 +58,15 @@
         },
         {
           "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
-          "method": "recordFlatPattern",
-          "count": 1,
-          "role": "service-adapter"
-        },
-        {
-          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
-          "method": "recordPattern",
-          "count": 2,
-          "role": "service-adapter"
-        },
-        {
-          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
-          "method": "recordFullBank",
-          "count": 2,
-          "role": "service-adapter"
-        },
-        {
-          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
-          "method": "recordStructure",
-          "count": 1,
-          "role": "service-adapter"
-        },
-        {
-          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
           "method": "recordPreparedPattern",
           "count": 2,
           "role": "service-adapter",
           "coalescedPreparedCount": 1
         },
         {
-          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
-          "method": "recordPreparedFullBank",
-          "count": 1,
-          "role": "service-adapter",
-          "providerForwardCount": 1
-        },
-        {
-          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
-          "method": "recordPattern",
-          "count": 1,
-          "role": "service-adapter"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
-          "method": "recordFlatPattern",
-          "count": 1,
-          "role": "service-adapter"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
-          "method": "recordFullBank",
-          "count": 1,
-          "role": "service-adapter"
-        },
-        {
-          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
-          "method": "recordStructure",
-          "count": 1,
-          "role": "service-adapter"
-        },
-        {
           "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
           "method": "recordPreparedPattern",
-          "count": 3,
-          "role": "service-adapter",
-          "providerForwardCount": 1
-        },
-        {
-          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
-          "method": "recordPreparedSynchronizedPattern",
-          "count": 1,
-          "role": "service-adapter",
-          "providerForwardCount": 1
-        },
-        {
-          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
-          "method": "recordPreparedFullBank",
-          "count": 1,
+          "count": 2,
           "role": "service-adapter",
           "providerForwardCount": 1
         }
@@ -155,36 +79,86 @@
     },
     "internalForwards": {
       "path": "src/state/sequencer/SequencerHistory.cpp",
-      "expectedTotal": 7,
-      "groups": [
-        {
-          "method": "recordPattern",
-          "count": 2
-        },
-        {
-          "method": "recordFlatPattern",
-          "count": 1
-        },
-        {
-          "method": "recordFullBank",
-          "count": 1
-        },
-        {
-          "method": "recordPreparedPattern",
-          "count": 1
-        },
-        {
-          "method": "recordPreparedFullBank",
-          "count": 1,
-          "providerForwardCount": 1
-        },
-        {
-          "method": "recordPreparedStructure",
-          "count": 1
-        }
-      ]
+      "expectedTotal": 0,
+      "groups": []
     },
     "explicitExclusions": []
+  },
+  "retiredRawApi": {
+    "roots": [
+      "src",
+      "test"
+    ],
+    "identifiers": [
+      "RecordPatternFn",
+      "RecordPatternChangeFn",
+      "RecordFullBankFn",
+      "CanRecordFullBankFn",
+      "RecordPreparedFullBankFn",
+      "RecordStructureFn",
+      "recordPattern",
+      "recordFlatPattern",
+      "recordPatternChange",
+      "recordPatternWithStorage",
+      "recordFullBank",
+      "recordStructure",
+      "canRecordSynchronizedPattern",
+      "recordPreparedSynchronizedPattern",
+      "recordPreparedFullBank",
+      "recordPreparedStructure",
+      "recordSequencerPatternHistory",
+      "recordSequencerBankHistory",
+      "canRecordSequencerBankHistory",
+      "recordPreparedSequencerBankHistory",
+      "recordSequencerStructureHistory",
+      "recordSequencerTrackStructureHistoryChange",
+      "recordPatternFromCoreState",
+      "recordFlatPatternFromCoreState",
+      "recordPatternChangeFromCoreState",
+      "recordPreparedSynchronizedPatternFromCoreState",
+      "recordFullBankFromCoreState",
+      "canRecordFullBankFromCoreState",
+      "recordPreparedFullBankFromCoreState",
+      "recordStructureFromCoreState"
+    ],
+    "targetedIdentifiers": [
+      {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
+        "identifier": "canRecordFullBank"
+      },
+      {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "identifier": "canRecordFullBank"
+      }
+    ],
+    "mutationLayers": [
+      {
+        "name": "domain-facade",
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
+        "identifier": "canRecordFullBank"
+      },
+      {
+        "name": "core-state",
+        "path": "src/state/CoreState.hpp",
+        "identifier": "recordSequencerPatternHistory"
+      },
+      {
+        "name": "history-service",
+        "path": "src/state/sequencer/SequencerHistory.cpp",
+        "identifier": "recordPatternWithStorage"
+      },
+      {
+        "name": "structure-helper",
+        "path": "src/handler/sequencer/SequencerStructureHistoryUtils.hpp",
+        "identifier": "recordSequencerTrackStructureHistoryChange"
+      },
+      {
+        "name": "test-clients",
+        "path": "test/Regression.cpp",
+        "identifier": "recordPattern"
+      }
+    ],
+    "expectedTotal": 0
   },
   "preparedPatternLifecycle": {
     "ownerDeclaration": {
@@ -422,11 +396,11 @@
       "defensiveForward": {
         "path": "src/state/sequencer/SequencerHistory.cpp",
         "function": "recordPreparedFullBank",
-        "expectedCallCount": 1
+        "expectedCallCount": 0
       },
       "globalSourceCalls": {
         "path": "src",
-        "expectedCallCount": 2
+        "expectedCallCount": 1
       },
       "forbiddenHandlerRoot": {
         "path": "src/handler",
@@ -565,11 +539,11 @@
       "defensiveForward": {
         "path": "src/state/sequencer/SequencerHistory.cpp",
         "function": "recordPreparedStructure",
-        "expectedCallCount": 1
+        "expectedCallCount": 0
       },
       "stateSourceCalls": {
         "path": "src/state",
-        "expectedCallCount": 2
+        "expectedCallCount": 1
       },
       "coreAuthority": {
         "method": "commitAdmittedSequencerStructureHistory",

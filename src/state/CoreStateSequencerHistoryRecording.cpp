@@ -223,105 +223,6 @@ CoreState::abandonUnsafeSequencerPatternHistory_(const char* reason) {
     return SequencerPatternHistoryCommitOutcome::Failed;
 }
 
-FLASHMEM bool CoreState::recordSequencerPatternHistory(
-    sequencer::SequencerHistoryPatternSnapshot before,
-    sequencer::SequencerHistoryPatternSnapshot after,
-    sequencer::SequencerHistoryDescriptor descriptor,
-    sequencer::SequencerHistoryPatternStorage storage) {
-    const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
-    uint8_t targetTrack = activeTrack;
-    if (descriptor.trackIndex == sequencer::SequencerHistoryDescriptor::INVALID_INDEX) {
-        descriptor.trackIndex = activeTrack;
-    } else {
-        targetTrack = sequencer::SequencerTrackBankState::clampTrackIndex(descriptor.trackIndex);
-        descriptor.trackIndex = targetTrack;
-    }
-
-    const bool recorded = storage == sequencer::SequencerHistoryPatternStorage::FlatOnly
-                              ? sequencerHistory.recordFlatPattern(targetTrack, std::move(before),
-                                                                   std::move(after), descriptor)
-                              : sequencerHistory.recordPattern(targetTrack, std::move(before),
-                                                               std::move(after), descriptor);
-    if (!recorded) { return false; }
-
-    const bool synchronized =
-        storage == sequencer::SequencerHistoryPatternStorage::FlatOnly
-            ? sequencer::storeActiveTrackPreservingGraph(sequencerTracks, sequencer)
-            : sequencer::storeActiveTrack(sequencerTracks, sequencer);
-    if (!synchronized) {
-        OC_LOG_ERROR("[CoreState] Failed to synchronize active sequencer graph after history");
-    }
-    markProjectMutated();
-    refreshSharedTrackStateFromSequencer();
-    return true;
-}
-
-FLASHMEM bool CoreState::recordSequencerPatternHistory(
-    sequencer::SequencerHistoryPatternChangePtr change) {
-    if (!change) return false;
-
-    const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
-    const uint8_t targetTrack =
-        change->descriptor.trackIndex == sequencer::SequencerHistoryDescriptor::INVALID_INDEX
-            ? activeTrack
-            : sequencer::SequencerTrackBankState::clampTrackIndex(change->descriptor.trackIndex);
-    change->trackIndex = targetTrack;
-    change->descriptor.trackIndex = targetTrack;
-    const auto storage = change->storage;
-    if (!sequencerHistory.recordPattern(std::move(change))) return false;
-
-    const bool synchronized =
-        storage == sequencer::SequencerHistoryPatternStorage::FlatOnly
-            ? sequencer::storeActiveTrackPreservingGraph(sequencerTracks, sequencer)
-            : sequencer::storeActiveTrack(sequencerTracks, sequencer);
-    if (!synchronized) {
-        OC_LOG_ERROR("[CoreState] Failed to synchronize active sequencer graph after history");
-    }
-    markProjectMutated();
-    refreshSharedTrackStateFromSequencer();
-    return true;
-}
-
-FLASHMEM bool CoreState::recordSequencerBankHistory(
-    sequencer::SequencerHistoryTrackBankSnapshot before,
-    sequencer::SequencerHistoryTrackBankSnapshot after,
-    sequencer::SequencerHistoryDescriptor descriptor) {
-    if (!sequencerHistory.recordFullBank(std::move(before), std::move(after), descriptor)) {
-        return false;
-    }
-
-    markSequencerProjectMutated_();
-    refreshSharedTrackStateFromSequencer();
-    return true;
-}
-
-FLASHMEM bool CoreState::recordSequencerBankHistory(
-    sequencer::SequencerHistoryFullBankChangePtr change) {
-    if (!sequencerHistory.recordFullBank(std::move(change))) { return false; }
-
-    markSequencerProjectMutated_();
-    refreshSharedTrackStateFromSequencer();
-    return true;
-}
-
-FLASHMEM bool CoreState::canRecordSequencerBankHistory(
-    const sequencer::SequencerHistoryFullBankChange& change) const {
-    // FullBank replay rejects while a Step Draft is active, including
-    // content-only changes with unchanged topology. Keep admission identical
-    // so History can never publish an `after` snapshot that cannot be applied.
-    return !sequencer.stepContentDraft.active.get() && sequencerHistory.canRecordFullBank(change);
-}
-
-FLASHMEM void CoreState::recordPreparedSequencerBankHistory(
-    sequencer::SequencerHistoryFullBankChangePtr change) {
-    if (!change || !canRecordSequencerBankHistory(*change)) return;
-    const uint16_t enabledMask = change->after.flat.enabledMask;
-    const uint8_t activeTrack = change->after.flat.activeTrack;
-    if (!publishPreparedSequencerTrackState(enabledMask, activeTrack)) return;
-    sequencerHistory.recordPreparedFullBank(std::move(change));
-    publishPreparedSequencerMutation();
-}
-
 FLASHMEM sequencer::SequencerPreparedFullBankEditResult
 CoreState::applyPreparedProjectScaleChoice(
     sequencer::SequencerPreparedFullBankEditOwner owner,
@@ -407,15 +308,6 @@ CoreState::applyPreparedProjectScaleChoice(
 
     result.outcome = Outcome::Committed;
     return result;
-}
-
-FLASHMEM bool CoreState::recordSequencerStructureHistory(
-    sequencer::SequencerHistoryTrackStructureChangePtr change) {
-    if (!sequencerHistory.recordStructure(std::move(change))) { return false; }
-
-    markSequencerProjectMutated_();
-    refreshSharedTrackStateFromSequencer();
-    return true;
 }
 
 FLASHMEM bool CoreState::canRecordSequencerStructureHistory(

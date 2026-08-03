@@ -3,13 +3,173 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #include "app/ExtmemAllocator.hpp"
 #include "state/CoreState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "state/sequencer/SequencerStructureHistory.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace test_support::sequencer_transaction {
+
+/**
+ * Test-only admission authority for direct History fixtures.
+ *
+ * Product code must enter History through an owner-specific prepared
+ * transaction. These helpers keep low-level History behavior tests readable
+ * without restoring the retired allocate-and-record compatibility surface.
+ */
+inline bool commitAdmittedPattern(
+    core::state::sequencer::SequencerHistoryService& history,
+    uint8_t trackIndex,
+    core::state::sequencer::SequencerHistoryPatternSnapshot before,
+    core::state::sequencer::SequencerHistoryPatternSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor = {},
+    core::state::sequencer::SequencerHistoryPatternStorage storage =
+        core::state::sequencer::SequencerHistoryPatternStorage::FullGraph
+) {
+    namespace seq = core::state::sequencer;
+    auto change = core::app::makeExtmemUnique<seq::SequencerHistoryPatternChange>();
+    if (!change) return false;
+
+    const uint8_t targetTrack = seq::SequencerTrackBankState::clampTrackIndex(
+        trackIndex
+    );
+    if (descriptor.trackIndex == seq::SequencerHistoryDescriptor::INVALID_INDEX) {
+        descriptor.trackIndex = targetTrack;
+    }
+    change->trackIndex = targetTrack;
+    change->storage = storage;
+    change->descriptor = descriptor;
+    change->before = std::move(before);
+    change->after = std::move(after);
+    if (!history.canRecordPattern(*change)) return false;
+
+    history.recordPreparedPattern(std::move(change));
+    return true;
+}
+
+inline bool commitAdmittedPattern(
+    core::state::sequencer::SequencerHistoryService& history,
+    core::state::sequencer::SequencerHistoryPatternSnapshot before,
+    core::state::sequencer::SequencerHistoryPatternSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor = {},
+    core::state::sequencer::SequencerHistoryPatternStorage storage =
+        core::state::sequencer::SequencerHistoryPatternStorage::FullGraph
+) {
+    return commitAdmittedPattern(
+        history,
+        0U,
+        std::move(before),
+        std::move(after),
+        descriptor,
+        storage
+    );
+}
+
+inline bool commitAdmittedFullBank(
+    core::state::sequencer::SequencerHistoryService& history,
+    core::state::sequencer::SequencerHistoryTrackBankSnapshot before,
+    core::state::sequencer::SequencerHistoryTrackBankSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor = {}
+) {
+    namespace seq = core::state::sequencer;
+    auto change = core::app::makeExtmemUnique<seq::SequencerHistoryFullBankChange>();
+    if (!change) return false;
+
+    change->descriptor = descriptor;
+    change->before = std::move(before);
+    change->after = std::move(after);
+    if (!history.canRecordFullBank(*change)) return false;
+
+    history.commitAdmittedFullBank(std::move(change));
+    return true;
+}
+
+inline bool commitAdmittedStructure(
+    core::state::sequencer::SequencerHistoryService& history,
+    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+) {
+    if (!change || !history.canRecordStructure(*change)) return false;
+    history.commitAdmittedStructure(std::move(change));
+    return true;
+}
+
+/** Reproduces the retired Core facade only inside integration tests. */
+inline bool commitAdmittedPattern(
+    core::state::CoreState& state,
+    core::state::sequencer::SequencerHistoryPatternSnapshot before,
+    core::state::sequencer::SequencerHistoryPatternSnapshot after,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor = {},
+    core::state::sequencer::SequencerHistoryPatternStorage storage =
+        core::state::sequencer::SequencerHistoryPatternStorage::FullGraph
+) {
+    namespace seq = core::state::sequencer;
+    const uint8_t activeTrack = state.sequencerTracks.activeTrackIndex();
+    const uint8_t targetTrack =
+        descriptor.trackIndex == seq::SequencerHistoryDescriptor::INVALID_INDEX
+            ? activeTrack
+            : seq::SequencerTrackBankState::clampTrackIndex(descriptor.trackIndex);
+    descriptor.trackIndex = targetTrack;
+
+    if (!commitAdmittedPattern(
+            state.sequencerHistory,
+            targetTrack,
+            std::move(before),
+            std::move(after),
+            descriptor,
+            storage
+        )) {
+        return false;
+    }
+
+    const bool synchronized =
+        storage == seq::SequencerHistoryPatternStorage::FlatOnly
+            ? seq::storeActiveTrackPreservingGraph(
+                  state.sequencerTracks,
+                  state.sequencer
+              )
+            : seq::storeActiveTrack(state.sequencerTracks, state.sequencer);
+    assert(synchronized);
+    state.markProjectMutated();
+    state.refreshSharedTrackStateFromSequencer();
+    return true;
+}
+
+inline bool publishAdmittedPattern(
+    core::state::CoreState& state,
+    core::state::sequencer::SequencerHistoryPatternChangePtr change
+) {
+    if (!change || !state.sequencerHistory.canRecordPattern(*change)) return false;
+    state.sequencerHistory.recordPreparedPattern(std::move(change));
+    state.publishPreparedSequencerMutation();
+    return true;
+}
+
+inline bool canPublishAdmittedFullBank(
+    const core::state::CoreState& state,
+    const core::state::sequencer::SequencerHistoryFullBankChange& change
+) {
+    return !state.sequencer.stepContentDraft.active.get() &&
+           state.sequencerHistory.canRecordFullBank(change);
+}
+
+inline bool publishAdmittedFullBank(
+    core::state::CoreState& state,
+    core::state::sequencer::SequencerHistoryFullBankChangePtr change
+) {
+    if (!change || !canPublishAdmittedFullBank(state, *change)) return false;
+    const uint16_t enabledMask = change->after.flat.enabledMask;
+    const uint8_t activeTrack = change->after.flat.activeTrack;
+    if (!state.publishPreparedSequencerTrackState(enabledMask, activeTrack)) {
+        return false;
+    }
+    state.sequencerHistory.commitAdmittedFullBank(std::move(change));
+    state.publishPreparedSequencerMutation();
+    return true;
+}
 
 inline void mixFingerprintBytes(
     uint64_t& hash,

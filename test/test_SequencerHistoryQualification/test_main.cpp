@@ -264,7 +264,7 @@ void prepareFlatHistoryPair(
     seq::captureFlatHistorySnapshot(h.state.sequencer, after);
 }
 
-void test_record_flat_pattern_has_one_atomic_change_allocation() {
+void test_admitted_flat_pattern_has_one_atomic_change_allocation() {
     {
         Harness h;
         seq::SequencerHistoryPatternSnapshot before;
@@ -276,9 +276,12 @@ void test_record_flat_pattern_has_one_atomic_change_allocation() {
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            assert(!h.state.sequencerHistory.recordFlatPattern(
+            assert(!tx::commitAdmittedPattern(
+                h.state.sequencerHistory,
                 std::move(before),
-                std::move(after)
+                std::move(after),
+                seq::SequencerHistoryDescriptor{},
+                seq::SequencerHistoryPatternStorage::FlatOnly
             ));
             tx::assertFailureConsumed(1U);
             tx::assertStateInvariant(h.state, invariant);
@@ -298,9 +301,12 @@ void test_record_flat_pattern_has_one_atomic_change_allocation() {
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(2U);
-            assert(h.state.sequencerHistory.recordFlatPattern(
+            assert(tx::commitAdmittedPattern(
+                h.state.sequencerHistory,
                 std::move(before),
-                std::move(after)
+                std::move(after),
+                seq::SequencerHistoryDescriptor{},
+                seq::SequencerHistoryPatternStorage::FlatOnly
             ));
             tx::assertMaxPlusOneStillArmed(1U);
             tx::assertSingleCommittedPublication(h.state, invariant, false);
@@ -309,7 +315,7 @@ void test_record_flat_pattern_has_one_atomic_change_allocation() {
         tx::assertMusicalSnapshot(h.state, musicalBaseline);
     }
 
-    std::cout << "[PASS] FlatOnly record has one atomic Change allocation\n";
+    std::cout << "[PASS] admitted FlatOnly commit has one atomic Change allocation\n";
 }
 
 void test_prepared_pattern_publication_is_allocation_free() {
@@ -358,7 +364,7 @@ void test_prepared_pattern_publication_is_allocation_free() {
 int main() {
     test_all_extmem_helpers_share_the_fail_nth_seam();
     test_snapshot_capture_allocation_matrix_is_atomic();
-    test_record_flat_pattern_has_one_atomic_change_allocation();
+    test_admitted_flat_pattern_has_one_atomic_change_allocation();
     test_prepared_pattern_publication_is_allocation_free();
     std::cout << "Sequencer History qualification tests passed\n";
     return 0;

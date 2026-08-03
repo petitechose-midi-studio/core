@@ -18,35 +18,6 @@ namespace {
 #endif
 }
 
-FLASHMEM bool recordPatternFromCoreState(
-    void* context, core::state::sequencer::SequencerHistoryPatternSnapshot before,
-    core::state::sequencer::SequencerHistoryPatternSnapshot after,
-    core::state::sequencer::SequencerHistoryDescriptor descriptor) {
-    if (context == nullptr) { return false; }
-
-    auto* state = static_cast<core::state::CoreState*>(context);
-    return state->recordSequencerPatternHistory(std::move(before), std::move(after), descriptor);
-}
-
-FLASHMEM bool recordFlatPatternFromCoreState(
-    void* context, core::state::sequencer::SequencerHistoryPatternSnapshot before,
-    core::state::sequencer::SequencerHistoryPatternSnapshot after,
-    core::state::sequencer::SequencerHistoryDescriptor descriptor) {
-    if (context == nullptr) { return false; }
-
-    auto* state = static_cast<core::state::CoreState*>(context);
-    return state->recordSequencerPatternHistory(
-        std::move(before), std::move(after), descriptor,
-        core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly);
-}
-
-FLASHMEM bool recordPatternChangeFromCoreState(
-    void* context, core::state::sequencer::SequencerHistoryPatternChangePtr change) {
-    if (context == nullptr) return false;
-    return static_cast<core::state::CoreState*>(context)->recordSequencerPatternHistory(
-        std::move(change));
-}
-
 FLASHMEM bool canRecordPatternFromCoreState(
     void* context, const core::state::sequencer::SequencerHistoryPatternChange& change) {
     if (context == nullptr) return false;
@@ -58,51 +29,12 @@ FLASHMEM void recordPreparedPatternFromCoreState(
     void* context, core::state::sequencer::SequencerHistoryPatternChangePtr change) {
     if (context == nullptr || !change) return;
     auto* state = static_cast<core::state::CoreState*>(context);
-    // Public compatibility adapters remain defensive for callers that probe
-    // admission and may still transfer on rejection. The sealed Core
-    // coalescer publishes through its direct trusted path.
+    // The four retained prepared references probe admission immediately before
+    // their no-fail ownership transfer. The sealed Core coalescer publishes
+    // through its direct trusted path.
     if (!state->sequencerHistory.canRecordPattern(*change)) return;
     state->sequencerHistory.recordPreparedPattern(std::move(change));
     state->markProjectMutated();
-}
-
-FLASHMEM void recordPreparedSynchronizedPatternFromCoreState(
-    void* context, core::state::sequencer::SequencerHistoryPatternChangePtr change) {
-    if (context == nullptr || !change) return;
-    auto* state = static_cast<core::state::CoreState*>(context);
-    if (!state->sequencerHistory.canRecordPattern(*change)) return;
-    state->sequencerHistory.recordPreparedPattern(std::move(change));
-    state->publishPreparedSequencerMutation();
-}
-
-FLASHMEM bool recordFullBankFromCoreState(
-    void* context, core::state::sequencer::SequencerHistoryFullBankChangePtr change) {
-    if (context == nullptr) { return false; }
-
-    auto* state = static_cast<core::state::CoreState*>(context);
-    return state->recordSequencerBankHistory(std::move(change));
-}
-
-FLASHMEM bool canRecordFullBankFromCoreState(
-    void* context, const core::state::sequencer::SequencerHistoryFullBankChange& change) {
-    if (context == nullptr) return false;
-    return static_cast<const core::state::CoreState*>(context)->canRecordSequencerBankHistory(
-        change);
-}
-
-FLASHMEM void recordPreparedFullBankFromCoreState(
-    void* context, core::state::sequencer::SequencerHistoryFullBankChangePtr change) {
-    if (context == nullptr || !change) return;
-    static_cast<core::state::CoreState*>(context)->recordPreparedSequencerBankHistory(
-        std::move(change));
-}
-
-FLASHMEM bool recordStructureFromCoreState(
-    void* context, core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) {
-    if (context == nullptr) { return false; }
-
-    auto* state = static_cast<core::state::CoreState*>(context);
-    return state->recordSequencerStructureHistory(std::move(change));
 }
 
 FLASHMEM bool canRecordStructureFromCoreState(
@@ -259,18 +191,10 @@ FLASHMEM SequencerHistoryDomainServices::SequencerHistoryDomainServices(
 FLASHMEM SequencerHistoryDomainServices
 SequencerHistoryDomainServices::fromCoreState(core::state::CoreState& state) {
     static constexpr Operations operations PROGMEM{
-        .recordPattern = recordPatternFromCoreState,
-        .recordFlatPattern = recordFlatPatternFromCoreState,
-        .recordPatternChange = recordPatternChangeFromCoreState,
         .canRecordPattern = canRecordPatternFromCoreState,
         .recordPreparedPattern = recordPreparedPatternFromCoreState,
-        .recordPreparedSynchronizedPattern = recordPreparedSynchronizedPatternFromCoreState,
-        .recordStructure = recordStructureFromCoreState,
         .canRecordStructure = canRecordStructureFromCoreState,
         .commitAdmittedStructure = commitAdmittedStructureFromCoreState,
-        .recordFullBank = recordFullBankFromCoreState,
-        .canRecordFullBank = canRecordFullBankFromCoreState,
-        .recordPreparedFullBank = recordPreparedFullBankFromCoreState,
         .beginCoalescedPatternEdit = beginCoalescedPatternEditFromCoreState,
         .sealCoalescedPatternEdit = sealCoalescedPatternEditFromCoreState,
         .beginCoalescedCcLaneEventEdit = beginCoalescedCcLaneEventEditFromCoreState,
@@ -289,14 +213,6 @@ SequencerHistoryDomainServices::fromCoreState(core::state::CoreState& state) {
     return fromStaticOperations<operations>(&state);
 }
 
-FLASHMEM bool SequencerHistoryDomainServices::recordPattern(
-    core::state::sequencer::SequencerHistoryPatternSnapshot before,
-    core::state::sequencer::SequencerHistoryPatternSnapshot after,
-    core::state::sequencer::SequencerHistoryDescriptor descriptor) const {
-    return operations_->recordPattern != nullptr &&
-           operations_->recordPattern(context_, std::move(before), std::move(after), descriptor);
-}
-
 FLASHMEM bool SequencerHistoryDomainServices::canRecordPattern(
     const core::state::sequencer::SequencerHistoryPatternChange& change) const {
     return operations_->canRecordPattern != nullptr &&
@@ -308,40 +224,6 @@ FLASHMEM void SequencerHistoryDomainServices::recordPreparedPattern(
     core::state::sequencer::SequencerHistoryPatternChangePtr change) const {
     if (operations_->recordPreparedPattern == nullptr) return;
     operations_->recordPreparedPattern(context_, std::move(change));
-}
-
-FLASHMEM bool SequencerHistoryDomainServices::canRecordSynchronizedPattern(
-    const core::state::sequencer::SequencerHistoryPatternChange& change) const {
-    return operations_->canRecordPattern != nullptr &&
-           operations_->recordPreparedSynchronizedPattern != nullptr &&
-           operations_->canRecordPattern(context_, change);
-}
-
-FLASHMEM void SequencerHistoryDomainServices::recordPreparedSynchronizedPattern(
-    core::state::sequencer::SequencerHistoryPatternChangePtr change) const {
-    if (operations_->recordPreparedSynchronizedPattern == nullptr) return;
-    operations_->recordPreparedSynchronizedPattern(context_, std::move(change));
-}
-
-FLASHMEM bool SequencerHistoryDomainServices::recordFlatPattern(
-    core::state::sequencer::SequencerHistoryPatternSnapshot before,
-    core::state::sequencer::SequencerHistoryPatternSnapshot after,
-    core::state::sequencer::SequencerHistoryDescriptor descriptor) const {
-    return operations_->recordFlatPattern != nullptr &&
-           operations_->recordFlatPattern(context_, std::move(before), std::move(after),
-                                          descriptor);
-}
-
-FLASHMEM bool SequencerHistoryDomainServices::recordPattern(
-    core::state::sequencer::SequencerHistoryPatternChangePtr change) const {
-    return operations_->recordPatternChange != nullptr &&
-           operations_->recordPatternChange(context_, std::move(change));
-}
-
-FLASHMEM bool SequencerHistoryDomainServices::recordStructure(
-    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const {
-    return operations_->recordStructure != nullptr &&
-           operations_->recordStructure(context_, std::move(change));
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::canRecordStructure(
@@ -364,25 +246,6 @@ FLASHMEM void SequencerHistoryDomainServices::commitAdmittedStructure(
         failAdmittedStructureInvariant();
     }
     operations_->commitAdmittedStructure(context_, std::move(change));
-}
-
-FLASHMEM bool SequencerHistoryDomainServices::recordFullBank(
-    core::state::sequencer::SequencerHistoryFullBankChangePtr change) const {
-    return operations_->recordFullBank != nullptr &&
-           operations_->recordFullBank(context_, std::move(change));
-}
-
-FLASHMEM bool SequencerHistoryDomainServices::canRecordFullBank(
-    const core::state::sequencer::SequencerHistoryFullBankChange& change) const {
-    return operations_->canRecordFullBank != nullptr &&
-           operations_->recordPreparedFullBank != nullptr &&
-           operations_->canRecordFullBank(context_, change);
-}
-
-FLASHMEM void SequencerHistoryDomainServices::recordPreparedFullBank(
-    core::state::sequencer::SequencerHistoryFullBankChangePtr change) const {
-    if (operations_->recordPreparedFullBank == nullptr) return;
-    operations_->recordPreparedFullBank(context_, std::move(change));
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedPatternEdit(

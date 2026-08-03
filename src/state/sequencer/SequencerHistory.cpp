@@ -1769,49 +1769,6 @@ FLASHMEM bool populatePreparedHistoryFullBankStaging(
     return true;
 }
 
-FLASHMEM bool SequencerHistoryService::recordPattern(uint8_t trackIndex,
-                                                     SequencerHistoryPatternSnapshot before,
-                                                     SequencerHistoryPatternSnapshot after,
-                                                     SequencerHistoryDescriptor descriptor) {
-    return recordPatternWithStorage(trackIndex, std::move(before), std::move(after), descriptor,
-                                    SequencerHistoryPatternStorage::FullGraph);
-}
-
-FLASHMEM bool SequencerHistoryService::recordFlatPattern(uint8_t trackIndex,
-                                                         SequencerHistoryPatternSnapshot before,
-                                                         SequencerHistoryPatternSnapshot after,
-                                                         SequencerHistoryDescriptor descriptor) {
-    return recordPatternWithStorage(trackIndex, std::move(before), std::move(after), descriptor,
-                                    SequencerHistoryPatternStorage::FlatOnly);
-}
-
-FLASHMEM bool SequencerHistoryService::recordPatternWithStorage(
-    uint8_t trackIndex, SequencerHistoryPatternSnapshot before,
-    SequencerHistoryPatternSnapshot after, SequencerHistoryDescriptor descriptor,
-    SequencerHistoryPatternStorage storage) {
-    auto change = core::app::makeExtmemUnique<SequencerHistoryPatternChange>();
-    if (!change) { return false; }
-
-    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    if (descriptor.trackIndex == SequencerHistoryDescriptor::INVALID_INDEX) {
-        descriptor.trackIndex = targetTrack;
-    }
-
-    change->trackIndex = targetTrack;
-    change->storage = storage;
-    change->descriptor = descriptor;
-    change->before = std::move(before);
-    change->after = std::move(after);
-
-    return recordPattern(std::move(change));
-}
-
-FLASHMEM bool SequencerHistoryService::recordPattern(SequencerHistoryPatternChangePtr change) {
-    if (!change || !canRecordPattern(*change)) return false;
-    recordPreparedPattern(std::move(change));
-    return true;
-}
-
 FLASHMEM bool SequencerHistoryService::canRecordPattern(
     const SequencerHistoryPatternChange& change) const {
     if (change.storage == SequencerHistoryPatternStorage::FlatOnly) {
@@ -1853,47 +1810,10 @@ FLASHMEM void SequencerHistoryService::recordPreparedPattern(
     commitPreparedEntry(std::move(entry));
 }
 
-FLASHMEM bool SequencerHistoryService::recordPattern(SequencerHistoryPatternSnapshot before,
-                                                     SequencerHistoryPatternSnapshot after,
-                                                     SequencerHistoryDescriptor descriptor) {
-    return recordPattern(0, std::move(before), std::move(after), descriptor);
-}
-
-FLASHMEM bool SequencerHistoryService::recordFlatPattern(SequencerHistoryPatternSnapshot before,
-                                                         SequencerHistoryPatternSnapshot after,
-                                                         SequencerHistoryDescriptor descriptor) {
-    return recordFlatPattern(0, std::move(before), std::move(after), descriptor);
-}
-
-FLASHMEM bool SequencerHistoryService::recordFullBank(SequencerHistoryTrackBankSnapshot before,
-                                                      SequencerHistoryTrackBankSnapshot after,
-                                                      SequencerHistoryDescriptor descriptor) {
-    auto change = core::app::makeExtmemUnique<SequencerHistoryFullBankChange>();
-    if (!change) { return false; }
-
-    change->descriptor = descriptor;
-    change->before = std::move(before);
-    change->after = std::move(after);
-    return recordFullBank(std::move(change));
-}
-
-FLASHMEM bool SequencerHistoryService::recordFullBank(SequencerHistoryFullBankChangePtr change) {
-    if (!change || !canRecordFullBank(*change)) return false;
-    recordPreparedFullBank(std::move(change));
-    return true;
-}
-
 FLASHMEM bool SequencerHistoryService::canRecordFullBank(
     const SequencerHistoryFullBankChange& change) const {
     return !sameMusicalHistorySnapshot(change.before, change.after) &&
            incomingEntryFitsRetainedBudget(fullBankChangeRetainedBytes(change));
-}
-
-FLASHMEM void SequencerHistoryService::recordPreparedFullBank(
-    SequencerHistoryFullBankChangePtr change) {
-    if (!change || !canRecordFullBank(*change)) return;
-
-    commitAdmittedFullBank(std::move(change));
 }
 
 FLASHMEM void SequencerHistoryService::commitAdmittedFullBank(
@@ -1909,21 +1829,6 @@ FLASHMEM void SequencerHistoryService::commitAdmittedFullBank(
     entry.scope = SequencerHistoryScope::FullBank;
     entry.fullBank = std::move(change);
     commitPreparedEntry(std::move(entry));
-}
-
-FLASHMEM bool SequencerHistoryService::recordStructure(
-    SequencerHistoryTrackStructureChangePtr change) {
-    if (!change || !canRecordStructure(*change)) { return false; }
-
-    recordPreparedStructure(std::move(change));
-    return true;
-}
-
-FLASHMEM void SequencerHistoryService::recordPreparedStructure(
-    SequencerHistoryTrackStructureChangePtr change) {
-    if (!change || !canRecordStructure(*change)) return;
-
-    commitAdmittedStructure(std::move(change));
 }
 
 FLASHMEM void SequencerHistoryService::commitAdmittedStructure(

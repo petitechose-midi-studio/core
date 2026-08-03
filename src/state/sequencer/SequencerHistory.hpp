@@ -580,36 +580,13 @@ public:
         project_history_sink_ = sink;
     }
 
-    bool recordPattern(uint8_t trackIndex, SequencerHistoryPatternSnapshot before,
-                       SequencerHistoryPatternSnapshot after,
-                       SequencerHistoryDescriptor descriptor = {});
-    bool recordPattern(SequencerHistoryPatternChangePtr change);
     // Side-effect-free admission check for a fully prepared Pattern change.
     bool canRecordPattern(const SequencerHistoryPatternChange& change) const;
     // Precondition: canRecordPattern(change) was true and change was not
     // modified afterwards. Under that contract this commit cannot fail.
     void recordPreparedPattern(SequencerHistoryPatternChangePtr change);
 
-    bool recordFlatPattern(uint8_t trackIndex, SequencerHistoryPatternSnapshot before,
-                           SequencerHistoryPatternSnapshot after,
-                           SequencerHistoryDescriptor descriptor = {});
-
-    bool recordPattern(SequencerHistoryPatternSnapshot before,
-                       SequencerHistoryPatternSnapshot after,
-                       SequencerHistoryDescriptor descriptor = {});
-
-    bool recordFlatPattern(SequencerHistoryPatternSnapshot before,
-                           SequencerHistoryPatternSnapshot after,
-                           SequencerHistoryDescriptor descriptor = {});
-
-    bool recordFullBank(SequencerHistoryTrackBankSnapshot before,
-                        SequencerHistoryTrackBankSnapshot after,
-                        SequencerHistoryDescriptor descriptor = {});
-    bool recordFullBank(SequencerHistoryFullBankChangePtr change);
     bool canRecordFullBank(const SequencerHistoryFullBankChange& change) const;
-    // Precondition: canRecordFullBank(change) was true and change was not
-    // modified afterwards. Under that contract this commit cannot fail.
-    void recordPreparedFullBank(SequencerHistoryFullBankChangePtr change);
     // Internal no-fail tail for a FullBank change whose immutable payload and
     // retained-byte admission were proven before the first live write. This
     // performs no allocation and no policy recheck.
@@ -617,16 +594,11 @@ public:
     // Side-effect-free admission check for a fully prepared change. Callers
     // must repeat it if snapshot graph ownership changes before recording.
     bool canRecordStructure(const SequencerHistoryTrackStructureChange& change) const;
-    // Precondition: canRecordStructure(change) was true and change was not
-    // modified afterwards. Under that contract this commit cannot fail.
-    void recordPreparedStructure(SequencerHistoryTrackStructureChangePtr change);
     // Internal no-fail tail for an immutable Structure change admitted before
     // the first live write. This performs no equality or policy recheck.
     void commitAdmittedStructure(
         SequencerHistoryTrackStructureChangePtr change
     ) noexcept;
-    bool recordStructure(SequencerHistoryTrackStructureChangePtr change);
-
     bool canUndo() const { return undo_count_ > 0; }
     bool canRedo() const { return redo_count_ > 0; }
 
@@ -672,10 +644,6 @@ private:
     bool pushUndo(SequencerHistoryEntry entry);
     bool pushRedo(SequencerHistoryEntry entry);
     void commitPreparedEntry(SequencerHistoryEntry entry);
-    bool recordPatternWithStorage(uint8_t trackIndex, SequencerHistoryPatternSnapshot before,
-                                  SequencerHistoryPatternSnapshot after,
-                                  SequencerHistoryDescriptor descriptor,
-                                  SequencerHistoryPatternStorage storage);
 };
 
 }  // namespace core::state::sequencer

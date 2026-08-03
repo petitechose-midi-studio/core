@@ -3568,7 +3568,8 @@ void test_undo_removed_active_child_context_returns_to_root() {
 
     core::state::sequencer::SequencerHistoryPatternSnapshot after;
     assert(core::state::sequencer::captureHistorySnapshot(h.state.sequencer, after));
-    assert(h.state.recordSequencerPatternHistory(
+    assert(tx::commitAdmittedPattern(
+        h.state,
         std::move(before), std::move(after),
         core::state::sequencer::SequencerHistoryDescriptor{
             .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,

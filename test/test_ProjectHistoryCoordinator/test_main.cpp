@@ -60,7 +60,8 @@ void recordStepPitch(core::state::CoreState& state, uint8_t pitch) {
     const uint8_t previous = state.sequencer.pattern.note[0];
     assert(state.sequencer.setStepNoteAt(0, pitch));
     assert(seq::captureHistorySnapshot(state.sequencer, after));
-    assert(state.recordSequencerPatternHistory(
+    assert(tx::commitAdmittedPattern(
+        state,
         std::move(before),
         std::move(after),
         seq::SequencerHistoryDescriptor{
@@ -180,7 +181,8 @@ void recordCcLane(core::state::CoreState& state) {
     state.sequencer.pattern.ccLaneRevision.set(bank->revision);
 
     assert(seq::captureHistorySnapshot(state.sequencer, after));
-    assert(state.recordSequencerPatternHistory(
+    assert(tx::commitAdmittedPattern(
+        state,
         std::move(before),
         std::move(after),
         seq::SequencerHistoryDescriptor{

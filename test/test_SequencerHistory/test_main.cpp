@@ -19,8 +19,11 @@
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../../src/state/sequencer/SequencerStructureHistory.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
+#include "../support/SequencerHistoryTransactionAssertions.hpp"
 
 namespace {
+
+namespace tx = test_support::sequencer_transaction;
 
 using core::state::sequencer::SequencerHistoryPatternSnapshot;
 using core::state::sequencer::SequencerHistoryScope;
@@ -235,7 +238,7 @@ void test_pattern_history_undo_redo_restores_flat_data_and_focus() {
     assert(core::state::sequencer::captureHistorySnapshot(state, after));
 
     SequencerHistoryService history;
-    assert(history.recordPattern(std::move(before), std::move(after)));
+    assert(tx::commitAdmittedPattern(history, std::move(before), std::move(after)));
     assert(history.undoCount() == 1);
 
     assertActiveDraftBlocksDirectHistory(history, bank, state, false);
@@ -269,7 +272,13 @@ void test_flat_pattern_history_restores_region_only_edit() {
     core::state::sequencer::captureFlatHistorySnapshot(state, after);
 
     SequencerHistoryService history;
-    assert(history.recordFlatPattern(std::move(before), std::move(after)));
+    assert(tx::commitAdmittedPattern(
+        history,
+        std::move(before),
+        std::move(after),
+        SequencerHistoryDescriptor{},
+        core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly
+    ));
     assert(history.undo(bank, state));
     auto region = core::state::sequencer::patternPlaybackRegion(state.pattern);
     assert(region.contentLength == 8);
@@ -326,7 +335,7 @@ void test_pattern_history_restores_graph_payload() {
     assert(core::state::sequencer::captureHistorySnapshot(state, after));
 
     SequencerHistoryService history;
-    assert(history.recordPattern(std::move(before), std::move(after)));
+    assert(tx::commitAdmittedPattern(history, std::move(before), std::move(after)));
 
     assert(history.undo(bank, state));
     assert(core::state::sequencer::graphView(state.pattern) == nullptr);
@@ -378,7 +387,13 @@ void test_flat_pattern_history_preserves_graph_payload() {
     core::state::sequencer::captureFlatHistorySnapshot(state, after);
 
     SequencerHistoryService history;
-    assert(history.recordFlatPattern(std::move(before), std::move(after)));
+    assert(tx::commitAdmittedPattern(
+        history,
+        std::move(before),
+        std::move(after),
+        SequencerHistoryDescriptor{},
+        core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly
+    ));
 
     assert(history.undo(bank, state));
     assert(!state.pattern.isEnabled(0));
@@ -462,7 +477,13 @@ size_t recordFlatPatternWithOptionalCcLaneAndVerifyPreservation(bool withCcLane)
     core::state::sequencer::captureFlatHistorySnapshot(state, after);
 
     SequencerHistoryService history;
-    assert(history.recordFlatPattern(std::move(before), std::move(after)));
+    assert(tx::commitAdmittedPattern(
+        history,
+        std::move(before),
+        std::move(after),
+        SequencerHistoryDescriptor{},
+        core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly
+    ));
     const size_t retainedBytes = history.retainedBytes();
     assert(retainedBytes > 0U);
 
@@ -539,7 +560,13 @@ void test_flat_pattern_history_rejects_graph_revision_change() {
     SequencerHistoryPatternSnapshot after;
     core::state::sequencer::captureFlatHistorySnapshot(state, after);
     SequencerHistoryService history;
-    assert(!history.recordFlatPattern(std::move(before), std::move(after)));
+    assert(!tx::commitAdmittedPattern(
+        history,
+        std::move(before),
+        std::move(after),
+        SequencerHistoryDescriptor{},
+        core::state::sequencer::SequencerHistoryPatternStorage::FlatOnly
+    ));
     assert(!history.canUndo());
 
     std::cout << "[PASS] test_flat_pattern_history_rejects_graph_revision_change\n";
@@ -580,7 +607,7 @@ void test_pattern_noop_ignores_unused_graph_capacity() {
     graph.cycleSets[graph.cycleSetCount].offset = 1;
 
     SequencerHistoryService history;
-    assert(!history.recordPattern(std::move(before), std::move(after)));
+    assert(!tx::commitAdmittedPattern(history, std::move(before), std::move(after)));
     assert(!history.canUndo());
 
     std::cout << "[PASS] test_pattern_noop_ignores_unused_graph_capacity\n";
@@ -598,7 +625,7 @@ void test_pattern_noop_ignores_focus_only_change() {
     assert(core::state::sequencer::captureHistorySnapshot(state, after));
 
     SequencerHistoryService history;
-    assert(!history.recordPattern(std::move(before), std::move(after)));
+    assert(!tx::commitAdmittedPattern(history, std::move(before), std::move(after)));
     assert(!history.canUndo());
 
     std::cout << "[PASS] test_pattern_noop_ignores_focus_only_change\n";
@@ -615,7 +642,11 @@ void test_redo_clears_after_new_record() {
     setStep(state.pattern, 0, 61);
     SequencerHistoryPatternSnapshot firstAfter;
     assert(core::state::sequencer::captureHistorySnapshot(state, firstAfter));
-    assert(history.recordPattern(std::move(firstBefore), std::move(firstAfter)));
+    assert(tx::commitAdmittedPattern(
+        history,
+        std::move(firstBefore),
+        std::move(firstAfter)
+    ));
 
     assert(history.undo(bank, state));
     assert(history.canRedo());
@@ -625,7 +656,11 @@ void test_redo_clears_after_new_record() {
     setStep(state.pattern, 0, 62);
     SequencerHistoryPatternSnapshot secondAfter;
     assert(core::state::sequencer::captureHistorySnapshot(state, secondAfter));
-    assert(history.recordPattern(std::move(secondBefore), std::move(secondAfter)));
+    assert(tx::commitAdmittedPattern(
+        history,
+        std::move(secondBefore),
+        std::move(secondAfter)
+    ));
 
     assert(!history.canRedo());
     assert(history.undoCount() == 1);
@@ -647,7 +682,8 @@ void test_pattern_history_undoes_previous_track_without_switching_active_track()
     assert(core::state::sequencer::captureHistorySnapshot(active, track0After));
 
     SequencerHistoryService history;
-    assert(history.recordPattern(
+    assert(tx::commitAdmittedPattern(
+        history,
         0,
         std::move(track0Before),
         std::move(track0After),
@@ -669,7 +705,12 @@ void test_pattern_history_undoes_previous_track_without_switching_active_track()
     setStep(active.pattern, 0, 73);
     SequencerHistoryPatternSnapshot track1After;
     assert(core::state::sequencer::captureHistorySnapshot(active, track1After));
-    assert(history.recordPattern(1, std::move(track1Before), std::move(track1After)));
+    assert(tx::commitAdmittedPattern(
+        history,
+        1,
+        std::move(track1Before),
+        std::move(track1After)
+    ));
 
     assert(history.undo(bank, active));
     assert(bank.activeTrackIndex() == 1);
@@ -728,7 +769,7 @@ void test_full_bank_history_restores_active_track_and_graphs() {
     assert(core::state::sequencer::captureHistorySnapshot(bank, active, after));
 
     SequencerHistoryService history;
-    assert(history.recordFullBank(std::move(before), std::move(after)));
+    assert(tx::commitAdmittedFullBank(history, std::move(before), std::move(after)));
 
     assertActiveDraftBlocksDirectHistory(history, bank, active, false);
     assert(history.undo(bank, active));
@@ -799,7 +840,7 @@ void test_structure_history_restores_track_mask_active_track_and_graphs() {
 
     change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;
     SequencerHistoryService history;
-    assert(history.recordStructure(std::move(change)));
+    assert(tx::commitAdmittedStructure(history, std::move(change)));
     assert(history.undoCount(SequencerHistoryScope::Structure) == 1);
     assert(history.undoCount(SequencerHistoryScope::FullBank) == 0);
 
@@ -866,7 +907,7 @@ void test_structure_history_preflight_matches_record_acceptance() {
         noOp->after
     ));
     assert(!history.canRecordStructure(*noOp));
-    assert(!history.recordStructure(std::move(noOp)));
+    assert(!tx::commitAdmittedStructure(history, std::move(noOp)));
 
     auto change = core::app::makeExtmemUnique<SequencerHistoryTrackStructureChange>();
     assert(change);
@@ -884,7 +925,7 @@ void test_structure_history_preflight_matches_record_acceptance() {
         change->after
     ));
     assert(history.canRecordStructure(*change));
-    history.recordPreparedStructure(std::move(change));
+    assert(tx::commitAdmittedStructure(history, std::move(change)));
     assert(history.undoCount(SequencerHistoryScope::Structure) == 1);
 
     std::cout << "[PASS] test_structure_history_preflight_matches_record_acceptance\n";
@@ -895,14 +936,14 @@ void test_structure_history_preflight_accepts_with_budget_pruning() {
 
     auto first = makeGraphHeavyStructureHistoryChange();
     assert(history.canRecordStructure(*first));
-    assert(history.recordStructure(std::move(first)));
+    assert(tx::commitAdmittedStructure(history, std::move(first)));
     const size_t entryBytes = history.retainedBytes();
     assert(entryBytes > 0);
     assert(entryBytes <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
 
     auto second = makeGraphHeavyStructureHistoryChange();
     assert(history.canRecordStructure(*second));
-    assert(history.recordStructure(std::move(second)));
+    assert(tx::commitAdmittedStructure(history, std::move(second)));
     assert(history.retainedBytes() == entryBytes * 2U);
     assert(history.retainedBytes() <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
 
@@ -911,7 +952,7 @@ void test_structure_history_preflight_accepts_with_budget_pruning() {
            SequencerHistoryService::RETAINED_BYTE_BUDGET);
     const uint8_t countBefore = history.undoCount(SequencerHistoryScope::Structure);
     assert(history.canRecordStructure(*incoming));
-    history.recordPreparedStructure(std::move(incoming));
+    assert(tx::commitAdmittedStructure(history, std::move(incoming)));
     assert(history.undoCount(SequencerHistoryScope::Structure) == countBefore);
     assert(history.retainedBytes() == entryBytes * 2U);
     assert(history.retainedBytes() <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
@@ -1041,7 +1082,7 @@ void test_history_limits_prune_by_scope() {
         setStep(state.pattern, 0, static_cast<uint8_t>(50U + i));
         SequencerHistoryPatternSnapshot after;
         assert(core::state::sequencer::captureHistorySnapshot(state, after));
-        assert(history.recordPattern(std::move(before), std::move(after)));
+        assert(tx::commitAdmittedPattern(history, std::move(before), std::move(after)));
     }
 
     for (uint8_t i = 0; i < SequencerHistoryService::FULL_BANK_ENTRY_LIMIT + 1U; ++i) {
@@ -1050,7 +1091,7 @@ void test_history_limits_prune_by_scope() {
         setStep(bank.track(1), 0, static_cast<uint8_t>(70U + i));
         SequencerHistoryTrackBankSnapshot after;
         assert(core::state::sequencer::captureHistorySnapshot(bank, state, after));
-        assert(history.recordFullBank(std::move(before), std::move(after)));
+        assert(tx::commitAdmittedFullBank(history, std::move(before), std::move(after)));
     }
 
     for (uint8_t i = 0; i < SequencerHistoryService::STRUCTURE_ENTRY_LIMIT + 1U; ++i) {
@@ -1072,7 +1113,7 @@ void test_history_limits_prune_by_scope() {
         ));
         change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;
         assert(history.canRecordStructure(*change));
-        assert(history.recordStructure(std::move(change)));
+        assert(tx::commitAdmittedStructure(history, std::move(change)));
     }
 
     assert(history.undoCount(SequencerHistoryScope::PatternOnly) ==
@@ -1106,7 +1147,7 @@ void test_history_prunes_graph_heavy_entries_to_psram_budget() {
         bank.track(1).note[0] = static_cast<uint8_t>(61U + edit);
         SequencerHistoryTrackBankSnapshot after;
         assert(core::state::sequencer::captureHistorySnapshot(bank, state, after));
-        assert(history.recordFullBank(std::move(before), std::move(after)));
+        assert(tx::commitAdmittedFullBank(history, std::move(before), std::move(after)));
         assert(history.retainedBytes() <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
     }
 
@@ -1126,7 +1167,7 @@ void test_clear_resets_stacks() {
     assert(core::state::sequencer::captureHistorySnapshot(state, after));
 
     SequencerHistoryService history;
-    assert(history.recordPattern(std::move(before), std::move(after)));
+    assert(tx::commitAdmittedPattern(history, std::move(before), std::move(after)));
     history.clear();
 
     assert(!history.canUndo());

@@ -1,9 +1,6 @@
 #pragma once
 
-#include <utility>
-
 #include "app/ExtmemAllocator.hpp"
-#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerStructureHistory.hpp"
 
@@ -45,18 +42,6 @@ inline core::state::sequencer::SequencerHistoryDescriptor makeSequencerTrackStru
         .beforeValue = beforeValue,
         .afterValue = afterValue,
     };
-}
-
-inline bool recordSequencerTrackStructureHistoryChange(
-    SequencerHistoryDomainServices& history,
-    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
-) {
-    if (!change) return false;
-    change->descriptor = makeSequencerTrackStructureHistoryDescriptor(
-        change->before,
-        change->after
-    );
-    return history.recordStructure(std::move(change));
 }
 
 }  // namespace core::handler

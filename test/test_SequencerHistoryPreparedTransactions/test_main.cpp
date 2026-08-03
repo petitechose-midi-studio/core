@@ -816,10 +816,7 @@ void runPatternCommit(
         staged,
         prepared.synchronization
     ));
-    auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-        h.state
-    );
-    assert(history.canRecordSynchronizedPattern(*prepared.change));
+    assert(h.state.sequencerHistory.canRecordPattern(*prepared.change));
 
     const auto before = tx::captureStateInvariant(h.state);
     const auto beforeBankGraph = h.state.sequencerTracks.track(0U).graph.get();
@@ -839,7 +836,7 @@ void runPatternCommit(
             h.state.sequencer,
             std::move(prepared.synchronization)
         );
-        history.recordPreparedSynchronizedPattern(std::move(prepared.change));
+        assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
         tx::assertMaxPlusOneStillArmed(0U);
         assertExactlyOnePublication(h.state, before);
         assert(
@@ -1069,10 +1066,7 @@ void prepareGraphCcPatternTraversalEntry(Harness& h, bool targetActive) {
         prepared.synchronization
     ));
 
-    auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-        h.state
-    );
-    assert(history.canRecordSynchronizedPattern(*prepared.change));
+    assert(h.state.sequencerHistory.canRecordPattern(*prepared.change));
     assert(seq::preparedActiveTrackSynchronizationMatches(
         h.state.sequencerTracks,
         prepared.synchronization
@@ -1083,7 +1077,7 @@ void prepareGraphCcPatternTraversalEntry(Harness& h, bool targetActive) {
         h.state.sequencer,
         std::move(prepared.synchronization)
     );
-    history.recordPreparedSynchronizedPattern(std::move(prepared.change));
+    assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
     settleSetup(h);
 
     if (!targetActive) {
@@ -1325,11 +1319,8 @@ void test_pattern_noop_admission_preserves_live_state() {
     auto musical = captureFullBankMusicalProof(h);
     const auto before = tx::captureStateInvariant(h.state);
     const auto owners = captureBankOwners(h);
-    auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-        h.state
-    );
-    assert(!history.canRecordSynchronizedPattern(*noOp.change));
-    history.recordPreparedSynchronizedPattern(std::move(noOp.change));
+    assert(!h.state.sequencerHistory.canRecordPattern(*noOp.change));
+    assert(!tx::publishAdmittedPattern(h.state, std::move(noOp.change)));
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
     tx::assertStateInvariant(h.state, before);
@@ -1592,10 +1583,7 @@ void test_flat_sync_accepts_coherent_cold_payload_revision_drift() {
         staged,
         prepared.synchronization
     ));
-    auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-        h.state
-    );
-    assert(history.canRecordSynchronizedPattern(*prepared.change));
+    assert(h.state.sequencerHistory.canRecordPattern(*prepared.change));
 
     publishStagedFlatPattern(h, staged);
     seq::publishPreparedActiveTrackSynchronization(
@@ -1603,7 +1591,7 @@ void test_flat_sync_accepts_coherent_cold_payload_revision_drift() {
         h.state.sequencer,
         std::move(prepared.synchronization)
     );
-    history.recordPreparedSynchronizedPattern(std::move(prepared.change));
+    assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
 
     assert(
         bankPattern.graphRevision.get() ==
@@ -1639,10 +1627,7 @@ void test_prepared_publication_is_exact_during_notification_drain() {
         staged,
         prepared.synchronization
     ));
-    auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-        h.state
-    );
-    assert(history.canRecordSynchronizedPattern(*prepared.change));
+    assert(h.state.sequencerHistory.canRecordPattern(*prepared.change));
     const auto before = tx::captureStateInvariant(h.state);
 
     oc::state::Signal<uint8_t> trigger{0U};
@@ -1663,7 +1648,7 @@ void test_prepared_publication_is_exact_during_notification_drain() {
             h.state.sequencer,
             std::move(prepared.synchronization)
         );
-        history.recordPreparedSynchronizedPattern(std::move(prepared.change));
+        assert(tx::publishAdmittedPattern(h.state, std::move(prepared.change)));
         committed = true;
     });
     assert(subscription.isValid());
@@ -1877,11 +1862,8 @@ void commitFullBankEnabledMaskChange(Harness& h, uint16_t enabledMask) {
         h.state.sequencer,
         *prepared.change
     ));
-    auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-        h.state
-    );
-    assert(history.canRecordFullBank(*prepared.change));
-    history.recordPreparedFullBank(std::move(prepared.change));
+    assert(tx::canPublishAdmittedFullBank(h.state, *prepared.change));
+    assert(tx::publishAdmittedFullBank(h.state, std::move(prepared.change)));
     assert(
         h.state.sequencerHistory.undoCount(
             seq::SequencerHistoryScope::FullBank
@@ -2335,11 +2317,8 @@ void test_full_bank_noop_budget_and_pruning() {
             h.state.sequencer,
             *noOp.change
         ));
-        auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-            h.state
-        );
-        assert(!history.canRecordFullBank(*noOp.change));
-        history.recordPreparedFullBank(std::move(noOp.change));
+        assert(!tx::canPublishAdmittedFullBank(h.state, *noOp.change));
+        assert(!tx::publishAdmittedFullBank(h.state, std::move(noOp.change)));
         test_support::drainNotifications();
         h.state.flushProjectMutationCoalescing();
         tx::assertStateInvariant(h.state, before);
@@ -2358,11 +2337,8 @@ void test_full_bank_noop_budget_and_pruning() {
             h.state.sequencer,
             *maximum.change
         ));
-        auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-            h.state
-        );
-        assert(history.canRecordFullBank(*maximum.change));
-        history.recordPreparedFullBank(std::move(maximum.change));
+        assert(tx::canPublishAdmittedFullBank(h.state, *maximum.change));
+        assert(tx::publishAdmittedFullBank(h.state, std::move(maximum.change)));
         assert(
             h.state.sequencerHistory.retainedBytes() <=
             seq::SequencerHistoryService::RETAINED_BYTE_BUDGET
@@ -2372,9 +2348,6 @@ void test_full_bank_noop_budget_and_pruning() {
     {
         Harness h;
         initializeActivePayload(h, PayloadKind::None);
-        auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-            h.state
-        );
         const auto modifiedBefore = h.state.project.metadata.modifiedCounter;
         for (uint8_t index = 0U; index < 5U; ++index) {
             PreparedFullBank prepared;
@@ -2389,8 +2362,8 @@ void test_full_bank_noop_budget_and_pruning() {
                 h.state.sequencer,
                 *prepared.change
             ));
-            assert(history.canRecordFullBank(*prepared.change));
-            history.recordPreparedFullBank(std::move(prepared.change));
+            assert(tx::canPublishAdmittedFullBank(h.state, *prepared.change));
+            assert(tx::publishAdmittedFullBank(h.state, std::move(prepared.change)));
         }
         assert(
             h.state.sequencerHistory.undoCount(seq::SequencerHistoryScope::FullBank) ==
@@ -2420,10 +2393,7 @@ void test_full_bank_commit_is_nofail_and_exactly_once() {
         stagedActive,
         *prepared.change
     ));
-    auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-        h.state
-    );
-    assert(history.canRecordFullBank(*prepared.change));
+    assert(tx::canPublishAdmittedFullBank(h.state, *prepared.change));
     const auto before = tx::captureStateInvariant(h.state);
     const std::size_t expectedRetained = expectedFullBankRetainedBytes(
         *prepared.change
@@ -2437,7 +2407,7 @@ void test_full_bank_commit_is_nofail_and_exactly_once() {
             stagedBank,
             stagedActive
         );
-        history.recordPreparedFullBank(std::move(prepared.change));
+        assert(tx::publishAdmittedFullBank(h.state, std::move(prepared.change)));
         tx::assertMaxPlusOneStillArmed(0U);
         assertExactlyOnePublication(h.state, before);
         assert(
@@ -2561,13 +2531,10 @@ void test_prepared_bank_admission_rejects_active_step_draft() {
         const auto owners = captureBankOwners(h);
         const auto draft = captureDraftInvariant(h);
         auto musical = captureFullBankMusicalProof(h);
-        auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
-            h.state
-        );
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            assert(!history.canRecordFullBank(*prepared.change));
-            history.recordPreparedFullBank(std::move(prepared.change));
+            assert(!tx::canPublishAdmittedFullBank(h.state, *prepared.change));
+            assert(!tx::publishAdmittedFullBank(h.state, std::move(prepared.change)));
             tx::assertMaxPlusOneStillArmed(0U);
             tx::assertStateInvariant(h.state, before);
             assertBankOwners(h, owners);

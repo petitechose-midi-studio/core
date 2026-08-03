@@ -396,22 +396,6 @@ public:
     void publishPreparedSequencerMutation(
         bool notifyProjectNavigation = true
     );
-    bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternSnapshot before,
-                                       sequencer::SequencerHistoryPatternSnapshot after,
-                                       sequencer::SequencerHistoryDescriptor descriptor = {},
-                                       sequencer::SequencerHistoryPatternStorage storage =
-                                           sequencer::SequencerHistoryPatternStorage::FullGraph);
-    bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternChangePtr change);
-    bool recordSequencerBankHistory(sequencer::SequencerHistoryTrackBankSnapshot before,
-                                    sequencer::SequencerHistoryTrackBankSnapshot after,
-                                    sequencer::SequencerHistoryDescriptor descriptor = {});
-    bool recordSequencerBankHistory(sequencer::SequencerHistoryFullBankChangePtr change);
-    bool canRecordSequencerBankHistory(
-        const sequencer::SequencerHistoryFullBankChange& change) const;
-    // Requires an unchanged change accepted by canRecord*. Publishes the
-    // prepared bank topology into shared UI/Macro projections and commits the
-    // history plus dirty/autosave boundary without further allocation.
-    void recordPreparedSequencerBankHistory(sequencer::SequencerHistoryFullBankChangePtr change);
     sequencer::SequencerPreparedFullBankEditResult applyPreparedProjectScaleChoice(
         sequencer::SequencerPreparedFullBankEditOwner owner,
         uint8_t row,
@@ -424,7 +408,6 @@ public:
     void commitAdmittedSequencerStructureHistory(
         sequencer::SequencerHistoryTrackStructureChangePtr change
     ) noexcept;
-    bool recordSequencerStructureHistory(sequencer::SequencerHistoryTrackStructureChangePtr change);
     bool beginOrContinueSequencerPatternHistoryCoalescing(
         uint8_t step, sequencer::StepProperty property, uint32_t nowMs,
         sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan, bool stateProperty = false);
