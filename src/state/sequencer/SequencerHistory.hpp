@@ -455,6 +455,13 @@ bool reserveHistorySnapshotStorage(const SequencerState& source,
                                    SequencerHistoryPatternSnapshot& snapshot);
 bool captureHistorySnapshotUsingReservedStorage(const SequencerState& source,
                                                 SequencerHistoryPatternSnapshot& out);
+// Captures a detached candidate into owners reserved by the live prepared
+// transaction. This operation is allocation-free and never reads live Pattern
+// bytes after validating the candidate payload shape.
+bool captureDetachedHistorySnapshotUsingReservedStorage(
+    const SequencerPatternState& source,
+    uint8_t focusedStep,
+    SequencerHistoryPatternSnapshot& out);
 bool reserveHistorySnapshotGraphStorage(SequencerHistoryPatternSnapshot& snapshot);
 bool captureHistorySnapshotUsingReservedGraph(const SequencerState& source,
                                               SequencerHistoryPatternSnapshot& out);
@@ -514,6 +521,11 @@ bool capturePreparedActiveTrackSynchronizationUsingReservedStorage(
 bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
     const SequencerTrackBankState& bank, const SequencerState& after,
     SequencerPreparedActiveTrackSynchronization& synchronization);
+// Detached-candidate overload used before the first Quick Controls live write.
+bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerPatternState& after,
+    SequencerPreparedActiveTrackSynchronization& synchronization);
 void publishPreparedActiveTrackSynchronization(
     SequencerTrackBankState& bank, const SequencerState& active,
     SequencerPreparedActiveTrackSynchronization synchronization);
@@ -538,6 +550,10 @@ bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState& active,
 
 bool sameMusicalHistorySnapshot(const SequencerHistoryPatternSnapshot& lhs,
                                 const SequencerHistoryPatternSnapshot& rhs);
+/** Allocation-free semantic comparison of two live or detached Pattern owners. */
+bool sameMusicalPatternState(
+    const SequencerPatternState& lhs,
+    const SequencerPatternState& rhs);
 
 // Allocation-free exact revalidation of one full captured Pattern payload.
 // Focus is owned by the enclosing editor/Structure snapshot and is therefore

@@ -163,7 +163,8 @@ FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
         sequencer_.pattern.stepsPerBeat,
         sequencer_.pattern.swingOffsetPercent,
         sequencer_.pattern.patternNudgePercent,
-        sequencer_.pattern.patternTimingRevision
+        sequencer_.pattern.patternTimingRevision,
+        sequencer_.patternQuickControls.previewRevision
     );
 }
 

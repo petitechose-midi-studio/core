@@ -130,6 +130,29 @@ ExtmemUniquePtr<T> makeExtmemUnique(Args&&... args) {
 }
 
 /**
+ * Cold-path counterpart of makeExtmemUnique().
+ *
+ * Modal transactions use the same strict PSRAM ownership and failure seam,
+ * but keep their type-specific allocation machinery out of scarce ITCM.
+ */
+template <typename T, typename... Args>
+static FLASHMEM ExtmemUniquePtr<T> makeExtmemUniqueCold(Args&&... args) {
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    if (testing::consumeExtmemAllocationFailure()) return ExtmemUniquePtr<T>(nullptr);
+#endif
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+    void* memory = allocateExtmemStrict(sizeof(T));
+    if (!memory) return ExtmemUniquePtr<T>(nullptr);
+#if OC_ENABLE_STATS
+    core::diagnostics::trackExtmemAllocation(memory);
+#endif
+    return ExtmemUniquePtr<T>(new(memory) T(std::forward<Args>(args)...));
+#else
+    return ExtmemUniquePtr<T>(new T(std::forward<Args>(args)...));
+#endif
+}
+
+/**
  * Allocates and copy-constructs one trivial PSRAM object without first
  * value-initializing its complete storage.
  *

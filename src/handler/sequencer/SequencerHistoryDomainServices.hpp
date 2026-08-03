@@ -72,6 +72,11 @@ public:
             core::state::sequencer::SequencerPreparedFullBankEditOwner owner,
             uint8_t row,
             int choiceIndex);
+    using ApplyPreparedQuickControlsEditFn =
+        core::state::sequencer::SequencerPreparedPatternEditCommitOutcome (*)(
+            void* context,
+            uint8_t key,
+            core::state::sequencer::SequencerHistoryDescriptor descriptor);
 
     struct Operations {
         CanRecordPatternFn canRecordPattern = nullptr;
@@ -91,6 +96,7 @@ public:
         CommitPreparedPatternEditFn commitPreparedPatternEdit = nullptr;
         AbortPreparedPatternEditFn abortPreparedPatternEdit = nullptr;
         ApplyPreparedProjectScaleChoiceFn applyPreparedProjectScaleChoice = nullptr;
+        ApplyPreparedQuickControlsEditFn applyPreparedQuickControlsEdit = nullptr;
     };
 
     SequencerHistoryDomainServices() = default;
@@ -162,6 +168,10 @@ public:
         uint8_t row,
         int choiceIndex
     ) const;
+    core::state::sequencer::SequencerPreparedPatternEditCommitOutcome
+    applyPreparedQuickControlsEdit(
+        uint8_t key,
+        core::state::sequencer::SequencerHistoryDescriptor descriptor = {}) const;
 private:
     SequencerHistoryDomainServices(void* context, const Operations* operations);
     static const Operations EMPTY_OPERATIONS;

@@ -68,6 +68,12 @@ void applySnapshotPreservingGraph(
     const SequencerPatternSnapshot& snapshot
 );
 
+/** Copies only the Pattern-owned CC revision on a cold publication path. */
+void copySequencerCcLaneRevision(
+    SequencerPatternState& target,
+    const SequencerPatternState& source
+);
+
 [[nodiscard]] bool copyPatternState(
     SequencerPatternState& target,
     const SequencerPatternState& source
@@ -157,6 +163,9 @@ void mergeSnapshotIntoCurrent(SequencerState& target, const SequencerPatternSnap
 bool duplicatePatternForward(SequencerState& target);
 
 bool rotatePattern(SequencerState& target, int offsetSteps);
+
+/** Rotates one explicit Pattern owner without touching editor UI state. */
+bool rotatePatternState(SequencerPatternState& target, int offsetSteps);
 
 bool clearStepRange(SequencerState& target, uint8_t startStep, uint8_t endStep);
 

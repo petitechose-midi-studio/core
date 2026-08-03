@@ -354,6 +354,7 @@ FLASHMEM void SequencerState::reset() {
         );
         return;
     }
+    quickControlsDraft.reset();
     pattern.reset();
     page.set(0);
     focusedStep.set(0);

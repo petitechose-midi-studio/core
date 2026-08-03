@@ -181,7 +181,8 @@
       "preparedPatternEditReady",
       "sealPreparedPatternEdit",
       "commitPreparedPatternEdit",
-      "abortPreparedPatternEdit"
+      "abortPreparedPatternEdit",
+      "applyPreparedQuickControlsEdit"
     ],
     "centralAuthority": {
       "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
@@ -191,7 +192,8 @@
         "sequencerPreparedPatternEditReady": 1,
         "sealSequencerPreparedPatternEdit": 1,
         "commitSequencerPreparedPatternEdit": 1,
-        "abortSequencerPreparedPatternEdit": 1
+        "abortSequencerPreparedPatternEdit": 1,
+        "applySequencerPreparedQuickControlsEdit": 1
       }
     },
     "serviceAdapter": {
@@ -201,23 +203,26 @@
         "preparedPatternEditReady": 1,
         "sealPreparedPatternEdit": 1,
         "commitPreparedPatternEdit": 1,
-        "abortPreparedPatternEdit": 1
+        "abortPreparedPatternEdit": 1,
+        "applyPreparedQuickControlsEdit": 1
       }
     },
     "expectedSurfaceCount": 9,
     "expectedSurfaceCallTotals": {
       "beginPreparedPatternEdit": 10,
       "preparedPatternEditReady": 1,
-      "sealPreparedPatternEdit": 11,
-      "commitPreparedPatternEdit": 11,
-      "abortPreparedPatternEdit": 2
+      "sealPreparedPatternEdit": 10,
+      "commitPreparedPatternEdit": 10,
+      "abortPreparedPatternEdit": 2,
+      "applyPreparedQuickControlsEdit": 1
     },
     "expectedCallTotals": {
       "beginPreparedPatternEdit": 11,
       "preparedPatternEditReady": 2,
-      "sealPreparedPatternEdit": 12,
-      "commitPreparedPatternEdit": 12,
-      "abortPreparedPatternEdit": 3
+      "sealPreparedPatternEdit": 11,
+      "commitPreparedPatternEdit": 11,
+      "abortPreparedPatternEdit": 3,
+      "applyPreparedQuickControlsEdit": 2
     },
     "forbiddenRawMethods": [
       "captureHistorySnapshot",
@@ -226,15 +231,8 @@
       "recordFlatPattern"
     ],
     "expectedForbiddenRawCallTotal": 0,
-    "expectedRawCallExemptionTotal": 2,
-    "rawCallExemptions": [
-      {
-        "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
-        "method": "captureHistorySnapshot",
-        "count": 2,
-        "reason": "Retained R-09 Cancel and Offset transactional snapshots"
-      }
-    ],
+    "expectedRawCallExemptionTotal": 0,
+    "rawCallExemptions": [],
     "surfaces": [
       {
         "path": "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
@@ -246,7 +244,8 @@
           "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 1,
           "commitPreparedPatternEdit": 1,
-          "abortPreparedPatternEdit": 0
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
         }
       },
       {
@@ -259,7 +258,8 @@
           "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 2,
           "commitPreparedPatternEdit": 1,
-          "abortPreparedPatternEdit": 0
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
         }
       },
       {
@@ -272,7 +272,8 @@
           "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 2,
           "commitPreparedPatternEdit": 2,
-          "abortPreparedPatternEdit": 0
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
         }
       },
       {
@@ -286,7 +287,8 @@
           "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 1,
           "commitPreparedPatternEdit": 1,
-          "abortPreparedPatternEdit": 0
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
         }
       },
       {
@@ -299,7 +301,8 @@
           "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 0,
           "commitPreparedPatternEdit": 1,
-          "abortPreparedPatternEdit": 0
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
         }
       },
       {
@@ -312,7 +315,8 @@
           "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 1,
           "commitPreparedPatternEdit": 1,
-          "abortPreparedPatternEdit": 0
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
         }
       },
       {
@@ -325,7 +329,8 @@
           "preparedPatternEditReady": 0,
           "sealPreparedPatternEdit": 2,
           "commitPreparedPatternEdit": 2,
-          "abortPreparedPatternEdit": 0
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
         }
       },
       {
@@ -338,7 +343,8 @@
           "preparedPatternEditReady": 1,
           "sealPreparedPatternEdit": 1,
           "commitPreparedPatternEdit": 1,
-          "abortPreparedPatternEdit": 1
+          "abortPreparedPatternEdit": 1,
+          "applyPreparedQuickControlsEdit": 0
         }
       },
       {
@@ -349,9 +355,10 @@
         "calls": {
           "beginPreparedPatternEdit": 1,
           "preparedPatternEditReady": 0,
-          "sealPreparedPatternEdit": 1,
-          "commitPreparedPatternEdit": 1,
-          "abortPreparedPatternEdit": 1
+          "sealPreparedPatternEdit": 0,
+          "commitPreparedPatternEdit": 0,
+          "abortPreparedPatternEdit": 1,
+          "applyPreparedQuickControlsEdit": 1
         }
       }
     ]
@@ -711,9 +718,8 @@
     "quickControlsRetainedBools": {
       "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp",
       "members": [
-        "cancel_snapshot_valid_",
-        "offset_snapshot_valid_",
-        "cancel_retry_required_"
+        "history_retry_required_",
+        "nested_step_draft_"
       ]
     }
   },
@@ -728,10 +734,11 @@
       "BUILD_TESTING"
     ],
     "allocatorPath": "src/app/ExtmemAllocator.hpp",
-    "expectedAllocatorGuardCount": 5,
+    "expectedAllocatorGuardCount": 6,
     "expectedSeamNamespaceCount": 1,
     "guardedHelpers": [
       "makeExtmemUnique",
+      "makeExtmemUniqueCold",
       "makeExtmemUniqueCopy",
       "makeExtmemUniqueForOverwrite",
       "makeExtmemUniqueArrayForOverwrite"

@@ -554,12 +554,15 @@ struct SequencerPatternQuickControlsState {
         PatternQuickControlItem::LENGTH
     };
     Signal<int8_t, 4> offsetSteps{0};
+    // One bounded invalidation source for detached authoring projections.
+    Signal<uint32_t, 8> previewRevision{0};
     uint32_t hideAtMs = 0;
 
     SequencerPatternQuickControlsState();
     ~SequencerPatternQuickControlsState();
 
     void showFeedback(uint32_t nowMs);
+    void bumpPreview();
 
     void update(uint32_t nowMs) {
         if (!feedbackVisible.get()) return;

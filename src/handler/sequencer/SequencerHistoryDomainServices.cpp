@@ -182,6 +182,19 @@ applyPreparedProjectScaleChoiceFromCoreState(
         ->applyPreparedProjectScaleChoice(owner, row, choiceIndex);
 }
 
+FLASHMEM core::state::sequencer::SequencerPreparedPatternEditCommitOutcome
+applyPreparedQuickControlsEditFromCoreState(
+    void* context,
+    uint8_t key,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
+) {
+    using Outcome =
+        core::state::sequencer::SequencerPreparedPatternEditCommitOutcome;
+    if (context == nullptr) return Outcome::Failed;
+    return static_cast<core::state::CoreState*>(context)
+        ->applySequencerPreparedQuickControlsEdit(key, descriptor);
+}
+
 }  // namespace
 
 const SequencerHistoryDomainServices::Operations SequencerHistoryDomainServices::EMPTY_OPERATIONS
@@ -212,6 +225,7 @@ SequencerHistoryDomainServices::fromCoreState(core::state::CoreState& state) {
         .commitPreparedPatternEdit = commitPreparedPatternEditFromCoreState,
         .abortPreparedPatternEdit = abortPreparedPatternEditFromCoreState,
         .applyPreparedProjectScaleChoice = applyPreparedProjectScaleChoiceFromCoreState,
+        .applyPreparedQuickControlsEdit = applyPreparedQuickControlsEditFromCoreState,
     };
     return fromStaticOperations<operations>(&state);
 }
@@ -372,6 +386,18 @@ SequencerHistoryDomainServices::applyPreparedProjectScaleChoice(
     if (operations_->applyPreparedProjectScaleChoice == nullptr) return {};
     return operations_->applyPreparedProjectScaleChoice(
         context_, owner, row, choiceIndex);
+}
+
+FLASHMEM core::state::sequencer::SequencerPreparedPatternEditCommitOutcome
+SequencerHistoryDomainServices::applyPreparedQuickControlsEdit(
+    uint8_t key,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor
+) const {
+    using Outcome =
+        core::state::sequencer::SequencerPreparedPatternEditCommitOutcome;
+    return operations_->applyPreparedQuickControlsEdit != nullptr
+        ? operations_->applyPreparedQuickControlsEdit(context_, key, descriptor)
+        : Outcome::Failed;
 }
 
 }  // namespace core::handler

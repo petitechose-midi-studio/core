@@ -11,6 +11,7 @@
 #include "state/shared/StructureSlotOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::ui::sequencer {
 
@@ -146,7 +147,9 @@ FLASHMEM SequencerHeaderBarProps buildSequencerHeaderBarProps(
     std::array<char, 12> badgeText{};
     if (ccLaneGrid) {
         const auto* bank =
-            core::state::sequencer::sequencerCcLaneView(sequencer.pattern);
+            core::state::sequencer::sequencerCcLaneView(
+                core::state::sequencer::authoringPattern(sequencer)
+            );
         if (bank != nullptr && sequencer.ccLaneUi.focusedLane < bank->lanes.size() &&
             bank->lanes[sequencer.ccLaneUi.focusedLane].occupied) {
             std::snprintf(

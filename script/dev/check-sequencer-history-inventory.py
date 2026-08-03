@@ -166,9 +166,8 @@ D_OOM_FORBIDDEN_IDENTIFIERS = (
     "SequencerPreparedFullBankEditOutcome::Failed",
 )
 D_OOM_QUICK_CONTROLS_BOOL_MEMBERS = (
-    "cancel_snapshot_valid_",
-    "offset_snapshot_valid_",
-    "cancel_retry_required_",
+    "history_retry_required_",
+    "nested_step_draft_",
 )
 D_OOM_TYPED_BEGIN_METHODS = (
     "beginOrContinueSequencerPatternHistoryCoalescing",
@@ -182,6 +181,7 @@ PREPARED_PATTERN_LIFECYCLE_METHODS = (
     "sealPreparedPatternEdit",
     "commitPreparedPatternEdit",
     "abortPreparedPatternEdit",
+    "applyPreparedQuickControlsEdit",
 )
 PREPARED_PATTERN_OWNERS = (
     "PatternPitch",
@@ -212,6 +212,7 @@ PREPARED_PATTERN_CENTRAL_METHODS = (
     "sealSequencerPreparedPatternEdit",
     "commitSequencerPreparedPatternEdit",
     "abortSequencerPreparedPatternEdit",
+    "applySequencerPreparedQuickControlsEdit",
 )
 PREPARED_PATTERN_CENTRAL_PATH = "src/state/CoreStateSequencerHistoryRecording.cpp"
 PREPARED_PATTERN_CENTRAL_QUALIFIER = "CoreState"
@@ -224,25 +225,22 @@ PREPARED_PATTERN_FORBIDDEN_RAW_METHODS = (
     "recordPattern",
     "recordFlatPattern",
 )
-PREPARED_PATTERN_RAW_CALL_EXEMPTIONS = {
-    (
-        "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
-        "captureHistorySnapshot",
-    ): 2,
-}
+PREPARED_PATTERN_RAW_CALL_EXEMPTIONS = {}
 EXPECTED_PREPARED_SURFACE_CALL_TOTALS = {
     "beginPreparedPatternEdit": 10,
     "preparedPatternEditReady": 1,
-    "sealPreparedPatternEdit": 11,
-    "commitPreparedPatternEdit": 11,
+    "sealPreparedPatternEdit": 10,
+    "commitPreparedPatternEdit": 10,
     "abortPreparedPatternEdit": 2,
+    "applyPreparedQuickControlsEdit": 1,
 }
 EXPECTED_PREPARED_CALL_TOTALS = {
     "beginPreparedPatternEdit": 11,
     "preparedPatternEditReady": 2,
-    "sealPreparedPatternEdit": 12,
-    "commitPreparedPatternEdit": 12,
+    "sealPreparedPatternEdit": 11,
+    "commitPreparedPatternEdit": 11,
     "abortPreparedPatternEdit": 3,
+    "applyPreparedQuickControlsEdit": 2,
 }
 PREPARED_FULL_BANK_OWNER_PATH = "src/state/sequencer/SequencerHistory.hpp"
 PREPARED_FULL_BANK_OWNER_ENUM = "SequencerPreparedFullBankEditOwner"
@@ -845,7 +843,7 @@ def d_oom_manifest_errors(manifest) -> list[str]:
     ):
         errors.append("D-OOM Quick Controls retained-state path must remain canonical")
     if tuple(quick_controls.get("members", ())) != D_OOM_QUICK_CONTROLS_BOOL_MEMBERS:
-        errors.append("D-OOM Quick Controls retained bool members must remain exactly three")
+        errors.append("D-OOM Quick Controls retained bool members must remain exactly two")
     if typed_begin_methods != D_OOM_TYPED_BEGIN_METHODS:
         errors.append("D-OOM typed begin-method set must remain canonical")
     return errors
@@ -1544,10 +1542,12 @@ def manifest_errors(manifest) -> list[str]:
 
     seam = manifest.get("failureInjection", {})
     helpers = seam.get("guardedHelpers", [])
-    if len(helpers) != 4 or len(set(helpers)) != 4:
-        errors.append("failure injection must name four unique guarded helpers")
+    if len(helpers) != 5 or len(set(helpers)) != 5:
+        errors.append("failure injection must name five unique guarded helpers")
     if seam.get("expectedAllocatorGuardCount") != len(helpers) + 1:
-        errors.append("allocator guard count must be one seam guard plus four helper guards")
+        errors.append(
+            "allocator guard count must be one seam guard plus every guarded helper"
+        )
     return errors
 
 
@@ -2811,6 +2811,7 @@ def prepared_lifecycle_self_test(manifest) -> bool:
             "      PreparedOwner::PatternPitch);\n"
             "  history.commitPreparedPatternEdit(PreparedOwner::PatternPitch);\n"
             "  history.abortPreparedPatternEdit(PreparedOwner::PatternPitch);\n"
+            "  history.applyPreparedQuickControlsEdit(PreparedOwner::PatternPitch);\n"
             "  // history.recordPattern();\n"
             "  const char* raw = \"captureHistorySnapshot(\";\n"
             "}\n",
@@ -2822,7 +2823,8 @@ def prepared_lifecycle_self_test(manifest) -> bool:
             "void CoreState::sequencerPreparedPatternEditReady() {}\n"
             "void CoreState::sealSequencerPreparedPatternEdit() {}\n"
             "void CoreState::commitSequencerPreparedPatternEdit() {}\n"
-            "void CoreState::abortSequencerPreparedPatternEdit() {}\n",
+            "void CoreState::abortSequencerPreparedPatternEdit() {}\n"
+            "void CoreState::applySequencerPreparedQuickControlsEdit() {}\n",
             encoding="utf-8",
         )
         if enum_members(owner_path, declaration["enum"]) != PREPARED_PATTERN_OWNERS:
@@ -2833,7 +2835,7 @@ def prepared_lifecycle_self_test(manifest) -> bool:
             surface_path,
             declaration["enum"],
             declaration["owners"],
-        ) != Counter({"PatternPitch": 5}):
+        ) != Counter({"PatternPitch": 6}):
             return False
         if count_any_calls(surface_path, lifecycle["forbiddenRawMethods"]):
             return False
@@ -3542,7 +3544,7 @@ def main() -> int:
         "  prepared Pattern lifecycle: "
         f"{lifecycle['ownerDeclaration']['expectedCount']} owners / "
         f"{lifecycle['expectedSurfaceCount']} lifecycle surfaces; "
-        "two retained R-09 raw captures; zero raw record calls"
+        "zero retained R-09 raw captures; zero raw record calls"
     )
     full_bank = manifest["preparedFullBankLifecycle"]
     print(
@@ -3593,7 +3595,11 @@ def main() -> int:
         f"{len(d_oom['surfaceIdentifiers'])} surface anchors / "
         "zero silent begin guards"
     )
-    print("  EXTMEM failure seam: test-only; 4/4 allocator helpers guarded")
+    failure_helpers = manifest["failureInjection"]["guardedHelpers"]
+    print(
+        "  EXTMEM failure seam: test-only; "
+        f"{len(failure_helpers)}/{len(failure_helpers)} allocator helpers guarded"
+    )
     return 0
 
 

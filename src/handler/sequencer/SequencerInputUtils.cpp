@@ -2,6 +2,8 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
+
 namespace core::handler::sequencer::input_utils {
 
 FLASHMEM float clampNormalized(float value) {
@@ -46,21 +48,22 @@ FLASHMEM float quickControlToNormalized(
     const SequencerState& state,
     core::state::sequencer::PatternQuickControlItem item
 ) {
+    const auto& pattern = core::state::sequencer::authoringPattern(state);
     switch (item) {
         case core::state::sequencer::PatternQuickControlItem::OFFSET:
             return 0.5f;
         case core::state::sequencer::PatternQuickControlItem::SWING:
-            return swingOffsetToNormalized(state.pattern.swingOffsetPercent.get());
+            return swingOffsetToNormalized(pattern.swingOffsetPercent.get());
         case core::state::sequencer::PatternQuickControlItem::NUDGE:
-            return nudgeToNormalized(state.pattern.patternNudgePercent.get());
+            return nudgeToNormalized(pattern.patternNudgePercent.get());
         case core::state::sequencer::PatternQuickControlItem::DIVISION:
             return indexToNormalized(
-                findStepsPerBeatChoiceIndex(state.pattern.stepsPerBeat.get()),
+                findStepsPerBeatChoiceIndex(pattern.stepsPerBeat.get()),
                 static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
             );
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default: {
-            const uint8_t len = state.pattern.length.get();
+            const uint8_t len = pattern.length.get();
             const uint8_t idx = (len > 0) ? static_cast<uint8_t>(len - 1) : 0;
             return indexToNormalized(idx, static_cast<int>(SequencerState::MAX_STEPS));
         }
@@ -73,25 +76,29 @@ FLASHMEM void applyNormalizedToQuickControl(
     float normalized
 ) {
     const float value = clampNormalized(normalized);
+    auto& pattern = core::state::sequencer::authoringPattern(state);
+    const bool detached = &pattern != &state.pattern;
     switch (item) {
         case core::state::sequencer::PatternQuickControlItem::DIVISION: {
             const int idx = normalizedToIndex(
                 value,
                 static_cast<int>(STEPS_PER_BEAT_CHOICES.size())
             );
-            state.pattern.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
+            pattern.stepsPerBeat.set(STEPS_PER_BEAT_CHOICES[static_cast<size_t>(idx)]);
             return;
         }
         case core::state::sequencer::PatternQuickControlItem::SWING:
-            state.setPatternSwingOffsetPercent(normalizedToSwingOffset(value));
+            if (detached) pattern.setPatternSwingOffsetPercent(normalizedToSwingOffset(value));
+            else state.setPatternSwingOffsetPercent(normalizedToSwingOffset(value));
             return;
         case core::state::sequencer::PatternQuickControlItem::NUDGE:
-            state.setPatternNudgePercent(normalizedToNudge(value));
+            if (detached) pattern.setPatternNudgePercent(normalizedToNudge(value));
+            else state.setPatternNudgePercent(normalizedToNudge(value));
             return;
         case core::state::sequencer::PatternQuickControlItem::LENGTH:
         default: {
             const int idx = normalizedToIndex(value, static_cast<int>(SequencerState::MAX_STEPS));
-            state.pattern.setContentLength(static_cast<uint8_t>(idx + 1));
+            pattern.setContentLength(static_cast<uint8_t>(idx + 1));
             return;
         }
     }

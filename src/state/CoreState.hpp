@@ -431,6 +431,12 @@ public:
         sequencer::SequencerHistoryDescriptor descriptor);
     sequencer::SequencerPreparedPatternEditCommitOutcome commitSequencerPreparedPatternEdit(
         sequencer::SequencerPreparedPatternEditOwner owner);
+    // Captures/admit the detached Quick Controls candidate before swapping its
+    // payload into live state and publishing through the normal prepared sink.
+    sequencer::SequencerPreparedPatternEditCommitOutcome
+    applySequencerPreparedQuickControlsEdit(
+        uint8_t key,
+        sequencer::SequencerHistoryDescriptor descriptor);
     // Matching prepared-family owners are restored through the single
     // allocation-free rollback primitive, before or after seal.
     [[nodiscard]] sequencer::SequencerPreparedPatternEditAbortOutcome
@@ -491,6 +497,7 @@ private:
     using SequencerPatternHistoryCommitOutcome = sequencer::SequencerPatternHistoryCommitOutcome;
 
     void consumePendingSequencerMutation_(bool* priorMutation = nullptr);
+    void clearPreparedSequencerPatternEditWithoutLiveRestore_();
     bool rollbackPreparedSequencerPatternEdit_();
     sequencer::SequencerPreparedPatternEditSealOutcome
     sealSequencerPreparedPatternEditWithGraphCompaction_(

@@ -4,7 +4,9 @@
 #include "../../src/sequencer/SequencerRuntimeSnapshotBank.hpp"
 #include "../../src/state/project/ProjectNavigationState.hpp"
 #include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerState.hpp"
+#include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankState.hpp"
 
 namespace {
@@ -394,6 +396,73 @@ void test_refresh_resolves_project_and_pattern_swing() {
     std::cout << "[PASS] test_refresh_resolves_project_and_pattern_swing\n";
 }
 
+void test_quick_controls_preview_round_trips_through_inactive_runtime_buffers() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerState sequencer;
+    seq::SequencerTrackBankState trackBank;
+    core::state::project::ProjectNavigationState projectNavigation;
+    core::sequencer::SequencerRuntimeSnapshotBank bank{
+        sequencer,
+        trackBank,
+        projectNavigation,
+    };
+
+    sequencer.pattern.setContentLength(8U);
+    assert(sequencer.pattern.setStepNoteAt(0U, 60U));
+    auto* liveLanes = seq::ensureSequencerCcLaneBank(sequencer.pattern);
+    assert(liveLanes != nullptr);
+    seq::SequencerCcLaneDraft laneDraft{};
+    laneDraft.destination.controller = 74U;
+    assert(seq::createSequencerCcLane(*liveLanes, 0U, laneDraft).changed());
+    assert(seq::setSequencerCcLaneEvent(*liveLanes, 0U, 0U, 11U).changed());
+    sequencer.pattern.bumpCcLaneRevision();
+
+    uint8_t index = bank.refresh();
+    bank.commit(index);
+    assert(bank.activeSnapshot().tracks[0].length == 8U);
+    assert(bank.activeSnapshot().tracks[0].note[0] == 60U);
+
+    const auto openingPath = seq::capturePreparedSequencerGraphContentPath(sequencer);
+    assert(sequencer.quickControlsDraft.begin(
+        sequencer.pattern,
+        openingPath,
+        sequencer.page.get(),
+        sequencer.focusedStep.get()));
+    auto& draft = seq::authoringPattern(sequencer);
+    draft.setContentLength(12U);
+    assert(draft.setStepNoteAt(0U, 72U));
+    assert(draft.ccLanes != nullptr);
+    assert(seq::setSequencerCcLaneEvent(*draft.ccLanes, 0U, 3U, 96U).changed());
+    draft.bumpCcLaneRevision();
+    sequencer.patternQuickControls.bumpPreview();
+
+    index = bank.refresh();
+    assert(bank.activeSnapshot().tracks[0].length == 8U);
+    assert(bank.activeSnapshot().tracks[0].note[0] == 60U);
+    assert(bank.snapshot(index).tracks[0].length == 12U);
+    assert(bank.snapshot(index).tracks[0].note[0] == 72U);
+    const auto* preparedLanes = bank.laneSnapshot(index)->lanesForTrack(0U);
+    assert(preparedLanes != nullptr);
+    assert(preparedLanes->lanes[0].values[3] == 96U);
+    bank.commit(index);
+    assert(bank.activeSnapshot().tracks[0].length == 12U);
+    assert(bank.activeSnapshot().tracks[0].note[0] == 72U);
+
+    sequencer.quickControlsDraft.reset();
+    sequencer.patternQuickControls.bumpPreview();
+    index = bank.refresh();
+    assert(bank.activeSnapshot().tracks[0].length == 12U);
+    bank.commit(index);
+    assert(bank.activeSnapshot().tracks[0].length == 8U);
+    assert(bank.activeSnapshot().tracks[0].note[0] == 60U);
+    const auto* restoredLanes = bank.laneSnapshot(index)->lanesForTrack(0U);
+    assert(restoredLanes != nullptr);
+    assert(!restoredLanes->lanes[0].activeMask.test(3U));
+
+    std::cout
+        << "[PASS] Quick Controls flat/CC preview round-trips through immutable buffers\n";
+}
+
 }  // namespace
 
 int main() {
@@ -407,6 +476,7 @@ int main() {
     test_refresh_recreated_active_track_does_not_keep_stale_buffer_payload();
     test_refresh_resolves_project_and_pattern_scale();
     test_refresh_resolves_project_and_pattern_swing();
+    test_quick_controls_preview_round_trips_through_inactive_runtime_buffers();
     std::cout << "All SequencerRuntimeSnapshotBank tests passed\n";
     return 0;
 }

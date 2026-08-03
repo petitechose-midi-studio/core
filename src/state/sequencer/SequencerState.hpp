@@ -12,6 +12,7 @@
 
 #include "SequencerPatternState.hpp"
 #include "SequencerPatternEditorState.hpp"
+#include "SequencerQuickControlsDraft.hpp"
 #include "SequencerStepContentDraftSession.hpp"
 #include "SequencerUiState.hpp"
 
@@ -70,6 +71,8 @@ struct SequencerState {
     SequencerPatternQuickControlsState patternQuickControls;
     SequencerPatternEditorState patternEditor;
     SequencerContentViewState contentView;
+    // One lazy detached Pattern used only while Quick Controls is held.
+    SequencerQuickControlsDraftSession quickControlsDraft;
     // One cold PSRAM scratch shared by Chord/Micro/Cycle creation sessions.
     // Published Pattern data remains untouched until explicit Apply/Save.
     SequencerStepContentDraftSession stepContentDraft;

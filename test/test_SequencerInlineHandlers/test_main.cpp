@@ -839,7 +839,9 @@ void test_pattern_quick_controls_left_top_is_cancel_not_local_history() {
 
     holdPatternQuickControls(h);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.pattern.length.get() != 8);
+    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(core::state::sequencer::authoringPattern(h.state.sequencer)
+               .length.get() != 8);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
@@ -861,11 +863,14 @@ void test_pattern_quick_controls_length_undo_redo_workflow() {
     assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
            core::state::sequencer::PatternQuickControlItem::LENGTH);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    const uint8_t appliedLength = h.state.sequencer.pattern.length.get();
+    const uint8_t appliedLength =
+        core::state::sequencer::authoringPattern(h.state.sequencer).length.get();
     assert(appliedLength != 8);
+    assert(h.state.sequencer.pattern.length.get() == 8);
     h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencer.pattern.length.get() == appliedLength);
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     assert(h.state.undoProjectHistory());
@@ -902,18 +907,24 @@ void test_pattern_quick_controls_offset_undo_redo_workflow() {
     assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
            core::state::sequencer::PatternQuickControlItem::OFFSET);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.pattern.isEnabled(0));
-    assert(h.state.sequencer.pattern.isEnabled(6));
-    assert(h.state.sequencer.pattern.isEnabled(7));
-    assert(h.state.sequencer.pattern.note[0] == 62);
-    assert(h.state.sequencer.pattern.note[6] == 67);
-    assert(h.state.sequencer.pattern.note[7] == 60);
-    assert(h.state.sequencer.pattern.velocity[0] == 91);
-    assert(h.state.sequencer.pattern.velocity[6] == 103);
-    assert(h.state.sequencer.pattern.velocity[7] == 80);
+    const auto& preview =
+        core::state::sequencer::authoringPattern(h.state.sequencer);
+    assert(preview.isEnabled(0));
+    assert(preview.isEnabled(6));
+    assert(preview.isEnabled(7));
+    assert(preview.note[0] == 62);
+    assert(preview.note[6] == 67);
+    assert(preview.note[7] == 60);
+    assert(preview.velocity[0] == 91);
+    assert(preview.velocity[6] == 103);
+    assert(preview.velocity[7] == 80);
+    assert(h.state.sequencer.pattern.isEnabled(1));
+    assert(!h.state.sequencer.pattern.isEnabled(6));
     h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencer.pattern.isEnabled(6));
+    assert(!h.state.sequencer.pattern.isEnabled(1));
 
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencer.pattern.isEnabled(0));
@@ -951,11 +962,15 @@ void test_pattern_quick_controls_division_undo_redo_workflow() {
     assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
            core::state::sequencer::PatternQuickControlItem::DIVISION);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    const uint8_t appliedDivision = h.state.sequencer.pattern.stepsPerBeat.get();
+    const uint8_t appliedDivision =
+        core::state::sequencer::authoringPattern(h.state.sequencer)
+            .stepsPerBeat.get();
     assert(appliedDivision != initialDivision);
+    assert(h.state.sequencer.pattern.stepsPerBeat.get() == initialDivision);
     h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencer.pattern.stepsPerBeat.get() == appliedDivision);
 
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencer.pattern.stepsPerBeat.get() == initialDivision);
@@ -978,8 +993,11 @@ void test_pattern_quick_controls_swing_and_nudge_workflow() {
     assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
            core::state::sequencer::PatternQuickControlItem::SWING);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.pattern.swingOffsetPercent.get() == 75);
+    assert(h.state.sequencer.pattern.swingOffsetPercent.get() == 0);
+    assert(core::state::sequencer::authoringPattern(h.state.sequencer)
+               .swingOffsetPercent.get() == 75);
     h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.pattern.swingOffsetPercent.get() == 75);
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     holdPatternQuickControls(h);
@@ -987,8 +1005,11 @@ void test_pattern_quick_controls_swing_and_nudge_workflow() {
     assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
            core::state::sequencer::PatternQuickControlItem::NUDGE);
     h.turn(Config::EncoderID::OPT, 0.0f);
-    assert(h.state.sequencer.pattern.patternNudgePercent.get() == -50);
+    assert(h.state.sequencer.pattern.patternNudgePercent.get() == 0);
+    assert(core::state::sequencer::authoringPattern(h.state.sequencer)
+               .patternNudgePercent.get() == -50);
     h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.pattern.patternNudgePercent.get() == -50);
     assert(h.state.sequencerHistory.undoCount() == 2);
 
     std::cout << "[PASS] test_pattern_quick_controls_swing_and_nudge_workflow\n";

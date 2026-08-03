@@ -600,6 +600,7 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
 
     for helper in (
         "makeExtmemUnique",
+        "makeExtmemUniqueCold",
         "makeExtmemUniqueCopy",
         "makeExtmemUniqueForOverwrite",
         "makeExtmemUniqueArrayForOverwrite",
@@ -691,7 +692,7 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
             )
 
     for symbol, expected in (
-        ("allocateExtmemStrict", 5),
+        ("allocateExtmemStrict", 6),
         ("freeExtmemStrict", 3),
     ):
         found = len(re.findall(
@@ -3333,9 +3334,10 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     )
     require(
         SEQUENCER_VIEW_HEADER,
-        r"StaticWatchGroup\s*<\s*13\s*>\s+header_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*13\s*>\s+header_strip_watcher_\s*;.*?"
-        r"StaticWatchGroup\s*<\s*41\s*>\s+grid_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*14\s*>\s+header_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*14\s*>\s+header_strip_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*42\s*>\s+grid_watcher_\s*;.*?"
+        r"StaticWatchGroup\s*<\s*25\s*>\s+selector_overlay_watcher_\s*;.*?"
         r"StaticWatchGroup\s*<\s*23\s*>\s+bottom_action_strip_watcher_\s*;",
         "Sequencer UI watcher capacities must retain the post-PageCreate compact locks",
     )
@@ -4101,8 +4103,8 @@ def self_test() -> int:
     )
     widened_sequencer_header_watcher = mutate(
         SEQUENCER_VIEW_HEADER,
-        "StaticWatchGroup<13> header_watcher_;",
         "StaticWatchGroup<14> header_watcher_;",
+        "StaticWatchGroup<15> header_watcher_;",
     )
     restored_page_ensure_raw = dict(step_draft_fixture)
     restored_page_ensure_raw[PAGE_STRUCTURE_EDIT_WORKFLOW] += (

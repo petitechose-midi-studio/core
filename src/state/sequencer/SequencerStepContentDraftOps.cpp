@@ -145,6 +145,9 @@ FLASHMEM uint32_t publishedRevisionFor(const SequencerState& sequencer) {
 }  // namespace
 
 FLASHMEM SequencerPatternState& authoringPattern(SequencerState& sequencer) {
+    if (auto* quickControls = sequencer.quickControlsDraft.previewPattern()) {
+        return *quickControls;
+    }
     auto* draft = sequencer.stepContentDraft.pattern();
     return draft != nullptr ? *draft : sequencer.pattern;
 }
@@ -152,6 +155,9 @@ FLASHMEM SequencerPatternState& authoringPattern(SequencerState& sequencer) {
 FLASHMEM const SequencerPatternState& authoringPattern(
     const SequencerState& sequencer
 ) {
+    if (const auto* quickControls = sequencer.quickControlsDraft.previewPattern()) {
+        return *quickControls;
+    }
     const auto* draft = sequencer.stepContentDraft.pattern();
     return draft != nullptr ? *draft : sequencer.pattern;
 }

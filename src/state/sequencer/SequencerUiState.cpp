@@ -7,6 +7,10 @@ namespace core::state::sequencer {
 FLASHMEM SequencerPatternQuickControlsState::SequencerPatternQuickControlsState() = default;
 FLASHMEM SequencerPatternQuickControlsState::~SequencerPatternQuickControlsState() = default;
 
+FLASHMEM void SequencerPatternQuickControlsState::bumpPreview() {
+    previewRevision.set(previewRevision.get() + 1U);
+}
+
 FLASHMEM SequencerContentViewState::SequencerContentViewState() = default;
 FLASHMEM SequencerContentViewState::~SequencerContentViewState() = default;
 
@@ -376,6 +380,7 @@ FLASHMEM void SequencerPatternQuickControlsState::reset() {
     feedbackVisible.set(false);
     focusedItem.set(PatternQuickControlItem::LENGTH);
     offsetSteps.set(0);
+    previewRevision.set(0);
     hideAtMs = 0;
 }
 

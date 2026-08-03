@@ -10,7 +10,6 @@
 #include "state/StructureNavigationState.hpp"
 #include "state/TrackNavigationState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
-#include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 
 namespace core::handler {
@@ -18,9 +17,8 @@ namespace core::handler {
 /**
  * Binds sequencer pattern quick controls to buttons and encoders.
  *
- * The handler snapshots the pattern for cancel/offset behavior, applies length,
- * division, and offset changes through sequencer state ops, and leaves playback
- * runtime untouched.
+ * A modal gesture edits one detached PSRAM Pattern preview. Apply publishes it
+ * through the prepared History transaction; Cancel only discards it.
  */
 class SequencerPatternQuickControlsHandler {
 public:
@@ -55,20 +53,18 @@ private:
     void configureOptForFocusedItem();
     void clampFocusToLength();
     void prepareQuickControlsForOpen();
-    bool captureCancelSnapshot();
-    bool captureOffsetSnapshot();
     bool abortPreparedQuickControlsHistory();
     bool beginPreparedQuickControlsHistory();
     bool ensurePreparedQuickControlsHistory();
+    core::state::sequencer::SequencerPreparedPatternEditCommitOutcome
+    applyNestedStepDraftQuickControls();
     void showHistoryRejection(core::state::sequencer::SequencerHistoryRejectionReason reason);
-    void discardModalSnapshots();
     void closeTransientQuickControlsState();
     int focusedItemOrderIndex() const;
     void setFocusedItemByOrderIndex(int index);
     int currentOffsetMax() const;
     float offsetToNormalized(int offsetSteps) const;
     int normalizedToOffset(float normalized) const;
-    bool applyOffsetFromSnapshot(int offsetSteps);
     bool applyOffsetDelta(int offsetSteps);
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
@@ -80,12 +76,9 @@ private:
     oc::api::EncoderAPI& encoders_;
     oc::api::ButtonAPI& buttons_;
     oc::type::ScopeID scope_id_ = 0;
-    core::state::sequencer::SequencerHistoryPatternSnapshot cancel_snapshot_{};
-    core::state::sequencer::SequencerHistoryPatternSnapshot offset_snapshot_{};
     SequencerHistoryDomainServices history_;
-    bool cancel_snapshot_valid_ = false;
-    bool offset_snapshot_valid_ = false;
-    bool cancel_retry_required_ = false;
+    bool history_retry_required_ = false;
+    bool nested_step_draft_ = false;
 };
 
 }  // namespace core::handler

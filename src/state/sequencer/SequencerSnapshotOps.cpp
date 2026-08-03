@@ -344,6 +344,13 @@ FLASHMEM void applySnapshotPreservingGraph(
     applySnapshotPreservingGraphImpl(target, snapshot);
 }
 
+FLASHMEM void copySequencerCcLaneRevision(
+    SequencerPatternState& target,
+    const SequencerPatternState& source
+) {
+    target.ccLaneRevision.set(source.ccLaneRevision.get());
+}
+
 FLASHMEM bool copyPatternState(
     SequencerPatternState& target,
     const SequencerPatternState& source
@@ -365,7 +372,7 @@ FLASHMEM bool copyPatternState(
     target.graph = std::move(graph);
     target.graphRevision.set(snapshot.graphRevision);
     installSequencerCcLaneBank(target, std::move(ccLanes));
-    target.ccLaneRevision.set(source.ccLaneRevision.get());
+    copySequencerCcLaneRevision(target, source);
     return true;
 }
 
@@ -425,7 +432,7 @@ FLASHMEM bool copyPatternStatePreservingGraph(
     captureSnapshot(source, snapshot);
     applySnapshotPreservingGraph(target, snapshot);
     installSequencerCcLaneBank(target, std::move(ccLanes));
-    target.ccLaneRevision.set(source.ccLaneRevision.get());
+    copySequencerCcLaneRevision(target, source);
     return true;
 }
 
@@ -614,8 +621,8 @@ FLASHMEM bool duplicatePatternForward(SequencerState& target) {
     return true;
 }
 
-FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
-    const uint8_t len = target.pattern.length.get();
+FLASHMEM bool rotatePatternState(SequencerPatternState& target, int offsetSteps) {
+    const uint8_t len = target.length.get();
     if (len <= 1) return false;
 
     int normalizedOffset = offsetSteps % static_cast<int>(len);
@@ -626,13 +633,13 @@ FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
 
     std::array<StepPayload, SequencerState::MAX_STEPS> nextSteps{};
     const auto activeMask = lengthMask(len);
-    const auto sourceMask = target.pattern.enabledMask.get();
+    const auto sourceMask = target.enabledMask.get();
     auto nextMask = sourceMask & ~activeMask;
 
     for (uint16_t i = 0; i < len; ++i) {
         const auto sourceStep = static_cast<uint8_t>(i);
         const uint8_t dst = static_cast<uint8_t>((i + normalizedOffset) % len);
-        nextSteps[dst] = readStep(target.pattern, sourceStep);
+        nextSteps[dst] = readStep(target, sourceStep);
 
         if (sourceMask.test(sourceStep)) {
             nextMask.setBit(dst, true);
@@ -641,20 +648,24 @@ FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
 
     for (uint16_t i = 0; i < len; ++i) {
         const auto step = static_cast<uint8_t>(i);
-        writeStep(target.pattern, step, nextSteps[i]);
+        writeStep(target, step, nextSteps[i]);
     }
 
-    target.pattern.enabledMask.set(nextMask);
-    rotateRootStepNodes(target.pattern, normalizedOffset);
-    if (target.pattern.ccLanes && rotateSequencerCcLaneBank(
-            *target.pattern.ccLanes,
+    target.enabledMask.set(nextMask);
+    rotateRootStepNodes(target, normalizedOffset);
+    if (target.ccLanes && rotateSequencerCcLaneBank(
+            *target.ccLanes,
             len,
             normalizedOffset
         )) {
-        target.pattern.bumpCcLaneRevision();
+        target.bumpCcLaneRevision();
     }
-    target.pattern.bumpStepDataRevision();
+    target.bumpStepDataRevision();
     return true;
+}
+
+FLASHMEM bool rotatePattern(SequencerState& target, int offsetSteps) {
+    return rotatePatternState(target.pattern, offsetSteps);
 }
 
 FLASHMEM SequencerSnapshotBatchMutationResult

@@ -13,6 +13,7 @@
 #include "state/sequencer/SequencerHistory.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler {
 using ButtonID = Config::ButtonID;
@@ -26,8 +27,6 @@ using PreparedBeginOutcome =
     core::state::sequencer::SequencerPreparedPatternEditBeginOutcome;
 using PreparedCommitOutcome =
     core::state::sequencer::SequencerPreparedPatternEditCommitOutcome;
-using PreparedSealOutcome =
-    core::state::sequencer::SequencerPreparedPatternEditSealOutcome;
 
 namespace {
 
@@ -180,6 +179,11 @@ FLASHMEM void SequencerPatternQuickControlsHandler::setupBindings() {
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::open() {
+    // Idle state owns no draft payload, including after any interrupted view
+    // lifecycle that bypassed the normal modal close path.
+    sequencer_.quickControlsDraft.reset();
+    history_retry_required_ = false;
+    nested_step_draft_ = false;
     if (history_.commitCoalescedPatternEditOutcome() ==
         core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
         showHistoryRejection(
@@ -187,66 +191,67 @@ FLASHMEM void SequencerPatternQuickControlsHandler::open() {
         return;
     }
 
-    discardModalSnapshots();
-    if (!captureCancelSnapshot()) {
-        discardModalSnapshots();
+    const auto openingPath =
+        core::state::sequencer::capturePreparedSequencerGraphContentPath(sequencer_);
+    auto* parentStepDraft = sequencer_.stepContentDraft.pattern();
+    nested_step_draft_ = parentStepDraft != nullptr;
+    const auto& openingPattern = nested_step_draft_
+        ? *parentStepDraft
+        : sequencer_.pattern;
+    if (!sequencer_.quickControlsDraft.begin(
+            openingPattern,
+            openingPath,
+            sequencer_.page.get(),
+            sequencer_.focusedStep.get())) {
+        nested_step_draft_ = false;
         showHistoryRejection(
             core::state::sequencer::SequencerHistoryRejectionReason::ResourceUnavailable);
         return;
     }
-    if (!captureOffsetSnapshot()) {
-        discardModalSnapshots();
-        showHistoryRejection(
-            core::state::sequencer::SequencerHistoryRejectionReason::ResourceUnavailable);
-        return;
-    }
-    if (!beginPreparedQuickControlsHistory()) {
-        discardModalSnapshots();
+    if (!nested_step_draft_ && !beginPreparedQuickControlsHistory()) {
+        sequencer_.quickControlsDraft.reset();
         return;
     }
 
     auto& quick = sequencer_.patternQuickControls;
     prepareQuickControlsForOpen();
     quick.selecting.set(true);
+    quick.bumpPreview();
     configureOptForFocusedItem();
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::closeApply() {
     auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
-    // A release following a failed Cancel belongs to the old acquired
-    // gesture. Consume it; only an explicit Cancel retry may settle it.
-    if (cancel_retry_required_) return;
+    if (nested_step_draft_) {
+        const auto nestedOutcome = applyNestedStepDraftQuickControls();
+        if (nestedOutcome == PreparedCommitOutcome::NoChange) {
+            (void)sequencer_.quickControlsDraft.restoreOpeningView(sequencer_);
+            closeTransientQuickControlsState();
+        } else if (nestedOutcome == PreparedCommitOutcome::Committed) {
+            closeTransientQuickControlsState();
+        } else {
+            showHistoryRejection(
+                core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
+        }
+        return;
+    }
+    if (history_retry_required_ && !ensurePreparedQuickControlsHistory()) return;
 
-    const auto sealOutcome = history_.sealPreparedPatternEdit(
-        QUICK_CONTROLS_HISTORY_OWNER, QUICK_CONTROLS_HISTORY_KEY, true,
+    const auto outcome = history_.applyPreparedQuickControlsEdit(
+        QUICK_CONTROLS_HISTORY_KEY,
         quickControlsHistoryDescriptor());
-    if (sealOutcome == PreparedSealOutcome::Cleared) {
+    if (outcome == PreparedCommitOutcome::Committed) {
         closeTransientQuickControlsState();
         return;
     }
-    if (sealOutcome == PreparedSealOutcome::FailedClosed) {
-        cancel_retry_required_ = true;
-        quick.offsetSteps.set(0);
-        configureOptForFocusedItem();
-        showHistoryRejection(
-            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
-        (void)ensurePreparedQuickControlsHistory();
+    if (outcome == PreparedCommitOutcome::NoChange) {
+        (void)sequencer_.quickControlsDraft.restoreOpeningView(sequencer_);
+        closeTransientQuickControlsState();
         return;
     }
-    if (sealOutcome == PreparedSealOutcome::Sealed) {
-        const auto commitOutcome =
-            history_.commitPreparedPatternEdit(QUICK_CONTROLS_HISTORY_OWNER);
-        if (commitOutcome == PreparedCommitOutcome::Committed ||
-            commitOutcome == PreparedCommitOutcome::NoChange) {
-            closeTransientQuickControlsState();
-            return;
-        }
-    }
 
-    (void)abortPreparedQuickControlsHistory();
-    cancel_retry_required_ = true;
-    quick.offsetSteps.set(0);
+    history_retry_required_ = true;
     configureOptForFocusedItem();
     showHistoryRejection(
         core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
@@ -257,25 +262,14 @@ FLASHMEM void SequencerPatternQuickControlsHandler::closeCancel() {
     auto& quick = sequencer_.patternQuickControls;
     if (!quick.selecting.get()) return;
 
-    if (!cancel_snapshot_valid_) {
-        cancel_retry_required_ = true;
-        showHistoryRejection(
-            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
-        return;
-    }
-    if (!core::state::sequencer::applyHistorySnapshotToEditor(sequencer_, cancel_snapshot_)) {
-        cancel_retry_required_ = true;
-        showHistoryRejection(
-            core::state::sequencer::SequencerHistoryRejectionReason::ResourceUnavailable);
-        return;
-    }
-    core::state::sequencer::refreshContentView(sequencer_);
-    clampFocusToLength();
-
-    if (abortPreparedQuickControlsHistory()) {
+    if (nested_step_draft_) {
+        (void)sequencer_.quickControlsDraft.restoreOpeningView(sequencer_);
+        closeTransientQuickControlsState();
+    } else if (abortPreparedQuickControlsHistory()) {
+        (void)sequencer_.quickControlsDraft.restoreOpeningView(sequencer_);
         closeTransientQuickControlsState();
     } else {
-        cancel_retry_required_ = true;
+        history_retry_required_ = true;
         showHistoryRejection(
             core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
     }
@@ -290,11 +284,6 @@ FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
         const int next = nav::nextWrappedIndex(delta, current, CHILD_ITEM_COUNT);
         const auto nextItem = childQuickControlAtOrderIndex(next);
         if (nextItem == Item::OFFSET) {
-            if (!captureOffsetSnapshot()) {
-                showHistoryRejection(
-                    core::state::sequencer::SequencerHistoryRejectionReason::ResourceUnavailable);
-                return;
-            }
             sequencer_.patternQuickControls.offsetSteps.set(0);
         }
         sequencer_.patternQuickControls.focusedItem.set(nextItem);
@@ -307,11 +296,6 @@ FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
     const auto nextItem =
         core::state::sequencer::quickControlAtOrderIndex(static_cast<size_t>(next));
     if (nextItem == Item::OFFSET) {
-        if (!captureOffsetSnapshot()) {
-            showHistoryRejection(
-                core::state::sequencer::SequencerHistoryRejectionReason::ResourceUnavailable);
-            return;
-        }
         sequencer_.patternQuickControls.offsetSteps.set(0);
     }
     setFocusedItemByOrderIndex(next);
@@ -319,7 +303,7 @@ FLASHMEM void SequencerPatternQuickControlsHandler::navigate(float delta) {
 }
 
 FLASHMEM bool SequencerPatternQuickControlsHandler::setFocusedValue(float normalized) {
-    if (cancel_retry_required_) return false;
+    if (history_retry_required_) return false;
     auto item = sequencer_.patternQuickControls.focusedItem.get();
     if (core::state::sequencer::isChildContentView(sequencer_)) {
         if (item == Item::LENGTH) {
@@ -333,14 +317,17 @@ FLASHMEM bool SequencerPatternQuickControlsHandler::setFocusedValue(float normal
                     core::state::sequencer::resizeActiveMicroSequenceContent(sequencer_, length);
             }
             clampFocusToLength();
+            if (changed) sequencer_.patternQuickControls.bumpPreview();
             return changed;
         }
 
         if (item == Item::OFFSET) {
             const int offsetSteps = normalizedToOffset(normalized);
-            if (sequencer_.patternQuickControls.offsetSteps.get() == offsetSteps) { return false; }
-            if (applyOffsetFromSnapshot(offsetSteps)) {
+            const int currentOffset = sequencer_.patternQuickControls.offsetSteps.get();
+            if (currentOffset == offsetSteps) { return false; }
+            if (applyOffsetDelta(offsetSteps - currentOffset)) {
                 sequencer_.patternQuickControls.offsetSteps.set(static_cast<int8_t>(offsetSteps));
+                sequencer_.patternQuickControls.bumpPreview();
                 return true;
             }
         }
@@ -349,9 +336,11 @@ FLASHMEM bool SequencerPatternQuickControlsHandler::setFocusedValue(float normal
 
     if (item == Item::OFFSET) {
         const int offsetSteps = normalizedToOffset(normalized);
-        if (sequencer_.patternQuickControls.offsetSteps.get() == offsetSteps) { return false; }
-        if (applyOffsetFromSnapshot(offsetSteps)) {
+        const int currentOffset = sequencer_.patternQuickControls.offsetSteps.get();
+        if (currentOffset == offsetSteps) { return false; }
+        if (applyOffsetDelta(offsetSteps - currentOffset)) {
             sequencer_.patternQuickControls.offsetSteps.set(static_cast<int8_t>(offsetSteps));
+            sequencer_.patternQuickControls.bumpPreview();
             return true;
         }
         return false;
@@ -361,7 +350,9 @@ FLASHMEM bool SequencerPatternQuickControlsHandler::setFocusedValue(float normal
     input_utils::applyNormalizedToQuickControl(sequencer_, item, normalized);
     sequencer_.patternQuickControls.offsetSteps.set(0);
     if (item == Item::LENGTH) { clampFocusToLength(); }
-    return input_utils::quickControlToNormalized(sequencer_, item) != before;
+    const bool changed = input_utils::quickControlToNormalized(sequencer_, item) != before;
+    if (changed) sequencer_.patternQuickControls.bumpPreview();
+    return changed;
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::setFocusedValueDirect(float normalized) {
@@ -477,24 +468,6 @@ FLASHMEM void SequencerPatternQuickControlsHandler::prepareQuickControlsForOpen(
     }
 }
 
-FLASHMEM bool SequencerPatternQuickControlsHandler::captureCancelSnapshot() {
-    cancel_snapshot_valid_ = false;
-    cancel_snapshot_.reset();
-    cancel_snapshot_valid_ =
-        core::state::sequencer::captureHistorySnapshot(sequencer_, cancel_snapshot_);
-    if (!cancel_snapshot_valid_) cancel_snapshot_.reset();
-    return cancel_snapshot_valid_;
-}
-
-FLASHMEM bool SequencerPatternQuickControlsHandler::captureOffsetSnapshot() {
-    offset_snapshot_valid_ = false;
-    offset_snapshot_.reset();
-    offset_snapshot_valid_ =
-        core::state::sequencer::captureHistorySnapshot(sequencer_, offset_snapshot_);
-    if (!offset_snapshot_valid_) { offset_snapshot_.reset(); }
-    return offset_snapshot_valid_;
-}
-
 FLASHMEM bool SequencerPatternQuickControlsHandler::abortPreparedQuickControlsHistory() {
     const auto outcome = history_.abortPreparedPatternEdit(
         QUICK_CONTROLS_HISTORY_OWNER, QUICK_CONTROLS_HISTORY_KEY);
@@ -519,30 +492,35 @@ FLASHMEM bool SequencerPatternQuickControlsHandler::beginPreparedQuickControlsHi
 }
 
 FLASHMEM bool SequencerPatternQuickControlsHandler::ensurePreparedQuickControlsHistory() {
-    if (!cancel_retry_required_) return true;
+    if (!history_retry_required_) return true;
     if (!abortPreparedQuickControlsHistory()) {
         showHistoryRejection(
             core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
         return false;
     }
 
-    discardModalSnapshots();
-    cancel_retry_required_ = true;
-    if (!captureCancelSnapshot() || !captureOffsetSnapshot()) {
-        cancel_snapshot_valid_ = false;
-        offset_snapshot_valid_ = false;
-        cancel_snapshot_.reset();
-        offset_snapshot_.reset();
-        showHistoryRejection(
-            core::state::sequencer::SequencerHistoryRejectionReason::ResourceUnavailable);
-        return false;
-    }
-
     if (!beginPreparedQuickControlsHistory()) return false;
 
-    cancel_retry_required_ = false;
-    sequencer_.patternQuickControls.offsetSteps.set(0);
+    history_retry_required_ = false;
     return true;
+}
+
+FLASHMEM PreparedCommitOutcome
+SequencerPatternQuickControlsHandler::applyNestedStepDraftQuickControls() {
+    auto* parent = sequencer_.stepContentDraft.pattern();
+    if (parent == nullptr) return PreparedCommitOutcome::Failed;
+    const auto outcome =
+        sequencer_.quickControlsDraft.publishToDetachedParent(*parent);
+    if (outcome == core::state::sequencer::
+            SequencerQuickControlsNestedPublishOutcome::Failed) {
+        return PreparedCommitOutcome::Failed;
+    }
+    if (outcome == core::state::sequencer::
+            SequencerQuickControlsNestedPublishOutcome::NoChange) {
+        return PreparedCommitOutcome::NoChange;
+    }
+    sequencer_.stepContentDraft.touch();
+    return PreparedCommitOutcome::Committed;
 }
 
 FLASHMEM void SequencerPatternQuickControlsHandler::showHistoryRejection(
@@ -550,19 +528,14 @@ FLASHMEM void SequencerPatternQuickControlsHandler::showHistoryRejection(
     sequencer_.historyFeedback.showRejection(reason, core::time_compat::millis());
 }
 
-FLASHMEM void SequencerPatternQuickControlsHandler::discardModalSnapshots() {
-    cancel_snapshot_valid_ = false;
-    offset_snapshot_valid_ = false;
-    cancel_retry_required_ = false;
-    cancel_snapshot_.reset();
-    offset_snapshot_.reset();
-}
-
 FLASHMEM void SequencerPatternQuickControlsHandler::closeTransientQuickControlsState() {
     auto& quick = sequencer_.patternQuickControls;
-    quick.selecting.set(false);
     quick.offsetSteps.set(0);
-    discardModalSnapshots();
+    history_retry_required_ = false;
+    nested_step_draft_ = false;
+    sequencer_.quickControlsDraft.reset();
+    quick.bumpPreview();
+    quick.selecting.set(false);
 }
 
 FLASHMEM int SequencerPatternQuickControlsHandler::focusedItemOrderIndex() const {
@@ -596,30 +569,15 @@ FLASHMEM int SequencerPatternQuickControlsHandler::normalizedToOffset(float norm
     return index - maxOffset;
 }
 
-FLASHMEM bool SequencerPatternQuickControlsHandler::applyOffsetFromSnapshot(int offsetSteps) {
-    if (!offset_snapshot_valid_ ||
-        !core::state::sequencer::applyHistorySnapshotToEditor(sequencer_, offset_snapshot_)) {
-        return false;
-    }
-    if (offsetSteps != 0) {
-        if (core::state::sequencer::isChildContentView(sequencer_)) {
-            core::state::sequencer::rotateActiveContentSteps(sequencer_, offsetSteps);
-        } else {
-            core::state::sequencer::rotatePattern(sequencer_, offsetSteps);
-        }
-    }
-    core::state::sequencer::refreshContentView(sequencer_);
-    clampFocusToLength();
-    return true;
-}
-
 FLASHMEM bool SequencerPatternQuickControlsHandler::applyOffsetDelta(int offsetSteps) {
     if (offsetSteps == 0) return false;
     bool changed = false;
     if (core::state::sequencer::isChildContentView(sequencer_)) {
         changed = core::state::sequencer::rotateActiveContentSteps(sequencer_, offsetSteps);
     } else {
-        changed = core::state::sequencer::rotatePattern(sequencer_, offsetSteps);
+        changed = core::state::sequencer::rotatePatternState(
+            core::state::sequencer::authoringPattern(sequencer_),
+            offsetSteps);
     }
     core::state::sequencer::refreshContentView(sequencer_);
     clampFocusToLength();

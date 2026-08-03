@@ -31,13 +31,15 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
         core::state::sequencer::SequencerTrackBankState::clampTrackIndex(
             track_bank_.activeTrackIndex()
         );
+    const auto& activePattern =
+        core::state::sequencer::authoringPattern(sequencer_);
 
     uint16_t lanePresentMask = 0;
     for (uint8_t i = 0;
          i < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
          ++i) {
         const auto& source =
-            (i == activeTrack) ? sequencer_.pattern : track_bank_.track(i);
+            (i == activeTrack) ? activePattern : track_bank_.track(i);
         if (core::state::sequencer::sequencerCcLaneView(source) != nullptr) {
             lanePresentMask = static_cast<uint16_t>(lanePresentMask | (1U << i));
         }
@@ -58,7 +60,7 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
         }
         for (uint8_t i = 0; i < lanes.tracks.size(); ++i) {
             const auto& sourcePattern =
-                (i == activeTrack) ? sequencer_.pattern : track_bank_.track(i);
+                (i == activeTrack) ? activePattern : track_bank_.track(i);
             const auto* source =
                 core::state::sequencer::sequencerCcLaneView(sourcePattern);
             const uint32_t sourceRevision = sourcePattern.ccLaneRevision.get();
@@ -89,7 +91,7 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
 
     for (uint8_t i = 0; i < runtimeSnapshot.tracks.size(); ++i) {
         const auto& source = (i == activeTrack)
-            ? core::state::sequencer::authoringPattern(sequencer_)
+            ? activePattern
             : track_bank_.track(i);
         const auto signature =
             captureRuntimeStateSignature(

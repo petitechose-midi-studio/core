@@ -903,6 +903,24 @@ FLASHMEM bool captureHistorySnapshotUsingReservedStorage(const SequencerState& s
     return true;
 }
 
+FLASHMEM bool captureDetachedHistorySnapshotUsingReservedStorage(
+    const SequencerPatternState& source,
+    uint8_t focusedStep,
+    SequencerHistoryPatternSnapshot& out
+) {
+    if (!capturePatternPayloadUsingReservedStorage(source, out.graph, out.ccLanes)) {
+        return false;
+    }
+    captureSnapshot(source, out.flat);
+    out.ccLaneRevision = source.ccLaneRevision.get();
+    const uint8_t length = source.length.get();
+    out.focusedStep = length == 0U
+        ? 0U
+        : static_cast<uint8_t>(std::min<uint16_t>(focusedStep, length - 1U));
+    out.ccLanesCaptured = true;
+    return true;
+}
+
 FLASHMEM bool reserveHistorySnapshotGraphStorage(SequencerHistoryPatternSnapshot& snapshot) {
     if (snapshot.graph) return true;
     snapshot.graph = core::app::makeExtmemUnique<Graph>();
@@ -1146,6 +1164,34 @@ FLASHMEM bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
     return synchronization.captured;
 }
 
+FLASHMEM bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerPatternState& after,
+    SequencerPreparedActiveTrackSynchronization& synchronization
+) {
+    if (!preparedActiveTrackSynchronizationMatches(bank, synchronization)) {
+        synchronization.captured = false;
+        return false;
+    }
+    synchronization.captured = false;
+    if (synchronization.storage == SequencerHistoryPatternStorage::FlatOnly) {
+        const auto& target = bank.track(synchronization.trackIndex);
+        synchronization.captured =
+            sameGraph(graphView(target), graphView(after)) &&
+            sameOptionalSequencerCcLaneBank(
+                sequencerCcLaneView(target),
+                sequencerCcLaneView(after)
+            );
+        if (synchronization.captured) synchronization.payload.reset();
+        return synchronization.captured;
+    }
+    synchronization.captured = captureHistoryPatternPayloadUsingReservedStorage(
+        after,
+        synchronization.payload
+    );
+    return synchronization.captured;
+}
+
 namespace {
 
 FLASHMEM void publishPreparedActiveTrackSynchronizationUsingFlat(
@@ -1328,11 +1374,38 @@ FLASHMEM bool applyHistorySnapshot(SequencerTrackBankState& bank, SequencerState
 }
 
 FLASHMEM bool sameMusicalHistorySnapshot(const SequencerHistoryPatternSnapshot& lhs,
-                                          const SequencerHistoryPatternSnapshot& rhs) {
+                                         const SequencerHistoryPatternSnapshot& rhs) {
     return sameFlatPatternSnapshot(lhs.flat, rhs.flat) &&
            sameGraph(lhs.graph.get(), rhs.graph.get()) &&
            (!lhs.ccLanesCaptured || !rhs.ccLanesCaptured ||
             sameOptionalSequencerCcLaneBank(lhs.ccLanes.get(), rhs.ccLanes.get()));
+}
+
+FLASHMEM bool sameMusicalPatternState(
+    const SequencerPatternState& lhs,
+    const SequencerPatternState& rhs
+) {
+    return lhs.length.get() == rhs.length.get() &&
+           lhs.playStart == rhs.playStart &&
+           lhs.loopStart == rhs.loopStart &&
+           lhs.loopEnd == rhs.loopEnd &&
+           lhs.stepsPerBeat.get() == rhs.stepsPerBeat.get() &&
+           lhs.enabledMask.get() == rhs.enabledMask.get() &&
+           lhs.swingOffsetPercent.get() == rhs.swingOffsetPercent.get() &&
+           lhs.patternNudgePercent.get() == rhs.patternNudgePercent.get() &&
+           sameVariationRanges(lhs.variationRanges, rhs.variationRanges) &&
+           lhs.scalePolicy == rhs.scalePolicy &&
+           sameScaleSettings(lhs.scaleOverride, rhs.scaleOverride) &&
+           lhs.pitchEditMode == rhs.pitchEditMode &&
+           lhs.note == rhs.note &&
+           lhs.velocity == rhs.velocity &&
+           lhs.gate == rhs.gate &&
+           lhs.nudge == rhs.nudge &&
+           lhs.probability == rhs.probability &&
+           sameGraph(graphView(lhs), graphView(rhs)) &&
+           sameOptionalSequencerCcLaneBank(
+               sequencerCcLaneView(lhs),
+               sequencerCcLaneView(rhs));
 }
 
 FLASHMEM bool liveHistoryPatternSnapshotMatches(

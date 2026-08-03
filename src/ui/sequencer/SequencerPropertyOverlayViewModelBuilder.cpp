@@ -15,6 +15,7 @@
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/sequencer/SequencerQuickControlVisuals.hpp"
 #include "ui/sequencer/SequencerStepContentDraftTransitionLabels.hpp"
@@ -114,6 +115,7 @@ void formatQuickControlValue(
     QuickItem item
 ) {
     if (!buffer || size == 0) return;
+    const auto& pattern = core::state::sequencer::authoringPattern(sequencer);
     if (core::state::sequencer::isChildContentView(sequencer) &&
         item == QuickItem::DIVISION) {
         buffer[0] = '\0';
@@ -135,7 +137,7 @@ void formatQuickControlValue(
                 size,
                 1U,
                 static_cast<unsigned>(
-                    4U * static_cast<uint16_t>(sequencer.pattern.stepsPerBeat.get())
+                    4U * static_cast<uint16_t>(pattern.stepsPerBeat.get())
                 )
             );
             return;
@@ -145,7 +147,7 @@ void formatQuickControlValue(
                 size,
                 "%u%%",
                 static_cast<unsigned>(
-                    sequencer.pattern.effectiveSwingPercent(
+                    pattern.effectiveSwingPercent(
                         projectNavigation.transportSwingPercent
                     )
                 )
@@ -156,7 +158,7 @@ void formatQuickControlValue(
                 buffer,
                 size,
                 "%+d%%",
-                static_cast<int>(sequencer.pattern.patternNudgePercent.get())
+                static_cast<int>(pattern.patternNudgePercent.get())
             );
             return;
         case QuickItem::LENGTH:
@@ -184,7 +186,9 @@ uint8_t localVariationRangeForStep(
         return 0;
     }
 
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(
+        core::state::sequencer::authoringPattern(sequencer)
+    );
     if (graph == nullptr) return 0;
 
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(
@@ -413,7 +417,9 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
                 .color = standalone::theme::color::MACRO_CC_COLOR,
             };
             const auto* bank =
-                core::state::sequencer::sequencerCcLaneView(sequencer.pattern);
+                core::state::sequencer::sequencerCcLaneView(
+                    core::state::sequencer::authoringPattern(sequencer)
+                );
             const int8_t laneIndex =
                 core::state::sequencer::sequencerPropertySelectionLaneAt(
                     bank,
