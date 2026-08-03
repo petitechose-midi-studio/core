@@ -539,20 +539,6 @@ FLASHMEM void commitPreparedHistoryStructureReplayState(
     replay.ready = false;
 }
 
-FLASHMEM bool applyHistoryStructureSnapshot(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    const SequencerHistoryTrackStructureSnapshot& snapshot
-) {
-    SequencerPreparedStructureHistoryReplay prepared;
-    if (!prepareHistoryStructureReplayOwners(
-            snapshot, bank.activeTrackIndex(), prepared)) {
-        return false;
-    }
-    commitPreparedHistoryStructureReplayState(bank, active, prepared);
-    return true;
-}
-
 FLASHMEM bool sameMusicalHistoryStructureSnapshot(
     const SequencerHistoryTrackStructureSnapshot& lhs,
     const SequencerHistoryTrackStructureSnapshot& rhs

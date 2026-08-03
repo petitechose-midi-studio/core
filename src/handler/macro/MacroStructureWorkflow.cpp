@@ -371,8 +371,8 @@ FLASHMEM void MacroStructureWorkflow::pasteCurrentStructure() {
                 structure_clipboard_.macroAutomationSet.get()
             )) {
             syncPreviewToCurrentContext();
+            track_ui_.previewAddSlot.set(false);
         }
-        track_ui_.previewAddSlot.set(false);
         return;
     }
 
@@ -401,8 +401,10 @@ FLASHMEM void MacroStructureWorkflow::createPreviewedStructure() {
         case core::state::StructureNavigationFocus::TRACK:
             if (services_.createTrack(track_ui_.previewTrackIndex.get())) {
                 syncPreviewToCurrentContext();
+                track_ui_.previewAddSlot.set(false);
+                macro_ui_.previewAddPageSlot.set(false);
             }
-            break;
+            return;
         case core::state::StructureNavigationFocus::STEP:
             if (services_.activateMacroSlot(macro_ui_.focusedMacroSlot.get())) {
                 clampFocusedMacroSlot();

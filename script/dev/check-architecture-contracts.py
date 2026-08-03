@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import functools
 from pathlib import Path
 import re
 import subprocess
@@ -22,6 +23,7 @@ COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*SequencerPreparedPageStructureMutationPlan.cpp.o(.text* .rodata*)",
     "*SequencerPreparedPageStructureTransaction.cpp.o(.text* .rodata*)",
     "*SequencerDirectTrackStructureTransaction.cpp.o(.text* .rodata*)",
+    "*MacroDirectTrackStructureTransaction.cpp.o(.text* .rodata*)",
     "*SequencerPreparedTrackStructurePlanValidation.cpp.o(.text* .rodata*)",
     "*SequencerPreparedTrackStructureTransaction.cpp.o(.text* .rodata*)",
     "*SharedTrackDomainServices.cpp.o(.text* .rodata*)",
@@ -193,6 +195,18 @@ PRESS_HOLD_TURN_RELEASE_GESTURE_HEADER = (
 )
 MACRO_STRUCTURE_WORKFLOW = "src/handler/macro/MacroStructureWorkflow.cpp"
 MACRO_STRUCTURE_WORKFLOW_HEADER = "src/handler/macro/MacroStructureWorkflow.hpp"
+MACRO_STRUCTURE_DOMAIN_SERVICES = (
+    "src/handler/macro/MacroStructureDomainServices.cpp"
+)
+MACRO_STRUCTURE_DOMAIN_SERVICES_HEADER = (
+    "src/handler/macro/MacroStructureDomainServices.hpp"
+)
+MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION = (
+    "src/handler/macro/MacroDirectTrackStructureTransaction.cpp"
+)
+MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION_HEADER = (
+    "src/handler/macro/MacroDirectTrackStructureTransaction.hpp"
+)
 MACRO_PERFORMANCE_HANDLER = "src/handler/macro/MacroPerformanceHandler.cpp"
 MACRO_VIEW = "src/ui/view/MacroView.cpp"
 STRUCTURE_NAVIGATION_STATE = "src/state/StructureNavigationState.cpp"
@@ -211,6 +225,9 @@ SHARED_TRACK_DOMAIN_SERVICES = (
 )
 CORE_SEQUENCER_HISTORY_TRAVERSAL = (
     "src/state/CoreStateSequencerHistoryTraversal.cpp"
+)
+CORE_SEQUENCER_HISTORY_RECORDING = (
+    "src/state/CoreStateSequencerHistoryRecording.cpp"
 )
 SEQUENCER_STEP_HANDLER = "src/handler/sequencer/SequencerStepHandler.cpp"
 SEQUENCER_STEP_HANDLER_HEADER = "src/handler/sequencer/SequencerStepHandler.hpp"
@@ -324,6 +341,7 @@ def cold_placement_contract_errors(cold_placement: str) -> list[str]:
     return errors
 
 
+@functools.lru_cache(maxsize=512)
 def cpp_code_mask(content: str) -> str:
     """Blank comments and quoted literals while preserving source offsets."""
     masked = list(content)
@@ -382,6 +400,11 @@ def cpp_code_mask(content: str) -> str:
     return "".join(masked)
 
 
+@functools.lru_cache(maxsize=65536)
+def regex_count_dotall(pattern: str, content: str) -> int:
+    return len(re.findall(pattern, content, flags=re.DOTALL))
+
+
 def matching_cpp_delimiter(
     masked_content: str,
     opening_index: int,
@@ -400,6 +423,7 @@ def matching_cpp_delimiter(
     return None
 
 
+@functools.lru_cache(maxsize=8192)
 def cpp_function_bodies(content: str, qualified_name: str) -> list[str]:
     """Return balanced, comment/literal-masked bodies for qualified definitions."""
     masked = cpp_code_mask(content)
@@ -427,6 +451,7 @@ def cpp_function_bodies(content: str, qualified_name: str) -> list[str]:
     return bodies
 
 
+@functools.lru_cache(maxsize=2048)
 def cpp_type_bodies(content: str, type_name: str) -> list[str]:
     """Return balanced, comment/literal-masked class or struct bodies."""
     masked = cpp_code_mask(content)
@@ -954,7 +979,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         return code_mask_cache[rel]
 
     def require(rel: str, pattern: str, description: str, count: int = 1) -> None:
-        found = len(re.findall(pattern, files.get(rel, ""), flags=re.DOTALL))
+        found = regex_count_dotall(pattern, files.get(rel, ""))
         if found != count:
             errors.append(f"{rel}: {description} (expected {count}, found {found})")
 
@@ -962,7 +987,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         pattern: str, description: str, count: int
     ) -> None:
         found = sum(
-            len(re.findall(pattern, masked_file(rel), flags=re.DOTALL))
+            regex_count_dotall(pattern, masked_file(rel))
             for rel in files
         )
         if found != count:
@@ -994,7 +1019,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
                 f"(found {len(bodies)})"
             )
             return
-        found = len(re.findall(pattern, bodies[0], flags=re.DOTALL))
+        found = regex_count_dotall(pattern, bodies[0])
         if found != count:
             errors.append(
                 f"{rel}: {description} in {qualified_name} "
@@ -1025,7 +1050,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
                 f"(found {len(bodies)})"
             )
             return
-        found = len(re.findall(pattern, bodies[0], flags=re.DOTALL))
+        found = regex_count_dotall(pattern, bodies[0])
         if found != count:
             errors.append(
                 f"{rel}: {description} in {type_name} "
@@ -2030,6 +2055,288 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         "direct Track adapter must not restore raw capture/record/apply paths",
         count=0,
     )
+
+    require_in_function(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executePrepared",
+        r"\bexecuteSequencerTrackStructureTransaction\s*\(",
+        "direct Macro Track adapter must own exactly one common kernel call",
+    )
+    require(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"__attribute__\s*\(\(\s*noinline\s*\)\).*?"
+        r"__declspec\s*\(\s*noinline\s*\).*?"
+        r"FLASHMEM\s+Result\s+executePrepared\s*\(",
+        "Macro kernel dispatch must retain its portable ARM stack split",
+    )
+    require_in_function(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executeDirect",
+        r"\bexecutePrepared\s*\(\s*context\s*\)",
+        "direct Macro Track preflight must dispatch exactly once",
+    )
+    macro_direct_routes = (
+        (
+            "executeMacroDeleteTrackStructure",
+            r"\bexecuteDirect\s*\(\s*state\s*,\s*Action::MacroDelete\s*,\s*"
+            r"state\.sharedTrackActive\.get\s*\(\s*\)",
+            "MacroDelete",
+        ),
+        (
+            "executeMacroResetTrackStructure",
+            r"\bexecuteDirect\s*\(\s*state\s*,\s*Action::MacroReset\s*,\s*"
+            r"targetTrack",
+            "MacroReset",
+        ),
+        (
+            "executeMacroPasteTrackStructure",
+            r"\bexecuteDirect\s*\(\s*state\s*,\s*Action::MacroPaste\s*,\s*"
+            r"targetTrack\s*,\s*&track\s*,\s*automation",
+            "MacroPaste",
+        ),
+        (
+            "executeMacroCreateTrackStructure",
+            r"\bexecuteDirect\s*\(\s*state\s*,\s*Action::MacroCreate\s*,\s*"
+            r"targetTrack",
+            "MacroCreate",
+        ),
+    )
+    for function, route, action_name in macro_direct_routes:
+        require_in_function(
+            MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            function,
+            route,
+            f"{function} must route the frozen {action_name} action",
+        )
+        require(
+            MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION_HEADER,
+            rf"\[\[nodiscard\]\]\s*SequencerPreparedTrackStructureResult\s*"
+            rf"{re.escape(function)}\s*\(",
+            f"{function} must remain a typed public cold route",
+        )
+
+    macro_service_routes = (
+        (
+            "MacroStructureDomainServices::deleteActiveTrack",
+            "executeMacroDeleteTrackStructure",
+        ),
+        (
+            "MacroStructureDomainServices::resetTrackContent",
+            "executeMacroResetTrackStructure",
+        ),
+        (
+            "MacroStructureDomainServices::pasteTrack",
+            "executeMacroPasteTrackStructure",
+        ),
+        (
+            "MacroStructureDomainServices::createTrack",
+            "executeMacroCreateTrackStructure",
+        ),
+    )
+    for function, adapter in macro_service_routes:
+        require_in_function(
+            MACRO_STRUCTURE_DOMAIN_SERVICES,
+            function,
+            rf"\b{re.escape(adapter)}\s*\(",
+            f"{function} must delegate exactly once to {adapter}",
+        )
+        require_in_function(
+            MACRO_STRUCTURE_DOMAIN_SERVICES,
+            function,
+            r"\bresult\.settled\s*\(\s*\)",
+            f"{function} must consume the typed transaction result",
+        )
+        require_in_function(
+            MACRO_STRUCTURE_DOMAIN_SERVICES,
+            function,
+            r"\b(?:prepareMacroTrackStructureHistory|"
+            r"rollbackMacroTrackStructureHistory|"
+            r"commitMacroTrackStructureHistory|applyTrackStructureMutation|"
+            r"applyTrackStructureState|recordPreparedStructure)\s*\(",
+            f"{function} must not retain raw Track mutation or History paths",
+            count=0,
+        )
+
+    retired_macro_track_helpers = (
+        "prepareMacroTrackStructureHistory",
+        "rollbackMacroTrackStructureHistory",
+        "commitMacroTrackStructureHistory",
+        "applyTrackStructureMutation",
+        "applyTrackStructureState",
+        "setSharedTrackStateFromCoreState",
+    )
+    for retired_helper in retired_macro_track_helpers:
+        require(
+            MACRO_STRUCTURE_DOMAIN_SERVICES,
+            rf"\b{re.escape(retired_helper)}\b",
+            f"retired Macro Track helper {retired_helper} must remain absent",
+            count=0,
+        )
+        require(
+            MACRO_STRUCTURE_DOMAIN_SERVICES_HEADER,
+            rf"\b{re.escape(retired_helper)}\b",
+            f"retired Macro Track declaration {retired_helper} must remain absent",
+            count=0,
+        )
+
+    require_in_function(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executeDirect",
+        r"^\s*if\s*\(\s*"
+        r"state\.sequencer\.stepContentDraft\.rejectTransitionIfActive\s*\(\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::\s*)*"
+        r"SequencerStepContentDraftBlockedTransition::TRACK\s*\)\s*\)",
+        "direct Macro Track adapter must give Draft rejection first priority",
+    )
+    require_in_function(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "executeDirect",
+        r"validIntent\s*\(\s*context\s*\).*?"
+        r"pasteSourcesMatch\s*\(\s*context\s*\).*?"
+        r"validateInitialTopology\s*\(\s*context\s*\).*?"
+        r"executePrepared\s*\(\s*context\s*\)",
+        "Macro intent, clipboard and topology checks must precede chronology",
+    )
+    require(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"\btrackClipboardValid\s*\(\s*context\.pasteAutomation\s*\)",
+        "Macro Track clipboard must be validated before transaction allocation",
+    )
+    require_in_function(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "prepareMacroAfter",
+        r"\bclearTracksInDomain\s*\(",
+        "Delete/Reset/Create must mutate only the detached control domain",
+        count=2,
+    )
+    require_in_function(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "prepareMacroAfter",
+        r"\breplaceTrackFromClipboardInDomain\s*\(",
+        "Paste must mutate only the detached control domain",
+    )
+    require_in_function(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "prepareMacroAfter",
+        r"\b(?:clearTracks|replaceTrackFromClipboard)\s*\(",
+        "Macro preparation must not mutate the live control domain",
+        count=0,
+    )
+    require(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"sizeof\s*\(\s*void\s*\*\s*\)\s*!=\s*4U\s*\|\|\s*"
+        r"sizeof\s*\(\s*DirectContext\s*\)\s*<=\s*96U",
+        "Macro direct context must retain its ARM stack ceiling",
+    )
+    require(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"sizeof\s*\(\s*void\s*\*\s*\)\s*!=\s*8U\s*\|\|\s*"
+        r"sizeof\s*\(\s*DirectContext\s*\)\s*<=\s*120U",
+        "Macro direct context must retain its native stack ceiling",
+    )
+    for intent_field in (
+        "clipboardRevision",
+        "holdAcquisition",
+        "contextRevision",
+        "previewTrack",
+        "previewAddTrack",
+        "canonicalClipboardSource",
+        "clipboardAutomation",
+        "trackSelection",
+    ):
+        require_in_function(
+            MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "captureIntent",
+            rf"\.{re.escape(intent_field)}\s*=",
+            f"Macro direct intent must capture {intent_field}",
+        )
+        require_in_function(
+            MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            "sameIntent",
+            rf"lhs\.{re.escape(intent_field)}\s*==\s*"
+            rf"rhs\.{re.escape(intent_field)}",
+            f"Macro direct intent must revalidate {intent_field}",
+        )
+    require(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        r"\b(?:recordStructure|recordPreparedStructure|"
+        r"prepareMacroTrackStructureHistory|rollbackMacroTrackStructureHistory|"
+        r"commitMacroTrackStructureHistory|applyTrackStructureMutation|"
+        r"applyTrackStructureState)\s*\(",
+        "direct Macro adapter must not restore raw mutation or History routes",
+        count=0,
+    )
+    require_in_function(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "reconcileCommitted",
+        r"\bclearManualAndMaybeSync\s*\(.*?\bnextMacroConfigRevision\s*\(",
+        "committed Macro reconciliation must clear UI state and revise config once",
+    )
+    require_in_function(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "settleNoChange",
+        r"^\s*auto&\s+context\s*=.*?"
+        r"clearManualAndMaybeSync\s*\(\s*context\s*,\s*plan\s*\)\s*;\s*$",
+        "Macro NoChange settlement must remain publication-free",
+    )
+    for no_fail_function in (
+        "clearManualAndMaybeSync",
+        "reconcileCommitted",
+        "settleNoChange",
+    ):
+        require_in_function(
+            MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+            no_fail_function,
+            r"\b(?:makeExtmem\w*|record\w*|rollback\w*|"
+            r"markProjectMutated)\s*\(|\bnew\b|\breturn\s+false\b",
+            f"{no_fail_function} must remain allocation- and failure-free",
+            count=0,
+        )
+
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_RECORDING,
+        "CoreState::commitAdmittedSequencerStructureHistory",
+        r"const\s+bool\s+directMacroTrackAction\s*=\s*"
+        r"change\s*&&\s*change->macroStructure\s*&&.*?"
+        r"affectedTrackIndex\s*!=.*?INVALID_AFFECTED_TRACK\s*;.*?"
+        r"commitAdmittedStructure\s*\(\s*std::move\s*\(\s*change\s*\)\s*\)\s*;.*?"
+        r"publishPreparedSequencerMutation\s*\(\s*!directMacroTrackAction\s*\)",
+        "direct Macro Track commits must suppress Project-navigation publication",
+    )
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_RECORDING,
+        "CoreState::publishPreparedSequencerMutation",
+        r"if\s*\(\s*notifyProjectNavigation\s*\)\s*\{\s*"
+        r"markProjectMutated\s*\(\s*\)\s*;\s*\}\s*else\s*\{\s*"
+        r"markProjectDurableMutation_\s*\(\s*\)\s*;\s*\}",
+        "prepared publication must separate durable state from Project navigation",
+    )
+    require_in_function(
+        MACRO_STRUCTURE_WORKFLOW,
+        "MacroStructureWorkflow::pasteCurrentStructure",
+        r"if\s*\(\s*services_\.pasteTrack\s*\(.*?\)\s*\)\s*\{\s*"
+        r"syncPreviewToCurrentContext\s*\(\s*\)\s*;\s*"
+        r"track_ui_\.previewAddSlot\.set\s*\(\s*false\s*\)\s*;\s*\}",
+        "Macro Track Paste must settle its add preview only on success",
+    )
+    require_in_function(
+        MACRO_STRUCTURE_WORKFLOW,
+        "MacroStructureWorkflow::pasteCurrentStructure",
+        r"\btrack_ui_\.previewAddSlot\.set\s*\(",
+        "Macro Track Paste must have exactly one success-owned preview settlement",
+    )
+    require_in_function(
+        MACRO_STRUCTURE_WORKFLOW,
+        "MacroStructureWorkflow::createPreviewedStructure",
+        r"case\s+(?:[A-Za-z_][A-Za-z0-9_]*::)*"
+        r"StructureNavigationFocus::TRACK\s*:\s*"
+        r"if\s*\(\s*services_\.createTrack\s*\(.*?\)\s*\)\s*\{.*?"
+        r"track_ui_\.previewAddSlot\.set\s*\(\s*false\s*\)\s*;.*?"
+        r"macro_ui_\.previewAddPageSlot\.set\s*\(\s*false\s*\)\s*;\s*"
+        r"\}\s*return\s*;",
+        "Macro Track Create must settle both previews only on success",
+    )
+
     require_in_function(
         PAGE_STRUCTURE_EDIT_WORKFLOW,
         "SequencerStructureEditWorkflow::createPreviewedTrackStructure",
@@ -2649,7 +2956,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     require(
         MACRO_STRUCTURE_WORKFLOW_HEADER,
         r"sizeof\s*\(\s*void\s*\*\s*\)\s*!=\s*4U\s*\|\|\s*"
-        r"sizeof\s*\(\s*MacroStructureWorkflow\s*\)\s*==\s*120U",
+        r"sizeof\s*\(\s*MacroStructureWorkflow\s*\)\s*==\s*116U",
         "Macro Structure workflow must retain its ARM PSRAM envelope",
     )
     require_in_type(
@@ -3522,8 +3829,8 @@ def self_test() -> int:
     )
     widened_macro_structure_workflow = mutate(
         MACRO_STRUCTURE_WORKFLOW_HEADER,
+        "sizeof(MacroStructureWorkflow) == 116U",
         "sizeof(MacroStructureWorkflow) == 120U",
-        "sizeof(MacroStructureWorkflow) == 124U",
     )
     restored_public_macro_structure_helper = mutate(
         MACRO_STRUCTURE_WORKFLOW_HEADER,
@@ -3634,6 +3941,54 @@ def self_test() -> int:
         "        latchedActiveTrack",
         "        Action::SequencerRemoveCurrent,\n"
         "        latchedActiveTrack",
+    )
+    miswired_macro_create_action = mutate(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "        Action::MacroCreate,\n"
+        "        targetTrack,\n"
+        "        nullptr,\n"
+        "        nullptr\n"
+        "    );\n"
+        "}",
+        "        Action::MacroReset,\n"
+        "        targetTrack,\n"
+        "        nullptr,\n"
+        "        nullptr\n"
+        "    );\n"
+        "}",
+    )
+    bypassed_macro_reset_service = mutate(
+        MACRO_STRUCTURE_DOMAIN_SERVICES,
+        "    const auto result = executeMacroResetTrackStructure(\n",
+        "    const auto result = executeMacroCreateTrackStructure(\n",
+    )
+    restored_macro_track_rollback = {
+        **step_draft_fixture,
+        MACRO_STRUCTURE_DOMAIN_SERVICES:
+            step_draft_fixture[MACRO_STRUCTURE_DOMAIN_SERVICES]
+            + "\nvoid injectedMacroRollback() { "
+            + "rollbackMacroTrackStructureHistory(); }\n",
+    }
+    widened_macro_direct_context_arm_stack = mutate(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "sizeof(DirectContext) <= 96U",
+        "sizeof(DirectContext) <= 100U",
+    )
+    missing_macro_clipboard_prevalidation = mutate(
+        MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION,
+        "macro_structure_automation_ops::trackClipboardValid(",
+        "macro_structure_automation_ops::skipTrackClipboardValidation(",
+    )
+    lost_macro_navigation_suppression = mutate(
+        CORE_SEQUENCER_HISTORY_RECORDING,
+        "publishPreparedSequencerMutation(!directMacroTrackAction);",
+        "publishPreparedSequencerMutation(true);",
+    )
+    broken_macro_paste_preview_settlement = mutate_pattern(
+        MACRO_STRUCTURE_WORKFLOW,
+        r"(MacroStructureWorkflow::pasteCurrentStructure\s*\(\s*\).*?"
+        r"track_ui_\.previewAddSlot\.)set\s*\(\s*false\s*\)",
+        r"\g<1>set(true)",
     )
     miswired_create_workflow = mutate(
         PAGE_STRUCTURE_EDIT_WORKFLOW,
@@ -3782,10 +4137,12 @@ def self_test() -> int:
     )
     allocating_structure_replay_tail = mutate(
         "src/state/sequencer/SequencerHistory.cpp",
-        "    result.descriptor = descriptorForEntry(entry);",
+        "    result.descriptor = descriptorForEntry(entry);\n"
+        "    commitPreparedHistoryStructureReplayState(bank, active, replay);",
         "    result.descriptor = descriptorForEntry(entry);\n"
         "    (void)prepareHistoryStructureReplayOwners(\n"
-        "        *replay.targetSnapshot, bank.activeTrackIndex(), replay);",
+        "        *replay.targetSnapshot, bank.activeTrackIndex(), replay);\n"
+        "    commitPreparedHistoryStructureReplayState(bank, active, replay);",
     )
     validation_before_draft_priority = mutate(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
@@ -4355,6 +4712,66 @@ def self_test() -> int:
                 miswired_selection_action
             )),
             "miswired SequencerRemoveSelection action is rejected",
+        ),
+        (
+            miswired_macro_create_action[
+                MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                miswired_macro_create_action
+            )),
+            "miswired MacroCreate action is rejected",
+        ),
+        (
+            bypassed_macro_reset_service[MACRO_STRUCTURE_DOMAIN_SERVICES]
+            != step_draft_fixture[MACRO_STRUCTURE_DOMAIN_SERVICES]
+            and bool(step_draft_transition_contract_errors(
+                bypassed_macro_reset_service
+            )),
+            "Macro Reset service bypassing its typed adapter is rejected",
+        ),
+        (
+            restored_macro_track_rollback[MACRO_STRUCTURE_DOMAIN_SERVICES]
+            != step_draft_fixture[MACRO_STRUCTURE_DOMAIN_SERVICES]
+            and bool(step_draft_transition_contract_errors(
+                restored_macro_track_rollback
+            )),
+            "restored Macro Track rollback route is rejected",
+        ),
+        (
+            widened_macro_direct_context_arm_stack[
+                MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                widened_macro_direct_context_arm_stack
+            )),
+            "widened Macro direct context ARM stack ceiling is rejected",
+        ),
+        (
+            missing_macro_clipboard_prevalidation[
+                MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION
+            ] != step_draft_fixture[MACRO_DIRECT_TRACK_STRUCTURE_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                missing_macro_clipboard_prevalidation
+            )),
+            "Macro Paste without pre-allocation clipboard validation is rejected",
+        ),
+        (
+            lost_macro_navigation_suppression[
+                CORE_SEQUENCER_HISTORY_RECORDING
+            ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_RECORDING]
+            and bool(step_draft_transition_contract_errors(
+                lost_macro_navigation_suppression
+            )),
+            "direct Macro commit publishing Project navigation is rejected",
+        ),
+        (
+            broken_macro_paste_preview_settlement[MACRO_STRUCTURE_WORKFLOW]
+            != step_draft_fixture[MACRO_STRUCTURE_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                broken_macro_paste_preview_settlement
+            )),
+            "Macro Track Paste without success-owned preview settlement is rejected",
         ),
         (
             miswired_create_workflow[PAGE_STRUCTURE_EDIT_WORKFLOW]

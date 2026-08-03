@@ -393,7 +393,9 @@ public:
     // Prepared transactions have already synchronized editor and bank. Consume
     // only this coalescer's watched notifications, then publish dirty/save once
     // without cloning a cold payload or draining unrelated callbacks.
-    void publishPreparedSequencerMutation();
+    void publishPreparedSequencerMutation(
+        bool notifyProjectNavigation = true
+    );
     bool recordSequencerPatternHistory(sequencer::SequencerHistoryPatternSnapshot before,
                                        sequencer::SequencerHistoryPatternSnapshot after,
                                        sequencer::SequencerHistoryDescriptor descriptor = {},
@@ -523,6 +525,7 @@ private:
     [[nodiscard]] bool queueSequencerBankApply_(sequencer::SequencerTrackBankState& stagedBank,
                                                 sequencer::SequencerState& staged);
     void requestProjectSessionSave_();
+    void markProjectDurableMutation_();
     void markSequencerProjectMutated_();
     void clearPendingSequencerApply_();
     bool refreshSharedTrackStateFromMacroPages_();

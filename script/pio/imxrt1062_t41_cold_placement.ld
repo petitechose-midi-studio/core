@@ -29,6 +29,7 @@
 *SequencerPreparedPageStructureMutationPlan.cpp.o(.text* .rodata*)
 *SequencerPreparedPageStructureTransaction.cpp.o(.text* .rodata*)
 *SequencerDirectTrackStructureTransaction.cpp.o(.text* .rodata*)
+*MacroDirectTrackStructureTransaction.cpp.o(.text* .rodata*)
 *SequencerPreparedTrackStructurePlanValidation.cpp.o(.text* .rodata*)
 *SequencerPreparedTrackStructureTransaction.cpp.o(.text* .rodata*)
 

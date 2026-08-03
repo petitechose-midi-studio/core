@@ -52,6 +52,10 @@ bool replaceTrackFromClipboard(
     uint8_t destTrack,
     const core::state::MacroAutomationClipboard* clipboard
 );
+/** Allocation-free source validation used before a prepared Track boundary. */
+[[nodiscard]] bool trackClipboardValid(
+    const core::state::MacroAutomationClipboard* clipboard
+);
 /** Detached-domain variant; partial failure is discard-only for the caller. */
 bool replaceTrackFromClipboardInDomain(
     core::state::modulation::ProjectControlDomainState& domain,

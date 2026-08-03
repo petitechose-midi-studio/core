@@ -30,7 +30,6 @@ class MacroStructureDomainServices {
 public:
     using FlushMutationCoalescingFn = void (*)(void* context);
     using MarkProjectMutatedFn = void (*)(void* context);
-    using SetSharedTrackStateFn = bool (*)(void* context, uint16_t enabledMask, uint8_t activeTrack);
     using SwitchToPageFn = void (*)(void* context, uint8_t pageIndex);
     using SwitchToTrackFn = void (*)(void* context, uint8_t trackIndex);
 
@@ -50,7 +49,6 @@ public:
         void* context = nullptr;
         FlushMutationCoalescingFn flushMutationCoalescing = nullptr;
         MarkProjectMutatedFn markProjectMutated = nullptr;
-        SetSharedTrackStateFn setSharedTrackState = nullptr;
         SwitchToPageFn switchToPage = nullptr;
         SwitchToTrackFn switchToTrack = nullptr;
     };

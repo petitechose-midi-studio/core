@@ -2,6 +2,7 @@
 
 from teensy_product_placement import (
     COUPLED_HISTORY_REPLAY_FLASH_MARKERS,
+    MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS,
     PAGE_STRUCTURE_BUILDER_FLASH_MARKERS,
     PAGE_STRUCTURE_FLASH_MARKERS,
     PAGE_STRUCTURE_GRAPH_FLASH_MARKERS,
@@ -70,6 +71,22 @@ def main() -> int:
 1610644900 96 T core::state::CoreState::reconcilePreparedSequencerActiveTrackPresentation()
 1610645500 96 T core::state::CoreState::reconcilePreparedMacroTrackTransfer(unsigned short)
 1610646100 96 T core::state::macro::MacroWorkflow::syncActivePagePresentation(core::state::MacroState&, core::state::macro::MacroPagesState const&, core::state::macro::MacroUiState&)
+1610660100 48 T core::handler::executeMacroDeleteTrackStructure(core::state::CoreState&)
+1610660200 44 T core::handler::executeMacroResetTrackStructure(core::state::CoreState&, unsigned char)
+1610660300 44 T core::handler::executeMacroPasteTrackStructure(core::state::CoreState&, unsigned char, core::state::macro::MacroTrackData const&, core::state::MacroAutomationClipboard const*)
+1610660400 44 T core::handler::executeMacroCreateTrackStructure(core::state::CoreState&, unsigned char)
+1610660500 124 t core::handler::(anonymous namespace)::executePrepared(core::handler::(anonymous namespace)::DirectContext&)
+1610660700 340 t core::handler::(anonymous namespace)::executeDirect(core::state::CoreState&, core::handler::SequencerPreparedTrackStructureAction, unsigned char, core::state::macro::MacroTrackData const*, core::state::MacroAutomationClipboard const*)
+1610661100 160 t core::handler::(anonymous namespace)::validIntent(core::handler::(anonymous namespace)::DirectContext const&)
+1610661300 128 t core::handler::(anonymous namespace)::pasteSourcesMatch(core::handler::(anonymous namespace)::DirectContext const&)
+1610661500 296 t core::handler::(anonymous namespace)::intentStillMatches(core::handler::(anonymous namespace)::DirectContext const&)
+1610661800 56 t core::handler::(anonymous namespace)::clearManualAndMaybeSync(core::handler::(anonymous namespace)::DirectContext&, core::handler::SequencerPreparedTrackStructurePlan const&)
+1610661900 2 t core::handler::(anonymous namespace)::settleNoChange(void*, core::handler::SequencerPreparedTrackStructurePlan const&)
+1610662000 2 t core::handler::(anonymous namespace)::settleSuccessful(void*, core::handler::SequencerPreparedTrackStructurePlan const&)
+1610662100 94 t core::handler::(anonymous namespace)::reconcileCommitted(void*, core::handler::SequencerPreparedTrackStructurePlan const&, core::state::sequencer::SequencerHistoryTrackStructureChange const&)
+1610662300 126 t core::handler::(anonymous namespace)::prepareMacroAfter(void const*, core::handler::SequencerPreparedTrackStructurePlan const&, std::array<core::state::macro::MacroTrackData, 16u>&, core::state::modulation::ProjectControlDomainState&)
+1610662500 462 t core::handler::(anonymous namespace)::buildPlan(void const*, core::handler::SequencerPreparedTrackStructureAction, core::handler::SequencerPreparedTrackStructurePlan&)
+1610663000 86 t core::handler::(anonymous namespace)::revalidate(void const*, core::handler::SequencerPreparedTrackStructurePlan const&, core::state::sequencer::SequencerHistoryTrackStructureChange const&)
 1610646700 114 T core::state::CoreState::traverseSequencerHistory_(core::state::sequencer::SequencerHistoryDirection)
 1610647300 94 T core::state::CoreState::armPreparedSequencerHistoryActivation_(core::state::sequencer::SequencerHistoryDirection, core::state::sequencer::SequencerTrackActivationHistoryPlan const&, core::state::sequencer::SequencerTrackActivationHistoryTransition&)
 1610647900 158 T core::state::CoreState::traversePreparedSequencerStructureHistory_(core::state::sequencer::SequencerHistoryDirection, core::state::sequencer::SequencerPreparedStructureHistoryReplay&&)
@@ -99,6 +116,8 @@ def main() -> int:
     assert len(TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS) == 7
     assert len(TRACK_STRUCTURE_FLASH_MARKERS) == 24
     assert len(set(TRACK_STRUCTURE_FLASH_MARKERS)) == 24
+    assert len(MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS) == 16
+    assert len(set(MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS)) == 16
     assert len(COUPLED_HISTORY_REPLAY_FLASH_MARKERS) == 10
     assert len(set(COUPLED_HISTORY_REPLAY_FLASH_MARKERS)) == 10
     assert product_placement_violations(valid) == ()
@@ -122,6 +141,7 @@ def main() -> int:
     for marker in (
         *PAGE_STRUCTURE_FLASH_MARKERS,
         *TRACK_STRUCTURE_FLASH_MARKERS,
+        *MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS,
         *COUPLED_HISTORY_REPLAY_FLASH_MARKERS,
     ):
         symbol_line = next(line for line in valid_lines if marker in line)

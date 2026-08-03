@@ -89,6 +89,25 @@ TRACK_STRUCTURE_FLASH_MARKERS = (
     *TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS,
 )
 
+MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS = (
+    "executeMacroDeleteTrackStructure(",
+    "executeMacroResetTrackStructure(",
+    "executeMacroPasteTrackStructure(",
+    "executeMacroCreateTrackStructure(",
+    "executePrepared(core::handler::(anonymous namespace)::DirectContext&)",
+    "executeDirect(core::state::CoreState&",
+    "validIntent(core::handler::(anonymous namespace)::DirectContext const&)",
+    "pasteSourcesMatch(core::handler::(anonymous namespace)::DirectContext const&)",
+    "intentStillMatches(core::handler::(anonymous namespace)::DirectContext const&)",
+    "clearManualAndMaybeSync(core::handler::(anonymous namespace)::DirectContext&",
+    "settleNoChange(void*, core::handler::SequencerPreparedTrackStructurePlan const&)",
+    "settleSuccessful(void*, core::handler::SequencerPreparedTrackStructurePlan const&)",
+    "reconcileCommitted(void*, core::handler::SequencerPreparedTrackStructurePlan const&",
+    "prepareMacroAfter(void const*, core::handler::SequencerPreparedTrackStructurePlan const&",
+    "buildPlan(void const*, core::handler::SequencerPreparedTrackStructureAction",
+    "revalidate(void const*, core::handler::SequencerPreparedTrackStructurePlan const&",
+)
+
 COUPLED_HISTORY_REPLAY_FLASH_MARKERS = (
     "CoreState::traverseSequencerHistory_(",
     "CoreState::armPreparedSequencerHistoryActivation_(",
@@ -150,6 +169,7 @@ def product_placement_violations(nm_output: str) -> tuple[str, ...]:
         "FatFormatter::makeFat32(",
         *PAGE_STRUCTURE_FLASH_MARKERS,
         *TRACK_STRUCTURE_FLASH_MARKERS,
+        *MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS,
         *COUPLED_HISTORY_REPLAY_FLASH_MARKERS,
     )
     for marker in flash_markers:

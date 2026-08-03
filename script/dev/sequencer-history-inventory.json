@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "scope": "L-R08-07 direct Sequencer Track Structure routes slice 3",
+  "scope": "L-R08-07 direct Macro Track Structure routes slice 6",
   "recordingBoundary": {
     "entryRecordingCallTotal": 44,
-    "expectedMigratedRemovalTotal": 14,
+    "expectedMigratedRemovalTotal": 15,
     "expectedProviderForwardTotal": 5,
     "expectedCoalescedPreparedTotal": 1,
-    "expectedTotal": 36,
+    "expectedTotal": 35,
     "memberDispatch": {
       "methods": [
         "recordPattern",
@@ -19,13 +19,13 @@
         "recordPreparedStructure"
       ],
       "expectedMethodCount": 8,
-      "expectedTotal": 28,
-      "expectedSinkTotal": 8,
+      "expectedTotal": 27,
+      "expectedSinkTotal": 7,
       "expectedServiceAdapterTotal": 20,
       "expectedSinkClassifications": {
         "post-fallible": 2,
         "prepared": 5,
-        "rollback-aware": 1
+        "rollback-aware": 0
       },
       "groups": [
         {
@@ -76,13 +76,6 @@
           "count": 1,
           "role": "sink",
           "classification": "prepared"
-        },
-        {
-          "path": "src/handler/macro/MacroStructureDomainServices.cpp",
-          "method": "recordPreparedStructure",
-          "count": 1,
-          "role": "sink",
-          "classification": "rollback-aware"
         },
         {
           "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
@@ -689,6 +682,7 @@
       "test/test_SequencerMacroPropertyHandler/test_main.cpp": 1,
       "test/test_SequencerPatternEditorHandler/test_main.cpp": 3,
       "test/test_SequencerPreparedTrackStructureTransaction/test_main.cpp": 1,
+      "test/test_MacroDirectTrackStructureTransaction/test_main.cpp": 1,
       "test/test_SequencerQuickControlsContainment/test_main.cpp": 1,
       "test/test_SequencerTrackBankOps/test_main.cpp": 1
     }

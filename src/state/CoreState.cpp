@@ -304,11 +304,15 @@ FLASHMEM void CoreState::flushMacroValueHistoryCoalescing() {
     macroDomain_.coalescedValueHistory.clear();
 }
 
-FLASHMEM void CoreState::markProjectMutated() {
+FLASHMEM void CoreState::markProjectDurableMutation_() {
     ++project.metadata.modifiedCounter;
     if (project.metadata.modifiedCounter == 0) { project.metadata.modifiedCounter = 1; }
     project.metadata.dirty = true;
     requestProjectSessionSave_();
+}
+
+FLASHMEM void CoreState::markProjectMutated() {
+    markProjectDurableMutation_();
     projectNavigation.notifyContentChanged();
 }
 

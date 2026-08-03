@@ -228,14 +228,6 @@ void commitPreparedHistoryStructureReplayState(
     SequencerState& active,
     SequencerPreparedStructureHistoryReplay& replay
 ) noexcept;
-// Slice-6 lease: Macro direct-action rollback still restores one detached
-// Sequencer snapshot outside History traversal. Core History itself rejects
-// Structure on the generic path and uses only the prepared coupled lifecycle.
-bool applyHistoryStructureSnapshot(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    const SequencerHistoryTrackStructureSnapshot& snapshot
-);
 
 bool sameMusicalHistoryStructureSnapshot(
     const SequencerHistoryTrackStructureSnapshot& lhs,

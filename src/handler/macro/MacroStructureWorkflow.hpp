@@ -210,8 +210,8 @@ private:
 };
 
 static_assert(
-    sizeof(void*) != 4U || sizeof(MacroStructureWorkflow) == 120U,
-    "Macro Structure workflow must remain in its 120-byte ARM PSRAM envelope"
+    sizeof(void*) != 4U || sizeof(MacroStructureWorkflow) == 116U,
+    "Macro Structure workflow must remain in its 116-byte ARM PSRAM envelope"
 );
 
 }  // namespace core::handler

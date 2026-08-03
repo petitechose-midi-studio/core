@@ -426,17 +426,27 @@ FLASHMEM void CoreState::recordPreparedSequencerStructureHistory(
 FLASHMEM void CoreState::commitAdmittedSequencerStructureHistory(
     sequencer::SequencerHistoryTrackStructureChangePtr change
 ) noexcept {
+    const bool directMacroTrackAction = change && change->macroStructure &&
+        change->macroStructure->affectedTrackIndex != sequencer::
+            SequencerHistoryMacroTrackStructurePayload::
+                INVALID_AFFECTED_TRACK;
     sequencerHistory.commitAdmittedStructure(std::move(change));
-    publishPreparedSequencerMutation();
+    publishPreparedSequencerMutation(!directMacroTrackAction);
 }
 
-FLASHMEM void CoreState::publishPreparedSequencerMutation() {
+FLASHMEM void CoreState::publishPreparedSequencerMutation(
+    bool notifyProjectNavigation
+) {
     // The prepared transaction already performed the coalescer action's
     // editor-to-bank synchronization. Cancel only this coalescer's queued
     // callbacks (including later entries in an active notification wave)
     // and consume an already-armed mark before publishing directly.
     consumePendingSequencerMutation_();
-    markProjectMutated();
+    if (notifyProjectNavigation) {
+        markProjectMutated();
+    } else {
+        markProjectDurableMutation_();
+    }
 }
 
 FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(

@@ -463,6 +463,13 @@ FLASHMEM bool replaceTrackFromClipboard(
     );
 }
 
+FLASHMEM bool trackClipboardValid(
+    const core::state::MacroAutomationClipboard* clipboard
+) {
+    StorageUsage usage{};
+    return clipboardUsage(clipboard, true, usage);
+}
+
 FLASHMEM bool replaceTrackFromClipboardInDomain(
     modulation::ProjectControlDomainState& domain,
     uint8_t destTrack,
