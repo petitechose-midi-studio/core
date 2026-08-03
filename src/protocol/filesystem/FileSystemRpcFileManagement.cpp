@@ -23,7 +23,7 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleMkdir_(
     FileSystemRpcStatus status = FileSystemRpcStatus::OK;
     if (!readPath(reader, path, sizeof(path)) || reader.remaining() != 0) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
-    } else if (internal::isConditionalMutationReservedPath(files_, path)) {
+    } else if (internal::isProtocolReservedPath(files_, path)) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
         auto acquired = files_.acquireMutation(
@@ -65,7 +65,7 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleDelete_(
         !readPath(reader, path, sizeof(path)) ||
         reader.remaining() != 0) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
-    } else if (internal::isConditionalMutationReservedPath(files_, path)) {
+    } else if (internal::isProtocolReservedPath(files_, path)) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
         const auto mode = recursive
@@ -110,8 +110,8 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleRename_(
         !readPath(reader, toPath, sizeof(toPath)) ||
         reader.remaining() != 0) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
-    } else if (internal::isConditionalMutationReservedPath(files_, fromPath) ||
-               internal::isConditionalMutationReservedPath(files_, toPath)) {
+    } else if (internal::isProtocolReservedPath(files_, fromPath) ||
+               internal::isProtocolReservedPath(files_, toPath)) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
         auto acquired = files_.acquireMutation(

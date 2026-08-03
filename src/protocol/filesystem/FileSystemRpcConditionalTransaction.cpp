@@ -4,6 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/AtomicProductFile.hpp"
 #include "persistence/PersistenceChecksum.hpp"
 #include "protocol/filesystem/FileSystemRpcDigest.hpp"
 #include "protocol/filesystem/FileSystemRpcInternal.hpp"
@@ -93,32 +94,30 @@ FLASHMEM ExecutionResult executeReplace(
                 false,
             };
         }
-        auto backup = files.stat(lease, BACKUP_PATH);
-        if (backup || backup.error().code != ErrorCode::RESOURCE_NOT_FOUND) {
-            return {FileSystemRpcStatus::INVALID_STATE, false};
+        auto stagingInfo = files.stat(lease, journal.stagingPath);
+        if (!stagingInfo || stagingInfo.value().type != oc::interface::FileType::FILE) {
+            return {
+                stagingInfo ? FileSystemRpcStatus::INVALID_STATE
+                            : mapError(stagingInfo.error()),
+                false,
+            };
         }
-
-        auto backedUp = files.rename(lease, journal.currentPath, BACKUP_PATH);
-        if (!backedUp) return {mapError(backedUp.error()), false};
-        auto promoted = files.rename(lease, journal.stagingPath, journal.currentPath);
-        if (!promoted) {
-            auto restored = files.rename(lease, BACKUP_PATH, journal.currentPath);
-            if (restored) {
-                (void)removeJournalLast(files, lease);
-            }
-            return {mapError(promoted.error()), false};
-        }
+        auto promoted = core::persistence::commitProductFileTemp(
+            files,
+            lease,
+            journal.currentPath,
+            BACKUP_PATH,
+            journal.stagingPath,
+            stagingInfo.value().sizeBytes
+        );
+        if (!promoted) return {mapError(promoted.error()), false};
 
         auto committed = readDigest(files, lease, journal.currentPath);
         if (committed.status != FileSystemRpcStatus::OK ||
             !digestEquals(committed.sha256, journal.replacementSha256)) {
-            (void)files.remove(lease, journal.currentPath);
-            auto restored = files.rename(lease, BACKUP_PATH, journal.currentPath);
-            if (restored) (void)removeJournalLast(files, lease);
             return {FileSystemRpcStatus::STORAGE_ERROR, false};
         }
-        if (removeIfExists(files, lease, BACKUP_PATH) != FileSystemRpcStatus::OK ||
-            removeJournalLast(files, lease) != FileSystemRpcStatus::OK) {
+        if (removeJournalLast(files, lease) != FileSystemRpcStatus::OK) {
             return {FileSystemRpcStatus::STORAGE_ERROR, true};
         }
         return {FileSystemRpcStatus::OK, true};
@@ -145,10 +144,24 @@ FLASHMEM ExecutionResult executeReplace(
     auto staging = readDigest(files, lease, journal.stagingPath);
     if (staging.status == FileSystemRpcStatus::OK &&
         digestEquals(staging.sha256, journal.replacementSha256)) {
-        auto promoted = files.rename(lease, journal.stagingPath, journal.currentPath);
+        auto stagingInfo = files.stat(lease, journal.stagingPath);
+        if (!stagingInfo || stagingInfo.value().type != oc::interface::FileType::FILE) {
+            return {
+                stagingInfo ? FileSystemRpcStatus::INVALID_STATE
+                            : mapError(stagingInfo.error()),
+                false,
+            };
+        }
+        auto promoted = core::persistence::commitProductFileTemp(
+            files,
+            lease,
+            journal.currentPath,
+            BACKUP_PATH,
+            journal.stagingPath,
+            stagingInfo.value().sizeBytes
+        );
         if (!promoted) return {mapError(promoted.error()), false};
-        if (removeIfExists(files, lease, BACKUP_PATH) != FileSystemRpcStatus::OK ||
-            removeJournalLast(files, lease) != FileSystemRpcStatus::OK) {
+        if (removeJournalLast(files, lease) != FileSystemRpcStatus::OK) {
             return {FileSystemRpcStatus::STORAGE_ERROR, true};
         }
         return {FileSystemRpcStatus::OK, true};
@@ -234,8 +247,8 @@ FLASHMEM bool pathEquals(const char* lhs, const char* rhs) {
 
 FLASHMEM bool isReservedPath(const char* normalized) {
     // Reserve the complete protocol-owned rpc-* namespace. The prefix is
-    // compared with FAT case semantics and also catches normal RPC-CO~n short
-    // aliases generated for the conditional journal and backup.
+    // compared with FAT case semantics and also catches RPC-~n short aliases
+    // generated for ordinary/conditional journals, staging and backups.
     return pathStartsWith(normalized, RESOLVED_PROTOCOL_TMP_PREFIX);
 }
 

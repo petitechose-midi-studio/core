@@ -87,7 +87,7 @@ FLASHMEM Result<size_t> encodeConditionalResponse(
 
 }  // namespace
 
-FLASHMEM bool internal::isConditionalMutationReservedPath(
+FLASHMEM bool internal::isProtocolReservedPath(
     core::persistence::ProductFileService& files,
     const char* productPath
 ) {

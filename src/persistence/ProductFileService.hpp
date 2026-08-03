@@ -48,6 +48,13 @@ public:
         oc::type::ErrorCode error = oc::type::ErrorCode::OK
     );
     oc::type::Result<void> requireRecovery(oc::type::ErrorCode error);
+    oc::type::Result<void> requireRecovery(
+        const ProductMutationLease& lease,
+        oc::type::ErrorCode error
+    );
+    bool recoveryRequired(const ProductMutationLease& lease) const {
+        return coordinator_.recoveryRequired(lease);
+    }
     void markMediaUnavailable();
 
     ProductStorageIdentity storageIdentity() const { return coordinator_.identity(); }

@@ -34,6 +34,8 @@ COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*(.text._ZN4core11persistence20ProjectFileWorkspace7prepareEv*)",
     "*(.text.*StorageRecoveryRuntimeManager*)",
     "*AtomicProductFile.cpp.o(.text* .rodata*)",
+    "*ProductFileTransactionJournal.cpp.o(.text* .rodata*)",
+    "*ProductFileTransactionJournalCodec.cpp.o(.text* .rodata*)",
     "*ProductAssetFileStore.cpp.o(.text* .rodata*)",
     "*ProductFileService.cpp.o(.text* .rodata*)",
     "*ProductPersistenceCoordinator.cpp.o(.text* .rodata*)",
@@ -909,6 +911,28 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
                 f"{rel}: {description} (expected {count}, found {found})"
             )
 
+    def require_ordered_function(
+        rel: str,
+        function_name: str,
+        patterns: tuple[str, ...],
+        description: str,
+    ) -> None:
+        bodies = cpp_function_bodies(files.get(rel, ""), function_name)
+        if len(bodies) != 1:
+            errors.append(
+                f"{rel}: {function_name} must have one balanced definition "
+                f"(found {len(bodies)})"
+            )
+            return
+        body = cpp_code_mask(bodies[0])
+        matches = [re.search(pattern, body, flags=re.DOTALL) for pattern in patterns]
+        if any(match is None for match in matches):
+            errors.append(f"{rel}: {description} (missing ordered marker)")
+            return
+        positions = [match.start() for match in matches if match is not None]
+        if positions != sorted(positions):
+            errors.append(f"{rel}: {description} (wrong order)")
+
     coordinator = "src/persistence/ProductPersistenceCoordinator.hpp"
     service_header = "src/persistence/ProductFileService.hpp"
     service_source = "src/persistence/ProductFileService.cpp"
@@ -917,6 +941,18 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     rpc_header = "src/protocol/filesystem/FileSystemRpc.hpp"
     recovery_source = "src/persistence/ProductStorageRecoveryService.cpp"
     recovery_header = "src/persistence/ProductStorageRecoveryService.hpp"
+    atomic_header = "src/persistence/AtomicProductFile.hpp"
+    journal_source = "src/persistence/ProductFileTransactionJournal.cpp"
+    journal_codec = "src/persistence/ProductFileTransactionJournalCodec.cpp"
+    journal_internal = "src/persistence/ProductFileTransactionJournalInternal.hpp"
+    coordinator_source = "src/persistence/ProductPersistenceCoordinator.cpp"
+    conditional_source = (
+        "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp"
+    )
+    rpc_internal = "src/protocol/filesystem/FileSystemRpcInternal.hpp"
+    project_transactions = "src/persistence/ProjectFileTransactions.cpp"
+    atomic_test = "test/test_AtomicProductFile/test_main.cpp"
+    cmake_source = "CMakeLists.txt"
     machine_source = "src/persistence/StorageRecoveryMachine.cpp"
     main_source = "main.cpp"
 
@@ -931,6 +967,18 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (rpc_header, r"sizeof\(FileSystemRpcHandler\)\s*==\s*300U", "RPC handler must remain 300 B on ARM"),
         (service_header, r"ProductPersistenceCoordinator\s+coordinator_\s*\{\s*\}", "file service must embed exactly one coordinator"),
         (recovery_header, r"static\s+ProductStorageRecoveryResult\s+reconcile\s*\(", "recovery service must remain stateless"),
+        (atomic_header, r"PRODUCT_FILE_JOURNAL_SLOT_A\s*=.*?tmp/rpc-product-file-a\.journal", "ordinary journal slot A must remain fixed"),
+        (atomic_header, r"PRODUCT_FILE_JOURNAL_SLOT_B\s*=.*?tmp/rpc-product-file-b\.journal", "ordinary journal slot B must remain fixed"),
+        (atomic_header, r"PRODUCT_FILE_JOURNAL_VERSION\s*=\s*1U", "ordinary journal version must remain explicit"),
+        (atomic_header, r"PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE\s*=\s*603U", "ordinary journal record must remain bounded"),
+        (atomic_header, r"commitProductFileTemp\s*\([^;]*uint32_t\s+expectedSize", "ordinary commit must bind the expected payload size"),
+        (journal_internal, r"union\s+JournalStorage\s*\{\s*uint8_t\s+encoded\s*\[\s*PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE\s*\]\s*;\s*char\s+paths\s*\[\s*PATH_COUNT\s*\]\s*\[\s*PATH_CAPACITY\s*\]", "journal codec must reuse one bounded workspace"),
+        (journal_codec, r"targetSlot\s*=\s*workspace\.activeSlot\s*==\s*NO_ACTIVE_SLOT.*?inactiveSlot\s*\(\s*workspace\.activeSlot\s*\)", "phase writes must alternate through the inactive slot"),
+        (coordinator_source, r"ProductPersistenceCoordinator::requireRecovery\s*\(\s*const\s+ProductMutationLease&\s+lease", "mapped failure must transition through the exact lease"),
+        (project_transactions, r"shouldTryBackup\s*\([^)]*\)\s*\{\s*return\s+!result\s*&&\s*result\.error\(\)\.code\s*==\s*ErrorCode::RESOURCE_NOT_FOUND", "legacy backup fallback must require a missing current"),
+        (rpc_internal, r"bool\s+isProtocolReservedPath\s*\(", "ordinary RPC must reserve the complete protocol namespace"),
+        (cmake_source, r"MS_CORE_PERSISTENCE_IO_TESTS.*?test_AtomicProductFile", "fault campaign must share the persistence I/O lock"),
+        (atomic_test, r"for\s*\(\s*CutMode\s+mode\s*:\s*\{\s*CutMode::BEFORE\s*,\s*CutMode::AFTER\s*\}\s*\)", "fault campaign must enumerate cuts before and after every boundary"),
         (
             service_source,
             r"ProductFileService::initForRecovery\s*\(\s*\)\s*\{.*?"
@@ -945,6 +993,12 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         main_source,
         r"productFileService->initForRecovery\s*\(",
         "firmware boot and cold-backend retry must start blocked",
+        count=2,
+    )
+    require(
+        conditional_source,
+        r"commitProductFileTemp\s*\(",
+        "both conditional replacement branches must use durable ordinary promotion",
         count=2,
     )
     require(
@@ -993,6 +1047,64 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
                     "as its first parameter"
                 )
 
+    require_ordered_function(
+        journal_codec,
+        "persistPhase",
+        (
+            r"files\.beginWrite\s*\(",
+            r"appendExact\s*\(",
+            r"files\.finishWrite\s*\(",
+            r"files\.flush\s*\(",
+            r"workspace\.sequence\s*=\s*nextSequence",
+        ),
+        "phase publication must write, finish and flush before becoming active",
+    )
+    require_ordered_function(
+        journal_source,
+        "executeCommit",
+        (
+            r"persistPhase\s*\([^;]*ProductFileTransactionPhase::PREPARED",
+            r"files\.rename\s*\([^;]*FINAL_PATH[^;]*BACKUP_PATH",
+            r"files\.flush\s*\([^;]*BACKUP_PATH",
+            r"persistPhase\s*\([^;]*ProductFileTransactionPhase::BACKED_UP",
+            r"files\.rename\s*\([^;]*TMP_PATH[^;]*FINAL_PATH",
+            r"files\.flush\s*\([^;]*FINAL_PATH",
+            r"persistPhase\s*\([^;]*ProductFileTransactionPhase::PROMOTED",
+            r"cleanupMappedPath\s*\([^;]*BACKUP_PATH",
+            r"persistPhase\s*\([^;]*ProductFileTransactionPhase::COMMITTED",
+        ),
+        "ordinary promotion must preserve the frozen durable phase order",
+    )
+    require_ordered_function(
+        journal_source,
+        "commitWithWorkspace",
+        (
+            r"files\.flush\s*\([^;]*TMP_PATH",
+            r"executeCommit\s*\(",
+        ),
+        "the exact temporary must be flushed before PREPARED admission",
+    )
+    require(
+        journal_source,
+        r"commitProductFileTemp\s*\([^)]*\)\s*\{.*?"
+        r"JournalWorkspace\s+workspace\s*\{\s*\}\s*;\s*"
+        r"return\s+commitWithWorkspace\s*\(",
+        "public commit must keep the bounded workspace in a separate cold frame",
+    )
+    require(
+        journal_source,
+        r"recoverPendingProductFileTransaction\s*\([^)]*\)\s*\{.*?"
+        r"JournalWorkspace\s+workspace\s*\{\s*\}\s*;\s*"
+        r"return\s+recoverWithWorkspace\s*\(",
+        "public recovery must keep the bounded workspace in a separate cold frame",
+    )
+    require(
+        journal_source,
+        r"if\s*\(\s*workspace\.hadCurrent\s*\)\s*\{\s*"
+        r"auto\s+backupCleanup\s*=\s*cleanupMappedPath\s*\([^;]*BACKUP_PATH",
+        "create must not perform an unnecessary backup cleanup",
+    )
+
     recovery_bodies = cpp_function_bodies(
         files.get(recovery_source, ""),
         "ProductStorageRecoveryService::reconcile",
@@ -1007,6 +1119,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         ordered_markers = (
             "files.beginRecovery(",
             "files.ensureLayout(lease)",
+            "recoverPendingProductFileTransaction(files, lease)",
             "conditional::recoverPendingMutation(",
             "restoreService.restore(state, lease)",
             "state.recoverSettingsFromRamAfterStorageReopen()",
@@ -1016,13 +1129,14 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         positions = [body.find(marker) for marker in ordered_markers]
         if any(position < 0 for position in positions) or positions != sorted(positions):
             errors.append(
-                f"{recovery_source}: recovery must keep layout -> conditional -> "
+                f"{recovery_source}: recovery must keep layout -> ordinary -> conditional -> "
                 "boot restore -> settings -> exact session save -> READY order"
             )
 
     for marker in (
         "writeSessionActive_",
         "conditionalRecoveryChecked_",
+        "isConditionalMutationReservedPath",
     ):
         owners = sorted(rel for rel, content in files.items() if marker in content)
         if owners:
@@ -4031,6 +4145,11 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
         for path in source_files()
     }
     fixture["main.cpp"] = (ROOT / "main.cpp").read_text(encoding="utf-8")
+    for rel in (
+        "CMakeLists.txt",
+        "test/test_AtomicProductFile/test_main.cpp",
+    ):
+        fixture[rel] = (ROOT / rel).read_text(encoding="utf-8")
 
     def mutate(rel: str, before: str, after: str) -> dict[str, str]:
         result = dict(fixture)
@@ -4078,6 +4197,26 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
         "static FLASHMEM bool initStorage() {\n"
         "    while (true) {}\n",
     )
+    journal_loses_second_slot = mutate(
+        "src/persistence/AtomicProductFile.hpp",
+        '    "tmp/rpc-product-file-b.journal";',
+        '    "tmp/rpc-product-file-a.journal";',
+    )
+    recovery_omits_ordinary_mapping = mutate(
+        "src/persistence/ProductStorageRecoveryService.cpp",
+        "recoverPendingProductFileTransaction(files, lease)",
+        "skipPendingProductFileTransaction(files, lease)",
+    )
+    conditional_bypasses_durable_promotion = mutate(
+        "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp",
+        "core::persistence::commitProductFileTemp(",
+        "files.rename(",
+    )
+    fault_campaign_omits_after_cuts = mutate(
+        "test/test_AtomicProductFile/test_main.cpp",
+        "{CutMode::BEFORE, CutMode::AFTER}",
+        "{CutMode::BEFORE}",
+    )
 
     return (
         (
@@ -4117,6 +4256,44 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
                 storage_init_halts_before_recovery
             )),
             "fatal storage initialization before retry recovery is rejected",
+        ),
+        (
+            journal_loses_second_slot["src/persistence/AtomicProductFile.hpp"]
+            != fixture["src/persistence/AtomicProductFile.hpp"]
+            and bool(persistence_lease_contract_errors(journal_loses_second_slot)),
+            "ordinary journal without a distinct second slot is rejected",
+        ),
+        (
+            recovery_omits_ordinary_mapping[
+                "src/persistence/ProductStorageRecoveryService.cpp"
+            ]
+            != fixture["src/persistence/ProductStorageRecoveryService.cpp"]
+            and bool(persistence_lease_contract_errors(
+                recovery_omits_ordinary_mapping
+            )),
+            "unified recovery without ordinary mapping replay is rejected",
+        ),
+        (
+            conditional_bypasses_durable_promotion[
+                "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp"
+            ]
+            != fixture[
+                "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp"
+            ]
+            and bool(persistence_lease_contract_errors(
+                conditional_bypasses_durable_promotion
+            )),
+            "conditional replacement bypassing durable promotion is rejected",
+        ),
+        (
+            fault_campaign_omits_after_cuts[
+                "test/test_AtomicProductFile/test_main.cpp"
+            ]
+            != fixture["test/test_AtomicProductFile/test_main.cpp"]
+            and bool(persistence_lease_contract_errors(
+                fault_campaign_omits_after_cuts
+            )),
+            "fault campaign without after-boundary cuts is rejected",
         ),
     )
 
@@ -6570,6 +6747,11 @@ def main(show_inventory: bool = False) -> int:
         for path in source_files()
     }
     contract_sources["main.cpp"] = (ROOT / "main.cpp").read_text(encoding="utf-8")
+    for rel in (
+        "CMakeLists.txt",
+        "test/test_AtomicProductFile/test_main.cpp",
+    ):
+        contract_sources[rel] = (ROOT / rel).read_text(encoding="utf-8")
     errors.extend(step_draft_transition_contract_errors(contract_sources))
     errors.extend(extmem_lifetime_contract_errors(contract_sources))
     errors.extend(persistence_lease_contract_errors(contract_sources))

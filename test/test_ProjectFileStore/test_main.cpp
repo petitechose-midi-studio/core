@@ -279,7 +279,7 @@ void test_load_recovers_interrupted_backup_commit() {
     std::cout << "[PASS] test_load_recovers_interrupted_backup_commit\n";
 }
 
-void test_load_recovers_corrupt_current_from_valid_backup() {
+void test_load_rejects_corrupt_current_with_unmapped_backup() {
     resetTestRoot();
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
@@ -299,15 +299,19 @@ void test_load_recovers_corrupt_current_from_valid_backup() {
         files, "projects/p321.mspj", 0, corrupt, sizeof(corrupt)
     ));
 
-    assertLoadedProject(store, "Backup", 4);
+    project::ProjectSnapshot loaded;
+    project_file::LoadReport report{};
+    auto result = store.load("p321", loaded, &report);
+    assert(!result);
+    assert(result.error().code == oc::type::ErrorCode::STORAGE_CORRUPT);
     assert(std::filesystem::is_regular_file(
         testRoot() / "midi-studio" / "projects" / "p321.mspj"
     ));
-    assert(!std::filesystem::exists(
+    assert(std::filesystem::is_regular_file(
         testRoot() / "midi-studio" / "projects" / "p321.mspj.bak"
     ));
 
-    std::cout << "[PASS] test_load_recovers_corrupt_current_from_valid_backup\n";
+    std::cout << "[PASS] test_load_rejects_corrupt_current_with_unmapped_backup\n";
 }
 
 void test_load_reports_corrupt_backup_when_current_is_missing() {
@@ -461,7 +465,7 @@ int main() {
     test_save_overwrites_existing_project_through_backup_commit();
     test_stale_tmp_is_replaced_on_save();
     test_load_recovers_interrupted_backup_commit();
-    test_load_recovers_corrupt_current_from_valid_backup();
+    test_load_rejects_corrupt_current_with_unmapped_backup();
     test_load_reports_corrupt_backup_when_current_is_missing();
     test_save_propagates_current_stat_error_before_commit();
     test_list_projects_returns_saved_projects_sorted();

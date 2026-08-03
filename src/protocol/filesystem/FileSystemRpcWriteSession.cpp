@@ -57,7 +57,7 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteBegin_(
         return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
     }
 
-    if (internal::isConditionalMutationReservedPath(files_, path)) {
+    if (internal::isProtocolReservedPath(files_, path)) {
         const size_t size = encodeWriteResponse(
             FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE,
             frame.requestId,
@@ -259,13 +259,15 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
                 writeSession_.lease,
                 writeSession_.finalPath,
                 writeSession_.backupPath,
-                writeSession_.tmpPath
+                writeSession_.tmpPath,
+                writeSession_.expectedSize
             );
             if (!commit) {
                 status = mapError(commit.error());
             }
         }
-        if (status != FileSystemRpcStatus::OK) {
+        if (status != FileSystemRpcStatus::OK &&
+            !files_.recoveryRequired(writeSession_.lease)) {
             (void)core::persistence::deleteProductFileIfExists(
                 files_,
                 writeSession_.lease,

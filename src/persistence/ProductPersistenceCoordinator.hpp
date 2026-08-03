@@ -114,6 +114,11 @@ public:
 
     void markMediaUnavailable();
     oc::type::Result<void> requireRecovery(oc::type::ErrorCode error);
+    oc::type::Result<void> requireRecovery(
+        const ProductMutationLease& lease,
+        oc::type::ErrorCode error
+    );
+    bool recoveryRequired(const ProductMutationLease& lease) const;
 
     ProductStorageIdentity identity() const { return identity_; }
     ProductStorageState storageState() const { return storage_state_; }

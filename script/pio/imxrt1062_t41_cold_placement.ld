@@ -56,6 +56,8 @@
  * main remains eligible for ITCM. */
 *(.text.*StorageRecoveryRuntimeManager*)
 *AtomicProductFile.cpp.o(.text* .rodata*)
+*ProductFileTransactionJournal.cpp.o(.text* .rodata*)
+*ProductFileTransactionJournalCodec.cpp.o(.text* .rodata*)
 *ProductAssetFileStore.cpp.o(.text* .rodata*)
 *ProductFileService.cpp.o(.text* .rodata*)
 *ProductPersistenceCoordinator.cpp.o(.text* .rodata*)

@@ -4,6 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/AtomicProductFile.hpp"
 #include "protocol/filesystem/FileSystemRpcConditionalTransaction.hpp"
 #include "state/CoreState.hpp"
 
@@ -121,6 +122,17 @@ FLASHMEM ProductStorageRecoveryResult ProductStorageRecoveryService::reconcile(
             result,
             ProductStorageRecoveryStatus::LAYOUT_FAILED,
             layout.error().code
+        );
+    }
+
+    const auto ordinary = recoverPendingProductFileTransaction(files, lease);
+    if (!ordinary) {
+        return failRecovery(
+            files,
+            lease,
+            result,
+            ProductStorageRecoveryStatus::ORDINARY_TRANSACTION_FAILED,
+            ordinary.error().code
         );
     }
 

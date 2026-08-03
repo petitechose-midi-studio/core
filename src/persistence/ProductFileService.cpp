@@ -5,6 +5,8 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/AtomicProductFile.hpp"
+
 namespace core::persistence {
 
 namespace {
@@ -60,6 +62,17 @@ FLASHMEM oc::type::Result<void> ProductFileService::init() {
             lease.invalidate_();
         }
         return layout;
+    }
+
+    auto ordinary = recoverPendingProductFileTransaction(*this, lease);
+    if (!ordinary) {
+        const auto error = ordinary.error();
+        if (coordinator_.owns(lease, ProductMutationOwner::RECOVERY)) {
+            (void)completeRecovery(lease, false, error.code);
+        } else {
+            lease.invalidate_();
+        }
+        return oc::type::Result<void>::err(error);
     }
 
     auto completed = completeRecovery(lease, true);
@@ -157,6 +170,13 @@ FLASHMEM oc::type::Result<void> ProductFileService::completeRecovery(
 
 FLASHMEM oc::type::Result<void> ProductFileService::requireRecovery(ErrorCode errorCode) {
     return coordinator_.requireRecovery(errorCode);
+}
+
+FLASHMEM oc::type::Result<void> ProductFileService::requireRecovery(
+    const ProductMutationLease& lease,
+    ErrorCode errorCode
+) {
+    return coordinator_.requireRecovery(lease, errorCode);
 }
 
 FLASHMEM void ProductFileService::markMediaUnavailable() {

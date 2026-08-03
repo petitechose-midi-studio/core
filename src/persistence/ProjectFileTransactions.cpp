@@ -74,23 +74,34 @@ FLASHMEM oc::type::Result<ProjectLoadResult> loadFromPath(
 }
 
 FLASHMEM bool shouldTryBackup(const oc::type::Result<ProjectLoadResult>& result) {
-    if (result) return false;
-    const auto code = result.error().code;
-    return code == ErrorCode::RESOURCE_NOT_FOUND || code == ErrorCode::STORAGE_CORRUPT;
+    return !result && result.error().code == ErrorCode::RESOURCE_NOT_FOUND;
 }
 
-FLASHMEM void restoreBackupAsCurrent(ProductFileService& files,
-                                     const ProductMutationLease& lease,
-                                     const char* current,
-                                     const char* backup,
-                                     ProjectLoadResult& result) {
-    auto deleted = deleteProductFileIfExists(files, lease, current);
-    if (!deleted) return;
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM oc::type::Result<ProjectLoadResult> restoreBackupAsCurrent(
+    ProductFileService& files,
+    const ProductMutationLease& lease,
+    const char* current,
+    const char* backup,
+    const ProjectLoadResult& loaded
+) {
     auto restored = files.rename(lease, backup, current);
-    if (!restored) return;
+    if (!restored) {
+        return oc::type::Result<ProjectLoadResult>::err(restored.error());
+    }
+    auto flushed = files.flush(lease, current);
+    if (!flushed) {
+        return oc::type::Result<ProjectLoadResult>::err(flushed.error());
+    }
 
+    ProjectLoadResult result = loaded;
     std::strncpy(result.projectPath, current, sizeof(result.projectPath) - 1U);
     result.projectPath[sizeof(result.projectPath) - 1U] = '\0';
+    return oc::type::Result<ProjectLoadResult>::ok(result);
 }
 
 FLASHMEM void copyReport(core::persistence::project_file::LoadReport* target,
@@ -132,9 +143,7 @@ FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackupUsingLease(
     }
 
     copyReport(report, attemptReport);
-    auto result = backupLoaded.value();
-    restoreBackupAsCurrent(files, lease, current, backup, result);
-    return oc::type::Result<ProjectLoadResult>::ok(result);
+    return restoreBackupAsCurrent(files, lease, current, backup, backupLoaded.value());
 }
 
 }  // namespace

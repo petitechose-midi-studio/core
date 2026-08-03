@@ -69,7 +69,7 @@ size_t encodeWriteResponse(FileSystemRpcMessageId messageId,
                            uint8_t* out,
                            size_t outSize);
 oc::type::Result<void> readPath(ByteReader& reader, char* path, size_t pathSize);
-bool isConditionalMutationReservedPath(
+bool isProtocolReservedPath(
     core::persistence::ProductFileService& files,
     const char* productPath
 );

@@ -197,6 +197,48 @@ FLASHMEM oc::type::Result<void> ProductPersistenceCoordinator::requireRecovery(
     return oc::type::Result<void>::ok();
 }
 
+FLASHMEM oc::type::Result<void> ProductPersistenceCoordinator::requireRecovery(
+    const ProductMutationLease& lease,
+    ErrorCode errorCode
+) {
+    if (!owns(lease)) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_STATE, "stale product mutation lease"}
+        );
+    }
+    const auto normalizedError = errorCode == ErrorCode::OK
+        ? ErrorCode::STORAGE_WRITE_FAILED
+        : errorCode;
+    if (active_owner_ == ProductMutationOwner::RECOVERY) {
+        if (storage_state_ != ProductStorageState::RECOVERING) {
+            return oc::type::Result<void>::err(
+                {ErrorCode::INVALID_STATE, "recovery lease is not recovering"}
+            );
+        }
+        recovery_error_ = normalizedError;
+        return oc::type::Result<void>::ok();
+    }
+    if (storage_state_ != ProductStorageState::READY) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_STATE, "mutation cannot require recovery"}
+        );
+    }
+    storage_state_ = ProductStorageState::DEGRADED;
+    recovery_error_ = normalizedError;
+    return oc::type::Result<void>::ok();
+}
+
+bool ProductPersistenceCoordinator::recoveryRequired(
+    const ProductMutationLease& lease
+) const {
+    if (!owns(lease)) return false;
+    if (active_owner_ == ProductMutationOwner::RECOVERY) {
+        return storage_state_ == ProductStorageState::RECOVERING &&
+               recovery_error_ != ErrorCode::OK;
+    }
+    return storage_state_ == ProductStorageState::DEGRADED;
+}
+
 FLASHMEM oc::type::Result<ProductMutationLease>
 ProductPersistenceCoordinator::acquire_(ProductMutationOwner owner) {
     if (active_lease_id_ != 0) {

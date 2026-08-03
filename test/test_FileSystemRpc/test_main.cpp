@@ -9,6 +9,7 @@
 #include <oc/impl/HostFileSystem.hpp>
 #include <oc/interface/ITransport.hpp>
 
+#include "../../src/persistence/AtomicProductFile.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../support/ProductFileTestMutation.hpp"
 #include "../../src/protocol/filesystem/FileSystemRpc.hpp"
@@ -206,6 +207,7 @@ void completeExternalProductRecovery(ProductFileService& service) {
     assert(acquired);
     auto lease = std::move(acquired.value());
     assert(service.ensureLayout(lease));
+    assert(core::persistence::recoverPendingProductFileTransaction(service, lease));
     bool quarantined = false;
     assert(
         core::protocol::filesystem::conditional_mutation::recoverPendingMutation(
@@ -926,7 +928,7 @@ void test_write_commit_propagates_final_stat_error() {
     std::cout << "[PASS] test_write_commit_propagates_final_stat_error\n";
 }
 
-void test_write_commit_restores_previous_file_when_promotion_fails() {
+void test_write_commit_requires_recovery_when_promotion_fails() {
     resetTestRoot();
 
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
@@ -949,18 +951,39 @@ void test_write_commit_restores_previous_file_when_promotion_fails() {
                sizeof(replacement)
            ) == FileSystemRpcStatus::STORAGE_ERROR);
     assert(!handler.hasActiveWriteSession());
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assertProductReadBlocked(service, "projects/rollback.bin");
+    assertProductReadBlocked(service, "tmp/rpc-write-1250.tmp");
+    assertProductReadBlocked(service, "tmp/rpc-backup-1250.tmp");
+    assert(!filesystem.delegate.stat("/midi-studio/projects/rollback.bin"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-write-1250.tmp"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-backup-1250.tmp"));
+    assert(
+        filesystem.delegate.stat("/midi-studio/tmp/rpc-product-file-a.journal") ||
+        filesystem.delegate.stat("/midi-studio/tmp/rpc-product-file-b.journal")
+    );
+
+    filesystem.failTmpPromotion = false;
+    completeExternalProductRecovery(service);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::READY);
 
     uint8_t loaded[8] = {};
     auto read = service.read("projects/rollback.bin", 0, loaded, sizeof(loaded));
-    assert(read && read.value() == sizeof(previous));
-    assert(std::memcmp(loaded, previous, sizeof(previous)) == 0);
+    assert(read && read.value() == sizeof(replacement));
+    assert(std::memcmp(loaded, replacement, sizeof(replacement)) == 0);
     assert(!service.stat("tmp/rpc-write-1250.tmp"));
     assert(!service.stat("tmp/rpc-backup-1250.tmp"));
+    assert(
+        filesystem.delegate.stat("/midi-studio/tmp/rpc-product-file-a.journal") ||
+        filesystem.delegate.stat("/midi-studio/tmp/rpc-product-file-b.journal")
+    );
 
-    std::cout << "[PASS] test_write_commit_restores_previous_file_when_promotion_fails\n";
+    std::cout << "[PASS] test_write_commit_requires_recovery_when_promotion_fails\n";
 }
 
-void test_write_commit_retains_backup_when_rollback_fails() {
+void test_write_recovery_retains_backup_when_restore_fails() {
     resetTestRoot();
 
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
@@ -984,15 +1007,51 @@ void test_write_commit_retains_backup_when_rollback_fails() {
                sizeof(replacement)
            ) == FileSystemRpcStatus::STORAGE_ERROR);
     assert(!handler.hasActiveWriteSession());
-    assert(!service.stat("projects/backup-retained.bin"));
-    assert(!service.stat("tmp/rpc-write-1251.tmp"));
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(!filesystem.delegate.stat(
+        "/midi-studio/projects/backup-retained.bin"
+    ));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-write-1251.tmp"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-backup-1251.tmp"));
+
+    assert(filesystem.delegate.remove("/midi-studio/tmp/rpc-write-1251.tmp"));
+    filesystem.failTmpPromotion = false;
+
+    auto acquired = service.beginRecovery();
+    assert(acquired);
+    auto lease = std::move(acquired.value());
+    assert(service.ensureLayout(lease));
+    auto failedRecovery =
+        core::persistence::recoverPendingProductFileTransaction(service, lease);
+    assert(!failedRecovery);
+    assert(failedRecovery.error().code ==
+           oc::type::ErrorCode::STORAGE_WRITE_FAILED);
+    assert(service.completeRecovery(
+        lease,
+        false,
+        failedRecovery.error().code
+    ));
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-backup-1251.tmp"));
+
+    filesystem.failBackupRestore = false;
+    completeExternalProductRecovery(service);
 
     uint8_t loaded[8] = {};
-    auto read = service.read("tmp/rpc-backup-1251.tmp", 0, loaded, sizeof(loaded));
+    auto read = service.read(
+        "projects/backup-retained.bin",
+        0,
+        loaded,
+        sizeof(loaded)
+    );
     assert(read && read.value() == sizeof(previous));
     assert(std::memcmp(loaded, previous, sizeof(previous)) == 0);
+    assert(!service.stat("tmp/rpc-write-1251.tmp"));
+    assert(!service.stat("tmp/rpc-backup-1251.tmp"));
 
-    std::cout << "[PASS] test_write_commit_retains_backup_when_rollback_fails\n";
+    std::cout << "[PASS] test_write_recovery_retains_backup_when_restore_fails\n";
 }
 
 void test_write_session_abort_and_timeout_cleanup() {
@@ -1848,7 +1907,7 @@ void test_conditional_replace_rejects_fat_short_name_alias_syntax() {
         << "[PASS] test_conditional_replace_rejects_fat_short_name_alias_syntax\n";
 }
 
-void test_conditional_transaction_paths_are_protocol_reserved() {
+void test_protocol_transaction_paths_are_reserved() {
     resetTestRoot();
     Harness h;
     const size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
@@ -1940,7 +1999,31 @@ void test_conditional_transaction_paths_are_protocol_reserved() {
     status = FileSystemRpcCodec::decodeStatusResponse(h.response, nextResponseSize);
     assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
 
-    std::cout << "[PASS] test_conditional_transaction_paths_are_protocol_reserved\n";
+    nextRequestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        77,
+        0x2003,
+        "tmp/rpc-product-file-a.journal",
+        4,
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    write = FileSystemRpcCodec::decodeWriteResponse(h.response, nextResponseSize);
+    assert(write && write.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+    assert(!h.handler.hasActiveWriteSession());
+
+    nextRequestSize = FileSystemRpcCodec::encodeDeleteRequest(
+        78,
+        "TMP/RPC-PRODUCT-FILE-B.JOURNAL",
+        false,
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    status = FileSystemRpcCodec::decodeStatusResponse(h.response, nextResponseSize);
+    assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
+    std::cout << "[PASS] test_protocol_transaction_paths_are_reserved\n";
 }
 
 void test_endpoint_answers_only_filesystem_requests() {
@@ -2048,8 +2131,8 @@ int main() {
     test_write_session_commits_empty_file();
     test_write_session_aborts_on_short_append();
     test_write_commit_propagates_final_stat_error();
-    test_write_commit_restores_previous_file_when_promotion_fails();
-    test_write_commit_retains_backup_when_rollback_fails();
+    test_write_commit_requires_recovery_when_promotion_fails();
+    test_write_recovery_retains_backup_when_restore_fails();
     test_write_session_abort_and_timeout_cleanup();
     test_invalid_path_maps_to_error_status();
     test_read_error_response_is_decodable();
@@ -2066,7 +2149,7 @@ int main() {
     test_truncated_conditional_journal_is_quarantined_once();
     test_bad_crc_conditional_journal_is_quarantined_once();
     test_conditional_replace_rejects_fat_short_name_alias_syntax();
-    test_conditional_transaction_paths_are_protocol_reserved();
+    test_protocol_transaction_paths_are_reserved();
     test_endpoint_answers_only_filesystem_requests();
     test_endpoint_update_expires_abandoned_write_session();
 

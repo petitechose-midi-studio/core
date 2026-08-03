@@ -227,7 +227,12 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
         case Phase::COMMIT: {
             OC_PERF_SCOPE(perfCommit, "persistence.project-save.commit");
             auto commit = commitProductFileTemp(
-                files_, lease, paths_.current, paths_.backup, paths_.tmp
+                files_,
+                lease,
+                paths_.current,
+                paths_.backup,
+                paths_.tmp,
+                encoded_size_
             );
             if (!commit) {
                 const auto error = commit.error();
@@ -308,7 +313,9 @@ FLASHMEM void ProjectSaveTransaction::cleanupTmp_(
     const ProductMutationLease& lease
 ) {
     if (tmp_prepared_ && paths_.tmp != nullptr && files_.owns(lease)) {
-        (void)deleteProductFileIfExists(files_, lease, paths_.tmp);
+        if (!files_.recoveryRequired(lease)) {
+            (void)deleteProductFileIfExists(files_, lease, paths_.tmp);
+        }
     }
 }
 

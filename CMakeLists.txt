@@ -132,6 +132,7 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
 
     set(MS_CORE_NATIVE_TEST_TARGETS)
     set(MS_CORE_PERSISTENCE_IO_TESTS
+        test_AtomicProductFile
         test_CoreStatePersistence
         test_FileSystemRpc
         test_ProductFileService
