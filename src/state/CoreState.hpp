@@ -419,10 +419,6 @@ public:
     );
     bool canRecordSequencerStructureHistory(
         const sequencer::SequencerHistoryTrackStructureChange& change) const;
-    // Same immutable prepared contract as FullBank, including shared Track
-    // projection publication before the no-fail history boundary.
-    void recordPreparedSequencerStructureHistory(
-        sequencer::SequencerHistoryTrackStructureChangePtr change);
     // Trusted no-fail tail for an unchanged, admitted Track Structure entry.
     // Shared topology has already been published by the owning transaction.
     void commitAdmittedSequencerStructureHistory(

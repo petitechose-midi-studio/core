@@ -11,6 +11,7 @@ from teensy_product_placement import (
     TRACK_STRUCTURE_ADAPTER_FLASH_MARKERS,
     TRACK_STRUCTURE_FLASH_MARKERS,
     TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS,
+    TRACK_TRANSFER_FLASH_MARKERS,
     TRACK_STRUCTURE_WORKFLOW_FLASH_MARKERS,
     product_placement_violations,
 )
@@ -71,6 +72,12 @@ def main() -> int:
 1610644900 96 T core::state::CoreState::reconcilePreparedSequencerActiveTrackPresentation()
 1610645500 96 T core::state::CoreState::reconcilePreparedMacroTrackTransfer(unsigned short)
 1610646100 96 T core::state::macro::MacroWorkflow::syncActivePagePresentation(core::state::MacroState&, core::state::macro::MacroPagesState const&, core::state::macro::MacroUiState&)
+1610653700 760 T core::handler::prepareSequencerTrackTransfer(core::state::sequencer::SequencerTrackBankState const&, core::state::project::ProjectTrackState const&, core::state::sequencer::SequencerState&, core::state::StructureClipboardState const&, core::handler::SharedTrackDomainServices const&, core::handler::SequencerHistoryDomainServices const&, unsigned char, unsigned short, core::state::sequencer::SequencerTrackActivationQueue*, bool, core::state::macro::MacroPagesState*)
+1610654500 840 T core::handler::commitPreparedSequencerTrackTransfer(core::state::sequencer::SequencerTrackBankState&, core::state::project::ProjectTrackState const&, core::state::sequencer::SequencerState&, core::state::StructureClipboardState const&, core::handler::SharedTrackDomainServices const&, core::handler::SequencerHistoryDomainServices const&, core::handler::PreparedSequencerTrackTransfer, core::state::macro::MacroPagesState*)
+1610655400 160 T core::handler::executeSequencerTrackTransfer(core::state::sequencer::SequencerTrackBankState&, core::state::project::ProjectTrackState const&, core::state::sequencer::SequencerState&, core::state::StructureClipboardState const&, core::handler::SharedTrackDomainServices const&, core::handler::SequencerHistoryDomainServices const&, unsigned char, unsigned short, core::state::sequencer::SequencerTrackActivationQueue*, bool, core::state::macro::MacroPagesState*)
+1610655600 260 t core::handler::(anonymous namespace)::clipboardPayloadFingerprint(core::state::StructureClipboardState const&, core::state::ClipboardTransferPlan const&)
+1610655900 420 t core::handler::(anonymous namespace)::prepareMacroStructureTransfer(core::state::macro::MacroPagesState const&, core::state::StructureClipboardState const&, core::handler::PreparedSequencerTrackTransfer&)
+1610656400 72 t core::handler::(anonymous namespace)::statusForChronology(core::state::sequencer::SequencerTrackStructureChronologyResult const&)
 1610660100 48 T core::handler::executeMacroDeleteTrackStructure(core::state::CoreState&)
 1610660200 44 T core::handler::executeMacroResetTrackStructure(core::state::CoreState&, unsigned char)
 1610660300 44 T core::handler::executeMacroPasteTrackStructure(core::state::CoreState&, unsigned char, core::state::macro::MacroTrackData const&, core::state::MacroAutomationClipboard const*)
@@ -114,8 +121,9 @@ def main() -> int:
     assert len(TRACK_STRUCTURE_ADAPTER_FLASH_MARKERS) == 10
     assert len(TRACK_STRUCTURE_WORKFLOW_FLASH_MARKERS) == 7
     assert len(TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS) == 7
-    assert len(TRACK_STRUCTURE_FLASH_MARKERS) == 24
-    assert len(set(TRACK_STRUCTURE_FLASH_MARKERS)) == 24
+    assert len(TRACK_TRANSFER_FLASH_MARKERS) == 6
+    assert len(TRACK_STRUCTURE_FLASH_MARKERS) == 30
+    assert len(set(TRACK_STRUCTURE_FLASH_MARKERS)) == 30
     assert len(MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS) == 16
     assert len(set(MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS)) == 16
     assert len(COUPLED_HISTORY_REPLAY_FLASH_MARKERS) == 10

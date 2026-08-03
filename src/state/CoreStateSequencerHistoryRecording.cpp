@@ -413,16 +413,6 @@ FLASHMEM bool CoreState::canRecordSequencerStructureHistory(
     return !sequencer.stepContentDraft.active.get() && sequencerHistory.canRecordStructure(change);
 }
 
-FLASHMEM void CoreState::recordPreparedSequencerStructureHistory(
-    sequencer::SequencerHistoryTrackStructureChangePtr change) {
-    if (!change || !canRecordSequencerStructureHistory(*change)) return;
-    const uint16_t enabledMask = change->after.enabledMask;
-    const uint8_t activeTrack = change->after.activeTrack;
-    if (!publishPreparedSequencerTrackState(enabledMask, activeTrack)) return;
-    sequencerHistory.recordPreparedStructure(std::move(change));
-    publishPreparedSequencerMutation();
-}
-
 FLASHMEM void CoreState::commitAdmittedSequencerStructureHistory(
     sequencer::SequencerHistoryTrackStructureChangePtr change
 ) noexcept {

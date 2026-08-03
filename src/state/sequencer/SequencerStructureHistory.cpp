@@ -682,23 +682,6 @@ FLASHMEM bool liveMacroTrackStructureMatches(
     return true;
 }
 
-FLASHMEM bool applyMacroTrackStructureHistory(
-    core::state::macro::MacroPagesState& pages,
-    const SequencerHistoryMacroTrackStructurePayload& payload,
-    bool after
-) {
-    if (!validateMacroTrackStructureHistoryReplay(pages, payload, after)) {
-        return false;
-    }
-    commitMacroTrackStructureHistoryReplay(pages, payload, after);
-    // Compatibility wrapper: legacy callers still expect the derived Macro
-    // view to be published immediately. Coordinated Track replay calls the
-    // durable commit directly and owns this publication at its final boundary.
-    pages.syncActiveTrackCache();
-    pages.updateActiveConfigs();
-    return true;
-}
-
 FLASHMEM bool validateMacroTrackStructureHistoryReplay(
     const core::state::macro::MacroPagesState& pages,
     const SequencerHistoryMacroTrackStructurePayload& payload,

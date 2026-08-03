@@ -114,13 +114,6 @@ FLASHMEM bool canRecordStructureFromCoreState(
     return state->canRecordSequencerStructureHistory(change);
 }
 
-FLASHMEM void recordPreparedStructureFromCoreState(
-    void* context, core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) {
-    if (context == nullptr) return;
-    auto* state = static_cast<core::state::CoreState*>(context);
-    state->recordPreparedSequencerStructureHistory(std::move(change));
-}
-
 FLASHMEM void commitAdmittedStructureFromCoreState(
     void* context,
     core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
@@ -274,7 +267,6 @@ SequencerHistoryDomainServices::fromCoreState(core::state::CoreState& state) {
         .recordPreparedSynchronizedPattern = recordPreparedSynchronizedPatternFromCoreState,
         .recordStructure = recordStructureFromCoreState,
         .canRecordStructure = canRecordStructureFromCoreState,
-        .recordPreparedStructure = recordPreparedStructureFromCoreState,
         .commitAdmittedStructure = commitAdmittedStructureFromCoreState,
         .recordFullBank = recordFullBankFromCoreState,
         .canRecordFullBank = canRecordFullBankFromCoreState,
@@ -355,14 +347,7 @@ FLASHMEM bool SequencerHistoryDomainServices::recordStructure(
 FLASHMEM bool SequencerHistoryDomainServices::canRecordStructure(
     const core::state::sequencer::SequencerHistoryTrackStructureChange& change) const {
     return operations_->canRecordStructure != nullptr &&
-           operations_->recordPreparedStructure != nullptr &&
            operations_->canRecordStructure(context_, change);
-}
-
-FLASHMEM void SequencerHistoryDomainServices::recordPreparedStructure(
-    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const {
-    if (operations_->recordPreparedStructure == nullptr) return;
-    operations_->recordPreparedStructure(context_, std::move(change));
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::canCommitAdmittedStructure(

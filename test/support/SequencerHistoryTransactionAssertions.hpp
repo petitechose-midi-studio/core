@@ -7,8 +7,83 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/CoreState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
+#include "state/sequencer/SequencerSnapshotOps.hpp"
 
 namespace test_support::sequencer_transaction {
+
+inline void mixFingerprintBytes(
+    uint64_t& hash,
+    const void* bytes,
+    std::size_t size
+) {
+    constexpr uint64_t prime = 1099511628211ULL;
+    const auto* cursor = static_cast<const uint8_t*>(bytes);
+    for (std::size_t index = 0U; index < size; ++index) {
+        hash ^= cursor[index];
+        hash *= prime;
+    }
+}
+
+template <typename T>
+inline void mixFingerprintValue(uint64_t& hash, const T& value) {
+    mixFingerprintBytes(hash, &value, sizeof(value));
+}
+
+/** Padding-independent fingerprint of the complete authored flat pattern. */
+inline uint64_t flatPatternFingerprint(
+    const core::state::sequencer::SequencerPatternState& pattern,
+    bool includeRevisions = true
+) {
+    namespace seq = core::state::sequencer;
+    seq::SequencerPatternSnapshot snapshot{};
+    seq::captureSnapshot(pattern, snapshot);
+    uint64_t hash = 1469598103934665603ULL;
+    mixFingerprintValue(hash, snapshot.length);
+    mixFingerprintValue(hash, snapshot.playStart);
+    mixFingerprintValue(hash, snapshot.loopStart);
+    mixFingerprintValue(hash, snapshot.loopEnd);
+    mixFingerprintValue(hash, snapshot.stepsPerBeat);
+    mixFingerprintValue(hash, snapshot.enabledMask.low);
+    mixFingerprintValue(hash, snapshot.enabledMask.high);
+    if (includeRevisions) {
+        mixFingerprintValue(hash, snapshot.stepDataRevision);
+        mixFingerprintValue(hash, snapshot.patternVariationRevision);
+        mixFingerprintValue(hash, snapshot.patternScaleRevision);
+        mixFingerprintValue(hash, snapshot.patternTimingRevision);
+        mixFingerprintValue(hash, snapshot.graphRevision);
+        const uint32_t ccLaneRevision = pattern.ccLaneRevision.get();
+        mixFingerprintValue(hash, ccLaneRevision);
+    }
+    mixFingerprintValue(hash, snapshot.swingOffsetPercent);
+    mixFingerprintValue(hash, snapshot.patternNudgePercent);
+    mixFingerprintValue(hash, snapshot.effectiveSwingPercent);
+    mixFingerprintValue(hash, snapshot.variationRanges.pitchSemitones);
+    mixFingerprintValue(hash, snapshot.variationRanges.velocity);
+    mixFingerprintValue(hash, snapshot.variationRanges.gatePercent);
+    mixFingerprintValue(hash, snapshot.variationRanges.nudge);
+    mixFingerprintValue(hash, snapshot.scalePolicy);
+    mixFingerprintValue(hash, snapshot.scaleOverride.root);
+    mixFingerprintValue(hash, snapshot.scaleOverride.type);
+    mixFingerprintValue(hash, snapshot.scaleOverride.mode);
+    mixFingerprintValue(hash, snapshot.pitchEditMode);
+    mixFingerprintValue(hash, snapshot.effectiveScaleSettings.root);
+    mixFingerprintValue(hash, snapshot.effectiveScaleSettings.type);
+    mixFingerprintValue(hash, snapshot.effectiveScaleSettings.mode);
+    mixFingerprintBytes(hash, snapshot.note.data(), sizeof(snapshot.note));
+    mixFingerprintBytes(
+        hash,
+        snapshot.velocity.data(),
+        sizeof(snapshot.velocity)
+    );
+    mixFingerprintBytes(hash, snapshot.gate.data(), sizeof(snapshot.gate));
+    mixFingerprintBytes(hash, snapshot.nudge.data(), sizeof(snapshot.nudge));
+    mixFingerprintBytes(
+        hash,
+        snapshot.probability.data(),
+        sizeof(snapshot.probability)
+    );
+    return hash;
+}
 
 struct StateInvariant {
     const void* editorGraphOwner = nullptr;

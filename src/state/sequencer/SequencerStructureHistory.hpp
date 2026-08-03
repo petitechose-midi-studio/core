@@ -276,10 +276,5 @@ void commitAdmittedMacroTrackStructureHistoryAfter(
     core::state::macro::MacroPagesState& pages,
     const SequencerHistoryMacroTrackStructurePayload& payload
 ) noexcept;
-bool applyMacroTrackStructureHistory(
-    core::state::macro::MacroPagesState& pages,
-    const SequencerHistoryMacroTrackStructurePayload& payload,
-    bool after
-);
 
 }  // namespace core::state::sequencer

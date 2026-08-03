@@ -550,6 +550,14 @@ void assertSharedTrackProjection(
     uint16_t expectedMask,
     uint8_t expectedActive
 ) {
+    if (h.state.sharedTrackEnabledMask.get() != expectedMask ||
+        h.state.sharedTrackActive.get() != expectedActive) {
+        std::cerr << "shared Track projection drift mask="
+                  << h.state.sharedTrackEnabledMask.get() << '/'
+                  << expectedMask << " active="
+                  << static_cast<unsigned>(h.state.sharedTrackActive.get())
+                  << '/' << static_cast<unsigned>(expectedActive) << '\n';
+    }
     assert(h.state.sequencerTracks.currentEnabledMask() == expectedMask);
     assert(h.state.sequencerTracks.activeTrackIndex() == expectedActive);
     assert(h.state.sharedTrackEnabledMask.get() == expectedMask);
@@ -2614,8 +2622,8 @@ void test_prepared_bank_admission_rejects_active_step_draft() {
         );
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-            assert(!history.canRecordStructure(*prepared.change));
-            history.recordPreparedStructure(std::move(prepared.change));
+            assert(!history.canCommitAdmittedStructure(*prepared.change));
+            prepared.change.reset();
             tx::assertMaxPlusOneStillArmed(0U);
             tx::assertStateInvariant(h.state, before);
             assertBankOwners(h, owners);
@@ -2813,8 +2821,8 @@ void test_structure_noop_and_commit_are_exact() {
         auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
             h.state
         );
-        assert(!history.canRecordStructure(*noOp.change));
-        history.recordPreparedStructure(std::move(noOp.change));
+        assert(!history.canCommitAdmittedStructure(*noOp.change));
+        noOp.change.reset();
         test_support::drainNotifications();
         h.state.flushProjectMutationCoalescing();
         tx::assertStateInvariant(h.state, before);
@@ -2842,7 +2850,7 @@ void test_structure_noop_and_commit_are_exact() {
     auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
         h.state
     );
-    assert(history.canRecordStructure(*prepared.change));
+    assert(history.canCommitAdmittedStructure(*prepared.change));
     const auto before = tx::captureStateInvariant(h.state);
 
     {
@@ -2853,7 +2861,11 @@ void test_structure_noop_and_commit_are_exact() {
             stagedBank,
             stagedActive
         );
-        history.recordPreparedStructure(std::move(prepared.change));
+        assert(h.state.publishPreparedSequencerTrackState(
+            prepared.change->after.enabledMask,
+            prepared.change->after.activeTrack
+        ));
+        history.commitAdmittedStructure(std::move(prepared.change));
         tx::assertMaxPlusOneStillArmed(0U);
         assertExactlyOnePublication(h.state, before);
         assert(
@@ -3054,8 +3066,12 @@ void prepareMaximumCoupledStructureReplay(
 
     auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
         h.state);
-    assert(history.canRecordStructure(*prepared.change));
-    history.recordPreparedStructure(std::move(prepared.change));
+    assert(history.canCommitAdmittedStructure(*prepared.change));
+    assert(h.state.publishPreparedSequencerTrackState(
+        prepared.change->after.enabledMask,
+        prepared.change->after.activeTrack
+    ));
+    history.commitAdmittedStructure(std::move(prepared.change));
     settleSetup(h);
     assert(
         h.state.sequencerHistory.undoCount(
@@ -3679,7 +3695,12 @@ void test_macro_replay_validation_and_commit_revision_policy() {
     seq::commitMacroTrackStructureHistoryReplay(pages, *equalPayload, false);
     assert(pages.control.authoredRevision == equalRevision);
     assert(pages.tracks[2U].activePage == equalPayload->beforeTracks[2U].activePage);
-    assert(seq::applyMacroTrackStructureHistory(pages, *equalPayload, true));
+    assert(seq::validateMacroTrackStructureHistoryReplay(
+        pages,
+        *equalPayload,
+        true
+    ));
+    seq::commitMacroTrackStructureHistoryReplay(pages, *equalPayload, true);
     assert(pages.control.authoredRevision == equalRevision);
     assert(pages.tracks[2U].activePage == afterPage);
 
@@ -3751,11 +3772,25 @@ void test_macro_replay_validation_and_commit_revision_policy() {
     assert(pages.currentEnabledPageMask() == 0x0003U);
     assert(pages.activeConfigs[0U].cc == 99U);
 
-    assert(seq::applyMacroTrackStructureHistory(pages, *cachePayload, true));
+    assert(seq::validateMacroTrackStructureHistoryReplay(
+        pages,
+        *cachePayload,
+        true
+    ));
+    seq::commitMacroTrackStructureHistoryReplay(pages, *cachePayload, true);
+    pages.syncActiveTrackCache();
+    pages.updateActiveConfigs();
     assert(pages.currentActivePage() == 1U);
     assert(pages.currentEnabledPageMask() == 0x0003U);
     assert(pages.activeConfigs[0U].cc == 99U);
-    assert(seq::applyMacroTrackStructureHistory(pages, *cachePayload, false));
+    assert(seq::validateMacroTrackStructureHistoryReplay(
+        pages,
+        *cachePayload,
+        false
+    ));
+    seq::commitMacroTrackStructureHistoryReplay(pages, *cachePayload, false);
+    pages.syncActiveTrackCache();
+    pages.updateActiveConfigs();
     assert(pages.currentActivePage() == 0U);
     assert(pages.currentEnabledPageMask() == 0x0001U);
     assert(pages.activeConfigs[0U].cc == beforeCc);

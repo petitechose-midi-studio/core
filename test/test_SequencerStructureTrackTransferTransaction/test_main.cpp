@@ -1,3 +1,8 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+
+#include <array>
 #include <cassert>
 #include <cstdint>
 
@@ -8,6 +13,8 @@
 #include "../support/NotificationTestUtils.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerStructureHistoryUtils.hpp"
+#include "handler/sequencer/SequencerStructureSelectionOps.hpp"
 #include "handler/sequencer/SequencerStructureTrackTransferTransaction.hpp"
 #include "sequencer/SequencerCcLaneRuntime.hpp"
 #include "state/CoreState.hpp"
@@ -15,8 +22,14 @@
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerCcLaneRouting.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerPatternRegionOps.hpp"
 #include "state/sequencer/SequencerSnapshotOps.hpp"
+#include "support/SequencerHistoryTransactionAssertions.hpp"
+
+#if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+#error "This test requires native EXTMEM failure injection"
+#endif
 
 namespace {
 
@@ -38,6 +51,14 @@ void recordPreparedPublish(
     recorder->activeTrack = activeTrack;
 }
 
+bool capturePreparedSettlement(
+    const void* context,
+    core::handler::PreparedTrackStructureSettlementCheckpoint& out
+) noexcept {
+    out = {};
+    return context != nullptr;
+}
+
 bool canRecordPreparedHistory(
     const void* context,
     const core::state::sequencer::SequencerHistoryTrackStructureChange& change) {
@@ -46,16 +67,27 @@ bool canRecordPreparedHistory(
     return history != nullptr && history->canRecordStructure(change);
 }
 
-void recordPreparedHistory(void* context,
-                           core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) {
+void commitAdmittedHistory(
+    void* context,
+    core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
+) noexcept {
     auto* history = static_cast<core::state::sequencer::SequencerHistoryService*>(context);
     assert(history != nullptr);
-    history->recordPreparedStructure(std::move(change));
+    history->commitAdmittedStructure(std::move(change));
+}
+
+core::state::sequencer::SequencerTrackStructureChronologyResult
+openTrackChronology(void*) {
+    return {
+        core::state::sequencer::SequencerTrackStructureChronologyStatus::Opened,
+        core::state::sequencer::SequencerPatternHistoryCommitOutcome::NoPending,
+    };
 }
 
 constexpr core::handler::SequencerHistoryDomainServices::Operations kPreparedHistoryOperations{
     .canRecordStructure = canRecordPreparedHistory,
-    .recordPreparedStructure = recordPreparedHistory,
+    .commitAdmittedStructure = commitAdmittedHistory,
+    .openTrackStructureChronologyBoundary = openTrackChronology,
 };
 
 void storeSourceClipboard(core::state::StructureClipboardState& clipboard,
@@ -64,6 +96,89 @@ void storeSourceClipboard(core::state::StructureClipboardState& clipboard,
     core::state::sequencer::captureSnapshot(editor.pattern, snapshot);
     assert(clipboard.storeSequencerTrack(
         snapshot, nullptr, 0, core::state::sequencer::sequencerCcLaneView(editor.pattern)));
+}
+
+void seedMaximumSelectionTransfer(core::state::CoreState& state) {
+    namespace seq = core::state::sequencer;
+    assert(state.publishPreparedSequencerTrackState(0xFFFFU, 0U));
+    for (uint8_t track = 0U;
+         track < seq::SequencerTrackBankState::TRACK_COUNT;
+         ++track) {
+        auto& pattern = track == 0U
+            ? state.sequencer.pattern
+            : state.sequencerTracks.track(track);
+        pattern.note[0] = static_cast<uint8_t>(40U + track);
+        pattern.setEnabled(0U, true);
+        pattern.bumpStepDataRevision();
+        assert(seq::ensureGraphRoot(pattern));
+        auto* lanes = seq::ensureSequencerCcLaneBank(pattern);
+        assert(lanes != nullptr);
+        seq::SequencerCcLaneDraft lane{};
+        lane.destination.controller = static_cast<uint8_t>(20U + track);
+        assert(seq::createSequencerCcLane(*lanes, 0U, lane).changed());
+        assert(seq::setSequencerCcLaneEvent(
+            *lanes,
+            0U,
+            0U,
+            static_cast<uint8_t>(60U + track)
+        ).changed());
+        pattern.bumpCcLaneRevision();
+        state.pages.tracks[track].pages[0U].cc[0U] =
+            static_cast<uint8_t>(70U + track);
+    }
+
+    auto selection = core::handler::captureTrackSelectionClipboard(
+        state.sequencerTracks,
+        state.sequencer,
+        state.pages,
+        0x7FFFU
+    );
+    assert(selection);
+    assert(selection->count == 15U);
+    assert(state.structureClipboard.storeSequencerTrackSelection(
+        std::move(selection)
+    ));
+    state.flushProjectMutationCoalescing();
+}
+
+core::handler::SequencerTrackTransferResult executeMaximumSelectionTransfer(
+    core::state::CoreState& state
+) {
+    return core::handler::executeSequencerTrackTransfer(
+        state.sequencerTracks,
+        state.projectTracks,
+        state.sequencer,
+        state.structureClipboard,
+        core::handler::SharedTrackDomainServices::fromCoreState(state),
+        core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+        1U,
+        0U,
+        &state.sequencerTrackActivations,
+        false,
+        &state.pages
+    );
+}
+
+core::state::sequencer::SequencerHistoryTrackStructureChangePtr
+captureMaximumSelectionProof(core::state::CoreState& state) {
+    namespace seq = core::state::sequencer;
+    auto proof = core::handler::captureSequencerTrackStructureHistoryBefore(
+        state.sequencerTracks,
+        state.sequencer,
+        0xFFFFU
+    );
+    assert(proof);
+    assert(seq::captureMacroTrackStructureHistoryBefore(
+        state.pages,
+        0xFFFEU,
+        *proof
+    ));
+    auto* macro = proof->macroStructure.get();
+    assert(macro != nullptr);
+    macro->afterTracks = macro->beforeTracks;
+    macro->afterControl.reset();
+    macro->afterCaptured = true;
+    return proof;
 }
 
 void authorInheritedAndPinnedLanes(core::state::sequencer::SequencerPatternState& pattern) {
@@ -133,6 +248,8 @@ void test_missing_prepared_history_blocks_before_mutation() {
         {
             .context = &recorder,
             .publishPreparedSequencerState = recordPreparedPublish,
+            .capturePreparedTrackStructureSettlementCheckpoint =
+                capturePreparedSettlement,
         },
     };
     const core::handler::SequencerHistoryDomainServices history;
@@ -169,6 +286,8 @@ void test_outgoing_live_route_change_does_not_block_content_transfer() {
         {
             .context = &recorder,
             .publishPreparedSequencerState = recordPreparedPublish,
+            .capturePreparedTrackStructureSettlementCheckpoint =
+                capturePreparedSettlement,
         },
     };
     core::state::sequencer::SequencerHistoryService historyService;
@@ -195,6 +314,157 @@ void test_outgoing_live_route_change_does_not_block_content_transfer() {
     std::cout << "[PASS] outgoing route changes stay independent from content transfer\n";
 }
 
+void test_in_place_clipboard_payload_drift_rejects_before_mutation() {
+    core::state::sequencer::SequencerTrackBankState tracks;
+    core::state::sequencer::SequencerState editor;
+    core::state::project::ProjectTrackState projectTracks;
+    tracks.reset();
+    editor.pattern.note[0] = 83U;
+    editor.pattern.setEnabled(0U, true);
+    core::state::StructureClipboardState clipboard;
+    storeSourceClipboard(clipboard, editor);
+
+    oc::state::Signal<uint8_t, 8> activeTrack{0U};
+    oc::state::Signal<uint16_t, 16> enabledMask{0x0001U};
+    PublishRecorder recorder;
+    const core::handler::SharedTrackDomainServices shared{
+        {activeTrack, enabledMask},
+        {
+            .context = &recorder,
+            .publishPreparedSequencerState = recordPreparedPublish,
+            .capturePreparedTrackStructureSettlementCheckpoint =
+                capturePreparedSettlement,
+        },
+    };
+    core::state::sequencer::SequencerHistoryService historyService;
+    const auto history = core::handler::SequencerHistoryDomainServices::
+        fromStaticOperations<kPreparedHistoryOperations>(&historyService);
+
+    auto prepared = core::handler::prepareSequencerTrackTransfer(
+        tracks,
+        projectTracks,
+        editor,
+        clipboard,
+        shared,
+        history,
+        1U
+    );
+    assert(prepared.ready());
+    const auto* targetGraph = tracks.track(1U).graph.get();
+    const auto* targetCc = tracks.track(1U).ccLanes.get();
+    clipboard.sequencerTrack.note[0] = 99U;
+
+    const auto result = core::handler::commitPreparedSequencerTrackTransfer(
+        tracks,
+        projectTracks,
+        editor,
+        clipboard,
+        shared,
+        history,
+        std::move(prepared)
+    );
+    assert(result.status == core::handler::SequencerTrackTransferStatus::STALE);
+    assert(!recorder.called);
+    assert(historyService.undoCount() == 0U);
+    assert(tracks.currentEnabledMask() == 0x0001U);
+    assert(tracks.activeTrackIndex() == 0U);
+    assert(tracks.track(1U).note[0] ==
+           core::state::sequencer::SequencerPatternState::DEFAULT_NOTE);
+    assert(tracks.track(1U).graph.get() == targetGraph);
+    assert(tracks.track(1U).ccLanes.get() == targetCc);
+    assert(editor.pattern.note[0] == 83U);
+
+    std::cout << "[PASS] in-place clipboard drift rejects before mutation\n";
+}
+
+void test_in_place_project_control_clipboard_drift_rejects_before_mutation() {
+    test_support::CoreStorages storages;
+    core::state::CoreState state(storages.settings);
+    state.sequencer.pattern.note[0U] = 85U;
+    state.sequencer.pattern.setEnabled(0U, true);
+    state.sequencer.pattern.bumpStepDataRevision();
+    state.pages.tracks[0U].pages[0U].cc[0U] = 91U;
+
+    auto selection = core::handler::captureTrackSelectionClipboard(
+        state.sequencerTracks,
+        state.sequencer,
+        state.pages,
+        0x0001U
+    );
+    assert(selection);
+    assert(selection->count == 1U);
+    assert(selection->projectControl);
+    assert(state.structureClipboard.storeSequencerTrackSelection(
+        std::move(selection)
+    ));
+    state.flushProjectMutationCoalescing();
+    test_support::drainNotifications();
+
+    const auto shared =
+        core::handler::SharedTrackDomainServices::fromCoreState(state);
+    const auto history =
+        core::handler::SequencerHistoryDomainServices::fromCoreState(state);
+    auto prepared = core::handler::prepareSequencerTrackTransfer(
+        state.sequencerTracks,
+        state.projectTracks,
+        state.sequencer,
+        state.structureClipboard,
+        shared,
+        history,
+        1U,
+        0U,
+        nullptr,
+        false,
+        &state.pages
+    );
+    assert(prepared.ready());
+
+    const uint8_t sequencerUndoBefore = state.sequencerHistory.undoCount();
+    const uint8_t projectUndoBefore = state.projectHistory.undoCount();
+    const uint32_t modifiedBefore = state.project.metadata.modifiedCounter;
+    const auto* targetGraph = state.sequencerTracks.track(1U).graph.get();
+    const auto* targetCc = state.sequencerTracks.track(1U).ccLanes.get();
+    core::handler::PreparedTrackStructureSettlementCheckpoint settlement{};
+    assert(shared.capturePreparedTrackStructureSettlementCheckpoint(
+        settlement
+    ));
+
+    auto* storedSelection =
+        state.structureClipboard.sequencerTrackSelection.get();
+    assert(storedSelection != nullptr && storedSelection->projectControl);
+    ++storedSelection->projectControl->curves.nextCurveId;
+
+    const auto result = core::handler::commitPreparedSequencerTrackTransfer(
+        state.sequencerTracks,
+        state.projectTracks,
+        state.sequencer,
+        state.structureClipboard,
+        shared,
+        history,
+        std::move(prepared),
+        &state.pages
+    );
+    assert(result.status == core::handler::SequencerTrackTransferStatus::STALE);
+    assert(state.currentSharedTrackEnabledMask() == 0x0001U);
+    assert(state.currentSharedActiveTrack() == 0U);
+    assert(state.sequencer.pattern.note[0U] == 85U);
+    assert(state.sequencerTracks.track(1U).note[0U] ==
+           core::state::sequencer::SequencerPatternState::DEFAULT_NOTE);
+    assert(state.sequencerTracks.track(1U).graph.get() == targetGraph);
+    assert(state.sequencerTracks.track(1U).ccLanes.get() == targetCc);
+    assert(state.pages.tracks[0U].pages[0U].cc[0U] == 91U);
+    assert(state.sequencerHistory.undoCount() == sequencerUndoBefore);
+    assert(state.projectHistory.undoCount() == projectUndoBefore);
+    assert(state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(shared.preparedTrackStructureSettlementCheckpointMatches(
+        settlement
+    ));
+
+    test_support::drainNotifications();
+    std::cout
+        << "[PASS] in-place Project Control clipboard drift rejects before mutation\n";
+}
+
 void test_track_transfer_refuses_an_active_step_draft_before_mutation() {
     core::state::sequencer::SequencerTrackBankState tracks;
     core::state::sequencer::SequencerState editor;
@@ -213,6 +483,8 @@ void test_track_transfer_refuses_an_active_step_draft_before_mutation() {
         {
             .context = &recorder,
             .publishPreparedSequencerState = recordPreparedPublish,
+            .capturePreparedTrackStructureSettlementCheckpoint =
+                capturePreparedSettlement,
         },
     };
     core::state::sequencer::SequencerHistoryService historyService;
@@ -823,12 +1095,156 @@ void test_track_paste_rebases_lane_lifecycle_and_clears_destination_hold() {
     std::cout << "[PASS] frozen Track paste preserves old Lane until one activation boundary\n";
 }
 
+void test_maximum_selection_transfer_retains_exact_103_allocation_contract() {
+    using namespace test_support::sequencer_transaction;
+    test_support::CoreStorages storages;
+    core::state::CoreState state(storages.settings);
+    seedMaximumSelectionTransfer(state);
+    const core::state::macro::MacroAutomationSlotAddress sourceManual{
+        .track = 0U,
+        .page = 0U,
+        .macro = 0U,
+    };
+    const core::state::macro::MacroAutomationSlotAddress targetManual{
+        .track = 1U,
+        .page = 0U,
+        .macro = 0U,
+    };
+    assert(state.macroUi.manualOverrides.activate(sourceManual, 0.25f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::
+               ACTIVATED);
+    assert(state.macroUi.manualOverrides.activate(targetManual, 0.75f) ==
+           core::state::macro::MacroManualOverrideState::ActivateStatus::
+               ACTIVATED);
+    test_support::drainNotifications();
+    state.flushProjectMutationCoalescing();
+    test_support::drainNotifications();
+    const uint8_t sequencerUndoBefore = state.sequencerHistory.undoCount();
+    const uint8_t projectUndoBefore = state.projectHistory.undoCount();
+    const uint32_t modifiedBefore = state.project.metadata.modifiedCounter;
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(104U);
+        const auto result = executeMaximumSelectionTransfer(state);
+        assert(result.status ==
+               core::handler::SequencerTrackTransferStatus::APPLIED);
+        assert(result.plan.count == 15U);
+        assert(result.plan.targetMask == 0xFFFEU);
+        assert(result.chronology.status == core::state::sequencer::
+            SequencerTrackStructureChronologyStatus::Opened);
+        assertMaxPlusOneStillArmed(103U);
+    }
+    assertFailureInjectionReset();
+    test_support::drainNotifications();
+    assert(state.currentSharedActiveTrack() == 1U);
+    assert(state.currentSharedTrackEnabledMask() == 0xFFFFU);
+    assert(state.sequencer.pattern.note[0] == 40U);
+    assert(state.pages.tracks[1U].pages[0U].cc[0U] == 70U);
+    assert(state.macroUi.manualOverrides.activeFor(sourceManual));
+    assert(!state.macroUi.manualOverrides.activeFor(targetManual));
+    assert(state.sequencerHistory.undoCount() == sequencerUndoBefore + 1U);
+    assert(state.projectHistory.undoCount() == projectUndoBefore + 1U);
+    assert(state.project.metadata.modifiedCounter == modifiedBefore + 1U);
+
+    assert(state.undoProjectHistory());
+    test_support::drainNotifications();
+    assert(state.currentSharedActiveTrack() == 0U);
+    assert(state.sequencerTracks.track(1U).note[0] == 41U);
+    assert(state.pages.tracks[1U].pages[0U].cc[0U] == 71U);
+    assert(state.redoProjectHistory());
+    test_support::drainNotifications();
+    assert(state.currentSharedActiveTrack() == 1U);
+    assert(state.sequencer.pattern.note[0] == 40U);
+    assert(state.pages.tracks[1U].pages[0U].cc[0U] == 70U);
+    std::cout << "[PASS] maximum selection transfer retains 103 allocations and armed 104\n";
+}
+
+void test_maximum_selection_transfer_fails_atomically_at_every_ordinal() {
+    using namespace test_support::sequencer_transaction;
+    namespace seq = core::state::sequencer;
+    for (std::size_t ordinal = 1U; ordinal <= 103U; ++ordinal) {
+        test_support::CoreStorages storages;
+        core::state::CoreState state(storages.settings);
+        seedMaximumSelectionTransfer(state);
+        test_support::drainNotifications();
+        state.flushProjectMutationCoalescing();
+        test_support::drainNotifications();
+
+        auto proof = captureMaximumSelectionProof(state);
+        const auto invariant = captureStateInvariant(state);
+        seq::SequencerTrackActivationMutationGuard activationGuard{};
+        assert(state.sequencerTrackActivations.captureMutationGuard(
+            0xFFFFU,
+            activationGuard
+        ));
+        const auto shared =
+            core::handler::SharedTrackDomainServices::fromCoreState(state);
+        core::handler::PreparedTrackStructureSettlementCheckpoint settlement{};
+        assert(shared.capturePreparedTrackStructureSettlementCheckpoint(
+            settlement
+        ));
+        const uint32_t clipboardRevision =
+            state.structureClipboard.revision.get();
+        const auto* clipboardOwner =
+            state.structureClipboard.sequencerTrackSelection.get();
+
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            const auto result = executeMaximumSelectionTransfer(state);
+            if (result.status != core::handler::
+                    SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE) {
+                std::cerr
+                    << "unexpected maximum-transfer status at ordinal "
+                    << ordinal << ": "
+                    << static_cast<unsigned>(result.status)
+                    << ", attempts="
+                    << core::app::testing::extmemAllocationAttempt
+                    << ", predecessor="
+                    << static_cast<unsigned>(
+                           result.chronology.predecessorPattern)
+                    << '\n';
+            }
+            assert(result.status == core::handler::
+                SequencerTrackTransferStatus::ALLOCATION_UNAVAILABLE);
+            assert(result.chronology.status == seq::
+                SequencerTrackStructureChronologyStatus::Opened);
+            assertFailureConsumed(ordinal);
+            assert(seq::liveHistoryStructureSnapshotMatches(
+                state.sequencerTracks,
+                state.sequencer,
+                proof->before
+            ));
+            assert(seq::liveMacroTrackStructureMatches(
+                state.pages,
+                *proof->macroStructure,
+                false
+            ));
+            assertStateInvariant(state, invariant);
+            assert(state.sequencerTrackActivations.mutationGuardMatches(
+                activationGuard
+            ));
+            assert(shared.preparedTrackStructureSettlementCheckpointMatches(
+                settlement
+            ));
+            assert(state.structureClipboard.revision.get() ==
+                   clipboardRevision);
+            assert(state.structureClipboard.sequencerTrackSelection.get() ==
+                   clipboardOwner);
+        }
+        assertFailureInjectionReset();
+    }
+    test_support::drainNotifications();
+    std::cout << "[PASS] maximum selection transfer is exact at failures 1..103\n";
+}
+
 }  // namespace
 
 int main() {
     test_missing_prepared_publication_blocks_before_mutation();
     test_missing_prepared_history_blocks_before_mutation();
     test_outgoing_live_route_change_does_not_block_content_transfer();
+    test_in_place_clipboard_payload_drift_rejects_before_mutation();
+    test_in_place_project_control_clipboard_drift_rejects_before_mutation();
     test_track_transfer_refuses_an_active_step_draft_before_mutation();
     test_track_paste_activation_masks_follow_exclusive_solo();
     test_second_paste_same_track_is_blocked_by_canonical_pending_plan();
@@ -839,6 +1255,8 @@ int main() {
     test_track_paste_rebinds_inherited_lane_and_preserves_pin_through_history();
     test_track_copy_paste_undo_redo_preserves_canonical_destination_identity();
     test_track_paste_rebases_lane_lifecycle_and_clears_destination_hold();
+    test_maximum_selection_transfer_retains_exact_103_allocation_contract();
+    test_maximum_selection_transfer_fails_atomically_at_every_ordinal();
     std::cout << "All SequencerStructureTrackTransferTransaction tests passed\n";
     return 0;
 }

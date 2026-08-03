@@ -230,7 +230,7 @@ FLASHMEM void SharedTrackDomainServices::publishPreparedSequencerState(
 FLASHMEM void
 SharedTrackDomainServices::reconcilePreparedMacroTrackTransfer(
     uint16_t capturedTrackMask
-) const {
+) const noexcept {
     if (operations_.context == nullptr ||
         operations_.reconcilePreparedTrackPresentation == nullptr) {
         return;

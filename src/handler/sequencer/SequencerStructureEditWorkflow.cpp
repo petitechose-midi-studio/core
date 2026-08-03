@@ -393,10 +393,6 @@ FLASHMEM void SequencerStructureEditWorkflow::updateTrackPasteActivation(uint32_
 FLASHMEM bool SequencerStructureEditWorkflow::commitTrackPaste(uint32_t nowMs) {
     auto& paste = sequencer_.structureUi.trackPaste;
     if (paste.commitConsumed || !paste.plan.canCommit()) return false;
-    if (history_.commitCoalescedPatternEditOutcome() ==
-        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
-        return false;
-    }
     paste.commitConsumed = true;
 
     const auto result = executeSequencerTrackTransfer(

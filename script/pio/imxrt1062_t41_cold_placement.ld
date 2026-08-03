@@ -32,6 +32,7 @@
 *MacroDirectTrackStructureTransaction.cpp.o(.text* .rodata*)
 *SequencerPreparedTrackStructurePlanValidation.cpp.o(.text* .rodata*)
 *SequencerPreparedTrackStructureTransaction.cpp.o(.text* .rodata*)
+*SequencerStructureTrackTransferTransaction.cpp.o(.text* .rodata*)
 
 /* Track Structure coordination, exact History snapshots, and owner rotation
  * execute only at authored transaction/replay boundaries. Their explicitly

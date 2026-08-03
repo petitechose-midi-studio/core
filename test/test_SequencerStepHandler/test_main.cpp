@@ -525,6 +525,8 @@ struct PreparedEditorUiInvariant {
     uint8_t contentViewRootFocus = 0U;
     uint8_t contentViewStackDepth = 0U;
     uint64_t contentViewFramesHash = 0U;
+
+    bool operator==(const PreparedEditorUiInvariant&) const = default;
 };
 
 PreparedEditorUiInvariant capturePreparedEditorUiInvariant(
@@ -610,6 +612,8 @@ struct PreparedClipboardInvariant {
     uint64_t graphHash = 0U;
     const void* ccOwner = nullptr;
     uint64_t ccHash = 0U;
+
+    bool operator==(const PreparedClipboardInvariant&) const = default;
 };
 
 PreparedClipboardInvariant capturePreparedClipboardInvariant(
@@ -663,6 +667,8 @@ struct PreparedProductInvariant {
     bool statusTransportLocked = false;
     bool statusBeat = false;
     uint64_t statusTrackActivityHash = 0U;
+
+    bool operator==(const PreparedProductInvariant&) const = default;
 };
 
 PreparedProductInvariant capturePreparedProductInvariant(
@@ -763,9 +769,7 @@ PreparedActionInvariant capturePreparedActionInvariant(
 
     const auto activeTrack = h.state.sequencerTracks.activeTrackIndex();
     const auto& bankPattern = h.state.sequencerTracks.track(activeTrack);
-    seq::SequencerPatternSnapshot bankFlat{};
-    seq::captureSnapshot(bankPattern, bankFlat);
-    out.bankFlatHash = byteHash(&bankFlat, sizeof(bankFlat));
+    out.bankFlatHash = tx::flatPatternFingerprint(bankPattern);
     out.bankGraphOwner = bankPattern.graph.get();
     out.bankGraphHash = objectHash(bankPattern.graph.get());
     out.bankCcOwner = bankPattern.ccLanes.get();
@@ -784,23 +788,19 @@ void assertPreparedActionInvariant(
     tx::assertMusicalSnapshot(h.state, expected.musical);
 
     const auto product = capturePreparedProductInvariant(h);
-    assert(byteHash(&product, sizeof(product)) ==
-           byteHash(&expected.product, sizeof(expected.product)));
+    assert(product == expected.product);
     const auto activeTrack = expected.product.bankActiveTrack;
     const auto& bankPattern = h.state.sequencerTracks.track(activeTrack);
-    seq::SequencerPatternSnapshot bankFlat{};
-    seq::captureSnapshot(bankPattern, bankFlat);
-    assert(byteHash(&bankFlat, sizeof(bankFlat)) == expected.bankFlatHash);
+    assert(tx::flatPatternFingerprint(bankPattern) == expected.bankFlatHash);
     assert(bankPattern.graph.get() == expected.bankGraphOwner);
     assert(objectHash(bankPattern.graph.get()) == expected.bankGraphHash);
     assert(bankPattern.ccLanes.get() == expected.bankCcOwner);
     assert(objectHash(bankPattern.ccLanes.get()) == expected.bankCcHash);
 
     const auto ui = capturePreparedEditorUiInvariant(h);
-    assert(byteHash(&ui, sizeof(ui)) == byteHash(&expected.ui, sizeof(expected.ui)));
+    assert(ui == expected.ui);
     const auto clipboard = capturePreparedClipboardInvariant(h.state.structureClipboard);
-    assert(byteHash(&clipboard, sizeof(clipboard)) ==
-           byteHash(&expected.clipboard, sizeof(expected.clipboard)));
+    assert(clipboard == expected.clipboard);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 }
 
@@ -1070,31 +1070,11 @@ TrackColdOwners trackColdOwners(const seq::SequencerPatternState& pattern) {
 }
 
 uint64_t trackFlatHash(const seq::SequencerPatternState& pattern) {
-    seq::SequencerPatternSnapshot flat{};
-    seq::captureSnapshot(pattern, flat);
-    const std::array<uint32_t, 6U> revisions{
-        pattern.stepDataRevision.get(),
-        pattern.patternVariationRevision.get(),
-        pattern.patternScaleRevision.get(),
-        pattern.patternTimingRevision.get(),
-        pattern.graphRevision.get(),
-        pattern.ccLaneRevision.get(),
-    };
-    uint64_t hash = byteHash(&flat, sizeof(flat));
-    hash ^= byteHash(revisions.data(), sizeof(revisions));
-    hash *= 1099511628211ULL;
-    return hash;
+    return tx::flatPatternFingerprint(pattern);
 }
 
 uint64_t trackMusicalHash(const seq::SequencerPatternState& pattern) {
-    seq::SequencerPatternSnapshot flat{};
-    seq::captureSnapshot(pattern, flat);
-    flat.stepDataRevision = 0U;
-    flat.patternVariationRevision = 0U;
-    flat.patternScaleRevision = 0U;
-    flat.patternTimingRevision = 0U;
-    flat.graphRevision = 0U;
-    return byteHash(&flat, sizeof(flat));
+    return tx::flatPatternFingerprint(pattern, false);
 }
 
 void installTrackColdOwners(seq::SequencerPatternState& pattern, uint8_t tag) {
@@ -1229,6 +1209,81 @@ struct TrackTransientUiInvariant {
     uint64_t trackPasteHash = 0U;
 };
 
+uint64_t trackPasteSemanticFingerprint(
+    const seq::SequencerTrackPasteUiState& paste
+) noexcept {
+    uint64_t hash = 1469598103934665603ULL;
+    const auto mix = [&hash](const auto& value) {
+        tx::mixFingerprintValue(hash, value);
+    };
+    const auto mixEntity = [&mix](
+        const core::state::contextual::ContextEntityRef& entity
+    ) {
+        mix(entity.kind);
+        mix(entity.track);
+        mix(entity.page);
+        mix(entity.item);
+        mix(entity.node);
+    };
+
+    mix(paste.revision.get());
+    mix(paste.guard.phase);
+    mix(paste.guard.pressedAtMs);
+    mix(paste.guard.armedAtMs);
+    mix(paste.guard.guardDurationMs);
+    mix(paste.guard.progressPermille);
+
+    mix(paste.feedback.active);
+    mix(paste.feedback.action);
+    mixEntity(paste.feedback.source);
+    mixEntity(paste.feedback.target);
+    mix(paste.feedback.status);
+    mix(paste.feedback.reason);
+    mix(paste.feedback.expiryPolicy);
+    mix(paste.feedback.shownAtMs);
+    mix(paste.feedback.durationMs);
+
+    mix(paste.plan.payloadKind);
+    mix(paste.plan.clipboardRevision);
+    mix(paste.plan.sourceMask);
+    mix(paste.plan.targetMask);
+    mix(paste.plan.createMask);
+    mix(paste.plan.overwriteMask);
+    mix(paste.plan.targetEndExclusive);
+    mix(paste.plan.sourceCount);
+    mix(paste.plan.count);
+    mix(paste.plan.firstSource);
+    mix(paste.plan.lastSource);
+    mix(paste.plan.firstTarget);
+    mix(paste.plan.lastTarget);
+    mix(paste.plan.bindingPolicy);
+    mix(paste.plan.inheritedLaneCount);
+    mix(paste.plan.pinnedLaneCount);
+    mix(paste.plan.availability);
+    mix(paste.plan.reason);
+    for (const auto& entry : paste.plan.entries) {
+        mix(entry.clipboardIndex);
+        mix(entry.sourceTrack);
+        mix(entry.targetTrack);
+        mix(entry.targetMidiChannel);
+        mix(entry.targetRouteValid);
+        mix(entry.targetMuted);
+        mix(entry.inheritedLaneCount);
+        mix(entry.pinnedLaneCount);
+        mix(entry.targetKind);
+    }
+
+    mix(paste.clipboardKind);
+    mix(paste.clipboardRevision);
+    mix(paste.interactionGeneration);
+    mix(paste.operationGeneration);
+    mix(paste.activationGeneration);
+    mix(paste.detailVisible);
+    mix(paste.buttonOwned);
+    mix(paste.commitConsumed);
+    return hash;
+}
+
 TrackTransientUiInvariant captureTrackTransientUiInvariant(
     const SequencerStepHarness& h
 ) {
@@ -1255,9 +1310,8 @@ TrackTransientUiInvariant captureTrackTransientUiInvariant(
         .stepDraftHash = byteHash(
             &sequencer.stepContentDraft,
             sizeof(sequencer.stepContentDraft)),
-        .trackPasteHash = byteHash(
-            &sequencer.structureUi.trackPaste,
-            sizeof(sequencer.structureUi.trackPaste)),
+        .trackPasteHash = trackPasteSemanticFingerprint(
+            sequencer.structureUi.trackPaste),
     };
 }
 
@@ -1280,6 +1334,8 @@ struct TrackMacroInvariant {
     uint32_t automationEditRevision = 0U;
     uint32_t runtimeProjectionRevision = 0U;
     uint32_t runtimeOwnerRevision = 0U;
+
+    bool operator==(const TrackMacroInvariant&) const = default;
 };
 
 TrackMacroInvariant captureTrackMacroInvariant(const SequencerStepHarness& h) {
@@ -1402,14 +1458,10 @@ void assertTrackTransactionInvariant(
            expected.transientUi.stepDraftHash);
     assert(actual.transientUi.trackPasteHash ==
            expected.transientUi.trackPasteHash);
-    assert(byteHash(&actual.macros, sizeof(actual.macros)) ==
-           byteHash(&expected.macros, sizeof(expected.macros)));
-    assert(byteHash(&actual.editorUi, sizeof(actual.editorUi)) ==
-           byteHash(&expected.editorUi, sizeof(expected.editorUi)));
-    assert(byteHash(&actual.clipboard, sizeof(actual.clipboard)) ==
-           byteHash(&expected.clipboard, sizeof(expected.clipboard)));
-    assert(byteHash(&actual.product, sizeof(actual.product)) ==
-           byteHash(&expected.product, sizeof(expected.product)));
+    assert(actual.macros == expected.macros);
+    assert(actual.editorUi == expected.editorUi);
+    assert(actual.clipboard == expected.clipboard);
+    assert(actual.product == expected.product);
     tx::assertStateInvariant(h.state, expected.publication);
     assert(actual.projectTracksHash == expected.projectTracksHash);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing() ==
@@ -1470,8 +1522,7 @@ void assertCanonicalTrackLogicalProof(
     assert(actual.ccHashes == expected.ccHashes);
     assert(actual.hasGraph == expected.hasGraph);
     assert(actual.hasCc == expected.hasCc);
-    assert(byteHash(&actual.macros, sizeof(actual.macros)) ==
-           byteHash(&expected.macros, sizeof(expected.macros)));
+    assert(actual.macros == expected.macros);
     assert(actual.trackMask == expected.trackMask);
     assert(actual.sharedMask == expected.sharedMask);
     assert(actual.trackActive == expected.trackActive);
@@ -4411,6 +4462,11 @@ void test_direct_track_selection_remove_sparse_and_max_masks_replay_exactly() {
         const auto& untouched = h.state.sequencerTracks.track(0U);
         assert(untouched.graph.get() == untouchedGraph);
         assert(untouched.ccLanes.get() == untouchedCc);
+        if (trackFlatHash(untouched) != untouchedFlat) {
+            std::cerr << "untouched Track flat drift actual="
+                      << trackFlatHash(untouched)
+                      << " expected=" << untouchedFlat << '\n';
+        }
         assert(trackFlatHash(untouched) == untouchedFlat);
         assert(objectHash(untouched.graph.get()) == untouchedGraphHash);
         assert(objectHash(untouched.ccLanes.get()) == untouchedCcHash);

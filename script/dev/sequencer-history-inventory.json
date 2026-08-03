@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "scope": "L-R08-07 direct Macro Track Structure routes slice 6",
+  "scope": "L-R08-07 prepared Track-transfer convergence slice 7",
   "recordingBoundary": {
     "entryRecordingCallTotal": 44,
-    "expectedMigratedRemovalTotal": 15,
+    "expectedMigratedRemovalTotal": 19,
     "expectedProviderForwardTotal": 5,
     "expectedCoalescedPreparedTotal": 1,
-    "expectedTotal": 35,
+    "expectedTotal": 31,
     "memberDispatch": {
       "methods": [
         "recordPattern",
@@ -19,12 +19,12 @@
         "recordPreparedStructure"
       ],
       "expectedMethodCount": 8,
-      "expectedTotal": 27,
-      "expectedSinkTotal": 7,
-      "expectedServiceAdapterTotal": 20,
+      "expectedTotal": 24,
+      "expectedSinkTotal": 6,
+      "expectedServiceAdapterTotal": 18,
       "expectedSinkClassifications": {
         "post-fallible": 2,
-        "prepared": 5,
+        "prepared": 4,
         "rollback-aware": 0
       },
       "groups": [
@@ -71,13 +71,6 @@
           "classification": "prepared"
         },
         {
-          "path": "src/handler/sequencer/SequencerStructureTrackTransferTransaction.cpp",
-          "method": "recordPreparedStructure",
-          "count": 1,
-          "role": "sink",
-          "classification": "prepared"
-        },
-        {
           "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
           "method": "recordFlatPattern",
           "count": 1,
@@ -114,12 +107,6 @@
           "count": 1,
           "role": "service-adapter",
           "providerForwardCount": 1
-        },
-        {
-          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
-          "method": "recordPreparedStructure",
-          "count": 1,
-          "role": "service-adapter"
         },
         {
           "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
@@ -165,19 +152,13 @@
           "count": 1,
           "role": "service-adapter",
           "providerForwardCount": 1
-        },
-        {
-          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
-          "method": "recordPreparedStructure",
-          "count": 1,
-          "role": "service-adapter"
         }
       ]
     },
     "coreStateAdapter": {
       "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
       "method": "recordPreparedSequencerStructureHistory",
-      "expectedCount": 1
+      "expectedCount": 0
     },
     "internalForwards": {
       "path": "src/state/sequencer/SequencerHistory.cpp",
@@ -519,10 +500,14 @@
       },
       "memberDispatch": {
         "path": "src",
-        "expectedTotal": 2,
+        "expectedTotal": 4,
         "groups": [
           {
             "path": "src/handler/sequencer/SequencerPreparedTrackStructureTransaction.cpp",
+            "count": 2
+          },
+          {
+            "path": "src/handler/sequencer/SequencerStructureTrackTransferTransaction.cpp",
             "count": 2
           }
         ]
@@ -532,7 +517,7 @@
       "method": "commitAdmittedStructure",
       "memberDispatch": {
         "path": "src",
-        "expectedTotal": 3,
+        "expectedTotal": 4,
         "groups": [
           {
             "path": "src/handler/sequencer/SequencerPreparedTrackStructureTransaction.cpp",
@@ -544,6 +529,10 @@
           },
           {
             "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+            "count": 1
+          },
+          {
+            "path": "src/handler/sequencer/SequencerStructureTrackTransferTransaction.cpp",
             "count": 1
           }
         ]
@@ -683,6 +672,7 @@
       "test/test_SequencerPatternEditorHandler/test_main.cpp": 3,
       "test/test_SequencerPreparedTrackStructureTransaction/test_main.cpp": 1,
       "test/test_MacroDirectTrackStructureTransaction/test_main.cpp": 1,
+      "test/test_SequencerStructureTrackTransferTransaction/test_main.cpp": 1,
       "test/test_SequencerQuickControlsContainment/test_main.cpp": 1,
       "test/test_SequencerTrackBankOps/test_main.cpp": 1
     }

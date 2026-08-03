@@ -92,7 +92,7 @@ public:
     ) const noexcept;
     void reconcilePreparedMacroTrackTransfer(
         uint16_t capturedTrackMask
-    ) const;
+    ) const noexcept;
     [[nodiscard]] bool capturePreparedTrackStructureSettlementCheckpoint(
         PreparedTrackStructureSettlementCheckpoint& out
     ) const;

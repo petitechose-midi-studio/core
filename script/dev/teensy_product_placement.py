@@ -83,10 +83,20 @@ TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS = (
     "MacroWorkflow::syncActivePagePresentation(",
 )
 
+TRACK_TRANSFER_FLASH_MARKERS = (
+    "prepareSequencerTrackTransfer(",
+    "commitPreparedSequencerTrackTransfer(",
+    "executeSequencerTrackTransfer(",
+    "(anonymous namespace)::clipboardPayloadFingerprint(",
+    "(anonymous namespace)::prepareMacroStructureTransfer(",
+    "(anonymous namespace)::statusForChronology(",
+)
+
 TRACK_STRUCTURE_FLASH_MARKERS = (
     *TRACK_STRUCTURE_ADAPTER_FLASH_MARKERS,
     *TRACK_STRUCTURE_WORKFLOW_FLASH_MARKERS,
     *TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS,
+    *TRACK_TRANSFER_FLASH_MARKERS,
 )
 
 MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS = (

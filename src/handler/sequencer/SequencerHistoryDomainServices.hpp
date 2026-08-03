@@ -35,8 +35,6 @@ public:
     using CanRecordStructureFn = bool (*)(
         const void* context,
         const core::state::sequencer::SequencerHistoryTrackStructureChange& change);
-    using RecordPreparedStructureFn = void (*)(
-        void* context, core::state::sequencer::SequencerHistoryTrackStructureChangePtr change);
     using CommitAdmittedStructureFn = void (*)(
         void* context,
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
@@ -99,7 +97,6 @@ public:
         RecordPreparedPatternFn recordPreparedSynchronizedPattern = nullptr;
         RecordStructureFn recordStructure = nullptr;
         CanRecordStructureFn canRecordStructure = nullptr;
-        RecordPreparedStructureFn recordPreparedStructure = nullptr;
         CommitAdmittedStructureFn commitAdmittedStructure = nullptr;
         RecordFullBankFn recordFullBank = nullptr;
         CanRecordFullBankFn canRecordFullBank = nullptr;
@@ -155,9 +152,6 @@ public:
         core::state::sequencer::SequencerHistoryFullBankChangePtr change) const;
     [[nodiscard]] bool canRecordStructure(
         const core::state::sequencer::SequencerHistoryTrackStructureChange& change) const;
-    // Precondition: canRecordStructure(change) was true and change is unchanged.
-    void recordPreparedStructure(
-        core::state::sequencer::SequencerHistoryTrackStructureChangePtr change) const;
     // Trusted Track transaction gate. A true result admits the unchanged
     // payload and proves the no-fail Core commit sink is installed.
     [[nodiscard]] bool canCommitAdmittedStructure(

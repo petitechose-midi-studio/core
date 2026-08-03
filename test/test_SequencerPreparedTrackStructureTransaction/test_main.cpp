@@ -777,13 +777,9 @@ struct LiveProof {
 };
 
 uint64_t flatHash(const seq::SequencerPatternState& pattern) {
-    seq::SequencerPatternSnapshot snapshot{};
-    seq::captureSnapshot(pattern, snapshot);
-    uint64_t hash = byteHash(&snapshot, sizeof(snapshot));
-    const uint32_t ccRevision = pattern.ccLaneRevision.get();
-    hash ^= byteHash(&ccRevision, sizeof(ccRevision));
-    hash *= 1099511628211ULL;
-    return hash;
+    return test_support::sequencer_transaction::flatPatternFingerprint(
+        pattern
+    );
 }
 
 void capturePatternProof(
@@ -837,6 +833,13 @@ LiveProof captureLiveProof(const Harness& harness) {
 
 void assertLiveProof(const Harness& harness, const LiveProof& expected) {
     const auto actual = captureLiveProof(harness);
+    for (std::size_t index = 0U; index < actual.flatHashes.size(); ++index) {
+        if (actual.flatHashes[index] != expected.flatHashes[index]) {
+            std::cerr << "flat proof drift index=" << index
+                      << " actual=" << actual.flatHashes[index]
+                      << " expected=" << expected.flatHashes[index] << '\n';
+        }
+    }
     assert(actual.graphOwners == expected.graphOwners);
     assert(actual.ccOwners == expected.ccOwners);
     assert(actual.flatHashes == expected.flatHashes);

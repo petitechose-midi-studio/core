@@ -24,6 +24,7 @@
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
 #include "../support/ProjectControlTestUtils.hpp"
+#include "../support/SequencerHistoryTransactionAssertions.hpp"
 
 #if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
 #error "This test requires native EXTMEM failure injection"
@@ -64,9 +65,8 @@ uint64_t fingerprint(const T& value) {
 uint64_t fingerprintPattern(
     const core::state::sequencer::SequencerPatternState& pattern
 ) {
-    core::state::sequencer::SequencerPatternSnapshot snapshot{};
-    core::state::sequencer::captureSnapshot(pattern, snapshot);
-    uint64_t hash = fingerprint(snapshot);
+    uint64_t hash = test_support::sequencer_transaction::
+        flatPatternFingerprint(pattern);
     const uintptr_t graphOwner = reinterpret_cast<uintptr_t>(
         pattern.graph.get()
     );
@@ -344,7 +344,32 @@ void runFailureMatrix(Prepare&& prepare, Execute&& execute) {
             assert(result.status == Status::AllocationUnavailable);
             assert(!result.settled());
             assert(core::app::testing::extmemAllocationAttempt == ordinal);
-            assert(captureFailureProof(state) == before);
+            const FailureProof after = captureFailureProof(state);
+            if (!(after == before)) {
+                std::cerr
+                    << "failure proof drift count=" << AllocationCount
+                    << " ordinal=" << ordinal
+                    << " macro=" << (after.macroTracks != before.macroTracks)
+                    << " control=" << (after.control != before.control)
+                    << " manual=" << (after.manual != before.manual)
+                    << " sequencer=" << (after.sequencer != before.sequencer)
+                    << " projectTracks="
+                    << (after.projectTracks != before.projectTracks)
+                    << " config="
+                    << (after.configRevision != before.configRevision)
+                    << " controlRevision="
+                    << (after.controlRevision != before.controlRevision)
+                    << " modified="
+                    << (after.modifiedCounter != before.modifiedCounter)
+                    << " sharedMask="
+                    << static_cast<unsigned>(after.sharedMask) << '/'
+                    << static_cast<unsigned>(before.sharedMask)
+                    << " sharedActive="
+                    << static_cast<unsigned>(after.sharedActive) << '/'
+                    << static_cast<unsigned>(before.sharedActive)
+                    << '\n';
+            }
+            assert(after == before);
         }
         assert(core::app::testing::extmemAllocationAttempt == 0U);
         settle(state);

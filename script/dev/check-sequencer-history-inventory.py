@@ -27,18 +27,18 @@ CANONICAL_RECORDING_METHODS = (
     "recordPreparedStructure",
 )
 ENTRY_RECORDING_CALL_TOTAL = 44
-EXPECTED_MIGRATED_REMOVAL_TOTAL = 15
+EXPECTED_MIGRATED_REMOVAL_TOTAL = 19
 EXPECTED_PROVIDER_FORWARD_TOTAL = 5
 EXPECTED_COALESCED_PREPARED_TOTAL = 1
-EXPECTED_MEMBER_DISPATCH_TOTAL = 27
-EXPECTED_CORE_STATE_ADAPTER_TOTAL = 1
+EXPECTED_MEMBER_DISPATCH_TOTAL = 24
+EXPECTED_CORE_STATE_ADAPTER_TOTAL = 0
 EXPECTED_INTERNAL_FORWARD_TOTAL = 7
-EXPECTED_RECORDING_CALL_TOTAL = 35
-EXPECTED_SINK_TOTAL = 7
-EXPECTED_SERVICE_ADAPTER_TOTAL = 20
+EXPECTED_RECORDING_CALL_TOTAL = 31
+EXPECTED_SINK_TOTAL = 6
+EXPECTED_SERVICE_ADAPTER_TOTAL = 18
 EXPECTED_SINK_CLASSIFICATIONS = {
     "post-fallible": 2,
-    "prepared": 5,
+    "prepared": 4,
     "rollback-aware": 0,
 }
 PREPARED_PATTERN_LIFECYCLE_METHODS = (
@@ -184,6 +184,9 @@ PREPARED_FULL_BANK_PROVIDER_ANCHORS = {
 
 PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH = (
     "src/handler/sequencer/SequencerPreparedTrackStructureTransaction.cpp"
+)
+SEQUENCER_TRACK_TRANSFER_TRANSACTION_PATH = (
+    "src/handler/sequencer/SequencerStructureTrackTransferTransaction.cpp"
 )
 PREPARED_TRACK_STRUCTURE_SERVICE_HEADER = (
     "src/handler/sequencer/SequencerHistoryDomainServices.hpp"
@@ -719,20 +722,20 @@ def manifest_errors(manifest) -> list[str]:
             f"member manifest total is {member_total}, expected {members.get('expectedTotal')}"
         )
     if members.get("expectedTotal") != EXPECTED_MEMBER_DISPATCH_TOTAL:
-        errors.append("member-dispatch total must remain 27 after L-R08-07 slice 6")
+        errors.append("member-dispatch total must remain 24 after L-R08-07 slice 7")
     if sink_total != members.get("expectedSinkTotal"):
         errors.append(
             f"sink manifest total is {sink_total}, expected {members.get('expectedSinkTotal')}"
         )
     if members.get("expectedSinkTotal") != EXPECTED_SINK_TOTAL:
-        errors.append("mutation-sink total must remain 7 after L-R08-07 slice 6")
+        errors.append("mutation-sink total must remain 6 after L-R08-07 slice 7")
     if service_total != members.get("expectedServiceAdapterTotal"):
         errors.append(
             "service/adapter manifest total is "
             f"{service_total}, expected {members.get('expectedServiceAdapterTotal')}"
         )
     if members.get("expectedServiceAdapterTotal") != EXPECTED_SERVICE_ADAPTER_TOTAL:
-        errors.append("service/adapter total must remain 20 after L-R08-05")
+        errors.append("service/adapter total must remain 18 after L-R08-07 slice 7")
     expected_classifications = Counter(members.get("expectedSinkClassifications", {}))
     if classifications != expected_classifications:
         errors.append(
@@ -740,7 +743,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {dict(expected_classifications)}, observed {dict(classifications)}"
         )
     if dict(expected_classifications) != EXPECTED_SINK_CLASSIFICATIONS:
-        errors.append("sink classifications must remain 2 post-fallible, 5 prepared and 0 rollback-aware")
+        errors.append("sink classifications must remain 2 post-fallible, 4 prepared and 0 rollback-aware")
 
     forwards = boundary.get("internalForwards", {})
     forward_groups = forwards.get("groups", [])
@@ -774,7 +777,7 @@ def manifest_errors(manifest) -> list[str]:
     if boundary.get("entryRecordingCallTotal") != ENTRY_RECORDING_CALL_TOTAL:
         errors.append("entry recording-call total must remain 44")
     if boundary.get("expectedMigratedRemovalTotal") != EXPECTED_MIGRATED_REMOVAL_TOTAL:
-        errors.append("migrated recording-call removal total must remain 15")
+        errors.append("migrated recording-call removal total must remain 19")
     if boundary.get("expectedProviderForwardTotal") != EXPECTED_PROVIDER_FORWARD_TOTAL:
         errors.append("expected provider-forward total must remain 5")
     if provider_forward_total != EXPECTED_PROVIDER_FORWARD_TOTAL:
@@ -792,7 +795,7 @@ def manifest_errors(manifest) -> list[str]:
 
     adapter = boundary.get("coreStateAdapter", {})
     if adapter.get("expectedCount") != EXPECTED_CORE_STATE_ADAPTER_TOTAL:
-        errors.append("CoreState adapter total must remain 1")
+        errors.append("CoreState adapter total must remain 0")
     recording_total = (
         members.get("expectedTotal", 0)
         + forwards.get("expectedTotal", 0)
@@ -804,7 +807,7 @@ def manifest_errors(manifest) -> list[str]:
             f"expected {boundary.get('expectedTotal')}"
         )
     if boundary.get("expectedTotal") != EXPECTED_RECORDING_CALL_TOTAL:
-        errors.append("recording boundary total must remain 35 after L-R08-07 slice 6")
+        errors.append("recording boundary total must remain 31 after L-R08-07 slice 7")
     if recording_total != (
         ENTRY_RECORDING_CALL_TOTAL -
         EXPECTED_MIGRATED_REMOVAL_TOTAL +
@@ -812,7 +815,7 @@ def manifest_errors(manifest) -> list[str]:
         coalesced_prepared_total
     ):
         errors.append(
-            "recording boundary must equal the 44-call entry minus fourteen "
+            "recording boundary must equal the 44-call entry minus nineteen "
             "migrated calls plus five provider forwards and one prepared "
             "coalesced boundary"
         )
@@ -1177,10 +1180,14 @@ def manifest_errors(manifest) -> list[str]:
             (group.get("path"), group.get("count"))
             for group in admission_dispatch.get("groups", [])
         )
+        expected_admission_groups = (
+            (PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH, 2),
+            (SEQUENCER_TRACK_TRANSFER_TRANSACTION_PATH, 2),
+        )
         if admission_dispatch.get("path") != "src" or \
-                admission_dispatch.get("expectedTotal") != 2 or \
-                admission_groups != ((PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH, 2),):
-            errors.append("prepared Track Structure admission calls must remain transaction-only 2")
+                admission_dispatch.get("expectedTotal") != 4 or \
+                admission_groups != expected_admission_groups:
+            errors.append("prepared Track Structure admission calls must remain exact 4")
 
         trusted = track_structure.get("trustedCommit", {})
         if trusted.get("method") != PREPARED_TRACK_STRUCTURE_TRUSTED_METHOD:
@@ -1194,11 +1201,12 @@ def manifest_errors(manifest) -> list[str]:
             (PREPARED_TRACK_STRUCTURE_TRANSACTION_PATH, 1),
             (PREPARED_TRACK_STRUCTURE_SERVICE_SOURCE, 1),
             (PREPARED_TRACK_STRUCTURE_CORE_SOURCE, 1),
+            (SEQUENCER_TRACK_TRANSFER_TRANSACTION_PATH, 1),
         )
         if trusted_dispatch.get("path") != "src" or \
-                trusted_dispatch.get("expectedTotal") != 3 or \
+                trusted_dispatch.get("expectedTotal") != 4 or \
                 trusted_groups != expected_trusted_groups:
-            errors.append("prepared Track Structure trusted member dispatch must remain exact 3")
+            errors.append("prepared Track Structure trusted member dispatch must remain exact 4")
 
         state_declaration = trusted.get("stateDeclaration", {})
         if state_declaration.get("path") != \
@@ -2722,6 +2730,14 @@ def prepared_track_structure_lifecycle_self_test(manifest) -> bool:
             "  commitAdmittedStructure();\n"
             "}\n",
         )
+        write(
+            SEQUENCER_TRACK_TRANSFER_TRANSACTION_PATH,
+            "void commitPreparedSequencerTrackTransfer() {\n"
+            "  history.canCommitAdmittedStructure();\n"
+            "  prepared.history.canCommitAdmittedStructure();\n"
+            "  history.commitAdmittedStructure();\n"
+            "}\n",
+        )
         admission, trusted, forbidden = (
             collect_prepared_track_structure_observation(root, manifest)
         )
@@ -2894,8 +2910,8 @@ def run_self_tests(manifest) -> list[str]:
     removal_drift = copy.deepcopy(manifest)
     removal_drift["recordingBoundary"]["expectedMigratedRemovalTotal"] -= 1
     removal_errors = manifest_errors(removal_drift)
-    if not any("removal total must remain 15" in error for error in removal_errors):
-        failures.append("L-R08-07 slice-6 migrated-removal drift was not rejected")
+    if not any("removal total must remain 19" in error for error in removal_errors):
+        failures.append("L-R08-07 slice-7 migrated-removal drift was not rejected")
 
     if not scanner_self_test(manifest):
         failures.append("source scanner/sanitizer fixture was not classified exactly")

@@ -26,6 +26,7 @@ COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*MacroDirectTrackStructureTransaction.cpp.o(.text* .rodata*)",
     "*SequencerPreparedTrackStructurePlanValidation.cpp.o(.text* .rodata*)",
     "*SequencerPreparedTrackStructureTransaction.cpp.o(.text* .rodata*)",
+    "*SequencerStructureTrackTransferTransaction.cpp.o(.text* .rodata*)",
     "*SharedTrackDomainServices.cpp.o(.text* .rodata*)",
     "*SequencerHistory.cpp.o(.text* .rodata*)",
     "*SequencerStructureHistory.cpp.o(.text* .rodata*)",
@@ -216,6 +217,18 @@ DIRECT_TRACK_STRUCTURE_TRANSACTION = (
 )
 DIRECT_TRACK_STRUCTURE_TRANSACTION_HEADER = (
     "src/handler/sequencer/SequencerDirectTrackStructureTransaction.hpp"
+)
+TRACK_TRANSFER_TRANSACTION = (
+    "src/handler/sequencer/SequencerStructureTrackTransferTransaction.cpp"
+)
+TRACK_TRANSFER_TRANSACTION_HEADER = (
+    "src/handler/sequencer/SequencerStructureTrackTransferTransaction.hpp"
+)
+SEQUENCER_HISTORY_DOMAIN_SERVICES = (
+    "src/handler/sequencer/SequencerHistoryDomainServices.cpp"
+)
+SEQUENCER_HISTORY_DOMAIN_SERVICES_HEADER = (
+    "src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 )
 SHARED_TRACK_DOMAIN_SERVICES_HEADER = (
     "src/handler/common/SharedTrackDomainServices.hpp"
@@ -1545,6 +1558,222 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
             r"\bexecuteSequencerPreparedPageStructureMutationPlan\s*\(",
             f"{function} must execute exactly one prepared plan",
         )
+
+    require(
+        TRACK_TRANSFER_TRANSACTION_HEADER,
+        r"SequencerTrackStructureChronologyResult\s+chronology\s*\{\s*\}\s*;",
+        "Track transfer result and prepared owner must expose chronology",
+        count=2,
+    )
+    require(
+        TRACK_TRANSFER_TRANSACTION_HEADER,
+        r"PreparedTrackStructureSettlementCheckpoint\s+settlementCheckpoint\s*"
+        r"\{\s*\}\s*;\s*uint64_t\s+clipboardPayloadFingerprint\s*=\s*0U\s*;",
+        "prepared Track transfer must own settlement and deep clipboard guards",
+    )
+    require(
+        TRACK_TRANSFER_TRANSACTION_HEADER,
+        r"sizeof\s*\(\s*void\s*\*\s*\)\s*!=\s*4U\s*\|\|\s*"
+        r"sizeof\s*\(\s*PreparedSequencerTrackTransfer\s*\)\s*<=\s*512U",
+        "prepared Track transfer owner must retain its ARM hard ceiling",
+    )
+    require(
+        TRACK_TRANSFER_TRANSACTION_HEADER,
+        r"commitPreparedSequencerTrackTransfer\s*\(.*?"
+        r"PreparedSequencerTrackTransfer\s*&&\s*prepared\s*,",
+        "prepared Track transfer commit must not duplicate its owner on the ARM stack",
+    )
+    require_in_function(
+        TRACK_TRANSFER_TRANSACTION,
+        "prepareSequencerTrackTransfer",
+        r"^\s*PreparedSequencerTrackTransfer\s+prepared\s*;\s*"
+        r"if\s*\(\s*sequencer\.stepContentDraft\.rejectTransitionIfActive\s*\(",
+        "Track transfer preparation must give Draft rejection first executable priority",
+    )
+    require_in_function(
+        TRACK_TRANSFER_TRANSACTION,
+        "prepareSequencerTrackTransfer",
+        r"buildSequencerTrackClipboardTransferPlan\s*\(.*?"
+        r"canPublishPreparedSequencerState\s*\(.*?"
+        r"openTrackStructureChronologyBoundary\s*\(.*?"
+        r"capturePreparedTrackStructureSettlementCheckpoint\s*\(.*?"
+        r"clipboardPayloadFingerprint\s*\(",
+        "Track transfer must validate intent/publication then own chronology and guards in order",
+    )
+    require_in_function(
+        TRACK_TRANSFER_TRANSACTION,
+        "prepareSequencerTrackTransfer",
+        r"\bopenTrackStructureChronologyBoundary\s*\(",
+        "Track transfer preparation must open exactly one chronology boundary",
+    )
+    require_in_function(
+        TRACK_TRANSFER_TRANSACTION,
+        "prepareSequencerTrackTransfer",
+        r"\bclipboardPayloadFingerprint\s*\(",
+        "Track transfer preparation must capture and revalidate its deep clipboard fingerprint",
+        count=2,
+    )
+    require(
+        TRACK_TRANSFER_TRANSACTION,
+        r"FLASHMEM\s+bool\s+prepareMacroStructureTransfer\s*\(.*?"
+        r"captureMacroTrackStructureHistoryBefore\s*\(\s*"
+        r"pages\s*,\s*prepared\.plan\.targetMask\s*,\s*\*prepared\.history\s*\)",
+        "Macro transfer history must capture the exact destination mask",
+    )
+    require_in_function(
+        TRACK_TRANSFER_TRANSACTION,
+        "prepareSequencerTrackTransfer",
+        r"\bhistory\.canCommitAdmittedStructure\s*\(",
+        "prepared Track transfer must perform one initial History admission",
+    )
+    require_in_function(
+        TRACK_TRANSFER_TRANSACTION,
+        "commitPreparedSequencerTrackTransfer",
+        r"clipboardPayloadFingerprint\s*\(.*?"
+        r"liveHistoryStructureSnapshotMatches\s*\(.*?"
+        r"preparedTrackStructureSettlementCheckpointMatches\s*\(",
+        "Track transfer commit must revalidate payload, musical state and settlement",
+    )
+    require_in_function(
+        TRACK_TRANSFER_TRANSACTION,
+        "commitPreparedSequencerTrackTransfer",
+        r"canPublishPreparedSequencerState\s*\(.*?"
+        r"history\.canCommitAdmittedStructure\s*\(.*?"
+        r"activationQueue->armPrepared\s*\(",
+        "Track transfer commit must repeat publication and History admission before activation arm",
+    )
+    require_in_function(
+        TRACK_TRANSFER_TRANSACTION,
+        "commitPreparedSequencerTrackTransfer",
+        r"\bhistory\.canCommitAdmittedStructure\s*\(",
+        "prepared Track transfer must repeat History admission exactly once",
+    )
+    require_in_function(
+        TRACK_TRANSFER_TRANSACTION,
+        "commitPreparedSequencerTrackTransfer",
+        r"commitAdmittedMacroTrackStructureHistoryAfter\s*\(.*?"
+        r"installTrackContentSnapshotWithOwnedPayload\s*\(.*?"
+        r"installTrackContentSnapshotToEditorWithOwnedPayload\s*\(.*?"
+        r"publishPreparedSequencerState\s*\(.*?"
+        r"reconcilePreparedMacroTrackTransfer\s*\(.*?"
+        r"history\.commitAdmittedStructure\s*\(.*?"
+        r"activationQueue->publishPrepared\s*\(.*?"
+        r"resultFromPrepared\s*\(\s*SequencerTrackTransferStatus::APPLIED",
+        "armed Track transfer tail must publish Macro, musical, shared, History and activation state in order",
+    )
+    transfer_commit_bodies = function_bodies(
+        TRACK_TRANSFER_TRANSACTION,
+        "commitPreparedSequencerTrackTransfer",
+    )
+    if len(transfer_commit_bodies) == 1:
+        arm_gate = re.search(
+            r"if\s*\(\s*prepared\.activationQueue\s*!=\s*nullptr\s*&&\s*"
+            r"!prepared\.activationQueue->armPrepared\s*\(\s*"
+            r"prepared\.activationBatch\s*\)\s*\)\s*\{\s*"
+            r"return\s+resultFromPrepared\s*\(\s*"
+            r"SequencerTrackTransferStatus::STALE\s*,\s*prepared\s*\)\s*;\s*\}",
+            transfer_commit_bodies[0],
+            flags=re.DOTALL,
+        )
+        if arm_gate is None:
+            errors.append(
+                f"{TRACK_TRANSFER_TRANSACTION}: activation arm must remain the "
+                "ultimate recoverable Track transfer gate"
+            )
+        else:
+            armed_tail = transfer_commit_bodies[0][arm_gate.end():]
+            forbidden_armed_tail = (
+                r"\bclipboardPayloadFingerprint\s*\(",
+                r"\bsourcePayload\s*\(",
+                r"\bbuildSequencerTrackClipboardTransferPlan\s*\(",
+                r"\bcan(?:CommitAdmittedStructure|PublishPreparedSequencerState)\s*\(",
+                r"\b(?:capture|clone|prepare)Sequencer[A-Za-z0-9_]*\s*\(",
+                r"\bprepareMacroStructureTransfer\s*\(",
+                r"\b(?:make|tryMake)Extmem[A-Za-z0-9_]*\s*\(",
+                r"\brollback[A-Za-z0-9_]*\s*\(",
+                r"resultFromPrepared\s*\(\s*SequencerTrackTransferStatus::"
+                r"(?!APPLIED\b)",
+            )
+            for forbidden in forbidden_armed_tail:
+                if re.search(forbidden, armed_tail, flags=re.DOTALL):
+                    errors.append(
+                        f"{TRACK_TRANSFER_TRANSACTION}: armed Track transfer tail "
+                        f"restored a recoverable/fallible path matching {forbidden}"
+                    )
+    require_in_function(
+        TRACK_TRANSFER_TRANSACTION,
+        "executeSequencerTrackTransfer",
+        r"prepareSequencerTrackTransfer\s*\(.*?"
+        r"commitPreparedSequencerTrackTransfer\s*\(",
+        "public Track transfer wrapper must prepare then commit exactly once",
+    )
+    require(
+        TRACK_TRANSFER_TRANSACTION,
+        r"\b(?:recordStructure|recordPreparedStructure|"
+        r"applyMacroTrackStructureHistory|rollback[A-Za-z0-9_]*)\s*\(",
+        "Track transfer must not restore raw recording, fallible replay or rollback",
+        count=0,
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::commitTrackPaste",
+        r"\bexecuteSequencerTrackTransfer\s*\(",
+        "Sequencer Track Paste must delegate exactly once to the transfer transaction",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::commitTrackPaste",
+        r"\bresult\.applied\s*\(",
+        "Sequencer Track Paste must consume the typed transfer result",
+    )
+    require_in_function(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "SequencerStructureEditWorkflow::commitTrackPaste",
+        r"\b(?:commitCoalescedPatternEditOutcome|commitPatternHistoryBarrier)\s*\(",
+        "Sequencer Track Paste caller must not own chronology",
+        count=0,
+    )
+    require_in_function(
+        MACRO_STRUCTURE_DOMAIN_SERVICES,
+        "MacroStructureDomainServices::pasteTrackSelection",
+        r"\bexecuteSequencerTrackTransfer\s*\(",
+        "Macro Track Selection Paste must delegate exactly once to the transfer transaction",
+    )
+    require_in_function(
+        MACRO_STRUCTURE_DOMAIN_SERVICES,
+        "MacroStructureDomainServices::pasteTrackSelection",
+        r"\bresult\.applied\s*\(",
+        "Macro Track Selection Paste must consume the typed transfer result",
+    )
+    require(
+        SEQUENCER_HISTORY_DOMAIN_SERVICES_HEADER,
+        r"\brecordPreparedStructure\b",
+        "History facade must not restore the raw prepared Structure adapter",
+        count=0,
+    )
+    require(
+        SEQUENCER_HISTORY_DOMAIN_SERVICES,
+        r"\brecordPreparedStructure\b",
+        "History facade implementation must not restore the raw prepared Structure adapter",
+        count=0,
+    )
+    require(
+        CORE_STATE_HEADER,
+        r"\brecordPreparedSequencerStructureHistory\b",
+        "CoreState must not restore the raw prepared Structure recording adapter",
+        count=0,
+    )
+    require(
+        CORE_SEQUENCER_HISTORY_RECORDING,
+        r"\brecordPreparedSequencerStructureHistory\b",
+        "CoreState recording implementation must not restore the raw prepared Structure adapter",
+        count=0,
+    )
+    require_across_files(
+        r"\bapplyMacroTrackStructureHistory\s*\(",
+        "legacy fallible Macro Track Structure replay must remain removed",
+        count=0,
+    )
 
     require_in_function(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
@@ -4554,6 +4783,55 @@ def self_test() -> int:
         "    (void)duplicate_history.commitCoalescedPatternEditOutcome();\n"
         "    constexpr auto action = Action::StepPaste;",
     )
+    transfer_wrong_macro_mask = mutate(
+        TRACK_TRANSFER_TRANSACTION,
+        "                prepared.plan.targetMask,\n"
+        "                *prepared.history",
+        "                prepared.historyMask,\n"
+        "                *prepared.history",
+    )
+    transfer_owner_passed_by_value = mutate(
+        TRACK_TRANSFER_TRANSACTION_HEADER,
+        "    PreparedSequencerTrackTransfer&& prepared,",
+        "    PreparedSequencerTrackTransfer prepared,",
+    )
+    transfer_missing_fingerprint_recheck = mutate(
+        TRACK_TRANSFER_TRANSACTION,
+        "    if (prepared.clipboardPayloadFingerprint !=\n"
+        "            clipboardPayloadFingerprint(clipboard, prepared.plan)) {",
+        "    if (false) {",
+    )
+    transfer_fallible_after_arm = mutate(
+        TRACK_TRANSFER_TRANSACTION,
+        "    // No recoverable branch, allocation or reconstructive rollback is allowed\n"
+        "    // beyond the atomic activation arm.\n"
+        "    if (macroStructure != nullptr) {",
+        "    // No recoverable branch, allocation or reconstructive rollback is allowed\n"
+        "    // beyond the atomic activation arm.\n"
+        "    if (!sharedTracks.canPublishPreparedSequencerState()) {\n"
+        "        return resultFromPrepared(\n"
+        "            SequencerTrackTransferStatus::PUBLICATION_UNAVAILABLE, prepared);\n"
+        "    }\n"
+        "    if (macroStructure != nullptr) {",
+    )
+    restored_track_paste_caller_chronology = mutate(
+        PAGE_STRUCTURE_EDIT_WORKFLOW,
+        "    const auto result = executeSequencerTrackTransfer(\n",
+        "    (void)history_.commitCoalescedPatternEditOutcome();\n\n"
+        "    const auto result = executeSequencerTrackTransfer(\n",
+    )
+    duplicate_macro_transfer_dispatch = mutate(
+        MACRO_STRUCTURE_DOMAIN_SERVICES,
+        "    if (core_state_ == nullptr) return false;\n"
+        "    const auto result = executeSequencerTrackTransfer(\n",
+        "    if (core_state_ == nullptr) return false;\n"
+        "    (void)executeSequencerTrackTransfer();\n"
+        "    const auto result = executeSequencerTrackTransfer(\n",
+    )
+    restored_raw_structure_adapter = dict(step_draft_fixture)
+    restored_raw_structure_adapter[SEQUENCER_HISTORY_DOMAIN_SERVICES_HEADER] += (
+        "\nvoid injectedRawStructureAdapter() { recordPreparedStructure(); }\n"
+    )
     checks = (
         (
             not extmem_lifetime_contract_errors(extmem_fixture),
@@ -4688,6 +4966,60 @@ def self_test() -> int:
         (
             not step_draft_transition_contract_errors(step_draft_fixture),
             "valid Step-draft transition contract is accepted",
+        ),
+        (
+            transfer_wrong_macro_mask[TRACK_TRANSFER_TRANSACTION]
+            != step_draft_fixture[TRACK_TRANSFER_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                transfer_wrong_macro_mask
+            )),
+            "Track transfer Macro capture widening is rejected",
+        ),
+        (
+            transfer_owner_passed_by_value[TRACK_TRANSFER_TRANSACTION_HEADER]
+            != step_draft_fixture[TRACK_TRANSFER_TRANSACTION_HEADER]
+            and bool(step_draft_transition_contract_errors(
+                transfer_owner_passed_by_value
+            )),
+            "Track transfer by-value owner stack duplication is rejected",
+        ),
+        (
+            transfer_missing_fingerprint_recheck[TRACK_TRANSFER_TRANSACTION]
+            != step_draft_fixture[TRACK_TRANSFER_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                transfer_missing_fingerprint_recheck
+            )),
+            "Track transfer clipboard revalidation removal is rejected",
+        ),
+        (
+            transfer_fallible_after_arm[TRACK_TRANSFER_TRANSACTION]
+            != step_draft_fixture[TRACK_TRANSFER_TRANSACTION]
+            and bool(step_draft_transition_contract_errors(
+                transfer_fallible_after_arm
+            )),
+            "fallible Track transfer work after activation arm is rejected",
+        ),
+        (
+            restored_track_paste_caller_chronology[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            != step_draft_fixture[PAGE_STRUCTURE_EDIT_WORKFLOW]
+            and bool(step_draft_transition_contract_errors(
+                restored_track_paste_caller_chronology
+            )),
+            "restored caller-owned Track Paste chronology is rejected",
+        ),
+        (
+            duplicate_macro_transfer_dispatch[MACRO_STRUCTURE_DOMAIN_SERVICES]
+            != step_draft_fixture[MACRO_STRUCTURE_DOMAIN_SERVICES]
+            and bool(step_draft_transition_contract_errors(
+                duplicate_macro_transfer_dispatch
+            )),
+            "duplicate Macro Track transfer dispatch is rejected",
+        ),
+        (
+            bool(step_draft_transition_contract_errors(
+                restored_raw_structure_adapter
+            )),
+            "restored raw prepared Structure adapter is rejected",
         ),
         (
             miswired_create_action[DIRECT_TRACK_STRUCTURE_TRANSACTION]
