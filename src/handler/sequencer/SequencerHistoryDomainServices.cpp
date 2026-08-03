@@ -55,10 +55,11 @@ FLASHMEM void commitAdmittedStructureFromCoreState(
         ->commitAdmittedSequencerStructureHistory(std::move(change));
 }
 
-FLASHMEM bool beginCoalescedPatternEditFromCoreState(
+FLASHMEM core::state::sequencer::SequencerHistoryOpenOutcome beginCoalescedPatternEditFromCoreState(
     void* context, uint8_t step, core::state::sequencer::StepProperty property, uint32_t nowMs,
     core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan, bool stateProperty) {
-    if (context == nullptr) { return false; }
+    using Outcome = core::state::sequencer::SequencerHistoryOpenOutcome;
+    if (context == nullptr) return Outcome::HistoryUnavailable;
 
     auto* state = static_cast<core::state::CoreState*>(context);
     return state->beginOrContinueSequencerPatternHistoryCoalescing(step, property, nowMs,
@@ -72,10 +73,12 @@ FLASHMEM bool sealCoalescedPatternEditFromCoreState(void* context, bool mutation
         mutationChanged);
 }
 
-FLASHMEM bool beginCoalescedCcLaneEventEditFromCoreState(
+FLASHMEM core::state::sequencer::SequencerHistoryOpenOutcome
+beginCoalescedCcLaneEventEditFromCoreState(
     void* context, uint8_t lane, uint8_t step, int32_t beforeValue, int32_t afterValue,
     const core::state::sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs) {
-    if (context == nullptr) return false;
+    using Outcome = core::state::sequencer::SequencerHistoryOpenOutcome;
+    if (context == nullptr) return Outcome::HistoryUnavailable;
     return static_cast<core::state::CoreState*>(context)
         ->beginOrContinueSequencerCcLaneEventHistoryCoalescing(lane, step, beforeValue, afterValue,
                                                                afterBank, nowMs);
@@ -103,7 +106,7 @@ beginPreparedPatternEditFromCoreState(
     core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
     core::state::sequencer::SequencerHistoryDescriptor descriptor, bool compactGraphOnSeal) {
     using Outcome = core::state::sequencer::SequencerPreparedPatternEditBeginOutcome;
-    if (context == nullptr) return Outcome::Failed;
+    if (context == nullptr) return Outcome::HistoryUnavailable;
     return static_cast<core::state::CoreState*>(context)
         ->beginOrContinueSequencerPreparedPatternEdit(owner, key, payloadPlan, descriptor,
                                                       compactGraphOnSeal);
@@ -248,13 +251,16 @@ FLASHMEM void SequencerHistoryDomainServices::commitAdmittedStructure(
     operations_->commitAdmittedStructure(context_, std::move(change));
 }
 
-FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedPatternEdit(
+FLASHMEM core::state::sequencer::SequencerHistoryOpenOutcome
+SequencerHistoryDomainServices::beginCoalescedPatternEdit(
     uint8_t step, core::state::sequencer::StepProperty property, uint32_t nowMs,
     core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
     bool stateProperty) const {
-    return operations_->beginCoalescedPatternEdit != nullptr &&
-           operations_->beginCoalescedPatternEdit(context_, step, property, nowMs, payloadPlan,
-                                                  stateProperty);
+    using Outcome = core::state::sequencer::SequencerHistoryOpenOutcome;
+    return operations_->beginCoalescedPatternEdit != nullptr
+               ? operations_->beginCoalescedPatternEdit(context_, step, property, nowMs, payloadPlan,
+                                                  stateProperty)
+               : Outcome::HistoryUnavailable;
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::sealCoalescedPatternEdit(bool mutationChanged) const {
@@ -262,12 +268,15 @@ FLASHMEM bool SequencerHistoryDomainServices::sealCoalescedPatternEdit(bool muta
            operations_->sealCoalescedPatternEdit(context_, mutationChanged);
 }
 
-FLASHMEM bool SequencerHistoryDomainServices::beginCoalescedCcLaneEventEdit(
+FLASHMEM core::state::sequencer::SequencerHistoryOpenOutcome
+SequencerHistoryDomainServices::beginCoalescedCcLaneEventEdit(
     uint8_t lane, uint8_t step, int32_t beforeValue, int32_t afterValue,
     const core::state::sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs) const {
-    return operations_->beginCoalescedCcLaneEventEdit != nullptr &&
-           operations_->beginCoalescedCcLaneEventEdit(context_, lane, step, beforeValue, afterValue,
-                                                      afterBank, nowMs);
+    using Outcome = core::state::sequencer::SequencerHistoryOpenOutcome;
+    return operations_->beginCoalescedCcLaneEventEdit != nullptr
+               ? operations_->beginCoalescedCcLaneEventEdit(context_, lane, step, beforeValue, afterValue,
+                                                      afterBank, nowMs)
+               : Outcome::HistoryUnavailable;
 }
 
 FLASHMEM core::state::sequencer::SequencerPatternHistoryCommitOutcome
@@ -294,7 +303,7 @@ SequencerHistoryDomainServices::beginPreparedPatternEdit(
     return operations_->beginPreparedPatternEdit != nullptr
                ? operations_->beginPreparedPatternEdit(context_, owner, key, payloadPlan,
                                                        descriptor, compactGraphOnSeal)
-               : Outcome::Failed;
+               : Outcome::HistoryUnavailable;
 }
 
 FLASHMEM bool SequencerHistoryDomainServices::preparedPatternEditReady(

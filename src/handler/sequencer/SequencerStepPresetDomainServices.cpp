@@ -766,7 +766,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     auto buffer = makeStepPresetBuffer();
     auto preset = core::app::makeExtmemUnique<SequencerStepGraphPreset>();
     if (!buffer || !preset) {
-        result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
+        result.status = SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::RESOURCE_EXHAUSTED;
         return result;
     }
@@ -817,23 +817,34 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
         !core::state::sequencer::captureHistorySnapshot(state_->sequencer, change->before) ||
         !core::state::sequencer::reserveHistorySnapshotGraphStorage(change->after) ||
         !core::state::sequencer::copyPatternState(staged->pattern, state_->sequencer.pattern)) {
-        result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
+        result.status = SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE;
         result.assetStatus = SequencerGraphAssetStatus::RESOURCE_EXHAUSTED;
         return result;
     }
     copyEditorContextForStaging(*staged, state_->sequencer);
 
     core::state::sequencer::SequencerGraphAssetReport applyReport{};
+    // The generic graph-copy primitive reports a false return for both graph
+    // capacity and first-owner allocation failures. Reserve that owner here so
+    // this publication boundary can preserve the actionable D-OOM reason.
+    if (core::state::sequencer::graphView(staged->pattern) == nullptr &&
+        !core::state::sequencer::ensureGraphRoot(staged->pattern)) {
+        result.status = SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE;
+        result.assetStatus = SequencerGraphAssetStatus::RESOURCE_EXHAUSTED;
+        return result;
+    }
     const bool applied = core::state::sequencer::applyStepGraphPreset(*staged, target.stepIndex,
                                                                       *preset, &applyReport);
     result.assetStatus = applyReport.status;
     if (!applied) {
-        result.status = statusFromAsset(applyReport.status);
+        result.status = applyReport.status == SequencerGraphAssetStatus::RESOURCE_EXHAUSTED
+                            ? SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE
+                            : statusFromAsset(applyReport.status);
         return result;
     }
 
     if (!core::state::sequencer::captureHistorySnapshotUsingReservedGraph(*staged, change->after)) {
-        result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
+        result.status = SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE;
         result.assetStatus = SequencerGraphAssetStatus::RESOURCE_EXHAUSTED;
         return result;
     }
@@ -856,7 +867,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> bankGraph;
     if (!core::state::cloneSequencerGraph(bankGraph,
                                           core::state::sequencer::graphView(staged->pattern))) {
-        result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
+        result.status = SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE;
         result.assetStatus = SequencerGraphAssetStatus::RESOURCE_EXHAUSTED;
         return result;
     }
@@ -876,7 +887,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
         core::state::sequencer::activationHistoryRef(activationBatch);
     change->auxiliary.activation.targetAudibleMask = targetAudibleMask;
     if (!state_->sequencerHistory.canRecordPattern(*change)) {
-        result.status = SequencerStepPresetStatus::FAILED;
+        result.status = SequencerStepPresetStatus::HISTORY_UNAVAILABLE;
         return result;
     }
 

@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <config/PlatformCompat.hpp>
+#include <oc/time/Time.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
@@ -28,7 +29,7 @@ FLASHMEM bool openForStep(core::state::sequencer::SequencerState& sequencer,
                           oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                           uint8_t step) {
     if (step >= core::state::sequencer::activeContentLength(sequencer)) { return false; }
-    if (!commitHistory(history)) return false;
+    if (!commitHistory(sequencer, history)) return false;
 
     sequencer.focusedStep.set(step);
     sequencer.page.set(core::state::sequencer::activeContentPageForStep(step));
@@ -42,15 +43,25 @@ FLASHMEM bool openForStep(core::state::sequencer::SequencerState& sequencer,
     return true;
 }
 
-FLASHMEM bool commitHistory(SequencerHistoryDomainServices& history) {
+FLASHMEM bool commitHistory(core::state::sequencer::SequencerState& sequencer,
+                            SequencerHistoryDomainServices& history) {
     const auto familyOutcome = history.commitPreparedPatternEdit(
         core::state::sequencer::SequencerPreparedPatternEditOwner::StepEditSession);
     if (familyOutcome ==
         core::state::sequencer::SequencerPreparedPatternEditCommitOutcome::Failed) {
+        sequencer.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+            oc::time::millis());
         return false;
     }
-    return history.commitCoalescedPatternEditOutcome() !=
-           core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed;
+    if (history.commitCoalescedPatternEditOutcome() ==
+        core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        sequencer.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+            oc::time::millis());
+        return false;
+    }
+    return true;
 }
 
 FLASHMEM bool retargetRootStep(core::state::sequencer::SequencerState& sequencer,
@@ -69,7 +80,7 @@ FLASHMEM bool retargetRootStep(core::state::sequencer::SequencerState& sequencer
 
     // Close both history aggregation layers before changing the target.  The
     // next snapshot therefore cannot absorb edits from the previous Step.
-    if (!commitHistory(history)) return false;
+    if (!commitHistory(sequencer, history)) return false;
 
     auto& edit = sequencer.stepEdit;
     edit.contextHold.clear();
@@ -93,7 +104,7 @@ FLASHMEM bool backToParentContent(core::state::sequencer::SequencerState& sequen
                 : step_edit_rows::CYCLE_STATES;
     }
 
-    if (!commitHistory(history)) return false;
+    if (!commitHistory(sequencer, history)) return false;
     if (!core::state::sequencer::leaveContentView(sequencer)) return false;
 
     auto& edit = sequencer.stepEdit;
@@ -108,7 +119,7 @@ FLASHMEM bool close(core::state::sequencer::SequencerState& sequencer,
                     SequencerHistoryDomainServices& history,
                     ButtonReleaseLatch<2>& contextReleaseLatch,
                     oc::context::OverlayManager<core::ui::OverlayType>& overlays) {
-    if (!commitHistory(history)) return false;
+    if (!commitHistory(sequencer, history)) return false;
     contextReleaseLatch.clear();
     overlays.hide();
     sequencer.stepEdit.reset();

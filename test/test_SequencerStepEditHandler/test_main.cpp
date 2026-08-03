@@ -68,6 +68,15 @@ constexpr uint8_t CHORD_ROW = step_edit_rows::CHORD;
 constexpr uint8_t MICRO_SEQUENCE_ROW = step_edit_rows::MICRO_SEQUENCE;
 constexpr uint8_t CYCLE_STATES_ROW = step_edit_rows::CYCLE_STATES;
 
+void assertMemoryRejection(const core::state::CoreState& state, uint32_t expectedRevision) {
+    const auto& feedback = state.sequencer.historyFeedback;
+    assert(feedback.visible.get());
+    assert(feedback.revision.get() == expectedRevision);
+    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line2.data(), "Memory unavailable") == 0);
+    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
+}
+
 std::filesystem::path testRoot() {
     return std::filesystem::temp_directory_path() / "midi-studio-core-step-edit-handler-test";
 }
@@ -1606,6 +1615,7 @@ void test_step_edit_context_preflight_failures_are_atomic() {
         core::state::sequencer::SequencerHistoryPatternSnapshot musicalBefore;
         tx::captureMusicalSnapshot(h.state, musicalBefore);
         const auto invariantBefore = tx::captureStateInvariant(h.state);
+        const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
@@ -1624,6 +1634,7 @@ void test_step_edit_context_preflight_failures_are_atomic() {
         tx::assertMusicalSnapshot(h.state, musicalBefore);
         tx::assertStateInvariant(h.state, invariantBefore);
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assertMemoryRejection(h.state, feedbackRevisionBefore + 1U);
     }
 
     for (std::size_t ordinal = 1U; ordinal <= 4U; ++ordinal) {
@@ -1653,6 +1664,7 @@ void test_step_edit_context_preflight_failures_are_atomic() {
         core::state::sequencer::SequencerHistoryPatternSnapshot musicalBefore;
         tx::captureMusicalSnapshot(h.state, musicalBefore);
         const auto invariantBefore = tx::captureStateInvariant(h.state);
+        const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
@@ -1668,6 +1680,7 @@ void test_step_edit_context_preflight_failures_are_atomic() {
         tx::assertMusicalSnapshot(h.state, musicalBefore);
         tx::assertStateInvariant(h.state, invariantBefore);
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assertMemoryRejection(h.state, feedbackRevisionBefore + 1U);
     }
 
     std::cout << "[PASS] all context clear/paste preflight failures are atomic\n";
@@ -2792,9 +2805,10 @@ void test_blocked_preset_load_keeps_pending_history_coalescing() {
     assert(picker.step().descriptor.compatibility ==
            core::state::sequencer::SequencerStepPresetCompatibility::CORRUPT);
 
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+    assert(core::state::sequencer::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         0U, core::state::sequencer::StepProperty::NOTE, g_now_ms,
-        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly));
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly)));
     assert(h.state.sequencer.setStepNoteAt(0U, 72U));
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());

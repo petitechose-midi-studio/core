@@ -248,12 +248,14 @@ CoreState::applyPreparedProjectScaleChoice(
 
     if (commitSequencerPatternHistoryCoalescing_() ==
         SequencerPatternHistoryCommitOutcome::Failed) {
+        result.outcome = Outcome::HistoryUnavailable;
         return result;
     }
 
     if (sequencer.stepContentDraft.active.get()) {
         sequencer.stepContentDraft.noteBlockedTransition(
             sequencer::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD);
+        result.outcome = Outcome::Blocked;
         return result;
     }
 
@@ -272,16 +274,26 @@ CoreState::applyPreparedProjectScaleChoice(
     if (!change ||
         !sequencer::reservePreparedHistoryFullBankAfter(
             sequencerTracks, sequencer, *change)) {
+        result.outcome = Outcome::ResourceUnavailable;
         return result;
     }
 
     auto stagedBank = core::app::makeExtmemUnique<sequencer::SequencerTrackBankState>();
-    if (!stagedBank) return result;
+    if (!stagedBank) {
+        result.outcome = Outcome::ResourceUnavailable;
+        return result;
+    }
     auto stagedActive = core::app::makeExtmemUnique<sequencer::SequencerState>();
-    if (!stagedActive) return result;
+    if (!stagedActive) {
+        result.outcome = Outcome::ResourceUnavailable;
+        return result;
+    }
 
     if (!sequencer::populatePreparedHistoryFullBankStaging(
             sequencerTracks, sequencer, change->before, *stagedBank, *stagedActive)) {
+        // Source topology was validated above and the staging roots already
+        // exist. The remaining fallible work is payload cloning into PSRAM.
+        result.outcome = Outcome::ResourceUnavailable;
         return result;
     }
 
@@ -293,6 +305,7 @@ CoreState::applyPreparedProjectScaleChoice(
         !sequencerHistory.canRecordFullBank(*change) ||
         !preparedFullBankSourceTopologyMatches(
             sequencerTracks, sequencer, change->before)) {
+        result.outcome = stagedMutation.changed ? Outcome::HistoryUnavailable : Outcome::Blocked;
         return result;
     }
 
@@ -341,10 +354,12 @@ FLASHMEM void CoreState::publishPreparedSequencerMutation(
     }
 }
 
-FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
+FLASHMEM sequencer::SequencerHistoryOpenOutcome
+CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     uint8_t step, sequencer::StepProperty property, uint32_t nowMs,
     sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan, bool stateProperty) {
-    if (step >= sequencer::SequencerPatternState::MAX_STEPS) { return false; }
+    using Outcome = sequencer::SequencerHistoryOpenOutcome;
+    if (step >= sequencer::SequencerPatternState::MAX_STEPS) { return Outcome::Blocked; }
 
     auto& pending = sequencerDomain_.coalescedPatternHistory;
     const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
@@ -353,21 +368,22 @@ FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
         // The stable grouping key intentionally excludes storage policy. A
         // plan drift is a caller-classification bug; reject it atomically
         // rather than splitting one 500 ms gesture into two Undo entries.
-        if (pending.payloadPlan != payloadPlan || !pending.sealed ||
+        if (pending.payloadPlan != payloadPlan) return Outcome::Blocked;
+        if (!pending.sealed ||
             !pending.preparedPatternChange ||
             !sequencer::preparedActiveTrackSynchronizationMatches(sequencerTracks,
                                                                   pending.synchronization)) {
-            return false;
+            return Outcome::HistoryUnavailable;
         }
         consumePendingSequencerMutation_(&pending.genericMutationPendingAtBegin);
         pending.sealed = false;
         pending.lastTouchedMs = nowMs;
-        return true;
+        return Outcome::Continued;
     }
 
     if (pending.pending) {
         const auto outcome = commitSequencerPatternHistoryCoalescing_();
-        if (outcome == SequencerPatternHistoryCommitOutcome::Failed) { return false; }
+        if (outcome == SequencerPatternHistoryCommitOutcome::Failed) { return Outcome::HistoryUnavailable; }
     }
 
     sequencer::SequencerHistoryGraphPtr prospectiveGraph;
@@ -375,15 +391,17 @@ FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
         sequencerTracks, sequencer, activeTrack, payloadPlan, prospectiveGraph);
     if (!change || !sequencer::reservePreparedHistoryPatternAfter(sequencerTracks, sequencer,
                                                                   *change, payloadPlan)) {
-        return false;
+        return Outcome::ResourceUnavailable;
     }
 
     sequencer::SequencerPreparedActiveTrackSynchronization synchronization;
     if (!sequencer::reservePreparedActiveTrackSynchronization(
-            sequencerTracks, sequencer, activeTrack, payloadPlan, synchronization) ||
-        activeTrack != sequencerTracks.activeTrackIndex() ||
+            sequencerTracks, sequencer, activeTrack, payloadPlan, synchronization)) {
+        return Outcome::ResourceUnavailable;
+    }
+    if (activeTrack != sequencerTracks.activeTrackIndex() ||
         !sequencer::preparedActiveTrackSynchronizationMatches(sequencerTracks, synchronization)) {
-        return false;
+        return Outcome::HistoryUnavailable;
     }
 
     pending.clear();
@@ -403,7 +421,7 @@ FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     if (prospectiveGraph) {
         if (sequencer.pattern.graph) {
             pending.clear();
-            return false;
+            return Outcome::HistoryUnavailable;
         }
         sequencer.pattern.graph = std::move(prospectiveGraph);
         pending.prospectiveGraphInstalled = true;
@@ -414,7 +432,7 @@ FLASHMEM bool CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
     // (including a still-queued callback) so Step publication can subsume it,
     // or restore it if this gesture later proves to be a no-op/net return.
     consumePendingSequencerMutation_(&pending.genericMutationPendingAtBegin);
-    return true;
+    return Outcome::Started;
 }
 
 FLASHMEM sequencer::SequencerPreparedPatternEditBeginOutcome
@@ -423,6 +441,18 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
     sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
     sequencer::SequencerHistoryDescriptor descriptor, bool compactGraphOnSeal) {
     using Outcome = sequencer::SequencerPreparedPatternEditBeginOutcome;
+
+    switch (owner) {
+        case sequencer::SequencerPreparedPatternEditOwner::PatternPitch:
+        case sequencer::SequencerPreparedPatternEditOwner::PropertySelector:
+        case sequencer::SequencerPreparedPatternEditOwner::StepContent:
+        case sequencer::SequencerPreparedPatternEditOwner::StepEditSession:
+        case sequencer::SequencerPreparedPatternEditOwner::StepToggle:
+        case sequencer::SequencerPreparedPatternEditOwner::PatternEditor:
+        case sequencer::SequencerPreparedPatternEditOwner::PageStructure:
+        case sequencer::SequencerPreparedPatternEditOwner::QuickControls: break;
+        default: return Outcome::Blocked;
+    }
 
     auto& pending = sequencerDomain_.coalescedPatternHistory;
     const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
@@ -438,7 +468,7 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
             !sequencer::preparedHistoryPatternAfterMatchesTrack(
                 sequencerTracks, sequencer, activeTrack, pending.preparedPatternChange->after,
                 pending.preparedPatternChange->storage)) {
-            return Outcome::Failed;
+            return Outcome::HistoryUnavailable;
         }
         consumePendingSequencerMutation_(&pending.genericMutationPendingAtBegin);
         pending.sealed = false;
@@ -447,7 +477,7 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
 
     if (pending.pending) {
         const auto outcome = commitSequencerPatternHistoryCoalescing_();
-        if (outcome == SequencerPatternHistoryCommitOutcome::Failed) { return Outcome::Failed; }
+        if (outcome == SequencerPatternHistoryCommitOutcome::Failed) { return Outcome::HistoryUnavailable; }
     }
 
     sequencer::SequencerHistoryGraphPtr prospectiveGraph;
@@ -455,15 +485,17 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
         sequencerTracks, sequencer, activeTrack, payloadPlan, prospectiveGraph, descriptor);
     if (!change || !sequencer::reservePreparedHistoryPatternAfter(sequencerTracks, sequencer,
                                                                   *change, payloadPlan)) {
-        return Outcome::Failed;
+        return Outcome::ResourceUnavailable;
     }
 
     sequencer::SequencerPreparedActiveTrackSynchronization synchronization;
     if (!sequencer::reservePreparedActiveTrackSynchronization(
-            sequencerTracks, sequencer, activeTrack, payloadPlan, synchronization) ||
-        activeTrack != sequencerTracks.activeTrackIndex() ||
+            sequencerTracks, sequencer, activeTrack, payloadPlan, synchronization)) {
+        return Outcome::ResourceUnavailable;
+    }
+    if (activeTrack != sequencerTracks.activeTrackIndex() ||
         !sequencer::preparedActiveTrackSynchronizationMatches(sequencerTracks, synchronization)) {
-        return Outcome::Failed;
+        return Outcome::HistoryUnavailable;
     }
 
     const bool preserveEmptyPageCcOwner =
@@ -498,7 +530,7 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
     if (prospectiveGraph) {
         if (sequencer.pattern.graph) {
             pending.clear();
-            return Outcome::Failed;
+            return Outcome::HistoryUnavailable;
         }
         sequencer.pattern.graph = std::move(prospectiveGraph);
         pending.prospectiveGraphInstalled = true;
@@ -855,15 +887,17 @@ CoreState::finishSequencerPreparedPatternEdit_(
     return Outcome::Sealed;
 }
 
-FLASHMEM bool CoreState::beginOrContinueSequencerCcLaneEventHistoryCoalescing(
+FLASHMEM sequencer::SequencerHistoryOpenOutcome
+CoreState::beginOrContinueSequencerCcLaneEventHistoryCoalescing(
     uint8_t lane, uint8_t step, int32_t beforeValue, int32_t afterValue,
     const sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs) {
+    using Outcome = sequencer::SequencerHistoryOpenOutcome;
     if (lane >= sequencer::SequencerCcLaneBank::MAX_LANES ||
         step >= sequencer::SequencerCcLaneBank::MAX_STEPS || beforeValue < -1 ||
         beforeValue > 127 || afterValue < 0 || afterValue > 127 || afterBank == nullptr ||
         !afterBank->lanes[lane].occupied || !afterBank->lanes[lane].activeMask.test(step) ||
         afterBank->lanes[lane].values[step] != afterValue) {
-        return false;
+        return Outcome::Blocked;
     }
 
     auto& pending = sequencerDomain_.coalescedPatternHistory;
@@ -885,28 +919,28 @@ FLASHMEM bool CoreState::beginOrContinueSequencerCcLaneEventHistoryCoalescing(
                 (void)sequencer::applyHistorySnapshotToEditor(sequencer, change->before);
             }
             pending.clear();
-            return false;
+            return Outcome::HistoryUnavailable;
         }
         change->descriptor.afterValue = afterValue;
         const bool noChange = sequencer::sameMusicalHistorySnapshot(change->before, change->after);
         if (!noChange && !sequencerHistory.canRecordPattern(*change)) {
             (void)sequencer::applyHistorySnapshotToEditor(sequencer, change->before);
             pending.clear();
-            return false;
+            return Outcome::HistoryUnavailable;
         }
         pending.lastTouchedMs = nowMs;
-        return true;
+        return Outcome::Continued;
     }
 
     if (pending.pending) {
         const auto outcome = commitSequencerPatternHistoryCoalescing_();
-        if (outcome == SequencerPatternHistoryCommitOutcome::Failed) { return false; }
+        if (outcome == SequencerPatternHistoryCommitOutcome::Failed) { return Outcome::HistoryUnavailable; }
     }
 
     auto change = core::app::makeExtmemUnique<sequencer::SequencerHistoryPatternChange>();
     if (!change) {
         pending.clear();
-        return false;
+        return Outcome::ResourceUnavailable;
     }
     change->trackIndex = activeTrack;
     change->storage = sequencer::SequencerHistoryPatternStorage::FullGraph;
@@ -919,10 +953,13 @@ FLASHMEM bool CoreState::beginOrContinueSequencerCcLaneEventHistoryCoalescing(
         .beforeValue = beforeValue,
         .afterValue = afterValue,
     };
-    if (!sequencer::captureHistorySnapshot(sequencer, change->before) || !captureAfter(*change) ||
-        !sequencerHistory.canRecordPattern(*change)) {
+    if (!sequencer::captureHistorySnapshot(sequencer, change->before) || !captureAfter(*change)) {
         pending.clear();
-        return false;
+        return Outcome::ResourceUnavailable;
+    }
+    if (!sequencerHistory.canRecordPattern(*change)) {
+        pending.clear();
+        return Outcome::HistoryUnavailable;
     }
 
     pending.clear();
@@ -933,7 +970,7 @@ FLASHMEM bool CoreState::beginOrContinueSequencerCcLaneEventHistoryCoalescing(
     pending.lane = lane;
     pending.lastTouchedMs = nowMs;
     pending.preparedCcLaneChange = std::move(change);
-    return true;
+    return Outcome::Started;
 }
 
 FLASHMEM CoreState::SequencerPatternHistoryCommitOutcome

@@ -163,7 +163,7 @@ FLASHMEM bool SequencerStepEditHandler::openFocusedStepContentAtRow(uint8_t row)
 }
 
 FLASHMEM bool SequencerStepEditHandler::commitStepEditHistory() {
-    return step_edit_session_workflow::commitHistory(history_);
+    return step_edit_session_workflow::commitHistory(sequencer_, history_);
 }
 
 FLASHMEM bool SequencerStepEditHandler::beginPreparedPatternMutation(
@@ -171,25 +171,37 @@ FLASHMEM bool SequencerStepEditHandler::beginPreparedPatternMutation(
     core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
     core::state::sequencer::SequencerHistoryDescriptor descriptor, bool compactGraphOnSeal) {
     if (sequencer_.stepContentDraft.active.get()) return true;
-    return history_.beginPreparedPatternEdit(owner, key, payloadPlan, descriptor,
-                                             compactGraphOnSeal) !=
-           core::state::sequencer::SequencerPreparedPatternEditBeginOutcome::Failed;
+    const auto outcome =
+        history_.beginPreparedPatternEdit(owner, key, payloadPlan, descriptor,
+                                             compactGraphOnSeal);
+    if (core::state::sequencer::sequencerHistoryOpenAccepted(outcome)) return true;
+    sequencer_.historyFeedback.showRejection(outcome, oc::time::millis());
+    return false;
 }
 
 FLASHMEM bool SequencerStepEditHandler::sealPreparedPatternMutation(
     core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key, bool changed,
     core::state::sequencer::SequencerHistoryDescriptor descriptor) {
     if (sequencer_.stepContentDraft.active.get()) return true;
-    return !core::state::sequencer::sequencerPreparedPatternEditSealFailed(
-        history_.sealPreparedPatternEdit(owner, key, changed, descriptor)
-    );
+    const auto outcome = history_.sealPreparedPatternEdit(owner, key, changed, descriptor);
+    if (!core::state::sequencer::sequencerPreparedPatternEditSealFailed(outcome)) return true;
+    sequencer_.historyFeedback.showRejection(
+        core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+        oc::time::millis());
+    return false;
 }
 
 FLASHMEM bool SequencerStepEditHandler::commitPreparedPatternMutation(
     core::state::sequencer::SequencerPreparedPatternEditOwner owner) {
     if (sequencer_.stepContentDraft.active.get()) return true;
-    return history_.commitPreparedPatternEdit(owner) !=
-           core::state::sequencer::SequencerPreparedPatternEditCommitOutcome::Failed;
+    if (history_.commitPreparedPatternEdit(owner) !=
+           core::state::sequencer::SequencerPreparedPatternEditCommitOutcome::Failed) {
+        return true;
+    }
+    sequencer_.historyFeedback.showRejection(
+        core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+        oc::time::millis());
+    return false;
 }
 
 FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {

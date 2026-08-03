@@ -25,13 +25,12 @@ public:
         void* context,
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
     ) noexcept;
-    using BeginCoalescedPatternEditFn = bool (*)(
+    using BeginCoalescedPatternEditFn = core::state::sequencer::SequencerHistoryOpenOutcome (*)(
         void* context, uint8_t step, core::state::sequencer::StepProperty property, uint32_t nowMs,
         core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
         bool stateProperty);
     using SealCoalescedPatternEditFn = bool (*)(void* context, bool mutationChanged);
-    using BeginCoalescedCcLaneEventEditFn =
-        bool (*)(void* context, uint8_t lane, uint8_t step, int32_t beforeValue, int32_t afterValue,
+    using BeginCoalescedCcLaneEventEditFn = core::state::sequencer::SequencerHistoryOpenOutcome (*)(void* context, uint8_t lane, uint8_t step, int32_t beforeValue, int32_t afterValue,
                  const core::state::sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs);
     using CommitCoalescedPatternEditFn =
         core::state::sequencer::SequencerPatternHistoryCommitOutcome (*)(void* context);
@@ -119,12 +118,12 @@ public:
     void commitAdmittedStructure(
         core::state::sequencer::SequencerHistoryTrackStructureChangePtr change
     ) const noexcept;
-    bool beginCoalescedPatternEdit(
+    core::state::sequencer::SequencerHistoryOpenOutcome beginCoalescedPatternEdit(
         uint8_t step, core::state::sequencer::StepProperty property, uint32_t nowMs,
         core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
         bool stateProperty = false) const;
     bool sealCoalescedPatternEdit(bool mutationChanged) const;
-    bool beginCoalescedCcLaneEventEdit(uint8_t lane, uint8_t step, int32_t beforeValue,
+    core::state::sequencer::SequencerHistoryOpenOutcome beginCoalescedCcLaneEventEdit(uint8_t lane, uint8_t step, int32_t beforeValue,
                                        int32_t afterValue,
                                        const core::state::sequencer::SequencerCcLaneBank* afterBank,
                                        uint32_t nowMs) const;

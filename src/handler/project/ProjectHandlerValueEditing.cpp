@@ -8,6 +8,28 @@ namespace core::handler {
 
 using namespace project_handler_internal;
 
+namespace {
+
+FLASHMEM bool acceptProjectScaleResult(
+    core::state::project::ProjectNavigationState& navigation,
+    core::state::sequencer::SequencerPreparedFullBankEditOutcome outcome) {
+    using Outcome = core::state::sequencer::SequencerPreparedFullBankEditOutcome;
+    switch (outcome) {
+        case Outcome::Committed:
+        case Outcome::NoChange: return true;
+        case Outcome::ResourceUnavailable:
+            navigation.setLifecycleFeedback("Memory unavailable - unchanged");
+            return false;
+        case Outcome::HistoryUnavailable:
+            navigation.setLifecycleFeedback("History unavailable - unchanged");
+            return false;
+        case Outcome::Blocked: return false;
+    }
+    return false;
+}
+
+}  // namespace
+
 FLASHMEM bool ProjectHandler::recordProjectSettingsChange(
     const core::state::project::ProjectSettingsHistorySnapshot& before,
     core::state::project::ProjectSettingsHistoryActionKind kind, uint8_t subject, bool coalesce) {
@@ -110,8 +132,7 @@ FLASHMEM bool ProjectHandler::applyFocusedMusicScaleStep(int steps) {
         row,
         next
     );
-    return result.outcome !=
-        core::state::sequencer::SequencerPreparedFullBankEditOutcome::Failed;
+    return acceptProjectScaleResult(navigation_, result.outcome);
 }
 
 FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
@@ -309,8 +330,7 @@ FLASHMEM bool ProjectHandler::setFocusedMusicScaleValue(float normalized) {
         row,
         next
     );
-    return result.outcome !=
-        core::state::sequencer::SequencerPreparedFullBankEditOutcome::Failed;
+    return acceptProjectScaleResult(navigation_, result.outcome);
 }
 
 FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {

@@ -30,6 +30,13 @@ FLASHMEM bool commitPatternHistoryBarrier(SequencerHistoryDomainServices& histor
            seq::SequencerPatternHistoryCommitOutcome::Failed;
 }
 
+FLASHMEM bool publishPatternHistoryBarrier(seq::SequencerState& sequencer, bool committed) {
+    if (committed) return true;
+    sequencer.historyFeedback.showRejection(
+        seq::SequencerHistoryRejectionReason::HistoryUnavailable, core::time_compat::millis());
+    return false;
+}
+
 FLASHMEM seq::SequencerHistoryDescriptor stepToggleDescriptor(uint8_t step, bool beforeEnabled,
                                                               bool afterEnabled) {
     return {
@@ -111,7 +118,9 @@ FLASHMEM void SequencerStepHandler::handleContextSelectorRelease() {
     const auto outcome = context_selector_workflow_.release();
     switch (outcome.action) {
         case SequencerContextSelectorAction::APPLY_CONTEXT:
-            if (!commitPatternHistoryBarrier(history_)) return;
+            if (!publishPatternHistoryBarrier(sequencer_, commitPatternHistoryBarrier(history_))) {
+                return;
+            }
             navigation_workflow_.setNavigationFocus(outcome.focus);
             return;
         case SequencerContextSelectorAction::OPEN_STEP_EDITOR:
@@ -172,7 +181,7 @@ FLASHMEM bool SequencerStepHandler::trackFocusActive() const {
 }
 
 FLASHMEM void SequencerStepHandler::enterSelectionModeForCurrentFocus() {
-    if (!commitPatternHistoryBarrier(history_)) return;
+    if (!publishPatternHistoryBarrier(sequencer_, commitPatternHistoryBarrier(history_))) return;
     navigation_workflow_.enterSelectionModeForCurrentFocus();
 }
 
@@ -299,7 +308,9 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                    navigation_workflow_.stepFocusActive();
         })
         .then([this](float delta) {
-            if (!commitPatternHistoryBarrier(history_)) return;
+            if (!publishPatternHistoryBarrier(sequencer_, commitPatternHistoryBarrier(history_))) {
+                return;
+            }
             navigation_workflow_.moveByFocus(delta);
         });
 
@@ -314,7 +325,9 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                    !edit_workflow_.trackRemoveNavigationBlocked();
         })
         .then([this](float delta) {
-            if (!commitPatternHistoryBarrier(history_)) return;
+            if (!publishPatternHistoryBarrier(sequencer_, commitPatternHistoryBarrier(history_))) {
+                return;
+            }
             navigation_workflow_.moveByFocus(delta);
         });
 
@@ -408,7 +421,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                     backFromStepContentDraft();
                     return;
                 }
-                if (!commitPatternHistoryBarrier(history_)) return;
+                if (!publishPatternHistoryBarrier(sequencer_,
+                                                  commitPatternHistoryBarrier(history_))) {
+                    return;
+                }
                 core::state::sequencer::leaveContentView(sequencer_);
                 return;
             }
@@ -543,7 +559,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             }
             if (track_ui_.selection.active.get()) {
                 edit_workflow_.clearHoldAction();
-                if (!commitPatternHistoryBarrier(history_)) return;
+                if (!publishPatternHistoryBarrier(sequencer_,
+                                                  commitPatternHistoryBarrier(history_))) {
+                    return;
+                }
             }
             edit_workflow_.applySelectionBottomLeftTap();
         });
@@ -584,7 +603,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             }
             if (trackFocusActive()) {
                 edit_workflow_.clearHoldAction();
-                if (!commitPatternHistoryBarrier(history_)) return;
+                if (!publishPatternHistoryBarrier(sequencer_,
+                                                  commitPatternHistoryBarrier(history_))) {
+                    return;
+                }
             }
             edit_workflow_.applyCurrentStructureShortPress();
         });
@@ -796,13 +818,13 @@ SequencerStepHandler::selectionInteractionPolicy() const {
 }
 
 FLASHMEM void SequencerStepHandler::applyStepContentDraft() {
-    if (!commitPatternHistoryBarrier(history_)) return;
+    if (!publishPatternHistoryBarrier(sequencer_, commitPatternHistoryBarrier(history_))) return;
     (void)sequencer::step_content_draft_workflow::apply(sequencer_, tracks_, history_);
 }
 
 FLASHMEM void SequencerStepHandler::backFromStepContentDraft() {
     using Result = sequencer::step_content_draft_workflow::BackResult;
-    if (!commitPatternHistoryBarrier(history_)) return;
+    if (!publishPatternHistoryBarrier(sequencer_, commitPatternHistoryBarrier(history_))) return;
     const auto result = sequencer::step_content_draft_workflow::requestBack(sequencer_);
     if (result == Result::DISCARDED || result == Result::SAVED) {
         (void)core::state::sequencer::leaveContentView(sequencer_);
@@ -869,7 +891,10 @@ FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
                                  : seq::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload;
     const auto begin =
         history_.beginPreparedPatternEdit(kStepToggleOwner, abs, payloadPlan, descriptor);
-    if (begin == seq::SequencerPreparedPatternEditBeginOutcome::Failed) return;
+    if (!seq::sequencerHistoryOpenAccepted(begin)) {
+        sequencer_.historyFeedback.showRejection(begin, core::time_compat::millis());
+        return;
+    }
 
     sequencer_.focusedStep.set(abs);
     const bool changed = seq::toggleActiveContentStep(sequencer_, abs);
@@ -877,10 +902,18 @@ FLASHMEM void SequencerStepHandler::toggleStep(uint8_t indexInPage) {
         stepToggleDescriptor(abs, beforeEnabled, seq::activeContentStepEnabled(sequencer_, abs));
 
     const auto seal = history_.sealPreparedPatternEdit(kStepToggleOwner, abs, changed, descriptor);
+    if (seq::sequencerPreparedPatternEditSealFailed(seal)) {
+        sequencer_.historyFeedback.showRejection(
+            seq::SequencerHistoryRejectionReason::HistoryUnavailable, core::time_compat::millis());
+        return;
+    }
     if (seal != seq::SequencerPreparedPatternEditSealOutcome::Sealed) return;
 
     const auto commit = history_.commitPreparedPatternEdit(kStepToggleOwner);
-    if (commit != seq::SequencerPreparedPatternEditCommitOutcome::Committed) { return; }
+    if (commit != seq::SequencerPreparedPatternEditCommitOutcome::Committed) {
+        sequencer_.historyFeedback.showRejection(
+            seq::SequencerHistoryRejectionReason::HistoryUnavailable, core::time_compat::millis());
+        return; }
 }
 
 }  // namespace core::handler

@@ -332,6 +332,31 @@ FLASHMEM void SequencerHistoryFeedbackState::show(
     visible.set(true);
 }
 
+FLASHMEM void SequencerHistoryFeedbackState::showRejection(SequencerHistoryRejectionReason reason,
+                                                           uint32_t nowMs) {
+    const char* detail = "Edit unavailable";
+    switch (reason) {
+        case SequencerHistoryRejectionReason::ResourceUnavailable:
+            detail = "Memory unavailable";
+            break;
+        case SequencerHistoryRejectionReason::HistoryUnavailable:
+            detail = "History unavailable";
+            break;
+        case SequencerHistoryRejectionReason::Blocked: break;
+    }
+    show("EDIT BLOCKED", detail, "State unchanged", nowMs);
+}
+
+FLASHMEM void SequencerHistoryFeedbackState::showRejection(SequencerHistoryOpenOutcome outcome,
+                                                           uint32_t nowMs) {
+    showRejection(sequencerHistoryRejectionFor(outcome), nowMs);
+}
+
+FLASHMEM void SequencerHistoryFeedbackState::showRejection(SequencerHistoryGestureOutcome outcome,
+                                                           uint32_t nowMs) {
+    showRejection(sequencerHistoryRejectionFor(outcome), nowMs);
+}
+
 FLASHMEM void SequencerHistoryFeedbackState::reset() {
     visible.set(false);
     hideAtMs = 0;

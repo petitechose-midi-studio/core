@@ -313,8 +313,8 @@ void assertEditorAndActiveTrackRevisionsMatch(const Harness& h) {
 }
 
 void beginFlat(core::state::CoreState& state, uint32_t nowMs) {
-    assert(state.beginOrContinueSequencerPatternHistoryCoalescing(kStep, seq::StepProperty::NOTE,
-                                                                  nowMs, PayloadPlan::FlatOnly));
+    assert(seq::sequencerHistoryOpenAccepted(state.beginOrContinueSequencerPatternHistoryCoalescing(kStep, seq::StepProperty::NOTE,
+                                                                  nowMs, PayloadPlan::FlatOnly)));
 }
 
 void mutateFlatAndSeal(core::state::CoreState& state, uint8_t note) {
@@ -530,13 +530,15 @@ void test_same_key_payload_plan_drift_is_rejected_without_publication() {
 #if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        assert(!h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-            kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FullCurrentPayload));
+        assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FullCurrentPayload) ==
+               seq::SequencerHistoryOpenOutcome::Blocked);
         tx::assertMaxPlusOneStillArmed(0U);
     }
 #else
-    assert(!h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-        kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FullCurrentPayload));
+    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+        kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FullCurrentPayload) ==
+           seq::SequencerHistoryOpenOutcome::Blocked);
 #endif
 
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
@@ -629,8 +631,9 @@ void test_key_change_commits_the_old_session_before_new_begin_failure() {
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        assert(!h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-            1U, seq::StepProperty::NOTE, 200U, PayloadPlan::FlatOnly));
+        assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            1U, seq::StepProperty::NOTE, 200U, PayloadPlan::FlatOnly) ==
+               seq::SequencerHistoryOpenOutcome::ResourceUnavailable);
         tx::assertFailureConsumed(1U);
     }
 
@@ -655,8 +658,9 @@ void test_step_to_cc_transition_keeps_old_commit_when_cc_begin_fails() {
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        assert(!h.state.beginOrContinueSequencerCcLaneEventHistoryCoalescing(0U, kStep, 91, 92,
-                                                                             stagedCc.get(), 200U));
+        assert(h.state.beginOrContinueSequencerCcLaneEventHistoryCoalescing(0U, kStep, 91, 92,
+                                                                             stagedCc.get(), 200U) ==
+               seq::SequencerHistoryOpenOutcome::ResourceUnavailable);
         tx::assertFailureConsumed(1U);
     }
 
@@ -686,8 +690,9 @@ void test_cc_to_step_transition_keeps_old_commit_when_step_begin_fails() {
     auto stagedCc = stageCcLaneEvent(h.state, 92U);
     const void* stagedCcOwner = stagedCc.get();
 
-    assert(h.state.beginOrContinueSequencerCcLaneEventHistoryCoalescing(0U, kStep, 91, 92,
-                                                                        stagedCc.get(), 100U));
+    assert(seq::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerCcLaneEventHistoryCoalescing(0U, kStep, 91, 92,
+                                                                        stagedCc.get(), 100U)));
     seq::installSequencerCcLaneBank(h.state.sequencer.pattern, std::move(stagedCc));
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(editorCcLaneEventValue(h.state) == 92U);
@@ -696,8 +701,9 @@ void test_cc_to_step_transition_keeps_old_commit_when_step_begin_fails() {
         // Ordinal 1 is the legacy CC commit's active-bank synchronization;
         // ordinal 2 is the new Step transaction's final Change owner.
         core::app::testing::ScopedExtmemAllocationFailure failure(2U);
-        assert(!h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-            kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FlatOnly));
+        assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FlatOnly) ==
+               seq::SequencerHistoryOpenOutcome::ResourceUnavailable);
         tx::assertFailureConsumed(2U);
     }
 
@@ -830,13 +836,15 @@ void test_net_return_rearms_a_preexisting_generic_mutation() {
     h.state.sequencer.focusedStep.set(1U);
     const auto before = tx::captureStateInvariant(h.state);
 
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-        kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph));
+    assert(
+        seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+        kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph)));
     assert(seq::setNodeLocalVariationRange(h.state.sequencer.pattern, seq::rootStepNodeId(kStep),
                                            seq::StepProperty::NOTE, 5U));
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-        kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FullWithProspectiveGraph));
+    assert(
+        seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+        kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FullWithProspectiveGraph)));
     h.state.sequencer.pattern.graph->reset();
     h.state.sequencer.pattern.bumpGraphRevision();
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
@@ -872,8 +880,9 @@ void test_no_op_seal_is_immediate_and_byte_identical() {
         Harness h;
         const auto before = tx::captureStateInvariant(h.state);
         assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
-        assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-            kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph));
+        assert(seq::sequencerHistoryOpenAccepted(
+            h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph)));
         assert(h.state.sequencer.pattern.graph != nullptr);
         assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
         assert(h.state.sealSequencerPatternHistoryCoalescing(false));
@@ -895,15 +904,17 @@ void test_prospective_graph_net_return_releases_the_live_owner_exactly() {
     assert(before.editorGraphOwner == nullptr);
     assert(before.bankGraphOwner == nullptr);
 
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-        kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph));
+    assert(
+        seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+        kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph)));
     assert(h.state.sequencer.pattern.graph != nullptr);
     assert(seq::setNodeLocalVariationRange(h.state.sequencer.pattern, seq::rootStepNodeId(kStep),
                                            seq::StepProperty::NOTE, 6U));
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
 
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-        kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FullWithProspectiveGraph));
+    assert(
+        seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+        kStep, seq::StepProperty::NOTE, 200U, PayloadPlan::FullWithProspectiveGraph)));
     assert(h.state.sequencer.pattern.graph != nullptr);
     h.state.sequencer.pattern.graph->reset();
     h.state.sequencer.pattern.bumpGraphRevision();
@@ -929,8 +940,9 @@ void test_prospective_graph_commits_without_post_begin_allocation() {
         // Graphless/no-CC prospective order is Change, prospective live Graph,
         // reserved after Graph, and reserved active-bank synchronization Graph.
         core::app::testing::ScopedExtmemAllocationFailure failure(5U);
-        assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-            kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph));
+        assert(seq::sequencerHistoryOpenAccepted(
+            h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph)));
         assert(h.state.sequencer.pattern.graph != nullptr);
         assert(seq::graphView(h.state.sequencer.pattern) == nullptr);
         assert(seq::setNodeLocalVariationRange(
@@ -940,8 +952,9 @@ void test_prospective_graph_commits_without_post_begin_allocation() {
         tx::assertMaxPlusOneStillArmed(4U);
     }
 #else
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-        kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph));
+    assert(
+        seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+        kStep, seq::StepProperty::NOTE, 100U, PayloadPlan::FullWithProspectiveGraph)));
     assert(seq::setNodeLocalVariationRange(h.state.sequencer.pattern, seq::rootStepNodeId(kStep),
                                            seq::StepProperty::NOTE, 5U));
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
@@ -993,8 +1006,9 @@ void assertBeginFailNthAndMaxPlusOne(PayloadPlan plan, InitialPayload initialPay
 
         {
             core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
-            assert(!h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-                kStep, seq::StepProperty::NOTE, 100U, plan));
+            assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+                kStep, seq::StepProperty::NOTE, 100U, plan) ==
+                   seq::SequencerHistoryOpenOutcome::ResourceUnavailable);
             tx::assertFailureConsumed(ordinal);
         }
 
@@ -1010,8 +1024,9 @@ void assertBeginFailNthAndMaxPlusOne(PayloadPlan plan, InitialPayload initialPay
         core::app::testing::ScopedExtmemAllocationFailure failure(allocationCount + 1U);
         {
             allocation_trace::Scope trace;
-            assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-                kStep, seq::StepProperty::NOTE, 100U, plan));
+            assert(seq::sequencerHistoryOpenAccepted(
+                h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+                kStep, seq::StepProperty::NOTE, 100U, plan)));
             assertAllocationRequests(expectedRequests);
         }
         mutateMatrixCandidateAndSeal(h.state, plan);

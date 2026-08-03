@@ -4,7 +4,6 @@
 #include <cstring>
 
 #include <array>
-#include <utility>
 
 #include <config/App.hpp>
 #include <config/Timing.hpp>
@@ -15,6 +14,7 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
+#include <utility>
 
 #include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/common/SharedTrackDomainServices.hpp"
@@ -801,6 +801,46 @@ void assertPreparedActionInvariant(
     assert(ui == expected.ui);
     const auto clipboard = capturePreparedClipboardInvariant(h.state.structureClipboard);
     assert(clipboard == expected.clipboard);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+}
+
+void assertPreparedActionRejectionInvariant(const SequencerStepHarness& h,
+                                            const PreparedActionInvariant& expected,
+                                            seq::SequencerHistoryRejectionReason reason) {
+    tx::assertStateInvariant(h.state, expected.state);
+    tx::assertMusicalSnapshot(h.state, expected.musical);
+
+    const auto& feedback = h.state.sequencer.historyFeedback;
+    const char* detail = "Edit unavailable";
+    if (reason == seq::SequencerHistoryRejectionReason::ResourceUnavailable) {
+        detail = "Memory unavailable";
+    } else if (reason == seq::SequencerHistoryRejectionReason::HistoryUnavailable) {
+        detail = "History unavailable";
+    }
+    assert(feedback.visible.get());
+    assert(feedback.revision.get() == expected.product.historyFeedbackRevision + 1U);
+    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line2.data(), detail) == 0);
+    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
+    assert(feedback.hideAtMs == g_now_ms + seq::SequencerHistoryFeedbackState::DISPLAY_HOLD_MS);
+
+    const auto product = capturePreparedProductInvariant(h);
+    auto expectedProduct = expected.product;
+    expectedProduct.historyFeedbackVisible = product.historyFeedbackVisible;
+    expectedProduct.historyFeedbackRevision = product.historyFeedbackRevision;
+    expectedProduct.historyFeedbackLinesHash = product.historyFeedbackLinesHash;
+    expectedProduct.historyFeedbackHideAtMs = product.historyFeedbackHideAtMs;
+    assert(product == expectedProduct);
+
+    const auto activeTrack = expected.product.bankActiveTrack;
+    const auto& bankPattern = h.state.sequencerTracks.track(activeTrack);
+    assert(tx::flatPatternFingerprint(bankPattern) == expected.bankFlatHash);
+    assert(bankPattern.graph.get() == expected.bankGraphOwner);
+    assert(objectHash(bankPattern.graph.get()) == expected.bankGraphHash);
+    assert(bankPattern.ccLanes.get() == expected.bankCcOwner);
+    assert(objectHash(bankPattern.ccLanes.get()) == expected.bankCcHash);
+    assert(capturePreparedEditorUiInvariant(h) == expected.ui);
+    assert(capturePreparedClipboardInvariant(h.state.structureClipboard) == expected.clipboard);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 }
 
@@ -3471,7 +3511,8 @@ void test_graphless_child_content_paste_uses_prospective_compacted_owner() {
                        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::
                            FullWithProspectiveGraph,
                        descriptor(), true) ==
-                   core::state::sequencer::SequencerPreparedPatternEditBeginOutcome::Failed);
+                   core::state::sequencer::SequencerPreparedPatternEditBeginOutcome::
+                       ResourceUnavailable);
             tx::assertFailureConsumed(ordinal);
         }
 
@@ -7803,7 +7844,7 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
             assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
         }
         test_support::drainNotifications();
-        assertPreparedActionInvariant(h, expected);
+        assertPreparedActionRejectionInvariant(h, expected, seq::SequencerHistoryRejectionReason::ResourceUnavailable);
     }
 
     {
@@ -7828,7 +7869,7 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
             assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
         }
         test_support::drainNotifications();
-        assertPreparedActionInvariant(h, expected);
+        assertPreparedActionRejectionInvariant(h, expected, seq::SequencerHistoryRejectionReason::ResourceUnavailable);
     }
 
     {
@@ -7857,7 +7898,7 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
             assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
         }
         test_support::drainNotifications();
-        assertPreparedActionInvariant(h, expected);
+        assertPreparedActionRejectionInvariant(h, expected, seq::SequencerHistoryRejectionReason::ResourceUnavailable);
     }
 
     {
@@ -7890,7 +7931,7 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
             assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
         }
         test_support::drainNotifications();
-        assertPreparedActionInvariant(h, expected);
+        assertPreparedActionRejectionInvariant(h, expected, seq::SequencerHistoryRejectionReason::ResourceUnavailable);
     }
 
     {
@@ -7921,7 +7962,7 @@ void test_prepared_step_page_oom_failures_restore_exact_state() {
             assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
         }
         test_support::drainNotifications();
-        assertPreparedActionInvariant(h, expected);
+        assertPreparedActionRejectionInvariant(h, expected, seq::SequencerHistoryRejectionReason::ResourceUnavailable);
     }
 
     std::cout << "[PASS] prepared Step/Page OOM failures restore exact state\n";
@@ -7954,7 +7995,7 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         test_support::drainNotifications();
         assert(failing.commitCount == 1U);
         assert(failing.abortCount == 1U);
-        assertPreparedActionInvariant(h, expected);
+        assertPreparedActionRejectionInvariant(h, expected, seq::SequencerHistoryRejectionReason::HistoryUnavailable);
     }
 
     {
@@ -7986,7 +8027,7 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         test_support::drainNotifications();
         assert(failing.commitCount == 1U);
         assert(failing.abortCount == 1U);
-        assertPreparedActionInvariant(h, expected);
+        assertPreparedActionRejectionInvariant(h, expected, seq::SequencerHistoryRejectionReason::HistoryUnavailable);
     }
 
     {
@@ -8017,7 +8058,7 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         test_support::drainNotifications();
         assert(failing.commitCount == 1U);
         assert(failing.abortCount == 1U);
-        assertPreparedActionInvariant(h, expected);
+        assertPreparedActionRejectionInvariant(h, expected, seq::SequencerHistoryRejectionReason::HistoryUnavailable);
     }
 
     {
@@ -8050,7 +8091,7 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         test_support::drainNotifications();
         assert(failing.commitCount == 1U);
         assert(failing.abortCount == 1U);
-        assertPreparedActionInvariant(h, expected);
+        assertPreparedActionRejectionInvariant(h, expected, seq::SequencerHistoryRejectionReason::HistoryUnavailable);
     }
 
     {
@@ -8084,7 +8125,7 @@ void test_prepared_step_page_failed_commits_restore_exact_state() {
         test_support::drainNotifications();
         assert(failing.commitCount == 1U);
         assert(failing.abortCount == 1U);
-        assertPreparedActionInvariant(h, expected);
+        assertPreparedActionRejectionInvariant(h, expected, seq::SequencerHistoryRejectionReason::HistoryUnavailable);
     }
 
     std::cout << "[PASS] failed Step/Page commits restore music, UI and clipboard\n";

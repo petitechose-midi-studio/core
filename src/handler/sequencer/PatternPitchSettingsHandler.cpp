@@ -145,13 +145,21 @@ FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
     };
     const auto beginOutcome = history_.beginPreparedPatternEdit(PreparedOwner::PatternPitch,
                                                                 editKey, payloadPlan, descriptor);
-    if (beginOutcome == PreparedBeginOutcome::Failed) return;
+    if (!core::state::sequencer::sequencerHistoryOpenAccepted(beginOutcome)) {
+        sequencer_.historyFeedback.showRejection(beginOutcome, oc::time::millis());
+        return;
+    }
 
     const auto projection = services_.applyChoice(row, selectedIndex);
 
     const auto sealOutcome = history_.sealPreparedPatternEdit(PreparedOwner::PatternPitch, editKey,
                                                               choiceChanged, descriptor);
-    if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(sealOutcome)) return;
+    if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(sealOutcome)) {
+        sequencer_.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+            oc::time::millis());
+        return;
+    }
 
     const auto commitOutcome = history_.commitPreparedPatternEdit(PreparedOwner::PatternPitch);
     if ((sealOutcome == PreparedSealOutcome::Sealed &&
@@ -159,6 +167,9 @@ FLASHMEM void PatternPitchSettingsHandler::applySelectorAndClose() {
         (sealOutcome == PreparedSealOutcome::Cleared &&
          commitOutcome != PreparedCommitOutcome::NoPending &&
          commitOutcome != PreparedCommitOutcome::NoChange)) {
+        sequencer_.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+            oc::time::millis());
         return;
     }
     showChordProjectionFeedback(sequencer_.historyFeedback, projection, oc::time::millis());

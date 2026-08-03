@@ -1,8 +1,9 @@
 #include <cassert>
-#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+
+#include <array>
 #include <filesystem>
 #include <iostream>
 
@@ -15,24 +16,24 @@
 #include <oc/impl/HostFileSystem.hpp>
 
 #include "../../src/app/ExtmemAllocator.hpp"
-#include "../../src/handler/project/ProjectHandler.hpp"
 #include "../../src/handler/common/ModulatorNavigationWorkflow.hpp"
+#include "../../src/handler/project/ProjectHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/settings/SequencerSettingsDomainServices.hpp"
+#include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/persistence/ProjectFileContainer.hpp"
 #include "../../src/persistence/ProjectFileStore.hpp"
 #include "../../src/persistence/ProjectSnapshotPersistenceCodec.hpp"
 #include "../../src/persistence/ProjectStatePersistenceCodec.hpp"
 #include "../../src/persistence/ProjectTrackStatePersistenceCodec.hpp"
-#include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/modulation/ProjectControlMacroOps.hpp"
 #include "../../src/state/project/ProjectMenuModel.hpp"
 #include "../../src/state/project/ProjectModulatorMenuModel.hpp"
-#include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../../src/state/project/ProjectNameKeyboard.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
+#include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 
@@ -52,11 +53,11 @@ std::filesystem::path projectHandlerFsRoot() {
     return std::filesystem::temp_directory_path() / "midi-studio-core-project-handler-test";
 }
 
-using test_support::TestButtonHardware;
-using test_support::TestEncoderHardware;
 using core::state::project::ProjectNodeId;
 using core::state::project::ProjectTab;
 using core::state::sequencer::SequencerHistoryScope;
+using test_support::TestButtonHardware;
+using test_support::TestEncoderHardware;
 
 constexpr float PROJECT_NAME_TEST_OPT_TICKS_PER_ROW =
     (600.0f * 4.0f) /
@@ -429,6 +430,8 @@ void test_music_scale_normalized_surface_and_rejections_are_atomic() {
     assert(h.state.sequencerHistory.redoCount() == redoBefore);
     assert(h.state.sequencerHistory.retainedBytes() == retainedBefore);
     assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(),
+                       "Memory unavailable - unchanged") == 0);
 
     // OPT is the normalized Project surface. An exact value is a pre-boundary
     // no-op and therefore never probes FullBank allocation or consumes redo.
@@ -442,6 +445,22 @@ void test_music_scale_normalized_surface_and_rejections_are_atomic() {
     assert(h.state.sequencerHistory.redoCount() == redoBefore);
     assert(h.state.sequencerHistory.retainedBytes() == retainedBefore);
     assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+
+    // An unsealed predecessor cannot be crossed by Project Scale. The
+    // handler keeps the current choice and publishes the History-specific
+    // lifecycle reason without probing FullBank allocation.
+    assert(core::state::sequencer::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            0U, core::state::sequencer::StepProperty::NOTE, 100U,
+            core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly)));
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.tap(Config::ButtonID::NAV);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 5U);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(),
+                       "History unavailable - unchanged") == 0);
 
     std::cout << "[PASS] Project NAV/OPT scale surfaces reject atomically and preserve no-op\n";
 }

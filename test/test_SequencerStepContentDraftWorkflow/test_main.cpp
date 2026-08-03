@@ -8,6 +8,7 @@
 #include <iostream>
 #include <utility>
 
+#include "app/ExtmemAllocator.hpp"
 #include "handler/sequencer/SequencerStepContentDraftWorkflow.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -16,10 +17,24 @@
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "ui/sequencer/SequencerStepContentDraftTransitionLabels.hpp"
 
+#if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+#error "This test requires native EXTMEM failure injection"
+#endif
+
 namespace {
 
 namespace draft_workflow = core::handler::sequencer::step_content_draft_workflow;
 namespace seq = core::state::sequencer;
+
+void assertHistoryRejection(const seq::SequencerState& sequencer, const char* expectedDetail,
+                            uint32_t expectedRevision) {
+    const auto& feedback = sequencer.historyFeedback;
+    assert(feedback.visible.get());
+    assert(feedback.revision.get() == expectedRevision);
+    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line2.data(), expectedDetail) == 0);
+    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
+}
 
 bool graphHasChild(const oc::note::sequencer::StepSequencerGraph& graph, uint8_t step,
                    seq::StepContentChildKind kind) {
@@ -159,6 +174,7 @@ void test_failed_preflight_preserves_draft_and_published_pattern() {
     assert(result.opened && result.draft);
     assert(seq::setActiveContentStepFromNormalized(sequencer, 0, seq::StepProperty::NOTE, 1.0f,
                                                    sequencer.pattern.pitchEditMode, {}));
+    const uint32_t feedbackRevisionBefore = sequencer.historyFeedback.revision.get();
 
     assert(!draft_workflow::apply(sequencer, tracks, history));
     assert(sequencer.stepContentDraft.active.get());
@@ -167,6 +183,40 @@ void test_failed_preflight_preserves_draft_and_published_pattern() {
            seq::SequencerStepContentDraftFailure::HISTORY_UNAVAILABLE);
     assert(recorder.preparedCount == 0);
     assert(!rootHasChild(sequencer.pattern, 0, seq::StepContentChildKind::CYCLE_STATES));
+    assertHistoryRejection(sequencer, "History unavailable", feedbackRevisionBefore + 1U);
+}
+
+void test_allocation_failure_keeps_draft_and_save_prompt_retryable() {
+    seq::SequencerState sequencer;
+    seq::SequencerTrackBankState tracks;
+    HistoryRecorder recorder;
+    auto history = recorder.services();
+
+    const auto result = seq::openOrCreateActiveContentChild(
+        sequencer, 0U, seq::StepContentChildKind::CYCLE_STATES, seq::DEFAULT_CYCLE_STATE_COUNT);
+    assert(result.opened && result.draft);
+    assert(seq::setActiveContentStepFromNormalized(sequencer, 0U, seq::StepProperty::NOTE, 1.0F,
+                                                   sequencer.pattern.pitchEditMode, {}));
+    assert(draft_workflow::requestBack(sequencer) == draft_workflow::BackResult::CONTINUE_EDITING);
+    assert(sequencer.stepContentDraft.exitPromptVisible.get());
+    const uint32_t feedbackRevisionBefore = sequencer.historyFeedback.revision.get();
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(draft_workflow::applyExitChoice(sequencer, tracks, history) ==
+               draft_workflow::BackResult::FAILED);
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+    }
+
+    assert(sequencer.stepContentDraft.active.get());
+    assert(sequencer.stepContentDraft.modified());
+    assert(sequencer.stepContentDraft.exitPromptVisible.get());
+    assert(sequencer.stepContentDraft.failure ==
+           seq::SequencerStepContentDraftFailure::OUT_OF_MEMORY);
+    assert(recorder.preparedCount == 0U);
+    assert(!rootHasChild(sequencer.pattern, 0U, seq::StepContentChildKind::CYCLE_STATES));
+    assertHistoryRejection(sequencer, "Memory unavailable", feedbackRevisionBefore + 1U);
 }
 
 void test_track_switch_is_blocked_without_losing_the_active_draft() {
@@ -295,6 +345,7 @@ int main() {
     test_pristine_back_abandons_without_history();
     test_modified_back_defaults_to_save_and_supports_continue_discard();
     test_failed_preflight_preserves_draft_and_published_pattern();
+    test_allocation_failure_keeps_draft_and_save_prompt_retryable();
     test_track_switch_is_blocked_without_losing_the_active_draft();
     test_unpublishable_flat_draft_mutation_is_rejected_explicitly();
     test_chord_draft_sanitizes_invalid_mode_without_allocating_graph_scratch();

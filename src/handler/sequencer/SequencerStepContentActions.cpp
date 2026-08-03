@@ -1,6 +1,7 @@
 #include "SequencerStepHandler.hpp"
 
 #include <config/PlatformCompat.hpp>
+#include <oc/time/Time.hpp>
 
 #include "state/sequencer/SequencerContentViewOps.hpp"
 
@@ -24,8 +25,16 @@ FLASHMEM seq::SequencerHistoryDescriptor stepContentDescriptor(uint8_t step) {
     };
 }
 
-FLASHMEM bool preparedBeginAccepted(seq::SequencerPreparedPatternEditBeginOutcome outcome) {
-    return outcome != seq::SequencerPreparedPatternEditBeginOutcome::Failed;
+FLASHMEM bool preparedBeginAccepted(seq::SequencerState& sequencer,
+                                    seq::SequencerPreparedPatternEditBeginOutcome outcome) {
+    if (seq::sequencerHistoryOpenAccepted(outcome)) return true;
+    sequencer.historyFeedback.showRejection(outcome, oc::time::millis());
+    return false;
+}
+
+FLASHMEM void showHistoryUnavailable(seq::SequencerState& sequencer) {
+    sequencer.historyFeedback.showRejection(
+        seq::SequencerHistoryRejectionReason::HistoryUnavailable, oc::time::millis());
 }
 
 FLASHMEM seq::SequencerCoalescedPatternPayloadPlan pastePayloadPlan(
@@ -63,7 +72,9 @@ FLASHMEM void SequencerStepHandler::clearFocusedStepContent() {
     }
 
     const auto descriptor = stepContentDescriptor(step);
-    if (!preparedBeginAccepted(history_.beginPreparedPatternEdit(
+    if (!preparedBeginAccepted(
+            sequencer_,
+            history_.beginPreparedPatternEdit(
             kStepContentOwner, step, seq::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload,
             descriptor, true))) {
         return;
@@ -72,10 +83,16 @@ FLASHMEM void SequencerStepHandler::clearFocusedStepContent() {
     const bool changed = seq::clearActiveContentChildrenPreservingGraphOwner(sequencer_, step);
     const auto seal =
         history_.sealPreparedPatternEdit(kStepContentOwner, step, changed, descriptor);
-    if (seal != seq::SequencerPreparedPatternEditSealOutcome::Sealed) { return; }
+    if (seq::sequencerPreparedPatternEditSealFailed(seal)) {
+        showHistoryUnavailable(sequencer_);
+        return;
+    }
+    if (seal != seq::SequencerPreparedPatternEditSealOutcome::Sealed) return;
 
     const auto commit = history_.commitPreparedPatternEdit(kStepContentOwner);
-    if (commit != seq::SequencerPreparedPatternEditCommitOutcome::Committed) { return; }
+    if (commit != seq::SequencerPreparedPatternEditCommitOutcome::Committed) {
+        showHistoryUnavailable(sequencer_);
+        return; }
 }
 
 FLASHMEM void SequencerStepHandler::copyFocusedStepContent() {
@@ -95,7 +112,7 @@ FLASHMEM void SequencerStepHandler::pasteFocusedStepContent() {
 
     const uint8_t key = static_cast<uint8_t>(step | kPasteKeyFlag);
     const auto descriptor = stepContentDescriptor(step);
-    if (!preparedBeginAccepted(history_.beginPreparedPatternEdit(
+    if (!preparedBeginAccepted(sequencer_, history_.beginPreparedPatternEdit(
             kStepContentOwner, key, pastePayloadPlan(sequencer_), descriptor, true))) {
         return;
     }
@@ -103,10 +120,16 @@ FLASHMEM void SequencerStepHandler::pasteFocusedStepContent() {
     const bool changed = seq::pasteActiveContentChildrenFromClipboardPreservingGraphOwner(
         sequencer_, step, structure_clipboard_);
     const auto seal = history_.sealPreparedPatternEdit(kStepContentOwner, key, changed, descriptor);
-    if (seal != seq::SequencerPreparedPatternEditSealOutcome::Sealed) { return; }
+    if (seq::sequencerPreparedPatternEditSealFailed(seal)) {
+        showHistoryUnavailable(sequencer_);
+        return;
+    }
+    if (seal != seq::SequencerPreparedPatternEditSealOutcome::Sealed) return;
 
     const auto commit = history_.commitPreparedPatternEdit(kStepContentOwner);
-    if (commit != seq::SequencerPreparedPatternEditCommitOutcome::Committed) { return; }
+    if (commit != seq::SequencerPreparedPatternEditCommitOutcome::Committed) {
+        showHistoryUnavailable(sequencer_);
+        return; }
 }
 
 }  // namespace core::handler

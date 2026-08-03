@@ -11,6 +11,7 @@
 #include "state/project/ProjectHistoryEventSink.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerChordContextProjection.hpp"
+#include "state/sequencer/SequencerHistoryOutcomes.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
@@ -132,23 +133,15 @@ enum class SequencerPreparedFullBankEditOwner : uint8_t {
     SequencerSettingsScale,
 };
 
-enum class SequencerPreparedFullBankEditOutcome : uint8_t {
-    Failed = 0,
-    NoChange,
-    Committed,
-};
+using SequencerPreparedFullBankEditOutcome = SequencerHistoryGestureOutcome;
 
 struct SequencerPreparedFullBankEditResult {
     SequencerPreparedFullBankEditOutcome outcome =
-        SequencerPreparedFullBankEditOutcome::Failed;
+        SequencerPreparedFullBankEditOutcome::Blocked;
     SequencerChordContextProjectionStats projection{};
 };
 
-enum class SequencerPreparedPatternEditBeginOutcome : uint8_t {
-    Failed = 0,
-    Started,
-    Continued,
-};
+using SequencerPreparedPatternEditBeginOutcome = SequencerHistoryOpenOutcome;
 
 enum class SequencerPreparedPatternEditSealOutcome : uint8_t {
     Failed = 0,

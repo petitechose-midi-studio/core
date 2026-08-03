@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 
 #include <iostream>
 #include <oc/api/ButtonAPI.hpp>
@@ -54,10 +55,9 @@ void applyRootStepEdit(SessionHarness& h, uint8_t step, Mutation mutation) {
         .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
         .stepIndex = step,
     };
-    assert(h.history.beginPreparedPatternEdit(
+    assert(core::state::sequencer::sequencerHistoryOpenAccepted(h.history.beginPreparedPatternEdit(
                owner, step, core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly,
-               descriptor) !=
-           core::state::sequencer::SequencerPreparedPatternEditBeginOutcome::Failed);
+               descriptor)));
     const bool changed = mutation();
     assert(!core::state::sequencer::sequencerPreparedPatternEditSealFailed(
         h.history.sealPreparedPatternEdit(owner, step, changed, descriptor)
@@ -177,12 +177,14 @@ void test_failed_generic_commit_keeps_retarget_ui_exact_and_retryable() {
     const uint8_t rowBefore = h.state.sequencer.stepEdit.focusedRow.get();
     const auto overlayBefore = h.overlays.current();
     const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
 
     // Leave a legacy StepProperty transaction between begin and seal. The
     // StepEdit owner-specific commit sees NoPending, then the generic typed
     // barrier must reject this incomplete owner before changing UI target.
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-        0U, seq::StepProperty::NOTE, 100U, seq::SequencerCoalescedPatternPayloadPlan::FlatOnly));
+    assert(
+        seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+        0U, seq::StepProperty::NOTE, 100U, seq::SequencerCoalescedPatternPayloadPlan::FlatOnly)));
     assert(!session_workflow::retargetRootStep(h.state.sequencer, h.history, 1));
 
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
@@ -192,6 +194,10 @@ void test_failed_generic_commit_keeps_retarget_ui_exact_and_retryable() {
     assert(h.state.sequencer.stepEdit.focusedRow.get() == rowBefore);
     assert(h.overlays.current() == overlayBefore);
     assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevisionBefore + 1U);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "History unavailable") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
 
     // Recover the incomplete no-op, then prove the same transition succeeds.
     assert(h.state.sealSequencerPatternHistoryCoalescing(false));

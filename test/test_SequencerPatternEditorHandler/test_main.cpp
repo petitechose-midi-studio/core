@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 
 #include <config/InputIDs.hpp>
 #include <iostream>
@@ -85,6 +86,16 @@ void focusRandomize(Harness& h) {
     h.press(Config::ButtonID::BOTTOM_LEFT);
     h.release(Config::ButtonID::BOTTOM_LEFT);
     assert(h.randomize.active);
+}
+
+void assertHistoryRejection(const Harness& h, const char* expectedDetail,
+                            uint32_t expectedRevision) {
+    const auto& feedback = h.state.sequencer.historyFeedback;
+    assert(feedback.visible.get());
+    assert(feedback.revision.get() == expectedRevision);
+    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line2.data(), expectedDetail) == 0);
+    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
 }
 
 void test_retained_navigation_uses_modifier_grammar_without_history() {
@@ -238,6 +249,7 @@ void test_randomize_apply_stops_at_failed_history_barrier() {
     assert(h.state.beginOrContinueSequencerPreparedPatternEdit(
                owner, 0U, seq::SequencerCoalescedPatternPayloadPlan::FlatOnly, descriptor) ==
            seq::SequencerPreparedPatternEditBeginOutcome::Started);
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
 
 #if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
     {
@@ -256,6 +268,7 @@ void test_randomize_apply_stops_at_failed_history_barrier() {
     assert(h.state.sequencerTracks.track(0).note == before);
     assert(h.state.sequencerHistory.undoCount() == 0U);
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assertHistoryRejection(h, "History unavailable", feedbackRevisionBefore + 1U);
 
     assert(h.state.sealSequencerPreparedPatternEdit(owner, 0U, false, descriptor) ==
            seq::SequencerPreparedPatternEditSealOutcome::Cleared);
@@ -265,6 +278,43 @@ void test_randomize_apply_stops_at_failed_history_barrier() {
     assert(h.state.sequencer.pattern.note == expected);
     assert(h.state.sequencerHistory.undoCount() == 1U);
 }
+
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+void test_randomize_apply_allocation_failure_keeps_preview_retryable() {
+    Harness h;
+    assert(h.state.sequencer.pattern.setContentLength(16));
+    enableFirstSteps(h.state.sequencer, 16);
+    const auto before = h.state.sequencer.pattern.note;
+    assert(h.handler.openFromCurrentPage());
+    focusRandomize(h);
+    const auto preview = h.randomize.preview.note;
+    assert(preview != before);
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+    }
+
+    assert(h.randomize.active);
+    assert(h.randomize.preview.note == preview);
+    assert(h.state.sequencer.pattern.note == before);
+    assert(h.state.sequencerTracks.track(0).note == before);
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assertHistoryRejection(h, "Memory unavailable", feedbackRevisionBefore + 1U);
+
+    h.press(Config::ButtonID::BOTTOM_RIGHT);
+    h.release(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!h.randomize.active);
+    assert(h.state.sequencer.pattern.note == preview);
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+}
+#endif
 
 void test_add_page_extends_to_next_window_and_is_one_undoable_action() {
     Harness h;
@@ -291,6 +341,7 @@ void test_add_page_begin_failure_preserves_ui_and_pattern() {
 
     const uint8_t pageBefore = h.state.sequencer.page.get();
     const uint8_t focusedStepBefore = h.state.sequencer.focusedStep.get();
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
         h.press(Config::ButtonID::BOTTOM_RIGHT);
@@ -305,6 +356,7 @@ void test_add_page_begin_failure_preserves_ui_and_pattern() {
     assert(h.state.sequencer.focusedStep.get() == focusedStepBefore);
     assert(h.state.sequencerHistory.undoCount() == 0U);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assertHistoryRejection(h, "Memory unavailable", feedbackRevisionBefore + 1U);
 }
 #endif
 
@@ -317,6 +369,9 @@ int main() {
     test_randomize_preview_reroll_and_cancel_never_publish();
     test_randomize_apply_is_one_exact_flat_history_entry();
     test_randomize_apply_stops_at_failed_history_barrier();
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    test_randomize_apply_allocation_failure_keeps_preview_retryable();
+#endif
     test_add_page_extends_to_next_window_and_is_one_undoable_action();
 #if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
     test_add_page_begin_failure_preserves_ui_and_pattern();

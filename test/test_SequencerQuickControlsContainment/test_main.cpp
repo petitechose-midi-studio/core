@@ -3,14 +3,15 @@
 #endif
 
 #include <cassert>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <iostream>
-#include <new>
+#include <cstring>
+#include <array>
 
 #include <config/InputIDs.hpp>
+#include <iostream>
+#include <new>
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
@@ -455,6 +456,16 @@ void assertAllocationRatchet(std::size_t expectedAttempts) {
     );
 }
 
+void assertHistoryRejection(const Harness& h, const char* expectedDetail,
+                            uint32_t expectedRevision) {
+    const auto& feedback = h.state.sequencer.historyFeedback;
+    assert(feedback.visible.get());
+    assert(feedback.revision.get() == expectedRevision);
+    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line2.data(), expectedDetail) == 0);
+    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
+}
+
 void test_quick_direct_caller_rejects_fail_one_atomically() {
     Harness h;
     preparePayload(h, PayloadKind::FlatOnly);
@@ -470,6 +481,7 @@ void test_quick_direct_caller_rejects_fail_one_atomically() {
     seq::SequencerHistoryPatternSnapshot musicalBefore;
     captureMusical(h, musicalBefore);
     const auto uiBefore = captureQuickDirectUiInvariant(h);
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 
     {
@@ -482,6 +494,7 @@ void test_quick_direct_caller_rejects_fail_one_atomically() {
     assertRejectionInvariant(h, stateBefore);
     assertMusicalEquals(h, musicalBefore);
     assertQuickDirectUiInvariant(h, uiBefore);
+    assertHistoryRejection(h, "Memory unavailable", feedbackRevisionBefore + 1U);
 
     std::cout << "[PASS] Quick direct caller rejects fail-1 atomically\n";
 }
@@ -900,6 +913,7 @@ void verifyOpenFailure(PayloadKind kind, std::size_t ordinal) {
     seq::SequencerHistoryPatternSnapshot baseline;
     captureMusical(h, baseline);
     const auto invariant = captureRejectionInvariant(h);
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
@@ -908,6 +922,7 @@ void verifyOpenFailure(PayloadKind kind, std::size_t ordinal) {
         assert(!h.state.sequencer.patternQuickControls.selecting.get());
         assertFailureWasConsumed(ordinal);
         assertRejectionInvariant(h, invariant);
+        assertHistoryRejection(h, "Memory unavailable", feedbackRevisionBefore + 1U);
     }
 
     h.release(Config::ButtonID::LEFT_CENTER);
@@ -960,6 +975,7 @@ void verifyOffsetEntryFailure(PayloadKind kind, std::size_t ordinal) {
     seq::SequencerHistoryPatternSnapshot beforeEntry;
     captureMusical(h, beforeEntry);
     const auto invariant = captureRejectionInvariant(h);
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
@@ -971,6 +987,7 @@ void verifyOffsetEntryFailure(PayloadKind kind, std::size_t ordinal) {
         assert(h.state.sequencer.patternQuickControls.offsetSteps.get() == 0);
         assertFailureWasConsumed(ordinal);
         assertRejectionInvariant(h, invariant);
+        assertHistoryRejection(h, "Memory unavailable", feedbackRevisionBefore + 1U);
     }
 
     assertMusicalEquals(h, beforeEntry);
@@ -1035,6 +1052,7 @@ void verifyCancelFailure(PayloadKind kind, std::size_t ordinal) {
     seq::SequencerHistoryPatternSnapshot liveEdit;
     captureMusical(h, liveEdit);
     const auto invariant = captureRejectionInvariant(h);
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
@@ -1044,6 +1062,7 @@ void verifyCancelFailure(PayloadKind kind, std::size_t ordinal) {
         assertPayloadAtOffset(h, kind, 1U);
         assertFailureWasConsumed(ordinal);
         assertRejectionInvariant(h, invariant);
+        assertHistoryRejection(h, "Memory unavailable", feedbackRevisionBefore + 1U);
 
         // A physical release after the failed Cancel must be consumed without
         // applying/closing. The explicit Cancel retry remains authoritative.
@@ -1052,6 +1071,7 @@ void verifyCancelFailure(PayloadKind kind, std::size_t ordinal) {
         assertPayloadAtOffset(h, kind, 1U);
         assertFailureWasConsumed(ordinal);
         assertRejectionInvariant(h, invariant);
+        assertHistoryRejection(h, "Memory unavailable", feedbackRevisionBefore + 1U);
     }
 
     assertMusicalEquals(h, liveEdit);
@@ -1060,6 +1080,38 @@ void verifyCancelFailure(PayloadKind kind, std::size_t ordinal) {
     assertPayloadAtOffset(h, kind, 0U);
     assertMusicalEquals(h, baseline);
     assert(h.state.sequencerHistory.undoCount() == 0U);
+}
+
+void test_failed_apply_rearms_history_and_keeps_modal_retryable() {
+    Harness h;
+    preparePayload(h, PayloadKind::FlatOnly);
+    seq::SequencerHistoryPatternSnapshot baseline;
+    captureMusical(h, baseline);
+
+    holdOpen(h);
+    h.turn(Config::EncoderID::OPT, normalizedRootLength(4U));
+    assert(h.state.sequencer.pattern.length.get() == 4U);
+    assert(h.state.abortSequencerPreparedPatternEdit(
+               seq::SequencerPreparedPatternEditOwner::QuickControls, 0U) ==
+           seq::SequencerPreparedPatternEditAbortOutcome::Aborted);
+    assertMusicalEquals(h, baseline);
+
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.patternQuickControls.selecting.get());
+    assertHistoryRejection(h, "History unavailable", feedbackRevisionBefore + 1U);
+    assertMusicalEquals(h, baseline);
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+
+    h.turn(Config::EncoderID::OPT, normalizedRootLength(6U));
+    assert(h.state.sequencer.pattern.length.get() == 6U);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+    assert(h.state.undoSequencerHistory());
+    assertMusicalEquals(h, baseline);
+
+    std::cout << "[PASS] failed Apply rearms History and keeps the modal retryable\n";
 }
 
 void verifyCancelAllocationRatchet(PayloadKind kind, std::size_t expectedAttempts) {
@@ -1395,6 +1447,7 @@ int main() {
     test_open_failure_matrix_is_atomic();
     test_offset_entry_failure_matrix_is_retryable();
     test_cancel_failure_matrix_preserves_retry_contract();
+    test_failed_apply_rearms_history_and_keeps_modal_retryable();
     test_offset_restore_failure_matrix_is_atomic_and_reversible();
     test_child_offset_failure_matrix_is_contained();
     test_quick_direct_child_length_uses_full_payload();

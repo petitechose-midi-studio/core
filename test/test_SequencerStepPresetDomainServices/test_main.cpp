@@ -2,18 +2,20 @@
 #undef NDEBUG
 #endif
 
-#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>
-#include <iostream>
+#include <array>
 #include <string>
 #include <vector>
+
+#include <filesystem>
+#include <iostream>
 
 #include <oc/impl/HostFileSystem.hpp>
 #include <oc/interface/IFileSystem.hpp>
 
+#include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/persistence/SequencerGraphAssetCodec.hpp"
@@ -25,6 +27,10 @@
 #include "../../src/state/sequencer/SequencerHistory.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/CoreStorages.hpp"
+
+#if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+#error "This test requires native EXTMEM failure injection"
+#endif
 
 namespace {
 
@@ -746,12 +752,12 @@ void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
     assert(stale.status == SequencerStepPresetStatus::STALE_TARGET);
     assertInvariantUnchanged(h.state, beforeWrongPreview);
 
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+    assert(core::state::sequencer::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         target.stepIndex,
         core::state::sequencer::StepProperty::VELOCITY,
         100,
-        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly
-    ));
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly)));
     h.state.sequencer.pattern.velocity[target.stepIndex] = 77;
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     const auto beforePendingEdit = captureInvariant(h.state);
@@ -764,6 +770,64 @@ void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
     assertInvariantUnchanged(h.state, beforePendingEdit);
 
     std::cout << "[PASS] test_apply_preflight_failures_leave_every_live_domain_unchanged\n";
+}
+
+void test_apply_allocation_failure_matrix_is_atomic_and_bounded() {
+    constexpr std::size_t APPLY_ALLOCATION_ATTEMPTS = 8U;
+    static_assert(APPLY_ALLOCATION_ATTEMPTS <= 12U,
+                  "Step preset apply exceeded its frozen allocation-attempt budget");
+
+    for (std::size_t ordinal = 1U; ordinal <= APPLY_ALLOCATION_ATTEMPTS; ++ordinal) {
+        Harness h;
+        prepareTarget(h);
+        saveBytes(h.files, "apply-allocation-source",
+                  encodePreset("apply-allocation-source", "Allocation Source"));
+        const auto target = h.presets.captureTarget();
+        const auto inspected = h.presets.inspectPreset("apply-allocation-source", target, 0U, 1U);
+        assert(inspected.inspected());
+        const auto before = captureInvariant(h.state);
+
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            const auto result = h.presets.applyPreset("apply-allocation-source", target,
+                                                      inspected.descriptor.previewKey);
+            if (ordinal == 7U) {
+                // Graph compaction owns an optional scratch allocation. Its
+                // failure deliberately falls back to the uncompacted graph
+                // and must not reject an otherwise admitted musical edit.
+                assert(result.ok());
+                assert(result.activation == SequencerStepPresetActivation::APPLIED);
+            } else {
+                assert(result.status == SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE);
+            }
+            assert(core::app::testing::extmemAllocationAttempt == ordinal);
+            assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+        }
+
+        if (ordinal == 7U) {
+            assert(h.state.sequencerHistory.undoCount() == 1U);
+        } else {
+            assertInvariantUnchanged(h.state, before);
+        }
+    }
+
+    Harness h;
+    prepareTarget(h);
+    saveBytes(h.files, "apply-max-plus-one", encodePreset("apply-max-plus-one", "Max Plus One"));
+    const auto target = h.presets.captureTarget();
+    const auto inspected = h.presets.inspectPreset("apply-max-plus-one", target, 0U, 1U);
+    assert(inspected.inspected());
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(APPLY_ALLOCATION_ATTEMPTS + 1U);
+        const auto result =
+            h.presets.applyPreset("apply-max-plus-one", target, inspected.descriptor.previewKey);
+        assert(result.ok());
+        assert(core::app::testing::extmemAllocationAttempt == APPLY_ALLOCATION_ATTEMPTS);
+        assert(core::app::testing::extmemAllocationFailureOrdinal ==
+               APPLY_ALLOCATION_ATTEMPTS + 1U);
+    }
+
+    std::cout << "[PASS] Step preset Apply freezes 8 allocation outcomes and max+1\n";
 }
 
 void test_random_cycle_preview_is_stable_and_generation_admission_is_exact() {
@@ -1086,6 +1150,7 @@ int main() {
     test_manager_refuses_previous_future_and_partial_without_mutation();
     test_step_presets_require_one_matching_pattern_pitch_context();
     test_apply_preflight_failures_leave_every_live_domain_unchanged();
+    test_apply_allocation_failure_matrix_is_atomic_and_bounded();
     test_random_cycle_preview_is_stable_and_generation_admission_is_exact();
     test_apply_second_read_payload_change_is_stale_and_non_mutating();
     test_apply_activation_conflict_leaves_preexisting_queue_and_state_unchanged();

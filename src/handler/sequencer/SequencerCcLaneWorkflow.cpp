@@ -195,7 +195,11 @@ FLASHMEM bool SequencerCcLaneWorkflow::createDefaultLane(uint32_t nowMs) {
     }
 
     auto change = prepareChange_(seq::SequencerHistoryActionKind::CcLaneCreate, ui.focusedLane);
-    if (!change || !installPreparedChange_(std::move(change), std::move(staged))) {
+    if (!change) {
+        block_(ActionId::CREATE, Reason::ALLOCATION_UNAVAILABLE, nowMs);
+        return false;
+    }
+    if (!installPreparedChange_(std::move(change), std::move(staged))) {
         block_(ActionId::CREATE, Reason::HISTORY_UNAVAILABLE, nowMs);
         return false;
     }
@@ -445,7 +449,11 @@ FLASHMEM bool SequencerCcLaneWorkflow::applySettings_(bool macroConflictAuthoriz
     }
 
     auto change = prepareChange_(seq::SequencerHistoryActionKind::CcLaneSettings, ui.focusedLane);
-    if (!change || !installPreparedChange_(std::move(change), std::move(staged))) {
+    if (!change) {
+        block_(ActionId::APPLY, Reason::ALLOCATION_UNAVAILABLE, nowMs);
+        return false;
+    }
+    if (!installPreparedChange_(std::move(change), std::move(staged))) {
         block_(ActionId::APPLY, Reason::HISTORY_UNAVAILABLE, nowMs);
         return false;
     }
@@ -482,7 +490,11 @@ FLASHMEM bool SequencerCcLaneWorkflow::editFocusedEvent(float delta, uint32_t no
 FLASHMEM bool SequencerCcLaneWorkflow::setFocusedEventValue_(uint8_t nextValue, uint32_t nowMs) {
     auto& ui = editor_.ccLaneUi;
     LaneBankPtr staged;
-    if (!stageCurrentBank_(staged, false) || !staged || ui.focusedLane >= staged->lanes.size() ||
+    if (!stageCurrentBank_(staged, false)) {
+        block_(ActionId::EDIT, Reason::ALLOCATION_UNAVAILABLE, nowMs);
+        return false;
+    }
+    if (!staged || ui.focusedLane >= staged->lanes.size() ||
         !staged->lanes[ui.focusedLane].occupied) {
         block_(ActionId::EDIT, Reason::INVALID_PAYLOAD, nowMs);
         return false;
@@ -494,10 +506,14 @@ FLASHMEM bool SequencerCcLaneWorkflow::setFocusedEventValue_(uint8_t nextValue, 
         seq::setSequencerCcLaneEvent(*staged, ui.focusedLane, ui.focusedStep, nextValue);
     if (!mutation.changed()) return false;
 
-    if (!history_.beginCoalescedCcLaneEventEdit(
+    const auto beginOutcome = history_.beginCoalescedCcLaneEventEdit(
             ui.focusedLane, ui.focusedStep, hadEvent ? static_cast<int32_t>(beforeValue) : -1,
-            static_cast<int32_t>(nextValue), staged.get(), nowMs)) {
-        block_(ActionId::EDIT, Reason::HISTORY_UNAVAILABLE, nowMs);
+            static_cast<int32_t>(nextValue), staged.get(), nowMs);
+    if (!seq::sequencerHistoryOpenAccepted(beginOutcome)) {
+        block_(ActionId::EDIT,
+               beginOutcome == seq::SequencerHistoryOpenOutcome::ResourceUnavailable
+                   ? Reason::ALLOCATION_UNAVAILABLE
+                   : Reason::HISTORY_UNAVAILABLE, nowMs);
         refreshProjection();
         return false;
     }
@@ -598,7 +614,11 @@ FLASHMEM bool SequencerCcLaneWorkflow::applyTransition(uint32_t nowMs) {
     auto& ui = editor_.ccLaneUi;
     if (ui.mode != seq::SequencerCcLaneUiMode::TRANSITION_PICKER) return false;
     LaneBankPtr staged;
-    if (!stageCurrentBank_(staged, false) || !staged || ui.focusedLane >= staged->lanes.size())
+    if (!stageCurrentBank_(staged, false)) {
+        block_(ActionId::EDIT, Reason::ALLOCATION_UNAVAILABLE, nowMs);
+        return false;
+    }
+    if (!staged || ui.focusedLane >= staged->lanes.size())
         return false;
     const auto before =
         seq::sequencerCcLaneTransition(staged->lanes[ui.focusedLane], ui.transitionStep);
@@ -616,7 +636,10 @@ FLASHMEM bool SequencerCcLaneWorkflow::applyTransition(uint32_t nowMs) {
     if (!mutation.changed()) return false;
     auto change = prepareChange_(seq::SequencerHistoryActionKind::CcLaneTransitionEdit,
                                  ui.focusedLane, ui.transitionStep);
-    if (!change) return false;
+    if (!change) {
+        block_(ActionId::EDIT, Reason::ALLOCATION_UNAVAILABLE, nowMs);
+        return false;
+    }
     change->descriptor.hasValue = true;
     change->descriptor.beforeValue = static_cast<int32_t>(before);
     change->descriptor.afterValue = static_cast<int32_t>(ui.selectedTransition);
@@ -660,7 +683,10 @@ FLASHMEM bool SequencerCcLaneWorkflow::toggleFocusedEvent(uint32_t nowMs) {
 FLASHMEM bool SequencerCcLaneWorkflow::commitEventEdit(uint32_t nowMs) {
     using Outcome = core::state::sequencer::SequencerPatternHistoryCommitOutcome;
     const auto outcome = history_.commitCoalescedPatternEditOutcome();
-    if (outcome == Outcome::Failed) return false;
+    if (outcome == Outcome::Failed) {
+        block_(ActionId::EDIT, Reason::HISTORY_UNAVAILABLE, nowMs);
+        return false;
+    }
     if (outcome == Outcome::Committed) {
         publishFeedback_(ActionId::EDIT, contextual::OperationFeedbackStatus::APPLIED, Reason::NONE,
                          contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION, nowMs, 650);
@@ -672,7 +698,11 @@ FLASHMEM bool SequencerCcLaneWorkflow::clearFocusedEvent_(uint32_t nowMs) {
     if (!commitEventEdit(nowMs)) return false;
     auto& ui = editor_.ccLaneUi;
     LaneBankPtr staged;
-    if (!stageCurrentBank_(staged, false) || !staged || ui.focusedLane >= staged->lanes.size())
+    if (!stageCurrentBank_(staged, false)) {
+        block_(ActionId::CLEAR, Reason::ALLOCATION_UNAVAILABLE, nowMs);
+        return false;
+    }
+    if (!staged || ui.focusedLane >= staged->lanes.size())
         return false;
     const auto& beforeLane = staged->lanes[ui.focusedLane];
     if (!beforeLane.occupied || !beforeLane.activeMask.test(ui.focusedStep)) return false;
@@ -681,7 +711,10 @@ FLASHMEM bool SequencerCcLaneWorkflow::clearFocusedEvent_(uint32_t nowMs) {
         return false;
     auto change = prepareChange_(seq::SequencerHistoryActionKind::CcLaneEventClear, ui.focusedLane,
                                  ui.focusedStep);
-    if (!change) return false;
+    if (!change) {
+        block_(ActionId::CLEAR, Reason::ALLOCATION_UNAVAILABLE, nowMs);
+        return false;
+    }
     change->descriptor.hasValue = true;
     change->descriptor.beforeValue = beforeValue;
     change->descriptor.afterValue = -1;
@@ -699,11 +732,21 @@ FLASHMEM bool SequencerCcLaneWorkflow::deleteCurrentLane_(uint32_t nowMs) {
     if (!commitEventEdit(nowMs)) return false;
     auto& ui = editor_.ccLaneUi;
     LaneBankPtr staged;
-    if (!stageCurrentBank_(staged, false) || !staged ||
-        !seq::deleteSequencerCcLane(*staged, ui.focusedLane).changed())
+    if (!stageCurrentBank_(staged, false)) {
+        block_(ActionId::REMOVE, Reason::ALLOCATION_UNAVAILABLE, nowMs);
         return false;
+    }
+    if (!staged ||
+        !seq::deleteSequencerCcLane(*staged, ui.focusedLane).changed()) {
+        block_(ActionId::REMOVE, Reason::INVALID_PAYLOAD, nowMs);
+        return false;
+    }
     auto change = prepareChange_(seq::SequencerHistoryActionKind::CcLaneDelete, ui.focusedLane);
-    if (!change || !installPreparedChange_(std::move(change), std::move(staged))) {
+    if (!change) {
+        block_(ActionId::REMOVE, Reason::ALLOCATION_UNAVAILABLE, nowMs);
+        return false;
+    }
+    if (!installPreparedChange_(std::move(change), std::move(staged))) {
         block_(ActionId::REMOVE, Reason::HISTORY_UNAVAILABLE, nowMs);
         return false;
     }
@@ -793,13 +836,11 @@ FLASHMEM bool SequencerCcLaneWorkflow::releaseGuard(seq::SequencerCcLaneActionSl
                          contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION, nowMs, 650);
         return false;
     }
-    const auto action = editor_.ccLaneUi.action(slot).hold.action;
     const bool applied = slot == seq::SequencerCcLaneActionSlot::BOTTOM_LEFT
                              ? deleteCurrentLane_(nowMs)
                              : applySettings_(true, nowMs);
     contextual::resetGuardedAction(guard);
     editor_.ccLaneUi.actionGuard.set(guard);
-    if (!applied) block_(action, Reason::FAILED, nowMs);
     return applied;
 }
 

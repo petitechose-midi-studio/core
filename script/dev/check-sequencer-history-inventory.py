@@ -107,6 +107,75 @@ EXPECTED_SINK_CLASSIFICATIONS = {
     "prepared": 4,
     "rollback-aware": 0,
 }
+D_OOM_ENUM_MEMBERS = {
+    "SequencerHistoryRejectionReason": (
+        "Blocked",
+        "ResourceUnavailable",
+        "HistoryUnavailable",
+    ),
+    "SequencerHistoryOpenOutcome": (
+        "Blocked",
+        "ResourceUnavailable",
+        "HistoryUnavailable",
+        "Started",
+        "Continued",
+    ),
+    "SequencerHistoryGestureOutcome": (
+        "Blocked",
+        "ResourceUnavailable",
+        "HistoryUnavailable",
+        "NoChange",
+        "Committed",
+    ),
+}
+D_OOM_SURFACE_IDENTIFIER_COUNTS = {
+    ("src/handler/sequencer/PatternPitchSettingsHandler.cpp", "showRejection"): 3,
+    ("src/handler/sequencer/SequencerCcLaneWorkflow.cpp", "ALLOCATION_UNAVAILABLE"): 12,
+    ("src/handler/sequencer/SequencerCcLaneWorkflow.cpp", "HISTORY_UNAVAILABLE"): 7,
+    ("src/handler/sequencer/SequencerMacroPropertyHandler.cpp", "showRejection"): 10,
+    ("src/handler/sequencer/SequencerPatternEditorHandler.cpp", "showRejection"): 2,
+    ("src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp", "showRejection"): 3,
+    ("src/handler/sequencer/SequencerPreparedPageStructureTransaction.cpp", "showRejection"): 4,
+    ("src/handler/sequencer/SequencerPropertySelectorHandler.cpp", "showRejection"): 8,
+    ("src/handler/sequencer/SequencerStepContentActions.cpp", "showRejection"): 2,
+    ("src/handler/sequencer/SequencerStepContentDraftWorkflow.cpp", "showRejection"): 2,
+    ("src/handler/sequencer/SequencerStepEditHandler.cpp", "showRejection"): 3,
+    ("src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp", "showRejection"): 2,
+    ("src/handler/sequencer/SequencerStepHandler.cpp", "showRejection"): 4,
+    ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "ALLOCATION_UNAVAILABLE"): 6,
+    ("src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "HISTORY_UNAVAILABLE"): 1,
+    ("src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "ALLOCATION_UNAVAILABLE"): 2,
+    ("src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "HISTORY_UNAVAILABLE"): 2,
+    ("src/handler/settings/SequencerSettingsHandler.cpp", "showRejection"): 1,
+    ("src/state/sequencer/SequencerUiState.cpp", "showRejection"): 5,
+}
+D_OOM_STRING_LITERAL_COUNTS = {
+    ("src/handler/project/ProjectHandlerValueEditing.cpp",
+     "Memory unavailable - unchanged"): 1,
+    ("src/handler/project/ProjectHandlerValueEditing.cpp",
+     "History unavailable - unchanged"): 1,
+    ("src/state/sequencer/SequencerUiState.cpp", "EDIT BLOCKED"): 1,
+    ("src/state/sequencer/SequencerUiState.cpp", "Edit unavailable"): 1,
+    ("src/state/sequencer/SequencerUiState.cpp", "Memory unavailable"): 1,
+    ("src/state/sequencer/SequencerUiState.cpp", "History unavailable"): 1,
+    ("src/state/sequencer/SequencerUiState.cpp", "State unchanged"): 1,
+}
+D_OOM_FORBIDDEN_IDENTIFIERS = (
+    "SequencerHistoryOpenOutcome::Failed",
+    "SequencerPreparedPatternEditBeginOutcome::Failed",
+    "SequencerPreparedFullBankEditOutcome::Failed",
+)
+D_OOM_QUICK_CONTROLS_BOOL_MEMBERS = (
+    "cancel_snapshot_valid_",
+    "offset_snapshot_valid_",
+    "cancel_retry_required_",
+)
+D_OOM_TYPED_BEGIN_METHODS = (
+    "beginOrContinueSequencerPatternHistoryCoalescing",
+    "beginOrContinueSequencerPreparedPatternEdit",
+    "beginCoalescedPatternEdit",
+    "beginPreparedPatternEdit",
+)
 PREPARED_PATTERN_LIFECYCLE_METHODS = (
     "beginPreparedPatternEdit",
     "preparedPatternEditReady",
@@ -720,8 +789,70 @@ def walk_manifest(value, path="root"):
             yield from walk_manifest(child, f"{path}[{index}]")
 
 
-def manifest_errors(manifest) -> list[str]:
+def d_oom_manifest_errors(manifest) -> list[str]:
     errors = []
+    try:
+        section = manifest["dOomPublication"]
+        header = section["outcomeHeader"]
+        enum_items = header["enums"]
+        surface_items = section["surfaceIdentifiers"]
+        literal_items = section["stringLiterals"]
+        forbidden = tuple(section["forbiddenIdentifiers"])
+        quick_controls = section["quickControlsRetainedBools"]
+        typed_begin_methods = tuple(section["typedBeginMethods"])
+    except (KeyError, TypeError):
+        return ["manifest is missing the D-OOM typed-publication ratchet"]
+
+    if header.get("path") != "src/state/sequencer/SequencerHistoryOutcomes.hpp":
+        errors.append("D-OOM outcome header path must remain canonical")
+    declared_enums = {
+        item.get("name"): tuple(item.get("members", ()))
+        for item in enum_items
+    }
+    if declared_enums != D_OOM_ENUM_MEMBERS:
+        errors.append("D-OOM outcome enums must match the frozen typed vocabulary")
+
+    declared_surfaces = Counter()
+    for item in surface_items:
+        key = (item.get("path"), item.get("identifier"))
+        count = item.get("expectedCount")
+        if key in declared_surfaces:
+            errors.append(f"duplicate D-OOM surface identifier: {key}")
+        if type(count) is not int or count <= 0:
+            errors.append(f"D-OOM surface identifier {key} must have a positive count")
+            continue
+        declared_surfaces[key] = count
+    if dict(declared_surfaces) != D_OOM_SURFACE_IDENTIFIER_COUNTS:
+        errors.append("D-OOM surface identifier inventory differs from the frozen contract")
+
+    declared_literals = Counter()
+    for item in literal_items:
+        key = (item.get("path"), item.get("literal"))
+        count = item.get("expectedCount")
+        if key in declared_literals:
+            errors.append(f"duplicate D-OOM string literal: {key}")
+        if type(count) is not int or count <= 0:
+            errors.append(f"D-OOM string literal {key} must have a positive count")
+            continue
+        declared_literals[key] = count
+    if dict(declared_literals) != D_OOM_STRING_LITERAL_COUNTS:
+        errors.append("D-OOM string literal inventory differs from the frozen contract")
+
+    if forbidden != D_OOM_FORBIDDEN_IDENTIFIERS:
+        errors.append("D-OOM forbidden Failed identifiers must remain canonical")
+    if quick_controls.get("path") != (
+        "src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
+    ):
+        errors.append("D-OOM Quick Controls retained-state path must remain canonical")
+    if tuple(quick_controls.get("members", ())) != D_OOM_QUICK_CONTROLS_BOOL_MEMBERS:
+        errors.append("D-OOM Quick Controls retained bool members must remain exactly three")
+    if typed_begin_methods != D_OOM_TYPED_BEGIN_METHODS:
+        errors.append("D-OOM typed begin-method set must remain canonical")
+    return errors
+
+
+def manifest_errors(manifest) -> list[str]:
+    errors = d_oom_manifest_errors(manifest)
     if manifest.get("schemaVersion") != 1:
         errors.append("manifest schemaVersion must be 1")
 
@@ -1684,6 +1815,14 @@ def collect_observation(root: Path, manifest):
         r"\bif\s*\(\s*!\s*history_\s*\.\s*" +
         re.escape(begin_method) + r"\s*\("
     )
+    typed_guarded_begin_pattern = re.compile(
+        r"\b(?:const\s+)?auto\s+(?P<outcome>[A-Za-z_]\w*)\s*=\s*"
+        r"history_\s*\.\s*" + re.escape(begin_method) +
+        r"\s*\([^;]*?\)\s*;\s*if\s*\(\s*!\s*"
+        r"(?:[A-Za-z_]\w*\s*::\s*)*sequencerHistoryOpenAccepted\s*\(\s*"
+        r"(?P=outcome)\s*\)\s*\)",
+        re.DOTALL,
+    )
     seal_method = manifest["coalescedSeals"]["method"]
     seals = Counter()
     authoritative_seals = Counter()
@@ -1698,7 +1837,10 @@ def collect_observation(root: Path, manifest):
         count = len(begin_pattern.findall(text))
         if count:
             begins[rel] = count
-        authoritative_count = len(guarded_begin_pattern.findall(text))
+        authoritative_count = (
+            len(guarded_begin_pattern.findall(text)) +
+            len(typed_guarded_begin_pattern.findall(text))
+        )
         if authoritative_count:
             authoritative_begins[rel] = authoritative_count
         count = len(seal_pattern.findall(text))
@@ -1883,6 +2025,7 @@ def collect_observation(root: Path, manifest):
             prepared_track_structure_trusted_commit,
         "preparedTrackStructureForbiddenRawCalls":
             prepared_track_structure_forbidden_raw_calls,
+        "dOom": collect_d_oom_observation(root, manifest),
     }
 
 
@@ -2055,6 +2198,41 @@ def observation_errors(manifest, observed) -> list[str]:
         observed["preparedTrackStructureForbiddenRawCalls"],
     )
 
+    expected_d_oom = expected_d_oom_observation(manifest)
+    observed_d_oom = observed["dOom"]
+    if observed_d_oom["enums"] != expected_d_oom["enums"]:
+        errors.append(
+            "D-OOM outcome enum mismatch: "
+            f"expected {expected_d_oom['enums']}, observed {observed_d_oom['enums']}"
+        )
+    errors += counter_errors(
+        "D-OOM surface identifier",
+        expected_d_oom["surfaceIdentifiers"],
+        observed_d_oom["surfaceIdentifiers"],
+    )
+    errors += counter_errors(
+        "D-OOM string literal",
+        expected_d_oom["stringLiterals"],
+        observed_d_oom["stringLiterals"],
+    )
+    errors += counter_errors(
+        "D-OOM forbidden Failed identifier",
+        expected_d_oom["forbiddenIdentifiers"],
+        observed_d_oom["forbiddenIdentifiers"],
+    )
+    errors += counter_errors(
+        "D-OOM silent begin guard",
+        expected_d_oom["silentBeginGuards"],
+        observed_d_oom["silentBeginGuards"],
+    )
+    if (observed_d_oom["quickControlsRetainedBools"] !=
+            expected_d_oom["quickControlsRetainedBools"]):
+        errors.append(
+            "D-OOM Quick Controls retained bool mismatch: "
+            f"expected {expected_d_oom['quickControlsRetainedBools']}, "
+            f"observed {observed_d_oom['quickControlsRetainedBools']}"
+        )
+
     member_total = sum(observed["members"].values())
     forward_total = sum(observed["forwards"].values())
     adapter_total = sum(observed["adapter"].values())
@@ -2165,6 +2343,93 @@ def count_identifier_occurrences(path: Path, identifiers) -> Counter:
     text = sanitize_cpp(path.read_text(encoding="utf-8"))
     pattern = identifier_pattern(identifiers)
     return Counter(match.group(1) for match in pattern.finditer(text))
+
+
+def expected_d_oom_observation(manifest):
+    section = manifest["dOomPublication"]
+    return {
+        "enums": {
+            item["name"]: tuple(item["members"])
+            for item in section["outcomeHeader"]["enums"]
+        },
+        "surfaceIdentifiers": Counter({
+            (item["path"], item["identifier"]): item["expectedCount"]
+            for item in section["surfaceIdentifiers"]
+        }),
+        "stringLiterals": Counter({
+            (item["path"], item["literal"]): item["expectedCount"]
+            for item in section["stringLiterals"]
+        }),
+        "forbiddenIdentifiers": Counter(),
+        "silentBeginGuards": Counter(),
+        "quickControlsRetainedBools": tuple(
+            section["quickControlsRetainedBools"]["members"]
+        ),
+    }
+
+
+def collect_d_oom_observation(root: Path, manifest):
+    section = manifest["dOomPublication"]
+    header = section["outcomeHeader"]
+    enums = {
+        item["name"]: enum_members(root / header["path"], item["name"])
+        for item in header["enums"]
+    }
+
+    surface_identifiers = Counter()
+    for item in section["surfaceIdentifiers"]:
+        count = count_identifier_occurrences(
+            root / item["path"],
+            (item["identifier"],),
+        )[item["identifier"]]
+        if count:
+            surface_identifiers[(item["path"], item["identifier"])] = count
+
+    string_literals = Counter()
+    for item in section["stringLiterals"]:
+        raw = (root / item["path"]).read_text(encoding="utf-8")
+        count = raw.count('"' + item["literal"] + '"')
+        if count:
+            string_literals[(item["path"], item["literal"])] = count
+
+    forbidden_identifiers = Counter()
+    forbidden_pattern = identifier_pattern(section["forbiddenIdentifiers"])
+    silent_begin_guards = Counter()
+    begin_patterns = {
+        method: re.compile(
+            r"\bif\s*\(\s*!\s*"
+            r"(?:[A-Za-z_]\w*\s*(?:\.|->)\s*)*" +
+            re.escape(method) + r"\s*\("
+        )
+        for method in section["typedBeginMethods"]
+    }
+    for path in source_files(root):
+        text = sanitize_cpp(path.read_text(encoding="utf-8"))
+        rel = relative(root, path)
+        forbidden_identifiers.update(
+            match.group(1) for match in forbidden_pattern.finditer(text)
+        )
+        for method, pattern in begin_patterns.items():
+            count = len(pattern.findall(text))
+            if count:
+                silent_begin_guards[(rel, method)] = count
+
+    quick_controls = section["quickControlsRetainedBools"]
+    quick_text = sanitize_cpp(
+        (root / quick_controls["path"]).read_text(encoding="utf-8")
+    )
+    quick_bool_members = tuple(re.findall(
+        r"\bbool\s+([A-Za-z_]\w*)\s*=\s*(?:false|true)\s*;",
+        quick_text,
+    ))
+    return {
+        "enums": enums,
+        "surfaceIdentifiers": surface_identifiers,
+        "stringLiterals": string_literals,
+        "forbiddenIdentifiers": forbidden_identifiers,
+        "silentBeginGuards": silent_begin_guards,
+        "quickControlsRetainedBools": quick_bool_members,
+    }
 
 
 def count_identifiers_under(
@@ -2420,6 +2685,7 @@ def synthetic_observation(manifest):
             expected_prepared_track_structure_trusted_commit_counter(manifest)
         ),
         "preparedTrackStructureForbiddenRawCalls": Counter(),
+        "dOom": expected_d_oom_observation(manifest),
     }
 
 
@@ -3088,6 +3354,31 @@ def seam_self_test(manifest) -> bool:
             for error in seam_errors(root, manifest)
         )
 
+
+def d_oom_publication_self_test(manifest) -> bool:
+    drift = synthetic_observation(manifest)
+    d_oom = drift["dOom"]
+    enum_name = "SequencerHistoryOpenOutcome"
+    d_oom["enums"][enum_name] = d_oom["enums"][enum_name][:-1]
+    surface_key = next(iter(d_oom["surfaceIdentifiers"]))
+    d_oom["surfaceIdentifiers"][surface_key] -= 1
+    d_oom["forbiddenIdentifiers"][D_OOM_FORBIDDEN_IDENTIFIERS[0]] = 1
+    d_oom["silentBeginGuards"][(
+        "src/handler/sequencer/UnexpectedSilentBegin.cpp",
+        D_OOM_TYPED_BEGIN_METHODS[0],
+    )] = 1
+    d_oom["quickControlsRetainedBools"] += ("unexpected_failure_state_",)
+    errors = observation_errors(manifest, drift)
+    labels = (
+        "D-OOM outcome enum mismatch",
+        "D-OOM surface identifier mismatch",
+        "D-OOM forbidden Failed identifier mismatch",
+        "D-OOM silent begin guard mismatch",
+        "D-OOM Quick Controls retained bool mismatch",
+    )
+    return all(any(label in error for error in errors) for label in labels)
+
+
 def run_self_tests(manifest) -> list[str]:
     failures = []
     baseline_errors = manifest_errors(manifest)
@@ -3160,6 +3451,8 @@ def run_self_tests(manifest) -> list[str]:
         failures.append("prepared Track Structure lifecycle drift was not rejected")
     if not seam_self_test(manifest):
         failures.append("failure-seam fixture or broken-helper mutation was not detected")
+    if not d_oom_publication_self_test(manifest):
+        failures.append("D-OOM publication drift was not rejected")
     return failures
 
 
@@ -3201,7 +3494,7 @@ def main() -> int:
             for failure in failures:
                 print(f"[FAIL] {failure}", file=sys.stderr)
             return 1
-        print("Sequencer history inventory self-tests: OK (13/13)")
+        print("Sequencer history inventory self-tests: OK (14/14)")
         return 0
 
     root = args.root.resolve()
@@ -3292,6 +3585,13 @@ def main() -> int:
         "  coalesced seals: "
         f"{seals['expectedBusinessTotal']} business + "
         f"{seals['expectedAdapterTotal']} adapter; all business returns authoritative"
+    )
+    d_oom = manifest["dOomPublication"]
+    print(
+        "  D-OOM typed publication: "
+        f"{len(d_oom['outcomeHeader']['enums'])} enums / "
+        f"{len(d_oom['surfaceIdentifiers'])} surface anchors / "
+        "zero silent begin guards"
     )
     print("  EXTMEM failure seam: test-only; 4/4 allocator helpers guarded")
     return 0

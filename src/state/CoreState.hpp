@@ -70,7 +70,7 @@ struct CoreStateLifecycle;
 namespace sequencer {
 struct SequencerGraphCompactionRemap;
 struct SequencerPreparedGraphContentPath;
-}
+}  // namespace sequencer
 
 /**
  * Owns the macro runtime, page bank, history, and projection state.
@@ -408,7 +408,7 @@ public:
     void commitAdmittedSequencerStructureHistory(
         sequencer::SequencerHistoryTrackStructureChangePtr change
     ) noexcept;
-    bool beginOrContinueSequencerPatternHistoryCoalescing(
+    sequencer::SequencerHistoryOpenOutcome beginOrContinueSequencerPatternHistoryCoalescing(
         uint8_t step, sequencer::StepProperty property, uint32_t nowMs,
         sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan, bool stateProperty = false);
     bool sealSequencerPatternHistoryCoalescing(bool mutationChanged);
@@ -436,7 +436,7 @@ public:
     [[nodiscard]] sequencer::SequencerPreparedPatternEditAbortOutcome
     abortSequencerPreparedPatternEdit(
         sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key);
-    bool beginOrContinueSequencerCcLaneEventHistoryCoalescing(
+    sequencer::SequencerHistoryOpenOutcome beginOrContinueSequencerCcLaneEventHistoryCoalescing(
         uint8_t lane, uint8_t step, int32_t beforeValue, int32_t afterValue,
         const sequencer::SequencerCcLaneBank* afterBank, uint32_t nowMs);
     sequencer::SequencerPatternHistoryCommitOutcome

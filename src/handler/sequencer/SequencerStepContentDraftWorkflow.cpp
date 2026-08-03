@@ -1,14 +1,31 @@
 #include "handler/sequencer/SequencerStepContentDraftWorkflow.hpp"
 
-#include <utility>
-
 #include <config/PlatformCompat.hpp>
+#include <config/TimeCompat.hpp>
+#include <utility>
 
 #include "app/ExtmemAllocator.hpp"
 #include "handler/common/NavigationUtils.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler::sequencer::step_content_draft_workflow {
+
+namespace {
+
+FLASHMEM void noteFailure(core::state::sequencer::SequencerState& sequencer,
+                          core::state::sequencer::SequencerStepContentDraftFailure failure) {
+    namespace seq = core::state::sequencer;
+    sequencer.stepContentDraft.noteFailure(failure);
+    if (failure == seq::SequencerStepContentDraftFailure::OUT_OF_MEMORY) {
+        sequencer.historyFeedback.showRejection(
+            seq::SequencerHistoryRejectionReason::ResourceUnavailable, core::time_compat::millis());
+    } else if (failure == seq::SequencerStepContentDraftFailure::HISTORY_UNAVAILABLE) {
+        sequencer.historyFeedback.showRejection(
+            seq::SequencerHistoryRejectionReason::HistoryUnavailable, core::time_compat::millis());
+    }
+}
+
+}  // namespace
 
 FLASHMEM bool apply(
     core::state::sequencer::SequencerState& sequencer,
@@ -19,16 +36,14 @@ FLASHMEM bool apply(
     if (!sequencer.stepContentDraft.active.get()) return false;
     sequencer.stepContentDraft.clearFailure();
     if (!seq::stepContentDraftHasPublishableSubset(sequencer)) {
-        sequencer.stepContentDraft.noteFailure(
-            seq::SequencerStepContentDraftFailure::UNPUBLISHABLE_MUTATION
+        noteFailure(sequencer, seq::SequencerStepContentDraftFailure::UNPUBLISHABLE_MUTATION
         );
         return false;
     }
 
     auto change = core::app::makeExtmemUnique<seq::SequencerHistoryPatternChange>();
     if (!change) {
-        sequencer.stepContentDraft.noteFailure(
-            seq::SequencerStepContentDraftFailure::OUT_OF_MEMORY
+        noteFailure(sequencer, seq::SequencerStepContentDraftFailure::OUT_OF_MEMORY
         );
         return false;
     }
@@ -48,19 +63,20 @@ FLASHMEM bool apply(
     if (!seq::captureHistorySnapshot(sequencer, change->before) ||
         !seq::captureHistorySnapshot(sequencer, change->after) ||
         !seq::captureStepContentDraftAfterSnapshot(sequencer, change->after)) {
-        sequencer.stepContentDraft.noteFailure(
-            seq::SequencerStepContentDraftFailure::OUT_OF_MEMORY
+        noteFailure(sequencer, seq::SequencerStepContentDraftFailure::OUT_OF_MEMORY
         );
         return false;
     }
     if (!history.canRecordPattern(*change)) {
-        sequencer.stepContentDraft.noteFailure(
-            seq::SequencerStepContentDraftFailure::HISTORY_UNAVAILABLE
+        noteFailure(sequencer, seq::SequencerStepContentDraftFailure::HISTORY_UNAVAILABLE
         );
         return false;
     }
 
-    if (!seq::publishStepContentDraft(sequencer)) return false;
+    if (!seq::publishStepContentDraft(sequencer)) {
+        noteFailure(sequencer, seq::SequencerStepContentDraftFailure::UNPUBLISHABLE_MUTATION);
+        return false;
+    }
     history.recordPreparedPattern(std::move(change));
     return true;
 }

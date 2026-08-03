@@ -2,12 +2,13 @@
 #undef NDEBUG
 #endif
 
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+
+#include <array>
 #include <iostream>
 #include <new>
 
@@ -681,7 +682,7 @@ void test_owner_specific_no_change_chronology() {
             2U,
             currentChoice(2U, scale)
         );
-        assert(result.outcome == Outcome::Failed);
+        assert(result.outcome == Outcome::Blocked);
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
         assert(h.state.sequencerHistory.undoCount() == 1U);
         assert(h.state.sequencer.stepContentDraft.active.get());
@@ -718,7 +719,7 @@ void test_active_draft_rejects_changed_choices_for_both_owners() {
                 0U,
                 changedChoice(0U, scale)
             );
-            assert(result.outcome == Outcome::Failed);
+            assert(result.outcome == Outcome::Blocked);
             assert(core::app::testing::extmemAllocationAttempt == 0U);
             assertExactLiveProof(h, musicalBefore);
         }
@@ -928,7 +929,7 @@ void test_maximum_topology_fail_nth_is_exact_and_atomic() {
                 0U,
                 choice
             );
-            assert(result.outcome == Outcome::Failed);
+            assert(result.outcome == Outcome::ResourceUnavailable);
             assert(result.projection.patternsVisited == 0U);
             tx::assertFailureConsumed(ordinal);
             assertExactLiveProof(h, before);

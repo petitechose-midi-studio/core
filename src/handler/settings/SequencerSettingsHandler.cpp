@@ -127,8 +127,8 @@ FLASHMEM void SequencerSettingsHandler::applySelectorAndClose() {
         row,
         choice
     );
-    if (result.outcome ==
-        core::state::sequencer::SequencerPreparedFullBankEditOutcome::Failed) {
+    if (!core::state::sequencer::sequencerHistoryGestureAccepted(result.outcome)) {
+        sequencer_.historyFeedback.showRejection(result.outcome, oc::time::millis());
         return;
     }
     if (result.outcome ==

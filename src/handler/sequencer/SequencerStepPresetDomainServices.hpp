@@ -24,6 +24,8 @@ namespace core::handler {
 enum class SequencerStepPresetStatus : uint8_t {
     OK = 0,
     STORAGE_UNAVAILABLE,
+    ALLOCATION_UNAVAILABLE,
+    HISTORY_UNAVAILABLE,
     EMPTY,
     INCOMPATIBLE,
     CAPACITY,

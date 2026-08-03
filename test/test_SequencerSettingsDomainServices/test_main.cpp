@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 #include <iostream>
 
 #include <oc/api/ButtonAPI.hpp>
@@ -9,10 +10,10 @@
 #include <oc/core/input/InputBinding.hpp>
 
 #include "../../src/app/ExtmemAllocator.hpp"
+#include "../../src/handler/sequencer/PatternPitchSettingsDomainServices.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/settings/SequencerSettingsDomainServices.hpp"
 #include "../../src/handler/settings/SequencerSettingsHandler.hpp"
-#include "../../src/handler/sequencer/PatternPitchSettingsDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerProjectScaleOps.hpp"
@@ -541,7 +542,7 @@ void test_settings_no_change_closes_without_feedback_or_full_bank_allocation() {
     std::cout << "[PASS] Settings no-op closes without feedback or FullBank allocation\n";
 }
 
-void test_settings_failure_keeps_selector_open_without_feedback() {
+void test_settings_failure_keeps_selector_open_with_memory_feedback() {
     SequencerSettingsHandlerHarness h;
     h.openSettings();
     h.tap(Config::ButtonID::NAV);
@@ -558,12 +559,16 @@ void test_settings_failure_keeps_selector_open_without_feedback() {
     assert(h.state.sequencerSettings.flowPhase.get() ==
            core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
     assert(h.state.sequencerSettings.selector.visible.get());
-    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision + 1U);
+    assert(h.state.sequencer.historyFeedback.visible.get());
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Memory unavailable") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
     assert(h.state.sequencerTracks.projectScaleSettings().root == scaleBefore.root);
     assert(h.state.sequencerHistory.undoCount(
                core::state::sequencer::SequencerHistoryScope::FullBank) == 0U);
 
-    std::cout << "[PASS] Settings allocation failure keeps selector open and silent\n";
+    std::cout << "[PASS] Settings allocation failure stays open with memory feedback\n";
 }
 
 void test_settings_no_change_with_active_draft_rejects_before_allocation() {
@@ -587,7 +592,11 @@ void test_settings_no_change_with_active_draft_rejects_before_allocation() {
     assert(h.state.sequencerSettings.flowPhase.get() ==
            core::state::SequencerSettingsFlowPhase::VALUE_SELECTOR);
     assert(h.state.sequencerSettings.selector.visible.get());
-    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision + 1U);
+    assert(h.state.sequencer.historyFeedback.visible.get());
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Edit unavailable") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
     assert(h.state.sequencer.stepContentDraft.failure ==
            core::state::sequencer::SequencerStepContentDraftFailure::TRANSITION_BLOCKED);
     assert(h.state.sequencer.stepContentDraft.blockedTransition ==
@@ -677,7 +686,7 @@ int main() {
     test_pattern_pitch_context_projects_formula_at_the_mode_boundary();
     test_project_scale_settings_are_undoable_through_handler();
     test_settings_no_change_closes_without_feedback_or_full_bank_allocation();
-    test_settings_failure_keeps_selector_open_without_feedback();
+    test_settings_failure_keeps_selector_open_with_memory_feedback();
     test_settings_no_change_with_active_draft_rejects_before_allocation();
     test_project_chord_projection_is_one_undoable_transaction();
     std::cout << "All SequencerSettingsDomainServices tests passed\n";

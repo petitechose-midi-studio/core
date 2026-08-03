@@ -55,8 +55,12 @@ private:
     void configureOptForFocusedItem();
     void clampFocusToLength();
     void prepareQuickControlsForOpen();
+    bool captureCancelSnapshot();
     bool captureOffsetSnapshot();
     bool abortPreparedQuickControlsHistory();
+    bool beginPreparedQuickControlsHistory();
+    bool ensurePreparedQuickControlsHistory();
+    void showHistoryRejection(core::state::sequencer::SequencerHistoryRejectionReason reason);
     void discardModalSnapshots();
     void closeTransientQuickControlsState();
     int focusedItemOrderIndex() const;

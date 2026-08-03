@@ -3,6 +3,7 @@
 #include <cstdlib>
 
 #include <config/PlatformCompat.hpp>
+#include <config/TimeCompat.hpp>
 
 #if defined(ARDUINO)
 // Cold placement is owned by the linker object selector. Preserving ordinary
@@ -112,6 +113,9 @@ FLASHMEM bool SequencerPreparedPageStructureTransaction::openBoundary() {
     using BoundaryOutcome = seq::SequencerPatternHistoryCommitOutcome;
     switch (outcome) {
         case BoundaryOutcome::Failed:
+            sequencer_.historyFeedback.showRejection(
+                seq::SequencerHistoryRejectionReason::HistoryUnavailable,
+                core::time_compat::millis());
             return false;
         case BoundaryOutcome::NoPending:
         case BoundaryOutcome::NoChange:
@@ -164,6 +168,11 @@ FLASHMEM bool SequencerPreparedPageStructureTransaction::begin(
         phase_ = Phase::Armed;
         abortOwned();
     }
+    sequencer_.historyFeedback.showRejection(
+        outcome == BeginOutcome::Continued
+            ? seq::SequencerHistoryRejectionReason::HistoryUnavailable
+            : seq::sequencerHistoryRejectionFor(outcome),
+        core::time_compat::millis());
     return false;
 }
 
@@ -204,6 +213,10 @@ SequencerPreparedPageStructureTransaction::execute(
     }
 
     const auto result = sealAndCommit(mutationChanged);
+    if (result == SequencerPreparedPageStructureResult::Failed) {
+        sequencer_.historyFeedback.showRejection(
+            seq::SequencerHistoryRejectionReason::HistoryUnavailable, core::time_compat::millis());
+    }
     if (result == SequencerPreparedPageStructureResult::Committed &&
         execution.finalizeCommitted != nullptr) {
         execution.finalizeCommitted(execution.mutationContext, sequencer_);
@@ -215,6 +228,8 @@ FLASHMEM SequencerPreparedPageStructureResult
 SequencerPreparedPageStructureTransaction::abort() {
     if (ownsPending()) abortOwned();
     else phase_ = Phase::Closed;
+    sequencer_.historyFeedback.showRejection(seq::SequencerHistoryRejectionReason::Blocked,
+                                             core::time_compat::millis());
     return SequencerPreparedPageStructureResult::Failed;
 }
 

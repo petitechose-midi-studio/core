@@ -41,7 +41,7 @@ core::state::sequencer::SequencerPreparedPatternEditBeginOutcome rejectPreparedP
     core::state::sequencer::SequencerHistoryDescriptor, bool) {
     g_prepared_begin_seen = true;
     g_prepared_payload_plan = payloadPlan;
-    return core::state::sequencer::SequencerPreparedPatternEditBeginOutcome::Failed;
+    return core::state::sequencer::SequencerPreparedPatternEditBeginOutcome::ResourceUnavailable;
 }
 
 core::state::sequencer::SequencerPatternHistoryCommitOutcome noPendingPatternEdit(void*) {
@@ -231,10 +231,15 @@ void test_property_selector_stays_open_when_history_barrier_fails() {
                owner, 0U, seq::SequencerCoalescedPatternPayloadPlan::FlatOnly, descriptor) ==
            seq::SequencerPreparedPatternEditBeginOutcome::Started);
 
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevisionBefore + 1U);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "History unavailable") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
 
     assert(h.state.sealSequencerPreparedPatternEdit(owner, 0U, false, descriptor) ==
            seq::SequencerPreparedPatternEditSealOutcome::Cleared);
@@ -375,6 +380,7 @@ void test_property_selector_rejected_prepare_blocks_edit_and_feedback() {
 
     g_now_ms = 100;
     const uint32_t feedbackDeadline = h.state.sequencer.patternVariationFeedback.hideAtMs;
+    const uint32_t historyFeedbackRevision = h.state.sequencer.historyFeedback.revision.get();
     h.turn(Config::EncoderID::OPT, 1.0f);
 
     assert(g_prepared_begin_seen);
@@ -384,8 +390,12 @@ void test_property_selector_rejected_prepare_blocks_edit_and_feedback() {
     assert(h.state.sequencer.patternVariationFeedback.hideAtMs == feedbackDeadline);
     assert(h.state.sequencerHistory.undoCount() == 0);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencer.historyFeedback.revision.get() == historyFeedbackRevision + 1U);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Memory unavailable") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
 
-    std::cout << "[PASS] test_property_selector_rejected_prepare_blocks_edit_and_feedback\n";
+    std::cout << "[PASS] Property Selector resource rejection is visible and atomic\n";
 }
 
 void test_property_selector_left_top_commits_live_variation_edit() {
@@ -702,11 +712,15 @@ void test_pattern_pitch_rejected_prepare_blocks_projection_and_feedback() {
            core::state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT);
     assert(h.state.patternPitchSettings.flowPhase.get() ==
            core::state::PatternPitchSettingsFlowPhase::VALUE_SELECTOR);
-    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision + 1U);
+    assert(h.state.sequencer.historyFeedback.visible.get());
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Memory unavailable") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
     assert(h.state.sequencerHistory.undoCount() == 0);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 
-    std::cout << "[PASS] test_pattern_pitch_rejected_prepare_blocks_projection_and_feedback\n";
+    std::cout << "[PASS] Pattern Pitch resource rejection is visible and atomic\n";
 }
 
 void test_pattern_pitch_payload_plan_tracks_enabled_graph() {

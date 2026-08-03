@@ -1,7 +1,7 @@
 #include "handler/sequencer/SequencerStepPresetLibraryAdapter.hpp"
 
-#include <algorithm>
 #include <cstring>
+#include <algorithm>
 
 #include <config/PlatformCompat.hpp>
 
@@ -32,6 +32,10 @@ FLASHMEM contextual::ContextActionReason reasonForResult(
             return contextual::ContextActionReason::CONFLICT;
         case SequencerStepPresetStatus::STORAGE_UNAVAILABLE:
             return contextual::ContextActionReason::STORAGE_UNAVAILABLE;
+        case SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE:
+            return contextual::ContextActionReason::ALLOCATION_UNAVAILABLE;
+        case SequencerStepPresetStatus::HISTORY_UNAVAILABLE:
+            return contextual::ContextActionReason::HISTORY_UNAVAILABLE;
         case SequencerStepPresetStatus::INCOMPATIBLE:
             return contextual::ContextActionReason::INCOMPATIBLE;
         case SequencerStepPresetStatus::EMPTY:

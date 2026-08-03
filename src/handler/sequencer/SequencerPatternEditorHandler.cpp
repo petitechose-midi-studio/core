@@ -4,6 +4,7 @@
 
 #include <config/InputIDs.hpp>
 #include <config/PlatformCompat.hpp>
+#include <config/TimeCompat.hpp>
 
 #include "app/ExtmemAllocator.hpp"
 #include "handler/common/NavigationUtils.hpp"
@@ -19,6 +20,11 @@ namespace {
 namespace input_utils = core::handler::sequencer::input_utils;
 using Field = core::state::sequencer::SequencerPatternEditorField;
 using Mode = core::state::sequencer::SequencerPatternEditorNavigationMode;
+
+FLASHMEM void showHistoryRejection(core::state::sequencer::SequencerState& sequencer,
+                                   core::state::sequencer::SequencerHistoryRejectionReason reason) {
+    sequencer.historyFeedback.showRejection(reason, core::time_compat::millis());
+}
 
 FLASHMEM int16_t normalizedToRange(float normalized,
                                    core::state::sequencer::SequencerPatternEditorValueRange range) {
@@ -354,12 +360,20 @@ FLASHMEM void SequencerPatternEditorHandler::applyRandomize() {
     }
     if (history_.commitCoalescedPatternEditOutcome() ==
         core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        showHistoryRejection(
+            sequencer_,
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
         return;
     }
 
     auto change =
         core::app::makeExtmemUnique<core::state::sequencer::SequencerHistoryPatternChange>();
-    if (!change) return;
+    if (!change) {
+        showHistoryRejection(
+            sequencer_,
+            core::state::sequencer::SequencerHistoryRejectionReason::ResourceUnavailable);
+        return;
+    }
 
     const uint8_t owner = sequencer_.patternEditor.ownerTrack;
     change->trackIndex = owner;
@@ -373,7 +387,12 @@ FLASHMEM void SequencerPatternEditorHandler::applyRandomize() {
     change->after.flat = randomize_.preview;
     change->after.focusedStep = randomize_.focusedStep;
 
-    if (!history_.canRecordPattern(*change)) return;
+    if (!history_.canRecordPattern(*change)) {
+        showHistoryRejection(
+            sequencer_,
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
+        return;
+    }
 
     core::state::sequencer::applySnapshotToEditorPreservingGraph(sequencer_, randomize_.preview);
     core::state::sequencer::applySnapshotPreservingGraph(tracks_.track(owner), randomize_.preview);
@@ -441,7 +460,10 @@ FLASHMEM bool SequencerPatternEditorHandler::beginPendingEdit(
         core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor,
         static_cast<uint8_t>(field), payloadPlanForField(sequencer_, field), descriptor);
     using Outcome = core::state::sequencer::SequencerPreparedPatternEditBeginOutcome;
-    if (outcome == Outcome::Failed) return false;
+    if (!core::state::sequencer::sequencerHistoryOpenAccepted(outcome)) {
+        sequencer_.historyFeedback.showRejection(outcome, core::time_compat::millis());
+        return false;
+    }
     if (outcome == Outcome::Started) {
         edit_field_ = field;
         edit_action_ = actionKind;
@@ -454,12 +476,20 @@ FLASHMEM bool SequencerPatternEditorHandler::beginPendingEdit(
             if (core::state::sequencer::sequencerPreparedPatternEditSealClosed(sealOutcome)) {
                 resetPendingEditMetadata();
             }
+            showHistoryRejection(
+                sequencer_,
+                core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
             return false;
         }
         const auto commitOutcome = history_.commitPreparedPatternEdit(
             core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor);
         using CommitOutcome = core::state::sequencer::SequencerPreparedPatternEditCommitOutcome;
-        if (commitOutcome == CommitOutcome::Failed) return false;
+        if (commitOutcome == CommitOutcome::Failed) {
+            showHistoryRejection(
+                sequencer_,
+                core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
+            return false;
+        }
         resetPendingEditMetadata();
         return false;
     }
@@ -483,7 +513,12 @@ FLASHMEM bool SequencerPatternEditorHandler::sealPendingEdit(bool changed) {
     if (core::state::sequencer::sequencerPreparedPatternEditSealClosed(outcome)) {
         resetPendingEditMetadata();
     }
-    if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(outcome)) return false;
+    if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(outcome)) {
+        showHistoryRejection(
+            sequencer_,
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
+        return false;
+    }
     return true;
 }
 
@@ -491,10 +526,16 @@ FLASHMEM bool SequencerPatternEditorHandler::commitPendingEdit() {
     const auto outcome = history_.commitPreparedPatternEdit(
         core::state::sequencer::SequencerPreparedPatternEditOwner::PatternEditor);
     if (outcome == core::state::sequencer::SequencerPreparedPatternEditCommitOutcome::Failed) {
+        showHistoryRejection(
+            sequencer_,
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
         return false;
     }
     if (history_.commitCoalescedPatternEditOutcome() ==
         core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        showHistoryRejection(
+            sequencer_,
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable);
         return false;
     }
     resetPendingEditMetadata();

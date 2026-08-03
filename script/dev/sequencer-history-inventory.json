@@ -633,6 +633,90 @@
       }
     ]
   },
+  "dOomPublication": {
+    "outcomeHeader": {
+      "path": "src/state/sequencer/SequencerHistoryOutcomes.hpp",
+      "enums": [
+        {
+          "name": "SequencerHistoryRejectionReason",
+          "members": [
+            "Blocked",
+            "ResourceUnavailable",
+            "HistoryUnavailable"
+          ]
+        },
+        {
+          "name": "SequencerHistoryOpenOutcome",
+          "members": [
+            "Blocked",
+            "ResourceUnavailable",
+            "HistoryUnavailable",
+            "Started",
+            "Continued"
+          ]
+        },
+        {
+          "name": "SequencerHistoryGestureOutcome",
+          "members": [
+            "Blocked",
+            "ResourceUnavailable",
+            "HistoryUnavailable",
+            "NoChange",
+            "Committed"
+          ]
+        }
+      ]
+    },
+    "surfaceIdentifiers": [
+      {"path": "src/handler/sequencer/PatternPitchSettingsHandler.cpp", "identifier": "showRejection", "expectedCount": 3},
+      {"path": "src/handler/sequencer/SequencerCcLaneWorkflow.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 12},
+      {"path": "src/handler/sequencer/SequencerCcLaneWorkflow.cpp", "identifier": "HISTORY_UNAVAILABLE", "expectedCount": 7},
+      {"path": "src/handler/sequencer/SequencerMacroPropertyHandler.cpp", "identifier": "showRejection", "expectedCount": 10},
+      {"path": "src/handler/sequencer/SequencerPatternEditorHandler.cpp", "identifier": "showRejection", "expectedCount": 2},
+      {"path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp", "identifier": "showRejection", "expectedCount": 3},
+      {"path": "src/handler/sequencer/SequencerPreparedPageStructureTransaction.cpp", "identifier": "showRejection", "expectedCount": 4},
+      {"path": "src/handler/sequencer/SequencerPropertySelectorHandler.cpp", "identifier": "showRejection", "expectedCount": 8},
+      {"path": "src/handler/sequencer/SequencerStepContentActions.cpp", "identifier": "showRejection", "expectedCount": 2},
+      {"path": "src/handler/sequencer/SequencerStepContentDraftWorkflow.cpp", "identifier": "showRejection", "expectedCount": 2},
+      {"path": "src/handler/sequencer/SequencerStepEditHandler.cpp", "identifier": "showRejection", "expectedCount": 3},
+      {"path": "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp", "identifier": "showRejection", "expectedCount": 2},
+      {"path": "src/handler/sequencer/SequencerStepHandler.cpp", "identifier": "showRejection", "expectedCount": 4},
+      {"path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 6},
+      {"path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "identifier": "HISTORY_UNAVAILABLE", "expectedCount": 1},
+      {"path": "src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 2},
+      {"path": "src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "identifier": "HISTORY_UNAVAILABLE", "expectedCount": 2},
+      {"path": "src/handler/settings/SequencerSettingsHandler.cpp", "identifier": "showRejection", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "identifier": "showRejection", "expectedCount": 5}
+    ],
+    "stringLiterals": [
+      {"path": "src/handler/project/ProjectHandlerValueEditing.cpp", "literal": "Memory unavailable - unchanged", "expectedCount": 1},
+      {"path": "src/handler/project/ProjectHandlerValueEditing.cpp", "literal": "History unavailable - unchanged", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "literal": "EDIT BLOCKED", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "literal": "Edit unavailable", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "literal": "Memory unavailable", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "literal": "History unavailable", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "literal": "State unchanged", "expectedCount": 1}
+    ],
+    "forbiddenIdentifiers": [
+      "SequencerHistoryOpenOutcome::Failed",
+      "SequencerPreparedPatternEditBeginOutcome::Failed",
+      "SequencerPreparedFullBankEditOutcome::Failed"
+    ],
+    "typedBeginMethods": [
+      "beginOrContinueSequencerPatternHistoryCoalescing",
+      "beginOrContinueSequencerPreparedPatternEdit",
+      "beginCoalescedPatternEdit",
+      "beginPreparedPatternEdit"
+    ],
+    "quickControlsRetainedBools": {
+      "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp",
+      "members": [
+        "cancel_snapshot_valid_",
+        "offset_snapshot_valid_",
+        "cancel_retry_required_"
+      ]
+    }
+  },
   "failureInjection": {
     "macro": "MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION",
     "cmakePath": "CMakeLists.txt",
@@ -659,11 +743,14 @@
       "test/test_SequencerHistory/test_main.cpp": 1,
       "test/test_SequencerHistoryQualification/test_main.cpp": 1,
       "test/test_SequencerMacroPropertyHandler/test_main.cpp": 1,
-      "test/test_SequencerPatternEditorHandler/test_main.cpp": 3,
+      "test/test_SequencerPatternEditorHandler/test_main.cpp": 5,
       "test/test_SequencerPreparedTrackStructureTransaction/test_main.cpp": 1,
       "test/test_MacroDirectTrackStructureTransaction/test_main.cpp": 1,
       "test/test_SequencerStructureTrackTransferTransaction/test_main.cpp": 1,
       "test/test_SequencerQuickControlsContainment/test_main.cpp": 1,
+      "test/test_SequencerCcLaneWorkflow/test_main.cpp": 1,
+      "test/test_SequencerStepContentDraftWorkflow/test_main.cpp": 1,
+      "test/test_SequencerStepPresetDomainServices/test_main.cpp": 1,
       "test/test_SequencerTrackBankOps/test_main.cpp": 1
     }
   }

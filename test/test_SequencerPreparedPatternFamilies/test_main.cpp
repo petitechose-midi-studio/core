@@ -192,8 +192,9 @@ void test_typed_abort_is_exact_before_and_after_seal() {
     }
 
     Harness h;
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
-        kStep, seq::StepProperty::NOTE, 10U, Plan::FlatOnly));
+    assert(
+        seq::sequencerHistoryOpenAccepted(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+        kStep, seq::StepProperty::NOTE, 10U, Plan::FlatOnly)));
     assert(h.state.sequencer.setStepNoteAt(kStep, 66U));
     assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     assert(h.state.abortSequencerPreparedPatternEdit(Owner::PageStructure, 1U) ==
@@ -501,7 +502,7 @@ void test_first_begin_failure_is_atomic() {
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        assert(begin(h, Owner::PatternPitch, 4U) == BeginOutcome::Failed);
+        assert(begin(h, Owner::PatternPitch, 4U) == BeginOutcome::ResourceUnavailable);
         tx::assertFailureConsumed(1U);
     }
     tx::assertFailureInjectionReset();
@@ -522,7 +523,7 @@ void test_failed_transition_keeps_exact_prior_entry_only() {
 
     {
         core::app::testing::ScopedExtmemAllocationFailure failure(1U);
-        assert(begin(h, Owner::StepToggle, 6U) == BeginOutcome::Failed);
+        assert(begin(h, Owner::StepToggle, 6U) == BeginOutcome::ResourceUnavailable);
         tx::assertFailureConsumed(1U);
     }
     tx::assertFailureInjectionReset();

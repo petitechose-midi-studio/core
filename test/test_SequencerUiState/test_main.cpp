@@ -1,8 +1,8 @@
 #include <cassert>
-#include <cstring>
 #include <cstdint>
-#include <iostream>
+#include <cstring>
 #include <array>
+#include <iostream>
 #include <type_traits>
 
 #include "../../src/state/sequencer/SequencerPresetLibraryEntryPolicy.hpp"
@@ -159,6 +159,43 @@ void test_history_feedback_shows_and_expires() {
     std::cout << "[PASS] test_history_feedback_shows_and_expires\n";
 }
 
+void assertHistoryRejection(const core::state::sequencer::SequencerHistoryFeedbackState& state,
+                            const char* expectedDetail, uint32_t expectedRevision,
+                            uint32_t expectedHideAtMs) {
+    assert(state.visible.get());
+    assert(state.revision.get() == expectedRevision);
+    assert(std::strcmp(state.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(state.line2.data(), expectedDetail) == 0);
+    assert(std::strcmp(state.line3.data(), "State unchanged") == 0);
+    assert(state.hideAtMs == expectedHideAtMs);
+}
+
+void test_history_rejection_feedback_is_typed_exact_and_expires() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerHistoryFeedbackState state;
+
+    state.showRejection(seq::SequencerHistoryRejectionReason::ResourceUnavailable, 100U);
+    assertHistoryRejection(state, "Memory unavailable", 1U, 1300U);
+
+    state.showRejection(seq::SequencerHistoryOpenOutcome::HistoryUnavailable, 200U);
+    assertHistoryRejection(state, "History unavailable", 2U, 1400U);
+
+    state.showRejection(seq::SequencerHistoryGestureOutcome::Blocked, 300U);
+    assertHistoryRejection(state, "Edit unavailable", 3U, 1500U);
+
+    state.update(1499U);
+    assertHistoryRejection(state, "Edit unavailable", 3U, 1500U);
+    state.update(1500U);
+    assert(!state.visible.get());
+    assert(state.revision.get() == 4U);
+    assert(state.hideAtMs == 0U);
+    assert(std::strcmp(state.line1.data(), "") == 0);
+    assert(std::strcmp(state.line2.data(), "") == 0);
+    assert(std::strcmp(state.line3.data(), "") == 0);
+
+    std::cout << "[PASS] typed history rejection feedback is exact and expires\n";
+}
+
 void test_track_paste_has_one_bounded_revision_subscription_surface() {
     using State = core::state::sequencer::SequencerTrackPasteUiState;
     static_assert(std::is_standard_layout_v<
@@ -302,6 +339,7 @@ int main() {
     test_context_selector_state_is_bounded_and_resettable();
     test_chord_sub_editor_has_one_atomic_observation_surface();
     test_history_feedback_shows_and_expires();
+    test_history_rejection_feedback_is_typed_exact_and_expires();
     test_track_paste_has_one_bounded_revision_subscription_surface();
     test_preset_library_keeps_only_the_active_domain_payload();
     test_preset_library_entry_policy_matches_the_visible_editor_surface();

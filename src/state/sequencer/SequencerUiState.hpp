@@ -1,23 +1,25 @@
 #pragma once
 
-#include <array>
 #include <cstdint>
-#include <variant>
 #include <cstring>
+
+#include <array>
+#include <variant>
 
 #include <oc/note/sequencer/StepBitMask128.hpp>
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 #include <oc/state/Signal.hpp>
 #include <oc/time/Time.hpp>
 
-#include "state/StructureNavigationState.hpp"
 #include "state/StructureClipboardPastePlan.hpp"
+#include "state/StructureNavigationState.hpp"
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/contextual/OperationFeedbackState.hpp"
 #include "state/project/ProjectState.hpp"
-#include "state/sequencer/SequencerPatternState.hpp"
 #include "state/sequencer/SequencerCcLaneDomain.hpp"
 #include "state/sequencer/SequencerChordPresetModel.hpp"
+#include "state/sequencer/SequencerHistoryOutcomes.hpp"
+#include "state/sequencer/SequencerPatternState.hpp"
 #include "state/sequencer/SequencerStepPresetModel.hpp"
 #include "state/sequencer/SequencerUiStateFwd.hpp"
 #include "state/sequencer/StepProperty.hpp"
@@ -522,6 +524,10 @@ struct SequencerHistoryFeedbackState {
     uint32_t hideAtMs = 0;
 
     void show(const char* nextLine1, const char* nextLine2, const char* nextLine3, uint32_t nowMs);
+
+    void showRejection(SequencerHistoryRejectionReason reason, uint32_t nowMs);
+    void showRejection(SequencerHistoryOpenOutcome outcome, uint32_t nowMs);
+    void showRejection(SequencerHistoryGestureOutcome outcome, uint32_t nowMs);
 
     void update(uint32_t nowMs) {
         if (!visible.get()) return;

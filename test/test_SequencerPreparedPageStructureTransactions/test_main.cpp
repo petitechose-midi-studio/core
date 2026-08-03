@@ -2,16 +2,17 @@
 #undef NDEBUG
 #endif
 
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <array>
+#include <optional>
+
 #include <initializer_list>
 #include <iostream>
 #include <new>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -116,6 +117,16 @@ using AbortOutcome = seq::SequencerPreparedPatternEditAbortOutcome;
 using BoundaryOutcome = seq::SequencerPatternHistoryCommitOutcome;
 using Plan = seq::SequencerCoalescedPatternPayloadPlan;
 using Owner = seq::SequencerPreparedPatternEditOwner;
+
+void assertHistoryRejection(const seq::SequencerState& sequencer, const char* expectedDetail,
+                            uint32_t expectedRevision) {
+    const auto& feedback = sequencer.historyFeedback;
+    assert(feedback.visible.get());
+    assert(feedback.revision.get() == expectedRevision);
+    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line2.data(), expectedDetail) == 0);
+    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
+}
 
 constexpr std::size_t kArmAllocationHeaderBytes = 16U;
 constexpr std::size_t kArmPatternChangeBytes = 1736U;
@@ -537,10 +548,12 @@ void test_boundary_failure_and_one_shot_protocol_stop_before_begin() {
     {
         Harness h;
         h.script.boundaryOutcome = BoundaryOutcome::Failed;
+        const uint32_t feedbackRevisionBefore = h.sequencer.historyFeedback.revision.get();
         Transaction transaction(h.sequencer, h.history, Action::PageClear);
         assert(!transaction.openBoundary());
         assert(transaction.execute(execution(h.script)) == Result::Failed);
         assertCallSequence(h.script, {Call::Boundary});
+        assertHistoryRejection(h.sequencer, "History unavailable", feedbackRevisionBefore + 1U);
     }
 
     {
@@ -596,7 +609,8 @@ void test_boundary_failure_and_one_shot_protocol_stop_before_begin() {
 void test_begin_accepts_started_only_and_closes_continued() {
     {
         Harness h;
-        h.script.beginOutcome = BeginOutcome::Failed;
+        h.script.beginOutcome = BeginOutcome::ResourceUnavailable;
+        const uint32_t feedbackRevisionBefore = h.sequencer.historyFeedback.revision.get();
         Transaction transaction(h.sequencer, h.history, Action::StepPaste);
         assert(transaction.openBoundary());
         assert(transaction.execute(execution(
@@ -610,11 +624,13 @@ void test_begin_accepts_started_only_and_closes_continued() {
                Result::Failed);
         assertCallSequence(h.script, {Call::Boundary, Call::Begin});
         assert(h.script.abortCount == 0U);
+        assertHistoryRejection(h.sequencer, "Memory unavailable", feedbackRevisionBefore + 1U);
     }
 
     {
         Harness h;
         h.script.beginOutcome = BeginOutcome::Continued;
+        const uint32_t feedbackRevisionBefore = h.sequencer.historyFeedback.revision.get();
         {
             Transaction transaction(h.sequencer, h.history, Action::StepPaste);
             assert(transaction.openBoundary());
@@ -635,6 +651,7 @@ void test_begin_accepts_started_only_and_closes_continued() {
         assert(h.script.abortCount == 1U);
         assert(h.script.abortOwner == Owner::PageStructure);
         assert(h.script.abortKey == static_cast<uint8_t>(Action::StepPaste));
+        assertHistoryRejection(h.sequencer, "History unavailable", feedbackRevisionBefore + 1U);
     }
 
     std::cout << "[PASS] Page begin accepts Started only and aborts Continued\n";
@@ -644,6 +661,7 @@ void test_failed_mutation_and_revalidation_abort_exactly_once() {
     {
         Harness h;
         h.script.mutationOutcome = MutationOutcome::Failed;
+        const uint32_t feedbackRevisionBefore = h.sequencer.historyFeedback.revision.get();
         {
             Transaction transaction(
                 h.sequencer,
@@ -667,6 +685,7 @@ void test_failed_mutation_and_revalidation_abort_exactly_once() {
              Call::Mutation, Call::Abort}
         );
         assert(h.script.abortCount == 1U);
+        assertHistoryRejection(h.sequencer, "Edit unavailable", feedbackRevisionBefore + 1U);
     }
 
     {

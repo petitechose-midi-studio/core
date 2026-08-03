@@ -159,6 +159,9 @@ FLASHMEM void SequencerPropertySelectorHandler::setupBindings() {
 FLASHMEM void SequencerPropertySelectorHandler::open() {
     const auto commitOutcome = history_.commitCoalescedPatternEditOutcome();
     if (commitOutcome == core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        sequencer_.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+            now_provider_ ? now_provider_() : 0U);
         return;
     }
 
@@ -185,6 +188,9 @@ FLASHMEM void SequencerPropertySelectorHandler::open() {
 FLASHMEM void SequencerPropertySelectorHandler::openCcLaneShortcut() {
     const auto commitOutcome = history_.commitCoalescedPatternEditOutcome();
     if (commitOutcome == core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        sequencer_.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+            now_provider_ ? now_provider_() : 0U);
         return;
     }
 
@@ -271,9 +277,17 @@ FLASHMEM void SequencerPropertySelectorHandler::closeCancel() {
 
 FLASHMEM bool SequencerPropertySelectorHandler::commitLiveEdits() {
     const auto familyOutcome = history_.commitPreparedPatternEdit(PreparedOwner::PropertySelector);
-    if (familyOutcome == PreparedCommitOutcome::Failed) return false;
+    if (familyOutcome == PreparedCommitOutcome::Failed) {
+        sequencer_.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+            now_provider_ ? now_provider_() : 0U);
+        return false;
+    }
     const auto coalescedOutcome = history_.commitCoalescedPatternEditOutcome();
     if (coalescedOutcome == core::state::sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        sequencer_.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+            now_provider_ ? now_provider_() : 0U);
         return false;
     }
     clearPreparedSegment();
@@ -307,7 +321,11 @@ FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float no
         const auto beginOutcome = history_.beginPreparedPatternEdit(
             PreparedOwner::PropertySelector, key, payloadPlan,
             makeStateHistoryDescriptor(step, beforeEnabled ? 1 : 0, afterEnabled ? 1 : 0));
-        if (beginOutcome == PreparedBeginOutcome::Failed) return;
+        if (!core::state::sequencer::sequencerHistoryOpenAccepted(beginOutcome)) {
+            sequencer_.historyFeedback.showRejection(beginOutcome,
+                                                     now_provider_ ? now_provider_() : 0U);
+            return;
+        }
         if (beginOutcome == PreparedBeginOutcome::Started || !prepared_segment_active_ ||
             prepared_segment_key_ != key) {
             prepared_segment_before_value_ = beforeEnabled ? 1 : 0;
@@ -326,7 +344,12 @@ FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float no
         if (core::state::sequencer::sequencerPreparedPatternEditSealClosed(sealOutcome)) {
             clearPreparedSegment();
         }
-        if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(sealOutcome)) return;
+        if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(sealOutcome)) {
+            sequencer_.historyFeedback.showRejection(
+                core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+                now_provider_ ? now_provider_() : 0U);
+            return;
+        }
         return;
     }
     if (sequencer_.stepPropertyInlineSelector.selectedIndex.get() >=
@@ -343,7 +366,11 @@ FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float no
     const auto beginOutcome = history_.beginPreparedPatternEdit(
         PreparedOwner::PropertySelector, key, PayloadPlan::FlatOnly,
         makeVariationHistoryDescriptor(property, beforeRange, range));
-    if (beginOutcome == PreparedBeginOutcome::Failed) return;
+    if (!core::state::sequencer::sequencerHistoryOpenAccepted(beginOutcome)) {
+        sequencer_.historyFeedback.showRejection(beginOutcome,
+                                                 now_provider_ ? now_provider_() : 0U);
+        return;
+    }
     if (beginOutcome == PreparedBeginOutcome::Started || !prepared_segment_active_ ||
         prepared_segment_key_ != key) {
         prepared_segment_before_value_ = beforeRange;
@@ -360,7 +387,12 @@ FLASHMEM void SequencerPropertySelectorHandler::setActiveVariationRange(float no
     if (core::state::sequencer::sequencerPreparedPatternEditSealClosed(sealOutcome)) {
         clearPreparedSegment();
     }
-    if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(sealOutcome)) return;
+    if (core::state::sequencer::sequencerPreparedPatternEditSealFailed(sealOutcome)) {
+        sequencer_.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+            now_provider_ ? now_provider_() : 0U);
+        return;
+    }
     if (changed) {
         sequencer_.patternVariationFeedback.show(property, now_provider_ ? now_provider_() : 0);
     }

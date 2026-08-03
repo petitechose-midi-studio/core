@@ -2,9 +2,10 @@
 #undef NDEBUG
 #endif
 
-#include <array>
 #include <cassert>
 #include <cstring>
+
+#include <array>
 #include <iostream>
 
 #include <oc/api/ButtonAPI.hpp>
@@ -16,9 +17,9 @@
 #include <oc/state/NotificationQueue.hpp>
 
 #include "../../src/app/ExtmemAllocator.hpp"
-#include "../../src/handler/sequencer/SequencerMacroPropertyHandler.hpp"
-#include "../../src/handler/sequencer/SequencerInputUtils.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "../../src/handler/sequencer/SequencerInputUtils.hpp"
+#include "../../src/handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
@@ -118,6 +119,16 @@ void assertMacroUiInvariant(
     assert(actual.quickFocusedItem == expected.quickFocusedItem);
     assert(actual.quickOffsetSteps == expected.quickOffsetSteps);
     assert(actual.quickHideAtMs == expected.quickHideAtMs);
+}
+
+void assertHistoryRejection(const core::state::sequencer::SequencerState& sequencer,
+                            const char* expectedDetail, uint32_t expectedRevision) {
+    const auto& feedback = sequencer.historyFeedback;
+    assert(feedback.visible.get());
+    assert(feedback.revision.get() == expectedRevision);
+    assert(std::strcmp(feedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(feedback.line2.data(), expectedDetail) == 0);
+    assert(std::strcmp(feedback.line3.data(), "State unchanged") == 0);
 }
 
 struct SequencerMacroPropertyHarness {
@@ -263,6 +274,7 @@ void test_all_five_macro_and_opt_callers_reject_fail_one_atomically() {
         core::state::sequencer::SequencerHistoryPatternSnapshot musicalBefore;
         tx::captureMusicalSnapshot(h.state, musicalBefore);
         const auto uiBefore = captureMacroUiInvariant(h.state.sequencer);
+        const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 
         {
@@ -275,6 +287,8 @@ void test_all_five_macro_and_opt_callers_reject_fail_one_atomically() {
         tx::assertStateInvariant(h.state, stateBefore);
         tx::assertMusicalSnapshot(h.state, musicalBefore);
         assertMacroUiInvariant(h.state.sequencer, uiBefore);
+        assertHistoryRejection(h.state.sequencer, "Memory unavailable",
+                               feedbackRevisionBefore + 1U);
     }
 
     std::cout

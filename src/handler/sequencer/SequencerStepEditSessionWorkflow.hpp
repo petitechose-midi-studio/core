@@ -18,7 +18,8 @@ bool openForMacroInPage(core::state::sequencer::SequencerState& sequencer,
 bool openForStep(core::state::sequencer::SequencerState& sequencer,
                  SequencerHistoryDomainServices& history,
                  oc::context::OverlayManager<core::ui::OverlayType>& overlays, uint8_t step);
-bool commitHistory(SequencerHistoryDomainServices& history);
+bool commitHistory(core::state::sequencer::SequencerState& sequencer,
+                   SequencerHistoryDomainServices& history);
 bool retargetRootStep(core::state::sequencer::SequencerState& sequencer,
                       SequencerHistoryDomainServices& history, int direction);
 bool backToParentContent(core::state::sequencer::SequencerState& sequencer,
