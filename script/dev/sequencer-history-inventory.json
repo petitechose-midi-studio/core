@@ -454,16 +454,54 @@
           "expectedGraphResetCount": 1,
           "expectedCcResetCount": 1,
           "expectedActiveScratchClearCount": 0,
-          "expectedDraftGuardCount": 0
+          "expectedDraftGuardCount": 0,
+          "expectedSnapshotActiveGuardCount": 0,
+          "expectedEditorGraphRouteCount": 0,
+          "expectedEditorCcRouteCount": 0,
+          "expectedGraphCaptureCallCount": 0,
+          "expectedDataCaptureCallCount": 0
+        },
+        {
+          "function": "captureHistoryTrackBankGraphUsingReservedStorage",
+          "expectedActiveTrackBindingCount": 1,
+          "expectedSkipGuardCount": 0,
+          "expectedGraphResetCount": 0,
+          "expectedCcResetCount": 0,
+          "expectedActiveScratchClearCount": 0,
+          "expectedDraftGuardCount": 0,
+          "expectedSnapshotActiveGuardCount": 1,
+          "expectedEditorGraphRouteCount": 1,
+          "expectedEditorCcRouteCount": 0,
+          "expectedGraphCaptureCallCount": 0,
+          "expectedDataCaptureCallCount": 0
+        },
+        {
+          "function": "captureHistoryTrackBankDataUsingReservedStorage",
+          "expectedActiveTrackBindingCount": 1,
+          "expectedSkipGuardCount": 0,
+          "expectedGraphResetCount": 0,
+          "expectedCcResetCount": 0,
+          "expectedActiveScratchClearCount": 0,
+          "expectedDraftGuardCount": 0,
+          "expectedSnapshotActiveGuardCount": 1,
+          "expectedEditorGraphRouteCount": 0,
+          "expectedEditorCcRouteCount": 1,
+          "expectedGraphCaptureCallCount": 0,
+          "expectedDataCaptureCallCount": 0
         },
         {
           "function": "captureHistoryTrackBankSnapshotUsingReservedStorage",
           "expectedActiveTrackBindingCount": 1,
-          "expectedSkipGuardCount": 1,
-          "expectedGraphResetCount": 1,
-          "expectedCcResetCount": 1,
+          "expectedSkipGuardCount": 0,
+          "expectedGraphResetCount": 0,
+          "expectedCcResetCount": 0,
           "expectedActiveScratchClearCount": 0,
-          "expectedDraftGuardCount": 0
+          "expectedDraftGuardCount": 0,
+          "expectedSnapshotActiveGuardCount": 1,
+          "expectedEditorGraphRouteCount": 0,
+          "expectedEditorCcRouteCount": 0,
+          "expectedGraphCaptureCallCount": 1,
+          "expectedDataCaptureCallCount": 1
         },
         {
           "function": "applyHistorySnapshot",
@@ -472,7 +510,12 @@
           "expectedGraphResetCount": 0,
           "expectedCcResetCount": 0,
           "expectedActiveScratchClearCount": 2,
-          "expectedDraftGuardCount": 0
+          "expectedDraftGuardCount": 0,
+          "expectedSnapshotActiveGuardCount": 0,
+          "expectedEditorGraphRouteCount": 0,
+          "expectedEditorCcRouteCount": 0,
+          "expectedGraphCaptureCallCount": 0,
+          "expectedDataCaptureCallCount": 0
         }
       ]
     }
@@ -746,6 +789,7 @@
     "allowedTestUses": {
       "test/support/SequencerHistoryTransactionAssertions.hpp": 1,
       "test/test_ProjectHistoryCoordinator/test_main.cpp": 1,
+      "test/test_ProjectSessionAutosaveService/test_main.cpp": 1,
       "test/test_SequencerCoalescedPatternTransactions/test_main.cpp": 10,
       "test/test_SequencerHistory/test_main.cpp": 1,
       "test/test_SequencerHistoryQualification/test_main.cpp": 1,

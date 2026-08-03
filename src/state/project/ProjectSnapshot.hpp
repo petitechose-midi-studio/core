@@ -70,6 +70,14 @@ public:
     SliceKind nextSliceKind() const;
 
 private:
+    enum class BoundaryMode : uint8_t {
+        // Yielded captures require every Project transaction to be closed.
+        COOPERATIVE_QUIESCENT = 0,
+        // Non-yielding compatibility captures may observe live coalesced edits,
+        // but boundaryReady_ still rejects rollback-capable transactions.
+        SYNCHRONOUS_CURRENT_STATE,
+    };
+
     enum class Phase : uint8_t {
         IDLE = 0,
         PROJECT,
@@ -80,11 +88,33 @@ private:
         COMPLETE,
     };
 
+    static bool boundaryReady_(
+        const core::state::CoreState& state,
+        BoundaryMode mode
+    );
+    bool begin_(
+        const core::state::CoreState& state,
+        ProjectSnapshot& snapshot,
+        BoundaryMode mode
+    );
+    static bool captureSynchronously_(
+        const core::state::CoreState& state,
+        ProjectSnapshot& snapshot
+    );
     bool guardMatches_() const;
+
+    friend ProjectSnapshotPtr captureProjectSnapshotOwned(
+        const core::state::CoreState& state
+    );
+    friend bool captureProjectSnapshot(
+        const core::state::CoreState& state,
+        ProjectSnapshot& out
+    );
 
     const core::state::CoreState* state_ = nullptr;
     ProjectSnapshot* snapshot_ = nullptr;
     Phase phase_ = Phase::IDLE;
+    BoundaryMode mode_ = BoundaryMode::COOPERATIVE_QUIESCENT;
     ProjectCaptureGuard guard_{};
     uint32_t automation_offset_ = 0U;
     uint8_t macro_track_ = 0U;

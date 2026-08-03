@@ -93,12 +93,30 @@ FLASHMEM void applyProjectEditing(core::state::CoreState& state,
 
 }  // namespace
 
+FLASHMEM bool ProjectSnapshotCapture::boundaryReady_(
+    const core::state::CoreState& state,
+    BoundaryMode mode
+) {
+    if (mode == BoundaryMode::COOPERATIVE_QUIESCENT) {
+        return !state.hasPendingProjectTransaction();
+    }
+    return !state.macroHistory.hasPendingModulatorAuditionTransaction(state.pages) &&
+           !state.projectTrackHistory.hasPendingGesture();
+}
+
 FLASHMEM bool ProjectSnapshotCapture::begin(const core::state::CoreState& state,
                                             ProjectSnapshot& snapshot) {
+    return begin_(state, snapshot, BoundaryMode::COOPERATIVE_QUIESCENT);
+}
+
+FLASHMEM bool ProjectSnapshotCapture::begin_(const core::state::CoreState& state,
+                                             ProjectSnapshot& snapshot,
+                                             BoundaryMode mode) {
     cancel();
-    if (!snapshot.projectControl || state.hasPendingProjectTransaction()) {
+    if (!snapshot.projectControl || !boundaryReady_(state, mode)) {
         return false;
     }
+    mode_ = mode;
 
     guard_ = {
         .token = state.projectSessionSaveToken(),
@@ -113,7 +131,7 @@ FLASHMEM bool ProjectSnapshotCapture::begin(const core::state::CoreState& state,
             state.sequencer,
             snapshot.sequencer
         ) ||
-        state.hasPendingProjectTransaction() ||
+        !boundaryReady_(state, mode_) ||
         !state.projectSessionSaveTokenMatches(guard_.token) ||
         state.pages.control.authoredRevision != guard_.authoredRevision ||
         state.projectTracks.revision.get() != guard_.projectTrackRevision ||
@@ -284,6 +302,7 @@ FLASHMEM void ProjectSnapshotCapture::cancel() {
     state_ = nullptr;
     snapshot_ = nullptr;
     phase_ = Phase::IDLE;
+    mode_ = BoundaryMode::COOPERATIVE_QUIESCENT;
     guard_ = {};
     automation_offset_ = 0U;
     macro_track_ = 0U;
@@ -315,19 +334,25 @@ ProjectSnapshotCapture::nextSliceKind() const {
 
 FLASHMEM bool ProjectSnapshotCapture::guardMatches_() const {
     return state_ != nullptr &&
-           !state_->hasPendingProjectTransaction() &&
+           boundaryReady_(*state_, mode_) &&
            state_->projectSessionSaveTokenMatches(guard_.token) &&
            state_->pages.control.authoredRevision == guard_.authoredRevision &&
            state_->projectTracks.revision.get() == guard_.projectTrackRevision &&
            state_->sequencerTracks.activeTrackIndex() == frozen_active_track_;
 }
 
-namespace {
-
-FLASHMEM bool captureToCompletion(const core::state::CoreState& state,
-                                  ProjectSnapshot& snapshot) {
+FLASHMEM bool ProjectSnapshotCapture::captureSynchronously_(
+    const core::state::CoreState& state,
+    ProjectSnapshot& snapshot
+) {
     ProjectSnapshotCapture capture;
-    if (!capture.begin(state, snapshot)) return false;
+    if (!capture.begin_(
+            state,
+            snapshot,
+            BoundaryMode::SYNCHRONOUS_CURRENT_STATE
+        )) {
+        return false;
+    }
 
     while (capture.active()) {
         const auto progress = capture.advance();
@@ -340,17 +365,17 @@ FLASHMEM bool captureToCompletion(const core::state::CoreState& state,
     return false;
 }
 
-}  // namespace
-
 FLASHMEM ProjectSnapshotPtr captureProjectSnapshotOwned(const core::state::CoreState& state) {
     OC_PERF_SCOPE(perfCapture, "persistence.project-snapshot.allocate-and-capture");
     auto snapshot = makeProjectSnapshot();
-    if (!snapshot || !captureToCompletion(state, *snapshot)) return {};
+    if (!snapshot || !ProjectSnapshotCapture::captureSynchronously_(state, *snapshot)) {
+        return {};
+    }
     return snapshot;
 }
 
 FLASHMEM bool captureProjectSnapshot(const core::state::CoreState& state, ProjectSnapshot& out) {
-    return captureToCompletion(state, out);
+    return ProjectSnapshotCapture::captureSynchronously_(state, out);
 }
 
 FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,

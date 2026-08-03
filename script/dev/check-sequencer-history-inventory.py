@@ -277,6 +277,8 @@ PREPARED_FULL_BANK_FORBIDDEN_RAW_METHODS = (
 PREPARED_FULL_BANK_PROVIDER_PATH = "src/state/sequencer/SequencerHistory.cpp"
 PREPARED_FULL_BANK_PROVIDERS = (
     "reserveHistoryTrackBankSnapshotStorage",
+    "captureHistoryTrackBankGraphUsingReservedStorage",
+    "captureHistoryTrackBankDataUsingReservedStorage",
     "captureHistoryTrackBankSnapshotUsingReservedStorage",
     "applyHistorySnapshot",
 )
@@ -320,6 +322,36 @@ PREPARED_FULL_BANK_PROVIDER_ANCHORS = {
         re.compile(
             r"\bactive\s*\.\s*stepContentDraft\s*\.\s*active\s*\.\s*get\s*\("
         ),
+    ),
+    "expectedSnapshotActiveGuardCount": (
+        "snapshot-active-guard",
+        re.compile(
+            r"\bout\s*\.\s*flat\s*\.\s*activeTrack\s*!=\s*activeTrack"
+        ),
+    ),
+    "expectedEditorGraphRouteCount": (
+        "active-editor-graph-route",
+        re.compile(
+            r"\bauto\s*&\s*targetGraph\s*=\s*trackIndex\s*==\s*activeTrack"
+            r"\s*\?\s*out\s*\.\s*editorGraph\s*:\s*out\s*\.\s*bankGraphs"
+            r"\s*\[\s*trackIndex\s*\]"
+        ),
+    ),
+    "expectedEditorCcRouteCount": (
+        "active-editor-cc-route",
+        re.compile(
+            r"\bauto\s*&\s*targetCcLanes\s*=\s*trackIndex\s*==\s*activeTrack"
+            r"\s*\?\s*out\s*\.\s*editorCcLanes\s*:\s*out\s*\.\s*bankCcLanes"
+            r"\s*\[\s*trackIndex\s*\]"
+        ),
+    ),
+    "expectedGraphCaptureCallCount": (
+        "graph-slice-call",
+        re.compile(r"\bcaptureHistoryTrackBankGraphUsingReservedStorage\s*\("),
+    ),
+    "expectedDataCaptureCallCount": (
+        "cc-data-slice-call",
+        re.compile(r"\bcaptureHistoryTrackBankDataUsingReservedStorage\s*\("),
     ),
 }
 
@@ -3114,12 +3146,25 @@ def prepared_full_bank_provider_self_test(manifest) -> bool:
         "  }\n"
         "  return true;\n"
         "}\n"
+        "bool captureHistoryTrackBankGraphUsingReservedStorage() {\n"
+        "  const uint8_t activeTrack = bank.activeTrackIndex();\n"
+        "  if (out.flat.activeTrack != activeTrack) return false;\n"
+        "  auto& targetGraph = trackIndex == activeTrack\n"
+        "    ? out.editorGraph : out.bankGraphs[trackIndex];\n"
+        "  return true;\n"
+        "}\n"
+        "bool captureHistoryTrackBankDataUsingReservedStorage() {\n"
+        "  const uint8_t activeTrack = bank.activeTrackIndex();\n"
+        "  if (out.flat.activeTrack != activeTrack) return false;\n"
+        "  auto& targetCcLanes = trackIndex == activeTrack\n"
+        "    ? out.editorCcLanes : out.bankCcLanes[trackIndex];\n"
+        "  return true;\n"
+        "}\n"
         "bool captureHistoryTrackBankSnapshotUsingReservedStorage() {\n"
         "  const uint8_t activeTrack = bank.activeTrackIndex();\n"
-        "  if (i == activeTrack) {\n"
-        "    out.bankGraphs[i].reset();\n"
-        "    out.bankCcLanes[i].reset();\n"
-        "  }\n"
+        "  if (out.flat.activeTrack != activeTrack) return false;\n"
+        "  captureHistoryTrackBankGraphUsingReservedStorage();\n"
+        "  captureHistoryTrackBankDataUsingReservedStorage();\n"
         "  return true;\n"
         "}\n"
         "bool applyHistorySnapshot(const SequencerHistoryTrackBankSnapshot& snapshot) {\n"

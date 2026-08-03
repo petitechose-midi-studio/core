@@ -336,6 +336,10 @@ void test_snapshot_and_reset_boundaries_see_or_purge_the_central_cc_transaction(
     assert(h.workflow.editFocusedEvent(1.0f, 100U));
     assert(h.state.hasPendingProjectTransaction());
 
+    core::state::project::ProjectSnapshot cooperativeSnapshot;
+    core::state::project::ProjectSnapshotCapture cooperativeCapture;
+    assert(!cooperativeCapture.begin(h.state, cooperativeSnapshot));
+
     core::state::project::ProjectSnapshot snapshot;
     assert(core::state::project::captureProjectSnapshot(h.state, snapshot));
     const auto* captured = snapshot.sequencer.editorCcLanes.get();
