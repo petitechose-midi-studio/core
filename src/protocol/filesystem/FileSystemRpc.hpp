@@ -9,12 +9,23 @@
 
 #include "persistence/ProductFileService.hpp"
 
+namespace core::persistence {
+class ProductFileCommitPlan;
+}
+
 namespace core::protocol::filesystem {
+
+namespace conditional_mutation {
+class ConditionalMutationPlan;
+}
 
 inline constexpr uint8_t FILESYSTEM_RPC_SCHEMA = 1;
 inline constexpr uint8_t FILESYSTEM_RPC_ID_MIN = 0xE0;
 inline constexpr uint8_t FILESYSTEM_RPC_ID_MAX = 0xFB;
 inline constexpr size_t FILESYSTEM_RPC_MAX_CHUNK_SIZE = 30720;
+inline constexpr uint32_t FILESYSTEM_RPC_MAX_UPLOAD_SIZE = 524'288U;
+inline constexpr uint32_t FILESYSTEM_RPC_TOTAL_WRITE_TIMEOUT_MS = 10'000U;
+inline constexpr size_t FILESYSTEM_RPC_REQUEST_BUFFER_SIZE = 32512;
 inline constexpr size_t FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE = 32512;
 inline constexpr uint8_t FILESYSTEM_RPC_MAX_LIST_ENTRIES = 8;
 inline constexpr size_t FILESYSTEM_RPC_SHA256_SIZE = 32;
@@ -288,9 +299,25 @@ public:
                                          uint8_t* response,
                                          size_t responseSize);
 
+    /** Dispatch one frame whose timeout and storage-recovery gates are owned
+     * by the foreground coordinator. This path performs no implicit
+     * maintenance before the requested operation. */
+    oc::type::Result<size_t> handleAdmittedFrame(const uint8_t* request,
+                                                 size_t requestSize,
+                                                 uint32_t nowMs,
+                                                 uint8_t* response,
+                                                 size_t responseSize);
+
     void update(uint32_t nowMs);
     bool hasActiveWriteSession() const;
+    bool writeSessionIdleExpired(uint32_t nowMs) const;
     void abortWriteSession();
+    oc::type::Result<size_t> encodeErrorResponse(
+        uint16_t requestId,
+        FileSystemRpcStatus status,
+        uint8_t* response,
+        size_t responseSize
+    ) const;
     FileSystemRpcConditionalRecoveryState conditionalRecoveryState() const {
         return conditionalRecoveryState_;
     }
@@ -299,6 +326,8 @@ public:
     }
 
 private:
+    friend class FileSystemRpcEndpoint;
+
     static constexpr size_t PATH_BUFFER_SIZE = oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1;
     static constexpr size_t GENERATED_PATH_BUFFER_SIZE = 32;
     static constexpr uint32_t CONDITIONAL_RECOVERY_RETRY_MS = 500;
@@ -341,6 +370,23 @@ private:
     oc::type::Result<size_t> handleWriteCommit_(const FileSystemRpcFrame& frame,
                                                 uint8_t* response,
                                                 size_t responseSize);
+    oc::type::Result<size_t> beginCooperativeWriteCommit_(
+        const FileSystemRpcFrame& frame,
+        core::persistence::ProductFileCommitPlan& plan,
+        uint16_t& sessionId,
+        uint8_t* response,
+        size_t responseSize
+    );
+    oc::type::Result<size_t> advanceCooperativeWriteCommit_(
+        core::persistence::ProductFileCommitPlan& plan,
+        uint16_t requestId,
+        uint16_t sessionId,
+        uint8_t* response,
+        size_t responseSize
+    );
+    void cancelCooperativeWriteCommit_(
+        core::persistence::ProductFileCommitPlan& plan
+    );
     oc::type::Result<size_t> handleWriteAbort_(const FileSystemRpcFrame& frame,
                                                uint8_t* response,
                                                size_t responseSize);
@@ -361,6 +407,22 @@ private:
                                                       uint32_t nowMs,
                                                       uint8_t* response,
                                                       size_t responseSize);
+    oc::type::Result<size_t> beginCooperativeConditionalMutation_(
+        const FileSystemRpcFrame& frame,
+        conditional_mutation::ConditionalMutationPlan& plan,
+        uint8_t* response,
+        size_t responseSize
+    );
+    oc::type::Result<size_t> advanceCooperativeConditionalMutation_(
+        conditional_mutation::ConditionalMutationPlan& plan,
+        uint16_t requestId,
+        uint32_t nowMs,
+        uint8_t* response,
+        size_t responseSize
+    );
+    void cancelCooperativeConditionalMutation_(
+        conditional_mutation::ConditionalMutationPlan& plan
+    );
     oc::type::Result<size_t> encodeError_(uint16_t requestId,
                                           FileSystemRpcStatus status,
                                           uint8_t* response,
@@ -392,12 +454,14 @@ static_assert(alignof(FileSystemRpcHandler) == 4U, "filesystem RPC handler align
 class FileSystemRpcEndpoint {
 public:
     using NowProvider = uint32_t (*)();
+    using MicrosProvider = uint32_t (*)();
 
     FileSystemRpcEndpoint(oc::interface::ITransport& transport,
                           core::persistence::ProductFileService& files,
                           NowProvider nowProvider,
                           FileSystemRpcHandler::Config handlerConfig =
-                              FileSystemRpcHandler::Config());
+                              FileSystemRpcHandler::Config(),
+                          MicrosProvider microsProvider = nullptr);
     ~FileSystemRpcEndpoint();
 
     FileSystemRpcEndpoint(const FileSystemRpcEndpoint&) = delete;
@@ -407,17 +471,59 @@ public:
 
     void begin();
     void end();
-    void update();
+    void advance(uint32_t nowMs, bool playbackActive);
     bool active() const;
 
 private:
+    enum class PendingOperation : uint8_t {
+        FRAME = 0,
+        WRITE_COMMIT,
+        CONDITIONAL_MUTATION,
+    };
+
+    struct PendingFrame {
+        alignas(8) uint8_t data[FILESYSTEM_RPC_REQUEST_BUFFER_SIZE] = {};
+        size_t size = 0;
+        core::persistence::ProductPersistenceJobToken token{};
+        uint16_t requestId = 0;
+        uint16_t sessionId = 0;
+        PendingOperation operation = PendingOperation::FRAME;
+        bool uploadContinuation = false;
+    };
+
     void handleReceive_(const uint8_t* data, size_t size);
+    void sendError_(const uint8_t* data, size_t size, FileSystemRpcStatus status);
+    void sendErrorForRequest_(uint16_t requestId, FileSystemRpcStatus status);
+    PendingFrame* emptyFrame_();
+    PendingFrame* activeFrame_();
+    void clearFrame_(PendingFrame& frame);
+    void cancelFrameOperation_(PendingFrame& frame);
+    void cancelPendingJobs_();
+    void advanceUploadTimeout_(uint32_t nowMs);
+    bool uploadPromotionPending_() const;
+    static bool isUploadContinuation_(FileSystemRpcMessageId messageId);
+    static core::persistence::ProductPersistenceWorkQuota quotaFor_(
+        const PendingFrame& frame,
+        FileSystemRpcMessageId messageId
+    );
 
     oc::interface::ITransport& transport_;
+    core::persistence::ProductFileService& files_;
     NowProvider nowProvider_ = nullptr;
+    MicrosProvider microsProvider_ = nullptr;
     FileSystemRpcHandler handler_;
+    PendingFrame pending_[2]{};
     uint8_t response_[FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE] = {};
+    core::persistence::ProductPersistenceJobToken upload_job_{};
+    uint32_t upload_started_ms_ = 0;
     bool active_ = false;
 };
+
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+static_assert(
+    sizeof(FileSystemRpcEndpoint) <= 98'304U,
+    "filesystem RPC endpoint exceeds retained PSRAM ceiling"
+);
+#endif
 
 }  // namespace core::protocol::filesystem

@@ -10,7 +10,9 @@
 namespace {
 
 using core::persistence::PRODUCT_PERSISTENCE_AUTOSAVE_MAX_DEFERRAL_MS;
+using core::persistence::PRODUCT_PERSISTENCE_QUOTA_ASSET_METADATA;
 using core::persistence::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO;
+using core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
 using core::persistence::PRODUCT_PERSISTENCE_QUOTA_RAW_CATALOG;
 using core::persistence::PRODUCT_PERSISTENCE_SOFT_ADVANCE_WALL_MICROS;
 using core::persistence::ProductPersistenceJobAdmission;
@@ -236,7 +238,19 @@ void test_one_claim_per_turn_and_exact_metrics() {
         admission(ProductPersistenceJobOwner::FILESYSTEM_RPC, 0U)
     );
 
+    assert(hasErrorCode(
+        coordinator.prepareAdvance(job, PRODUCT_PERSISTENCE_QUOTA_ASSET_METADATA),
+        ErrorCode::INVALID_STATE
+    ));
     assert(coordinator.beginTurn(0U));
+    assert(coordinator.prepareAdvance(
+        job,
+        PRODUCT_PERSISTENCE_QUOTA_ASSET_METADATA
+    ));
+    assert(
+        inspect(coordinator, job).quota.maxBytes() ==
+        PRODUCT_PERSISTENCE_QUOTA_ASSET_METADATA.maxBytes()
+    );
     assert(coordinator.claimAdvance(job, 0U));
     assert(hasErrorCode(
         coordinator.claimAdvance(job, 0U),
@@ -261,6 +275,7 @@ void test_one_claim_per_turn_and_exact_metrics() {
     assert(firstSnapshot.safeYield);
 
     assert(coordinator.beginTurn(2U));
+    assert(coordinator.prepareAdvance(job, PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO));
     assert(coordinator.claimAdvance(job, 2U));
     ProductPersistenceWorkUsage second{
         .bytes = 200U,
@@ -277,6 +292,7 @@ void test_one_claim_per_turn_and_exact_metrics() {
     assert(secondSnapshot.wallOverruns == 1U);
 
     assert(coordinator.beginTurn(3U));
+    assert(coordinator.prepareAdvance(job, PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO));
     assert(coordinator.claimAdvance(job, 3U));
     ProductPersistenceWorkUsage exceeded{
         .bytes = PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO.maxBytes() + 1U,
@@ -292,6 +308,10 @@ void test_one_claim_per_turn_and_exact_metrics() {
     assert(exceededSnapshot.metrics.advances == 3U);
 
     assert(coordinator.beginTurn(4U));
+    assert(hasErrorCode(
+        coordinator.prepareAdvance(job, PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE),
+        ErrorCode::RESOURCE_EXHAUSTED
+    ));
     assert(hasErrorCode(
         coordinator.claimAdvance(job, 4U),
         ErrorCode::RESOURCE_EXHAUSTED
@@ -401,6 +421,29 @@ void test_exact_release_and_media_invalidation() {
     std::cout << "[PASS] exact release and media invalidation\n";
 }
 
+void test_unsafe_external_unwind_has_one_explicit_release_path() {
+    ProductPersistenceJobCoordinator coordinator;
+    auto job = admit(
+        coordinator,
+        admission(ProductPersistenceJobOwner::FILESYSTEM_RPC, 0U)
+    );
+
+    assert(coordinator.beginTurn(0U));
+    assert(coordinator.claimAdvance(job, 0U));
+    assert(hasErrorCode(
+        coordinator.cancelAfterUnwind(job),
+        ErrorCode::INVALID_STATE
+    ));
+    assert(job.valid());
+    assert(coordinator.finishAdvance(job, {}, false));
+    assert(hasErrorCode(coordinator.cancel(job), ErrorCode::INVALID_STATE));
+    assert(coordinator.cancelAfterUnwind(job));
+    assert(!job.valid());
+    assert(coordinator.depth() == 0U);
+
+    std::cout << "[PASS] explicit unsafe unwind release\n";
+}
+
 }  // namespace
 
 int main() {
@@ -411,5 +454,6 @@ int main() {
     test_one_claim_per_turn_and_exact_metrics();
     test_deadline_and_id_exhaustion_are_rollover_safe();
     test_exact_release_and_media_invalidation();
+    test_unsafe_external_unwind_has_one_explicit_release_path();
     return 0;
 }

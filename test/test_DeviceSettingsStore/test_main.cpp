@@ -199,6 +199,69 @@ void test_noncanonical_current_payload_is_rejected_atomically() {
     std::cout << "[PASS] test_noncanonical_current_payload_is_rejected_atomically\n";
 }
 
+void test_reconcile_does_not_rewrite_equal_current_settings() {
+    MemoryStorage storage;
+    storage.init();
+
+    core::state::MidiSyncState sync;
+    setSentinel(sync);
+    core::persistence::DeviceSettingsStore store(storage);
+    assert(store.saveAll(sync));
+    const int initialCommitCount = storage.commitCount;
+
+    assert(store.reconcileAllStatus(sync) ==
+           core::persistence::PersistenceWriteStatus::OK);
+    assert(store.reconcileAllStatus(sync) ==
+           core::persistence::PersistenceWriteStatus::OK);
+    assert(storage.commitCount == initialCommitCount);
+
+    std::cout << "[PASS] reconcile leaves equal current settings untouched\n";
+}
+
+void test_reconcile_migrates_legacy_settings_once() {
+    MemoryStorage storage;
+    storage.init();
+
+    const uint32_t magic = StorageLayout::MAGIC;
+    const uint8_t legacyVersion =
+        static_cast<uint8_t>(StorageLayout::VERSION - 1U);
+    assert(storage.write(
+        StorageLayout::ADDR_MAGIC,
+        reinterpret_cast<const uint8_t*>(&magic),
+        sizeof(magic)
+    ) == sizeof(magic));
+    assert(storage.write(
+        StorageLayout::ADDR_VERSION,
+        &legacyVersion,
+        sizeof(legacyVersion)
+    ) == sizeof(legacyVersion));
+    assert(storage.commit());
+
+    core::state::MidiSyncState sync;
+    setSentinel(sync);
+    core::persistence::DeviceSettingsStore store(storage);
+    const int legacyCommitCount = storage.commitCount;
+    assert(store.reconcileAllStatus(sync) ==
+           core::persistence::PersistenceWriteStatus::OK);
+    assert(storage.commitCount == legacyCommitCount + 1);
+
+    assert(store.reconcileAllStatus(sync) ==
+           core::persistence::PersistenceWriteStatus::OK);
+    assert(storage.commitCount == legacyCommitCount + 1);
+
+    core::state::MidiSyncState loaded;
+    assert(store.load(loaded));
+    assertSync(
+        loaded,
+        core::state::MidiSyncMode::SLAVE,
+        false,
+        750,
+        12
+    );
+
+    std::cout << "[PASS] reconcile migrates legacy settings once\n";
+}
+
 }  // namespace
 
 int main() {
@@ -211,6 +274,8 @@ int main() {
     test_blank_storage_is_initialized_once();
     test_unsupported_version_is_rejected_without_rewrite();
     test_noncanonical_current_payload_is_rejected_atomically();
+    test_reconcile_does_not_rewrite_equal_current_settings();
+    test_reconcile_migrates_legacy_settings_once();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

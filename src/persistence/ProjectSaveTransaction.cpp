@@ -59,33 +59,23 @@ FLASHMEM oc::type::Result<void> ProjectSaveTransaction::begin(
     return oc::type::Result<void>::ok();
 }
 
-FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance() {
-    if (!lease_.valid()) {
-        return oc::type::Result<ProjectSaveProgress>::err(
-            {ErrorCode::INVALID_STATE, "project save lease is not active"}
-        );
-    }
-    return advance_(lease_, true);
-}
-
-FLASHMEM oc::type::Result<ProjectSaveProgress>
-ProjectSaveTransaction::saveToCompletionWithRecoveryLease(
+FLASHMEM oc::type::Result<void> ProjectSaveTransaction::beginWithRecoveryLease(
     const core::state::project::ProjectSnapshot& snapshot,
     AtomicProductFilePaths paths,
     const ProductMutationLease& recoveryLease
 ) {
     if (active()) {
-        return oc::type::Result<ProjectSaveProgress>::err(
+        return oc::type::Result<void>::err(
             {ErrorCode::INVALID_STATE, "project save already active"}
         );
     }
     if (!validSavePaths(paths)) {
-        return oc::type::Result<ProjectSaveProgress>::err(
+        return oc::type::Result<void>::err(
             {ErrorCode::INVALID_ARGUMENT, "invalid project save paths"}
         );
     }
     if (!files_.owns(recoveryLease, ProductMutationOwner::RECOVERY)) {
-        return oc::type::Result<ProjectSaveProgress>::err(
+        return oc::type::Result<void>::err(
             {ErrorCode::INVALID_STATE, "exact recovery lease required"}
         );
     }
@@ -93,10 +83,47 @@ ProjectSaveTransaction::saveToCompletionWithRecoveryLease(
     snapshot_ = &snapshot;
     paths_ = paths;
     phase_ = Phase::PREPARE;
+    recovery_lease_ = &recoveryLease;
+    return oc::type::Result<void>::ok();
+}
+
+FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance(
+    ProjectSaveStage* attemptedStage
+) {
+    const ProductMutationLease* activeLease = recovery_lease_ != nullptr
+        ? recovery_lease_
+        : &lease_;
+    if (!activeLease->valid()) {
+        if (attemptedStage) *attemptedStage = ProjectSaveStage::PREPARE;
+        return oc::type::Result<ProjectSaveProgress>::err(
+            {ErrorCode::INVALID_STATE, "project save lease is not active"}
+        );
+    }
+    if (attemptedStage) *attemptedStage = currentStage_();
+    return advance_(*activeLease, recovery_lease_ == nullptr);
+}
+
+FLASHMEM oc::type::Result<ProjectSaveProgress>
+ProjectSaveTransaction::saveToCompletionWithRecoveryLease(
+    const core::state::project::ProjectSnapshot& snapshot,
+    AtomicProductFilePaths paths,
+    const ProductMutationLease& recoveryLease,
+    ProjectSaveStage* failedStage
+) {
+    if (failedStage) *failedStage = ProjectSaveStage::PREPARE;
+    auto begun = beginWithRecoveryLease(snapshot, paths, recoveryLease);
+    if (!begun) {
+        return oc::type::Result<ProjectSaveProgress>::err(begun.error());
+    }
 
     while (active()) {
-        auto progress = advance_(recoveryLease, false);
-        if (!progress || progress.value().complete) {
+        const auto attemptedStage = currentStage_();
+        auto progress = advance();
+        if (!progress) {
+            if (failedStage) *failedStage = attemptedStage;
+            return progress;
+        }
+        if (progress.value().complete) {
             return progress;
         }
     }
@@ -167,25 +194,28 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
                 );
             }
             OC_PERF_UNITS(perfEncode, encoded_size_, 0U);
-            phase_ = Phase::WRITE;
+            phase_ = Phase::BEGIN_WRITE;
             return oc::type::Result<ProjectSaveProgress>::ok({
                 .completedStage = ProjectSaveStage::ENCODE,
             });
         }
 
+        case Phase::BEGIN_WRITE: {
+            OC_PERF_SCOPE(perfBeginWrite, "persistence.project-save.begin-write");
+            auto beginWrite = files_.beginWrite(lease, paths_.tmp, encoded_size_);
+            if (!beginWrite) {
+                const auto error = beginWrite.error();
+                cancel_(lease, releaseLeaseOnCompletion);
+                return oc::type::Result<ProjectSaveProgress>::err(error);
+            }
+            phase_ = Phase::WRITE;
+            return oc::type::Result<ProjectSaveProgress>::ok({
+                .completedStage = ProjectSaveStage::WRITE,
+            });
+        }
+
         case Phase::WRITE: {
             OC_PERF_SCOPE(perfWrite, "persistence.project-save.write-chunk");
-            const bool exactWriteSessionActive =
-                files_.owns(lease) && files_.writeSessionActive();
-            if (!exactWriteSessionActive) {
-                auto beginWrite = files_.beginWrite(lease, paths_.tmp, encoded_size_);
-                if (!beginWrite) {
-                    const auto error = beginWrite.error();
-                    cancel_(lease, releaseLeaseOnCompletion);
-                    return oc::type::Result<ProjectSaveProgress>::err(error);
-                }
-            }
-
             const uint32_t chunkSize = std::min<uint32_t>(
                 PROJECT_FILE_WRITE_CHUNK_SIZE,
                 encoded_size_ - write_offset_
@@ -210,14 +240,23 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
             OC_PERF_UNITS(perfWrite, chunkSize, write_offset_);
 
             if (write_offset_ == encoded_size_) {
-                auto finish = files_.finishWrite(lease);
-                if (!finish) {
-                    const auto error = finish.error();
-                    cancel_(lease, releaseLeaseOnCompletion);
-                    return oc::type::Result<ProjectSaveProgress>::err(error);
-                }
-                phase_ = Phase::COMMIT;
+                phase_ = Phase::FINISH_WRITE;
             }
+            return oc::type::Result<ProjectSaveProgress>::ok({
+                .completedStage = ProjectSaveStage::WRITE,
+                .bytesWritten = write_offset_,
+            });
+        }
+
+        case Phase::FINISH_WRITE: {
+            OC_PERF_SCOPE(perfFinishWrite, "persistence.project-save.finish-write");
+            auto finish = files_.finishWrite(lease);
+            if (!finish) {
+                const auto error = finish.error();
+                cancel_(lease, releaseLeaseOnCompletion);
+                return oc::type::Result<ProjectSaveProgress>::err(error);
+            }
+            phase_ = Phase::COMMIT;
             return oc::type::Result<ProjectSaveProgress>::ok({
                 .completedStage = ProjectSaveStage::WRITE,
                 .bytesWritten = write_offset_,
@@ -226,18 +265,40 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
 
         case Phase::COMMIT: {
             OC_PERF_SCOPE(perfCommit, "persistence.project-save.commit");
-            auto commit = commitProductFileTemp(
-                files_,
-                lease,
-                paths_.current,
-                paths_.backup,
-                paths_.tmp,
-                encoded_size_
-            );
-            if (!commit) {
-                const auto error = commit.error();
+            auto& commitPlan = commit_plan_started_
+                ? workspace_.commitPlan()
+                : workspace_.resetCommitPlan();
+            if (!commit_plan_started_) {
+                auto begun = commitPlan.begin(
+                    files_,
+                    lease,
+                    paths_.current,
+                    paths_.backup,
+                    paths_.tmp,
+                    encoded_size_
+                );
+                if (!begun) {
+                    const auto error = begun.error();
+                    cancel_(lease, releaseLeaseOnCompletion);
+                    return oc::type::Result<ProjectSaveProgress>::err(error);
+                }
+                commit_plan_started_ = true;
+            }
+
+            auto committed = commitPlan.advance(files_, lease);
+            if (!committed) {
+                const auto error = committed.error();
+                if (commitPlan.requiresRecoveryOnFailure()) {
+                    (void)files_.requireRecovery(lease, error.code);
+                }
                 cancel_(lease, releaseLeaseOnCompletion);
                 return oc::type::Result<ProjectSaveProgress>::err(error);
+            }
+            if (!committed.value()) {
+                return oc::type::Result<ProjectSaveProgress>::ok({
+                    .completedStage = ProjectSaveStage::COMMIT,
+                    .bytesWritten = encoded_size_,
+                });
             }
 
             const uint32_t bytesWritten = encoded_size_;
@@ -268,11 +329,14 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
 }
 
 FLASHMEM void ProjectSaveTransaction::cancel() {
-    if (!lease_.valid()) {
+    const ProductMutationLease* activeLease = recovery_lease_ != nullptr
+        ? recovery_lease_
+        : &lease_;
+    if (!activeLease->valid()) {
         reset_();
         return;
     }
-    cancel_(lease_, true);
+    cancel_(*activeLease, recovery_lease_ == nullptr);
 }
 
 FLASHMEM void ProjectSaveTransaction::cancel_(
@@ -296,7 +360,28 @@ bool ProjectSaveTransaction::active() const {
 }
 
 bool ProjectSaveTransaction::writeSessionActive() const {
-    return lease_.valid() && files_.owns(lease_) && files_.writeSessionActive();
+    const ProductMutationLease* activeLease = recovery_lease_ != nullptr
+        ? recovery_lease_
+        : &lease_;
+    return activeLease->valid() && files_.owns(*activeLease) &&
+           files_.writeSessionActive();
+}
+
+ProjectSaveStage ProjectSaveTransaction::currentStage_() const {
+    switch (phase_) {
+        case Phase::ENCODE:
+            return ProjectSaveStage::ENCODE;
+        case Phase::WRITE:
+        case Phase::BEGIN_WRITE:
+        case Phase::FINISH_WRITE:
+            return ProjectSaveStage::WRITE;
+        case Phase::COMMIT:
+            return ProjectSaveStage::COMMIT;
+        case Phase::IDLE:
+        case Phase::PREPARE:
+        default:
+            return ProjectSaveStage::PREPARE;
+    }
 }
 
 FLASHMEM void ProjectSaveTransaction::reset_() {
@@ -306,7 +391,9 @@ FLASHMEM void ProjectSaveTransaction::reset_() {
     encoded_size_ = 0;
     write_offset_ = 0;
     tmp_prepared_ = false;
+    commit_plan_started_ = false;
     lease_ = ProductMutationLease{};
+    recovery_lease_ = nullptr;
 }
 
 FLASHMEM void ProjectSaveTransaction::cleanupTmp_(

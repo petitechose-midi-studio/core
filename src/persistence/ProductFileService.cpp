@@ -1,6 +1,7 @@
 #include "persistence/ProductFileService.hpp"
 
 #include <cstring>
+#include <limits>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -22,6 +23,23 @@ constexpr const char* const kLayoutDirectories[] PROGMEM = {
     ProductFileService::CHORD_PRESETS_DIR,
     ProductFileService::TMP_DIR,
 };
+static_assert(
+    sizeof(kLayoutDirectories) / sizeof(kLayoutDirectories[0]) ==
+        ProductFileService::LAYOUT_DIRECTORY_COUNT
+);
+
+const char kWorkMeasurementBusy[] PROGMEM =
+    "product persistence work measurement already active";
+
+template <typename T, typename U>
+void saturatingAccumulate(T& value, U increment) {
+    const auto maximum = std::numeric_limits<T>::max();
+    const uint64_t room = static_cast<uint64_t>(maximum) -
+                          static_cast<uint64_t>(value);
+    value = static_cast<uint64_t>(increment) > room
+        ? maximum
+        : static_cast<T>(value + static_cast<T>(increment));
+}
 
 oc::type::Result<void> invalidPath_(const char* context) {
     return oc::type::Result<void>::err({ErrorCode::INVALID_ARGUMENT, context});
@@ -41,8 +59,65 @@ oc::type::Result<void> mediaUnavailable_() {
 
 }  // namespace
 
+FLASHMEM ProductPersistenceWorkMeasurement::~ProductPersistenceWorkMeasurement() {
+    release_();
+}
+
+FLASHMEM ProductPersistenceWorkMeasurement::ProductPersistenceWorkMeasurement(
+    ProductPersistenceWorkMeasurement&& other
+) noexcept : service_(other.service_), usage_(other.usage_) {
+    other.service_ = nullptr;
+    other.usage_ = nullptr;
+}
+
+FLASHMEM ProductPersistenceWorkMeasurement&
+ProductPersistenceWorkMeasurement::operator=(
+    ProductPersistenceWorkMeasurement&& other
+) noexcept {
+    if (this != &other) {
+        release_();
+        service_ = other.service_;
+        usage_ = other.usage_;
+        other.service_ = nullptr;
+        other.usage_ = nullptr;
+    }
+    return *this;
+}
+
+FLASHMEM void ProductPersistenceWorkMeasurement::addEntries(uint16_t count) {
+    if (service_ && usage_) service_->noteEntries_(count);
+}
+
+FLASHMEM void ProductPersistenceWorkMeasurement::addNodes(uint8_t count) {
+    if (service_ && usage_) service_->noteNodes_(count);
+}
+
+FLASHMEM void ProductPersistenceWorkMeasurement::addAllocations(uint8_t count) {
+    if (service_ && usage_) service_->noteAllocations_(count);
+}
+
+FLASHMEM void ProductPersistenceWorkMeasurement::release_() {
+    if (service_ && usage_) service_->endWorkMeasurement_(usage_);
+    service_ = nullptr;
+    usage_ = nullptr;
+}
+
 FLASHMEM ProductFileService::ProductFileService(oc::interface::IFileSystem& filesystem)
     : filesystem_(filesystem) {}
+
+FLASHMEM oc::type::Result<ProductPersistenceWorkMeasurement>
+ProductFileService::measurePersistenceWork(ProductPersistenceWorkUsage& usage) {
+    if (work_usage_) {
+        return oc::type::Result<ProductPersistenceWorkMeasurement>::err(
+            {ErrorCode::INVALID_STATE, kWorkMeasurementBusy}
+        );
+    }
+    usage = {};
+    work_usage_ = &usage;
+    return oc::type::Result<ProductPersistenceWorkMeasurement>::ok(
+        ProductPersistenceWorkMeasurement(*this, usage)
+    );
+}
 
 FLASHMEM oc::type::Result<void> ProductFileService::init() {
     auto initialized = initBackend_();
@@ -96,6 +171,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::initForRecovery() {
 }
 
 FLASHMEM oc::type::Result<void> ProductFileService::initBackend_() {
+    noteFilesystemCall_();
     auto initialized = filesystem_.init();
     if (!initialized) {
         observeBackendFailure_(initialized.error());
@@ -149,6 +225,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::releaseMutation(
 ) {
     if (write_lease_id_ != 0 && coordinator_.owns(lease) &&
         write_lease_id_ == lease.id_) {
+        noteFilesystemCall_();
         filesystem_.abortWrite();
         write_lease_id_ = 0;
     }
@@ -182,6 +259,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::requireRecovery(
 FLASHMEM void ProductFileService::markMediaUnavailable() {
     job_coordinator_.invalidateAll();
     if (write_lease_id_ != 0) {
+        noteFilesystemCall_();
         filesystem_.abortWrite();
         write_lease_id_ = 0;
     }
@@ -191,13 +269,25 @@ FLASHMEM void ProductFileService::markMediaUnavailable() {
 FLASHMEM oc::type::Result<void> ProductFileService::ensureLayout(
     const ProductMutationLease& lease
 ) {
-    for (const char* directory : kLayoutDirectories) {
-        auto result = createDirectory(lease, directory);
+    for (uint8_t index = 0U; index < LAYOUT_DIRECTORY_COUNT; ++index) {
+        auto result = ensureLayoutDirectory(lease, index);
         if (!result) {
             return result;
         }
     }
     return oc::type::Result<void>::ok();
+}
+
+FLASHMEM oc::type::Result<void> ProductFileService::ensureLayoutDirectory(
+    const ProductMutationLease& lease,
+    uint8_t index
+) {
+    if (index >= LAYOUT_DIRECTORY_COUNT) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_ARGUMENT, "product layout directory index"}
+        );
+    }
+    return createDirectory(lease, kLayoutDirectories[index]);
 }
 
 FLASHMEM oc::type::Result<void> ProductFileService::resolvePath(
@@ -296,6 +386,7 @@ FLASHMEM oc::type::Result<oc::interface::FileInfo> ProductFileService::stat_(
     if (!pathResult) {
         return oc::type::Result<oc::interface::FileInfo>::err(pathResult.error());
     }
+    noteFilesystemCall_();
     auto result = filesystem_.stat(path);
     if (!result) {
         observeBackendFailure_(result.error());
@@ -335,7 +426,13 @@ FLASHMEM oc::type::Result<void> ProductFileService::list_(
     if (!pathResult) {
         return pathResult;
     }
-    auto result = filesystem_.list(path, visitor, context);
+    noteFilesystemCall_();
+    MeasuredListVisitorContext measuredContext{this, visitor, context};
+    auto result = filesystem_.list(
+        path,
+        work_usage_ ? &ProductFileService::measuredListVisitor_ : visitor,
+        work_usage_ ? static_cast<void*>(&measuredContext) : context
+    );
     if (!result) {
         observeBackendFailure_(result.error());
     }
@@ -356,6 +453,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::createDirectory(
         return pathResult;
     }
 
+    noteFilesystemCall_();
     auto existing = filesystem_.stat(path);
     if (existing) {
         if (existing.value().type == oc::interface::FileType::DIRECTORY) {
@@ -370,6 +468,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::createDirectory(
         return oc::type::Result<void>::err(existing.error());
     }
 
+    noteFilesystemCall_();
     auto result = filesystem_.createDirectory(path);
     if (!result) {
         observeBackendFailure_(result.error());
@@ -396,6 +495,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::remove(
     if (isProductRootPath_(path)) {
         return invalidPath_("cannot remove product root");
     }
+    noteFilesystemCall_();
     auto result = filesystem_.remove(path, mode);
     if (!result) {
         observeBackendFailure_(result.error());
@@ -432,6 +532,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::rename(
         return invalidPath_("cannot rename to product root");
     }
 
+    noteFilesystemCall_();
     auto result = filesystem_.rename(fromPath, toPath);
     if (!result) {
         observeBackendFailure_(result.error());
@@ -476,9 +577,12 @@ FLASHMEM oc::type::Result<size_t> ProductFileService::read_(
     if (!pathResult) {
         return oc::type::Result<size_t>::err(pathResult.error());
     }
+    noteFilesystemCall_();
     auto result = filesystem_.read(path, offset, buffer, size);
     if (!result) {
         observeBackendFailure_(result.error());
+    } else {
+        noteBytes_(result.value());
     }
     return result;
 }
@@ -507,6 +611,7 @@ FLASHMEM oc::type::Result<size_t> ProductFileService::write(
     if (size == 0) {
         return oc::type::Result<size_t>::ok(0);
     }
+    noteFilesystemCall_();
     auto result = filesystem_.write(path, offset, data, size);
     if (!result) {
         observeBackendFailure_(result.error());
@@ -516,6 +621,7 @@ FLASHMEM oc::type::Result<size_t> ProductFileService::write(
     if (!touched) {
         return oc::type::Result<size_t>::err(touched.error());
     }
+    noteBytes_(result.value());
     return result;
 }
 
@@ -532,6 +638,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::flush(
     if (!pathResult) {
         return pathResult;
     }
+    noteFilesystemCall_();
     auto result = filesystem_.flush(path);
     if (!result) {
         observeBackendFailure_(result.error());
@@ -565,6 +672,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::beginWrite(
             {ErrorCode::INVALID_ARGUMENT, "cannot write product root"}
         );
     }
+    noteFilesystemCall_();
     auto result = filesystem_.beginWrite(path, expectedSize);
     if (!result) {
         observeBackendFailure_(result.error());
@@ -573,6 +681,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::beginWrite(
     write_lease_id_ = lease.id_;
     auto touched = coordinator_.noteMutation(lease);
     if (!touched) {
+        noteFilesystemCall_();
         filesystem_.abortWrite();
         write_lease_id_ = 0;
         return touched;
@@ -594,6 +703,7 @@ FLASHMEM oc::type::Result<size_t> ProductFileService::appendWrite(
             {ErrorCode::INVALID_STATE, "write session is not owned by lease"}
         );
     }
+    noteFilesystemCall_();
     auto result = filesystem_.appendWrite(data, size);
     if (!result) {
         observeBackendFailure_(result.error());
@@ -605,6 +715,7 @@ FLASHMEM oc::type::Result<size_t> ProductFileService::appendWrite(
             return oc::type::Result<size_t>::err(touched.error());
         }
     }
+    noteBytes_(result.value());
     return result;
 }
 
@@ -620,6 +731,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::finishWrite(
             {ErrorCode::INVALID_STATE, "write session is not owned by lease"}
         );
     }
+    noteFilesystemCall_();
     auto result = filesystem_.finishWrite();
     write_lease_id_ = 0;
     if (!result) {
@@ -643,6 +755,7 @@ FLASHMEM oc::type::Result<void> ProductFileService::abortWrite(
     if (write_lease_id_ != lease.id_) {
         return staleLease_();
     }
+    noteFilesystemCall_();
     filesystem_.abortWrite();
     write_lease_id_ = 0;
     return oc::type::Result<void>::ok();
@@ -705,6 +818,42 @@ FLASHMEM void ProductFileService::observeBackendFailure_(oc::type::Error error) 
     if (!filesystem_.available() || error.code == ErrorCode::HARDWARE_NOT_FOUND) {
         markMediaUnavailable();
     }
+}
+
+FLASHMEM bool ProductFileService::measuredListVisitor_(
+    const oc::interface::DirectoryEntry& entry,
+    void* context
+) {
+    auto* measured = static_cast<MeasuredListVisitorContext*>(context);
+    if (!measured || !measured->service || !measured->visitor) return false;
+    measured->service->noteEntries_(1U);
+    return measured->visitor(entry, measured->context);
+}
+
+FLASHMEM void ProductFileService::noteFilesystemCall_() {
+    if (work_usage_) saturatingAccumulate(work_usage_->filesystemCalls, 1U);
+}
+
+FLASHMEM void ProductFileService::noteBytes_(size_t bytes) {
+    if (work_usage_) saturatingAccumulate(work_usage_->bytes, bytes);
+}
+
+FLASHMEM void ProductFileService::noteEntries_(uint16_t entries) {
+    if (work_usage_) saturatingAccumulate(work_usage_->entries, entries);
+}
+
+FLASHMEM void ProductFileService::noteNodes_(uint8_t nodes) {
+    if (work_usage_) saturatingAccumulate(work_usage_->nodes, nodes);
+}
+
+FLASHMEM void ProductFileService::noteAllocations_(uint8_t allocations) {
+    if (work_usage_) saturatingAccumulate(work_usage_->allocations, allocations);
+}
+
+FLASHMEM void ProductFileService::endWorkMeasurement_(
+    ProductPersistenceWorkUsage* usage
+) {
+    if (work_usage_ == usage) work_usage_ = nullptr;
 }
 
 FLASHMEM bool ProductFileService::isProductRootPath_(const char* resolvedPath) {

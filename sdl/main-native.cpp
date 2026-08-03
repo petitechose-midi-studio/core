@@ -163,7 +163,24 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "Failed to initialize product file service\n");
         return 1;
     }
-    ms::entry::SdlProjectSessionRuntime projectSessionRuntime(productFiles, coreState);
+    ms::entry::SdlProjectSessionRuntime projectSessionRuntime(
+        productFiles,
+        coreState,
+        0U,
+        &app,
+        [](void* context, uint32_t nowMs, bool playbackActive) {
+            auto* app = static_cast<oc::app::OpenControlApp*>(context);
+            if (!app || app->contexts().activeId() !=
+                            static_cast<uint8_t>(Config::ContextID::STANDALONE)) {
+                return;
+            }
+            auto* activeContext = app->contexts().active();
+            if (activeContext) {
+                static_cast<core::context::StandaloneContext*>(activeContext)
+                    ->advancePersistence(nowMs, playbackActive);
+            }
+        }
+    );
     reportProjectSessionRestore(projectSessionRuntime.restoreResult());
 
     const int bridge_udp_port = ms::bridge::udp_port(argc, argv, 8000);

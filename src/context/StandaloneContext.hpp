@@ -23,6 +23,7 @@
  * CoreState is received from main.cpp (survives context switches).
  */
 
+#include <cstdint>
 #include <memory>
 
 #include "app/ExtmemAllocator.hpp"
@@ -95,6 +96,7 @@ public:
     // IContext interface
     oc::type::Result<void> init() override;
     void update() override;
+    void advancePersistence(uint32_t nowMs, bool playbackActive);
     const char* getName() const override { return "Standalone"; }
 
 protected:

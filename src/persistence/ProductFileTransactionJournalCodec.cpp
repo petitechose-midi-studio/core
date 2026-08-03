@@ -28,18 +28,6 @@ static_assert(PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE ==
                   3U * (1U + oc::interface::FILESYSTEM_MAX_PATH_LENGTH) +
                   JOURNAL_CHECKSUM_SIZE);
 
-enum class SlotState : uint8_t {
-    ABSENT = 0,
-    VALID,
-    CORRUPT,
-    UNSUPPORTED,
-};
-
-struct SlotObservation {
-    SlotState state = SlotState::ABSENT;
-    uint64_t sequence = 0;
-};
-
 constexpr bool phaseValid(uint8_t raw) {
     return raw >= static_cast<uint8_t>(ProductFileTransactionPhase::PREPARED) &&
            raw <= static_cast<uint8_t>(ProductFileTransactionPhase::ROLLED_BACK);
@@ -61,7 +49,7 @@ FLASHMEM bool pathEqualsFat(const char* lhs, const char* rhs) {
     return *lhs == '\0' && *rhs == '\0';
 }
 
-constexpr const char* slotPath(uint8_t slot) {
+constexpr const char* slotPath_(uint8_t slot) {
     return slot == 0U ? PRODUCT_FILE_JOURNAL_SLOT_A : PRODUCT_FILE_JOURNAL_SLOT_B;
 }
 
@@ -147,45 +135,53 @@ FLASHMEM oc::type::Result<void> validateStoredPaths(
     return oc::type::Result<void>::ok();
 }
 
-FLASHMEM oc::type::Result<SlotObservation> readSlot(
+FLASHMEM oc::type::Result<JournalSlotObservation> readSlot_(
     ProductFileService& files,
     const ProductMutationLease& lease,
     uint8_t slot,
     JournalWorkspace& workspace
 ) {
-    auto info = files.stat(lease, slotPath(slot));
+    auto info = files.stat(lease, slotPath_(slot));
     if (!info) {
         if (info.error().code == ErrorCode::RESOURCE_NOT_FOUND) {
-            return oc::type::Result<SlotObservation>::ok({SlotState::ABSENT, 0});
+            return oc::type::Result<JournalSlotObservation>::ok(
+                {JournalSlotState::ABSENT, 0}
+            );
         }
-        return oc::type::Result<SlotObservation>::err(info.error());
+        return oc::type::Result<JournalSlotObservation>::err(info.error());
     }
     if (info.value().type != oc::interface::FileType::FILE ||
         info.value().sizeBytes < JOURNAL_MIN_RECORD_SIZE ||
         info.value().sizeBytes > PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE) {
-        return oc::type::Result<SlotObservation>::ok({SlotState::CORRUPT, 0});
+        return oc::type::Result<JournalSlotObservation>::ok(
+            {JournalSlotState::CORRUPT, 0}
+        );
     }
 
     auto read = files.read(
         lease,
-        slotPath(slot),
+        slotPath_(slot),
         0,
         workspace.storage.encoded,
         info.value().sizeBytes
     );
-    if (!read) return oc::type::Result<SlotObservation>::err(read.error());
+    if (!read) return oc::type::Result<JournalSlotObservation>::err(read.error());
     if (read.value() != info.value().sizeBytes) {
-        return oc::type::Result<SlotObservation>::err(
+        return oc::type::Result<JournalSlotObservation>::err(
             {ErrorCode::STORAGE_READ_FAILED, "short product file journal read"}
         );
     }
 
     const uint8_t* encoded = workspace.storage.encoded;
     if (std::memcmp(encoded, JOURNAL_MAGIC, sizeof(JOURNAL_MAGIC)) != 0) {
-        return oc::type::Result<SlotObservation>::ok({SlotState::CORRUPT, 0});
+        return oc::type::Result<JournalSlotObservation>::ok(
+            {JournalSlotState::CORRUPT, 0}
+        );
     }
     if (encoded[4] != PRODUCT_FILE_JOURNAL_VERSION) {
-        return oc::type::Result<SlotObservation>::ok({SlotState::UNSUPPORTED, 0});
+        return oc::type::Result<JournalSlotObservation>::ok(
+            {JournalSlotState::UNSUPPORTED, 0}
+        );
     }
     const uint32_t storedChecksum = readU32LE(
         encoded + info.value().sizeBytes - JOURNAL_CHECKSUM_SIZE
@@ -194,19 +190,25 @@ FLASHMEM oc::type::Result<SlotObservation> readSlot(
             encoded,
             info.value().sizeBytes - JOURNAL_CHECKSUM_SIZE
         )) {
-        return oc::type::Result<SlotObservation>::ok({SlotState::CORRUPT, 0});
+        return oc::type::Result<JournalSlotObservation>::ok(
+            {JournalSlotState::CORRUPT, 0}
+        );
     }
 
     const uint8_t rawPhase = encoded[5];
     const uint8_t flags = encoded[6];
     if (!phaseValid(rawPhase) || (flags & ~FLAG_HAD_CURRENT) != 0U ||
         encoded[7] != 0U) {
-        return oc::type::Result<SlotObservation>::ok({SlotState::CORRUPT, 0});
+        return oc::type::Result<JournalSlotObservation>::ok(
+            {JournalSlotState::CORRUPT, 0}
+        );
     }
     const uint64_t sequence = readU64LE(encoded + 8U);
     const uint32_t expectedSize = readU32LE(encoded + 16U);
     if (sequence == 0U) {
-        return oc::type::Result<SlotObservation>::ok({SlotState::CORRUPT, 0});
+        return oc::type::Result<JournalSlotObservation>::ok(
+            {JournalSlotState::CORRUPT, 0}
+        );
     }
 
     size_t offsets[PATH_COUNT] = {};
@@ -215,19 +217,25 @@ FLASHMEM oc::type::Result<SlotObservation> readSlot(
     const size_t payloadEnd = info.value().sizeBytes - JOURNAL_CHECKSUM_SIZE;
     for (uint8_t index = 0; index < PATH_COUNT; ++index) {
         if (cursor >= payloadEnd) {
-            return oc::type::Result<SlotObservation>::ok({SlotState::CORRUPT, 0});
+            return oc::type::Result<JournalSlotObservation>::ok(
+                {JournalSlotState::CORRUPT, 0}
+            );
         }
         const uint8_t length = encoded[cursor++];
         if (length == 0U || length > oc::interface::FILESYSTEM_MAX_PATH_LENGTH ||
             cursor + length > payloadEnd) {
-            return oc::type::Result<SlotObservation>::ok({SlotState::CORRUPT, 0});
+            return oc::type::Result<JournalSlotObservation>::ok(
+                {JournalSlotState::CORRUPT, 0}
+            );
         }
         lengths[index] = length;
         offsets[index] = cursor;
         cursor += length;
     }
     if (cursor != payloadEnd) {
-        return oc::type::Result<SlotObservation>::ok({SlotState::CORRUPT, 0});
+        return oc::type::Result<JournalSlotObservation>::ok(
+            {JournalSlotState::CORRUPT, 0}
+        );
     }
 
     for (int index = PATH_COUNT - 1; index >= 0; --index) {
@@ -246,9 +254,13 @@ FLASHMEM oc::type::Result<SlotObservation> readSlot(
 
     auto validPaths = validateStoredPaths(files, workspace);
     if (!validPaths) {
-        return oc::type::Result<SlotObservation>::ok({SlotState::CORRUPT, 0});
+        return oc::type::Result<JournalSlotObservation>::ok(
+            {JournalSlotState::CORRUPT, 0}
+        );
     }
-    return oc::type::Result<SlotObservation>::ok({SlotState::VALID, sequence});
+    return oc::type::Result<JournalSlotObservation>::ok(
+        {JournalSlotState::VALID, sequence}
+    );
 }
 
 }  // namespace
@@ -256,6 +268,24 @@ FLASHMEM oc::type::Result<SlotObservation> readSlot(
 FLASHMEM bool isJournalPath(const char* normalized) {
     return pathEqualsFat(normalized, RESOLVED_JOURNAL_SLOT_A) ||
            pathEqualsFat(normalized, RESOLVED_JOURNAL_SLOT_B);
+}
+
+FLASHMEM const char* journalSlotPath(uint8_t slot) {
+    return slotPath_(slot);
+}
+
+FLASHMEM oc::type::Result<JournalSlotObservation> readJournalSlot(
+    ProductFileService& files,
+    const ProductMutationLease& lease,
+    uint8_t slot,
+    JournalWorkspace& workspace
+) {
+    if (slot > 1U) {
+        return oc::type::Result<JournalSlotObservation>::err(
+            {ErrorCode::INVALID_ARGUMENT, "invalid product journal slot"}
+        );
+    }
+    return readSlot_(files, lease, slot, workspace);
 }
 
 FLASHMEM oc::type::Result<void> persistPhase(
@@ -292,51 +322,40 @@ FLASHMEM oc::type::Result<void> persistPhase(
     const uint8_t targetSlot = workspace.activeSlot == NO_ACTIVE_SLOT
         ? 0U
         : inactiveSlot(workspace.activeSlot);
-    uint8_t header[JOURNAL_HEADER_SIZE] = {};
-    std::memcpy(header, JOURNAL_MAGIC, sizeof(JOURNAL_MAGIC));
-    header[4] = PRODUCT_FILE_JOURNAL_VERSION;
-    header[5] = static_cast<uint8_t>(phase);
-    header[6] = workspace.hadCurrent ? FLAG_HAD_CURRENT : 0U;
-    writeU64LE(header + 8U, nextSequence);
-    writeU32LE(header + 16U, workspace.expectedSize);
+    uint8_t record[PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE] = {};
+    std::memcpy(record, JOURNAL_MAGIC, sizeof(JOURNAL_MAGIC));
+    record[4] = PRODUCT_FILE_JOURNAL_VERSION;
+    record[5] = static_cast<uint8_t>(phase);
+    record[6] = workspace.hadCurrent ? FLAG_HAD_CURRENT : 0U;
+    writeU64LE(record + 8U, nextSequence);
+    writeU32LE(record + 16U, workspace.expectedSize);
+
+    size_t cursor = JOURNAL_HEADER_SIZE;
+    for (uint8_t index = 0; index < PATH_COUNT; ++index) {
+        const uint8_t length = pathLengths[index];
+        record[cursor++] = length;
+        std::memcpy(record + cursor, workspace.storage.paths[index], length);
+        cursor += length;
+    }
+    writeU32LE(
+        record + cursor,
+        checksum::crc32(record, cursor)
+    );
+    cursor += JOURNAL_CHECKSUM_SIZE;
+    if (cursor != recordSize) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_STATE, "product file journal size drift"}
+        );
+    }
 
     auto begun = files.beginWrite(
         lease,
-        slotPath(targetSlot),
+        slotPath_(targetSlot),
         static_cast<uint32_t>(recordSize)
     );
     if (!begun) return begun;
 
-    uint32_t crcState = checksum::CRC32_INITIAL_STATE;
-    auto appended = appendExact(files, lease, header, sizeof(header));
-    if (!appended) {
-        (void)files.abortWrite(lease);
-        return appended;
-    }
-    crcState = checksum::crc32Update(crcState, header, sizeof(header));
-
-    for (uint8_t index = 0; index < PATH_COUNT; ++index) {
-        const uint8_t length = pathLengths[index];
-        appended = appendExact(files, lease, &length, sizeof(length));
-        if (!appended) {
-            (void)files.abortWrite(lease);
-            return appended;
-        }
-        crcState = checksum::crc32Update(crcState, &length, sizeof(length));
-        const auto* bytes = reinterpret_cast<const uint8_t*>(
-            workspace.storage.paths[index]
-        );
-        appended = appendExact(files, lease, bytes, length);
-        if (!appended) {
-            (void)files.abortWrite(lease);
-            return appended;
-        }
-        crcState = checksum::crc32Update(crcState, bytes, length);
-    }
-
-    uint8_t checksumBytes[JOURNAL_CHECKSUM_SIZE] = {};
-    writeU32LE(checksumBytes, checksum::crc32Finish(crcState));
-    appended = appendExact(files, lease, checksumBytes, sizeof(checksumBytes));
+    auto appended = appendExact(files, lease, record, recordSize);
     if (!appended) {
         (void)files.abortWrite(lease);
         return appended;
@@ -347,7 +366,7 @@ FLASHMEM oc::type::Result<void> persistPhase(
         (void)files.abortWrite(lease);
         return finished;
     }
-    auto flushed = files.flush(lease, slotPath(targetSlot));
+    auto flushed = files.flush(lease, slotPath_(targetSlot));
     if (!flushed) return flushed;
 
     workspace.sequence = nextSequence;
@@ -361,23 +380,23 @@ FLASHMEM oc::type::Result<JournalSelection> selectLatest(
     const ProductMutationLease& lease,
     JournalWorkspace& workspace
 ) {
-    auto firstRead = readSlot(files, lease, 0U, workspace);
+    auto firstRead = readSlot_(files, lease, 0U, workspace);
     if (!firstRead) return oc::type::Result<JournalSelection>::err(firstRead.error());
-    const SlotObservation first = firstRead.value();
+    const JournalSlotObservation first = firstRead.value();
 
-    auto secondRead = readSlot(files, lease, 1U, workspace);
+    auto secondRead = readSlot_(files, lease, 1U, workspace);
     if (!secondRead) return oc::type::Result<JournalSelection>::err(secondRead.error());
-    const SlotObservation second = secondRead.value();
+    const JournalSlotObservation second = secondRead.value();
 
-    if (first.state == SlotState::UNSUPPORTED ||
-        second.state == SlotState::UNSUPPORTED) {
+    if (first.state == JournalSlotState::UNSUPPORTED ||
+        second.state == JournalSlotState::UNSUPPORTED) {
         return oc::type::Result<JournalSelection>::err(
             {ErrorCode::INVALID_STATE, "unsupported product file journal version"}
         );
     }
 
-    const bool firstValid = first.state == SlotState::VALID;
-    const bool secondValid = second.state == SlotState::VALID;
+    const bool firstValid = first.state == JournalSlotState::VALID;
+    const bool secondValid = second.state == JournalSlotState::VALID;
     if (firstValid && secondValid && first.sequence == second.sequence) {
         return oc::type::Result<JournalSelection>::err(
             {ErrorCode::STORAGE_CORRUPT, "ambiguous product file journal sequence"}
@@ -388,8 +407,9 @@ FLASHMEM oc::type::Result<JournalSelection> selectLatest(
                                  (firstValid && first.sequence > second.sequence)
             ? 0U
             : 1U;
-        auto selectedRead = readSlot(files, lease, selected, workspace);
-        if (!selectedRead || selectedRead.value().state != SlotState::VALID) {
+        auto selectedRead = readSlot_(files, lease, selected, workspace);
+        if (!selectedRead ||
+            selectedRead.value().state != JournalSlotState::VALID) {
             return selectedRead
                 ? oc::type::Result<JournalSelection>::err(
                       {ErrorCode::STORAGE_CORRUPT, "product file journal changed during selection"}
@@ -399,8 +419,8 @@ FLASHMEM oc::type::Result<JournalSelection> selectLatest(
         return oc::type::Result<JournalSelection>::ok({true});
     }
 
-    const bool firstCorrupt = first.state == SlotState::CORRUPT;
-    const bool secondCorrupt = second.state == SlotState::CORRUPT;
+    const bool firstCorrupt = first.state == JournalSlotState::CORRUPT;
+    const bool secondCorrupt = second.state == JournalSlotState::CORRUPT;
     if (firstCorrupt && secondCorrupt) {
         return oc::type::Result<JournalSelection>::err(
             {ErrorCode::STORAGE_CORRUPT, "both product file journal slots corrupt"}
@@ -408,7 +428,11 @@ FLASHMEM oc::type::Result<JournalSelection> selectLatest(
     }
     if (firstCorrupt || secondCorrupt) {
         const uint8_t corruptSlot = firstCorrupt ? 0U : 1U;
-        auto removed = deleteProductFileIfExists(files, lease, slotPath(corruptSlot));
+        auto removed = deleteProductFileIfExists(
+            files,
+            lease,
+            slotPath_(corruptSlot)
+        );
         if (!removed) return oc::type::Result<JournalSelection>::err(removed.error());
     }
     workspace = JournalWorkspace{};

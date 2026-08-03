@@ -111,8 +111,11 @@ void StandaloneContext::update() {
     if (feature_assembly_) {
         feature_assembly_->update(core::time_compat::millis());
     }
+}
+
+void StandaloneContext::advancePersistence(uint32_t nowMs, bool playbackActive) {
     if (filesystem_rpc_endpoint_) {
-        filesystem_rpc_endpoint_->update();
+        filesystem_rpc_endpoint_->advance(nowMs, playbackActive);
     }
 }
 
@@ -272,7 +275,9 @@ FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
         core::app::makeExtmemUnique<core::protocol::filesystem::FileSystemRpcEndpoint>(
             frames(),
             product_files_,
-            &core::time_compat::millis
+            &core::time_compat::millis,
+            core::protocol::filesystem::FileSystemRpcHandler::Config{},
+            &core::time_compat::micros
         );
     if (!filesystem_rpc_endpoint_) {
         OC_LOG_ERROR("Filesystem RPC endpoint allocation failed");

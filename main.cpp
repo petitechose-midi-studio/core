@@ -21,11 +21,13 @@
 #include <config/platform-teensy/Buffer.hpp>
 #include <config/platform-teensy/Hardware.hpp>
 #endif
+#include "app/ExtmemAllocator.hpp"
 #include "context/StandaloneContext.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
 #include "persistence/PersistenceStatus.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "persistence/ProductStorageRecoveryService.hpp"
+#include "persistence/ProductStorageRecoveryPlan.hpp"
 #include "persistence/ProjectSessionAutosaveService.hpp"
 #include "persistence/ProjectSessionRestoreService.hpp"
 #include "persistence/ProjectSessionStore.hpp"
@@ -66,8 +68,28 @@ static core::app::ExtmemUniquePtr<core::sequencer::SequencerRuntimeService>
 namespace {
 
 constexpr uint32_t STORAGE_RECOVERY_SAMPLE_MS = 500;
+constexpr uint32_t STORAGE_RECOVERY_RETRY_BACKOFF_MS = 5000;
 const char kPersistenceTurnRejected[] PROGMEM =
     "[Persistence] Foreground turn rejected: {}";
+const char kNoRecoveryErrorContext[] PROGMEM = "none";
+const char kRecoveryFailureLog[] PROGMEM =
+    "[StorageRecovery] Reconciliation failed at {}ms status={}({}) "
+    "error={} stage={} context={}";
+const char kRecoveryRetrySuspendedLog[] PROGMEM =
+    "[StorageRecovery] Automatic retry suspended for media generation {}; "
+    "RAM remains authoritative until media removal/reinsert";
+const char kRecoveryRevalidationBackoffLog[] PROGMEM =
+    "[StorageRecovery] Revalidation failed; retrying after backoff";
+const char kRecoveryWorkspaceUnavailable[] PROGMEM =
+    "storage recovery PSRAM workspace unavailable";
+const char kStorageInitializationDeferredLog[] PROGMEM =
+    "Storage initialization deferred; application will start degraded "
+    "and wait for runtime media recovery";
+const char kBootRecoveryDegradedLog[] PROGMEM =
+    "[StorageRecovery] Boot degraded status={}({}) error={} stage={} "
+    "context={}; continuing with RAM-authoritative state";
+const char kBootRecoveryCompleteLog[] PROGMEM =
+    "[StorageRecovery] Boot reconciliation complete session-save={}B";
 
 struct StorageBackendRef {
     const char* label;
@@ -100,32 +122,48 @@ public:
             (!reopenStorageBackends_() || !allStorageBackendsAvailable_())) {
             return unavailableStorage_();
         }
-        return reconcileProductStorage_(
-            core::persistence::ProductStorageRecoveryMode::BOOT,
-            nowMs
-        );
+        return reconcileProductStorageSynchronously_(nowMs);
     }
 
     void update(uint32_t nowMs, bool playing) {
+        if (runtimeRecoveryActive_()) {
+            const bool mediaPresent = allStorageBackendsAvailable_();
+            if (!mediaPresent) {
+                if (productFileService) productFileService->markMediaUnavailable();
+                latched_media_generation_ = 0;
+                recovery_plan_->cancel(
+                    *productFileService,
+                    *projectSessionAutosaveService,
+                    oc::type::ErrorCode::HARDWARE_NOT_FOUND
+                );
+                recovery_job_ = {};
+                (void)machine_.completeRevalidation(false, nowMs);
+                return;
+            }
+            if (!playing) advanceRuntimeRecovery_(nowMs);
+            return;
+        }
+
         if (last_sample_ms_ != 0 &&
-            static_cast<uint32_t>(nowMs - last_sample_ms_) < STORAGE_RECOVERY_SAMPLE_MS) {
+            static_cast<uint32_t>(nowMs - last_sample_ms_) <
+                STORAGE_RECOVERY_SAMPLE_MS) {
             return;
         }
         last_sample_ms_ = nowMs;
 
         const bool mediaPresent = allStorageBackendsAvailable_();
         if (!mediaPresent && productFileService) {
-            // Invalidate the exact lease and abort a live stream as soon as an
-            // absence is observed. Debounce controls recovery scheduling only.
             productFileService->markMediaUnavailable();
+            latched_media_generation_ = 0;
         }
+        if (mediaPresent && sameMediaRetryLatched_()) return;
+
         const bool reconciliationRequired =
             mediaPresent && productFileService &&
             productFileService->storageState() !=
                 core::persistence::ProductStorageState::READY &&
             productFileService->storageState() !=
                 core::persistence::ProductStorageState::EXHAUSTED;
-
         const auto action = machine_.update({
             .mediaPresent = mediaPresent,
             .playing = playing,
@@ -136,11 +174,25 @@ public:
     }
 
 private:
+    bool servicesAvailable_() const {
+        return productFileService && projectSessionRestoreService &&
+               projectSessionAutosaveService && coreState;
+    }
+
+    bool ensureRecoveryPlan_() {
+        if (recovery_plan_) return true;
+        recovery_plan_ = core::app::makeExtmemUniqueCold<
+            core::persistence::ProductStorageRecoveryPlan>();
+        return static_cast<bool>(recovery_plan_);
+    }
+
+    bool runtimeRecoveryActive_() const {
+        return recovery_plan_ && recovery_plan_->active();
+    }
+
     bool allStorageBackendsAvailable_() const {
         for (const auto& item : storageBackends) {
-            if (!item.backend->available()) {
-                return false;
-            }
+            if (!item.backend->available()) return false;
         }
         return !productFileService || productFileService->mediaPresent();
     }
@@ -156,7 +208,6 @@ private:
                 ok = false;
             }
         }
-
         if (productFileService && !productFileService->mediaPresent()) {
             const auto initialized = productFileService->initForRecovery();
             if (!initialized) {
@@ -178,44 +229,207 @@ private:
         return result;
     }
 
-    core::persistence::ProductStorageRecoveryResult reconcileProductStorage_(
-        core::persistence::ProductStorageRecoveryMode mode,
-        uint32_t nowMs
-    ) {
-        if (!productFileService || !projectSessionRestoreService ||
-            !projectSessionAutosaveService || !coreState) {
-            core::persistence::ProductStorageRecoveryResult unavailable{};
-            unavailable.status =
-                core::persistence::ProductStorageRecoveryStatus::BUSY;
-            unavailable.error = oc::type::ErrorCode::INVALID_STATE;
-            OC_LOG_WARN("[StorageRecovery] Runtime services unavailable at {}ms", nowMs);
-            return unavailable;
+    core::persistence::ProductStorageRecoveryResult unavailableWorkspace_() const {
+        core::persistence::ProductStorageRecoveryResult result{};
+        result.status =
+            core::persistence::ProductStorageRecoveryStatus::RESOURCE_EXHAUSTED;
+        result.error = oc::type::ErrorCode::RESOURCE_EXHAUSTED;
+        result.errorContext = kRecoveryWorkspaceUnavailable;
+        return result;
+    }
+
+    core::persistence::ProductStorageRecoveryResult
+    reconcileProductStorageSynchronously_(uint32_t nowMs) {
+        if (!servicesAvailable_()) {
+            auto result = unavailableStorage_();
+            result.status = core::persistence::ProductStorageRecoveryStatus::BUSY;
+            result.error = oc::type::ErrorCode::INVALID_STATE;
+            return result;
+        }
+        if (!ensureRecoveryPlan_()) {
+            auto result = unavailableWorkspace_();
+            recordRecoveryResult_(result, nowMs);
+            return result;
+        }
+        if (recovery_plan_->begin(
+                *productFileService,
+                *projectSessionAutosaveService,
+                *coreState,
+                core::persistence::ProductStorageRecoveryMode::BOOT
+            )) {
+            while (recovery_plan_->active()) {
+                (void)recovery_plan_->advance(
+                    *productFileService,
+                    *projectSessionRestoreService,
+                    *projectSessionAutosaveService,
+                    *coreState
+                );
+            }
+        }
+        const auto result = recovery_plan_->result();
+        recordRecoveryResult_(result, nowMs);
+        return result;
+    }
+
+    void startRuntimeRecovery_(uint32_t nowMs) {
+        if (!servicesAvailable_() || !ensureRecoveryPlan_()) {
+            const auto result = servicesAvailable_()
+                ? unavailableWorkspace_()
+                : unavailableStorage_();
+            recordRecoveryResult_(result, nowMs);
+            (void)machine_.completeRevalidation(false, nowMs);
+            return;
+        }
+        if (!recovery_plan_->begin(
+                *productFileService,
+                *projectSessionAutosaveService,
+                *coreState,
+                core::persistence::ProductStorageRecoveryMode::HOT_SWAP
+            )) {
+            const auto result = recovery_plan_->result();
+            recordRecoveryResult_(result, nowMs);
+            (void)machine_.completeRevalidation(false, nowMs);
+            return;
         }
 
-        auto result = core::persistence::ProductStorageRecoveryService::reconcile(
-            *productFileService,
-            *projectSessionRestoreService,
-            *projectSessionAutosaveService,
-            *coreState,
-            mode
+        auto admitted = productFileService->persistenceJobs().admit({
+            .owner = core::persistence::ProductPersistenceJobOwner::STORAGE_RECOVERY,
+            .nowMs = nowMs,
+            .deadlineAfterMs = 0U,
+            .quota = recovery_plan_->nextWorkQuota(
+                *projectSessionAutosaveService
+            ),
+        });
+        if (!admitted) {
+            recovery_plan_->cancel(
+                *productFileService,
+                *projectSessionAutosaveService,
+                admitted.error().code
+            );
+            const auto result = recovery_plan_->result();
+            recordRecoveryResult_(result, nowMs);
+            (void)machine_.completeRevalidation(false, nowMs);
+            return;
+        }
+        recovery_job_ = std::move(admitted.value());
+        OC_LOG_INFO(
+            "[StorageRecovery] Cooperative stopped-only reconciliation scheduled"
         );
-        if (!result.recovered()) {
-            OC_LOG_WARN(
-                "[StorageRecovery] Reconciliation failed at {}ms status={} error={}",
-                nowMs,
-                static_cast<unsigned>(result.status),
-                oc::type::errorCodeToString(result.error)
+    }
+
+    void advanceRuntimeRecovery_(uint32_t nowMs) {
+        auto& jobs = productFileService->persistenceJobs();
+        if (!jobs.owns(recovery_job_)) {
+            recovery_plan_->cancel(
+                *productFileService,
+                *projectSessionAutosaveService,
+                oc::type::ErrorCode::INVALID_STATE
+            );
+            recovery_job_ = {};
+            finishRuntimeRecovery_(nowMs);
+            return;
+        }
+        if (!jobs.isActive(recovery_job_)) return;
+
+        const auto quota = recovery_plan_->nextWorkQuota(
+            *projectSessionAutosaveService
+        );
+        if (!jobs.prepareAdvance(recovery_job_, quota) ||
+            !jobs.claimAdvance(recovery_job_, nowMs)) {
+            return;
+        }
+
+        core::persistence::ProductPersistenceWorkUsage usage{};
+        const uint32_t startedMicros = micros();
+        bool terminal = false;
+        auto measured = productFileService->measurePersistenceWork(usage);
+        if (measured) {
+            auto measurement = std::move(measured.value());
+            terminal = recovery_plan_->advance(
+                *productFileService,
+                *projectSessionRestoreService,
+                *projectSessionAutosaveService,
+                *coreState
             );
         }
-        return result;
+        usage.wallMicros = static_cast<uint32_t>(micros() - startedMicros);
+        const auto finished = jobs.finishAdvance(recovery_job_, usage, true);
+        if (!finished) {
+            recovery_plan_->cancel(
+                *productFileService,
+                *projectSessionAutosaveService,
+                finished.error().code
+            );
+            (void)jobs.cancelAfterUnwind(recovery_job_);
+            recovery_job_ = {};
+            finishRuntimeRecovery_(nowMs);
+            return;
+        }
+        if (!terminal) return;
+
+        if (!jobs.complete(recovery_job_)) {
+            (void)jobs.cancelAfterUnwind(recovery_job_);
+        }
+        recovery_job_ = {};
+        finishRuntimeRecovery_(nowMs);
+    }
+
+    void finishRuntimeRecovery_(uint32_t nowMs) {
+        const auto result = recovery_plan_->result();
+        recordRecoveryResult_(result, nowMs);
+        const auto next = machine_.completeRevalidation(result.recovered(), nowMs);
+        if (result.recovered()) {
+            handleAction_(next, nowMs);
+        } else if (!sameMediaRetryLatched_()) {
+            OC_LOG_WARN(kRecoveryRevalidationBackoffLog);
+        }
+    }
+
+    void recordRecoveryResult_(
+        const core::persistence::ProductStorageRecoveryResult& result,
+        uint32_t nowMs
+    ) {
+        if (!result.recovered()) {
+            const char* context = result.errorContext
+                ? result.errorContext
+                : kNoRecoveryErrorContext;
+            OC_LOG_WARN(
+                kRecoveryFailureLog,
+                nowMs,
+                static_cast<unsigned>(result.status),
+                core::persistence::productStorageRecoveryStatusLabel(result.status),
+                oc::type::errorCodeToString(result.error),
+                core::persistence::ProjectSessionAutosaveService::failureStageLabel(
+                    result.sessionSaveFailureStage
+                ),
+                context
+            );
+            if (productFileService &&
+                core::persistence::productStorageRecoveryRequiresMediaChange(
+                    result.status
+                )) {
+                latched_media_generation_ =
+                    productFileService->storageIdentity().mediaGeneration;
+                OC_LOG_WARN(kRecoveryRetrySuspendedLog, latched_media_generation_);
+            }
+        } else {
+            latched_media_generation_ = 0;
+        }
+    }
+
+    bool sameMediaRetryLatched_() const {
+        return latched_media_generation_ != 0 && productFileService &&
+               productFileService->storageIdentity().mediaGeneration ==
+                   latched_media_generation_;
     }
 
     void handleAction_(core::persistence::StorageRecoveryAction action, uint32_t nowMs) {
         switch (action) {
             case core::persistence::StorageRecoveryAction::MARK_OFFLINE:
-                OC_LOG_WARN("[StorageRecovery] SD unavailable; runtime RAM remains authoritative");
+                OC_LOG_WARN(
+                    "[StorageRecovery] SD unavailable; runtime RAM remains authoritative"
+                );
                 return;
-
             case core::persistence::StorageRecoveryAction::ATTEMPT_REOPEN: {
                 OC_LOG_INFO("[StorageRecovery] SD present; reopening storage backends");
                 const bool reopenOk = reopenStorageBackends_();
@@ -227,27 +441,12 @@ private:
                 handleAction_(next, nowMs);
                 return;
             }
-
-            case core::persistence::StorageRecoveryAction::ATTEMPT_REVALIDATE: {
-                OC_LOG_INFO("[StorageRecovery] Reconciling journal, settings and live session");
-                const auto recovery = reconcileProductStorage_(
-                    core::persistence::ProductStorageRecoveryMode::HOT_SWAP,
-                    nowMs
-                );
-                const bool revalidateOk = recovery.recovered();
-                const auto next = machine_.completeRevalidation(revalidateOk, nowMs);
-                if (!revalidateOk) {
-                    OC_LOG_WARN("[StorageRecovery] Revalidation failed; retrying after backoff");
-                    return;
-                }
-                handleAction_(next, nowMs);
+            case core::persistence::StorageRecoveryAction::ATTEMPT_REVALIDATE:
+                startRuntimeRecovery_(nowMs);
                 return;
-            }
-
             case core::persistence::StorageRecoveryAction::MARK_RECOVERED:
                 OC_LOG_INFO("[StorageRecovery] SD recovered; persistence resumed");
                 return;
-
             case core::persistence::StorageRecoveryAction::NONE:
             default:
                 return;
@@ -258,10 +457,14 @@ private:
         core::persistence::StorageRecoveryConfig{
             .removalDebounceMs = 1000,
             .insertionDebounceMs = 1000,
-            .retryBackoffMs = 500,
+            .retryBackoffMs = STORAGE_RECOVERY_RETRY_BACKOFF_MS,
         }
     };
+    core::app::ExtmemUniquePtr<core::persistence::ProductStorageRecoveryPlan>
+        recovery_plan_;
+    core::persistence::ProductPersistenceJobToken recovery_job_{};
     uint32_t last_sample_ms_ = 0;
+    uint32_t latched_media_generation_ = 0;
 };
 
 StorageRecoveryRuntimeManager storageRecovery;
@@ -353,10 +556,7 @@ static FLASHMEM bool initStorage() {
             deviceSettingsStorage.capacity()
         );
     } else {
-        OC_LOG_WARN(
-            "Storage initialization deferred; boot recovery will retry every {}ms",
-            STORAGE_RECOVERY_SAMPLE_MS
-        );
+        OC_LOG_WARN(kStorageInitializationDeferredLog);
     }
     return initialized;
 }
@@ -368,15 +568,21 @@ static FLASHMEM void initApp() {
     projectSessionRestoreService.emplace(*projectSessionStore);
     projectSessionAutosaveService.emplace(*projectSessionStore);
 
-    auto bootRecovery = storageRecovery.reconcileBoot(millis());
-    while (!bootRecovery.recovered()) {
+    const auto bootRecovery = storageRecovery.reconcileBoot(millis());
+    if (!bootRecovery.recovered()) {
+        const char* context = bootRecovery.errorContext
+            ? bootRecovery.errorContext
+            : kNoRecoveryErrorContext;
         OC_LOG_WARN(
-            "[StorageRecovery] Boot reconciliation pending status={} error={}",
+            kBootRecoveryDegradedLog,
             static_cast<unsigned>(bootRecovery.status),
-            oc::type::errorCodeToString(bootRecovery.error)
+            core::persistence::productStorageRecoveryStatusLabel(bootRecovery.status),
+            oc::type::errorCodeToString(bootRecovery.error),
+            core::persistence::ProjectSessionAutosaveService::failureStageLabel(
+                bootRecovery.sessionSaveFailureStage
+            ),
+            context
         );
-        delay(STORAGE_RECOVERY_SAMPLE_MS);
-        bootRecovery = storageRecovery.reconcileBoot(millis());
     }
 
     switch (bootRecovery.sessionRestoreStatus) {
@@ -395,10 +601,12 @@ static FLASHMEM void initApp() {
             OC_LOG_WARN("[ProjectSession] current.mspj unavailable/corrupt; using default session");
             break;
     }
-    OC_LOG_INFO(
-        "[StorageRecovery] Boot reconciliation complete session-save={}B",
-        bootRecovery.sessionSaveBytes
-    );
+    if (bootRecovery.recovered()) {
+        OC_LOG_INFO(
+            kBootRecoveryCompleteLog,
+            bootRecovery.sessionSaveBytes
+        );
+    }
 
 #if defined(MS_UX_RECORDER)
     semanticUxRecorder =
@@ -600,12 +808,26 @@ void loop() {
 
         // Sampling never pauses for an open stream: observed removal must
         // invalidate its lease and abort the backend handle immediately.
+        const bool playbackActive = coreState->statusBar.playing.get();
         {
             OC_PERF_SCOPE(perfStorageRecovery, "main.storage-recovery");
             storageRecovery.update(
                 persistenceNowMs,
-                coreState->statusBar.playing.get()
+                playbackActive
             );
+        }
+
+        // The transport callback only retained the request in PSRAM. Execute
+        // at most one admitted RPC advance after state maintenance and the
+        // shared turn boundary have both completed.
+        if (persistenceTurnReady && app &&
+            app->contexts().activeId() ==
+                static_cast<uint8_t>(Config::ContextID::STANDALONE)) {
+            auto* activeContext = app->contexts().active();
+            if (activeContext) {
+                static_cast<core::context::StandaloneContext*>(activeContext)
+                    ->advancePersistence(persistenceNowMs, playbackActive);
+            }
         }
 
         const bool productFileWriteActive =

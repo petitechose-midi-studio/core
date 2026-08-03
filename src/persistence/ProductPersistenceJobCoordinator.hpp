@@ -253,6 +253,10 @@ public:
     );
 
     oc::type::Result<void> beginTurn(uint32_t nowMs);
+    oc::type::Result<void> prepareAdvance(
+        const ProductPersistenceJobToken& token,
+        ProductPersistenceWorkQuota quota
+    );
     oc::type::Result<void> claimAdvance(
         const ProductPersistenceJobToken& token,
         uint32_t nowMs
@@ -265,6 +269,9 @@ public:
 
     oc::type::Result<void> complete(ProductPersistenceJobToken& token);
     oc::type::Result<void> cancel(ProductPersistenceJobToken& token);
+    /** Release an unsafe record only after its owner has synchronously unwound
+     * every external resource. A currently claimed advance cannot be bypassed. */
+    oc::type::Result<void> cancelAfterUnwind(ProductPersistenceJobToken& token);
     oc::type::Result<void> expire(ProductPersistenceJobToken& token, uint32_t nowMs);
     void invalidateAll();
 

@@ -74,6 +74,32 @@ FLASHMEM PersistenceWriteStatus DeviceSettingsStore::saveAllStatus(
     return PersistenceWriteStatus::OK;
 }
 
+FLASHMEM PersistenceWriteStatus DeviceSettingsStore::reconcileAllStatus(
+    const state::MidiSyncState& midiSync
+) {
+    const auto formatStatus = currentFormatStatus_();
+    if (formatStatus == PersistenceWriteStatus::OK) {
+        state::MidiSyncState durable;
+        if (!loadMidiSync_(durable)) {
+            // The durable payload is not a usable exact-current snapshot.
+            // Recovery is RAM-authoritative, so replace it once rather than
+            // preserving a malformed current-format header indefinitely.
+            return saveAllStatus(midiSync);
+        }
+        if (durable.mode.get() == midiSync.mode.get() &&
+            durable.followTransport.get() == midiSync.followTransport.get() &&
+            durable.autoFallbackMs.get() == midiSync.autoFallbackMs.get() &&
+            durable.autoLockClockCount.get() == midiSync.autoLockClockCount.get() &&
+            !backend_.isDirty()) {
+            return PersistenceWriteStatus::OK;
+        }
+    } else if (formatStatus != PersistenceWriteStatus::INVALID_CONFIG) {
+        return formatStatus;
+    }
+
+    return saveAllStatus(midiSync);
+}
+
 FLASHMEM bool DeviceSettingsStore::saveMidiSyncMode(state::MidiSyncMode mode) {
     return saveMidiSyncModeStatus(mode) == PersistenceWriteStatus::OK;
 }

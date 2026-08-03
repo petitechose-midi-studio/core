@@ -103,6 +103,12 @@ bool rootEntryVisitor(const oc::interface::DirectoryEntry& entry, void* context)
     return true;
 }
 
+bool countEntryVisitor(const oc::interface::DirectoryEntry&, void* context) {
+    auto* count = static_cast<uint16_t*>(context);
+    ++(*count);
+    return true;
+}
+
 void test_init_creates_product_layout() {
     resetTestRoot();
 
@@ -213,6 +219,64 @@ void test_file_roundtrip_rename_and_recursive_remove() {
     assert(service.storageIdentity().storageEpoch == beforeRelease.storageEpoch + 1);
 
     std::cout << "[PASS] test_file_roundtrip_rename_and_recursive_remove\n";
+}
+
+void test_work_measurement_counts_exact_primitives_and_rejects_nesting() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto service = makeService(filesystem);
+    auto leaseResult = service.acquireMutation(ProductMutationOwner::FILESYSTEM_RPC);
+    assert(leaseResult);
+    auto lease = std::move(leaseResult.value());
+
+    core::persistence::ProductPersistenceWorkUsage usage{};
+    {
+        auto measuredResult = service.measurePersistenceWork(usage);
+        assert(measuredResult);
+        auto measured = std::move(measuredResult.value());
+        core::persistence::ProductPersistenceWorkUsage nestedUsage{};
+        assert(hasResultErrorCode(
+            service.measurePersistenceWork(nestedUsage),
+            oc::type::ErrorCode::INVALID_STATE
+        ));
+
+        assert(service.createDirectory(lease, "projects/measured"));
+        const uint8_t payload[] = {1U, 2U, 3U, 4U};
+        assert(service.write(
+            lease,
+            "projects/measured/value.bin",
+            0U,
+            payload,
+            sizeof(payload)
+        ));
+        assert(service.stat("projects/measured/value.bin"));
+        uint16_t visited = 0U;
+        assert(service.list("projects/measured", countEntryVisitor, &visited));
+        assert(visited == 1U);
+        uint8_t readBuffer[sizeof(payload)] = {};
+        assert(service.read(
+            "projects/measured/value.bin",
+            0U,
+            readBuffer,
+            sizeof(readBuffer)
+        ));
+        measured.addNodes(1U);
+        measured.addAllocations(2U);
+    }
+
+    assert(usage.filesystemCalls == 6U);
+    assert(usage.bytes == 8U);
+    assert(usage.entries == 1U);
+    assert(usage.nodes == 1U);
+    assert(usage.allocations == 2U);
+
+    core::persistence::ProductPersistenceWorkUsage secondUsage{};
+    auto secondMeasurement = service.measurePersistenceWork(secondUsage);
+    assert(secondMeasurement);
+    assert(service.releaseMutation(lease));
+
+    std::cout << "[PASS] exact persistence work measurement\n";
 }
 
 void test_sandbox_rejects_escape_and_invalid_paths() {
@@ -540,6 +604,7 @@ int main() {
     test_init_creates_product_layout();
     test_resolve_path_accepts_relative_and_product_rooted_paths();
     test_file_roundtrip_rename_and_recursive_remove();
+    test_work_measurement_counts_exact_primitives_and_rejects_nesting();
     test_sandbox_rejects_escape_and_invalid_paths();
     test_sequential_write_session_contract_is_enforced_by_product_service();
     test_coordinator_grants_one_exact_owner_and_advances_epoch_once();

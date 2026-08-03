@@ -47,6 +47,18 @@ struct FileState {
     uint32_t size = 0;
 };
 
+enum class JournalSlotState : uint8_t {
+    ABSENT = 0,
+    VALID,
+    CORRUPT,
+    UNSUPPORTED,
+};
+
+struct JournalSlotObservation {
+    JournalSlotState state = JournalSlotState::ABSENT;
+    uint64_t sequence = 0;
+};
+
 constexpr bool phaseTerminal(ProductFileTransactionPhase phase) {
     return phase == ProductFileTransactionPhase::COMMITTED ||
            phase == ProductFileTransactionPhase::ROLLED_BACK;
@@ -57,6 +69,14 @@ oc::type::Result<void> persistPhase(
     const ProductMutationLease& lease,
     JournalWorkspace& workspace,
     ProductFileTransactionPhase phase
+);
+
+const char* journalSlotPath(uint8_t slot);
+oc::type::Result<JournalSlotObservation> readJournalSlot(
+    ProductFileService& files,
+    const ProductMutationLease& lease,
+    uint8_t slot,
+    JournalWorkspace& workspace
 );
 
 oc::type::Result<JournalSelection> selectLatest(

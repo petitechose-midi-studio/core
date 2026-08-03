@@ -24,15 +24,21 @@ namespace ms::entry {
  */
 class SdlProjectSessionRuntime {
 public:
+    using PersistenceAdvanceFn = void (*)(void*, uint32_t, bool);
+
     explicit SdlProjectSessionRuntime(
         core::persistence::ProductFileService& productFiles,
         core::state::CoreState& state,
-        uint32_t autosaveDelayMs = 0
+        uint32_t autosaveDelayMs = 0,
+        void* persistenceAdvanceContext = nullptr,
+        PersistenceAdvanceFn persistenceAdvance = nullptr
     )
         : product_files_(productFiles)
         , state_(state)
         , store_(productFiles)
-        , restore_(store_) {
+        , restore_(store_)
+        , persistence_advance_context_(persistenceAdvanceContext)
+        , persistence_advance_(persistenceAdvance) {
         restore_result_ = restore_.restore(state_);
         autosave_.emplace(store_, autosaveDelayMs);
     }
@@ -51,6 +57,15 @@ public:
         const uint32_t nowMs = oc::time::millis();
         const auto turn = product_files_.persistenceJobs().beginTurn(nowMs);
         if (!turn) return;
+
+        const bool playbackActive = state_.statusBar.playing.get();
+        if (persistence_advance_) {
+            persistence_advance_(
+                persistence_advance_context_,
+                nowMs,
+                playbackActive
+            );
+        }
 
         const bool productFileWriteActive = product_files_.writeSessionActive();
         const bool autosaveWriteActive = autosave_ && autosave_->writeSessionActive();
@@ -74,6 +89,8 @@ private:
     core::persistence::ProjectSessionRestoreService restore_;
     core::persistence::ProjectSessionRestoreService::Result restore_result_{};
     std::optional<core::persistence::ProjectSessionAutosaveService> autosave_;
+    void* persistence_advance_context_ = nullptr;
+    PersistenceAdvanceFn persistence_advance_ = nullptr;
 };
 
 }  // namespace ms::entry

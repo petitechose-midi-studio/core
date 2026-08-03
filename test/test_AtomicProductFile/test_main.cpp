@@ -14,6 +14,8 @@
 
 #include "../../src/persistence/AtomicProductFile.hpp"
 #include "../../src/persistence/PersistenceChecksum.hpp"
+#include "../../src/persistence/ProductFileCommitPlan.hpp"
+#include "../../src/persistence/ProductFileRecoveryPlan.hpp"
 
 namespace {
 
@@ -632,6 +634,144 @@ void test_two_successive_transactions_reuse_bounded_slots() {
     std::cout << "[PASS] test_two_successive_transactions_reuse_bounded_slots\n";
 }
 
+void test_cooperative_commit_uses_one_bounded_durable_phase_per_advance() {
+    static_assert(sizeof(core::persistence::ProductFileCommitPlan) <= 2048U);
+    resetTestRoot();
+    oc::impl::HostFileSystem backend(testRoot().string().c_str());
+    ProductFileService files(backend);
+    assert(files.init());
+    seedCurrent(files);
+
+    auto acquired = files.acquireMutation(ProductMutationOwner::FILESYSTEM_RPC);
+    assert(acquired);
+    auto lease = std::move(acquired.value());
+    assert(core::persistence::writeProductFileTemp(
+        files,
+        lease,
+        TEMPORARY,
+        NEW_DATA,
+        sizeof(NEW_DATA),
+        sizeof(NEW_DATA)
+    ));
+
+    core::persistence::ProductFileCommitPlan plan;
+    assert(plan.begin(
+        files,
+        lease,
+        CURRENT,
+        BACKUP,
+        TEMPORARY,
+        sizeof(NEW_DATA)
+    ));
+
+    uint8_t advances = 0U;
+    bool complete = false;
+    while (!complete && advances < 32U) {
+        core::persistence::ProductPersistenceWorkUsage usage{};
+        oc::type::Result<bool> advanced = oc::type::Result<bool>::ok(false);
+        {
+            auto measuredResult = files.measurePersistenceWork(usage);
+            assert(measuredResult);
+            auto measured = std::move(measuredResult.value());
+            advanced = plan.advance(files, lease);
+        }
+        assert(advanced);
+        complete = advanced.value();
+        ++advances;
+        assert(usage.bytes <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE.maxBytes());
+        assert(usage.filesystemCalls <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
+                   .maxFilesystemCalls());
+        assert(usage.allocations == 0U);
+        assert(usage.entries == 0U);
+        assert(usage.nodes == 0U);
+    }
+
+    assert(complete);
+    assert(plan.complete());
+    assert(plan.mapped());
+    assert(plan.requiresRecoveryOnFailure());
+    assert(advances > 1U);
+    assert(files.releaseMutation(lease));
+    assertFileEquals(files, NEW_DATA, sizeof(NEW_DATA));
+    assert(missing(files, TEMPORARY));
+    assert(missing(files, BACKUP));
+
+    std::cout << "[PASS] cooperative commit phase quotas ("
+              << static_cast<unsigned>(advances) << " advances)\n";
+}
+
+void test_cooperative_recovery_uses_one_bounded_durable_phase_per_advance() {
+    static_assert(sizeof(core::persistence::ProductFileRecoveryPlan) <= 768U);
+    uint32_t durableBoundaries = 0U;
+    resetTestRoot();
+    {
+        BoundaryFaultFileSystem backend(testRoot().string().c_str());
+        ProductFileService files(backend);
+        assert(files.init());
+        seedCurrent(files);
+        backend.arm(0U, CutMode::BEFORE);
+        assert(replace(files, NEW_DATA, sizeof(NEW_DATA)));
+        durableBoundaries = backend.boundaryCount();
+    }
+    assert(durableBoundaries > 2U);
+
+    resetTestRoot();
+    {
+        BoundaryFaultFileSystem backend(testRoot().string().c_str());
+        ProductFileService files(backend);
+        assert(files.init());
+        seedCurrent(files);
+        backend.arm(durableBoundaries - 1U, CutMode::AFTER);
+        assert(!replace(files, NEW_DATA, sizeof(NEW_DATA)));
+        assert(backend.cut());
+    }
+
+    oc::impl::HostFileSystem backend(testRoot().string().c_str());
+    ProductFileService files(backend);
+    assert(files.initForRecovery());
+    auto acquired = files.beginRecovery();
+    assert(acquired);
+    auto lease = std::move(acquired.value());
+
+    core::persistence::ProductFileRecoveryPlan plan;
+    assert(plan.begin(files, lease));
+    uint8_t advances = 0U;
+    bool complete = false;
+    while (!complete && advances < 32U) {
+        core::persistence::ProductPersistenceWorkUsage usage{};
+        oc::type::Result<bool> advanced = oc::type::Result<bool>::ok(false);
+        {
+            auto measuredResult = files.measurePersistenceWork(usage);
+            assert(measuredResult);
+            auto measured = std::move(measuredResult.value());
+            advanced = plan.advance(files, lease);
+        }
+        assert(advanced);
+        complete = advanced.value();
+        ++advances;
+        assert(usage.bytes <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE.maxBytes());
+        assert(usage.filesystemCalls <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
+                   .maxFilesystemCalls());
+        assert(usage.allocations == 0U);
+        assert(usage.entries == 0U);
+        assert(usage.nodes == 0U);
+    }
+
+    assert(complete);
+    assert(plan.complete());
+    assert(advances > 1U);
+    assert(files.completeRecovery(lease, true));
+    assert(files.storageState() == ProductStorageState::READY);
+    assertCanonicalAfterRecovery(files, true);
+
+    std::cout << "[PASS] cooperative recovery phase quotas ("
+              << static_cast<unsigned>(advances) << " advances)\n";
+}
+
 }  // namespace
 
 int main() {
@@ -646,6 +786,8 @@ int main() {
     test_sequence_exhaustion_is_non_mutating();
     test_metadata_alias_and_nondistinct_paths_are_rejected();
     test_two_successive_transactions_reuse_bounded_slots();
+    test_cooperative_commit_uses_one_bounded_durable_phase_per_advance();
+    test_cooperative_recovery_uses_one_bounded_durable_phase_per_advance();
 
     resetTestRoot();
     std::cout << "\n==============================================\n";

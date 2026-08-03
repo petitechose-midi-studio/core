@@ -21,6 +21,10 @@ const char kQueueStateCorrupt[] PROGMEM = "persistence job queue state corrupt";
 const char kAdvanceUsageMissing[] PROGMEM =
     "persistence advance has no usage record";
 const char kTurnAlreadyConsumed[] PROGMEM = "persistence turn already consumed";
+const char kAdvancePreparationClosed[] PROGMEM =
+    "persistence advance preparation is closed";
+const char kAdvancePreparationInvalid[] PROGMEM =
+    "persistence advance quota is invalid";
 const char kJobNotActive[] PROGMEM = "persistence job is not active";
 const char kQuotaAlreadyExceeded[] PROGMEM =
     "persistence job quota already exceeded";
@@ -152,6 +156,37 @@ oc::type::Result<void> ProductPersistenceJobCoordinator::beginTurn(uint32_t nowM
     return oc::type::Result<void>::ok();
 }
 
+FLASHMEM oc::type::Result<void> ProductPersistenceJobCoordinator::prepareAdvance(
+    const ProductPersistenceJobToken& token,
+    ProductPersistenceWorkQuota quota
+) {
+    if (turn_state_ != TurnState::OPEN) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_STATE, kAdvancePreparationClosed}
+        );
+    }
+    if (!quota.valid()) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_ARGUMENT, kAdvancePreparationInvalid}
+        );
+    }
+
+    Record* record = recordFor_(token);
+    if (!record || record->state != ProductPersistenceJobState::ACTIVE) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_STATE, kJobNotActive}
+        );
+    }
+    if (quotaExceeded_(*record)) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::RESOURCE_EXHAUSTED, kQuotaAlreadyExceeded}
+        );
+    }
+
+    record->quota = quota;
+    return oc::type::Result<void>::ok();
+}
+
 oc::type::Result<void> ProductPersistenceJobCoordinator::claimAdvance(
     const ProductPersistenceJobToken& token,
     uint32_t nowMs
@@ -253,6 +288,28 @@ FLASHMEM oc::type::Result<void> ProductPersistenceJobCoordinator::cancel(
     }
     if (record->state == ProductPersistenceJobState::ACTIVE &&
         (turn_state_ == TurnState::CLAIMED || !safeYield_(*record))) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_STATE, kNotCancelSafe}
+        );
+    }
+
+    releaseRecord_(*record);
+    token.invalidate_();
+    return oc::type::Result<void>::ok();
+}
+
+FLASHMEM oc::type::Result<void> ProductPersistenceJobCoordinator::cancelAfterUnwind(
+    ProductPersistenceJobToken& token
+) {
+    Record* record = recordFor_(token);
+    if (!record) {
+        token.invalidate_();
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_STATE, kStaleToken}
+        );
+    }
+    if (record->state == ProductPersistenceJobState::ACTIVE &&
+        turn_state_ == TurnState::CLAIMED) {
         return oc::type::Result<void>::err(
             {ErrorCode::INVALID_STATE, kNotCancelSafe}
         );

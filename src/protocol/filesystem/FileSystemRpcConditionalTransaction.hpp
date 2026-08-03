@@ -9,6 +9,7 @@ namespace core::protocol::filesystem::conditional_mutation {
 
 inline constexpr const char* JOURNAL_STAGING_PATH =
     "tmp/rpc-conditional.journal.tmp";
+inline constexpr const char* JOURNAL_PATH = "tmp/rpc-conditional.journal";
 inline constexpr const char* BACKUP_PATH = "tmp/rpc-conditional.backup";
 
 enum class Kind : uint8_t {

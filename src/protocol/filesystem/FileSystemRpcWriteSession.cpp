@@ -7,9 +7,11 @@
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/AtomicProductFile.hpp"
+#include "persistence/ProductFileCommitPlan.hpp"
 
 namespace core::protocol::filesystem {
 
+using oc::type::ErrorCode;
 using oc::type::Result;
 using internal::ByteReader;
 using internal::bufferTooSmall;
@@ -36,6 +38,19 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteBegin_(
             FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE,
             frame.requestId,
             FileSystemRpcStatus::INVALID_ARGUMENT,
+            sessionId,
+            0,
+            response,
+            responseSize
+        );
+        return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
+    }
+
+    if (expectedSize > FILESYSTEM_RPC_MAX_UPLOAD_SIZE) {
+        const size_t size = encodeWriteResponse(
+            FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE,
+            frame.requestId,
+            FileSystemRpcStatus::TOO_LARGE,
             sessionId,
             0,
             response,
@@ -228,19 +243,47 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
     uint8_t* response,
     size_t responseSize
 ) {
-    uint16_t sessionId = 0;
+    core::persistence::ProductFileCommitPlan plan{};
+    uint16_t sessionId = 0U;
+    auto result = beginCooperativeWriteCommit_(
+        frame,
+        plan,
+        sessionId,
+        response,
+        responseSize
+    );
+    while (result && result.value() == 0U && plan.active()) {
+        result = advanceCooperativeWriteCommit_(
+            plan,
+            frame.requestId,
+            sessionId,
+            response,
+            responseSize
+        );
+    }
+    return result;
+}
+
+FLASHMEM Result<size_t> FileSystemRpcHandler::beginCooperativeWriteCommit_(
+    const FileSystemRpcFrame& frame,
+    core::persistence::ProductFileCommitPlan& plan,
+    uint16_t& sessionId,
+    uint8_t* response,
+    size_t responseSize
+) {
+    sessionId = 0U;
     ByteReader reader(frame.payload, frame.payloadSize);
-    if (!reader.readU16(sessionId) || reader.remaining() != 0) {
+    if (!reader.readU16(sessionId) || reader.remaining() != 0U) {
         const size_t encoded = encodeWriteResponse(
             FileSystemRpcMessageId::WRITE_COMMIT_RESPONSE,
             frame.requestId,
             FileSystemRpcStatus::INVALID_ARGUMENT,
             sessionId,
-            0,
+            0U,
             response,
             responseSize
         );
-        return encoded > 0 ? Result<size_t>::ok(encoded) : bufferTooSmall();
+        return encoded > 0U ? Result<size_t>::ok(encoded) : bufferTooSmall();
     }
 
     FileSystemRpcStatus status = FileSystemRpcStatus::OK;
@@ -249,12 +292,12 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
     } else if (writeSession_.writtenBytes != writeSession_.expectedSize) {
         status = FileSystemRpcStatus::INVALID_STATE;
     } else {
-        auto finish = files_.finishWrite(writeSession_.lease);
-        if (!finish) {
-            status = mapError(finish.error());
+        auto finished = files_.finishWrite(writeSession_.lease);
+        if (!finished) {
+            status = mapError(finished.error());
             (void)files_.abortWrite(writeSession_.lease);
         } else {
-            auto commit = core::persistence::commitProductFileTemp(
+            auto begun = plan.begin(
                 files_,
                 writeSession_.lease,
                 writeSession_.finalPath,
@@ -262,11 +305,11 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
                 writeSession_.tmpPath,
                 writeSession_.expectedSize
             );
-            if (!commit) {
-                status = mapError(commit.error());
-            }
+            if (begun) return Result<size_t>::ok(0U);
+            status = mapError(begun.error());
         }
-        if (status != FileSystemRpcStatus::OK &&
+
+        if (files_.owns(writeSession_.lease) &&
             !files_.recoveryRequired(writeSession_.lease)) {
             (void)core::persistence::deleteProductFileIfExists(
                 files_,
@@ -285,11 +328,78 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
         frame.requestId,
         status,
         sessionId,
-        0,
+        0U,
         response,
         responseSize
     );
-    return encoded > 0 ? Result<size_t>::ok(encoded) : bufferTooSmall();
+    return encoded > 0U ? Result<size_t>::ok(encoded) : bufferTooSmall();
+}
+
+FLASHMEM Result<size_t> FileSystemRpcHandler::advanceCooperativeWriteCommit_(
+    core::persistence::ProductFileCommitPlan& plan,
+    uint16_t requestId,
+    uint16_t sessionId,
+    uint8_t* response,
+    size_t responseSize
+) {
+    FileSystemRpcStatus status = FileSystemRpcStatus::OK;
+    if (!hasActiveWriteSession() || writeSession_.sessionId != sessionId) {
+        status = FileSystemRpcStatus::INVALID_STATE;
+    } else {
+        auto advanced = plan.advance(files_, writeSession_.lease);
+        if (advanced && !advanced.value()) return Result<size_t>::ok(0U);
+        if (!advanced) {
+            status = mapError(advanced.error());
+            if (plan.requiresRecoveryOnFailure() && files_.owns(writeSession_.lease)) {
+                (void)files_.requireRecovery(
+                    writeSession_.lease,
+                    advanced.error().code
+                );
+            } else if (files_.owns(writeSession_.lease)) {
+                (void)core::persistence::deleteProductFileIfExists(
+                    files_,
+                    writeSession_.lease,
+                    writeSession_.tmpPath
+                );
+            }
+        }
+
+        auto released = releaseWriteSession_();
+        if (status == FileSystemRpcStatus::OK && !released) {
+            status = mapError(released.error());
+        }
+    }
+    plan.reset();
+
+    const size_t encoded = encodeWriteResponse(
+        FileSystemRpcMessageId::WRITE_COMMIT_RESPONSE,
+        requestId,
+        status,
+        sessionId,
+        0U,
+        response,
+        responseSize
+    );
+    return encoded > 0U ? Result<size_t>::ok(encoded) : bufferTooSmall();
+}
+
+FLASHMEM void FileSystemRpcHandler::cancelCooperativeWriteCommit_(
+    core::persistence::ProductFileCommitPlan& plan
+) {
+    if (writeSession_.lease.valid() && files_.owns(writeSession_.lease)) {
+        if (plan.mapped() || plan.requiresRecoveryOnFailure()) {
+            (void)files_.requireRecovery(
+                writeSession_.lease,
+                ErrorCode::STORAGE_WRITE_FAILED
+            );
+            (void)releaseWriteSession_();
+        } else {
+            abortWriteSession();
+        }
+    } else {
+        (void)releaseWriteSession_();
+    }
+    plan.reset();
 }
 
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteAbort_(
@@ -346,8 +456,7 @@ void FileSystemRpcHandler::expireWriteSession_(uint32_t nowMs) {
     if (!hasActiveWriteSession()) {
         return;
     }
-    if (static_cast<uint32_t>(nowMs - writeSession_.lastActivityMs) <=
-        config_.writeSessionTimeoutMs) {
+    if (!writeSessionIdleExpired(nowMs)) {
         return;
     }
     abortWriteSession();

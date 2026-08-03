@@ -31,14 +31,20 @@ enum class ProductStorageRecoveryStatus : uint8_t {
     COMPLETION_FAILED,
 };
 
+const char* productStorageRecoveryStatusLabel(ProductStorageRecoveryStatus status);
+bool productStorageRecoveryRequiresMediaChange(ProductStorageRecoveryStatus status);
+
 struct ProductStorageRecoveryResult {
     ProductStorageRecoveryStatus status = ProductStorageRecoveryStatus::BUSY;
     oc::type::ErrorCode error = oc::type::ErrorCode::OK;
+    const char* errorContext = nullptr;
     PersistenceWriteStatus settingsStatus = PersistenceWriteStatus::OK;
     ProjectSessionRestoreService::Status sessionRestoreStatus =
         ProjectSessionRestoreService::Status::MISSING;
     ProjectSessionAutosaveService::Status sessionSaveStatus =
         ProjectSessionAutosaveService::Status::IDLE;
+    ProjectSessionAutosaveService::FailureStage sessionSaveFailureStage =
+        ProjectSessionAutosaveService::FailureStage::NONE;
     uint32_t sessionRestoreBytes = 0;
     uint32_t sessionSaveBytes = 0;
     bool conditionalJournalQuarantined = false;

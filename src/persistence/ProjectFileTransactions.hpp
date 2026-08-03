@@ -15,7 +15,8 @@ oc::type::Result<ProjectSaveResult> saveToCompletionWithRecoveryLease(
     ProjectSaveTransaction& transaction,
     const core::state::project::ProjectSnapshot& snapshot,
     AtomicProductFilePaths paths,
-    const ProductMutationLease& recoveryLease
+    const ProductMutationLease& recoveryLease,
+    ProjectSaveStage* failedStage = nullptr
 );
 
 oc::type::Result<ProjectLoadResult> loadWithBackup(

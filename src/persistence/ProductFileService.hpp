@@ -11,6 +11,43 @@
 
 namespace core::persistence {
 
+class ProductFileService;
+
+class ProductPersistenceWorkMeasurement {
+public:
+    ProductPersistenceWorkMeasurement() = default;
+    ~ProductPersistenceWorkMeasurement();
+
+    ProductPersistenceWorkMeasurement(const ProductPersistenceWorkMeasurement&) = delete;
+    ProductPersistenceWorkMeasurement& operator=(
+        const ProductPersistenceWorkMeasurement&
+    ) = delete;
+    ProductPersistenceWorkMeasurement(
+        ProductPersistenceWorkMeasurement&& other
+    ) noexcept;
+    ProductPersistenceWorkMeasurement& operator=(
+        ProductPersistenceWorkMeasurement&& other
+    ) noexcept;
+
+    void addEntries(uint16_t count);
+    void addNodes(uint8_t count);
+    void addAllocations(uint8_t count);
+    bool valid() const { return service_ != nullptr && usage_ != nullptr; }
+
+private:
+    friend class ProductFileService;
+
+    ProductPersistenceWorkMeasurement(
+        ProductFileService& service,
+        ProductPersistenceWorkUsage& usage
+    ) : service_(&service), usage_(&usage) {}
+
+    void release_();
+
+    ProductFileService* service_ = nullptr;
+    ProductPersistenceWorkUsage* usage_ = nullptr;
+};
+
 /**
  * Product-scoped filesystem facade for MIDI Studio user data.
  *
@@ -20,6 +57,7 @@ namespace core::persistence {
  */
 class ProductFileService {
 public:
+    static constexpr uint8_t LAYOUT_DIRECTORY_COUNT = 7U;
     static constexpr const char* PRODUCT_ROOT = "/midi-studio";
     static constexpr const char* SESSION_DIR = "/midi-studio/session";
     static constexpr const char* PROJECTS_DIR = "/midi-studio/projects";
@@ -70,8 +108,15 @@ public:
     const ProductPersistenceJobCoordinator& persistenceJobs() const {
         return job_coordinator_;
     }
+    oc::type::Result<ProductPersistenceWorkMeasurement> measurePersistenceWork(
+        ProductPersistenceWorkUsage& usage
+    );
 
     oc::type::Result<void> ensureLayout(const ProductMutationLease& lease);
+    oc::type::Result<void> ensureLayoutDirectory(
+        const ProductMutationLease& lease,
+        uint8_t index
+    );
 
     oc::type::Result<void> resolvePath(const char* productPath,
                                        char* outPath,
@@ -132,6 +177,15 @@ private:
 
     static bool isProductRootPath_(const char* resolvedPath);
     static bool isProductRootSegment_(const char* path, size_t offset);
+    struct MeasuredListVisitorContext {
+        ProductFileService* service;
+        oc::interface::DirectoryEntryVisitor visitor;
+        void* context;
+    };
+    static bool measuredListVisitor_(
+        const oc::interface::DirectoryEntry& entry,
+        void* context
+    );
 
     oc::type::Result<void> initBackend_();
     oc::type::Result<void> ensureReadable_(const ProductMutationLease* lease);
@@ -150,15 +204,24 @@ private:
                                    uint8_t* buffer,
                                    size_t size);
     void observeBackendFailure_(oc::type::Error error);
+    void noteFilesystemCall_();
+    void noteBytes_(size_t bytes);
+    void noteEntries_(uint16_t entries);
+    void noteNodes_(uint8_t nodes);
+    void noteAllocations_(uint8_t allocations);
+    void endWorkMeasurement_(ProductPersistenceWorkUsage* usage);
+
+    friend class ProductPersistenceWorkMeasurement;
 
     oc::interface::IFileSystem& filesystem_;
     ProductPersistenceCoordinator coordinator_{};
     ProductPersistenceJobCoordinator job_coordinator_{};
+    ProductPersistenceWorkUsage* work_usage_ = nullptr;
     uint32_t write_lease_id_ = 0;
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(ProductFileService) == 156U, "product file service exceeds LOCK-S");
+static_assert(sizeof(ProductFileService) == 160U, "product file service exceeds LOCK-S");
 static_assert(alignof(ProductFileService) == 4U, "product file service alignment drift");
 #endif
 

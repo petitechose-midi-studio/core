@@ -85,31 +85,49 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
     size_t responseSize
 ) {
     expireWriteSession_(nowMs);
+    updateConditionalRecovery_(nowMs);
+    if (conditionalRecoveryState_ == FileSystemRpcConditionalRecoveryState::BLOCKED) {
+        auto frame = FileSystemRpcCodec::decodeFrame(request, requestSize);
+        if (!frame) {
+            return encodeError_(
+                0,
+                FileSystemRpcStatus::INVALID_MESSAGE,
+                response,
+                responseSize
+            );
+        }
+        if (!isRecoverySafeRequest(frame.value().messageId)) {
+            const auto blockedStatus =
+                conditionalRecoveryStatus_ == FileSystemRpcStatus::UNSUPPORTED ||
+                conditionalRecoveryStatus_ == FileSystemRpcStatus::TOO_LARGE
+                ? conditionalRecoveryStatus_
+                : (files_.storageState() == core::persistence::ProductStorageState::ABSENT
+                    ? FileSystemRpcStatus::STORAGE_ERROR
+                    : FileSystemRpcStatus::BUSY);
+            return encodeError_(
+                frame.value().requestId,
+                blockedStatus,
+                response,
+                responseSize
+            );
+        }
+    }
+    return handleAdmittedFrame(request, requestSize, nowMs, response, responseSize);
+}
 
+FLASHMEM Result<size_t> FileSystemRpcHandler::handleAdmittedFrame(
+    const uint8_t* request,
+    size_t requestSize,
+    uint32_t nowMs,
+    uint8_t* response,
+    size_t responseSize
+) {
     auto frame = FileSystemRpcCodec::decodeFrame(request, requestSize);
     if (!frame) {
         return encodeError_(0, FileSystemRpcStatus::INVALID_MESSAGE, response, responseSize);
     }
     if (frame.value().schema != FILESYSTEM_RPC_SCHEMA) {
         return encodeError_(frame.value().requestId, FileSystemRpcStatus::UNSUPPORTED, response, responseSize);
-    }
-
-    updateConditionalRecovery_(nowMs);
-    if (conditionalRecoveryState_ == FileSystemRpcConditionalRecoveryState::BLOCKED &&
-        !isRecoverySafeRequest(frame.value().messageId)) {
-        const auto blockedStatus =
-            conditionalRecoveryStatus_ == FileSystemRpcStatus::UNSUPPORTED ||
-            conditionalRecoveryStatus_ == FileSystemRpcStatus::TOO_LARGE
-            ? conditionalRecoveryStatus_
-            : (files_.storageState() == core::persistence::ProductStorageState::ABSENT
-                ? FileSystemRpcStatus::STORAGE_ERROR
-                : FileSystemRpcStatus::BUSY);
-        return encodeError_(
-            frame.value().requestId,
-            blockedStatus,
-            response,
-            responseSize
-        );
     }
 
     switch (frame.value().messageId) {
@@ -157,6 +175,12 @@ bool FileSystemRpcHandler::hasActiveWriteSession() const {
            );
 }
 
+bool FileSystemRpcHandler::writeSessionIdleExpired(uint32_t nowMs) const {
+    return hasActiveWriteSession() &&
+           static_cast<uint32_t>(nowMs - writeSession_.lastActivityMs) >=
+               config_.writeSessionTimeoutMs;
+}
+
 FLASHMEM void FileSystemRpcHandler::abortWriteSession() {
     if (writeSession_.lease.valid() && files_.owns(writeSession_.lease)) {
         (void)files_.abortWrite(writeSession_.lease);
@@ -167,6 +191,15 @@ FLASHMEM void FileSystemRpcHandler::abortWriteSession() {
         );
     }
     (void)releaseWriteSession_();
+}
+
+FLASHMEM Result<size_t> FileSystemRpcHandler::encodeErrorResponse(
+    uint16_t requestId,
+    FileSystemRpcStatus status,
+    uint8_t* response,
+    size_t responseSize
+) const {
+    return encodeError_(requestId, status, response, responseSize);
 }
 
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleCapabilities_(

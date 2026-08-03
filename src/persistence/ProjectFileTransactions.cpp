@@ -176,12 +176,14 @@ FLASHMEM oc::type::Result<ProjectSaveResult> saveToCompletionWithRecoveryLease(
     ProjectSaveTransaction& transaction,
     const core::state::project::ProjectSnapshot& snapshot,
     AtomicProductFilePaths paths,
-    const ProductMutationLease& recoveryLease
+    const ProductMutationLease& recoveryLease,
+    ProjectSaveStage* failedStage
 ) {
     auto progress = transaction.saveToCompletionWithRecoveryLease(
         snapshot,
         paths,
-        recoveryLease
+        recoveryLease,
+        failedStage
     );
     if (!progress) {
         return oc::type::Result<ProjectSaveResult>::err(progress.error());

@@ -24,15 +24,23 @@ public:
     );
     oc::type::Result<ProjectSaveResult> saveCurrent(
         const core::state::project::ProjectSnapshot& snapshot,
-        const ProductMutationLease& recoveryLease
+        const ProductMutationLease& recoveryLease,
+        ProjectSaveStage* failedStage = nullptr
     );
     oc::type::Result<void> beginSaveCurrent(
         const core::state::project::ProjectSnapshot& snapshot
     );
-    oc::type::Result<ProjectSaveProgress> advanceSaveCurrent();
+    oc::type::Result<void> beginSaveCurrent(
+        const core::state::project::ProjectSnapshot& snapshot,
+        const ProductMutationLease& recoveryLease
+    );
+    oc::type::Result<ProjectSaveProgress> advanceSaveCurrent(
+        ProjectSaveStage* attemptedStage = nullptr
+    );
     void cancelSaveCurrent();
     bool saveCurrentInProgress() const;
     bool saveCurrentWriteSessionActive() const;
+    ProjectSaveStage saveCurrentStage() const;
 
     oc::type::Result<ProjectLoadResult> loadCurrent(
         core::state::project::ProjectSnapshot& out,
@@ -51,7 +59,7 @@ private:
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(ProjectSessionStore) == 60U, "project session store ABI drift");
+static_assert(sizeof(ProjectSessionStore) == 64U, "project session store ABI drift");
 static_assert(alignof(ProjectSessionStore) == 4U, "project session store alignment drift");
 #endif
 

@@ -18,7 +18,6 @@ using internal::mapError;
 
 namespace {
 
-constexpr const char* JOURNAL_PATH = "tmp/rpc-conditional.journal";
 constexpr const char* JOURNAL_QUARANTINE_PATH =
     FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH;
 constexpr const char* RESOLVED_TMP_PREFIX = "/midi-studio/tmp/";

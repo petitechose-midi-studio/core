@@ -24,6 +24,12 @@ public:
     bool load(state::MidiSyncState& midiSync);
     bool saveAll(const state::MidiSyncState& midiSync);
     PersistenceWriteStatus saveAllStatus(const state::MidiSyncState& midiSync);
+    /**
+     * Persist the RAM-authoritative settings only when durable content differs.
+     * Invalid/legacy layouts are migrated; an exact current layout is left
+     * untouched so a later product-storage retry cannot amplify writes.
+     */
+    PersistenceWriteStatus reconcileAllStatus(const state::MidiSyncState& midiSync);
 
     bool saveMidiSyncMode(state::MidiSyncMode mode);
     bool saveMidiFollowTransport(bool followTransport);
