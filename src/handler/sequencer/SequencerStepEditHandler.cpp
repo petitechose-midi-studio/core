@@ -114,6 +114,7 @@ void SequencerStepEditHandler::update(uint32_t nowMs) {
 
     const auto presetResult = preset_library_.update(nowMs);
     if (presetResult.outcome == SequencerPresetLibraryOutcome::LOADED ||
+        presetResult.outcome == SequencerPresetLibraryOutcome::QUEUED ||
         presetResult.outcome == SequencerPresetLibraryOutcome::CANCELLED) {
         handlePresetLibraryResult(presetResult);
     }

@@ -16,9 +16,11 @@ using CodecReport =
 }  // namespace
 
 FLASHMEM ChordPresetFileStore::ChordPresetFileStore(
-    ProductFileService& files
+    ProductFileService& files,
+    ProductDirectoryCatalog& catalog
 ) : store_(
         files,
+        catalog,
         {
             .directory = DIRECTORY,
             .extension = EXTENSION,
@@ -26,7 +28,8 @@ FLASHMEM ChordPresetFileStore::ChordPresetFileStore(
             .maxFileSize = MAX_FILE_SIZE,
             .writeChunkSize = WRITE_CHUNK_SIZE,
         },
-        readMetadata_
+        readMetadata_,
+        ProductPersistenceJobOwner::CHORD_PRESET_CATALOG
     ) {}
 
 FLASHMEM bool ChordPresetFileStore::validPresetId(const char* presetId) {

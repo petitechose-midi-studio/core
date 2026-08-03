@@ -40,6 +40,8 @@ FLASHMEM contextual::ContextActionReason reasonForResult(
             return contextual::ContextActionReason::INCOMPATIBLE;
         case SequencerStepPresetStatus::EMPTY:
             return contextual::ContextActionReason::EMPTY_SELECTION;
+        case SequencerStepPresetStatus::QUEUED:
+            return contextual::ContextActionReason::PENDING;
         default:
             return contextual::ContextActionReason::FAILED;
     }
@@ -51,6 +53,9 @@ FLASHMEM sequencer::SequencerPresetLibraryFeedback feedbackForResult(
     using Feedback = sequencer::SequencerPresetLibraryFeedback;
     if (result.status == SequencerStepPresetStatus::EMPTY) {
         return Feedback::EMPTY;
+    }
+    if (result.status == SequencerStepPresetStatus::QUEUED) {
+        return Feedback::QUEUED;
     }
     if (result.status == SequencerStepPresetStatus::INCOMPATIBLE ||
         result.status == SequencerStepPresetStatus::CAPACITY ||
@@ -109,7 +114,8 @@ FLASHMEM bool SequencerStepPresetLibraryAdapter::beginSession_(
     return self != nullptr && self->beginSession();
 }
 
-FLASHMEM bool SequencerStepPresetLibraryAdapter::loadPage_(
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerStepPresetLibraryAdapter::loadPage_(
     void* context,
     SequencerPresetLibraryPager::Entry* entries,
     uint8_t capacity,
@@ -119,14 +125,15 @@ FLASHMEM bool SequencerStepPresetLibraryAdapter::loadPage_(
 ) {
     auto* self =
         static_cast<SequencerStepPresetLibraryAdapter*>(context);
-    return self != nullptr &&
-           self->loadPage(
-               entries,
-               capacity,
-               anchorExclusive,
-               direction,
-               out
-           );
+    return self != nullptr
+        ? self->loadPage(
+              entries,
+              capacity,
+              anchorExclusive,
+              direction,
+              out
+          )
+        : SequencerPresetLibraryPager::PageLoadStatus::FAILED;
 }
 
 FLASHMEM void SequencerStepPresetLibraryAdapter::clearInspection_(
@@ -243,7 +250,8 @@ FLASHMEM bool SequencerStepPresetLibraryAdapter::beginSession() {
     return true;
 }
 
-FLASHMEM bool SequencerStepPresetLibraryAdapter::loadPage(
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerStepPresetLibraryAdapter::loadPage(
     SequencerPresetLibraryPager::Entry* entries,
     uint8_t capacity,
     const char* anchorExclusive,
@@ -256,7 +264,12 @@ FLASHMEM bool SequencerStepPresetLibraryAdapter::loadPage(
         anchorExclusive,
         direction
     );
-    if (!listed.ok()) return false;
+    if (listed.status == SequencerStepPresetStatus::QUEUED) {
+        return SequencerPresetLibraryPager::PageLoadStatus::PENDING;
+    }
+    if (!listed.ok()) {
+        return SequencerPresetLibraryPager::PageLoadStatus::FAILED;
+    }
     out = {
         .count = listed.count,
         .truncated = listed.truncated,
@@ -264,7 +277,7 @@ FLASHMEM bool SequencerStepPresetLibraryAdapter::loadPage(
         .hasNext = listed.hasNext,
         .totalCount = listed.totalCount,
     };
-    return true;
+    return SequencerPresetLibraryPager::PageLoadStatus::READY;
 }
 
 FLASHMEM void
@@ -415,6 +428,13 @@ SequencerStepPresetLibraryAdapter::execute(
                 resolvedId,
                 sizeof(resolvedId)
             );
+            if (action.status == SequencerStepPresetStatus::QUEUED) {
+                return {
+                    .outcome = SequencerPresetLibraryOutcome::RETRY_PENDING,
+                    .feedback = feedbackForResult(action),
+                    .reason = reasonForResult(action),
+                };
+            }
             if (!action.ok()) {
                 return {
                     .outcome =
@@ -436,6 +456,13 @@ SequencerStepPresetLibraryAdapter::execute(
             step.target,
             overwriteAuthorized
         );
+        if (action.status == SequencerStepPresetStatus::QUEUED) {
+            return {
+                .outcome = SequencerPresetLibraryOutcome::RETRY_PENDING,
+                .feedback = feedbackForResult(action),
+                .reason = reasonForResult(action),
+            };
+        }
         if (!action.ok()) {
             return {
                 .outcome =
@@ -458,6 +485,14 @@ SequencerStepPresetLibraryAdapter::execute(
         step.target,
         step.descriptor.previewKey
     );
+    if (action.status == SequencerStepPresetStatus::QUEUED &&
+        action.activation != SequencerStepPresetActivation::QUEUED) {
+        return {
+            .outcome = SequencerPresetLibraryOutcome::RETRY_PENDING,
+            .feedback = feedbackForResult(action),
+            .reason = reasonForResult(action),
+        };
+    }
     if (!action.ok()) {
         return {
             .outcome =

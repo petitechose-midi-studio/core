@@ -7,6 +7,7 @@ struct CoreState;
 }
 
 namespace core::persistence {
+class ProductDirectoryCatalog;
 class ProductFileService;
 }  // namespace core::persistence
 
@@ -23,6 +24,7 @@ public:
         LOAD_FAILED,
         LIST_FAILED,
         DRAFT_ACTIVE,
+        QUEUED,
     };
 
     struct Result {
@@ -34,12 +36,16 @@ public:
 
     ProjectLifecycleDomainServices() = default;
     explicit ProjectLifecycleDomainServices(core::state::CoreState& state);
-    ProjectLifecycleDomainServices(core::state::CoreState& state,
-                                   core::persistence::ProductFileService& productFiles);
+    ProjectLifecycleDomainServices(
+        core::state::CoreState& state,
+        core::persistence::ProductFileService& productFiles,
+        core::persistence::ProductDirectoryCatalog& productCatalog
+    );
     static ProjectLifecycleDomainServices fromCoreState(core::state::CoreState& state);
     static ProjectLifecycleDomainServices fromCoreState(
         core::state::CoreState& state,
-        core::persistence::ProductFileService& productFiles
+        core::persistence::ProductFileService& productFiles,
+        core::persistence::ProductDirectoryCatalog& productCatalog
     );
 
     Result resetMusicalProject() const;
@@ -58,6 +64,7 @@ public:
 private:
     core::state::CoreState* state_ = nullptr;
     core::persistence::ProductFileService* product_files_ = nullptr;
+    core::persistence::ProductDirectoryCatalog* product_catalog_ = nullptr;
 };
 
 }  // namespace core::handler

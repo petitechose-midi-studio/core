@@ -70,6 +70,8 @@ struct ProjectHandlerHarness {
     std::string projectFsRootPath;
     oc::impl::HostFileSystem projectFilesystem;
     core::persistence::ProductFileService productFiles;
+    core::app::ExtmemUniquePtr<core::persistence::ProductDirectoryCatalog>
+        productCatalog;
     test_support::CoreStorages storages;
     core::state::CoreState state;
 
@@ -87,6 +89,10 @@ struct ProjectHandlerHarness {
         : projectFsRootPath(projectHandlerFsRoot().string())
         , projectFilesystem(projectFsRootPath.c_str())
         , productFiles(projectFilesystem)
+        , productCatalog(
+              core::app::makeExtmemUniqueCold<
+                  core::persistence::ProductDirectoryCatalog>(productFiles)
+          )
         , state(storages.settings)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
@@ -116,7 +122,8 @@ struct ProjectHandlerHarness {
                        core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                       core::handler::ProjectLifecycleDomainServices::fromCoreState(
                           state,
-                          productFiles
+                          productFiles,
+                          *productCatalog
                       ),
                   },
                   sequencerSettings,
@@ -127,7 +134,9 @@ struct ProjectHandlerHarness {
                   mockTimeMs) {
         std::error_code ec;
         std::filesystem::remove_all(projectHandlerFsRoot(), ec);
+        assert(productCatalog);
         assert(productFiles.init());
+        state.activeView.set(core::ui::ViewType::PROJECT);
         overlays.setActiveViewProvider([]() { return PROJECT_SCOPE; });
         g_now_ms = 0;
     }
@@ -147,6 +156,16 @@ struct ProjectHandlerHarness {
     void tap(Config::ButtonID id) {
         press(id);
         release(id);
+        settleCatalog();
+    }
+
+    void settleCatalog() {
+        while (productCatalog->pending()) {
+            ++g_now_ms;
+            assert(productFiles.persistenceJobs().beginTurn(g_now_ms));
+            productCatalog->advance(g_now_ms, false);
+            handler.update(g_now_ms);
+        }
     }
 
     void advance(uint32_t ms) {
@@ -179,7 +198,7 @@ void saveCurrentProjectSnapshot(ProjectHandlerHarness& h, const char* id) {
     h.state.project.metadata.hasSavedIdentity = true;
     core::state::project::ProjectSnapshot snapshot;
     assert(core::state::project::captureProjectSnapshot(h.state, snapshot));
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     assert(store.save(snapshot));
 }
 
@@ -697,7 +716,7 @@ void test_overview_save_as_name_editor_persists_named_project() {
     assert(h.state.project.metadata.hasSavedIdentity);
     assert(!h.state.project.metadata.dirty);
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot saved;
     assert(store.load("Q q", saved));
     RestoredProjectHarness restored{saved};
@@ -777,7 +796,7 @@ void test_overview_rename_name_editor_moves_project_file() {
     assert(std::strcmp(h.state.project.metadata.id.data(), "q") == 0);
     assert(std::strcmp(h.state.project.metadata.name.data(), "q") == 0);
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot snapshot;
     assert(store.load("q", snapshot));
     assert(!store.load("p002", snapshot));
@@ -888,7 +907,7 @@ void test_new_project_save_as_new_persists_then_resets() {
     assert(!h.state.sequencer.pattern.isEnabled(2));
     assert(near(h.state.macros.slots[0].value.get(), 0.5f));
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot saved;
     assert(store.load("p001", saved));
 
@@ -940,7 +959,7 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
     assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(!h.state.sequencer.pattern.isEnabled(7));
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot saved;
     assert(store.load("p002", saved));
 
@@ -1173,7 +1192,8 @@ void test_future_project_load_is_rejected_atomically() {
 
     auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
         h.state,
-        h.productFiles
+        h.productFiles,
+        *h.productCatalog
     );
     const auto tokenBeforeRejectedLoad = h.state.projectSessionSaveToken();
     const auto directLoad = lifecycle.loadProject("future-project");
@@ -1226,7 +1246,7 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
     assert(h.state.sequencer.pattern.note[5] == 74);
     assert(h.state.sequencer.pattern.velocity[5] == 111);
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot loaded;
     assert(store.load("p001", loaded));
 
@@ -1275,7 +1295,7 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
     assert(std::strcmp(h.state.project.metadata.id.data(), "p002") == 0);
     assert(h.state.statusBar.tempo.get() == 144.0f);
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot saveduntitled;
     assert(store.load("p001", saveduntitled));
 
@@ -1296,7 +1316,8 @@ void test_manual_save_as_rejects_invalid_and_duplicate_slugs() {
     ProjectHandlerHarness h;
     auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
         h.state,
-        h.productFiles
+        h.productFiles,
+        *h.productCatalog
     );
 
     h.state.statusBar.tempo.set(132.0f);
@@ -1308,7 +1329,7 @@ void test_manual_save_as_rejects_invalid_and_duplicate_slugs() {
     assert(std::strcmp(h.state.project.metadata.name.data(), "live-set.01") == 0);
     assert(h.state.projectSessionSaveToken().session != beforeSaveAs.session);
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot snapshot;
     assert(store.load("live-set.01", snapshot));
     RestoredProjectHarness restored{snapshot};
@@ -1330,7 +1351,8 @@ void test_rename_current_project_moves_catalogue_file() {
     ProjectHandlerHarness h;
     auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
         h.state,
-        h.productFiles
+        h.productFiles,
+        *h.productCatalog
     );
 
     h.state.statusBar.tempo.set(126.0f);
@@ -1352,7 +1374,7 @@ void test_rename_current_project_moves_catalogue_file() {
     assert(!h.productFiles.stat("projects/original.project.mspj"));
     assert(h.productFiles.stat("projects/renamed-project.mspj"));
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot snapshot;
     assert(store.load("renamed-project", snapshot));
     RestoredProjectHarness restored{snapshot};
@@ -1371,7 +1393,8 @@ void test_rename_current_project_rejects_existing_target_without_mutating_state(
     ProjectHandlerHarness h;
     auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
         h.state,
-        h.productFiles
+        h.productFiles,
+        *h.productCatalog
     );
 
     assert(lifecycle.saveAsProject("p001").success());
@@ -1395,7 +1418,7 @@ void test_rename_current_project_rejects_existing_target_without_mutating_state(
     assert(h.productFiles.stat("projects/p001.mspj"));
     assert(h.productFiles.stat("projects/p002.mspj"));
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot p002;
     assert(store.load("p002", p002));
     RestoredProjectHarness restored{p002};

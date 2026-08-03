@@ -6,6 +6,7 @@
 #include <oc/type/Result.hpp>
 
 #include "persistence/ProductFileService.hpp"
+#include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProjectFileLimits.hpp"
 #include "persistence/ProjectLoadReport.hpp"
 #include "persistence/ProjectFileWorkspace.hpp"
@@ -38,7 +39,10 @@ public:
     static constexpr uint32_t MAX_PROJECT_FILE_SIZE = PROJECT_FILE_MAX_SIZE;
     static constexpr uint32_t WRITE_CHUNK_SIZE = PROJECT_FILE_WRITE_CHUNK_SIZE;
 
-    explicit ProjectFileStore(ProductFileService& files);
+    ProjectFileStore(
+        ProductFileService& files,
+        ProductDirectoryCatalog& catalog
+    );
 
     oc::type::Result<ProjectSaveResult> save(
         const core::state::project::ProjectSnapshot& snapshot
@@ -52,6 +56,7 @@ public:
 
     oc::type::Result<ProjectListResult> listProjects(ProjectListEntry* entries,
                                                      uint8_t capacity);
+    oc::type::Result<void> nextProjectId(char* out, size_t outSize);
 
 private:
     struct ProjectPaths {
@@ -71,10 +76,8 @@ private:
         const ProjectPaths& paths
     );
 
-    static bool listProjectsVisitor_(const oc::interface::DirectoryEntry& entry,
-                                     void* context);
-
     ProductFileService& files_;
+    ProductDirectoryCatalog& catalog_;
     ProjectFileWorkspace workspace_;
 };
 

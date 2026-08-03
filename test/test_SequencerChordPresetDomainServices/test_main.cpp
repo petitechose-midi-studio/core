@@ -45,15 +45,17 @@ struct Harness {
     core::state::CoreState state;
     oc::impl::HostFileSystem filesystem;
     core::persistence::ProductFileService productFiles;
+    core::persistence::ProductDirectoryCatalog productCatalog;
     core::handler::SequencerChordPresetDomainServices presets;
 
     Harness()
         : state(storages.settings)
         , filesystem(testRoot().string().c_str())
         , productFiles(filesystem)
+        , productCatalog(productFiles)
         , presets(
               core::handler::SequencerChordPresetDomainServices::
-                  fromCoreState(state, productFiles)
+                  fromCoreState(state, productFiles, productCatalog)
           ) {
         resetTestRoot();
         assert(filesystem.init());

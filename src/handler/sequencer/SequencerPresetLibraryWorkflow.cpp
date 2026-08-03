@@ -31,6 +31,7 @@ terminalFeedback(SequencerPresetLibraryOutcome outcome) {
         case SequencerPresetLibraryOutcome::LOADED:
             return Feedback::LOADED;
         case SequencerPresetLibraryOutcome::QUEUED:
+        case SequencerPresetLibraryOutcome::RETRY_PENDING:
             return Feedback::QUEUED;
         case SequencerPresetLibraryOutcome::CANCELLED:
             return Feedback::CANCELLED;
@@ -62,6 +63,9 @@ FLASHMEM bool SequencerPresetLibraryWorkflow::open(
     if (!adapter.valid()) return false;
     inspection_pending_ = false;
     inspection_due_at_ms_ = 0U;
+    pending_page_purpose_ = PendingPagePurpose::NONE;
+    action_retry_pending_ = false;
+    action_retry_overwrite_authorized_ = false;
 
     auto& picker = sequencer_.presetLibrary;
     picker.open(
@@ -89,6 +93,9 @@ FLASHMEM bool SequencerPresetLibraryWorkflow::open(
 FLASHMEM void SequencerPresetLibraryWorkflow::close() {
     inspection_pending_ = false;
     inspection_due_at_ms_ = 0U;
+    pending_page_purpose_ = PendingPagePurpose::NONE;
+    action_retry_pending_ = false;
+    action_retry_overwrite_authorized_ = false;
     modal::hideIfCurrent(
         overlays_,
         core::ui::OverlayType::PRESET_LIBRARY
@@ -101,6 +108,13 @@ FLASHMEM void SequencerPresetLibraryWorkflow::close() {
 FLASHMEM bool SequencerPresetLibraryWorkflow::back(uint32_t nowMs) {
     auto& picker = sequencer_.presetLibrary;
     if (!active()) return false;
+    if (pager_.pending() || action_retry_pending_) {
+        // Catalog work is independent of the modal. Abandon the unchanged UI
+        // continuation immediately; the admitted background scan may finish
+        // and be reused by a later open without trapping the user in playback.
+        close();
+        return true;
+    }
     if (operationPending()) return false;
     if (actionGuardEngaged()) {
         (void)cancelActionGuard(nowMs);
@@ -147,7 +161,21 @@ FLASHMEM void SequencerPresetLibraryWorkflow::move(
         return;
     }
 
-    if (pager_.move(delta)) scheduleFocusedInspection(nowMs);
+    if (pager_.move(delta)) {
+        scheduleFocusedInspection(nowMs);
+    } else if (pager_.pending()) {
+        inspection_pending_ = false;
+        inspection_due_at_ms_ = 0U;
+        adapter_.clearInspection(adapter_.context);
+        picker.inspecting.set(false);
+        pending_page_purpose_ = PendingPagePurpose::BROWSE;
+        publishOperationFeedback(
+            contextual::OperationFeedbackStatus::QUEUED,
+            contextual::ContextActionReason::PENDING,
+            contextual::OperationFeedbackExpiryPolicy::WHEN_RESOLVED,
+            nowMs
+        );
+    }
 }
 
 FLASHMEM void SequencerPresetLibraryWorkflow::enterDetail() {
@@ -233,7 +261,8 @@ SequencerPresetLibraryWorkflow::shouldCommitBeforeLoad(
 FLASHMEM bool SequencerPresetLibraryWorkflow::operationPending() const {
     if (!active()) return false;
     const auto& picker = sequencer_.presetLibrary;
-    return picker.feedback.get() ==
+    return pager_.pending() || action_retry_pending_ ||
+           picker.feedback.get() ==
                core::state::sequencer::
                    SequencerPresetLibraryFeedback::QUEUED ||
            (picker.operationFeedback.get().active &&
@@ -302,6 +331,41 @@ SequencerPresetLibraryWorkflow::update(uint32_t nowMs) {
     if (!active()) return result;
 
     auto& picker = sequencer_.presetLibrary;
+    if (pager_.pending()) {
+        const auto purpose = pending_page_purpose_;
+        const auto pageStatus = pager_.retryPending();
+        if (pageStatus ==
+            SequencerPresetLibraryPager::PageLoadStatus::PENDING) {
+            return result;
+        }
+        pending_page_purpose_ = PendingPagePurpose::NONE;
+        if (pageStatus ==
+            SequencerPresetLibraryPager::PageLoadStatus::FAILED) {
+            publishOperationFeedback(
+                contextual::OperationFeedbackStatus::FAILED,
+                contextual::ContextActionReason::STORAGE_UNAVAILABLE,
+                contextual::OperationFeedbackExpiryPolicy::ON_ACKNOWLEDGEMENT,
+                nowMs
+            );
+            return result;
+        }
+        if (picker.itemCount() > 0U) inspectFocused(true);
+        if (purpose == PendingPagePurpose::POST_SAVE) {
+            picker.feedback.set(
+                core::state::sequencer::
+                    SequencerPresetLibraryFeedback::SAVED
+            );
+            publishOperationFeedback(
+                contextual::OperationFeedbackStatus::APPLIED,
+                contextual::ContextActionReason::NONE,
+                contextual::OperationFeedbackExpiryPolicy::AFTER_DURATION,
+                nowMs,
+                Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS,
+                contextual::ContextActionId::SAVE
+            );
+        }
+    }
+
     if (inspection_pending_ &&
         oc::time::deadlineReachedMs(
             nowMs,
@@ -312,6 +376,14 @@ SequencerPresetLibraryWorkflow::update(uint32_t nowMs) {
     auto feedback = picker.operationFeedback.get();
     if (contextual::updateOperationFeedback(feedback, nowMs)) {
         picker.operationFeedback.set(feedback);
+    }
+
+    if (action_retry_pending_) {
+        const bool overwriteAuthorized =
+            action_retry_overwrite_authorized_;
+        action_retry_pending_ = false;
+        action_retry_overwrite_authorized_ = false;
+        return executeCurrentAction(overwriteAuthorized, nowMs);
     }
 
     if (adapter_.update != nullptr) {
@@ -444,7 +516,8 @@ SequencerPresetLibraryWorkflow::commitActionGuard(uint32_t nowMs) {
     return result;
 }
 
-FLASHMEM bool SequencerPresetLibraryWorkflow::refreshPage(
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerPresetLibraryWorkflow::refreshPage(
     const char* anchorExclusive,
     SequencerPresetLibraryPager::PageDirection direction,
     bool selectLast
@@ -454,33 +527,57 @@ FLASHMEM bool SequencerPresetLibraryWorkflow::refreshPage(
     inspection_due_at_ms_ = 0U;
     adapter_.clearInspection(adapter_.context);
     picker.inspecting.set(false);
-    if (!pager_.refreshPage(
-            anchorExclusive,
-            direction,
-            selectLast
-        )) {
+    const auto status = pager_.refreshPage(
+        anchorExclusive,
+        direction,
+        selectLast
+    );
+    if (status ==
+        SequencerPresetLibraryPager::PageLoadStatus::PENDING) {
+        pending_page_purpose_ = PendingPagePurpose::BROWSE;
+        publishOperationFeedback(
+            contextual::OperationFeedbackStatus::QUEUED,
+            contextual::ContextActionReason::PENDING,
+            contextual::OperationFeedbackExpiryPolicy::WHEN_RESOLVED,
+            0U
+        );
+        return status;
+    }
+    pending_page_purpose_ = PendingPagePurpose::NONE;
+    if (status ==
+        SequencerPresetLibraryPager::PageLoadStatus::FAILED) {
         publishOperationFeedback(
             contextual::OperationFeedbackStatus::FAILED,
             contextual::ContextActionReason::STORAGE_UNAVAILABLE,
             contextual::OperationFeedbackExpiryPolicy::ON_ACKNOWLEDGEMENT,
             0U
         );
-        return false;
+        return status;
     }
     if (picker.itemCount() > 0U) inspectFocused(true);
-    return true;
+    return status;
 }
 
-FLASHMEM bool
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
 SequencerPresetLibraryWorkflow::refreshPageContainingAndSelect(
     const char* assetId
 ) {
     inspection_pending_ = false;
     inspection_due_at_ms_ = 0U;
     adapter_.clearInspection(adapter_.context);
-    if (!pager_.refreshPageContainingAndSelect(assetId)) return false;
+    const auto status = pager_.refreshPageContainingAndSelect(assetId);
+    if (status ==
+        SequencerPresetLibraryPager::PageLoadStatus::PENDING) {
+        pending_page_purpose_ = PendingPagePurpose::POST_SAVE;
+        return status;
+    }
+    pending_page_purpose_ = PendingPagePurpose::NONE;
+    if (status ==
+        SequencerPresetLibraryPager::PageLoadStatus::FAILED) {
+        return status;
+    }
     inspectFocused(true);
-    return true;
+    return status;
 }
 
 FLASHMEM void
@@ -560,6 +657,13 @@ SequencerPresetLibraryWorkflow::executeCurrentAction(
             createNew,
             overwriteAuthorized
         );
+        if (result.outcome ==
+            SequencerPresetLibraryOutcome::RETRY_PENDING) {
+            action_retry_pending_ = true;
+            action_retry_overwrite_authorized_ = overwriteAuthorized;
+            publishTerminalResult(result, nowMs);
+            return result;
+        }
         if (result.outcome != SequencerPresetLibraryOutcome::SAVED) {
             picker.setFeedback(
                 result.feedback !=
@@ -643,6 +747,13 @@ SequencerPresetLibraryWorkflow::executeCurrentAction(
         overwriteAuthorized
     );
     if (result.outcome ==
+        SequencerPresetLibraryOutcome::RETRY_PENDING) {
+        action_retry_pending_ = true;
+        action_retry_overwrite_authorized_ = overwriteAuthorized;
+        publishTerminalResult(result, nowMs);
+        return result;
+    }
+    if (result.outcome ==
             SequencerPresetLibraryOutcome::LOADED ||
         result.outcome ==
             SequencerPresetLibraryOutcome::QUEUED ||
@@ -691,7 +802,9 @@ SequencerPresetLibraryWorkflow::publishTerminalResult(
     uint32_t durationMs =
         Config::Timing::CONTEXT_APPLIED_FEEDBACK_MS;
     if (result.outcome ==
-        SequencerPresetLibraryOutcome::QUEUED) {
+            SequencerPresetLibraryOutcome::QUEUED ||
+        result.outcome ==
+            SequencerPresetLibraryOutcome::RETRY_PENDING) {
         status = contextual::OperationFeedbackStatus::QUEUED;
         expiry =
             contextual::OperationFeedbackExpiryPolicy::WHEN_RESOLVED;

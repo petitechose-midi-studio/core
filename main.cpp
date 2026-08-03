@@ -25,6 +25,7 @@
 #include "context/StandaloneContext.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
 #include "persistence/PersistenceStatus.hpp"
+#include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "persistence/ProductStorageRecoveryService.hpp"
 #include "persistence/ProductStorageRecoveryPlan.hpp"
@@ -55,6 +56,8 @@ static std::optional<oc::hal::teensy::CD74HC4067> mux;
 static oc::hal::teensy::SDCardBackend deviceSettingsStorage("/core-settings.bin");
 static oc::hal::teensy::SDFileSystemBackend productFileSystemBackend;
 static std::optional<core::persistence::ProductFileService> productFileService;
+static core::app::ExtmemUniquePtr<core::persistence::ProductDirectoryCatalog>
+    productDirectoryCatalog;
 static std::optional<core::persistence::ProjectSessionStore> projectSessionStore;
 static std::optional<core::persistence::ProjectSessionAutosaveService> projectSessionAutosaveService;
 static std::optional<core::persistence::ProjectSessionRestoreService> projectSessionRestoreService;
@@ -540,6 +543,16 @@ static FLASHMEM bool initStorage() {
     }
 
     productFileService.emplace(productFileSystemBackend);
+    productDirectoryCatalog =
+        core::app::makeExtmemUniqueCold<core::persistence::ProductDirectoryCatalog>(
+            *productFileService,
+            &millis,
+            &micros
+        );
+    if (!productDirectoryCatalog) {
+        OC_LOG_ERROR("Product directory catalog PSRAM allocation failed");
+        storageBackendsReady = false;
+    }
 #if defined(MS_PROJECT_STORE_SMOKE)
     const auto productFilesResult = productFileService->init();
 #else
@@ -564,6 +577,10 @@ static FLASHMEM bool initStorage() {
 
 #if !defined(MS_PROJECT_STORE_SMOKE)
 static FLASHMEM void initApp() {
+    if (!productDirectoryCatalog) {
+        OC_LOG_ERROR("Product directory catalog unavailable");
+        while (true) {}
+    }
     coreState.emplace(deviceSettingsStorage);
     projectSessionStore.emplace(*productFileService);
     projectSessionRestoreService.emplace(*projectSessionStore);
@@ -695,7 +712,8 @@ static FLASHMEM void initApp() {
         [&]() {
             return std::make_unique<core::context::StandaloneContext>(
                 *coreState,
-                *productFileService
+                *productFileService,
+                *productDirectoryCatalog
             );
         });
     app->begin();
@@ -717,10 +735,14 @@ FLASHMEM void setup() {
 
 #if defined(MS_PROJECT_STORE_SMOKE)
     const bool storageReady = initStorage();
-    if (storageReady && productFileService) {
+    if (storageReady && productFileService && productDirectoryCatalog) {
         coreState.emplace(deviceSettingsStorage);
         projectStoreSmokeResult =
-            core::validation::project::runProjectStoreSmoke(*productFileService, *coreState);
+            core::validation::project::runProjectStoreSmoke(
+                *productFileService,
+                *productDirectoryCatalog,
+                *coreState
+            );
     } else {
         OC_LOG_ERROR("[project-store-smoke] ProductFileService unavailable");
         projectStoreSmokeResult = false;

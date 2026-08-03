@@ -26,6 +26,7 @@
 namespace {
 
 using core::persistence::ProductFileService;
+using core::persistence::ProductDirectoryCatalog;
 using core::protocol::filesystem::FileSystemRpcCodec;
 using core::protocol::filesystem::FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_CAPABILITIES;
@@ -158,6 +159,7 @@ void resetTestRoot() {
 struct Harness {
     oc::impl::HostFileSystem filesystem;
     ProductFileService service;
+    ProductDirectoryCatalog catalog;
     FileSystemRpcHandler handler;
     uint8_t request[1024] = {};
     uint8_t response[1024] = {};
@@ -165,7 +167,8 @@ struct Harness {
     Harness()
         : filesystem(testRoot().string().c_str()),
           service(filesystem),
-          handler(service, FileSystemRpcHandler::Config{100}) {
+          catalog(service),
+          handler(service, catalog, FileSystemRpcHandler::Config{100}) {
         auto init = service.init();
         assert(init);
     }
@@ -398,7 +401,7 @@ void assertCorruptJournalIsQuarantinedOnce(
 
     // A fresh handler sees no durable journal to replay. The fixed quarantine
     // evidence remains intact, so the same corruption cannot loop on reboot.
-    FileSystemRpcHandler restarted(h.service);
+    FileSystemRpcHandler restarted(h.service, h.catalog);
     requestSize = FileSystemRpcCodec::encodeCapabilitiesRequest(
         83,
         h.request,
@@ -920,7 +923,8 @@ void test_write_session_aborts_on_short_append() {
     filesystem.shortAppend = true;
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog, FileSystemRpcHandler::Config{100});
     uint8_t request[1024] = {};
     uint8_t response[1024] = {};
 
@@ -967,7 +971,8 @@ void test_write_commit_propagates_final_stat_error() {
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog, FileSystemRpcHandler::Config{100});
     uint8_t request[1024] = {};
     uint8_t response[1024] = {};
 
@@ -1026,7 +1031,8 @@ void test_write_commit_requires_recovery_when_promotion_fails() {
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog, FileSystemRpcHandler::Config{100});
 
     const uint8_t previous[] = {'o', 'l', 'd'};
     const uint8_t replacement[] = {'n', 'e', 'w'};
@@ -1081,7 +1087,8 @@ void test_write_recovery_retains_backup_when_restore_fails() {
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog, FileSystemRpcHandler::Config{100});
 
     const uint8_t previous[] = {'s', 'a', 'f', 'e'};
     const uint8_t replacement[] = {'n', 'e', 'w'};
@@ -1634,7 +1641,8 @@ void test_conditional_replace_requires_full_recovery_authority() {
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service);
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog);
     assert(core::test::writeProductFileFixture(
         service,
         "library/step-presets/demo.mssp",
@@ -1729,7 +1737,8 @@ void test_conditional_delete_requires_full_recovery_authority() {
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service);
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog);
     assert(core::test::writeProductFileFixture(
         service,
         "library/step-presets/delete.mssp",
@@ -1807,7 +1816,8 @@ void test_conditional_journal_promotion_failure_is_non_mutating() {
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service);
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog);
     assert(core::test::writeProductFileFixture(
         service,
         "library/step-presets/demo.mssp",
@@ -2131,8 +2141,9 @@ void test_endpoint_answers_only_filesystem_requests() {
         service, "projects/endpoint.bin", 0, payload, sizeof(payload)
     ));
 
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
-    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
     assert(endpoint.active());
     assert(transport.onReceive);
@@ -2187,10 +2198,12 @@ void test_endpoint_advance_expires_abandoned_write_session() {
     ProductFileService service(filesystem);
     assert(service.init());
 
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
     FileSystemRpcEndpoint endpoint(
         transport,
         service,
+        catalog,
         nowMs,
         FileSystemRpcHandler::Config{100}
     );
@@ -2253,8 +2266,9 @@ void test_endpoint_retains_two_frames_and_rejects_the_third() {
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
-    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
 
     uint8_t request[64] = {};
@@ -2323,8 +2337,9 @@ void test_endpoint_playback_rejects_without_filesystem_work() {
         service, "projects/playback.bin", 0U, payload, sizeof(payload)
     ));
 
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
-    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
     uint8_t request[128] = {};
     const size_t requestSize = FileSystemRpcCodec::encodeStatRequest(
@@ -2366,8 +2381,9 @@ void test_endpoint_total_upload_deadline_is_not_refreshed_by_chunks() {
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
-    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
 
     uint8_t request[128] = {};
@@ -2439,8 +2455,9 @@ void test_aged_autosave_aborts_upload_before_promotion() {
 
     core::persistence::ProjectSessionStore sessionStore(service);
     core::persistence::ProjectSessionAutosaveService autosave(sessionStore, 1U);
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
-    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
 
     const uint32_t admittedAt = state.projectSessionSaveTimestampMs() + 1U;
@@ -2565,8 +2582,9 @@ void test_endpoint_commit_yields_between_bounded_durable_phases() {
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
-    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
 
     constexpr uint16_t sessionId = 0x4567U;
@@ -2694,8 +2712,9 @@ void test_endpoint_conditional_replace_is_cooperative_and_playback_safe() {
         3U
     ));
 
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
-    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
 
     uint8_t request[256] = {};
@@ -2797,8 +2816,9 @@ void test_endpoint_reaps_conditional_continuation_after_media_invalidation() {
         3U
     ));
 
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
-    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
     uint8_t request[256] = {};
     const size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
@@ -2862,8 +2882,9 @@ void test_endpoint_deadline_cancels_durable_conditional_into_recovery() {
         3U
     ));
 
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
-    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
     uint8_t request[256] = {};
     const size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(

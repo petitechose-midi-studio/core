@@ -19,6 +19,7 @@ namespace {
 using core::persistence::ChordPresetFileListEntry;
 using core::persistence::ChordPresetFilePageDirection;
 using core::persistence::ChordPresetFileStore;
+using core::persistence::ProductDirectoryCatalog;
 using core::persistence::ProductFileService;
 using namespace oc::note::sequencer;
 
@@ -73,13 +74,33 @@ StepSequencerChordPreset preset(
     return result;
 }
 
+oc::type::Result<core::persistence::ChordPresetFileListResult> listSettled(
+    ProductFileService& files,
+    ProductDirectoryCatalog& catalog,
+    ChordPresetFileStore& store,
+    ChordPresetFileListEntry* entries,
+    uint8_t capacity
+) {
+    auto listed = store.list(entries, capacity);
+    for (uint32_t nowMs = 1U;
+         !listed && listed.error().code == oc::type::ErrorCode::HARDWARE_BUSY &&
+         nowMs <= ProductDirectoryCatalog::MAX_ENTRIES + 2U;
+         ++nowMs) {
+        assert(files.persistenceJobs().beginTurn(nowMs));
+        catalog.advance(nowMs, false);
+        listed = store.list(entries, capacity);
+    }
+    return listed;
+}
+
 void test_roundtrip_metadata_sort_pagination_and_next_id() {
     resetTestRoot();
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     assert(filesystem.init());
     ProductFileService productFiles(filesystem);
     assert(productFiles.init());
-    ChordPresetFileStore store(productFiles);
+    ProductDirectoryCatalog catalog(productFiles);
+    ChordPresetFileStore store(productFiles, catalog);
 
     const auto zulu = preset("chord-preset-001", "Zulu", 3);
     const auto alpha = preset("chord-preset-002", "alpha", 4);
@@ -91,7 +112,7 @@ void test_roundtrip_metadata_sort_pagination_and_next_id() {
     ));
 
     ChordPresetFileListEntry entries[2]{};
-    const auto listed = store.list(entries, 2);
+    const auto listed = listSettled(productFiles, catalog, store, entries, 2);
     assert(listed);
     assert(listed.value().count == 2);
     assert(listed.value().totalCount == 2);
@@ -154,7 +175,8 @@ void test_corrupt_payload_is_rejected_transactionally() {
     assert(filesystem.init());
     ProductFileService productFiles(filesystem);
     assert(productFiles.init());
-    ChordPresetFileStore store(productFiles);
+    ProductDirectoryCatalog catalog(productFiles);
+    ChordPresetFileStore store(productFiles, catalog);
 
     const auto source = preset("chord-preset-001", "Minor Open", 3);
     assert(store.save(source));

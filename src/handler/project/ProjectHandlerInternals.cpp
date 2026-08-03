@@ -191,6 +191,8 @@ FLASHMEM const char* projectLifecycleFailureLabel(
             return "List failed";
         case Status::DRAFT_ACTIVE:
             return "Finish Step draft";
+        case Status::QUEUED:
+            return "Loading projects";
         case Status::OK:
         default:
             return fallback;

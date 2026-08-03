@@ -66,6 +66,14 @@ public:
     void update(uint32_t nowMs);
 
 private:
+    enum class PendingProjectCatalogAction : uint8_t {
+        NONE = 0,
+        LOAD_PICKER,
+        SAVE_CURRENT,
+        SAVE_RESET_AS_NEW,
+        SAVE_AS_AND_LOAD,
+    };
+
     void setupBindings();
     bool canHandleProjectInput() const;
     bool projectConfirmationActive() const;
@@ -153,6 +161,10 @@ private:
         focusedModulator() const;
     [[nodiscard]] uint16_t focusedModulatorDetailRowCount() const;
     bool activateFocusedProjectAction();
+    bool requestProjectLoadPicker();
+    bool saveCurrentProjectWithFeedback();
+    void beginPendingProjectCatalog(PendingProjectCatalogAction action);
+    void pollPendingProjectCatalog();
     bool loadProjectWithFeedback(const char* projectId);
     bool saveCurrentAndLoadProjectWithFeedback(const char* projectId);
     bool saveAsAndLoadProjectWithFeedback(const char* projectId);
@@ -188,9 +200,14 @@ private:
     uint32_t settings_gesture_commit_deadline_ms_ = 0U;
     uint8_t routing_gesture_track_ =
         core::state::project::PROJECT_TRACK_COUNT;
+    core::state::project::ProjectNodeId pending_project_catalog_node_ =
+        core::state::project::ProjectNodeId::OVERVIEW_ROOT;
+    uint8_t pending_project_catalog_row_ = 0U;
     bool modulator_bottom_left_was_pressed_ = false;
     bool modulator_bottom_right_was_pressed_ = false;
     bool recorded_shape_capture_button_active_ = false;
+    PendingProjectCatalogAction pending_project_catalog_action_ =
+        PendingProjectCatalogAction::NONE;
 };
 
 }  // namespace core::handler

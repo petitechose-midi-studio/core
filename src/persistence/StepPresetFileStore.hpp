@@ -48,7 +48,10 @@ public:
         sequencer_graph_asset_codec::MAX_ENCODED_SIZE;
     static constexpr uint32_t WRITE_CHUNK_SIZE = 1024;
 
-    explicit StepPresetFileStore(ProductFileService& files);
+    StepPresetFileStore(
+        ProductFileService& files,
+        ProductDirectoryCatalog& catalog
+    );
 
     oc::type::Result<StepPresetFileSaveResult> save(
         const char* presetId,

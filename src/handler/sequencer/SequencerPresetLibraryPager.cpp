@@ -22,44 +22,58 @@ FLASHMEM void SequencerPresetLibraryPager::configure(
 ) {
     context_ = context;
     loader_ = loader;
+    clearPending_();
 }
 
-FLASHMEM bool SequencerPresetLibraryPager::refreshFirstPage() {
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerPresetLibraryPager::refreshFirstPage() {
     return refreshPage(nullptr, PageDirection::FORWARD, false);
 }
 
-FLASHMEM bool SequencerPresetLibraryPager::refreshPage(
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerPresetLibraryPager::refreshPage(
+    const char* anchorExclusive,
+    PageDirection direction,
+    bool selectLast
+) {
+    clearPending_();
+    rememberPage_(anchorExclusive, direction, selectLast);
+    return requestPage_(anchorExclusive, direction, selectLast);
+}
+
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerPresetLibraryPager::requestPage_(
     const char* anchorExclusive,
     PageDirection direction,
     bool selectLast
 ) {
     Entry entries[PickerState::ENTRY_CAPACITY]{};
     core::persistence::ProductAssetFileListResult page{};
-    if (loader_ == nullptr ||
-        !loader_(
-            context_,
-            entries,
-            PickerState::ENTRY_CAPACITY,
-            anchorExclusive,
-            direction,
-            page
-        )) {
-        for (uint8_t index = 0;
-             index < PickerState::ENTRY_CAPACITY;
-             ++index) {
-            picker_.setEntry(index, nullptr);
-        }
-        picker_.entryCount.set(0);
-        picker_.truncated.set(false);
-        picker_.hasPreviousPage.set(false);
-        picker_.hasNextPage.set(false);
-        picker_.totalEntryCount.set(0);
-        picker_.selectedIndex.set(0);
-        picker_.setFeedback(
-            core::state::sequencer::SequencerPresetLibraryFeedback::FAILED
-        );
-        return false;
+    const auto status = loader_ != nullptr
+        ? loader_(
+              context_,
+              entries,
+              PickerState::ENTRY_CAPACITY,
+              anchorExclusive,
+              direction,
+              page
+          )
+        : PageLoadStatus::FAILED;
+    if (status == PageLoadStatus::PENDING) {
+        markPending_();
+        return status;
     }
+    if (status == PageLoadStatus::FAILED) return failPage_();
+    clearPending_();
+    return applyPage_(entries, page, selectLast);
+}
+
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerPresetLibraryPager::applyPage_(
+    const Entry* entries,
+    const core::persistence::ProductAssetFileListResult& page,
+    bool selectLast
+) {
 
     for (uint8_t index = 0;
          index < PickerState::ENTRY_CAPACITY;
@@ -85,7 +99,7 @@ FLASHMEM bool SequencerPresetLibraryPager::refreshPage(
         picker_.setFeedback(
             core::state::sequencer::SequencerPresetLibraryFeedback::EMPTY
         );
-        return true;
+        return PageLoadStatus::READY;
     }
     picker_.selectedIndex.set(
         selectLast
@@ -96,58 +110,179 @@ FLASHMEM bool SequencerPresetLibraryPager::refreshPage(
         core::state::sequencer::SequencerPresetLibraryFeedback::NONE
     );
     picker_.bump();
-    return true;
+    return PageLoadStatus::READY;
 }
 
-FLASHMEM bool
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
 SequencerPresetLibraryPager::refreshPageContainingAndSelect(
     const char* assetId
 ) {
-    if (assetId == nullptr || assetId[0] == '\0') return false;
+    clearPending_();
+    if (assetId == nullptr || assetId[0] == '\0') {
+        return PageLoadStatus::FAILED;
+    }
 
-    char pageAnchor[PickerState::ID_SIZE]{};
-    bool hasPageAnchor = false;
+    std::strncpy(
+        pending_asset_id_,
+        assetId,
+        sizeof(pending_asset_id_) - 1U
+    );
+    pending_kind_ = PendingKind::CONTAINING_BACKWARD;
+    return continueContainingBackward_();
+}
+
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerPresetLibraryPager::continueContainingBackward_() {
     Entry preceding[PickerState::ENTRY_CAPACITY]{};
     core::persistence::ProductAssetFileListResult page{};
-    if (loader_ == nullptr ||
-        !loader_(
-            context_,
-            preceding,
-            PickerState::ENTRY_CAPACITY,
-            assetId,
-            PageDirection::BACKWARD,
-            page
-        )) {
-        (void)refreshFirstPage();
-        return false;
+    const auto status = loader_ != nullptr
+        ? loader_(
+              context_,
+              preceding,
+              PickerState::ENTRY_CAPACITY,
+              pending_asset_id_,
+              PageDirection::BACKWARD,
+              page
+          )
+        : PageLoadStatus::FAILED;
+    if (status == PageLoadStatus::PENDING) {
+        markPending_();
+        return status;
     }
+    if (status == PageLoadStatus::FAILED) return failPage_();
+
+    pending_anchor_[0] = '\0';
     if (page.count == PickerState::ENTRY_CAPACITY) {
         std::strncpy(
-            pageAnchor,
+            pending_anchor_,
             preceding[0].id,
-            sizeof(pageAnchor) - 1U
+            sizeof(pending_anchor_) - 1U
         );
-        hasPageAnchor = true;
     }
+    pending_kind_ = PendingKind::CONTAINING_FORWARD;
+    return continueContainingForward_();
+}
 
-    if (!refreshPage(
-            hasPageAnchor ? pageAnchor : nullptr,
-            PageDirection::FORWARD,
-            false
-        )) {
-        return false;
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerPresetLibraryPager::continueContainingForward_() {
+    Entry entries[PickerState::ENTRY_CAPACITY]{};
+    core::persistence::ProductAssetFileListResult page{};
+    const auto status = loader_ != nullptr
+        ? loader_(
+              context_,
+              entries,
+              PickerState::ENTRY_CAPACITY,
+              pending_anchor_[0] != '\0' ? pending_anchor_ : nullptr,
+              PageDirection::FORWARD,
+              page
+          )
+        : PageLoadStatus::FAILED;
+    if (status == PageLoadStatus::PENDING) {
+        markPending_();
+        return status;
     }
+    if (status == PageLoadStatus::FAILED) return failPage_();
+
+    char wanted[PickerState::ID_SIZE]{};
+    std::strncpy(wanted, pending_asset_id_, sizeof(wanted) - 1U);
+    (void)applyPage_(entries, page, false);
     for (uint8_t index = 0;
          index < picker_.entryCount.get();
          ++index) {
-        if (std::strcmp(picker_.entryId(index), assetId) != 0) continue;
+        if (std::strcmp(picker_.entryId(index), wanted) != 0) continue;
         picker_.selectedIndex.set(static_cast<uint8_t>(
             index + picker_.newAssetItemOffset()
         ));
+        clearPending_();
         picker_.bump();
-        return true;
+        return PageLoadStatus::READY;
     }
-    return false;
+    clearPending_();
+    picker_.setFeedback(
+        core::state::sequencer::SequencerPresetLibraryFeedback::FAILED
+    );
+    return PageLoadStatus::FAILED;
+}
+
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerPresetLibraryPager::retryPending() {
+    switch (pending_kind_) {
+        case PendingKind::PAGE: {
+            char anchor[PickerState::ID_SIZE]{};
+            std::strncpy(anchor, pending_anchor_, sizeof(anchor) - 1U);
+            return requestPage_(
+                anchor[0] != '\0' ? anchor : nullptr,
+                pending_direction_,
+                pending_select_last_
+            );
+        }
+        case PendingKind::CONTAINING_BACKWARD:
+            return continueContainingBackward_();
+        case PendingKind::CONTAINING_FORWARD:
+            return continueContainingForward_();
+        case PendingKind::NONE:
+        default:
+            return PageLoadStatus::READY;
+    }
+}
+
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerPresetLibraryPager::failPage_() {
+    clearPending_();
+    for (uint8_t index = 0;
+         index < PickerState::ENTRY_CAPACITY;
+         ++index) {
+        picker_.setEntry(index, nullptr);
+    }
+    picker_.entryCount.set(0);
+    picker_.truncated.set(false);
+    picker_.hasPreviousPage.set(false);
+    picker_.hasNextPage.set(false);
+    picker_.totalEntryCount.set(0);
+    picker_.selectedIndex.set(0);
+    picker_.setFeedback(
+        core::state::sequencer::SequencerPresetLibraryFeedback::FAILED
+    );
+    return PageLoadStatus::FAILED;
+}
+
+FLASHMEM void SequencerPresetLibraryPager::rememberPage_(
+    const char* anchorExclusive,
+    PageDirection direction,
+    bool selectLast
+) {
+    pending_kind_ = PendingKind::PAGE;
+    pending_direction_ = direction;
+    pending_select_last_ = selectLast;
+    pending_anchor_[0] = '\0';
+    if (anchorExclusive != nullptr) {
+        std::strncpy(
+            pending_anchor_,
+            anchorExclusive,
+            sizeof(pending_anchor_) - 1U
+        );
+    }
+}
+
+FLASHMEM void SequencerPresetLibraryPager::markPending_() {
+    using Feedback =
+        core::state::sequencer::SequencerPresetLibraryFeedback;
+    if (picker_.feedback.get() != Feedback::QUEUED) {
+        picker_.feedback.set(Feedback::QUEUED);
+        picker_.bump();
+    }
+}
+
+FLASHMEM void SequencerPresetLibraryPager::clearPending_() {
+    pending_kind_ = PendingKind::NONE;
+    pending_direction_ = PageDirection::FORWARD;
+    pending_select_last_ = false;
+    pending_anchor_[0] = '\0';
+    pending_asset_id_[0] = '\0';
+}
+
+FLASHMEM bool SequencerPresetLibraryPager::pending() const {
+    return pending_kind_ != PendingKind::NONE;
 }
 
 FLASHMEM bool SequencerPresetLibraryPager::move(float delta) {
@@ -172,7 +307,7 @@ FLASHMEM bool SequencerPresetLibraryPager::move(float delta) {
             )),
             PageDirection::FORWARD,
             false
-        );
+        ) == PageLoadStatus::READY;
     }
     if (!forward && picker_.hasPreviousPage.get() &&
         picker_.entryCount.get() > 0U) {
@@ -180,7 +315,7 @@ FLASHMEM bool SequencerPresetLibraryPager::move(float delta) {
             picker_.entryId(0),
             PageDirection::BACKWARD,
             true
-        );
+        ) == PageLoadStatus::READY;
     }
     return false;
 }

@@ -8,7 +8,6 @@
 
 namespace core::protocol::filesystem {
 
-using oc::interface::DirectoryEntry;
 using oc::type::Result;
 using internal::ByteReader;
 using internal::ByteWriter;
@@ -25,57 +24,18 @@ FLASHMEM bool isRecoverySafeRequest(FileSystemRpcMessageId messageId) {
     return messageId == FileSystemRpcMessageId::CAPABILITIES_REQUEST;
 }
 
-struct ListBuildContext {
-    ByteWriter* writer = nullptr;
-    uint16_t startIndex = 0;
-    uint8_t maxEntries = 0;
-    uint16_t visited = 0;
-    uint8_t written = 0;
-    bool hasMore = false;
-};
-
-FLASHMEM bool listVisitor(const DirectoryEntry& entry, void* context) {
-    auto* list = static_cast<ListBuildContext*>(context);
-    if (!list || !list->writer) return false;
-
-    if (list->visited++ < list->startIndex) {
-        return true;
-    }
-
-    if (list->written >= list->maxEntries) {
-        list->hasMore = true;
-        return false;
-    }
-
-    const size_t nameLength = std::strlen(entry.name);
-    const size_t encodedSize = 1 + nameLength + 1 + 4 + 1;
-    if (nameLength > UINT8_MAX || list->writer->remaining() < encodedSize) {
-        list->hasMore = true;
-        return false;
-    }
-
-    if (!list->writer->writeString(entry.name, oc::interface::FILESYSTEM_MAX_NAME_LENGTH) ||
-        !list->writer->writeU8(static_cast<uint8_t>(mapFileType(entry.type))) ||
-        !list->writer->writeU32(entry.sizeBytes) ||
-        !list->writer->writeBool(entry.nameTruncated)) {
-        list->hasMore = true;
-        return false;
-    }
-
-    ++list->written;
-    return true;
-}
-
 }  // namespace
 
 FLASHMEM FileSystemRpcHandler::FileSystemRpcHandler(
-    core::persistence::ProductFileService& files
-) : FileSystemRpcHandler(files, Config{}) {}
+    core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog
+) : FileSystemRpcHandler(files, catalog, Config{}) {}
 
 FLASHMEM FileSystemRpcHandler::FileSystemRpcHandler(
     core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog,
     Config config
-) : files_(files), config_(config) {}
+) : files_(files), catalog_(catalog), config_(config) {}
 
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
     const uint8_t* request,
@@ -112,7 +72,14 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
             );
         }
     }
-    return handleAdmittedFrame(request, requestSize, nowMs, response, responseSize);
+    return handleAdmittedFrame(
+        request,
+        requestSize,
+        nowMs,
+        response,
+        responseSize,
+        nullptr
+    );
 }
 
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleAdmittedFrame(
@@ -120,7 +87,8 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleAdmittedFrame(
     size_t requestSize,
     uint32_t nowMs,
     uint8_t* response,
-    size_t responseSize
+    size_t responseSize,
+    core::persistence::ProductPersistenceWorkMeasurement* measurement
 ) {
     auto frame = FileSystemRpcCodec::decodeFrame(request, requestSize);
     if (!frame) {
@@ -136,7 +104,7 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleAdmittedFrame(
         case FileSystemRpcMessageId::CAPABILITIES_REQUEST:
             return handleCapabilities_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::LIST_REQUEST:
-            return handleList_(frame.value(), response, responseSize);
+            return handleList_(frame.value(), response, responseSize, measurement);
         case FileSystemRpcMessageId::READ_REQUEST:
             return handleRead_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::WRITE_BEGIN_REQUEST:
@@ -268,7 +236,8 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleStat_(
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleList_(
     const FileSystemRpcFrame& frame,
     uint8_t* response,
-    size_t responseSize
+    size_t responseSize,
+    core::persistence::ProductPersistenceWorkMeasurement* measurement
 ) {
     uint16_t startIndex = 0;
     uint8_t maxEntries = 0;
@@ -297,21 +266,67 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleList_(
     const size_t hasMoreOffset = writer.position();
     if (!writer.writeU8(0)) return bufferTooSmall();
 
-    ListBuildContext context{&writer, startIndex, maxEntries, 0, 0, false};
-    auto list = files_.list(path, listVisitor, &context);
-    if (!list) {
+    core::persistence::ProductPersistenceWorkUsage directUsage{};
+    core::persistence::ProductPersistenceWorkMeasurement directMeasurement{};
+    if (measurement == nullptr) {
+        auto measured = files_.measurePersistenceWork(directUsage);
+        if (!measured) {
+            const size_t size = encodeStatusOnly(
+                FileSystemRpcMessageId::LIST_RESPONSE,
+                frame.requestId,
+                FileSystemRpcStatus::BUSY,
+                response,
+                responseSize
+            );
+            return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
+        }
+        directMeasurement = std::move(measured.value());
+        measurement = &directMeasurement;
+    }
+
+    const auto prepared = catalog_.prepareRawExternal(path, *measurement);
+    if (!prepared) {
         const size_t size = encodeStatusOnly(
             FileSystemRpcMessageId::LIST_RESPONSE,
             frame.requestId,
-            mapError(list.error()),
+            mapError(prepared.error()),
             response,
             responseSize
         );
         return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
     }
 
-    writer.patchU8(countOffset, context.written);
-    writer.patchU8(hasMoreOffset, context.hasMore ? 1 : 0);
+    uint16_t entryCount = 0U;
+    const auto* entries = catalog_.rawEntries(path, entryCount);
+    if (entries == nullptr) {
+        const size_t size = encodeStatusOnly(
+            FileSystemRpcMessageId::LIST_RESPONSE,
+            frame.requestId,
+            FileSystemRpcStatus::BUSY,
+            response,
+            responseSize
+        );
+        return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
+    }
+
+    uint8_t written = 0U;
+    uint16_t index = startIndex < entryCount ? startIndex : entryCount;
+    for (; index < entryCount && written < maxEntries; ++index) {
+        const auto& entry = entries[index];
+        const size_t nameLength = std::strlen(entry.name);
+        const size_t encodedSize = 1U + nameLength + 1U + 4U + 1U;
+        if (nameLength > UINT8_MAX || writer.remaining() < encodedSize) break;
+        if (!writer.writeString(entry.name, oc::interface::FILESYSTEM_MAX_NAME_LENGTH) ||
+            !writer.writeU8(static_cast<uint8_t>(mapFileType(entry.type))) ||
+            !writer.writeU32(entry.sizeBytes) ||
+            !writer.writeBool(entry.nameTruncated)) {
+            break;
+        }
+        ++written;
+    }
+
+    writer.patchU8(countOffset, written);
+    writer.patchU8(hasMoreOffset, index < entryCount ? 1U : 0U);
     return Result<size_t>::ok(writer.position());
 }
 

@@ -14,59 +14,12 @@ namespace {
 
 using oc::type::ErrorCode;
 
-struct ProjectListContext {
-    ProjectFileStore* store = nullptr;
-    ProjectListEntry* entries = nullptr;
-    uint8_t capacity = 0;
-    ProjectListResult result{};
-};
-
 }  // namespace
 
-FLASHMEM ProjectFileStore::ProjectFileStore(ProductFileService& files)
-    : files_(files) {}
-
-FLASHMEM bool ProjectFileStore::listProjectsVisitor_(
-    const oc::interface::DirectoryEntry& entry,
-    void* context
-) {
-    auto* list = static_cast<ProjectListContext*>(context);
-    if (!list || !list->store || !list->entries) return false;
-    if (entry.type != oc::interface::FileType::FILE || entry.nameTruncated) return true;
-
-    constexpr const char* extension = core::state::project::PROJECT_FILE_EXTENSION;
-    constexpr size_t extensionLength = core::state::project::PROJECT_FILE_EXTENSION_LENGTH;
-    const size_t nameLength = std::strlen(entry.name);
-    if (nameLength <= extensionLength) return true;
-    if (std::strcmp(entry.name + nameLength - extensionLength, extension) != 0) return true;
-
-    char projectId[core::state::project::ProjectMetadata::ID_SIZE] = {};
-    const size_t slugLength = nameLength - extensionLength;
-    if (slugLength >= sizeof(projectId)) return true;
-    std::memcpy(projectId, entry.name, slugLength);
-    projectId[slugLength] = '\0';
-    if (!validProjectId_(projectId)) return true;
-
-    ProjectPaths paths{};
-    if (!buildPaths_(projectId, paths)) return true;
-
-    auto info = list->store->files_.stat(paths.current);
-    if (!info || info.value().type != oc::interface::FileType::FILE) return true;
-    if (info.value().sizeBytes == 0 || info.value().sizeBytes > MAX_PROJECT_FILE_SIZE) {
-        return true;
-    }
-
-    if (list->result.count >= list->capacity) {
-        list->result.truncated = true;
-        return true;
-    }
-
-    auto& target = list->entries[list->result.count++];
-    std::strncpy(target.id, projectId, sizeof(target.id) - 1U);
-    target.id[sizeof(target.id) - 1U] = '\0';
-    target.sizeBytes = info.value().sizeBytes;
-    return true;
-}
+FLASHMEM ProjectFileStore::ProjectFileStore(
+    ProductFileService& files,
+    ProductDirectoryCatalog& catalog
+) : files_(files), catalog_(catalog) {}
 
 FLASHMEM bool ProjectFileStore::validProjectId_(const char* projectId) {
     return core::state::project::validProjectSlug(projectId);
@@ -178,21 +131,85 @@ FLASHMEM oc::type::Result<ProjectListResult> ProjectFileStore::listProjects(
         entries[i] = ProjectListEntry{};
     }
 
-    ProjectListContext context{this, entries, capacity, ProjectListResult{}};
-    auto listed = files_.list("projects", listProjectsVisitor_, &context);
-    if (!listed) {
-        return oc::type::Result<ProjectListResult>::err(listed.error());
+    const auto ready = catalog_.requestRaw(
+        "projects",
+        ProductPersistenceJobOwner::PROJECT_CATALOG
+    );
+    if (!ready) return oc::type::Result<ProjectListResult>::err(ready.error());
+
+    uint16_t rawCount = 0U;
+    const auto* rawEntries = catalog_.rawEntries("projects", rawCount);
+    if (rawEntries == nullptr) {
+        return oc::type::Result<ProjectListResult>::err(
+            {ErrorCode::HARDWARE_BUSY, "project catalog not ready"}
+        );
     }
-    for (uint8_t i = 1; i < context.result.count; ++i) {
-        ProjectListEntry current = entries[i];
-        uint8_t insert = i;
-        while (insert > 0 && std::strcmp(entries[insert - 1U].id, current.id) > 0) {
-            entries[insert] = entries[insert - 1U];
+
+    ProjectListResult result{};
+    constexpr const char* extension = core::state::project::PROJECT_FILE_EXTENSION;
+    constexpr size_t extensionLength =
+        core::state::project::PROJECT_FILE_EXTENSION_LENGTH;
+    for (uint16_t index = 0U; index < rawCount; ++index) {
+        const auto& entry = rawEntries[index];
+        if (entry.type != oc::interface::FileType::FILE || entry.nameTruncated ||
+            entry.sizeBytes == 0U || entry.sizeBytes > MAX_PROJECT_FILE_SIZE) {
+            continue;
+        }
+        const size_t nameLength = std::strlen(entry.name);
+        if (nameLength <= extensionLength ||
+            std::strcmp(entry.name + nameLength - extensionLength, extension) != 0) {
+            continue;
+        }
+        char projectId[core::state::project::ProjectMetadata::ID_SIZE] = {};
+        const size_t slugLength = nameLength - extensionLength;
+        if (slugLength >= sizeof(projectId)) continue;
+        std::memcpy(projectId, entry.name, slugLength);
+        projectId[slugLength] = '\0';
+        if (!validProjectId_(projectId)) continue;
+
+        ProjectListEntry candidate{};
+        std::strncpy(candidate.id, projectId, sizeof(candidate.id) - 1U);
+        candidate.sizeBytes = entry.sizeBytes;
+        uint8_t insert = result.count;
+        while (insert > 0U &&
+               std::strcmp(entries[insert - 1U].id, candidate.id) > 0) {
+            if (insert < capacity) {
+                entries[insert] = entries[insert - 1U];
+            }
             --insert;
         }
-        entries[insert] = current;
+        if (result.count < capacity) {
+            entries[insert] = candidate;
+            ++result.count;
+        } else {
+            result.truncated = true;
+            if (insert < capacity) entries[insert] = candidate;
+        }
     }
-    return oc::type::Result<ProjectListResult>::ok(context.result);
+    return oc::type::Result<ProjectListResult>::ok(result);
+}
+
+FLASHMEM oc::type::Result<void> ProjectFileStore::nextProjectId(
+    char* out,
+    size_t outSize
+) {
+    if (out == nullptr || outSize == 0U) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_ARGUMENT, "invalid next project id buffer"}
+        );
+    }
+    const auto ready = catalog_.requestRaw(
+        "projects",
+        ProductPersistenceJobOwner::PROJECT_CATALOG
+    );
+    if (!ready) return ready;
+    return catalog_.nextGeneratedId(
+        "projects",
+        "p",
+        core::state::project::PROJECT_FILE_EXTENSION,
+        out,
+        outSize
+    );
 }
 
 }  // namespace core::persistence

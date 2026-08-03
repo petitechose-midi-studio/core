@@ -26,6 +26,8 @@ FLASHMEM contextual::ContextActionReason reasonForResult(
             return contextual::ContextActionReason::INCOMPATIBLE;
         case SequencerChordPresetStatus::EMPTY:
             return contextual::ContextActionReason::EMPTY_SELECTION;
+        case SequencerChordPresetStatus::QUEUED:
+            return contextual::ContextActionReason::PENDING;
         default:
             return contextual::ContextActionReason::FAILED;
     }
@@ -37,6 +39,9 @@ FLASHMEM sequencer::SequencerPresetLibraryFeedback feedbackForResult(
     using Feedback = sequencer::SequencerPresetLibraryFeedback;
     if (result.status == SequencerChordPresetStatus::EMPTY) {
         return Feedback::EMPTY;
+    }
+    if (result.status == SequencerChordPresetStatus::QUEUED) {
+        return Feedback::QUEUED;
     }
     if (result.status == SequencerChordPresetStatus::INCOMPATIBLE ||
         result.status == SequencerChordPresetStatus::CORRUPT ||
@@ -92,7 +97,8 @@ FLASHMEM bool SequencerChordPresetLibraryAdapter::beginSession_(
     return self != nullptr && self->beginSession();
 }
 
-FLASHMEM bool SequencerChordPresetLibraryAdapter::loadPage_(
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerChordPresetLibraryAdapter::loadPage_(
     void* context,
     SequencerPresetLibraryPager::Entry* entries,
     uint8_t capacity,
@@ -102,14 +108,15 @@ FLASHMEM bool SequencerChordPresetLibraryAdapter::loadPage_(
 ) {
     auto* self =
         static_cast<SequencerChordPresetLibraryAdapter*>(context);
-    return self != nullptr &&
-           self->loadPage(
-               entries,
-               capacity,
-               anchorExclusive,
-               direction,
-               out
-           );
+    return self != nullptr
+        ? self->loadPage(
+              entries,
+              capacity,
+              anchorExclusive,
+              direction,
+              out
+          )
+        : SequencerPresetLibraryPager::PageLoadStatus::FAILED;
 }
 
 FLASHMEM void
@@ -218,7 +225,8 @@ SequencerChordPresetLibraryAdapter::beginSession() {
     return true;
 }
 
-FLASHMEM bool SequencerChordPresetLibraryAdapter::loadPage(
+FLASHMEM SequencerPresetLibraryPager::PageLoadStatus
+SequencerChordPresetLibraryAdapter::loadPage(
     SequencerPresetLibraryPager::Entry* entries,
     uint8_t capacity,
     const char* anchorExclusive,
@@ -231,7 +239,12 @@ FLASHMEM bool SequencerChordPresetLibraryAdapter::loadPage(
         anchorExclusive,
         direction
     );
-    if (!listed.ok()) return false;
+    if (listed.status == SequencerChordPresetStatus::QUEUED) {
+        return SequencerPresetLibraryPager::PageLoadStatus::PENDING;
+    }
+    if (!listed.ok()) {
+        return SequencerPresetLibraryPager::PageLoadStatus::FAILED;
+    }
     out = {
         .count = listed.count,
         .truncated = listed.truncated,
@@ -239,7 +252,7 @@ FLASHMEM bool SequencerChordPresetLibraryAdapter::loadPage(
         .hasNext = listed.hasNext,
         .totalCount = listed.totalCount,
     };
-    return true;
+    return SequencerPresetLibraryPager::PageLoadStatus::READY;
 }
 
 FLASHMEM void
@@ -344,6 +357,13 @@ SequencerChordPresetLibraryAdapter::execute(
                 resolvedId,
                 sizeof(resolvedId)
             );
+            if (action.status == SequencerChordPresetStatus::QUEUED) {
+                return {
+                    .outcome = SequencerPresetLibraryOutcome::RETRY_PENDING,
+                    .feedback = feedbackForResult(action),
+                    .reason = reasonForResult(action),
+                };
+            }
             if (!action.ok()) {
                 return {
                     .outcome =
@@ -365,6 +385,13 @@ SequencerChordPresetLibraryAdapter::execute(
             chord.target,
             overwriteAuthorized
         );
+        if (action.status == SequencerChordPresetStatus::QUEUED) {
+            return {
+                .outcome = SequencerPresetLibraryOutcome::RETRY_PENDING,
+                .feedback = feedbackForResult(action),
+                .reason = reasonForResult(action),
+            };
+        }
         if (!action.ok()) {
             return {
                 .outcome =
@@ -387,6 +414,13 @@ SequencerChordPresetLibraryAdapter::execute(
         chord.target,
         chord.descriptor.previewKey
     );
+    if (action.status == SequencerChordPresetStatus::QUEUED) {
+        return {
+            .outcome = SequencerPresetLibraryOutcome::RETRY_PENDING,
+            .feedback = feedbackForResult(action),
+            .reason = reasonForResult(action),
+        };
+    }
     if (!action.ok()) {
         return {
             .outcome =

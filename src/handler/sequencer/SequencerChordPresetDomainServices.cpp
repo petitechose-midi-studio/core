@@ -36,6 +36,8 @@ FLASHMEM SequencerChordPresetStatus statusFromFileError(
     switch (error) {
         case oc::type::ErrorCode::STORAGE_CORRUPT:
             return SequencerChordPresetStatus::CORRUPT;
+        case oc::type::ErrorCode::HARDWARE_BUSY:
+            return SequencerChordPresetStatus::QUEUED;
         case oc::type::ErrorCode::INVALID_STATE:
         case oc::type::ErrorCode::HARDWARE_INIT_FAILED:
         case oc::type::ErrorCode::HARDWARE_NOT_FOUND:
@@ -249,16 +251,19 @@ FLASHMEM bool inspectTarget(
 FLASHMEM SequencerChordPresetDomainServices::
 SequencerChordPresetDomainServices(
     core::state::CoreState& state,
-    core::persistence::ProductFileService& files
+    core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog
 ) : state_(&state),
-    files_(&files) {}
+    files_(&files),
+    catalog_(&catalog) {}
 
 FLASHMEM SequencerChordPresetDomainServices
 SequencerChordPresetDomainServices::fromCoreState(
     core::state::CoreState& state,
-    core::persistence::ProductFileService& files
+    core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog
 ) {
-    return {state, files};
+    return {state, files, catalog};
 }
 
 FLASHMEM SequencerChordPresetListResult
@@ -270,13 +275,13 @@ SequencerChordPresetDomainServices::listPresetsPage(
 ) const {
     OC_PERF_SCOPE(perfList, "persistence.chord-preset.list-page");
     SequencerChordPresetListResult result{};
-    if (files_ == nullptr) {
+    if (files_ == nullptr || catalog_ == nullptr) {
         result.status =
             SequencerChordPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
     }
-    core::persistence::ChordPresetFileStore store(*files_);
+    core::persistence::ChordPresetFileStore store(*files_, *catalog_);
     const auto listed = store.listPage(
         entries,
         capacity,
@@ -303,13 +308,13 @@ SequencerChordPresetDomainServices::nextPresetId(
     size_t outSize
 ) const {
     SequencerChordPresetActionResult result{};
-    if (files_ == nullptr) {
+    if (files_ == nullptr || catalog_ == nullptr) {
         result.status =
             SequencerChordPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
     }
-    core::persistence::ChordPresetFileStore store(*files_);
+    core::persistence::ChordPresetFileStore store(*files_, *catalog_);
     const auto next = store.nextPresetId(out, outSize);
     if (!next) {
         result.status = statusFromFileError(next.error().code);
@@ -358,7 +363,7 @@ SequencerChordPresetDomainServices::inspectPreset(
     descriptor.generation = generation;
     copyText(descriptor.technicalId, presetId);
 
-    if (state_ == nullptr || files_ == nullptr) {
+    if (state_ == nullptr || files_ == nullptr || catalog_ == nullptr) {
         result.status =
             SequencerChordPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
@@ -372,7 +377,7 @@ SequencerChordPresetDomainServices::inspectPreset(
         return result;
     }
 
-    core::persistence::ChordPresetFileStore store(*files_);
+    core::persistence::ChordPresetFileStore store(*files_, *catalog_);
     Asset asset{};
     const auto loaded = store.load(presetId, asset);
     if (!loaded) {
@@ -465,7 +470,7 @@ SequencerChordPresetDomainServices::savePreset(
 ) const {
     SequencerChordPresetActionResult result{};
     copyText(result.presetId, presetId);
-    if (state_ == nullptr || files_ == nullptr) {
+    if (state_ == nullptr || files_ == nullptr || catalog_ == nullptr) {
         result.status =
             SequencerChordPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
@@ -481,7 +486,7 @@ SequencerChordPresetDomainServices::savePreset(
         return result;
     }
 
-    core::persistence::ChordPresetFileStore store(*files_);
+    core::persistence::ChordPresetFileStore store(*files_, *catalog_);
     const auto existing = store.exists(presetId);
     if (!existing) {
         result.status = statusFromFileError(existing.error().code);
@@ -548,7 +553,7 @@ SequencerChordPresetDomainServices::applyPreset(
 ) const {
     SequencerChordPresetActionResult result{};
     copyText(result.presetId, presetId);
-    if (state_ == nullptr || files_ == nullptr) {
+    if (state_ == nullptr || files_ == nullptr || catalog_ == nullptr) {
         result.status =
             SequencerChordPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;

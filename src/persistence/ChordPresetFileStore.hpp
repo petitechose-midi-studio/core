@@ -39,7 +39,10 @@ public:
         oc::note::sequencer::STEP_SEQUENCER_CHORD_PRESET_ENCODED_SIZE;
     static constexpr uint32_t WRITE_CHUNK_SIZE = MAX_FILE_SIZE;
 
-    explicit ChordPresetFileStore(ProductFileService& files);
+    ChordPresetFileStore(
+        ProductFileService& files,
+        ProductDirectoryCatalog& catalog
+    );
 
     oc::type::Result<ChordPresetFileSaveResult> save(
         const oc::note::sequencer::StepSequencerChordPreset& preset

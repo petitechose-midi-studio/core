@@ -7,9 +7,13 @@
 
 namespace core::persistence {
 
-FLASHMEM StepPresetFileStore::StepPresetFileStore(ProductFileService& files)
+FLASHMEM StepPresetFileStore::StepPresetFileStore(
+    ProductFileService& files,
+    ProductDirectoryCatalog& catalog
+)
     : store_(
           files,
+          catalog,
           {
               .directory = DIRECTORY,
               .extension = EXTENSION,
@@ -17,7 +21,8 @@ FLASHMEM StepPresetFileStore::StepPresetFileStore(ProductFileService& files)
               .maxFileSize = MAX_FILE_SIZE,
               .writeChunkSize = WRITE_CHUNK_SIZE,
           },
-          readMetadata_
+          readMetadata_,
+          ProductPersistenceJobOwner::STEP_PRESET_CATALOG
       ) {}
 
 FLASHMEM bool StepPresetFileStore::validPresetId(const char* presetId) {

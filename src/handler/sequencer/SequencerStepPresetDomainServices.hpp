@@ -12,6 +12,7 @@
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 
 namespace core::persistence {
+class ProductDirectoryCatalog;
 class ProductFileService;
 }
 
@@ -94,12 +95,16 @@ public:
     using Entry = core::persistence::StepPresetFileListEntry;
 
     SequencerStepPresetDomainServices() = default;
-    SequencerStepPresetDomainServices(core::state::CoreState& state,
-                                      core::persistence::ProductFileService& files);
+    SequencerStepPresetDomainServices(
+        core::state::CoreState& state,
+        core::persistence::ProductFileService& files,
+        core::persistence::ProductDirectoryCatalog& catalog
+    );
 
     static SequencerStepPresetDomainServices fromCoreState(
         core::state::CoreState& state,
-        core::persistence::ProductFileService& files
+        core::persistence::ProductFileService& files,
+        core::persistence::ProductDirectoryCatalog& catalog
     );
 
     SequencerStepPresetListResult listPresetsPage(
@@ -156,6 +161,7 @@ private:
 
     core::state::CoreState* state_ = nullptr;
     core::persistence::ProductFileService* files_ = nullptr;
+    core::persistence::ProductDirectoryCatalog* catalog_ = nullptr;
 };
 
 }  // namespace core::handler

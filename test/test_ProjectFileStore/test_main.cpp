@@ -149,9 +149,31 @@ project::ProjectSnapshot capture(core::state::CoreState& state) {
     return snapshot;
 }
 
-core::persistence::ProjectFileStore makeStore(core::persistence::ProductFileService& files) {
+core::persistence::ProjectFileStore makeStore(
+    core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog
+) {
     assert(files.init());
-    return core::persistence::ProjectFileStore(files);
+    return core::persistence::ProjectFileStore(files, catalog);
+}
+
+oc::type::Result<core::persistence::ProjectListResult> listProjectsSettled(
+    core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog,
+    core::persistence::ProjectFileStore& store,
+    core::persistence::ProjectListEntry* entries,
+    uint8_t capacity
+) {
+    auto listed = store.listProjects(entries, capacity);
+    for (uint32_t nowMs = 1U;
+         !listed && listed.error().code == oc::type::ErrorCode::HARDWARE_BUSY &&
+         nowMs <= 3U;
+         ++nowMs) {
+        assert(files.persistenceJobs().beginTurn(nowMs));
+        catalog.advance(nowMs, false);
+        listed = store.listProjects(entries, capacity);
+    }
+    return listed;
 }
 
 void assertLoadedProject(core::persistence::ProjectFileStore& store,
@@ -181,7 +203,8 @@ void test_save_load_project_snapshot_roundtrip() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -209,7 +232,8 @@ void test_save_overwrites_existing_project_through_backup_commit() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto first = makeCoreState(storages);
@@ -233,7 +257,8 @@ void test_stale_tmp_is_replaced_on_save() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     const uint8_t stale[] = {'s', 't', 'a', 'l', 'e'};
     assert(core::test::writeProductFileFixture(
@@ -258,7 +283,8 @@ void test_load_recovers_interrupted_backup_commit() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -284,7 +310,8 @@ void test_load_rejects_corrupt_current_with_unmapped_backup() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -319,7 +346,8 @@ void test_load_reports_corrupt_backup_when_current_is_missing() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     const uint8_t corrupt[] = {'b', 'r', 'o', 'k', 'e', 'n'};
     assert(core::test::writeProductFileFixture(
@@ -341,7 +369,8 @@ void test_save_propagates_current_stat_error_before_commit() {
 
     CurrentStatFailureFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -363,7 +392,8 @@ void test_list_projects_returns_saved_projects_sorted() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto p003 = makeCoreState(storages);
@@ -383,7 +413,7 @@ void test_list_projects_returns_saved_projects_sorted() {
     ));
 
     core::persistence::ProjectListEntry entries[4]{};
-    auto listed = store.listProjects(entries, 4);
+    auto listed = listProjectsSettled(files, catalog, store, entries, 4);
     assert(listed);
     assert(listed.value().count == 2);
     assert(!listed.value().truncated);
@@ -400,7 +430,8 @@ void test_save_load_and_list_max_length_project_slug() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -420,7 +451,7 @@ void test_save_load_and_list_max_length_project_slug() {
     assert(std::strcmp(loaded.project.metadata.name.data(), slug.data()) == 0);
 
     core::persistence::ProjectListEntry entries[1]{};
-    auto listed = store.listProjects(entries, 1);
+    auto listed = listProjectsSettled(files, catalog, store, entries, 1);
     assert(listed);
     assert(listed.value().count == 1);
     assert(std::strcmp(entries[0].id, slug.data()) == 0);
@@ -433,19 +464,20 @@ void test_list_projects_reports_truncation() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
-    auto p001 = makeCoreState(storages);
-    configureProject(p001, "First", 1, "p001");
-    assert(store.save(capture(p001)));
-
     auto p002 = makeCoreState(storages);
     configureProject(p002, "Second", 2, "p002");
     assert(store.save(capture(p002)));
 
+    auto p001 = makeCoreState(storages);
+    configureProject(p001, "First", 1, "p001");
+    assert(store.save(capture(p001)));
+
     core::persistence::ProjectListEntry entries[1]{};
-    auto listed = store.listProjects(entries, 1);
+    auto listed = listProjectsSettled(files, catalog, store, entries, 1);
     assert(listed);
     assert(listed.value().count == 1);
     assert(listed.value().truncated);

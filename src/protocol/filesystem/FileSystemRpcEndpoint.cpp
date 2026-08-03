@@ -41,6 +41,7 @@ bool elapsedAtLeast(uint32_t nowMs, uint32_t startedAtMs, uint32_t durationMs) {
 FLASHMEM FileSystemRpcEndpoint::FileSystemRpcEndpoint(
     oc::interface::ITransport& transport,
     core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog,
     NowProvider nowProvider,
     FileSystemRpcHandler::Config handlerConfig,
     MicrosProvider microsProvider
@@ -48,7 +49,7 @@ FLASHMEM FileSystemRpcEndpoint::FileSystemRpcEndpoint(
     files_(files),
     nowProvider_(nowProvider),
     microsProvider_(microsProvider),
-    handler_(files, handlerConfig) {}
+    handler_(files, catalog, handlerConfig) {}
 
 FLASHMEM FileSystemRpcEndpoint::~FileSystemRpcEndpoint() {
     end();
@@ -269,7 +270,8 @@ void FileSystemRpcEndpoint::advance(uint32_t nowMs, bool playbackActive) {
                     frame->size,
                     nowMs,
                     response_,
-                    sizeof(response_)
+                    sizeof(response_),
+                    &measurement
                 );
             }
         }

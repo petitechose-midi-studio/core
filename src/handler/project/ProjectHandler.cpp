@@ -81,7 +81,9 @@ FLASHMEM bool ProjectHandler::physicalHoldActive() const {
 }
 
 FLASHMEM bool ProjectHandler::regularProjectInputActive() const {
-    return canHandleProjectInput() && !navigation_.physicalHoldActive.get();
+    return canHandleProjectInput() && !navigation_.physicalHoldActive.get() &&
+           pending_project_catalog_action_ ==
+               PendingProjectCatalogAction::NONE;
 }
 
 FLASHMEM void ProjectHandler::enterPhysicalHoldLayer() {
@@ -100,6 +102,7 @@ FLASHMEM void ProjectHandler::leavePhysicalHoldLayer() {
 
 
 void ProjectHandler::update(uint32_t nowMs) {
+    pollPendingProjectCatalog();
     if (settings_gesture_commit_deadline_ms_ != 0U &&
         (active_view_.get() != core::ui::ViewType::PROJECT ||
          static_cast<int32_t>(
@@ -214,6 +217,7 @@ FLASHMEM void ProjectHandler::resetProject() {
 }
 
 FLASHMEM void ProjectHandler::back() {
+    pending_project_catalog_action_ = PendingProjectCatalogAction::NONE;
     commitPendingRoutingGesture();
     endProjectSettingsGesture();
     macro_history_.endCoalescing();

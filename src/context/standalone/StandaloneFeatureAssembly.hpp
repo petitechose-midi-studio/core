@@ -15,6 +15,7 @@ struct CoreState;
 }
 
 namespace core::persistence {
+class ProductDirectoryCatalog;
 class ProductFileService;
 }
 
@@ -60,6 +61,7 @@ class StandaloneFeatureAssembly {
 public:
     StandaloneFeatureAssembly(core::state::CoreState& state,
                               core::persistence::ProductFileService& productFiles,
+                              core::persistence::ProductDirectoryCatalog& productCatalog,
                               oc::context::OverlayManager<core::ui::OverlayType>& overlays,
                               OverlayPresentationRegistry& overlayPresentations,
                               oc::api::EncoderAPI& encoders,

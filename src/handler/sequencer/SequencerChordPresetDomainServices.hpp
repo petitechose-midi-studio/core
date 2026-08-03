@@ -7,6 +7,7 @@
 #include "state/sequencer/SequencerChordPresetModel.hpp"
 
 namespace core::persistence {
+class ProductDirectoryCatalog;
 class ProductFileService;
 }
 
@@ -25,6 +26,7 @@ enum class SequencerChordPresetStatus : uint8_t {
     STALE_TARGET,
     COLLISION,
     FAILED,
+    QUEUED,
 };
 
 struct SequencerChordPresetListResult {
@@ -67,12 +69,14 @@ public:
     SequencerChordPresetDomainServices() = default;
     SequencerChordPresetDomainServices(
         core::state::CoreState& state,
-        core::persistence::ProductFileService& files
+        core::persistence::ProductFileService& files,
+        core::persistence::ProductDirectoryCatalog& catalog
     );
 
     static SequencerChordPresetDomainServices fromCoreState(
         core::state::CoreState& state,
-        core::persistence::ProductFileService& files
+        core::persistence::ProductFileService& files,
+        core::persistence::ProductDirectoryCatalog& catalog
     );
 
     SequencerChordPresetListResult listPresetsPage(
@@ -113,6 +117,7 @@ public:
 private:
     core::state::CoreState* state_ = nullptr;
     core::persistence::ProductFileService* files_ = nullptr;
+    core::persistence::ProductDirectoryCatalog* catalog_ = nullptr;
 };
 
 }  // namespace core::handler

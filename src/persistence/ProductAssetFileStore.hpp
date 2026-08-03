@@ -6,6 +6,7 @@
 #include <oc/interface/IFileSystem.hpp>
 #include <oc/type/Result.hpp>
 
+#include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "state/project/ProjectState.hpp"
 
@@ -43,14 +44,7 @@ struct ProductAssetFileTransferResult {
     char id[core::state::project::ProjectMetadata::ID_SIZE] = {};
 };
 
-struct ProductAssetFileListEntry {
-    static constexpr size_t SEMANTIC_NAME_SIZE = 32;
-
-    char id[core::state::project::ProjectMetadata::ID_SIZE] = {};
-    char semanticName[SEMANTIC_NAME_SIZE] = {};
-    uint32_t sizeBytes = 0;
-    bool metadataReadable = false;
-};
+using ProductAssetFileListEntry = ProductDirectoryAssetEntry;
 
 struct ProductAssetFileListResult {
     uint8_t count = 0;
@@ -88,16 +82,16 @@ bool buildProductAssetFilePaths(
 /**
  * Allocation-free product asset store shared by Step and Chord libraries.
  *
- * The store retains no catalog: listPage scans the directory and keeps only
- * the requested sorted page. Asset-specific codecs are injected solely for
- * bounded metadata reads.
+ * Pages and generated IDs reuse the product-wide bounded PSRAM catalog.
  */
 class ProductAssetFileStore {
 public:
     ProductAssetFileStore(
         ProductFileService& files,
+        ProductDirectoryCatalog& catalog,
         ProductAssetFileLayout layout,
-        ProductAssetMetadataReader metadataReader
+        ProductAssetMetadataReader metadataReader,
+        ProductPersistenceJobOwner catalogOwner
     );
 
     oc::type::Result<ProductAssetFileTransferResult> save(
@@ -133,23 +127,16 @@ public:
     static bool validAssetId(const char* assetId);
 
 private:
-    struct ListContext;
-
-    static bool listVisitor_(
-        const oc::interface::DirectoryEntry& entry,
-        void* context
-    );
-    bool buildListEntry_(
-        const char* assetId,
-        uint32_t sizeBytes,
-        ProductAssetFileListEntry& out
-    );
+    ProductDirectoryAssetQuery catalogQuery_() const;
     bool paths_(const char* assetId, ProductAssetFilePaths& out) const;
     bool layoutValid_() const;
 
     ProductFileService& files_;
+    ProductDirectoryCatalog& catalog_;
     ProductAssetFileLayout layout_{};
     ProductAssetMetadataReader metadataReader_ = nullptr;
+    ProductPersistenceJobOwner catalog_owner_ =
+        ProductPersistenceJobOwner::NONE;
 };
 
 }  // namespace core::persistence

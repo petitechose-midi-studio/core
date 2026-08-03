@@ -88,6 +88,10 @@ FLASHMEM void ProductPersistenceWorkMeasurement::addEntries(uint16_t count) {
     if (service_ && usage_) service_->noteEntries_(count);
 }
 
+FLASHMEM void ProductPersistenceWorkMeasurement::addBytes(size_t count) {
+    if (service_ && usage_) service_->noteBytes_(count);
+}
+
 FLASHMEM void ProductPersistenceWorkMeasurement::addNodes(uint8_t count) {
     if (service_ && usage_) service_->noteNodes_(count);
 }

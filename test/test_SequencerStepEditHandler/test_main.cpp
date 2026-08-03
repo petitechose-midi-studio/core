@@ -229,6 +229,8 @@ struct SequencerStepEditHarness {
     core::state::CoreState state;
     oc::impl::HostFileSystem filesystem;
     core::persistence::ProductFileService productFiles;
+    core::app::ExtmemUniquePtr<core::persistence::ProductDirectoryCatalog>
+        productCatalog;
 
     oc::core::event::EventBus eventBus;
     oc::core::input::InputBinding inputBinding;
@@ -242,7 +244,12 @@ struct SequencerStepEditHarness {
 
     SequencerStepEditHarness()
         : state(storages.settings), filesystem(testRoot().string().c_str()),
-          productFiles(filesystem), inputBinding(eventBus, mockTimeMs, Config::Input::CONFIG),
+          productFiles(filesystem),
+          productCatalog(
+              core::app::makeExtmemUniqueCold<
+                  core::persistence::ProductDirectoryCatalog>(productFiles)
+          ),
+          inputBinding(eventBus, mockTimeMs, Config::Input::CONFIG),
           buttons(inputBinding, buttonHw), encoders(inputBinding, encoderHw),
           overlays(state.overlays, buttons),
           handler(
@@ -256,9 +263,11 @@ struct SequencerStepEditHarness {
                   state.structureNavigationFocus,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                   core::handler::SequencerStepPresetDomainServices::fromCoreState(state,
-                                                                                  productFiles),
+                                                                                  productFiles,
+                                                                                  *productCatalog),
                   core::handler::SequencerChordPresetDomainServices::fromCoreState(state,
-                                                                                   productFiles),
+                                                                                   productFiles,
+                                                                                   *productCatalog),
               },
               overlays, encoders, buttons, SEQUENCER_SCOPE, OVERLAY_SCOPE, PRESET_LIBRARY_SCOPE,
               mockStepPresetTimeMs),
@@ -272,6 +281,7 @@ struct SequencerStepEditHarness {
               },
               encoders, buttons, SEQUENCER_SCOPE) {
         resetTestRoot();
+        assert(productCatalog);
         assert(filesystem.init());
         assert(productFiles.init());
         overlays.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
@@ -309,6 +319,23 @@ struct SequencerStepEditHarness {
         inputBinding.processTick();
     }
 
+    void advancePresetCatalogTurn(bool playbackActive = false) {
+        ++g_now_ms;
+        assert(productFiles.persistenceJobs().beginTurn(g_now_ms));
+        productCatalog->advance(g_now_ms, playbackActive);
+        handler.update(g_now_ms);
+    }
+
+    void settlePresetCatalog() {
+        for (uint16_t guard = 0;
+             productCatalog->pending() &&
+             guard < core::persistence::ProductDirectoryCatalog::MAX_ENTRIES + 2U;
+             ++guard) {
+            advancePresetCatalogTurn();
+        }
+        assert(!productCatalog->pending());
+    }
+
     void turn(Config::EncoderID id, float value) {
         const auto encoderId = static_cast<oc::type::EncoderID>(id);
         encoderHw.setPosition(encoderId, value);
@@ -330,7 +357,10 @@ void openStepEdit(SequencerStepEditHarness& h, uint8_t indexInPage) {
     assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
 }
 
-void openStepPresetLibrary(SequencerStepEditHarness& h) {
+void openStepPresetLibrary(
+    SequencerStepEditHarness& h,
+    bool settleCatalog = true
+) {
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     assert(h.state.sequencer.presetLibrary.visible.get());
@@ -341,9 +371,13 @@ void openStepPresetLibrary(SequencerStepEditHarness& h) {
     h.release(Config::ButtonID::NAV);
     assert(h.state.sequencer.presetLibrary.visible.get());
     assert(!h.state.sequencer.presetLibrary.detailVisible.get());
+    if (settleCatalog) h.settlePresetCatalog();
 }
 
-void openChordPresetLibrary(SequencerStepEditHarness& h) {
+void openChordPresetLibrary(
+    SequencerStepEditHarness& h,
+    bool settleCatalog = true
+) {
     h.press(Config::ButtonID::NAV);
     h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
     auto& picker = h.state.sequencer.presetLibrary;
@@ -354,6 +388,7 @@ void openChordPresetLibrary(SequencerStepEditHarness& h) {
     h.release(Config::ButtonID::NAV);
     assert(picker.visible.get());
     assert(!picker.detailVisible.get());
+    if (settleCatalog) h.settlePresetCatalog();
 }
 
 void focusStepEditRow(SequencerStepEditHarness& h, uint8_t row) {
@@ -2497,6 +2532,7 @@ void test_step_preset_library_saves_and_loads_focused_step() {
            core::state::sequencer::SequencerPresetLibraryFeedback::SAVED);
     assert(h.state.sequencer.presetLibrary.operationFeedback.get().action ==
            core::state::contextual::ContextActionId::SAVE);
+    h.settlePresetCatalog();
     assert(h.state.sequencer.presetLibrary.entryCount.get() == 1);
     assert(std::strcmp(h.state.sequencer.presetLibrary.entryId(0), "step-preset-001") == 0);
     assert(std::filesystem::exists(testRoot() / "midi-studio" / "library" / "step-presets" /
@@ -2569,7 +2605,11 @@ void test_step_preset_overwrite_accepts_authoritative_long_press_with_clock_lag(
     openStepEdit(h, 0);
     h.release(Config::MACRO_BUTTONS[0]);
     auto presets =
-        core::handler::SequencerStepPresetDomainServices::fromCoreState(h.state, h.productFiles);
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            h.state,
+            h.productFiles,
+            *h.productCatalog
+        );
     const auto initialTarget = presets.captureTarget();
     assert(initialTarget.valid);
     assert(presets.savePreset("clock-lag-overwrite", initialTarget, false).ok());
@@ -2619,7 +2659,11 @@ void test_step_preset_overwrite_accepts_authoritative_long_press_with_clock_lag(
 void test_step_preset_library_pages_without_mutating_and_restores_load_focus() {
     SequencerStepEditHarness h;
     auto presets =
-        core::handler::SequencerStepPresetDomainServices::fromCoreState(h.state, h.productFiles);
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            h.state,
+            h.productFiles,
+            *h.productCatalog
+        );
     const auto target = presets.captureTarget();
     constexpr uint8_t pageCapacity =
         core::state::sequencer::SequencerPresetLibrarySessionState::ENTRY_CAPACITY;
@@ -2743,7 +2787,11 @@ void test_step_preset_library_pages_without_mutating_and_restores_load_focus() {
 void test_preset_nav_defers_inspection_until_focus_settles() {
     SequencerStepEditHarness h;
     auto presets =
-        core::handler::SequencerStepPresetDomainServices::fromCoreState(h.state, h.productFiles);
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            h.state,
+            h.productFiles,
+            *h.productCatalog
+        );
     const auto target = presets.captureTarget();
     assert(target.valid);
     assert(presets.savePreset("browse-a", target, false).ok());
@@ -2787,7 +2835,11 @@ void test_preset_nav_defers_inspection_until_focus_settles() {
 void test_blocked_preset_load_keeps_pending_history_coalescing() {
     SequencerStepEditHarness h;
     auto presets =
-        core::handler::SequencerStepPresetDomainServices::fromCoreState(h.state, h.productFiles);
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            h.state,
+            h.productFiles,
+            *h.productCatalog
+        );
     const auto target = presets.captureTarget();
     assert(target.valid);
     assert(presets.savePreset("corrupt-load", target, false).ok());
@@ -2833,7 +2885,11 @@ void test_blocked_preset_load_keeps_pending_history_coalescing() {
 void test_step_preset_save_selects_new_asset_beyond_first_page() {
     SequencerStepEditHarness h;
     auto presets =
-        core::handler::SequencerStepPresetDomainServices::fromCoreState(h.state, h.productFiles);
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            h.state,
+            h.productFiles,
+            *h.productCatalog
+        );
     const auto target = presets.captureTarget();
     constexpr uint8_t pageCapacity =
         core::state::sequencer::SequencerPresetLibrarySessionState::ENTRY_CAPACITY;
@@ -2868,6 +2924,7 @@ void test_step_preset_save_selects_new_asset_beyond_first_page() {
 
     assert(picker.mode.get() == core::state::sequencer::SequencerPresetLibraryMode::LOAD);
     assert(picker.feedback.get() == core::state::sequencer::SequencerPresetLibraryFeedback::SAVED);
+    h.settlePresetCatalog();
     assert(picker.totalEntryCount.get() == static_cast<uint16_t>(existingPresetCount + 1U));
     assert(picker.hasPreviousPage.get());
     assert(picker.selectedIndex.get() < picker.entryCount.get());
@@ -2888,7 +2945,11 @@ void test_step_preset_queued_feedback_resolves_to_applied_and_auto_closes() {
     assert(h.state.sequencer.setStepDataAt(0, 70, 96, 120, 0, 100));
 
     auto presets =
-        core::handler::SequencerStepPresetDomainServices::fromCoreState(h.state, h.productFiles);
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            h.state,
+            h.productFiles,
+            *h.productCatalog
+        );
     const auto target = presets.captureTarget();
     assert(target.valid && target.trackIndex == 0 && target.stepIndex == 0);
     assert(presets.savePreset("queued-ui", target, false).ok());
@@ -2971,7 +3032,11 @@ void test_step_preset_queued_feedback_resolves_to_cancelled_on_undo() {
     assert(h.state.sequencer.setStepDataAt(0, 72, 96, 120, 0, 100));
 
     auto presets =
-        core::handler::SequencerStepPresetDomainServices::fromCoreState(h.state, h.productFiles);
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            h.state,
+            h.productFiles,
+            *h.productCatalog
+        );
     const auto target = presets.captureTarget();
     assert(presets.savePreset("queued-cancel", target, false).ok());
     assert(h.state.sequencer.setStepDataAt(0, 43, 12, 40, 4, 84));
@@ -3016,6 +3081,119 @@ void test_step_preset_queued_feedback_resolves_to_cancelled_on_undo() {
     std::cout << "[PASS] test_step_preset_queued_feedback_resolves_to_cancelled_on_undo\n";
 }
 
+void test_step_preset_library_open_waits_for_catalog_without_blocking() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern.setEnabled(0, true);
+
+    openStepEdit(h, 0);
+    h.release(Config::MACRO_BUTTONS[0]);
+    openStepPresetLibrary(h, false);
+
+    auto& picker = h.state.sequencer.presetLibrary;
+    assert(h.productCatalog->pending());
+    assert(picker.visible.get());
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerPresetLibraryFeedback::QUEUED);
+    assert(picker.operationFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::QUEUED);
+
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(picker.mode.get() ==
+           core::state::sequencer::SequencerPresetLibraryMode::LOAD);
+
+    h.settlePresetCatalog();
+    assert(!h.productCatalog->pending());
+    assert(picker.visible.get());
+    assert(picker.entryCount.get() == 0U);
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerPresetLibraryFeedback::EMPTY);
+    assert(!picker.operationFeedback.get().active);
+
+    resetTestRoot();
+    std::cout << "[PASS] preset library open retries the cooperative catalog\n";
+}
+
+void test_pending_preset_catalog_never_traps_modal_navigation() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern.setEnabled(0, true);
+
+    openStepEdit(h, 0);
+    h.release(Config::MACRO_BUTTONS[0]);
+    openStepPresetLibrary(h, false);
+    assert(h.productCatalog->pending());
+
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.presetLibrary.visible.get());
+    assert(h.overlays.current() == core::ui::OverlayType::SEQ_STEP_EDIT);
+    assert(h.productCatalog->pending());
+
+    h.settlePresetCatalog();
+    assert(!h.productCatalog->pending());
+    assert(!h.state.sequencer.presetLibrary.visible.get());
+
+    resetTestRoot();
+    std::cout << "[PASS] pending catalog can be abandoned without blocking Back\n";
+}
+
+void test_step_preset_save_retries_stale_catalog_before_writing() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.pattern.setEnabled(0, true);
+    assert(h.state.sequencer.setStepDataAt(0, 64, 96, 120, 0, 100));
+
+    openStepEdit(h, 0);
+    h.release(Config::MACRO_BUTTONS[0]);
+    openStepPresetLibrary(h);
+    auto& picker = h.state.sequencer.presetLibrary;
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(picker.mode.get() ==
+           core::state::sequencer::SequencerPresetLibraryMode::SAVE);
+
+    auto presets =
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            h.state,
+            h.productFiles,
+            *h.productCatalog
+        );
+    assert(presets.savePreset("catalog-seed", picker.step().target, false).ok());
+
+    const auto generatedPath =
+        testRoot() / "midi-studio" / "library" / "step-presets" /
+        "step-preset-001.mssp";
+    assert(!std::filesystem::exists(generatedPath));
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(h.productCatalog->pending());
+    assert(picker.mode.get() ==
+           core::state::sequencer::SequencerPresetLibraryMode::SAVE);
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerPresetLibraryFeedback::QUEUED);
+    assert(picker.operationFeedback.get().status ==
+           core::state::contextual::OperationFeedbackStatus::QUEUED);
+    assert(!std::filesystem::exists(generatedPath));
+
+    h.advancePresetCatalogTurn();
+    assert(h.productCatalog->pending());
+    assert(!std::filesystem::exists(generatedPath));
+
+    h.settlePresetCatalog();
+    assert(std::filesystem::exists(generatedPath));
+    assert(picker.mode.get() ==
+           core::state::sequencer::SequencerPresetLibraryMode::LOAD);
+    assert(picker.feedback.get() ==
+           core::state::sequencer::SequencerPresetLibraryFeedback::SAVED);
+    assert(picker.totalEntryCount.get() == 2U);
+    assert(picker.selectedItemIsExistingAsset());
+    assert(std::strcmp(
+               picker.entryId(picker.existingEntryIndexForSelectedItem()),
+               "step-preset-001"
+           ) == 0);
+
+    resetTestRoot();
+    std::cout << "[PASS] save retries a stale catalog before durable write\n";
+}
+
 void test_chord_preset_library_saves_and_loads_only_the_active_draft() {
     using Spec = oc::note::sequencer::StepSequencerChordSpec;
 
@@ -3041,6 +3219,7 @@ void test_chord_preset_library_saves_and_loads_only_the_active_draft() {
     assert(picker.selectedItemIsNewAsset());
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(picker.feedback.get() == core::state::sequencer::SequencerPresetLibraryFeedback::SAVED);
+    h.settlePresetCatalog();
     assert(picker.entryCount.get() == 1U);
     assert(picker.mode.get() == core::state::sequencer::SequencerPresetLibraryMode::LOAD);
     assert(h.state.sequencerHistory.undoCount() == 0U);
@@ -3100,7 +3279,11 @@ void test_step_and_chord_preset_libraries_share_the_navigation_contract() {
     h.release(Config::MACRO_BUTTONS[0]);
 
     auto stepPresets =
-        core::handler::SequencerStepPresetDomainServices::fromCoreState(h.state, h.productFiles);
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            h.state,
+            h.productFiles,
+            *h.productCatalog
+        );
     const auto stepTarget = stepPresets.captureTarget();
     assert(stepTarget.valid);
     assert(stepPresets.savePreset("shared-step-contract", stepTarget, false).ok());
@@ -3149,6 +3332,7 @@ void test_step_and_chord_preset_libraries_share_the_navigation_contract() {
     assert(core::state::sequencer::sequencerChordPresetTargetHash(library.chord().target) ==
            frozenChordTargetHash);
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    h.settlePresetCatalog();
     assert(library.entryCount.get() == 1U);
     assert(library.mode.get() == core::state::sequencer::SequencerPresetLibraryMode::LOAD);
 
@@ -3232,6 +3416,9 @@ int main() {
     test_step_preset_save_selects_new_asset_beyond_first_page();
     test_step_preset_queued_feedback_resolves_to_applied_and_auto_closes();
     test_step_preset_queued_feedback_resolves_to_cancelled_on_undo();
+    test_step_preset_library_open_waits_for_catalog_without_blocking();
+    test_pending_preset_catalog_never_traps_modal_navigation();
+    test_step_preset_save_retries_stale_catalog_before_writing();
     test_chord_preset_library_saves_and_loads_only_the_active_draft();
     test_step_and_chord_preset_libraries_share_the_navigation_contract();
 

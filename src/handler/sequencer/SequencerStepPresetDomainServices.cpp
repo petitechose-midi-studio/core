@@ -108,6 +108,7 @@ FLASHMEM core::app::ExtmemUniquePtr<StepPresetBuffer> makeStepPresetBuffer() {
 FLASHMEM SequencerStepPresetStatus statusFromFileError(oc::type::ErrorCode code) {
     switch (code) {
         case oc::type::ErrorCode::RESOURCE_NOT_FOUND: return SequencerStepPresetStatus::EMPTY;
+        case oc::type::ErrorCode::HARDWARE_BUSY: return SequencerStepPresetStatus::QUEUED;
         case oc::type::ErrorCode::INVALID_STATE:
         case oc::type::ErrorCode::HARDWARE_NOT_FOUND:
         case oc::type::ErrorCode::HARDWARE_INIT_FAILED:
@@ -373,12 +374,17 @@ FLASHMEM void setCompatibilityReason(SequencerStepPresetDescriptor& descriptor) 
 }  // namespace
 
 FLASHMEM SequencerStepPresetDomainServices::SequencerStepPresetDomainServices(
-    core::state::CoreState& state, core::persistence::ProductFileService& files)
-    : state_(&state), files_(&files) {}
+    core::state::CoreState& state,
+    core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog
+) : state_(&state), files_(&files), catalog_(&catalog) {}
 
 FLASHMEM SequencerStepPresetDomainServices SequencerStepPresetDomainServices::fromCoreState(
-    core::state::CoreState& state, core::persistence::ProductFileService& files) {
-    return SequencerStepPresetDomainServices{state, files};
+    core::state::CoreState& state,
+    core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog
+) {
+    return SequencerStepPresetDomainServices{state, files, catalog};
 }
 
 FLASHMEM SequencerStepPresetListResult SequencerStepPresetDomainServices::listPresetsPage(
@@ -386,13 +392,13 @@ FLASHMEM SequencerStepPresetListResult SequencerStepPresetDomainServices::listPr
     core::persistence::StepPresetFilePageDirection direction) const {
     OC_PERF_SCOPE(perfList, "persistence.step-preset.list-page");
     SequencerStepPresetListResult result{};
-    if (files_ == nullptr) {
+    if (files_ == nullptr || catalog_ == nullptr) {
         result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
     }
 
-    core::persistence::StepPresetFileStore store(*files_);
+    core::persistence::StepPresetFileStore store(*files_, *catalog_);
     auto listed = store.listPage(entries, capacity, anchorExclusive, direction);
     if (!listed) {
         result.status = statusFromFileError(listed.error().code);
@@ -412,13 +418,13 @@ FLASHMEM SequencerStepPresetListResult SequencerStepPresetDomainServices::listPr
 FLASHMEM SequencerStepPresetActionResult
 SequencerStepPresetDomainServices::nextPresetId(char* out, size_t outSize) const {
     SequencerStepPresetActionResult result{};
-    if (files_ == nullptr) {
+    if (files_ == nullptr || catalog_ == nullptr) {
         result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
     }
 
-    core::persistence::StepPresetFileStore store(*files_);
+    core::persistence::StepPresetFileStore store(*files_, *catalog_);
     auto next = store.nextPresetId(out, outSize);
     if (!next) {
         result.status = statusFromFileError(next.error().code);
@@ -524,7 +530,7 @@ FLASHMEM SequencerStepPresetInspectResult SequencerStepPresetDomainServices::ins
         .stateIndex = previewStateIndex,
     };
 
-    if (state_ == nullptr || files_ == nullptr) {
+    if (state_ == nullptr || files_ == nullptr || catalog_ == nullptr) {
         result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         descriptor.compatibility = SequencerStepPresetCompatibility::STORAGE_UNAVAILABLE;
@@ -540,7 +546,7 @@ FLASHMEM SequencerStepPresetInspectResult SequencerStepPresetDomainServices::ins
         return result;
     }
 
-    core::persistence::StepPresetFileStore store(*files_);
+    core::persistence::StepPresetFileStore store(*files_, *catalog_);
     uint16_t payloadSize = 0;
     auto loaded = store.load(presetId, encodedWorkspace, STEP_PRESET_MAX_ENCODED_SIZE, payloadSize);
     if (!loaded) {
@@ -658,7 +664,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::save
     const char* presetId, const SequencerStepPresetTarget& target, bool allowOverwrite) const {
     SequencerStepPresetActionResult result{};
     copyPresetId(result.presetId, sizeof(result.presetId), presetId);
-    if (state_ == nullptr || files_ == nullptr) {
+    if (state_ == nullptr || files_ == nullptr || catalog_ == nullptr) {
         result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
@@ -668,7 +674,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::save
         return result;
     }
 
-    core::persistence::StepPresetFileStore store(*files_);
+    core::persistence::StepPresetFileStore store(*files_, *catalog_);
     const auto existing = store.exists(presetId);
     if (!existing) {
         result.status = statusFromFileError(existing.error().code);
@@ -749,7 +755,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     const core::state::sequencer::SequencerStepPresetPreviewKey& expectedPreview) const {
     SequencerStepPresetActionResult result{};
     copyPresetId(result.presetId, sizeof(result.presetId), presetId);
-    if (state_ == nullptr || files_ == nullptr) {
+    if (state_ == nullptr || files_ == nullptr || catalog_ == nullptr) {
         result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
@@ -789,7 +795,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::appl
     // still matches the admitted preview.
     {
         OC_PERF_SCOPE(perfVerify, "persistence.step-preset.verify-payload");
-        core::persistence::StepPresetFileStore store(*files_);
+        core::persistence::StepPresetFileStore store(*files_, *catalog_);
         uint16_t verifiedSize = 0;
         const auto verified =
             store.load(presetId, buffer->bytes, STEP_PRESET_MAX_ENCODED_SIZE, verifiedSize);
@@ -949,7 +955,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::rena
     const char* presetId, const char* expectedSemanticName, const char* newSemanticName) const {
     SequencerStepPresetActionResult result{};
     copyPresetId(result.presetId, sizeof(result.presetId), presetId);
-    if (files_ == nullptr) {
+    if (files_ == nullptr || catalog_ == nullptr) {
         result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
@@ -971,7 +977,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::rena
         return result;
     }
 
-    core::persistence::StepPresetFileStore store(*files_);
+    core::persistence::StepPresetFileStore store(*files_, *catalog_);
     uint16_t beforeSize = 0;
     const auto loaded =
         store.load(presetId, before->bytes, STEP_PRESET_MAX_ENCODED_SIZE, beforeSize);
@@ -1043,7 +1049,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::dele
     const char* presetId, const char* expectedSemanticName) const {
     SequencerStepPresetActionResult result{};
     copyPresetId(result.presetId, sizeof(result.presetId), presetId);
-    if (files_ == nullptr) {
+    if (files_ == nullptr || catalog_ == nullptr) {
         result.status = SequencerStepPresetStatus::STORAGE_UNAVAILABLE;
         result.fileError = oc::type::ErrorCode::INVALID_STATE;
         return result;
@@ -1063,7 +1069,7 @@ FLASHMEM SequencerStepPresetActionResult SequencerStepPresetDomainServices::dele
         return result;
     }
 
-    core::persistence::StepPresetFileStore store(*files_);
+    core::persistence::StepPresetFileStore store(*files_, *catalog_);
     uint16_t payloadSize = 0;
     const auto loaded =
         store.load(presetId, buffer->bytes, STEP_PRESET_MAX_ENCODED_SIZE, payloadSize);

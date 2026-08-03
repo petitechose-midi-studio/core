@@ -24,6 +24,7 @@ namespace asset_codec =
     core::persistence::sequencer_graph_asset_codec;
 
 using core::persistence::ProductFileService;
+using core::persistence::ProductDirectoryCatalog;
 using core::persistence::StepPresetFileListEntry;
 using core::persistence::StepPresetFileStore;
 using core::state::sequencer::SequencerState;
@@ -116,6 +117,25 @@ asset_codec::EncodeResult encodeFocusedPreset(
     return asset_codec::encode(preset, out, capacity);
 }
 
+oc::type::Result<core::persistence::StepPresetFileListResult> listSettled(
+    ProductFileService& files,
+    ProductDirectoryCatalog& catalog,
+    StepPresetFileStore& store,
+    StepPresetFileListEntry* entries,
+    uint8_t capacity
+) {
+    auto listed = store.list(entries, capacity);
+    for (uint32_t nowMs = 1U;
+         !listed && listed.error().code == oc::type::ErrorCode::HARDWARE_BUSY &&
+         nowMs <= ProductDirectoryCatalog::MAX_ENTRIES + 2U;
+         ++nowMs) {
+        assert(files.persistenceJobs().beginTurn(nowMs));
+        catalog.advance(nowMs, false);
+        listed = store.list(entries, capacity);
+    }
+    return listed;
+}
+
 void applyFocusedPreset(
     SequencerState& target,
     const uint8_t* data,
@@ -137,7 +157,8 @@ void test_step_preset_file_store_roundtrip_and_lists_files() {
     assert(filesystem.init());
     ProductFileService productFiles(filesystem);
     assert(productFiles.init());
-    StepPresetFileStore store(productFiles);
+    ProductDirectoryCatalog catalog(productFiles);
+    StepPresetFileStore store(productFiles, catalog);
 
     SequencerState source;
     prepareSource(source);
@@ -162,7 +183,7 @@ void test_step_preset_file_store_roundtrip_and_lists_files() {
     ));
 
     StepPresetFileListEntry entries[4]{};
-    const auto listed = store.list(entries, 4);
+    const auto listed = listSettled(productFiles, catalog, store, entries, 4);
     assert(listed);
     assert(listed.value().count == 1);
     assert(!listed.value().truncated);
@@ -224,7 +245,8 @@ void test_remove_is_exact_and_cleans_atomic_sidecars() {
     assert(filesystem.init());
     ProductFileService productFiles(filesystem);
     assert(productFiles.init());
-    StepPresetFileStore store(productFiles);
+    ProductDirectoryCatalog catalog(productFiles);
+    StepPresetFileStore store(productFiles, catalog);
 
     SequencerState source;
     prepareSource(source);

@@ -21,7 +21,7 @@ private:
         core::state::sequencer::SequencerPresetLibraryMode;
 
     static bool beginSession_(void* context);
-    static bool loadPage_(
+    static SequencerPresetLibraryPager::PageLoadStatus loadPage_(
         void* context,
         SequencerPresetLibraryPager::Entry* entries,
         uint8_t capacity,
@@ -64,7 +64,7 @@ private:
     );
 
     bool beginSession();
-    bool loadPage(
+    SequencerPresetLibraryPager::PageLoadStatus loadPage(
         SequencerPresetLibraryPager::Entry* entries,
         uint8_t capacity,
         const char* anchorExclusive,

@@ -30,6 +30,7 @@ public:
     ) noexcept;
 
     void addEntries(uint16_t count);
+    void addBytes(size_t count);
     void addNodes(uint8_t count);
     void addAllocations(uint8_t count);
     bool valid() const { return service_ != nullptr && usage_ != nullptr; }

@@ -22,6 +22,7 @@
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
+#include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "state/CoreState.hpp"
 #include "ui/transportbar/ContextSoftkeyBar.hpp"
@@ -32,6 +33,7 @@ namespace core::context::standalone {
 FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     core::state::CoreState& state,
     core::persistence::ProductFileService& productFiles,
+    core::persistence::ProductDirectoryCatalog& productCatalog,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     OverlayPresentationRegistry& overlayPresentations,
     oc::api::EncoderAPI& encoders,
@@ -112,10 +114,15 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         },
         core::handler::SharedTrackDomainServices::fromCoreState(state),
         core::state::project::ProjectTrackDomainServices::fromCoreState(state),
-        core::handler::SequencerStepPresetDomainServices::fromCoreState(state, productFiles),
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            state,
+            productFiles,
+            productCatalog
+        ),
         core::handler::SequencerChordPresetDomainServices::fromCoreState(
             state,
-            productFiles
+            productFiles,
+            productCatalog
         ),
         overlays,
         overlayPresentations,
@@ -158,7 +165,8 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                 core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                 core::handler::ProjectLifecycleDomainServices::fromCoreState(
                     state,
-                    productFiles
+                    productFiles,
+                    productCatalog
                 ),
             },
             core::handler::SequencerSettingsDomainServices{

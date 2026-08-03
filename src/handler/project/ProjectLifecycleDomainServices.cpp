@@ -51,29 +51,6 @@ FLASHMEM bool formatProjectFilePath(const char* projectId, char* out, size_t out
     return written > 0 && static_cast<size_t>(written) < outSize;
 }
 
-FLASHMEM Result findNextProjectId(core::persistence::ProductFileService& files,
-                                  char* outId,
-                                  size_t outIdSize) {
-    char candidate[core::state::project::ProjectMetadata::ID_SIZE] = {};
-    char path[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
-    for (uint16_t i = 1; i <= 999; ++i) {
-        if (!core::state::project::formatGeneratedProjectSlug(i, candidate, sizeof(candidate)) ||
-            !formatProjectFilePath(candidate, path, sizeof(path))) {
-            return invalidArgument();
-        }
-
-        auto info = files.stat(path);
-        if (!info && info.error().code == ErrorCode::RESOURCE_NOT_FOUND) {
-            if (!assignText(outId, outIdSize, candidate)) return invalidArgument();
-            return Result{.status = Status::OK};
-        }
-        if (!info) {
-            return Result{.status = Status::LIST_FAILED};
-        }
-    }
-    return Result{.status = Status::SAVE_FAILED};
-}
-
 FLASHMEM Result ensureProjectDoesNotExist(core::persistence::ProductFileService& files,
                                           const char* projectId) {
     char path[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
@@ -126,8 +103,11 @@ FLASHMEM ProjectLifecycleDomainServices::ProjectLifecycleDomainServices(
 
 FLASHMEM ProjectLifecycleDomainServices::ProjectLifecycleDomainServices(
     core::state::CoreState& state,
-    core::persistence::ProductFileService& productFiles
-) : state_(&state), product_files_(&productFiles) {}
+    core::persistence::ProductFileService& productFiles,
+    core::persistence::ProductDirectoryCatalog& productCatalog
+) : state_(&state),
+    product_files_(&productFiles),
+    product_catalog_(&productCatalog) {}
 
 FLASHMEM ProjectLifecycleDomainServices ProjectLifecycleDomainServices::fromCoreState(
     core::state::CoreState& state
@@ -137,9 +117,10 @@ FLASHMEM ProjectLifecycleDomainServices ProjectLifecycleDomainServices::fromCore
 
 FLASHMEM ProjectLifecycleDomainServices ProjectLifecycleDomainServices::fromCoreState(
     core::state::CoreState& state,
-    core::persistence::ProductFileService& productFiles
+    core::persistence::ProductFileService& productFiles,
+    core::persistence::ProductDirectoryCatalog& productCatalog
 ) {
-    return ProjectLifecycleDomainServices{state, productFiles};
+    return ProjectLifecycleDomainServices{state, productFiles, productCatalog};
 }
 
 FLASHMEM ProjectLifecycleDomainServices::Result
@@ -183,7 +164,7 @@ ProjectLifecycleDomainServices::markProjectMutated() const {
 FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::saveProject(
     const char* projectId
 ) const {
-    if (state_ == nullptr || product_files_ == nullptr) {
+    if (state_ == nullptr || product_files_ == nullptr || product_catalog_ == nullptr) {
         return unavailable();
     }
     if (projectId == nullptr || projectId[0] == '\0') {
@@ -200,7 +181,7 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
     snapshot->project.metadata.hasSavedIdentity = true;
     snapshot->project.metadata.dirty = false;
 
-    core::persistence::ProjectFileStore store(*product_files_);
+    core::persistence::ProjectFileStore store(*product_files_, *product_catalog_);
     auto saved = store.save(*snapshot);
     if (!saved) {
         return Result{.status = Status::SAVE_FAILED};
@@ -233,14 +214,21 @@ ProjectLifecycleDomainServices::saveCurrentProject() const {
 
 FLASHMEM ProjectLifecycleDomainServices::Result
 ProjectLifecycleDomainServices::saveAsNextProject() const {
-    if (state_ == nullptr || product_files_ == nullptr) {
+    if (state_ == nullptr || product_files_ == nullptr || product_catalog_ == nullptr) {
         return unavailable();
     }
 
     char nextId[core::state::project::ProjectMetadata::ID_SIZE] = {};
-    auto selected = findNextProjectId(*product_files_, nextId, sizeof(nextId));
-    if (!selected.success()) {
-        return selected;
+    core::persistence::ProjectFileStore store(*product_files_, *product_catalog_);
+    const auto selected = store.nextProjectId(nextId, sizeof(nextId));
+    if (!selected) {
+        return Result{
+            .status = selected.error().code == ErrorCode::HARDWARE_BUSY
+                ? Status::QUEUED
+                : (selected.error().code == ErrorCode::RESOURCE_EXHAUSTED
+                    ? Status::SAVE_FAILED
+                    : Status::LIST_FAILED),
+        };
     }
 
     auto snapshot = core::state::project::captureProjectSnapshotOwned(*state_);
@@ -253,7 +241,6 @@ ProjectLifecycleDomainServices::saveAsNextProject() const {
     snapshot->project.metadata.hasSavedIdentity = true;
     snapshot->project.metadata.dirty = false;
 
-    core::persistence::ProjectFileStore store(*product_files_);
     auto saved = store.save(*snapshot);
     if (!saved) {
         return Result{.status = Status::SAVE_FAILED};
@@ -268,7 +255,7 @@ ProjectLifecycleDomainServices::saveAsNextProject() const {
 FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::saveAsProject(
     const char* projectId
 ) const {
-    if (state_ == nullptr || product_files_ == nullptr) {
+    if (state_ == nullptr || product_files_ == nullptr || product_catalog_ == nullptr) {
         return unavailable();
     }
     if (!core::state::project::validProjectSlug(projectId)) {
@@ -284,7 +271,7 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
 
 FLASHMEM ProjectLifecycleDomainServices::Result
 ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) const {
-    if (state_ == nullptr || product_files_ == nullptr) {
+    if (state_ == nullptr || product_files_ == nullptr || product_catalog_ == nullptr) {
         return unavailable();
     }
     if (!core::state::project::validProjectSlug(projectId)) {
@@ -318,7 +305,7 @@ ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) cons
     snapshot->project.metadata.hasSavedIdentity = true;
     snapshot->project.metadata.dirty = false;
 
-    core::persistence::ProjectFileStore store(*product_files_);
+    core::persistence::ProjectFileStore store(*product_files_, *product_catalog_);
     auto saved = store.save(*snapshot);
     if (!saved) {
         return Result{.status = Status::SAVE_FAILED};
@@ -342,7 +329,7 @@ ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) cons
 FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::loadProject(
     const char* projectId
 ) const {
-    if (state_ == nullptr || product_files_ == nullptr) {
+    if (state_ == nullptr || product_files_ == nullptr || product_catalog_ == nullptr) {
         return unavailable();
     }
     if (state_->sequencer.stepContentDraft.active.get()) {
@@ -356,7 +343,7 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
         return invalidArgument();
     }
 
-    core::persistence::ProjectFileStore store(*product_files_);
+    core::persistence::ProjectFileStore store(*product_files_, *product_catalog_);
     auto snapshot = core::state::project::makeProjectSnapshot();
     if (!snapshot) {
         return Result{.status = Status::LOAD_FAILED};
@@ -380,13 +367,11 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
 
 FLASHMEM ProjectLifecycleDomainServices::Result
 ProjectLifecycleDomainServices::refreshLoadableProjects() const {
-    if (state_ == nullptr || product_files_ == nullptr) {
+    if (state_ == nullptr || product_files_ == nullptr || product_catalog_ == nullptr) {
         return unavailable();
     }
 
-    state_->projectNavigation.loadProjects.clear();
-
-    core::persistence::ProjectFileStore store(*product_files_);
+    core::persistence::ProjectFileStore store(*product_files_, *product_catalog_);
     core::persistence::ProjectListEntry entries[
         core::state::project::ProjectBrowserState::MAX_PROJECTS
     ]{};
@@ -395,10 +380,15 @@ ProjectLifecycleDomainServices::refreshLoadableProjects() const {
         core::state::project::ProjectBrowserState::MAX_PROJECTS
     );
     if (!listed) {
+        if (listed.error().code == ErrorCode::HARDWARE_BUSY) {
+            return Result{.status = Status::QUEUED};
+        }
+        state_->projectNavigation.loadProjects.clear();
         state_->projectNavigation.notifyContentChanged();
         return Result{.status = Status::LIST_FAILED};
     }
 
+    state_->projectNavigation.loadProjects.clear();
     state_->projectNavigation.loadProjects.scanned = true;
     state_->projectNavigation.loadProjects.truncated = listed.value().truncated;
     for (uint8_t i = 0; i < listed.value().count; ++i) {

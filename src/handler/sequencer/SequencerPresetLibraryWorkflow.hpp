@@ -20,6 +20,8 @@ enum class SequencerPresetLibraryOutcome : uint8_t {
     QUEUED,
     CANCELLED,
     BLOCKED,
+    /** Catalog/storage admission is accepted; retry the unchanged action. */
+    RETRY_PENDING,
 };
 
 struct SequencerPresetLibraryResult {
@@ -53,7 +55,7 @@ struct SequencerPresetLibraryAdapter {
     void* context = nullptr;
     Kind kind = Kind::STEP;
     bool (*beginSession)(void* context) = nullptr;
-    bool (*loadPage)(
+    SequencerPresetLibraryPager::PageLoadStatus (*loadPage)(
         void* context,
         Entry* entries,
         uint8_t capacity,
@@ -137,12 +139,19 @@ public:
     SequencerPresetLibraryResult commitActionGuard(uint32_t nowMs);
 
 private:
-    bool refreshPage(
+    enum class PendingPagePurpose : uint8_t {
+        NONE = 0,
+        BROWSE,
+        POST_SAVE,
+    };
+
+    SequencerPresetLibraryPager::PageLoadStatus refreshPage(
         const char* anchorExclusive,
         SequencerPresetLibraryPager::PageDirection direction,
         bool selectLast
     );
-    bool refreshPageContainingAndSelect(const char* assetId);
+    SequencerPresetLibraryPager::PageLoadStatus
+        refreshPageContainingAndSelect(const char* assetId);
     void scheduleFocusedInspection(uint32_t nowMs);
     void completePendingInspection();
     void inspectFocused(bool force = false);
@@ -174,6 +183,9 @@ private:
     SequencerPresetLibraryPager pager_;
     bool inspection_pending_ = false;
     uint32_t inspection_due_at_ms_ = 0;
+    PendingPagePurpose pending_page_purpose_ = PendingPagePurpose::NONE;
+    bool action_retry_pending_ = false;
+    bool action_retry_overwrite_authorized_ = false;
 };
 
 }  // namespace core::handler

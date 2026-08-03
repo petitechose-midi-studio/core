@@ -8,6 +8,7 @@
 #include <oc/type/Result.hpp>
 
 #include "persistence/ProductFileService.hpp"
+#include "persistence/ProductDirectoryCatalog.hpp"
 
 namespace core::persistence {
 class ProductFileCommitPlan;
@@ -290,8 +291,15 @@ public:
         uint32_t writeSessionTimeoutMs;
     };
 
-    explicit FileSystemRpcHandler(core::persistence::ProductFileService& files);
-    FileSystemRpcHandler(core::persistence::ProductFileService& files, Config config);
+    FileSystemRpcHandler(
+        core::persistence::ProductFileService& files,
+        core::persistence::ProductDirectoryCatalog& catalog
+    );
+    FileSystemRpcHandler(
+        core::persistence::ProductFileService& files,
+        core::persistence::ProductDirectoryCatalog& catalog,
+        Config config
+    );
 
     oc::type::Result<size_t> handleFrame(const uint8_t* request,
                                          size_t requestSize,
@@ -306,7 +314,9 @@ public:
                                                  size_t requestSize,
                                                  uint32_t nowMs,
                                                  uint8_t* response,
-                                                 size_t responseSize);
+                                                 size_t responseSize,
+                                                 core::persistence::ProductPersistenceWorkMeasurement*
+                                                     measurement = nullptr);
 
     void update(uint32_t nowMs);
     bool hasActiveWriteSession() const;
@@ -355,7 +365,9 @@ private:
                                                  size_t responseSize);
     oc::type::Result<size_t> handleList_(const FileSystemRpcFrame& frame,
                                          uint8_t* response,
-                                         size_t responseSize);
+                                         size_t responseSize,
+                                         core::persistence::ProductPersistenceWorkMeasurement*
+                                             measurement);
     oc::type::Result<size_t> handleRead_(const FileSystemRpcFrame& frame,
                                          uint8_t* response,
                                          size_t responseSize);
@@ -437,6 +449,7 @@ private:
     void updateConditionalRecovery_(uint32_t nowMs);
 
     core::persistence::ProductFileService& files_;
+    core::persistence::ProductDirectoryCatalog& catalog_;
     Config config_;
     WriteSession writeSession_{};
     core::persistence::ProductStorageIdentity conditionalRecoveryIdentity_{};
@@ -447,7 +460,7 @@ private:
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(FileSystemRpcHandler) == 300U, "filesystem RPC handler exceeds LOCK-S");
+static_assert(sizeof(FileSystemRpcHandler) == 304U, "filesystem RPC handler ABI drift");
 static_assert(alignof(FileSystemRpcHandler) == 4U, "filesystem RPC handler alignment drift");
 #endif
 
@@ -458,6 +471,7 @@ public:
 
     FileSystemRpcEndpoint(oc::interface::ITransport& transport,
                           core::persistence::ProductFileService& files,
+                          core::persistence::ProductDirectoryCatalog& catalog,
                           NowProvider nowProvider,
                           FileSystemRpcHandler::Config handlerConfig =
                               FileSystemRpcHandler::Config(),

@@ -100,6 +100,7 @@ FLASHMEM bool verifyProjectStoreSmokeState(const core::state::CoreState& state) 
 }  // namespace
 
 FLASHMEM bool runProjectStoreSmoke(core::persistence::ProductFileService& productFiles,
+                                   core::persistence::ProductDirectoryCatalog& productCatalog,
                                    core::state::CoreState& state) {
     OC_LOG_INFO("[project-store-smoke] start");
 
@@ -111,7 +112,7 @@ FLASHMEM bool runProjectStoreSmoke(core::persistence::ProductFileService& produc
         return false;
     }
 
-    core::persistence::ProjectFileStore store(productFiles);
+    core::persistence::ProjectFileStore store(productFiles, productCatalog);
     auto saved = store.save(*savedSnapshot);
     if (!saved) {
         OC_LOG_ERROR("[project-store-smoke] save failed: {} context={}",
