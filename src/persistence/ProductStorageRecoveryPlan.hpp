@@ -42,6 +42,7 @@ public:
     bool active() const;
     bool terminal() const;
     const ProductStorageRecoveryResult& result() const { return result_; }
+    uint32_t lastWorkBytes() const { return last_work_bytes_; }
 
 private:
     enum class Step : uint8_t {
@@ -88,6 +89,7 @@ private:
     bool conditional_corrupt_ = false;
     bool session_recovery_started_ = false;
     uint8_t layout_index_ = 0U;
+    uint32_t last_work_bytes_ = 0U;
 };
 
 static_assert(

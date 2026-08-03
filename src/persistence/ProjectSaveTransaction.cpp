@@ -197,6 +197,7 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
             phase_ = Phase::BEGIN_WRITE;
             return oc::type::Result<ProjectSaveProgress>::ok({
                 .completedStage = ProjectSaveStage::ENCODE,
+                .workBytes = encoded_size_,
             });
         }
 
@@ -346,6 +347,12 @@ FLASHMEM void ProjectSaveTransaction::cancel_(
     if (files_.owns(lease)) {
         if (files_.writeSessionActive()) {
             (void)files_.abortWrite(lease);
+        }
+        // Once PREPARED has been durably mapped, deleting tmp would destroy
+        // the only recoverable continuation. Mark the medium degraded first;
+        // cleanupTmp_ will then preserve every journal-owned artifact.
+        if (commit_plan_started_ && workspace_.commitPlan().mapped()) {
+            (void)files_.requireRecovery(lease, ErrorCode::INVALID_STATE);
         }
         cleanupTmp_(lease);
     }

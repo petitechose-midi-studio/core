@@ -18,9 +18,9 @@ namespace ms::entry {
  *
  * Construction restores the current session before autosave starts. update()
  * is called after OpenControlApp::update(); it always advances CoreState
- * coalescing, then opens the one persistence turn. An external product-file
- * write blocks project autosave only. An autosave-owned write may keep
- * advancing.
+ * coalescing, then opens the one persistence turn. Autosave is admitted behind
+ * an explicit owner instead of being suppressed, and every admitted slice is
+ * paused while musical playback is active.
  */
 class SdlProjectSessionRuntime {
 public:
@@ -67,17 +67,12 @@ public:
             );
         }
 
-        const bool productFileWriteActive = product_files_.writeSessionActive();
-        const bool autosaveWriteActive = autosave_ && autosave_->writeSessionActive();
-        const bool externalProductFileWriteActive =
-            productFileWriteActive && !autosaveWriteActive;
-
-        if (externalProductFileWriteActive) return;
-
         if (autosave_) {
             autosave_->update(
                 state_,
-                nowMs
+                nowMs,
+                false,
+                playbackActive
             );
         }
     }

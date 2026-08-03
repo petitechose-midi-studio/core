@@ -1058,31 +1058,116 @@ FLASHMEM bool reserveHistoryTrackBankSnapshotStorage(const SequencerTrackBankSta
     return true;
 }
 
+FLASHMEM bool captureHistoryTrackBankGraphUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryTrackBankSnapshot& out,
+    uint32_t* bytesCopied
+) {
+    if (bytesCopied) *bytesCopied = 0U;
+    const uint8_t activeTrack = bank.activeTrackIndex();
+    if (trackIndex >= SequencerTrackBankState::TRACK_COUNT ||
+        out.flat.activeTrack != activeTrack) {
+        return false;
+    }
+
+    const auto& source = patternSourceForTrack(bank, active, trackIndex);
+    const auto* sourceGraph = graphView(source);
+    auto& targetGraph = trackIndex == activeTrack
+        ? out.editorGraph
+        : out.bankGraphs[trackIndex];
+
+    // reserveHistoryTrackBankSnapshotStorage() already normalized absent and
+    // disabled owners. Never allocate or release an owner after admission.
+    if (sourceGraph == nullptr) return targetGraph == nullptr;
+    if (!targetGraph) return false;
+    *targetGraph = *sourceGraph;
+    if (bytesCopied) *bytesCopied = sizeof(Graph);
+    return true;
+}
+
+FLASHMEM bool captureHistoryTrackBankDataUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryTrackBankSnapshot& out,
+    uint32_t* bytesCopied
+) {
+    if (bytesCopied) *bytesCopied = 0U;
+    const uint8_t activeTrack = bank.activeTrackIndex();
+    if (trackIndex >= SequencerTrackBankState::TRACK_COUNT ||
+        out.flat.activeTrack != activeTrack) {
+        return false;
+    }
+
+    const auto& source = patternSourceForTrack(bank, active, trackIndex);
+    const auto* sourceCcLanes = source.ccLanes.get();
+    if (sourceCcLanes != nullptr && !validSequencerCcLaneBank(*sourceCcLanes)) {
+        return false;
+    }
+    const bool sourceCcLanesEmpty = sourceCcLanes == nullptr ||
+        sequencerCcLaneCount(*sourceCcLanes) == 0U;
+    auto& targetCcLanes = trackIndex == activeTrack
+        ? out.editorCcLanes
+        : out.bankCcLanes[trackIndex];
+    if (sourceCcLanesEmpty) {
+        if (targetCcLanes) return false;
+    } else {
+        if (!targetCcLanes) return false;
+        *targetCcLanes = *sourceCcLanes;
+    }
+
+    captureSnapshot(source, out.flat.tracks[trackIndex]);
+    if (bytesCopied) {
+        *bytesCopied = sizeof(SequencerPatternSnapshot) +
+            (sourceCcLanesEmpty ? 0U : sizeof(SequencerCcLaneBank));
+    }
+    return true;
+}
+
+FLASHMEM bool finalizeHistoryTrackBankSnapshotUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    uint8_t frozenActiveTrack,
+    uint8_t frozenFocusedStep,
+    StepProperty frozenActiveStepProperty,
+    SequencerHistoryTrackBankSnapshot& out
+) {
+    if (frozenActiveTrack != bank.activeTrackIndex() ||
+        out.flat.activeTrack != frozenActiveTrack) {
+        return false;
+    }
+    out.flat.activeTrack = frozenActiveTrack;
+    out.flat.enabledMask = bank.currentEnabledMask();
+    out.flat.projectScaleRevision = bank.projectScaleRevisionSignal().get();
+    out.flat.projectScaleSettings = bank.projectScaleSettings();
+    out.focusedStep = frozenFocusedStep;
+    out.activeStepProperty = frozenActiveStepProperty;
+    return true;
+}
+
 FLASHMEM bool captureHistoryTrackBankSnapshotUsingReservedStorage(
     const SequencerTrackBankState& bank, const SequencerState& active,
     SequencerHistoryTrackBankSnapshot& out) {
     const uint8_t activeTrack = bank.activeTrackIndex();
     if (out.flat.activeTrack != activeTrack) return false;
-    if (!capturePatternPayloadUsingReservedStorage(active.pattern, out.editorGraph,
-                                                   out.editorCcLanes)) {
-        return false;
-    }
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if (i == activeTrack) {
-            out.bankGraphs[i].reset();
-            out.bankCcLanes[i].reset();
-            continue;
-        }
-        if (!capturePatternPayloadUsingReservedStorage(bank.track(i), out.bankGraphs[i],
-                                                       out.bankCcLanes[i])) {
+        if (!captureHistoryTrackBankGraphUsingReservedStorage(
+                bank, active, i, out
+            ) ||
+            !captureHistoryTrackBankDataUsingReservedStorage(
+                bank, active, i, out
+            )) {
             return false;
         }
     }
-
-    captureTrackBankSnapshot(bank, active, out.flat);
-    out.focusedStep = active.focusedStep.get();
-    out.activeStepProperty = active.activeStepProperty.get();
-    return true;
+    return finalizeHistoryTrackBankSnapshotUsingReservedStorage(
+        bank,
+        activeTrack,
+        active.focusedStep.get(),
+        active.activeStepProperty.get(),
+        out
+    );
 }
 
 FLASHMEM bool reservePreparedActiveTrackSynchronization(

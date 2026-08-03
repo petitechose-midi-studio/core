@@ -49,9 +49,15 @@ public:
         FAILED,
     };
 
+    enum class SliceKind : uint8_t {
+        SMALL = 0,
+        SEQUENCER,
+    };
+
     struct Progress {
         Status status = Status::IDLE;
         uint32_t modifiedCounter = 0;
+        uint32_t workBytes = 0;
     };
 
     bool begin(const core::state::CoreState& state, ProjectSnapshot& snapshot);
@@ -61,6 +67,7 @@ public:
     bool active() const;
     bool complete() const;
     const ProjectCaptureGuard* guard() const;
+    SliceKind nextSliceKind() const;
 
 private:
     enum class Phase : uint8_t {
@@ -68,15 +75,24 @@ private:
         PROJECT,
         MACROS,
         AUTOMATION,
-        SEQUENCER,
+        SEQUENCER_GRAPH,
+        SEQUENCER_DATA,
         COMPLETE,
     };
+
+    bool guardMatches_() const;
 
     const core::state::CoreState* state_ = nullptr;
     ProjectSnapshot* snapshot_ = nullptr;
     Phase phase_ = Phase::IDLE;
     ProjectCaptureGuard guard_{};
-
+    uint32_t automation_offset_ = 0U;
+    uint8_t macro_track_ = 0U;
+    uint8_t sequencer_track_ = 0U;
+    uint8_t frozen_active_track_ = 0U;
+    uint8_t frozen_focused_step_ = 0U;
+    core::state::sequencer::StepProperty frozen_active_step_property_ =
+        core::state::sequencer::StepProperty::NOTE;
 };
 
 ProjectSnapshotPtr makeProjectSnapshot();

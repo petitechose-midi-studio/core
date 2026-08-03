@@ -114,8 +114,9 @@ FLASHMEM bool runProjectStoreSmoke(core::persistence::ProductFileService& produc
     core::persistence::ProjectFileStore store(productFiles);
     auto saved = store.save(*savedSnapshot);
     if (!saved) {
-        OC_LOG_ERROR("[project-store-smoke] save failed: {}",
-                     oc::type::errorCodeToString(saved.error().code));
+        OC_LOG_ERROR("[project-store-smoke] save failed: {} context={}",
+                     oc::type::errorCodeToString(saved.error().code),
+                     saved.error().context ? saved.error().context : "none");
         return false;
     }
     OC_LOG_INFO("[project-store-smoke] saved {} bytes to {}",

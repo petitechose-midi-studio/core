@@ -13,11 +13,15 @@
 #include "../../src/persistence/AtomicProductFile.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/persistence/ProductFileRecoveryPlan.hpp"
+#include "../../src/persistence/ProjectSessionAutosaveService.hpp"
+#include "../../src/persistence/ProjectSessionStore.hpp"
 #include "../support/ProductFileTestMutation.hpp"
 #include "../../src/protocol/filesystem/FileSystemRpc.hpp"
 #include "../../src/protocol/filesystem/FileSystemRpcConditionalTransaction.hpp"
 #include "../../src/protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
 #include "../../src/protocol/filesystem/FileSystemRpcInternal.hpp"
+#include "../../src/state/CoreState.hpp"
+#include "../support/CoreStorages.hpp"
 
 namespace {
 
@@ -2414,6 +2418,104 @@ void test_endpoint_total_upload_deadline_is_not_refreshed_by_chunks() {
     std::cout << "[PASS] total upload deadline is absolute\n";
 }
 
+void test_aged_autosave_aborts_upload_before_promotion() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    test_support::CoreStorages storages;
+    core::state::CoreState state(storages.settings);
+    state.project.metadata.hasSavedIdentity = true;
+    std::strncpy(
+        state.project.metadata.id.data(),
+        "rpc-autosave",
+        state.project.metadata.id.size() - 1U
+    );
+    state.sequencer.pattern.setContentLength(8U);
+    state.sequencer.setStepDataAt(0U, 85U, 100U, 75U);
+    state.sequencer.pattern.toggle(0U);
+    state.markProjectMutated();
+
+    core::persistence::ProjectSessionStore sessionStore(service);
+    core::persistence::ProjectSessionAutosaveService autosave(sessionStore, 1U);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    endpoint.begin();
+
+    const uint32_t admittedAt = state.projectSessionSaveTimestampMs() + 1U;
+    g_now_ms = admittedAt;
+    uint8_t request[128] = {};
+    const size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        75U,
+        0x4567U,
+        "projects/aged-upload.bin",
+        4U,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    const auto admitted = autosave.update(state, g_now_ms);
+    assert(admitted.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    assert(service.persistenceJobs().depth() == 2U);
+    assert(service.persistenceJobs().highWater() == 2U);
+    assert(service.stat("tmp/rpc-write-4567.tmp"));
+    core::persistence::ProductPersistenceJobSnapshot autosaveSnapshot{};
+    assert(autosave.inspectPersistenceJob(autosaveSnapshot));
+    assert(autosaveSnapshot.state ==
+           core::persistence::ProductPersistenceJobState::DEFERRED);
+    assert(autosaveSnapshot.metrics.advances == 0U);
+
+    g_now_ms = admittedAt +
+        core::persistence::PRODUCT_PERSISTENCE_AUTOSAVE_MAX_DEFERRAL_MS - 1U;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    const auto stillDeferred = autosave.update(state, g_now_ms);
+    assert(stillDeferred.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    assert(service.stat("tmp/rpc-write-4567.tmp"));
+    assert(autosave.inspectPersistenceJob(autosaveSnapshot));
+    assert(autosaveSnapshot.state ==
+           core::persistence::ProductPersistenceJobState::DEFERRED);
+
+    g_now_ms = admittedAt +
+        core::persistence::PRODUCT_PERSISTENCE_AUTOSAVE_MAX_DEFERRAL_MS;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    const auto promoted = autosave.update(state, g_now_ms);
+    assert(promoted.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    assert(!service.stat("tmp/rpc-write-4567.tmp"));
+    assert(!service.stat("projects/aged-upload.bin"));
+    assert(service.persistenceJobs().depth() == 1U);
+    assert(autosave.inspectPersistenceJob(autosaveSnapshot));
+    assert(autosaveSnapshot.state ==
+           core::persistence::ProductPersistenceJobState::ACTIVE);
+    assert(autosaveSnapshot.metrics.advances == 0U);
+
+    core::persistence::ProjectSessionAutosaveService::Result saved{};
+    for (uint16_t turn = 0U; turn < 384U; ++turn) {
+        ++g_now_ms;
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        saved = autosave.update(state, g_now_ms);
+        if (saved.status !=
+            core::persistence::ProjectSessionAutosaveService::Status::SAVING) {
+            break;
+        }
+    }
+    assert(saved.saved());
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(service.stat("session/current.mspj"));
+
+    endpoint.end();
+    std::cout << "[PASS] aged autosave safely aborts upload before promotion\n";
+}
+
 void test_upload_size_limit_is_inclusive() {
     resetTestRoot();
     Harness h;
@@ -2857,6 +2959,7 @@ int main() {
     test_endpoint_retains_two_frames_and_rejects_the_third();
     test_endpoint_playback_rejects_without_filesystem_work();
     test_endpoint_total_upload_deadline_is_not_refreshed_by_chunks();
+    test_aged_autosave_aborts_upload_before_promotion();
     test_upload_size_limit_is_inclusive();
     test_endpoint_commit_yields_between_bounded_durable_phases();
     test_endpoint_conditional_replace_is_cooperative_and_playback_safe();

@@ -1,9 +1,13 @@
 #include "persistence/ProjectSessionAutosaveService.hpp"
 
+#include <limits>
+#include <utility>
+
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/log/Log.hpp>
 
+#include "config/TimeCompat.hpp"
 #include "persistence/ProjectSessionStore.hpp"
 #include "state/CoreState.hpp"
 #include "state/project/ProjectSnapshot.hpp"
@@ -28,6 +32,12 @@ const char kRecoveryProgressLost[] PROGMEM =
     "project session recovery progress lost";
 const char kSaveAcknowledgementFailed[] PROGMEM =
     "project session save acknowledgement failed";
+const char kAutosaveJobBlocked[] PROGMEM =
+    "project session autosave queue blocked";
+const char kAutosaveJobAdvanceFailed[] PROGMEM =
+    "project session autosave advance failed";
+const char kAutosaveMeasurementFailed[] PROGMEM =
+    "project session autosave measurement unavailable";
 const char kFailureStageNone[] PROGMEM = "NONE";
 const char kFailureStageCapture[] PROGMEM = "CAPTURE";
 const char kFailureStagePrepare[] PROGMEM = "PREPARE";
@@ -72,10 +82,12 @@ FLASHMEM const char* ProjectSessionAutosaveService::failureStageLabel(
 
 FLASHMEM ProjectSessionAutosaveService::ProjectSessionAutosaveService(
     ProjectSessionStore& store,
-    uint32_t delayMs
+    uint32_t delayMs,
+    MicrosProvider microsProvider
 ) : store_(store)
   , delay_ms_(delayMs == 0 ? core::state::CoreState::PROJECT_SESSION_AUTOSAVE_DELAY_MS
-                           : delayMs) {
+                           : delayMs)
+  , micros_provider_(microsProvider ? microsProvider : &core::time_compat::micros) {
     OC_PERF_SCOPE(perfInitialize, "persistence.autosave.initialize");
     if (!store_.prepareWorkspace()) {
         OC_LOG_WARN("[ProjectSessionAutosave] file workspace allocation failed");
@@ -87,13 +99,14 @@ FLASHMEM ProjectSessionAutosaveService::ProjectSessionAutosaveService(
 }
 
 FLASHMEM ProjectSessionAutosaveService::~ProjectSessionAutosaveService() {
-    cancelInFlight_();
+    cancelOrdinary_();
 }
 
 ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::update(
     core::state::CoreState& state,
     uint32_t nowMs,
-    bool mutationPending
+    bool mutationPending,
+    bool playbackActive
 ) {
     if (recovery_in_progress_) {
         return Result{
@@ -106,31 +119,60 @@ ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::update(
     if (!inProgress && !state.hasPendingProjectSessionSave()) {
         return Result{.status = Status::IDLE};
     }
-    return updatePending_(state, nowMs, mutationPending, inProgress);
+    return updatePending_(
+        state,
+        nowMs,
+        mutationPending,
+        playbackActive,
+        inProgress
+    );
 }
 
 FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::updatePending_(
     core::state::CoreState& state,
     uint32_t nowMs,
     bool mutationPending,
+    bool playbackActive,
     bool inProgress
 ) {
     if (inProgress) {
+        auto& jobs = store_.productFiles().persistenceJobs();
+        if (!job_token_.valid() || !jobs.owns(job_token_)) {
+            cancelInFlight_();
+            job_token_ = {};
+            state.requestProjectSessionSave();
+            inProgress = false;
+        }
+    }
+
+    if (inProgress) {
         const bool transactionPending =
             mutationPending || state.hasPendingProjectTransaction();
-        if (transactionPending) {
-            cancelInFlight_();
-            return Result{.status = Status::BLOCKED};
+        const auto* guard = capture_.guard();
+        const bool captureStale = guard == nullptr ||
+            !state.projectSessionSaveTokenMatches(guard->token);
+        if (transactionPending || captureStale) {
+            // Latch invalidation even during playback or while this job is
+            // deferred. Durable unwind itself remains an admitted foreground
+            // advance; no filesystem cleanup is allowed from this observer.
+            requestOrdinaryCancel_(
+                transactionPending ? Status::BLOCKED : Status::WAITING
+            );
         }
 
-        const auto* guard = capture_.guard();
-        if (guard == nullptr ||
-            !state.projectSessionSaveTokenMatches(guard->token)) {
-            cancelInFlight_();
+        // An admitted save is frozen in place while music is running,
+        // including an already-open write stream. A latched stale cleanup
+        // resumes only after playback stops, so this branch performs no
+        // filesystem work.
+        if (playbackActive) {
+            return Result{
+                .status = Status::SAVING,
+                .modifiedCounter = guard ? guard->token.modifiedCounter : 0U,
+            };
         }
 
         if (inProgress_()) {
-            return capture_.active() ? advanceCapture_(state) : advanceSave_(state);
+            return advanceOrdinary_(state, nowMs);
         }
     }
 
@@ -147,7 +189,11 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::up
         return Result{.status = Status::WAITING};
     }
 
-    return startCapture_(state);
+    if (playbackActive) {
+        return Result{.status = Status::BLOCKED};
+    }
+
+    return startCapture_(state, nowMs);
 }
 
 FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::flush(
@@ -160,6 +206,10 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::fl
             .errorContext = kRecoveryBlocked,
         };
     }
+    // flush() is a synchronous compatibility path used outside the firmware
+    // foreground scheduler. Unwind any ordinary queued continuation before
+    // driving the same capture/save primitives to completion locally.
+    if (job_token_.valid()) cancelOrdinary_();
     if (state.hasPendingProjectTransaction()) {
         if (inProgress_()) cancelInFlight_();
         return Result{
@@ -181,7 +231,16 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::fl
 
     Result result{.status = Status::SAVING};
     if (!inProgress_()) {
-        result = startCapture_(state);
+        if (!beginCapture_(state)) {
+            state.requestProjectSessionSave();
+            return Result{
+                .status = Status::CAPTURE_FAILED,
+                .failureStage = FailureStage::CAPTURE,
+                .error = ErrorCode::RESOURCE_EXHAUSTED,
+                .errorContext = kCaptureStartFailed,
+            };
+        }
+        result = advanceCapture_(state);
     }
 
     while (result.status == Status::SAVING) {
@@ -219,7 +278,7 @@ ProjectSessionAutosaveService::beginRecovery(
 ) {
     // Discard work tied to the removed medium, then bind a fresh snapshot to
     // the exact live RAM identity and caller-owned RECOVERY lease.
-    cancelInFlight_();
+    cancelOrdinary_();
     if (!recoveryLease.valid()) {
         return Result{
             .status = Status::BLOCKED,
@@ -246,7 +305,7 @@ ProjectSessionAutosaveService::beginRecovery(
     const auto requestedToken = state.requestProjectSessionSave();
     if (!state.hasPendingProjectSessionSave() ||
         !state.projectSessionSaveTokenMatches(requestedToken) ||
-        !capture_.begin(state, *snapshot_)) {
+        !beginCapture_(state)) {
         capture_.cancel();
         return Result{
             .status = Status::CAPTURE_FAILED,
@@ -316,10 +375,13 @@ FLASHMEM void ProjectSessionAutosaveService::cancelRecovery() {
     cancelInFlight_();
 }
 
-ProductPersistenceWorkQuota
+FLASHMEM ProductPersistenceWorkQuota
 ProjectSessionAutosaveService::recoveryWorkQuota() const {
     if (capture_.active()) {
-        return PRODUCT_PERSISTENCE_QUOTA_AUTOSAVE_SEQUENCER;
+        return capture_.nextSliceKind() ==
+                       core::state::project::ProjectSnapshotCapture::SliceKind::SEQUENCER
+            ? PRODUCT_PERSISTENCE_QUOTA_AUTOSAVE_SEQUENCER
+            : PRODUCT_PERSISTENCE_QUOTA_AUTOSAVE_AUTOMATION;
     }
     if (!store_.saveCurrentInProgress()) {
         return PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
@@ -349,6 +411,7 @@ ProjectSessionAutosaveService::advanceRecoveryCapture_(
         return Result{
             .status = Status::WAITING,
             .modifiedCounter = progress.modifiedCounter,
+            .workBytes = progress.workBytes,
         };
     }
     if (progress.status ==
@@ -359,6 +422,7 @@ ProjectSessionAutosaveService::advanceRecoveryCapture_(
         return Result{
             .status = Status::CAPTURE_FAILED,
             .modifiedCounter = progress.modifiedCounter,
+            .workBytes = progress.workBytes,
             .failureStage = FailureStage::CAPTURE,
             .error = ErrorCode::RESOURCE_EXHAUSTED,
             .errorContext = kCaptureAdvanceFailed,
@@ -369,6 +433,7 @@ ProjectSessionAutosaveService::advanceRecoveryCapture_(
         return Result{
             .status = Status::SAVING,
             .modifiedCounter = progress.modifiedCounter,
+            .workBytes = progress.workBytes,
         };
     }
 
@@ -381,6 +446,7 @@ ProjectSessionAutosaveService::advanceRecoveryCapture_(
         return Result{
             .status = Status::WAITING,
             .modifiedCounter = progress.modifiedCounter,
+            .workBytes = progress.workBytes,
         };
     }
 
@@ -393,6 +459,7 @@ ProjectSessionAutosaveService::advanceRecoveryCapture_(
         return Result{
             .status = Status::SAVE_FAILED,
             .modifiedCounter = capturedCounter,
+            .workBytes = progress.workBytes,
             .failureStage = FailureStage::PREPARE,
             .error = error.code,
             .errorContext = error.context,
@@ -401,18 +468,35 @@ ProjectSessionAutosaveService::advanceRecoveryCapture_(
     return Result{
         .status = Status::SAVING,
         .modifiedCounter = capturedCounter,
+        .workBytes = progress.workBytes,
     };
 }
 
-FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::startCapture_(
+FLASHMEM bool ProjectSessionAutosaveService::beginCapture_(
     core::state::CoreState& state
 ) {
-    recovery_in_progress_ = false;
-    OC_PERF_SCOPE(perfStart, "persistence.autosave.start-capture");
     if (!snapshot_) {
         snapshot_ = core::state::project::makeProjectSnapshot();
     }
-    if (!snapshot_ || !capture_.begin(state, *snapshot_)) {
+    return snapshot_ && capture_.begin(state, *snapshot_);
+}
+
+FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::startCapture_(
+    core::state::CoreState& state,
+    uint32_t nowMs
+) {
+    recovery_in_progress_ = false;
+    ordinary_cancel_status_ = Status::IDLE;
+    OC_PERF_SCOPE(perfStart, "persistence.autosave.start-capture");
+    auto& jobs = store_.productFiles().persistenceJobs();
+    if (jobs.depth() >= 2U) {
+        return Result{
+            .status = Status::BLOCKED,
+            .error = ErrorCode::HARDWARE_BUSY,
+            .errorContext = kAutosaveJobBlocked,
+        };
+    }
+    if (!beginCapture_(state)) {
         state.requestProjectSessionSave();
         OC_LOG_WARN("[ProjectSessionAutosave] capture failed");
         return Result{
@@ -423,7 +507,142 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::st
         };
     }
 
-    return advanceCapture_(state);
+    auto admitted = jobs.admit({
+        .owner = ProductPersistenceJobOwner::PROJECT_AUTOSAVE,
+        .nowMs = nowMs,
+        .deadlineAfterMs = 0U,
+        .quota = nextWorkQuota_(),
+    });
+    if (!admitted) {
+        const auto error = admitted.error();
+        capture_.cancel();
+        return Result{
+            .status = Status::BLOCKED,
+            .error = error.code,
+            .errorContext = error.context,
+        };
+    }
+    job_token_ = std::move(admitted.value());
+    return jobs.isActive(job_token_)
+        ? advanceOrdinary_(state, nowMs)
+        : Result{
+              .status = Status::SAVING,
+              .modifiedCounter = capture_.guard()->token.modifiedCounter,
+          };
+}
+
+FLASHMEM ProjectSessionAutosaveService::Result
+ProjectSessionAutosaveService::advanceOrdinary_(
+    core::state::CoreState& state,
+    uint32_t nowMs
+) {
+    auto& files = store_.productFiles();
+    auto& jobs = files.persistenceJobs();
+    if (!job_token_.valid() || !jobs.owns(job_token_)) {
+        cancelInFlight_();
+        job_token_ = {};
+        state.requestProjectSessionSave();
+        return Result{
+            .status = Status::WAITING,
+            .error = ErrorCode::INVALID_STATE,
+            .errorContext = kAutosaveJobAdvanceFailed,
+        };
+    }
+    if (!jobs.isActive(job_token_)) {
+        const auto* guard = capture_.guard();
+        return Result{
+            .status = ordinaryCancelPending_()
+                ? ordinary_cancel_status_
+                : Status::SAVING,
+            .modifiedCounter = guard ? guard->token.modifiedCounter : 0U,
+        };
+    }
+
+    auto prepared = jobs.prepareAdvance(job_token_, nextWorkQuota_());
+    if (!prepared) {
+        if (prepared.error().code == ErrorCode::RESOURCE_EXHAUSTED) {
+            cancelOrdinary_();
+            state.requestProjectSessionSave();
+            return Result{
+                .status = Status::SAVE_FAILED,
+                .error = prepared.error().code,
+                .errorContext = prepared.error().context,
+            };
+        }
+        // Another owner already consumed this foreground turn. A pending
+        // invalidation remains latched; it must not unwind outside its own
+        // measured advance.
+        return Result{
+            .status = ordinaryCancelPending_()
+                ? ordinary_cancel_status_
+                : Status::SAVING,
+        };
+    }
+    auto claimed = jobs.claimAdvance(job_token_, nowMs);
+    if (!claimed) {
+        return Result{.status = Status::SAVING};
+    }
+
+    ProductPersistenceWorkUsage usage{};
+    const uint32_t startedMicros = micros_provider_();
+    Result result{
+        .status = Status::SAVE_FAILED,
+        .error = ErrorCode::INVALID_STATE,
+        .errorContext = kSaveProgressLost,
+    };
+    auto measured = files.measurePersistenceWork(usage);
+    if (!measured) {
+        result.error = measured.error().code;
+        result.errorContext = kAutosaveMeasurementFailed;
+    } else {
+        auto measurement = std::move(measured.value());
+        if (ordinaryCancelPending_()) {
+            const auto* guard = capture_.guard();
+            const uint32_t modifiedCounter =
+                guard ? guard->token.modifiedCounter : 0U;
+            const Status cancelStatus = ordinary_cancel_status_;
+            cancelInFlight_();
+            result = Result{
+                .status = cancelStatus,
+                .modifiedCounter = modifiedCounter,
+            };
+        } else if (capture_.active()) {
+            result = advanceCapture_(state);
+        } else if (store_.saveCurrentInProgress()) {
+            result = advanceSave_(state);
+        }
+    }
+
+    const uint32_t byteRoom =
+        std::numeric_limits<uint32_t>::max() - usage.bytes;
+    usage.bytes += result.workBytes > byteRoom ? byteRoom : result.workBytes;
+    usage.wallMicros = static_cast<uint32_t>(micros_provider_() - startedMicros);
+    const bool safeYield = !store_.saveCurrentWriteSessionActive();
+    auto finished = jobs.finishAdvance(job_token_, usage, safeYield);
+    if (!finished) {
+        const auto error = finished.error();
+        cancelInFlight_();
+        (void)jobs.cancelAfterUnwind(job_token_);
+        state.requestProjectSessionSave();
+        return Result{
+            .status = Status::SAVE_FAILED,
+            .failureStage = result.failureStage,
+            .error = error.code,
+            .errorContext = error.context,
+        };
+    }
+
+    if (result.status == Status::SAVED) {
+        if (!jobs.complete(job_token_)) {
+            (void)jobs.cancelAfterUnwind(job_token_);
+        }
+        ordinary_cancel_status_ = Status::IDLE;
+    } else if (result.status != Status::SAVING) {
+        cancelInFlight_();
+        (void)jobs.cancelAfterUnwind(job_token_);
+        ordinary_cancel_status_ = Status::IDLE;
+    }
+    return result;
 }
 
 FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::advanceCapture_(
@@ -436,6 +655,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         return Result{
             .status = Status::WAITING,
             .modifiedCounter = progress.modifiedCounter,
+            .workBytes = progress.workBytes,
         };
     }
     if (progress.status == core::state::project::ProjectSnapshotCapture::Status::FAILED ||
@@ -444,6 +664,8 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         OC_LOG_WARN("[ProjectSessionAutosave] capture failed");
         return Result{
             .status = Status::CAPTURE_FAILED,
+            .modifiedCounter = progress.modifiedCounter,
+            .workBytes = progress.workBytes,
             .failureStage = FailureStage::CAPTURE,
             .error = ErrorCode::RESOURCE_EXHAUSTED,
             .errorContext = kCaptureAdvanceFailed,
@@ -453,6 +675,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         return Result{
             .status = Status::SAVING,
             .modifiedCounter = progress.modifiedCounter,
+            .workBytes = progress.workBytes,
         };
     }
 
@@ -463,6 +686,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         return Result{
             .status = Status::WAITING,
             .modifiedCounter = progress.modifiedCounter,
+            .workBytes = progress.workBytes,
         };
     }
     auto started = store_.beginSaveCurrent(*snapshot_);
@@ -473,6 +697,8 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         OC_LOG_WARN("[ProjectSessionAutosave] save start failed");
         return Result{
             .status = Status::SAVE_FAILED,
+            .modifiedCounter = progress.modifiedCounter,
+            .workBytes = progress.workBytes,
             .failureStage = FailureStage::PREPARE,
             .error = error.code,
             .errorContext = error.context,
@@ -481,6 +707,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
     return Result{
         .status = Status::SAVING,
         .modifiedCounter = guard->token.modifiedCounter,
+        .workBytes = progress.workBytes,
     };
 }
 
@@ -521,6 +748,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         return Result{
             .status = Status::SAVING,
             .modifiedCounter = capturedToken.modifiedCounter,
+            .workBytes = saved.value().workBytes,
         };
     }
 
@@ -533,6 +761,7 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
             .status = Status::WAITING,
             .bytes = bytesWritten,
             .modifiedCounter = capturedToken.modifiedCounter,
+            .workBytes = saved.value().workBytes,
             .failureStage = FailureStage::ACKNOWLEDGE,
             .error = ErrorCode::INVALID_STATE,
             .errorContext = kSaveAcknowledgementFailed,
@@ -544,7 +773,28 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         .status = Status::SAVED,
         .bytes = bytesWritten,
         .modifiedCounter = capturedToken.modifiedCounter,
+        .workBytes = saved.value().workBytes,
     };
+}
+
+FLASHMEM ProductPersistenceWorkQuota
+ProjectSessionAutosaveService::nextWorkQuota_() const {
+    if (ordinaryCancelPending_()) {
+        return PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
+    }
+    return recoveryWorkQuota();
+}
+
+FLASHMEM void ProjectSessionAutosaveService::requestOrdinaryCancel_(Status status) {
+    if (status != Status::BLOCKED && status != Status::WAITING) return;
+    if (ordinary_cancel_status_ == Status::IDLE || status == Status::BLOCKED) {
+        ordinary_cancel_status_ = status;
+    }
+}
+
+FLASHMEM bool ProjectSessionAutosaveService::ordinaryCancelPending_() const {
+    return ordinary_cancel_status_ == Status::BLOCKED ||
+           ordinary_cancel_status_ == Status::WAITING;
 }
 
 FLASHMEM void ProjectSessionAutosaveService::cancelInFlight_() {
@@ -555,12 +805,30 @@ FLASHMEM void ProjectSessionAutosaveService::cancelInFlight_() {
     recovery_in_progress_ = false;
 }
 
+FLASHMEM void ProjectSessionAutosaveService::cancelOrdinary_() {
+    cancelInFlight_();
+    ordinary_cancel_status_ = Status::IDLE;
+    if (!job_token_.valid()) return;
+
+    auto& jobs = store_.productFiles().persistenceJobs();
+    if (!jobs.owns(job_token_)) {
+        job_token_ = {};
+        return;
+    }
+    if (!jobs.cancel(job_token_)) {
+        (void)jobs.cancelAfterUnwind(job_token_);
+    }
+}
+
 bool ProjectSessionAutosaveService::inProgress_() const {
     return capture_.active() || store_.saveCurrentInProgress();
 }
 
-bool ProjectSessionAutosaveService::writeSessionActive() const {
-    return store_.saveCurrentWriteSessionActive();
+FLASHMEM bool ProjectSessionAutosaveService::inspectPersistenceJob(
+    ProductPersistenceJobSnapshot& snapshot
+) const {
+    return job_token_.valid() &&
+           store_.productFiles().persistenceJobs().inspect(job_token_, snapshot);
 }
 
 }  // namespace core::persistence

@@ -151,8 +151,9 @@ oc::type::Result<void> ProductPersistenceJobCoordinator::beginTurn(uint32_t nowM
             {ErrorCode::INVALID_STATE, kAdvanceUsageMissing}
         );
     }
+    (void)nowMs;
     turn_state_ = TurnState::OPEN;
-    rebalance_(nowMs);
+    rebalance_();
     return oc::type::Result<void>::ok();
 }
 
@@ -498,26 +499,21 @@ bool ProductPersistenceJobCoordinator::usageWithinQuota_(
            usage.entries <= quota.maxEntries() && usage.nodes <= quota.maxNodes();
 }
 
-bool ProductPersistenceJobCoordinator::preferDeferred_(uint32_t nowMs) const {
+bool ProductPersistenceJobCoordinator::preferDeferred_() const {
     const Record* active = activeRecord_();
     const Record* deferred = deferredRecord_();
     if (!active || !deferred || !safeYield_(*active)) return false;
 
-    if (static_cast<uint8_t>(deferred->priority) >
-        static_cast<uint8_t>(active->priority)) {
-        return true;
-    }
-    return deferred->priority == ProductPersistenceJobPriority::AUTOSAVE &&
-           active->priority == ProductPersistenceJobPriority::EXPLICIT &&
-           elapsedAtLeast(
-               nowMs,
-               deferred->admittedAtMs,
-               PRODUCT_PERSISTENCE_AUTOSAVE_MAX_DEFERRAL_MS
-           );
+    // Autosave age is a signal to the active explicit owner, not scheduler
+    // authority to swap records behind that owner's back. In particular, an
+    // upload must first abort its open stream at a safe boundary; releasing
+    // its record then promotes the already-admitted autosave normally.
+    return static_cast<uint8_t>(deferred->priority) >
+           static_cast<uint8_t>(active->priority);
 }
 
-void ProductPersistenceJobCoordinator::rebalance_(uint32_t nowMs) {
-    if (!preferDeferred_(nowMs)) return;
+void ProductPersistenceJobCoordinator::rebalance_() {
+    if (!preferDeferred_()) return;
 
     Record* active = activeRecord_();
     Record* deferred = deferredRecord_();

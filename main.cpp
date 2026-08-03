@@ -352,6 +352,7 @@ private:
                 *coreState
             );
         }
+        usage.bytes += recovery_plan_->lastWorkBytes();
         usage.wallMicros = static_cast<uint32_t>(micros() - startedMicros);
         const auto finished = jobs.finishAdvance(recovery_job_, usage, true);
         if (!finished) {
@@ -830,20 +831,14 @@ void loop() {
             }
         }
 
-        const bool productFileWriteActive =
-            productFileService && productFileService->writeSessionActive();
-        const bool autosaveWriteActive =
-            projectSessionAutosaveService &&
-            projectSessionAutosaveService->writeSessionActive();
-        const bool externalProductFileWriteActive =
-            productFileWriteActive && !autosaveWriteActive;
-        if (persistenceTurnReady && !externalProductFileWriteActive &&
-            projectSessionAutosaveService && productFileService &&
+        if (persistenceTurnReady && projectSessionAutosaveService && productFileService &&
             productFileService->available()) {
             OC_PERF_SCOPE(perfAutosave, "main.autosave");
             projectSessionAutosaveService->update(
                 *coreState,
-                persistenceNowMs
+                persistenceNowMs,
+                false,
+                playbackActive
             );
         }
 

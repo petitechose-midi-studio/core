@@ -206,6 +206,7 @@ FLASHMEM bool ProductStorageRecoveryPlan::begin(
     conditional_corrupt_ = false;
     session_recovery_started_ = false;
     layout_index_ = 0U;
+    last_work_bytes_ = 0U;
 
     auto acquired = files.beginRecovery();
     if (!acquired) {
@@ -239,6 +240,7 @@ FLASHMEM bool ProductStorageRecoveryPlan::advance(
     ProjectSessionAutosaveService& autosaveService,
     core::state::CoreState& state
 ) {
+    last_work_bytes_ = 0U;
     if (!active() || !files.owns(lease_, ProductMutationOwner::RECOVERY)) {
         return fail_(
             files,
@@ -558,6 +560,7 @@ FLASHMEM bool ProductStorageRecoveryPlan::fail_(
 void ProductStorageRecoveryPlan::copySessionResult_(
     const ProjectSessionAutosaveService::Result& session
 ) {
+    last_work_bytes_ = session.workBytes;
     result_.sessionSaveStatus = session.status;
     result_.sessionSaveFailureStage = session.failureStage;
     result_.sessionSaveBytes = session.bytes;

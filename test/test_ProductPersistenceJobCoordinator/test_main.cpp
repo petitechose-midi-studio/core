@@ -213,6 +213,11 @@ void test_autosave_aging_is_rollover_safe_and_does_not_preempt_recovery() {
     assert(coordinator.activeJobId() == explicitJob.id());
     assert(coordinator.deferredAutosaveAged(atAge));
     assert(coordinator.beginTurn(atAge));
+    assert(coordinator.activeJobId() == explicitJob.id());
+    assert(coordinator.deferredJobId() == autosave.id());
+    // The explicit owner observes the age signal, unwinds safely, then its
+    // normal release promotes the already-admitted autosave.
+    assert(coordinator.cancel(explicitJob));
     assert(coordinator.activeJobId() == autosave.id());
 
     ProductPersistenceJobCoordinator recoveryCoordinator;

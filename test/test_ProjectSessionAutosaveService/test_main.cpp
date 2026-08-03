@@ -3,18 +3,25 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <utility>
 
 #include <oc/impl/HostFileSystem.hpp>
 #include <oc/time/Time.hpp>
 
+#include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/macro/MacroPerformanceDomainServices.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/persistence/ProjectSessionAutosaveService.hpp"
+#include "../../src/persistence/ProjectSessionRestoreService.hpp"
 #include "../../src/persistence/ProjectSessionStore.hpp"
+#include "../../src/persistence/ProductStorageRecoveryService.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/modulation/ProjectControlMacroOps.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
+#include "../../src/state/sequencer/SequencerCcLaneDomain.hpp"
+#include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../support/CoreStorages.hpp"
 
 namespace core::state::testing {
@@ -43,6 +50,15 @@ namespace modulation = core::state::modulation;
 
 uint32_t mockTimeMs() {
     return 0;
+}
+
+uint32_t g_slow_micros = 0U;
+
+uint32_t slowMicros() {
+    const uint32_t current = g_slow_micros;
+    g_slow_micros +=
+        core::persistence::PRODUCT_PERSISTENCE_SOFT_ADVANCE_WALL_MICROS + 1U;
+    return current;
 }
 
 std::filesystem::path testRoot() {
@@ -133,13 +149,26 @@ void assertCurrentSessionNote(core::persistence::ProductFileService& files, uint
     assert(restored.sequencer.pattern.isEnabled(0));
 }
 
+core::persistence::ProjectSessionAutosaveService::Result updateAutosave(
+    core::persistence::ProductFileService& files,
+    core::persistence::ProjectSessionAutosaveService& autosave,
+    core::state::CoreState& state,
+    uint32_t nowMs,
+    bool mutationPending = false,
+    bool playbackActive = false
+) {
+    assert(files.persistenceJobs().beginTurn(nowMs));
+    return autosave.update(state, nowMs, mutationPending, playbackActive);
+}
+
 core::persistence::ProjectSessionAutosaveService::Result updateUntilSettled(
+    core::persistence::ProductFileService& files,
     core::persistence::ProjectSessionAutosaveService& autosave,
     core::state::CoreState& state,
     uint32_t nowMs
 ) {
-    for (uint16_t step = 0; step < 192; ++step) {
-        auto result = autosave.update(state, nowMs);
+    for (uint16_t step = 0; step < 384; ++step) {
+        auto result = updateAutosave(files, autosave, state, nowMs);
         if (result.status !=
             core::persistence::ProjectSessionAutosaveService::Status::SAVING) {
             return result;
@@ -147,6 +176,21 @@ core::persistence::ProjectSessionAutosaveService::Result updateUntilSettled(
     }
     assert(false && "autosave did not settle");
     return {};
+}
+
+void advanceUntilWriteSession(
+    core::persistence::ProductFileService& files,
+    core::persistence::ProjectSessionAutosaveService& autosave,
+    core::state::CoreState& state,
+    uint32_t nowMs
+) {
+    for (uint16_t step = 0; step < 256U; ++step) {
+        const auto progress = updateAutosave(files, autosave, state, nowMs);
+        assert(progress.status ==
+               core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+        if (files.writeSessionActive()) return;
+    }
+    assert(false && "autosave did not open its bounded write session");
 }
 
 void test_waits_until_delay_before_saving() {
@@ -163,18 +207,18 @@ void test_waits_until_delay_before_saving() {
     state.markProjectMutated();
 
     const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
-    auto waiting = autosave.update(state, requestedAt + 999U);
+    auto waiting = updateAutosave(files, autosave, state, requestedAt + 999U);
     assert(waiting.status ==
            core::persistence::ProjectSessionAutosaveService::Status::WAITING);
     assert(state.hasPendingProjectSessionSave());
     assertNoCurrentSessionFile();
 
-    auto started = autosave.update(state, requestedAt + 1000U);
+    auto started = updateAutosave(files, autosave, state, requestedAt + 1000U);
     assert(started.status ==
            core::persistence::ProjectSessionAutosaveService::Status::SAVING);
     assertNoCurrentSessionFile();
 
-    auto saved = updateUntilSettled(autosave, state, requestedAt + 1000U);
+    auto saved = updateUntilSettled(files, autosave, state, requestedAt + 1000U);
     assert(saved.saved());
     assert(saved.bytes > 0);
     assert(!state.hasPendingProjectSessionSave());
@@ -201,13 +245,13 @@ void test_coalesces_until_latest_request_timestamp() {
     state.markProjectMutated();
     const uint32_t secondRequestAt = state.projectSessionSaveTimestampMs();
 
-    auto stillWaiting = autosave.update(state, secondRequestAt + 999U);
+    auto stillWaiting = updateAutosave(files, autosave, state, secondRequestAt + 999U);
     assert(stillWaiting.status ==
            core::persistence::ProjectSessionAutosaveService::Status::WAITING);
     assert(state.hasPendingProjectSessionSave());
     assertNoCurrentSessionFile();
 
-    auto saved = updateUntilSettled(autosave, state, secondRequestAt + 1000U);
+    auto saved = updateUntilSettled(files, autosave, state, secondRequestAt + 1000U);
     assert(saved.saved());
     assert(saved.modifiedCounter == state.project.metadata.modifiedCounter);
     assert(saved.modifiedCounter >= 2U);
@@ -231,13 +275,13 @@ void test_write_blocked_keeps_pending_session() {
     state.markProjectMutated();
 
     const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
-    auto blocked = autosave.update(state, requestedAt + 100U, true);
+    auto blocked = updateAutosave(files, autosave, state, requestedAt + 100U, true);
     assert(blocked.status ==
            core::persistence::ProjectSessionAutosaveService::Status::BLOCKED);
     assert(state.hasPendingProjectSessionSave());
     assertNoCurrentSessionFile();
 
-    auto saved = updateUntilSettled(autosave, state, requestedAt + 101U);
+    auto saved = updateUntilSettled(files, autosave, state, requestedAt + 101U);
     assert(saved.saved());
     assertCurrentSessionNote(files, 63);
 
@@ -260,7 +304,9 @@ void test_pending_live_edit_blocks_session_save_until_flushed() {
 
     assert(state.hasPendingProjectMutationCoalescing());
     const uint32_t firstRequestAt = state.projectSessionSaveTimestampMs();
-    auto blocked = autosave.update(
+    auto blocked = updateAutosave(
+        files,
+        autosave,
         state,
         firstRequestAt + 100U,
         state.hasPendingProjectMutationCoalescing()
@@ -273,7 +319,7 @@ void test_pending_live_edit_blocks_session_save_until_flushed() {
     state.flushProjectMutationCoalescing();
     assert(!state.hasPendingProjectMutationCoalescing());
     const uint32_t flushedRequestAt = state.projectSessionSaveTimestampMs();
-    auto saved = updateUntilSettled(autosave, state, flushedRequestAt + 100U);
+    auto saved = updateUntilSettled(files, autosave, state, flushedRequestAt + 100U);
     assert(saved.saved());
     assert(!state.hasPendingProjectSessionSave());
 
@@ -300,7 +346,7 @@ void test_mutation_during_capture_restarts_from_latest_revision() {
     state.markProjectMutated();
 
     const uint32_t firstRequestAt = state.projectSessionSaveTimestampMs();
-    auto started = autosave.update(state, firstRequestAt + 100U);
+    auto started = updateAutosave(files, autosave, state, firstRequestAt + 100U);
     assert(started.status ==
            core::persistence::ProjectSessionAutosaveService::Status::SAVING);
 
@@ -308,12 +354,12 @@ void test_mutation_during_capture_restarts_from_latest_revision() {
     state.markProjectMutated();
     const uint32_t latestRequestAt = state.projectSessionSaveTimestampMs();
 
-    auto stale = autosave.update(state, latestRequestAt + 99U);
+    auto stale = updateAutosave(files, autosave, state, latestRequestAt + 99U);
     assert(stale.status ==
            core::persistence::ProjectSessionAutosaveService::Status::WAITING);
     assertNoCurrentSessionFile();
 
-    auto saved = updateUntilSettled(autosave, state, latestRequestAt + 100U);
+    auto saved = updateUntilSettled(files, autosave, state, latestRequestAt + 100U);
     assert(saved.saved());
     assert(saved.modifiedCounter == state.project.metadata.modifiedCounter);
     assertCurrentSessionNote(files, 77);
@@ -335,7 +381,9 @@ void test_same_mutation_second_request_invalidates_in_flight_capture() {
     state.markProjectMutated();
     const auto firstToken = state.projectSessionSaveToken();
 
-    const auto started = autosave.update(
+    const auto started = updateAutosave(
+        files,
+        autosave,
         state,
         state.projectSessionSaveTimestampMs() + 100U
     );
@@ -348,7 +396,9 @@ void test_same_mutation_second_request_invalidates_in_flight_capture() {
     assert(secondToken.modifiedCounter == firstToken.modifiedCounter);
     assert(secondToken.requestId == firstToken.requestId + 1U);
 
-    const auto waiting = autosave.update(
+    const auto waiting = updateAutosave(
+        files,
+        autosave,
         state,
         state.projectSessionSaveTimestampMs() + 99U
     );
@@ -358,6 +408,7 @@ void test_same_mutation_second_request_invalidates_in_flight_capture() {
     assertNoCurrentSessionFile();
 
     const auto saved = updateUntilSettled(
+        files,
         autosave,
         state,
         state.projectSessionSaveTimestampMs() + 100U
@@ -393,11 +444,7 @@ void test_equal_counter_project_replacement_cancels_stale_save() {
     assert(project::captureProjectSnapshot(replacementState, replacement));
 
     const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
-    for (uint8_t slice = 0; slice < 7; ++slice) {
-        const auto progress = autosave.update(state, requestedAt + 100U);
-        assert(progress.status ==
-               core::persistence::ProjectSessionAutosaveService::Status::SAVING);
-    }
+    advanceUntilWriteSession(files, autosave, state, requestedAt + 100U);
 
     const auto tmpPath =
         testRoot() / "midi-studio" / "tmp" / "session.current.tmp";
@@ -411,7 +458,9 @@ void test_equal_counter_project_replacement_cancels_stale_save() {
     assert(projectBToken.session != projectAToken.session);
     assert(state.hasPendingProjectSessionSave());
 
-    const auto waiting = autosave.update(
+    const auto waiting = updateAutosave(
+        files,
+        autosave,
         state,
         state.projectSessionSaveTimestampMs() + 99U
     );
@@ -422,6 +471,7 @@ void test_equal_counter_project_replacement_cancels_stale_save() {
     assert(state.hasPendingProjectSessionSave());
 
     const auto saved = updateUntilSettled(
+        files,
         autosave,
         state,
         state.projectSessionSaveTimestampMs() + 100U
@@ -566,16 +616,22 @@ void test_write_block_pauses_an_in_flight_capture() {
     state.markProjectMutated();
 
     const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
-    auto started = autosave.update(state, requestedAt + 100U);
+    auto started = updateAutosave(files, autosave, state, requestedAt + 100U);
     assert(started.status ==
            core::persistence::ProjectSessionAutosaveService::Status::SAVING);
 
-    auto blocked = autosave.update(state, requestedAt + 101U, true);
+    auto blocked = updateAutosave(
+        files,
+        autosave,
+        state,
+        requestedAt + 101U,
+        true
+    );
     assert(blocked.status ==
            core::persistence::ProjectSessionAutosaveService::Status::BLOCKED);
     assertNoCurrentSessionFile();
 
-    auto saved = updateUntilSettled(autosave, state, requestedAt + 102U);
+    auto saved = updateUntilSettled(files, autosave, state, requestedAt + 102U);
     assert(saved.saved());
     assertCurrentSessionNote(files, 66);
 
@@ -596,32 +652,38 @@ void test_mutation_after_tmp_write_discards_the_stale_transaction() {
     state.markProjectMutated();
 
     const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
-    for (uint8_t slice = 0; slice < 7; ++slice) {
-        const auto progress = autosave.update(state, requestedAt + 100U);
-        assert(progress.status ==
-               core::persistence::ProjectSessionAutosaveService::Status::SAVING);
-    }
+    advanceUntilWriteSession(files, autosave, state, requestedAt + 100U);
 
     const auto tmpPath =
         testRoot() / "midi-studio" / "tmp" / "session.current.tmp";
     assert(std::filesystem::is_regular_file(tmpPath));
     assertNoCurrentSessionFile();
-    assert(autosave.writeSessionActive());
+    assert(store.saveCurrentWriteSessionActive());
     assert(files.writeSessionActive());
 
     state.sequencer.setStepDataAt(0, 78, 100, 75);
     state.markProjectMutated();
     const uint32_t latestRequestAt = state.projectSessionSaveTimestampMs();
 
-    const auto waiting = autosave.update(state, latestRequestAt + 99U);
+    const auto waiting = updateAutosave(
+        files,
+        autosave,
+        state,
+        latestRequestAt + 99U
+    );
     assert(waiting.status ==
            core::persistence::ProjectSessionAutosaveService::Status::WAITING);
     assert(!std::filesystem::exists(tmpPath));
     assertNoCurrentSessionFile();
-    assert(!autosave.writeSessionActive());
+    assert(!store.saveCurrentWriteSessionActive());
     assert(!files.writeSessionActive());
 
-    const auto saved = updateUntilSettled(autosave, state, latestRequestAt + 100U);
+    const auto saved = updateUntilSettled(
+        files,
+        autosave,
+        state,
+        latestRequestAt + 100U
+    );
     assert(saved.saved());
     assertCurrentSessionNote(files, 78);
 
@@ -642,23 +704,21 @@ void test_pending_live_edit_aborts_an_in_flight_write() {
     state.markProjectMutated();
 
     const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
-    for (uint8_t slice = 0; slice < 7; ++slice) {
-        const auto progress = autosave.update(state, requestedAt + 100U);
-        assert(progress.status ==
-               core::persistence::ProjectSessionAutosaveService::Status::SAVING);
-    }
+    advanceUntilWriteSession(files, autosave, state, requestedAt + 100U);
 
     const auto tmpPath =
         testRoot() / "midi-studio" / "tmp" / "session.current.tmp";
     assert(std::filesystem::is_regular_file(tmpPath));
-    assert(autosave.writeSessionActive());
+    assert(store.saveCurrentWriteSessionActive());
     assert(files.writeSessionActive());
 
     const auto macros = core::handler::MacroPerformanceDomainServices::fromCoreState(state);
     macros.setManualValue(0, 0.8f);
     assert(state.hasPendingProjectMutationCoalescing());
 
-    const auto blocked = autosave.update(
+    const auto blocked = updateAutosave(
+        files,
+        autosave,
         state,
         requestedAt + 101U,
         state.hasPendingProjectMutationCoalescing()
@@ -666,13 +726,18 @@ void test_pending_live_edit_aborts_an_in_flight_write() {
     assert(blocked.status ==
            core::persistence::ProjectSessionAutosaveService::Status::BLOCKED);
     assert(!std::filesystem::exists(tmpPath));
-    assert(!autosave.writeSessionActive());
+    assert(!store.saveCurrentWriteSessionActive());
     assert(!files.writeSessionActive());
     assert(state.hasPendingProjectSessionSave());
 
     state.flushProjectMutationCoalescing();
     const uint32_t latestRequestAt = state.projectSessionSaveTimestampMs();
-    const auto saved = updateUntilSettled(autosave, state, latestRequestAt + 100U);
+    const auto saved = updateUntilSettled(
+        files,
+        autosave,
+        state,
+        latestRequestAt + 100U
+    );
     assert(saved.saved());
 
     project::ProjectSnapshot loaded;
@@ -698,7 +763,7 @@ void test_modulator_audition_blocks_and_aborts_an_in_flight_autosave() {
     state.markProjectMutated();
 
     const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
-    const auto started = autosave.update(state, requestedAt + 100U);
+    const auto started = updateAutosave(files, autosave, state, requestedAt + 100U);
     assert(started.status ==
            core::persistence::ProjectSessionAutosaveService::Status::SAVING);
 
@@ -706,17 +771,17 @@ void test_modulator_audition_blocks_and_aborts_an_in_flight_autosave() {
     assert(begun.changed());
     assert(state.hasPendingProjectTransaction());
 
-    const auto blocked = autosave.update(state, requestedAt + 101U);
+    const auto blocked = updateAutosave(files, autosave, state, requestedAt + 101U);
     assert(blocked.status ==
            core::persistence::ProjectSessionAutosaveService::Status::BLOCKED);
     assert(state.hasPendingProjectSessionSave());
     assertNoCurrentSessionFile();
-    assert(!autosave.writeSessionActive());
+    assert(!store.saveCurrentWriteSessionActive());
     assert(!files.writeSessionActive());
 
     assert(state.macroHistory.abortPendingModulatorAudition(state.pages));
     assert(!state.hasPendingProjectTransaction());
-    const auto saved = updateUntilSettled(autosave, state, requestedAt + 102U);
+    const auto saved = updateUntilSettled(files, autosave, state, requestedAt + 102U);
     assert(saved.saved());
     assertCurrentSessionNote(files, 71);
 
@@ -795,12 +860,8 @@ void test_destruction_cancels_an_in_flight_write() {
     const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
     {
         core::persistence::ProjectSessionAutosaveService autosave(store, 100);
-        for (uint8_t slice = 0; slice < 7; ++slice) {
-            const auto progress = autosave.update(state, requestedAt + 100U);
-            assert(progress.status ==
-                   core::persistence::ProjectSessionAutosaveService::Status::SAVING);
-        }
-        assert(autosave.writeSessionActive());
+        advanceUntilWriteSession(files, autosave, state, requestedAt + 100U);
+        assert(store.saveCurrentWriteSessionActive());
         assert(files.writeSessionActive());
     }
 
@@ -812,6 +873,337 @@ void test_destruction_cancels_an_in_flight_write() {
     assertNoCurrentSessionFile();
 
     std::cout << "[PASS] test_destruction_cancels_an_in_flight_write\n";
+}
+
+void test_playback_blocks_admission_and_freezes_admitted_work() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto files = makeProductFiles(filesystem);
+    core::persistence::ProjectSessionStore store(files);
+    core::persistence::ProjectSessionAutosaveService autosave(store, 100);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "p023", 83);
+    state.markProjectMutated();
+    const uint32_t dueAt = state.projectSessionSaveTimestampMs() + 100U;
+
+    const auto blocked = updateAutosave(
+        files, autosave, state, dueAt, false, true
+    );
+    assert(blocked.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::BLOCKED);
+    assert(files.persistenceJobs().depth() == 0U);
+    assertNoCurrentSessionFile();
+
+    const auto started = updateAutosave(files, autosave, state, dueAt);
+    assert(started.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    core::persistence::ProductPersistenceJobSnapshot beforeCapturePause{};
+    assert(autosave.inspectPersistenceJob(beforeCapturePause));
+    assert(beforeCapturePause.metrics.advances == 1U);
+
+    for (uint8_t turn = 0U; turn < 8U; ++turn) {
+        const auto paused = updateAutosave(
+            files,
+            autosave,
+            state,
+            dueAt + 1U + turn,
+            false,
+            true
+        );
+        assert(paused.status ==
+               core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    }
+    core::persistence::ProductPersistenceJobSnapshot afterCapturePause{};
+    assert(autosave.inspectPersistenceJob(afterCapturePause));
+    assert(afterCapturePause.metrics.advances ==
+           beforeCapturePause.metrics.advances);
+    assertNoCurrentSessionFile();
+
+    advanceUntilWriteSession(files, autosave, state, dueAt + 10U);
+    core::persistence::ProductPersistenceJobSnapshot beforeWritePause{};
+    assert(autosave.inspectPersistenceJob(beforeWritePause));
+    const auto tmpPath =
+        testRoot() / "midi-studio" / "tmp" / "session.current.tmp";
+    assert(std::filesystem::is_regular_file(tmpPath));
+    const auto bytesBeforePause = std::filesystem::file_size(tmpPath);
+
+    for (uint8_t turn = 0U; turn < 8U; ++turn) {
+        const auto paused = updateAutosave(
+            files,
+            autosave,
+            state,
+            dueAt + 20U + turn,
+            false,
+            true
+        );
+        assert(paused.status ==
+               core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    }
+    core::persistence::ProductPersistenceJobSnapshot afterWritePause{};
+    assert(autosave.inspectPersistenceJob(afterWritePause));
+    assert(afterWritePause.metrics.advances == beforeWritePause.metrics.advances);
+    assert(std::filesystem::file_size(tmpPath) == bytesBeforePause);
+    assert(store.saveCurrentWriteSessionActive());
+
+    const auto saved = updateUntilSettled(
+        files, autosave, state, dueAt + 30U
+    );
+    assert(saved.saved());
+    assertCurrentSessionNote(files, 83);
+
+    std::cout << "[PASS] playback blocks admission and freezes admitted work\n";
+}
+
+void test_admitted_autosave_performs_no_extmem_allocation() {
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto files = makeProductFiles(filesystem);
+    core::persistence::ProjectSessionStore store(files);
+    core::persistence::ProjectSessionAutosaveService autosave(store, 100);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "p024", 84);
+    assert(core::state::sequencer::ensureGraphRoot(state.sequencer.pattern));
+    auto* ccLanes = core::state::sequencer::ensureSequencerCcLaneBank(
+        state.sequencer.pattern
+    );
+    assert(ccLanes != nullptr);
+    core::state::sequencer::SequencerCcLaneDraft ccLane{};
+    ccLane.destination.controller = 74U;
+    assert(core::state::sequencer::createSequencerCcLane(
+        *ccLanes,
+        0U,
+        ccLane
+    ).changed());
+    state.markProjectMutated();
+    const uint32_t dueAt = state.projectSessionSaveTimestampMs() + 100U;
+    auto progress = updateAutosave(files, autosave, state, dueAt);
+    assert(progress.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+
+    for (uint16_t turn = 0U; turn < 384U; ++turn) {
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+            progress = updateAutosave(files, autosave, state, dueAt + turn + 1U);
+            assert(core::app::testing::extmemAllocationAttempt == 0U);
+        }
+        if (progress.status !=
+            core::persistence::ProjectSessionAutosaveService::Status::SAVING) {
+            break;
+        }
+    }
+    assert(progress.saved());
+    assert(files.persistenceJobs().depth() == 0U);
+    assert(files.persistenceJobs().highWater() == 1U);
+    assertCurrentSessionNote(files, 84);
+#endif
+
+    std::cout << "[PASS] admitted autosave performs no EXTMEM allocation\n";
+}
+
+void test_stale_capture_after_durable_mapping_preserves_recovery_evidence() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto files = makeProductFiles(filesystem);
+    core::persistence::ProjectSessionStore store(files);
+    core::persistence::ProjectSessionRestoreService restore(store);
+    core::persistence::ProjectSessionAutosaveService autosave(store, 100);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "p025", 85);
+    state.markProjectMutated();
+    const uint32_t dueAt = state.projectSessionSaveTimestampMs() + 100U;
+    const auto slotA =
+        testRoot() / "midi-studio" / "tmp" / "rpc-product-file-a.journal";
+    const auto slotB =
+        testRoot() / "midi-studio" / "tmp" / "rpc-product-file-b.journal";
+    const auto tmpPath =
+        testRoot() / "midi-studio" / "tmp" / "session.current.tmp";
+
+    bool durableMappingObserved = false;
+    for (uint16_t turn = 0U; turn < 384U; ++turn) {
+        const auto progress = updateAutosave(
+            files, autosave, state, dueAt + turn
+        );
+        assert(progress.status ==
+               core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+        durableMappingObserved = std::filesystem::exists(slotA) ||
+                                 std::filesystem::exists(slotB);
+        if (durableMappingObserved) break;
+    }
+    assert(durableMappingObserved);
+    assert(std::filesystem::exists(tmpPath));
+    assert(files.storageState() ==
+           core::persistence::ProductStorageState::READY);
+
+    state.sequencer.setStepDataAt(0U, 86U, 100U, 75U);
+    state.markProjectMutated();
+    const uint32_t latestDueAt = state.projectSessionSaveTimestampMs() + 100U;
+    const auto waiting = updateAutosave(
+        files, autosave, state, latestDueAt - 1U
+    );
+    assert(waiting.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::WAITING);
+    assert(files.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(std::filesystem::exists(tmpPath));
+    assert(std::filesystem::exists(slotA) || std::filesystem::exists(slotB));
+    assertNoCurrentSessionFile();
+
+    const auto recovered =
+        core::persistence::ProductStorageRecoveryService::reconcile(
+            files,
+            restore,
+            autosave,
+            state,
+            core::persistence::ProductStorageRecoveryMode::HOT_SWAP
+        );
+    assert(recovered.recovered());
+    assert(files.storageState() ==
+           core::persistence::ProductStorageState::READY);
+    assert(!state.hasPendingProjectSessionSave());
+    assertCurrentSessionNote(files, 86U);
+
+    std::cout
+        << "[PASS] stale durable mapping preserves and reconciles evidence\n";
+}
+
+void test_encode_advance_is_finite_measured_and_io_free() {
+    resetTestRoot();
+    g_slow_micros = 0U;
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto files = makeProductFiles(filesystem);
+    core::persistence::ProjectSessionStore store(files);
+    core::persistence::ProjectSessionAutosaveService autosave(
+        store,
+        100U,
+        &slowMicros
+    );
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "p026", 87U);
+    state.markProjectMutated();
+    const uint32_t dueAt = state.projectSessionSaveTimestampMs() + 100U;
+
+    bool encodeObserved = false;
+    core::persistence::ProjectSessionAutosaveService::Result progress{};
+    for (uint16_t turn = 0U; turn < 384U; ++turn) {
+        progress = updateAutosave(files, autosave, state, dueAt + turn);
+        core::persistence::ProductPersistenceJobSnapshot snapshot{};
+        if (autosave.inspectPersistenceJob(snapshot) &&
+            snapshot.quota.maxBytes() ==
+                core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROJECT_ENCODE.maxBytes() &&
+            snapshot.metrics.advances != 0U) {
+            encodeObserved = true;
+            assert(snapshot.lastUsage.bytes > 0U);
+            assert(snapshot.lastUsage.bytes <= 512U * 1024U);
+            assert(snapshot.lastUsage.filesystemCalls == 0U);
+            assert(snapshot.lastUsage.allocations == 0U);
+            assert(snapshot.lastUsage.wallMicros >
+                   core::persistence::PRODUCT_PERSISTENCE_SOFT_ADVANCE_WALL_MICROS);
+            assert(snapshot.wallOverruns > 0U);
+        }
+        if (progress.status !=
+            core::persistence::ProjectSessionAutosaveService::Status::SAVING) {
+            break;
+        }
+    }
+    assert(encodeObserved);
+    assert(progress.saved());
+    assertCurrentSessionNote(files, 87U);
+
+    std::cout << "[PASS] encode advance is finite, measured and I/O-free\n";
+}
+
+void test_stale_save_waits_for_its_foreground_turn_before_unwind() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto files = makeProductFiles(filesystem);
+    core::persistence::ProjectSessionStore store(files);
+    core::persistence::ProjectSessionAutosaveService autosave(store, 100U);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "p027", 88U);
+    state.markProjectMutated();
+    const uint32_t dueAt = state.projectSessionSaveTimestampMs() + 100U;
+
+    for (uint16_t turn = 0U; turn < 192U && !store.saveCurrentInProgress(); ++turn) {
+        const auto progress = updateAutosave(files, autosave, state, dueAt + turn);
+        assert(progress.status ==
+               core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    }
+    assert(store.saveCurrentInProgress());
+    assert(!store.saveCurrentWriteSessionActive());
+
+    // Advance PREPARE so cancellation has real filesystem-owned state to
+    // unwind, while the autosave is still at a declared safe yield.
+    const auto prepared = updateAutosave(files, autosave, state, dueAt + 193U);
+    assert(prepared.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    assert(store.saveCurrentStage() == core::persistence::ProjectSaveStage::ENCODE);
+    core::persistence::ProductPersistenceJobSnapshot autosaveBeforePreemption{};
+    assert(autosave.inspectPersistenceJob(autosaveBeforePreemption));
+    assert(autosaveBeforePreemption.safeYield);
+    assert(autosaveBeforePreemption.lastUsage.filesystemCalls > 0U);
+
+    auto& jobs = files.persistenceJobs();
+    auto admittedRecovery = jobs.admit({
+        .owner = core::persistence::ProductPersistenceJobOwner::STORAGE_RECOVERY,
+        .nowMs = dueAt + 194U,
+        .quota = core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE,
+    });
+    assert(admittedRecovery);
+    auto recovery = std::move(admittedRecovery.value());
+    assert(jobs.depth() == 2U);
+
+    assert(jobs.beginTurn(dueAt + 194U));
+    assert(jobs.isActive(recovery));
+    assert(jobs.prepareAdvance(
+        recovery,
+        core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
+    ));
+    assert(jobs.claimAdvance(recovery, dueAt + 194U));
+    assert(jobs.finishAdvance(recovery, {}, true));
+
+    state.sequencer.setStepDataAt(0U, 89U, 100U, 75U);
+    state.markProjectMutated();
+    const auto pendingToken = state.projectSessionSaveToken();
+
+    // The recovery job already consumed this pass. Observing staleness may
+    // latch cancellation, but it must not touch the transaction or filesystem.
+    const auto deferredCancel = autosave.update(state, dueAt + 194U);
+    assert(deferredCancel.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::WAITING);
+    assert(state.projectSessionSaveTokenMatches(pendingToken));
+    assert(store.saveCurrentInProgress());
+    assert(jobs.depth() == 2U);
+
+    assert(jobs.complete(recovery));
+    assert(jobs.depth() == 1U);
+    assert(jobs.beginTurn(dueAt + 195U));
+
+    const auto cancelled = autosave.update(state, dueAt + 195U);
+    assert(cancelled.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::WAITING);
+    assert(state.projectSessionSaveTokenMatches(pendingToken));
+    assert(!store.saveCurrentInProgress());
+    assert(jobs.depth() == 0U);
+    assert(state.hasPendingProjectSessionSave());
+    assertNoCurrentSessionFile();
+
+    std::cout << "[PASS] stale save waits for its own foreground unwind turn\n";
 }
 
 }  // namespace
@@ -838,6 +1230,11 @@ int main() {
     test_flush_refuses_an_active_modulator_audition();
     test_flush_writes_without_waiting();
     test_destruction_cancels_an_in_flight_write();
+    test_playback_blocks_admission_and_freezes_admitted_work();
+    test_admitted_autosave_performs_no_extmem_allocation();
+    test_stale_capture_after_durable_mapping_preserves_recovery_evidence();
+    test_encode_advance_is_finite_measured_and_io_free();
+    test_stale_save_waits_for_its_foreground_turn_before_unwind();
 
     resetTestRoot();
 

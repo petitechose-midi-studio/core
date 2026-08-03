@@ -335,8 +335,8 @@ private:
         const ProductPersistenceWorkUsage& usage,
         const ProductPersistenceWorkQuota& quota
     ) const;
-    bool preferDeferred_(uint32_t nowMs) const;
-    void rebalance_(uint32_t nowMs);
+    bool preferDeferred_() const;
+    void rebalance_();
     void updateMetrics_(Record& record, const ProductPersistenceWorkUsage& usage);
     void releaseRecord_(Record& record);
 

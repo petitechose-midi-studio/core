@@ -488,6 +488,30 @@ bool captureHistorySnapshot(const SequencerTrackBankState& bank, const Sequencer
 bool reserveHistoryTrackBankSnapshotStorage(const SequencerTrackBankState& bank,
                                             const SequencerState& active,
                                             SequencerHistoryTrackBankSnapshot& snapshot);
+// Allocation-free slices used by cooperative Project capture. Reservation must
+// have completed before the first slice. Graph and flat/CC payloads are split
+// so no single Track copy exceeds the frozen 16 KiB foreground quota.
+bool captureHistoryTrackBankGraphUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryTrackBankSnapshot& out,
+    uint32_t* bytesCopied = nullptr
+);
+bool captureHistoryTrackBankDataUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex,
+    SequencerHistoryTrackBankSnapshot& out,
+    uint32_t* bytesCopied = nullptr
+);
+bool finalizeHistoryTrackBankSnapshotUsingReservedStorage(
+    const SequencerTrackBankState& bank,
+    uint8_t frozenActiveTrack,
+    uint8_t frozenFocusedStep,
+    StepProperty frozenActiveStepProperty,
+    SequencerHistoryTrackBankSnapshot& out
+);
 // The active editor is canonical. These FullBank helpers freeze its Track
 // identity and deliberately keep the corresponding bank Graph/CC slots empty;
 // that slot is noncanonical scratch even when legacy synchronization has

@@ -438,6 +438,7 @@ void test_hotswap_recovery_is_stopped_only_and_cooperative() {
                 state
             );
         }
+        usage.bytes += plan->lastWorkBytes();
         assert(usage.bytes <= quota.maxBytes());
         if (usage.filesystemCalls > quota.maxFilesystemCalls()) {
             std::cerr << "recovery quota mismatch turn=" << turns

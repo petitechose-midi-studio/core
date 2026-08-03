@@ -21,6 +21,9 @@ struct ProjectSaveProgress {
     ProjectSaveStage completedStage = ProjectSaveStage::PREPARE;
     bool complete = false;
     uint32_t bytesWritten = 0;
+    // Logical non-filesystem bytes consumed by this advance. Filesystem bytes
+    // are measured directly by ProductFileService and must not be duplicated.
+    uint32_t workBytes = 0;
 };
 
 /**

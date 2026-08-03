@@ -963,9 +963,9 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (coordinator, r"sizeof\(ProductMutationLease\)\s*==\s*4", "lease must remain 4 B"),
         (coordinator, r"sizeof\(ProductPersistenceCoordinator\)\s*==\s*20", "coordinator must remain 20 B"),
         (job_coordinator, r"sizeof\(ProductPersistenceJobCoordinator\)\s*<=\s*128U", "job coordinator must remain at most 128 B"),
-        (service_header, r"sizeof\(ProductFileService\)\s*==\s*156U", "file service must remain 156 B on ARM"),
-        (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*48U", "Project save must remain 48 B on ARM"),
-        (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*60U", "session store must remain 60 B on ARM"),
+        (service_header, r"sizeof\(ProductFileService\)\s*==\s*160U", "file service must remain 160 B on ARM"),
+        (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*52U", "Project save must remain 52 B on ARM"),
+        (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*64U", "session store must remain 64 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*276U", "RPC write session must remain 276 B on ARM"),
         (rpc_header, r"sizeof\(FileSystemRpcHandler\)\s*==\s*300U", "RPC handler must remain 300 B on ARM"),
         (service_header, r"ProductPersistenceCoordinator\s+coordinator_\s*\{\s*\}", "file service must embed exactly one coordinator"),
@@ -991,9 +991,14 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
             r"Result<void>::ok\s*\(\s*\).*?coordinator_\.requireRecovery",
             "backend retry must leave ABSENT admission to beginRecovery",
         ),
-        (main_source, r"productFileService->markMediaUnavailable\s*\(", "runtime sampling must invalidate observed removal"),
     ):
         require(rel, pattern, description)
+    require(
+        main_source,
+        r"productFileService->markMediaUnavailable\s*\(",
+        "active recovery and runtime sampling must invalidate observed removal",
+        count=2,
+    )
     require(
         main_source,
         r"productFileService->initForRecovery\s*\(",
@@ -1009,8 +1014,35 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     require(
         main_source,
         r"storageRecovery\.reconcileBoot\s*\(",
-        "firmware boot and its retry must use unified recovery",
+        "firmware boot must use unified recovery",
+        count=1,
+    )
+    require(
+        main_source,
+        r"recovery_plan_->begin\s*\(",
+        "boot and hot-swap recovery must share the cooperative plan",
         count=2,
+    )
+    require(
+        recovery_source,
+        r"ordinary_\.begin\s*\(\s*files\s*,\s*lease_\s*\)",
+        "cooperative recovery must begin ordinary journal replay with the exact lease",
+    )
+    require(
+        recovery_source,
+        r"ordinary_\.advance\s*\(\s*files\s*,\s*lease_\s*\)",
+        "cooperative recovery must advance ordinary journal replay with the exact lease",
+    )
+    require(
+        recovery_source,
+        r"autosaveService\.beginRecovery\s*\(\s*state\s*,\s*lease_\s*\)",
+        "boot and hot-swap recovery must bind the RAM session save to the exact lease",
+        count=2,
+    )
+    require(
+        recovery_source,
+        r"autosaveService\.advanceRecovery\s*\(\s*state\s*,\s*lease_\s*\)",
+        "cooperative RAM session save must advance with the exact recovery lease",
     )
     require(
         main_source,
@@ -1149,24 +1181,25 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
 
     recovery_bodies = cpp_function_bodies(
         files.get(recovery_source, ""),
-        "ProductStorageRecoveryService::reconcile",
+        "ProductStorageRecoveryPlan::advance",
     )
     if len(recovery_bodies) != 1:
         errors.append(
-            f"{recovery_source}: reconcile must have one balanced definition "
+            f"{recovery_source}: recovery plan advance must have one balanced definition "
             f"(found {len(recovery_bodies)})"
         )
     else:
         body = cpp_code_mask(recovery_bodies[0])
         ordered_markers = (
-            "files.beginRecovery(",
-            "files.ensureLayout(lease)",
-            "recoverPendingProductFileTransaction(files, lease)",
-            "conditional::recoverPendingMutation(",
-            "restoreService.restore(state, lease)",
-            "state.recoverSettingsFromRamAfterStorageReopen()",
-            "autosaveService.flushRecovery(state, lease)",
-            "files.completeRecovery(lease, true)",
+            "case Step::ENSURE_LAYOUT:",
+            "case Step::BEGIN_ORDINARY:",
+            "case Step::ADVANCE_ORDINARY:",
+            "case Step::LOAD_CONDITIONAL:",
+            "case Step::RESTORE_BOOT_SESSION:",
+            "case Step::RECONCILE_SETTINGS:",
+            "case Step::BEGIN_SESSION_SAVE:",
+            "case Step::ADVANCE_SESSION_SAVE:",
+            "case Step::COMPLETE_RECOVERY:",
         )
         positions = [body.find(marker) for marker in ordered_markers]
         if any(position < 0 for position in positions) or positions != sorted(positions):
@@ -4216,14 +4249,14 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
     )
     recovery_without_exact_session_save = mutate(
         "src/persistence/ProductStorageRecoveryService.cpp",
-        "autosaveService.flushRecovery(state, lease)",
+        "autosaveService.beginRecovery(state, lease_)",
         "autosaveService.flush(state)",
     )
     recovery_sampling_paused_by_stream = mutate(
         "main.cpp",
         "            storageRecovery.update(\n"
         "                persistenceNowMs,\n"
-        "                coreState->statusBar.playing.get()\n"
+        "                playbackActive\n"
         "            );",
         "            if (!productFileWriteActive) {\n"
         "                storageRecovery.update(\n"
@@ -4268,8 +4301,8 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
     )
     recovery_omits_ordinary_mapping = mutate(
         "src/persistence/ProductStorageRecoveryService.cpp",
-        "recoverPendingProductFileTransaction(files, lease)",
-        "skipPendingProductFileTransaction(files, lease)",
+        "ordinary_.begin(files, lease_)",
+        "ordinary_.skip(files, lease_)",
     )
     conditional_bypasses_durable_promotion = mutate(
         "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp",

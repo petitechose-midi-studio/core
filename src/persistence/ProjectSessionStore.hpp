@@ -18,6 +18,8 @@ public:
     ProjectSessionStore& operator=(ProjectSessionStore&&) = delete;
 
     bool prepareWorkspace();
+    ProductFileService& productFiles() { return files_; }
+    const ProductFileService& productFiles() const { return files_; }
 
     oc::type::Result<ProjectSaveResult> saveCurrent(
         const core::state::project::ProjectSnapshot& snapshot
