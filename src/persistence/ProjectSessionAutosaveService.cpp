@@ -118,6 +118,95 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::fl
     return result;
 }
 
+FLASHMEM ProjectSessionAutosaveService::Result
+ProjectSessionAutosaveService::flushRecovery(
+    core::state::CoreState& state,
+    const ProductMutationLease& recoveryLease
+) {
+    // Recovery is synchronous and highest-integrity. Discard any capture/save
+    // tied to the removed medium, then bind a fresh snapshot to the exact live
+    // RAM identity before using the caller's sole RECOVERY lease.
+    cancelInFlight_();
+    if (state.hasPendingProjectTransaction()) {
+        return Result{.status = Status::BLOCKED};
+    }
+    if (!snapshot_) {
+        return Result{.status = Status::CAPTURE_FAILED};
+    }
+
+    const auto requestedToken = state.requestProjectSessionSave();
+    if (!state.hasPendingProjectSessionSave() ||
+        !state.projectSessionSaveTokenMatches(requestedToken) ||
+        !capture_.begin(state, *snapshot_)) {
+        capture_.cancel();
+        return Result{
+            .status = Status::CAPTURE_FAILED,
+            .modifiedCounter = requestedToken.modifiedCounter,
+        };
+    }
+
+    core::state::project::ProjectSnapshotCapture::Progress progress{};
+    do {
+        progress = capture_.advance();
+        if (progress.status ==
+            core::state::project::ProjectSnapshotCapture::Status::STALE) {
+            return Result{
+                .status = Status::WAITING,
+                .modifiedCounter = progress.modifiedCounter,
+            };
+        }
+        if (progress.status ==
+                core::state::project::ProjectSnapshotCapture::Status::FAILED ||
+            progress.status ==
+                core::state::project::ProjectSnapshotCapture::Status::IDLE) {
+            capture_.cancel();
+            return Result{
+                .status = Status::CAPTURE_FAILED,
+                .modifiedCounter = progress.modifiedCounter,
+            };
+        }
+    } while (progress.status ==
+             core::state::project::ProjectSnapshotCapture::Status::IN_PROGRESS);
+
+    const auto* guard = capture_.guard();
+    if (progress.status !=
+            core::state::project::ProjectSnapshotCapture::Status::COMPLETE ||
+        guard == nullptr || !capture_.complete() ||
+        !state.projectSessionSaveTokenMatches(guard->token)) {
+        capture_.cancel();
+        return Result{
+            .status = Status::WAITING,
+            .modifiedCounter = requestedToken.modifiedCounter,
+        };
+    }
+
+    const auto capturedToken = guard->token;
+    auto saved = store_.saveCurrent(*snapshot_, recoveryLease);
+    if (!saved) {
+        capture_.cancel();
+        return Result{
+            .status = Status::SAVE_FAILED,
+            .modifiedCounter = capturedToken.modifiedCounter,
+        };
+    }
+
+    const uint32_t bytesWritten = saved.value().bytesWritten;
+    if (!state.acknowledgeProjectSessionSave(capturedToken)) {
+        capture_.cancel();
+        return Result{
+            .status = Status::WAITING,
+            .bytes = bytesWritten,
+            .modifiedCounter = capturedToken.modifiedCounter,
+        };
+    }
+    capture_.cancel();
+    return Result{
+        .status = Status::SAVED,
+        .bytes = bytesWritten,
+        .modifiedCounter = capturedToken.modifiedCounter,
+    };
+}
+
 FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::startCapture_(
     core::state::CoreState& state
 ) {

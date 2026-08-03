@@ -300,17 +300,23 @@ public:
 
 private:
     static constexpr size_t PATH_BUFFER_SIZE = oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1;
+    static constexpr size_t GENERATED_PATH_BUFFER_SIZE = 32;
+    static constexpr uint32_t CONDITIONAL_RECOVERY_RETRY_MS = 500;
 
     struct WriteSession {
-        bool active = false;
-        uint16_t sessionId = 0;
         uint32_t expectedSize = 0;
         uint32_t writtenBytes = 0;
         uint32_t lastActivityMs = 0;
+        core::persistence::ProductMutationLease lease{};
+        uint16_t sessionId = 0;
         char finalPath[PATH_BUFFER_SIZE] = {};
-        char tmpPath[PATH_BUFFER_SIZE] = {};
-        char backupPath[PATH_BUFFER_SIZE] = {};
+        char tmpPath[GENERATED_PATH_BUFFER_SIZE] = {};
+        char backupPath[GENERATED_PATH_BUFFER_SIZE] = {};
     };
+
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+    static_assert(sizeof(WriteSession) == 276U, "filesystem RPC write lease ABI drift");
+#endif
 
     oc::type::Result<size_t> handleStat_(const FileSystemRpcFrame& frame,
                                          uint8_t* response,
@@ -348,9 +354,11 @@ private:
                                            uint8_t* response,
                                            size_t responseSize);
     oc::type::Result<size_t> handleConditionalReplace_(const FileSystemRpcFrame& frame,
+                                                       uint32_t nowMs,
                                                        uint8_t* response,
                                                        size_t responseSize);
     oc::type::Result<size_t> handleConditionalDelete_(const FileSystemRpcFrame& frame,
+                                                      uint32_t nowMs,
                                                       uint8_t* response,
                                                       size_t responseSize);
     oc::type::Result<size_t> encodeError_(uint16_t requestId,
@@ -360,17 +368,26 @@ private:
 
     void expireWriteSession_(uint32_t nowMs);
     void clearWriteSession_();
+    oc::type::Result<void> releaseWriteSession_();
     bool copySessionPath_(const char* path, uint16_t sessionId);
     FileSystemRpcStatus recoverConditionalMutation_();
+    bool conditionalRecoveryDue_(uint32_t nowMs) const;
+    void updateConditionalRecovery_(uint32_t nowMs);
 
     core::persistence::ProductFileService& files_;
     Config config_;
     WriteSession writeSession_{};
-    bool conditionalRecoveryChecked_ = false;
+    core::persistence::ProductStorageIdentity conditionalRecoveryIdentity_{};
+    uint32_t conditionalRecoveryRetryAtMs_ = 0;
     FileSystemRpcConditionalRecoveryState conditionalRecoveryState_ =
         FileSystemRpcConditionalRecoveryState::NOT_CHECKED;
     FileSystemRpcStatus conditionalRecoveryStatus_ = FileSystemRpcStatus::OK;
 };
+
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+static_assert(sizeof(FileSystemRpcHandler) == 300U, "filesystem RPC handler exceeds LOCK-S");
+static_assert(alignof(FileSystemRpcHandler) == 4U, "filesystem RPC handler alignment drift");
+#endif
 
 class FileSystemRpcEndpoint {
 public:

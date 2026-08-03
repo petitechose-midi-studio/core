@@ -36,6 +36,7 @@
 #include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
+#include "../support/ProductFileTestMutation.hpp"
 
 namespace {
 
@@ -261,10 +262,12 @@ void writeFutureSequencerProjectFile(ProjectHandlerHarness& h, const char* id) {
     char path[96] = {};
     const int pathLength = std::snprintf(path, sizeof(path), "projects/%s.mspj", id);
     assert(pathLength > 0 && static_cast<size_t>(pathLength) < sizeof(path));
-    const auto written = h.productFiles.write(path, 0, bytes, encoded.bytesWritten);
+    const auto written = core::test::writeProductFileFixture(
+        h.productFiles, path, 0, bytes, encoded.bytesWritten
+    );
     assert(written);
     assert(written.value() == encoded.bytesWritten);
-    assert(h.productFiles.flush(path));
+    assert(core::test::flushProductFileFixture(h.productFiles, path));
 }
 
 void moveProjectNameKeyboardRows(ProjectHandlerHarness& h, int rowsDown) {

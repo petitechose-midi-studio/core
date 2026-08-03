@@ -48,6 +48,25 @@
  * inline helper may be emitted by more than one persistence translation unit. */
 *(.text._ZN4core11persistence20ProjectFileWorkspace7prepareEv*)
 
+/* Persistence coordination, file transactions, filesystem RPC and full media
+ * reconciliation execute only at explicit storage, boot, or hot-swap
+ * boundaries.  They are never part of audio, MIDI publication, automation,
+ * sequencer tick, or retained UI rendering.  Keep both their compiler-emitted
+ * helpers and constant tables in cached Flash; only the tiny sampling gate in
+ * main remains eligible for ITCM. */
+*(.text.*StorageRecoveryRuntimeManager*)
+*AtomicProductFile.cpp.o(.text* .rodata*)
+*ProductAssetFileStore.cpp.o(.text* .rodata*)
+*ProductFileService.cpp.o(.text* .rodata*)
+*ProductPersistenceCoordinator.cpp.o(.text* .rodata*)
+*ProductStorageRecoveryService.cpp.o(.text* .rodata*)
+*ProjectFileTransactions.cpp.o(.text* .rodata*)
+*ProjectSaveTransaction.cpp.o(.text* .rodata*)
+*ProjectSessionRestoreService.cpp.o(.text* .rodata*)
+*ProjectSessionStore.cpp.o(.text* .rodata*)
+*StorageRecoveryMachine.cpp.o(.text* .rodata*)
+*FileSystemRpc*.cpp.o(.text* .rodata*)
+
 /* Snapshot batches and their compiler-emitted Graph/Signal helpers are used by
  * authored History transactions, never playback. Keep COMDAT selection from
  * moving these cold accessors into ITCM as callsites evolve. */

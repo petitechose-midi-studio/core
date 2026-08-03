@@ -17,11 +17,13 @@ struct AtomicProductFilePaths {
 
 oc::type::Result<void> deleteProductFileIfExists(
     ProductFileService& files,
+    const ProductMutationLease& lease,
     const char* path
 );
 
 oc::type::Result<void> writeProductFileTemp(
     ProductFileService& files,
+    const ProductMutationLease& lease,
     const char* tmpPath,
     const uint8_t* data,
     uint32_t size,
@@ -30,6 +32,7 @@ oc::type::Result<void> writeProductFileTemp(
 
 oc::type::Result<void> commitProductFileTemp(
     ProductFileService& files,
+    const ProductMutationLease& lease,
     const char* current,
     const char* backup,
     const char* tmp
@@ -37,6 +40,7 @@ oc::type::Result<void> commitProductFileTemp(
 
 oc::type::Result<void> replaceProductFileAtomically(
     ProductFileService& files,
+    const ProductMutationLease& lease,
     AtomicProductFilePaths paths,
     const uint8_t* data,
     uint32_t size,
@@ -45,6 +49,7 @@ oc::type::Result<void> replaceProductFileAtomically(
 
 oc::type::Result<bool> recoverProductFileBackupIfCurrentMissing(
     ProductFileService& files,
+    const ProductMutationLease& lease,
     const char* current,
     const char* backup
 );

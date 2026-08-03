@@ -12,6 +12,7 @@
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/ProductFileTestMutation.hpp"
 
 namespace {
 
@@ -136,7 +137,9 @@ void test_corrupt_session_reports_degraded_and_keeps_runtime() {
     core::persistence::ProductFileService files(filesystem);
     assert(files.init());
     const uint8_t corrupt[] = {'b', 'a', 'd'};
-    assert(files.write("session/current.mspj", 0, corrupt, sizeof(corrupt)));
+    assert(core::test::writeProductFileFixture(
+        files, "session/current.mspj", 0, corrupt, sizeof(corrupt)
+    ));
     core::persistence::ProjectSessionStore store(files);
 
     test_support::CoreStorages storages;

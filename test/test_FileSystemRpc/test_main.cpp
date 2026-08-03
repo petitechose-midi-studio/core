@@ -10,7 +10,10 @@
 #include <oc/interface/ITransport.hpp>
 
 #include "../../src/persistence/ProductFileService.hpp"
+#include "../support/ProductFileTestMutation.hpp"
 #include "../../src/protocol/filesystem/FileSystemRpc.hpp"
+#include "../../src/protocol/filesystem/FileSystemRpcConditionalTransaction.hpp"
+#include "../../src/protocol/filesystem/FileSystemRpcInternal.hpp"
 
 namespace {
 
@@ -189,6 +192,31 @@ void assertProductFileEquals(
     }
 }
 
+void assertProductReadBlocked(
+    ProductFileService& service,
+    const char* path
+) {
+    const auto info = service.stat(path);
+    assert(!info);
+    assert(info.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+}
+
+void completeExternalProductRecovery(ProductFileService& service) {
+    auto acquired = service.beginRecovery();
+    assert(acquired);
+    auto lease = std::move(acquired.value());
+    assert(service.ensureLayout(lease));
+    bool quarantined = false;
+    assert(
+        core::protocol::filesystem::conditional_mutation::recoverPendingMutation(
+            service,
+            lease,
+            quarantined
+        ) == FileSystemRpcStatus::OK
+    );
+    assert(service.completeRecovery(lease, true));
+}
+
 void assertCorruptJournalIsQuarantinedOnce(
     const uint8_t* journal,
     size_t journalSize
@@ -199,31 +227,36 @@ void assertCorruptJournalIsQuarantinedOnce(
     static constexpr uint8_t backupData[] = {'b', 'a', 'c', 'k', 'u', 'p'};
     static constexpr uint8_t stagingData[] = {'s', 't', 'a', 'g', 'e'};
     static constexpr uint8_t staleEvidence[] = {'o', 'l', 'd'};
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "projects/preserved.bin",
         0,
         projectData,
         sizeof(projectData)
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/rpc-conditional.backup",
         0,
         backupData,
         sizeof(backupData)
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/user-step-preset-stage.mssp",
         0,
         stagingData,
         sizeof(stagingData)
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH,
         0,
         staleEvidence,
         sizeof(staleEvidence)
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/rpc-conditional.journal",
         0,
         journal,
@@ -529,7 +562,9 @@ void test_stat_and_read_roundtrip() {
     Harness h;
 
     const uint8_t payload[] = {'p', 'r', 'o', 'j', 'e', 'c', 't'};
-    auto written = h.service.write("projects/demo.bin", 0, payload, sizeof(payload));
+    auto written = core::test::writeProductFileFixture(
+        h.service, "projects/demo.bin", 0, payload, sizeof(payload)
+    );
     assert(written);
 
     size_t requestSize = FileSystemRpcCodec::encodeStatRequest(
@@ -601,9 +636,9 @@ void test_list_is_paginated_and_bounded() {
     Harness h;
 
     const uint8_t byte = 1;
-    assert(h.service.write("projects/a.bin", 0, &byte, 1));
-    assert(h.service.write("projects/b.bin", 0, &byte, 1));
-    assert(h.service.write("projects/c.bin", 0, &byte, 1));
+    assert(core::test::writeProductFileFixture(h.service, "projects/a.bin", 0, &byte, 1));
+    assert(core::test::writeProductFileFixture(h.service, "projects/b.bin", 0, &byte, 1));
+    assert(core::test::writeProductFileFixture(h.service, "projects/c.bin", 0, &byte, 1));
 
     const size_t requestSize = FileSystemRpcCodec::encodeListRequest(
         11,
@@ -901,7 +936,9 @@ void test_write_commit_restores_previous_file_when_promotion_fails() {
 
     const uint8_t previous[] = {'o', 'l', 'd'};
     const uint8_t replacement[] = {'n', 'e', 'w'};
-    assert(service.write("projects/rollback.bin", 0, previous, sizeof(previous)));
+    assert(core::test::writeProductFileFixture(
+        service, "projects/rollback.bin", 0, previous, sizeof(previous)
+    ));
     filesystem.failTmpPromotion = true;
 
     assert(writeFileViaRpc(
@@ -933,7 +970,9 @@ void test_write_commit_retains_backup_when_rollback_fails() {
 
     const uint8_t previous[] = {'s', 'a', 'f', 'e'};
     const uint8_t replacement[] = {'n', 'e', 'w'};
-    assert(service.write("projects/backup-retained.bin", 0, previous, sizeof(previous)));
+    assert(core::test::writeProductFileFixture(
+        service, "projects/backup-retained.bin", 0, previous, sizeof(previous)
+    ));
     filesystem.failTmpPromotion = true;
     filesystem.failBackupRestore = true;
 
@@ -1086,7 +1125,9 @@ void test_file_management_operations() {
     assert(folder.value().type == oc::interface::FileType::DIRECTORY);
 
     const uint8_t payload[] = {'r', 'p', 'c'};
-    assert(h.service.write("projects/rpc-folder/source.bin", 0, payload, sizeof(payload)));
+    assert(core::test::writeProductFileFixture(
+        h.service, "projects/rpc-folder/source.bin", 0, payload, sizeof(payload)
+    ));
 
     requestSize = FileSystemRpcCodec::encodeRenameRequest(
         48,
@@ -1141,16 +1182,89 @@ void test_file_management_operations() {
     std::cout << "[PASS] test_file_management_operations\n";
 }
 
+void test_storage_gate_maps_busy_exhausted_absent_and_io_failures() {
+    using core::protocol::filesystem::internal::mapError;
+    using oc::type::Error;
+    using oc::type::ErrorCode;
+
+    assert(mapError(Error{ErrorCode::HARDWARE_BUSY, "busy"}) ==
+           FileSystemRpcStatus::BUSY);
+    assert(mapError(Error{ErrorCode::RESOURCE_EXHAUSTED, "exhausted"}) ==
+           FileSystemRpcStatus::TOO_LARGE);
+    assert(mapError(Error{ErrorCode::HARDWARE_NOT_FOUND, "absent"}) ==
+           FileSystemRpcStatus::STORAGE_ERROR);
+    assert(mapError(Error{ErrorCode::HARDWARE_INIT_FAILED, "init"}) ==
+           FileSystemRpcStatus::STORAGE_ERROR);
+    assert(mapError(Error{ErrorCode::HARDWARE_TIMEOUT, "timeout"}) ==
+           FileSystemRpcStatus::STORAGE_ERROR);
+    assert(mapError(Error{ErrorCode::STORAGE_WRITE_FAILED, "write"}) ==
+           FileSystemRpcStatus::STORAGE_ERROR);
+
+    resetTestRoot();
+    Harness busyHarness;
+    auto heldResult = busyHarness.service.acquireMutation(
+        core::persistence::ProductMutationOwner::ASSET
+    );
+    assert(heldResult);
+    auto held = std::move(heldResult.value());
+    size_t requestSize = FileSystemRpcCodec::encodeStatRequest(
+        58,
+        "projects/busy.bin",
+        busyHarness.request,
+        sizeof(busyHarness.request)
+    );
+    size_t responseSize = busyHarness.transact(requestSize, 0);
+    auto blocked = FileSystemRpcCodec::decodeStatusResponse(
+        busyHarness.response,
+        responseSize
+    );
+    assert(blocked && blocked.value().status == FileSystemRpcStatus::BUSY);
+    assert(busyHarness.service.releaseMutation(held));
+
+    resetTestRoot();
+    Harness absentHarness;
+    absentHarness.service.markMediaUnavailable();
+    requestSize = FileSystemRpcCodec::encodeStatRequest(
+        59,
+        "projects/absent.bin",
+        absentHarness.request,
+        sizeof(absentHarness.request)
+    );
+    responseSize = absentHarness.transact(requestSize, 0);
+    const auto absent = FileSystemRpcCodec::decodeStatusResponse(
+        absentHarness.response,
+        responseSize
+    );
+    assert(absent && absent.value().status == FileSystemRpcStatus::STORAGE_ERROR);
+
+    requestSize = FileSystemRpcCodec::encodeCapabilitiesRequest(
+        60,
+        absentHarness.request,
+        sizeof(absentHarness.request)
+    );
+    responseSize = absentHarness.transact(requestSize, 1);
+    const auto capabilities = FileSystemRpcCodec::decodeCapabilitiesResponse(
+        absentHarness.response,
+        responseSize
+    );
+    assert(capabilities && capabilities.value().status == FileSystemRpcStatus::OK);
+
+    std::cout
+        << "[PASS] test_storage_gate_maps_busy_exhausted_absent_and_io_failures\n";
+}
+
 void test_conditional_replace_is_cas_and_idempotent() {
     resetTestRoot();
     Harness h;
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "library/step-presets/demo.mssp",
         0,
         reinterpret_cast<const uint8_t*>("old"),
         3
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/step-preset-stage.mssp",
         0,
         reinterpret_cast<const uint8_t*>("new"),
@@ -1210,13 +1324,15 @@ void test_conditional_replace_is_cas_and_idempotent() {
 void test_conditional_replace_rejects_source_and_staging_mismatch() {
     resetTestRoot();
     Harness h;
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "library/step-presets/demo.mssp",
         0,
         reinterpret_cast<const uint8_t*>("old"),
         3
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/step-preset-stage.mssp",
         0,
         reinterpret_cast<const uint8_t*>("tampered"),
@@ -1272,7 +1388,8 @@ void test_conditional_replace_rejects_source_and_staging_mismatch() {
 void test_conditional_replace_rejects_case_alias_of_same_fat_path() {
     resetTestRoot();
     Harness h;
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/conditional-alias.mssp",
         0,
         reinterpret_cast<const uint8_t*>("new"),
@@ -1316,7 +1433,8 @@ void test_conditional_replace_rejects_case_alias_of_same_fat_path() {
 void test_conditional_delete_is_cas_and_idempotent() {
     resetTestRoot();
     Harness h;
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "library/step-presets/delete.mssp",
         0,
         reinterpret_cast<const uint8_t*>("delete-me"),
@@ -1360,19 +1478,21 @@ void test_conditional_delete_is_cas_and_idempotent() {
     std::cout << "[PASS] test_conditional_delete_is_cas_and_idempotent\n";
 }
 
-void test_conditional_replace_recovers_interrupted_promotion() {
+void test_conditional_replace_requires_full_recovery_authority() {
     resetTestRoot();
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
     FileSystemRpcHandler handler(service);
-    assert(service.write(
+    assert(core::test::writeProductFileFixture(
+        service,
         "library/step-presets/demo.mssp",
         0,
         reinterpret_cast<const uint8_t*>("old"),
         3
     ));
-    assert(service.write(
+    assert(core::test::writeProductFileFixture(
+        service,
         "tmp/step-preset-stage.mssp",
         0,
         reinterpret_cast<const uint8_t*>("new"),
@@ -1400,10 +1520,18 @@ void test_conditional_replace_recovers_interrupted_promotion() {
         handled.value()
     );
     assert(mutation && mutation.value().status == FileSystemRpcStatus::STORAGE_ERROR);
-    assert(!service.stat("library/step-presets/demo.mssp"));
-    assert(service.stat("tmp/rpc-conditional.backup"));
-    assert(service.stat("tmp/rpc-conditional.journal"));
-    assert(service.stat("tmp/step-preset-stage.mssp"));
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assertProductReadBlocked(service, "library/step-presets/demo.mssp");
+    assertProductReadBlocked(service, "tmp/rpc-conditional.backup");
+    assertProductReadBlocked(service, "tmp/rpc-conditional.journal");
+    assertProductReadBlocked(service, "tmp/step-preset-stage.mssp");
+    assert(!filesystem.delegate.stat(
+        "/midi-studio/library/step-presets/demo.mssp"
+    ));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.backup"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/step-preset-stage.mssp"));
 
     filesystem.failConditionalPromotion = false;
     filesystem.failConditionalRestore = false;
@@ -1415,6 +1543,23 @@ void test_conditional_replace_recovers_interrupted_promotion() {
     );
     handled = handler.handleFrame(request, requestSize, 1, response, sizeof(response));
     assert(handled);
+    auto blocked = FileSystemRpcCodec::decodeStatusResponse(response, handled.value());
+    assert(blocked && blocked.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.backup"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal"));
+
+    handled = handler.handleFrame(request, requestSize, 500, response, sizeof(response));
+    assert(handled);
+    blocked = FileSystemRpcCodec::decodeStatusResponse(response, handled.value());
+    assert(blocked && blocked.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+
+    completeExternalProductRecovery(service);
+    handled = handler.handleFrame(request, requestSize, 501, response, sizeof(response));
+    assert(handled);
     auto stat = FileSystemRpcCodec::decodeStatResponse(response, handled.value());
     assert(stat && stat.value().status == FileSystemRpcStatus::OK);
 
@@ -1424,16 +1569,18 @@ void test_conditional_replace_recovers_interrupted_promotion() {
     assert(!service.stat("tmp/rpc-conditional.backup"));
     assert(!service.stat("tmp/rpc-conditional.journal"));
 
-    std::cout << "[PASS] test_conditional_replace_recovers_interrupted_promotion\n";
+    std::cout
+        << "[PASS] test_conditional_replace_requires_full_recovery_authority\n";
 }
 
-void test_conditional_delete_recovers_interrupted_cleanup() {
+void test_conditional_delete_requires_full_recovery_authority() {
     resetTestRoot();
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
     FileSystemRpcHandler handler(service);
-    assert(service.write(
+    assert(core::test::writeProductFileFixture(
+        service,
         "library/step-presets/delete.mssp",
         0,
         reinterpret_cast<const uint8_t*>("delete-me"),
@@ -1458,9 +1605,16 @@ void test_conditional_delete_recovers_interrupted_cleanup() {
         handled.value()
     );
     assert(mutation && mutation.value().status == FileSystemRpcStatus::STORAGE_ERROR);
-    assert(!service.stat("library/step-presets/delete.mssp"));
-    assert(service.stat("tmp/rpc-conditional.backup"));
-    assert(service.stat("tmp/rpc-conditional.journal"));
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assertProductReadBlocked(service, "library/step-presets/delete.mssp");
+    assertProductReadBlocked(service, "tmp/rpc-conditional.backup");
+    assertProductReadBlocked(service, "tmp/rpc-conditional.journal");
+    assert(!filesystem.delegate.stat(
+        "/midi-studio/library/step-presets/delete.mssp"
+    ));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.backup"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal"));
 
     filesystem.failConditionalBackupRemove = false;
     requestSize = FileSystemRpcCodec::encodeStatRequest(
@@ -1471,12 +1625,30 @@ void test_conditional_delete_recovers_interrupted_cleanup() {
     );
     handled = handler.handleFrame(request, requestSize, 1, response, sizeof(response));
     assert(handled);
+    auto blocked = FileSystemRpcCodec::decodeStatusResponse(response, handled.value());
+    assert(blocked && blocked.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.backup"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal"));
+
+    handled = handler.handleFrame(request, requestSize, 500, response, sizeof(response));
+    assert(handled);
+    blocked = FileSystemRpcCodec::decodeStatusResponse(response, handled.value());
+    assert(blocked && blocked.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+
+    completeExternalProductRecovery(service);
+    handled = handler.handleFrame(request, requestSize, 501, response, sizeof(response));
+    assert(handled);
     auto stat = FileSystemRpcCodec::decodeStatResponse(response, handled.value());
     assert(stat && stat.value().status == FileSystemRpcStatus::NOT_FOUND);
     assert(!service.stat("tmp/rpc-conditional.backup"));
     assert(!service.stat("tmp/rpc-conditional.journal"));
 
-    std::cout << "[PASS] test_conditional_delete_recovers_interrupted_cleanup\n";
+    std::cout
+        << "[PASS] test_conditional_delete_requires_full_recovery_authority\n";
 }
 
 void test_conditional_journal_promotion_failure_is_non_mutating() {
@@ -1485,13 +1657,15 @@ void test_conditional_journal_promotion_failure_is_non_mutating() {
     ProductFileService service(filesystem);
     assert(service.init());
     FileSystemRpcHandler handler(service);
-    assert(service.write(
+    assert(core::test::writeProductFileFixture(
+        service,
         "library/step-presets/demo.mssp",
         0,
         reinterpret_cast<const uint8_t*>("old"),
         3
     ));
-    assert(service.write(
+    assert(core::test::writeProductFileFixture(
+        service,
         "tmp/step-preset-stage.mssp",
         0,
         reinterpret_cast<const uint8_t*>("new"),
@@ -1528,6 +1702,43 @@ void test_conditional_journal_promotion_failure_is_non_mutating() {
     assert(mutation.value().outcome == FileSystemRpcMutationOutcome::NONE);
 
     uint8_t loaded[8] = {};
+    auto blockedRead = service.read(
+        "library/step-presets/demo.mssp",
+        0,
+        loaded,
+        sizeof(loaded)
+    );
+    assert(!blockedRead);
+    assert(blockedRead.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+    blockedRead = service.read(
+        "tmp/step-preset-stage.mssp",
+        0,
+        loaded,
+        sizeof(loaded)
+    );
+    assert(!blockedRead);
+    assert(blockedRead.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(filesystem.delegate.stat(
+        "/midi-studio/library/step-presets/demo.mssp"
+    ));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/step-preset-stage.mssp"));
+    assert(!filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.backup"));
+    assert(!filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal"));
+    assert(!filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal.tmp"));
+
+    handler.update(499);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    handler.update(500);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+
+    completeExternalProductRecovery(service);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::READY);
+
     auto read = service.read(
         "library/step-presets/demo.mssp",
         0,
@@ -1554,7 +1765,8 @@ void test_orphan_conditional_journal_staging_is_cleaned_on_recovery() {
     resetTestRoot();
     Harness h;
     const uint8_t partial[] = {'F', 'S', 'T', 'X'};
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/rpc-conditional.journal.tmp",
         0,
         partial,
@@ -1678,7 +1890,7 @@ void test_conditional_transaction_paths_are_protocol_reserved() {
     assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
 
     const uint8_t byte = 1;
-    assert(h.service.write("tmp/source.bin", 0, &byte, 1));
+    assert(core::test::writeProductFileFixture(h.service, "tmp/source.bin", 0, &byte, 1));
     nextRequestSize = FileSystemRpcCodec::encodeRenameRequest(
         73,
         "tmp/source.bin",
@@ -1739,7 +1951,9 @@ void test_endpoint_answers_only_filesystem_requests() {
     assert(service.init());
 
     const uint8_t payload[] = {'o', 'k'};
-    assert(service.write("projects/endpoint.bin", 0, payload, sizeof(payload)));
+    assert(core::test::writeProductFileFixture(
+        service, "projects/endpoint.bin", 0, payload, sizeof(payload)
+    ));
 
     FakeTransport transport;
     FileSystemRpcEndpoint endpoint(transport, service, nowMs);
@@ -1840,12 +2054,13 @@ int main() {
     test_invalid_path_maps_to_error_status();
     test_read_error_response_is_decodable();
     test_file_management_operations();
+    test_storage_gate_maps_busy_exhausted_absent_and_io_failures();
     test_conditional_replace_is_cas_and_idempotent();
     test_conditional_replace_rejects_source_and_staging_mismatch();
     test_conditional_replace_rejects_case_alias_of_same_fat_path();
     test_conditional_delete_is_cas_and_idempotent();
-    test_conditional_replace_recovers_interrupted_promotion();
-    test_conditional_delete_recovers_interrupted_cleanup();
+    test_conditional_replace_requires_full_recovery_authority();
+    test_conditional_delete_requires_full_recovery_authority();
     test_conditional_journal_promotion_failure_is_non_mutating();
     test_orphan_conditional_journal_staging_is_cleaned_on_recovery();
     test_truncated_conditional_journal_is_quarantined_once();

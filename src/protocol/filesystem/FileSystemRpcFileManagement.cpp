@@ -1,5 +1,7 @@
 #include "protocol/filesystem/FileSystemRpcInternal.hpp"
 
+#include <utility>
+
 #include <config/PlatformCompat.hpp>
 
 namespace core::protocol::filesystem {
@@ -24,9 +26,19 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleMkdir_(
     } else if (internal::isConditionalMutationReservedPath(files_, path)) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
-        auto result = files_.createDirectory(path);
-        if (!result) {
-            status = mapError(result.error());
+        auto acquired = files_.acquireMutation(
+            core::persistence::ProductMutationOwner::FILESYSTEM_RPC
+        );
+        if (!acquired) {
+            status = mapError(acquired.error());
+        } else {
+            auto lease = std::move(acquired.value());
+            auto result = files_.createDirectory(lease, path);
+            if (!result) status = mapError(result.error());
+            auto released = files_.releaseMutation(lease);
+            if (status == FileSystemRpcStatus::OK && !released) {
+                status = mapError(released.error());
+            }
         }
     }
 
@@ -59,9 +71,19 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleDelete_(
         const auto mode = recursive
             ? oc::interface::RemoveMode::RECURSIVE
             : oc::interface::RemoveMode::FILE_OR_EMPTY_DIRECTORY;
-        auto result = files_.remove(path, mode);
-        if (!result) {
-            status = mapError(result.error());
+        auto acquired = files_.acquireMutation(
+            core::persistence::ProductMutationOwner::FILESYSTEM_RPC
+        );
+        if (!acquired) {
+            status = mapError(acquired.error());
+        } else {
+            auto lease = std::move(acquired.value());
+            auto result = files_.remove(lease, path, mode);
+            if (!result) status = mapError(result.error());
+            auto released = files_.releaseMutation(lease);
+            if (status == FileSystemRpcStatus::OK && !released) {
+                status = mapError(released.error());
+            }
         }
     }
 
@@ -92,9 +114,19 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleRename_(
                internal::isConditionalMutationReservedPath(files_, toPath)) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
-        auto result = files_.rename(fromPath, toPath);
-        if (!result) {
-            status = mapError(result.error());
+        auto acquired = files_.acquireMutation(
+            core::persistence::ProductMutationOwner::FILESYSTEM_RPC
+        );
+        if (!acquired) {
+            status = mapError(acquired.error());
+        } else {
+            auto lease = std::move(acquired.value());
+            auto result = files_.rename(lease, fromPath, toPath);
+            if (!result) status = mapError(result.error());
+            auto released = files_.releaseMutation(lease);
+            if (status == FileSystemRpcStatus::OK && !released) {
+                status = mapError(released.error());
+            }
         }
     }
 

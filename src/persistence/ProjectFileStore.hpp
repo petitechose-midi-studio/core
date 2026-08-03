@@ -64,6 +64,13 @@ private:
     static bool buildPaths_(const char* projectId, ProjectPaths& out);
     static bool validProjectId_(const char* projectId);
 
+    static oc::type::Result<ProjectSaveResult> saveWithPaths_(
+        ProductFileService& files,
+        ProjectFileWorkspace& workspace,
+        const core::state::project::ProjectSnapshot& snapshot,
+        const ProjectPaths& paths
+    );
+
     static bool listProjectsVisitor_(const oc::interface::DirectoryEntry& entry,
                                      void* context);
 

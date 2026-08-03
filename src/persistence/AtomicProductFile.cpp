@@ -19,9 +19,10 @@ FLASHMEM bool isNotFound(const oc::type::Result<void>& result) {
 
 FLASHMEM oc::type::Result<void> deleteProductFileIfExists(
     ProductFileService& files,
+    const ProductMutationLease& lease,
     const char* path
 ) {
-    auto removed = files.remove(path);
+    auto removed = files.remove(lease, path);
     if (removed || isNotFound(removed)) {
         return oc::type::Result<void>::ok();
     }
@@ -30,6 +31,7 @@ FLASHMEM oc::type::Result<void> deleteProductFileIfExists(
 
 FLASHMEM oc::type::Result<void> writeProductFileTemp(
     ProductFileService& files,
+    const ProductMutationLease& lease,
     const char* tmpPath,
     const uint8_t* data,
     uint32_t size,
@@ -40,23 +42,17 @@ FLASHMEM oc::type::Result<void> writeProductFileTemp(
             {ErrorCode::INVALID_ARGUMENT, "invalid atomic file payload"}
         );
     }
-    if (files.writeSessionActive()) {
-        return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "write session active"}
-        );
-    }
-
     OC_PERF_SCOPE(perfWrite, "persistence.atomic-write");
     OC_PERF_UNITS(perfWrite, size, chunkSize);
-    auto begin = files.beginWrite(tmpPath, size);
+    auto begin = files.beginWrite(lease, tmpPath, size);
     if (!begin) return begin;
 
     uint32_t offset = 0;
     while (offset < size) {
         const uint32_t next = std::min<uint32_t>(chunkSize, size - offset);
-        auto written = files.appendWrite(data + offset, next);
+        auto written = files.appendWrite(lease, data + offset, next);
         if (!written || written.value() != next) {
-            files.abortWrite();
+            (void)files.abortWrite(lease);
             return oc::type::Result<void>::err(
                 {ErrorCode::STORAGE_WRITE_FAILED, "atomic tmp write failed"}
             );
@@ -64,9 +60,9 @@ FLASHMEM oc::type::Result<void> writeProductFileTemp(
         offset += next;
     }
 
-    auto finish = files.finishWrite();
+    auto finish = files.finishWrite(lease);
     if (!finish) {
-        files.abortWrite();
+        (void)files.abortWrite(lease);
         return finish;
     }
     return oc::type::Result<void>::ok();
@@ -74,6 +70,7 @@ FLASHMEM oc::type::Result<void> writeProductFileTemp(
 
 FLASHMEM oc::type::Result<void> commitProductFileTemp(
     ProductFileService& files,
+    const ProductMutationLease& lease,
     const char* current,
     const char* backup,
     const char* tmp
@@ -84,35 +81,36 @@ FLASHMEM oc::type::Result<void> commitProductFileTemp(
         );
     }
 
-    auto deleteBackup = deleteProductFileIfExists(files, backup);
+    auto deleteBackup = deleteProductFileIfExists(files, lease, backup);
     if (!deleteBackup) return deleteBackup;
 
-    auto currentInfo = files.stat(current);
+    auto currentInfo = files.stat(lease, current);
     if (!currentInfo && currentInfo.error().code != ErrorCode::RESOURCE_NOT_FOUND) {
         return oc::type::Result<void>::err(currentInfo.error());
     }
     const bool hadCurrent = static_cast<bool>(currentInfo);
     if (hadCurrent) {
-        auto backupResult = files.rename(current, backup);
+        auto backupResult = files.rename(lease, current, backup);
         if (!backupResult) return backupResult;
     }
 
-    auto promote = files.rename(tmp, current);
+    auto promote = files.rename(lease, tmp, current);
     if (!promote) {
         if (hadCurrent) {
-            (void)files.rename(backup, current);
+            (void)files.rename(lease, backup, current);
         }
         return promote;
     }
 
     if (hadCurrent) {
-        (void)deleteProductFileIfExists(files, backup);
+        (void)deleteProductFileIfExists(files, lease, backup);
     }
     return oc::type::Result<void>::ok();
 }
 
 FLASHMEM oc::type::Result<void> replaceProductFileAtomically(
     ProductFileService& files,
+    const ProductMutationLease& lease,
     AtomicProductFilePaths paths,
     const uint8_t* data,
     uint32_t size,
@@ -125,21 +123,27 @@ FLASHMEM oc::type::Result<void> replaceProductFileAtomically(
         );
     }
 
-    auto ensureDirectory = files.createDirectory(paths.directory);
+    auto ensureDirectory = files.createDirectory(lease, paths.directory);
     if (!ensureDirectory) return ensureDirectory;
 
-    auto deleteTmp = deleteProductFileIfExists(files, paths.tmp);
+    auto deleteTmp = deleteProductFileIfExists(files, lease, paths.tmp);
     if (!deleteTmp) return deleteTmp;
 
-    auto write = writeProductFileTemp(files, paths.tmp, data, size, chunkSize);
+    auto write = writeProductFileTemp(files, lease, paths.tmp, data, size, chunkSize);
     if (!write) {
-        (void)deleteProductFileIfExists(files, paths.tmp);
+        (void)deleteProductFileIfExists(files, lease, paths.tmp);
         return write;
     }
 
-    auto commit = commitProductFileTemp(files, paths.current, paths.backup, paths.tmp);
+    auto commit = commitProductFileTemp(
+        files,
+        lease,
+        paths.current,
+        paths.backup,
+        paths.tmp
+    );
     if (!commit) {
-        (void)deleteProductFileIfExists(files, paths.tmp);
+        (void)deleteProductFileIfExists(files, lease, paths.tmp);
         return commit;
     }
     return oc::type::Result<void>::ok();
@@ -147,6 +151,7 @@ FLASHMEM oc::type::Result<void> replaceProductFileAtomically(
 
 FLASHMEM oc::type::Result<bool> recoverProductFileBackupIfCurrentMissing(
     ProductFileService& files,
+    const ProductMutationLease& lease,
     const char* current,
     const char* backup
 ) {
@@ -156,13 +161,13 @@ FLASHMEM oc::type::Result<bool> recoverProductFileBackupIfCurrentMissing(
         );
     }
 
-    auto currentInfo = files.stat(current);
+    auto currentInfo = files.stat(lease, current);
     if (currentInfo) return oc::type::Result<bool>::ok(false);
     if (currentInfo.error().code != ErrorCode::RESOURCE_NOT_FOUND) {
         return oc::type::Result<bool>::err(currentInfo.error());
     }
 
-    auto backupInfo = files.stat(backup);
+    auto backupInfo = files.stat(lease, backup);
     if (!backupInfo) {
         if (backupInfo.error().code == ErrorCode::RESOURCE_NOT_FOUND) {
             return oc::type::Result<bool>::ok(false);
@@ -175,7 +180,7 @@ FLASHMEM oc::type::Result<bool> recoverProductFileBackupIfCurrentMissing(
         );
     }
 
-    auto restored = files.rename(backup, current);
+    auto restored = files.rename(lease, backup, current);
     if (!restored) return oc::type::Result<bool>::err(restored.error());
     return oc::type::Result<bool>::ok(true);
 }

@@ -42,6 +42,7 @@
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/SequencerHistoryTransactionAssertions.hpp"
+#include "../support/ProductFileTestMutation.hpp"
 
 namespace {
 
@@ -2792,10 +2793,17 @@ void test_blocked_preset_load_keeps_pending_history_coalescing() {
     assert(presets.savePreset("corrupt-load", target, false).ok());
 
     constexpr uint8_t corruptPayload[] = {0x42U, 0x41U, 0x44U};
-    assert(h.productFiles.beginWrite("library/step-presets/corrupt-load.mssp",
-                                     sizeof(corruptPayload)));
-    assert(h.productFiles.appendWrite(corruptPayload, sizeof(corruptPayload)));
-    assert(h.productFiles.finishWrite());
+    core::test::ProductFileTestMutation corruptWrite(h.productFiles);
+    assert(h.productFiles.beginWrite(
+        corruptWrite.lease(),
+        "library/step-presets/corrupt-load.mssp",
+        sizeof(corruptPayload)
+    ));
+    assert(h.productFiles.appendWrite(
+        corruptWrite.lease(), corruptPayload, sizeof(corruptPayload)
+    ));
+    assert(h.productFiles.finishWrite(corruptWrite.lease()));
+    assert(corruptWrite.release());
 
     openStepEdit(h, 0);
     h.release(Config::MACRO_BUTTONS[0]);

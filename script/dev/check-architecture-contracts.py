@@ -32,6 +32,18 @@ COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*SequencerStructureHistory.cpp.o(.text* .rodata*)",
     "*SequencerTrackBankOps.cpp.o(.text* .rodata*)",
     "*(.text._ZN4core11persistence20ProjectFileWorkspace7prepareEv*)",
+    "*(.text.*StorageRecoveryRuntimeManager*)",
+    "*AtomicProductFile.cpp.o(.text* .rodata*)",
+    "*ProductAssetFileStore.cpp.o(.text* .rodata*)",
+    "*ProductFileService.cpp.o(.text* .rodata*)",
+    "*ProductPersistenceCoordinator.cpp.o(.text* .rodata*)",
+    "*ProductStorageRecoveryService.cpp.o(.text* .rodata*)",
+    "*ProjectFileTransactions.cpp.o(.text* .rodata*)",
+    "*ProjectSaveTransaction.cpp.o(.text* .rodata*)",
+    "*ProjectSessionRestoreService.cpp.o(.text* .rodata*)",
+    "*ProjectSessionStore.cpp.o(.text* .rodata*)",
+    "*StorageRecoveryMachine.cpp.o(.text* .rodata*)",
+    "*FileSystemRpc*.cpp.o(.text* .rodata*)",
     "*SequencerSnapshotOps.cpp.o(.text* .rodata*)",
     "*(.text._ZNK2oc4note9sequencer18StepSequencerGraph8sequenceEt*)",
     "*(.text._ZNK2oc4note9sequencer18StepSequencerGraph8cycleSetEt*)",
@@ -878,6 +890,254 @@ def mutation_contract_errors(rel: str, content: str) -> list[str]:
     for symbol in FORBIDDEN_MUTATION_SYMBOLS:
         if re.search(rf"\b{re.escape(symbol)}\b", content):
             errors.append(f"{rel}: obsolete mutation symbol {symbol}")
+    return errors
+
+
+def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
+    """Freeze the single R-05 mutation/recovery authority and its exact ABI."""
+    errors: list[str] = []
+
+    def require(
+        rel: str,
+        pattern: str,
+        description: str,
+        count: int = 1,
+    ) -> None:
+        found = regex_count_dotall(pattern, files.get(rel, ""))
+        if found != count:
+            errors.append(
+                f"{rel}: {description} (expected {count}, found {found})"
+            )
+
+    coordinator = "src/persistence/ProductPersistenceCoordinator.hpp"
+    service_header = "src/persistence/ProductFileService.hpp"
+    service_source = "src/persistence/ProductFileService.cpp"
+    save_header = "src/persistence/ProjectSaveTransaction.hpp"
+    session_header = "src/persistence/ProjectSessionStore.hpp"
+    rpc_header = "src/protocol/filesystem/FileSystemRpc.hpp"
+    recovery_source = "src/persistence/ProductStorageRecoveryService.cpp"
+    recovery_header = "src/persistence/ProductStorageRecoveryService.hpp"
+    machine_source = "src/persistence/StorageRecoveryMachine.cpp"
+    main_source = "main.cpp"
+
+    for rel, pattern, description in (
+        (coordinator, r"sizeof\(ProductStorageIdentity\)\s*==\s*8", "storage identity must remain 8 B"),
+        (coordinator, r"sizeof\(ProductMutationLease\)\s*==\s*4", "lease must remain 4 B"),
+        (coordinator, r"sizeof\(ProductPersistenceCoordinator\)\s*==\s*20", "coordinator must remain 20 B"),
+        (service_header, r"sizeof\(ProductFileService\)\s*==\s*28U", "file service must remain 28 B on ARM"),
+        (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*48U", "Project save must remain 48 B on ARM"),
+        (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*60U", "session store must remain 60 B on ARM"),
+        (rpc_header, r"sizeof\(WriteSession\)\s*==\s*276U", "RPC write session must remain 276 B on ARM"),
+        (rpc_header, r"sizeof\(FileSystemRpcHandler\)\s*==\s*300U", "RPC handler must remain 300 B on ARM"),
+        (service_header, r"ProductPersistenceCoordinator\s+coordinator_\s*\{\s*\}", "file service must embed exactly one coordinator"),
+        (recovery_header, r"static\s+ProductStorageRecoveryResult\s+reconcile\s*\(", "recovery service must remain stateless"),
+        (
+            service_source,
+            r"ProductFileService::initForRecovery\s*\(\s*\)\s*\{.*?"
+            r"storageState\s*\(\s*\)\s*==\s*ProductStorageState::ABSENT.*?"
+            r"Result<void>::ok\s*\(\s*\).*?coordinator_\.requireRecovery",
+            "backend retry must leave ABSENT admission to beginRecovery",
+        ),
+        (main_source, r"productFileService->markMediaUnavailable\s*\(", "runtime sampling must invalidate observed removal"),
+    ):
+        require(rel, pattern, description)
+    require(
+        main_source,
+        r"productFileService->initForRecovery\s*\(",
+        "firmware boot and cold-backend retry must start blocked",
+        count=2,
+    )
+    require(
+        main_source,
+        r"storageRecovery\.reconcileBoot\s*\(",
+        "firmware boot and its retry must use unified recovery",
+        count=2,
+    )
+
+    service_bodies = cpp_type_bodies(files.get(service_header, ""), "ProductFileService")
+    if len(service_bodies) != 1:
+        errors.append(
+            f"{service_header}: ProductFileService must have one balanced definition "
+            f"(found {len(service_bodies)})"
+        )
+    else:
+        service_body = service_bodies[0]
+        for mutator in (
+            "createDirectory",
+            "remove",
+            "rename",
+            "write",
+            "flush",
+            "beginWrite",
+            "appendWrite",
+            "finishWrite",
+            "abortWrite",
+        ):
+            declarations = re.findall(
+                rf"\b{mutator}\s*\(([^;{{}}]*)\)\s*;",
+                service_body,
+                flags=re.DOTALL,
+            )
+            if len(declarations) != 1:
+                errors.append(
+                    f"{service_header}: {mutator} must have exactly one mutating "
+                    f"declaration (found {len(declarations)})"
+                )
+                continue
+            if re.match(
+                r"\s*const\s+ProductMutationLease\s*&\s*[A-Za-z_]\w*",
+                declarations[0],
+            ) is None:
+                errors.append(
+                    f"{service_header}: {mutator} must require the exact lease "
+                    "as its first parameter"
+                )
+
+    recovery_bodies = cpp_function_bodies(
+        files.get(recovery_source, ""),
+        "ProductStorageRecoveryService::reconcile",
+    )
+    if len(recovery_bodies) != 1:
+        errors.append(
+            f"{recovery_source}: reconcile must have one balanced definition "
+            f"(found {len(recovery_bodies)})"
+        )
+    else:
+        body = cpp_code_mask(recovery_bodies[0])
+        ordered_markers = (
+            "files.beginRecovery(",
+            "files.ensureLayout(lease)",
+            "conditional::recoverPendingMutation(",
+            "restoreService.restore(state, lease)",
+            "state.recoverSettingsFromRamAfterStorageReopen()",
+            "autosaveService.flushRecovery(state, lease)",
+            "files.completeRecovery(lease, true)",
+        )
+        positions = [body.find(marker) for marker in ordered_markers]
+        if any(position < 0 for position in positions) or positions != sorted(positions):
+            errors.append(
+                f"{recovery_source}: recovery must keep layout -> conditional -> "
+                "boot restore -> settings -> exact session save -> READY order"
+            )
+
+    for marker in (
+        "writeSessionActive_",
+        "conditionalRecoveryChecked_",
+    ):
+        owners = sorted(rel for rel, content in files.items() if marker in content)
+        if owners:
+            errors.append(
+                f"source set: retired persistence authority {marker} restored in "
+                + ", ".join(owners)
+            )
+
+    main = cpp_code_mask(files.get(main_source, ""))
+    if re.search(r"if\s*\(\s*!productFileWriteActive\s*\)", main):
+        errors.append(
+            "main.cpp: media sampling must not pause while a product stream is active"
+        )
+    if "projectSessionRestoreService->restore(" in main:
+        errors.append(
+            "main.cpp: boot restore must not bypass ProductStorageRecoveryService"
+        )
+
+    for function_name in ("initializeStorageBackend", "initStorage"):
+        bodies = cpp_function_bodies(files.get(main_source, ""), function_name)
+        if not bodies:
+            errors.append(
+                f"main.cpp: {function_name} must have a balanced definition"
+            )
+        elif re.search(r"\bwhile\s*\(\s*true\s*\)", max(bodies, key=len)):
+            errors.append(
+                f"main.cpp: {function_name} must return into retryable boot recovery, "
+                "not halt"
+            )
+
+    reconcile_boot_bodies = cpp_function_bodies(
+        files.get(main_source, ""),
+        "reconcileBoot",
+    )
+    if len(reconcile_boot_bodies) != 1:
+        errors.append(
+            "main.cpp: reconcileBoot must have one balanced definition "
+            f"(found {len(reconcile_boot_bodies)})"
+        )
+    else:
+        reconcile_boot = reconcile_boot_bodies[0]
+        checked_reopen = re.search(
+            r"!\s*reopenStorageBackends_\s*\(\s*\)\s*\|\|\s*"
+            r"!\s*allStorageBackendsAvailable_\s*\(\s*\).*?"
+            r"return\s+unavailableStorage_\s*\(\s*\)",
+            reconcile_boot,
+            flags=re.DOTALL,
+        )
+        if checked_reopen is None or re.search(
+            r"\(\s*void\s*\)\s*reopenStorageBackends_",
+            reconcile_boot,
+        ):
+            errors.append(
+                "main.cpp: boot must stop before reconciliation when backend "
+                "reinitialization remains unavailable"
+            )
+
+    reopen_bodies = cpp_function_bodies(
+        files.get(main_source, ""),
+        "reopenStorageBackends_",
+    )
+    if not reopen_bodies:
+        errors.append(
+            "main.cpp: reopenStorageBackends_ must have a balanced definition"
+        )
+    else:
+        # Calls used as control-flow conditions also look like definitions to
+        # the lightweight balanced-body scanner. The actual inline method is
+        # the unique largest body.
+        reopen = max(reopen_bodies, key=len)
+        for marker, description in (
+            (
+                "initializeStorageBackend(item)",
+                "cold settings backend must be initialized during retry",
+            ),
+            (
+                "productFileService->initForRecovery()",
+                "cold product backend must be initialized during retry",
+            ),
+            (
+                "allStorageBackendsAvailable_()",
+                "retry success must recheck every backend",
+            ),
+        ):
+            if marker not in reopen:
+                errors.append(f"main.cpp: {description}")
+
+    recovery_completion_owners = {
+        "src/persistence/ProductFileService.cpp",
+        "src/persistence/ProductStorageRecoveryService.cpp",
+    }
+    for rel, content in files.items():
+        if not rel.startswith("src/") or rel in recovery_completion_owners:
+            continue
+        if "beginRecovery" not in content and "completeRecovery" not in content:
+            continue
+        code = cpp_code_mask(content)
+        if re.search(r"\.(?:beginRecovery|completeRecovery)\s*\(", code):
+            errors.append(
+                f"{rel}: only ProductStorageRecoveryService may complete "
+                "product reconciliation"
+            )
+
+    machine = cpp_code_mask(files.get(machine_source, ""))
+    transient = re.search(
+        r"case\s+StorageRecoveryState::MISSING_DEBOUNCE\s*:.*?"
+        r"if\s*\(\s*input\.mediaPresent\s*\)\s*\{(.*?)\}",
+        machine,
+        flags=re.DOTALL,
+    )
+    if transient is None or "StorageRecoveryState::RECOVERY_PENDING" not in transient.group(1):
+        errors.append(
+            f"{machine_source}: transient observed absence must require reconciliation"
+        )
+
     return errors
 
 
@@ -3765,6 +4025,113 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
     return errors
 
 
+def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
+    fixture = {
+        path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
+        for path in source_files()
+    }
+    fixture["main.cpp"] = (ROOT / "main.cpp").read_text(encoding="utf-8")
+
+    def mutate(rel: str, before: str, after: str) -> dict[str, str]:
+        result = dict(fixture)
+        result[rel] = result[rel].replace(before, after, 1)
+        return result
+
+    raw_product_flush = mutate(
+        "src/persistence/ProductFileService.hpp",
+        "    oc::type::Result<void> flush(const ProductMutationLease& lease,\n"
+        "                                 const char* productPath);",
+        "    oc::type::Result<void> flush(const char* productPath);",
+    )
+    recovery_without_exact_session_save = mutate(
+        "src/persistence/ProductStorageRecoveryService.cpp",
+        "autosaveService.flushRecovery(state, lease)",
+        "autosaveService.flush(state)",
+    )
+    recovery_sampling_paused_by_stream = mutate(
+        "main.cpp",
+        "storageRecovery.update(millis(), coreState->statusBar.playing.get());",
+        "if (!productFileWriteActive) {\n"
+        "                storageRecovery.update(\n"
+        "                    millis(), coreState->statusBar.playing.get());\n"
+            "            }",
+    )
+    rpc_completes_partial_recovery = mutate(
+        "src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp",
+        "    auto acquired = files_.acquireMutation(\n",
+        "    auto bypass = files_.beginRecovery();\n"
+        "    auto acquired = files_.acquireMutation(\n",
+    )
+    boot_ignores_failed_backend_retry = mutate(
+        "main.cpp",
+        "        if (!allStorageBackendsAvailable_() &&\n"
+        "            (!reopenStorageBackends_() || !allStorageBackendsAvailable_())) {\n"
+        "            return unavailableStorage_();\n"
+        "        }",
+        "        if (!allStorageBackendsAvailable_()) {\n"
+        "            (void)reopenStorageBackends_();\n"
+        "        }",
+    )
+    storage_init_halts_before_recovery = mutate(
+        "main.cpp",
+        "static FLASHMEM bool initStorage() {\n",
+        "static FLASHMEM bool initStorage() {\n"
+        "    while (true) {}\n",
+    )
+
+    return (
+        (
+            not persistence_lease_contract_errors(fixture),
+            "valid single persistence lease contract is accepted",
+        ),
+        (
+            bool(persistence_lease_contract_errors(raw_product_flush)),
+            "raw ProductFileService mutator overload is rejected",
+        ),
+        (
+            bool(persistence_lease_contract_errors(
+                recovery_without_exact_session_save
+            )),
+            "recovery without exact RAM session save is rejected",
+        ),
+        (
+            bool(persistence_lease_contract_errors(
+                recovery_sampling_paused_by_stream
+            )),
+            "media sampling paused by a product stream is rejected",
+        ),
+        (
+            bool(persistence_lease_contract_errors(
+                rpc_completes_partial_recovery
+            )),
+            "RPC journal-only recovery completion is rejected",
+        ),
+        (
+            bool(persistence_lease_contract_errors(
+                boot_ignores_failed_backend_retry
+            )),
+            "boot reconciliation after a failed backend retry is rejected",
+        ),
+        (
+            bool(persistence_lease_contract_errors(
+                storage_init_halts_before_recovery
+            )),
+            "fatal storage initialization before retry recovery is rejected",
+        ),
+    )
+
+
+def persistence_self_test() -> int:
+    checks = persistence_self_test_checks()
+    failures = [description for ok, description in checks if not ok]
+    if failures:
+        for failure in failures:
+            print(f"SELF-TEST ERROR: {failure}")
+        return 1
+    print(f"Persistence architecture self-tests: OK ({len(checks)}/{len(checks)})")
+    return 0
+
+
 def self_test() -> int:
     step_draft_fixture = {
         path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
@@ -4834,7 +5201,7 @@ def self_test() -> int:
     restored_raw_structure_adapter[SEQUENCER_HISTORY_DOMAIN_SERVICES_HEADER] += (
         "\nvoid injectedRawStructureAdapter() { recordPreparedStructure(); }\n"
     )
-    checks = (
+    checks = persistence_self_test_checks() + (
         (
             not extmem_lifetime_contract_errors(extmem_fixture),
             "valid strict EXTMEM lifetime contract is accepted",
@@ -6202,8 +6569,10 @@ def main(show_inventory: bool = False) -> int:
         path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
         for path in source_files()
     }
+    contract_sources["main.cpp"] = (ROOT / "main.cpp").read_text(encoding="utf-8")
     errors.extend(step_draft_transition_contract_errors(contract_sources))
     errors.extend(extmem_lifetime_contract_errors(contract_sources))
+    errors.extend(persistence_lease_contract_errors(contract_sources))
 
     platformio = PLATFORMIO.read_text(encoding="utf-8")
     if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
@@ -6505,9 +6874,20 @@ if __name__ == "__main__":
         help="run deterministic fixture checks for the gate itself",
     )
     parser.add_argument(
+        "--self-test-persistence",
+        action="store_true",
+        help="run only the deterministic R-05 persistence fixtures",
+    )
+    parser.add_argument(
         "--inventory",
         action="store_true",
         help="print the full advisory >800-line inventory",
     )
     args = parser.parse_args()
-    sys.exit(self_test() if args.self_test else main(args.inventory))
+    if args.self_test and args.self_test_persistence:
+        parser.error("choose either --self-test or --self-test-persistence")
+    if args.self_test:
+        sys.exit(self_test())
+    if args.self_test_persistence:
+        sys.exit(persistence_self_test())
+    sys.exit(main(args.inventory))

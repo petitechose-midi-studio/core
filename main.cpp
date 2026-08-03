@@ -25,6 +25,7 @@
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
 #include "persistence/PersistenceStatus.hpp"
 #include "persistence/ProductFileService.hpp"
+#include "persistence/ProductStorageRecoveryService.hpp"
 #include "persistence/ProjectSessionAutosaveService.hpp"
 #include "persistence/ProjectSessionRestoreService.hpp"
 #include "persistence/ProjectSessionStore.hpp"
@@ -75,8 +76,34 @@ StorageBackendRef storageBackends[] = {
     {"Settings", &deviceSettingsStorage},
 };
 
+FLASHMEM bool initializeStorageBackend(const StorageBackendRef& item) {
+    const auto initialized = item.backend->init();
+    if (!initialized) {
+        OC_LOG_WARN("[StorageRecovery] {} init pending: {}",
+                    item.label,
+                    oc::type::errorCodeToString(initialized.error().code));
+        return false;
+    }
+    if (!item.backend->available()) {
+        OC_LOG_WARN("[StorageRecovery] {} initialized but unavailable", item.label);
+        return false;
+    }
+    return true;
+}
+
 class StorageRecoveryRuntimeManager {
 public:
+    core::persistence::ProductStorageRecoveryResult reconcileBoot(uint32_t nowMs) {
+        if (!allStorageBackendsAvailable_() &&
+            (!reopenStorageBackends_() || !allStorageBackendsAvailable_())) {
+            return unavailableStorage_();
+        }
+        return reconcileProductStorage_(
+            core::persistence::ProductStorageRecoveryMode::BOOT,
+            nowMs
+        );
+    }
+
     void update(uint32_t nowMs, bool playing) {
         if (last_sample_ms_ != 0 &&
             static_cast<uint32_t>(nowMs - last_sample_ms_) < STORAGE_RECOVERY_SAMPLE_MS) {
@@ -84,10 +111,24 @@ public:
         }
         last_sample_ms_ = nowMs;
 
+        const bool mediaPresent = allStorageBackendsAvailable_();
+        if (!mediaPresent && productFileService) {
+            // Invalidate the exact lease and abort a live stream as soon as an
+            // absence is observed. Debounce controls recovery scheduling only.
+            productFileService->markMediaUnavailable();
+        }
+        const bool reconciliationRequired =
+            mediaPresent && productFileService &&
+            productFileService->storageState() !=
+                core::persistence::ProductStorageState::READY &&
+            productFileService->storageState() !=
+                core::persistence::ProductStorageState::EXHAUSTED;
+
         const auto action = machine_.update({
-            allStorageBackendsAvailable_(),
-            playing,
-            nowMs,
+            .mediaPresent = mediaPresent,
+            .playing = playing,
+            .reconciliationRequired = reconciliationRequired,
+            .nowMs = nowMs,
         });
         handleAction_(action, nowMs);
     }
@@ -99,34 +140,72 @@ private:
                 return false;
             }
         }
-        return true;
+        return !productFileService || productFileService->mediaPresent();
     }
 
     bool reopenStorageBackends_() const {
         bool ok = true;
         for (const auto& item : storageBackends) {
-            if (!item.backend->reopen()) {
-                OC_LOG_WARN("[StorageRecovery] Reopen failed for {}", item.label);
+            const bool backendReady = item.backend->available()
+                ? item.backend->reopen()
+                : initializeStorageBackend(item);
+            if (!backendReady) {
+                OC_LOG_WARN("[StorageRecovery] Open/init failed for {}", item.label);
                 ok = false;
             }
         }
-        return ok;
+
+        if (productFileService && !productFileService->mediaPresent()) {
+            const auto initialized = productFileService->initForRecovery();
+            if (!initialized) {
+                OC_LOG_WARN(
+                    "[StorageRecovery] Product filesystem init pending: {}",
+                    oc::type::errorCodeToString(initialized.error().code)
+                );
+                ok = false;
+            }
+        }
+        return ok && allStorageBackendsAvailable_();
     }
 
-    bool revalidateFromRam_(uint32_t nowMs) {
-        if (!coreState) {
-            OC_LOG_WARN("[StorageRecovery] CoreState unavailable during revalidation");
-            return false;
+    static core::persistence::ProductStorageRecoveryResult unavailableStorage_() {
+        core::persistence::ProductStorageRecoveryResult result{};
+        result.status =
+            core::persistence::ProductStorageRecoveryStatus::MEDIA_UNAVAILABLE;
+        result.error = oc::type::ErrorCode::HARDWARE_NOT_FOUND;
+        return result;
+    }
+
+    core::persistence::ProductStorageRecoveryResult reconcileProductStorage_(
+        core::persistence::ProductStorageRecoveryMode mode,
+        uint32_t nowMs
+    ) {
+        if (!productFileService || !projectSessionRestoreService ||
+            !projectSessionAutosaveService || !coreState) {
+            core::persistence::ProductStorageRecoveryResult unavailable{};
+            unavailable.status =
+                core::persistence::ProductStorageRecoveryStatus::BUSY;
+            unavailable.error = oc::type::ErrorCode::INVALID_STATE;
+            OC_LOG_WARN("[StorageRecovery] Runtime services unavailable at {}ms", nowMs);
+            return unavailable;
         }
 
-        const auto status = coreState->recoverSettingsFromRamAfterStorageReopen();
-        if (status != core::persistence::PersistenceWriteStatus::OK) {
-            OC_LOG_WARN("[StorageRecovery] RAM revalidation failed at {}ms: {}",
-                        nowMs,
-                        core::persistence::persistenceWriteStatusLabel(status));
-            return false;
+        auto result = core::persistence::ProductStorageRecoveryService::reconcile(
+            *productFileService,
+            *projectSessionRestoreService,
+            *projectSessionAutosaveService,
+            *coreState,
+            mode
+        );
+        if (!result.recovered()) {
+            OC_LOG_WARN(
+                "[StorageRecovery] Reconciliation failed at {}ms status={} error={}",
+                nowMs,
+                static_cast<unsigned>(result.status),
+                oc::type::errorCodeToString(result.error)
+            );
         }
-        return true;
+        return result;
     }
 
     void handleAction_(core::persistence::StorageRecoveryAction action, uint32_t nowMs) {
@@ -148,8 +227,12 @@ private:
             }
 
             case core::persistence::StorageRecoveryAction::ATTEMPT_REVALIDATE: {
-                OC_LOG_INFO("[StorageRecovery] Revalidating storage from live RAM");
-                const bool revalidateOk = revalidateFromRam_(nowMs);
+                OC_LOG_INFO("[StorageRecovery] Reconciling journal, settings and live session");
+                const auto recovery = reconcileProductStorage_(
+                    core::persistence::ProductStorageRecoveryMode::HOT_SWAP,
+                    nowMs
+                );
+                const bool revalidateOk = recovery.recovered();
                 const auto next = machine_.completeRevalidation(revalidateOk, nowMs);
                 if (!revalidateOk) {
                     OC_LOG_WARN("[StorageRecovery] Revalidation failed; retrying after backoff");
@@ -169,7 +252,13 @@ private:
         }
     }
 
-    core::persistence::StorageRecoveryMachine machine_{};
+    core::persistence::StorageRecoveryMachine machine_{
+        core::persistence::StorageRecoveryConfig{
+            .removalDebounceMs = 1000,
+            .insertionDebounceMs = 1000,
+            .retryBackoffMs = 500,
+        }
+    };
     uint32_t last_sample_ms_ = 0;
 };
 
@@ -207,7 +296,7 @@ core::app::ExtmemUniquePtr<core::validation::ux::SemanticUxRecorder>
 // Initialization Helpers
 // =============================================================================
 
-/// Check result and halt on error (embedded systems have no recovery)
+/// Halt only for non-storage peripherals which cannot run in a degraded mode.
 #if !defined(MS_PROJECT_STORE_SMOKE)
 static FLASHMEM void checkOrHalt(const oc::type::Result<void>& result, const char* component) {
     if (!result) {
@@ -236,41 +325,38 @@ static FLASHMEM void initMux() {
 }
 #endif
 
-static FLASHMEM void initStorageBackend(oc::hal::teensy::SDCardBackend& backend,
-                                        const char* label) {
-    const auto result = backend.init();
-    if (!result) {
-        OC_LOG_ERROR("{} storage init failed: {}",
-                     label,
-                     oc::type::errorCodeToString(result.error().code));
-        while (true) {}
-    }
-}
-
-static FLASHMEM void initStorage() {
-    struct StorageInitItem {
-        const char* label;
-        oc::hal::teensy::SDCardBackend* backend;
-    };
-
-    const StorageInitItem items[] = {
-        {"Settings", &deviceSettingsStorage},
-    };
-
-    for (const auto& item : items) {
-        initStorageBackend(*item.backend, item.label);
+static FLASHMEM bool initStorage() {
+    bool storageBackendsReady = true;
+    for (const auto& item : storageBackends) {
+        if (!initializeStorageBackend(item)) {
+            storageBackendsReady = false;
+        }
     }
 
     productFileService.emplace(productFileSystemBackend);
+#if defined(MS_PROJECT_STORE_SMOKE)
     const auto productFilesResult = productFileService->init();
+#else
+    const auto productFilesResult = productFileService->initForRecovery();
+#endif
     if (!productFilesResult) {
-        OC_LOG_ERROR("Product file service init failed: {}",
-                     oc::type::errorCodeToString(productFilesResult.error().code));
-        while (true) {}
+        OC_LOG_WARN("[StorageRecovery] Product file service init pending: {}",
+                    oc::type::errorCodeToString(productFilesResult.error().code));
     }
 
-    OC_LOG_INFO("Storage ready settings={}B; presets/projects use ProductFileService",
-                deviceSettingsStorage.capacity());
+    const bool initialized = storageBackendsReady && productFilesResult;
+    if (initialized) {
+        OC_LOG_INFO(
+            "Storage backends initialized settings={}B; reconciliation follows",
+            deviceSettingsStorage.capacity()
+        );
+    } else {
+        OC_LOG_WARN(
+            "Storage initialization deferred; boot recovery will retry every {}ms",
+            STORAGE_RECOVERY_SAMPLE_MS
+        );
+    }
+    return initialized;
 }
 
 #if !defined(MS_PROJECT_STORE_SMOKE)
@@ -278,11 +364,23 @@ static FLASHMEM void initApp() {
     coreState.emplace(deviceSettingsStorage);
     projectSessionStore.emplace(*productFileService);
     projectSessionRestoreService.emplace(*projectSessionStore);
-    const auto sessionRestore = projectSessionRestoreService->restore(*coreState);
-    switch (sessionRestore.status) {
+    projectSessionAutosaveService.emplace(*projectSessionStore);
+
+    auto bootRecovery = storageRecovery.reconcileBoot(millis());
+    while (!bootRecovery.recovered()) {
+        OC_LOG_WARN(
+            "[StorageRecovery] Boot reconciliation pending status={} error={}",
+            static_cast<unsigned>(bootRecovery.status),
+            oc::type::errorCodeToString(bootRecovery.error)
+        );
+        delay(STORAGE_RECOVERY_SAMPLE_MS);
+        bootRecovery = storageRecovery.reconcileBoot(millis());
+    }
+
+    switch (bootRecovery.sessionRestoreStatus) {
         case core::persistence::ProjectSessionRestoreService::Status::RESTORED:
             OC_LOG_INFO("[ProjectSession] restored current.mspj bytes={}",
-                        sessionRestore.bytes);
+                        bootRecovery.sessionRestoreBytes);
             break;
         case core::persistence::ProjectSessionRestoreService::Status::MISSING:
             OC_LOG_INFO("[ProjectSession] no current.mspj; using default session");
@@ -295,7 +393,10 @@ static FLASHMEM void initApp() {
             OC_LOG_WARN("[ProjectSession] current.mspj unavailable/corrupt; using default session");
             break;
     }
-    projectSessionAutosaveService.emplace(*projectSessionStore);
+    OC_LOG_INFO(
+        "[StorageRecovery] Boot reconciliation complete session-save={}B",
+        bootRecovery.sessionSaveBytes
+    );
 
 #if defined(MS_UX_RECORDER)
     semanticUxRecorder =
@@ -404,8 +505,8 @@ FLASHMEM void setup() {
     OC_LOG_INFO("App {}Hz, LVGL {}Hz", Config::Timing::APP_HZ, Config::Timing::LVGL_HZ);
 
 #if defined(MS_PROJECT_STORE_SMOKE)
-    initStorage();
-    if (productFileService) {
+    const bool storageReady = initStorage();
+    if (storageReady && productFileService) {
         coreState.emplace(deviceSettingsStorage);
         projectStoreSmokeResult =
             core::validation::project::runProjectStoreSmoke(*productFileService, *coreState);
@@ -427,7 +528,7 @@ FLASHMEM void setup() {
     initDisplay();
     initLVGL();
     initMux();
-    initStorage();
+    (void)initStorage();
     initApp();
 
 #if defined(MS_UX_RECORDER)
@@ -474,6 +575,13 @@ void loop() {
             app->update();
         }
 
+        // Sampling never pauses for an open stream: observed removal must
+        // invalidate its lease and abort the backend handle immediately.
+        {
+            OC_PERF_SCOPE(perfStorageRecovery, "main.storage-recovery");
+            storageRecovery.update(millis(), coreState->statusBar.playing.get());
+        }
+
         const bool productFileWriteActive =
             productFileService && productFileService->writeSessionActive();
         const bool autosaveWriteActive =
@@ -481,14 +589,6 @@ void loop() {
             projectSessionAutosaveService->writeSessionActive();
         const bool externalProductFileWriteActive =
             productFileWriteActive && !autosaveWriteActive;
-        // Product file sessions keep an SD handle open; avoid competing recovery
-        // while any write is active. An autosave-owned session is advanced below;
-        // an external PC/controller transfer blocks state-side persistence.
-        if (!productFileWriteActive) {
-            OC_PERF_SCOPE(perfStorageRecovery, "main.storage-recovery");
-            storageRecovery.update(millis(), coreState->statusBar.playing.get());
-        }
-
         // Update state-side coalescing before evaluating the project autosave.
         if (!externalProductFileWriteActive) {
             {
@@ -496,7 +596,8 @@ void loop() {
                 coreState->update();
             }
 
-            if (projectSessionAutosaveService) {
+            if (projectSessionAutosaveService && productFileService &&
+                productFileService->available()) {
                 OC_PERF_SCOPE(perfAutosave, "main.autosave");
                 projectSessionAutosaveService->update(
                     *coreState,

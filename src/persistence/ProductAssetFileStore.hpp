@@ -20,11 +20,22 @@ struct ProductAssetFileLayout {
 };
 
 struct ProductAssetFilePaths {
-    char directory[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
-    char current[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
-    char backup[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
-    char tmp[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
+    // Product asset IDs are bounded to 63 bytes and the registered library
+    // roots are shorter than 32 bytes. Keep private sidecars independent from
+    // the wider RPC path maximum so four cold paths do not consume 772 bytes
+    // of scarce DTCM stack.
+    static constexpr size_t PATH_SIZE = 128;
+
+    char directory[PATH_SIZE] = {};
+    char current[PATH_SIZE] = {};
+    char backup[PATH_SIZE] = {};
+    char tmp[PATH_SIZE] = {};
 };
+
+static_assert(
+    ProductAssetFilePaths::PATH_SIZE <=
+    oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1
+);
 
 struct ProductAssetFileTransferResult {
     uint32_t bytes = 0;

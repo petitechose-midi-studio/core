@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 #include <config/PlatformCompat.hpp>
 
@@ -43,7 +44,7 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteBegin_(
         return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
     }
 
-    if (writeSession_.active) {
+    if (hasActiveWriteSession()) {
         const size_t size = encodeWriteResponse(
             FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE,
             frame.requestId,
@@ -83,13 +84,14 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteBegin_(
         return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
     }
 
-    (void)files_.remove(writeSession_.tmpPath);
-    auto begin = files_.beginWrite(writeSession_.tmpPath, expectedSize);
-    if (!begin) {
+    auto acquired = files_.acquireMutation(
+        core::persistence::ProductMutationOwner::FILESYSTEM_RPC
+    );
+    if (!acquired) {
         const size_t size = encodeWriteResponse(
             FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE,
             frame.requestId,
-            mapError(begin.error()),
+            mapError(acquired.error()),
             sessionId,
             0,
             response,
@@ -98,8 +100,44 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteBegin_(
         clearWriteSession_();
         return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
     }
+    writeSession_.lease = std::move(acquired.value());
 
-    writeSession_.active = true;
+    auto deletedTmp = core::persistence::deleteProductFileIfExists(
+        files_,
+        writeSession_.lease,
+        writeSession_.tmpPath
+    );
+    if (!deletedTmp) {
+        const auto status = mapError(deletedTmp.error());
+        (void)releaseWriteSession_();
+        const size_t size = encodeWriteResponse(
+            FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE,
+            frame.requestId,
+            status,
+            sessionId,
+            0,
+            response,
+            responseSize
+        );
+        return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
+    }
+
+    auto begin = files_.beginWrite(writeSession_.lease, writeSession_.tmpPath, expectedSize);
+    if (!begin) {
+        const auto status = mapError(begin.error());
+        (void)releaseWriteSession_();
+        const size_t size = encodeWriteResponse(
+            FileSystemRpcMessageId::WRITE_BEGIN_RESPONSE,
+            frame.requestId,
+            status,
+            sessionId,
+            0,
+            response,
+            responseSize
+        );
+        return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
+    }
+
     writeSession_.sessionId = sessionId;
     writeSession_.expectedSize = expectedSize;
     writeSession_.writtenBytes = 0;
@@ -149,19 +187,23 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteChunk_(
 
     FileSystemRpcStatus status = FileSystemRpcStatus::OK;
     uint16_t bytesWritten = 0;
-    if (!writeSession_.active || writeSession_.sessionId != sessionId) {
+    if (!hasActiveWriteSession() || writeSession_.sessionId != sessionId) {
         status = FileSystemRpcStatus::INVALID_STATE;
     } else if (offset != writeSession_.writtenBytes ||
                offset > writeSession_.expectedSize ||
                static_cast<uint32_t>(size) > writeSession_.expectedSize - offset) {
         status = FileSystemRpcStatus::INVALID_ARGUMENT;
     } else {
-        auto written = files_.appendWrite(chunk, size);
+        auto written = files_.appendWrite(writeSession_.lease, chunk, size);
         if (!written || written.value() != size) {
             status = written ? FileSystemRpcStatus::STORAGE_ERROR : mapError(written.error());
-            files_.abortWrite();
-            (void)files_.remove(writeSession_.tmpPath);
-            clearWriteSession_();
+            (void)files_.abortWrite(writeSession_.lease);
+            (void)core::persistence::deleteProductFileIfExists(
+                files_,
+                writeSession_.lease,
+                writeSession_.tmpPath
+            );
+            (void)releaseWriteSession_();
         } else {
             bytesWritten = static_cast<uint16_t>(written.value());
             writeSession_.writtenBytes += bytesWritten;
@@ -202,22 +244,19 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
     }
 
     FileSystemRpcStatus status = FileSystemRpcStatus::OK;
-    bool writeFinished = false;
-    if (!writeSession_.active || writeSession_.sessionId != sessionId) {
+    if (!hasActiveWriteSession() || writeSession_.sessionId != sessionId) {
         status = FileSystemRpcStatus::INVALID_STATE;
     } else if (writeSession_.writtenBytes != writeSession_.expectedSize) {
         status = FileSystemRpcStatus::INVALID_STATE;
     } else {
-        auto finish = files_.finishWrite();
+        auto finish = files_.finishWrite(writeSession_.lease);
         if (!finish) {
             status = mapError(finish.error());
-            files_.abortWrite();
-            (void)files_.remove(writeSession_.tmpPath);
-            clearWriteSession_();
+            (void)files_.abortWrite(writeSession_.lease);
         } else {
-            writeFinished = true;
             auto commit = core::persistence::commitProductFileTemp(
                 files_,
+                writeSession_.lease,
                 writeSession_.finalPath,
                 writeSession_.backupPath,
                 writeSession_.tmpPath
@@ -226,13 +265,17 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteCommit_(
                 status = mapError(commit.error());
             }
         }
-    }
-
-    if (status == FileSystemRpcStatus::OK) {
-        clearWriteSession_();
-    } else if (writeFinished) {
-        (void)files_.remove(writeSession_.tmpPath);
-        clearWriteSession_();
+        if (status != FileSystemRpcStatus::OK) {
+            (void)core::persistence::deleteProductFileIfExists(
+                files_,
+                writeSession_.lease,
+                writeSession_.tmpPath
+            );
+        }
+        auto released = releaseWriteSession_();
+        if (status == FileSystemRpcStatus::OK && !released) {
+            status = mapError(released.error());
+        }
     }
 
     const size_t encoded = encodeWriteResponse(
@@ -268,12 +311,17 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteAbort_(
     }
 
     FileSystemRpcStatus status = FileSystemRpcStatus::OK;
-    if (!writeSession_.active || writeSession_.sessionId != sessionId) {
+    if (!hasActiveWriteSession() || writeSession_.sessionId != sessionId) {
         status = FileSystemRpcStatus::INVALID_STATE;
     } else {
-        files_.abortWrite();
-        (void)files_.remove(writeSession_.tmpPath);
-        clearWriteSession_();
+        (void)files_.abortWrite(writeSession_.lease);
+        (void)core::persistence::deleteProductFileIfExists(
+            files_,
+            writeSession_.lease,
+            writeSession_.tmpPath
+        );
+        auto released = releaseWriteSession_();
+        if (!released) status = mapError(released.error());
     }
 
     const size_t encoded = encodeWriteResponse(
@@ -289,7 +337,11 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteAbort_(
 }
 
 void FileSystemRpcHandler::expireWriteSession_(uint32_t nowMs) {
-    if (!writeSession_.active) {
+    if (writeSession_.lease.valid() && !files_.owns(writeSession_.lease)) {
+        (void)releaseWriteSession_();
+        return;
+    }
+    if (!hasActiveWriteSession()) {
         return;
     }
     if (static_cast<uint32_t>(nowMs - writeSession_.lastActivityMs) <=
@@ -300,7 +352,17 @@ void FileSystemRpcHandler::expireWriteSession_(uint32_t nowMs) {
 }
 
 FLASHMEM void FileSystemRpcHandler::clearWriteSession_() {
-    writeSession_ = {};
+    writeSession_ = WriteSession{};
+}
+
+FLASHMEM oc::type::Result<void> FileSystemRpcHandler::releaseWriteSession_() {
+    if (!writeSession_.lease.valid()) {
+        clearWriteSession_();
+        return oc::type::Result<void>::ok();
+    }
+    auto released = files_.releaseMutation(writeSession_.lease);
+    clearWriteSession_();
+    return released;
 }
 
 FLASHMEM bool FileSystemRpcHandler::copySessionPath_(const char* path, uint16_t sessionId) {

@@ -19,28 +19,62 @@ StorageRecoveryConfig fastConfig() {
     };
 }
 
-void test_removal_debounces_before_offline_action() {
+void test_observed_transient_absence_still_requires_reconciliation() {
+    StorageRecoveryMachine transient{fastConfig()};
+
+    assert(transient.update({.mediaPresent = false, .playing = false, .nowMs = 10}) ==
+           StorageRecoveryAction::NONE);
+    assert(transient.state() == StorageRecoveryState::MISSING_DEBOUNCE);
+
+    assert(transient.update({.mediaPresent = true, .playing = false, .nowMs = 50}) ==
+           StorageRecoveryAction::NONE);
+    assert(transient.state() == StorageRecoveryState::RECOVERY_PENDING);
+    assert(transient.update({.mediaPresent = true, .playing = false, .nowMs = 249}) ==
+           StorageRecoveryAction::NONE);
+    assert(transient.update({.mediaPresent = true, .playing = false, .nowMs = 250}) ==
+           StorageRecoveryAction::ATTEMPT_REOPEN);
+
+    StorageRecoveryMachine sustained{fastConfig()};
+
+    assert(sustained.update({.mediaPresent = false, .playing = false, .nowMs = 100}) ==
+           StorageRecoveryAction::NONE);
+    assert(sustained.update({.mediaPresent = false, .playing = false, .nowMs = 199}) ==
+           StorageRecoveryAction::NONE);
+    assert(sustained.state() == StorageRecoveryState::MISSING_DEBOUNCE);
+
+    assert(sustained.update({.mediaPresent = false, .playing = false, .nowMs = 200}) ==
+           StorageRecoveryAction::MARK_OFFLINE);
+    assert(sustained.state() == StorageRecoveryState::OFFLINE);
+
+    std::cout
+        << "[PASS] test_observed_transient_absence_still_requires_reconciliation\n";
+}
+
+void test_external_reconciliation_requirement_uses_retry_backoff() {
     StorageRecoveryMachine machine{fastConfig()};
 
-    assert(machine.update({.mediaPresent = false, .playing = false, .nowMs = 10}) ==
-           StorageRecoveryAction::NONE);
-    assert(machine.state() == StorageRecoveryState::MISSING_DEBOUNCE);
+    assert(machine.update({
+        .mediaPresent = true,
+        .playing = false,
+        .reconciliationRequired = true,
+        .nowMs = 10,
+    }) == StorageRecoveryAction::NONE);
+    assert(machine.state() == StorageRecoveryState::DEGRADED);
+    assert(machine.update({
+        .mediaPresent = true,
+        .playing = false,
+        .reconciliationRequired = true,
+        .nowMs = 509,
+    }) == StorageRecoveryAction::NONE);
+    assert(machine.update({
+        .mediaPresent = true,
+        .playing = false,
+        .reconciliationRequired = true,
+        .nowMs = 510,
+    }) == StorageRecoveryAction::ATTEMPT_REOPEN);
 
-    assert(machine.update({.mediaPresent = true, .playing = false, .nowMs = 50}) ==
-           StorageRecoveryAction::NONE);
-    assert(machine.state() == StorageRecoveryState::READY);
-
-    assert(machine.update({.mediaPresent = false, .playing = false, .nowMs = 100}) ==
-           StorageRecoveryAction::NONE);
-    assert(machine.update({.mediaPresent = false, .playing = false, .nowMs = 199}) ==
-           StorageRecoveryAction::NONE);
-    assert(machine.state() == StorageRecoveryState::MISSING_DEBOUNCE);
-
-    assert(machine.update({.mediaPresent = false, .playing = false, .nowMs = 200}) ==
-           StorageRecoveryAction::MARK_OFFLINE);
-    assert(machine.state() == StorageRecoveryState::OFFLINE);
-
-    std::cout << "[PASS] test_removal_debounces_before_offline_action\n";
+    std::cout
+        << "[PASS] test_external_reconciliation_requirement_uses_retry_backoff\n";
 }
 
 void test_reinsert_waits_until_idle_before_reopen() {
@@ -127,7 +161,8 @@ void test_media_removed_during_pending_recovery_returns_offline() {
 }  // namespace
 
 int main() {
-    test_removal_debounces_before_offline_action();
+    test_observed_transient_absence_still_requires_reconciliation();
+    test_external_reconciliation_requirement_uses_retry_backoff();
     test_reinsert_waits_until_idle_before_reopen();
     test_reopen_and_revalidation_success_marks_recovered_then_ready();
     test_failed_recovery_retries_with_backoff();

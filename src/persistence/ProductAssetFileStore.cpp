@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
@@ -372,8 +373,15 @@ ProductAssetFileStore::save(
         );
     }
 
+    auto acquired = files_.acquireMutation(ProductMutationOwner::ASSET);
+    if (!acquired) {
+        return oc::type::Result<ProductAssetFileTransferResult>::err(acquired.error());
+    }
+    auto lease = std::move(acquired.value());
+
     auto saved = replaceProductFileAtomically(
         files_,
+        lease,
         {
             .directory = paths.directory,
             .current = paths.current,
@@ -385,9 +393,15 @@ ProductAssetFileStore::save(
         layout_.writeChunkSize
     );
     if (!saved) {
+        const auto error = saved.error();
+        (void)files_.releaseMutation(lease);
         return oc::type::Result<ProductAssetFileTransferResult>::err(
-            saved.error()
+            error
         );
+    }
+    auto released = files_.releaseMutation(lease);
+    if (!released) {
+        return oc::type::Result<ProductAssetFileTransferResult>::err(released.error());
     }
 
     ProductAssetFileTransferResult result{};
@@ -417,44 +431,60 @@ ProductAssetFileStore::load(
         );
     }
 
+    auto acquired = files_.acquireMutation(ProductMutationOwner::ASSET);
+    if (!acquired) {
+        return oc::type::Result<ProductAssetFileTransferResult>::err(acquired.error());
+    }
+    auto lease = std::move(acquired.value());
+
     const auto recovered = recoverProductFileBackupIfCurrentMissing(
         files_,
+        lease,
         paths.current,
         paths.backup
     );
     if (!recovered) {
+        const auto error = recovered.error();
+        (void)files_.releaseMutation(lease);
         return oc::type::Result<ProductAssetFileTransferResult>::err(
-            recovered.error()
+            error
         );
     }
 
-    const auto info = files_.stat(paths.current);
+    const auto info = files_.stat(lease, paths.current);
     if (!info) {
+        const auto error = info.error();
+        (void)files_.releaseMutation(lease);
         return oc::type::Result<ProductAssetFileTransferResult>::err(
-            info.error()
+            error
         );
     }
     if (info.value().type != oc::interface::FileType::FILE ||
         info.value().sizeBytes == 0U ||
         info.value().sizeBytes > outCapacity ||
         info.value().sizeBytes > layout_.maxFileSize) {
+        (void)files_.releaseMutation(lease);
         return oc::type::Result<ProductAssetFileTransferResult>::err(
             {ErrorCode::RESOURCE_EXHAUSTED, "asset file too large"}
         );
     }
 
     const auto read = files_.read(
+        lease,
         paths.current,
         0,
         outPayload,
         info.value().sizeBytes
     );
     if (!read) {
+        const auto error = read.error();
+        (void)files_.releaseMutation(lease);
         return oc::type::Result<ProductAssetFileTransferResult>::err(
-            read.error()
+            error
         );
     }
     if (read.value() != info.value().sizeBytes) {
+        (void)files_.releaseMutation(lease);
         return oc::type::Result<ProductAssetFileTransferResult>::err(
             {ErrorCode::STORAGE_READ_FAILED, "short asset read"}
         );
@@ -465,6 +495,11 @@ ProductAssetFileStore::load(
     outSize = result.bytes;
     std::strncpy(result.path, paths.current, sizeof(result.path) - 1U);
     std::strncpy(result.id, assetId, sizeof(result.id) - 1U);
+    auto released = files_.releaseMutation(lease);
+    if (!released) {
+        outSize = 0U;
+        return oc::type::Result<ProductAssetFileTransferResult>::err(released.error());
+    }
     return oc::type::Result<ProductAssetFileTransferResult>::ok(result);
 }
 
@@ -473,25 +508,42 @@ FLASHMEM oc::type::Result<void> ProductAssetFileStore::remove(
 ) {
     ProductAssetFilePaths paths{};
     if (!paths_(assetId, paths)) return invalid("invalid asset id");
-    if (files_.writeSessionActive()) {
-        return oc::type::Result<void>::err(
-            {ErrorCode::INVALID_STATE, "asset write session active"}
-        );
+    auto acquired = files_.acquireMutation(ProductMutationOwner::ASSET);
+    if (!acquired) {
+        return oc::type::Result<void>::err(acquired.error());
     }
+    auto lease = std::move(acquired.value());
 
-    const auto currentInfo = files_.stat(paths.current);
+    const auto currentInfo = files_.stat(lease, paths.current);
     if (!currentInfo) {
-        return oc::type::Result<void>::err(currentInfo.error());
+        const auto error = currentInfo.error();
+        (void)files_.releaseMutation(lease);
+        return oc::type::Result<void>::err(error);
     }
     if (currentInfo.value().type != oc::interface::FileType::FILE) {
+        (void)files_.releaseMutation(lease);
         return invalid("asset path is not a file");
     }
 
-    auto deletedTmp = deleteProductFileIfExists(files_, paths.tmp);
-    if (!deletedTmp) return deletedTmp;
-    auto deletedBackup = deleteProductFileIfExists(files_, paths.backup);
-    if (!deletedBackup) return deletedBackup;
-    return files_.remove(paths.current);
+    auto deletedTmp = deleteProductFileIfExists(files_, lease, paths.tmp);
+    if (!deletedTmp) {
+        const auto error = deletedTmp.error();
+        (void)files_.releaseMutation(lease);
+        return oc::type::Result<void>::err(error);
+    }
+    auto deletedBackup = deleteProductFileIfExists(files_, lease, paths.backup);
+    if (!deletedBackup) {
+        const auto error = deletedBackup.error();
+        (void)files_.releaseMutation(lease);
+        return oc::type::Result<void>::err(error);
+    }
+    auto removed = files_.remove(lease, paths.current);
+    if (!removed) {
+        const auto error = removed.error();
+        (void)files_.releaseMutation(lease);
+        return oc::type::Result<void>::err(error);
+    }
+    return files_.releaseMutation(lease);
 }
 
 FLASHMEM oc::type::Result<ProductAssetFileListResult>
@@ -541,12 +593,6 @@ ProductAssetFileStore::listPage(
         );
     }
 
-    const auto ensureDirectory = files_.createDirectory(layout_.directory);
-    if (!ensureDirectory) {
-        return oc::type::Result<ProductAssetFileListResult>::err(
-            ensureDirectory.error()
-        );
-    }
     for (uint8_t index = 0; index < capacity; ++index) {
         entries[index] = {};
     }
@@ -631,9 +677,6 @@ FLASHMEM oc::type::Result<void> ProductAssetFileStore::nextAssetId(
     if (out == nullptr || outSize == 0U || !layoutValid_()) {
         return invalid("invalid next asset id buffer");
     }
-    const auto ensureDirectory = files_.createDirectory(layout_.directory);
-    if (!ensureDirectory) return ensureDirectory;
-
     for (uint16_t index = 1; index <= 999U; ++index) {
         char candidate[core::state::project::ProjectMetadata::ID_SIZE] = {};
         const int written = std::snprintf(

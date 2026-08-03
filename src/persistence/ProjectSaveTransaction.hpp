@@ -46,6 +46,19 @@ public:
         AtomicProductFilePaths paths
     );
     oc::type::Result<ProjectSaveProgress> advance();
+
+    /**
+     * Complete one save synchronously under the caller's exact RECOVERY lease.
+     *
+     * The lease is borrowed, never copied or released. This keeps recovery as
+     * one transaction from layout/journal reconciliation through the exact
+     * RAM-authoritative session commit without growing the retained ABI.
+     */
+    oc::type::Result<ProjectSaveProgress> saveToCompletionWithRecoveryLease(
+        const core::state::project::ProjectSnapshot& snapshot,
+        AtomicProductFilePaths paths,
+        const ProductMutationLease& recoveryLease
+    );
     void cancel();
 
     bool active() const;
@@ -60,8 +73,13 @@ private:
         COMMIT,
     };
 
+    oc::type::Result<ProjectSaveProgress> advance_(
+        const ProductMutationLease& lease,
+        bool releaseLeaseOnCompletion
+    );
+    void cancel_(const ProductMutationLease& lease, bool releaseLease);
     void reset_();
-    void cleanupTmp_();
+    void cleanupTmp_(const ProductMutationLease& lease);
 
     ProductFileService& files_;
     ProjectFileWorkspace& workspace_;
@@ -71,7 +89,12 @@ private:
     uint32_t encoded_size_ = 0;
     uint32_t write_offset_ = 0;
     bool tmp_prepared_ = false;
-    bool write_session_active_ = false;
+    ProductMutationLease lease_{};
 };
+
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+static_assert(sizeof(ProjectSaveTransaction) == 48U, "project save lease ABI drift");
+static_assert(alignof(ProjectSaveTransaction) == 4U, "project save alignment drift");
+#endif
 
 }  // namespace core::persistence

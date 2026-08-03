@@ -11,6 +11,7 @@ struct CoreState;
 namespace core::persistence {
 
 class ProjectSessionStore;
+class ProductMutationLease;
 
 class ProjectSessionAutosaveService {
 public:
@@ -40,6 +41,10 @@ public:
 
     Result update(core::state::CoreState& state, uint32_t nowMs, bool mutationPending = false);
     Result flush(core::state::CoreState& state);
+    Result flushRecovery(
+        core::state::CoreState& state,
+        const ProductMutationLease& recoveryLease
+    );
     bool writeSessionActive() const;
 
 private:

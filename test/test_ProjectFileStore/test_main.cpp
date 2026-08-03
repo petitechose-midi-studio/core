@@ -14,6 +14,7 @@
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../../src/state/project/ProjectSlug.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/ProductFileTestMutation.hpp"
 
 namespace {
 
@@ -235,7 +236,9 @@ void test_stale_tmp_is_replaced_on_save() {
     auto store = makeStore(files);
 
     const uint8_t stale[] = {'s', 't', 'a', 'l', 'e'};
-    assert(files.write("tmp/p321.mspj.tmp", 0, stale, sizeof(stale)));
+    assert(core::test::writeProductFileFixture(
+        files, "tmp/p321.mspj.tmp", 0, stale, sizeof(stale)
+    ));
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -261,7 +264,9 @@ void test_load_recovers_interrupted_backup_commit() {
     auto state = makeCoreState(storages);
     configureProject(state, "Backup", 4);
     assert(store.save(capture(state)));
-    assert(files.rename("projects/p321.mspj", "projects/p321.mspj.bak"));
+    assert(core::test::renameProductFileFixture(
+        files, "projects/p321.mspj", "projects/p321.mspj.bak"
+    ));
 
     assertLoadedProject(store, "Backup", 4);
     assert(std::filesystem::is_regular_file(
@@ -285,10 +290,14 @@ void test_load_recovers_corrupt_current_from_valid_backup() {
     auto state = makeCoreState(storages);
     configureProject(state, "Backup", 4);
     assert(store.save(capture(state)));
-    assert(files.rename("projects/p321.mspj", "projects/p321.mspj.bak"));
+    assert(core::test::renameProductFileFixture(
+        files, "projects/p321.mspj", "projects/p321.mspj.bak"
+    ));
 
     const uint8_t corrupt[] = {'b', 'r', 'o', 'k', 'e', 'n'};
-    assert(files.write("projects/p321.mspj", 0, corrupt, sizeof(corrupt)));
+    assert(core::test::writeProductFileFixture(
+        files, "projects/p321.mspj", 0, corrupt, sizeof(corrupt)
+    ));
 
     assertLoadedProject(store, "Backup", 4);
     assert(std::filesystem::is_regular_file(
@@ -309,7 +318,9 @@ void test_load_reports_corrupt_backup_when_current_is_missing() {
     auto store = makeStore(files);
 
     const uint8_t corrupt[] = {'b', 'r', 'o', 'k', 'e', 'n'};
-    assert(files.write("projects/p321.mspj.bak", 0, corrupt, sizeof(corrupt)));
+    assert(core::test::writeProductFileFixture(
+        files, "projects/p321.mspj.bak", 0, corrupt, sizeof(corrupt)
+    ));
 
     project::ProjectSnapshot loaded;
     project_file::LoadReport report{};
@@ -360,8 +371,12 @@ void test_list_projects_returns_saved_projects_sorted() {
     assert(store.save(capture(p001)));
 
     const uint8_t invalid[] = {'x'};
-    assert(files.write("projects/BROKEN_.mspj", 0, invalid, sizeof(invalid)));
-    assert(files.write("projects/p999.bin", 0, invalid, sizeof(invalid)));
+    assert(core::test::writeProductFileFixture(
+        files, "projects/BROKEN_.mspj", 0, invalid, sizeof(invalid)
+    ));
+    assert(core::test::writeProductFileFixture(
+        files, "projects/p999.bin", 0, invalid, sizeof(invalid)
+    ));
 
     core::persistence::ProjectListEntry entries[4]{};
     auto listed = store.listProjects(entries, 4);

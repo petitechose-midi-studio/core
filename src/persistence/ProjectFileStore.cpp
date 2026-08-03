@@ -95,6 +95,33 @@ FLASHMEM bool ProjectFileStore::buildPaths_(const char* projectId, ProjectPaths&
            );
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM oc::type::Result<ProjectSaveResult> ProjectFileStore::saveWithPaths_(
+    ProductFileService& files,
+    ProjectFileWorkspace& workspace,
+    const core::state::project::ProjectSnapshot& snapshot,
+    const ProjectPaths& paths
+) {
+    // ProjectPaths owns the large bounded path buffers in the caller. Keep the
+    // lease-bearing transaction in this sequential cold frame so increasing
+    // its exact ABI does not increase the caller's peak DTCM stack usage.
+    ProjectSaveTransaction transaction(files, workspace);
+    return project_file_transactions::saveToCompletion(
+        transaction,
+        snapshot,
+        {
+            .directory = paths.directory,
+            .current = paths.current,
+            .backup = paths.backup,
+            .tmp = paths.tmp,
+        }
+    );
+}
+
 FLASHMEM oc::type::Result<ProjectSaveResult> ProjectFileStore::save(
     const core::state::project::ProjectSnapshot& snapshot
 ) {
@@ -114,17 +141,7 @@ FLASHMEM oc::type::Result<ProjectSaveResult> ProjectFileStore::save(
         );
     }
 
-    ProjectSaveTransaction transaction(files_, workspace_);
-    return project_file_transactions::saveToCompletion(
-        transaction,
-        snapshot,
-        {
-            .directory = paths.directory,
-            .current = paths.current,
-            .backup = paths.backup,
-            .tmp = paths.tmp,
-        }
-    );
+    return saveWithPaths_(files_, workspace_, snapshot, paths);
 }
 
 FLASHMEM oc::type::Result<ProjectLoadResult> ProjectFileStore::load(

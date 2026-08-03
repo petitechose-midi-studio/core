@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <utility>
 
 #include <config/PlatformCompat.hpp>
 
@@ -99,7 +100,18 @@ FLASHMEM Result deleteProjectFileIfExists(
         return invalidArgument();
     }
 
-    auto removed = files.remove(path);
+    auto acquired = files.acquireMutation(
+        core::persistence::ProductMutationOwner::PROJECT
+    );
+    if (!acquired) {
+        return Result{.status = Status::SAVE_FAILED};
+    }
+    auto lease = std::move(acquired.value());
+    auto removed = files.remove(lease, path);
+    auto released = files.releaseMutation(lease);
+    if (!released) {
+        return Result{.status = Status::SAVE_FAILED};
+    }
     if (removed || removed.error().code == ErrorCode::RESOURCE_NOT_FOUND) {
         return Result{.status = Status::OK};
     }

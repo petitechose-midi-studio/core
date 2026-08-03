@@ -28,6 +28,23 @@ FLASHMEM oc::type::Result<ProjectSaveResult> ProjectSessionStore::saveCurrent(
     );
 }
 
+FLASHMEM oc::type::Result<ProjectSaveResult> ProjectSessionStore::saveCurrent(
+    const core::state::project::ProjectSnapshot& snapshot,
+    const ProductMutationLease& recoveryLease
+) {
+    return project_file_transactions::saveToCompletionWithRecoveryLease(
+        save_transaction_,
+        snapshot,
+        {
+            .directory = "session",
+            .current = CURRENT_SESSION_PATH,
+            .backup = CURRENT_SESSION_BACKUP_PATH,
+            .tmp = CURRENT_SESSION_TMP_PATH,
+        },
+        recoveryLease
+    );
+}
+
 FLASHMEM oc::type::Result<void> ProjectSessionStore::beginSaveCurrent(
     const core::state::project::ProjectSnapshot& snapshot
 ) {
@@ -69,6 +86,27 @@ FLASHMEM oc::type::Result<ProjectLoadResult> ProjectSessionStore::loadCurrent(
     }
     return project_file_transactions::loadWithBackup(
         files_, workspace_, CURRENT_SESSION_PATH, CURRENT_SESSION_BACKUP_PATH, out, report
+    );
+}
+
+FLASHMEM oc::type::Result<ProjectLoadResult> ProjectSessionStore::loadCurrent(
+    core::state::project::ProjectSnapshot& out,
+    const ProductMutationLease& recoveryLease,
+    core::persistence::project_file::LoadReport* report
+) {
+    if (save_transaction_.active()) {
+        return oc::type::Result<ProjectLoadResult>::err(
+            {oc::type::ErrorCode::INVALID_STATE, "project session save active"}
+        );
+    }
+    return project_file_transactions::loadWithBackup(
+        files_,
+        recoveryLease,
+        workspace_,
+        CURRENT_SESSION_PATH,
+        CURRENT_SESSION_BACKUP_PATH,
+        out,
+        report
     );
 }
 

@@ -10,7 +10,12 @@ namespace core::protocol::filesystem::conditional_mutation {
 
 namespace {
 
-constexpr size_t HASH_READ_BUFFER_SIZE = 512;
+// Seven SHA-256 blocks keep streaming aligned while leaving enough DTCM stack
+// headroom for the exact mutation lease and stat guards. Filesystem RPC is a
+// cold control path; the modest extra read iteration protects the realtime
+// stack without affecting musical work.
+constexpr size_t HASH_READ_BUFFER_SIZE = 7U * 64U;
+static_assert(HASH_READ_BUFFER_SIZE == 448U);
 
 constexpr uint32_t rotateRight(uint32_t value, uint8_t count) {
     return (value >> count) | (value << (32U - count));
@@ -140,6 +145,35 @@ private:
     uint64_t totalBytes_ = 0;
 };
 
+FLASHMEM FileSystemRpcStatus digestFileSize(
+    core::persistence::ProductFileService& files,
+    const core::persistence::ProductMutationLease& lease,
+    const char* path,
+    uint32_t& size
+) {
+    auto info = files.stat(lease, path);
+    if (!info) return internal::mapError(info.error());
+    if (info.value().type != oc::interface::FileType::FILE) {
+        return FileSystemRpcStatus::INVALID_ARGUMENT;
+    }
+    size = info.value().sizeBytes;
+    return FileSystemRpcStatus::OK;
+}
+
+FLASHMEM FileSystemRpcStatus verifyDigestFileSize(
+    core::persistence::ProductFileService& files,
+    const core::persistence::ProductMutationLease& lease,
+    const char* path,
+    uint32_t expectedSize
+) {
+    auto info = files.stat(lease, path);
+    if (!info) return internal::mapError(info.error());
+    return info.value().type == oc::interface::FileType::FILE &&
+           info.value().sizeBytes == expectedSize
+        ? FileSystemRpcStatus::OK
+        : FileSystemRpcStatus::PRECONDITION_FAILED;
+}
+
 }  // namespace
 
 FLASHMEM bool digestEquals(const uint8_t* lhs, const uint8_t* rhs) {
@@ -156,26 +190,21 @@ FLASHMEM void copyDigest(uint8_t* destination, const uint8_t* source) {
 
 FLASHMEM DigestReadResult readDigest(
     core::persistence::ProductFileService& files,
+    const core::persistence::ProductMutationLease& lease,
     const char* path
 ) {
     DigestReadResult result{};
-    auto before = files.stat(path);
-    if (!before) {
-        result.status = internal::mapError(before.error());
-        return result;
-    }
-    if (before.value().type != oc::interface::FileType::FILE) {
-        result.status = FileSystemRpcStatus::INVALID_ARGUMENT;
-        return result;
-    }
+    uint32_t fileSize = 0;
+    result.status = digestFileSize(files, lease, path, fileSize);
+    if (result.status != FileSystemRpcStatus::OK) return result;
 
     Sha256 sha256;
     uint8_t buffer[HASH_READ_BUFFER_SIZE] = {};
     uint32_t offset = 0;
-    while (offset < before.value().sizeBytes) {
-        const size_t remaining = before.value().sizeBytes - offset;
+    while (offset < fileSize) {
+        const size_t remaining = fileSize - offset;
         const size_t requested = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
-        auto read = files.read(path, offset, buffer, requested);
+        auto read = files.read(lease, path, offset, buffer, requested);
         if (!read) {
             result.status = internal::mapError(read.error());
             return result;
@@ -188,16 +217,8 @@ FLASHMEM DigestReadResult readDigest(
         offset += static_cast<uint32_t>(read.value());
     }
 
-    auto after = files.stat(path);
-    if (!after) {
-        result.status = internal::mapError(after.error());
-        return result;
-    }
-    if (after.value().type != oc::interface::FileType::FILE ||
-        after.value().sizeBytes != before.value().sizeBytes) {
-        result.status = FileSystemRpcStatus::PRECONDITION_FAILED;
-        return result;
-    }
+    result.status = verifyDigestFileSize(files, lease, path, fileSize);
+    if (result.status != FileSystemRpcStatus::OK) return result;
     sha256.finish(result.sha256);
     result.status = FileSystemRpcStatus::OK;
     return result;

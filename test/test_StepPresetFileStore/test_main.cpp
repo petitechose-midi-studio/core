@@ -11,6 +11,7 @@
 #include <oc/impl/HostFileSystem.hpp>
 
 #include "../../src/persistence/ProductFileService.hpp"
+#include "../support/ProductFileTestMutation.hpp"
 #include "../../src/persistence/SequencerGraphAssetCodec.hpp"
 #include "../../src/persistence/StepPresetFileStore.hpp"
 #include "../../src/state/sequencer/SequencerGraphAsset.hpp"
@@ -191,7 +192,8 @@ void test_step_preset_file_store_roundtrip_and_lists_files() {
     applyFocusedPreset(target, loadedPayload.data(), loadedSize);
     assertLoadedIntoTarget(target);
 
-    assert(productFiles.rename(
+    assert(core::test::renameProductFileFixture(
+        productFiles,
         "library/step-presets/step-preset-001.mssp",
         "library/step-presets/step-preset-001.mssp.bak"
     ));
@@ -240,10 +242,14 @@ void test_remove_is_exact_and_cleans_atomic_sidecars() {
     const char* const backup =
         "library/step-presets/step-preset-007.mssp.bak";
     const char* const tmp = "tmp/step-preset-007.mssp.tmp";
-    assert(productFiles.write(backup, 0, payload.data(), encoded.bytesWritten));
-    assert(productFiles.flush(backup));
-    assert(productFiles.write(tmp, 0, payload.data(), encoded.bytesWritten));
-    assert(productFiles.flush(tmp));
+    assert(core::test::writeProductFileFixture(
+        productFiles, backup, 0, payload.data(), encoded.bytesWritten
+    ));
+    assert(core::test::flushProductFileFixture(productFiles, backup));
+    assert(core::test::writeProductFileFixture(
+        productFiles, tmp, 0, payload.data(), encoded.bytesWritten
+    ));
+    assert(core::test::flushProductFileFixture(productFiles, tmp));
 
     const auto invalid = store.remove("../step-preset-007");
     assert(!invalid);

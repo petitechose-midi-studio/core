@@ -164,6 +164,9 @@ FLASHMEM FileSystemRpcStatus mapError(Error error) {
             return FileSystemRpcStatus::TOO_LARGE;
         case ErrorCode::INVALID_STATE:
             return FileSystemRpcStatus::INVALID_STATE;
+        case ErrorCode::HARDWARE_NOT_FOUND:
+        case ErrorCode::HARDWARE_INIT_FAILED:
+        case ErrorCode::HARDWARE_TIMEOUT:
         case ErrorCode::STORAGE_READ_FAILED:
         case ErrorCode::STORAGE_WRITE_FAILED:
         case ErrorCode::STORAGE_CORRUPT:

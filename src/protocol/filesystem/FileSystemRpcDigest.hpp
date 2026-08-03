@@ -17,6 +17,7 @@ void copyDigest(uint8_t* destination, const uint8_t* source);
 
 DigestReadResult readDigest(
     core::persistence::ProductFileService& files,
+    const core::persistence::ProductMutationLease& lease,
     const char* path
 );
 

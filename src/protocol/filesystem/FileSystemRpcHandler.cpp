@@ -4,6 +4,8 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/AtomicProductFile.hpp"
+
 namespace core::protocol::filesystem {
 
 using oc::interface::DirectoryEntry;
@@ -20,15 +22,7 @@ using internal::writeFrameHeader;
 namespace {
 
 FLASHMEM bool isRecoverySafeRequest(FileSystemRpcMessageId messageId) {
-    switch (messageId) {
-        case FileSystemRpcMessageId::CAPABILITIES_REQUEST:
-        case FileSystemRpcMessageId::STAT_REQUEST:
-        case FileSystemRpcMessageId::LIST_REQUEST:
-        case FileSystemRpcMessageId::READ_REQUEST:
-            return true;
-        default:
-            return false;
-    }
+    return messageId == FileSystemRpcMessageId::CAPABILITIES_REQUEST;
 }
 
 struct ListBuildContext {
@@ -100,24 +94,19 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
         return encodeError_(frame.value().requestId, FileSystemRpcStatus::UNSUPPORTED, response, responseSize);
     }
 
-    if (!conditionalRecoveryChecked_) {
-        const auto recoveryStatus = recoverConditionalMutation_();
-        conditionalRecoveryChecked_ = true;
-        conditionalRecoveryStatus_ = recoveryStatus;
-        if (recoveryStatus == FileSystemRpcStatus::OK) {
-            if (conditionalRecoveryState_ !=
-                FileSystemRpcConditionalRecoveryState::CORRUPT_JOURNAL_QUARANTINED) {
-                conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::READY;
-            }
-        } else {
-            conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::BLOCKED;
-        }
-    }
+    updateConditionalRecovery_(nowMs);
     if (conditionalRecoveryState_ == FileSystemRpcConditionalRecoveryState::BLOCKED &&
         !isRecoverySafeRequest(frame.value().messageId)) {
+        const auto blockedStatus =
+            conditionalRecoveryStatus_ == FileSystemRpcStatus::UNSUPPORTED ||
+            conditionalRecoveryStatus_ == FileSystemRpcStatus::TOO_LARGE
+            ? conditionalRecoveryStatus_
+            : (files_.storageState() == core::persistence::ProductStorageState::ABSENT
+                ? FileSystemRpcStatus::STORAGE_ERROR
+                : FileSystemRpcStatus::BUSY);
         return encodeError_(
             frame.value().requestId,
-            conditionalRecoveryStatus_,
+            blockedStatus,
             response,
             responseSize
         );
@@ -147,9 +136,9 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
         case FileSystemRpcMessageId::RENAME_REQUEST:
             return handleRename_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::CONDITIONAL_REPLACE_REQUEST:
-            return handleConditionalReplace_(frame.value(), response, responseSize);
+            return handleConditionalReplace_(frame.value(), nowMs, response, responseSize);
         case FileSystemRpcMessageId::CONDITIONAL_DELETE_REQUEST:
-            return handleConditionalDelete_(frame.value(), response, responseSize);
+            return handleConditionalDelete_(frame.value(), nowMs, response, responseSize);
         default:
             return encodeError_(frame.value().requestId, FileSystemRpcStatus::INVALID_MESSAGE, response, responseSize);
     }
@@ -157,18 +146,27 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
 
 void FileSystemRpcHandler::update(uint32_t nowMs) {
     expireWriteSession_(nowMs);
+    updateConditionalRecovery_(nowMs);
 }
 
 bool FileSystemRpcHandler::hasActiveWriteSession() const {
-    return writeSession_.active;
+    return writeSession_.lease.valid() &&
+           files_.owns(
+               writeSession_.lease,
+               core::persistence::ProductMutationOwner::FILESYSTEM_RPC
+           );
 }
 
 FLASHMEM void FileSystemRpcHandler::abortWriteSession() {
-    if (writeSession_.active) {
-        files_.abortWrite();
-        (void)files_.remove(writeSession_.tmpPath);
+    if (writeSession_.lease.valid() && files_.owns(writeSession_.lease)) {
+        (void)files_.abortWrite(writeSession_.lease);
+        (void)core::persistence::deleteProductFileIfExists(
+            files_,
+            writeSession_.lease,
+            writeSession_.tmpPath
+        );
     }
-    clearWriteSession_();
+    (void)releaseWriteSession_();
 }
 
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleCapabilities_(

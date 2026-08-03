@@ -12,6 +12,7 @@
 
 #include "../../src/persistence/ChordPresetFileStore.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
+#include "../support/ProductFileTestMutation.hpp"
 
 namespace {
 
@@ -160,13 +161,14 @@ void test_corrupt_payload_is_rejected_transactionally() {
     const uint8_t corrupt = 0xFFU;
     const char* path =
         "library/chord-presets/chord-preset-001.mscp";
-    assert(productFiles.write(
+    assert(core::test::writeProductFileFixture(
+        productFiles,
         path,
         ChordPresetFileStore::MAX_FILE_SIZE - 1U,
         &corrupt,
         1
     ));
-    assert(productFiles.flush(path));
+    assert(core::test::flushProductFileFixture(productFiles, path));
 
     StepSequencerChordPreset loaded{};
     loaded.valid = true;
