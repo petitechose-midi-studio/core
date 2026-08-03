@@ -29,6 +29,7 @@ enum class ProductStorageRecoveryStatus : uint8_t {
     SETTINGS_FAILED,
     SESSION_SAVE_FAILED,
     COMPLETION_FAILED,
+    TREE_CLEANUP_FAILED,
 };
 
 const char* productStorageRecoveryStatusLabel(ProductStorageRecoveryStatus status);

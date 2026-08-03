@@ -2125,6 +2125,16 @@ void test_protocol_transaction_paths_are_reserved() {
     status = FileSystemRpcCodec::decodeStatusResponse(h.response, nextResponseSize);
     assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
 
+    nextRequestSize = FileSystemRpcCodec::encodeMkdirRequest(
+        79,
+        "TMP/RPC-D",
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    status = FileSystemRpcCodec::decodeStatusResponse(h.response, nextResponseSize);
+    assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
     std::cout << "[PASS] test_protocol_transaction_paths_are_reserved\n";
 }
 
@@ -2188,6 +2198,213 @@ void test_endpoint_answers_only_filesystem_requests() {
     assert(!transport.onReceive);
 
     std::cout << "[PASS] test_endpoint_answers_only_filesystem_requests\n";
+}
+
+void test_endpoint_recursive_delete_is_hide_first_and_one_node_per_turn() {
+    resetTestRoot();
+    g_now_ms = 10U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    auto leaseResult = service.acquireMutation(
+        core::persistence::ProductMutationOwner::PROJECT
+    );
+    assert(leaseResult);
+    auto lease = std::move(leaseResult.value());
+    assert(service.createDirectory(lease, "projects/delete-tree/a/b"));
+    const uint8_t payload[] = {'d', 'e', 'l'};
+    assert(service.write(
+        lease,
+        "projects/delete-tree/a/b/deep.bin",
+        0U,
+        payload,
+        sizeof(payload)
+    ));
+    assert(service.write(
+        lease,
+        "projects/delete-tree/root.bin",
+        0U,
+        payload,
+        sizeof(payload)
+    ));
+    assert(service.releaseMutation(lease));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    uint8_t request[256] = {};
+    const size_t requestSize = FileSystemRpcCodec::encodeDeleteRequest(
+        0x5151U,
+        "projects/delete-tree",
+        true,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+    assert(transport.sendCount == 0U);
+
+    // Admission only retains the PSRAM continuation and mutation lease.
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(filesystem.filesystemCalls == 0U);
+    assert(transport.sendCount == 0U);
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "delete-tree"
+    ));
+
+    // The pre-hide check is bounded to the marker and canonical stat.
+    ++g_now_ms;
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(filesystem.filesystemCalls == 2U);
+    assert(transport.sendCount == 0U);
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "delete-tree"
+    ));
+
+    // One atomic rename removes the canonical tree before any child deletion.
+    ++g_now_ms;
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(filesystem.filesystemCalls == 1U);
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "delete-tree"
+    ));
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
+    ));
+
+    // A retained destructive continuation freezes completely during playback.
+    ++g_now_ms;
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, true);
+    assert(filesystem.filesystemCalls == 0U);
+    assert(transport.sendCount == 0U);
+
+    uint8_t cleanupAdvances = 0U;
+    while (transport.sendCount == 0U && cleanupAdvances < 32U) {
+        ++g_now_ms;
+        ++cleanupAdvances;
+        filesystem.resetWorkCounters();
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        assert(filesystem.filesystemCalls <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_TREE_CLEANUP
+                   .maxFilesystemCalls());
+    }
+
+    assert(cleanupAdvances > 3U);
+    assert(cleanupAdvances < 32U);
+    assert(transport.sendCount == 1U);
+    const auto deleted = FileSystemRpcCodec::decodeStatusResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(deleted);
+    assert(deleted.value().requestId == 0x5151U);
+    assert(deleted.value().messageId == FileSystemRpcMessageId::DELETE_RESPONSE);
+    assert(deleted.value().status == FileSystemRpcStatus::OK);
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::READY);
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
+    ));
+
+    endpoint.end();
+    std::cout << "[PASS] endpoint recursive delete is hide-first and bounded ("
+              << static_cast<unsigned>(cleanupAdvances) << " cleanup advances)\n";
+}
+
+void test_endpoint_recursive_delete_deadline_preserves_recovery_marker() {
+    resetTestRoot();
+    g_now_ms = 100U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    auto leaseResult = service.acquireMutation(
+        core::persistence::ProductMutationOwner::PROJECT
+    );
+    assert(leaseResult);
+    auto lease = std::move(leaseResult.value());
+    assert(service.createDirectory(lease, "projects/deadline-tree/a"));
+    const uint8_t payload[] = {'x'};
+    assert(service.write(
+        lease,
+        "projects/deadline-tree/a/value.bin",
+        0U,
+        payload,
+        sizeof(payload)
+    ));
+    assert(service.releaseMutation(lease));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    uint8_t request[256] = {};
+    const size_t requestSize = FileSystemRpcCodec::encodeDeleteRequest(
+        0x5252U,
+        "projects/deadline-tree",
+        true,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+
+    // Construct the continuation, precheck both paths, then atomically hide.
+    for (uint8_t advance = 0U; advance < 3U; ++advance) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++g_now_ms;
+    }
+    assert(transport.sendCount == 0U);
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "deadline-tree"
+    ));
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
+    ));
+
+    // The exact total deadline unwinds only control state: canonical content
+    // stays hidden and the fixed marker remains for the recovery-priority job.
+    g_now_ms = 100U + FILESYSTEM_RPC_TOTAL_WRITE_TIMEOUT_MS;
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(filesystem.filesystemCalls == 0U);
+    assert(transport.sendCount == 1U);
+    const auto expired = FileSystemRpcCodec::decodeStatusResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(expired);
+    assert(expired.value().requestId == 0x5252U);
+    assert(expired.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "deadline-tree"
+    ));
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
+    ));
+
+    endpoint.end();
+    std::cout
+        << "[PASS] recursive delete deadline preserves recovery marker\n";
 }
 
 void test_endpoint_advance_expires_abandoned_write_session() {
@@ -2976,6 +3193,8 @@ int main() {
     test_conditional_replace_rejects_fat_short_name_alias_syntax();
     test_protocol_transaction_paths_are_reserved();
     test_endpoint_answers_only_filesystem_requests();
+    test_endpoint_recursive_delete_is_hide_first_and_one_node_per_turn();
+    test_endpoint_recursive_delete_deadline_preserves_recovery_marker();
     test_endpoint_advance_expires_abandoned_write_session();
     test_endpoint_retains_two_frames_and_rejects_the_third();
     test_endpoint_playback_rejects_without_filesystem_work();

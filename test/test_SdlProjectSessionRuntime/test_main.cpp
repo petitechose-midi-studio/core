@@ -379,6 +379,11 @@ void test_hotswap_recovery_is_stopped_only_and_cooperative() {
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService productFiles(filesystem);
     assert(productFiles.initForRecovery());
+    // A fixed hidden root is the durable recursive-delete continuation. A
+    // reconstructed hot-swap plan must drain it before publishing READY.
+    assert(std::filesystem::create_directories(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d" / "a" / "b"
+    ));
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -435,7 +440,8 @@ void test_hotswap_recovery_is_stopped_only_and_cooperative() {
                 productFiles,
                 restore,
                 autosave,
-                state
+                state,
+                &measurement
             );
         }
         usage.bytes += plan->lastWorkBytes();
@@ -466,6 +472,9 @@ void test_hotswap_recovery_is_stopped_only_and_cooperative() {
     assert(!state.hasPendingProjectSessionSave());
     assert(std::filesystem::exists(
         testRoot() / "midi-studio" / "session" / "current.mspj"
+    ));
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
     ));
 
     resetTestRoot();

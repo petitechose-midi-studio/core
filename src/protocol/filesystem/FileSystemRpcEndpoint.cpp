@@ -7,6 +7,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/ProductFileCommitPlan.hpp"
+#include "persistence/ProductTreeCleanupPlan.hpp"
 #include "protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
 
 namespace core::protocol::filesystem {
@@ -30,6 +31,15 @@ static_assert(
 static_assert(
     alignof(conditional_mutation::ConditionalMutationPlan) <= 8U,
     "conditional mutation plan alignment exceeds request storage"
+);
+static_assert(
+    sizeof(core::persistence::ProductTreeCleanupPlan) <=
+        FILESYSTEM_RPC_REQUEST_BUFFER_SIZE,
+    "tree cleanup plan does not fit retained request storage"
+);
+static_assert(
+    alignof(core::persistence::ProductTreeCleanupPlan) <= 8U,
+    "tree cleanup plan alignment exceeds request storage"
 );
 
 bool elapsedAtLeast(uint32_t nowMs, uint32_t startedAtMs, uint32_t durationMs) {
@@ -207,6 +217,18 @@ void FileSystemRpcEndpoint::advance(uint32_t nowMs, bool playbackActive) {
                 );
                 operationPending = response && response.value() == 0U &&
                                    plan->active();
+            } else if (frame->operation == PendingOperation::TREE_CLEANUP) {
+                auto* plan = reinterpret_cast<
+                    core::persistence::ProductTreeCleanupPlan*>(frame->data);
+                response = handler_.advanceCooperativeRecursiveDelete_(
+                    *plan,
+                    frame->requestId,
+                    response_,
+                    sizeof(response_),
+                    &measurement
+                );
+                operationPending = response && response.value() == 0U &&
+                                   plan->active();
             } else if (frame->uploadContinuation &&
                        messageId == FileSystemRpcMessageId::WRITE_COMMIT_REQUEST) {
                 std::memcpy(response_, frame->data, frame->size);
@@ -256,6 +278,32 @@ void FileSystemRpcEndpoint::advance(uint32_t nowMs, bool playbackActive) {
                         conditional_mutation::ConditionalMutationPlan{};
                     frame->operation = PendingOperation::CONDITIONAL_MUTATION;
                     response = handler_.beginCooperativeConditionalMutation_(
+                        copied.value(),
+                        *plan,
+                        response_,
+                        sizeof(response_)
+                    );
+                    operationPending = response && response.value() == 0U &&
+                                       plan->active();
+                }
+            } else if (messageId == FileSystemRpcMessageId::DELETE_REQUEST) {
+                std::memcpy(response_, frame->data, frame->size);
+                auto copied = FileSystemRpcCodec::decodeFrame(
+                    response_,
+                    frame->size
+                );
+                if (!copied) {
+                    response = handler_.encodeErrorResponse(
+                        frame->requestId,
+                        FileSystemRpcStatus::INVALID_MESSAGE,
+                        response_,
+                        sizeof(response_)
+                    );
+                } else {
+                    auto* plan = ::new (static_cast<void*>(frame->data))
+                        core::persistence::ProductTreeCleanupPlan{};
+                    frame->operation = PendingOperation::TREE_CLEANUP;
+                    response = handler_.beginCooperativeRecursiveDelete_(
                         copied.value(),
                         *plan,
                         response_,
@@ -432,6 +480,10 @@ FLASHMEM void FileSystemRpcEndpoint::clearFrame_(PendingFrame& frame) {
         auto* plan = reinterpret_cast<
             conditional_mutation::ConditionalMutationPlan*>(frame.data);
         plan->~ConditionalMutationPlan();
+    } else if (frame.operation == PendingOperation::TREE_CLEANUP) {
+        auto* plan = reinterpret_cast<
+            core::persistence::ProductTreeCleanupPlan*>(frame.data);
+        plan->~ProductTreeCleanupPlan();
     }
     frame.size = 0U;
     frame.token = core::persistence::ProductPersistenceJobToken{};
@@ -453,6 +505,11 @@ FLASHMEM void FileSystemRpcEndpoint::cancelFrameOperation_(PendingFrame& frame) 
             conditional_mutation::ConditionalMutationPlan*>(frame.data);
         handler_.cancelCooperativeConditionalMutation_(*plan);
         plan->~ConditionalMutationPlan();
+    } else if (frame.operation == PendingOperation::TREE_CLEANUP) {
+        auto* plan = reinterpret_cast<
+            core::persistence::ProductTreeCleanupPlan*>(frame.data);
+        handler_.cancelCooperativeRecursiveDelete_(*plan);
+        plan->~ProductTreeCleanupPlan();
     } else {
         return;
     }
@@ -552,6 +609,9 @@ FileSystemRpcEndpoint::quotaFor_(
             default:
                 return PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
         }
+    }
+    if (frame.operation == PendingOperation::TREE_CLEANUP) {
+        return PRODUCT_PERSISTENCE_QUOTA_TREE_CLEANUP;
     }
     switch (messageId) {
         case FileSystemRpcMessageId::CAPABILITIES_REQUEST:

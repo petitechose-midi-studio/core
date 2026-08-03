@@ -21,6 +21,8 @@ using core::protocol::filesystem::FileSystemRpcStatus;
 
 const char kConditionalRecoveryFailed[] PROGMEM =
     "conditional product mutation recovery failed";
+const char kTreeCleanupRecoveryFailed[] PROGMEM =
+    "hidden product tree cleanup failed";
 const char kRecoveryLeaseLost[] PROGMEM =
     "product recovery lease lost during session restore";
 const char kSessionSaveBlocked[] PROGMEM =
@@ -42,6 +44,7 @@ const char kStatusConditionalFailed[] PROGMEM = "CONDITIONAL_FAILED";
 const char kStatusSettingsFailed[] PROGMEM = "SETTINGS_FAILED";
 const char kStatusSessionSaveFailed[] PROGMEM = "SESSION_SAVE_FAILED";
 const char kStatusCompletionFailed[] PROGMEM = "COMPLETION_FAILED";
+const char kStatusTreeCleanupFailed[] PROGMEM = "TREE_CLEANUP_FAILED";
 const char kStatusUnknown[] PROGMEM = "UNKNOWN";
 
 FLASHMEM Error settingsError(PersistenceWriteStatus status) {
@@ -165,6 +168,8 @@ FLASHMEM const char* productStorageRecoveryStatusLabel(
             return kStatusSessionSaveFailed;
         case ProductStorageRecoveryStatus::COMPLETION_FAILED:
             return kStatusCompletionFailed;
+        case ProductStorageRecoveryStatus::TREE_CLEANUP_FAILED:
+            return kStatusTreeCleanupFailed;
         default: return kStatusUnknown;
     }
 }
@@ -184,6 +189,7 @@ FLASHMEM bool productStorageRecoveryRequiresMediaChange(
         case ProductStorageRecoveryStatus::SETTINGS_FAILED:
         case ProductStorageRecoveryStatus::SESSION_SAVE_FAILED:
         case ProductStorageRecoveryStatus::COMPLETION_FAILED:
+        case ProductStorageRecoveryStatus::TREE_CLEANUP_FAILED:
         default:
             return true;
     }
@@ -238,7 +244,8 @@ FLASHMEM bool ProductStorageRecoveryPlan::advance(
     ProductFileService& files,
     ProjectSessionRestoreService& restoreService,
     ProjectSessionAutosaveService& autosaveService,
-    core::state::CoreState& state
+    core::state::CoreState& state,
+    ProductPersistenceWorkMeasurement* measurement
 ) {
     last_work_bytes_ = 0U;
     if (!active() || !files.owns(lease_, ProductMutationOwner::RECOVERY)) {
@@ -263,10 +270,30 @@ FLASHMEM bool ProductStorageRecoveryPlan::advance(
             }
             ++layout_index_;
             if (layout_index_ == ProductFileService::LAYOUT_DIRECTORY_COUNT) {
-                step_ = Step::BEGIN_ORDINARY;
+                step_ = Step::BEGIN_TREE_CLEANUP;
             }
             return false;
         }
+        case Step::BEGIN_TREE_CLEANUP:
+            tree_cleanup_.beginRecovery();
+            step_ = Step::ADVANCE_TREE_CLEANUP;
+            return false;
+        case Step::ADVANCE_TREE_CLEANUP:
+            if (!tree_cleanup_.advanceRecovery(files, lease_, measurement)) {
+                return false;
+            }
+            if (!tree_cleanup_.completed()) {
+                const auto error = tree_cleanup_.error();
+                return fail_(
+                    files,
+                    autosaveService,
+                    ProductStorageRecoveryStatus::TREE_CLEANUP_FAILED,
+                    {error.code,
+                     error.context ? error.context : kTreeCleanupRecoveryFailed}
+                );
+            }
+            step_ = Step::BEGIN_ORDINARY;
+            return false;
         case Step::BEGIN_ORDINARY: {
             auto begun = ordinary_.begin(files, lease_);
             if (!begun) {
@@ -520,6 +547,10 @@ FLASHMEM void ProductStorageRecoveryPlan::cancel(
 ProductPersistenceWorkQuota ProductStorageRecoveryPlan::nextWorkQuota(
     const ProjectSessionAutosaveService& autosaveService
 ) const {
+    if (step_ == Step::BEGIN_TREE_CLEANUP ||
+        step_ == Step::ADVANCE_TREE_CLEANUP) {
+        return PRODUCT_PERSISTENCE_QUOTA_TREE_CLEANUP;
+    }
     if (step_ == Step::ADVANCE_CONDITIONAL) {
         return conditional_.nextWorkClass() ==
                        protocol::filesystem::conditional_mutation::

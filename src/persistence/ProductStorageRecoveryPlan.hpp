@@ -5,6 +5,7 @@
 
 #include "persistence/ProductFileRecoveryPlan.hpp"
 #include "persistence/ProductStorageRecoveryService.hpp"
+#include "persistence/ProductTreeCleanupPlan.hpp"
 #include "protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
 
 namespace core::persistence {
@@ -28,7 +29,8 @@ public:
         ProductFileService& files,
         ProjectSessionRestoreService& restoreService,
         ProjectSessionAutosaveService& autosaveService,
-        core::state::CoreState& state
+        core::state::CoreState& state,
+        ProductPersistenceWorkMeasurement* measurement = nullptr
     );
     void cancel(
         ProductFileService& files,
@@ -48,6 +50,8 @@ private:
     enum class Step : uint8_t {
         IDLE = 0,
         ENSURE_LAYOUT,
+        BEGIN_TREE_CLEANUP,
+        ADVANCE_TREE_CLEANUP,
         BEGIN_ORDINARY,
         ADVANCE_ORDINARY,
         LOAD_CONDITIONAL,
@@ -76,6 +80,7 @@ private:
     void advanceAfterConditional_();
 
     ProductFileRecoveryPlan ordinary_{};
+    ProductTreeCleanupPlan tree_cleanup_{};
     protocol::filesystem::conditional_mutation::ConditionalMutationPlan
         conditional_{};
     protocol::filesystem::conditional_mutation::Journal conditional_journal_{};

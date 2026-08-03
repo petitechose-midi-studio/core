@@ -139,6 +139,11 @@ public:
         const ProductMutationLease& lease,
         const char* productPath
     );
+    /**
+     * Remove one file or an already-empty directory. RECURSIVE is rejected:
+     * runtime trees must use ProductTreeCleanupPlan so backend recursion can
+     * never escape the foreground job quotas.
+     */
     oc::type::Result<void> remove(
         const ProductMutationLease& lease,
         const char* productPath,

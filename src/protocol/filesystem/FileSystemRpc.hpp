@@ -12,6 +12,7 @@
 
 namespace core::persistence {
 class ProductFileCommitPlan;
+class ProductTreeCleanupPlan;
 }
 
 namespace core::protocol::filesystem {
@@ -435,6 +436,22 @@ private:
     void cancelCooperativeConditionalMutation_(
         conditional_mutation::ConditionalMutationPlan& plan
     );
+    oc::type::Result<size_t> beginCooperativeRecursiveDelete_(
+        const FileSystemRpcFrame& frame,
+        core::persistence::ProductTreeCleanupPlan& plan,
+        uint8_t* response,
+        size_t responseSize
+    );
+    oc::type::Result<size_t> advanceCooperativeRecursiveDelete_(
+        core::persistence::ProductTreeCleanupPlan& plan,
+        uint16_t requestId,
+        uint8_t* response,
+        size_t responseSize,
+        core::persistence::ProductPersistenceWorkMeasurement* measurement
+    );
+    void cancelCooperativeRecursiveDelete_(
+        core::persistence::ProductTreeCleanupPlan& plan
+    );
     oc::type::Result<size_t> encodeError_(uint16_t requestId,
                                           FileSystemRpcStatus status,
                                           uint8_t* response,
@@ -493,6 +510,7 @@ private:
         FRAME = 0,
         WRITE_COMMIT,
         CONDITIONAL_MUTATION,
+        TREE_CLEANUP,
     };
 
     struct PendingFrame {

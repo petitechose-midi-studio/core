@@ -352,7 +352,8 @@ private:
                 *productFileService,
                 *projectSessionRestoreService,
                 *projectSessionAutosaveService,
-                *coreState
+                *coreState,
+                &measurement
             );
         }
         usage.bytes += recovery_plan_->lastWorkBytes();

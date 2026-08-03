@@ -967,7 +967,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*52U", "Project save must remain 52 B on ARM"),
         (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*64U", "session store must remain 64 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*276U", "RPC write session must remain 276 B on ARM"),
-        (rpc_header, r"sizeof\(FileSystemRpcHandler\)\s*==\s*300U", "RPC handler must remain 300 B on ARM"),
+        (rpc_header, r"sizeof\(FileSystemRpcHandler\)\s*==\s*304U", "RPC handler must remain 304 B on ARM"),
         (service_header, r"ProductPersistenceCoordinator\s+coordinator_\s*\{\s*\}", "file service must embed exactly one coordinator"),
         (service_header, r"ProductPersistenceJobCoordinator\s+job_coordinator_\s*\{\s*\}", "file service must own exactly one job coordinator"),
         (service_source, r"job_coordinator_\.invalidateAll\s*\(\s*\)", "media removal must invalidate every persistence job"),

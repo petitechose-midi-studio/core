@@ -12,6 +12,7 @@
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/persistence/ProductPersistenceCoordinator.hpp"
 #include "../../src/persistence/ProductPersistenceJobCoordinator.hpp"
+#include "../../src/persistence/ProductTreeCleanupPlan.hpp"
 
 namespace {
 
@@ -23,6 +24,7 @@ using core::persistence::ProductPersistenceCoordinatorSeed;
 using core::persistence::ProductPersistenceJobOwner;
 using core::persistence::ProductStorageIdentity;
 using core::persistence::ProductStorageState;
+using core::persistence::ProductTreeCleanupPlan;
 
 std::filesystem::path testRoot() {
     return std::filesystem::temp_directory_path() / "midi-studio-core-product-file-service-test";
@@ -207,18 +209,144 @@ void test_file_roundtrip_rename_and_recursive_remove() {
     assert(!service.stat("projects/session-001/project.bin"));
     assert(service.stat("projects/session-001/current.bin"));
 
-    assert(service.remove(
+    const auto recursiveRejected = service.remove(
         lease,
         "projects/session-001",
         oc::interface::RemoveMode::RECURSIVE
-    ));
-    assert(!service.stat("projects/session-001"));
+    );
+    assert(!recursiveRejected);
+    assert(recursiveRejected.error().code == oc::type::ErrorCode::INVALID_ARGUMENT);
+    assert(service.stat("projects/session-001/current.bin"));
+
     const auto beforeRelease = service.storageIdentity();
     assert(service.releaseMutation(lease));
     assert(service.storageIdentity().mediaGeneration == beforeRelease.mediaGeneration);
     assert(service.storageIdentity().storageEpoch == beforeRelease.storageEpoch + 1);
 
+    ProductTreeCleanupPlan cleanup;
+    assert(cleanup.beginDelete(service, "projects/session-001"));
+    uint8_t advances = 0U;
+    while (cleanup.active() && advances < 32U) {
+        ++advances;
+        core::persistence::ProductPersistenceWorkUsage usage{};
+        {
+            auto measuredResult = service.measurePersistenceWork(usage);
+            assert(measuredResult);
+            auto measurement = std::move(measuredResult.value());
+            (void)cleanup.advanceDelete(service, &measurement);
+        }
+        assert(usage.bytes <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_TREE_CLEANUP.maxBytes());
+        assert(usage.filesystemCalls <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_TREE_CLEANUP
+                   .maxFilesystemCalls());
+        assert(usage.entries <= 1U);
+        assert(usage.nodes <= 1U);
+    }
+    assert(cleanup.completed());
+    assert(advances > 2U);
+    assert(!service.stat("projects/session-001"));
+    assert(!service.stat(core::persistence::PRODUCT_TREE_CLEANUP_PATH));
+    assert(service.storageIdentity().mediaGeneration == beforeRelease.mediaGeneration);
+    assert(service.storageIdentity().storageEpoch == beforeRelease.storageEpoch + 2U);
+
     std::cout << "[PASS] test_file_roundtrip_rename_and_recursive_remove\n";
+}
+
+void test_hidden_tree_cleanup_reconstructs_after_cancellation() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto service = makeService(filesystem);
+    auto leaseResult = service.acquireMutation(ProductMutationOwner::PROJECT);
+    assert(leaseResult);
+    auto lease = std::move(leaseResult.value());
+    assert(service.createDirectory(lease, "projects/cancelled/a/b"));
+    const uint8_t payload[] = {1U, 2U, 3U};
+    assert(service.write(
+        lease,
+        "projects/cancelled/a/b/payload.bin",
+        0U,
+        payload,
+        sizeof(payload)
+    ));
+    assert(service.write(
+        lease,
+        "projects/cancelled/root.bin",
+        0U,
+        payload,
+        sizeof(payload)
+    ));
+    assert(service.releaseMutation(lease));
+
+    ProductTreeCleanupPlan interrupted;
+    assert(interrupted.beginDelete(service, "projects/cancelled"));
+    for (uint8_t advance = 0U; advance < 3U; ++advance) {
+        core::persistence::ProductPersistenceWorkUsage usage{};
+        auto measuredResult = service.measurePersistenceWork(usage);
+        assert(measuredResult);
+        auto measurement = std::move(measuredResult.value());
+        (void)interrupted.advanceDelete(service, &measurement);
+    }
+    assert(interrupted.active());
+    assert(interrupted.canonicalHidden());
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "cancelled"
+    ));
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
+    ));
+
+    interrupted.cancelDelete(service, oc::type::ErrorCode::HARDWARE_TIMEOUT);
+    assert(interrupted.terminal());
+    assert(!interrupted.completed());
+    assert(service.storageState() == ProductStorageState::DEGRADED);
+
+    auto recoveryResult = service.beginRecovery();
+    assert(recoveryResult);
+    auto recoveryLease = std::move(recoveryResult.value());
+    ProductTreeCleanupPlan reconstructed;
+    reconstructed.beginRecovery();
+    uint8_t recoveryAdvances = 0U;
+    while (reconstructed.active() && recoveryAdvances < 32U) {
+        ++recoveryAdvances;
+        core::persistence::ProductPersistenceWorkUsage usage{};
+        {
+            auto measuredResult = service.measurePersistenceWork(usage);
+            assert(measuredResult);
+            auto measurement = std::move(measuredResult.value());
+            (void)reconstructed.advanceRecovery(
+                service,
+                recoveryLease,
+                &measurement
+            );
+        }
+        assert(usage.bytes <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_TREE_CLEANUP.maxBytes());
+        assert(usage.filesystemCalls <= 2U);
+        assert(usage.entries <= 1U);
+        assert(usage.nodes <= 1U);
+    }
+    assert(reconstructed.completed());
+    assert(recoveryAdvances > 2U);
+    assert(service.completeRecovery(recoveryLease, true));
+    assert(service.storageState() == ProductStorageState::READY);
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
+    ));
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "cancelled"
+    ));
+    ProductTreeCleanupPlan reservedParent;
+    const auto parentDelete = reservedParent.beginDelete(service, "tmp");
+    assert(!parentDelete);
+    assert(parentDelete.error().code == oc::type::ErrorCode::INVALID_ARGUMENT);
+    ProductTreeCleanupPlan expandingPrefix;
+    const auto shortDelete = expandingPrefix.beginDelete(service, "a");
+    assert(!shortDelete);
+    assert(shortDelete.error().code == oc::type::ErrorCode::RESOURCE_EXHAUSTED);
+
+    std::cout << "[PASS] hidden tree cleanup reconstructs after cancellation\n";
 }
 
 void test_work_measurement_counts_exact_primitives_and_rejects_nesting() {
@@ -604,6 +732,7 @@ int main() {
     test_init_creates_product_layout();
     test_resolve_path_accepts_relative_and_product_rooted_paths();
     test_file_roundtrip_rename_and_recursive_remove();
+    test_hidden_tree_cleanup_reconstructs_after_cancellation();
     test_work_measurement_counts_exact_primitives_and_rejects_nesting();
     test_sandbox_rejects_escape_and_invalid_paths();
     test_sequential_write_session_contract_is_enforced_by_product_service();

@@ -499,8 +499,14 @@ FLASHMEM oc::type::Result<void> ProductFileService::remove(
     if (isProductRootPath_(path)) {
         return invalidPath_("cannot remove product root");
     }
+    if (mode == oc::interface::RemoveMode::RECURSIVE) {
+        return invalidPath_("recursive remove requires cooperative tree cleanup");
+    }
     noteFilesystemCall_();
-    auto result = filesystem_.remove(path, mode);
+    auto result = filesystem_.remove(
+        path,
+        oc::interface::RemoveMode::FILE_OR_EMPTY_DIRECTORY
+    );
     if (!result) {
         observeBackendFailure_(result.error());
         return result;
