@@ -16,6 +16,10 @@
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
+namespace core::state::macro {
+struct MacroPagesState;
+}
+
 namespace core::state::sequencer {
 
 using SequencerHistoryGraphPtr =
@@ -81,6 +85,8 @@ struct SequencerHistoryTrackBankSnapshot {
 
 struct SequencerHistoryTrackStructureChange;
 struct SequencerHistoryMacroTrackStructurePayload;
+struct SequencerPreparedStructureHistoryReplay;
+enum class SequencerStructureHistoryReplayPrepareOutcome : uint8_t;
 
 enum class SequencerHistoryScope : uint8_t {
     PatternOnly = 0,
@@ -629,10 +635,21 @@ public:
                                                SequencerState& active);
     SequencerHistoryApplyResult redoWithResult(SequencerTrackBankState& bank,
                                                SequencerState& active);
+    SequencerStructureHistoryReplayPrepareOutcome prepareStructureHistoryReplay(
+        SequencerHistoryDirection direction,
+        const SequencerTrackBankState& bank,
+        const SequencerState& active,
+        const core::state::macro::MacroPagesState& pages,
+        SequencerPreparedStructureHistoryReplay& out
+    ) const;
+    SequencerHistoryApplyResult commitPreparedStructureHistoryReplay(
+        SequencerTrackBankState& bank,
+        SequencerState& active,
+        core::state::macro::MacroPagesState& pages,
+        SequencerPreparedStructureHistoryReplay&& replay
+    ) noexcept;
     bool peekUndoTrackActivation(SequencerTrackActivationHistoryPlan& out) const;
     bool peekRedoTrackActivation(SequencerTrackActivationHistoryPlan& out) const;
-    const SequencerHistoryMacroTrackStructurePayload* peekUndoMacroTrackStructure() const;
-    const SequencerHistoryMacroTrackStructurePayload* peekRedoMacroTrackStructure() const;
 
     void clear();
     void discardRedoBranch();

@@ -2920,6 +2920,458 @@ void test_structure_frozen_mask_requires_active_track_union() {
     std::cout << "[PASS] Structure frozen mask requires before/after Track union\n";
 }
 
+uint64_t replayFingerprint(const void* data, std::size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    uint64_t hash = 1469598103934665603ULL;
+    for (std::size_t index = 0U; index < size; ++index) {
+        hash ^= bytes[index];
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+uint64_t coreReplayFailureFingerprint(const Harness& h) {
+    return replayFingerprint(&h.state, sizeof(h.state));
+}
+
+uint64_t macroTrackFingerprint(const Harness& h) {
+    return replayFingerprint(
+        h.state.pages.tracks.data(),
+        sizeof(h.state.pages.tracks));
+}
+
+uint64_t macroControlFingerprint(const Harness& h) {
+    return replayFingerprint(
+        &h.state.pages.control.authored,
+        sizeof(h.state.pages.control.authored));
+}
+
+seq::SequencerTrackActivationExpectedState captureActivationExpected(
+    const Harness& h
+) {
+    seq::SequencerTrackActivationHistoryTransitionPlan plan;
+    assert(h.state.sequencerTrackActivations.planHistoryTransition(
+        seq::SequencerTrackActivationHistoryRef{
+            .trackMask = 0xFFFFU,
+            .operationId = 0xA55A1234U,
+            .origin = seq::SequencerTrackActivationOrigin::TRACK_PASTE,
+        },
+        seq::SequencerTrackActivationTarget::BEFORE,
+        0xFFFFU,
+        false,
+        plan));
+    return plan.expected;
+}
+
+void assertActivationExpected(
+    const Harness& h,
+    const seq::SequencerTrackActivationExpectedState& expected
+) {
+    const auto actual = captureActivationExpected(h);
+    assert(actual.nextGeneration == expected.nextGeneration);
+    assert(actual.nextOperationId == expected.nextOperationId);
+    assert(actual.telemetryRevision == expected.telemetryRevision);
+    for (uint8_t track = 0U;
+         track < seq::SequencerTrackBankState::TRACK_COUNT;
+         ++track) {
+        assert(actual.entries[track].phase == expected.entries[track].phase);
+        assert(
+            actual.entries[track].requiresLocalLoopBoundary ==
+            expected.entries[track].requiresLocalLoopBoundary);
+        assert(actual.entries[track].target == expected.entries[track].target);
+        assert(actual.entries[track].origin == expected.entries[track].origin);
+        assert(
+            actual.entries[track].generation ==
+            expected.entries[track].generation);
+        assert(
+            actual.entries[track].operationId ==
+            expected.entries[track].operationId);
+    }
+}
+
+struct CoupledReplayExpectations {
+    FullBankMusicalProof before;
+    FullBankMusicalProof after;
+    uint64_t macroTracksBefore = 0U;
+    uint64_t macroTracksAfter = 0U;
+    uint64_t macroControlBefore = 0U;
+    uint64_t macroControlAfter = 0U;
+};
+
+void prepareMaximumCoupledStructureReplay(
+    Harness& h,
+    CoupledReplayExpectations& expected,
+    bool distinctControl = true
+) {
+    initializeCapturedTracks(h, PayloadKind::GraphAndCc, 0xFFFFU);
+    h.state.sequencerTracks.syncSharedTrackState(0x0001U, 0U);
+    (void)h.state.refreshSharedTrackStateFromSequencer();
+    settleSetup(h);
+
+    expected.before = captureFullBankMusicalProof(h);
+    expected.macroTracksBefore = macroTrackFingerprint(h);
+    expected.macroControlBefore = macroControlFingerprint(h);
+
+    PreparedStructure prepared;
+    assert(prepareStructure(h, 0xFFFFU, prepared));
+    assert(seq::captureMacroTrackStructureHistoryBefore(
+        h.state.pages,
+        seq::sequencerHistoryTrackBit(0U),
+        *prepared.change,
+        0U));
+    prepared.change->activation = {
+        .trackMask = seq::sequencerHistoryTrackBit(0U),
+        .operationId = 0x10203040U,
+        .origin = seq::SequencerTrackActivationOrigin::TRACK_PASTE,
+    };
+    prepared.change->activationBeforeAudibleMask = 0x0001U;
+    prepared.change->activationAfterAudibleMask = 0x0003U;
+
+    h.state.sequencerTracks.syncSharedTrackState(0x0003U, 0U);
+    h.state.sequencer.pattern.setEnabled(2U, true);
+    auto& macroTrack = h.state.pages.tracks[0U];
+    macroTrack.enabledPageMask = 0x0003U;
+    macroTrack.activePage = 1U;
+    macroTrack.pages[1U].cc[0U] = 99U;
+    if (distinctControl) {
+        ++h.state.pages.control.authored.curves.nextCurveId;
+        h.state.pages.control.markAuthoredMutation();
+    }
+    assert(h.state.refreshSharedTrackStateFromSequencer());
+    h.state.pages.syncActiveTrackCache();
+    h.state.pages.updateActiveConfigs();
+
+    assert(seq::capturePreparedHistoryStructureAfterUsingReservedStorage(
+        h.state.sequencerTracks,
+        h.state.sequencer,
+        *prepared.change));
+    assert(seq::captureMacroTrackStructureHistoryAfter(
+        h.state.pages, *prepared.change));
+
+    expected.after = captureFullBankMusicalProof(h);
+    expected.macroTracksAfter = macroTrackFingerprint(h);
+    expected.macroControlAfter = macroControlFingerprint(h);
+
+    auto history = core::handler::SequencerHistoryDomainServices::fromCoreState(
+        h.state);
+    assert(history.canRecordStructure(*prepared.change));
+    history.recordPreparedStructure(std::move(prepared.change));
+    settleSetup(h);
+    assert(
+        h.state.sequencerHistory.undoCount(
+            seq::SequencerHistoryScope::Structure) == 1U);
+    assert(h.state.sequencerHistory.redoCount() == 0U);
+    assert(h.state.projectHistory.undoCount() == 1U);
+}
+
+ExpectedAllocationRequests expectedMaximumCoupledReplayRequests() {
+    ExpectedAllocationRequests expected;
+    for (uint8_t owner = 0U;
+         owner <= seq::SequencerTrackBankState::TRACK_COUNT;
+         ++owner) {
+        appendPayloadRequests(expected, PayloadKind::GraphAndCc);
+    }
+    return expected;
+}
+
+void assertAllocationRequestPrefix(
+    const ExpectedAllocationRequests& expected,
+    std::size_t count
+) {
+    assert(!allocation_trace::overflow);
+    assert(allocation_trace::count == count);
+    assert(count <= expected.count);
+    for (std::size_t index = 0U; index < count; ++index) {
+        assert(allocation_trace::requests[index] == expected.bytes[index]);
+    }
+}
+
+bool traverseCoupledReplay(
+    Harness& h,
+    seq::SequencerHistoryDirection direction
+) {
+    return direction == seq::SequencerHistoryDirection::Undo
+        ? h.state.undoSequencerHistory()
+        : h.state.redoSequencerHistory();
+}
+
+void verifyCoupledReplayAllocationFailures(
+    Harness& h,
+    seq::SequencerHistoryDirection direction,
+    const ExpectedAllocationRequests& expectedRequests
+) {
+    const auto stateInvariant = tx::captureStateInvariant(h.state);
+    const auto bankOwners = captureBankOwners(h);
+    const auto activation = captureActivationExpected(h);
+    const uint64_t exactCore = coreReplayFailureFingerprint(h);
+
+    for (std::size_t ordinal = 1U; ordinal <= expectedRequests.count; ++ordinal) {
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            allocation_trace::Scope trace;
+            assert(!traverseCoupledReplay(h, direction));
+            tx::assertFailureConsumed(ordinal);
+            assertAllocationRequestPrefix(expectedRequests, ordinal - 1U);
+        }
+        assert(coreReplayFailureFingerprint(h) == exactCore);
+        tx::assertStateInvariant(h.state, stateInvariant);
+        assertBankOwners(h, bankOwners);
+        assertActivationExpected(h, activation);
+    }
+}
+
+void verifyCoupledReplaySuccess(
+    Harness& h,
+    seq::SequencerHistoryDirection direction,
+    const ExpectedAllocationRequests& expectedRequests,
+    const CoupledReplayExpectations& expected,
+    uint32_t expectedControlRevision
+) {
+    const auto before = tx::captureStateInvariant(h.state);
+    const uint32_t automationRevision =
+        h.state.macroUi.automationEditRevision.get();
+    const uint32_t runtimeRevision =
+        h.state.macroUi.runtimeProjectionRevision.get();
+    const uint32_t configRevision = h.state.configRevision.get();
+    const uint32_t feedbackRevision =
+        h.state.sequencer.historyFeedback.revision.get();
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(
+            expectedRequests.count + 1U);
+        allocation_trace::Scope trace;
+        assert(traverseCoupledReplay(h, direction));
+        assertAllocationRequests(expectedRequests);
+        tx::assertMaxPlusOneStillArmed(expectedRequests.count);
+    }
+
+    const auto after = tx::captureStateInvariant(h.state);
+    assert(after.retainedBytes == before.retainedBytes);
+    assert(after.modifiedCounter == before.modifiedCounter + 1U);
+    assert(after.dirty);
+    assert(after.sessionSavePending);
+    assert(h.state.pages.control.authoredRevision == expectedControlRevision);
+    assert(
+        h.state.macroUi.automationEditRevision.get() ==
+        automationRevision + 1U);
+    assert(
+        h.state.macroUi.runtimeProjectionRevision.get() ==
+        core::state::macro::nextMacroRuntimeProjectionRevision(
+            runtimeRevision,
+            core::state::macro::kMacroRuntimeProjectionDirtyConfig));
+    assert(
+        h.state.configRevision.get() ==
+        core::state::macro::nextMacroConfigRevision(
+            configRevision,
+            core::state::macro::kMacroConfigDirtyAll));
+    assert(
+        h.state.sequencer.historyFeedback.revision.get() ==
+        feedbackRevision + 1U);
+    const auto activationTelemetry =
+        h.state.sequencerTrackActivations.telemetry(0U);
+    assert(
+        activationTelemetry.status !=
+        seq::SequencerTrackActivationStatus::IDLE);
+    assert(activationTelemetry.generation != 0U);
+    assert(
+        activationTelemetry.origin ==
+        seq::SequencerTrackActivationOrigin::TRACK_PASTE);
+
+    if (direction == seq::SequencerHistoryDirection::Undo) {
+        assert(after.sequencerUndoCount == 0U);
+        assert(after.sequencerRedoCount == 1U);
+        assert(after.projectUndoCount == 0U);
+        assert(after.projectRedoCount == 1U);
+        assertFullBankMusicalProof(h, expected.before);
+        assert(macroTrackFingerprint(h) == expected.macroTracksBefore);
+        assert(macroControlFingerprint(h) == expected.macroControlBefore);
+        assertSharedTrackProjection(h, 0x0001U, 0U);
+    } else {
+        assert(after.sequencerUndoCount == 1U);
+        assert(after.sequencerRedoCount == 0U);
+        assert(after.projectUndoCount == 1U);
+        assert(after.projectRedoCount == 0U);
+        assertFullBankMusicalProof(h, expected.after);
+        assert(macroTrackFingerprint(h) == expected.macroTracksAfter);
+        assert(macroControlFingerprint(h) == expected.macroControlAfter);
+        assertSharedTrackProjection(h, 0x0003U, 0U);
+    }
+    assertNoDeferredPublication(h);
+}
+
+void test_coupled_structure_replay_allocation_matrix() {
+    Harness h;
+    CoupledReplayExpectations expected;
+    prepareMaximumCoupledStructureReplay(h, expected);
+    const auto expectedRequests = expectedMaximumCoupledReplayRequests();
+    assert(expectedRequests.count == 34U);
+
+    verifyCoupledReplayAllocationFailures(
+        h, seq::SequencerHistoryDirection::Undo, expectedRequests);
+    const uint32_t afterControlRevision =
+        h.state.pages.control.authoredRevision;
+    verifyCoupledReplaySuccess(
+        h,
+        seq::SequencerHistoryDirection::Undo,
+        expectedRequests,
+        expected,
+        afterControlRevision + 1U);
+
+    h.state.acknowledgeProjectSessionSave(
+        h.state.project.metadata.modifiedCounter);
+    verifyCoupledReplayAllocationFailures(
+        h, seq::SequencerHistoryDirection::Redo, expectedRequests);
+    verifyCoupledReplaySuccess(
+        h,
+        seq::SequencerHistoryDirection::Redo,
+        expectedRequests,
+        expected,
+        afterControlRevision + 2U);
+
+    std::cout
+        << "[PASS] coupled Structure replay is Macro-first, fail-atomic and no-fail after arm\n";
+}
+
+void test_coupled_structure_replay_equal_control_preserves_revision() {
+    Harness h;
+    CoupledReplayExpectations expected;
+    prepareMaximumCoupledStructureReplay(h, expected, false);
+    const auto expectedRequests = expectedMaximumCoupledReplayRequests();
+    const uint32_t controlRevision =
+        h.state.pages.control.authoredRevision;
+
+    verifyCoupledReplaySuccess(
+        h,
+        seq::SequencerHistoryDirection::Undo,
+        expectedRequests,
+        expected,
+        controlRevision);
+    h.state.acknowledgeProjectSessionSave(
+        h.state.project.metadata.modifiedCounter);
+    verifyCoupledReplaySuccess(
+        h,
+        seq::SequencerHistoryDirection::Redo,
+        expectedRequests,
+        expected,
+        controlRevision);
+
+    std::cout
+        << "[PASS] coupled Structure replay preserves equal Macro control revision\n";
+}
+
+void test_coupled_structure_replay_playing_waits_for_loop() {
+    Harness h;
+    CoupledReplayExpectations expected;
+    prepareMaximumCoupledStructureReplay(h, expected);
+    const auto expectedRequests = expectedMaximumCoupledReplayRequests();
+    const uint32_t controlRevision =
+        h.state.pages.control.authoredRevision;
+    h.state.statusBar.playing.set(true);
+
+    verifyCoupledReplaySuccess(
+        h,
+        seq::SequencerHistoryDirection::Undo,
+        expectedRequests,
+        expected,
+        controlRevision + 1U);
+    assert(
+        h.state.sequencerTrackActivations.pendingTrackMask() ==
+        seq::sequencerHistoryTrackBit(0U));
+
+    std::cout
+        << "[PASS] coupled Structure replay while playing waits for local loop\n";
+}
+
+void test_coupled_structure_replay_rejects_macro_drift_before_allocation() {
+    Harness h;
+    CoupledReplayExpectations expected;
+    prepareMaximumCoupledStructureReplay(h, expected);
+    h.state.pages.tracks[0U].activePage = 2U;
+    const uint64_t exactCore = coreReplayFailureFingerprint(h);
+    const auto activation = captureActivationExpected(h);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        allocation_trace::Scope trace;
+        assert(!h.state.undoSequencerHistory());
+        assertAllocationRequestPrefix(ExpectedAllocationRequests{}, 0U);
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
+    assert(coreReplayFailureFingerprint(h) == exactCore);
+    assertActivationExpected(h, activation);
+
+    std::cout << "[PASS] coupled Structure replay rejects Macro drift before allocation\n";
+}
+
+void test_coupled_structure_replay_atomic_arm_is_ultimate_gate() {
+    Harness h;
+    CoupledReplayExpectations expected;
+    prepareMaximumCoupledStructureReplay(h, expected);
+
+    {
+        seq::SequencerPreparedStructureHistoryReplay prepared;
+        assert(
+            h.state.sequencerHistory.prepareStructureHistoryReplay(
+                seq::SequencerHistoryDirection::Undo,
+                h.state.sequencerTracks,
+                h.state.sequencer,
+                h.state.pages,
+                prepared) ==
+            seq::SequencerStructureHistoryReplayPrepareOutcome::Prepared);
+        seq::SequencerTrackActivationHistoryTransitionPlan historyPlan;
+        assert(h.state.sequencerTrackActivations.planHistoryTransition(
+            prepared.activation.reference,
+            seq::SequencerTrackActivationTarget::BEFORE,
+            prepared.activation.targetAudibleMask,
+            false,
+            historyPlan));
+
+        seq::SequencerTrackActivationPlan interferingPlan;
+        assert(h.state.sequencerTrackActivations.planActivation(
+            0x0002U,
+            0x0002U,
+            false,
+            interferingPlan,
+            seq::SequencerTrackActivationOrigin::TRACK_PASTE));
+        seq::SequencerTrackActivationBatch interferingBatch;
+        assert(h.state.sequencerTrackActivations.tryArmPlannedActivation(
+            interferingPlan, interferingBatch));
+        h.state.sequencerTrackActivations.publishPrepared(interferingBatch);
+
+        const uint64_t exactCore = coreReplayFailureFingerprint(h);
+        seq::SequencerTrackActivationHistoryTransition rejected;
+        assert(!h.state.sequencerTrackActivations.tryArmPlannedHistoryTransition(
+            historyPlan, rejected));
+        assert(coreReplayFailureFingerprint(h) == exactCore);
+        assert(prepared.valid());
+    }
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+    assert(h.state.sequencerHistory.redoCount() == 0U);
+
+    std::cout << "[PASS] stale atomic arm discards prepared replay without domain mutation\n";
+}
+
+void test_coupled_structure_replay_draft_precedes_allocation() {
+    Harness h;
+    CoupledReplayExpectations expected;
+    prepareMaximumCoupledStructureReplay(h, expected);
+    beginModifiedChordDraft(h);
+    const auto draft = captureDraftInvariant(h);
+    const auto stateInvariant = tx::captureStateInvariant(h.state);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        allocation_trace::Scope trace;
+        assert(!h.state.undoSequencerHistory());
+        assertAllocationRequestPrefix(ExpectedAllocationRequests{}, 0U);
+        tx::assertMaxPlusOneStillArmed(0U);
+    }
+    tx::assertStateInvariant(h.state, stateInvariant);
+    assertHistoryBlockedDraft(h, draft);
+
+    std::cout << "[PASS] coupled Structure replay rejects Draft before allocation\n";
+}
+
 void test_presence_growth_is_rejected_by_strict_capture() {
     seq::SequencerState staged;
     staged.reset();
@@ -3347,6 +3799,12 @@ int main() {
     test_structure_preparation_allocation_matrix();
     test_structure_noop_and_commit_are_exact();
     test_structure_frozen_mask_requires_active_track_union();
+    test_coupled_structure_replay_allocation_matrix();
+    test_coupled_structure_replay_equal_control_preserves_revision();
+    test_coupled_structure_replay_playing_waits_for_loop();
+    test_coupled_structure_replay_rejects_macro_drift_before_allocation();
+    test_coupled_structure_replay_atomic_arm_is_ultimate_gate();
+    test_coupled_structure_replay_draft_precedes_allocation();
     test_prepared_bank_admission_rejects_active_step_draft();
     test_presence_growth_is_rejected_by_strict_capture();
     test_cc_capture_validation_preserves_detached_owners();

@@ -82,6 +82,52 @@ struct SequencerHistoryTrackStructureChange {
     ) noexcept;
 };
 
+enum class SequencerStructureHistoryReplayPrepareOutcome : uint8_t {
+    Unavailable = 0,
+    Rejected,
+    Prepared,
+};
+
+// Detached target owners and exact retained-entry proof for one coupled
+// Structure Undo/Redo. The History entry stays on its source stack until the
+// atomic activation gate has succeeded; commit then consumes these owners in
+// an allocation-free tail.
+struct SequencerPreparedStructureHistoryReplay {
+    SequencerHistoryDirection direction = SequencerHistoryDirection::Undo;
+    uintptr_t entryIdentity = 0U;
+    const SequencerHistoryTrackStructureChange* entry = nullptr;
+    const SequencerHistoryTrackStructureSnapshot* targetSnapshot = nullptr;
+    const SequencerHistoryMacroTrackStructurePayload* macroStructure = nullptr;
+    SequencerTrackActivationHistoryPlan activation{};
+    uint16_t capturedTrackMask = 0U;
+    uint8_t targetActiveTrack = SequencerTrackBankState::TRACK_COUNT;
+    bool ready = false;
+    std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT>
+        bankGraphs{};
+    std::array<SequencerHistoryCcLanePtr, SequencerTrackBankState::TRACK_COUNT>
+        bankCcLanes{};
+    SequencerHistoryGraphPtr editorGraph{};
+    SequencerHistoryCcLanePtr editorCcLanes{};
+
+    SequencerPreparedStructureHistoryReplay();
+    ~SequencerPreparedStructureHistoryReplay();
+    SequencerPreparedStructureHistoryReplay(
+        const SequencerPreparedStructureHistoryReplay&) = delete;
+    SequencerPreparedStructureHistoryReplay& operator=(
+        const SequencerPreparedStructureHistoryReplay&) = delete;
+    SequencerPreparedStructureHistoryReplay(
+        SequencerPreparedStructureHistoryReplay&&) noexcept;
+    SequencerPreparedStructureHistoryReplay& operator=(
+        SequencerPreparedStructureHistoryReplay&&) noexcept;
+
+    void reset();
+    bool valid() const {
+        return ready && entryIdentity != 0U && entry != nullptr &&
+            targetSnapshot != nullptr && capturedTrackMask != 0U &&
+            targetActiveTrack < SequencerTrackBankState::TRACK_COUNT;
+    }
+};
+
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 static_assert(
     sizeof(SequencerHistoryTrackStructureSnapshot) == 13576U,
@@ -94,6 +140,10 @@ static_assert(
 static_assert(
     sizeof(SequencerHistoryTrackStructureChange) == 27192U,
     "LOCK-P: ARM Structure History transaction ABI changed"
+);
+static_assert(
+    sizeof(SequencerPreparedStructureHistoryReplay) <= 256U,
+    "prepared Structure replay handle exceeds its ARM frame contract"
 );
 #endif
 
@@ -168,6 +218,19 @@ bool liveHistoryStructureSnapshotMatches(
     const SequencerHistoryTrackStructureSnapshot& snapshot
 );
 
+bool prepareHistoryStructureReplayOwners(
+    const SequencerHistoryTrackStructureSnapshot& snapshot,
+    uint8_t liveActiveTrack,
+    SequencerPreparedStructureHistoryReplay& out
+);
+void commitPreparedHistoryStructureReplayState(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    SequencerPreparedStructureHistoryReplay& replay
+) noexcept;
+// Slice-6 lease: Macro direct-action rollback still restores one detached
+// Sequencer snapshot outside History traversal. Core History itself rejects
+// Structure on the generic path and uses only the prepared coupled lifecycle.
 bool applyHistoryStructureSnapshot(
     SequencerTrackBankState& bank,
     SequencerState& active,

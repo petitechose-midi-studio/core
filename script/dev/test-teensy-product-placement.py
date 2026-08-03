@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from teensy_product_placement import (
+    COUPLED_HISTORY_REPLAY_FLASH_MARKERS,
     PAGE_STRUCTURE_BUILDER_FLASH_MARKERS,
     PAGE_STRUCTURE_FLASH_MARKERS,
     PAGE_STRUCTURE_GRAPH_FLASH_MARKERS,
@@ -69,6 +70,16 @@ def main() -> int:
 1610644900 96 T core::state::CoreState::reconcilePreparedSequencerActiveTrackPresentation()
 1610645500 96 T core::state::CoreState::reconcilePreparedMacroTrackTransfer(unsigned short)
 1610646100 96 T core::state::macro::MacroWorkflow::syncActivePagePresentation(core::state::MacroState&, core::state::macro::MacroPagesState const&, core::state::macro::MacroUiState&)
+1610646700 114 T core::state::CoreState::traverseSequencerHistory_(core::state::sequencer::SequencerHistoryDirection)
+1610647300 94 T core::state::CoreState::armPreparedSequencerHistoryActivation_(core::state::sequencer::SequencerHistoryDirection, core::state::sequencer::SequencerTrackActivationHistoryPlan const&, core::state::sequencer::SequencerTrackActivationHistoryTransition&)
+1610647900 158 T core::state::CoreState::traversePreparedSequencerStructureHistory_(core::state::sequencer::SequencerHistoryDirection, core::state::sequencer::SequencerPreparedStructureHistoryReplay&&)
+1610648500 204 T core::state::CoreState::traverseGenericSequencerHistory_(core::state::sequencer::SequencerHistoryDirection)
+1610649100 1358 T core::state::CoreState::publishSequencerHistoryTraversal_(core::state::sequencer::SequencerHistoryApplyResult const&, core::state::sequencer::SequencerHistoryMacroTrackStructurePayload const*, core::state::sequencer::SequencerTrackActivationHistoryPlan const&, core::state::sequencer::SequencerTrackActivationHistoryTransition const&, bool, unsigned char)
+1610650700 206 T core::state::sequencer::SequencerHistoryService::prepareStructureHistoryReplay(core::state::sequencer::SequencerHistoryDirection, core::state::sequencer::SequencerTrackBankState const&, core::state::sequencer::SequencerState const&, core::state::macro::MacroPagesState const&, core::state::sequencer::SequencerPreparedStructureHistoryReplay&) const
+1610651300 360 T core::state::sequencer::SequencerHistoryService::commitPreparedStructureHistoryReplay(core::state::sequencer::SequencerTrackBankState&, core::state::sequencer::SequencerState&, core::state::macro::MacroPagesState&, core::state::sequencer::SequencerPreparedStructureHistoryReplay&&)
+1610651900 180 T core::state::sequencer::prepareHistoryStructureReplayOwners(core::state::sequencer::SequencerHistoryTrackStructureSnapshot const&, unsigned char, core::state::sequencer::SequencerPreparedStructureHistoryReplay&)
+1610652500 416 T core::state::sequencer::commitPreparedHistoryStructureReplayState(core::state::sequencer::SequencerTrackBankState&, core::state::sequencer::SequencerState&, core::state::sequencer::SequencerPreparedStructureHistoryReplay&)
+1610653100 92 T core::state::sequencer::SequencerPreparedStructureHistoryReplay::reset()
 34348 324 T core::handler::MacroValueHandler::handleValueChange(unsigned char, float)
 24016 648 T core::handler::MacroAutomationPlaybackService::update(unsigned long)
 54180 596 T core::sequencer::RealtimeMidiQueue::pushBatchImpl_(void)
@@ -88,6 +99,8 @@ def main() -> int:
     assert len(TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS) == 7
     assert len(TRACK_STRUCTURE_FLASH_MARKERS) == 24
     assert len(set(TRACK_STRUCTURE_FLASH_MARKERS)) == 24
+    assert len(COUPLED_HISTORY_REPLAY_FLASH_MARKERS) == 10
+    assert len(set(COUPLED_HISTORY_REPLAY_FLASH_MARKERS)) == 10
     assert product_placement_violations(valid) == ()
 
     invalid = valid.replace(
@@ -106,7 +119,11 @@ def main() -> int:
     assert "LVGL draw buffer must be one 320x240 RGB565 frame in RAM2" in violations
 
     valid_lines = valid.splitlines()
-    for marker in (*PAGE_STRUCTURE_FLASH_MARKERS, *TRACK_STRUCTURE_FLASH_MARKERS):
+    for marker in (
+        *PAGE_STRUCTURE_FLASH_MARKERS,
+        *TRACK_STRUCTURE_FLASH_MARKERS,
+        *COUPLED_HISTORY_REPLAY_FLASH_MARKERS,
+    ):
         symbol_line = next(line for line in valid_lines if marker in line)
 
         missing = "\n".join(line for line in valid_lines if marker not in line)

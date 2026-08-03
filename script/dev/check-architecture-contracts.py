@@ -1122,9 +1122,7 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         ("src/state/CoreStateProjectHistory.cpp", "CoreState::redoProjectHistory",
          "sequencer"),
         ("src/state/CoreStateSequencerHistoryTraversal.cpp",
-         "CoreState::undoSequencerHistory", "sequencer"),
-        ("src/state/CoreStateSequencerHistoryTraversal.cpp",
-         "CoreState::redoSequencerHistory", "sequencer"),
+         "CoreState::traverseSequencerHistory_", "sequencer"),
         (STEP_DRAFT_HISTORY, "applyEntrySnapshot", "active"),
     )
     for rel, function, receiver in history_guards:
@@ -1143,9 +1141,9 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         for rel, content in files.items()
         if rel.startswith("src/")
     )
-    if history_count != 5:
+    if history_count != 4:
         errors.append(
-            f"src: expected exactly five production HISTORY guards, found {history_count}"
+            f"src: expected exactly four production HISTORY guards, found {history_count}"
         )
 
     require(
@@ -1573,30 +1571,128 @@ def step_draft_transition_contract_errors(files: dict[str, str]) -> list[str]:
         r"\breconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\)",
         "committed Track tail must reconcile Macro presentation exactly once",
     )
-    for history_function in (
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        "CoreState::publishSequencerHistoryTraversal_",
+        r"else\s+if\s*\(\s*result\.descriptor\.kind\s*==\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*"
+        r"SequencerHistoryActionKind::TrackStructure\s*&&\s*"
+        r"activeTrackBefore\s*!=\s*"
+        r"sequencerTracks\.activeTrackIndex\s*\(\s*\)\s*\)\s*\{\s*"
+        r"reconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\)",
+        "pure Track Structure replay must reconcile presentation only on active-Track change",
+    )
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        "CoreState::traversePreparedSequencerStructureHistory_",
+        r"const\s+uint8_t\s+activeTrackBefore\s*=\s*"
+        r"sequencerTracks\.activeTrackIndex\s*\(\s*\)\s*;.*?"
+        r"sequencerHistory\.commitPreparedStructureHistoryReplay\s*\(",
+        "prepared Track replay must capture the active Track before its no-fail tail",
+    )
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        "CoreState::traverseSequencerHistory_",
+        r"prepareStructureHistoryReplay\s*\(.*?"
+        r"traversePreparedSequencerStructureHistory_\s*\(",
+        "coupled Structure replay must prepare before dispatching its no-fail path",
+    )
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        "CoreState::armPreparedSequencerHistoryActivation_",
+        r"planHistoryTransition\s*\(.*?"
+        r"tryArmPlannedHistoryTransition\s*\(",
+        "coupled activation must pure-plan before its atomic arm",
+    )
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        "CoreState::traversePreparedSequencerStructureHistory_",
+        r"armPreparedSequencerHistoryActivation_\s*\(.*?"
+        r"commitPreparedStructureHistoryReplay\s*\(.*?"
+        r"commitHistoryTransition\s*\(.*?"
+        r"publishSequencerHistoryTraversal_\s*\(",
+        "coupled Structure replay must arm, commit and publish in order",
+    )
+    require(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        r"\bapplyMacroTrackStructureHistory\s*\(",
+        "Core traversal must not use the legacy fallible Macro replay wrapper",
+        count=0,
+    )
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        "CoreState::traverseGenericSequencerHistory_",
+        r"sequencerHistory\.undoWithResult\s*\(",
+        "generic Undo fallback must occur exactly once without compensation",
+    )
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        "CoreState::traverseGenericSequencerHistory_",
+        r"sequencerHistory\.redoWithResult\s*\(",
+        "generic Redo fallback must occur exactly once without compensation",
+    )
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
         "CoreState::undoSequencerHistory",
+        r"return\s+traverseSequencerHistory_\s*\(\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*SequencerHistoryDirection::Undo\s*\)",
+        "Undo wrapper must delegate only to the shared direction coordinator",
+    )
+    require_in_function(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
         "CoreState::redoSequencerHistory",
-    ):
-        require_in_function(
-            CORE_SEQUENCER_HISTORY_TRAVERSAL,
-            history_function,
-            r"else\s+if\s*\(\s*result\.descriptor\.kind\s*==\s*"
-            r"(?:[A-Za-z_][A-Za-z0-9_]*::)*"
-            r"SequencerHistoryActionKind::TrackStructure\s*&&\s*"
-            r"activeTrackBefore\s*!=\s*"
-            r"sequencerTracks\.activeTrackIndex\s*\(\s*\)\s*\)\s*\{\s*"
-            r"reconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\)",
-            "pure Track Structure replay must reconcile presentation only on active-Track change",
-        )
-        traversal = "undoWithResult" if "undo" in history_function else "redoWithResult"
-        require_in_function(
-            CORE_SEQUENCER_HISTORY_TRAVERSAL,
-            history_function,
-            r"const\s+uint8_t\s+activeTrackBefore\s*=\s*"
-            r"sequencerTracks\.activeTrackIndex\s*\(\s*\)\s*;.*?"
-            rf"sequencerHistory\.{traversal}\s*\(",
-            "Track replay must capture the active Track before applying history",
-        )
+        r"return\s+traverseSequencerHistory_\s*\(\s*"
+        r"(?:[A-Za-z_][A-Za-z0-9_]*::)*SequencerHistoryDirection::Redo\s*\)",
+        "Redo wrapper must delegate only to the shared direction coordinator",
+    )
+    require_in_function(
+        "src/state/sequencer/SequencerHistory.cpp",
+        "SequencerHistoryService::prepareStructureHistoryReplay",
+        r"validateMacroTrackStructureHistoryReplay\s*\(.*?"
+        r"prepareHistoryStructureReplayOwners\s*\(",
+        "Macro replay validation must precede every Structure owner allocation",
+    )
+    require_in_function(
+        "src/state/sequencer/SequencerHistory.cpp",
+        "SequencerHistoryService::commitPreparedStructureHistoryReplay",
+        r"commitPreparedHistoryStructureReplayState\s*\(.*?"
+        r"commitMacroTrackStructureHistoryReplay\s*\(.*?"
+        r"popBack\s*\(.*?notifyApplied\s*\(",
+        "no-fail tail must commit Sequencer, Macro and chronology in order",
+    )
+    require(
+        "src/state/sequencer/SequencerHistory.cpp",
+        r"\bapplyEntrySnapshot\s*\([^)]*\)\s*\{.*?"
+        r"if\s*\(\s*entry\.scope\s*==\s*"
+        r"SequencerHistoryScope::Structure\s*\)\s*return\s+false\s*;",
+        "generic History application must reject Structure replay",
+    )
+    require(
+        "src/state/sequencer/SequencerStructureHistory.hpp",
+        r"static_assert\s*\(\s*sizeof\s*\(\s*"
+        r"SequencerPreparedStructureHistoryReplay\s*\)\s*<=\s*256U",
+        "prepared Structure replay handle must retain its 256-byte ARM lock",
+    )
+    require(
+        "src/state/sequencer/SequencerStructureHistory.cpp",
+        r"\bprepareHistoryStructureReplayOwners\s*\([^)]*\)\s*\{.*?"
+        r"for\s*\([^)]*\)\s*\{.*?"
+        r"cloneSnapshotGraph\s*\(\s*snapshot\.tracks\[i\]\s*,\s*"
+        r"out\.bankGraphs\[i\]\s*\).*?"
+        r"cloneSequencerCcLaneBank\s*\(\s*out\.bankCcLanes\[i\].*?"
+        r"cloneSnapshotGraph\s*\(\s*snapshot\.tracks\[targetActive\]\s*,\s*"
+        r"out\.editorGraph\s*\).*?"
+        r"cloneSequencerCcLaneBank\s*\(\s*out\.editorCcLanes",
+        "Structure replay allocation order must remain bank G,C ascending then editor G,C",
+    )
+    require_in_function(
+        "src/state/sequencer/SequencerHistory.cpp",
+        "SequencerHistoryService::commitPreparedStructureHistoryReplay",
+        r"\b(?:makeExtmem|clone(?:SnapshotGraph|SequencerCcLaneBank)|"
+        r"prepareHistoryStructureReplayOwners)\s*\(",
+        "prepared Structure replay History tail must allocate zero owners",
+        count=0,
+    )
 
     selection_intent_fields = (
         ("clipboardRevision", r"uint32_t", r"selection\.clipboardRevision\.get\s*\(\s*\)"),
@@ -3631,15 +3727,9 @@ def self_test() -> int:
         "reconcilePreparedSequencerActiveTrackPresentation();",
         "skipPreparedSequencerActiveTrackPresentation();",
     )
-    missing_track_undo_presentation_reconciliation = mutate_pattern(
+    missing_track_history_presentation_reconciliation = mutate_pattern(
         CORE_SEQUENCER_HISTORY_TRAVERSAL,
-        r"(\bCoreState::undoSequencerHistory\s*\(\s*\)\s*\{.*?)"
-        r"\breconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\)",
-        r"\g<1>skipPreparedSequencerActiveTrackPresentation()",
-    )
-    missing_track_redo_presentation_reconciliation = mutate_pattern(
-        CORE_SEQUENCER_HISTORY_TRAVERSAL,
-        r"(\bCoreState::redoSequencerHistory\s*\(\s*\)\s*\{.*?)"
+        r"(\bCoreState::publishSequencerHistoryTraversal_\s*\([^)]*\)\s*\{.*?)"
         r"\breconcilePreparedSequencerActiveTrackPresentation\s*\(\s*\)",
         r"\g<1>skipPreparedSequencerActiveTrackPresentation()",
     )
@@ -3648,31 +3738,55 @@ def self_test() -> int:
         "                   sequencer::SequencerHistoryActionKind::TrackStructure &&\n"
         "               activeTrackBefore != sequencerTracks.activeTrackIndex()"
     )
-    unconditional_track_undo_presentation = mutate(
+    unconditional_track_history_presentation = mutate(
         CORE_SEQUENCER_HISTORY_TRAVERSAL,
         active_change_condition,
         "result.descriptor.kind ==\n"
         "                   sequencer::SequencerHistoryActionKind::TrackStructure",
     )
-    unconditional_track_redo_presentation = dict(step_draft_fixture)
-    undo_condition_end = unconditional_track_redo_presentation[
-        CORE_SEQUENCER_HISTORY_TRAVERSAL
-    ].find(active_change_condition)
-    redo_condition_start = unconditional_track_redo_presentation[
-        CORE_SEQUENCER_HISTORY_TRAVERSAL
-    ].find(active_change_condition, undo_condition_end + 1)
-    if redo_condition_start >= 0:
-        content = unconditional_track_redo_presentation[
-            CORE_SEQUENCER_HISTORY_TRAVERSAL
-        ]
-        unconditional_track_redo_presentation[
-            CORE_SEQUENCER_HISTORY_TRAVERSAL
-        ] = (
-            content[:redo_condition_start]
-            + "result.descriptor.kind ==\n"
-            "                   sequencer::SequencerHistoryActionKind::TrackStructure"
-            + content[redo_condition_start + len(active_change_condition):]
-        )
+    missing_coupled_replay_preparation = mutate(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        "sequencerHistory.prepareStructureHistoryReplay(",
+        "sequencerHistory.skipStructureHistoryReplayPreparation(",
+    )
+    legacy_coupled_activation_planning = mutate(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        "sequencerTrackActivations.planHistoryTransition(",
+        "sequencerTrackActivations.prepareHistoryTransition(",
+    )
+    missing_coupled_atomic_arm = mutate(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        "sequencerTrackActivations.tryArmPlannedHistoryTransition(",
+        "sequencerTrackActivations.skipArmPlannedHistoryTransition(",
+    )
+    compensating_coupled_replay = mutate(
+        CORE_SEQUENCER_HISTORY_TRAVERSAL,
+        ": sequencerHistory.redoWithResult(sequencerTracks, sequencer);",
+        ": sequencerHistory.redoWithResult(sequencerTracks, sequencer);\n"
+        "        (void)sequencerHistory.undoWithResult(sequencerTracks, sequencer);",
+    )
+    missing_macro_replay_prevalidation = mutate(
+        "src/state/sequencer/SequencerHistory.cpp",
+        "validateMacroTrackStructureHistoryReplay(pages, *macroStructure, after)",
+        "skipMacroTrackStructureHistoryReplayValidation(pages, *macroStructure, after)",
+    )
+    generic_structure_replay_escape = mutate(
+        "src/state/sequencer/SequencerHistory.cpp",
+        "if (entry.scope == SequencerHistoryScope::Structure) return false;",
+        "if (entry.scope == SequencerHistoryScope::Structure) return true;",
+    )
+    widened_structure_replay_handle = mutate(
+        "src/state/sequencer/SequencerStructureHistory.hpp",
+        "sizeof(SequencerPreparedStructureHistoryReplay) <= 256U",
+        "sizeof(SequencerPreparedStructureHistoryReplay) <= 512U",
+    )
+    allocating_structure_replay_tail = mutate(
+        "src/state/sequencer/SequencerHistory.cpp",
+        "    result.descriptor = descriptorForEntry(entry);",
+        "    result.descriptor = descriptorForEntry(entry);\n"
+        "    (void)prepareHistoryStructureReplayOwners(\n"
+        "        *replay.targetSnapshot, bank.activeTrackIndex(), replay);",
+    )
     validation_before_draft_priority = mutate(
         DIRECT_TRACK_STRUCTURE_TRANSACTION,
         "    // Draft owns Track transition priority",
@@ -4364,40 +4478,96 @@ def self_test() -> int:
             "missing committed Track presentation reconciliation is rejected",
         ),
         (
-            missing_track_undo_presentation_reconciliation[
+            missing_track_history_presentation_reconciliation[
                 CORE_SEQUENCER_HISTORY_TRAVERSAL
             ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_TRAVERSAL]
             and bool(step_draft_transition_contract_errors(
-                missing_track_undo_presentation_reconciliation
+                missing_track_history_presentation_reconciliation
             )),
-            "missing Track Structure Undo presentation reconciliation is rejected",
+            "missing Track Structure History presentation reconciliation is rejected",
         ),
         (
-            missing_track_redo_presentation_reconciliation[
+            unconditional_track_history_presentation[
                 CORE_SEQUENCER_HISTORY_TRAVERSAL
             ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_TRAVERSAL]
             and bool(step_draft_transition_contract_errors(
-                missing_track_redo_presentation_reconciliation
+                unconditional_track_history_presentation
             )),
-            "missing Track Structure Redo presentation reconciliation is rejected",
+            "unconditional Track Structure History presentation reconciliation is rejected",
         ),
         (
-            unconditional_track_undo_presentation[
+            missing_coupled_replay_preparation[
                 CORE_SEQUENCER_HISTORY_TRAVERSAL
             ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_TRAVERSAL]
             and bool(step_draft_transition_contract_errors(
-                unconditional_track_undo_presentation
+                missing_coupled_replay_preparation
             )),
-            "unconditional Track Structure Undo presentation reconciliation is rejected",
+            "missing coupled Structure replay preparation is rejected",
         ),
         (
-            unconditional_track_redo_presentation[
+            legacy_coupled_activation_planning[
                 CORE_SEQUENCER_HISTORY_TRAVERSAL
             ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_TRAVERSAL]
             and bool(step_draft_transition_contract_errors(
-                unconditional_track_redo_presentation
+                legacy_coupled_activation_planning
             )),
-            "unconditional Track Structure Redo presentation reconciliation is rejected",
+            "legacy mutating coupled activation preparation is rejected",
+        ),
+        (
+            missing_coupled_atomic_arm[
+                CORE_SEQUENCER_HISTORY_TRAVERSAL
+            ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_TRAVERSAL]
+            and bool(step_draft_transition_contract_errors(
+                missing_coupled_atomic_arm
+            )),
+            "missing coupled atomic activation arm is rejected",
+        ),
+        (
+            compensating_coupled_replay[
+                CORE_SEQUENCER_HISTORY_TRAVERSAL
+            ] != step_draft_fixture[CORE_SEQUENCER_HISTORY_TRAVERSAL]
+            and bool(step_draft_transition_contract_errors(
+                compensating_coupled_replay
+            )),
+            "compensating opposite coupled replay is rejected",
+        ),
+        (
+            missing_macro_replay_prevalidation[
+                "src/state/sequencer/SequencerHistory.cpp"
+            ] != step_draft_fixture["src/state/sequencer/SequencerHistory.cpp"]
+            and bool(step_draft_transition_contract_errors(
+                missing_macro_replay_prevalidation
+            )),
+            "missing Macro replay prevalidation is rejected",
+        ),
+        (
+            generic_structure_replay_escape[
+                "src/state/sequencer/SequencerHistory.cpp"
+            ] != step_draft_fixture["src/state/sequencer/SequencerHistory.cpp"]
+            and bool(step_draft_transition_contract_errors(
+                generic_structure_replay_escape
+            )),
+            "generic Structure replay escape is rejected",
+        ),
+        (
+            widened_structure_replay_handle[
+                "src/state/sequencer/SequencerStructureHistory.hpp"
+            ] != step_draft_fixture[
+                "src/state/sequencer/SequencerStructureHistory.hpp"
+            ]
+            and bool(step_draft_transition_contract_errors(
+                widened_structure_replay_handle
+            )),
+            "widened prepared Structure replay handle is rejected",
+        ),
+        (
+            allocating_structure_replay_tail[
+                "src/state/sequencer/SequencerHistory.cpp"
+            ] != step_draft_fixture["src/state/sequencer/SequencerHistory.cpp"]
+            and bool(step_draft_transition_contract_errors(
+                allocating_structure_replay_tail
+            )),
+            "allocation in prepared Structure replay tail is rejected",
         ),
         (
             validation_before_draft_priority[DIRECT_TRACK_STRUCTURE_TRANSACTION]

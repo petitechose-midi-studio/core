@@ -89,6 +89,19 @@ TRACK_STRUCTURE_FLASH_MARKERS = (
     *TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS,
 )
 
+COUPLED_HISTORY_REPLAY_FLASH_MARKERS = (
+    "CoreState::traverseSequencerHistory_(",
+    "CoreState::armPreparedSequencerHistoryActivation_(",
+    "CoreState::traversePreparedSequencerStructureHistory_(",
+    "CoreState::traverseGenericSequencerHistory_(",
+    "CoreState::publishSequencerHistoryTraversal_(",
+    "SequencerHistoryService::prepareStructureHistoryReplay(",
+    "SequencerHistoryService::commitPreparedStructureHistoryReplay(",
+    "prepareHistoryStructureReplayOwners(",
+    "commitPreparedHistoryStructureReplayState(",
+    "SequencerPreparedStructureHistoryReplay::reset()",
+)
+
 
 def _symbols(nm_output: str) -> tuple[tuple[int, int, str, str], ...]:
     symbols: list[tuple[int, int, str, str]] = []
@@ -137,6 +150,7 @@ def product_placement_violations(nm_output: str) -> tuple[str, ...]:
         "FatFormatter::makeFat32(",
         *PAGE_STRUCTURE_FLASH_MARKERS,
         *TRACK_STRUCTURE_FLASH_MARKERS,
+        *COUPLED_HISTORY_REPLAY_FLASH_MARKERS,
     )
     for marker in flash_markers:
         matches = _code_addresses(symbols, marker)

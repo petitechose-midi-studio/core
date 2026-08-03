@@ -752,6 +752,7 @@ void test_full_bank_history_restores_active_track_and_graphs() {
 void test_structure_history_restores_track_mask_active_track_and_graphs() {
     SequencerTrackBankState bank;
     SequencerState active;
+    core::state::macro::MacroPagesState pages;
     assert(core::state::sequencer::initializeTrackBankFromActive(bank, active));
     bank.syncSharedTrackState(0x0003, 0);
 
@@ -803,7 +804,18 @@ void test_structure_history_restores_track_mask_active_track_and_graphs() {
     assert(history.undoCount(SequencerHistoryScope::FullBank) == 0);
 
     assertActiveDraftBlocksDirectHistory(history, bank, active, false);
-    assert(history.undo(bank, active));
+    core::state::sequencer::SequencerPreparedStructureHistoryReplay undo;
+    assert(
+        history.prepareStructureHistoryReplay(
+            core::state::sequencer::SequencerHistoryDirection::Undo,
+            bank,
+            active,
+            pages,
+            undo) ==
+        core::state::sequencer::
+            SequencerStructureHistoryReplayPrepareOutcome::Prepared);
+    assert(history.commitPreparedStructureHistoryReplay(
+        bank, active, pages, std::move(undo)).applied);
     assert(bank.activeTrackIndex() == 0);
     assert(bank.currentEnabledMask() == 0x0003);
     assert(active.pattern.note[0] == 60);
@@ -812,7 +824,18 @@ void test_structure_history_restores_track_mask_active_track_and_graphs() {
     assert(hasCycleStateSet(bank.track(1), 0));
 
     assertActiveDraftBlocksDirectHistory(history, bank, active, true);
-    assert(history.redo(bank, active));
+    core::state::sequencer::SequencerPreparedStructureHistoryReplay redo;
+    assert(
+        history.prepareStructureHistoryReplay(
+            core::state::sequencer::SequencerHistoryDirection::Redo,
+            bank,
+            active,
+            pages,
+            redo) ==
+        core::state::sequencer::
+            SequencerStructureHistoryReplayPrepareOutcome::Prepared);
+    assert(history.commitPreparedStructureHistoryReplay(
+        bank, active, pages, std::move(redo)).applied);
     assert(bank.activeTrackIndex() == 1);
     assert(bank.currentEnabledMask() == 0x0002);
     assert(active.pattern.note[0] == 80);

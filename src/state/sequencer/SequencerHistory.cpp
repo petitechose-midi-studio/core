@@ -132,6 +132,14 @@ using oc::note::sequencer::StepSequencerCycleStateSet;
 using oc::note::sequencer::StepSequencerSequence;
 using oc::note::sequencer::StepSequencerStepNode;
 
+[[noreturn]] FLASHMEM void failSequencerHistoryInvariant() noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+    __builtin_trap();
+#else
+    for (;;) {}
+#endif
+}
+
 FLASHMEM bool sameScaleSettings(oc::note::sequencer::StepSequencerScaleSettings lhs,
                                 oc::note::sequencer::StepSequencerScaleSettings rhs) {
     lhs.clamp();
@@ -817,11 +825,9 @@ FLASHMEM bool applyEntrySnapshot(SequencerHistoryEntry& entry, bool after,
         return applyHistorySnapshotToTrack(bank, active, entry.pattern->trackIndex, snapshot);
     }
 
-    if (entry.scope == SequencerHistoryScope::Structure) {
-        if (!entry.structure) return false;
-        return applyHistoryStructureSnapshot(
-            bank, active, after ? entry.structure->after : entry.structure->before);
-    }
+    // Structure owns a Macro-aware prepared replay lifecycle and may never
+    // escape through this generic allocating path.
+    if (entry.scope == SequencerHistoryScope::Structure) return false;
 
     if (!entry.fullBank) return false;
     return applyHistorySnapshot(bank, active,
@@ -1923,13 +1929,7 @@ FLASHMEM void SequencerHistoryService::recordPreparedStructure(
 FLASHMEM void SequencerHistoryService::commitAdmittedStructure(
     SequencerHistoryTrackStructureChangePtr change
 ) noexcept {
-    if (!change) {
-#if defined(__GNUC__) || defined(__clang__)
-        __builtin_trap();
-#else
-        for (;;) {}
-#endif
-    }
+    if (!change) failSequencerHistoryInvariant();
 
     if (change->descriptor.kind == SequencerHistoryActionKind::PatternEdit) {
         change->descriptor.kind = SequencerHistoryActionKind::TrackStructure;
@@ -2004,6 +2004,112 @@ SequencerHistoryService::redoWithResult(SequencerTrackBankState& bank, Sequencer
     return result;
 }
 
+FLASHMEM SequencerStructureHistoryReplayPrepareOutcome
+SequencerHistoryService::prepareStructureHistoryReplay(
+    SequencerHistoryDirection direction,
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    const core::state::macro::MacroPagesState& pages,
+    SequencerPreparedStructureHistoryReplay& out
+) const {
+    out.reset();
+    if (active.stepContentDraft.active.get()) {
+        return SequencerStructureHistoryReplayPrepareOutcome::Rejected;
+    }
+
+    const bool redo = direction == SequencerHistoryDirection::Redo;
+    const auto& entries = redo ? redo_ : undo_;
+    const uint8_t count = redo ? redo_count_ : undo_count_;
+    if (count == 0U) {
+        return SequencerStructureHistoryReplayPrepareOutcome::Unavailable;
+    }
+
+    const auto& entry = entries[count - 1U];
+    if (entry.scope != SequencerHistoryScope::Structure) {
+        return SequencerStructureHistoryReplayPrepareOutcome::Unavailable;
+    }
+    if (!entry.structure) {
+        return SequencerStructureHistoryReplayPrepareOutcome::Rejected;
+    }
+
+    const bool after = redo;
+    const auto* macroStructure = entry.structure->macroStructure.get();
+    if (macroStructure != nullptr &&
+        !validateMacroTrackStructureHistoryReplay(pages, *macroStructure, after)) {
+        return SequencerStructureHistoryReplayPrepareOutcome::Rejected;
+    }
+
+    const auto& target = after ? entry.structure->after : entry.structure->before;
+    if (!prepareHistoryStructureReplayOwners(
+            target, bank.activeTrackIndex(), out)) {
+        return SequencerStructureHistoryReplayPrepareOutcome::Rejected;
+    }
+
+    out.direction = direction;
+    out.entryIdentity = projectHistoryIdentity(entry);
+    out.entry = entry.structure.get();
+    out.macroStructure = macroStructure;
+    if (entry.structure->activation.valid()) {
+        out.activation.reference = entry.structure->activation;
+        out.activation.targetAudibleMask = after
+            ? entry.structure->activationAfterAudibleMask
+            : entry.structure->activationBeforeAudibleMask;
+    }
+    return SequencerStructureHistoryReplayPrepareOutcome::Prepared;
+}
+
+FLASHMEM SequencerHistoryApplyResult
+SequencerHistoryService::commitPreparedStructureHistoryReplay(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    core::state::macro::MacroPagesState& pages,
+    SequencerPreparedStructureHistoryReplay&& replay
+) noexcept {
+    SequencerHistoryApplyResult result;
+    result.direction = replay.direction;
+
+    const bool redo = replay.direction == SequencerHistoryDirection::Redo;
+    auto& entries = redo ? redo_ : undo_;
+    uint8_t& count = redo ? redo_count_ : undo_count_;
+    if (count == 0U) failSequencerHistoryInvariant();
+
+    auto& entry = entries[count - 1U];
+    const auto* target = entry.structure == nullptr
+        ? nullptr
+        : (redo ? &entry.structure->after : &entry.structure->before);
+    if (!replay.valid() || entry.scope != SequencerHistoryScope::Structure ||
+        !entry.structure || replay.entry != entry.structure.get() ||
+        replay.entryIdentity != projectHistoryIdentity(entry) ||
+        replay.targetSnapshot != target ||
+        replay.macroStructure != entry.structure->macroStructure.get()) {
+        failSequencerHistoryInvariant();
+    }
+
+    result.descriptor = descriptorForEntry(entry);
+    commitPreparedHistoryStructureReplayState(bank, active, replay);
+    if (replay.macroStructure != nullptr) {
+        commitMacroTrackStructureHistoryReplay(
+            pages, *replay.macroStructure, redo);
+    }
+
+    const uintptr_t identity = replay.entryIdentity;
+    auto moved = popBack(entries, count);
+    const bool pushed = redo
+        ? pushUndo(std::move(moved))
+        : pushRedo(std::move(moved));
+    if (!pushed) failSequencerHistoryInvariant();
+
+    result.applied = true;
+    if (project_history_sink_ != nullptr) {
+        project_history_sink_->notifyApplied(
+            core::state::project::ProjectHistoryDomain::Sequencer,
+            identity,
+            redo ? core::state::project::ProjectHistoryDirection::Redo
+                 : core::state::project::ProjectHistoryDirection::Undo);
+    }
+    return result;
+}
+
 FLASHMEM bool SequencerHistoryService::peekUndoTrackActivation(
     SequencerTrackActivationHistoryPlan& out) const {
     out = {};
@@ -2040,22 +2146,6 @@ FLASHMEM bool SequencerHistoryService::peekRedoTrackActivation(
     out.reference = entry.structure->activation;
     out.targetAudibleMask = entry.structure->activationAfterAudibleMask;
     return true;
-}
-
-FLASHMEM const SequencerHistoryMacroTrackStructurePayload*
-SequencerHistoryService::peekUndoMacroTrackStructure() const {
-    if (undo_count_ == 0U) return nullptr;
-    const auto& entry = undo_[undo_count_ - 1U];
-    if (entry.scope != SequencerHistoryScope::Structure || !entry.structure) { return nullptr; }
-    return entry.structure->macroStructure.get();
-}
-
-FLASHMEM const SequencerHistoryMacroTrackStructurePayload*
-SequencerHistoryService::peekRedoMacroTrackStructure() const {
-    if (redo_count_ == 0U) return nullptr;
-    const auto& entry = redo_[redo_count_ - 1U];
-    if (entry.scope != SequencerHistoryScope::Structure || !entry.structure) { return nullptr; }
-    return entry.structure->macroStructure.get();
 }
 
 FLASHMEM void SequencerHistoryService::clear() {

@@ -186,6 +186,33 @@ FLASHMEM SequencerHistoryTrackStructureChange& SequencerHistoryTrackStructureCha
     SequencerHistoryTrackStructureChange&&
 ) noexcept = default;
 
+FLASHMEM SequencerPreparedStructureHistoryReplay::
+    SequencerPreparedStructureHistoryReplay() = default;
+FLASHMEM SequencerPreparedStructureHistoryReplay::
+    ~SequencerPreparedStructureHistoryReplay() = default;
+FLASHMEM SequencerPreparedStructureHistoryReplay::
+    SequencerPreparedStructureHistoryReplay(
+        SequencerPreparedStructureHistoryReplay&&) noexcept = default;
+FLASHMEM SequencerPreparedStructureHistoryReplay&
+SequencerPreparedStructureHistoryReplay::operator=(
+    SequencerPreparedStructureHistoryReplay&&) noexcept = default;
+
+FLASHMEM void SequencerPreparedStructureHistoryReplay::reset() {
+    direction = SequencerHistoryDirection::Undo;
+    entryIdentity = 0U;
+    entry = nullptr;
+    targetSnapshot = nullptr;
+    macroStructure = nullptr;
+    activation = {};
+    capturedTrackMask = 0U;
+    targetActiveTrack = SequencerTrackBankState::TRACK_COUNT;
+    ready = false;
+    for (auto& graph : bankGraphs) graph.reset();
+    for (auto& ccLanes : bankCcLanes) ccLanes.reset();
+    editorGraph.reset();
+    editorCcLanes.reset();
+}
+
 FLASHMEM uint16_t sequencerHistoryTrackBit(uint8_t trackIndex) {
     const uint8_t clamped = SequencerTrackBankState::clampTrackIndex(trackIndex);
     return static_cast<uint16_t>(1U << clamped);
@@ -431,79 +458,98 @@ FLASHMEM bool liveHistoryStructureSnapshotMatches(
     return true;
 }
 
+FLASHMEM bool prepareHistoryStructureReplayOwners(
+    const SequencerHistoryTrackStructureSnapshot& snapshot,
+    uint8_t liveActiveTrack,
+    SequencerPreparedStructureHistoryReplay& out
+) {
+    out.reset();
+    if (!validStructureSnapshotSource(snapshot)) {
+        return false;
+    }
+    const uint16_t capturedMask = snapshot.capturedTrackMask;
+    const uint8_t targetActive = snapshot.activeTrack;
+    if (liveActiveTrack >= SequencerTrackBankState::TRACK_COUNT ||
+        (capturedMask & sequencerHistoryTrackBit(liveActiveTrack)) == 0U) {
+        return false;
+    }
+
+    out.targetSnapshot = &snapshot;
+    out.capturedTrackMask = capturedMask;
+    out.targetActiveTrack = targetActive;
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if ((capturedMask & sequencerHistoryTrackBit(i)) == 0U) continue;
+        if (!cloneSnapshotGraph(snapshot.tracks[i], out.bankGraphs[i]) ||
+            !cloneSequencerCcLaneBank(
+                out.bankCcLanes[i], snapshot.tracks[i].ccLanes.get())) {
+            out.reset();
+            return false;
+        }
+    }
+    if (!cloneSnapshotGraph(snapshot.tracks[targetActive], out.editorGraph) ||
+        !cloneSequencerCcLaneBank(
+            out.editorCcLanes, snapshot.tracks[targetActive].ccLanes.get())) {
+        out.reset();
+        return false;
+    }
+    out.ready = true;
+    return true;
+}
+
+FLASHMEM void commitPreparedHistoryStructureReplayState(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    SequencerPreparedStructureHistoryReplay& replay
+) noexcept {
+    const auto* snapshot = replay.targetSnapshot;
+    if (!replay.ready || snapshot == nullptr ||
+        !validStructureSnapshotSource(*snapshot) ||
+        replay.capturedTrackMask != snapshot->capturedTrackMask ||
+        replay.targetActiveTrack != snapshot->activeTrack ||
+        (replay.capturedTrackMask &
+            sequencerHistoryTrackBit(bank.activeTrackIndex())) == 0U) {
+        failStructureHistoryInvariant();
+    }
+
+    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
+        if ((replay.capturedTrackMask & sequencerHistoryTrackBit(i)) == 0U) continue;
+        applySnapshot(bank.track(i), snapshot->tracks[i].flat);
+        installSnapshotGraph(
+            bank.track(i),
+            std::move(replay.bankGraphs[i]),
+            snapshot->tracks[i].flat.graphRevision
+        );
+        installSequencerCcLaneBank(
+            bank.track(i),
+            std::move(replay.bankCcLanes[i])
+        );
+    }
+
+    const uint8_t targetActive = replay.targetActiveTrack;
+    applySnapshotToEditor(active, snapshot->tracks[targetActive].flat);
+    installSnapshotGraph(
+        active.pattern,
+        std::move(replay.editorGraph),
+        snapshot->tracks[targetActive].flat.graphRevision
+    );
+    installSequencerCcLaneBank(active.pattern, std::move(replay.editorCcLanes));
+    bank.syncSharedTrackState(snapshot->enabledMask, targetActive);
+    active.focusedStep.set(snapshot->focusedStep);
+    active.page.set(snapshot->page);
+    replay.ready = false;
+}
+
 FLASHMEM bool applyHistoryStructureSnapshot(
     SequencerTrackBankState& bank,
     SequencerState& active,
     const SequencerHistoryTrackStructureSnapshot& snapshot
 ) {
-    const uint16_t capturedMask = sequencerHistorySanitizeTrackMask(
-        static_cast<uint16_t>(snapshot.capturedTrackMask | sequencerHistoryTrackBit(snapshot.activeTrack))
-    );
-    const uint8_t targetActive = SequencerTrackBankState::clampTrackIndex(
-        snapshot.activeTrack
-    );
-    if ((capturedMask & sequencerHistoryTrackBit(bank.activeTrackIndex())) == 0) {
+    SequencerPreparedStructureHistoryReplay prepared;
+    if (!prepareHistoryStructureReplayOwners(
+            snapshot, bank.activeTrackIndex(), prepared)) {
         return false;
     }
-
-    std::array<SequencerHistoryGraphPtr, SequencerTrackBankState::TRACK_COUNT> bankGraphs{};
-    SequencerHistoryGraphPtr editorGraph;
-    std::array<SequencerHistoryCcLanePtr, SequencerTrackBankState::TRACK_COUNT>
-        bankCcLanes{};
-    SequencerHistoryCcLanePtr editorCcLanes;
-    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((capturedMask & sequencerHistoryTrackBit(i)) == 0) {
-            continue;
-        }
-        if (!cloneSnapshotGraph(snapshot.tracks[i], bankGraphs[i])) return false;
-        if (snapshot.tracks[i].ccLanesCaptured &&
-            !cloneSequencerCcLaneBank(
-                bankCcLanes[i],
-                snapshot.tracks[i].ccLanes.get()
-            )) {
-            return false;
-        }
-    }
-    if (!cloneSnapshotGraph(snapshot.tracks[targetActive], editorGraph)) {
-        return false;
-    }
-    if (snapshot.tracks[targetActive].ccLanesCaptured &&
-        !cloneSequencerCcLaneBank(
-            editorCcLanes,
-            snapshot.tracks[targetActive].ccLanes.get()
-        )) {
-        return false;
-    }
-
-    for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        if ((capturedMask & sequencerHistoryTrackBit(i)) == 0) continue;
-        applySnapshot(bank.track(i), snapshot.tracks[i].flat);
-        installSnapshotGraph(
-            bank.track(i),
-            std::move(bankGraphs[i]),
-            snapshot.tracks[i].flat.graphRevision
-        );
-        if (snapshot.tracks[i].ccLanesCaptured) {
-            installSequencerCcLaneBank(
-                bank.track(i),
-                std::move(bankCcLanes[i])
-            );
-        }
-    }
-
-    applySnapshotToEditor(active, snapshot.tracks[targetActive].flat);
-    installSnapshotGraph(
-        active.pattern,
-        std::move(editorGraph),
-        snapshot.tracks[targetActive].flat.graphRevision
-    );
-    if (snapshot.tracks[targetActive].ccLanesCaptured) {
-        installSequencerCcLaneBank(active.pattern, std::move(editorCcLanes));
-    }
-    bank.syncSharedTrackState(snapshot.enabledMask, targetActive);
-    active.focusedStep.set(snapshot.focusedStep);
-    active.page.set(snapshot.page);
-
+    commitPreparedHistoryStructureReplayState(bank, active, prepared);
     return true;
 }
 

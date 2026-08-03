@@ -528,6 +528,23 @@ private:
     bool refreshSharedTrackStateFromMacroPages_();
     bool refreshSharedTrackStateFromSequencer_();
     bool setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack);
+    bool traverseSequencerHistory_(sequencer::SequencerHistoryDirection direction);
+    bool traversePreparedSequencerStructureHistory_(
+        sequencer::SequencerHistoryDirection direction,
+        sequencer::SequencerPreparedStructureHistoryReplay&& prepared);
+    bool traverseGenericSequencerHistory_(
+        sequencer::SequencerHistoryDirection direction);
+    bool armPreparedSequencerHistoryActivation_(
+        sequencer::SequencerHistoryDirection direction,
+        const sequencer::SequencerTrackActivationHistoryPlan& activation,
+        sequencer::SequencerTrackActivationHistoryTransition& transition);
+    void publishSequencerHistoryTraversal_(
+        const sequencer::SequencerHistoryApplyResult& result,
+        const sequencer::SequencerHistoryMacroTrackStructurePayload* macroStructure,
+        const sequencer::SequencerTrackActivationHistoryPlan& activation,
+        const sequencer::SequencerTrackActivationHistoryTransition& transition,
+        bool hasActivation,
+        uint8_t activeTrackBefore);
 };
 
 }  // namespace core::state

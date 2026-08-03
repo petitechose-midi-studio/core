@@ -242,7 +242,9 @@ FLASHMEM void reconcileMacroTrackStructureFromRestoredHistory(
 
 }  // namespace
 
-FLASHMEM bool CoreState::undoSequencerHistory() {
+FLASHMEM bool CoreState::traverseSequencerHistory_(
+    sequencer::SequencerHistoryDirection direction
+) {
     if (sequencer.stepContentDraft.rejectTransitionIfActive(
             sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {
         return false;
@@ -252,109 +254,134 @@ FLASHMEM bool CoreState::undoSequencerHistory() {
         return false;
     }
 
-    const auto* macroStructure = sequencerHistory.peekUndoMacroTrackStructure();
-    if (macroStructure != nullptr &&
-        !sequencer::liveMacroTrackStructureMatches(pages, *macroStructure, true)) {
+    sequencer::SequencerPreparedStructureHistoryReplay preparedStructure;
+    const auto structurePreparation =
+        sequencerHistory.prepareStructureHistoryReplay(
+            direction,
+            sequencerTracks,
+            sequencer,
+            pages,
+            preparedStructure);
+    if (structurePreparation ==
+        sequencer::SequencerStructureHistoryReplayPrepareOutcome::Rejected) {
+        return false;
+    }
+    const bool structurePrepared = structurePreparation ==
+        sequencer::SequencerStructureHistoryReplayPrepareOutcome::Prepared;
+    if (structurePrepared) {
+        return traversePreparedSequencerStructureHistory_(
+            direction, std::move(preparedStructure));
+    }
+    return traverseGenericSequencerHistory_(direction);
+}
+
+FLASHMEM bool CoreState::armPreparedSequencerHistoryActivation_(
+    sequencer::SequencerHistoryDirection direction,
+    const sequencer::SequencerTrackActivationHistoryPlan& activation,
+    sequencer::SequencerTrackActivationHistoryTransition& transition
+) {
+    sequencer::SequencerTrackActivationHistoryTransitionPlan plan;
+    const auto target = direction == sequencer::SequencerHistoryDirection::Undo
+        ? sequencer::SequencerTrackActivationTarget::BEFORE
+        : sequencer::SequencerTrackActivationTarget::AFTER;
+    return sequencerTrackActivations.planHistoryTransition(
+               activation.reference,
+               target,
+               activation.targetAudibleMask,
+               statusBar.playing.get(),
+               plan) &&
+        sequencerTrackActivations.tryArmPlannedHistoryTransition(
+            plan, transition);
+}
+
+FLASHMEM bool CoreState::traversePreparedSequencerStructureHistory_(
+    sequencer::SequencerHistoryDirection direction,
+    sequencer::SequencerPreparedStructureHistoryReplay&& prepared
+) {
+    const auto* macroStructure = prepared.macroStructure;
+    const auto activation = prepared.activation;
+    const bool hasActivation = activation.valid();
+    sequencer::SequencerTrackActivationHistoryTransition transition;
+    if (hasActivation &&
+        !armPreparedSequencerHistoryActivation_(
+            direction, activation, transition)) {
         return false;
     }
 
-    sequencer::SequencerTrackActivationHistoryPlan activation;
-    const bool hasActivation = sequencerHistory.peekUndoTrackActivation(activation);
-    sequencer::SequencerTrackActivationHistoryTransition activationTransition;
-    if (hasActivation &&
-        !sequencerTrackActivations.prepareHistoryTransition(
-            activation.reference, sequencer::SequencerTrackActivationTarget::BEFORE,
-            activation.targetAudibleMask, statusBar.playing.get(), activationTransition)) {
-        return false;
-    }
     const uint8_t activeTrackBefore = sequencerTracks.activeTrackIndex();
-    const auto result = sequencerHistory.undoWithResult(sequencerTracks, sequencer);
-    if (!result.applied) {
-        if (hasActivation) {
-            sequencerTrackActivations.rollbackHistoryTransition(activationTransition);
-        }
-        return false;
+    const auto result = sequencerHistory.commitPreparedStructureHistoryReplay(
+        sequencerTracks,
+        sequencer,
+        pages,
+        std::move(prepared));
+    if (hasActivation) {
+        sequencerTrackActivations.commitHistoryTransition(transition);
     }
-    if (macroStructure != nullptr &&
-        !sequencer::applyMacroTrackStructureHistory(pages, *macroStructure, false)) {
-        (void)sequencerHistory.redoWithResult(sequencerTracks, sequencer);
-        if (hasActivation) {
-            sequencerTrackActivations.rollbackHistoryTransition(activationTransition);
-        }
-        return false;
-    }
-    if (hasActivation) { sequencerTrackActivations.commitHistoryTransition(activationTransition); }
-    // History application has already restored editor and bank atomically.
-    // Consume its deferred watched-signal notifications at the same prepared
-    // boundary so Undo publishes dirty/save exactly once without recloning.
-    publishPreparedSequencerMutation();
-    sequencer::refreshContentView(sequencer);
-    sequencer.contentView.bump();
-    const bool trackPaste =
-        hasActivation &&
-        activation.reference.origin == sequencer::SequencerTrackActivationOrigin::TRACK_PASTE;
-    const bool waitsForLoop = hasActivation && statusBar.playing.get() &&
-                              (activationTransition.queuedMask & activation.targetAudibleMask) != 0;
-    const bool cancelsPending = hasActivation && activationTransition.cancelledMask != 0 &&
-                                activationTransition.queuedMask == 0;
-    showSequencerHistoryFeedback(
-        sequencer, result, oc::time::millis(), trackPaste ? "Track Paste" : nullptr,
-        waitsForLoop ? "At next loop"
-                     : (cancelsPending ? "Pending cancelled" : (trackPaste ? "Applied" : nullptr)));
-    refreshSharedTrackStateFromSequencer();
-    if (macroStructure != nullptr) {
-        reconcileMacroTrackStructureFromRestoredHistory(*this, *macroStructure);
-    } else if (result.descriptor.kind ==
-                   sequencer::SequencerHistoryActionKind::TrackStructure &&
-               activeTrackBefore != sequencerTracks.activeTrackIndex()) {
-        reconcilePreparedSequencerActiveTrackPresentation();
-    }
-    syncSequencerStructureUiFromRestoredHistory(*this);
+    publishSequencerHistoryTraversal_(
+        result,
+        macroStructure,
+        activation,
+        transition,
+        hasActivation,
+        activeTrackBefore);
     return true;
 }
 
-FLASHMEM bool CoreState::redoSequencerHistory() {
-    if (sequencer.stepContentDraft.rejectTransitionIfActive(
-            sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {
-        return false;
-    }
-    if (commitSequencerPatternHistoryCoalescingOutcome() ==
-        sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
-        return false;
-    }
-
-    const auto* macroStructure = sequencerHistory.peekRedoMacroTrackStructure();
-    if (macroStructure != nullptr &&
-        !sequencer::liveMacroTrackStructureMatches(pages, *macroStructure, false)) {
-        return false;
-    }
-
+FLASHMEM bool CoreState::traverseGenericSequencerHistory_(
+    sequencer::SequencerHistoryDirection direction
+) {
     sequencer::SequencerTrackActivationHistoryPlan activation;
-    const bool hasActivation = sequencerHistory.peekRedoTrackActivation(activation);
-    sequencer::SequencerTrackActivationHistoryTransition activationTransition;
+    const bool hasActivation = direction == sequencer::SequencerHistoryDirection::Undo
+        ? sequencerHistory.peekUndoTrackActivation(activation)
+        : sequencerHistory.peekRedoTrackActivation(activation);
+    sequencer::SequencerTrackActivationHistoryTransition transition;
+    const auto target = direction == sequencer::SequencerHistoryDirection::Undo
+        ? sequencer::SequencerTrackActivationTarget::BEFORE
+        : sequencer::SequencerTrackActivationTarget::AFTER;
     if (hasActivation &&
         !sequencerTrackActivations.prepareHistoryTransition(
-            activation.reference, sequencer::SequencerTrackActivationTarget::AFTER,
-            activation.targetAudibleMask, statusBar.playing.get(), activationTransition)) {
+            activation.reference,
+            target,
+            activation.targetAudibleMask,
+            statusBar.playing.get(),
+            transition)) {
         return false;
     }
+
     const uint8_t activeTrackBefore = sequencerTracks.activeTrackIndex();
-    const auto result = sequencerHistory.redoWithResult(sequencerTracks, sequencer);
+    const auto result = direction == sequencer::SequencerHistoryDirection::Undo
+        ? sequencerHistory.undoWithResult(sequencerTracks, sequencer)
+        : sequencerHistory.redoWithResult(sequencerTracks, sequencer);
     if (!result.applied) {
         if (hasActivation) {
-            sequencerTrackActivations.rollbackHistoryTransition(activationTransition);
+            sequencerTrackActivations.rollbackHistoryTransition(transition);
         }
         return false;
     }
-    if (macroStructure != nullptr &&
-        !sequencer::applyMacroTrackStructureHistory(pages, *macroStructure, true)) {
-        (void)sequencerHistory.undoWithResult(sequencerTracks, sequencer);
-        if (hasActivation) {
-            sequencerTrackActivations.rollbackHistoryTransition(activationTransition);
-        }
-        return false;
+    if (hasActivation) {
+        sequencerTrackActivations.commitHistoryTransition(transition);
     }
-    if (hasActivation) { sequencerTrackActivations.commitHistoryTransition(activationTransition); }
+    publishSequencerHistoryTraversal_(
+        result,
+        nullptr,
+        activation,
+        transition,
+        hasActivation,
+        activeTrackBefore);
+    return true;
+}
+
+FLASHMEM void CoreState::publishSequencerHistoryTraversal_(
+    const sequencer::SequencerHistoryApplyResult& result,
+    const sequencer::SequencerHistoryMacroTrackStructurePayload* macroStructure,
+    const sequencer::SequencerTrackActivationHistoryPlan& activation,
+    const sequencer::SequencerTrackActivationHistoryTransition& transition,
+    bool hasActivation,
+    uint8_t activeTrackBefore
+) {
+    // History application has already restored editor and bank atomically.
+    // Consume its deferred watched-signal notifications at the same prepared
+    // boundary so traversal publishes dirty/save exactly once without recloning.
     publishPreparedSequencerMutation();
     sequencer::refreshContentView(sequencer);
     sequencer.contentView.bump();
@@ -362,9 +389,9 @@ FLASHMEM bool CoreState::redoSequencerHistory() {
         hasActivation &&
         activation.reference.origin == sequencer::SequencerTrackActivationOrigin::TRACK_PASTE;
     const bool waitsForLoop = hasActivation && statusBar.playing.get() &&
-                              (activationTransition.queuedMask & activation.targetAudibleMask) != 0;
-    const bool cancelsPending = hasActivation && activationTransition.cancelledMask != 0 &&
-                                activationTransition.queuedMask == 0;
+                              (transition.queuedMask & activation.targetAudibleMask) != 0;
+    const bool cancelsPending = hasActivation && transition.cancelledMask != 0 &&
+                                transition.queuedMask == 0;
     showSequencerHistoryFeedback(
         sequencer, result, oc::time::millis(), trackPaste ? "Track Paste" : nullptr,
         waitsForLoop ? "At next loop"
@@ -378,7 +405,14 @@ FLASHMEM bool CoreState::redoSequencerHistory() {
         reconcilePreparedSequencerActiveTrackPresentation();
     }
     syncSequencerStructureUiFromRestoredHistory(*this);
-    return true;
+}
+
+FLASHMEM bool CoreState::undoSequencerHistory() {
+    return traverseSequencerHistory_(sequencer::SequencerHistoryDirection::Undo);
+}
+
+FLASHMEM bool CoreState::redoSequencerHistory() {
+    return traverseSequencerHistory_(sequencer::SequencerHistoryDirection::Redo);
 }
 
 FLASHMEM bool CoreState::clearSequencerHistory() {
