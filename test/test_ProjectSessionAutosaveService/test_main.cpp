@@ -2,6 +2,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 
 #include <oc/impl/HostFileSystem.hpp>
 #include <oc/time/Time.hpp>
@@ -15,6 +16,24 @@
 #include "../../src/state/modulation/ProjectControlMacroOps.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../support/CoreStorages.hpp"
+
+namespace core::state::testing {
+
+struct ProjectSessionTokenTestAccess {
+    static void seed(CoreState& state,
+                     project::ProjectSessionIdentity session,
+                     uint32_t mutationEpoch,
+                     uint32_t requestId) {
+        state.projectSessionControl_.session = session;
+        state.projectSessionControl_.mutationEpoch = mutationEpoch;
+        state.projectSessionControl_.requestId = requestId;
+        state.projectSessionControl_.requestTimestampMs = 0U;
+        state.projectSessionControl_.trackingEnabled = true;
+        state.projectSessionControl_.savePending = false;
+    }
+};
+
+}  // namespace core::state::testing
 
 namespace {
 
@@ -302,6 +321,237 @@ void test_mutation_during_capture_restarts_from_latest_revision() {
     std::cout << "[PASS] test_mutation_during_capture_restarts_from_latest_revision\n";
 }
 
+void test_same_mutation_second_request_invalidates_in_flight_capture() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto files = makeProductFiles(filesystem);
+    core::persistence::ProjectSessionStore store(files);
+    core::persistence::ProjectSessionAutosaveService autosave(store, 100);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "p013", 73);
+    state.markProjectMutated();
+    const auto firstToken = state.projectSessionSaveToken();
+
+    const auto started = autosave.update(
+        state,
+        state.projectSessionSaveTimestampMs() + 100U
+    );
+    assert(started.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+
+    const auto secondToken = state.requestProjectSessionSave();
+    assert(secondToken.session == firstToken.session);
+    assert(secondToken.mutationEpoch == firstToken.mutationEpoch);
+    assert(secondToken.modifiedCounter == firstToken.modifiedCounter);
+    assert(secondToken.requestId == firstToken.requestId + 1U);
+
+    const auto waiting = autosave.update(
+        state,
+        state.projectSessionSaveTimestampMs() + 99U
+    );
+    assert(waiting.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::WAITING);
+    assert(state.hasPendingProjectSessionSave());
+    assertNoCurrentSessionFile();
+
+    const auto saved = updateUntilSettled(
+        autosave,
+        state,
+        state.projectSessionSaveTimestampMs() + 100U
+    );
+    assert(saved.saved());
+    assert(!state.hasPendingProjectSessionSave());
+    assertCurrentSessionNote(files, 73);
+
+    std::cout
+        << "[PASS] same-mutation second request invalidates capture\n";
+}
+
+void test_equal_counter_project_replacement_cancels_stale_save() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    auto files = makeProductFiles(filesystem);
+    core::persistence::ProjectSessionStore store(files);
+    core::persistence::ProjectSessionAutosaveService autosave(store, 100);
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "p014", 74);
+    state.markProjectMutated();
+    const auto projectAToken = state.projectSessionSaveToken();
+
+    test_support::CoreStorages replacementStorages;
+    auto replacementState = makeCoreState(replacementStorages);
+    configureProject(replacementState, "p015", 75);
+    replacementState.project.metadata.modifiedCounter =
+        state.project.metadata.modifiedCounter;
+    project::ProjectSnapshot replacement;
+    assert(project::captureProjectSnapshot(replacementState, replacement));
+
+    const uint32_t requestedAt = state.projectSessionSaveTimestampMs();
+    for (uint8_t slice = 0; slice < 7; ++slice) {
+        const auto progress = autosave.update(state, requestedAt + 100U);
+        assert(progress.status ==
+               core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    }
+
+    const auto tmpPath =
+        testRoot() / "midi-studio" / "tmp" / "session.current.tmp";
+    assert(std::filesystem::is_regular_file(tmpPath));
+    assertNoCurrentSessionFile();
+
+    assert(project::applyProjectSnapshot(state, replacement));
+    state.requestProjectSessionSave();
+    const auto projectBToken = state.projectSessionSaveToken();
+    assert(projectBToken.modifiedCounter == projectAToken.modifiedCounter);
+    assert(projectBToken.session != projectAToken.session);
+    assert(state.hasPendingProjectSessionSave());
+
+    const auto waiting = autosave.update(
+        state,
+        state.projectSessionSaveTimestampMs() + 99U
+    );
+    assert(waiting.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::WAITING);
+    assert(!std::filesystem::exists(tmpPath));
+    assertNoCurrentSessionFile();
+    assert(state.hasPendingProjectSessionSave());
+
+    const auto saved = updateUntilSettled(
+        autosave,
+        state,
+        state.projectSessionSaveTimestampMs() + 100U
+    );
+    assert(saved.saved());
+    assertCurrentSessionNote(files, 75);
+
+    std::cout
+        << "[PASS] equal-counter Project replacement cancels stale save\n";
+}
+
+void test_exact_acknowledgement_rejects_a_stale_completion() {
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "p016", 76);
+    state.markProjectMutated();
+    const auto completedToken = state.projectSessionSaveToken();
+
+    const auto currentToken = state.requestProjectSessionSave();
+    assert(currentToken.requestId == completedToken.requestId + 1U);
+    assert(!state.acknowledgeProjectSessionSave(completedToken));
+    assert(state.hasPendingProjectSessionSave());
+    assert(state.projectSessionSaveToken() == currentToken);
+
+    assert(state.acknowledgeProjectSessionSave(currentToken));
+    assert(!state.hasPendingProjectSessionSave());
+    assert(!state.acknowledgeProjectSessionSave(currentToken));
+
+    std::cout
+        << "[PASS] exact acknowledgement rejects stale completion\n";
+}
+
+void test_checked_token_rollover_rotates_session_identity() {
+    constexpr uint32_t maximum = std::numeric_limits<uint32_t>::max();
+    using Access = core::state::testing::ProjectSessionTokenTestAccess;
+
+    {
+        test_support::CoreStorages storages;
+        auto state = makeCoreState(storages);
+        configureProject(state, "p017", 77);
+        Access::seed(state, {7U, 9U}, 41U, maximum);
+        state.project.metadata.modifiedCounter = 55U;
+
+        const auto token = state.requestProjectSessionSave();
+        assert(token.session.bootGeneration == 7U);
+        assert(token.session.sessionEpoch == 10U);
+        assert(token.mutationEpoch == 41U);
+        assert(token.requestId == 1U);
+        assert(token.modifiedCounter == 55U);
+    }
+
+    {
+        test_support::CoreStorages storages;
+        auto state = makeCoreState(storages);
+        configureProject(state, "p018", 78);
+        Access::seed(state, {11U, 17U}, maximum, 12U);
+        state.project.metadata.modifiedCounter = 90U;
+
+        state.markProjectMutated();
+        const auto token = state.projectSessionSaveToken();
+        assert(token.session.bootGeneration == 11U);
+        assert(token.session.sessionEpoch == 18U);
+        assert(token.mutationEpoch == 1U);
+        assert(token.requestId == 1U);
+        assert(token.modifiedCounter == 91U);
+        assert(state.hasPendingProjectSessionSave());
+    }
+
+    {
+        test_support::CoreStorages storages;
+        auto state = makeCoreState(storages);
+        configureProject(state, "p021", 81);
+        Access::seed(state, {12U, 21U}, 33U, 14U);
+        state.project.metadata.modifiedCounter = maximum;
+
+        state.markProjectMutated();
+        const auto token = state.projectSessionSaveToken();
+        assert(token.session.bootGeneration == 12U);
+        assert(token.session.sessionEpoch == 22U);
+        assert(token.mutationEpoch == 34U);
+        assert(token.requestId == 1U);
+        assert(token.modifiedCounter == 1U);
+        assert(state.hasPendingProjectSessionSave());
+    }
+
+    {
+        test_support::CoreStorages storages;
+        auto state = makeCoreState(storages);
+        configureProject(state, "p022", 82);
+        Access::seed(state, {13U, 30U}, maximum, 15U);
+        state.project.metadata.modifiedCounter = maximum;
+
+        state.markProjectMutated();
+        const auto token = state.projectSessionSaveToken();
+        assert(token.session.bootGeneration == 13U);
+        assert(token.session.sessionEpoch == 31U);
+        assert(token.mutationEpoch == 1U);
+        assert(token.requestId == 1U);
+        assert(token.modifiedCounter == 1U);
+        assert(state.hasPendingProjectSessionSave());
+    }
+
+    {
+        test_support::CoreStorages storages;
+        auto state = makeCoreState(storages);
+        configureProject(state, "p019", 79);
+        Access::seed(state, {23U, maximum}, 8U, maximum);
+
+        const auto token = state.requestProjectSessionSave();
+        assert(token.session.bootGeneration == 24U);
+        assert(token.session.sessionEpoch == 1U);
+        assert(token.requestId == 1U);
+    }
+
+    {
+        test_support::CoreStorages storages;
+        auto state = makeCoreState(storages);
+        configureProject(state, "p020", 80);
+        Access::seed(state, {maximum, maximum}, 9U, maximum);
+
+        const auto before = state.projectSessionSaveToken();
+        const auto after = state.requestProjectSessionSave();
+        assert(after == before);
+        assert(!state.hasPendingProjectSessionSave());
+        assert(state.requestProjectSessionSave() == before);
+    }
+
+    std::cout << "[PASS] checked token rollover rotates session identity\n";
+}
+
 void test_write_block_pauses_an_in_flight_capture() {
     resetTestRoot();
 
@@ -577,6 +827,10 @@ int main() {
     test_write_blocked_keeps_pending_session();
     test_pending_live_edit_blocks_session_save_until_flushed();
     test_mutation_during_capture_restarts_from_latest_revision();
+    test_same_mutation_second_request_invalidates_in_flight_capture();
+    test_equal_counter_project_replacement_cancels_stale_save();
+    test_exact_acknowledgement_rejects_a_stale_completion();
+    test_checked_token_rollover_rotates_session_identity();
     test_write_block_pauses_an_in_flight_capture();
     test_mutation_after_tmp_write_discards_the_stale_transaction();
     test_pending_live_edit_aborts_an_in_flight_write();

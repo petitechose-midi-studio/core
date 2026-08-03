@@ -143,7 +143,6 @@ ProjectLifecycleDomainServices::resetMusicalProject() const {
         return Result{.status = Status::DRAFT_ACTIVE};
     }
     state_->resetMusicalProject();
-    state_->requestProjectSessionSave();
     return Result{.status = Status::OK};
 }
 
@@ -195,8 +194,16 @@ FLASHMEM ProjectLifecycleDomainServices::Result ProjectLifecycleDomainServices::
         return Result{.status = Status::SAVE_FAILED};
     }
 
+    const bool identityChanged =
+        state_->project.metadata.hasSavedIdentity != snapshot->project.metadata.hasSavedIdentity ||
+        std::strcmp(state_->project.metadata.id.data(),
+                    snapshot->project.metadata.id.data()) != 0;
     state_->project.metadata = snapshot->project.metadata;
-    state_->requestProjectSessionSave();
+    if (identityChanged) {
+        state_->publishProjectSessionReplacement_();
+    } else {
+        state_->requestProjectSessionSave();
+    }
     state_->projectNavigation.notifyContentChanged();
     return Result{.status = Status::OK, .bytes = saved.value().bytesWritten};
 }
@@ -241,7 +248,7 @@ ProjectLifecycleDomainServices::saveAsNextProject() const {
     }
 
     state_->project.metadata = snapshot->project.metadata;
-    state_->requestProjectSessionSave();
+    state_->publishProjectSessionReplacement_();
     state_->projectNavigation.notifyContentChanged();
     return Result{.status = Status::OK, .bytes = saved.value().bytesWritten};
 }
@@ -315,7 +322,7 @@ ProjectLifecycleDomainServices::renameCurrentProject(const char* projectId) cons
     }
 
     state_->project.metadata = snapshot->project.metadata;
-    state_->requestProjectSessionSave();
+    state_->publishProjectSessionReplacement_();
     state_->projectNavigation.notifyContentChanged();
     return Result{.status = Status::OK, .bytes = saved.value().bytesWritten};
 }

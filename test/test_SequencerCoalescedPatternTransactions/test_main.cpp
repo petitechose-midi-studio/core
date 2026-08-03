@@ -113,7 +113,7 @@ struct Harness {
         state.flushProjectMutationCoalescing();
         test_support::drainNotifications();
         state.flushProjectMutationCoalescing();
-        state.acknowledgeProjectSessionSave(state.project.metadata.modifiedCounter);
+        state.acknowledgeProjectSessionSave(state.projectSessionSaveToken());
         assert(!state.hasPendingProjectSessionSave());
         assert(!state.hasPendingSequencerPatternHistoryCoalescing());
     }

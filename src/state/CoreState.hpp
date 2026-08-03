@@ -48,6 +48,7 @@
 #include "state/project/ProjectHistoryCoordinator.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectSettingsHistory.hpp"
+#include "state/project/ProjectSaveToken.hpp"
 #include "state/project/ProjectState.hpp"
 #include "state/project/ProjectTrackEditorState.hpp"
 #include "state/project/ProjectTrackHistory.hpp"
@@ -62,10 +63,24 @@ namespace core::sequencer {
 class MidiCcGlobalFrameCoordinator;
 }
 
+namespace core::handler {
+class ProjectLifecycleDomainServices;
+}
+
 namespace core::state {
 
+struct CoreState;
 struct CoreStateBootstrap;
 struct CoreStateLifecycle;
+
+namespace testing {
+struct ProjectSessionTokenTestAccess;
+}
+
+namespace project {
+struct ProjectSnapshot;
+bool applyProjectSnapshot(CoreState& state, const ProjectSnapshot& snapshot);
+}
 
 namespace sequencer {
 struct SequencerGraphCompactionRemap;
@@ -276,6 +291,9 @@ struct UiSystemState {
 struct CoreState {
     friend struct CoreStateBootstrap;
     friend struct CoreStateLifecycle;
+    friend class core::handler::ProjectLifecycleDomainServices;
+    friend bool project::applyProjectSnapshot(CoreState&, const project::ProjectSnapshot&);
+    friend struct testing::ProjectSessionTokenTestAccess;
 public:
     static constexpr uint32_t PROJECT_SESSION_AUTOSAVE_DELAY_MS = 2000;
 private:
@@ -287,9 +305,7 @@ private:
     core::app::ExtmemUniquePtr<project::ProjectSettingsHistoryService> projectSettingsHistory_;
     core::app::ExtmemUniquePtr<project::ProjectHistoryCoordinator> projectHistory_;
     core::app::ExtmemUniquePtr<UiSystemState> systemUi_;
-    bool projectSessionTrackingEnabled_ = false;
-    bool projectSessionSavePending_ = false;
-    uint32_t projectSessionSaveTimestampMs_ = 0;
+    project::ProjectSessionControlState projectSessionControl_{};
 public:
     /// Durable device settings only; musical content is file-based.
     persistence::DeviceSettingsStore deviceSettingsStore;
@@ -382,8 +398,10 @@ public:
     void updateMacroValueHistoryCoalescing(uint32_t nowMs);
     void flushMacroValueHistoryCoalescing();
     void markProjectMutated();
-    void requestProjectSessionSave();
-    void acknowledgeProjectSessionSave(uint32_t savedModifiedCounter);
+    project::ProjectSaveToken requestProjectSessionSave();
+    project::ProjectSaveToken projectSessionSaveToken() const;
+    bool projectSessionSaveTokenMatches(const project::ProjectSaveToken& token) const;
+    bool acknowledgeProjectSessionSave(const project::ProjectSaveToken& savedToken);
     bool hasPendingProjectSessionSave() const;
     uint32_t projectSessionSaveTimestampMs() const;
     bool hasPendingProjectMutationCoalescing() const;
@@ -510,7 +528,9 @@ private:
     [[nodiscard]] bool queueSequencerApply_(sequencer::SequencerState& staged, bool merge = false);
     [[nodiscard]] bool queueSequencerBankApply_(sequencer::SequencerTrackBankState& stagedBank,
                                                 sequencer::SequencerState& staged);
-    void requestProjectSessionSave_();
+    project::ProjectSaveToken requestProjectSessionSave_();
+    bool advanceProjectSessionIdentity_();
+    void publishProjectSessionReplacement_();
     void markProjectDurableMutation_();
     void markSequencerProjectMutated_();
     void clearPendingSequencerApply_();

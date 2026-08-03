@@ -261,8 +261,7 @@ void settlePreparedFixture(Harness& h) {
     h.state.flushProjectMutationCoalescing();
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter);
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     assert(!h.state.hasPendingProjectSessionSave());
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 }

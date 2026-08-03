@@ -94,9 +94,11 @@ FLASHMEM bool ProjectSnapshotCapture::begin(const core::state::CoreState& state,
 
     state_ = &state;
     snapshot_ = &snapshot;
-    modified_counter_ = state.project.metadata.modifiedCounter;
-    authored_revision_ = state.pages.control.authoredRevision;
-    project_track_revision_ = state.projectTracks.revision.get();
+    guard_ = {
+        .token = state.projectSessionSaveToken(),
+        .authoredRevision = state.pages.control.authoredRevision,
+        .projectTrackRevision = state.projectTracks.revision.get(),
+    };
     phase_ = Phase::PROJECT;
     return true;
 }
@@ -108,10 +110,10 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
 
     if (state_->macroHistory.hasPendingModulatorAuditionTransaction(state_->pages) ||
         state_->projectTrackHistory.hasPendingGesture() ||
-        state_->project.metadata.modifiedCounter != modified_counter_ ||
-        state_->pages.control.authoredRevision != authored_revision_ ||
-        state_->projectTracks.revision.get() != project_track_revision_) {
-        const uint32_t modifiedCounter = modified_counter_;
+        !state_->projectSessionSaveTokenMatches(guard_.token) ||
+        state_->pages.control.authoredRevision != guard_.authoredRevision ||
+        state_->projectTracks.revision.get() != guard_.projectTrackRevision) {
+        const uint32_t modifiedCounter = guard_.token.modifiedCounter;
         cancel();
         return {.status = Status::STALE, .modifiedCounter = modifiedCounter};
     }
@@ -146,7 +148,7 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
                     state_->sequencer,
                     snapshot_->sequencer
                 )) {
-                const uint32_t modifiedCounter = modified_counter_;
+                const uint32_t modifiedCounter = guard_.token.modifiedCounter;
                 cancel();
                 return {.status = Status::FAILED, .modifiedCounter = modifiedCounter};
             }
@@ -159,34 +161,40 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
     }
 
     if (state_->macroHistory.hasPendingModulatorAuditionTransaction(state_->pages) ||
-        state_->project.metadata.modifiedCounter != modified_counter_ ||
-        state_->pages.control.authoredRevision != authored_revision_ ||
-        state_->projectTracks.revision.get() != project_track_revision_) {
-        const uint32_t modifiedCounter = modified_counter_;
+        !state_->projectSessionSaveTokenMatches(guard_.token) ||
+        state_->pages.control.authoredRevision != guard_.authoredRevision ||
+        state_->projectTracks.revision.get() != guard_.projectTrackRevision) {
+        const uint32_t modifiedCounter = guard_.token.modifiedCounter;
         cancel();
         return {.status = Status::STALE, .modifiedCounter = modifiedCounter};
     }
 
     if (phase_ != Phase::COMPLETE) {
-        return {.status = Status::IN_PROGRESS, .modifiedCounter = modified_counter_};
+        return {.status = Status::IN_PROGRESS,
+                .modifiedCounter = guard_.token.modifiedCounter};
     }
 
-    const uint32_t modifiedCounter = modified_counter_;
-    cancel();
-    return {.status = Status::COMPLETE, .modifiedCounter = modifiedCounter};
+    return {.status = Status::COMPLETE,
+            .modifiedCounter = guard_.token.modifiedCounter};
 }
 
 FLASHMEM void ProjectSnapshotCapture::cancel() {
     state_ = nullptr;
     snapshot_ = nullptr;
     phase_ = Phase::IDLE;
-    modified_counter_ = 0;
-    authored_revision_ = 0;
-    project_track_revision_ = 0;
+    guard_ = {};
 }
 
 FLASHMEM bool ProjectSnapshotCapture::active() const {
-    return phase_ != Phase::IDLE;
+    return phase_ != Phase::IDLE && phase_ != Phase::COMPLETE;
+}
+
+FLASHMEM bool ProjectSnapshotCapture::complete() const {
+    return phase_ == Phase::COMPLETE;
+}
+
+FLASHMEM const ProjectCaptureGuard* ProjectSnapshotCapture::guard() const {
+    return phase_ == Phase::IDLE ? nullptr : &guard_;
 }
 
 namespace {
@@ -297,6 +305,7 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     state.macroUi.resetProjectRuntime();
     state.requestMacroRuntimeOwnerActivation();
     state.requestSequencerRuntimeProjectReset();
+    if (!state.advanceProjectSessionIdentity_()) return false;
     return true;
 }
 

@@ -839,8 +839,7 @@ struct CoreHarness {
         state.flushProjectMutationCoalescing();
         test_support::drainNotifications();
         state.flushProjectMutationCoalescing();
-        state.acknowledgeProjectSessionSave(
-            state.project.metadata.modifiedCounter);
+        state.acknowledgeProjectSessionSave(state.projectSessionSaveToken());
     }
 
     void synchronizeActiveTrack() {

@@ -251,9 +251,7 @@ void settleSetup(Harness& h) {
     h.state.flushProjectMutationCoalescing();
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter
-    );
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     assert(!h.state.hasPendingProjectSessionSave());
 }
 
@@ -876,9 +874,7 @@ void runPatternCommit(
         h.state.sequencer.pattern.ccLaneRevision.get()
     );
 
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter
-    );
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     const auto beforeUndo = tx::captureStateInvariant(h.state);
     assert(h.state.undoSequencerHistory());
     assertEditorAndActiveBankMusicalSnapshot(h, expectedBefore);
@@ -891,9 +887,7 @@ void runPatternCommit(
     assert(h.state.hasPendingProjectSessionSave());
     assertNoDeferredPublication(h);
 
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter
-    );
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     const auto beforeRedo = tx::captureStateInvariant(h.state);
     assert(h.state.redoSequencerHistory());
     assertEditorAndActiveBankMusicalSnapshot(h, expectedAfter);
@@ -2422,9 +2416,7 @@ void test_full_bank_commit_is_nofail_and_exactly_once() {
     }
 
     assertSharedTrackProjection(h, 0x0003U, 0U);
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter
-    );
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     const auto beforeUndo = tx::captureStateInvariant(h.state);
     assert(h.state.undoSequencerHistory());
     assertSharedTrackProjection(h, 0x0001U, 0U);
@@ -2434,9 +2426,7 @@ void test_full_bank_commit_is_nofail_and_exactly_once() {
     );
     assert(h.state.hasPendingProjectSessionSave());
     assertNoDeferredPublication(h);
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter
-    );
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     const auto beforeRedo = tx::captureStateInvariant(h.state);
     assert(h.state.redoSequencerHistory());
     assertSharedTrackProjection(h, 0x0003U, 0U);
@@ -2847,9 +2837,7 @@ void test_structure_noop_and_commit_are_exact() {
     }
 
     assertSharedTrackProjection(h, 0x0003U, 1U);
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter
-    );
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     const auto beforeUndo = tx::captureStateInvariant(h.state);
     assert(h.state.undoSequencerHistory());
     assertSharedTrackProjection(h, 0x0001U, 0U);
@@ -2859,9 +2847,7 @@ void test_structure_noop_and_commit_are_exact() {
     );
     assert(h.state.hasPendingProjectSessionSave());
     assertNoDeferredPublication(h);
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter
-    );
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     const auto beforeRedo = tx::captureStateInvariant(h.state);
     assert(h.state.redoSequencerHistory());
     assertSharedTrackProjection(h, 0x0003U, 1U);
@@ -3200,8 +3186,7 @@ void test_coupled_structure_replay_allocation_matrix() {
         expected,
         afterControlRevision + 1U);
 
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter);
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     verifyCoupledReplayAllocationFailures(
         h, seq::SequencerHistoryDirection::Redo, expectedRequests);
     verifyCoupledReplaySuccess(
@@ -3229,8 +3214,7 @@ void test_coupled_structure_replay_equal_control_preserves_revision() {
         expectedRequests,
         expected,
         controlRevision);
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter);
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     verifyCoupledReplaySuccess(
         h,
         seq::SequencerHistoryDirection::Redo,

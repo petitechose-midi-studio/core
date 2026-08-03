@@ -122,11 +122,20 @@ FLASHMEM bool CoreState::queueSequencerBankApply_(sequencer::SequencerTrackBankS
     return CoreStateLifecycle::queuePendingSequencerBankApply(*this, stagedBank, staged);
 }
 
-FLASHMEM void CoreState::requestProjectSessionSave_() {
-    if (!projectSessionTrackingEnabled_) return;
+FLASHMEM project::ProjectSaveToken CoreState::requestProjectSessionSave_() {
+    if (!projectSessionControl_.trackingEnabled) {
+        return projectSessionSaveToken();
+    }
 
-    projectSessionSavePending_ = true;
-    projectSessionSaveTimestampMs_ = oc::time::millis();
+    if (projectSessionControl_.requestId == UINT32_MAX &&
+        !advanceProjectSessionIdentity_()) {
+        return projectSessionSaveToken();
+    }
+
+    ++projectSessionControl_.requestId;
+    projectSessionControl_.savePending = true;
+    projectSessionControl_.requestTimestampMs = oc::time::millis();
+    return projectSessionSaveToken();
 }
 
 FLASHMEM void CoreState::markSequencerProjectMutated_() {

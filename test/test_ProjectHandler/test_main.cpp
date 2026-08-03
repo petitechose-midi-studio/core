@@ -1076,6 +1076,7 @@ void test_overview_save_and_load_roundtrip_project_file() {
     assert(h.state.projectNavigation.loadProjects.count == 1);
     assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "p001") == 0);
 
+    const auto beforeLoadToken = h.state.projectSessionSaveToken();
     h.tap(Config::ButtonID::NAV);
 
     assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded p001") == 0);
@@ -1089,6 +1090,7 @@ void test_overview_save_and_load_roundtrip_project_file() {
     assert(h.state.sequencer.pattern.isEnabled(2));
     assert(h.state.pages.activePageData().cc[0] == 81);
     assert(near(h.state.macros.slots[0].value.get(), 0.63f));
+    assert(h.state.projectSessionSaveToken().session != beforeLoadToken.session);
 
     std::cout << "[PASS] test_overview_save_and_load_roundtrip_project_file\n";
 }
@@ -1170,8 +1172,10 @@ void test_future_project_load_is_rejected_atomically() {
         h.state,
         h.productFiles
     );
+    const auto tokenBeforeRejectedLoad = h.state.projectSessionSaveToken();
     const auto directLoad = lifecycle.loadProject("future-project");
     assert(directLoad.status == Status::LOAD_FAILED);
+    assert(tokenBeforeRejectedLoad == h.state.projectSessionSaveToken());
     assert(h.productFiles.stat("projects/future-project.mspj"));
 
     std::cout << "[PASS] future project load is rejected atomically\n";
@@ -1294,10 +1298,12 @@ void test_manual_save_as_rejects_invalid_and_duplicate_slugs() {
 
     h.state.statusBar.tempo.set(132.0f);
     h.state.statusBar.tempoDisplay.set(132.0f);
+    const auto beforeSaveAs = h.state.projectSessionSaveToken();
     auto saved = lifecycle.saveAsProject("live-set.01");
     assert(saved.success());
     assert(std::strcmp(h.state.project.metadata.id.data(), "live-set.01") == 0);
     assert(std::strcmp(h.state.project.metadata.name.data(), "live-set.01") == 0);
+    assert(h.state.projectSessionSaveToken().session != beforeSaveAs.session);
 
     core::persistence::ProjectFileStore store(h.productFiles);
     core::state::project::ProjectSnapshot snapshot;
@@ -1305,11 +1311,13 @@ void test_manual_save_as_rejects_invalid_and_duplicate_slugs() {
     RestoredProjectHarness restored{snapshot};
     assert(restored.state.statusBar.tempo.get() == 132.0f);
 
+    const auto beforeRejectedSaves = h.state.projectSessionSaveToken();
     auto duplicate = lifecycle.saveAsProject("live-set.01");
     assert(duplicate.status == Status::ALREADY_EXISTS);
 
     auto invalid = lifecycle.saveAsProject("Live_Set");
     assert(invalid.status == Status::INVALID_ARGUMENT);
+    assert(h.state.projectSessionSaveToken() == beforeRejectedSaves);
 
     std::cout << "[PASS] test_manual_save_as_rejects_invalid_and_duplicate_slugs\n";
 }
@@ -1330,11 +1338,13 @@ void test_rename_current_project_moves_catalogue_file() {
     h.state.statusBar.tempoDisplay.set(158.0f);
     h.state.markProjectMutated();
 
+    const auto beforeRename = h.state.projectSessionSaveToken();
     auto renamed = lifecycle.renameCurrentProject("renamed-project");
     assert(renamed.success());
     assert(std::strcmp(h.state.project.metadata.id.data(), "renamed-project") == 0);
     assert(std::strcmp(h.state.project.metadata.name.data(), "renamed-project") == 0);
     assert(!h.state.project.metadata.dirty);
+    assert(h.state.projectSessionSaveToken().session != beforeRename.session);
 
     assert(!h.productFiles.stat("projects/original.project.mspj"));
     assert(h.productFiles.stat("projects/renamed-project.mspj"));
@@ -1345,8 +1355,10 @@ void test_rename_current_project_moves_catalogue_file() {
     RestoredProjectHarness restored{snapshot};
     assert(restored.state.statusBar.tempo.get() == 158.0f);
 
+    const auto beforeInvalidRename = h.state.projectSessionSaveToken();
     auto invalid = lifecycle.renameCurrentProject("bad_name");
     assert(invalid.status == Status::INVALID_ARGUMENT);
+    assert(h.state.projectSessionSaveToken() == beforeInvalidRename);
 
     std::cout << "[PASS] test_rename_current_project_moves_catalogue_file\n";
 }
@@ -1370,10 +1382,12 @@ void test_rename_current_project_rejects_existing_target_without_mutating_state(
     h.state.statusBar.tempoDisplay.set(177.0f);
     h.state.markProjectMutated();
 
+    const auto beforeRejectedRename = h.state.projectSessionSaveToken();
     auto duplicate = lifecycle.renameCurrentProject("p001");
     assert(duplicate.status == Status::ALREADY_EXISTS);
     assert(std::strcmp(h.state.project.metadata.id.data(), "p002") == 0);
     assert(h.state.project.metadata.dirty);
+    assert(h.state.projectSessionSaveToken() == beforeRejectedRename);
 
     assert(h.productFiles.stat("projects/p001.mspj"));
     assert(h.productFiles.stat("projects/p002.mspj"));

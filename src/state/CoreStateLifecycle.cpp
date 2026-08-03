@@ -325,6 +325,7 @@ FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
     }
 
     flushMutationCoalescers_(state);
+    state.publishProjectSessionReplacement_();
 }
 
 FLASHMEM void CoreStateLifecycle::factoryReset(CoreState& state) {
@@ -357,6 +358,7 @@ FLASHMEM void CoreStateLifecycle::factoryReset(CoreState& state) {
         state.projectHistory.clear();
     }
     persistFactoryDefaults_(state);
+    state.publishProjectSessionReplacement_();
 }
 
 FLASHMEM bool CoreStateLifecycle::queuePendingSequencerApply(

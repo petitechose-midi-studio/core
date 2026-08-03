@@ -263,9 +263,7 @@ void settle(Harness& h) {
     h.state.flushProjectMutationCoalescing();
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter
-    );
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     assert(!h.state.hasPendingProjectSessionSave());
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
 }
@@ -828,9 +826,7 @@ void runSuccessfulCase(
     h.state.flushProjectMutationCoalescing();
     tx::assertStateInvariant(h.state, committed);
 
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter
-    );
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     assert(h.state.undoSequencerHistory());
     seq::SequencerTrackBankSnapshot undone;
     seq::captureTrackBankSnapshot(h.state.sequencerTracks, h.state.sequencer, undone);
@@ -838,9 +834,7 @@ void runSuccessfulCase(
     assertCanonicalPayloadProof(h, beforePayload);
     assertScratchEmpty(h);
 
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter
-    );
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
     assert(h.state.redoSequencerHistory());
     seq::SequencerTrackBankSnapshot redone;
     seq::captureTrackBankSnapshot(h.state.sequencerTracks, h.state.sequencer, redone);

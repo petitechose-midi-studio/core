@@ -130,7 +130,7 @@ FLASHMEM void CoreStateBootstrap::initialize(CoreState& state) {
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     registerOverlaySignals_(state);
     setupMutationCoalescing_(state);
-    state.projectSessionTrackingEnabled_ = true;
+    state.projectSessionControl_.trackingEnabled = true;
 }
 
 }  // namespace core::state

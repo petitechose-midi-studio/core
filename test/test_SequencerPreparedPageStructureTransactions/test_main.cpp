@@ -883,7 +883,7 @@ struct CoreHarness {
         state.flushProjectMutationCoalescing();
         test_support::drainNotifications();
         state.flushProjectMutationCoalescing();
-        state.acknowledgeProjectSessionSave(state.project.metadata.modifiedCounter);
+        state.acknowledgeProjectSessionSave(state.projectSessionSaveToken());
     }
 };
 
@@ -907,8 +907,7 @@ void authorCoreFullPayload(CoreHarness& h, bool nonemptyCc) {
     h.state.flushProjectMutationCoalescing();
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter);
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
 }
 
 void authorCoreDisabledGraphAndCc(CoreHarness& h) {
@@ -932,8 +931,7 @@ void authorCoreDisabledGraphAndCc(CoreHarness& h) {
     h.state.flushProjectMutationCoalescing();
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
-    h.state.acknowledgeProjectSessionSave(
-        h.state.project.metadata.modifiedCounter);
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
 
     const auto& bankPattern = h.state.sequencerTracks.track(0U);
     assert(bankPattern.graph == nullptr);

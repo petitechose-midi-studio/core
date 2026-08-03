@@ -81,6 +81,7 @@ void test_factory_reset_clears_transient_state_and_overlays() {
 
     const uint32_t beforeRevision = state.configRevision.get();
     const uint32_t beforeRuntimeOwnerRevision = state.macroRuntimeOwnerRevision.get();
+    const auto beforeSaveToken = state.projectSessionSaveToken();
     state.factoryReset();
 
     assert(state.activeView.get() == core::ui::ViewType::MACRO);
@@ -91,6 +92,10 @@ void test_factory_reset_clears_transient_state_and_overlays() {
     assert(!state.sequencer.patternQuickControls.selecting.get());
     assert(!state.macroUi.manualOverrides.activeFor(manualAddress));
     assert(state.macroRuntimeOwnerRevision.get() == beforeRuntimeOwnerRevision + 1U);
+    const auto afterSaveToken = state.projectSessionSaveToken();
+    assert(afterSaveToken.session != beforeSaveToken.session);
+    assert(afterSaveToken.requestId == 1U);
+    assert(state.hasPendingProjectSessionSave());
     assert(
         state.configRevision.get() ==
         core::state::macro::nextMacroConfigRevision(
@@ -212,6 +217,7 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     state.activeView.set(core::ui::ViewType::MACRO);
 
     const uint32_t beforeRuntimeOwnerRevision = state.macroRuntimeOwnerRevision.get();
+    const auto beforeSaveToken = state.projectSessionSaveToken();
     state.resetStandaloneTransientUi();
 
     assert(!state.macroEdit.visible.get());
@@ -231,7 +237,21 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(state.macroUi.automationTake.phase ==
            core::state::macro::MacroAutomationTakePhase::IDLE);
     assert(state.macroRuntimeOwnerRevision.get() == beforeRuntimeOwnerRevision);
+    assert(state.projectSessionSaveToken() == beforeSaveToken);
     std::cout << "[PASS] test_reset_standalone_transient_ui_clears_context_owned_state\n";
+}
+
+void test_flush_preserves_project_session_identity() {
+    CoreStorages storage;
+    storage.initAll();
+
+    core::state::CoreState state(storage.settings);
+    const auto beforeSaveToken = state.projectSessionSaveToken();
+
+    state.flush();
+
+    assert(state.projectSessionSaveToken() == beforeSaveToken);
+    std::cout << "[PASS] test_flush_preserves_project_session_identity\n";
 }
 
 void test_musical_project_reset_activates_one_new_macro_runtime_owner() {
@@ -241,8 +261,13 @@ void test_musical_project_reset_activates_one_new_macro_runtime_owner() {
     core::state::CoreState state(storage.settings);
 
     const uint32_t beforeRevision = state.macroRuntimeOwnerRevision.get();
+    const auto beforeSaveToken = state.projectSessionSaveToken();
     state.resetMusicalProject();
     assert(state.macroRuntimeOwnerRevision.get() == beforeRevision + 1U);
+    const auto afterSaveToken = state.projectSessionSaveToken();
+    assert(afterSaveToken.session != beforeSaveToken.session);
+    assert(afterSaveToken.requestId == 1U);
+    assert(state.hasPendingProjectSessionSave());
 
     std::cout << "[PASS] test_musical_project_reset_activates_one_new_macro_runtime_owner\n";
 }
@@ -269,6 +294,7 @@ int main() {
     test_core_state_update_expires_inline_feedback();
     test_core_state_update_expires_status_bar_pulses();
     test_reset_standalone_transient_ui_clears_context_owned_state();
+    test_flush_preserves_project_session_identity();
     test_musical_project_reset_activates_one_new_macro_runtime_owner();
     test_macro_runtime_owner_revision_skips_zero_on_wrap();
     std::cout << "\nAll CoreState lifecycle tests passed.\n";

@@ -44,6 +44,10 @@ public:
 
 private:
     Result startCapture_(core::state::CoreState& state);
+    Result updatePending_(core::state::CoreState& state,
+                          uint32_t nowMs,
+                          bool mutationPending,
+                          bool inProgress);
     Result advanceCapture_(core::state::CoreState& state);
     Result advanceSave_(core::state::CoreState& state);
     void cancelInFlight_();
@@ -53,7 +57,6 @@ private:
     uint32_t delay_ms_ = 0;
     core::state::project::ProjectSnapshotPtr snapshot_;
     core::state::project::ProjectSnapshotCapture capture_;
-    uint32_t captured_modified_counter_ = 0;
 };
 
 }  // namespace core::persistence

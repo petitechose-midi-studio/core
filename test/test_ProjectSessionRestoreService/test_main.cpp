@@ -74,6 +74,7 @@ void test_missing_session_is_non_fatal() {
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
+    const auto tokenBefore = state.projectSessionSaveToken();
 
     auto result = restore.restore(state);
     assert(result.status == core::persistence::ProjectSessionRestoreService::Status::MISSING);
@@ -82,6 +83,7 @@ void test_missing_session_is_non_fatal() {
     assert(std::strcmp(state.project.metadata.name.data(), "untitled") == 0);
     assert(!state.project.metadata.hasSavedIdentity);
     assert(!state.hasPendingProjectSessionSave());
+    assert(state.projectSessionSaveToken() == tokenBefore);
 
     std::cout << "[PASS] test_missing_session_is_non_fatal\n";
 }
@@ -103,6 +105,7 @@ void test_valid_session_restores_runtime_project() {
     auto runtime = makeCoreState(runtimeStorages);
     assert(runtime.project.metadata.id[0] == '\0');
     assert(std::strcmp(runtime.project.metadata.name.data(), "untitled") == 0);
+    const auto tokenBefore = runtime.projectSessionSaveToken();
 
     core::persistence::ProjectSessionRestoreService restore(store);
     auto result = restore.restore(runtime);
@@ -121,6 +124,7 @@ void test_valid_session_restores_runtime_project() {
     assert(runtime.sequencer.pattern.isEnabled(0));
     assert(runtime.sequencer.pattern.note[0] == 70);
     assert(!runtime.hasPendingProjectSessionSave());
+    assert(runtime.projectSessionSaveToken().session != tokenBefore.session);
 
     std::cout << "[PASS] test_valid_session_restores_runtime_project\n";
 }
@@ -138,6 +142,7 @@ void test_corrupt_session_reports_degraded_and_keeps_runtime() {
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
     state.statusBar.tempo.set(123.0f);
+    const auto tokenBefore = state.projectSessionSaveToken();
 
     core::persistence::ProjectSessionRestoreService restore(store);
     auto result = restore.restore(state);
@@ -147,6 +152,7 @@ void test_corrupt_session_reports_degraded_and_keeps_runtime() {
     assert(std::strcmp(state.project.metadata.name.data(), "untitled") == 0);
     assert(state.statusBar.tempo.get() == 123.0f);
     assert(!state.hasPendingProjectSessionSave());
+    assert(state.projectSessionSaveToken() == tokenBefore);
 
     std::cout << "[PASS] test_corrupt_session_reports_degraded_and_keeps_runtime\n";
 }

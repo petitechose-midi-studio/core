@@ -305,8 +305,23 @@ FLASHMEM void CoreState::flushMacroValueHistoryCoalescing() {
 }
 
 FLASHMEM void CoreState::markProjectDurableMutation_() {
+    const bool mutationRollover = projectSessionControl_.mutationEpoch == UINT32_MAX;
+    const bool compatibilityRollover = project.metadata.modifiedCounter == UINT32_MAX;
+    if (mutationRollover || compatibilityRollover) {
+        if (!advanceProjectSessionIdentity_()) {
+            project.metadata.dirty = true;
+            return;
+        }
+        if (mutationRollover) {
+            projectSessionControl_.mutationEpoch = 0U;
+        }
+        if (compatibilityRollover) {
+            project.metadata.modifiedCounter = 0U;
+        }
+    }
+
+    ++projectSessionControl_.mutationEpoch;
     ++project.metadata.modifiedCounter;
-    if (project.metadata.modifiedCounter == 0) { project.metadata.modifiedCounter = 1; }
     project.metadata.dirty = true;
     requestProjectSessionSave_();
 }
@@ -316,21 +331,72 @@ FLASHMEM void CoreState::markProjectMutated() {
     projectNavigation.notifyContentChanged();
 }
 
-FLASHMEM void CoreState::requestProjectSessionSave() { requestProjectSessionSave_(); }
-
-FLASHMEM void CoreState::acknowledgeProjectSessionSave(uint32_t savedModifiedCounter) {
-    if (project.metadata.modifiedCounter != savedModifiedCounter) {
-        requestProjectSessionSave_();
-        return;
-    }
-
-    projectSessionSavePending_ = false;
-    projectSessionSaveTimestampMs_ = 0;
+FLASHMEM project::ProjectSaveToken CoreState::requestProjectSessionSave() {
+    return requestProjectSessionSave_();
 }
 
-bool CoreState::hasPendingProjectSessionSave() const { return projectSessionSavePending_; }
+FLASHMEM project::ProjectSaveToken CoreState::projectSessionSaveToken() const {
+    return {
+        .session = projectSessionControl_.session,
+        .mutationEpoch = projectSessionControl_.mutationEpoch,
+        .requestId = projectSessionControl_.requestId,
+        .modifiedCounter = project.metadata.modifiedCounter,
+    };
+}
 
-uint32_t CoreState::projectSessionSaveTimestampMs() const { return projectSessionSaveTimestampMs_; }
+FLASHMEM bool CoreState::projectSessionSaveTokenMatches(
+    const project::ProjectSaveToken& token
+) const {
+    return projectSessionSaveToken() == token;
+}
+
+FLASHMEM bool CoreState::acknowledgeProjectSessionSave(
+    const project::ProjectSaveToken& savedToken
+) {
+    if (!projectSessionControl_.savePending ||
+        !projectSessionSaveTokenMatches(savedToken)) {
+        return false;
+    }
+
+    projectSessionControl_.savePending = false;
+    projectSessionControl_.requestTimestampMs = 0U;
+    return true;
+}
+
+FLASHMEM bool CoreState::advanceProjectSessionIdentity_() {
+    auto& session = projectSessionControl_.session;
+    if (session.sessionEpoch != UINT32_MAX) {
+        ++session.sessionEpoch;
+    } else if (session.bootGeneration != UINT32_MAX) {
+        ++session.bootGeneration;
+        session.sessionEpoch = 1U;
+    } else {
+        projectSessionControl_.trackingEnabled = false;
+        projectSessionControl_.savePending = false;
+        projectSessionControl_.requestTimestampMs = 0U;
+        OC_LOG_ERROR("[CoreState] Project session identity exhausted");
+        return false;
+    }
+
+    projectSessionControl_.requestId = 0U;
+    projectSessionControl_.savePending = false;
+    projectSessionControl_.requestTimestampMs = 0U;
+    return true;
+}
+
+FLASHMEM void CoreState::publishProjectSessionReplacement_() {
+    if (advanceProjectSessionIdentity_()) {
+        requestProjectSessionSave_();
+    }
+}
+
+bool CoreState::hasPendingProjectSessionSave() const {
+    return projectSessionControl_.savePending;
+}
+
+uint32_t CoreState::projectSessionSaveTimestampMs() const {
+    return projectSessionControl_.requestTimestampMs;
+}
 
 bool CoreState::hasPendingProjectMutationCoalescing() const {
     const bool macroPending =

@@ -6,6 +6,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/modulation/ProjectControlDomainState.hpp"
+#include "state/project/ProjectSaveToken.hpp"
 #include "state/project/ProjectState.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
@@ -58,6 +59,8 @@ public:
     void cancel();
 
     bool active() const;
+    bool complete() const;
+    const ProjectCaptureGuard* guard() const;
 
 private:
     enum class Phase : uint8_t {
@@ -72,9 +75,7 @@ private:
     const core::state::CoreState* state_ = nullptr;
     ProjectSnapshot* snapshot_ = nullptr;
     Phase phase_ = Phase::IDLE;
-    uint32_t modified_counter_ = 0;
-    uint32_t authored_revision_ = 0;
-    uint32_t project_track_revision_ = 0;
+    ProjectCaptureGuard guard_{};
 
 };
 

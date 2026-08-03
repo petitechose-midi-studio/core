@@ -36,6 +36,18 @@ ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::update(
     bool mutationPending
 ) {
     const bool inProgress = inProgress_();
+    if (!inProgress && !state.hasPendingProjectSessionSave()) {
+        return Result{.status = Status::IDLE};
+    }
+    return updatePending_(state, nowMs, mutationPending, inProgress);
+}
+
+FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::updatePending_(
+    core::state::CoreState& state,
+    uint32_t nowMs,
+    bool mutationPending,
+    bool inProgress
+) {
     if (inProgress) {
         const bool transactionPending =
             mutationPending || state.hasPendingProjectTransaction();
@@ -44,8 +56,9 @@ ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::update(
             return Result{.status = Status::BLOCKED};
         }
 
-        if (store_.saveCurrentInProgress() &&
-            state.project.metadata.modifiedCounter != captured_modified_counter_) {
+        const auto* guard = capture_.guard();
+        if (guard == nullptr ||
+            !state.projectSessionSaveTokenMatches(guard->token)) {
             cancelInFlight_();
         }
 
@@ -77,10 +90,10 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::fl
         if (inProgress_()) cancelInFlight_();
         return Result{.status = Status::BLOCKED};
     }
-    if (capture_.active()) {
-        cancelInFlight_();
-    } else if (store_.saveCurrentInProgress() &&
-               state.project.metadata.modifiedCounter != captured_modified_counter_) {
+    const auto* guard = capture_.guard();
+    if (inProgress_() &&
+        (guard == nullptr ||
+         !state.projectSessionSaveTokenMatches(guard->token))) {
         cancelInFlight_();
     }
 
@@ -128,7 +141,6 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
     const auto progress = capture_.advance();
 
     if (progress.status == core::state::project::ProjectSnapshotCapture::Status::STALE) {
-        captured_modified_counter_ = 0;
         return Result{
             .status = Status::WAITING,
             .modifiedCounter = progress.modifiedCounter,
@@ -147,17 +159,25 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         };
     }
 
-    captured_modified_counter_ = progress.modifiedCounter;
+    const auto* guard = capture_.guard();
+    if (guard == nullptr || !capture_.complete() ||
+        !state.projectSessionSaveTokenMatches(guard->token)) {
+        cancelInFlight_();
+        return Result{
+            .status = Status::WAITING,
+            .modifiedCounter = progress.modifiedCounter,
+        };
+    }
     auto started = store_.beginSaveCurrent(*snapshot_);
     if (!started) {
+        capture_.cancel();
         state.requestProjectSessionSave();
-        captured_modified_counter_ = 0;
         OC_LOG_WARN("[ProjectSessionAutosave] save start failed");
         return Result{.status = Status::SAVE_FAILED};
     }
     return Result{
         .status = Status::SAVING,
-        .modifiedCounter = captured_modified_counter_,
+        .modifiedCounter = guard->token.modifiedCounter,
     };
 }
 
@@ -165,35 +185,45 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
     core::state::CoreState& state
 ) {
     OC_PERF_SCOPE(perfSave, "persistence.autosave.save-slice");
+    const auto* guard = capture_.guard();
+    if (guard == nullptr || !capture_.complete() ||
+        !state.projectSessionSaveTokenMatches(guard->token)) {
+        const uint32_t staleCounter =
+            guard != nullptr ? guard->token.modifiedCounter : 0U;
+        cancelInFlight_();
+        return Result{
+            .status = Status::WAITING,
+            .modifiedCounter = staleCounter,
+        };
+    }
+    const auto capturedToken = guard->token;
     auto saved = store_.advanceSaveCurrent();
 
     if (!saved) {
         state.requestProjectSessionSave();
-        const uint32_t savedCounter = captured_modified_counter_;
-        captured_modified_counter_ = 0;
+        capture_.cancel();
         OC_LOG_WARN("[ProjectSessionAutosave] save failed");
         return Result{
             .status = Status::SAVE_FAILED,
-            .modifiedCounter = savedCounter,
+            .modifiedCounter = capturedToken.modifiedCounter,
         };
     }
     if (!saved.value().complete) {
         return Result{
             .status = Status::SAVING,
-            .modifiedCounter = captured_modified_counter_,
+            .modifiedCounter = capturedToken.modifiedCounter,
         };
     }
 
-    const uint32_t savedCounter = captured_modified_counter_;
     const uint32_t bytesWritten = saved.value().bytesWritten;
     OC_PERF_UNITS(perfSave, bytesWritten, 1U);
 
-    state.acknowledgeProjectSessionSave(savedCounter);
-    captured_modified_counter_ = 0;
+    state.acknowledgeProjectSessionSave(capturedToken);
+    capture_.cancel();
     return Result{
         .status = Status::SAVED,
         .bytes = bytesWritten,
-        .modifiedCounter = savedCounter,
+        .modifiedCounter = capturedToken.modifiedCounter,
     };
 }
 
@@ -202,7 +232,6 @@ FLASHMEM void ProjectSessionAutosaveService::cancelInFlight_() {
     if (store_.saveCurrentInProgress()) {
         store_.cancelSaveCurrent();
     }
-    captured_modified_counter_ = 0;
 }
 
 bool ProjectSessionAutosaveService::inProgress_() const {
