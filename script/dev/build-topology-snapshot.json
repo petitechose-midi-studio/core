@@ -1,6 +1,6 @@
 {
   "conditionalSupplierLots": {
-    "L-R18-02F": "activate-explicit-owned-list",
+    "L-R18-02F": "evidence-only-existing-list",
     "L-R18-02H": "activate-targets-and-explicit-owned-lists",
     "L-R18-02N": "activate-explicit-owned-list",
     "L-R18-02U": "activate-target-and-explicit-owned-list"
@@ -142,8 +142,8 @@
     },
     "framework": {
       "cleanExpected": true,
-      "commit": "727a983d7ef2d1e8df15d2f8c63206b65bbc6fa6",
-      "tree": "9915fc1187d0afe0215a33c27af101f3ebc343cb"
+      "commit": "6d5ab27fe5060c24d42af894291cab03c96dc09c",
+      "tree": "857ecd385030dadb77a464f09cbd20f30e6327e5"
     },
     "halCommon": {
       "cleanExpected": true,
@@ -2322,16 +2322,34 @@
   },
   "suppliers": {
     "framework": {
-      "cmakeExplicitSourceList": false,
+      "cmakeExplicitSourceList": true,
       "cmakeLibraryTargets": [
         "oc_framework_native",
         "oc_framework_notificationqueue_diagnostics_support",
         "unity"
       ],
-      "cmakeRecursiveGlob": true,
+      "cmakeRecursiveGlob": false,
       "platformioSourceFilter": [
-        "+<**/*.cpp>",
-        "-<main.cpp>"
+        "+<oc/api/ButtonAPI.cpp>",
+        "+<oc/api/EncoderAPI.cpp>",
+        "+<oc/api/MidiAPI.cpp>",
+        "+<oc/app/AppBuilder.cpp>",
+        "+<oc/app/OpenControlApp.cpp>",
+        "+<oc/context/ContextManager.cpp>",
+        "+<oc/core/event/EventBus.cpp>",
+        "+<oc/core/event/EventTypesMacroSanity.cpp>",
+        "+<oc/core/input/BindingHandle.cpp>",
+        "+<oc/core/input/ButtonBuilder.cpp>",
+        "+<oc/core/input/ComboBuilder.cpp>",
+        "+<oc/core/input/EncoderBuilder.cpp>",
+        "+<oc/core/input/EncoderLogic.cpp>",
+        "+<oc/core/input/GestureDetector.cpp>",
+        "+<oc/core/input/InputBinding.cpp>",
+        "+<oc/diagnostics/Performance.cpp>",
+        "+<oc/log/Log.cpp>",
+        "+<oc/state/NotificationQueue.cpp>",
+        "+<oc/state/Signal.cpp>",
+        "+<oc/time/Time.cpp>"
       ],
       "sources": {
         "count": 20,
