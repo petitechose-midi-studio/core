@@ -16,7 +16,7 @@ concurrency:
 env:
   PLATFORMIO_VERSION: "6.1.18"
   MS_DEV_ENV_REPOSITORY: petitechose-midi-studio/ms-dev-env
-  MS_DEV_ENV_SHA: dc83c34088ccca2617297f7148687efad3bbef60
+  MS_DEV_ENV_SHA: ec565d041d6b1e61c5bc5cd6d2b8cf8af5f8162f
   OPEN_CONTROL_FRAMEWORK_SHA: 3a29ba81686145de225d1571d1d51bed5dffde3a
   OPEN_CONTROL_NOTE_SHA: 863ead7ab70a965617c7df0a60eb4750e538c2af
 
@@ -26,6 +26,7 @@ env:
   OPEN_CONTROL_UI_LVGL_SHA: 9827f5933ae826f30dd6df856966a769f19f6ef2
   OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA: b40208f1d3b6038e9ef0275b5a0f360fcb9ebf04
   MIDI_STUDIO_UI_SHA: bd822d51a08d60172b04f3d8aae3f825d1ec717d
+  OPEN_CONTROL_HAL_COMMON_SHA: e3aa784055554922d130bba8065422d11a7dcd02
 jobs:
   firmware_release:
     name: firmware (release)
@@ -88,6 +89,14 @@ jobs:
           repository: open-control/note
           ref: ${{ env.OPEN_CONTROL_NOTE_SHA }}
           path: workspace/open-control/note
+          persist-credentials: false
+
+      - name: Checkout HAL Common
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-common
+          ref: ${{ env.OPEN_CONTROL_HAL_COMMON_SHA }}
+          path: workspace/open-control/hal-common
           persist-credentials: false
 
       - name: Checkout UI
