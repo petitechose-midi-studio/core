@@ -24,8 +24,20 @@ namespace core::app {
  * internal heap; transaction and retained EXTMEM owners must fail instead.
  */
 inline void* allocateExtmemStrict(std::size_t bytes) noexcept {
-    if (bytes == 0U || extmem_smalloc_pool.pool == nullptr) return nullptr;
-    return sm_malloc_pool(&extmem_smalloc_pool, bytes);
+    if (bytes == 0U) return nullptr;
+    if (extmem_smalloc_pool.pool == nullptr) {
+#if OC_ENABLE_STATS
+        core::diagnostics::trackExtmemAllocationFailure();
+#endif
+        return nullptr;
+    }
+    void* allocated = sm_malloc_pool(&extmem_smalloc_pool, bytes);
+#if OC_ENABLE_STATS
+    if (allocated == nullptr) {
+        core::diagnostics::trackExtmemAllocationFailure();
+    }
+#endif
+    return allocated;
 }
 
 inline void freeExtmemStrict(void* ptr) noexcept {

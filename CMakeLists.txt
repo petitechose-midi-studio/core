@@ -155,6 +155,13 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
             PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/test"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        if(test_name STREQUAL test_StorageQualificationProbe)
+            target_sources("${test_name}" PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics/StorageQualificationProbe.cpp")
+            target_compile_definitions("${test_name}" PRIVATE
+                MS_STORAGE_QUALIFICATION=1
+                OC_ENABLE_STATS=1)
+        endif()
         if(test_name STREQUAL test_ModulatorSparklineModel)
             target_include_directories("${test_name}"
                 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../ui/src")

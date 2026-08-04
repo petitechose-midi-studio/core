@@ -12,6 +12,7 @@
 #include "diagnostics/MemoryFootprintReporter.hpp"
 #endif
 
+#include "diagnostics/StorageQualificationProbe.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
 #include "state/CoreStateBootstrap.hpp"
@@ -27,6 +28,27 @@
 namespace core::state {
 
 namespace {
+
+using StorageQualificationPhase =
+    core::diagnostics::storage_qualification::PhaseKind;
+
+FLASHMEM void recordProjectSaveToken(
+    StorageQualificationPhase phase,
+    const project::ProjectSaveToken& token,
+    uint8_t result,
+    uint32_t flags
+) {
+    core::diagnostics::storage_qualification::recordSaveToken(
+        phase,
+        token.session.bootGeneration,
+        token.session.sessionEpoch,
+        token.mutationEpoch,
+        token.requestId,
+        token.modifiedCounter,
+        result,
+        flags
+    );
+}
 
 [[noreturn]] FLASHMEM void failCoreStateAllocation(const char* label) {
     OC_LOG_ERROR("[CoreState] Failed to allocate {}", label);
@@ -323,7 +345,13 @@ FLASHMEM void CoreState::markProjectDurableMutation_() {
     ++projectSessionControl_.mutationEpoch;
     ++project.metadata.modifiedCounter;
     project.metadata.dirty = true;
-    requestProjectSessionSave_();
+    const auto token = requestProjectSessionSave_();
+    recordProjectSaveToken(
+        StorageQualificationPhase::Admit,
+        token,
+        projectSessionControl_.savePending ? 0U : 1U,
+        core::diagnostics::storage_qualification::SaveTokenFlagDurableMutation
+    );
 }
 
 FLASHMEM void CoreState::markProjectMutated() {
@@ -332,7 +360,14 @@ FLASHMEM void CoreState::markProjectMutated() {
 }
 
 FLASHMEM project::ProjectSaveToken CoreState::requestProjectSessionSave() {
-    return requestProjectSessionSave_();
+    const auto token = requestProjectSessionSave_();
+    recordProjectSaveToken(
+        StorageQualificationPhase::Admit,
+        token,
+        projectSessionControl_.savePending ? 0U : 1U,
+        core::diagnostics::storage_qualification::SaveTokenFlagExplicitRequest
+    );
+    return token;
 }
 
 FLASHMEM project::ProjectSaveToken CoreState::projectSessionSaveToken() const {
@@ -355,11 +390,23 @@ FLASHMEM bool CoreState::acknowledgeProjectSessionSave(
 ) {
     if (!projectSessionControl_.savePending ||
         !projectSessionSaveTokenMatches(savedToken)) {
+        recordProjectSaveToken(
+            StorageQualificationPhase::Complete,
+            savedToken,
+            1U,
+            core::diagnostics::storage_qualification::SaveTokenFlagNone
+        );
         return false;
     }
 
     projectSessionControl_.savePending = false;
     projectSessionControl_.requestTimestampMs = 0U;
+    recordProjectSaveToken(
+        StorageQualificationPhase::Complete,
+        savedToken,
+        0U,
+        core::diagnostics::storage_qualification::SaveTokenFlagAcknowledged
+    );
     return true;
 }
 
@@ -386,7 +433,13 @@ FLASHMEM bool CoreState::advanceProjectSessionIdentity_() {
 
 FLASHMEM void CoreState::publishProjectSessionReplacement_() {
     if (advanceProjectSessionIdentity_()) {
-        requestProjectSessionSave_();
+        const auto token = requestProjectSessionSave_();
+        recordProjectSaveToken(
+            StorageQualificationPhase::Admit,
+            token,
+            projectSessionControl_.savePending ? 0U : 1U,
+            core::diagnostics::storage_qualification::SaveTokenFlagSessionReplacement
+        );
     }
 }
 

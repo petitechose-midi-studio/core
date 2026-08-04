@@ -6,6 +6,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "diagnostics/StorageQualificationProbe.hpp"
 #include "persistence/AtomicProductFile.hpp"
 
 namespace core::persistence {
@@ -56,6 +57,35 @@ oc::type::Result<void> mediaUnavailable_() {
         {ErrorCode::HARDWARE_NOT_FOUND, "product storage unavailable"}
     );
 }
+
+template <typename Result>
+uint8_t qualificationResultCode(const Result& result) {
+    return static_cast<uint8_t>(
+        result ? ErrorCode::OK : result.error().code
+    );
+}
+
+uint32_t qualificationByteCount(size_t bytes) {
+    return bytes > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(bytes);
+}
+
+#if defined(MS_STORAGE_QUALIFICATION) && OC_ENABLE_STATS
+struct QualificationListVisitorContext {
+    oc::interface::DirectoryEntryVisitor visitor = nullptr;
+    void* context = nullptr;
+    uint16_t entries = 0U;
+};
+
+bool qualificationListVisitor(
+    const oc::interface::DirectoryEntry& entry,
+    void* opaque
+) {
+    auto* measured = static_cast<QualificationListVisitorContext*>(opaque);
+    if (!measured || !measured->visitor) return false;
+    if (measured->entries != UINT16_MAX) ++measured->entries;
+    return measured->visitor(entry, measured->context);
+}
+#endif
 
 }  // namespace
 
@@ -176,7 +206,21 @@ FLASHMEM oc::type::Result<void> ProductFileService::initForRecovery() {
 
 FLASHMEM oc::type::Result<void> ProductFileService::initBackend_() {
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::StorageInit,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto initialized = filesystem_.init();
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::StorageInit,
+        qualificationResultCode(initialized),
+        identity.mediaGeneration,
+        identity.storageEpoch
+    );
     if (!initialized) {
         observeBackendFailure_(initialized.error());
         if (!filesystem_.available()) {
@@ -230,7 +274,21 @@ FLASHMEM oc::type::Result<void> ProductFileService::releaseMutation(
     if (write_lease_id_ != 0 && coordinator_.owns(lease) &&
         write_lease_id_ == lease.id_) {
         noteFilesystemCall_();
+        const auto identity = coordinator_.identity();
+        const uint32_t qualificationStarted =
+            core::diagnostics::storage_qualification::beginStoragePrimitive(
+                core::diagnostics::storage_qualification::OperationKind::AbortWrite,
+                identity.mediaGeneration,
+                identity.storageEpoch
+            );
         filesystem_.abortWrite();
+        core::diagnostics::storage_qualification::endStoragePrimitive(
+            qualificationStarted,
+            core::diagnostics::storage_qualification::OperationKind::AbortWrite,
+            static_cast<uint8_t>(ErrorCode::OK),
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
         write_lease_id_ = 0;
     }
     return coordinator_.releaseMutation(lease);
@@ -264,7 +322,21 @@ FLASHMEM void ProductFileService::markMediaUnavailable() {
     job_coordinator_.invalidateAll();
     if (write_lease_id_ != 0) {
         noteFilesystemCall_();
+        const auto identity = coordinator_.identity();
+        const uint32_t qualificationStarted =
+            core::diagnostics::storage_qualification::beginStoragePrimitive(
+                core::diagnostics::storage_qualification::OperationKind::AbortWrite,
+                identity.mediaGeneration,
+                identity.storageEpoch
+            );
         filesystem_.abortWrite();
+        core::diagnostics::storage_qualification::endStoragePrimitive(
+            qualificationStarted,
+            core::diagnostics::storage_qualification::OperationKind::AbortWrite,
+            static_cast<uint8_t>(ErrorCode::OK),
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
         write_lease_id_ = 0;
     }
     coordinator_.markMediaUnavailable();
@@ -391,7 +463,21 @@ FLASHMEM oc::type::Result<oc::interface::FileInfo> ProductFileService::stat_(
         return oc::type::Result<oc::interface::FileInfo>::err(pathResult.error());
     }
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::Stat,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto result = filesystem_.stat(path);
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::Stat,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch
+    );
     if (!result) {
         observeBackendFailure_(result.error());
     }
@@ -432,10 +518,43 @@ FLASHMEM oc::type::Result<void> ProductFileService::list_(
     }
     noteFilesystemCall_();
     MeasuredListVisitorContext measuredContext{this, visitor, context};
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::List,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
+    auto effectiveVisitor = work_usage_
+        ? &ProductFileService::measuredListVisitor_
+        : visitor;
+    void* effectiveContext = work_usage_
+        ? static_cast<void*>(&measuredContext)
+        : context;
+    uint16_t qualificationEntries = 0U;
+#if defined(MS_STORAGE_QUALIFICATION) && OC_ENABLE_STATS
+    QualificationListVisitorContext qualificationContext{
+        effectiveVisitor,
+        effectiveContext,
+        0U,
+    };
     auto result = filesystem_.list(
         path,
-        work_usage_ ? &ProductFileService::measuredListVisitor_ : visitor,
-        work_usage_ ? static_cast<void*>(&measuredContext) : context
+        &qualificationListVisitor,
+        &qualificationContext
+    );
+    qualificationEntries = qualificationContext.entries;
+#else
+    auto result = filesystem_.list(path, effectiveVisitor, effectiveContext);
+#endif
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::List,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch,
+        0U,
+        qualificationEntries
     );
     if (!result) {
         observeBackendFailure_(result.error());
@@ -458,7 +577,21 @@ FLASHMEM oc::type::Result<void> ProductFileService::createDirectory(
     }
 
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t statQualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::Stat,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto existing = filesystem_.stat(path);
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        statQualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::Stat,
+        qualificationResultCode(existing),
+        identity.mediaGeneration,
+        identity.storageEpoch
+    );
     if (existing) {
         if (existing.value().type == oc::interface::FileType::DIRECTORY) {
             return oc::type::Result<void>::ok();
@@ -473,7 +606,20 @@ FLASHMEM oc::type::Result<void> ProductFileService::createDirectory(
     }
 
     noteFilesystemCall_();
+    const uint32_t createQualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::CreateDirectory,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto result = filesystem_.createDirectory(path);
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        createQualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::CreateDirectory,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch
+    );
     if (!result) {
         observeBackendFailure_(result.error());
         return result;
@@ -503,9 +649,23 @@ FLASHMEM oc::type::Result<void> ProductFileService::remove(
         return invalidPath_("recursive remove requires cooperative tree cleanup");
     }
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::Remove,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto result = filesystem_.remove(
         path,
         oc::interface::RemoveMode::FILE_OR_EMPTY_DIRECTORY
+    );
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::Remove,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch
     );
     if (!result) {
         observeBackendFailure_(result.error());
@@ -543,7 +703,21 @@ FLASHMEM oc::type::Result<void> ProductFileService::rename(
     }
 
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::Rename,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto result = filesystem_.rename(fromPath, toPath);
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::Rename,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch
+    );
     if (!result) {
         observeBackendFailure_(result.error());
         return result;
@@ -588,7 +762,22 @@ FLASHMEM oc::type::Result<size_t> ProductFileService::read_(
         return oc::type::Result<size_t>::err(pathResult.error());
     }
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::Read,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto result = filesystem_.read(path, offset, buffer, size);
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::Read,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch,
+        result ? qualificationByteCount(result.value()) : 0U
+    );
     if (!result) {
         observeBackendFailure_(result.error());
     } else {
@@ -622,7 +811,22 @@ FLASHMEM oc::type::Result<size_t> ProductFileService::write(
         return oc::type::Result<size_t>::ok(0);
     }
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::Write,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto result = filesystem_.write(path, offset, data, size);
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::Write,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch,
+        result ? qualificationByteCount(result.value()) : 0U
+    );
     if (!result) {
         observeBackendFailure_(result.error());
         return result;
@@ -649,7 +853,21 @@ FLASHMEM oc::type::Result<void> ProductFileService::flush(
         return pathResult;
     }
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::Flush,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto result = filesystem_.flush(path);
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::Flush,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch
+    );
     if (!result) {
         observeBackendFailure_(result.error());
         return result;
@@ -683,7 +901,22 @@ FLASHMEM oc::type::Result<void> ProductFileService::beginWrite(
         );
     }
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::BeginWrite,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto result = filesystem_.beginWrite(path, expectedSize);
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::BeginWrite,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch,
+        expectedSize
+    );
     if (!result) {
         observeBackendFailure_(result.error());
         return result;
@@ -692,7 +925,20 @@ FLASHMEM oc::type::Result<void> ProductFileService::beginWrite(
     auto touched = coordinator_.noteMutation(lease);
     if (!touched) {
         noteFilesystemCall_();
+        const uint32_t abortQualificationStarted =
+            core::diagnostics::storage_qualification::beginStoragePrimitive(
+                core::diagnostics::storage_qualification::OperationKind::AbortWrite,
+                identity.mediaGeneration,
+                identity.storageEpoch
+            );
         filesystem_.abortWrite();
+        core::diagnostics::storage_qualification::endStoragePrimitive(
+            abortQualificationStarted,
+            core::diagnostics::storage_qualification::OperationKind::AbortWrite,
+            static_cast<uint8_t>(ErrorCode::OK),
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
         write_lease_id_ = 0;
         return touched;
     }
@@ -714,7 +960,22 @@ FLASHMEM oc::type::Result<size_t> ProductFileService::appendWrite(
         );
     }
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::AppendWrite,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto result = filesystem_.appendWrite(data, size);
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::AppendWrite,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch,
+        result ? qualificationByteCount(result.value()) : 0U
+    );
     if (!result) {
         observeBackendFailure_(result.error());
         return result;
@@ -742,7 +1003,21 @@ FLASHMEM oc::type::Result<void> ProductFileService::finishWrite(
         );
     }
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::FinishWrite,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     auto result = filesystem_.finishWrite();
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::FinishWrite,
+        qualificationResultCode(result),
+        identity.mediaGeneration,
+        identity.storageEpoch
+    );
     write_lease_id_ = 0;
     if (!result) {
         observeBackendFailure_(result.error());
@@ -766,7 +1041,21 @@ FLASHMEM oc::type::Result<void> ProductFileService::abortWrite(
         return staleLease_();
     }
     noteFilesystemCall_();
+    const auto identity = coordinator_.identity();
+    const uint32_t qualificationStarted =
+        core::diagnostics::storage_qualification::beginStoragePrimitive(
+            core::diagnostics::storage_qualification::OperationKind::AbortWrite,
+            identity.mediaGeneration,
+            identity.storageEpoch
+        );
     filesystem_.abortWrite();
+    core::diagnostics::storage_qualification::endStoragePrimitive(
+        qualificationStarted,
+        core::diagnostics::storage_qualification::OperationKind::AbortWrite,
+        static_cast<uint8_t>(ErrorCode::OK),
+        identity.mediaGeneration,
+        identity.storageEpoch
+    );
     write_lease_id_ = 0;
     return oc::type::Result<void>::ok();
 }

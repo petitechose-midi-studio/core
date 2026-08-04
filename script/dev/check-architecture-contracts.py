@@ -551,10 +551,21 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
         strict_allocate,
         EXTMEM_ALLOCATOR_SOURCE,
         "allocateExtmemStrict",
-        r"\breturn\s+sm_malloc_pool\s*\(\s*&\s*extmem_smalloc_pool\s*,"
+        r"\ballocated\s*=\s*sm_malloc_pool\s*\(\s*&\s*extmem_smalloc_pool\s*,"
         r"\s*bytes\s*\)\s*;",
-        "strict allocation must return the canonical PSRAM pool sink",
+        "strict allocation must use the canonical PSRAM pool sink",
     )
+    if strict_allocate is not None:
+        failure_hooks = len(re.findall(
+            r"\bcore::diagnostics::trackExtmemAllocationFailure\s*\(\s*\)",
+            strict_allocate,
+        ))
+        if failure_hooks != 2:
+            errors.append(
+                f"{EXTMEM_ALLOCATOR_SOURCE}: allocateExtmemStrict must count "
+                f"both unavailable-pool and exhausted-pool failures "
+                f"(expected 2, found {failure_hooks})"
+            )
     require_once(
         strict_free,
         EXTMEM_ALLOCATOR_SOURCE,
@@ -7249,6 +7260,10 @@ def main(show_inventory: bool = False) -> int:
         errors.append(
             "platformio.ini: dev_diagnostics must use its dedicated linker script"
         )
+    elif "custom_diagnostics_build = yes" not in diagnostics_env.group(1):
+        errors.append(
+            "platformio.ini: dev_diagnostics must declare its diagnostic placement class"
+        )
 
     if not DIAGNOSTICS_LINKER.exists():
         errors.append("script/pio: missing diagnostics linker script")
@@ -7271,6 +7286,7 @@ def main(show_inventory: bool = False) -> int:
         or "product_placement_violations" not in memory_gate
         or "diagnostics_placement_violations" not in memory_gate
         or "normal_build_diagnostics_violations" not in memory_gate
+        or 'project_flag(action_env, "custom_diagnostics_build")' not in memory_gate
     ):
         errors.append(
             "script/pio/check_memory_budget.py: missing post-link placement gates"

@@ -4,6 +4,7 @@
 #include <new>
 #include <utility>
 
+#include "diagnostics/StorageQualificationProbe.hpp"
 #include "persistence/ProductFileCommitPlan.hpp"
 #include "persistence/ProductTreeCleanupPlan.hpp"
 #include "protocol/filesystem/FileSystemRpc.hpp"
@@ -154,7 +155,13 @@ void FileSystemRpcEndpoint::advance(uint32_t nowMs, bool playbackActive) {
     const auto quota = playbackActive
         ? core::persistence::PRODUCT_PERSISTENCE_QUOTA_ENDPOINT_FRAME
         : quotaFor_(*frame, messageId);
-    if (!jobs.prepareAdvance(token, quota) || !jobs.claimAdvance(token, nowMs)) {
+    if (!jobs.prepareAdvance(token, quota)) {
+        if (!jobRecord) { sendErrorForRequest_(frame->requestId, FileSystemRpcStatus::BUSY); }
+        return;
+    }
+    core::diagnostics::storage_qualification::setRequestId(frame->requestId);
+    if (!jobs.claimAdvance(token, nowMs)) {
+        core::diagnostics::storage_qualification::clearRequestId();
         if (!jobRecord) { sendErrorForRequest_(frame->requestId, FileSystemRpcStatus::BUSY); }
         return;
     }
@@ -425,12 +432,14 @@ FLASHMEM void FileSystemRpcEndpoint::handleReceive_(const uint8_t* data, size_t 
     if (continuation) return;
 
     const uint32_t nowMs = nowProvider_ ? nowProvider_() : 0U;
+    core::diagnostics::storage_qualification::setRequestId(frame->requestId);
     auto admitted = files_.persistenceJobs().admit({
         .owner = core::persistence::ProductPersistenceJobOwner::FILESYSTEM_RPC,
         .nowMs = nowMs,
         .deadlineAfterMs = FILESYSTEM_RPC_TOTAL_WRITE_TIMEOUT_MS,
         .quota = core::persistence::PRODUCT_PERSISTENCE_QUOTA_ENDPOINT_FRAME,
     });
+    core::diagnostics::storage_qualification::clearRequestId();
     if (!admitted) {
         clearFrame_(*frame);
         sendError_(data, size, FileSystemRpcStatus::BUSY);
@@ -623,6 +632,7 @@ FLASHMEM void FileSystemRpcEndpoint::handleJobStart_(const FileSystemJobRequest&
     if (uploadCommit) {
         record->jobId = upload_job_.id();
     } else {
+        core::diagnostics::storage_qualification::setRequestId(frame->requestId);
         auto admitted = jobs.admit({
             .owner = core::persistence::ProductPersistenceJobOwner::FILESYSTEM_RPC,
             .nowMs = nowMs,
@@ -631,6 +641,7 @@ FLASHMEM void FileSystemRpcEndpoint::handleJobStart_(const FileSystemJobRequest&
             .deadlineAfterMs = 0U,
             .quota = core::persistence::PRODUCT_PERSISTENCE_QUOTA_ENDPOINT_FRAME,
         });
+        core::diagnostics::storage_qualification::clearRequestId();
         if (!admitted) {
             clearFrame_(*frame);
             resetJobRecord_(*record);
@@ -827,8 +838,15 @@ FLASHMEM bool FileSystemRpcEndpoint::advanceJobInterruption_(PendingFrame& frame
 
     auto& jobs = files_.persistenceJobs();
     auto& token = frame.uploadContinuation ? upload_job_ : frame.token;
-    if (!jobs.prepareAdvance(token, core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE) ||
-        !jobs.claimAdvance(token, nowMs)) {
+    if (!jobs.prepareAdvance(
+            token,
+            core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
+        )) {
+        return true;
+    }
+    core::diagnostics::storage_qualification::setRequestId(frame.requestId);
+    if (!jobs.claimAdvance(token, nowMs)) {
+        core::diagnostics::storage_qualification::clearRequestId();
         return true;
     }
 
@@ -1015,8 +1033,12 @@ FLASHMEM void FileSystemRpcEndpoint::advanceUploadTimeout_(uint32_t nowMs) {
     if (!jobs.prepareAdvance(
             upload_job_,
             core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
-        ) ||
-        !jobs.claimAdvance(upload_job_, nowMs)) {
+        )) {
+        return;
+    }
+    core::diagnostics::storage_qualification::setRequestId(0U);
+    if (!jobs.claimAdvance(upload_job_, nowMs)) {
+        core::diagnostics::storage_qualification::clearRequestId();
         return;
     }
 

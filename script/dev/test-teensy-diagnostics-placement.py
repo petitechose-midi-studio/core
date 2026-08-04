@@ -28,6 +28,16 @@ def main() -> int:
         for violation in normal_violations
     )
 
+    qualification_trace = """
+1879066320 524288 b core::diagnostics::storage_qualification::(anonymous namespace)::traceStorage
+1610720000 1068 t core::diagnostics::storage_qualification::(anonymous namespace)::updateCold(bool, bool)
+"""
+    qualification_violations = normal_build_diagnostics_violations(
+        qualification_trace
+    )
+    assert any("traceStorage" in item for item in qualification_violations)
+    assert any("updateCold" in item for item in qualification_violations)
+
     invalid = valid.replace(
         "1611218610 46 T core::diagnostics::PerformanceReporter::update",
         "267696 46 T core::diagnostics::PerformanceReporter::update",

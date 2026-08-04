@@ -8,6 +8,7 @@
 #include <oc/log/Log.hpp>
 
 #include "config/TimeCompat.hpp"
+#include "diagnostics/StorageQualificationProbe.hpp"
 #include "persistence/ProjectSessionStore.hpp"
 #include "state/CoreState.hpp"
 #include "state/project/ProjectSnapshot.hpp"
@@ -61,6 +62,33 @@ ProjectSessionAutosaveService::FailureStage failureStage(
         default:
             return FailureStage::PREPARE;
     }
+}
+
+void recordAutosaveToken(
+    const core::state::project::ProjectCaptureGuard* guard,
+    core::diagnostics::storage_qualification::PhaseKind phase,
+    ErrorCode result,
+    ProjectSessionAutosaveService::FailureStage stage,
+    bool recovery = false
+) {
+    if (guard == nullptr) return;
+    const auto& token = guard->token;
+    uint32_t flags = core::diagnostics::storage_qualification::saveTokenStageFlags(
+        static_cast<uint8_t>(stage)
+    );
+    if (recovery) {
+        flags |= core::diagnostics::storage_qualification::SaveTokenFlagRecovery;
+    }
+    core::diagnostics::storage_qualification::recordSaveToken(
+        phase,
+        token.session.bootGeneration,
+        token.session.sessionEpoch,
+        token.mutationEpoch,
+        token.requestId,
+        token.modifiedCounter,
+        static_cast<uint8_t>(result),
+        flags
+    );
 }
 
 }  // namespace
@@ -317,6 +345,13 @@ ProjectSessionAutosaveService::beginRecovery(
     }
 
     recovery_in_progress_ = true;
+    recordAutosaveToken(
+        capture_.guard(),
+        core::diagnostics::storage_qualification::PhaseKind::Admit,
+        ErrorCode::OK,
+        FailureStage::CAPTURE,
+        true
+    );
     return Result{
         .status = Status::SAVING,
         .modifiedCounter = requestedToken.modifiedCounter,
@@ -350,6 +385,13 @@ ProjectSessionAutosaveService::advanceRecovery(
         const uint32_t staleCounter = guard != nullptr
             ? guard->token.modifiedCounter
             : 0U;
+        recordAutosaveToken(
+            guard,
+            core::diagnostics::storage_qualification::PhaseKind::Cancel,
+            ErrorCode::INVALID_STATE,
+            FailureStage::CAPTURE,
+            true
+        );
         cancelInFlight_();
         return Result{
             .status = Status::WAITING,
@@ -405,6 +447,19 @@ ProjectSessionAutosaveService::advanceRecoveryCapture_(
 ) {
     OC_PERF_SCOPE(perfCapture, "persistence.autosave.recovery-capture-slice");
     const auto progress = capture_.advance();
+    recordAutosaveToken(
+        capture_.guard(),
+        core::diagnostics::storage_qualification::PhaseKind::Advance,
+        progress.status == core::state::project::ProjectSnapshotCapture::Status::FAILED ||
+                progress.status == core::state::project::ProjectSnapshotCapture::Status::IDLE
+            ? ErrorCode::RESOURCE_EXHAUSTED
+            : (progress.status ==
+                       core::state::project::ProjectSnapshotCapture::Status::STALE
+                   ? ErrorCode::INVALID_STATE
+                   : ErrorCode::OK),
+        FailureStage::CAPTURE,
+        true
+    );
     if (progress.status ==
         core::state::project::ProjectSnapshotCapture::Status::STALE) {
         cancelInFlight_();
@@ -452,6 +507,13 @@ ProjectSessionAutosaveService::advanceRecoveryCapture_(
 
     const uint32_t capturedCounter = guard->token.modifiedCounter;
     auto begun = store_.beginSaveCurrent(*snapshot_, recoveryLease);
+    recordAutosaveToken(
+        guard,
+        core::diagnostics::storage_qualification::PhaseKind::Begin,
+        begun ? ErrorCode::OK : begun.error().code,
+        FailureStage::PREPARE,
+        true
+    );
     if (!begun) {
         const auto error = begun.error();
         cancelInFlight_();
@@ -478,7 +540,17 @@ FLASHMEM bool ProjectSessionAutosaveService::beginCapture_(
     if (!snapshot_) {
         snapshot_ = core::state::project::makeProjectSnapshot();
     }
-    return snapshot_ && capture_.begin(state, *snapshot_);
+    const bool begun = snapshot_ && capture_.begin(state, *snapshot_);
+    if (begun) {
+        recordAutosaveToken(
+            capture_.guard(),
+            core::diagnostics::storage_qualification::PhaseKind::Begin,
+            ErrorCode::OK,
+            FailureStage::CAPTURE,
+            recovery_in_progress_
+        );
+    }
+    return begun;
 }
 
 FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::startCapture_(
@@ -507,12 +579,17 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::st
         };
     }
 
+    const auto* qualificationGuard = capture_.guard();
+    core::diagnostics::storage_qualification::setRequestId(
+        qualificationGuard ? qualificationGuard->token.requestId : 0U
+    );
     auto admitted = jobs.admit({
         .owner = ProductPersistenceJobOwner::PROJECT_AUTOSAVE,
         .nowMs = nowMs,
         .deadlineAfterMs = 0U,
         .quota = nextWorkQuota_(),
     });
+    core::diagnostics::storage_qualification::clearRequestId();
     if (!admitted) {
         const auto error = admitted.error();
         capture_.cancel();
@@ -578,8 +655,13 @@ ProjectSessionAutosaveService::advanceOrdinary_(
                 : Status::SAVING,
         };
     }
+    const auto* qualificationGuard = capture_.guard();
+    core::diagnostics::storage_qualification::setRequestId(
+        qualificationGuard ? qualificationGuard->token.requestId : 0U
+    );
     auto claimed = jobs.claimAdvance(job_token_, nowMs);
     if (!claimed) {
+        core::diagnostics::storage_qualification::clearRequestId();
         return Result{.status = Status::SAVING};
     }
 
@@ -601,6 +683,12 @@ ProjectSessionAutosaveService::advanceOrdinary_(
             const uint32_t modifiedCounter =
                 guard ? guard->token.modifiedCounter : 0U;
             const Status cancelStatus = ordinary_cancel_status_;
+            recordAutosaveToken(
+                guard,
+                core::diagnostics::storage_qualification::PhaseKind::Cancel,
+                ErrorCode::INVALID_STATE,
+                FailureStage::CAPTURE
+            );
             cancelInFlight_();
             result = Result{
                 .status = cancelStatus,
@@ -650,6 +738,18 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
 ) {
     OC_PERF_SCOPE(perfCapture, "persistence.autosave.capture-slice");
     const auto progress = capture_.advance();
+    recordAutosaveToken(
+        capture_.guard(),
+        core::diagnostics::storage_qualification::PhaseKind::Advance,
+        progress.status == core::state::project::ProjectSnapshotCapture::Status::FAILED ||
+                progress.status == core::state::project::ProjectSnapshotCapture::Status::IDLE
+            ? ErrorCode::RESOURCE_EXHAUSTED
+            : (progress.status ==
+                       core::state::project::ProjectSnapshotCapture::Status::STALE
+                   ? ErrorCode::INVALID_STATE
+                   : ErrorCode::OK),
+        FailureStage::CAPTURE
+    );
 
     if (progress.status == core::state::project::ProjectSnapshotCapture::Status::STALE) {
         return Result{
@@ -690,6 +790,12 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         };
     }
     auto started = store_.beginSaveCurrent(*snapshot_);
+    recordAutosaveToken(
+        guard,
+        core::diagnostics::storage_qualification::PhaseKind::Begin,
+        started ? ErrorCode::OK : started.error().code,
+        FailureStage::PREPARE
+    );
     if (!started) {
         const auto error = started.error();
         capture_.cancel();
@@ -720,6 +826,13 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
         !state.projectSessionSaveTokenMatches(guard->token)) {
         const uint32_t staleCounter =
             guard != nullptr ? guard->token.modifiedCounter : 0U;
+        recordAutosaveToken(
+            guard,
+            core::diagnostics::storage_qualification::PhaseKind::Cancel,
+            ErrorCode::INVALID_STATE,
+            FailureStage::ACKNOWLEDGE,
+            recovery_in_progress_
+        );
         cancelInFlight_();
         return Result{
             .status = Status::WAITING,
@@ -732,6 +845,13 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
 
     if (!saved) {
         const auto error = saved.error();
+        recordAutosaveToken(
+            guard,
+            core::diagnostics::storage_qualification::PhaseKind::Advance,
+            error.code,
+            failureStage(attemptedStage),
+            recovery_in_progress_
+        );
         state.requestProjectSessionSave();
         capture_.cancel();
         recovery_in_progress_ = false;
@@ -744,6 +864,15 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
             .errorContext = error.context,
         };
     }
+    recordAutosaveToken(
+        guard,
+        saved.value().complete
+            ? core::diagnostics::storage_qualification::PhaseKind::End
+            : core::diagnostics::storage_qualification::PhaseKind::Advance,
+        ErrorCode::OK,
+        failureStage(attemptedStage),
+        recovery_in_progress_
+    );
     if (!saved.value().complete) {
         return Result{
             .status = Status::SAVING,
@@ -756,6 +885,13 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
     OC_PERF_UNITS(perfSave, bytesWritten, 1U);
 
     if (!state.acknowledgeProjectSessionSave(capturedToken)) {
+        recordAutosaveToken(
+            guard,
+            core::diagnostics::storage_qualification::PhaseKind::Cancel,
+            ErrorCode::INVALID_STATE,
+            FailureStage::ACKNOWLEDGE,
+            recovery_in_progress_
+        );
         cancelInFlight_();
         return Result{
             .status = Status::WAITING,
@@ -767,6 +903,13 @@ FLASHMEM ProjectSessionAutosaveService::Result ProjectSessionAutosaveService::ad
             .errorContext = kSaveAcknowledgementFailed,
         };
     }
+    recordAutosaveToken(
+        guard,
+        core::diagnostics::storage_qualification::PhaseKind::Complete,
+        ErrorCode::OK,
+        FailureStage::ACKNOWLEDGE,
+        recovery_in_progress_
+    );
     capture_.cancel();
     recovery_in_progress_ = false;
     return Result{

@@ -54,6 +54,7 @@ struct MemoryHighWater {
     uint16_t psramFallbackLive = 0U;
     uint16_t psramFallbackPeak = 0U;
     uint32_t psramFallbackTotal = 0U;
+    uint32_t psramAllocationFailures = 0U;
     uint32_t psramPoolBytes = 0U;
     uint32_t psramAllocatedBytes = 0U;
     uint32_t psramUserBytes = 0U;
@@ -377,6 +378,35 @@ void trackExtmemFree(void* ptr) {
 #else
     (void)ptr;
 #endif
+}
+
+FLASHMEM void trackExtmemAllocationFailure() {
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+    auto& state = highWater();
+    oc::realtime::InterruptGuard lock;
+    if (state.psramAllocationFailures != UINT32_MAX) {
+        ++state.psramAllocationFailures;
+    }
+#endif
+}
+
+FLASHMEM DynamicMemorySnapshot dynamicMemorySnapshot() {
+    DynamicMemorySnapshot snapshot{};
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+    auto& state = highWater();
+    oc::realtime::InterruptGuard lock;
+    snapshot.psramAllocatedBytes = state.psramAllocatedBytes;
+    snapshot.psramUserBytes = state.psramUserBytes;
+    snapshot.psramFreeBytes = state.psramPoolBytes >= state.psramAllocatedBytes
+        ? state.psramPoolBytes - state.psramAllocatedBytes
+        : 0U;
+    snapshot.psramLargestBlock = state.psramLargestBlock;
+    snapshot.psramBlocks = state.psramSpanCount;
+    snapshot.psramAllocationFailures = state.psramAllocationFailures;
+    snapshot.trackerReady = state.psramTrackerReady;
+    snapshot.trackerOverflow = state.psramTrackerOverflow;
+#endif
+    return snapshot;
 }
 
 FLASHMEM void recordDynamicMemorySample(const char* label) {

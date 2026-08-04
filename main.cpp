@@ -24,6 +24,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "context/StandaloneContext.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
+#include "diagnostics/StorageQualificationProbe.hpp"
 #include "persistence/PersistenceStatus.hpp"
 #include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
@@ -730,6 +731,7 @@ static FLASHMEM void initApp() {
 
 FLASHMEM void setup() {
     oc::hal::teensy::initLogging();
+    core::diagnostics::storage_qualification::begin();
 
     OC_LOG_INFO("=== MIDI Studio Core Boot ===");
     OC_LOG_INFO("App {}Hz, LVGL {}Hz", Config::Timing::APP_HZ, Config::Timing::LVGL_HZ);
@@ -801,6 +803,7 @@ void loop() {
     const uint32_t now = micros();
     if (now - lastMicros < APP_PERIOD_US) return;
     lastMicros = now;
+    core::diagnostics::storage_qualification::foregroundBegin();
     {
         OC_PERF_SCOPE(perfMainLoop, "main.loop");
 
@@ -878,9 +881,11 @@ void loop() {
             lvgl->refresh();
         }
     }
+    core::diagnostics::storage_qualification::foregroundEnd();
 
 #if OC_ENABLE_STATS
     core::diagnostics::performanceReporter().update(millis());
 #endif
+    core::diagnostics::storage_qualification::update();
 #endif
 }

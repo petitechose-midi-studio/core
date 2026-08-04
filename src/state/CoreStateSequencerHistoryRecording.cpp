@@ -14,6 +14,7 @@
 #include <wiring.h>
 #endif
 
+#include "diagnostics/StorageQualificationProbe.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
 #include "state/CoreStateBootstrap.hpp"
@@ -45,6 +46,31 @@ const char kPreparedFamilyRollbackFailed[] PROGMEM =
     "[CoreState] Failed allocation-free prepared-family rollback";
 const char kFamilyAdmissionRollbackFailed[] PROGMEM =
     "[CoreState] Failed allocation-free family admission rollback";
+
+constexpr uint32_t stepToggleQualificationDetail(
+    uint8_t key,
+    uint8_t activeTrack,
+    sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan
+) {
+    return static_cast<uint32_t>(key) |
+           (static_cast<uint32_t>(activeTrack) << 8U) |
+           (static_cast<uint32_t>(payloadPlan) << 16U);
+}
+
+void recordStepToggleQualification(
+    sequencer::SequencerPreparedPatternEditOwner owner,
+    core::diagnostics::storage_qualification::PhaseKind phase,
+    uint8_t result,
+    uint32_t detail
+) {
+    if (owner != sequencer::SequencerPreparedPatternEditOwner::StepToggle) return;
+    core::diagnostics::storage_qualification::recordWriter(
+        core::diagnostics::storage_qualification::OperationKind::StepToggle,
+        phase,
+        result,
+        detail
+    );
+}
 
 FLASHMEM bool hasCanonicalCcPayload(
     const sequencer::SequencerPatternState& pattern
@@ -444,6 +470,29 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
     sequencer::SequencerHistoryDescriptor descriptor, bool compactGraphOnSeal) {
     using Outcome = sequencer::SequencerPreparedPatternEditBeginOutcome;
 
+    const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
+    const uint32_t qualificationDetail =
+        stepToggleQualificationDetail(key, activeTrack, payloadPlan);
+    recordStepToggleQualification(
+        owner,
+        core::diagnostics::storage_qualification::PhaseKind::Begin,
+        0U,
+        qualificationDetail
+    );
+    const auto finish = [owner, qualificationDetail](Outcome outcome) {
+        const bool accepted = outcome == Outcome::Started ||
+                              outcome == Outcome::Continued;
+        recordStepToggleQualification(
+            owner,
+            accepted
+                ? core::diagnostics::storage_qualification::PhaseKind::Admit
+                : core::diagnostics::storage_qualification::PhaseKind::Cancel,
+            static_cast<uint8_t>(outcome),
+            qualificationDetail
+        );
+        return outcome;
+    };
+
     switch (owner) {
         case sequencer::SequencerPreparedPatternEditOwner::PatternPitch:
         case sequencer::SequencerPreparedPatternEditOwner::PropertySelector:
@@ -453,11 +502,10 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
         case sequencer::SequencerPreparedPatternEditOwner::PatternEditor:
         case sequencer::SequencerPreparedPatternEditOwner::PageStructure:
         case sequencer::SequencerPreparedPatternEditOwner::QuickControls: break;
-        default: return Outcome::Blocked;
+        default: return finish(Outcome::Blocked);
     }
 
     auto& pending = sequencerDomain_.coalescedPatternHistory;
-    const uint8_t activeTrack = sequencerTracks.activeTrackIndex();
     descriptor.trackIndex = activeTrack;
 
     if (pending.matchesPreparedFamily(activeTrack, owner, key) &&
@@ -470,16 +518,18 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
             !sequencer::preparedHistoryPatternAfterMatchesTrack(
                 sequencerTracks, sequencer, activeTrack, pending.preparedPatternChange->after,
                 pending.preparedPatternChange->storage)) {
-            return Outcome::HistoryUnavailable;
+            return finish(Outcome::HistoryUnavailable);
         }
         consumePendingSequencerMutation_(&pending.genericMutationPendingAtBegin);
         pending.sealed = false;
-        return Outcome::Continued;
+        return finish(Outcome::Continued);
     }
 
     if (pending.pending) {
         const auto outcome = commitSequencerPatternHistoryCoalescing_();
-        if (outcome == SequencerPatternHistoryCommitOutcome::Failed) { return Outcome::HistoryUnavailable; }
+        if (outcome == SequencerPatternHistoryCommitOutcome::Failed) {
+            return finish(Outcome::HistoryUnavailable);
+        }
     }
 
     sequencer::SequencerHistoryGraphPtr prospectiveGraph;
@@ -487,17 +537,17 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
         sequencerTracks, sequencer, activeTrack, payloadPlan, prospectiveGraph, descriptor);
     if (!change || !sequencer::reservePreparedHistoryPatternAfter(sequencerTracks, sequencer,
                                                                   *change, payloadPlan)) {
-        return Outcome::ResourceUnavailable;
+        return finish(Outcome::ResourceUnavailable);
     }
 
     sequencer::SequencerPreparedActiveTrackSynchronization synchronization;
     if (!sequencer::reservePreparedActiveTrackSynchronization(
             sequencerTracks, sequencer, activeTrack, payloadPlan, synchronization)) {
-        return Outcome::ResourceUnavailable;
+        return finish(Outcome::ResourceUnavailable);
     }
     if (activeTrack != sequencerTracks.activeTrackIndex() ||
         !sequencer::preparedActiveTrackSynchronizationMatches(sequencerTracks, synchronization)) {
-        return Outcome::HistoryUnavailable;
+        return finish(Outcome::HistoryUnavailable);
     }
 
     const bool preserveEmptyPageCcOwner =
@@ -532,14 +582,14 @@ CoreState::beginOrContinueSequencerPreparedPatternEdit(
     if (prospectiveGraph) {
         if (sequencer.pattern.graph) {
             pending.clear();
-            return Outcome::HistoryUnavailable;
+            return finish(Outcome::HistoryUnavailable);
         }
         sequencer.pattern.graph = std::move(prospectiveGraph);
         pending.prospectiveGraphInstalled = true;
     }
     pending.preparedPatternChange->setPreparedPayloadOwnerProof(sequencer.pattern);
     consumePendingSequencerMutation_(&pending.genericMutationPendingAtBegin);
-    return Outcome::Started;
+    return finish(Outcome::Started);
 }
 
 FLASHMEM bool CoreState::sequencerPreparedPatternEditReady(
@@ -700,11 +750,27 @@ CoreState::sealSequencerPreparedPatternEdit(sequencer::SequencerPreparedPatternE
     using Outcome = sequencer::SequencerPreparedPatternEditSealOutcome;
 
     auto& pending = sequencerDomain_.coalescedPatternHistory;
+    const uint32_t qualificationDetail = stepToggleQualificationDetail(
+        key,
+        sequencerTracks.activeTrackIndex(),
+        pending.payloadPlan
+    );
+    const auto finish = [owner, qualificationDetail](Outcome outcome) {
+        recordStepToggleQualification(
+            owner,
+            outcome == Outcome::Sealed
+                ? core::diagnostics::storage_qualification::PhaseKind::End
+                : core::diagnostics::storage_qualification::PhaseKind::Cancel,
+            static_cast<uint8_t>(outcome),
+            qualificationDetail
+        );
+        return outcome;
+    };
     if (!pending.pending ||
         pending.kind != SequencerDomainState::CoalescedPatternHistory::Kind::PreparedFamily ||
         pending.familyOwner != owner || pending.familyKey != key ||
         pending.sealed || !pending.preparedPatternChange) {
-        return Outcome::Failed;
+        return finish(Outcome::Failed);
     }
     const bool synchronizationMatches =
         sequencer::preparedActiveTrackSynchronizationMatches(sequencerTracks,
@@ -713,21 +779,23 @@ CoreState::sealSequencerPreparedPatternEdit(sequencer::SequencerPreparedPatternE
         pending.preparedPatternChange->preparedPayloadOwnerProofMatches(sequencer.pattern);
     if (!synchronizationMatches ||
         !payloadOwnerProofMatches) {
-        if (rollbackPreparedSequencerPatternEdit_()) return Outcome::FailedClosed;
+        if (rollbackPreparedSequencerPatternEdit_()) return finish(Outcome::FailedClosed);
         OC_LOG_ERROR(kPreparedFamilyIdentityRollbackFailed);
-        return Outcome::Failed;
+        return finish(Outcome::Failed);
     }
 
     if (!mutationChanged) {
         if (pending.hasChange) {
             consumePendingSequencerMutation_();
             pending.sealed = true;
-            return Outcome::Sealed;
+            return finish(Outcome::Sealed);
         }
         // False means no musical delta, not necessarily no preparatory write:
         // graph-backed setters can enable the prospective owner before their
         // final equality check. Roll back the complete prepared state.
-        return rollbackPreparedSequencerPatternEdit_() ? Outcome::Cleared : Outcome::Failed;
+        return finish(
+            rollbackPreparedSequencerPatternEdit_() ? Outcome::Cleared : Outcome::Failed
+        );
     }
 
     if (pending.prospectiveGraphInstalled && sequencer.pattern.graph &&
@@ -741,13 +809,13 @@ CoreState::sealSequencerPreparedPatternEdit(sequencer::SequencerPreparedPatternE
         // The reclaim phase already compacted after every planned destination
         // reference was released. The remaining mutation is append-only; its
         // small remapped UI path is published by the caller only after commit.
-        return finishSequencerPreparedPatternEdit_(descriptor, nullptr, false);
+        return finish(finishSequencerPreparedPatternEdit_(descriptor, nullptr, false));
     }
     if (pending.graphCompactionRequested()) {
-        return sealSequencerPreparedPatternEditWithGraphCompaction_(descriptor);
+        return finish(sealSequencerPreparedPatternEditWithGraphCompaction_(descriptor));
     }
 
-    return finishSequencerPreparedPatternEdit_(descriptor, nullptr, false);
+    return finish(finishSequencerPreparedPatternEdit_(descriptor, nullptr, false));
 }
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -1044,12 +1112,32 @@ CoreState::commitSequencerPreparedPatternEdit(sequencer::SequencerPreparedPatter
     using Outcome = sequencer::SequencerPreparedPatternEditCommitOutcome;
 
     const auto& pending = sequencerDomain_.coalescedPatternHistory;
+    const uint32_t qualificationDetail = stepToggleQualificationDetail(
+        pending.familyKey,
+        pending.activeTrack,
+        pending.payloadPlan
+    );
     if (!pending.pending ||
         pending.kind != SequencerDomainState::CoalescedPatternHistory::Kind::PreparedFamily ||
         pending.familyOwner != owner) {
+        recordStepToggleQualification(
+            owner,
+            core::diagnostics::storage_qualification::PhaseKind::Cancel,
+            static_cast<uint8_t>(Outcome::NoPending),
+            qualificationDetail
+        );
         return Outcome::NoPending;
     }
-    return commitSequencerPatternHistoryCoalescing_();
+    const auto outcome = commitSequencerPatternHistoryCoalescing_();
+    recordStepToggleQualification(
+        owner,
+        outcome == Outcome::Committed
+            ? core::diagnostics::storage_qualification::PhaseKind::Complete
+            : core::diagnostics::storage_qualification::PhaseKind::Cancel,
+        static_cast<uint8_t>(outcome),
+        qualificationDetail
+    );
+    return outcome;
 }
 
 #if defined(__GNUC__) || defined(__clang__)

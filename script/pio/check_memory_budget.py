@@ -30,6 +30,16 @@ def project_option(action_env, name: str, default: int) -> int:
     return int(action_env.GetProjectOption(name, str(default)))
 
 
+def project_flag(action_env, name: str, default: bool = False) -> bool:
+    fallback = "yes" if default else "no"
+    value = str(action_env.GetProjectOption(name, fallback)).strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    raise RuntimeError(f"invalid boolean project option {name}={value!r}")
+
+
 def teensy_size_path(action_env) -> Path:
     package_dir = Path(action_env.PioPlatform().get_package_dir("tool-teensy"))
     for name in ("teensy_size", "teensy_size.exe"):
@@ -60,7 +70,7 @@ def elf_placement_violations(action_env, elf_path: Path) -> tuple[str, ...]:
     if result.returncode != 0:
         raise RuntimeError(f"arm-none-eabi-nm failed for {elf_path}:\n{result.stderr}")
     violations = product_placement_violations(result.stdout)
-    if str(action_env.get("PIOENV", "")) == "dev_diagnostics":
+    if project_flag(action_env, "custom_diagnostics_build"):
         violations += diagnostics_placement_violations(result.stdout)
     else:
         violations += normal_build_diagnostics_violations(result.stdout)

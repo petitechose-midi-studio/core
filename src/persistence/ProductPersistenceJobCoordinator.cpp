@@ -4,6 +4,8 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "diagnostics/StorageQualificationProbe.hpp"
+
 namespace core::persistence {
 
 namespace {
@@ -140,6 +142,13 @@ ProductPersistenceJobCoordinator::admit(
         high_water_ = depth_;
     }
 
+    core::diagnostics::storage_qualification::recordJobAdmission(
+        admittedId,
+        static_cast<uint8_t>(record.owner),
+        depth_,
+        high_water_
+    );
+
     return oc::type::Result<ProductPersistenceJobToken>::ok(
         ProductPersistenceJobToken{admittedId}
     );
@@ -218,6 +227,10 @@ oc::type::Result<void> ProductPersistenceJobCoordinator::claimAdvance(
 
     record->flags &= static_cast<uint8_t>(~FLAG_SAFE_YIELD);
     turn_state_ = TurnState::CLAIMED;
+    core::diagnostics::storage_qualification::recordJobClaim(
+        record->id,
+        static_cast<uint8_t>(record->owner)
+    );
     return oc::type::Result<void>::ok();
 }
 
@@ -247,6 +260,19 @@ oc::type::Result<void> ProductPersistenceJobCoordinator::finishAdvance(
     }
 
     turn_state_ = TurnState::RECORDED;
+    core::diagnostics::storage_qualification::recordJobAdvance(
+        record->id,
+        static_cast<uint8_t>(record->owner),
+        usage.bytes,
+        usage.wallMicros,
+        usage.entries,
+        usage.filesystemCalls,
+        usage.allocations,
+        usage.nodes,
+        high_water_,
+        safeYield,
+        !withinQuota
+    );
     if (!withinQuota) {
         return oc::type::Result<void>::err(
             {ErrorCode::RESOURCE_EXHAUSTED, kAdvanceQuotaExceeded}
@@ -272,6 +298,12 @@ FLASHMEM oc::type::Result<void> ProductPersistenceJobCoordinator::complete(
         );
     }
 
+    core::diagnostics::storage_qualification::recordJobTerminal(
+        record->id,
+        static_cast<uint8_t>(record->owner),
+        core::diagnostics::storage_qualification::PhaseKind::Complete,
+        static_cast<uint8_t>(ErrorCode::OK)
+    );
     releaseRecord_(*record);
     token.invalidate_();
     return oc::type::Result<void>::ok();
@@ -294,6 +326,12 @@ FLASHMEM oc::type::Result<void> ProductPersistenceJobCoordinator::cancel(
         );
     }
 
+    core::diagnostics::storage_qualification::recordJobTerminal(
+        record->id,
+        static_cast<uint8_t>(record->owner),
+        core::diagnostics::storage_qualification::PhaseKind::Cancel,
+        static_cast<uint8_t>(ErrorCode::OK)
+    );
     releaseRecord_(*record);
     token.invalidate_();
     return oc::type::Result<void>::ok();
@@ -316,6 +354,12 @@ FLASHMEM oc::type::Result<void> ProductPersistenceJobCoordinator::cancelAfterUnw
         );
     }
 
+    core::diagnostics::storage_qualification::recordJobTerminal(
+        record->id,
+        static_cast<uint8_t>(record->owner),
+        core::diagnostics::storage_qualification::PhaseKind::Cancel,
+        static_cast<uint8_t>(ErrorCode::OK)
+    );
     releaseRecord_(*record);
     token.invalidate_();
     return oc::type::Result<void>::ok();
@@ -337,10 +381,37 @@ FLASHMEM oc::type::Result<void> ProductPersistenceJobCoordinator::expire(
             {ErrorCode::INVALID_STATE, kDeadlineNotExpired}
         );
     }
+#if defined(MS_STORAGE_QUALIFICATION) && OC_ENABLE_STATS
+    if (record->state == ProductPersistenceJobState::ACTIVE &&
+        (turn_state_ == TurnState::CLAIMED || !safeYield_(*record))) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::INVALID_STATE, kNotCancelSafe}
+        );
+    }
+    core::diagnostics::storage_qualification::recordJobTerminal(
+        record->id,
+        static_cast<uint8_t>(record->owner),
+        core::diagnostics::storage_qualification::PhaseKind::Expire,
+        static_cast<uint8_t>(ErrorCode::HARDWARE_TIMEOUT)
+    );
+    releaseRecord_(*record);
+    token.invalidate_();
+    return oc::type::Result<void>::ok();
+#else
     return cancel(token);
+#endif
 }
 
 FLASHMEM void ProductPersistenceJobCoordinator::invalidateAll() {
+    for (const auto& record : records_) {
+        if (record.state == ProductPersistenceJobState::EMPTY) continue;
+        core::diagnostics::storage_qualification::recordJobTerminal(
+            record.id,
+            static_cast<uint8_t>(record.owner),
+            core::diagnostics::storage_qualification::PhaseKind::Invalidate,
+            static_cast<uint8_t>(ErrorCode::HARDWARE_NOT_FOUND)
+        );
+    }
     records_[0] = {};
     records_[1] = {};
     active_slot_ = INVALID_SLOT;
