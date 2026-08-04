@@ -5,7 +5,7 @@
 #include <oc/interface/IFileSystem.hpp>
 #include <oc/type/Result.hpp>
 
-#include "persistence\ProductAssetFileStore.hpp"
+#include "persistence/ProductAssetFileStore.hpp"
 #include "persistence/SequencerGraphAssetCodec.hpp"
 
 namespace core::persistence {
