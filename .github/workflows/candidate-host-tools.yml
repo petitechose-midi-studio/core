@@ -391,12 +391,15 @@ jobs:
             --recipe-path src/persistence/ProjectFileInspection.hpp \
             --recipe-path src/persistence/ProjectFileInspection.cpp \
             --recipe-path src/persistence/ProjectFileLimits.hpp \
+            --recipe-path src/persistence/SequencerGraphAssetCodec.hpp \
+            --recipe-path src/persistence/SequencerGraphAssetCodec.cpp \
+            --recipe-path src/persistence/SequencerGraphRecordCodec.hpp \
+            --recipe-path src/persistence/SequencerGraphRecordCodec.cpp \
             --recipe-path src/state/project/ProjectSnapshotLifecycle.cpp \
-            --recipe-path src/state/sequencer/SequencerGraphAssetCodec.hpp \
-            --recipe-path src/state/sequencer/SequencerGraphAssetCodec.cpp \
-            --recipe-path src/state/sequencer/SequencerGraphAssetRecords.hpp \
-            --recipe-path src/state/sequencer/SequencerGraphPresetWorkflow.hpp \
-            --recipe-path src/state/sequencer/SequencerGraphPresetWorkflow.cpp \
+            --recipe-path src/state/sequencer/SequencerGraphAsset.hpp \
+            --recipe-path src/state/sequencer/SequencerGraphAsset.cpp \
+            --recipe-path src/state/sequencer/SequencerGraphCanonicalPolicy.hpp \
+            --recipe-path src/state/sequencer/SequencerGraphCanonicalPolicy.cpp \
             --recipe-path tools/ms_core_file_tool/main.cpp \
             --recipe-path tools/ms_core_file_tool/StepGraphPresetTool.hpp \
             --recipe-path tools/ms_core_file_tool/StepGraphPresetTool.cpp \
