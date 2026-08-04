@@ -54,7 +54,6 @@ FLASHMEM void ProjectNavigationState::reset() {
     destinationPickerPage = 0;
     destinationPickerLevel = ModulatorDestinationPickerLevel::TRACK;
     modulatorGuard.set({});
-    autosaveEnabled = true;
     scaleConstrainEnabled = true;
     patternsInheritScale = true;
     clipsInheritScale = true;

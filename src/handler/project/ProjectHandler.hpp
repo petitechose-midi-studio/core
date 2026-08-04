@@ -11,8 +11,8 @@
 #include "handler/project/ProjectLifecycleDomainServices.hpp"
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
-#include "state/MidiSyncState.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
@@ -38,7 +38,6 @@ public:
         core::state::project::ProjectTrackState& projectTracks;
         core::state::project::ProjectTrackDomainServices trackDomain;
         core::state::StatusBarState& statusBar;
-        core::state::MidiSyncState& midiSync;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
         core::state::MacroState& macros;
@@ -52,6 +51,7 @@ public:
     };
 
     ProjectHandler(StateRefs state,
+                   DeviceSettingsDomainServices deviceSettings,
                    SequencerSettingsDomainServices sequencerSettings,
                    MacroEditDomainServices macroEditServices,
                    oc::api::EncoderAPI& encoders,
@@ -91,7 +91,6 @@ private:
     bool applyFocusedMusicRootStep(int steps);
     bool applyFocusedMusicScaleStep(int steps);
     bool applyFocusedTransportStep(int steps);
-    bool applyFocusedStorageStep(int steps);
     bool applyFocusedRoutingStep(int steps);
     bool applyFocusedNameEditorStep(int steps);
     bool recordProjectSettingsChange(
@@ -105,7 +104,6 @@ private:
     bool setFocusedMusicRootValue(float normalized);
     bool setFocusedMusicScaleValue(float normalized);
     bool setFocusedTransportValue(float normalized);
-    bool setFocusedStorageValue(float normalized);
     bool setFocusedRoutingValue(float normalized);
     [[nodiscard]] bool setRoutingMidiChannel(
         uint8_t track,
@@ -178,7 +176,7 @@ private:
     core::state::project::ProjectTrackState& project_tracks_;
     core::state::project::ProjectTrackDomainServices track_domain_;
     core::state::StatusBarState& status_bar_;
-    core::state::MidiSyncState& midi_sync_;
+    DeviceSettingsDomainServices device_settings_;
     core::state::macro::MacroPagesState& pages_;
     core::state::macro::MacroUiState& macro_ui_;
     core::state::MacroState& macros_;

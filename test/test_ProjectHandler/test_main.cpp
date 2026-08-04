@@ -82,6 +82,7 @@ struct ProjectHandlerHarness {
     oc::api::ButtonAPI buttons;
     oc::api::EncoderAPI encoders;
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
+    core::handler::DeviceSettingsDomainServices deviceSettings;
     core::handler::SequencerSettingsDomainServices sequencerSettings;
     core::handler::ProjectHandler handler;
 
@@ -98,6 +99,10 @@ struct ProjectHandlerHarness {
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
         , overlays(state.overlays, buttons)
+        , deviceSettings(core::handler::DeviceSettingsDomainServices::StateRefs{
+              state.midiSync,
+              state.deviceSettingsStore,
+          })
         , sequencerSettings(core::handler::SequencerSettingsDomainServices::StateRefs{
               state.sequencerTracks,
           })
@@ -110,7 +115,6 @@ struct ProjectHandlerHarness {
                           state
                       ),
                       state.statusBar,
-                       state.midiSync,
                        state.pages,
                        state.macroUi,
                        state.macros,
@@ -120,12 +124,13 @@ struct ProjectHandlerHarness {
                        state.projectSettingsHistory,
                        state.structureClipboard,
                        core::handler::SequencerHistoryDomainServices::fromCoreState(state),
-                      core::handler::ProjectLifecycleDomainServices::fromCoreState(
+                       core::handler::ProjectLifecycleDomainServices::fromCoreState(
                           state,
                           productFiles,
                           *productCatalog
                       ),
                   },
+                  deviceSettings,
                   sequencerSettings,
                   core::handler::MacroEditDomainServices::fromCoreState(state),
                   encoders,
@@ -361,7 +366,7 @@ void test_left_top_does_not_back_at_project_tab_root() {
     std::cout << "[PASS] test_left_top_does_not_back_at_project_tab_root\n";
 }
 
-void test_nav_press_activates_storage_autosave_only() {
+void test_storage_project_identity_is_inert_and_navigation_wraps() {
     ProjectHandlerHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
@@ -375,23 +380,22 @@ void test_nav_press_activates_storage_autosave_only() {
     h.turn(Config::EncoderID::NAV, 5.0f);
     assert(h.state.projectNavigation.focusedRow.get() == 5);
 
+    const uint8_t revisionBefore = h.state.projectNavigation.contentRevision.get();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.focusedRow.get() == 5);
-    assert(h.state.projectNavigation.autosaveEnabled);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 6);
-
-    h.tap(Config::ButtonID::NAV);
-    assert(!h.state.projectNavigation.autosaveEnabled);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
+    assert(h.state.projectNavigation.contentRevision.get() == revisionBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.projectHistory.undoCount() == historyBefore);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.projectNavigation.focusedRow.get() == 0);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 5);
 
-    h.tap(Config::ButtonID::NAV);
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
-
-    std::cout << "[PASS] test_nav_press_activates_storage_autosave_only\n";
+    std::cout << "[PASS] Storage Project identity is inert and navigation wraps\n";
 }
 
 void test_music_scale_root_is_wired_and_undoable() {
@@ -586,6 +590,85 @@ void test_transport_values_are_editable_from_project() {
     std::cout << "[PASS] test_transport_values_are_editable_from_project\n";
 }
 
+void test_transport_sync_is_device_persisted_and_project_neutral() {
+    ProjectHandlerHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 2U);
+
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const bool dirtyBefore = h.state.project.metadata.dirty;
+    const auto saveTokenBefore = h.state.projectSessionSaveToken();
+    const int commitsBefore = h.storages.settings.commitCount;
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::MASTER);
+    assert(h.storages.settings.commitCount == commitsBefore + 1);
+
+    core::state::MidiSyncState restored{};
+    assert(h.state.deviceSettingsStore.load(restored));
+    assert(restored.mode.get() == core::state::MidiSyncMode::MASTER);
+
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+    assert(h.storages.settings.commitCount == commitsBefore + 2);
+    assert(h.state.deviceSettingsStore.load(restored));
+    assert(restored.mode.get() == core::state::MidiSyncMode::SLAVE);
+
+    assert(h.state.projectHistory.undoCount() == historyBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    assert(h.state.projectSessionSaveToken() == saveTokenBefore);
+    assert(!h.state.undoProjectHistory());
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+
+    std::cout << "[PASS] Project Transport persists Device Sync without Project mutation\n";
+}
+
+void test_transport_sync_failure_is_visible_retryable_and_project_neutral() {
+    ProjectHandlerHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 2U);
+
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const bool dirtyBefore = h.state.project.metadata.dirty;
+    const auto saveTokenBefore = h.state.projectSessionSaveToken();
+
+    h.storages.settings.setFaultMode(
+        test_support::MemoryStorage::FaultMode::COMMIT_FAIL
+    );
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::AUTO);
+    assert(std::strcmp(
+        h.state.projectNavigation.lifecycleFeedback.get(),
+        "Sync save failed - unchanged"
+    ) == 0);
+    assert(h.state.projectHistory.undoCount() == historyBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    assert(h.state.projectSessionSaveToken() == saveTokenBefore);
+
+    h.storages.settings.setFaultMode(test_support::MemoryStorage::FaultMode::NONE);
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::MASTER);
+    assert(h.state.projectNavigation.lifecycleFeedback.get()[0] == '\0');
+    assert(h.state.projectHistory.undoCount() == historyBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    assert(h.state.projectSessionSaveToken() == saveTokenBefore);
+
+    std::cout << "[PASS] Project Transport Sync failure is visible and retryable\n";
+}
+
 void test_project_setting_values_coalesce_and_use_global_history() {
     ProjectHandlerHarness h;
 
@@ -617,7 +700,7 @@ void test_project_setting_values_coalesce_and_use_global_history() {
     std::cout << "[PASS] Project settings coalesce and use global history\n";
 }
 
-void test_storage_autosave_is_editable_with_opt() {
+void test_storage_project_identity_ignores_opt() {
     ProjectHandlerHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
@@ -625,22 +708,20 @@ void test_storage_autosave_is_editable_with_opt() {
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
 
-    h.turn(Config::EncoderID::NAV, 6.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 6);
+    h.turn(Config::EncoderID::NAV, 5.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 5);
 
+    const uint8_t revisionBefore = h.state.projectNavigation.contentRevision.get();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.projectNavigation.autosaveEnabled);
-
     h.turn(Config::EncoderID::OPT, 0.0f);
-    assert(!h.state.projectNavigation.autosaveEnabled);
+    assert(h.state.projectNavigation.focusedRow.get() == 5);
+    assert(h.state.projectNavigation.contentRevision.get() == revisionBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.projectHistory.undoCount() == historyBefore);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 0);
-
-    h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(!h.state.projectNavigation.autosaveEnabled);
-
-    std::cout << "[PASS] test_storage_autosave_is_editable_with_opt\n";
+    std::cout << "[PASS] Storage Project identity ignores OPT\n";
 }
 
 void test_project_name_editor_uses_physical_action_buttons() {
@@ -2854,15 +2935,17 @@ int main() {
     test_nav_turn_on_overview_actions();
     test_left_top_backs_out_of_nested_project_folder();
     test_left_top_does_not_back_at_project_tab_root();
-    test_nav_press_activates_storage_autosave_only();
+    test_storage_project_identity_is_inert_and_navigation_wraps();
     test_music_scale_root_is_wired_and_undoable();
     test_music_scale_normalized_surface_and_rejections_are_atomic();
     test_project_cc_lane_defaults_are_direct_editable_values();
     test_left_center_hold_switches_tabs();
     test_left_center_hold_respects_fast_tab_delta();
     test_transport_values_are_editable_from_project();
+    test_transport_sync_is_device_persisted_and_project_neutral();
+    test_transport_sync_failure_is_visible_retryable_and_project_neutral();
     test_project_setting_values_coalesce_and_use_global_history();
-    test_storage_autosave_is_editable_with_opt();
+    test_storage_project_identity_ignores_opt();
     test_project_name_editor_uses_physical_action_buttons();
     test_overview_save_as_name_editor_persists_named_project();
     test_overview_save_as_name_editor_rejects_duplicate_project();

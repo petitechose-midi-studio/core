@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import teensy_memory_budget as memory_budget
+
 from teensy_memory_budget import (
     TeensyMemoryBudget,
     TeensyMemoryUsage,
@@ -9,7 +11,15 @@ from teensy_memory_budget import (
 
 
 def main() -> int:
+    assert memory_budget.__all__ == (
+        "TeensyMemoryUsage",
+        "TeensyMemoryBudget",
+        "parse_teensy_size",
+        "budget_violations",
+        "summary",
+    )
     output = """
+teensy_size:   FLASH: code:1083376, data:275340, headers:8324   free for files:6759424
 teensy_size:    RAM1: variables:64384, code:300008, padding:27672   free for local variables:132224
 teensy_size:    RAM2: variables:247968  free for malloc/new:276320
 teensy_size:  EXTRAM: variables:4282368

@@ -123,40 +123,10 @@ struct MacroDomainState {
     MacroDomainState& operator=(const MacroDomainState&) = delete;
 };
 
-/**
- * Owns the editable sequencer state, per-track bank, history, and pending
- * Project snapshots staged while transport is playing.
- */
+/** Owns the editable sequencer state, per-track bank, and history. */
 struct SequencerDomainState {
     static constexpr uint32_t COALESCED_PATTERN_HISTORY_IDLE_MS = 500;
     static constexpr uint32_t COALESCED_CC_LANE_HISTORY_IDLE_MS = 320;
-
-    struct PendingApply {
-        bool valid = false;
-        int16_t anchorPlayhead = -1;
-        bool merge = false;
-        bool fullBank = false;
-        sequencer::SequencerPatternSnapshot snapshot{};
-        sequencer::SequencerTrackBankSnapshot bankSnapshot{};
-        core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> patternGraph;
-        core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> activeTrackGraph;
-        core::app::ExtmemUniquePtr<sequencer::SequencerCcLaneBank> patternCcLanes;
-        core::app::ExtmemUniquePtr<sequencer::SequencerCcLaneBank> activeTrackCcLanes;
-        uint32_t patternCcLaneRevision = 0;
-        std::array<core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph>,
-                   sequencer::SequencerTrackBankState::TRACK_COUNT>
-            bankGraphs{};
-        std::array<core::app::ExtmemUniquePtr<sequencer::SequencerCcLaneBank>,
-                   sequencer::SequencerTrackBankState::TRACK_COUNT>
-            bankCcLanes{};
-        std::array<uint32_t, sequencer::SequencerTrackBankState::TRACK_COUNT> bankCcLaneRevisions{};
-    };
-
-    struct PendingApplyDeleter {
-        void operator()(PendingApply* ptr) const noexcept;
-    };
-
-    using PendingApplyPtr = std::unique_ptr<PendingApply, PendingApplyDeleter>;
 
     struct CoalescedPatternHistory {
         enum class Kind : uint8_t {
@@ -235,7 +205,6 @@ struct SequencerDomainState {
     core::app::ExtmemUniquePtr<sequencer::SequencerHistoryService> history;
     sequencer::SequencerTrackActivationQueue trackActivations;
     oc::state::Signal<uint32_t> runtimeProjectRevision{1};
-    PendingApplyPtr pendingApply;
     CoalescedPatternHistory coalescedPatternHistory;
     std::unique_ptr<oc::state::ChangeCoalescer<15>> mutationCoalescer;
 
@@ -486,12 +455,6 @@ public:
     bool undoProjectHistory();
     bool redoProjectHistory();
     [[nodiscard]] bool clearProjectHistory();
-    [[nodiscard]] bool queuePendingSequencerApply(sequencer::SequencerState& staged,
-                                                  bool merge = false);
-    [[nodiscard]] bool queuePendingSequencerBankApply(
-        sequencer::SequencerTrackBankState& stagedBank, sequencer::SequencerState& staged);
-    void clearPendingSequencerApply();
-    bool hasPendingSequencerApply() const;
     uint16_t currentSharedTrackEnabledMask() const;
     uint8_t currentSharedActiveTrack() const;
     bool setSharedTrackState(uint16_t enabledMask, uint8_t activeTrack);
@@ -525,15 +488,11 @@ private:
         const sequencer::SequencerGraphCompactionRemap* compactionRemap, bool graphCompacted);
     SequencerPatternHistoryCommitOutcome abandonUnsafeSequencerPatternHistory_(const char* reason);
     SequencerPatternHistoryCommitOutcome commitSequencerPatternHistoryCoalescing_();
-    [[nodiscard]] bool queueSequencerApply_(sequencer::SequencerState& staged, bool merge = false);
-    [[nodiscard]] bool queueSequencerBankApply_(sequencer::SequencerTrackBankState& stagedBank,
-                                                sequencer::SequencerState& staged);
     project::ProjectSaveToken requestProjectSessionSave_();
     bool advanceProjectSessionIdentity_();
     void publishProjectSessionReplacement_();
     void markProjectDurableMutation_();
     void markSequencerProjectMutated_();
-    void clearPendingSequencerApply_();
     bool refreshSharedTrackStateFromMacroPages_();
     bool refreshSharedTrackStateFromSequencer_();
     bool setSharedTrackState_(uint16_t enabledMask, uint8_t activeTrack);

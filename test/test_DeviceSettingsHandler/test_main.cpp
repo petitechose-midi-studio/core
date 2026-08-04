@@ -180,12 +180,43 @@ void test_selector_cancel_restores_parent_overlay_without_applying() {
     std::cout << "[PASS] test_selector_cancel_restores_parent_overlay_without_applying\n";
 }
 
+void test_selector_commit_failure_stays_open_and_retries() {
+    DeviceSettingsHarness h;
+    openSettings(h);
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.deviceSettings.flowPhase.get() ==
+           core::state::DeviceSettingsFlowPhase::VALUE_SELECTOR);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.deviceSettings.selector.selectedIndex.get() == 1);
+
+    h.storage.setFaultMode(MemoryStorage::FaultMode::COMMIT_FAIL);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.midiSync.mode.get() == core::state::MidiSyncMode::AUTO);
+    assert(h.deviceSettings.selector.visible.get());
+    assert(h.deviceSettings.flowPhase.get() ==
+           core::state::DeviceSettingsFlowPhase::VALUE_SELECTOR);
+    assert(h.overlays.current() ==
+           core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR);
+
+    h.storage.setFaultMode(MemoryStorage::FaultMode::NONE);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+    assert(!h.deviceSettings.selector.visible.get());
+    assert(h.deviceSettings.flowPhase.get() ==
+           core::state::DeviceSettingsFlowPhase::VIEW);
+    assert(h.overlays.current() == core::ui::OverlayType::NONE);
+
+    std::cout << "[PASS] test_selector_commit_failure_stays_open_and_retries\n";
+}
+
 }  // namespace
 
 int main() {
     test_settings_left_top_is_owned_by_view_switcher();
     test_selector_navigation_and_apply_follow_real_bindings();
     test_selector_cancel_restores_parent_overlay_without_applying();
+    test_selector_commit_failure_stays_open_and_retries();
     std::cout << "\nAll DeviceSettingsHandler tests passed.\n";
     return 0;
 }

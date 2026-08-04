@@ -56,12 +56,11 @@ public:
 
 private:
     ProductFileService& files_;
-    ProjectFileWorkspace workspace_;
     ProjectSaveTransaction save_transaction_;
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(ProjectSessionStore) == 64U, "project session store ABI drift");
+static_assert(sizeof(ProjectSessionStore) == 52U, "project session store ABI drift");
 static_assert(alignof(ProjectSessionStore) == 4U, "project session store alignment drift");
 #endif
 

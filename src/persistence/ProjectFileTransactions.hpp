@@ -21,7 +21,6 @@ oc::type::Result<ProjectSaveResult> saveToCompletionWithRecoveryLease(
 
 oc::type::Result<ProjectLoadResult> loadWithBackup(
     ProductFileService& files,
-    ProjectFileWorkspace& workspace,
     const char* current,
     const char* backup,
     core::state::project::ProjectSnapshot& out,
@@ -31,7 +30,6 @@ oc::type::Result<ProjectLoadResult> loadWithBackup(
 oc::type::Result<ProjectLoadResult> loadWithBackup(
     ProductFileService& files,
     const ProductMutationLease& recoveryLease,
-    ProjectFileWorkspace& workspace,
     const char* current,
     const char* backup,
     core::state::project::ProjectSnapshot& out,

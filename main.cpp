@@ -22,6 +22,7 @@
 #include <config/platform-teensy/Hardware.hpp>
 #endif
 #include "app/ExtmemAllocator.hpp"
+#include "app/PhaseRetainingDeadline.hpp"
 #include "context/StandaloneContext.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
 #include "diagnostics/StorageQualificationProbe.hpp"
@@ -734,7 +735,11 @@ FLASHMEM void setup() {
     core::diagnostics::storage_qualification::begin();
 
     OC_LOG_INFO("=== MIDI Studio Core Boot ===");
-    OC_LOG_INFO("App {}Hz, LVGL {}Hz", Config::Timing::APP_HZ, Config::Timing::LVGL_HZ);
+    OC_LOG_INFO(
+        "App {}Hz, LVGL {}Hz",
+        Config::Timing::INPUT_APP_ADMISSION_HZ,
+        Config::Timing::LVGL_SERVICE_HZ
+    );
 
 #if defined(MS_PROJECT_STORE_SMOKE)
     const bool storageReady = initStorage();
@@ -776,8 +781,10 @@ FLASHMEM void setup() {
 }
 
 // Timing constants for main loop
-constexpr uint32_t APP_PERIOD_US = 1'000'000 / Config::Timing::APP_HZ;
-constexpr uint32_t LVGL_PERIOD_US = 1'000'000 / Config::Timing::LVGL_HZ;
+constexpr uint32_t APP_PERIOD_US =
+    1'000'000U / Config::Timing::INPUT_APP_ADMISSION_HZ;
+constexpr uint32_t LVGL_PERIOD_US =
+    1'000'000U / Config::Timing::LVGL_SERVICE_HZ;
 void loop() {
 #if defined(MS_PROJECT_STORE_SMOKE)
     static uint32_t lastHeartbeatMs = 0;
@@ -797,12 +804,11 @@ void loop() {
     }
     delay(25);
 #else
-    static uint32_t lastMicros = 0;
-    static uint32_t lvglAccumulator = 0;
+    static core::app::PhaseRetainingDeadline<APP_PERIOD_US> appDeadline;
+    static core::app::PhaseRetainingDeadline<LVGL_PERIOD_US> lvglDeadline;
 
     const uint32_t now = micros();
-    if (now - lastMicros < APP_PERIOD_US) return;
-    lastMicros = now;
+    if (!appDeadline.consumeIfDue(now)) return;
     core::diagnostics::storage_qualification::foregroundBegin();
     {
         OC_PERF_SCOPE(perfMainLoop, "main.loop");
@@ -874,10 +880,9 @@ void loop() {
         }
 #endif
 
-        // Refresh LVGL at lower frequency to reduce CPU load.
-        lvglAccumulator += APP_PERIOD_US;
-        if (lvglAccumulator >= LVGL_PERIOD_US) {
-            lvglAccumulator = 0;
+        // Use actual elapsed foreground time while retaining LVGL phase and
+        // consuming at most one service deadline in this pass.
+        if (lvglDeadline.consumeIfDue(micros())) {
             lvgl->refresh();
         }
     }

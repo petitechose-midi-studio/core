@@ -8,6 +8,7 @@
 
 #include "persistence/AtomicProductFile.hpp"
 #include "persistence/ProjectFileLimits.hpp"
+#include "persistence/ProjectFileWorkspace.hpp"
 #include "persistence/ProjectSnapshotPersistenceCodec.hpp"
 
 namespace core::persistence {
@@ -23,10 +24,8 @@ FLASHMEM bool validSavePaths(AtomicProductFilePaths paths) {
 
 }  // namespace
 
-FLASHMEM ProjectSaveTransaction::ProjectSaveTransaction(
-    ProductFileService& files,
-    ProjectFileWorkspace& workspace
-) : files_(files), workspace_(workspace) {}
+FLASHMEM ProjectSaveTransaction::ProjectSaveTransaction(ProductFileService& files)
+    : files_(files) {}
 
 FLASHMEM ProjectSaveTransaction::~ProjectSaveTransaction() {
     cancel();
@@ -143,6 +142,14 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
         );
     }
 
+    auto borrowedWorkspace = files_.projectWriteWorkspace(lease);
+    if (!borrowedWorkspace) {
+        const auto error = borrowedWorkspace.error();
+        cancel_(lease, releaseLeaseOnCompletion);
+        return oc::type::Result<ProjectSaveProgress>::err(error);
+    }
+    auto& workspace = *borrowedWorkspace.value();
+
     switch (phase_) {
         case Phase::PREPARE: {
             OC_PERF_SCOPE(perfPrepare, "persistence.project-save.prepare");
@@ -160,7 +167,7 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
                 return oc::type::Result<ProjectSaveProgress>::err(error);
             }
             tmp_prepared_ = true;
-            if (!workspace_.prepare()) {
+            if (!workspace.prepare()) {
                 cancel_(lease, releaseLeaseOnCompletion);
                 return oc::type::Result<ProjectSaveProgress>::err(
                     {ErrorCode::RESOURCE_EXHAUSTED, "project save buffer"}
@@ -176,9 +183,9 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
             OC_PERF_SCOPE(perfEncode, "persistence.project-save.encode");
             auto encoded = core::persistence::project_snapshot_codec::encodeProjectSnapshot(
                 *snapshot_,
-                workspace_.data(),
-                workspace_.capacity(),
-                workspace_.codecWorkspace()
+                workspace.data(),
+                workspace.capacity(),
+                workspace.codecWorkspace()
             );
             if (encoded.status != core::persistence::project_file::Status::OK) {
                 cancel_(lease, releaseLeaseOnCompletion);
@@ -187,7 +194,7 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
                 );
             }
             encoded_size_ = encoded.bytesWritten;
-            if (encoded_size_ == 0 || encoded_size_ > workspace_.capacity()) {
+            if (encoded_size_ == 0 || encoded_size_ > workspace.capacity()) {
                 cancel_(lease, releaseLeaseOnCompletion);
                 return oc::type::Result<ProjectSaveProgress>::err(
                     {ErrorCode::STORAGE_WRITE_FAILED, "invalid encoded project size"}
@@ -223,7 +230,7 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
             );
             auto write = files_.appendWrite(
                 lease,
-                workspace_.data() + write_offset_,
+                workspace.data() + write_offset_,
                 chunkSize
             );
             if (!write || write.value() != chunkSize) {
@@ -267,8 +274,8 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
         case Phase::COMMIT: {
             OC_PERF_SCOPE(perfCommit, "persistence.project-save.commit");
             auto& commitPlan = commit_plan_started_
-                ? workspace_.commitPlan()
-                : workspace_.resetCommitPlan();
+                ? workspace.commitPlan()
+                : workspace.resetCommitPlan();
             if (!commit_plan_started_) {
                 auto begun = commitPlan.begin(
                     files_,
@@ -351,8 +358,11 @@ FLASHMEM void ProjectSaveTransaction::cancel_(
         // Once PREPARED has been durably mapped, deleting tmp would destroy
         // the only recoverable continuation. Mark the medium degraded first;
         // cleanupTmp_ will then preserve every journal-owned artifact.
-        if (commit_plan_started_ && workspace_.commitPlan().mapped()) {
-            (void)files_.requireRecovery(lease, ErrorCode::INVALID_STATE);
+        if (commit_plan_started_) {
+            auto workspace = files_.projectWriteWorkspace(lease);
+            if (workspace && workspace.value()->commitPlan().mapped()) {
+                (void)files_.requireRecovery(lease, ErrorCode::INVALID_STATE);
+            }
         }
         cleanupTmp_(lease);
     }

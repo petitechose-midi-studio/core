@@ -468,16 +468,14 @@ void test_selector_physically_restores_project_settings_history() {
     const auto before =
         core::state::project::captureProjectSettingsHistorySnapshot(
             h.state.statusBar,
-            h.state.projectNavigation,
-            h.state.midiSync
+            h.state.projectNavigation
         );
     h.state.statusBar.tempo.set(167.0f);
     h.state.statusBar.tempoDisplay.set(167.0f);
     const auto after =
         core::state::project::captureProjectSettingsHistorySnapshot(
             h.state.statusBar,
-            h.state.projectNavigation,
-            h.state.midiSync
+            h.state.projectNavigation
         );
     assert(h.state.projectSettingsHistory.record(
         before,
@@ -486,12 +484,15 @@ void test_selector_physically_restores_project_settings_history() {
         0U,
         true
     ));
+    h.state.midiSync.mode.set(core::state::MidiSyncMode::SLAVE);
 
     openSelector(h);
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.statusBar.tempo.get() == 120.0f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(h.state.statusBar.tempo.get() == 167.0f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
 
     std::cout << "[PASS] physical Undo/Redo restores Project settings\n";
 }

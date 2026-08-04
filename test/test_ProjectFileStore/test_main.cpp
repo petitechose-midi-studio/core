@@ -4,17 +4,24 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 
 #include <oc/impl/HostFileSystem.hpp>
 
 #include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/persistence/ProjectFileStore.hpp"
+#include "../../src/persistence/ProjectFileWorkspace.hpp"
+#include "../../src/persistence/ProjectSessionStore.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../../src/state/project/ProjectSlug.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/ProductFileTestMutation.hpp"
+
+#if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+#error "This test requires native EXTMEM failure injection"
+#endif
 
 namespace {
 
@@ -486,6 +493,141 @@ void test_list_projects_reports_truncation() {
     std::cout << "[PASS] test_list_projects_reports_truncation\n";
 }
 
+void test_read_workspace_does_not_allocate_write_scratch() {
+    {
+        core::persistence::ProjectFileReadWorkspace workspace;
+        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        assert(workspace.prepare());
+        assert(workspace.data() != nullptr);
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 2U);
+    }
+
+    {
+        core::persistence::ProjectFileWriteWorkspace workspace;
+        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        assert(!workspace.prepare());
+        assert(workspace.data() != nullptr);
+        assert(core::app::testing::extmemAllocationAttempt == 2U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+    }
+
+    std::cout << "[PASS] read workspace skips write scratch allocation\n";
+}
+
+void test_project_pool_prewarm_reports_resource_exhausted_without_fallback() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    assert(files.init());
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        auto prepared = files.prepareProjectWorkspace();
+        assert(!prepared);
+        assert(prepared.error().code == oc::type::ErrorCode::RESOURCE_EXHAUSTED);
+        assert(core::app::testing::extmemAllocationAttempt == 2U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+    }
+    assert(files.prepareProjectWorkspace());
+
+    std::cout << "[PASS] Project pool prewarm fails closed without fallback\n";
+}
+
+void test_file_and_session_stores_share_one_lease_checked_workspace() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    assert(files.init());
+    core::persistence::ProjectSessionStore session(files);
+    core::persistence::ProjectFileStore manual(files, catalog);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(3U);
+        assert(session.prepareWorkspace());
+        assert(core::app::testing::extmemAllocationAttempt == 2U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 3U);
+    }
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "SharedPool", 7U);
+    auto snapshot = capture(state);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        auto saved = manual.save(snapshot);
+        assert(saved);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
+    }
+
+    project::ProjectSnapshot loaded;
+    auto result = manual.load("p321", loaded);
+    assert(result);
+
+    auto readLeaseResult = files.acquireMutation(
+        core::persistence::ProductMutationOwner::PROJECT
+    );
+    assert(readLeaseResult);
+    auto readLease = std::move(readLeaseResult.value());
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        auto sharedRead = files.projectReadWorkspace(readLease);
+        assert(sharedRead);
+        assert(sharedRead.value()->prepare());
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
+    }
+    assert(files.releaseMutation(readLease));
+
+    assert(session.beginSaveCurrent(snapshot));
+    auto prewarmBusy = files.prepareProjectWorkspace();
+    assert(!prewarmBusy);
+    assert(prewarmBusy.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        auto blockedSave = manual.save(snapshot);
+        assert(!blockedSave);
+        assert(blockedSave.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        auto blockedLoad = manual.load("p321", loaded);
+        assert(!blockedLoad);
+        assert(blockedLoad.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    session.cancelSaveCurrent();
+
+    auto assetLeaseResult = files.acquireMutation(
+        core::persistence::ProductMutationOwner::ASSET
+    );
+    assert(assetLeaseResult);
+    auto assetLease = std::move(assetLeaseResult.value());
+    auto rejectedBorrow = files.projectWriteWorkspace(assetLease);
+    assert(!rejectedBorrow);
+    assert(rejectedBorrow.error().code == oc::type::ErrorCode::INVALID_STATE);
+    assert(files.releaseMutation(assetLease));
+
+    assert(session.beginSaveCurrent(snapshot));
+    auto preparedSave = session.advanceSaveCurrent();
+    assert(preparedSave);
+    assert(session.saveCurrentInProgress());
+    files.markMediaUnavailable();
+    auto staleAdvance = session.advanceSaveCurrent();
+    assert(!staleAdvance);
+    assert(staleAdvance.error().code == oc::type::ErrorCode::INVALID_STATE);
+    assert(!session.saveCurrentInProgress());
+
+    std::cout << "[PASS] file/session stores share one lease-checked workspace\n";
+}
+
 }  // namespace
 
 int main() {
@@ -493,6 +635,9 @@ int main() {
     std::cout << "ProjectFileStore tests\n";
     std::cout << "==============================================\n\n";
 
+    test_read_workspace_does_not_allocate_write_scratch();
+    test_project_pool_prewarm_reports_resource_exhausted_without_fallback();
+    test_file_and_session_stores_share_one_lease_checked_workspace();
     test_save_load_project_snapshot_roundtrip();
     test_save_overwrites_existing_project_through_backup_commit();
     test_stale_tmp_is_replaced_on_save();

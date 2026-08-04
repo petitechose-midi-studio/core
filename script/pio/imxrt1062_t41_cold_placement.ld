@@ -44,9 +44,10 @@
 *SequencerStructureHistory.cpp.o(.text* .rodata*)
 *SequencerTrackBankOps.cpp.o(.text* .rodata*)
 
-/* Project workspace allocation is a save/load boundary operation. This
- * inline helper may be emitted by more than one persistence translation unit. */
-*(.text._ZN4core11persistence20ProjectFileWorkspace7prepareEv*)
+/* Project read/write workspace allocation is a storage-boundary operation.
+ * These inline helpers may be emitted by more than one persistence unit. */
+*(.text._ZN4core11persistence24ProjectFileReadWorkspace7prepareEv*)
+*(.text._ZN4core11persistence25ProjectFileWriteWorkspace7prepareEv*)
 
 /* Persistence coordination, file transactions, filesystem RPC and full media
  * reconciliation execute only at explicit storage, boot, or hot-swap
@@ -60,6 +61,7 @@
 *ProductFileTransactionJournalCodec.cpp.o(.text* .rodata*)
 *ProductAssetFileStore.cpp.o(.text* .rodata*)
 *ProductFileService.cpp.o(.text* .rodata*)
+*ProjectWorkspacePool.cpp.o(.text* .rodata*)
 *ProductPersistenceCoordinator.cpp.o(.text* .rodata*)
 *ProductStorageRecoveryService.cpp.o(.text* .rodata*)
 *ProjectFileTransactions.cpp.o(.text* .rodata*)

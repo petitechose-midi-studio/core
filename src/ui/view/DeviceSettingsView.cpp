@@ -12,7 +12,10 @@ namespace {
 namespace style = oc::ui::lvgl::style;
 
 constexpr uint32_t RENDER_TIMER_PERIOD_MS =
-    (Config::Timing::LVGL_HZ > 1000) ? 1 : ((1000 + Config::Timing::LVGL_HZ - 1) / Config::Timing::LVGL_HZ);
+    (Config::Timing::RETAINED_VIEW_HZ > 1000)
+        ? 1
+        : ((1000 + Config::Timing::RETAINED_VIEW_HZ - 1) /
+           Config::Timing::RETAINED_VIEW_HZ);
 
 }  // namespace
 

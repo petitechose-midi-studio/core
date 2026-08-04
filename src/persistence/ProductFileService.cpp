@@ -31,6 +31,12 @@ static_assert(
 
 const char kWorkMeasurementBusy[] PROGMEM =
     "product persistence work measurement already active";
+const char kProjectWorkspaceBusy[] PROGMEM =
+    "project workspace mutation active";
+const char kProjectWorkspaceUnavailable[] PROGMEM =
+    "project workspace allocation failed";
+const char kProjectWorkspaceLeaseRequired[] PROGMEM =
+    "project workspace requires project or recovery lease";
 
 template <typename T, typename U>
 void saturatingAccumulate(T& value, U increment) {
@@ -238,6 +244,51 @@ FLASHMEM bool ProductFileService::available() const {
 
 FLASHMEM bool ProductFileService::mediaPresent() const {
     return filesystem_.available();
+}
+
+FLASHMEM oc::type::Result<void> ProductFileService::prepareProjectWorkspace() {
+    if (coordinator_.mutationActive()) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::HARDWARE_BUSY, kProjectWorkspaceBusy}
+        );
+    }
+    if (!project_workspace_.prepare()) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::RESOURCE_EXHAUSTED, kProjectWorkspaceUnavailable}
+        );
+    }
+    return oc::type::Result<void>::ok();
+}
+
+FLASHMEM oc::type::Result<ProjectFileReadWorkspace*>
+ProductFileService::projectReadWorkspace(const ProductMutationLease& lease) {
+    if (!ownsProjectWorkspaceLease_(lease)) {
+        return oc::type::Result<ProjectFileReadWorkspace*>::err(
+            {ErrorCode::INVALID_STATE, kProjectWorkspaceLeaseRequired}
+        );
+    }
+    return oc::type::Result<ProjectFileReadWorkspace*>::ok(
+        &project_workspace_.read()
+    );
+}
+
+FLASHMEM oc::type::Result<ProjectFileWriteWorkspace*>
+ProductFileService::projectWriteWorkspace(const ProductMutationLease& lease) {
+    if (!ownsProjectWorkspaceLease_(lease)) {
+        return oc::type::Result<ProjectFileWriteWorkspace*>::err(
+            {ErrorCode::INVALID_STATE, kProjectWorkspaceLeaseRequired}
+        );
+    }
+    return oc::type::Result<ProjectFileWriteWorkspace*>::ok(
+        &project_workspace_.write()
+    );
+}
+
+FLASHMEM bool ProductFileService::ownsProjectWorkspaceLease_(
+    const ProductMutationLease& lease
+) const {
+    return coordinator_.owns(lease, ProductMutationOwner::PROJECT) ||
+           coordinator_.owns(lease, ProductMutationOwner::RECOVERY);
 }
 
 FLASHMEM oc::type::Result<ProductMutationLease> ProductFileService::acquireMutation(

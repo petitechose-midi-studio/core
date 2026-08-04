@@ -4,9 +4,12 @@
 
 namespace Config::Timing {
 
-constexpr uint16_t REFRESH_HZ = 240;            // Display refresh rate
-constexpr uint32_t APP_HZ = REFRESH_HZ * 8;     // App polling rate (encoders, buttons)
-constexpr uint32_t LVGL_HZ = REFRESH_HZ;        // LVGL refresh cadence
+// These rates have independent owners. Their current numeric relationship is
+// a product baseline, not a derivation contract between input, UI and display.
+constexpr uint32_t INPUT_APP_ADMISSION_HZ = 1'920U;
+constexpr uint32_t LVGL_SERVICE_HZ = 240U;
+constexpr uint32_t RETAINED_VIEW_HZ = 240U;
+constexpr uint32_t PHYSICAL_DISPLAY_REQUEST_HZ = 240U;
 
 constexpr uint8_t DEBOUNCE_MS = 12;             // Button debounce
 constexpr uint32_t LONG_PRESS_MS = 500;

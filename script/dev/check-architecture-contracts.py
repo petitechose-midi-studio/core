@@ -31,13 +31,15 @@ COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*SequencerHistory.cpp.o(.text* .rodata*)",
     "*SequencerStructureHistory.cpp.o(.text* .rodata*)",
     "*SequencerTrackBankOps.cpp.o(.text* .rodata*)",
-    "*(.text._ZN4core11persistence20ProjectFileWorkspace7prepareEv*)",
+    "*(.text._ZN4core11persistence24ProjectFileReadWorkspace7prepareEv*)",
+    "*(.text._ZN4core11persistence25ProjectFileWriteWorkspace7prepareEv*)",
     "*(.text.*StorageRecoveryRuntimeManager*)",
     "*AtomicProductFile.cpp.o(.text* .rodata*)",
     "*ProductFileTransactionJournal.cpp.o(.text* .rodata*)",
     "*ProductFileTransactionJournalCodec.cpp.o(.text* .rodata*)",
     "*ProductAssetFileStore.cpp.o(.text* .rodata*)",
     "*ProductFileService.cpp.o(.text* .rodata*)",
+    "*ProjectWorkspacePool.cpp.o(.text* .rodata*)",
     "*ProductPersistenceCoordinator.cpp.o(.text* .rodata*)",
     "*ProductStorageRecoveryService.cpp.o(.text* .rodata*)",
     "*ProjectFileTransactions.cpp.o(.text* .rodata*)",
@@ -118,8 +120,74 @@ CORE_STATE_SOURCE = "src/state/CoreState.cpp"
 CORE_STATE_HEADER = "src/state/CoreState.hpp"
 STRICT_EXTMEM_OWNER_SOURCES = frozenset((
     EXTMEM_ALLOCATOR_SOURCE,
-    CORE_STATE_SOURCE,
 ))
+
+PROJECT_HISTORY_EVENT_SINK = "src/state/project/ProjectHistoryEventSink.hpp"
+PROJECT_HISTORY_COORDINATOR_HEADER = (
+    "src/state/project/ProjectHistoryCoordinator.hpp"
+)
+PROJECT_HISTORY_COORDINATOR_SOURCE = (
+    "src/state/project/ProjectHistoryCoordinator.cpp"
+)
+MACRO_HISTORY_HEADER = "src/state/macro/MacroHistory.hpp"
+MACRO_HISTORY_SOURCE = "src/state/macro/MacroHistory.cpp"
+SEQUENCER_HISTORY_HEADER = "src/state/sequencer/SequencerHistory.hpp"
+SEQUENCER_HISTORY_SOURCE = "src/state/sequencer/SequencerHistory.cpp"
+PSRAM_SPAN_TRACKER_HEADER = "src/diagnostics/PsramSpanTracker.hpp"
+MEMORY_FOOTPRINT_REPORTER_HEADER = (
+    "src/diagnostics/MemoryFootprintReporter.hpp"
+)
+MEMORY_FOOTPRINT_REPORTER_SOURCE = (
+    "src/diagnostics/MemoryFootprintReporter.cpp"
+)
+DIAGNOSTICS_PLACEMENT_GATE = "script/dev/teensy_diagnostics_placement.py"
+PROJECT_NAVIGATION_STATE_HEADER = (
+    "src/state/project/ProjectNavigationState.hpp"
+)
+PROJECT_MENU_MODEL_SOURCE = "src/state/project/ProjectMenuModel.cpp"
+PROJECT_SETTINGS_HISTORY_HEADER = (
+    "src/state/project/ProjectSettingsHistory.hpp"
+)
+PROJECT_HANDLER_HEADER = "src/handler/project/ProjectHandler.hpp"
+PROJECT_HANDLER_SOURCE = "src/handler/project/ProjectHandler.cpp"
+PROJECT_HANDLER_TEST = "test/test_ProjectHandler/test_main.cpp"
+PROJECT_MENU_MODEL_TEST = "test/test_ProjectMenuModel/test_main.cpp"
+PROJECT_HISTORY_COORDINATOR_TEST = (
+    "test/test_ProjectHistoryCoordinator/test_main.cpp"
+)
+VIEW_SWITCHER_HANDLER_TEST = "test/test_ViewSwitcherHandler/test_main.cpp"
+SDL_PROJECT_SESSION_RUNTIME = "sdl/entry/SdlProjectSessionRuntime.hpp"
+DEVICE_SETTINGS_DOMAIN_HEADER = (
+    "src/handler/settings/DeviceSettingsDomainServices.hpp"
+)
+DEVICE_SETTINGS_DOMAIN_SOURCE = (
+    "src/handler/settings/DeviceSettingsDomainServices.cpp"
+)
+DEVICE_SETTINGS_HANDLER_SOURCE = (
+    "src/handler/settings/DeviceSettingsHandler.cpp"
+)
+DEVICE_SETTINGS_CODEC_SOURCE = "src/persistence/DeviceSettingsCodec.cpp"
+DEVICE_SETTINGS_STORE_SOURCE = "src/persistence/DeviceSettingsStore.cpp"
+MIDI_SYNC_STATE_SOURCE = "src/state/MidiSyncState.cpp"
+PROJECT_HANDLER_VALUE_EDITING = (
+    "src/handler/project/ProjectHandlerValueEditing.cpp"
+)
+PROJECT_HANDLER_FOCUSED_ENCODER = (
+    "src/handler/project/ProjectHandlerFocusedEncoderSync.cpp"
+)
+PROJECT_SETTINGS_HISTORY_SOURCE = (
+    "src/state/project/ProjectSettingsHistory.cpp"
+)
+CORE_STATE_PROJECT_HISTORY_SOURCE = "src/state/CoreStateProjectHistory.cpp"
+PROJECT_FEATURE_MODULE_HEADER = (
+    "src/context/standalone/ProjectFeatureModule.hpp"
+)
+PROJECT_FEATURE_MODULE_SOURCE = (
+    "src/context/standalone/ProjectFeatureModule.cpp"
+)
+STANDALONE_FEATURE_ASSEMBLY_SOURCE = (
+    "src/context/standalone/StandaloneFeatureAssembly.cpp"
+)
 
 STRICT_EXTMEM_CALL = re.compile(
     r"\b(?:allocate|free)ExtmemStrict\s*\("
@@ -365,6 +433,14 @@ def cold_placement_contract_errors(cold_placement: str) -> list[str]:
                 "script/pio/imxrt1062_t41_cold_placement.ld: "
                 f"missing contracted cold-placement selector {selector}"
             )
+    legacy_workspace_selector = (
+        "*(.text._ZN4core11persistence20ProjectFileWorkspace7prepareEv*)"
+    )
+    if legacy_workspace_selector in cold_placement:
+        errors.append(
+            "script/pio/imxrt1062_t41_cold_placement.ld: "
+            "retired combined Project workspace selector restored"
+        )
     return errors
 
 
@@ -501,10 +577,7 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
     """Prove strict PSRAM allocation, ownership, and matching release paths."""
     errors: list[str] = []
     allocator = files.get(EXTMEM_ALLOCATOR_SOURCE, "")
-    core_state = files.get(CORE_STATE_SOURCE, "")
-    core_header_code = cpp_code_mask(files.get(CORE_STATE_HEADER, ""))
     allocator_code = cpp_code_mask(allocator)
-    core_state_code = cpp_code_mask(core_state)
 
     def single_function_body(
         content: str,
@@ -730,116 +803,6 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
                 f"changed (expected {expected}, found {found})"
             )
 
-    create_pending = single_function_body(
-        core_state,
-        CORE_STATE_SOURCE,
-        "createPendingApply",
-    )
-    pending_deleter = single_function_body(
-        core_state,
-        CORE_STATE_SOURCE,
-        "SequencerDomainState::PendingApplyDeleter::operator()",
-    )
-    core_constructor = single_function_body(
-        core_state,
-        CORE_STATE_SOURCE,
-        "CoreState::CoreState",
-    )
-
-    require_once(
-        create_pending,
-        CORE_STATE_SOURCE,
-        "createPendingApply",
-        r"\bcore::app::allocateExtmemStrict\s*\(\s*sizeof\s*\(\s*"
-        r"SequencerDomainState::PendingApply\s*\)\s*\)",
-        "PendingApply must use strict PSRAM allocation",
-    )
-    require_once(
-        create_pending,
-        CORE_STATE_SOURCE,
-        "createPendingApply",
-        r"\bif\s*\(\s*!\s*memory\s*\)\s*return\s+nullptr\s*;",
-        "PendingApply must fail closed on PSRAM exhaustion",
-    )
-    require_once(
-        create_pending,
-        CORE_STATE_SOURCE,
-        "createPendingApply",
-        r"\bcore::diagnostics::trackExtmemAllocation\s*\(\s*memory\s*\)",
-        "PendingApply must track its allocation",
-    )
-    require_once(
-        create_pending,
-        CORE_STATE_SOURCE,
-        "createPendingApply",
-        r"\bnew\s*\(\s*memory\s*\)\s*"
-        r"SequencerDomainState::PendingApply\s*\(\s*\)",
-        "PendingApply must be constructed in the strict allocation",
-    )
-
-    require_once(
-        pending_deleter,
-        CORE_STATE_SOURCE,
-        "SequencerDomainState::PendingApplyDeleter::operator()",
-        r"\bptr\s*->\s*~PendingApply\s*\(\s*\)",
-        "PendingApply must be destroyed before release",
-    )
-    require_once(
-        pending_deleter,
-        CORE_STATE_SOURCE,
-        "SequencerDomainState::PendingApplyDeleter::operator()",
-        r"\bcore::diagnostics::trackExtmemFree\s*\(\s*ptr\s*\)",
-        "PendingApply must track its free",
-    )
-    require_once(
-        pending_deleter,
-        CORE_STATE_SOURCE,
-        "SequencerDomainState::PendingApplyDeleter::operator()",
-        r"\bcore::app::freeExtmemStrict\s*\(\s*ptr\s*\)",
-        "PendingApply must use strict PSRAM release",
-    )
-    require_once(
-        core_constructor,
-        CORE_STATE_SOURCE,
-        "CoreState::CoreState",
-        r"\bsequencerDomain_\.pendingApply\.reset\s*\(\s*"
-        r"createPendingApply\s*\(\s*\)\s*\)",
-        "CoreState must adopt PendingApply into its custom-deleter owner",
-    )
-
-    pending_header_contracts = (
-        (
-            r"\busing\s+PendingApplyPtr\s*=\s*std::unique_ptr\s*<\s*"
-            r"PendingApply\s*,\s*PendingApplyDeleter\s*>\s*;",
-            "PendingApplyPtr must retain PendingApplyDeleter",
-        ),
-        (
-            r"\bPendingApplyPtr\s+pendingApply\s*;",
-            "pendingApply must retain its custom owner type",
-        ),
-    )
-    for pattern, description in pending_header_contracts:
-        found = len(re.findall(pattern, core_header_code, flags=re.DOTALL))
-        if found != 1:
-            errors.append(
-                f"{CORE_STATE_HEADER}: {description} "
-                f"(expected 1, found {found})"
-            )
-
-    for symbol, expected in (
-        ("allocateExtmemStrict", 1),
-        ("freeExtmemStrict", 1),
-    ):
-        found = len(re.findall(
-            rf"\bcore::app::{symbol}\s*\(",
-            core_state_code,
-        ))
-        if found != expected:
-            errors.append(
-                f"{CORE_STATE_SOURCE}: PendingApply {symbol} inventory "
-                f"changed (expected {expected}, found {found})"
-            )
-
     for rel, content in files.items():
         if rel in STRICT_EXTMEM_OWNER_SOURCES:
             continue
@@ -906,6 +869,690 @@ def mutation_contract_errors(rel: str, content: str) -> list[str]:
     return errors
 
 
+def history_admission_contract_errors(files: dict[str, str]) -> list[str]:
+    """Freeze D-UNDO retained-byte/span admission and publication order."""
+    errors: list[str] = []
+
+    def require(
+        rel: str,
+        pattern: str,
+        description: str,
+        count: int = 1,
+    ) -> None:
+        found = regex_count_dotall(pattern, files.get(rel, ""))
+        if found != count:
+            errors.append(
+                f"{rel}: {description} (expected {count}, found {found})"
+            )
+
+    def function_body(rel: str, function_name: str) -> str | None:
+        bodies = cpp_function_bodies(files.get(rel, ""), function_name)
+        if len(bodies) != 1:
+            errors.append(
+                f"{rel}: {function_name} must have one balanced definition "
+                f"(found {len(bodies)})"
+            )
+            return None
+        return cpp_code_mask(bodies[0])
+
+    def require_in_function(
+        rel: str,
+        function_name: str,
+        pattern: str,
+        description: str,
+    ) -> None:
+        body = function_body(rel, function_name)
+        if body is not None and re.search(pattern, body, flags=re.DOTALL) is None:
+            errors.append(f"{rel}: {description} in {function_name}")
+
+    def require_ordered_function(
+        rel: str,
+        function_name: str,
+        patterns: tuple[str, ...],
+        description: str,
+    ) -> None:
+        body = function_body(rel, function_name)
+        if body is None:
+            return
+        matches = [re.search(pattern, body, flags=re.DOTALL) for pattern in patterns]
+        if any(match is None for match in matches):
+            errors.append(f"{rel}: {description} (missing ordered marker)")
+            return
+        positions = [match.start() for match in matches if match is not None]
+        if positions != sorted(positions):
+            errors.append(f"{rel}: {description} (wrong order)")
+
+    for contract in (
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"struct\s+ProjectHistoryRetainedUsage\s*\{.*?"
+            r"uint32_t\s+bytes\s*=\s*0U\s*;.*?"
+            r"uint16_t\s+spans\s*=\s*0U\s*;.*?\}",
+            "retained usage must carry exact byte and span counters",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"sizeof\(ProjectHistoryRetainedUsage\)\s*==\s*8U",
+            "retained usage ABI must remain 8 B",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"using\s+CanRetainFn\s*=\s*bool\s*\(\*\).*?"
+            r"ProjectHistoryRetainedUsage\s+projected",
+            "event sink must expose allocation-free admission",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"using\s+RetainedFn\s*=\s*void\s*\(\*\).*?"
+            r"ProjectHistoryRetainedUsage\s+retained",
+            "event sink must expose retained-usage publication",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"CanRetainFn\s+canRetain\s*=\s*nullptr",
+            "event sink must retain the admission callback",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"RetainedFn\s+retained\s*=\s*nullptr",
+            "event sink must retain the usage-publication callback",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"return\s+canRetain\s*==\s*nullptr\s*\|\|\s*"
+            r"canRetain\s*\(\s*context\s*,\s*domain\s*,\s*projected\s*\)",
+            "detached domains must remain locally admissible",
+        ),
+        (
+            MACRO_HISTORY_HEADER,
+            r"RETAINED_BYTE_BUDGET\s*=\s*1'058'080U",
+            "Macro retained-byte cap must remain 1,058,080 B",
+        ),
+        (
+            MACRO_HISTORY_HEADER,
+            r"RETAINED_SPAN_BUDGET\s*=\s*144U",
+            "Macro retained-span cap must remain 144",
+        ),
+        (
+            SEQUENCER_HISTORY_HEADER,
+            r"RETAINED_BYTE_BUDGET\s*=\s*1024U\s*\*\s*1024U",
+            "Sequencer retained-byte cap must remain 1 MiB",
+        ),
+        (
+            SEQUENCER_HISTORY_HEADER,
+            r"RETAINED_SPAN_BUDGET\s*=\s*511U",
+            "Sequencer retained-span cap must remain 511",
+        ),
+        (
+            PROJECT_HISTORY_COORDINATOR_HEADER,
+            r"RETAINED_BYTE_BUDGET\s*=\s*2U\s*\*\s*1024U\s*\*\s*1024U",
+            "global retained-byte cap must remain 2 MiB",
+        ),
+        (
+            PROJECT_HISTORY_COORDINATOR_HEADER,
+            r"RETAINED_SPAN_BUDGET\s*=\s*655U",
+            "global retained-span cap must remain 655",
+        ),
+        (
+            PROJECT_HISTORY_COORDINATOR_HEADER,
+            r"std::array\s*<\s*ProjectHistoryRetainedUsage\s*,\s*4U\s*>"
+            r"\s+retained_usage_",
+            "coordinator must retain one counter per Project domain",
+        ),
+        (
+            MACRO_HISTORY_SOURCE,
+            r"macroEntriesRetainedUsage\s*\(\s*undo_\s*,\s*undo_count_\s*\)"
+            r".*?macroEntriesRetainedUsage\s*\(\s*redo_\s*,\s*redo_count_\s*\)",
+            "Macro accounting must include committed Undo and Redo only",
+        ),
+        (
+            SEQUENCER_HISTORY_SOURCE,
+            r"entriesRetainedUsage\s*\(\s*undo_\s*,\s*undo_count_\s*\)"
+            r".*?entriesRetainedUsage\s*\(\s*redo_\s*,\s*redo_count_\s*\)",
+            "Sequencer accounting must include committed Undo and Redo",
+        ),
+    ):
+        require(*contract)
+
+    for rel in (MACRO_HISTORY_HEADER, SEQUENCER_HISTORY_HEADER):
+        require_in_function(
+            rel,
+            "setProjectHistoryEventSink",
+            r"publishRetainedUsage_\s*\(\s*\)",
+            "attaching the global sink must publish current usage",
+        )
+
+    for rel, function_name in (
+        (MACRO_HISTORY_SOURCE, "MacroHistoryService::clear"),
+        (MACRO_HISTORY_SOURCE, "MacroHistoryService::discardRedoBranch"),
+        (SEQUENCER_HISTORY_SOURCE, "SequencerHistoryService::clear"),
+        (SEQUENCER_HISTORY_SOURCE, "SequencerHistoryService::discardRedoBranch"),
+    ):
+        require_in_function(
+            rel,
+            function_name,
+            r"publishRetainedUsage_\s*\(\s*\)",
+            "history release must publish retained usage",
+        )
+
+    require_ordered_function(
+        MACRO_HISTORY_SOURCE,
+        "MacroHistoryService::recordNewEntry_",
+        (
+            r"clearRedo_\s*\(\s*\)",
+            r"projected\.bytes\s*>\s*RETAINED_BYTE_BUDGET",
+            r"projected\.spans\s*>\s*RETAINED_SPAN_BUDGET",
+            r"admitsRetainedUsage\s*\(",
+            r"push_\s*\(",
+            r"publishRetainedUsage_\s*\(\s*\)",
+            r"notifyCommitted\s*\(",
+        ),
+        "Macro commit must evict, admit, publish, then expose the timeline entry",
+    )
+    require_ordered_function(
+        SEQUENCER_HISTORY_SOURCE,
+        "SequencerHistoryService::commitPreparedEntry",
+        (
+            r"discardRedoBranch\s*\(\s*\)",
+            r"projected\.bytes\s*>\s*RETAINED_BYTE_BUDGET",
+            r"projected\.spans\s*>\s*RETAINED_SPAN_BUDGET",
+            r"admitsRetainedUsage\s*\(",
+            r"pushUndo\s*\(",
+            r"publishRetainedUsage_\s*\(\s*\)",
+            r"notifyCommitted\s*\(",
+        ),
+        "Sequencer commit must evict, admit, publish, then expose the timeline entry",
+    )
+    require_ordered_function(
+        PROJECT_HISTORY_COORDINATOR_SOURCE,
+        "ProjectHistoryCoordinator::canRetain",
+        (
+            r"projected\.bytes\s*>\s*RETAINED_BYTE_BUDGET",
+            r"projected\.spans\s*>\s*RETAINED_SPAN_BUDGET",
+            r"bytes\s*\+=\s*retained_usage_\[index\]\.bytes",
+            r"spans\s*\+=\s*retained_usage_\[index\]\.spans",
+            r"bytes\s*<=\s*RETAINED_BYTE_BUDGET",
+            r"spans\s*<=\s*RETAINED_SPAN_BUDGET",
+        ),
+        "global admission must substitute one domain then test both caps",
+    )
+
+    return errors
+
+
+def psram_tracker_contract_errors(files: dict[str, str]) -> list[str]:
+    """Freeze L-R14-07 capacity, placement and masked publication."""
+    errors: list[str] = []
+
+    def require(
+        rel: str,
+        pattern: str,
+        description: str,
+        count: int = 1,
+    ) -> None:
+        found = regex_count_dotall(pattern, files.get(rel, ""))
+        if found != count:
+            errors.append(
+                f"{rel}: {description} (expected {count}, found {found})"
+            )
+
+    for contract in (
+        (
+            PSRAM_SPAN_TRACKER_HEADER,
+            r"PSRAM_SPAN_CAPACITY\s*=\s*1'034U",
+            "authoritative all-owner capacity must remain 1,034",
+        ),
+        (
+            PSRAM_SPAN_TRACKER_HEADER,
+            r"sizeof\(PsramSpan\)\s*==\s*12U",
+            "offset-based tracker entry must remain exactly 12 B",
+        ),
+        (
+            PSRAM_SPAN_TRACKER_HEADER,
+            r"PSRAM_SPAN_TABLE_BYTES\s*==\s*12'408U",
+            "authoritative table must remain exactly 12,408 B",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            r"EXTMEM\s+detail::PsramSpanTable\s+psramSpanTable\s*;",
+            "tracker table must be static diagnostics PSRAM",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            r"DMAMEM\s+uint8_t\s+memoryHighWaterStorage",
+            "compact published tracker state must remain in RAM2",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            r"sizeof\(MemoryHighWater\)\s*<=\s*128U",
+            "compact diagnostics state must remain within 128 B",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_HEADER,
+            r"bool\s+psramLargestBlockValid\s*=\s*false",
+            "public telemetry must distinguish true zero from invalid largest",
+        ),
+        (
+            DIAGNOSTICS_PLACEMENT_GATE,
+            r"PSRAM_SPAN_TABLE_BYTES\s*=\s*12_408",
+            "post-link gate must enforce exact tracker table bytes",
+        ),
+        (
+            DIAGNOSTICS_PLACEMENT_GATE,
+            r"EXTRAM_START.*?psramSpanTable.*?PSRAM_SPAN_TABLE_BYTES",
+            "post-link gate must enforce PSRAM table placement and size",
+        ),
+        (
+            DIAGNOSTICS_PLACEMENT_GATE,
+            r'"psramSpanTable".*?"core::diagnostics::detail::PsramSpanTracker"',
+            "normal firmware gate must reject tracker table and code",
+        ),
+    ):
+        require(*contract)
+
+    tracker_code = cpp_code_mask(files.get(PSRAM_SPAN_TRACKER_HEADER, ""))
+    if re.search(r"\b(?:new|delete|malloc|calloc|realloc|free)\b", tracker_code):
+        errors.append(
+            f"{PSRAM_SPAN_TRACKER_HEADER}: tracker must remain allocation-free"
+        )
+    if "InterruptGuard" in tracker_code:
+        errors.append(
+            f"{PSRAM_SPAN_TRACKER_HEADER}: table work must remain outside the mask"
+        )
+
+    memory_types = cpp_type_bodies(
+        files.get(MEMORY_FOOTPRINT_REPORTER_SOURCE, ""),
+        "MemoryHighWater",
+    )
+    if len(memory_types) != 1:
+        errors.append(
+            f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: MemoryHighWater must have "
+            f"one balanced definition (found {len(memory_types)})"
+        )
+    elif "PsramSpanTable" in cpp_code_mask(memory_types[0]):
+        errors.append(
+            f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: tracker table must not be "
+            "embedded in RAM2 state"
+        )
+
+    publication_bodies = cpp_function_bodies(
+        files.get(MEMORY_FOOTPRINT_REPORTER_SOURCE, ""),
+        "publishPsramTracker",
+    )
+    if len(publication_bodies) != 1:
+        errors.append(
+            f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: publishPsramTracker must have "
+            f"one balanced definition (found {len(publication_bodies)})"
+        )
+    else:
+        publication = cpp_code_mask(publication_bodies[0])
+        guard = publication.find("oc::realtime::InterruptGuard lock;")
+        if guard < 0:
+            errors.append(
+                f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: tracker publication "
+                "must own one explicit interrupt guard"
+            )
+        else:
+            masked_publication = publication[guard:]
+            assignment_count = len(re.findall(
+                r"state\.psramPublished\.[A-Za-z0-9_]+\s*=\s*"
+                r"snapshot\.[A-Za-z0-9_]+\s*;",
+                masked_publication,
+            ))
+            if assignment_count != 8:
+                errors.append(
+                    f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: LOCK-T publication "
+                    f"must contain exactly eight scalar field assignments (found "
+                    f"{assignment_count})"
+                )
+            if re.search(
+                r"\b(?:for|while)\s*\(|psramSpanTable|sm_[A-Za-z0-9_]+\s*\(",
+                masked_publication,
+            ):
+                errors.append(
+                    f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: LOCK-T publication "
+                    "must not loop, scan PSRAM or call the allocator"
+                )
+
+    snapshot_bodies = cpp_function_bodies(
+        files.get(MEMORY_FOOTPRINT_REPORTER_SOURCE, ""),
+        "dynamicMemorySnapshot",
+    )
+    if len(snapshot_bodies) != 1:
+        errors.append(
+            f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: dynamicMemorySnapshot must "
+            f"have one balanced definition (found {len(snapshot_bodies)})"
+        )
+    else:
+        snapshot_body = cpp_code_mask(snapshot_bodies[0])
+        published_reads = len(re.findall(
+            r"state\.psramPublished\.[A-Za-z0-9_]+",
+            snapshot_body,
+        ))
+        failure_reads = len(re.findall(
+            r"state\.psramAllocationFailures\b",
+            snapshot_body,
+        ))
+        if published_reads != 8 or failure_reads != 1:
+            errors.append(
+                f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: LOCK-T snapshot must "
+                "contain eight published reads plus one failure-counter read "
+                f"(found {published_reads}+{failure_reads})"
+            )
+        if re.search(r"\b(?:for|while)\s*\(|psramSpanTable", snapshot_body):
+            errors.append(
+                f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: public snapshot must not "
+                "loop or access the PSRAM table"
+            )
+
+    return errors
+
+
+def autosave_policy_contract_errors(files: dict[str, str]) -> list[str]:
+    """Freeze D-AUTOSAVE-v1 as always-on recovery with no pseudo-policy."""
+    errors: list[str] = []
+
+    retired_symbols = (
+        "autosaveEnabled",
+        "applyFocusedStorageStep",
+        "setFocusedStorageValue",
+        "ProjectSettingsHistoryActionKind::Autosave",
+        "AutosavePolicy",
+        "autosavePolicy",
+        "autosave_enabled",
+    )
+    for rel, content in sorted(files.items()):
+        if not rel.startswith(("src/", "test/test_ProjectHandler/",
+                               "test/test_ProjectMenuModel/")):
+            continue
+        for symbol in retired_symbols:
+            if symbol in content:
+                errors.append(f"{rel}: retired autosave policy symbol {symbol}")
+
+    menu = files.get(PROJECT_MENU_MODEL_SOURCE, "")
+    if re.search(r'row\s*\(\s*"Autosave"', menu):
+        errors.append(
+            f"{PROJECT_MENU_MODEL_SOURCE}: recovery autosave must not be a menu row"
+        )
+
+    settings_history = files.get(PROJECT_SETTINGS_HISTORY_HEADER, "")
+    if re.search(r"\bAutosave\s*,", settings_history):
+        errors.append(
+            f"{PROJECT_SETTINGS_HISTORY_HEADER}: recovery policy must not enter Project history"
+        )
+
+    coordinator = files.get(PROJECT_HISTORY_COORDINATOR_SOURCE, "")
+    if "Kind::Autosave" in coordinator or 'return "Autosave"' in coordinator:
+        errors.append(
+            f"{PROJECT_HISTORY_COORDINATOR_SOURCE}: retired Autosave action label"
+        )
+
+    firmware_updates = files.get("main.cpp", "").count(
+        "projectSessionAutosaveService->update("
+    )
+    if firmware_updates != 1:
+        errors.append(
+            "main.cpp: firmware must retain exactly one always-on recovery update "
+            f"(found {firmware_updates})"
+        )
+
+    sdl_updates = files.get(SDL_PROJECT_SESSION_RUNTIME, "").count(
+        "autosave_->update("
+    )
+    if sdl_updates != 1:
+        errors.append(
+            f"{SDL_PROJECT_SESSION_RUNTIME}: SDL must retain exactly one always-on "
+            f"recovery update (found {sdl_updates})"
+        )
+
+    return errors
+
+
+def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
+    """Freeze final R-07 Device ownership and persist-first publication."""
+    errors: list[str] = []
+
+    header = files.get(DEVICE_SETTINGS_DOMAIN_HEADER, "")
+    for marker in (
+        "enum class ApplyStatus",
+        "struct ApplyResult",
+        "PersistenceWriteStatus persistenceStatus",
+        "[[nodiscard]] ApplyResult applyMidiSyncMode(",
+        "[[nodiscard]] ApplyResult applyChoice(",
+    ):
+        if marker not in header:
+            errors.append(
+                f"{DEVICE_SETTINGS_DOMAIN_HEADER}: missing typed command marker {marker}"
+            )
+
+    source = files.get(DEVICE_SETTINGS_DOMAIN_SOURCE, "")
+    mode_bodies = cpp_function_bodies(
+        source,
+        "DeviceSettingsDomainServices::applyMidiSyncMode",
+    )
+    if len(mode_bodies) != 1:
+        errors.append(
+            f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: applyMidiSyncMode must have one "
+            f"balanced definition (found {len(mode_bodies)})"
+        )
+    else:
+        mode_body = cpp_code_mask(mode_bodies[0])
+        if "policy::validMode(mode)" not in mode_body or \
+                "return applyChoice(0U," not in mode_body:
+            errors.append(
+                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: typed mode command must "
+                "validate then delegate to row-zero persistence"
+            )
+
+    choice_bodies = cpp_function_bodies(
+        source,
+        "DeviceSettingsDomainServices::applyChoice",
+    )
+    if len(choice_bodies) != 1:
+        errors.append(
+            f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: applyChoice must have one "
+            f"balanced definition (found {len(choice_bodies)})"
+        )
+    else:
+        choice_body = cpp_code_mask(choice_bodies[0])
+        no_change = choice_body.find("ApplyStatus::NO_CHANGE")
+        stage = choice_body.find("saveMidiSyncModeStatus")
+        commit = choice_body.find("commitStatus")
+        publish = choice_body.find("midi_sync_->mode.set")
+        if not (0 <= no_change < stage < commit < publish):
+            errors.append(
+                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: mode command order must be "
+                "no-change, stage, commit, live publication"
+            )
+        if choice_body.count("ApplyStatus::PERSISTENCE_FAILED") != 2:
+            errors.append(
+                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: stage and commit failures "
+                "must both return structured persistence failure"
+            )
+
+    handler_bodies = cpp_function_bodies(
+        files.get(DEVICE_SETTINGS_HANDLER_SOURCE, ""),
+        "DeviceSettingsHandler::applySelectorAndClose",
+    )
+    if len(handler_bodies) != 1:
+        errors.append(
+            f"{DEVICE_SETTINGS_HANDLER_SOURCE}: applySelectorAndClose must "
+            f"have one balanced definition (found {len(handler_bodies)})"
+        )
+    else:
+        handler_body = cpp_code_mask(handler_bodies[0])
+        apply_pos = handler_body.find("services_.applyChoice")
+        guard_pos = handler_body.find("if (!result.success()) return;")
+        close_pos = handler_body.find("modal::hideIfCurrent")
+        if not (0 <= apply_pos < guard_pos < close_pos):
+            errors.append(
+                f"{DEVICE_SETTINGS_HANDLER_SOURCE}: selector must consume the "
+                "result and remain open on persistence failure"
+            )
+
+    project_header = files.get(PROJECT_HANDLER_HEADER, "")
+    for marker in (
+        "DeviceSettingsDomainServices deviceSettings,",
+        "DeviceSettingsDomainServices device_settings_;",
+    ):
+        if marker not in project_header:
+            errors.append(
+                f"{PROJECT_HANDLER_HEADER}: missing Device command dependency {marker}"
+            )
+    for duplicate in ("MidiSyncState& midiSync", "midi_sync_"):
+        if duplicate in project_header:
+            errors.append(
+                f"{PROJECT_HANDLER_HEADER}: duplicate Project MIDI Sync state {duplicate}"
+            )
+
+    project_source = files.get(PROJECT_HANDLER_SOURCE, "")
+    if ", device_settings_(deviceSettings)" not in project_source:
+        errors.append(
+            f"{PROJECT_HANDLER_SOURCE}: Device command value must be retained by Project"
+        )
+
+    project_edits = cpp_code_mask(
+        files.get(PROJECT_HANDLER_VALUE_EDITING, "")
+    )
+    if project_edits.count("device_settings_.applyMidiSyncMode(") != 2:
+        errors.append(
+            f"{PROJECT_HANDLER_VALUE_EDITING}: NAV and OPT must each use the "
+            "typed Device MIDI Sync command exactly once"
+        )
+    for retired in (
+        "ProjectSettingsHistoryActionKind::SyncMode",
+        "midi_sync_",
+    ):
+        if retired in project_edits:
+            errors.append(
+                f"{PROJECT_HANDLER_VALUE_EDITING}: retired Project Sync owner {retired}"
+            )
+    if "Sync save failed - unchanged" not in files.get(
+        PROJECT_HANDLER_VALUE_EDITING, ""
+    ):
+        errors.append(
+            f"{PROJECT_HANDLER_VALUE_EDITING}: persistence failure must remain visible"
+        )
+    focused_encoder = cpp_code_mask(
+        files.get(PROJECT_HANDLER_FOCUSED_ENCODER, "")
+    )
+    if focused_encoder.count("device_settings_.currentChoiceIndex(0U)") != 1 or \
+            "midi_sync_" in focused_encoder:
+        errors.append(
+            f"{PROJECT_HANDLER_FOCUSED_ENCODER}: Clock projection must read "
+            "only through the Device service"
+        )
+
+    feature_header = files.get(PROJECT_FEATURE_MODULE_HEADER, "")
+    feature_source = files.get(PROJECT_FEATURE_MODULE_SOURCE, "")
+    assembly = files.get(STANDALONE_FEATURE_ASSEMBLY_SOURCE, "")
+    if "DeviceSettingsDomainServices deviceSettings," not in feature_header or \
+            "        deviceSettings," not in feature_source:
+        errors.append(
+            f"{PROJECT_FEATURE_MODULE_HEADER}: Project feature must forward the "
+            "Device command value"
+        )
+    if "MidiSyncState& midiSync" in feature_header:
+        errors.append(
+            f"{PROJECT_FEATURE_MODULE_HEADER}: duplicate MIDI Sync state dependency"
+        )
+    if assembly.count("deviceSettingsServices") != 3:
+        errors.append(
+            f"{STANDALONE_FEATURE_ASSEMBLY_SOURCE}: one composed Device service "
+            "must feed both Project and Settings"
+        )
+
+    history_header = files.get(PROJECT_SETTINGS_HISTORY_HEADER, "")
+    history_source = files.get(PROJECT_SETTINGS_HISTORY_SOURCE, "")
+    history_graph = history_header + "\n" + history_source
+    for retired in (
+        "SyncMode",
+        "syncMode",
+        "MidiSyncState",
+        "midiSync",
+    ):
+        if retired in history_graph:
+            errors.append(
+                f"Project Settings history: retired MIDI Sync dependency {retired}"
+            )
+    for marker in (
+        "uint8_t scaleInheritanceFlags = 0x03U;",
+        "static_assert(sizeof(ProjectSettingsHistorySnapshot) == 12U);",
+        "static_assert(sizeof(ProjectSettingsHistoryEntry) == 28U);",
+    ):
+        if marker not in history_header:
+            errors.append(
+                f"{PROJECT_SETTINGS_HISTORY_HEADER}: missing compact history marker {marker}"
+            )
+
+    core_history = cpp_code_mask(
+        files.get(CORE_STATE_PROJECT_HISTORY_SOURCE, "")
+    )
+    for marker in (
+        "projectSettingsHistory.undo(statusBar, projectNavigation)",
+        "projectSettingsHistory.redo(statusBar, projectNavigation)",
+    ):
+        if marker not in core_history:
+            errors.append(
+                f"{CORE_STATE_PROJECT_HISTORY_SOURCE}: Settings traversal must "
+                f"remain Device-independent ({marker})"
+            )
+
+    coordinator = files.get(PROJECT_HISTORY_COORDINATOR_SOURCE, "")
+    if 'return "Sync Mode";' in coordinator:
+        errors.append(
+            f"{PROJECT_HISTORY_COORDINATOR_SOURCE}: retired Sync Mode history label"
+        )
+    coordinator_test = files.get(PROJECT_HISTORY_COORDINATOR_TEST, "")
+    if "test_remaining_project_settings_labels_survive_sync_cleanup" not in \
+            coordinator_test:
+        errors.append(
+            f"{PROJECT_HISTORY_COORDINATOR_TEST}: remaining Settings labels need proof"
+        )
+
+    menu = files.get(PROJECT_MENU_MODEL_SOURCE, "")
+    if menu.count('row("Clock", clockModeValue(context.clockMode)') != 1:
+        errors.append(
+            f"{PROJECT_MENU_MODEL_SOURCE}: Transport Clock Device control must remain visible"
+        )
+
+    expected_writers = {
+        DEVICE_SETTINGS_DOMAIN_SOURCE: (r"midi_sync_->mode\.set\s*\(", 1),
+        DEVICE_SETTINGS_CODEC_SOURCE: (r"midiSync\.mode\.set\s*\(", 1),
+        DEVICE_SETTINGS_STORE_SOURCE: (r"midiSync\.mode\.set\s*\(", 1),
+        MIDI_SYNC_STATE_SOURCE: (r"\bmode\.set\s*\(", 1),
+        PROJECT_HANDLER_VALUE_EDITING: (r"midi_sync_\.mode\.set\s*\(", 0),
+        PROJECT_SETTINGS_HISTORY_SOURCE: (r"midiSync\.mode\.set\s*\(", 0),
+    }
+    for rel, (pattern, expected) in expected_writers.items():
+        actual = len(re.findall(pattern, cpp_code_mask(files.get(rel, ""))))
+        if actual != expected:
+            errors.append(
+                f"{rel}: final R-07 mode-writer inventory must remain {expected} "
+                f"(found {actual})"
+            )
+
+    handler_test = files.get(PROJECT_HANDLER_TEST, "")
+    for marker in (
+        "test_transport_sync_is_device_persisted_and_project_neutral",
+        "test_transport_sync_failure_is_visible_retryable_and_project_neutral",
+        "projectSessionSaveToken() == saveTokenBefore",
+    ):
+        if marker not in handler_test:
+            errors.append(
+                f"{PROJECT_HANDLER_TEST}: missing Project-neutral Sync proof {marker}"
+            )
+    view_test = files.get(VIEW_SWITCHER_HANDLER_TEST, "")
+    if view_test.count(
+        "h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE"
+    ) < 2:
+        errors.append(
+            f"{VIEW_SWITCHER_HANDLER_TEST}: Undo/Redo must both preserve Device Sync"
+        )
+
+    return errors
+
+
 def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     """Freeze the single R-05 mutation/recovery authority and its exact ABI."""
     errors: list[str] = []
@@ -948,8 +1595,16 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     job_coordinator = "src/persistence/ProductPersistenceJobCoordinator.hpp"
     service_header = "src/persistence/ProductFileService.hpp"
     service_source = "src/persistence/ProductFileService.cpp"
+    project_workspace = "src/persistence/ProjectFileWorkspace.hpp"
+    project_workspace_pool = "src/persistence/ProjectWorkspacePool.hpp"
+    project_workspace_pool_source = "src/persistence/ProjectWorkspacePool.cpp"
+    project_transactions_header = "src/persistence/ProjectFileTransactions.hpp"
     save_header = "src/persistence/ProjectSaveTransaction.hpp"
+    save_source = "src/persistence/ProjectSaveTransaction.cpp"
+    project_store_header = "src/persistence/ProjectFileStore.hpp"
+    project_store_source = "src/persistence/ProjectFileStore.cpp"
     session_header = "src/persistence/ProjectSessionStore.hpp"
+    project_codec_source = "src/persistence/ProjectSnapshotPersistenceCodec.cpp"
     rpc_header = "src/protocol/filesystem/FileSystemRpc.hpp"
     job_rpc_header = "src/protocol/filesystem/FileSystemJobRpc.hpp"
     job_rpc_source = "src/protocol/filesystem/FileSystemJobRpc.cpp"
@@ -970,19 +1625,39 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     rpc_internal = "src/protocol/filesystem/FileSystemRpcInternal.hpp"
     project_transactions = "src/persistence/ProjectFileTransactions.cpp"
     atomic_test = "test/test_AtomicProductFile/test_main.cpp"
+    project_store_test = "test/test_ProjectFileStore/test_main.cpp"
     cmake_source = "CMakeLists.txt"
     machine_source = "src/persistence/StorageRecoveryMachine.cpp"
     main_source = "main.cpp"
     sdl_runtime = "sdl/entry/SdlProjectSessionRuntime.hpp"
 
-    for rel, pattern, description in (
+    for contract in (
         (coordinator, r"sizeof\(ProductStorageIdentity\)\s*==\s*8", "storage identity must remain 8 B"),
         (coordinator, r"sizeof\(ProductMutationLease\)\s*==\s*4", "lease must remain 4 B"),
         (coordinator, r"sizeof\(ProductPersistenceCoordinator\)\s*==\s*20", "coordinator must remain 20 B"),
         (job_coordinator, r"sizeof\(ProductPersistenceJobCoordinator\)\s*<=\s*128U", "job coordinator must remain at most 128 B"),
-        (service_header, r"sizeof\(ProductFileService\)\s*==\s*160U", "file service must remain 160 B on ARM"),
-        (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*52U", "Project save must remain 52 B on ARM"),
-        (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*64U", "session store must remain 64 B on ARM"),
+        (service_header, r"sizeof\(ProductFileService\)\s*==\s*168U", "file service plus Project pool must remain 168 B on ARM"),
+        (project_workspace, r"class\s+ProjectFileReadWorkspace\s*\{", "Project read workspace capability must remain explicit"),
+        (project_workspace, r"class\s+ProjectFileWriteWorkspace\s+final\s*:\s*public\s+ProjectFileReadWorkspace", "Project write workspace must derive only from the read capability"),
+        (project_workspace, r"ExtmemUniquePtr\s*<\s*ProjectFileBuffer\s*>\s+buffer_", "Project workspaces must own exactly one file buffer"),
+        (project_workspace, r"return\s+ProjectFileReadWorkspace::prepare\s*\(\s*\)\s*&&\s*codec_workspace_\.prepare\s*\(\s*\)", "Project write prepare must add codec scratch after read preparation"),
+        (project_workspace, r"sizeof\(ProjectFileBuffer\)\s*==\s*526176U", "Project file/commit buffer must remain 526,176 B on ARM"),
+        (project_workspace, r"alignof\(ProjectFileBuffer\)\s*==\s*8U", "Project file/commit buffer must remain 8-byte aligned"),
+        (project_workspace, r"sizeof\(ProjectFileReadWorkspace\)\s*==\s*4U", "Project read workspace must remain one ARM pointer"),
+        (project_workspace, r"sizeof\(ProjectFileWriteWorkspace\)\s*==\s*8U", "Project write workspace must remain two ARM pointers"),
+        (project_workspace_pool, r"class\s+ProjectWorkspacePool\s+final", "Project workspace pool must remain one final owner"),
+        (project_workspace_pool, r"writer_storage_\s*\[\s*2U\s*\*\s*sizeof\(void\*\)\s*\]", "Project pool control must remain exactly two pointers"),
+        (project_workspace_pool, r"sizeof\(ProjectWorkspacePool\)\s*==\s*8U", "Project pool must remain 8 B on ARM"),
+        (project_workspace_pool_source, r"new\s*\(\s*writer_storage_\s*\)\s*ProjectFileWriteWorkspace", "Project pool must placement-own the sole writer", 3),
+        (service_header, r"ProjectWorkspacePool\s+project_workspace_\s*\{\s*\}", "file service must own the sole Project workspace pool"),
+        (service_source, r"ProductFileService::prepareProjectWorkspace\s*\(\s*\).*?mutationActive\s*\(\s*\).*?project_workspace_\.prepare\s*\(\s*\)", "Project prewarm must reject an active mutation before preparing"),
+        (service_source, r"ProductFileService::ownsProjectWorkspaceLease_.*?ProductMutationOwner::PROJECT.*?ProductMutationOwner::RECOVERY", "Project pool borrow must accept only exact Project or Recovery owners"),
+        (project_transactions, r"files\.projectReadWorkspace\s*\(\s*lease\s*\)", "Project load must borrow only read capability under its lease"),
+        (save_source, r"files_\.projectWriteWorkspace\s*\(\s*lease\s*\)", "Project save/cancel must revalidate write capability", 2),
+        (project_store_header, r"sizeof\(ProjectFileStore\)\s*==\s*8U", "Project file store must remain two references on ARM"),
+        (project_codec_source, r"sizeof\(Storage\)\s*==\s*436855U", "Project encode scratch must remain exactly 436,855 B"),
+        (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*48U", "Project save must remain 48 B on ARM"),
+        (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*52U", "session store must remain 52 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*276U", "RPC write session must remain 276 B on ARM"),
         (rpc_header, r"sizeof\(FileSystemRpcHandler\)\s*==\s*304U", "RPC handler must remain 304 B on ARM"),
         (rpc_header, r"FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS\s*=\s*1u\s*<<\s*4", "legacy capabilities must reserve persistence-job feature bit 4"),
@@ -1030,6 +1705,17 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (rpc_internal, r"bool\s+isProtocolReservedPath\s*\(", "ordinary RPC must reserve the complete protocol namespace"),
         (cmake_source, r"MS_CORE_PERSISTENCE_IO_TESTS.*?test_AtomicProductFile", "fault campaign must share the persistence I/O lock"),
         (atomic_test, r"for\s*\(\s*CutMode\s+mode\s*:\s*\{\s*CutMode::BEFORE\s*,\s*CutMode::AFTER\s*\}\s*\)", "fault campaign must enumerate cuts before and after every boundary"),
+        (project_store_test, r"ProjectFileReadWorkspace\s+workspace", "direct Project test must exercise a fresh read workspace"),
+        (project_store_test, r"ProjectFileWriteWorkspace\s+workspace", "direct Project test must exercise a fresh write workspace"),
+        (project_store_test, r"ScopedExtmemAllocationFailure\s+failure\s*\(\s*2U\s*\)", "Project split and pool tests must arm the second allocation", 3),
+        (project_store_test, r"extmemAllocationAttempt\s*==\s*1U", "fresh Project read must stop after one allocation"),
+        (project_store_test, r"extmemAllocationFailureOrdinal\s*==\s*2U", "fresh Project read must leave allocation two armed"),
+        (project_store_test, r"extmemAllocationAttempt\s*==\s*2U", "fresh writer and pool prewarm must each reach the scratch allocation", 3),
+        (project_store_test, r"prepared\.error\(\)\.code\s*==\s*oc::type::ErrorCode::RESOURCE_EXHAUSTED", "Project pool allocation failure must return stable resource exhaustion"),
+        (project_store_test, r"void\s+test_file_and_session_stores_share_one_lease_checked_workspace", "direct Project test must prove the central shared pool"),
+        (project_store_test, r"blockedSave\.error\(\)\.code\s*==\s*oc::type::ErrorCode::HARDWARE_BUSY", "concurrent manual save must return stable busy"),
+        (project_store_test, r"blockedLoad\.error\(\)\.code\s*==\s*oc::type::ErrorCode::HARDWARE_BUSY", "concurrent manual load must return stable busy"),
+        (project_store_test, r"staleAdvance\.error\(\)\.code\s*==\s*oc::type::ErrorCode::INVALID_STATE", "media invalidation must reject a stale pooled save phase"),
         (
             service_source,
             r"ProductFileService::initForRecovery\s*\(\s*\)\s*\{.*?"
@@ -1038,7 +1724,92 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
             "backend retry must leave ABSENT admission to beginRecovery",
         ),
     ):
-        require(rel, pattern, description)
+        require(*contract)
+
+    workspace_scope = (
+        project_workspace,
+        project_workspace_pool,
+        project_workspace_pool_source,
+        project_transactions_header,
+        project_transactions,
+        save_header,
+        save_source,
+        project_store_header,
+        project_store_source,
+        session_header,
+    )
+    for rel in workspace_scope:
+        if re.search(r"\bProjectFileWorkspace\b", cpp_code_mask(files.get(rel, ""))):
+            errors.append(f"{rel}: retired combined Project workspace type restored")
+
+    for rel in (project_transactions_header, project_transactions):
+        if re.search(
+            r"\bProjectFileWriteWorkspace\b",
+            cpp_code_mask(files.get(rel, "")),
+        ):
+            errors.append(f"{rel}: Project load must not depend on write capability")
+        if re.search(
+            r"\bprojectWriteWorkspace\s*\(",
+            cpp_code_mask(files.get(rel, "")),
+        ):
+            errors.append(f"{rel}: Project load must not borrow write capability")
+
+    for rel in (save_header, project_store_header, session_header):
+        if re.search(
+            r"\bProjectFile(?:Read|Write)Workspace\s+\w+_",
+            cpp_code_mask(files.get(rel, "")),
+        ):
+            errors.append(f"{rel}: duplicate retained Project workspace owner")
+
+    read_workspace_bodies = cpp_type_bodies(
+        files.get(project_workspace, ""),
+        "ProjectFileReadWorkspace",
+    )
+    if len(read_workspace_bodies) != 1:
+        errors.append(
+            f"{project_workspace}: Project read workspace must have one balanced "
+            f"definition (found {len(read_workspace_bodies)})"
+        )
+    else:
+        read_body = read_workspace_bodies[0]
+        if len(re.findall(
+            r"makeExtmemUniqueForOverwrite\s*<\s*ProjectFileBuffer\s*>",
+            read_body,
+        )) != 1:
+            errors.append(
+                f"{project_workspace}: Project read workspace must allocate exactly "
+                "one file buffer"
+            )
+        if re.search(r"codec_workspace_|ProjectSnapshotCodecWorkspace", read_body):
+            errors.append(
+                f"{project_workspace}: Project read workspace must not own or prepare "
+                "encode scratch"
+            )
+
+    write_workspace_bodies = cpp_type_bodies(
+        files.get(project_workspace, ""),
+        "ProjectFileWriteWorkspace",
+    )
+    if len(write_workspace_bodies) != 1:
+        errors.append(
+            f"{project_workspace}: Project write workspace must have one balanced "
+            f"definition (found {len(write_workspace_bodies)})"
+        )
+    else:
+        write_body = write_workspace_bodies[0]
+        if re.search(r"ExtmemUniquePtr\s*<\s*ProjectFileBuffer\s*>", write_body):
+            errors.append(
+                f"{project_workspace}: Project write workspace must reuse the inherited "
+                "file buffer"
+            )
+        if len(re.findall(
+            r"ProjectSnapshotCodecWorkspace\s+codec_workspace_",
+            write_body,
+        )) != 1:
+            errors.append(
+                f"{project_workspace}: Project write workspace must own exactly one "
+                "encode scratch owner"
+            )
 
     supported_start_bodies = cpp_function_bodies(
         files.get(job_rpc_source, ""),
@@ -4438,6 +5209,7 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
         "CMakeLists.txt",
         "sdl/entry/SdlProjectSessionRuntime.hpp",
         "test/test_AtomicProductFile/test_main.cpp",
+        "test/test_ProjectFileStore/test_main.cpp",
     ):
         fixture[rel] = (ROOT / rel).read_text(encoding="utf-8")
 
@@ -4569,11 +5341,24 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
         "    const FileSystemJobRequest& request = decoded.value();\n"
         "    handler_.abortWriteSession();",
     )
+    project_load_widens_to_write = mutate(
+        "src/persistence/ProjectFileTransactions.cpp",
+        "files.projectReadWorkspace(lease)",
+        "files.projectWriteWorkspace(lease)",
+    )
 
     return (
         (
             not persistence_lease_contract_errors(fixture),
             "valid single persistence lease contract is accepted",
+        ),
+        (
+            project_load_widens_to_write[
+                "src/persistence/ProjectFileTransactions.cpp"
+            ]
+            != fixture["src/persistence/ProjectFileTransactions.cpp"]
+            and bool(persistence_lease_contract_errors(project_load_widens_to_write)),
+            "Project load widened to write capability is rejected",
         ),
         (
             bool(persistence_lease_contract_errors(raw_product_flush)),
@@ -4747,6 +5532,419 @@ def persistence_self_test() -> int:
     return 0
 
 
+def history_admission_self_test() -> int:
+    paths = (
+        PROJECT_HISTORY_EVENT_SINK,
+        PROJECT_HISTORY_COORDINATOR_HEADER,
+        PROJECT_HISTORY_COORDINATOR_SOURCE,
+        MACRO_HISTORY_HEADER,
+        MACRO_HISTORY_SOURCE,
+        SEQUENCER_HISTORY_HEADER,
+        SEQUENCER_HISTORY_SOURCE,
+    )
+    fixture = {
+        rel: (ROOT / rel).read_text(encoding="utf-8")
+        for rel in paths
+    }
+
+    def mutate(rel: str, before: str, after: str) -> dict[str, str]:
+        result = dict(fixture)
+        result[rel] = result[rel].replace(before, after, 1)
+        return result
+
+    mutations = (
+        (
+            MACRO_HISTORY_HEADER,
+            "1'058'080U",
+            "1'058'079U",
+            "Macro byte-budget drift is rejected",
+        ),
+        (
+            PROJECT_HISTORY_COORDINATOR_HEADER,
+            "RETAINED_SPAN_BUDGET = 655U",
+            "RETAINED_SPAN_BUDGET = 654U",
+            "global span-budget drift is rejected",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            "CanRetainFn canRetain = nullptr;",
+            "CanRetainFn legacyCanRetain = nullptr;",
+            "missing global admission callback is rejected",
+        ),
+        (
+            MACRO_HISTORY_SOURCE,
+            "    push_(undo_, undo_count_, std::move(change), project_history_sink_);\n"
+            "    publishRetainedUsage_();",
+            "    push_(undo_, undo_count_, std::move(change), project_history_sink_);",
+            "Macro commit without retained-usage publication is rejected",
+        ),
+        (
+            SEQUENCER_HISTORY_SOURCE,
+            "    const bool pushed = pushUndo(std::move(entry));\n"
+            "    assert(pushed);\n"
+            "    (void)pushed;\n"
+            "    publishRetainedUsage_();",
+            "    const bool pushed = pushUndo(std::move(entry));\n"
+            "    assert(pushed);\n"
+            "    (void)pushed;",
+            "Sequencer commit without retained-usage publication is rejected",
+        ),
+        (
+            PROJECT_HISTORY_COORDINATOR_SOURCE,
+            "        spans += retained_usage_[index].spans;",
+            "        spans += 0U;",
+            "global admission without cross-domain spans is rejected",
+        ),
+    )
+
+    checks: list[tuple[bool, str]] = [
+        (
+            not history_admission_contract_errors(fixture),
+            "the checked-in D-UNDO admission contract is accepted",
+        )
+    ]
+    for rel, before, after, description in mutations:
+        mutated = mutate(rel, before, after)
+        checks.append((
+            mutated[rel] != fixture[rel]
+            and bool(history_admission_contract_errors(mutated)),
+            description,
+        ))
+
+    failures = [description for ok, description in checks if not ok]
+    if failures:
+        for failure in failures:
+            print(f"SELF-TEST ERROR: {failure}")
+        return 1
+    print(
+        "History admission architecture self-tests: "
+        f"OK ({len(checks)}/{len(checks)})"
+    )
+    return 0
+
+
+def psram_tracker_self_test() -> int:
+    paths = (
+        PSRAM_SPAN_TRACKER_HEADER,
+        MEMORY_FOOTPRINT_REPORTER_HEADER,
+        MEMORY_FOOTPRINT_REPORTER_SOURCE,
+        DIAGNOSTICS_PLACEMENT_GATE,
+    )
+    fixture = {
+        rel: (ROOT / rel).read_text(encoding="utf-8")
+        for rel in paths
+    }
+
+    def mutate(rel: str, before: str, after: str) -> dict[str, str]:
+        result = dict(fixture)
+        result[rel] = result[rel].replace(before, after, 1)
+        return result
+
+    mutations = (
+        (
+            PSRAM_SPAN_TRACKER_HEADER,
+            "PSRAM_SPAN_CAPACITY = 1'034U",
+            "PSRAM_SPAN_CAPACITY = 1'033U",
+            "all-owner capacity drift is rejected",
+        ),
+        (
+            PSRAM_SPAN_TRACKER_HEADER,
+            "PSRAM_SPAN_TABLE_BYTES == 12'408U",
+            "PSRAM_SPAN_TABLE_BYTES == 12'407U",
+            "table-byte drift is rejected",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            "EXTMEM detail::PsramSpanTable psramSpanTable;",
+            "DMAMEM detail::PsramSpanTable psramSpanTable;",
+            "table moved back to RAM2 is rejected",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            "    state.psramPublished.largestBlockValid = "
+            "snapshot.largestBlockValid;",
+            "",
+            "seven-field partial publication is rejected",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            "    state.psramPublished.poolBytes = snapshot.poolBytes;",
+            "    (void)psramSpanTable[0];\n"
+            "    state.psramPublished.poolBytes = snapshot.poolBytes;",
+            "PSRAM table access under mask is rejected",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_HEADER,
+            "bool psramLargestBlockValid = false;",
+            "bool legacyLargestBlockState = false;",
+            "ambiguous largest-block validity is rejected",
+        ),
+        (
+            DIAGNOSTICS_PLACEMENT_GATE,
+            '"core::diagnostics::detail::PsramSpanTracker",',
+            '"legacy::PsramSpanTracker",',
+            "normal-image tracker-code escape is rejected",
+        ),
+    )
+
+    checks: list[tuple[bool, str]] = [(
+        not psram_tracker_contract_errors(fixture),
+        "the checked-in L-R14-07 tracker contract is accepted",
+    )]
+    for rel, before, after, description in mutations:
+        mutated = mutate(rel, before, after)
+        checks.append((
+            mutated[rel] != fixture[rel]
+            and bool(psram_tracker_contract_errors(mutated)),
+            description,
+        ))
+
+    failures = [description for ok, description in checks if not ok]
+    if failures:
+        for failure in failures:
+            print(f"SELF-TEST ERROR: {failure}")
+        return 1
+    print(
+        "PSRAM tracker architecture self-tests: "
+        f"OK ({len(checks)}/{len(checks)})"
+    )
+    return 0
+
+
+def autosave_policy_self_test() -> int:
+    paths = (
+        PROJECT_NAVIGATION_STATE_HEADER,
+        PROJECT_MENU_MODEL_SOURCE,
+        PROJECT_SETTINGS_HISTORY_HEADER,
+        PROJECT_HISTORY_COORDINATOR_SOURCE,
+        PROJECT_HANDLER_HEADER,
+        PROJECT_HANDLER_TEST,
+        PROJECT_MENU_MODEL_TEST,
+        "main.cpp",
+        SDL_PROJECT_SESSION_RUNTIME,
+    )
+    fixture = {
+        rel: (ROOT / rel).read_text(encoding="utf-8")
+        for rel in paths
+    }
+
+    def mutate(rel: str, before: str, after: str) -> dict[str, str]:
+        result = dict(fixture)
+        result[rel] = result[rel].replace(before, after, 1)
+        return result
+
+    mutations = (
+        (
+            PROJECT_NAVIGATION_STATE_HEADER,
+            "    bool scaleConstrainEnabled = true;",
+            "    bool autosaveEnabled = true;\n"
+            "    bool scaleConstrainEnabled = true;",
+            "restored Project autosave field is rejected",
+        ),
+        (
+            PROJECT_MENU_MODEL_SOURCE,
+            "    addRow(page, projectRow);",
+            "    addRow(page, projectRow);\n"
+            "    addRow(page, row(\"Autosave\", \"On\", "
+            "ProjectMenuRowKind::Toggle, ProjectNodeId::STORAGE_ROOT));",
+            "restored Autosave menu row is rejected",
+        ),
+        (
+            PROJECT_SETTINGS_HISTORY_HEADER,
+            "    ClipsInheritScale,",
+            "    ClipsInheritScale,\n    Autosave,",
+            "restored Project history action is rejected",
+        ),
+        (
+            PROJECT_HANDLER_HEADER,
+            "    bool applyFocusedRoutingStep(int steps);",
+            "    bool applyFocusedStorageStep(int steps);\n"
+            "    bool applyFocusedRoutingStep(int steps);",
+            "restored storage pseudo-value handler is rejected",
+        ),
+        (
+            "main.cpp",
+            "projectSessionAutosaveService->update(",
+            "retiredProjectSessionAutosaveUpdate(",
+            "missing firmware always-on update is rejected",
+        ),
+        (
+            SDL_PROJECT_SESSION_RUNTIME,
+            "autosave_->update(",
+            "retiredAutosaveUpdate(",
+            "missing SDL always-on update is rejected",
+        ),
+    )
+
+    checks: list[tuple[bool, str]] = [(
+        not autosave_policy_contract_errors(fixture),
+        "the checked-in D-AUTOSAVE-v1 contract is accepted",
+    )]
+    for rel, before, after, description in mutations:
+        mutated = mutate(rel, before, after)
+        checks.append((
+            mutated[rel] != fixture[rel]
+            and bool(autosave_policy_contract_errors(mutated)),
+            description,
+        ))
+
+    failures = [description for ok, description in checks if not ok]
+    if failures:
+        for failure in failures:
+            print(f"SELF-TEST ERROR: {failure}")
+        return 1
+    print(
+        "Autosave policy architecture self-tests: "
+        f"OK ({len(checks)}/{len(checks)})"
+    )
+    return 0
+
+
+def midi_sync_command_self_test() -> int:
+    paths = (
+        DEVICE_SETTINGS_DOMAIN_HEADER,
+        DEVICE_SETTINGS_DOMAIN_SOURCE,
+        DEVICE_SETTINGS_HANDLER_SOURCE,
+        DEVICE_SETTINGS_CODEC_SOURCE,
+        DEVICE_SETTINGS_STORE_SOURCE,
+        MIDI_SYNC_STATE_SOURCE,
+        PROJECT_HANDLER_HEADER,
+        PROJECT_HANDLER_SOURCE,
+        PROJECT_HANDLER_VALUE_EDITING,
+        PROJECT_HANDLER_FOCUSED_ENCODER,
+        PROJECT_SETTINGS_HISTORY_HEADER,
+        PROJECT_SETTINGS_HISTORY_SOURCE,
+        CORE_STATE_PROJECT_HISTORY_SOURCE,
+        PROJECT_HISTORY_COORDINATOR_SOURCE,
+        PROJECT_MENU_MODEL_SOURCE,
+        PROJECT_FEATURE_MODULE_HEADER,
+        PROJECT_FEATURE_MODULE_SOURCE,
+        STANDALONE_FEATURE_ASSEMBLY_SOURCE,
+        PROJECT_HANDLER_TEST,
+        PROJECT_HISTORY_COORDINATOR_TEST,
+        VIEW_SWITCHER_HANDLER_TEST,
+    )
+    fixture = {
+        rel: (ROOT / rel).read_text(encoding="utf-8")
+        for rel in paths
+    }
+
+    def mutate(rel: str, before: str, after: str) -> dict[str, str]:
+        result = dict(fixture)
+        result[rel] = result[rel].replace(before, after, 1)
+        return result
+
+    mutations = (
+        (
+            DEVICE_SETTINGS_DOMAIN_HEADER,
+            "    [[nodiscard]] ApplyResult applyMidiSyncMode(",
+            "    void applyMidiSyncMode(",
+            "untyped MIDI Sync command is rejected",
+        ),
+        (
+            DEVICE_SETTINGS_DOMAIN_SOURCE,
+            "    const auto commitStatus = store_->commitStatus();",
+            "    midi_sync_->mode.set(policy::MODES[appliedIndex]);\n"
+            "    const auto commitStatus = store_->commitStatus();",
+            "live publication before commit is rejected",
+        ),
+        (
+            DEVICE_SETTINGS_DOMAIN_SOURCE,
+            "return applyResult(ApplyStatus::NO_CHANGE);",
+            "return applyResult(ApplyStatus::APPLIED);",
+            "same-value command performing persistence is rejected",
+        ),
+        (
+            DEVICE_SETTINGS_DOMAIN_SOURCE,
+            "return applyResult(ApplyStatus::PERSISTENCE_FAILED, status);",
+            "return applyResult(ApplyStatus::APPLIED);",
+            "swallowed stage failure is rejected",
+        ),
+        (
+            DEVICE_SETTINGS_HANDLER_SOURCE,
+            "    if (!result.success()) return;",
+            "    (void)result;",
+            "selector closing on failure is rejected",
+        ),
+        (
+            PROJECT_HANDLER_VALUE_EDITING,
+            "                device_settings_.applyMidiSyncMode(midiSyncModeAt(next))",
+            "                (midi_sync_.mode.set(midiSyncModeAt(next)), "
+            "DeviceSettingsDomainServices::ApplyResult{})",
+            "restored direct Project writer is rejected",
+        ),
+        (
+            PROJECT_HANDLER_VALUE_EDITING,
+            '    navigation.setLifecycleFeedback("Sync save failed - unchanged");',
+            "    (void)navigation;",
+            "silent Project persistence failure is rejected",
+        ),
+        (
+            PROJECT_HANDLER_FOCUSED_ENCODER,
+            "device_settings_.currentChoiceIndex(0U)",
+            "midiSyncModeIndex(midi_sync_.mode.get())",
+            "duplicate Project Clock projection state is rejected",
+        ),
+        (
+            PROJECT_SETTINGS_HISTORY_HEADER,
+            "    Swing,\n    RunMode,",
+            "    Swing,\n    SyncMode,\n    RunMode,",
+            "restored Project Sync history action is rejected",
+        ),
+        (
+            PROJECT_SETTINGS_HISTORY_HEADER,
+            "    uint8_t scaleInheritanceFlags = 0x03U;",
+            "    uint8_t scaleInheritanceFlags = 0x03U;\n"
+            "    uint8_t syncMode = 0U;",
+            "restored Project Sync snapshot field is rejected",
+        ),
+        (
+            STANDALONE_FEATURE_ASSEMBLY_SOURCE,
+            "        deviceSettingsServices,",
+            "        core::handler::DeviceSettingsDomainServices{\n"
+            "            {state.midiSync, state.deviceSettingsStore}\n"
+            "        },",
+            "separate Project composition path is rejected",
+        ),
+        (
+            PROJECT_MENU_MODEL_SOURCE,
+            '    addRow(page, row("Clock", clockModeValue(context.clockMode),',
+            '    addRow(page, row("Clock Removed", "",',
+            "removing the Transport Clock Device control is rejected",
+        ),
+        (
+            VIEW_SWITCHER_HANDLER_TEST,
+            "    assert(h.state.midiSync.mode.get() == "
+            "core::state::MidiSyncMode::SLAVE);",
+            "    (void)h.state.midiSync.mode.get();",
+            "Undo/Redo Sync-independence proof removal is rejected",
+        ),
+    )
+
+    checks: list[tuple[bool, str]] = [(
+        not midi_sync_command_contract_errors(fixture),
+        "the checked-in final R-07 ownership contract is accepted",
+    )]
+    for rel, before, after, description in mutations:
+        mutated = mutate(rel, before, after)
+        checks.append((
+            mutated[rel] != fixture[rel]
+            and bool(midi_sync_command_contract_errors(mutated)),
+            description,
+        ))
+
+    failures = [description for ok, description in checks if not ok]
+    if failures:
+        for failure in failures:
+            print(f"SELF-TEST ERROR: {failure}")
+        return 1
+    print(
+        "MIDI Sync command architecture self-tests: "
+        f"OK ({len(checks)}/{len(checks)})"
+    )
+    return 0
+
+
 def self_test() -> int:
     step_draft_fixture = {
         path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
@@ -4806,26 +6004,6 @@ def self_test() -> int:
         EXTMEM_ALLOCATOR_SOURCE,
         "        freeExtmemStrict(ptr);",
         "        freeExtmemFallback(ptr);",
-    )
-    pending_apply_non_strict_allocation = mutate_extmem(
-        CORE_STATE_SOURCE,
-        "core::app::allocateExtmemStrict(",
-        "core::app::allocateExtmemFallback(",
-    )
-    pending_apply_non_strict_free = mutate_extmem(
-        CORE_STATE_SOURCE,
-        "core::app::freeExtmemStrict(ptr);",
-        "core::app::freeExtmemFallback(ptr);",
-    )
-    pending_apply_default_deleter = mutate_extmem(
-        CORE_STATE_HEADER,
-        "using PendingApplyPtr = std::unique_ptr<PendingApply, PendingApplyDeleter>;",
-        "using PendingApplyPtr = std::unique_ptr<PendingApply>;",
-    )
-    pending_apply_not_adopted = mutate_extmem(
-        CORE_STATE_SOURCE,
-        "sequencerDomain_.pendingApply.reset(createPendingApply());",
-        "(void)createPendingApply();",
     )
     escaped_strict_extmem_call = dict(extmem_fixture)
     escaped_strict_extmem_call["src/state/CoreStateProjectHistory.cpp"] = (
@@ -5832,24 +7010,6 @@ def self_test() -> int:
         (
             bool(extmem_lifetime_contract_errors(unpaired_extmem_deleter)),
             "EXTMEM deleter bypassing freeExtmemStrict is rejected",
-        ),
-        (
-            bool(extmem_lifetime_contract_errors(
-                pending_apply_non_strict_allocation
-            )),
-            "PendingApply non-strict allocation is rejected",
-        ),
-        (
-            bool(extmem_lifetime_contract_errors(pending_apply_non_strict_free)),
-            "PendingApply non-strict free is rejected",
-        ),
-        (
-            bool(extmem_lifetime_contract_errors(pending_apply_default_deleter)),
-            "PendingApply default deleter is rejected",
-        ),
-        (
-            bool(extmem_lifetime_contract_errors(pending_apply_not_adopted)),
-            "unowned PendingApply allocation is rejected",
         ),
         (
             bool(extmem_lifetime_contract_errors(escaped_strict_extmem_call)),
@@ -7189,11 +8349,21 @@ def main(show_inventory: bool = False) -> int:
         "CMakeLists.txt",
         "sdl/entry/SdlProjectSessionRuntime.hpp",
         "test/test_AtomicProductFile/test_main.cpp",
+        "test/test_ProjectHandler/test_main.cpp",
+        "test/test_ProjectHistoryCoordinator/test_main.cpp",
+        "test/test_ProjectMenuModel/test_main.cpp",
+        "test/test_ViewSwitcherHandler/test_main.cpp",
+        "test/test_ProjectFileStore/test_main.cpp",
+        DIAGNOSTICS_PLACEMENT_GATE,
     ):
         contract_sources[rel] = (ROOT / rel).read_text(encoding="utf-8")
     errors.extend(step_draft_transition_contract_errors(contract_sources))
     errors.extend(extmem_lifetime_contract_errors(contract_sources))
     errors.extend(persistence_lease_contract_errors(contract_sources))
+    errors.extend(history_admission_contract_errors(contract_sources))
+    errors.extend(psram_tracker_contract_errors(contract_sources))
+    errors.extend(autosave_policy_contract_errors(contract_sources))
+    errors.extend(midi_sync_command_contract_errors(contract_sources))
 
     platformio = PLATFORMIO.read_text(encoding="utf-8")
     if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
@@ -7505,15 +8675,50 @@ if __name__ == "__main__":
         help="run only the deterministic R-05 persistence fixtures",
     )
     parser.add_argument(
+        "--self-test-history-admission",
+        action="store_true",
+        help="run only the deterministic D-UNDO admission fixtures",
+    )
+    parser.add_argument(
+        "--self-test-psram-tracker",
+        action="store_true",
+        help="run only the deterministic L-R14-07 tracker fixtures",
+    )
+    parser.add_argument(
+        "--self-test-autosave-policy",
+        action="store_true",
+        help="run only the deterministic D-AUTOSAVE-v1 fixtures",
+    )
+    parser.add_argument(
+        "--self-test-midi-sync-command",
+        action="store_true",
+        help="run only the deterministic L-R07-01 command fixtures",
+    )
+    parser.add_argument(
         "--inventory",
         action="store_true",
         help="print the full advisory >800-line inventory",
     )
     args = parser.parse_args()
-    if args.self_test and args.self_test_persistence:
-        parser.error("choose either --self-test or --self-test-persistence")
+    if sum((
+        args.self_test,
+        args.self_test_persistence,
+        args.self_test_history_admission,
+        args.self_test_psram_tracker,
+        args.self_test_autosave_policy,
+        args.self_test_midi_sync_command,
+    )) > 1:
+        parser.error("choose exactly one architecture self-test")
     if args.self_test:
         sys.exit(self_test())
     if args.self_test_persistence:
         sys.exit(persistence_self_test())
+    if args.self_test_history_admission:
+        sys.exit(history_admission_self_test())
+    if args.self_test_psram_tracker:
+        sys.exit(psram_tracker_self_test())
+    if args.self_test_autosave_policy:
+        sys.exit(autosave_policy_self_test())
+    if args.self_test_midi_sync_command:
+        sys.exit(midi_sync_command_self_test())
     sys.exit(main(args.inventory))

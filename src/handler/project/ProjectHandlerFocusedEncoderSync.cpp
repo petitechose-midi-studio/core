@@ -469,7 +469,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 configureOptDiscrete(
                     encoders_,
                     3,
-                    indexToNormalized(midiSyncModeIndex(midi_sync_.mode.get()), 3)
+                    indexToNormalized(device_settings_.currentChoiceIndex(0U), 3)
                 );
                 return;
             case 3:
@@ -478,16 +478,6 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                     project::PROJECT_RUN_MODE_COUNT,
                     indexToNormalized(navigation_.transportRunMode, project::PROJECT_RUN_MODE_COUNT)
                 );
-                return;
-            default:
-                return;
-        }
-    }
-
-    if (node == ProjectNodeId::STORAGE_ROOT) {
-        switch (row) {
-            case 6:
-                configureOptDiscrete(encoders_, 2, navigation_.autosaveEnabled ? 1.0f : 0.0f);
                 return;
             default:
                 return;

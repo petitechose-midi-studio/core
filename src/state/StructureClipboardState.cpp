@@ -184,11 +184,6 @@ FLASHMEM void commitClipboardKind(
     clipboard.revision.set(clipboard.revision.get() + 1U);
 }
 
-FLASHMEM bool rejectClipboardStore(core::state::StructureClipboardState& clipboard) {
-    clipboard.clear();
-    return false;
-}
-
 struct MacroAutomationClipboardBuild {
     core::app::ExtmemUniquePtr<core::state::MacroAutomationClipboard> value;
     bool success = true;
@@ -274,7 +269,7 @@ FLASHMEM bool StructureClipboardState::storeMacroPage(
         sourcePage,
         false
     );
-    if (!automationSet.success) return rejectClipboardStore(*this);
+    if (!automationSet.success) return false;
     releaseOwnedPayloads(*this);
     macroPage = page;
     macroAutomationSet = std::move(automationSet.value);
@@ -293,7 +288,7 @@ FLASHMEM bool StructureClipboardState::storeMacroTrack(
         core::state::macro::PAGE_COUNT,
         true
     );
-    if (!automationSet.success) return rejectClipboardStore(*this);
+    if (!automationSet.success) return false;
     releaseOwnedPayloads(*this);
     macroTrack = track;
     macroAutomationSet = std::move(automationSet.value);
@@ -311,14 +306,14 @@ FLASHMEM bool StructureClipboardState::storeMacroAutomation(
             address,
             view
         ) || !view.automation.stored()) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     auto clipboard = core::app::makeExtmemUnique<
         core::state::MacroAutomationClipboard
     >();
     if (!clipboard ||
         !clipboard->append(0, 0, control, address, true, false)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     releaseOwnedPayloads(*this);
     clipboard->payloadKind = MacroClipboardPayloadKind::AUTOMATION;
@@ -332,15 +327,15 @@ FLASHMEM bool StructureClipboardState::storeMacroDestination(
     const core::state::macro::MacroAutomationSlotAddress& address
 ) {
     if (!core::state::macro::macroAutomationAddressValid(address)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     const auto& page = pages.pageData(address.track, address.page);
     if (!page.isMacroActive(address.macro)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
-    if (!clipboard) return rejectClipboardStore(*this);
+    if (!clipboard) return false;
     clipboard->entries[0] = {
         .valid = true,
         .sourcePage = address.page,
@@ -367,16 +362,16 @@ FLASHMEM bool StructureClipboardState::storeMacroSlot(
     const core::state::macro::MacroAutomationSlotAddress& address
 ) {
     if (!core::state::macro::macroAutomationAddressValid(address)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     const auto& page = pages.pageData(address.track, address.page);
     if (!page.isMacroActive(address.macro)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     auto clipboard = core::app::makeExtmemUnique<core::state::MacroAutomationClipboard>();
-    if (!clipboard) return rejectClipboardStore(*this);
+    if (!clipboard) return false;
     clipboard->payloadKind = MacroClipboardPayloadKind::SLOT;
     clipboard->sourceTrack = address.track;
     clipboard->sourcePage = address.page;
@@ -391,11 +386,11 @@ FLASHMEM bool StructureClipboardState::storeMacroSlot(
             address,
             view
         )) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     clipboard->sourceSlotPresent = view.present();
     if (!clipboard->append(address.page, address.macro, pages.control, address)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     auto& entry = clipboard->entries[0];
     entry.sourceMacroActive = true;
@@ -415,13 +410,13 @@ FLASHMEM bool StructureClipboardState::storeMacroSlotSelection(
     const oc::note::sequencer::StepBitMask128& selectedMask
 ) {
     if (sourceTrack >= core::state::macro::TRACK_COUNT) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     auto clipboard = core::app::makeExtmemUnique<
         core::state::MacroAutomationClipboard
     >();
-    if (!clipboard) return rejectClipboardStore(*this);
+    if (!clipboard) return false;
     clipboard->payloadKind = MacroClipboardPayloadKind::SLOT;
     clipboard->sourceTrack = sourceTrack;
 
@@ -440,7 +435,7 @@ FLASHMEM bool StructureClipboardState::storeMacroSlotSelection(
         const auto& pageData = pages.pageData(sourceTrack, page);
         if (!pages.tracks[sourceTrack].isPageEnabled(page) ||
             !pageData.isMacroActive(macro)) {
-            return rejectClipboardStore(*this);
+            return false;
         }
         const core::state::macro::MacroAutomationSlotAddress address{
             .track = sourceTrack,
@@ -453,7 +448,7 @@ FLASHMEM bool StructureClipboardState::storeMacroSlotSelection(
                 address,
                 view
             )) {
-            return rejectClipboardStore(*this);
+            return false;
         }
         const uint8_t entryIndex = clipboard->count;
         if (!clipboard->append(
@@ -462,7 +457,7 @@ FLASHMEM bool StructureClipboardState::storeMacroSlotSelection(
                 pages.control,
                 address
             )) {
-            return rejectClipboardStore(*this);
+            return false;
         }
         auto& entry = clipboard->entries[entryIndex];
         entry.sourceMacroActive = true;
@@ -481,7 +476,7 @@ FLASHMEM bool StructureClipboardState::storeMacroSlotSelection(
         }
     }
     if (clipboard->count == 0U) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     releaseOwnedPayloads(*this);
@@ -499,23 +494,23 @@ FLASHMEM bool StructureClipboardState::storeMacroPageSelection(
     uint16_t selectedMask
 ) {
     if (sourceTrack >= core::state::macro::TRACK_COUNT) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     const uint16_t mask = static_cast<uint16_t>(
         selectedMask &
         pages.tracks[sourceTrack].enabledPageMask
     );
-    if (mask == 0U) return rejectClipboardStore(*this);
+    if (mask == 0U) return false;
 
     auto clipboard = core::app::makeExtmemUnique<
         core::state::MacroPageSelectionClipboard
     >();
-    if (!clipboard) return rejectClipboardStore(*this);
+    if (!clipboard) return false;
     clipboard->projectControl = core::app::makeExtmemUnique<
         core::state::modulation::ProjectControlDomainState
     >(pages.control.authored);
     if (!clipboard->projectControl) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     clipboard->sourceTrack = sourceTrack;
     for (uint8_t page = 0U;
@@ -524,7 +519,7 @@ FLASHMEM bool StructureClipboardState::storeMacroPageSelection(
         const uint16_t bit = static_cast<uint16_t>(1U << page);
         if ((mask & bit) == 0U) continue;
         if (clipboard->count >= clipboard->pages.size()) {
-            return rejectClipboardStore(*this);
+            return false;
         }
         if (clipboard->sourceFirstPage >=
             core::state::macro::PAGE_COUNT) {
@@ -536,7 +531,7 @@ FLASHMEM bool StructureClipboardState::storeMacroPageSelection(
         entry.page = pages.pageData(sourceTrack, page);
     }
     clipboard->valid = clipboard->count > 0U;
-    if (!clipboard->valid) return rejectClipboardStore(*this);
+    if (!clipboard->valid) return false;
 
     releaseOwnedPayloads(*this);
     macroPageSelection = std::move(clipboard);
@@ -558,12 +553,12 @@ FLASHMEM bool StructureClipboardState::storeMacroModulation(
             view
         ) || !view.primaryModulation.isRecordedShape() ||
         view.mutationAmbiguous()) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     auto clipboard = core::app::makeExtmemUnique<
         core::state::MacroAutomationClipboard
     >();
-    if (!clipboard) return rejectClipboardStore(*this);
+    if (!clipboard) return false;
     clipboard->payloadKind = MacroClipboardPayloadKind::MODULATION;
     clipboard->sourceTrack = address.track;
     clipboard->sourcePage = address.page;
@@ -577,7 +572,7 @@ FLASHMEM bool StructureClipboardState::storeMacroModulation(
             false,
             true
         )) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     releaseOwnedPayloads(*this);
     macroAutomationSet = std::move(clipboard);
@@ -592,7 +587,7 @@ FLASHMEM bool StructureClipboardState::storeMacroModulationAssignment(
 ) {
     using namespace core::state::modulation;
     if (!core::state::macro::macroAutomationAddressValid(address)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     const auto* binding = findProjectModulationBinding(
         control.authored.modulation,
@@ -600,18 +595,18 @@ FLASHMEM bool StructureClipboardState::storeMacroModulationAssignment(
     );
     if (binding == nullptr ||
         binding->destination != projectControlDestination(address)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     const auto* source = findProjectModulator(
         control.authored.modulation,
         binding->sourceId
     );
-    if (source == nullptr) return rejectClipboardStore(*this);
+    if (source == nullptr) return false;
 
     auto payload = core::app::makeExtmemUnique<
         core::state::MacroModulationAssignmentClipboard
     >();
-    if (!payload) return rejectClipboardStore(*this);
+    if (!payload) return false;
     payload->valid = true;
     payload->sourceId = source->id;
     payload->binding = *binding;
@@ -634,7 +629,7 @@ FLASHMEM bool StructureClipboardState::storeProjectModulatorSource(
         control.authored.modulation,
         sourceId
     );
-    if (!source) return rejectClipboardStore(*this);
+    if (!source) return false;
     releaseOwnedPayloads(*this);
     projectModulatorSource = {
         .valid = true,
@@ -654,11 +649,11 @@ FLASHMEM bool StructureClipboardState::storeSequencerPage(
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
     if (!page.valid || page.count == 0) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graphCopy;
     if (!cloneSequencerGraph(graphCopy, graph)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     releaseOwnedPayloads(*this);
@@ -681,7 +676,7 @@ FLASHMEM bool StructureClipboardState::storeSequencerTrack(
             ccLaneCopy,
             ccLanes
         )) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     releaseOwnedPayloads(*this);
@@ -702,11 +697,11 @@ FLASHMEM bool StructureClipboardState::storeSequencerStepContent(
 ) {
     if (nodeId == oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID ||
         contentKind == SequencerStepContentClipboardKind::NONE) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graphCopy;
     if (!cloneSequencerGraph(graphCopy, &graph)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     releaseOwnedPayloads(*this);
@@ -722,11 +717,11 @@ FLASHMEM bool StructureClipboardState::storeSequencerSteps(
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
     if (!steps.valid || steps.count == 0) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     core::app::ExtmemUniquePtr<oc::note::sequencer::StepSequencerGraph> graphCopy;
     if (!cloneSequencerGraph(graphCopy, graph)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     releaseOwnedPayloads(*this);
@@ -741,13 +736,13 @@ FLASHMEM bool StructureClipboardState::storeSequencerPageSelection(
     const oc::note::sequencer::StepSequencerGraph* graph
 ) {
     if (!pages.valid || pages.count == 0U) {
-        return rejectClipboardStore(*this);
+        return false;
     }
     core::app::ExtmemUniquePtr<
         oc::note::sequencer::StepSequencerGraph
     > graphCopy;
     if (!cloneSequencerGraph(graphCopy, graph)) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     releaseOwnedPayloads(*this);
@@ -766,7 +761,7 @@ FLASHMEM bool StructureClipboardState::storeSequencerTrackSelection(
     > tracks
 ) {
     if (!tracks || !tracks->valid || tracks->count == 0U) {
-        return rejectClipboardStore(*this);
+        return false;
     }
 
     releaseOwnedPayloads(*this);

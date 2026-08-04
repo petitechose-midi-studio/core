@@ -20,9 +20,10 @@ constexpr lv_coord_t TAB_STRIP_HEIGHT = 24;
 constexpr lv_coord_t TAB_ACTIVE_WIDTH = 92;
 constexpr lv_coord_t TAB_INACTIVE_WIDTH = 30;
 constexpr uint32_t RENDER_TIMER_PERIOD_MS =
-    (Config::Timing::LVGL_HZ > 1000)
+    (Config::Timing::RETAINED_VIEW_HZ > 1000)
         ? 1
-        : ((1000 + Config::Timing::LVGL_HZ - 1) / Config::Timing::LVGL_HZ);
+        : ((1000 + Config::Timing::RETAINED_VIEW_HZ - 1) /
+           Config::Timing::RETAINED_VIEW_HZ);
 
 FLASHMEM ms::ui::MenuRowKind toMenuRowKind(core::state::project::ProjectMenuRowKind kind) {
     switch (kind) {

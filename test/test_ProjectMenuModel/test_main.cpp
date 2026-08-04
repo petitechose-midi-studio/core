@@ -273,29 +273,31 @@ void test_routing_rows_expose_all_track_output_channels() {
     std::cout << "[PASS] test_routing_rows_expose_all_track_output_channels\n";
 }
 
-void test_storage_project_identity_is_read_only_and_autosave_is_activable() {
+void test_storage_has_six_rows_and_read_only_project_identity() {
     core::state::project::ProjectNavigationState navigation;
 
     switchToStorage(navigation);
 
     navigation.focusedRow.set(5);
+    const uint8_t revisionBefore = navigation.contentRevision.get();
     assert(!core::state::project::enterFocusedProjectRow(navigation));
     auto page = core::state::project::buildProjectMenuPage(
         navigation,
         projectContext("p002", "p002", true, true)
     );
+    assert(page.rowCount == 6);
     assert(std::string(page.meta) == "STORAGE  p002*");
     assert(std::string(page.rows[5].label) == "Project");
     assert(page.rows[5].kind == core::state::project::ProjectMenuRowKind::Disabled);
     assert(std::string(rowValue(page.rows[5])) == "p002");
+    assert(navigation.contentRevision.get() == revisionBefore);
 
-    navigation.focusedRow.set(6);
-    assert(core::state::project::enterFocusedProjectRow(navigation));
-    assert(!navigation.autosaveEnabled);
-    page = core::state::project::buildProjectMenuPage(navigation);
-    assert(std::string(rowValue(page.rows[6])) == "Off");
+    core::state::project::navigateProjectRows(navigation, 1.0f);
+    assert(navigation.focusedRow.get() == 0);
+    core::state::project::navigateProjectRows(navigation, -1.0f);
+    assert(navigation.focusedRow.get() == 5);
 
-    std::cout << "[PASS] test_storage_project_identity_is_read_only_and_autosave_is_activable\n";
+    std::cout << "[PASS] test_storage_has_six_rows_and_read_only_project_identity\n";
 }
 
 void test_project_name_editor_exposes_qwerty_entry_state() {
@@ -734,7 +736,7 @@ int main() {
     test_music_root_scale_row_summarizes_key_and_folder_target();
     test_transport_rows_use_runtime_context();
     test_routing_rows_expose_all_track_output_channels();
-    test_storage_project_identity_is_read_only_and_autosave_is_activable();
+    test_storage_has_six_rows_and_read_only_project_identity();
     test_project_name_editor_exposes_qwerty_entry_state();
     test_load_project_picker_shows_detected_projects();
     test_load_project_confirmation_prompts_dirty_session_choice();

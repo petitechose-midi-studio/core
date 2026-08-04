@@ -16,6 +16,7 @@ struct DynamicMemorySnapshot {
     uint32_t psramAllocationFailures = 0U;
     bool trackerReady = false;
     bool trackerOverflow = false;
+    bool psramLargestBlockValid = false;
 };
 
 /** Starts the Teensy stack watermark before product initialization. */

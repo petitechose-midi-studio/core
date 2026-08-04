@@ -1,13 +1,14 @@
 #include "diagnostics/MemoryFootprintReporter.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <new>
 
 #include <config/PlatformCompat.hpp>
 
 #if OC_ENABLE_STATS
+#include "diagnostics/PsramSpanTracker.hpp"
+
 #include <lvgl.h>
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/log/Log.hpp>
@@ -35,36 +36,27 @@ namespace core::diagnostics {
 namespace {
 
 struct MemoryHighWater {
-    static constexpr size_t PSRAM_SPAN_CAPACITY = 256U;
-
-    struct PsramSpan {
-        uintptr_t begin = 0U;
-        uintptr_t end = 0U;
-        uint32_t userBytes = 0U;
-    };
-
     uint32_t minimumPsramFree = UINT32_MAX;
     uint32_t minimumPsramLargestBlock = UINT32_MAX;
     uint32_t maximumPsramUser = 0U;
     uint32_t maximumLvglUsed = 0U;
     uint8_t maximumLvglFragmentation = 0U;
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    std::array<PsramSpan, PSRAM_SPAN_CAPACITY> psramSpans{};
-    uint16_t psramSpanCount = 0U;
+    detail::PsramSpanTracker psramTracker{};
+    detail::PsramTrackerSnapshot psramPublished{};
     uint16_t psramFallbackLive = 0U;
     uint16_t psramFallbackPeak = 0U;
     uint32_t psramFallbackTotal = 0U;
     uint32_t psramAllocationFailures = 0U;
-    uint32_t psramPoolBytes = 0U;
-    uint32_t psramAllocatedBytes = 0U;
-    uint32_t psramUserBytes = 0U;
-    uint32_t psramLargestBlock = 0U;
-    bool psramTrackerReady = false;
-    bool psramTrackerOverflow = false;
     uintptr_t stackWatermarkLow = 0U;
     uintptr_t stackWatermarkHigh = 0U;
 #endif
 };
+
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+static_assert(sizeof(MemoryHighWater) <= 128U);
+EXTMEM detail::PsramSpanTable psramSpanTable;
+#endif
 
 alignas(MemoryHighWater)
 DMAMEM uint8_t memoryHighWaterStorage[sizeof(MemoryHighWater)];
@@ -98,14 +90,6 @@ uint32_t boundedU32(size_t value) {
     return static_cast<uint32_t>(std::min<size_t>(value, UINT32_MAX));
 }
 
-uint32_t allocatableBytes(uintptr_t begin, uintptr_t end) {
-    if (end <= begin) return 0U;
-    const size_t span = static_cast<size_t>(end - begin);
-    return span > PSRAM_ALLOCATION_OVERHEAD
-        ? boundedU32(span - PSRAM_ALLOCATION_OVERHEAD)
-        : 0U;
-}
-
 bool withinPsramPool(const void* ptr) {
     if (ptr == nullptr || extmem_smalloc_pool.pool == nullptr) return false;
     const uintptr_t begin =
@@ -117,7 +101,7 @@ bool withinPsramPool(const void* ptr) {
 
 bool psramAllocationSpan(
     const void* ptr,
-    MemoryHighWater::PsramSpan& out
+    detail::PsramSpan& out
 ) {
     if (ptr == nullptr || extmem_smalloc_pool.pool == nullptr) return false;
     const uintptr_t poolBegin =
@@ -133,98 +117,49 @@ bool psramAllocationSpan(
         begin + HEADER_SZ + header->rsz + HEADER_SZ;
     if (begin < poolBegin || end <= begin || end > poolEnd) return false;
     out = {
-        .begin = begin,
-        .end = end,
-        .userBytes = boundedU32(header->usz),
+        boundedU32(begin - poolBegin),
+        boundedU32(end - poolBegin),
+        boundedU32(header->usz),
     };
     return true;
 }
 
-void updatePsramDerived(MemoryHighWater& state) {
-    state.psramLargestBlock = 0U;
-    if (!state.psramTrackerReady || state.psramTrackerOverflow ||
-        extmem_smalloc_pool.pool == nullptr) {
-        return;
-    }
-
-    uintptr_t cursor = reinterpret_cast<uintptr_t>(
-        extmem_smalloc_pool.pool
-    );
-    const uintptr_t end = cursor + extmem_smalloc_pool.pool_size;
-    for (uint16_t index = 0U; index < state.psramSpanCount; ++index) {
-        const auto& span = state.psramSpans[index];
-        if (span.begin > cursor) {
-            state.psramLargestBlock = std::max(
-                state.psramLargestBlock,
-                allocatableBytes(cursor, span.begin)
-            );
-        }
-        cursor = std::max(cursor, span.end);
-    }
-    state.psramLargestBlock = std::max(
-        state.psramLargestBlock,
-        allocatableBytes(cursor, end)
-    );
-    const uint32_t freeBytes =
-        state.psramPoolBytes >= state.psramAllocatedBytes
-        ? state.psramPoolBytes - state.psramAllocatedBytes
+void updatePsramHighWater(
+    MemoryHighWater& state,
+    const detail::PsramTrackerSnapshot& snapshot
+) {
+    if (!snapshot.ready) return;
+    const uint32_t freeBytes = snapshot.poolBytes >= snapshot.allocatedBytes
+        ? snapshot.poolBytes - snapshot.allocatedBytes
         : 0U;
     state.minimumPsramFree = std::min(
         state.minimumPsramFree,
         freeBytes
     );
-    state.minimumPsramLargestBlock = std::min(
-        state.minimumPsramLargestBlock,
-        state.psramLargestBlock
-    );
+    if (snapshot.largestBlockValid) {
+        state.minimumPsramLargestBlock = std::min(
+            state.minimumPsramLargestBlock,
+            snapshot.largestBlock
+        );
+    }
     state.maximumPsramUser = std::max(
         state.maximumPsramUser,
-        state.psramUserBytes
+        snapshot.userBytes
     );
 }
 
-bool insertPsramSpan(
-    MemoryHighWater& state,
-    const MemoryHighWater::PsramSpan& span
-) {
-    if (state.psramSpanCount >= state.psramSpans.size()) return false;
-    uint16_t position = 0U;
-    while (position < state.psramSpanCount &&
-           state.psramSpans[position].begin < span.begin) {
-        ++position;
-    }
-    if (position < state.psramSpanCount &&
-        state.psramSpans[position].begin == span.begin) {
-        return false;
-    }
-    for (uint16_t index = state.psramSpanCount;
-         index > position;
-         --index) {
-        state.psramSpans[index] = state.psramSpans[index - 1U];
-    }
-    state.psramSpans[position] = span;
-    ++state.psramSpanCount;
-    return true;
-}
-
-bool removePsramSpan(
-    MemoryHighWater& state,
-    uintptr_t begin
-) {
-    uint16_t position = 0U;
-    while (position < state.psramSpanCount &&
-           state.psramSpans[position].begin != begin) {
-        ++position;
-    }
-    if (position >= state.psramSpanCount) return false;
-    for (uint16_t index = position + 1U;
-         index < state.psramSpanCount;
-         ++index) {
-        state.psramSpans[index - 1U] = state.psramSpans[index];
-    }
-    --state.psramSpanCount;
-    state.psramSpans[state.psramSpanCount] = {};
-    return true;
+void publishPsramTracker(MemoryHighWater& state) {
+    const auto snapshot = state.psramTracker.snapshot();
+    updatePsramHighWater(state, snapshot);
+    oc::realtime::InterruptGuard lock;
+    state.psramPublished.poolBytes = snapshot.poolBytes;
+    state.psramPublished.allocatedBytes = snapshot.allocatedBytes;
+    state.psramPublished.userBytes = snapshot.userBytes;
+    state.psramPublished.largestBlock = snapshot.largestBlock;
+    state.psramPublished.blockCount = snapshot.blockCount;
+    state.psramPublished.ready = snapshot.ready;
+    state.psramPublished.overflow = snapshot.overflow;
+    state.psramPublished.largestBlockValid = snapshot.largestBlockValid;
 }
 
 void bootstrapPsramTracker(MemoryHighWater& state) {
@@ -232,7 +167,10 @@ void bootstrapPsramTracker(MemoryHighWater& state) {
         extmem_smalloc_pool.pool_size <= PSRAM_ALLOCATION_OVERHEAD) {
         return;
     }
-    state.psramPoolBytes = boundedU32(extmem_smalloc_pool.pool_size);
+    state.psramTracker.reset(
+        boundedU32(extmem_smalloc_pool.pool_size),
+        boundedU32(PSRAM_ALLOCATION_OVERHEAD)
+    );
     auto* const base = static_cast<char*>(extmem_smalloc_pool.pool);
     auto* const end = base + extmem_smalloc_pool.pool_size;
     auto* cursor = reinterpret_cast<struct smalloc_hdr*>(base);
@@ -241,21 +179,17 @@ void bootstrapPsramTracker(MemoryHighWater& state) {
             ++cursor;
             continue;
         }
-        MemoryHighWater::PsramSpan span{};
+        detail::PsramSpan span{};
         if (!psramAllocationSpan(HEADER_TO_USER(cursor), span)) {
-            state.psramTrackerOverflow = true;
+            state.psramTracker.markOverflow();
             break;
         }
-        state.psramAllocatedBytes += boundedU32(span.end - span.begin);
-        state.psramUserBytes += span.userBytes;
-        if (!insertPsramSpan(state, span)) {
-            state.psramTrackerOverflow = true;
-            break;
-        }
-        cursor = reinterpret_cast<struct smalloc_hdr*>(span.end);
+        (void)state.psramTracker.insert(psramSpanTable, span);
+        cursor = reinterpret_cast<struct smalloc_hdr*>(
+            base + span.endOffset
+        );
     }
-    state.psramTrackerReady = true;
-    updatePsramDerived(state);
+    publishPsramTracker(state);
 }
 
 uintptr_t currentStackPointer() {
@@ -317,13 +251,14 @@ FLASHMEM void beginMemoryFootprintTracking() {
 void trackExtmemAllocation(void* ptr) {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     auto& state = highWater();
-    if (!state.psramTrackerReady || ptr == nullptr) return;
-    MemoryHighWater::PsramSpan span{};
+    if (!state.psramTracker.ready() || ptr == nullptr) return;
+    detail::PsramSpan span{};
     if (!psramAllocationSpan(ptr, span)) {
-        oc::realtime::InterruptGuard lock;
         if (withinPsramPool(ptr)) {
-            state.psramTrackerOverflow = true;
+            state.psramTracker.markOverflow();
+            publishPsramTracker(state);
         } else {
+            oc::realtime::InterruptGuard lock;
             ++state.psramFallbackLive;
             ++state.psramFallbackTotal;
             state.psramFallbackPeak = std::max(
@@ -334,13 +269,8 @@ void trackExtmemAllocation(void* ptr) {
         return;
     }
 
-    oc::realtime::InterruptGuard lock;
-    state.psramAllocatedBytes += boundedU32(span.end - span.begin);
-    state.psramUserBytes += span.userBytes;
-    if (!insertPsramSpan(state, span)) {
-        state.psramTrackerOverflow = true;
-    }
-    updatePsramDerived(state);
+    (void)state.psramTracker.insert(psramSpanTable, span);
+    publishPsramTracker(state);
 #else
     (void)ptr;
 #endif
@@ -349,32 +279,23 @@ void trackExtmemAllocation(void* ptr) {
 void trackExtmemFree(void* ptr) {
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     auto& state = highWater();
-    if (!state.psramTrackerReady || ptr == nullptr) return;
-    MemoryHighWater::PsramSpan span{};
+    if (!state.psramTracker.ready() || ptr == nullptr) return;
+    detail::PsramSpan span{};
     if (!psramAllocationSpan(ptr, span)) {
-        oc::realtime::InterruptGuard lock;
         if (withinPsramPool(ptr)) {
-            state.psramTrackerOverflow = true;
-        } else if (state.psramFallbackLive > 0U) {
-            --state.psramFallbackLive;
+            state.psramTracker.markOverflow();
+            publishPsramTracker(state);
+        } else {
+            oc::realtime::InterruptGuard lock;
+            if (state.psramFallbackLive > 0U) {
+                --state.psramFallbackLive;
+            }
         }
         return;
     }
 
-    oc::realtime::InterruptGuard lock;
-    const uint32_t allocationBytes = boundedU32(span.end - span.begin);
-    state.psramAllocatedBytes =
-        state.psramAllocatedBytes >= allocationBytes
-        ? state.psramAllocatedBytes - allocationBytes
-        : 0U;
-    state.psramUserBytes =
-        state.psramUserBytes >= span.userBytes
-        ? state.psramUserBytes - span.userBytes
-        : 0U;
-    if (!removePsramSpan(state, span.begin)) {
-        state.psramTrackerOverflow = true;
-    }
-    updatePsramDerived(state);
+    (void)state.psramTracker.remove(psramSpanTable, span);
+    publishPsramTracker(state);
 #else
     (void)ptr;
 #endif
@@ -394,17 +315,23 @@ FLASHMEM DynamicMemorySnapshot dynamicMemorySnapshot() {
     DynamicMemorySnapshot snapshot{};
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
     auto& state = highWater();
-    oc::realtime::InterruptGuard lock;
-    snapshot.psramAllocatedBytes = state.psramAllocatedBytes;
-    snapshot.psramUserBytes = state.psramUserBytes;
-    snapshot.psramFreeBytes = state.psramPoolBytes >= state.psramAllocatedBytes
-        ? state.psramPoolBytes - state.psramAllocatedBytes
+    uint32_t poolBytes = 0U;
+    {
+        oc::realtime::InterruptGuard lock;
+        poolBytes = state.psramPublished.poolBytes;
+        snapshot.psramAllocatedBytes = state.psramPublished.allocatedBytes;
+        snapshot.psramUserBytes = state.psramPublished.userBytes;
+        snapshot.psramLargestBlock = state.psramPublished.largestBlock;
+        snapshot.psramBlocks = state.psramPublished.blockCount;
+        snapshot.psramAllocationFailures = state.psramAllocationFailures;
+        snapshot.trackerReady = state.psramPublished.ready;
+        snapshot.trackerOverflow = state.psramPublished.overflow;
+        snapshot.psramLargestBlockValid =
+            state.psramPublished.largestBlockValid;
+    }
+    snapshot.psramFreeBytes = poolBytes >= snapshot.psramAllocatedBytes
+        ? poolBytes - snapshot.psramAllocatedBytes
         : 0U;
-    snapshot.psramLargestBlock = state.psramLargestBlock;
-    snapshot.psramBlocks = state.psramSpanCount;
-    snapshot.psramAllocationFailures = state.psramAllocationFailures;
-    snapshot.trackerReady = state.psramTrackerReady;
-    snapshot.trackerOverflow = state.psramTrackerOverflow;
 #endif
     return snapshot;
 }
@@ -416,10 +343,12 @@ FLASHMEM void recordDynamicMemorySample(const char* label) {
     uint32_t largestBlock = 0U;
     {
         oc::realtime::InterruptGuard lock;
-        freeBytes = state.psramPoolBytes >= state.psramAllocatedBytes
-            ? state.psramPoolBytes - state.psramAllocatedBytes
+        freeBytes = state.psramPublished.poolBytes >=
+                state.psramPublished.allocatedBytes
+            ? state.psramPublished.poolBytes -
+                state.psramPublished.allocatedBytes
             : 0U;
-        largestBlock = state.psramLargestBlock;
+        largestBlock = state.psramPublished.largestBlock;
     }
     OC_PERF_RECORD(label, 0U, freeBytes, largestBlock);
 #else
@@ -452,45 +381,39 @@ FLASHMEM void logMemoryFootprint(const char* phase) {
     );
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    uint32_t allocated = 0U;
-    uint32_t user = 0U;
-    uint32_t free = 0U;
-    uint32_t largest = 0U;
+    const auto memory = dynamicMemorySnapshot();
+    const uint32_t allocated = memory.psramAllocatedBytes;
+    const uint32_t user = memory.psramUserBytes;
+    const uint32_t free = memory.psramFreeBytes;
+    const uint32_t largest = memory.psramLargestBlock;
+    const uint32_t blocks = memory.psramBlocks;
     uint32_t peakUser = 0U;
     uint32_t lowFree = 0U;
     uint32_t lowLargest = 0U;
-    uint16_t blocks = 0U;
     uint16_t fallbackLive = 0U;
     uint16_t fallbackPeak = 0U;
     uint32_t fallbackTotal = 0U;
-    int trackerStatus = 0;
     {
         oc::realtime::InterruptGuard lock;
-        allocated = high.psramAllocatedBytes;
-        user = high.psramUserBytes;
-        free = high.psramPoolBytes >= allocated
-            ? high.psramPoolBytes - allocated
-            : 0U;
-        largest = high.psramLargestBlock;
-        blocks = high.psramSpanCount;
         peakUser = high.maximumPsramUser;
         lowFree = high.minimumPsramFree;
         lowLargest = high.minimumPsramLargestBlock;
         fallbackLive = high.psramFallbackLive;
         fallbackPeak = high.psramFallbackPeak;
         fallbackTotal = high.psramFallbackTotal;
-        trackerStatus = !high.psramTrackerReady
-            ? -1
-            : (high.psramTrackerOverflow ? -2 : 1);
     }
+    const int trackerStatus = !memory.trackerReady
+        ? -1
+        : (memory.trackerOverflow || !memory.psramLargestBlockValid ? -2 : 1);
     OC_LOG_INFO(
-        "[Perf][Memory][PSRAM] phase={} status={} allocated={}B user={}B free={}B largest={}B blocks={} peakUser={}B lowFree={}B lowLargest={}B fallback(live/peak/total)={}/{}/{}",
+        "[Perf][Memory][PSRAM] phase={} status={} allocated={}B user={}B free={}B largest={}B largestValid={} blocks={} peakUser={}B lowFree={}B lowLargest={}B fallback(live/peak/total)={}/{}/{}",
         phase ? phase : "unknown",
         trackerStatus,
         allocated,
         user,
         free,
         largest,
+        memory.psramLargestBlockValid ? 1U : 0U,
         blocks,
         peakUser,
         lowFree,

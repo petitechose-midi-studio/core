@@ -3,14 +3,8 @@
 #include <cstdio>
 
 #include <config/PlatformCompat.hpp>
-#include <new>
 #include <oc/log/Log.hpp>
 #include <oc/time/Time.hpp>
-#include <utility>
-
-#if OC_ENABLE_STATS
-#include "diagnostics/MemoryFootprintReporter.hpp"
-#endif
 
 #include "diagnostics/StorageQualificationProbe.hpp"
 #include "macro/MacroWorkflow.hpp"
@@ -53,21 +47,6 @@ FLASHMEM void recordProjectSaveToken(
 [[noreturn]] FLASHMEM void failCoreStateAllocation(const char* label) {
     OC_LOG_ERROR("[CoreState] Failed to allocate {}", label);
     while (true) {}
-}
-
-FLASHMEM SequencerDomainState::PendingApply* createPendingApply() {
-#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    void* memory = core::app::allocateExtmemStrict(
-        sizeof(SequencerDomainState::PendingApply)
-    );
-    if (!memory) return nullptr;
-#if OC_ENABLE_STATS
-    core::diagnostics::trackExtmemAllocation(memory);
-#endif
-    return new (memory) SequencerDomainState::PendingApply();
-#else
-    return new SequencerDomainState::PendingApply();
-#endif
 }
 
 FLASHMEM core::app::ExtmemUniquePtr<UiSystemState> createUiSystemState() {
@@ -143,26 +122,11 @@ FLASHMEM MacroDomainState::~MacroDomainState() = default;
 
 FLASHMEM SequencerDomainState::SequencerDomainState()
     : editor(createSequencerEditorState()), tracks(createSequencerTrackBankState()),
-      history(core::app::makeExtmemUnique<sequencer::SequencerHistoryService>()),
-      pendingApply(nullptr) {
+      history(core::app::makeExtmemUnique<sequencer::SequencerHistoryService>()) {
     if (!history) failCoreStateAllocation("sequencer history service");
 }
 
 FLASHMEM SequencerDomainState::~SequencerDomainState() = default;
-
-FLASHMEM void SequencerDomainState::PendingApplyDeleter::operator()(
-    PendingApply* ptr) const noexcept {
-    if (!ptr) return;
-#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    ptr->~PendingApply();
-#if OC_ENABLE_STATS
-    core::diagnostics::trackExtmemFree(ptr);
-#endif
-    core::app::freeExtmemStrict(ptr);
-#else
-    delete ptr;
-#endif
-}
 
 FLASHMEM CoreState::CoreState(oc::interface::IStorage& deviceSettingsStorage)
     : macroDomain_(), sequencerDomain_(), projectTracks_(createProjectTrackState()),
@@ -194,10 +158,6 @@ FLASHMEM CoreState::CoreState(oc::interface::IStorage& deviceSettingsStorage)
     sequencerHistory.setProjectHistoryEventSink(&projectHistory.eventSink());
     projectTrackHistory.setProjectHistoryEventSink(&projectHistory.eventSink());
     projectSettingsHistory.setProjectHistoryEventSink(&projectHistory.eventSink());
-    sequencerDomain_.pendingApply.reset(createPendingApply());
-    if (!sequencerDomain_.pendingApply) {
-        failCoreStateAllocation("sequencer pending apply buffer");
-    }
     CoreStateBootstrap::initialize(*this);
 }
 

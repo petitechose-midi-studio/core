@@ -6,10 +6,16 @@
 
 namespace core::state::project {
 
+namespace {
+
+constexpr uint8_t PATTERNS_INHERIT_SCALE = 0x01U;
+constexpr uint8_t CLIPS_INHERIT_SCALE = 0x02U;
+
+}  // namespace
+
 FLASHMEM ProjectSettingsHistorySnapshot captureProjectSettingsHistorySnapshot(
     const StatusBarState& statusBar,
-    const ProjectNavigationState& navigation,
-    const MidiSyncState& midiSync
+    const ProjectNavigationState& navigation
 ) {
     ProjectSettingsHistorySnapshot out{};
     out.tempoBpm = sanitizeProjectTempoBpm(statusBar.tempo.get());
@@ -22,14 +28,13 @@ FLASHMEM ProjectSettingsHistorySnapshot captureProjectSettingsHistorySnapshot(
             lane
         );
     }
-    out.syncMode = midiSync.mode.get();
     out.swingPercent = sanitizeProjectSwingPercent(
         navigation.transportSwingPercent
     );
     out.runMode = sanitizeProjectRunMode(navigation.transportRunMode);
-    out.patternsInheritScale = navigation.patternsInheritScale;
-    out.clipsInheritScale = navigation.clipsInheritScale;
-    out.autosaveEnabled = navigation.autosaveEnabled;
+    out.scaleInheritanceFlags =
+        (navigation.patternsInheritScale ? PATTERNS_INHERIT_SCALE : 0U) |
+        (navigation.clipsInheritScale ? CLIPS_INHERIT_SCALE : 0U);
     return out;
 }
 
@@ -40,24 +45,19 @@ FLASHMEM bool sameProjectSettingsHistorySnapshot(
     return lhs.tempoBpm == rhs.tempoBpm &&
            lhs.stepPasteMode == rhs.stepPasteMode &&
            lhs.ccLaneDefaultControllers == rhs.ccLaneDefaultControllers &&
-           lhs.syncMode == rhs.syncMode &&
            lhs.swingPercent == rhs.swingPercent &&
            lhs.runMode == rhs.runMode &&
-           lhs.patternsInheritScale == rhs.patternsInheritScale &&
-           lhs.clipsInheritScale == rhs.clipsInheritScale &&
-           lhs.autosaveEnabled == rhs.autosaveEnabled;
+           lhs.scaleInheritanceFlags == rhs.scaleInheritanceFlags;
 }
 
 FLASHMEM bool applyProjectSettingsHistorySnapshot(
     StatusBarState& statusBar,
     ProjectNavigationState& navigation,
-    MidiSyncState& midiSync,
     const ProjectSettingsHistorySnapshot& snapshot
 ) {
     const auto before = captureProjectSettingsHistorySnapshot(
         statusBar,
-        navigation,
-        midiSync
+        navigation
     );
     const float tempo = sanitizeProjectTempoBpm(snapshot.tempoBpm);
     statusBar.tempo.set(tempo);
@@ -71,18 +71,18 @@ FLASHMEM bool applyProjectSettingsHistorySnapshot(
             lane
         );
     }
-    midiSync.mode.set(snapshot.syncMode);
     navigation.transportSwingPercent = sanitizeProjectSwingPercent(
         snapshot.swingPercent
     );
     navigation.transportRunMode = sanitizeProjectRunMode(snapshot.runMode);
-    navigation.patternsInheritScale = snapshot.patternsInheritScale;
-    navigation.clipsInheritScale = snapshot.clipsInheritScale;
-    navigation.autosaveEnabled = snapshot.autosaveEnabled;
+    navigation.patternsInheritScale =
+        (snapshot.scaleInheritanceFlags & PATTERNS_INHERIT_SCALE) != 0U;
+    navigation.clipsInheritScale =
+        (snapshot.scaleInheritanceFlags & CLIPS_INHERIT_SCALE) != 0U;
     navigation.notifyContentChanged();
     return !sameProjectSettingsHistorySnapshot(
         before,
-        captureProjectSettingsHistorySnapshot(statusBar, navigation, midiSync)
+        captureProjectSettingsHistorySnapshot(statusBar, navigation)
     );
 }
 
@@ -137,8 +137,7 @@ FLASHMEM bool ProjectSettingsHistoryService::record(
 
 FLASHMEM bool ProjectSettingsHistoryService::undo(
     StatusBarState& statusBar,
-    ProjectNavigationState& navigation,
-    MidiSyncState& midiSync
+    ProjectNavigationState& navigation
 ) {
     endCoalescing();
     if (undo_count_ == 0U || redo_count_ >= ENTRY_LIMIT) return false;
@@ -146,13 +145,12 @@ FLASHMEM bool ProjectSettingsHistoryService::undo(
     if (slot >= ENTRY_LIMIT || !entries_[slot].occupied) return false;
     auto& entry = entries_[slot];
     if (!sameProjectSettingsHistorySnapshot(
-            captureProjectSettingsHistorySnapshot(statusBar, navigation, midiSync),
+            captureProjectSettingsHistorySnapshot(statusBar, navigation),
             entry.after
         ) ||
         !applyProjectSettingsHistorySnapshot(
             statusBar,
             navigation,
-            midiSync,
             entry.before
         )) {
         return false;
@@ -172,8 +170,7 @@ FLASHMEM bool ProjectSettingsHistoryService::undo(
 
 FLASHMEM bool ProjectSettingsHistoryService::redo(
     StatusBarState& statusBar,
-    ProjectNavigationState& navigation,
-    MidiSyncState& midiSync
+    ProjectNavigationState& navigation
 ) {
     endCoalescing();
     if (redo_count_ == 0U || undo_count_ >= ENTRY_LIMIT) return false;
@@ -181,13 +178,12 @@ FLASHMEM bool ProjectSettingsHistoryService::redo(
     if (slot >= ENTRY_LIMIT || !entries_[slot].occupied) return false;
     auto& entry = entries_[slot];
     if (!sameProjectSettingsHistorySnapshot(
-            captureProjectSettingsHistorySnapshot(statusBar, navigation, midiSync),
+            captureProjectSettingsHistorySnapshot(statusBar, navigation),
             entry.before
         ) ||
         !applyProjectSettingsHistorySnapshot(
             statusBar,
             navigation,
-            midiSync,
             entry.after
         )) {
         return false;

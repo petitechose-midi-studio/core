@@ -28,16 +28,25 @@ FLASHMEM bool acceptProjectScaleResult(
     return false;
 }
 
+FLASHMEM bool acceptMidiSyncResult(
+    core::state::project::ProjectNavigationState& navigation,
+    const DeviceSettingsDomainServices::ApplyResult& result
+) {
+    if (result.success()) return true;
+    navigation.setLifecycleFeedback("Sync save failed - unchanged");
+    return false;
+}
+
 }  // namespace
 
 FLASHMEM bool ProjectHandler::recordProjectSettingsChange(
     const core::state::project::ProjectSettingsHistorySnapshot& before,
     core::state::project::ProjectSettingsHistoryActionKind kind, uint8_t subject, bool coalesce) {
     const auto after = core::state::project::captureProjectSettingsHistorySnapshot(
-        status_bar_, navigation_, midi_sync_);
+        status_bar_, navigation_);
     if (!settings_history_.record(before, after, kind, subject, coalesce)) {
         (void)core::state::project::applyProjectSettingsHistorySnapshot(status_bar_, navigation_,
-                                                                        midi_sync_, before);
+                                                                        before);
         return false;
     }
     if (coalesce) {
@@ -58,8 +67,8 @@ FLASHMEM void ProjectHandler::endProjectSettingsGesture() {
 FLASHMEM bool ProjectHandler::applyFocusedProjectStep(int steps) {
     if (steps == 0) return false;
     const bool applied = applyFocusedMusicRootStep(steps) || applyFocusedMusicScaleStep(steps) ||
-                         applyFocusedTransportStep(steps) || applyFocusedStorageStep(steps) ||
-                         applyFocusedRoutingStep(steps) || applyFocusedNameEditorStep(steps);
+                         applyFocusedTransportStep(steps) || applyFocusedRoutingStep(steps) ||
+                         applyFocusedNameEditorStep(steps);
     if (applied) { navigation_.clearLifecycleFeedback(); }
     return applied;
 }
@@ -73,7 +82,7 @@ FLASHMEM bool ProjectHandler::applyFocusedMusicRootStep(int steps) {
 
     const uint8_t row = navigation_.focusedRow.get();
     const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-        status_bar_, navigation_, midi_sync_);
+        status_bar_, navigation_);
     auto kind = core::state::project::ProjectSettingsHistoryActionKind::StepPasteMode;
     uint8_t subject = 0U;
     if (row == 3U) {
@@ -105,7 +114,7 @@ FLASHMEM bool ProjectHandler::applyFocusedMusicScaleStep(int steps) {
     const uint8_t row = navigation_.focusedRow.get();
     if (row == 3U || row == 4U) {
         const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-            status_bar_, navigation_, midi_sync_);
+            status_bar_, navigation_);
         if (row == 3U) {
             navigation_.patternsInheritScale = !navigation_.patternsInheritScale;
         } else {
@@ -146,7 +155,7 @@ FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
     switch (row) {
         case 0: {
             const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
+                status_bar_, navigation_);
             const int current = project::roundedProjectTempoBpm(status_bar_.tempo.get());
             const int next =
                 clampInt(current + steps, static_cast<int>(project::PROJECT_TEMPO_MIN_BPM),
@@ -160,7 +169,7 @@ FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
         }
         case 1: {
             const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
+                status_bar_, navigation_);
             const int current = navigation_.transportSwingPercent;
             const int next = clampInt(current + steps, 0, project::PROJECT_SWING_MAX_PERCENT);
             if (next == current) return true;
@@ -170,19 +179,17 @@ FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
                 before, core::state::project::ProjectSettingsHistoryActionKind::Swing, 0U, false);
         }
         case 2: {
-            const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
-            const int current = midiSyncModeIndex(midi_sync_.mode.get());
+            const int current = device_settings_.currentChoiceIndex(0U);
             const int next = wrapIndex(current + steps, 3);
             if (next == current) return true;
-            midi_sync_.mode.set(midiSyncModeAt(next));
-            return recordProjectSettingsChange(
-                before, core::state::project::ProjectSettingsHistoryActionKind::SyncMode, 0U,
-                false);
+            return acceptMidiSyncResult(
+                navigation_,
+                device_settings_.applyMidiSyncMode(midiSyncModeAt(next))
+            );
         }
         case 3: {
             const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
+                status_bar_, navigation_);
             const int current = navigation_.transportRunMode;
             const int next = wrapIndex(current + steps, project::PROJECT_RUN_MODE_COUNT);
             if (next == current) return true;
@@ -190,28 +197,6 @@ FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
             navigation_.notifyContentChanged();
             return recordProjectSettingsChange(
                 before, core::state::project::ProjectSettingsHistoryActionKind::RunMode, 0U, false);
-        }
-        default: return false;
-    }
-}
-
-FLASHMEM bool ProjectHandler::applyFocusedStorageStep(int steps) {
-    if (navigation_.currentNode.get() != core::state::project::ProjectNodeId::STORAGE_ROOT) {
-        return false;
-    }
-
-    if (steps == 0) return false;
-
-    const uint8_t row = navigation_.focusedRow.get();
-    switch (row) {
-        case 6: {
-            const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
-            navigation_.autosaveEnabled = !navigation_.autosaveEnabled;
-            navigation_.notifyContentChanged();
-            return recordProjectSettingsChange(
-                before, core::state::project::ProjectSettingsHistoryActionKind::Autosave, 0U,
-                false);
         }
         default: return false;
     }
@@ -248,8 +233,8 @@ FLASHMEM bool ProjectHandler::applyFocusedRoutingStep(int steps) {
 
 FLASHMEM bool ProjectHandler::setFocusedProjectValue(float normalized) {
     return setFocusedMusicRootValue(normalized) || setFocusedMusicScaleValue(normalized) ||
-           setFocusedTransportValue(normalized) || setFocusedStorageValue(normalized) ||
-           setFocusedRoutingValue(normalized) || setFocusedModulatorValue(normalized) ||
+           setFocusedTransportValue(normalized) || setFocusedRoutingValue(normalized) ||
+           setFocusedModulatorValue(normalized) ||
            setFocusedNameEditorValue(normalized);
 }
 
@@ -286,7 +271,7 @@ FLASHMEM bool ProjectHandler::setFocusedMusicRootValue(float normalized) {
 
     const uint8_t row = navigation_.focusedRow.get();
     const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-        status_bar_, navigation_, midi_sync_);
+        status_bar_, navigation_);
     auto kind = core::state::project::ProjectSettingsHistoryActionKind::StepPasteMode;
     uint8_t subject = 0U;
     if (row == 3U) {
@@ -342,7 +327,7 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
     switch (row) {
         case 0: {
             const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
+                status_bar_, navigation_);
             const int current = project::roundedProjectTempoBpm(status_bar_.tempo.get());
             const int next = tempoFromNormalized(normalized);
             if (next == current) return true;
@@ -354,7 +339,7 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
         }
         case 1: {
             const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
+                status_bar_, navigation_);
             const int current = navigation_.transportSwingPercent;
             const int next = normalizedToIndex(normalized, project::PROJECT_SWING_STEPS);
             if (next == current) return true;
@@ -364,18 +349,17 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
                 before, core::state::project::ProjectSettingsHistoryActionKind::Swing, 0U, true);
         }
         case 2: {
-            const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
-            const int current = midiSyncModeIndex(midi_sync_.mode.get());
+            const int current = device_settings_.currentChoiceIndex(0U);
             const int next = normalizedToIndex(normalized, 3);
             if (next == current) return true;
-            midi_sync_.mode.set(midiSyncModeAt(next));
-            return recordProjectSettingsChange(
-                before, core::state::project::ProjectSettingsHistoryActionKind::SyncMode, 0U, true);
+            return acceptMidiSyncResult(
+                navigation_,
+                device_settings_.applyMidiSyncMode(midiSyncModeAt(next))
+            );
         }
         case 3: {
             const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
+                status_bar_, navigation_);
             const int current = navigation_.transportRunMode;
             const int next = normalizedToIndex(normalized, project::PROJECT_RUN_MODE_COUNT);
             if (next == current) return true;
@@ -383,27 +367,6 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
             navigation_.notifyContentChanged();
             return recordProjectSettingsChange(
                 before, core::state::project::ProjectSettingsHistoryActionKind::RunMode, 0U, true);
-        }
-        default: return false;
-    }
-}
-
-FLASHMEM bool ProjectHandler::setFocusedStorageValue(float normalized) {
-    if (navigation_.currentNode.get() != core::state::project::ProjectNodeId::STORAGE_ROOT) {
-        return false;
-    }
-
-    const uint8_t row = navigation_.focusedRow.get();
-    switch (row) {
-        case 6: {
-            const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
-            const bool next = normalized >= 0.5f;
-            if (next == navigation_.autosaveEnabled) return true;
-            navigation_.autosaveEnabled = next;
-            navigation_.notifyContentChanged();
-            return recordProjectSettingsChange(
-                before, core::state::project::ProjectSettingsHistoryActionKind::Autosave, 0U, true);
         }
         default: return false;
     }

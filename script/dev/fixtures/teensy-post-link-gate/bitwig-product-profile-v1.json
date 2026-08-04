@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "profile": {
+    "id": "midi-studio-bitwig-teensy41",
+    "version": "1.0.0",
+    "activeMemoryVector": "R11-initial",
+    "futureMemoryVector": "post-R15-final",
+    "publicationEnabled": false
+  },
+  "toolchain": {
+    "platformioCore": "6.1.18",
+    "platform": "platformio/teensy@5.2.0",
+    "platformPackages": {
+      "platformio/framework-arduinoteensy": "1.162.0",
+      "platformio/tool-teensy": "1.162.0",
+      "platformio/toolchain-gccarmnoneeabi-teensy": "1.150201.0"
+    },
+    "compiler": {
+      "name": "arm-none-eabi-g++",
+      "version": "15.2.1",
+      "build": "20251203"
+    },
+    "linker": {
+      "name": "GNU ld",
+      "version": "2.45.1.20251203"
+    }
+  },
+  "build": {
+    "framework": "arduino",
+    "board": "teensy41",
+    "cpuHz": 450000000,
+    "cppStandard": "gnu++17",
+    "capacityFlags": {
+      "OC_COBS_MAX_FRAME_SIZE": 4096,
+      "OC_MAX_PENDING_NOTIFICATIONS": 64,
+      "OC_MAX_BUTTONS": 64,
+      "OC_MAX_BUTTON_BINDINGS": 64,
+      "OC_MAX_ENCODER_BINDINGS": 32
+    }
+  },
+  "linker": {
+    "path": "script/pio/imxrt1062_t41_bitwig.ld",
+    "sha256": "8c9bf8038117ca9da4170045c05b551e55cbe3f61fa05a9a4187fbe0a64f6f35",
+    "upstream": "Teensyduino 1.62 imxrt1062_t41.ld",
+    "upstreamSha256": "a6acb453f3a7bae1c7bc39dfa0f62a7427b64f466f17dee0636e830b439495a7",
+    "itcmBankBytes": 32768,
+    "itcmBanksExact": 9,
+    "physicalExtent": "_stext through end(.ARM.exidx), including .fini"
+  },
+  "placementPolicy": {
+    "flash": "boot, FLASHMEM, .flashmem and .progmem code/data",
+    "itcm": "ordinary code and explicit .fastrun only",
+    "ram1": "stack and compact hot scalar/static state only; no bulk payload",
+    "ram2": "DMA-qualified buffers and bounded deterministic OCRAM owners",
+    "psram": "large static pools and non-deadline-critical bulk state",
+    "runtimeAllocation": "no new runtime allocation is introduced by this build-profile lot"
+  },
+  "memoryVectors": {
+    "R11-initial": {
+      "state": "active-transitional-no-regression",
+      "itcmBanksExact": 9,
+      "flash": {
+        "codeMaxBytes": 331536,
+        "dataMaxBytes": 141868,
+        "headersMaxBytes": 8900
+      },
+      "ram1": {
+        "variablesMaxBytes": 33312,
+        "itcmMaxBytes": 273752,
+        "itcmSlackMinBytes": 21160,
+        "localAndStackFreeMinBytes": 196064
+      },
+      "ram2": {
+        "variablesMaxBytes": 171168,
+        "freeMinBytes": 353120
+      },
+      "psram": {
+        "capacityBytes": 8388608,
+        "staticMaxBytes": 4300512,
+        "staticFreeMinBytes": 4088096
+      },
+      "lvglPoolExactBytes": 4096000
+    },
+    "post-R15-final": {
+      "state": "future-hard-ceiling",
+      "itcmBanksExact": 9,
+      "flash": {
+        "codeMaxBytes": 330120,
+        "dataMaxBytes": 140844,
+        "headersMaxBytes": 8264
+      },
+      "ram1": {
+        "variablesMaxBytes": 32288,
+        "itcmMaxBytes": 272600,
+        "itcmSlackMinBytes": 22312,
+        "localAndStackFreeMinBytes": 197088
+      },
+      "ram2": {
+        "variablesExactBytes": 171168,
+        "freeExactBytes": 353120
+      },
+      "psram": {
+        "capacityBytes": 8388608,
+        "staticMaxBytes": 4282368,
+        "staticFreeMinBytes": 4106240
+      },
+      "lvglPoolExactBytes": 4096000
+    }
+  },
+  "runtimeQualification": {
+    "ram1StackHighWaterMaxBytes": 32768,
+    "ram1ReserveAfterHighWaterMinBytes": 65536,
+    "requiredBeforePublication": true
+  },
+  "provenance": {
+    "requiredFields": [
+      "profile.id",
+      "profile.version",
+      "profile.sha256",
+      "environment.name",
+      "producer.repository",
+      "producer.commit",
+      "producer.tree",
+      "sourceSet.sha256",
+      "inputs.core.commit",
+      "inputs.ui.commit",
+      "inputs.openControl.commits",
+      "inputs.msDevEnv.commit",
+      "platformio.coreVersion",
+      "platform.name",
+      "platform.version",
+      "platform.manifestSha256",
+      "framework.name",
+      "framework.version",
+      "framework.manifestSha256",
+      "toolchain.name",
+      "toolchain.version",
+      "toolchain.manifestSha256",
+      "compiler.version",
+      "linker.path",
+      "linker.sha256",
+      "build.board",
+      "build.cpuHz",
+      "build.cppStandard",
+      "build.flags",
+      "memory.vector",
+      "memory.summary",
+      "artifacts.elf.sha256",
+      "artifacts.map.sha256",
+      "artifacts.hex.sha256"
+    ]
+  },
+  "workflow": {
+    "profileInventoryTargetMaxSeconds": 30,
+    "candidateMode": "read-only-staging",
+    "stagingArtifact": "midi-studio-bitwig-firmware",
+    "publicationGuard": "disabled-until-L-R11-03-and-archived-G-P1"
+  }
+}

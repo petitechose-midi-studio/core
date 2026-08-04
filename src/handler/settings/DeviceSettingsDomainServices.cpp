@@ -13,6 +13,8 @@ namespace core::handler {
 namespace {
 
 namespace policy = core::state::midi_sync_policy;
+using ApplyResult = DeviceSettingsDomainServices::ApplyResult;
+using ApplyStatus = DeviceSettingsDomainServices::ApplyStatus;
 
 template <typename T, size_t N>
 int findChoiceIndex(
@@ -24,6 +26,17 @@ int findChoiceIndex(
         if (choices[i] == value) return static_cast<int>(i);
     }
     return std::clamp(fallback, 0, static_cast<int>(N) - 1);
+}
+
+FLASHMEM ApplyResult applyResult(
+    ApplyStatus status,
+    core::persistence::PersistenceWriteStatus persistenceStatus =
+        core::persistence::PersistenceWriteStatus::OK
+) {
+    return ApplyResult{
+        .status = status,
+        .persistenceStatus = persistenceStatus,
+    };
 }
 
 }  // namespace
@@ -85,7 +98,21 @@ FLASHMEM int DeviceSettingsDomainServices::choiceCount(uint8_t row) const {
     }
 }
 
-FLASHMEM void DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceIndex) const {
+FLASHMEM DeviceSettingsDomainServices::ApplyResult
+DeviceSettingsDomainServices::applyMidiSyncMode(
+    core::state::MidiSyncMode mode
+) const {
+    if (!policy::validMode(mode)) {
+        return applyResult(
+            ApplyStatus::INVALID_SELECTION,
+            core::persistence::PersistenceWriteStatus::INVALID_CONFIG
+        );
+    }
+    return applyChoice(0U, findChoiceIndex(mode, policy::MODES, 0));
+}
+
+FLASHMEM DeviceSettingsDomainServices::ApplyResult
+DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceIndex) const {
     auto status = core::persistence::PersistenceWriteStatus::OK;
     int appliedIndex = 0;
 
@@ -96,6 +123,9 @@ FLASHMEM void DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceI
                 0,
                 static_cast<int>(policy::MODES.size()) - 1
             );
+            if (midi_sync_->mode.get() == policy::MODES[appliedIndex]) {
+                return applyResult(ApplyStatus::NO_CHANGE);
+            }
             status = store_->saveMidiSyncModeStatus(
                 policy::MODES[appliedIndex]
             );
@@ -107,6 +137,10 @@ FLASHMEM void DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceI
                 0,
                 static_cast<int>(policy::FOLLOW_TRANSPORT.size()) - 1
             );
+            if (midi_sync_->followTransport.get() ==
+                policy::FOLLOW_TRANSPORT[appliedIndex]) {
+                return applyResult(ApplyStatus::NO_CHANGE);
+            }
             status = store_->saveMidiFollowTransportStatus(
                 policy::FOLLOW_TRANSPORT[appliedIndex]
             );
@@ -118,6 +152,10 @@ FLASHMEM void DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceI
                 0,
                 static_cast<int>(policy::AUTO_FALLBACK_MS.size()) - 1
             );
+            if (midi_sync_->autoFallbackMs.get() ==
+                policy::AUTO_FALLBACK_MS[appliedIndex]) {
+                return applyResult(ApplyStatus::NO_CHANGE);
+            }
             status = store_->saveMidiAutoFallbackMsStatus(
                 policy::AUTO_FALLBACK_MS[appliedIndex]
             );
@@ -129,20 +167,27 @@ FLASHMEM void DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceI
                 0,
                 static_cast<int>(policy::AUTO_LOCK_CLOCKS.size()) - 1
             );
+            if (midi_sync_->autoLockClockCount.get() ==
+                policy::AUTO_LOCK_CLOCKS[appliedIndex]) {
+                return applyResult(ApplyStatus::NO_CHANGE);
+            }
             status = store_->saveMidiAutoLockClockCountStatus(
                 policy::AUTO_LOCK_CLOCKS[appliedIndex]
             );
             break;
         }
         default:
-            return;
+            return applyResult(
+                ApplyStatus::INVALID_SELECTION,
+                core::persistence::PersistenceWriteStatus::INVALID_CONFIG
+            );
     }
 
     if (status != core::persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[DeviceSettings] Failed to stage settings row {}: {}",
                     row,
                     core::persistence::persistenceWriteStatusLabel(status));
-        return;
+        return applyResult(ApplyStatus::PERSISTENCE_FAILED, status);
     }
 
     const auto commitStatus = store_->commitStatus();
@@ -150,7 +195,7 @@ FLASHMEM void DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceI
         OC_LOG_WARN("[DeviceSettings] Failed to commit settings row {}: {}",
                     row,
                     core::persistence::persistenceWriteStatusLabel(commitStatus));
-        return;
+        return applyResult(ApplyStatus::PERSISTENCE_FAILED, commitStatus);
     }
 
     switch (row) {
@@ -175,6 +220,7 @@ FLASHMEM void DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceI
         default:
             break;
     }
+    return applyResult(ApplyStatus::APPLIED);
 }
 
 }  // namespace core::handler

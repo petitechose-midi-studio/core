@@ -27,6 +27,8 @@ public:
     // lives in PSRAM. A domain eviction may still establish an intentional
     // boundary: actions older than an unavailable payload become unreachable.
     static constexpr uint8_t ENTRY_LIMIT = 68;
+    static constexpr uint32_t RETAINED_BYTE_BUDGET = 2U * 1024U * 1024U;
+    static constexpr uint16_t RETAINED_SPAN_BUDGET = 655U;
 
     struct Entry {
         uintptr_t identity = 0;
@@ -58,6 +60,11 @@ public:
     }
     [[nodiscard]] const Entry* peekUndo() const;
     [[nodiscard]] const Entry* peekRedo() const;
+    [[nodiscard]] ProjectHistoryRetainedUsage retainedUsage(
+        ProjectHistoryDomain domain
+    ) const;
+    [[nodiscard]] uint32_t retainedBytes() const;
+    [[nodiscard]] uint16_t retainedSpans() const;
 
     void clear();
 
@@ -86,6 +93,16 @@ private:
         uintptr_t identity,
         ProjectHistoryDirection direction
     );
+    static bool onCanRetain(
+        void* context,
+        ProjectHistoryDomain domain,
+        ProjectHistoryRetainedUsage projected
+    );
+    static void onRetained(
+        void* context,
+        ProjectHistoryDomain domain,
+        ProjectHistoryRetainedUsage retained
+    );
 
     void commitEntry(
         ProjectHistoryDomain domain,
@@ -100,6 +117,14 @@ private:
         ProjectHistoryDirection direction
     );
     void bumpRevision();
+    [[nodiscard]] bool canRetain(
+        ProjectHistoryDomain domain,
+        ProjectHistoryRetainedUsage projected
+    ) const;
+    void setRetainedUsage(
+        ProjectHistoryDomain domain,
+        ProjectHistoryRetainedUsage retained
+    );
 
     bool eraseIdentity(
         ProjectHistoryDomain domain,
@@ -113,6 +138,7 @@ private:
 
     ProjectHistoryEventSink sink_{};
     std::array<Entry, ENTRY_LIMIT> timeline_{};
+    std::array<ProjectHistoryRetainedUsage, 4U> retained_usage_{};
     uint8_t count_ = 0;
     uint8_t cursor_ = 0;
     void* branch_context_ = nullptr;

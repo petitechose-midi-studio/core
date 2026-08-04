@@ -27,9 +27,10 @@ namespace Display {
 constexpr uint8_t VSYNC_SPACING = 1;
 constexpr uint32_t SPI_SPEED = 50'000'000;
 
-static_assert(Config::Timing::LVGL_HZ > 0, "LVGL_HZ must be > 0");
-static_assert((Config::Timing::LVGL_HZ % VSYNC_SPACING) == 0,
-              "LVGL_HZ must be divisible by VSYNC_SPACING");
+static_assert(Config::Timing::PHYSICAL_DISPLAY_REQUEST_HZ > 0,
+              "PHYSICAL_DISPLAY_REQUEST_HZ must be > 0");
+static_assert((Config::Timing::PHYSICAL_DISPLAY_REQUEST_HZ % VSYNC_SPACING) == 0,
+              "PHYSICAL_DISPLAY_REQUEST_HZ must be divisible by VSYNC_SPACING");
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Teensy-specific configuration (only when building for Teensy)
@@ -53,7 +54,7 @@ constexpr oc::hal::teensy::Ili9341Config CONFIG = {
     .diffGap = 4,
     .irqPriority = 128,
     .lateStartRatio = 0.2f,
-    .refreshRate = Config::Timing::LVGL_HZ
+    .refreshRate = Config::Timing::PHYSICAL_DISPLAY_REQUEST_HZ
 };
 
 constexpr size_t BUFFER_SIZE = CONFIG.framebufferSize();  // 320*240 = 76800
@@ -74,7 +75,7 @@ constexpr oc::ui::lvgl::BridgeConfig CONFIG = {
     // full-frame buffers for the ILI9341 diff transfer path.
     .renderMode = LV_DISPLAY_RENDER_MODE_DIRECT,
     .buffer2 = nullptr,
-    .refreshHz = Config::Timing::LVGL_HZ
+    .refreshHz = Config::Timing::LVGL_SERVICE_HZ
 };
 }  // namespace LVGL
 #endif // !OC_DESKTOP

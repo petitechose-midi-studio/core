@@ -14,7 +14,8 @@ def main() -> int:
 1610855692 1040 T core::state::diagnostics::configureDebugLabels(core::state::CoreState&)
 1611042776 496 T oc::state::NotificationQueue::reportOverflow_(std::pair<void*, unsigned int>, char const*) const
 539198464 6688 b core::diagnostics::(anonymous namespace)::reporterStorage
-539205152 10264 b core::diagnostics::(anonymous namespace)::memoryHighWaterStorage
+539205152 128 b core::diagnostics::(anonymous namespace)::memoryHighWaterStorage
+1879048192 12408 b core::diagnostics::(anonymous namespace)::psramSpanTable
 """
     assert diagnostics_placement_violations(valid) == ()
     assert normal_build_diagnostics_violations("") == ()
@@ -25,6 +26,10 @@ def main() -> int:
     )
     assert any(
         "memoryHighWaterStorage" in violation
+        for violation in normal_violations
+    )
+    assert any(
+        "psramSpanTable" in violation
         for violation in normal_violations
     )
 
@@ -45,12 +50,17 @@ def main() -> int:
         "539198464 6688 b core::diagnostics::(anonymous namespace)::reporterStorage",
         "536946316 6688 b core::diagnostics::(anonymous namespace)::reporterStorage",
     ).replace(
-        "539205152 10264 b core::diagnostics::(anonymous namespace)::memoryHighWaterStorage",
-        "536953004 10264 b core::diagnostics::(anonymous namespace)::memoryHighWaterStorage",
+        "539205152 128 b core::diagnostics::(anonymous namespace)::memoryHighWaterStorage",
+        "536953004 128 b core::diagnostics::(anonymous namespace)::memoryHighWaterStorage",
+    ).replace(
+        "1879048192 12408 b core::diagnostics::(anonymous namespace)::psramSpanTable",
+        "539205280 12407 b core::diagnostics::(anonymous namespace)::psramSpanTable",
     )
     violations = diagnostics_placement_violations(invalid)
     assert "diagnostics reporter methods must execute from Flash" in violations
     assert "diagnostics reporter samples and counters must stay in RAM2" in violations
+    assert "diagnostics PSRAM span table must stay in EXTRAM" in violations
+    assert "diagnostics PSRAM span table must be exactly 12408 bytes" in violations
 
     print("Teensy diagnostics placement parser: OK")
     return 0

@@ -11,6 +11,7 @@
 #endif
 
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
 
@@ -268,7 +269,7 @@ void sampleQueue(oc::state::NotificationQueue& queue, size_t& peakPending) {
     assert(queue.pendingCount() <= oc::state::NotificationQueue::maxPending());
 }
 
-void test_full_bank_apply_at_next_playhead_step_stays_within_notification_capacity() {
+void test_full_bank_project_apply_stays_within_notification_capacity() {
     static_assert(
         oc::state::NotificationQueue::maxPending() == 96,
         "MIDI Studio requires headroom above its measured 64-entry atomic wave"
@@ -293,8 +294,8 @@ void test_full_bank_apply_at_next_playhead_step_stays_within_notification_capaci
     prepareStoredFullBank(staged);
     prepareDifferentLiveBank(state);
 
-    state.statusBar.playing.set(true);
-    state.sequencer.playheadStep.set(12);
+    core::state::project::ProjectSnapshot snapshot;
+    assert(core::state::project::captureProjectSnapshot(staged, snapshot));
     drainNotifications();
 
     RepresentativeSequencerObservers observers;
@@ -306,33 +307,18 @@ void test_full_bank_apply_at_next_playhead_step_stays_within_notification_capaci
     size_t peakPending = queue.pendingCount();
     sampleQueue(queue, peakPending);
 
-    assert(state.queuePendingSequencerBankApply(
-        staged.sequencerTracks,
-        staged.sequencer
-    ));
-    assert(state.hasPendingSequencerApply());
-    assert(state.sequencer.pattern.length.get() == 64);
+    assert(core::state::project::applyProjectSnapshot(state, snapshot));
     sampleQueue(queue, peakPending);
 
-    // The anchor step must not apply the staged bank.
-    state.update();
-    assert(state.hasPendingSequencerApply());
-    assert(state.sequencer.pattern.length.get() == 64);
-    sampleQueue(queue, peakPending);
-
-    // Crossing the step boundary runs CoreStateLifecycle's full-bank branch.
-    state.sequencer.playheadStep.set(13);
-    sampleQueue(queue, peakPending);
-    state.update();
-    sampleQueue(queue, peakPending);
-
-    // The measured atomic wave dropped by two when canonical Project Track
-    // commits replaced the duplicate MIDI-channel and mute coalescer watches.
-    assert(peakPending == 64);
+    constexpr size_t EXPECTED_PROJECT_APPLY_PEAK = 76;
+    if (peakPending != EXPECTED_PROJECT_APPLY_PEAK) {
+        std::cerr << "Unexpected synchronous Project apply peak: " << peakPending
+                  << "/" << oc::state::NotificationQueue::maxPending() << "\n";
+    }
+    assert(peakPending == EXPECTED_PROJECT_APPLY_PEAK);
 
     const size_t droppedBeforeFlush = queue.overflowCount();
 
-    assert(!state.hasPendingSequencerApply());
     assert(state.sequencerTracks.currentEnabledMask() == 0xFFFFU);
     assert(state.currentSharedTrackEnabledMask() == 0xFFFFU);
     assert(state.currentSharedActiveTrack() == 5);
@@ -357,7 +343,7 @@ void test_full_bank_apply_at_next_playhead_step_stays_within_notification_capaci
     }
     assert(queue.overflowCount() == 0);
 
-    std::cout << "[PASS] full-bank pending apply notification peak="
+    std::cout << "[PASS] full-bank Project apply notification peak="
               << peakPending << "/" << oc::state::NotificationQueue::maxPending()
               << " callbacks=" << observers.callbackCount << "\n";
 }
@@ -366,7 +352,7 @@ void test_full_bank_apply_at_next_playhead_step_stays_within_notification_capaci
 
 int main() {
     std::cout.setf(std::ios::unitbuf);
-    test_full_bank_apply_at_next_playhead_step_stays_within_notification_capacity();
+    test_full_bank_project_apply_stays_within_notification_capacity();
     std::cout << "All CoreState notification queue tests passed.\n";
     return 0;
 }

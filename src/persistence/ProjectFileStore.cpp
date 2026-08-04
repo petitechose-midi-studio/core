@@ -55,14 +55,13 @@ __declspec(noinline)
 #endif
 FLASHMEM oc::type::Result<ProjectSaveResult> ProjectFileStore::saveWithPaths_(
     ProductFileService& files,
-    ProjectFileWorkspace& workspace,
     const core::state::project::ProjectSnapshot& snapshot,
     const ProjectPaths& paths
 ) {
     // ProjectPaths owns the large bounded path buffers in the caller. Keep the
     // lease-bearing transaction in this sequential cold frame so increasing
     // its exact ABI does not increase the caller's peak DTCM stack usage.
-    ProjectSaveTransaction transaction(files, workspace);
+    ProjectSaveTransaction transaction(files);
     return project_file_transactions::saveToCompletion(
         transaction,
         snapshot,
@@ -94,7 +93,7 @@ FLASHMEM oc::type::Result<ProjectSaveResult> ProjectFileStore::save(
         );
     }
 
-    return saveWithPaths_(files_, workspace_, snapshot, paths);
+    return saveWithPaths_(files_, snapshot, paths);
 }
 
 FLASHMEM oc::type::Result<ProjectLoadResult> ProjectFileStore::load(
@@ -110,7 +109,7 @@ FLASHMEM oc::type::Result<ProjectLoadResult> ProjectFileStore::load(
     }
 
     return project_file_transactions::loadWithBackup(
-        files_, workspace_, paths.current, paths.backup, out, report
+        files_, paths.current, paths.backup, out, report
     );
 }
 

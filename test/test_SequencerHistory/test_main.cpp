@@ -31,10 +31,14 @@ using core::state::sequencer::SequencerHistoryService;
 using core::state::sequencer::SequencerHistoryTrackBankSnapshot;
 using core::state::sequencer::SequencerHistoryTrackStructureChange;
 using core::state::sequencer::SequencerHistoryActionKind;
+using core::state::sequencer::SequencerHistoryFullBankChange;
+using core::state::sequencer::SequencerHistoryMacroTrackStructurePayload;
+using core::state::sequencer::SequencerHistoryPatternChange;
 using core::state::sequencer::SequencerHistoryDescriptor;
 using core::state::sequencer::SequencerPatternState;
 using core::state::sequencer::SequencerState;
 using core::state::sequencer::SequencerTrackBankState;
+using core::state::sequencer::SequencerCcLaneBank;
 using core::state::sequencer::StepProperty;
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
@@ -147,6 +151,102 @@ makeGraphHeavyStructureHistoryChange() {
     }
 
     return change;
+}
+
+void allocateFullPatternPayload(SequencerHistoryPatternSnapshot& snapshot) {
+    snapshot.graph =
+        core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
+    snapshot.ccLanes =
+        core::app::makeExtmemUnique<SequencerCcLaneBank>();
+    assert(snapshot.graph && snapshot.ccLanes);
+}
+
+void allocateCanonicalFullBankPayload(
+    SequencerHistoryTrackBankSnapshot& snapshot
+) {
+    snapshot.flat.activeTrack = 0U;
+    snapshot.editorGraph =
+        core::app::makeExtmemUnique<oc::note::sequencer::StepSequencerGraph>();
+    snapshot.editorCcLanes =
+        core::app::makeExtmemUnique<SequencerCcLaneBank>();
+    assert(snapshot.editorGraph && snapshot.editorCcLanes);
+    for (uint8_t track = 1U; track < SequencerTrackBankState::TRACK_COUNT;
+         ++track) {
+        snapshot.bankGraphs[track] = core::app::makeExtmemUnique<
+            oc::note::sequencer::StepSequencerGraph
+        >();
+        snapshot.bankCcLanes[track] =
+            core::app::makeExtmemUnique<SequencerCcLaneBank>();
+        assert(snapshot.bankGraphs[track]);
+        assert(snapshot.bankCcLanes[track]);
+    }
+}
+
+void test_retained_span_accounting_matches_owner_topology() {
+    SequencerHistoryService history;
+
+    auto pattern = core::app::makeExtmemUnique<
+        SequencerHistoryPatternChange
+    >();
+    assert(pattern);
+    pattern->before.flat.note[0] = 60U;
+    pattern->after.flat.note[0] = 61U;
+    allocateFullPatternPayload(pattern->before);
+    allocateFullPatternPayload(pattern->after);
+    assert(history.canRecordPattern(*pattern));
+    history.recordPreparedPattern(std::move(pattern));
+    assert(history.retainedSpans() == 5U);
+
+    history.clear();
+    auto structure = core::app::makeExtmemUnique<
+        SequencerHistoryTrackStructureChange
+    >();
+    assert(structure);
+    structure->before.enabledMask = 0x0001U;
+    structure->after.enabledMask = 0xFFFFU;
+    structure->before.capturedTrackMask = 0xFFFFU;
+    structure->after.capturedTrackMask = 0xFFFFU;
+    for (uint8_t track = 0U; track < SequencerTrackBankState::TRACK_COUNT;
+         ++track) {
+        allocateFullPatternPayload(structure->before.tracks[track]);
+        allocateFullPatternPayload(structure->after.tracks[track]);
+    }
+    structure->macroStructure = core::app::makeExtmemUnique<
+        SequencerHistoryMacroTrackStructurePayload
+    >();
+    assert(structure->macroStructure);
+    structure->macroStructure->beforeControl = core::app::makeExtmemUnique<
+        core::state::modulation::ProjectControlDomainState
+    >();
+    structure->macroStructure->afterControl = core::app::makeExtmemUnique<
+        core::state::modulation::ProjectControlDomainState
+    >();
+    assert(structure->macroStructure->beforeControl);
+    assert(structure->macroStructure->afterControl);
+    structure->macroStructure->capturedTrackMask = 0xFFFFU;
+    structure->macroStructure->afterCaptured = true;
+    assert(history.canRecordStructure(*structure));
+    assert(tx::commitAdmittedStructure(history, std::move(structure)));
+    assert(history.retainedSpans() == 68U);
+
+    history.clear();
+    auto fullBank = core::app::makeExtmemUnique<
+        SequencerHistoryFullBankChange
+    >();
+    assert(fullBank);
+    fullBank->before.flat.tracks[0].note[0] = 64U;
+    fullBank->after.flat.tracks[0].note[0] = 65U;
+    allocateCanonicalFullBankPayload(fullBank->before);
+    allocateCanonicalFullBankPayload(fullBank->after);
+    assert(history.canRecordFullBank(*fullBank));
+    history.commitAdmittedFullBank(std::move(fullBank));
+    assert(history.retainedSpans() == 65U);
+    assert(
+        SequencerHistoryService::RETAINED_SPAN_BUDGET == 511U
+    );
+
+    std::cout
+        << "[PASS] retained spans match Pattern, Structure and FullBank owners\n";
 }
 
 bool hasMicroSequence(const SequencerPatternState& pattern, uint8_t step) {
@@ -938,6 +1038,8 @@ void test_structure_history_preflight_accepts_with_budget_pruning() {
     assert(history.canRecordStructure(*first));
     assert(tx::commitAdmittedStructure(history, std::move(first)));
     const size_t entryBytes = history.retainedBytes();
+    const uint16_t entrySpans = history.retainedSpans();
+    assert(entrySpans == 33U);
     assert(entryBytes > 0);
     assert(entryBytes <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
 
@@ -945,6 +1047,7 @@ void test_structure_history_preflight_accepts_with_budget_pruning() {
     assert(history.canRecordStructure(*second));
     assert(tx::commitAdmittedStructure(history, std::move(second)));
     assert(history.retainedBytes() == entryBytes * 2U);
+    assert(history.retainedSpans() == entrySpans * 2U);
     assert(history.retainedBytes() <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
 
     auto incoming = makeGraphHeavyStructureHistoryChange();
@@ -955,6 +1058,7 @@ void test_structure_history_preflight_accepts_with_budget_pruning() {
     assert(tx::commitAdmittedStructure(history, std::move(incoming)));
     assert(history.undoCount(SequencerHistoryScope::Structure) == countBefore);
     assert(history.retainedBytes() == entryBytes * 2U);
+    assert(history.retainedSpans() == entrySpans * 2U);
     assert(history.retainedBytes() <= SequencerHistoryService::RETAINED_BYTE_BUDGET);
 
     std::cout << "[PASS] test_structure_history_preflight_accepts_with_budget_pruning\n";
@@ -1198,6 +1302,7 @@ int main() {
     test_structure_history_restores_track_mask_active_track_and_graphs();
     test_structure_history_preflight_matches_record_acceptance();
     test_structure_history_preflight_accepts_with_budget_pruning();
+    test_retained_span_accounting_matches_owner_topology();
     test_track_switch_preserves_nested_graph_payload();
     test_track_switch_rotates_graph_and_cc_ownership_without_cloning();
     test_history_limits_prune_by_scope();
