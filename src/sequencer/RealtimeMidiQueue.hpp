@@ -28,7 +28,7 @@ enum class RealtimeMidiQueueLifecycleReason : uint8_t {
 /**
  * Global queue lifecycle observer, independent from the per-Track note
  * observer. The shared CC coordinator uses it to distinguish queued values
- * from values that physically reached MidiAPI.
+ * from values whose ownership was accepted by the MIDI transport.
  */
 class RealtimeMidiQueueLifecycleObserver {
 public:
@@ -69,6 +69,7 @@ struct RealtimeMidiQueueDiagnostics {
     uint32_t displacedControlChangeCount = 0;
     uint32_t lateSendCount = 0;
     uint32_t droppedLateNoteOnCount = 0;
+    uint32_t transportRejectedCount = 0;
     uint16_t highWaterMark = 0;
 };
 
@@ -157,7 +158,7 @@ private:
     void insertNoFail_(const RealtimeMidiEvent& event);
     void erase_(size_t index);
     void remove_(size_t index, RealtimeMidiQueueLifecycleReason reason);
-    void send_(oc::api::MidiAPI& midi, const RealtimeMidiEvent& event);
+    bool send_(oc::api::MidiAPI& midi, const RealtimeMidiEvent& event);
     void recordRejectedBatch_(
         const RealtimeMidiEvent* events,
         size_t count,

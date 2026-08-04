@@ -19,6 +19,8 @@ test_support::AdvancingMicrosClock testClock;
 
 class MockMidiTransport : public oc::interface::IMidi {
 public:
+    using MidiOutputAcceptance = oc::interface::MidiOutputAcceptance;
+
     struct Message {
         core::sequencer::RealtimeMidiEventType type;
         uint8_t channel;
@@ -28,28 +30,37 @@ public:
 
     oc::type::Result<void> init() override { return oc::type::Result<void>::ok(); }
     void update() override {}
-    void sendCC(uint8_t channel, uint8_t controller, uint8_t value) override {
+    MidiOutputAcceptance sendCC(uint8_t channel, uint8_t controller, uint8_t value) override {
+        ++sendAttempts;
+        if (!acceptOutput) return MidiOutputAcceptance::REJECTED;
         messages.push_back({
             core::sequencer::RealtimeMidiEventType::ControlChange,
             channel,
             controller,
             value,
         });
+        return MidiOutputAcceptance::ACCEPTED;
     }
-    void sendNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) override {
+    MidiOutputAcceptance sendNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) override {
+        ++sendAttempts;
+        if (!acceptOutput) return MidiOutputAcceptance::REJECTED;
         messages.push_back({core::sequencer::RealtimeMidiEventType::NoteOn, channel, note, velocity});
+        return MidiOutputAcceptance::ACCEPTED;
     }
-    void sendNoteOff(uint8_t channel, uint8_t note, uint8_t velocity) override {
+    MidiOutputAcceptance sendNoteOff(uint8_t channel, uint8_t note, uint8_t velocity) override {
+        ++sendAttempts;
+        if (!acceptOutput) return MidiOutputAcceptance::REJECTED;
         messages.push_back({core::sequencer::RealtimeMidiEventType::NoteOff, channel, note, velocity});
+        return MidiOutputAcceptance::ACCEPTED;
     }
-    void sendSysEx(const uint8_t*, size_t) override {}
-    void sendProgramChange(uint8_t, uint8_t) override {}
-    void sendPitchBend(uint8_t, int16_t) override {}
-    void sendChannelPressure(uint8_t, uint8_t) override {}
-    void sendClock() override {}
-    void sendStart() override {}
-    void sendStop() override {}
-    void sendContinue() override {}
+    MidiOutputAcceptance sendSysEx(const uint8_t*, size_t) override { return outputAcceptance(); }
+    MidiOutputAcceptance sendProgramChange(uint8_t, uint8_t) override { return outputAcceptance(); }
+    MidiOutputAcceptance sendPitchBend(uint8_t, int16_t) override { return outputAcceptance(); }
+    MidiOutputAcceptance sendChannelPressure(uint8_t, uint8_t) override { return outputAcceptance(); }
+    MidiOutputAcceptance sendClock() override { return outputAcceptance(); }
+    MidiOutputAcceptance sendStart() override { return outputAcceptance(); }
+    MidiOutputAcceptance sendStop() override { return outputAcceptance(); }
+    MidiOutputAcceptance sendContinue() override { return outputAcceptance(); }
 
     void setOnCC(CCCallback cb) override { on_cc = std::move(cb); }
     void setOnNoteOn(NoteCallback cb) override { on_note_on = std::move(cb); }
@@ -60,7 +71,16 @@ public:
     void setOnStop(RealtimeCallback cb) override { on_stop = std::move(cb); }
     void setOnContinue(RealtimeCallback cb) override { on_continue = std::move(cb); }
 
+    MidiOutputAcceptance outputAcceptance() {
+        ++sendAttempts;
+        return acceptOutput
+            ? MidiOutputAcceptance::ACCEPTED
+            : MidiOutputAcceptance::REJECTED;
+    }
+
     std::vector<Message> messages;
+    bool acceptOutput = true;
+    uint32_t sendAttempts = 0;
     CCCallback on_cc;
     NoteCallback on_note_on;
     NoteCallback on_note_off;
@@ -548,6 +568,41 @@ void test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal() {
     queue.detachLifecycleObserver(observer);
 }
 
+void test_transport_rejection_retains_ownership_until_retry() {
+    core::sequencer::RealtimeMidiQueue queue;
+    LifecycleObserver observer;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    queue.attachLifecycleObserver(observer);
+    assert(queue.push(event(
+        core::sequencer::RealtimeMidiEventType::NoteOff,
+        1000U,
+        60U
+    )));
+
+    transport.acceptOutput = false;
+    testClock.freezeAt(1000U);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
+
+    assert(transport.sendAttempts == 1U);
+    assert(transport.messages.empty());
+    assert(queue.size() == 1U);
+    assert(observer.dispatched.empty());
+    assert(queue.diagnostics().transportRejectedCount == 1U);
+
+    transport.acceptOutput = true;
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
+
+    assert(transport.sendAttempts == 2U);
+    assert(transport.messages.size() == 1U);
+    assert(queue.size() == 0U);
+    assert(observer.dispatched.size() == 1U);
+    assert(queue.diagnostics().transportRejectedCount == 1U);
+    queue.detachLifecycleObserver(observer);
+
+    std::cout << "[PASS] rejected transport ownership is retained and retried\n";
+}
+
 void test_saturating_diagnostic_counter() {
     using core::sequencer::realtimeMidiSaturatingAdd;
     assert(realtimeMidiSaturatingAdd(UINT32_MAX - 2U, 1U) == UINT32_MAX - 1U);
@@ -740,6 +795,7 @@ int main() {
     test_note_off_batch_displaces_note_on_then_cc_never_note_off();
     test_note_off_replacement_is_atomic_on_failure();
     test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal();
+    test_transport_rejection_retains_ownership_until_retry();
     test_saturating_diagnostic_counter();
     std::cout << "All RealtimeMidiQueue tests passed\n";
     return 0;

@@ -388,6 +388,15 @@ void RealtimeMidiQueue::drainDue(oc::api::MidiAPI& midi, uint32_t nowUs, uint32_
             );
             remove_(0, RealtimeMidiQueueLifecycleReason::DROPPED_LATE);
         } else {
+            if (!send_(midi, event)) {
+                diagnostics_.transportRejectedCount = realtimeMidiSaturatingAdd(
+                    diagnostics_.transportRejectedCount,
+                    1
+                );
+                OC_PERF_RECORD("midi.queue.transport-rejected", 0, 1, 0);
+                break;
+            }
+
             if (deltaUs > static_cast<int32_t>(LATE_SEND_THRESHOLD_US)) {
                 OC_PERF_RECORD("midi.queue.late-send", 0, static_cast<uint32_t>(deltaUs), 0);
                 diagnostics_.lateSendCount = realtimeMidiSaturatingAdd(
@@ -395,7 +404,6 @@ void RealtimeMidiQueue::drainDue(oc::api::MidiAPI& midi, uint32_t nowUs, uint32_
                     1
                 );
             }
-            send_(midi, event);
             erase_(0);
         }
 
@@ -474,17 +482,22 @@ void RealtimeMidiQueue::remove_(
     }
 }
 
-void RealtimeMidiQueue::send_(oc::api::MidiAPI& midi, const RealtimeMidiEvent& event) {
+bool RealtimeMidiQueue::send_(oc::api::MidiAPI& midi, const RealtimeMidiEvent& event) {
+    auto acceptance = oc::interface::MidiOutputAcceptance::REJECTED;
     switch (event.type) {
         case RealtimeMidiEventType::NoteOn:
-            midi.sendNoteOn(event.channel, event.note, event.velocity);
+            acceptance = midi.sendNoteOn(event.channel, event.note, event.velocity);
             break;
         case RealtimeMidiEventType::NoteOff:
-            midi.sendNoteOff(event.channel, event.note, event.velocity);
+            acceptance = midi.sendNoteOff(event.channel, event.note, event.velocity);
             break;
         case RealtimeMidiEventType::ControlChange:
-            midi.sendCC(event.channel, event.controller, event.value);
+            acceptance = midi.sendCC(event.channel, event.controller, event.value);
             break;
+    }
+
+    if (acceptance != oc::interface::MidiOutputAcceptance::ACCEPTED) {
+        return false;
     }
 
     if (event.trackIndex < track_observers_.size()) {
@@ -496,6 +509,7 @@ void RealtimeMidiQueue::send_(oc::api::MidiAPI& midi, const RealtimeMidiEvent& e
     if (lifecycle_observer_ != nullptr) {
         lifecycle_observer_->onRealtimeMidiEventDispatched(event);
     }
+    return true;
 }
 
 void RealtimeMidiQueue::recordRejectedBatch_(

@@ -55,6 +55,8 @@ void drainDue(core::sequencer::RealtimeMidiQueue& queue,
 
 class MockMidiTransport : public oc::interface::IMidi {
 public:
+    using MidiOutputAcceptance = oc::interface::MidiOutputAcceptance;
+
     struct Message {
         core::sequencer::RealtimeMidiEventType type;
         uint8_t channel;
@@ -64,38 +66,41 @@ public:
 
     oc::type::Result<void> init() override { return oc::type::Result<void>::ok(); }
     void update() override {}
-    void sendCC(uint8_t channel, uint8_t controller, uint8_t value) override {
+    MidiOutputAcceptance sendCC(uint8_t channel, uint8_t controller, uint8_t value) override {
         messages.push_back({
             core::sequencer::RealtimeMidiEventType::ControlChange,
             channel,
             controller,
             value,
         });
+        return MidiOutputAcceptance::ACCEPTED;
     }
-    void sendNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) override {
+    MidiOutputAcceptance sendNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) override {
         messages.push_back({
             core::sequencer::RealtimeMidiEventType::NoteOn,
             channel,
             note,
             velocity,
         });
+        return MidiOutputAcceptance::ACCEPTED;
     }
-    void sendNoteOff(uint8_t channel, uint8_t note, uint8_t velocity) override {
+    MidiOutputAcceptance sendNoteOff(uint8_t channel, uint8_t note, uint8_t velocity) override {
         messages.push_back({
             core::sequencer::RealtimeMidiEventType::NoteOff,
             channel,
             note,
             velocity,
         });
+        return MidiOutputAcceptance::ACCEPTED;
     }
-    void sendSysEx(const uint8_t*, size_t) override {}
-    void sendProgramChange(uint8_t, uint8_t) override {}
-    void sendPitchBend(uint8_t, int16_t) override {}
-    void sendChannelPressure(uint8_t, uint8_t) override {}
-    void sendClock() override {}
-    void sendStart() override {}
-    void sendStop() override {}
-    void sendContinue() override {}
+    MidiOutputAcceptance sendSysEx(const uint8_t*, size_t) override { return MidiOutputAcceptance::ACCEPTED; }
+    MidiOutputAcceptance sendProgramChange(uint8_t, uint8_t) override { return MidiOutputAcceptance::ACCEPTED; }
+    MidiOutputAcceptance sendPitchBend(uint8_t, int16_t) override { return MidiOutputAcceptance::ACCEPTED; }
+    MidiOutputAcceptance sendChannelPressure(uint8_t, uint8_t) override { return MidiOutputAcceptance::ACCEPTED; }
+    MidiOutputAcceptance sendClock() override { return MidiOutputAcceptance::ACCEPTED; }
+    MidiOutputAcceptance sendStart() override { return MidiOutputAcceptance::ACCEPTED; }
+    MidiOutputAcceptance sendStop() override { return MidiOutputAcceptance::ACCEPTED; }
+    MidiOutputAcceptance sendContinue() override { return MidiOutputAcceptance::ACCEPTED; }
     void setOnCC(CCCallback callback) override { onCC = std::move(callback); }
     void setOnNoteOn(NoteCallback callback) override { onNoteOn = std::move(callback); }
     void setOnNoteOff(NoteCallback callback) override { onNoteOff = std::move(callback); }
