@@ -32,23 +32,24 @@
 #include "../../src/state/sequencer/SequencerSnapshotOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/NotificationTestUtils.hpp"
+#include "support/AdvancingMicrosClock.hpp"
 
 namespace {
 
 using core::state::sequencer::SequencerState;
 using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
 
-uint32_t fakeMicros = 0;
+test_support::AdvancingMicrosClock testClock;
 
 void installTimeProvider() {
-    oc::time::setMicrosProvider([]() { return fakeMicros; });
+    testClock.install();
 }
 
 void drainDue(core::sequencer::RealtimeMidiQueue& queue,
               oc::api::MidiAPI& midi,
               uint32_t nowUs,
               uint32_t budgetUs) {
-    fakeMicros = nowUs;
+    testClock.freezeAt(nowUs);
     queue.drainDue(midi, nowUs, budgetUs);
 }
 

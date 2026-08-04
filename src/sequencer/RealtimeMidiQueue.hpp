@@ -89,15 +89,14 @@ struct RealtimeMidiQueueDiagnostics {
  */
 class RealtimeMidiQueue {
 public:
-    // Worst-case same-timestamp frame. The CC coordinator may resolve all 320
-    // bounded candidates to distinct physical destinations; the queue must be
-    // able to retain that complete atomic batch between the Note Off and Note
-    // On phases. A smaller producer-specific estimate can reject valid notes
-    // after accepting CCs and violate the documented Off < CC < On ordering.
-    static constexpr size_t MAX_NOTE_EVENTS_PER_PHASE = 128;
+    // Current transitional queue composition, not the producer maximum. Note
+    // can emit 16 same-deadline notes per Track, hence 256 events in either
+    // note phase across 16 Tracks. The executable producer-envelope fixture
+    // records that 832-event raw frame while capacity policy remains separate.
+    static constexpr size_t NOTE_EVENT_PHASE_CAPACITY = 128U;
     static constexpr size_t MAX_RESOLVED_CC_EVENTS_PER_FRAME = 320U;
     static constexpr size_t MAX_QUEUE_DEPTH =
-        2U * MAX_NOTE_EVENTS_PER_PHASE +
+        2U * NOTE_EVENT_PHASE_CAPACITY +
         MAX_RESOLVED_CC_EVENTS_PER_FRAME;
     static constexpr uint32_t LATE_SEND_THRESHOLD_US = 2000;
     static constexpr uint32_t DROP_THRESHOLD_US = 20000;
