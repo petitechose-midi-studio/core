@@ -56,7 +56,7 @@ public:
 
 private:
     ProductFileService& files_;
-    ProjectFileWorkspace workspace_;
+    ProjectFileWriteWorkspace workspace_;
     ProjectSaveTransaction save_transaction_;
 };
 

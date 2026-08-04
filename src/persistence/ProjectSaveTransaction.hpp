@@ -36,7 +36,10 @@ struct ProjectSaveProgress {
  */
 class ProjectSaveTransaction {
 public:
-    ProjectSaveTransaction(ProductFileService& files, ProjectFileWorkspace& workspace);
+    ProjectSaveTransaction(
+        ProductFileService& files,
+        ProjectFileWriteWorkspace& workspace
+    );
     ~ProjectSaveTransaction();
     ProjectSaveTransaction(const ProjectSaveTransaction&) = delete;
     ProjectSaveTransaction& operator=(const ProjectSaveTransaction&) = delete;
@@ -98,7 +101,7 @@ private:
     void cleanupTmp_(const ProductMutationLease& lease);
 
     ProductFileService& files_;
-    ProjectFileWorkspace& workspace_;
+    ProjectFileWriteWorkspace& workspace_;
     const core::state::project::ProjectSnapshot* snapshot_ = nullptr;
     AtomicProductFilePaths paths_{};
     Phase phase_ = Phase::IDLE;

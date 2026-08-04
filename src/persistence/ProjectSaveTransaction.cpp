@@ -25,7 +25,7 @@ FLASHMEM bool validSavePaths(AtomicProductFilePaths paths) {
 
 FLASHMEM ProjectSaveTransaction::ProjectSaveTransaction(
     ProductFileService& files,
-    ProjectFileWorkspace& workspace
+    ProjectFileWriteWorkspace& workspace
 ) : files_(files), workspace_(workspace) {}
 
 FLASHMEM ProjectSaveTransaction::~ProjectSaveTransaction() {

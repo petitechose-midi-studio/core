@@ -16,6 +16,10 @@
 #include "../support/CoreStorages.hpp"
 #include "../support/ProductFileTestMutation.hpp"
 
+#if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+#error "This test requires native EXTMEM failure injection"
+#endif
+
 namespace {
 
 namespace project = core::state::project;
@@ -486,6 +490,28 @@ void test_list_projects_reports_truncation() {
     std::cout << "[PASS] test_list_projects_reports_truncation\n";
 }
 
+void test_read_workspace_does_not_allocate_write_scratch() {
+    {
+        core::persistence::ProjectFileReadWorkspace workspace;
+        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        assert(workspace.prepare());
+        assert(workspace.data() != nullptr);
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 2U);
+    }
+
+    {
+        core::persistence::ProjectFileWriteWorkspace workspace;
+        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        assert(!workspace.prepare());
+        assert(workspace.data() != nullptr);
+        assert(core::app::testing::extmemAllocationAttempt == 2U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+    }
+
+    std::cout << "[PASS] read workspace skips write scratch allocation\n";
+}
+
 }  // namespace
 
 int main() {
@@ -493,6 +519,7 @@ int main() {
     std::cout << "ProjectFileStore tests\n";
     std::cout << "==============================================\n\n";
 
+    test_read_workspace_does_not_allocate_write_scratch();
     test_save_load_project_snapshot_roundtrip();
     test_save_overwrites_existing_project_through_backup_commit();
     test_stale_tmp_is_replaced_on_save();

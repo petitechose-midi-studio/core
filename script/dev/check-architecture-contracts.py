@@ -31,7 +31,8 @@ COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*SequencerHistory.cpp.o(.text* .rodata*)",
     "*SequencerStructureHistory.cpp.o(.text* .rodata*)",
     "*SequencerTrackBankOps.cpp.o(.text* .rodata*)",
-    "*(.text._ZN4core11persistence20ProjectFileWorkspace7prepareEv*)",
+    "*(.text._ZN4core11persistence24ProjectFileReadWorkspace7prepareEv*)",
+    "*(.text._ZN4core11persistence25ProjectFileWriteWorkspace7prepareEv*)",
     "*(.text.*StorageRecoveryRuntimeManager*)",
     "*AtomicProductFile.cpp.o(.text* .rodata*)",
     "*ProductFileTransactionJournal.cpp.o(.text* .rodata*)",
@@ -364,6 +365,14 @@ def cold_placement_contract_errors(cold_placement: str) -> list[str]:
                 "script/pio/imxrt1062_t41_cold_placement.ld: "
                 f"missing contracted cold-placement selector {selector}"
             )
+    legacy_workspace_selector = (
+        "*(.text._ZN4core11persistence20ProjectFileWorkspace7prepareEv*)"
+    )
+    if legacy_workspace_selector in cold_placement:
+        errors.append(
+            "script/pio/imxrt1062_t41_cold_placement.ld: "
+            "retired combined Project workspace selector restored"
+        )
     return errors
 
 
@@ -834,8 +843,14 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     job_coordinator = "src/persistence/ProductPersistenceJobCoordinator.hpp"
     service_header = "src/persistence/ProductFileService.hpp"
     service_source = "src/persistence/ProductFileService.cpp"
+    project_workspace = "src/persistence/ProjectFileWorkspace.hpp"
+    project_transactions_header = "src/persistence/ProjectFileTransactions.hpp"
     save_header = "src/persistence/ProjectSaveTransaction.hpp"
+    save_source = "src/persistence/ProjectSaveTransaction.cpp"
+    project_store_header = "src/persistence/ProjectFileStore.hpp"
+    project_store_source = "src/persistence/ProjectFileStore.cpp"
     session_header = "src/persistence/ProjectSessionStore.hpp"
+    project_codec_source = "src/persistence/ProjectSnapshotPersistenceCodec.cpp"
     rpc_header = "src/protocol/filesystem/FileSystemRpc.hpp"
     job_rpc_header = "src/protocol/filesystem/FileSystemJobRpc.hpp"
     job_rpc_source = "src/protocol/filesystem/FileSystemJobRpc.cpp"
@@ -856,17 +871,33 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     rpc_internal = "src/protocol/filesystem/FileSystemRpcInternal.hpp"
     project_transactions = "src/persistence/ProjectFileTransactions.cpp"
     atomic_test = "test/test_AtomicProductFile/test_main.cpp"
+    project_store_test = "test/test_ProjectFileStore/test_main.cpp"
     cmake_source = "CMakeLists.txt"
     machine_source = "src/persistence/StorageRecoveryMachine.cpp"
     main_source = "main.cpp"
     sdl_runtime = "sdl/entry/SdlProjectSessionRuntime.hpp"
 
-    for rel, pattern, description in (
+    for contract in (
         (coordinator, r"sizeof\(ProductStorageIdentity\)\s*==\s*8", "storage identity must remain 8 B"),
         (coordinator, r"sizeof\(ProductMutationLease\)\s*==\s*4", "lease must remain 4 B"),
         (coordinator, r"sizeof\(ProductPersistenceCoordinator\)\s*==\s*20", "coordinator must remain 20 B"),
         (job_coordinator, r"sizeof\(ProductPersistenceJobCoordinator\)\s*<=\s*128U", "job coordinator must remain at most 128 B"),
         (service_header, r"sizeof\(ProductFileService\)\s*==\s*160U", "file service must remain 160 B on ARM"),
+        (project_workspace, r"class\s+ProjectFileReadWorkspace\s*\{", "Project read workspace capability must remain explicit"),
+        (project_workspace, r"class\s+ProjectFileWriteWorkspace\s+final\s*:\s*public\s+ProjectFileReadWorkspace", "Project write workspace must derive only from the read capability"),
+        (project_workspace, r"ExtmemUniquePtr\s*<\s*ProjectFileBuffer\s*>\s+buffer_", "Project workspaces must own exactly one file buffer"),
+        (project_workspace, r"return\s+ProjectFileReadWorkspace::prepare\s*\(\s*\)\s*&&\s*codec_workspace_\.prepare\s*\(\s*\)", "Project write prepare must add codec scratch after read preparation"),
+        (project_workspace, r"sizeof\(ProjectFileBuffer\)\s*==\s*526176U", "Project file/commit buffer must remain 526,176 B on ARM"),
+        (project_workspace, r"alignof\(ProjectFileBuffer\)\s*==\s*8U", "Project file/commit buffer must remain 8-byte aligned"),
+        (project_workspace, r"sizeof\(ProjectFileReadWorkspace\)\s*==\s*4U", "Project read workspace must remain one ARM pointer"),
+        (project_workspace, r"sizeof\(ProjectFileWriteWorkspace\)\s*==\s*8U", "Project write workspace must remain two ARM pointers"),
+        (project_transactions_header, r"ProjectFileReadWorkspace&\s+workspace", "both public Project load APIs must accept read capability only", 2),
+        (save_header, r"ProjectFileWriteWorkspace&\s+workspace", "Project save transaction must require write capability", 2),
+        (project_store_header, r"ProjectFileWriteWorkspace&\s+workspace", "Project save helper must require write capability"),
+        (project_store_header, r"ProjectFileWriteWorkspace\s+workspace_", "Project file store must retain one write-capable workspace"),
+        (project_store_header, r"sizeof\(ProjectFileStore\)\s*==\s*16U", "Project file store must remain 16 B on ARM"),
+        (session_header, r"ProjectFileWriteWorkspace\s+workspace_", "Project session store must retain one write-capable workspace"),
+        (project_codec_source, r"sizeof\(Storage\)\s*==\s*436855U", "Project encode scratch must remain exactly 436,855 B"),
         (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*52U", "Project save must remain 52 B on ARM"),
         (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*64U", "session store must remain 64 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*276U", "RPC write session must remain 276 B on ARM"),
@@ -916,6 +947,12 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (rpc_internal, r"bool\s+isProtocolReservedPath\s*\(", "ordinary RPC must reserve the complete protocol namespace"),
         (cmake_source, r"MS_CORE_PERSISTENCE_IO_TESTS.*?test_AtomicProductFile", "fault campaign must share the persistence I/O lock"),
         (atomic_test, r"for\s*\(\s*CutMode\s+mode\s*:\s*\{\s*CutMode::BEFORE\s*,\s*CutMode::AFTER\s*\}\s*\)", "fault campaign must enumerate cuts before and after every boundary"),
+        (project_store_test, r"ProjectFileReadWorkspace\s+workspace", "direct Project test must exercise a fresh read workspace"),
+        (project_store_test, r"ProjectFileWriteWorkspace\s+workspace", "direct Project test must exercise a fresh write workspace"),
+        (project_store_test, r"ScopedExtmemAllocationFailure\s+failure\s*\(\s*2U\s*\)", "direct Project test must arm the second allocation twice", 2),
+        (project_store_test, r"extmemAllocationAttempt\s*==\s*1U", "fresh Project read must stop after one allocation"),
+        (project_store_test, r"extmemAllocationFailureOrdinal\s*==\s*2U", "fresh Project read must leave allocation two armed"),
+        (project_store_test, r"extmemAllocationAttempt\s*==\s*2U", "fresh Project write must reach the scratch allocation"),
         (
             service_source,
             r"ProductFileService::initForRecovery\s*\(\s*\)\s*\{.*?"
@@ -924,7 +961,78 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
             "backend retry must leave ABSENT admission to beginRecovery",
         ),
     ):
-        require(rel, pattern, description)
+        require(*contract)
+
+    workspace_scope = (
+        project_workspace,
+        project_transactions_header,
+        project_transactions,
+        save_header,
+        save_source,
+        project_store_header,
+        project_store_source,
+        session_header,
+    )
+    for rel in workspace_scope:
+        if re.search(r"\bProjectFileWorkspace\b", cpp_code_mask(files.get(rel, ""))):
+            errors.append(f"{rel}: retired combined Project workspace type restored")
+
+    for rel in (project_transactions_header, project_transactions):
+        if re.search(
+            r"\bProjectFileWriteWorkspace\b",
+            cpp_code_mask(files.get(rel, "")),
+        ):
+            errors.append(f"{rel}: Project load must not depend on write capability")
+
+    read_workspace_bodies = cpp_type_bodies(
+        files.get(project_workspace, ""),
+        "ProjectFileReadWorkspace",
+    )
+    if len(read_workspace_bodies) != 1:
+        errors.append(
+            f"{project_workspace}: Project read workspace must have one balanced "
+            f"definition (found {len(read_workspace_bodies)})"
+        )
+    else:
+        read_body = read_workspace_bodies[0]
+        if len(re.findall(
+            r"makeExtmemUniqueForOverwrite\s*<\s*ProjectFileBuffer\s*>",
+            read_body,
+        )) != 1:
+            errors.append(
+                f"{project_workspace}: Project read workspace must allocate exactly "
+                "one file buffer"
+            )
+        if re.search(r"codec_workspace_|ProjectSnapshotCodecWorkspace", read_body):
+            errors.append(
+                f"{project_workspace}: Project read workspace must not own or prepare "
+                "encode scratch"
+            )
+
+    write_workspace_bodies = cpp_type_bodies(
+        files.get(project_workspace, ""),
+        "ProjectFileWriteWorkspace",
+    )
+    if len(write_workspace_bodies) != 1:
+        errors.append(
+            f"{project_workspace}: Project write workspace must have one balanced "
+            f"definition (found {len(write_workspace_bodies)})"
+        )
+    else:
+        write_body = write_workspace_bodies[0]
+        if re.search(r"ExtmemUniquePtr\s*<\s*ProjectFileBuffer\s*>", write_body):
+            errors.append(
+                f"{project_workspace}: Project write workspace must reuse the inherited "
+                "file buffer"
+            )
+        if len(re.findall(
+            r"ProjectSnapshotCodecWorkspace\s+codec_workspace_",
+            write_body,
+        )) != 1:
+            errors.append(
+                f"{project_workspace}: Project write workspace must own exactly one "
+                "encode scratch owner"
+            )
 
     supported_start_bodies = cpp_function_bodies(
         files.get(job_rpc_source, ""),
@@ -4324,6 +4432,7 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
         "CMakeLists.txt",
         "sdl/entry/SdlProjectSessionRuntime.hpp",
         "test/test_AtomicProductFile/test_main.cpp",
+        "test/test_ProjectFileStore/test_main.cpp",
     ):
         fixture[rel] = (ROOT / rel).read_text(encoding="utf-8")
 
@@ -4455,11 +4564,24 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
         "    const FileSystemJobRequest& request = decoded.value();\n"
         "    handler_.abortWriteSession();",
     )
+    project_load_widens_to_write = mutate(
+        "src/persistence/ProjectFileTransactions.hpp",
+        "    ProjectFileReadWorkspace& workspace,\n",
+        "    ProjectFileWriteWorkspace& workspace,\n",
+    )
 
     return (
         (
             not persistence_lease_contract_errors(fixture),
             "valid single persistence lease contract is accepted",
+        ),
+        (
+            project_load_widens_to_write[
+                "src/persistence/ProjectFileTransactions.hpp"
+            ]
+            != fixture["src/persistence/ProjectFileTransactions.hpp"]
+            and bool(persistence_lease_contract_errors(project_load_widens_to_write)),
+            "Project load widened to write capability is rejected",
         ),
         (
             bool(persistence_lease_contract_errors(raw_product_flush)),
@@ -7037,6 +7159,7 @@ def main(show_inventory: bool = False) -> int:
         "CMakeLists.txt",
         "sdl/entry/SdlProjectSessionRuntime.hpp",
         "test/test_AtomicProductFile/test_main.cpp",
+        "test/test_ProjectFileStore/test_main.cpp",
     ):
         contract_sources[rel] = (ROOT / rel).read_text(encoding="utf-8")
     errors.extend(step_draft_transition_contract_errors(contract_sources))

@@ -55,7 +55,7 @@ __declspec(noinline)
 #endif
 FLASHMEM oc::type::Result<ProjectSaveResult> ProjectFileStore::saveWithPaths_(
     ProductFileService& files,
-    ProjectFileWorkspace& workspace,
+    ProjectFileWriteWorkspace& workspace,
     const core::state::project::ProjectSnapshot& snapshot,
     const ProjectPaths& paths
 ) {

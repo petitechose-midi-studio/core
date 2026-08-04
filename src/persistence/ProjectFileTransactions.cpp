@@ -18,7 +18,7 @@ using oc::type::ErrorCode;
 FLASHMEM oc::type::Result<ProjectLoadResult> loadFromPath(
     ProductFileService& files,
     const ProductMutationLease& lease,
-    ProjectFileWorkspace& workspace,
+    ProjectFileReadWorkspace& workspace,
     const char* path,
     core::state::project::ProjectSnapshot& out,
     core::persistence::project_file::LoadReport* report
@@ -112,7 +112,7 @@ FLASHMEM void copyReport(core::persistence::project_file::LoadReport* target,
 FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackupUsingLease(
     ProductFileService& files,
     const ProductMutationLease& lease,
-    ProjectFileWorkspace& workspace,
+    ProjectFileReadWorkspace& workspace,
     const char* current,
     const char* backup,
     core::state::project::ProjectSnapshot& out,
@@ -202,7 +202,7 @@ FLASHMEM oc::type::Result<ProjectSaveResult> saveToCompletionWithRecoveryLease(
 
 FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackup(
     ProductFileService& files,
-    ProjectFileWorkspace& workspace,
+    ProjectFileReadWorkspace& workspace,
     const char* current,
     const char* backup,
     core::state::project::ProjectSnapshot& out,
@@ -230,7 +230,7 @@ FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackup(
 FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackup(
     ProductFileService& files,
     const ProductMutationLease& recoveryLease,
-    ProjectFileWorkspace& workspace,
+    ProjectFileReadWorkspace& workspace,
     const char* current,
     const char* backup,
     core::state::project::ProjectSnapshot& out,
