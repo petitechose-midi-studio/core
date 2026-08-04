@@ -10,6 +10,7 @@
 #include <oc/time/Time.hpp>
 
 #include "../../src/sequencer/SequencerMidiEventSink.hpp"
+#include "support/AdvancingMicrosClock.hpp"
 
 namespace {
 
@@ -17,7 +18,7 @@ using core::sequencer::RealtimeMidiEventType;
 using oc::note::sequencer::SequencerEvent;
 using oc::note::sequencer::SequencerEventType;
 
-uint32_t fakeMicros = 0;
+test_support::AdvancingMicrosClock testClock;
 
 class MockMidiTransport : public oc::interface::IMidi {
 public:
@@ -94,13 +95,13 @@ SequencerEvent noteEvent(SequencerEventType type,
 }
 
 void installTimeProvider() {
-    oc::time::setMicrosProvider([]() { return fakeMicros; });
+    testClock.install();
 }
 
 void drainDue(core::sequencer::RealtimeMidiQueue& queue,
               oc::api::MidiAPI& midi,
               uint32_t nowUs) {
-    fakeMicros = nowUs;
+    testClock.freezeAt(nowUs);
     queue.drainDue(midi, nowUs, 10000);
 }
 

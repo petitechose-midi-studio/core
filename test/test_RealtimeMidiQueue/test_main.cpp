@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -10,10 +11,11 @@
 #include <oc/time/Time.hpp>
 
 #include "../../src/sequencer/RealtimeMidiQueue.hpp"
+#include "support/AdvancingMicrosClock.hpp"
 
 namespace {
 
-uint32_t fakeMicros = 0;
+test_support::AdvancingMicrosClock testClock;
 
 class MockMidiTransport : public oc::interface::IMidi {
 public:
@@ -106,21 +108,148 @@ core::sequencer::RealtimeMidiEvent event(core::sequencer::RealtimeMidiEventType 
 }
 
 void installTimeProvider() {
-    oc::time::setMicrosProvider([]() { return fakeMicros; });
+    testClock.install();
+}
+
+void test_zero_budget_completes_one_due_event() {
+    core::sequencer::RealtimeMidiQueue queue;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    constexpr uint32_t nowUs = 1'000U;
+
+    for (uint8_t note = 60U; note < 63U; ++note) {
+        assert(queue.push(event(
+            core::sequencer::RealtimeMidiEventType::NoteOff,
+            nowUs,
+            note
+        )));
+    }
+    testClock.advanceOnReadFrom(nowUs, 100U);
+
+    queue.drainDue(midi, testClock.currentUs(), 0U);
+
+    assert(transport.messages.size() == 1U);
+    assert(queue.size() == 2U);
+    assert(testClock.readCount() == 1U);
+    assert(testClock.currentUs() == 1'100U);
+}
+
+void test_500us_budget_stops_on_exact_advancing_sample() {
+    core::sequencer::RealtimeMidiQueue queue;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    constexpr uint32_t nowUs = 1'000U;
+
+    for (uint8_t note = 60U; note < 63U; ++note) {
+        assert(queue.push(event(
+            core::sequencer::RealtimeMidiEventType::NoteOff,
+            nowUs,
+            note
+        )));
+    }
+    testClock.advanceOnReadFrom(nowUs, 250U);
+
+    queue.drainDue(
+        midi,
+        testClock.currentUs(),
+        core::sequencer::RealtimeMidiQueue::MAX_DRAIN_BUDGET_US
+    );
+
+    assert(transport.messages.size() == 2U);
+    assert(queue.size() == 1U);
+    assert(testClock.readCount() == 2U);
+    assert(testClock.currentUs() == 1'500U);
+}
+
+void test_lateness_boundaries_are_exact() {
+    using Queue = core::sequencer::RealtimeMidiQueue;
+    using EventType = core::sequencer::RealtimeMidiEventType;
+
+    {
+        Queue queue;
+        MockMidiTransport transport;
+        oc::api::MidiAPI midi{transport};
+        assert(queue.push(event(EventType::NoteOn, 0U, 60U)));
+        testClock.freezeAt(Queue::LATE_SEND_THRESHOLD_US);
+        queue.drainDue(midi, testClock.currentUs(), 10'000U);
+        assert(transport.messages.size() == 1U);
+        assert(queue.diagnostics().lateSendCount == 0U);
+        assert(queue.diagnostics().droppedLateNoteOnCount == 0U);
+    }
+    {
+        Queue queue;
+        MockMidiTransport transport;
+        oc::api::MidiAPI midi{transport};
+        assert(queue.push(event(EventType::NoteOn, 0U, 61U)));
+        testClock.freezeAt(Queue::DROP_THRESHOLD_US);
+        queue.drainDue(midi, testClock.currentUs(), 10'000U);
+        assert(transport.messages.size() == 1U);
+        assert(queue.diagnostics().lateSendCount == 1U);
+        assert(queue.diagnostics().droppedLateNoteOnCount == 0U);
+    }
+    {
+        Queue queue;
+        MockMidiTransport transport;
+        oc::api::MidiAPI midi{transport};
+        assert(queue.push(event(EventType::NoteOn, 0U, 62U)));
+        testClock.freezeAt(Queue::DROP_THRESHOLD_US + 1U);
+        queue.drainDue(midi, testClock.currentUs(), 10'000U);
+        assert(transport.messages.empty());
+        assert(queue.diagnostics().lateSendCount == 0U);
+        assert(queue.diagnostics().droppedLateNoteOnCount == 1U);
+    }
+}
+
+void test_deadline_comparison_documents_strict_half_range() {
+    constexpr uint32_t supportedLimit = UINT32_C(0x7FFF'FFFF);
+    constexpr uint32_t ambiguousHalfRange = UINT32_C(0x8000'0000);
+    assert(oc::time::signedDeltaUs(supportedLimit, 0U) ==
+           std::numeric_limits<int32_t>::max());
+    assert(oc::time::signedDeltaUs(ambiguousHalfRange, 0U) ==
+           std::numeric_limits<int32_t>::min());
+    assert(oc::time::signedDeltaUs(0U, ambiguousHalfRange) ==
+           std::numeric_limits<int32_t>::min());
+
+    core::sequencer::RealtimeMidiQueue supportedQueue;
+    MockMidiTransport supportedTransport;
+    oc::api::MidiAPI supportedMidi{supportedTransport};
+    assert(supportedQueue.push(event(
+        core::sequencer::RealtimeMidiEventType::NoteOff,
+        0U,
+        60U
+    )));
+    testClock.freezeAt(supportedLimit);
+    supportedQueue.drainDue(supportedMidi, testClock.currentUs(), 0U);
+    assert(supportedTransport.messages.size() == 1U);
+    assert(supportedQueue.size() == 0U);
+
+    core::sequencer::RealtimeMidiQueue ambiguousQueue;
+    MockMidiTransport ambiguousTransport;
+    oc::api::MidiAPI ambiguousMidi{ambiguousTransport};
+    assert(ambiguousQueue.push(event(
+        core::sequencer::RealtimeMidiEventType::NoteOff,
+        0U,
+        61U
+    )));
+    testClock.freezeAt(ambiguousHalfRange);
+    ambiguousQueue.drainDue(ambiguousMidi, testClock.currentUs(), 0U);
+    assert(ambiguousTransport.messages.empty());
+    assert(ambiguousQueue.size() == 1U);
+    assert(testClock.readCount() == 0U);
 }
 
 void test_drains_in_deadline_order_with_note_off_priority() {
     core::sequencer::RealtimeMidiQueue queue;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    fakeMicros = 1000;
+    testClock.freezeAt(1000U);
 
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOn, 1000, 60)));
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOff, 1000, 60)));
     assert(queue.push(ccEvent(1000, 74, 96)));
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOn, 900, 61)));
 
-    queue.drainDue(midi, fakeMicros, 10000);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
 
     assert(transport.messages.size() == 4);
     assert(transport.messages[0].type == core::sequencer::RealtimeMidiEventType::NoteOn);
@@ -142,11 +271,13 @@ void test_late_cc_is_never_dropped() {
     core::sequencer::RealtimeMidiQueue queue;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    fakeMicros = core::sequencer::RealtimeMidiQueue::DROP_THRESHOLD_US + 5000;
+    testClock.freezeAt(
+        core::sequencer::RealtimeMidiQueue::DROP_THRESHOLD_US + 5000U
+    );
 
     assert(queue.push(ccEvent(0, 74, 99)));
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOn, 0, 60)));
-    queue.drainDue(midi, fakeMicros, 10000);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
 
     assert(transport.messages.size() == 1);
     assert(transport.messages[0].type ==
@@ -167,8 +298,8 @@ void test_wrap_aware_deadline_keeps_cc_before_note_on() {
         60
     )));
     assert(queue.push(ccEvent(deadline, 1, 7)));
-    fakeMicros = 3;
-    queue.drainDue(midi, fakeMicros, 10000);
+    testClock.freezeAt(3U);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
     assert(transport.messages.size() == 2);
     assert(transport.messages[0].type ==
            core::sequencer::RealtimeMidiEventType::ControlChange);
@@ -219,8 +350,8 @@ void test_current_capacity_retains_full_cc_batch_between_note_phases() {
 
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    fakeMicros = 1000;
-    queue.drainDue(midi, fakeMicros, UINT32_MAX);
+    testClock.freezeAt(1000U);
+    queue.drainDue(midi, testClock.currentUs(), UINT32_MAX);
     assert(transport.messages.size() == queue.capacity());
     for (size_t i = 0; i < notePhaseCapacity; ++i) {
         assert(transport.messages[i].type ==
@@ -409,8 +540,8 @@ void test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal() {
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
     assert(queue.push(ccEvent(1000, 73, 82, 6)));
-    fakeMicros = 1000;
-    queue.drainDue(midi, fakeMicros, 10000);
+    testClock.freezeAt(1000U);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
     assert(observer.dispatched.size() == 1);
     assert(observer.dispatched[0].type ==
            core::sequencer::RealtimeMidiEventType::ControlChange);
@@ -428,10 +559,10 @@ void test_future_event_stays_queued() {
     core::sequencer::RealtimeMidiQueue queue;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    fakeMicros = 1000;
+    testClock.freezeAt(1000U);
 
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOn, 2000, 60)));
-    queue.drainDue(midi, fakeMicros, 10000);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
 
     assert(transport.messages.empty());
     assert(queue.size() == 1);
@@ -443,10 +574,10 @@ void test_late_note_on_is_sent() {
     core::sequencer::RealtimeMidiQueue queue;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    fakeMicros = 5000;
+    testClock.freezeAt(5000U);
 
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOn, 1000, 60)));
-    queue.drainDue(midi, fakeMicros, 10000);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
 
     assert(transport.messages.size() == 1);
     assert(queue.size() == 0);
@@ -458,11 +589,13 @@ void test_large_late_note_on_drops_but_note_off_sends() {
     core::sequencer::RealtimeMidiQueue queue;
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    fakeMicros = core::sequencer::RealtimeMidiQueue::DROP_THRESHOLD_US + 1000;
+    testClock.freezeAt(
+        core::sequencer::RealtimeMidiQueue::DROP_THRESHOLD_US + 1000U
+    );
 
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOn, 0, 60)));
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOff, 0, 60)));
-    queue.drainDue(midi, fakeMicros, 10000);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
 
     assert(transport.messages.size() == 1);
     assert(transport.messages[0].type == core::sequencer::RealtimeMidiEventType::NoteOff);
@@ -498,8 +631,8 @@ void test_note_off_replaces_note_on_when_full() {
     }
 
     assert(queue.push(event(core::sequencer::RealtimeMidiEventType::NoteOff, 1000, 60)));
-    fakeMicros = 1000;
-    queue.drainDue(midi, fakeMicros, 10000);
+    testClock.freezeAt(1000U);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
 
     assert(!transport.messages.empty());
     assert(transport.messages[0].type == core::sequencer::RealtimeMidiEventType::NoteOff);
@@ -519,8 +652,8 @@ void test_cancel_pending_events_for_track_keeps_other_tracks() {
     assert(queue.cancelPendingEvents(1) == 2);
     assert(queue.size() == 1);
 
-    fakeMicros = 1000;
-    queue.drainDue(midi, fakeMicros, 10000);
+    testClock.freezeAt(1000U);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
 
     assert(transport.messages.size() == 1);
     assert(transport.messages[0].type == core::sequencer::RealtimeMidiEventType::NoteOn);
@@ -546,8 +679,8 @@ void test_cancel_pending_note_events_preserves_same_track_cc() {
     assert(queue.size() == 2U);
     MockMidiTransport transport;
     oc::api::MidiAPI midi{transport};
-    fakeMicros = 1000U;
-    queue.drainDue(midi, fakeMicros, 10000U);
+    testClock.freezeAt(1000U);
+    queue.drainDue(midi, testClock.currentUs(), 10000U);
     assert(transport.messages.size() == 2U);
     assert(transport.messages[0].type ==
            core::sequencer::RealtimeMidiEventType::ControlChange);
@@ -588,6 +721,10 @@ void test_packed_event_preserves_invalid_metadata_for_validation() {
 
 int main() {
     installTimeProvider();
+    test_zero_budget_completes_one_due_event();
+    test_500us_budget_stops_on_exact_advancing_sample();
+    test_lateness_boundaries_are_exact();
+    test_deadline_comparison_documents_strict_half_range();
     test_drains_in_deadline_order_with_note_off_priority();
     test_future_event_stays_queued();
     test_late_note_on_is_sent();

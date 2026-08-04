@@ -19,6 +19,7 @@
 #include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "sequencer/ProjectTrackRuntimeSnapshotBank.hpp"
 #include "state/macro/MacroConstants.hpp"
+#include "support/AdvancingMicrosClock.hpp"
 #include "support/ProjectTrackRuntimeSnapshotTestFixture.hpp"
 
 namespace {
@@ -41,7 +42,7 @@ using core::state::shared::MidiCcResolveStatus;
 using core::state::shared::MidiCcRouteValidity;
 namespace mod = core::state::modulation;
 
-uint32_t fakeMicros = 0;
+test_support::AdvancingMicrosClock testClock;
 
 class MockMidiTransport final : public oc::interface::IMidi {
 public:
@@ -183,8 +184,8 @@ void drain(
     oc::api::MidiAPI& midi,
     uint32_t deadlineUs
 ) {
-    fakeMicros = deadlineUs;
-    queue.drainDue(midi, fakeMicros, 100000);
+    testClock.freezeAt(deadlineUs);
+    queue.drainDue(midi, testClock.currentUs(), 100000U);
 }
 
 void test_one_global_frame_uses_manual_lane_macro_priority() {
@@ -1206,7 +1207,7 @@ void test_full_temporal_spool_drains_due_before_retrying_source_revision() {
 
 int main() {
     std::cout.setf(std::ios::unitbuf);
-    oc::time::setMicrosProvider([]() { return fakeMicros; });
+    testClock.install();
 
     test_one_global_frame_uses_manual_lane_macro_priority();
     test_physical_dispatch_cache_and_removed_pending_retry();
