@@ -33,9 +33,6 @@ pwsh ./script/dev/check-downstream-compat.ps1 -DownstreamProjectPath ..\plugin-b
 # Check repository contracts and print the complete attention inventory
 python ./script/dev/check-architecture-contracts.py
 python ./script/dev/check-architecture-contracts.py --inventory
-
-# Exercise the static gate's deterministic fixtures
-python ./script/dev/check-architecture-contracts.py --self-test
 ```
 
 ## Requirements
