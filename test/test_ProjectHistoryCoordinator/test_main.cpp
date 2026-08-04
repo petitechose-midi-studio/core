@@ -234,6 +234,27 @@ void assertRedoLabel(const core::state::CoreState& state, const char* expected) 
     ) == 0);
 }
 
+void assertDynamicRetainedUsagePublished(const Harness& h) {
+    const auto macroUsage = h.state.projectHistory.retainedUsage(
+        project::ProjectHistoryDomain::Macro
+    );
+    const auto sequencerUsage = h.state.projectHistory.retainedUsage(
+        project::ProjectHistoryDomain::Sequencer
+    );
+    assert(macroUsage.bytes == h.state.macroHistory.retainedBytes());
+    assert(macroUsage.spans == h.state.macroHistory.retainedSpans());
+    assert(sequencerUsage.bytes == h.state.sequencerHistory.retainedBytes());
+    assert(sequencerUsage.spans == h.state.sequencerHistory.retainedSpans());
+    assert(
+        h.state.projectHistory.retainedBytes() ==
+        macroUsage.bytes + sequencerUsage.bytes
+    );
+    assert(
+        h.state.projectHistory.retainedSpans() ==
+        macroUsage.spans + sequencerUsage.spans
+    );
+}
+
 void test_cross_domain_timeline_is_exact_and_semantic() {
     Harness h;
     const uint8_t initialPitch = h.state.sequencer.pattern.note[0];
@@ -474,11 +495,15 @@ void test_new_cross_domain_mutation_cuts_every_redo_branch() {
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencerHistory.redoCount() == 1U);
     assert(h.state.projectHistory.redoCount() == 1U);
+    assert(h.state.sequencerHistory.retainedBytes() > 0U);
+    assertDynamicRetainedUsagePublished(h);
 
     recordMacroDestination(h.state, 72);
     assert(h.state.projectHistory.redoCount() == 0U);
     assert(h.state.macroHistory.redoCount() == 0U);
     assert(h.state.sequencerHistory.redoCount() == 0U);
+    assert(h.state.sequencerHistory.retainedBytes() == 0U);
+    assertDynamicRetainedUsagePublished(h);
     assert(!h.state.redoProjectHistory());
 
     assert(h.state.undoProjectHistory());
@@ -487,6 +512,87 @@ void test_new_cross_domain_mutation_cuts_every_redo_branch() {
     assert(!h.state.pages.pageData(0, 0).isMacroActive(kMacro.macro));
 
     std::cout << "[PASS] a new domain mutation cuts the complete global Redo branch\n";
+}
+
+void test_global_retained_admission_is_exact_at_two_mib_and_655_spans() {
+    project::ProjectHistoryCoordinator history;
+    const auto& sink = history.eventSink();
+
+    constexpr project::ProjectHistoryRetainedUsage kMacroAdjustedMaximum{
+        .bytes = 1'050'680U,
+        .spans = 144U,
+    };
+    constexpr project::ProjectHistoryRetainedUsage kSequencerMaximumSpans{
+        .bytes = 1'046'472U,
+        .spans = 511U,
+    };
+    sink.notifyRetainedUsage(
+        project::ProjectHistoryDomain::Macro,
+        kMacroAdjustedMaximum
+    );
+    assert(sink.admitsRetainedUsage(
+        project::ProjectHistoryDomain::Sequencer,
+        kSequencerMaximumSpans
+    ));
+    sink.notifyRetainedUsage(
+        project::ProjectHistoryDomain::Sequencer,
+        kSequencerMaximumSpans
+    );
+    assert(
+        history.retainedBytes() ==
+        project::ProjectHistoryCoordinator::RETAINED_BYTE_BUDGET
+    );
+    assert(
+        history.retainedSpans() ==
+        project::ProjectHistoryCoordinator::RETAINED_SPAN_BUDGET
+    );
+
+    auto oneByteTooMany = kSequencerMaximumSpans;
+    ++oneByteTooMany.bytes;
+    assert(!sink.admitsRetainedUsage(
+        project::ProjectHistoryDomain::Sequencer,
+        oneByteTooMany
+    ));
+    auto oneSpanTooMany = kMacroAdjustedMaximum;
+    ++oneSpanTooMany.spans;
+    assert(!sink.admitsRetainedUsage(
+        project::ProjectHistoryDomain::Macro,
+        oneSpanTooMany
+    ));
+
+    sink.notifyRetainedUsage(
+        project::ProjectHistoryDomain::Sequencer,
+        {}
+    );
+    sink.notifyRetainedUsage(project::ProjectHistoryDomain::Macro, {});
+    assert(history.retainedBytes() == 0U);
+    assert(history.retainedSpans() == 0U);
+
+    constexpr project::ProjectHistoryRetainedUsage kMacroLocalMaximum{
+        .bytes = macro::MacroHistoryService::RETAINED_BYTE_BUDGET,
+        .spans = macro::MacroHistoryService::RETAINED_SPAN_BUDGET,
+    };
+    sink.notifyRetainedUsage(
+        project::ProjectHistoryDomain::Macro,
+        kMacroLocalMaximum
+    );
+    assert(!sink.admitsRetainedUsage(
+        project::ProjectHistoryDomain::Sequencer,
+        project::ProjectHistoryRetainedUsage{
+            .bytes = seq::SequencerHistoryService::RETAINED_BYTE_BUDGET,
+            .spans = seq::SequencerHistoryService::RETAINED_SPAN_BUDGET,
+        }
+    ));
+    assert(sink.admitsRetainedUsage(
+        project::ProjectHistoryDomain::Sequencer,
+        project::ProjectHistoryRetainedUsage{
+            .bytes = 878'396U,
+            .spans = 68U,
+        }
+    ));
+
+    std::cout
+        << "[PASS] global retained admission is exact at 2 MiB and 655 spans\n";
 }
 
 void test_macro_domain_eviction_establishes_an_exact_history_barrier() {
@@ -752,6 +858,7 @@ int main() {
     test_track_structure_boundary_reports_and_commits_pattern_predecessor();
     test_track_structure_boundary_preserves_exclusive_transaction_owners();
     test_new_cross_domain_mutation_cuts_every_redo_branch();
+    test_global_retained_admission_is_exact_at_two_mib_and_655_spans();
     test_macro_domain_eviction_establishes_an_exact_history_barrier();
     test_domain_clear_is_a_global_history_boundary();
     test_global_history_is_fail_closed_during_modulator_audition();

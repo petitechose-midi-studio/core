@@ -122,6 +122,18 @@ STRICT_EXTMEM_OWNER_SOURCES = frozenset((
     EXTMEM_ALLOCATOR_SOURCE,
 ))
 
+PROJECT_HISTORY_EVENT_SINK = "src/state/project/ProjectHistoryEventSink.hpp"
+PROJECT_HISTORY_COORDINATOR_HEADER = (
+    "src/state/project/ProjectHistoryCoordinator.hpp"
+)
+PROJECT_HISTORY_COORDINATOR_SOURCE = (
+    "src/state/project/ProjectHistoryCoordinator.cpp"
+)
+MACRO_HISTORY_HEADER = "src/state/macro/MacroHistory.hpp"
+MACRO_HISTORY_SOURCE = "src/state/macro/MacroHistory.cpp"
+SEQUENCER_HISTORY_HEADER = "src/state/sequencer/SequencerHistory.hpp"
+SEQUENCER_HISTORY_SOURCE = "src/state/sequencer/SequencerHistory.cpp"
+
 STRICT_EXTMEM_CALL = re.compile(
     r"\b(?:allocate|free)ExtmemStrict\s*\("
 )
@@ -799,6 +811,217 @@ def mutation_contract_errors(rel: str, content: str) -> list[str]:
     for symbol in FORBIDDEN_MUTATION_SYMBOLS:
         if re.search(rf"\b{re.escape(symbol)}\b", content):
             errors.append(f"{rel}: obsolete mutation symbol {symbol}")
+    return errors
+
+
+def history_admission_contract_errors(files: dict[str, str]) -> list[str]:
+    """Freeze D-UNDO retained-byte/span admission and publication order."""
+    errors: list[str] = []
+
+    def require(
+        rel: str,
+        pattern: str,
+        description: str,
+        count: int = 1,
+    ) -> None:
+        found = regex_count_dotall(pattern, files.get(rel, ""))
+        if found != count:
+            errors.append(
+                f"{rel}: {description} (expected {count}, found {found})"
+            )
+
+    def function_body(rel: str, function_name: str) -> str | None:
+        bodies = cpp_function_bodies(files.get(rel, ""), function_name)
+        if len(bodies) != 1:
+            errors.append(
+                f"{rel}: {function_name} must have one balanced definition "
+                f"(found {len(bodies)})"
+            )
+            return None
+        return cpp_code_mask(bodies[0])
+
+    def require_in_function(
+        rel: str,
+        function_name: str,
+        pattern: str,
+        description: str,
+    ) -> None:
+        body = function_body(rel, function_name)
+        if body is not None and re.search(pattern, body, flags=re.DOTALL) is None:
+            errors.append(f"{rel}: {description} in {function_name}")
+
+    def require_ordered_function(
+        rel: str,
+        function_name: str,
+        patterns: tuple[str, ...],
+        description: str,
+    ) -> None:
+        body = function_body(rel, function_name)
+        if body is None:
+            return
+        matches = [re.search(pattern, body, flags=re.DOTALL) for pattern in patterns]
+        if any(match is None for match in matches):
+            errors.append(f"{rel}: {description} (missing ordered marker)")
+            return
+        positions = [match.start() for match in matches if match is not None]
+        if positions != sorted(positions):
+            errors.append(f"{rel}: {description} (wrong order)")
+
+    for contract in (
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"struct\s+ProjectHistoryRetainedUsage\s*\{.*?"
+            r"uint32_t\s+bytes\s*=\s*0U\s*;.*?"
+            r"uint16_t\s+spans\s*=\s*0U\s*;.*?\}",
+            "retained usage must carry exact byte and span counters",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"sizeof\(ProjectHistoryRetainedUsage\)\s*==\s*8U",
+            "retained usage ABI must remain 8 B",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"using\s+CanRetainFn\s*=\s*bool\s*\(\*\).*?"
+            r"ProjectHistoryRetainedUsage\s+projected",
+            "event sink must expose allocation-free admission",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"using\s+RetainedFn\s*=\s*void\s*\(\*\).*?"
+            r"ProjectHistoryRetainedUsage\s+retained",
+            "event sink must expose retained-usage publication",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"CanRetainFn\s+canRetain\s*=\s*nullptr",
+            "event sink must retain the admission callback",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"RetainedFn\s+retained\s*=\s*nullptr",
+            "event sink must retain the usage-publication callback",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            r"return\s+canRetain\s*==\s*nullptr\s*\|\|\s*"
+            r"canRetain\s*\(\s*context\s*,\s*domain\s*,\s*projected\s*\)",
+            "detached domains must remain locally admissible",
+        ),
+        (
+            MACRO_HISTORY_HEADER,
+            r"RETAINED_BYTE_BUDGET\s*=\s*1'058'080U",
+            "Macro retained-byte cap must remain 1,058,080 B",
+        ),
+        (
+            MACRO_HISTORY_HEADER,
+            r"RETAINED_SPAN_BUDGET\s*=\s*144U",
+            "Macro retained-span cap must remain 144",
+        ),
+        (
+            SEQUENCER_HISTORY_HEADER,
+            r"RETAINED_BYTE_BUDGET\s*=\s*1024U\s*\*\s*1024U",
+            "Sequencer retained-byte cap must remain 1 MiB",
+        ),
+        (
+            SEQUENCER_HISTORY_HEADER,
+            r"RETAINED_SPAN_BUDGET\s*=\s*511U",
+            "Sequencer retained-span cap must remain 511",
+        ),
+        (
+            PROJECT_HISTORY_COORDINATOR_HEADER,
+            r"RETAINED_BYTE_BUDGET\s*=\s*2U\s*\*\s*1024U\s*\*\s*1024U",
+            "global retained-byte cap must remain 2 MiB",
+        ),
+        (
+            PROJECT_HISTORY_COORDINATOR_HEADER,
+            r"RETAINED_SPAN_BUDGET\s*=\s*655U",
+            "global retained-span cap must remain 655",
+        ),
+        (
+            PROJECT_HISTORY_COORDINATOR_HEADER,
+            r"std::array\s*<\s*ProjectHistoryRetainedUsage\s*,\s*4U\s*>"
+            r"\s+retained_usage_",
+            "coordinator must retain one counter per Project domain",
+        ),
+        (
+            MACRO_HISTORY_SOURCE,
+            r"macroEntriesRetainedUsage\s*\(\s*undo_\s*,\s*undo_count_\s*\)"
+            r".*?macroEntriesRetainedUsage\s*\(\s*redo_\s*,\s*redo_count_\s*\)",
+            "Macro accounting must include committed Undo and Redo only",
+        ),
+        (
+            SEQUENCER_HISTORY_SOURCE,
+            r"entriesRetainedUsage\s*\(\s*undo_\s*,\s*undo_count_\s*\)"
+            r".*?entriesRetainedUsage\s*\(\s*redo_\s*,\s*redo_count_\s*\)",
+            "Sequencer accounting must include committed Undo and Redo",
+        ),
+    ):
+        require(*contract)
+
+    for rel in (MACRO_HISTORY_HEADER, SEQUENCER_HISTORY_HEADER):
+        require_in_function(
+            rel,
+            "setProjectHistoryEventSink",
+            r"publishRetainedUsage_\s*\(\s*\)",
+            "attaching the global sink must publish current usage",
+        )
+
+    for rel, function_name in (
+        (MACRO_HISTORY_SOURCE, "MacroHistoryService::clear"),
+        (MACRO_HISTORY_SOURCE, "MacroHistoryService::discardRedoBranch"),
+        (SEQUENCER_HISTORY_SOURCE, "SequencerHistoryService::clear"),
+        (SEQUENCER_HISTORY_SOURCE, "SequencerHistoryService::discardRedoBranch"),
+    ):
+        require_in_function(
+            rel,
+            function_name,
+            r"publishRetainedUsage_\s*\(\s*\)",
+            "history release must publish retained usage",
+        )
+
+    require_ordered_function(
+        MACRO_HISTORY_SOURCE,
+        "MacroHistoryService::recordNewEntry_",
+        (
+            r"clearRedo_\s*\(\s*\)",
+            r"projected\.bytes\s*>\s*RETAINED_BYTE_BUDGET",
+            r"projected\.spans\s*>\s*RETAINED_SPAN_BUDGET",
+            r"admitsRetainedUsage\s*\(",
+            r"push_\s*\(",
+            r"publishRetainedUsage_\s*\(\s*\)",
+            r"notifyCommitted\s*\(",
+        ),
+        "Macro commit must evict, admit, publish, then expose the timeline entry",
+    )
+    require_ordered_function(
+        SEQUENCER_HISTORY_SOURCE,
+        "SequencerHistoryService::commitPreparedEntry",
+        (
+            r"discardRedoBranch\s*\(\s*\)",
+            r"projected\.bytes\s*>\s*RETAINED_BYTE_BUDGET",
+            r"projected\.spans\s*>\s*RETAINED_SPAN_BUDGET",
+            r"admitsRetainedUsage\s*\(",
+            r"pushUndo\s*\(",
+            r"publishRetainedUsage_\s*\(\s*\)",
+            r"notifyCommitted\s*\(",
+        ),
+        "Sequencer commit must evict, admit, publish, then expose the timeline entry",
+    )
+    require_ordered_function(
+        PROJECT_HISTORY_COORDINATOR_SOURCE,
+        "ProjectHistoryCoordinator::canRetain",
+        (
+            r"projected\.bytes\s*>\s*RETAINED_BYTE_BUDGET",
+            r"projected\.spans\s*>\s*RETAINED_SPAN_BUDGET",
+            r"bytes\s*\+=\s*retained_usage_\[index\]\.bytes",
+            r"spans\s*\+=\s*retained_usage_\[index\]\.spans",
+            r"bytes\s*<=\s*RETAINED_BYTE_BUDGET",
+            r"spans\s*<=\s*RETAINED_SPAN_BUDGET",
+        ),
+        "global admission must substitute one domain then test both caps",
+    )
+
     return errors
 
 
@@ -4781,6 +5004,97 @@ def persistence_self_test() -> int:
     return 0
 
 
+def history_admission_self_test() -> int:
+    paths = (
+        PROJECT_HISTORY_EVENT_SINK,
+        PROJECT_HISTORY_COORDINATOR_HEADER,
+        PROJECT_HISTORY_COORDINATOR_SOURCE,
+        MACRO_HISTORY_HEADER,
+        MACRO_HISTORY_SOURCE,
+        SEQUENCER_HISTORY_HEADER,
+        SEQUENCER_HISTORY_SOURCE,
+    )
+    fixture = {
+        rel: (ROOT / rel).read_text(encoding="utf-8")
+        for rel in paths
+    }
+
+    def mutate(rel: str, before: str, after: str) -> dict[str, str]:
+        result = dict(fixture)
+        result[rel] = result[rel].replace(before, after, 1)
+        return result
+
+    mutations = (
+        (
+            MACRO_HISTORY_HEADER,
+            "1'058'080U",
+            "1'058'079U",
+            "Macro byte-budget drift is rejected",
+        ),
+        (
+            PROJECT_HISTORY_COORDINATOR_HEADER,
+            "RETAINED_SPAN_BUDGET = 655U",
+            "RETAINED_SPAN_BUDGET = 654U",
+            "global span-budget drift is rejected",
+        ),
+        (
+            PROJECT_HISTORY_EVENT_SINK,
+            "CanRetainFn canRetain = nullptr;",
+            "CanRetainFn legacyCanRetain = nullptr;",
+            "missing global admission callback is rejected",
+        ),
+        (
+            MACRO_HISTORY_SOURCE,
+            "    push_(undo_, undo_count_, std::move(change), project_history_sink_);\n"
+            "    publishRetainedUsage_();",
+            "    push_(undo_, undo_count_, std::move(change), project_history_sink_);",
+            "Macro commit without retained-usage publication is rejected",
+        ),
+        (
+            SEQUENCER_HISTORY_SOURCE,
+            "    const bool pushed = pushUndo(std::move(entry));\n"
+            "    assert(pushed);\n"
+            "    (void)pushed;\n"
+            "    publishRetainedUsage_();",
+            "    const bool pushed = pushUndo(std::move(entry));\n"
+            "    assert(pushed);\n"
+            "    (void)pushed;",
+            "Sequencer commit without retained-usage publication is rejected",
+        ),
+        (
+            PROJECT_HISTORY_COORDINATOR_SOURCE,
+            "        spans += retained_usage_[index].spans;",
+            "        spans += 0U;",
+            "global admission without cross-domain spans is rejected",
+        ),
+    )
+
+    checks: list[tuple[bool, str]] = [
+        (
+            not history_admission_contract_errors(fixture),
+            "the checked-in D-UNDO admission contract is accepted",
+        )
+    ]
+    for rel, before, after, description in mutations:
+        mutated = mutate(rel, before, after)
+        checks.append((
+            mutated[rel] != fixture[rel]
+            and bool(history_admission_contract_errors(mutated)),
+            description,
+        ))
+
+    failures = [description for ok, description in checks if not ok]
+    if failures:
+        for failure in failures:
+            print(f"SELF-TEST ERROR: {failure}")
+        return 1
+    print(
+        "History admission architecture self-tests: "
+        f"OK ({len(checks)}/{len(checks)})"
+    )
+    return 0
+
+
 def self_test() -> int:
     step_draft_fixture = {
         path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
@@ -7191,6 +7505,7 @@ def main(show_inventory: bool = False) -> int:
     errors.extend(step_draft_transition_contract_errors(contract_sources))
     errors.extend(extmem_lifetime_contract_errors(contract_sources))
     errors.extend(persistence_lease_contract_errors(contract_sources))
+    errors.extend(history_admission_contract_errors(contract_sources))
 
     platformio = PLATFORMIO.read_text(encoding="utf-8")
     if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
@@ -7502,15 +7817,26 @@ if __name__ == "__main__":
         help="run only the deterministic R-05 persistence fixtures",
     )
     parser.add_argument(
+        "--self-test-history-admission",
+        action="store_true",
+        help="run only the deterministic D-UNDO admission fixtures",
+    )
+    parser.add_argument(
         "--inventory",
         action="store_true",
         help="print the full advisory >800-line inventory",
     )
     args = parser.parse_args()
-    if args.self_test and args.self_test_persistence:
-        parser.error("choose either --self-test or --self-test-persistence")
+    if sum((
+        args.self_test,
+        args.self_test_persistence,
+        args.self_test_history_admission,
+    )) > 1:
+        parser.error("choose exactly one architecture self-test")
     if args.self_test:
         sys.exit(self_test())
     if args.self_test_persistence:
         sys.exit(persistence_self_test())
+    if args.self_test_history_admission:
+        sys.exit(history_admission_self_test())
     sys.exit(main(args.inventory))

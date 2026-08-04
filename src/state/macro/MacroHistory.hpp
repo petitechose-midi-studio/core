@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 #include "state/macro/MacroHistoryTypes.hpp"
 
 namespace core::state::macro {
@@ -51,6 +53,8 @@ namespace core::state::macro {
 class MacroHistoryService {
 public:
     static constexpr uint8_t ENTRY_LIMIT = 8;
+    static constexpr uint32_t RETAINED_BYTE_BUDGET = 1'058'080U;
+    static constexpr uint16_t RETAINED_SPAN_BUDGET = 144U;
 
     MacroHistoryService();
     ~MacroHistoryService();
@@ -61,6 +65,7 @@ public:
         const core::state::project::ProjectHistoryEventSink* sink
     ) {
         project_history_sink_ = sink;
+        publishRetainedUsage_();
     }
 
     [[nodiscard]] MacroHistoryChangePtr prepare(
@@ -392,6 +397,8 @@ public:
     [[nodiscard]] bool canRedo() const { return redo_count_ > 0; }
     [[nodiscard]] uint8_t undoCount() const { return undo_count_; }
     [[nodiscard]] uint8_t redoCount() const { return redo_count_; }
+    [[nodiscard]] size_t retainedBytes() const;
+    [[nodiscard]] uint16_t retainedSpans() const;
     [[nodiscard]] uintptr_t projectHistoryUndoIdentity() const {
         return undo_count_ > 0U && undo_[undo_count_ - 1U]
             ? reinterpret_cast<uintptr_t>(undo_[undo_count_ - 1U].get())
@@ -481,6 +488,9 @@ private:
     );
     void recordNewEntry_(MacroHistoryChangePtr change);
     void clearRedo_();
+    [[nodiscard]] core::state::project::ProjectHistoryRetainedUsage
+        retainedUsage_() const;
+    void publishRetainedUsage_() const;
 
     std::array<MacroHistoryChangePtr, ENTRY_LIMIT> undo_{};
     std::array<MacroHistoryChangePtr, ENTRY_LIMIT> redo_{};

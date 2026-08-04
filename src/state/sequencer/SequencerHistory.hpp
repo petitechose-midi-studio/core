@@ -605,12 +605,14 @@ public:
     static constexpr uint8_t ENTRY_LIMIT =
         PATTERN_ENTRY_LIMIT + STRUCTURE_ENTRY_LIMIT + FULL_BANK_ENTRY_LIMIT;
     static constexpr size_t RETAINED_BYTE_BUDGET = 1024U * 1024U;
+    static constexpr uint16_t RETAINED_SPAN_BUDGET = 511U;
 
     SequencerHistoryService();
     ~SequencerHistoryService();
 
     void setProjectHistoryEventSink(const core::state::project::ProjectHistoryEventSink* sink) {
         project_history_sink_ = sink;
+        publishRetainedUsage_();
     }
 
     // Side-effect-free admission check for a fully prepared Pattern change.
@@ -667,6 +669,7 @@ public:
     uint8_t undoCount(SequencerHistoryScope scope) const;
     uint8_t redoCount(SequencerHistoryScope scope) const;
     size_t retainedBytes() const;
+    uint16_t retainedSpans() const;
 private:
     std::array<SequencerHistoryEntry, ENTRY_LIMIT> undo_{};
     std::array<SequencerHistoryEntry, ENTRY_LIMIT> redo_{};
@@ -677,6 +680,9 @@ private:
     bool pushUndo(SequencerHistoryEntry entry);
     bool pushRedo(SequencerHistoryEntry entry);
     void commitPreparedEntry(SequencerHistoryEntry entry);
+    [[nodiscard]] core::state::project::ProjectHistoryRetainedUsage
+        retainedUsage_() const;
+    void publishRetainedUsage_() const;
 };
 
 }  // namespace core::state::sequencer

@@ -593,6 +593,14 @@ countScope(const std::array<SequencerHistoryEntry, SequencerHistoryService::ENTR
 
 constexpr size_t kExtmemAllocationOverheadEstimate = 16U;
 
+using RetainedUsage =
+    core::state::project::ProjectHistoryRetainedUsage;
+
+FLASHMEM void addRetainedUsage(RetainedUsage& target, RetainedUsage added) {
+    target.bytes += added.bytes;
+    target.spans = static_cast<uint16_t>(target.spans + added.spans);
+}
+
 FLASHMEM size_t graphRetainedBytes(const GraphPtr& graph) {
     return graph ? sizeof(Graph) + kExtmemAllocationOverheadEstimate : 0U;
 }
@@ -601,8 +609,27 @@ FLASHMEM size_t ccLaneRetainedBytes(const SequencerHistoryCcLanePtr& lanes) {
     return lanes ? sizeof(SequencerCcLaneBank) + kExtmemAllocationOverheadEstimate : 0U;
 }
 
+FLASHMEM uint16_t graphRetainedSpans(const GraphPtr& graph) {
+    return graph ? 1U : 0U;
+}
+
+FLASHMEM uint16_t ccLaneRetainedSpans(
+    const SequencerHistoryCcLanePtr& lanes
+) {
+    return lanes ? 1U : 0U;
+}
+
 FLASHMEM size_t patternSnapshotRetainedBytes(const SequencerHistoryPatternSnapshot& snapshot) {
     return graphRetainedBytes(snapshot.graph) + ccLaneRetainedBytes(snapshot.ccLanes);
+}
+
+FLASHMEM uint16_t patternSnapshotRetainedSpans(
+    const SequencerHistoryPatternSnapshot& snapshot
+) {
+    return static_cast<uint16_t>(
+        graphRetainedSpans(snapshot.graph) +
+        ccLaneRetainedSpans(snapshot.ccLanes)
+    );
 }
 
 FLASHMEM size_t trackBankSnapshotRetainedBytes(const SequencerHistoryTrackBankSnapshot& snapshot) {
@@ -613,10 +640,35 @@ FLASHMEM size_t trackBankSnapshotRetainedBytes(const SequencerHistoryTrackBankSn
     return bytes;
 }
 
+FLASHMEM uint16_t trackBankSnapshotRetainedSpans(
+    const SequencerHistoryTrackBankSnapshot& snapshot
+) {
+    uint16_t spans = graphRetainedSpans(snapshot.editorGraph);
+    for (const auto& graph : snapshot.bankGraphs) {
+        spans = static_cast<uint16_t>(spans + graphRetainedSpans(graph));
+    }
+    spans = static_cast<uint16_t>(
+        spans + ccLaneRetainedSpans(snapshot.editorCcLanes)
+    );
+    for (const auto& lanes : snapshot.bankCcLanes) {
+        spans = static_cast<uint16_t>(spans + ccLaneRetainedSpans(lanes));
+    }
+    return spans;
+}
+
 FLASHMEM size_t fullBankChangeRetainedBytes(const SequencerHistoryFullBankChange& change) {
     return sizeof(SequencerHistoryFullBankChange) + kExtmemAllocationOverheadEstimate +
            trackBankSnapshotRetainedBytes(change.before) +
            trackBankSnapshotRetainedBytes(change.after);
+}
+
+FLASHMEM uint16_t fullBankChangeRetainedSpans(
+    const SequencerHistoryFullBankChange& change
+) {
+    return static_cast<uint16_t>(
+        1U + trackBankSnapshotRetainedSpans(change.before) +
+        trackBankSnapshotRetainedSpans(change.after)
+    );
 }
 
 FLASHMEM size_t
@@ -624,6 +676,18 @@ structureSnapshotRetainedBytes(const SequencerHistoryTrackStructureSnapshot& sna
     size_t bytes = 0;
     for (const auto& track : snapshot.tracks) { bytes += patternSnapshotRetainedBytes(track); }
     return bytes;
+}
+
+FLASHMEM uint16_t structureSnapshotRetainedSpans(
+    const SequencerHistoryTrackStructureSnapshot& snapshot
+) {
+    uint16_t spans = 0U;
+    for (const auto& track : snapshot.tracks) {
+        spans = static_cast<uint16_t>(
+            spans + patternSnapshotRetainedSpans(track)
+        );
+    }
+    return spans;
 }
 
 FLASHMEM size_t structureChangeRetainedBytes(const SequencerHistoryTrackStructureChange& change) {
@@ -646,9 +710,33 @@ FLASHMEM size_t structureChangeRetainedBytes(const SequencerHistoryTrackStructur
     return bytes;
 }
 
+FLASHMEM uint16_t structureChangeRetainedSpans(
+    const SequencerHistoryTrackStructureChange& change
+) {
+    uint16_t spans = static_cast<uint16_t>(
+        1U + structureSnapshotRetainedSpans(change.before) +
+        structureSnapshotRetainedSpans(change.after)
+    );
+    if (change.macroStructure != nullptr) {
+        ++spans;
+        if (change.macroStructure->beforeControl != nullptr) ++spans;
+        if (change.macroStructure->afterControl != nullptr) ++spans;
+    }
+    return spans;
+}
+
 FLASHMEM size_t patternChangeRetainedBytes(const SequencerHistoryPatternChange& change) {
     return sizeof(SequencerHistoryPatternChange) + kExtmemAllocationOverheadEstimate +
            patternSnapshotRetainedBytes(change.before) + patternSnapshotRetainedBytes(change.after);
+}
+
+FLASHMEM uint16_t patternChangeRetainedSpans(
+    const SequencerHistoryPatternChange& change
+) {
+    return static_cast<uint16_t>(
+        1U + patternSnapshotRetainedSpans(change.before) +
+        patternSnapshotRetainedSpans(change.after)
+    );
 }
 
 FLASHMEM size_t patternChangeAdmissionBytes(const SequencerHistoryPatternChange& change) {
@@ -662,10 +750,19 @@ FLASHMEM size_t patternChangeAdmissionBytes(const SequencerHistoryPatternChange&
     return patternChangeRetainedBytes(change);
 }
 
-FLASHMEM bool incomingEntryFitsRetainedBudget(size_t incomingBytes) {
+FLASHMEM uint16_t patternChangeAdmissionSpans(
+    const SequencerHistoryPatternChange& change
+) {
+    return change.storage == SequencerHistoryPatternStorage::FlatOnly
+        ? 1U
+        : patternChangeRetainedSpans(change);
+}
+
+FLASHMEM bool incomingEntryFitsRetainedBudget(RetainedUsage incoming) {
     // commitPreparedEntry may evict every retained entry, so admission depends
     // only on whether the incoming entry fits the total retained-byte budget.
-    return incomingBytes <= SequencerHistoryService::RETAINED_BYTE_BUDGET;
+    return incoming.bytes <= SequencerHistoryService::RETAINED_BYTE_BUDGET &&
+        incoming.spans <= SequencerHistoryService::RETAINED_SPAN_BUDGET;
 }
 
 FLASHMEM size_t entryRetainedBytes(const SequencerHistoryEntry& entry) {
@@ -683,12 +780,54 @@ FLASHMEM size_t entryRetainedBytes(const SequencerHistoryEntry& entry) {
     }
 }
 
+FLASHMEM uint16_t entryRetainedSpans(const SequencerHistoryEntry& entry) {
+    switch (entry.scope) {
+        case SequencerHistoryScope::PatternOnly:
+            return entry.pattern
+                ? patternChangeRetainedSpans(*entry.pattern)
+                : 0U;
+        case SequencerHistoryScope::Structure:
+            return entry.structure
+                ? structureChangeRetainedSpans(*entry.structure)
+                : 0U;
+        case SequencerHistoryScope::FullBank:
+            return entry.fullBank
+                ? fullBankChangeRetainedSpans(*entry.fullBank)
+                : 0U;
+        default:
+            return 0U;
+    }
+}
+
 FLASHMEM size_t entriesRetainedBytes(
     const std::array<SequencerHistoryEntry, SequencerHistoryService::ENTRY_LIMIT>& entries,
     uint8_t count) {
     size_t bytes = 0;
     for (uint8_t i = 0; i < count; ++i) { bytes += entryRetainedBytes(entries[i]); }
     return bytes;
+}
+
+FLASHMEM uint16_t entriesRetainedSpans(
+    const std::array<SequencerHistoryEntry, SequencerHistoryService::ENTRY_LIMIT>& entries,
+    uint8_t count
+) {
+    uint16_t spans = 0U;
+    for (uint8_t index = 0U; index < count; ++index) {
+        spans = static_cast<uint16_t>(
+            spans + entryRetainedSpans(entries[index])
+        );
+    }
+    return spans;
+}
+
+FLASHMEM RetainedUsage entriesRetainedUsage(
+    const std::array<SequencerHistoryEntry, SequencerHistoryService::ENTRY_LIMIT>& entries,
+    uint8_t count
+) {
+    return RetainedUsage{
+        .bytes = static_cast<uint32_t>(entriesRetainedBytes(entries, count)),
+        .spans = entriesRetainedSpans(entries, count),
+    };
 }
 
 FLASHMEM uintptr_t projectHistoryIdentity(const SequencerHistoryEntry& entry) {
@@ -1939,7 +2078,16 @@ FLASHMEM bool SequencerHistoryService::canRecordPattern(
         return false;
     }
 
-    return incomingEntryFitsRetainedBudget(patternChangeAdmissionBytes(change));
+    const RetainedUsage incoming{
+        .bytes = static_cast<uint32_t>(patternChangeAdmissionBytes(change)),
+        .spans = patternChangeAdmissionSpans(change),
+    };
+    return incomingEntryFitsRetainedBudget(incoming) &&
+        (project_history_sink_ == nullptr ||
+         project_history_sink_->admitsRetainedUsage(
+             core::state::project::ProjectHistoryDomain::Sequencer,
+             incoming
+         ));
 }
 
 FLASHMEM void SequencerHistoryService::recordPreparedPattern(
@@ -1970,8 +2118,17 @@ FLASHMEM void SequencerHistoryService::recordPreparedPattern(
 
 FLASHMEM bool SequencerHistoryService::canRecordFullBank(
     const SequencerHistoryFullBankChange& change) const {
+    const RetainedUsage incoming{
+        .bytes = static_cast<uint32_t>(fullBankChangeRetainedBytes(change)),
+        .spans = fullBankChangeRetainedSpans(change),
+    };
     return !sameMusicalHistorySnapshot(change.before, change.after) &&
-           incomingEntryFitsRetainedBudget(fullBankChangeRetainedBytes(change));
+        incomingEntryFitsRetainedBudget(incoming) &&
+        (project_history_sink_ == nullptr ||
+         project_history_sink_->admitsRetainedUsage(
+             core::state::project::ProjectHistoryDomain::Sequencer,
+             incoming
+         ));
 }
 
 FLASHMEM void SequencerHistoryService::commitAdmittedFullBank(
@@ -2012,7 +2169,16 @@ FLASHMEM bool SequencerHistoryService::canRecordStructure(
         return false;
     }
 
-    return incomingEntryFitsRetainedBudget(structureChangeRetainedBytes(change));
+    const RetainedUsage incoming{
+        .bytes = static_cast<uint32_t>(structureChangeRetainedBytes(change)),
+        .spans = structureChangeRetainedSpans(change),
+    };
+    return incomingEntryFitsRetainedBudget(incoming) &&
+        (project_history_sink_ == nullptr ||
+         project_history_sink_->admitsRetainedUsage(
+             core::state::project::ProjectHistoryDomain::Sequencer,
+             incoming
+         ));
 }
 
 FLASHMEM bool SequencerHistoryService::undo(SequencerTrackBankState& bank, SequencerState& active) {
@@ -2219,6 +2385,7 @@ FLASHMEM void SequencerHistoryService::clear() {
     redo_count_ = 0;
     for (auto& item : undo_) { item = SequencerHistoryEntry{}; }
     for (auto& item : redo_) { item = SequencerHistoryEntry{}; }
+    publishRetainedUsage_();
 }
 
 FLASHMEM void SequencerHistoryService::discardRedoBranch() {
@@ -2231,6 +2398,7 @@ FLASHMEM void SequencerHistoryService::discardRedoBranch() {
         redo_[index] = SequencerHistoryEntry{};
     }
     redo_count_ = 0U;
+    publishRetainedUsage_();
 }
 
 FLASHMEM uint8_t SequencerHistoryService::undoCount(SequencerHistoryScope scope) const {
@@ -2250,7 +2418,11 @@ FLASHMEM uintptr_t SequencerHistoryService::projectHistoryRedoIdentity() const {
 }
 
 FLASHMEM size_t SequencerHistoryService::retainedBytes() const {
-    return entriesRetainedBytes(undo_, undo_count_) + entriesRetainedBytes(redo_, redo_count_);
+    return retainedUsage_().bytes;
+}
+
+FLASHMEM uint16_t SequencerHistoryService::retainedSpans() const {
+    return retainedUsage_().spans;
 }
 
 FLASHMEM bool SequencerHistoryService::pushUndo(SequencerHistoryEntry entry) {
@@ -2263,25 +2435,64 @@ FLASHMEM bool SequencerHistoryService::pushRedo(SequencerHistoryEntry entry) {
 
 FLASHMEM void SequencerHistoryService::commitPreparedEntry(SequencerHistoryEntry entry) {
     assert(entry.valid());
-    const size_t incomingBytes = entryRetainedBytes(entry);
-    assert(incomingEntryFitsRetainedBudget(incomingBytes));
+    const RetainedUsage incoming{
+        .bytes = static_cast<uint32_t>(entryRetainedBytes(entry)),
+        .spans = entryRetainedSpans(entry),
+    };
+    assert(incomingEntryFitsRetainedBudget(incoming));
     const uintptr_t identity = projectHistoryIdentity(entry);
     const uint8_t actionKind = static_cast<uint8_t>(descriptorForEntry(entry).kind);
 
     discardRedoBranch();
 
     pruneOldestScope(undo_, undo_count_, entry.scope, project_history_sink_);
-    while (undo_count_ > 0 && retainedBytes() + incomingBytes > RETAINED_BYTE_BUDGET) {
+    auto projected = retainedUsage_();
+    addRetainedUsage(projected, incoming);
+    while (undo_count_ > 0U &&
+           (projected.bytes > RETAINED_BYTE_BUDGET ||
+            projected.spans > RETAINED_SPAN_BUDGET ||
+            (project_history_sink_ != nullptr &&
+             !project_history_sink_->admitsRetainedUsage(
+                 core::state::project::ProjectHistoryDomain::Sequencer,
+                 projected
+             )))) {
         removeEntryAt(undo_, undo_count_, 0, project_history_sink_);
+        projected = retainedUsage_();
+        addRetainedUsage(projected, incoming);
     }
-    assert(retainedBytes() + incomingBytes <= RETAINED_BYTE_BUDGET);
+    assert(projected.bytes <= RETAINED_BYTE_BUDGET);
+    assert(projected.spans <= RETAINED_SPAN_BUDGET);
+    assert(
+        project_history_sink_ == nullptr ||
+        project_history_sink_->admitsRetainedUsage(
+            core::state::project::ProjectHistoryDomain::Sequencer,
+            projected
+        )
+    );
 
     const bool pushed = pushUndo(std::move(entry));
     assert(pushed);
     (void)pushed;
+    publishRetainedUsage_();
     if (project_history_sink_ != nullptr) {
         project_history_sink_->notifyCommitted(
             core::state::project::ProjectHistoryDomain::Sequencer, identity, actionKind);
+    }
+}
+
+FLASHMEM core::state::project::ProjectHistoryRetainedUsage
+SequencerHistoryService::retainedUsage_() const {
+    auto usage = entriesRetainedUsage(undo_, undo_count_);
+    addRetainedUsage(usage, entriesRetainedUsage(redo_, redo_count_));
+    return usage;
+}
+
+FLASHMEM void SequencerHistoryService::publishRetainedUsage_() const {
+    if (project_history_sink_ != nullptr) {
+        project_history_sink_->notifyRetainedUsage(
+            core::state::project::ProjectHistoryDomain::Sequencer,
+            retainedUsage_()
+        );
     }
 }
 
