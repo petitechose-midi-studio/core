@@ -75,4 +75,3 @@ static_assert(sizeof(ProjectSessionControlState) == 24U,
               "Project session control layout changed");
 
 }  // namespace core::state::project
-
