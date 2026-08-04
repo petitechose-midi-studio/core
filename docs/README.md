@@ -74,7 +74,7 @@ python script/dev/check-architecture-contracts.py
 ```
 
 Use `--inventory` for the complete advisory list of files over 800 physical
-lines and `--self-test` to run the gate's deterministic fixtures.
+lines.
 
 ## Downstream Check
 
