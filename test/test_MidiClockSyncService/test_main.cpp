@@ -15,22 +15,45 @@ namespace {
 
 class MockMidiTransport : public oc::interface::IMidi {
 public:
+    using MidiOutputAcceptance = oc::interface::MidiOutputAcceptance;
+
     oc::type::Result<void> init() override { return oc::type::Result<void>::ok(); }
     void update() override {}
 
-    void sendCC(uint8_t, uint8_t, uint8_t) override {}
-    void sendNoteOn(uint8_t, uint8_t, uint8_t) override {}
-    void sendNoteOff(uint8_t, uint8_t, uint8_t) override {}
-    void sendSysEx(const uint8_t*, size_t) override {}
-    void sendProgramChange(uint8_t, uint8_t) override {}
-    void sendPitchBend(uint8_t, int16_t) override {}
-    void sendChannelPressure(uint8_t, uint8_t) override {}
+    MidiOutputAcceptance sendCC(uint8_t, uint8_t, uint8_t) override { return next_acceptance; }
+    MidiOutputAcceptance sendNoteOn(uint8_t, uint8_t, uint8_t) override { return next_acceptance; }
+    MidiOutputAcceptance sendNoteOff(uint8_t, uint8_t, uint8_t) override { return next_acceptance; }
+    MidiOutputAcceptance sendSysEx(const uint8_t*, size_t) override { return next_acceptance; }
+    MidiOutputAcceptance sendProgramChange(uint8_t, uint8_t) override { return next_acceptance; }
+    MidiOutputAcceptance sendPitchBend(uint8_t, int16_t) override { return next_acceptance; }
+    MidiOutputAcceptance sendChannelPressure(uint8_t, uint8_t) override { return next_acceptance; }
     void allNotesOff() override {}
 
-    void sendClock() override { clock_sent++; }
-    void sendStart() override { start_sent++; }
-    void sendStop() override { stop_sent++; }
-    void sendContinue() override { continue_sent++; }
+    MidiOutputAcceptance sendClock() override {
+        clock_sent++;
+        if (next_acceptance == MidiOutputAcceptance::ACCEPTED) {
+            clock_accepted++;
+        }
+        return next_acceptance;
+    }
+    MidiOutputAcceptance sendStart() override {
+        start_sent++;
+        if (next_acceptance == MidiOutputAcceptance::ACCEPTED) {
+            start_accepted++;
+        }
+        return next_acceptance;
+    }
+    MidiOutputAcceptance sendStop() override {
+        stop_sent++;
+        if (next_acceptance == MidiOutputAcceptance::ACCEPTED) {
+            stop_accepted++;
+        }
+        return next_acceptance;
+    }
+    MidiOutputAcceptance sendContinue() override {
+        continue_sent++;
+        return next_acceptance;
+    }
 
     void setOnCC(CCCallback cb) override { on_cc = std::move(cb); }
     void setOnNoteOn(NoteCallback cb) override { on_note_on = std::move(cb); }
@@ -45,6 +68,10 @@ public:
     int start_sent = 0;
     int stop_sent = 0;
     int continue_sent = 0;
+    int clock_accepted = 0;
+    int start_accepted = 0;
+    int stop_accepted = 0;
+    MidiOutputAcceptance next_acceptance = MidiOutputAcceptance::ACCEPTED;
 
     CCCallback on_cc;
     NoteCallback on_note_on;
@@ -185,6 +212,58 @@ void test_master_clock_burst_is_clamped() {
     assert(transport.clock_sent == core::sequencer::MAX_REALTIME_CLOCK_BURST_PER_UPDATE);
 
     std::cout << "[PASS] test_master_clock_burst_is_clamped\n";
+}
+
+void test_master_retries_rejected_transport_edges_without_advancing_ownership() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{midi};
+
+    sync.mode.set(core::state::MidiSyncMode::MASTER);
+    status.tempo.set(120.0f);
+    status.playing.set(true);
+    transport.next_acceptance =
+        oc::interface::MidiOutputAcceptance::REJECTED;
+
+    stepService(service, sync, status, 0U);
+    assert(transport.start_sent == 1);
+    assert(transport.start_accepted == 0);
+    assert(transport.clock_sent == 0);
+
+    transport.next_acceptance =
+        oc::interface::MidiOutputAcceptance::ACCEPTED;
+    stepService(service, sync, status, 100U);
+    assert(transport.start_sent == 2);
+    assert(transport.start_accepted == 1);
+    assert(transport.clock_accepted > 0);
+
+    transport.next_acceptance =
+        oc::interface::MidiOutputAcceptance::REJECTED;
+    const int acceptedBeforeClockRejection = transport.clock_accepted;
+    stepService(service, sync, status, 200U);
+    assert(transport.clock_accepted == acceptedBeforeClockRejection);
+
+    transport.next_acceptance =
+        oc::interface::MidiOutputAcceptance::ACCEPTED;
+    stepService(service, sync, status, 200U);
+    assert(transport.clock_accepted > acceptedBeforeClockRejection);
+
+    status.playing.set(false);
+    transport.next_acceptance =
+        oc::interface::MidiOutputAcceptance::REJECTED;
+    stepService(service, sync, status, 300U);
+    assert(transport.stop_sent == 1);
+    assert(transport.stop_accepted == 0);
+
+    transport.next_acceptance =
+        oc::interface::MidiOutputAcceptance::ACCEPTED;
+    stepService(service, sync, status, 300U);
+    assert(transport.stop_sent == 2);
+    assert(transport.stop_accepted == 1);
+
+    std::cout << "[PASS] rejected master transport edges retry without ownership advance\n";
 }
 
 void test_slave_follows_external_clock_and_transport() {
@@ -470,6 +549,7 @@ int main() {
     test_master_emits_realtime();
     test_master_without_transport_drive_does_not_emit_realtime();
     test_master_clock_burst_is_clamped();
+    test_master_retries_rejected_transport_edges_without_advancing_ownership();
     test_slave_follows_external_clock_and_transport();
     test_auto_lock_and_fallback();
     test_auto_latches_start_before_lock();

@@ -341,17 +341,22 @@ void MidiClockSyncService::pushSyncIndicators_() {
 
 void MidiClockSyncService::updateMasterClockOutput_() {
     if (current_playing_ && !last_master_playing_) {
-        midi_.sendStart();
+        if (midi_.sendStart() == oc::interface::MidiOutputAcceptance::ACCEPTED) {
+            last_master_playing_ = true;
+        }
     } else if (!current_playing_ && last_master_playing_) {
-        midi_.sendStop();
+        if (midi_.sendStop() == oc::interface::MidiOutputAcceptance::ACCEPTED) {
+            last_master_playing_ = false;
+        }
     }
-
-    last_master_playing_ = current_playing_;
 
     if (!current_playing_) {
         last_master_tick_sent_ = current_tick_;
         return;
     }
+
+    // Start must be accepted before Clock ownership can advance.
+    if (!last_master_playing_) return;
 
     if (current_tick_ < last_master_tick_sent_) {
         last_master_tick_sent_ = current_tick_;
@@ -364,7 +369,10 @@ void MidiClockSyncService::updateMasterClockOutput_() {
     }
 
     for (uint32_t i = 0; i < pending; ++i) {
-        midi_.sendClock();
+        if (midi_.sendClock() !=
+            oc::interface::MidiOutputAcceptance::ACCEPTED) {
+            break;
+        }
         last_master_tick_sent_ += 1;
     }
 }

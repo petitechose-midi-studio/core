@@ -66,18 +66,20 @@ void SequencerInternalTimerLane::onTimer_() {
     const uint32_t tick = clock_.tick();
 
     if (playing && !playing_) {
-        midi_.sendStart();
+        if (midi_.sendStart() == oc::interface::MidiOutputAcceptance::ACCEPTED) {
+            playing_ = true;
+        }
     } else if (!playing && playing_) {
-        midi_.sendStop();
+        if (midi_.sendStop() == oc::interface::MidiOutputAcceptance::ACCEPTED) {
+            playing_ = false;
+        }
     }
-
-    playing_ = playing;
 
     uint32_t pendingClockCount = 0;
 
     if (!playing) {
         last_tick_sent_ = tick;
-    } else {
+    } else if (playing_) {
         if (tick < last_tick_sent_) {
             last_tick_sent_ = tick;
         }
@@ -88,7 +90,10 @@ void SequencerInternalTimerLane::onTimer_() {
         }
 
         for (uint32_t i = 0; i < pendingClockCount; ++i) {
-            midi_.sendClock();
+            if (midi_.sendClock() !=
+                oc::interface::MidiOutputAcceptance::ACCEPTED) {
+                break;
+            }
             last_tick_sent_ += 1U;
         }
     }
@@ -113,7 +118,6 @@ void SequencerInternalTimerLane::onTimer_() {
 
 void SequencerInternalTimerLane::drainRealtimeMidiQueue_(uint32_t nowUs) {
     midi_queue_.drainDue(midi_, nowUs);
-    midi_.serviceOutput(RealtimeMidiQueue::MAX_DRAIN_BUDGET_US);
 }
 
 }  // namespace core::sequencer
