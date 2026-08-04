@@ -442,7 +442,6 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
 
     state.sharedTrackEnabledMask.set(state.sequencerTracks.currentEnabledMask());
     state.sharedTrackActive.set(state.sequencerTracks.activeTrackIndex());
-    state.clearPendingSequencerApply();
     if (!state.clearProjectHistory()) return false;
     core::state::project::reconcileProjectModulatorNavigationAfterHistory(
         state.projectNavigation,

@@ -118,7 +118,6 @@ CORE_STATE_SOURCE = "src/state/CoreState.cpp"
 CORE_STATE_HEADER = "src/state/CoreState.hpp"
 STRICT_EXTMEM_OWNER_SOURCES = frozenset((
     EXTMEM_ALLOCATOR_SOURCE,
-    CORE_STATE_SOURCE,
 ))
 
 STRICT_EXTMEM_CALL = re.compile(
@@ -501,10 +500,7 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
     """Prove strict PSRAM allocation, ownership, and matching release paths."""
     errors: list[str] = []
     allocator = files.get(EXTMEM_ALLOCATOR_SOURCE, "")
-    core_state = files.get(CORE_STATE_SOURCE, "")
-    core_header_code = cpp_code_mask(files.get(CORE_STATE_HEADER, ""))
     allocator_code = cpp_code_mask(allocator)
-    core_state_code = cpp_code_mask(core_state)
 
     def single_function_body(
         content: str,
@@ -727,116 +723,6 @@ def extmem_lifetime_contract_errors(files: dict[str, str]) -> list[str]:
         if found != expected:
             errors.append(
                 f"{EXTMEM_ALLOCATOR_SOURCE}: canonical {symbol} inventory "
-                f"changed (expected {expected}, found {found})"
-            )
-
-    create_pending = single_function_body(
-        core_state,
-        CORE_STATE_SOURCE,
-        "createPendingApply",
-    )
-    pending_deleter = single_function_body(
-        core_state,
-        CORE_STATE_SOURCE,
-        "SequencerDomainState::PendingApplyDeleter::operator()",
-    )
-    core_constructor = single_function_body(
-        core_state,
-        CORE_STATE_SOURCE,
-        "CoreState::CoreState",
-    )
-
-    require_once(
-        create_pending,
-        CORE_STATE_SOURCE,
-        "createPendingApply",
-        r"\bcore::app::allocateExtmemStrict\s*\(\s*sizeof\s*\(\s*"
-        r"SequencerDomainState::PendingApply\s*\)\s*\)",
-        "PendingApply must use strict PSRAM allocation",
-    )
-    require_once(
-        create_pending,
-        CORE_STATE_SOURCE,
-        "createPendingApply",
-        r"\bif\s*\(\s*!\s*memory\s*\)\s*return\s+nullptr\s*;",
-        "PendingApply must fail closed on PSRAM exhaustion",
-    )
-    require_once(
-        create_pending,
-        CORE_STATE_SOURCE,
-        "createPendingApply",
-        r"\bcore::diagnostics::trackExtmemAllocation\s*\(\s*memory\s*\)",
-        "PendingApply must track its allocation",
-    )
-    require_once(
-        create_pending,
-        CORE_STATE_SOURCE,
-        "createPendingApply",
-        r"\bnew\s*\(\s*memory\s*\)\s*"
-        r"SequencerDomainState::PendingApply\s*\(\s*\)",
-        "PendingApply must be constructed in the strict allocation",
-    )
-
-    require_once(
-        pending_deleter,
-        CORE_STATE_SOURCE,
-        "SequencerDomainState::PendingApplyDeleter::operator()",
-        r"\bptr\s*->\s*~PendingApply\s*\(\s*\)",
-        "PendingApply must be destroyed before release",
-    )
-    require_once(
-        pending_deleter,
-        CORE_STATE_SOURCE,
-        "SequencerDomainState::PendingApplyDeleter::operator()",
-        r"\bcore::diagnostics::trackExtmemFree\s*\(\s*ptr\s*\)",
-        "PendingApply must track its free",
-    )
-    require_once(
-        pending_deleter,
-        CORE_STATE_SOURCE,
-        "SequencerDomainState::PendingApplyDeleter::operator()",
-        r"\bcore::app::freeExtmemStrict\s*\(\s*ptr\s*\)",
-        "PendingApply must use strict PSRAM release",
-    )
-    require_once(
-        core_constructor,
-        CORE_STATE_SOURCE,
-        "CoreState::CoreState",
-        r"\bsequencerDomain_\.pendingApply\.reset\s*\(\s*"
-        r"createPendingApply\s*\(\s*\)\s*\)",
-        "CoreState must adopt PendingApply into its custom-deleter owner",
-    )
-
-    pending_header_contracts = (
-        (
-            r"\busing\s+PendingApplyPtr\s*=\s*std::unique_ptr\s*<\s*"
-            r"PendingApply\s*,\s*PendingApplyDeleter\s*>\s*;",
-            "PendingApplyPtr must retain PendingApplyDeleter",
-        ),
-        (
-            r"\bPendingApplyPtr\s+pendingApply\s*;",
-            "pendingApply must retain its custom owner type",
-        ),
-    )
-    for pattern, description in pending_header_contracts:
-        found = len(re.findall(pattern, core_header_code, flags=re.DOTALL))
-        if found != 1:
-            errors.append(
-                f"{CORE_STATE_HEADER}: {description} "
-                f"(expected 1, found {found})"
-            )
-
-    for symbol, expected in (
-        ("allocateExtmemStrict", 1),
-        ("freeExtmemStrict", 1),
-    ):
-        found = len(re.findall(
-            rf"\bcore::app::{symbol}\s*\(",
-            core_state_code,
-        ))
-        if found != expected:
-            errors.append(
-                f"{CORE_STATE_SOURCE}: PendingApply {symbol} inventory "
                 f"changed (expected {expected}, found {found})"
             )
 
@@ -4807,26 +4693,6 @@ def self_test() -> int:
         "        freeExtmemStrict(ptr);",
         "        freeExtmemFallback(ptr);",
     )
-    pending_apply_non_strict_allocation = mutate_extmem(
-        CORE_STATE_SOURCE,
-        "core::app::allocateExtmemStrict(",
-        "core::app::allocateExtmemFallback(",
-    )
-    pending_apply_non_strict_free = mutate_extmem(
-        CORE_STATE_SOURCE,
-        "core::app::freeExtmemStrict(ptr);",
-        "core::app::freeExtmemFallback(ptr);",
-    )
-    pending_apply_default_deleter = mutate_extmem(
-        CORE_STATE_HEADER,
-        "using PendingApplyPtr = std::unique_ptr<PendingApply, PendingApplyDeleter>;",
-        "using PendingApplyPtr = std::unique_ptr<PendingApply>;",
-    )
-    pending_apply_not_adopted = mutate_extmem(
-        CORE_STATE_SOURCE,
-        "sequencerDomain_.pendingApply.reset(createPendingApply());",
-        "(void)createPendingApply();",
-    )
     escaped_strict_extmem_call = dict(extmem_fixture)
     escaped_strict_extmem_call["src/state/CoreStateProjectHistory.cpp"] = (
         "\nvoid* escapedStrictExtmemCall() {\n"
@@ -5832,24 +5698,6 @@ def self_test() -> int:
         (
             bool(extmem_lifetime_contract_errors(unpaired_extmem_deleter)),
             "EXTMEM deleter bypassing freeExtmemStrict is rejected",
-        ),
-        (
-            bool(extmem_lifetime_contract_errors(
-                pending_apply_non_strict_allocation
-            )),
-            "PendingApply non-strict allocation is rejected",
-        ),
-        (
-            bool(extmem_lifetime_contract_errors(pending_apply_non_strict_free)),
-            "PendingApply non-strict free is rejected",
-        ),
-        (
-            bool(extmem_lifetime_contract_errors(pending_apply_default_deleter)),
-            "PendingApply default deleter is rejected",
-        ),
-        (
-            bool(extmem_lifetime_contract_errors(pending_apply_not_adopted)),
-            "unowned PendingApply allocation is rejected",
         ),
         (
             bool(extmem_lifetime_contract_errors(escaped_strict_extmem_call)),

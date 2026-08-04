@@ -1,10 +1,8 @@
 #include <cstdio>
 
 #include <config/PlatformCompat.hpp>
-#include <new>
 #include <oc/log/Log.hpp>
 #include <oc/time/Time.hpp>
-#include <utility>
 
 #include "state/CoreState.hpp"
 
@@ -15,7 +13,6 @@
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
 #include "state/CoreStateBootstrap.hpp"
-#include "state/CoreStateLifecycle.hpp"
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
@@ -36,21 +33,6 @@ FLASHMEM shared::SharedTrackCoordinator::StateRefs sharedTrackRefs(CoreState& st
 }
 
 }  // namespace
-
-FLASHMEM bool CoreState::queuePendingSequencerApply(sequencer::SequencerState& staged, bool merge) {
-    return queueSequencerApply_(staged, merge);
-}
-
-FLASHMEM bool CoreState::queuePendingSequencerBankApply(
-    sequencer::SequencerTrackBankState& stagedBank, sequencer::SequencerState& staged) {
-    return queueSequencerBankApply_(stagedBank, staged);
-}
-
-FLASHMEM void CoreState::clearPendingSequencerApply() { clearPendingSequencerApply_(); }
-
-bool CoreState::hasPendingSequencerApply() const {
-    return sequencerDomain_.pendingApply && sequencerDomain_.pendingApply->valid;
-}
 
 uint16_t CoreState::currentSharedTrackEnabledMask() const { return sharedTrackEnabledMask.get(); }
 
@@ -105,23 +87,6 @@ FLASHMEM persistence::PersistenceWriteStatus CoreState::recoverSettingsFromRamAf
     return deviceSettingsStore.reconcileAllStatus(midiSync);
 }
 
-FLASHMEM bool CoreState::queueSequencerApply_(sequencer::SequencerState& staged, bool merge) {
-    if (commitSequencerPatternHistoryCoalescingOutcome() ==
-        sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
-        return false;
-    }
-    return CoreStateLifecycle::queuePendingSequencerApply(*this, staged, merge);
-}
-
-FLASHMEM bool CoreState::queueSequencerBankApply_(sequencer::SequencerTrackBankState& stagedBank,
-                                                  sequencer::SequencerState& staged) {
-    if (commitSequencerPatternHistoryCoalescingOutcome() ==
-        sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
-        return false;
-    }
-    return CoreStateLifecycle::queuePendingSequencerBankApply(*this, stagedBank, staged);
-}
-
 FLASHMEM project::ProjectSaveToken CoreState::requestProjectSessionSave_() {
     if (!projectSessionControl_.trackingEnabled) {
         return projectSessionSaveToken();
@@ -143,10 +108,6 @@ FLASHMEM void CoreState::markSequencerProjectMutated_() {
         OC_LOG_ERROR("[CoreState] Failed to synchronize active sequencer graph");
     }
     markProjectMutated();
-}
-
-FLASHMEM void CoreState::clearPendingSequencerApply_() {
-    CoreStateLifecycle::clearPendingSequencerApply(*this);
 }
 
 FLASHMEM bool CoreState::refreshSharedTrackStateFromMacroPages_() {
