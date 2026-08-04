@@ -15,6 +15,8 @@ namespace {
 
 using MacroAction = core::state::macro::MacroInteractionAction;
 using MacroPolicy = core::state::macro::MacroInteractionPolicy;
+using SelectionAction =
+    core::state::StructureSelectionInteractionAction;
 
 }  // namespace
 
@@ -144,7 +146,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
                 return;
             }
             if (structure_workflow_.selectionActive()) {
-                structure_workflow_.toggleSelectionAtCursor();
+                if (structure_workflow_.selectionInteractionPolicy().navRelease ==
+                    SelectionAction::TOGGLE_ITEM) {
+                    structure_workflow_.toggleSelectionAtCursor();
+                }
                 return;
             }
             const auto action = MacroPolicy::navRelease(interactionContext());
@@ -198,7 +203,8 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .turn()
         .scope(scope_id_)
         .when([this]() {
-            return structure_workflow_.selectionActive();
+            return structure_workflow_.selectionInteractionPolicy().navTurn ==
+                   SelectionAction::MOVE_CURSOR;
         })
         .then([this](float delta) {
             structure_workflow_.navigateSelection(delta);
@@ -217,9 +223,10 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
 #if defined(MS_UX_RECORDER)
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomLeftRelease = false;
 #endif
-            if (structure_workflow_.canRemoveCurrentStructure()) {
-                structure_workflow_.beginHoldAction(core::state::StructureHoldAction::REMOVE);
-            }
+            (void)structure_workflow_.beginHoldAction(
+                core::state::StructureHoldAction::REMOVE,
+                structure_workflow_.canRemoveCurrentStructure()
+            );
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
@@ -228,14 +235,13 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .when([this]() {
             return !structure_workflow_.selectionActive() &&
                    (ignore_next_bottom_left_release_ ||
-                   structure_workflow_.hasHoldAction(
+                   structure_workflow_.hasCapturedAction(
                        core::state::StructureHoldAction::REMOVE
                    ) ||
                    policyAllows(MacroAction::CLEAR_STRUCTURE));
         })
         .then([this]() {
             const bool clearAllowed = policyAllows(MacroAction::CLEAR_STRUCTURE);
-            structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_left_release_) {
                 ignore_next_bottom_left_release_ = false;
 #if defined(MS_UX_RECORDER)
@@ -243,11 +249,16 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
 #endif
                 return;
             }
+            if (!structure_workflow_.releaseShortHoldAction(
+                    core::state::StructureHoldAction::REMOVE
+                )) {
+                return;
+            }
             // Macro Slot scope reserves this gesture for the guarded Remove
             // hold. Releasing early only cancels the pending hold; source-level
             // Clear remains an explicit action in the typed detail overlay.
             if (!clearAllowed) return;
-            structure_workflow_.eraseCurrentStructure();
+            structure_workflow_.applyCurrentStructureShortPress();
             performance_workflow_.refreshEncoders();
         });
 
@@ -283,11 +294,14 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
 #endif
             paste_only_press_active_ = false;
-            if (structure_workflow_.canPasteCurrentStructure()) {
-                paste_only_press_active_ =
-                    !policyAllows(MacroAction::COPY_STRUCTURE);
-                structure_workflow_.beginHoldAction(core::state::StructureHoldAction::PASTE);
-            }
+            const bool canPaste =
+                structure_workflow_.canPasteCurrentStructure();
+            const bool captured = structure_workflow_.beginHoldAction(
+                core::state::StructureHoldAction::PASTE,
+                canPaste
+            );
+            paste_only_press_active_ = captured && canPaste &&
+                !policyAllows(MacroAction::COPY_STRUCTURE);
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
@@ -296,7 +310,7 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .when([this]() {
             return !structure_workflow_.selectionActive() &&
                    (ignore_next_bottom_right_release_ ||
-                   structure_workflow_.hasHoldAction(
+                   structure_workflow_.hasCapturedAction(
                        core::state::StructureHoldAction::PASTE
                    ) ||
                    policyAllows(MacroAction::COPY_STRUCTURE));
@@ -305,12 +319,16 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
             const bool copyAllowed = policyAllows(MacroAction::COPY_STRUCTURE);
             const bool pasteOnlyPress = paste_only_press_active_;
             paste_only_press_active_ = false;
-            structure_workflow_.clearHoldAction();
             if (ignore_next_bottom_right_release_) {
                 ignore_next_bottom_right_release_ = false;
 #if defined(MS_UX_RECORDER)
                 if (ux_trace_state_) ux_trace_state_->ignoreNextBottomRightRelease = false;
 #endif
+                return;
+            }
+            if (!structure_workflow_.releaseShortHoldAction(
+                    core::state::StructureHoldAction::PASTE
+                )) {
                 return;
             }
             // An early release while Paste is armed only cancels the guarded
@@ -347,8 +365,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .then([this]() {
             ignore_next_bottom_right_release_ = false;
             selection_paste_press_active_ = false;
-            if (structure_workflow_.selectionPlacementActive() &&
-                structure_workflow_.canPasteSelection()) {
+            if (structure_workflow_.selectionInteractionPolicy()
+                    .bottomRightLongPress ==
+                SelectionAction::PASTE_SELECTION) {
                 selection_paste_press_active_ = true;
                 selection_paste_anchor_ =
                     structure_workflow_.selectionCursor();
@@ -374,10 +393,11 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
                 ignore_next_bottom_right_release_ = false;
                 return;
             }
-            if (structure_workflow_.selectionPlacementActive()) {
-                return;
+            if (structure_workflow_.selectionInteractionPolicy()
+                    .bottomRightRelease ==
+                SelectionAction::COPY_SELECTION) {
+                (void)structure_workflow_.copySelection();
             }
-            (void)structure_workflow_.copySelection();
         });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
@@ -385,7 +405,9 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .scope(scope_id_)
         .when([this]() {
             return selection_paste_press_active_ &&
-                   structure_workflow_.selectionPlacementActive() &&
+                   structure_workflow_.selectionInteractionPolicy()
+                           .bottomRightLongPress ==
+                       SelectionAction::PASTE_SELECTION &&
                    selection_paste_anchor_ ==
                        structure_workflow_.selectionCursor() &&
                    selection_paste_clipboard_revision_ ==
@@ -418,16 +440,13 @@ FLASHMEM void MacroPerformanceHandler::setupBindings() {
         .release()
         .scope(scope_id_)
         .when([this]() {
-            return structure_workflow_.selectionActive();
+            return structure_workflow_.selectionInteractionPolicy()
+                       .leftTopRelease != SelectionAction::NONE;
         })
         .then([this]() {
             (void)structure_workflow_.backSelectionMode();
             performance_workflow_.refreshEncoders();
         });
-}
-
-FLASHMEM void MacroPerformanceHandler::update(uint32_t nowMs) {
-    (void)nowMs;
 }
 
 FLASHMEM void MacroPerformanceHandler::attachEditors(

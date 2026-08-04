@@ -5,12 +5,12 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
-#include <iostream>
-#include <limits>
 
 #include <config/App.hpp>
 #include <config/InputIDs.hpp>
 #include <config/Timing.hpp>
+#include <iostream>
+#include <limits>
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
@@ -18,22 +18,26 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 
+#include "../support/CoreStorages.hpp"
+#include "../support/InputTestHardware.hpp"
+#include "../support/NotificationTestUtils.hpp"
+#include "../support/ProjectTrackRuntimeSnapshotTestFixture.hpp"
+#include "app/ExtmemAllocator.hpp"
 #include "handler/sequencer/SequencerCcLaneDomainServices.hpp"
 #include "handler/sequencer/SequencerCcLaneHandler.hpp"
 #include "handler/sequencer/SequencerCcLaneWorkflow.hpp"
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/sequencer/SequencerPropertySelectorHandler.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "state/CoreState.hpp"
 #include "state/project/ProjectSnapshot.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "validation/ux/SequencerCcLaneSemanticGesture.hpp"
-#include "../support/CoreStorages.hpp"
-#include "../support/InputTestHardware.hpp"
-#include "../support/NotificationTestUtils.hpp"
-#include "../support/ProjectTrackRuntimeSnapshotTestFixture.hpp"
+#if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+#error "This test requires native EXTMEM failure injection"
+#endif
 
 namespace {
 
@@ -164,6 +168,24 @@ void createDefaultLane(Harness& h, uint32_t nowMs = 10U) {
     assert(h.workflow.selectorFocusesAdd());
     assert(h.workflow.activateSelector(nowMs));
     assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
+}
+
+template <typename Action>
+void assertFirstAllocationRejected(Harness& h, contextual::ContextActionId expectedAction,
+                                   Action&& action) {
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(!action());
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+    }
+    const auto feedback = h.state.sequencer.ccLaneUi.operationFeedback.get();
+    assert(feedback.active);
+    assert(feedback.action == expectedAction);
+    assert(feedback.status == contextual::OperationFeedbackStatus::BLOCKED);
+    assert(feedback.reason == contextual::ContextActionReason::ALLOCATION_UNAVAILABLE);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
 }
 
 void test_slot_defaults_reuse_and_local_override_are_exact() {
@@ -314,6 +336,10 @@ void test_snapshot_and_reset_boundaries_see_or_purge_the_central_cc_transaction(
     assert(h.workflow.editFocusedEvent(1.0f, 100U));
     assert(h.state.hasPendingProjectTransaction());
 
+    core::state::project::ProjectSnapshot cooperativeSnapshot;
+    core::state::project::ProjectSnapshotCapture cooperativeCapture;
+    assert(!cooperativeCapture.begin(h.state, cooperativeSnapshot));
+
     core::state::project::ProjectSnapshot snapshot;
     assert(core::state::project::captureProjectSnapshot(h.state, snapshot));
     const auto* captured = snapshot.sequencer.editorCcLanes.get();
@@ -419,6 +445,89 @@ void test_history_preflight_failure_does_not_publish_the_staged_cc_event() {
 
     test_support::drainNotifications();
     std::cout << "[PASS] unavailable history rejects CC staging before publication\n";
+}
+
+void test_all_cc_authored_surfaces_publish_allocation_unavailable_exactly() {
+    {
+        Harness h;
+        h.workflow.openLaneSelector();
+        assert(h.workflow.selectorFocusesAdd());
+        assertFirstAllocationRejected(h, contextual::ContextActionId::CREATE,
+                                      [&]() { return h.workflow.activateSelector(100U); });
+        assert(seq::sequencerCcLaneView(h.state.sequencer.pattern) == nullptr);
+        assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_SELECTOR);
+    }
+
+    {
+        Harness h;
+        createDefaultLane(h);
+        assertFirstAllocationRejected(h, contextual::ContextActionId::EDIT,
+                                      [&]() { return h.workflow.editFocusedEvent(1.0F, 110U); });
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank != nullptr && !bank->lanes[0].activeMask.test(0U));
+        assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_GRID);
+    }
+
+    {
+        Harness h;
+        createDefaultLane(h);
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank != nullptr);
+        const uint8_t controllerBefore = bank->lanes[0].destination.controller;
+        assert(h.workflow.openSettings());
+        h.workflow.editDraft(1.0F);
+        assert(h.state.sequencer.ccLaneUi.draft.destination.controller != controllerBefore);
+        assertFirstAllocationRejected(h, contextual::ContextActionId::APPLY, [&]() {
+            return h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_RIGHT, 120U);
+        });
+        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank->lanes[0].destination.controller == controllerBefore);
+        assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS);
+    }
+
+    {
+        Harness h;
+        createDefaultLane(h);
+        assert(h.workflow.toggleFocusedEvent(130U));
+        assertFirstAllocationRejected(h, contextual::ContextActionId::CLEAR, [&]() {
+            return h.workflow.executeTap(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT, 140U);
+        });
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank != nullptr && bank->lanes[0].activeMask.test(0U));
+    }
+
+    {
+        Harness h;
+        createDefaultLane(h);
+        assert(h.workflow.toggleFocusedEvent(150U));
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank != nullptr);
+        const auto transitionBefore = seq::sequencerCcLaneTransition(bank->lanes[0], 0U);
+        assert(h.workflow.openFocusedTransitionPicker(160U));
+        h.workflow.moveTransition(1.0F);
+        assertFirstAllocationRejected(h, contextual::ContextActionId::EDIT,
+                                      [&]() { return h.workflow.applyTransition(170U); });
+        bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(seq::sequencerCcLaneTransition(bank->lanes[0], 0U) == transitionBefore);
+        assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::TRANSITION_PICKER);
+    }
+
+    {
+        Harness h;
+        createDefaultLane(h);
+        assert(h.workflow.openSettings());
+        assert(h.workflow.beginGuard(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT, 180U));
+        assertFirstAllocationRejected(h, contextual::ContextActionId::REMOVE, [&]() {
+            return h.workflow.releaseGuard(seq::SequencerCcLaneActionSlot::BOTTOM_LEFT,
+                                           180U + seq::SequencerCcLaneUiState::ACTION_GUARD_MS);
+        });
+        const auto* bank = seq::sequencerCcLaneView(h.state.sequencer.pattern);
+        assert(bank != nullptr && bank->lanes[0].occupied);
+        assert(h.state.sequencer.ccLaneUi.mode == seq::SequencerCcLaneUiMode::LANE_SETTINGS);
+    }
+
+    test_support::drainNotifications();
+    std::cout << "[PASS] all CC authored surfaces publish allocation unavailable exactly\n";
 }
 
 void test_nav_grammar_toggles_events_and_reveals_advanced_settings() {
@@ -743,7 +852,7 @@ void test_live_projection_requires_the_lane_in_committed_runtime_telemetry() {
     assert(!h.state.sequencer.ccLaneUi.hasResolvedValue);
 
     core::sequencer::RealtimeMidiQueue queue;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator{queue};
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator{queue};
     core::handler::SequencerCcLaneWorkflow liveWorkflow{
         {h.state.sequencer,
          h.state.sequencerTracks,
@@ -986,6 +1095,7 @@ int main() {
     test_snapshot_and_reset_boundaries_see_or_purge_the_central_cc_transaction();
     test_immediate_create_and_settings_follow_pending_event_without_double_publish();
     test_history_preflight_failure_does_not_publish_the_staged_cc_event();
+    test_all_cc_authored_surfaces_publish_allocation_unavailable_exactly();
     test_slot_defaults_reuse_and_local_override_are_exact();
     test_nav_grammar_toggles_events_and_reveals_advanced_settings();
     test_clear_settings_cancel_and_guarded_remove_are_exact_history();

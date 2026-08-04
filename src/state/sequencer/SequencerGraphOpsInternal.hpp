@@ -4,7 +4,7 @@
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
-#include "state/sequencer/SequencerPatternState.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 
 namespace core::state::sequencer::graph_ops_internal {
 
@@ -18,7 +18,6 @@ using oc::note::sequencer::STEP_NODE_GATE_OFFSET;
 using oc::note::sequencer::STEP_NODE_NOTE_OFFSET;
 using oc::note::sequencer::STEP_NODE_NUDGE_OFFSET;
 using oc::note::sequencer::STEP_NODE_PROBABILITY_OFFSET;
-using oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC;
 using oc::note::sequencer::STEP_NODE_VELOCITY_OFFSET;
 using oc::note::sequencer::StepSequencerCycleStateSet;
 using oc::note::sequencer::StepSequencerGraph;
@@ -29,13 +28,6 @@ using oc::note::sequencer::StepSequencerStepNode;
 using oc::note::sequencer::StepSequencerStepNodeFlags;
 
 inline constexpr uint16_t kInvalidId = StepSequencerGraphLimits::INVALID_ID;
-
-struct GraphCopyBudget {
-    uint16_t stepNodes = 0;
-    uint8_t sequences = 0;
-    uint8_t cycleSets = 0;
-    bool valid = true;
-};
 
 FLASHMEM bool hasStepNode(const StepSequencerGraph& graph, uint16_t nodeId);
 FLASHMEM StepSequencerGraph* mutableGraph(SequencerPatternState& pattern);
@@ -49,10 +41,6 @@ FLASHMEM StepSequencerCycleStateSet* mutableCycleSet(
 );
 FLASHMEM bool ensureGraphAllocated(SequencerPatternState& pattern);
 FLASHMEM bool assignFlag(uint16_t& flags, uint16_t flag, bool enabled);
-FLASHMEM bool initializeNodePitchPolicy(
-    StepSequencerStepNode& node,
-    SequencerPitchEditMode mode
-);
 FLASHMEM uint16_t allocateStepNodes(StepSequencerGraph& graph, uint8_t count);
 FLASHMEM uint16_t allocateSequence(
     StepSequencerGraph& graph,
@@ -63,13 +51,21 @@ FLASHMEM uint16_t allocateSequence(
 FLASHMEM uint8_t sequenceReservedCapacity(const StepSequencerGraph& graph, uint16_t sequenceId);
 FLASHMEM uint8_t cycleSetReservedCapacity(const StepSequencerGraph& graph, uint16_t cycleSetId);
 FLASHMEM uint16_t allocateCycleSet(StepSequencerGraph& graph, uint8_t length);
-FLASHMEM bool appendBudget(GraphCopyBudget& target, const GraphCopyBudget& source);
-FLASHMEM GraphCopyBudget childCopyBudget(
+FLASHMEM SequencerGraphPayloadInspection inspectGraphChildrenForCopy(
     const StepSequencerGraph& source,
-    const StepSequencerStepNode& node
-);
-FLASHMEM GraphCopyBudget sequenceCopyBudget(const StepSequencerGraph& source, uint16_t sequenceId);
-FLASHMEM GraphCopyBudget cycleSetCopyBudget(const StepSequencerGraph& source, uint16_t cycleSetId);
+    uint16_t nodeId,
+    uint8_t targetDepth
+) noexcept;
+FLASHMEM SequencerGraphPayloadInspection inspectGraphSequenceForCopy(
+    const StepSequencerGraph& source,
+    uint16_t sequenceId,
+    uint8_t targetDepth
+) noexcept;
+FLASHMEM SequencerGraphPayloadInspection inspectGraphCycleSetForCopy(
+    const StepSequencerGraph& source,
+    uint16_t cycleSetId,
+    uint8_t targetDepth
+) noexcept;
 FLASHMEM void copyStepNodeValuesWithoutChildren(
     StepSequencerStepNode& target,
     const StepSequencerStepNode& source

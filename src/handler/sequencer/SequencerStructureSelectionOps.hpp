@@ -3,7 +3,6 @@
 #include <cstdint>
 
 #include "app/ExtmemAllocator.hpp"
-#include "handler/sequencer/SequencerStructureStepOps.hpp"
 #include "state/StructureClipboardPastePlan.hpp"
 #include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerState.hpp"
@@ -17,7 +16,7 @@ uint16_t activeTrackSelectionMask(
     uint16_t enabledMask
 );
 
-core::state::shared::MaskMutation removeSelectedStructureTracks(
+core::state::shared::MaskMutation deleteSelectedStructureTracks(
     uint16_t enabledMask,
     uint16_t selectedMask,
     uint8_t activeTrack
@@ -25,17 +24,6 @@ core::state::shared::MaskMutation removeSelectedStructureTracks(
 
 uint16_t activeContentPageSelectionMask(
     const core::state::sequencer::SequencerState& sequencer,
-    uint16_t selectedMask
-);
-
-bool resetSelectedActiveContentPages(
-    core::state::sequencer::SequencerState& sequencer,
-    uint16_t selectedMask,
-    StepResetDepth depth
-);
-
-bool removeSelectedRootPages(
-    core::state::sequencer::SequencerState& sequencer,
     uint16_t selectedMask
 );
 
@@ -59,12 +47,6 @@ buildPageSelectionPastePlan(
     const core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& structureClipboard,
     uint8_t cursorPage
-);
-
-bool pastePageSelectionClipboard(
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::StructureClipboardState& structureClipboard,
-    const core::state::SequencerPageSelectionPastePlan& plan
 );
 
 }  // namespace core::handler

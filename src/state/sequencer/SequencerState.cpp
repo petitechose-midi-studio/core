@@ -1,5 +1,7 @@
 #include "state/sequencer/SequencerState.hpp"
 
+#include <algorithm>
+
 #include <config/PlatformCompat.hpp>
 
 namespace core::state::sequencer {
@@ -103,6 +105,7 @@ FLASHMEM bool SequencerPatternState::setPatternScaleOverride(
 }
 
 FLASHMEM bool SequencerPatternState::setPitchEditMode(SequencerPitchEditMode mode) {
+    mode = sanitizePitchEditMode(static_cast<uint8_t>(mode));
     if (pitchEditMode == mode) return false;
     pitchEditMode = mode;
     bumpPatternScaleRevision();
@@ -333,7 +336,7 @@ FLASHMEM void SequencerPatternState::reset() {
     bumpPatternVariationRevision();
     scalePolicy = SequencerPatternScalePolicy::INHERIT_PROJECT;
     scaleOverride = {};
-    pitchEditMode = SequencerPitchEditMode::CHROMATIC;
+    pitchEditMode = SequencerPitchEditMode::FOLLOW_SCALE;
     bumpPatternScaleRevision();
     swingOffsetPercent.set(0);
     patternNudgePercent.set(0);
@@ -351,6 +354,7 @@ FLASHMEM void SequencerState::reset() {
         );
         return;
     }
+    quickControlsDraft.reset();
     pattern.reset();
     page.set(0);
     focusedStep.set(0);
@@ -363,13 +367,14 @@ FLASHMEM void SequencerState::reset() {
     lastResolvedVariation = {};
     cycleVariationTelemetry.reset();
     expandedVariationTelemetry.reset();
+    runtimeDiagnostics.reset();
     variationTelemetryRevision.set(0);
     activeStepProperty.set(StepProperty::NOTE);
     stepStatePropertyActive.set(false);
 
     stepEdit.reset();
     contextSelector.reset();
-    stepPresetPicker.reset();
+    presetLibrary.reset();
     ccLaneUi.reset();
     stepPropertyInlineSelector.reset();
     stepContentSelector.reset();

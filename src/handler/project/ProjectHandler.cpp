@@ -19,6 +19,7 @@ const char FEEDBACK_PREVIEW_PENDING[] PROGMEM = "Preview - Apply or Back";
 }  // namespace
 
 FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
+                                        DeviceSettingsDomainServices deviceSettings,
                                         SequencerSettingsDomainServices sequencerSettings,
                                         MacroEditDomainServices macroEditServices,
                                         oc::api::EncoderAPI& encoders,
@@ -28,12 +29,10 @@ FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
     : overlays_(state.overlays)
     , active_view_(state.activeView)
     , navigation_(state.navigation)
-    , sequencer_(state.sequencer)
-    , sequencer_tracks_(state.sequencerTracks)
     , project_tracks_(state.projectTracks)
     , track_domain_(state.trackDomain)
     , status_bar_(state.statusBar)
-    , midi_sync_(state.midiSync)
+    , device_settings_(deviceSettings)
     , pages_(state.pages)
     , macro_ui_(state.macroUi)
     , macros_(state.macros)
@@ -83,7 +82,11 @@ FLASHMEM bool ProjectHandler::physicalHoldActive() const {
 }
 
 FLASHMEM bool ProjectHandler::regularProjectInputActive() const {
-    return canHandleProjectInput() && !navigation_.physicalHoldActive.get();
+    return canHandleProjectInput() && !navigation_.physicalHoldActive.get() &&
+           (pending_project_catalog_action_ ==
+                PendingProjectCatalogAction::NONE ||
+            pending_project_catalog_action_ ==
+                PendingProjectCatalogAction::LOAD_PICKER);
 }
 
 FLASHMEM void ProjectHandler::enterPhysicalHoldLayer() {
@@ -102,6 +105,7 @@ FLASHMEM void ProjectHandler::leavePhysicalHoldLayer() {
 
 
 void ProjectHandler::update(uint32_t nowMs) {
+    pollPendingProjectCatalog();
     if (settings_gesture_commit_deadline_ms_ != 0U &&
         (active_view_.get() != core::ui::ViewType::PROJECT ||
          static_cast<int32_t>(
@@ -216,6 +220,7 @@ FLASHMEM void ProjectHandler::resetProject() {
 }
 
 FLASHMEM void ProjectHandler::back() {
+    pending_project_catalog_action_ = PendingProjectCatalogAction::NONE;
     commitPendingRoutingGesture();
     endProjectSettingsGesture();
     macro_history_.endCoalescing();

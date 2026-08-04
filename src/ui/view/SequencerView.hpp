@@ -137,10 +137,10 @@ private:
         structure_selection_watcher_;
     oc::state::StaticWatchGroup<42> grid_watcher_;
     oc::state::StaticWatchGroup<1> grid_tick_watcher_;
-    oc::state::StaticWatchGroup<24> selector_overlay_watcher_;
+    oc::state::StaticWatchGroup<25> selector_overlay_watcher_;
     oc::state::StaticWatchGroup<7> overlay_visibility_watcher_;
     oc::state::StaticWatchGroup<10> left_action_strip_watcher_;
-    oc::state::StaticWatchGroup<24> bottom_action_strip_watcher_;
+    oc::state::StaticWatchGroup<23> bottom_action_strip_watcher_;
     oc::state::StaticWatchGroup<2> history_feedback_watcher_;
     oc::state::StaticWatchGroup<1> track_switch_ready_watcher_;
     oc::state::StaticWatchGroup<9> track_paste_preflight_watcher_;

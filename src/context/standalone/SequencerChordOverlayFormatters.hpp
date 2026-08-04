@@ -29,7 +29,12 @@ FLASHMEM void populateChordDetailOverlay(
     StepEditRenderData& data,
     const core::state::sequencer::SequencerStepChordUiState& chord,
     core::state::sequencer::SequencerChordEditField focusedField,
-    bool enabled
+    bool formulaEditorActive,
+    uint8_t focusedFormulaItem,
+    bool sourceSelectorActive,
+    core::state::sequencer::SequencerChordSourceChoice focusedSourceChoice,
+    bool enabled,
+    bool presetLibraryAvailable
 );
 
 }  // namespace core::context::standalone::sequencer_overlay_presenter

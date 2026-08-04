@@ -382,7 +382,6 @@ void test_switch_to_page_updates_runtime_status_and_marks_project_dirty() {
     services.switchToPage(2);
 
     assert(state.pages.currentActivePage() == 2);
-    assert(std::strcmp(state.statusBar.pageName.get(), "Mix Bus") == 0);
     assert(std::fabs(services.runtimeValue(0) - 0.23f) < 0.0001f);
     assert(state.project.metadata.dirty);
     assert(state.hasPendingProjectSessionSave());
@@ -1587,7 +1586,7 @@ void test_macro_track_structure_mutations_preserve_project_track_identity() {
     state.pages.tracks[0].activePage = 5U;
     state.pages.tracks[0].enabledPageMask = 0x0021U;
     state.pages.tracks[0].pages[5].cc[1] = 126U;
-    assert(structure.eraseTrack(0U));
+    assert(structure.resetTrackContent(0U));
     assert(state.pages.tracks[0].activePage == 0U);
     assert(state.pages.tracks[0].enabledPageMask == 0x0001U);
     assert(state.pages.tracks[0].pages[5].cc[1] ==
@@ -1687,7 +1686,7 @@ void test_slot_page_and_track_replacement_invalidate_only_targeted_manual_entrie
 
     configureAutomation(state.pages.control, source);
     assert(performance.takeManualControl(0, 0.7f));
-    assert(edit.removeSlot(0));
+    assert(edit.deleteSlot(0));
     assert(!state.pages.isMacroSlotActive(0));
     assert(!state.macroUi.manualOverrides.activeFor(source));
     assert(state.macroUi.manualOverrides.activeFor(unrelated));

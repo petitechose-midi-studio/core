@@ -32,6 +32,7 @@ enum class SequencerTrackTransferStatus : uint8_t {
 struct SequencerTrackTransferResult {
     SequencerTrackTransferStatus status = SequencerTrackTransferStatus::DISABLED;
     core::state::ClipboardTransferPlan plan{};
+    core::state::sequencer::SequencerTrackStructureChronologyResult chronology{};
     uint32_t activationGeneration = 0;
     uint32_t operationId = 0;
 
@@ -50,6 +51,9 @@ struct PreparedSequencerTrackTransfer {
 
     SequencerTrackTransferStatus status = SequencerTrackTransferStatus::DISABLED;
     core::state::ClipboardTransferPlan plan{};
+    core::state::sequencer::SequencerTrackStructureChronologyResult chronology{};
+    PreparedTrackStructureSettlementCheckpoint settlementCheckpoint{};
+    uint64_t clipboardPayloadFingerprint = 0U;
     uint16_t pendingTrackMask = 0;
     uint16_t initialEnabledMask = 0;
     uint16_t initialProjectMutedMask = 0;
@@ -100,10 +104,15 @@ struct PreparedSequencerTrackTransfer {
     }
 };
 
+static_assert(
+    sizeof(void*) != 4U || sizeof(PreparedSequencerTrackTransfer) <= 512U,
+    "prepared Track transfer owner exceeds its ARM frame contract"
+);
+
 PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     const core::state::sequencer::SequencerTrackBankState& tracks,
     const core::state::project::ProjectTrackState& projectTracks,
-    const core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,
     const SequencerHistoryDomainServices& history,
@@ -121,7 +130,7 @@ SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,
     const SequencerHistoryDomainServices& history,
-    PreparedSequencerTrackTransfer prepared,
+    PreparedSequencerTrackTransfer&& prepared,
     core::state::macro::MacroPagesState* macroPages = nullptr
 );
 

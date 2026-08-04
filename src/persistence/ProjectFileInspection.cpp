@@ -11,13 +11,25 @@ namespace {
 namespace project_file = core::persistence::project_file;
 namespace snapshot_codec = core::persistence::project_snapshot_codec;
 
-FLASHMEM Status classify(const snapshot_codec::DecodeResult& result) {
-    if (!result.ok || result.loadStatus == project_file::LoadStatus::FAILED) {
-        return Status::FAILED;
+FLASHMEM bool reportContainsOnlyUnsupportedFormat(
+    const project_file::LoadReport& report
+) {
+    bool foundUnsupported = false;
+    for (uint8_t index = 0U; index < report.itemCount; ++index) {
+        const auto& item = report.items[index];
+        if (item.severity == project_file::LoadSeverity::INFO) continue;
+        if (item.code !=
+                project_file::LoadCode::UNSUPPORTED_CONTAINER_VERSION &&
+            item.code != project_file::LoadCode::UNSUPPORTED_CHUNK_VERSION &&
+            item.code != project_file::LoadCode::UNKNOWN_CHUNK &&
+            item.code != project_file::LoadCode::MISSING_REQUIRED_CHUNK &&
+            item.code != project_file::LoadCode::UNEXPECTED_CHUNK &&
+            item.code != project_file::LoadCode::UNSUPPORTED_CHUNK_FLAGS) {
+            return false;
+        }
+        foundUnsupported = true;
     }
-    return result.loadStatus == project_file::LoadStatus::PARTIAL
-        ? Status::PARTIAL
-        : Status::CURRENT;
+    return foundUnsupported;
 }
 
 FLASHMEM Result resultFromDecode(
@@ -25,7 +37,7 @@ FLASHMEM Result resultFromDecode(
     uint32_t bytesWritten = 0U
 ) {
     return {
-        .status = classify(decoded),
+        .status = decoded.ok ? Status::CURRENT : Status::FAILED,
         .containerStatus = decoded.containerStatus,
         .loadStatus = decoded.loadStatus,
         .overwriteSafe = decoded.overwriteSafe,
@@ -49,9 +61,65 @@ FLASHMEM Result inspectProjectBytes(
     uint32_t size,
     project_file::LoadReport* report
 ) {
+    project_file::LoadReport localReport{};
+    auto* effectiveReport = report != nullptr ? report : &localReport;
+    project_file::DecodedChunkView chunks[project_file::MAX_CHUNKS]{};
+    const auto scanned = project_file::scan(
+        data,
+        size,
+        chunks,
+        project_file::MAX_CHUNKS,
+        effectiveReport
+    );
+    if (scanned.status != project_file::Status::OK) {
+        return {
+            .status = Status::FAILED,
+            .containerStatus = scanned.status,
+            .loadStatus = effectiveReport->status,
+            .overwriteSafe = false,
+        };
+    }
+    if (effectiveReport->hasIssues()) {
+        if (reportContainsOnlyUnsupportedFormat(*effectiveReport)) {
+            return {
+                .status = Status::UNSUPPORTED,
+                .containerStatus = scanned.status,
+                .loadStatus =
+                    project_file::LoadStatus::INSPECTION_ISSUES,
+                .overwriteSafe = false,
+            };
+        }
+        effectiveReport->markRejected();
+        return {
+            .status = Status::FAILED,
+            .containerStatus = scanned.status,
+            .loadStatus = effectiveReport->status,
+            .overwriteSafe = false,
+        };
+    }
+
     auto snapshot = core::state::project::makeProjectSnapshot();
     if (!snapshot) return allocationFailed();
-    return decodeProjectBytes(data, size, *snapshot, report);
+    const auto decoded = snapshot_codec::decodeProjectSnapshot(
+        data,
+        size,
+        *snapshot,
+        effectiveReport
+    );
+    if (!decoded.ok &&
+        reportContainsOnlyUnsupportedFormat(*effectiveReport)) {
+        effectiveReport->status =
+            project_file::LoadStatus::INSPECTION_ISSUES;
+        effectiveReport->overwriteSafe = false;
+        return {
+            .status = Status::UNSUPPORTED,
+            .containerStatus = decoded.containerStatus,
+            .loadStatus =
+                project_file::LoadStatus::INSPECTION_ISSUES,
+            .overwriteSafe = false,
+        };
+    }
+    return resultFromDecode(decoded);
 }
 
 FLASHMEM Result decodeProjectBytes(
@@ -70,8 +138,7 @@ FLASHMEM Result rewriteProjectBytes(
     uint32_t size,
     uint8_t* out,
     uint32_t outCapacity,
-    project_file::LoadReport* report,
-    RewriteOptions options
+    project_file::LoadReport* report
 ) {
     if (out == nullptr || outCapacity == 0U) {
         return {
@@ -91,10 +158,7 @@ FLASHMEM Result rewriteProjectBytes(
         report
     );
     auto result = resultFromDecode(decoded);
-    if (result.status == Status::FAILED ||
-        (result.status == Status::PARTIAL && !options.allowPartialOutput)) {
-        return result;
-    }
+    if (result.status != Status::CURRENT) return result;
 
     const auto encoded = snapshot_codec::encodeProjectSnapshot(
         *snapshot,
@@ -118,8 +182,8 @@ FLASHMEM const char* statusName(Status status) {
     switch (status) {
         case Status::CURRENT:
             return "current";
-        case Status::PARTIAL:
-            return "partial";
+        case Status::UNSUPPORTED:
+            return "unsupported";
         case Status::FAILED:
             return "failed";
         default:

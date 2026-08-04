@@ -4,7 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 
 namespace core::handler {
 namespace {
@@ -24,7 +24,7 @@ bool matchesLaneAuthor(
 }  // namespace
 
 FLASHMEM SequencerCcLaneLiveProjection projectSequencerCcLaneLive(
-    const MidiCcGlobalFrameCoordinator* coordinator,
+    const core::sequencer::MidiCcGlobalFrameCoordinator* coordinator,
     seq::SequencerCcLaneAddress address,
     const seq::SequencerCcLane& lane,
     const seq::SequencerCcTrackRoute& trackRoute

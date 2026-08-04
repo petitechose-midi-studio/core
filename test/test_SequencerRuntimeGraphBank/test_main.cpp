@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "../../src/sequencer/SequencerRuntimeGraphBank.hpp"
+#include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 
@@ -165,6 +166,91 @@ void test_chord_draft_projects_without_mutating_the_published_graph() {
         << "[PASS] test_chord_draft_projects_without_mutating_the_published_graph\n";
 }
 
+void test_quick_controls_draft_publishes_only_immutable_runtime_copies() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerState sequencer;
+    seq::SequencerTrackBankState trackBank;
+    core::sequencer::SequencerRuntimeGraphBank runtimeGraphs;
+
+    const uint16_t childNode = createNestedNode(sequencer.pattern, 0, 3);
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    runtimeGraphs.publishPrepared();
+    assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 3);
+
+    const auto openingPath = seq::capturePreparedSequencerGraphContentPath(sequencer);
+    assert(sequencer.quickControlsDraft.begin(
+        sequencer.pattern,
+        openingPath,
+        sequencer.page.get(),
+        sequencer.focusedStep.get()));
+    auto& draft = seq::authoringPattern(sequencer);
+    assert(&draft != &sequencer.pattern);
+    assert(seq::setNodeNoteOffset(draft, childNode, 9));
+    sequencer.patternQuickControls.bumpPreview();
+    assert(seq::graphView(sequencer.pattern)->stepNodes[childNode].noteOffset == 3);
+
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 3);
+    runtimeGraphs.publishPrepared();
+    const auto* previewRuntime = runtimeGraphs.graphForTrack(0);
+    assert(previewRuntime != nullptr);
+    assert(previewRuntime != seq::graphView(draft));
+    assert(previewRuntime->stepNodes[childNode].noteOffset == 9);
+
+    sequencer.quickControlsDraft.reset();
+    sequencer.patternQuickControls.bumpPreview();
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 9);
+    runtimeGraphs.publishPrepared();
+    assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 3);
+
+    std::cout
+        << "[PASS] Quick Controls Graph preview uses immutable runtime generations\n";
+}
+
+void test_nested_quick_controls_preview_overrides_step_draft_projection() {
+    namespace seq = core::state::sequencer;
+    seq::SequencerState sequencer;
+    seq::SequencerTrackBankState trackBank;
+    core::sequencer::SequencerRuntimeGraphBank runtimeGraphs;
+
+    assert(seq::beginStepContentDraft(
+        sequencer,
+        seq::SequencerStepContentDraftKind::MICRO_SEQUENCE,
+        0U));
+    auto& parent = *sequencer.stepContentDraft.pattern();
+    const uint16_t childNode = createNestedNode(parent, 0U, 3);
+    seq::notifyStepContentDraftMutation(sequencer);
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    runtimeGraphs.publishPrepared();
+    assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 3);
+
+    const auto openingPath = seq::capturePreparedSequencerGraphContentPath(sequencer);
+    assert(sequencer.quickControlsDraft.begin(
+        parent,
+        openingPath,
+        sequencer.page.get(),
+        sequencer.focusedStep.get()));
+    auto& nested = seq::authoringPattern(sequencer);
+    assert(&nested != &parent);
+    assert(seq::setNodeNoteOffset(nested, childNode, 9));
+    sequencer.patternQuickControls.bumpPreview();
+
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    runtimeGraphs.publishPrepared();
+    assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 9);
+    assert(parent.graph->stepNodes[childNode].noteOffset == 3);
+
+    sequencer.quickControlsDraft.reset();
+    sequencer.patternQuickControls.bumpPreview();
+    assert(runtimeGraphs.prepare(sequencer, trackBank));
+    runtimeGraphs.publishPrepared();
+    assert(runtimeGraphs.graphForTrack(0)->stepNodes[childNode].noteOffset == 3);
+
+    std::cout
+        << "[PASS] nested Quick Controls preview overrides Step draft projection\n";
+}
+
 }  // namespace
 
 int main() {
@@ -172,6 +258,8 @@ int main() {
     test_publication_commits_simultaneous_track_changes_together();
     test_micro_sequence_draft_is_runtime_only_until_apply_or_cancel();
     test_chord_draft_projects_without_mutating_the_published_graph();
+    test_quick_controls_draft_publishes_only_immutable_runtime_copies();
+    test_nested_quick_controls_preview_overrides_step_draft_projection();
     std::cout << "All SequencerRuntimeGraphBank tests passed\n";
     return 0;
 }

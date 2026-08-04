@@ -8,9 +8,11 @@
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
 
-namespace core::handler {
-
+namespace core::sequencer {
 class MidiCcGlobalFrameCoordinator;
+}
+
+namespace core::handler {
 
 class SequencerCcLaneWorkflow {
 public:
@@ -20,7 +22,8 @@ public:
         const core::state::project::ProjectNavigationState& projectNavigation;
         SequencerHistoryDomainServices history;
         core::state::StatusBarState& statusBar;
-        const MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
+        const core::sequencer::MidiCcGlobalFrameCoordinator*
+            midiCcCoordinator = nullptr;
     };
 
     SequencerCcLaneWorkflow(StateRefs state, SequencerCcLaneDomainServices services);
@@ -90,7 +93,7 @@ private:
     bool setFocusedEventValue_(uint8_t value, uint32_t nowMs);
     bool focusVisibleStep_(uint8_t indexInWindow, uint32_t nowMs);
     bool openTransitionPickerForFocused_(bool compact, uint32_t nowMs);
-    bool removeCurrentLane_(uint32_t nowMs);
+    bool deleteCurrentLane_(uint32_t nowMs);
     void openGrid_(uint8_t lane);
     void loadSettingsDraft_();
     void refreshActions_(const SequencerCcLanePreflight& preflight);
@@ -115,7 +118,8 @@ private:
     const core::state::project::ProjectNavigationState& project_navigation_;
     SequencerHistoryDomainServices history_;
     core::state::StatusBarState& status_bar_;
-    const MidiCcGlobalFrameCoordinator* midi_cc_coordinator_ = nullptr;
+    const core::sequencer::MidiCcGlobalFrameCoordinator*
+        midi_cc_coordinator_ = nullptr;
     SequencerCcLaneDomainServices services_;
     bool last_transport_playing_ = false;
     core::state::sequencer::SequencerCcLaneActionSlot guard_slot_ =

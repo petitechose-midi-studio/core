@@ -47,7 +47,7 @@ namespace core::validation::ux {
 struct StructureUxTraceState;
 }
 
-namespace core::handler {
+namespace core::sequencer {
 class MidiCcGlobalFrameCoordinator;
 }
 
@@ -59,7 +59,7 @@ constexpr uint8_t VIEW_SELECTOR = 15;
 constexpr uint8_t TRANSPORT = 20;
 constexpr uint8_t SEQUENCER_TRACK_EDIT = 21;
 constexpr uint8_t SEQUENCER_PATTERN_EDIT = 22;
-constexpr uint8_t SEQUENCER_STEP_PRESET = 23;
+constexpr uint8_t SEQUENCER_PRESET_LIBRARY = 23;
 constexpr uint8_t SEQUENCER_CC_LANE = 24;
 constexpr uint8_t SEQUENCER_STEP_EDIT = 25;
 constexpr uint8_t SEQUENCER_PROPERTY_SELECTOR = 30;
@@ -156,7 +156,8 @@ public:
         core::state::sequencer::SequencerTrackBankState& tracks,
         const core::state::project::ProjectNavigationState& projectNavigation,
         const core::state::project::ProjectTrackState& projectTracks,
-        const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator
+        const core::sequencer::MidiCcGlobalFrameCoordinator*
+            midiCcCoordinator
     );
 
     bool captureSemanticUxContext(
@@ -169,17 +170,18 @@ private:
     core::state::sequencer::SequencerTrackBankState& tracks_;
     const core::state::project::ProjectNavigationState& project_navigation_;
     const core::state::project::ProjectTrackState& project_tracks_;
-    const core::handler::MidiCcGlobalFrameCoordinator* midi_cc_coordinator_ = nullptr;
+    const core::sequencer::MidiCcGlobalFrameCoordinator*
+        midi_cc_coordinator_ = nullptr;
     mutable std::array<
         core::state::contextual::ContextActionSpec,
         3>
         gesture_specs_{};
 };
 
-class SequencerStepPresetUxSurface final
+class SequencerPresetLibraryUxSurface final
     : public core::validation::ux::SemanticUxSurface {
 public:
-    explicit SequencerStepPresetUxSurface(
+    explicit SequencerPresetLibraryUxSurface(
         core::state::sequencer::SequencerState& sequencer,
         const core::state::sequencer::SequencerTrackActivationQueue* trackActivations
     );
@@ -430,7 +432,7 @@ public:
                        core::state::macro::MacroUiState& macroUi,
                        oc::state::Signal<uint32_t>& configRevision,
                        core::state::StructureClipboardState& structureClipboard,
-                       const core::handler::MidiCcGlobalFrameCoordinator*
+                       const core::sequencer::MidiCcGlobalFrameCoordinator*
                            midiCcCoordinator);
 
     bool captureSemanticUxContext(
@@ -446,7 +448,8 @@ private:
     core::state::macro::MacroUiState& macro_ui_;
     oc::state::Signal<uint32_t>& config_revision_;
     core::state::StructureClipboardState& structure_clipboard_;
-    const core::handler::MidiCcGlobalFrameCoordinator* midi_cc_coordinator_ = nullptr;
+    const core::sequencer::MidiCcGlobalFrameCoordinator*
+        midi_cc_coordinator_ = nullptr;
     core::context::standalone::macro_overlay_presenter::StaticItems static_items_;
     mutable bool contextual_automation_record_seen_ = false;
     mutable bool contextual_recorded_shape_armed_ = false;

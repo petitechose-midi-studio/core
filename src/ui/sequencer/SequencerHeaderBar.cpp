@@ -7,7 +7,6 @@
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
 
-#include "ui/common/AddSlotIcon.hpp"
 #include "ui/sequencer/SequencerHeaderBarRenderModel.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -16,7 +15,6 @@ namespace core::ui {
 namespace theme = standalone::theme;
 namespace header_model = core::ui::sequencer::header_bar;
 namespace style = oc::ui::lvgl::style;
-namespace add_slot_icon_ns = core::ui::add_slot_icon;
 
 namespace {
 
@@ -294,15 +292,6 @@ FLASHMEM void SequencerHeaderBar::onStripDrawEvent(lv_event_t* event) {
             );
         }
 
-        if (visual.drawAddSlot) {
-            add_slot_icon_ns::drawCentered(
-                layer,
-                visual.segmentArea,
-                theme::color::TEXT_PRIMARY,
-                LV_OPA_COVER
-            );
-        }
-
         if (visual.sourceMarker) {
             const auto area = markerArea(
                 visual.segmentArea,
@@ -361,7 +350,6 @@ FLASHMEM void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& pro
                                    strip_cached_active_page_ != props.activePage ||
                                    strip_cached_viewed_page_ != props.viewedPage ||
                                    strip_cached_preview_track_ != props.previewTrack ||
-                                   strip_cached_add_page_index_ != props.addPageIndex ||
                                    strip_cached_enabled_mask_ != props.enabledMask ||
                                    strip_cached_page_source_marker_mask_ !=
                                        props.pageSourceMarkerMask ||
@@ -370,8 +358,7 @@ FLASHMEM void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& pro
                                    strip_cached_page_destination_overwrite_mask_ !=
                                        props.pageDestinationOverwriteMask ||
                                    strip_cached_page_destination_blocked_mask_ !=
-                                       props.pageDestinationBlockedMask ||
-                                   strip_cached_preview_page_add_slot_ != props.previewPageAddSlot;
+                                       props.pageDestinationBlockedMask;
 
     if (!stripStateChanged && !widthChanged) {
         return;
@@ -382,14 +369,12 @@ FLASHMEM void SequencerHeaderBar::renderStrip(const SequencerHeaderBarProps& pro
     strip_cached_active_page_ = props.activePage;
     strip_cached_viewed_page_ = props.viewedPage;
     strip_cached_preview_track_ = props.previewTrack;
-    strip_cached_add_page_index_ = props.addPageIndex;
     strip_cached_enabled_mask_ = props.enabledMask;
     strip_cached_page_source_marker_mask_ = props.pageSourceMarkerMask;
     strip_cached_page_destination_preview_mask_ = props.pageDestinationPreviewMask;
     strip_cached_page_destination_overwrite_mask_ = props.pageDestinationOverwriteMask;
     strip_cached_page_destination_blocked_mask_ =
         props.pageDestinationBlockedMask;
-    strip_cached_preview_page_add_slot_ = props.previewPageAddSlot;
     strip_draw_props_ = props;
     lv_obj_invalidate(strip_row_);
 

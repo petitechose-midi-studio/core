@@ -116,8 +116,8 @@ constexpr uint32_t MUX_SCAN_TICKS =
     (MUX_BUTTON_COUNT + Mux::BUTTON_READS_PER_APP_TICK - 1U) /
     Mux::BUTTON_READS_PER_APP_TICK;
 constexpr uint32_t MUX_SCAN_PERIOD_US =
-    (MUX_SCAN_TICKS * 1'000'000U + Config::Timing::APP_HZ - 1U) /
-    Config::Timing::APP_HZ;
+    (MUX_SCAN_TICKS * 1'000'000U + Config::Timing::INPUT_APP_ADMISSION_HZ - 1U) /
+    Config::Timing::INPUT_APP_ADMISSION_HZ;
 static_assert(
     MUX_SCAN_PERIOD_US <= Config::Timing::DEBOUNCE_MS * 1'000U,
     "MUX button scan period must fit inside the product debounce window"

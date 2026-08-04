@@ -15,8 +15,10 @@
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/sequencer/SequencerQuickControlVisuals.hpp"
+#include "ui/sequencer/SequencerStepContentDraftTransitionLabels.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/font/StandaloneIcons.hpp"
@@ -88,8 +90,6 @@ FLASHMEM const char* stepContentDraftFailureValue(
     const core::state::sequencer::SequencerStepContentDraftSession& draft
 ) {
     using Failure = core::state::sequencer::SequencerStepContentDraftFailure;
-    using Transition =
-        core::state::sequencer::SequencerStepContentDraftBlockedTransition;
     switch (draft.failure) {
         case Failure::OUT_OF_MEMORY:
             return "Out of memory";
@@ -100,14 +100,7 @@ FLASHMEM const char* stepContentDraftFailureValue(
         case Failure::UNPUBLISHABLE_MUTATION:
             return "Unsupported edit";
         case Failure::TRANSITION_BLOCKED:
-            switch (draft.blockedTransition) {
-                case Transition::TRACK: return "Apply before track";
-                case Transition::VIEW: return "Apply before view";
-                case Transition::PROJECT_LOAD: return "Apply before load";
-                case Transition::RESET: return "Apply before reset";
-                case Transition::NONE:
-                default: return "Apply or discard";
-            }
+            return propertyOverlayStepContentDraftTransitionLabel(draft.blockedTransition);
         case Failure::NONE:
         default:
             return "";
@@ -122,6 +115,7 @@ void formatQuickControlValue(
     QuickItem item
 ) {
     if (!buffer || size == 0) return;
+    const auto& pattern = core::state::sequencer::authoringPattern(sequencer);
     if (core::state::sequencer::isChildContentView(sequencer) &&
         item == QuickItem::DIVISION) {
         buffer[0] = '\0';
@@ -143,7 +137,7 @@ void formatQuickControlValue(
                 size,
                 1U,
                 static_cast<unsigned>(
-                    4U * static_cast<uint16_t>(sequencer.pattern.stepsPerBeat.get())
+                    4U * static_cast<uint16_t>(pattern.stepsPerBeat.get())
                 )
             );
             return;
@@ -153,7 +147,7 @@ void formatQuickControlValue(
                 size,
                 "%u%%",
                 static_cast<unsigned>(
-                    sequencer.pattern.effectiveSwingPercent(
+                    pattern.effectiveSwingPercent(
                         projectNavigation.transportSwingPercent
                     )
                 )
@@ -164,7 +158,7 @@ void formatQuickControlValue(
                 buffer,
                 size,
                 "%+d%%",
-                static_cast<int>(sequencer.pattern.patternNudgePercent.get())
+                static_cast<int>(pattern.patternNudgePercent.get())
             );
             return;
         case QuickItem::LENGTH:
@@ -192,7 +186,9 @@ uint8_t localVariationRangeForStep(
         return 0;
     }
 
-    const auto* graph = core::state::sequencer::graphView(sequencer.pattern);
+    const auto* graph = core::state::sequencer::graphView(
+        core::state::sequencer::authoringPattern(sequencer)
+    );
     if (graph == nullptr) return 0;
 
     const auto nodeId = core::state::sequencer::activeContentStepNodeId(
@@ -364,10 +360,7 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
             .customContent = true,
             .icon = sequencerContextIcon(focus),
             .label = sequencerContextLabel(focus),
-            .value = sequencer.contextSelector.feedback ==
-                    core::state::sequencer::SequencerContextSelectorFeedback::EDITOR_UNAVAILABLE
-                ? "No editor yet"
-                : "Turn NAV · release",
+            .value = "Turn NAV · release",
             .color = standalone::theme::color::STEP_STATE,
         };
     }
@@ -424,7 +417,9 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
                 .color = standalone::theme::color::MACRO_CC_COLOR,
             };
             const auto* bank =
-                core::state::sequencer::sequencerCcLaneView(sequencer.pattern);
+                core::state::sequencer::sequencerCcLaneView(
+                    core::state::sequencer::authoringPattern(sequencer)
+                );
             const int8_t laneIndex =
                 core::state::sequencer::sequencerPropertySelectionLaneAt(
                     bank,

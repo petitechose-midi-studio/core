@@ -241,14 +241,14 @@ FLASHMEM void SequencerView::bindHeaderState() {
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
-        state_refs_.sequencer.structureUi.previewAddPageSlot,
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.revision,
         state_refs_.sequencer.structureUi.trackPaste.revision,
-        state_refs_.sequencer.ccLaneUi.revision
+        state_refs_.sequencer.ccLaneUi.revision,
+        state_refs_.sequencer.patternQuickControls.previewRevision
     );
 }
 
@@ -265,12 +265,12 @@ FLASHMEM void SequencerView::bindHeaderStripState() {
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.trackNavigation.previewTrackIndex,
         state_refs_.sequencer.structureUi.previewPageIndex,
-        state_refs_.sequencer.structureUi.previewAddPageSlot,
         state_refs_.sequencer.structureUi.stepSelection.active,
         state_refs_.sequencer.structureUi.stepSelection.selectedMask,
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
-        state_refs_.sequencer.contentView.revision
+        state_refs_.sequencer.contentView.revision,
+        state_refs_.sequencer.patternQuickControls.previewRevision
     );
 }
 
@@ -333,8 +333,8 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sharedTrackEnabledMask,
         state_refs_.trackNavigation.previewAddSlot,
         state_refs_.trackNavigation.previewTrackIndex,
-        state_refs_.sequencer.structureUi.previewAddPageSlot,
-        state_refs_.sequencer.structureUi.previewPageIndex
+        state_refs_.sequencer.structureUi.previewPageIndex,
+        state_refs_.sequencer.patternQuickControls.previewRevision
     );
     grid_tick_watcher_.bind<&SequencerView::requestGridTickRender>(
         *this, 11, "SequencerView.gridTick"
@@ -372,7 +372,8 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.contentView.length,
         state_refs_.sequencer.contentView.revision,
-        state_refs_.sequencer.ccLaneUi.revision
+        state_refs_.sequencer.ccLaneUi.revision,
+        state_refs_.sequencer.patternQuickControls.previewRevision
     );
 }
 
@@ -416,7 +417,6 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
     bottom_action_strip_watcher_.watchAll(
         state_refs_.structureNavigationFocus,
         state_refs_.trackNavigation.previewAddSlot,
-        state_refs_.sequencer.structureUi.previewAddPageSlot,
         state_refs_.sequencer.structureUi.trackPaste.revision,
         state_refs_.trackNavigation.hold.action,
         state_refs_.trackNavigation.hold.startedAtMs,

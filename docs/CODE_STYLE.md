@@ -600,7 +600,7 @@ PlatformIO generates `compile_commands.json` automatically during build.
 
 ```bash
 # Generate/update compilation database
-pio run -e dev
+ms build core --target teensy --env dev
 ```
 
 > **Note**: Run a build after cloning to generate the compilation database. clangd won't work properly without it.
@@ -609,7 +609,7 @@ pio run -e dev
 
 | Issue | Solution |
 |-------|----------|
-| Red squiggles everywhere | Run `pio run -e debug` to generate `compile_commands.json` |
+| Red squiggles everywhere | Run `ms build core --target teensy --env dev` to generate `compile_commands.json` |
 | Arduino.h not found | Check `--query-driver` setting in clangd arguments |
 | Wrong includes suggested | Restart clangd: `Ctrl+Shift+P` → "clangd: Restart" |
 
@@ -619,7 +619,7 @@ pio run -e dev
 
 ```bash
 # Build with warnings
-pio run -e debug
+ms build core --target teensy --env dev
 
 # Format check (dry run)
 clang-format --dry-run --Werror src/**/*.cpp

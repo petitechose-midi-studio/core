@@ -17,21 +17,28 @@ namespace ms::entry {
  * Desktop project-session lifecycle matching the firmware boot and loop order.
  *
  * Construction restores the current session before autosave starts. update()
- * is called after OpenControlApp::update(); it advances CoreState coalescing,
- * then project autosave, unless an external product-file write owns the file
- * service. An autosave-owned write is allowed to keep advancing.
+ * is called after OpenControlApp::update(); it always advances CoreState
+ * coalescing, then opens the one persistence turn. Autosave is admitted behind
+ * an explicit owner instead of being suppressed, and every admitted slice is
+ * paused while musical playback is active.
  */
 class SdlProjectSessionRuntime {
 public:
+    using PersistenceAdvanceFn = void (*)(void*, uint32_t, bool);
+
     explicit SdlProjectSessionRuntime(
         core::persistence::ProductFileService& productFiles,
         core::state::CoreState& state,
-        uint32_t autosaveDelayMs = 0
+        uint32_t autosaveDelayMs = 0,
+        void* persistenceAdvanceContext = nullptr,
+        PersistenceAdvanceFn persistenceAdvance = nullptr
     )
         : product_files_(productFiles)
         , state_(state)
         , store_(productFiles)
-        , restore_(store_) {
+        , restore_(store_)
+        , persistence_advance_context_(persistenceAdvanceContext)
+        , persistence_advance_(persistenceAdvance) {
         restore_result_ = restore_.restore(state_);
         autosave_.emplace(store_, autosaveDelayMs);
     }
@@ -46,20 +53,26 @@ public:
     }
 
     void update() {
-        const bool productFileWriteActive = product_files_.writeSessionActive();
-        const bool autosaveWriteActive = autosave_ && autosave_->writeSessionActive();
-        const bool externalProductFileWriteActive =
-            productFileWriteActive && !autosaveWriteActive;
+        state_.update();
+        const uint32_t nowMs = oc::time::millis();
+        const auto turn = product_files_.persistenceJobs().beginTurn(nowMs);
+        if (!turn) return;
 
-        if (externalProductFileWriteActive) {
-            return;
+        const bool playbackActive = state_.statusBar.playing.get();
+        if (persistence_advance_) {
+            persistence_advance_(
+                persistence_advance_context_,
+                nowMs,
+                playbackActive
+            );
         }
 
-        state_.update();
         if (autosave_) {
             autosave_->update(
                 state_,
-                oc::time::millis()
+                nowMs,
+                false,
+                playbackActive
             );
         }
     }
@@ -71,6 +84,8 @@ private:
     core::persistence::ProjectSessionRestoreService restore_;
     core::persistence::ProjectSessionRestoreService::Result restore_result_{};
     std::optional<core::persistence::ProjectSessionAutosaveService> autosave_;
+    void* persistence_advance_context_ = nullptr;
+    PersistenceAdvanceFn persistence_advance_ = nullptr;
 };
 
 }  // namespace ms::entry

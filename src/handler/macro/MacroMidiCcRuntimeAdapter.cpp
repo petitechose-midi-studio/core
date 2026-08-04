@@ -4,26 +4,29 @@
 
 namespace core::handler {
 
+namespace midi_cc_runtime = core::sequencer;
+
 MacroMidiCcRuntimeAdapter::MacroMidiCcRuntimeAdapter(
     StateRefs state,
     MacroPerformanceDomainServices services,
-    MidiCcGlobalFrameCoordinator& coordinator
+    midi_cc_runtime::MidiCcGlobalFrameCoordinator& coordinator
 )
     : pages_(state.pages)
     , project_tracks_(state.projectTracks)
     , services_(services)
     , coordinator_(coordinator) {}
 
-MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishLiveManual(
+midi_cc_runtime::MidiCcGlobalFrameResult
+MacroMidiCcRuntimeAdapter::publishLiveManual(
     uint8_t macroIndex,
     uint8_t value
 ) {
     if (macroIndex >= core::state::macro::MACRO_COUNT || value > 127U) {
-        return MidiCcGlobalFrameResult{};
+        return midi_cc_runtime::MidiCcGlobalFrameResult{};
     }
     if (!services_.isActivePageEnabled() ||
         !services_.isMacroSlotActive(macroIndex)) {
-        return MidiCcGlobalFrameResult{};
+        return midi_cc_runtime::MidiCcGlobalFrameResult{};
     }
     const uint8_t activeTrack = pages_.currentActiveTrack();
     const uint16_t audible = core::state::project::audibleMask(
@@ -33,7 +36,7 @@ MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishLiveManual(
     if ((audible & static_cast<uint16_t>(1U << activeTrack)) == 0U) {
         // Manual input remains authored by the Macro workflow, but an
         // inaudible Track must not replace or emit a physical MIDI author.
-        return MidiCcGlobalFrameResult{};
+        return midi_cc_runtime::MidiCcGlobalFrameResult{};
     }
     const auto& config = services_.activeConfig(macroIndex);
     const uint8_t channel = core::state::project::projectTrackMidiChannel(
@@ -42,7 +45,8 @@ MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishLiveManual(
     const auto candidate = core::state::shared::MidiCcCandidate{
         .destination = core::state::shared::MidiCcDestination{
             .identity = core::state::shared::MidiCcDestinationIdentity{
-                .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                .port =
+                    midi_cc_runtime::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
                 .channel = channel,
                 .controller = config.cc,
             },
@@ -61,17 +65,18 @@ MidiCcGlobalFrameResult MacroMidiCcRuntimeAdapter::publishLiveManual(
     };
     uint16_t candidateCount = 0;
     if (!coordinator_.upsertPersistentAuthor(candidate, candidateCount)) {
-        return MidiCcGlobalFrameResult{};
+        return midi_cc_runtime::MidiCcGlobalFrameResult{};
     }
     return {
-        .status = MidiCcGlobalFrameStatus::OK,
+        .status = midi_cc_runtime::MidiCcGlobalFrameStatus::OK,
         .resolveStatus = core::state::shared::MidiCcResolveStatus::OK,
         .candidateCount = candidateCount,
     };
 }
 
 bool MacroMidiCcRuntimeAdapter::publishProjectFrame(
-    MidiCcGlobalFrameCoordinator::PersistentAuthorProducer producer,
+    midi_cc_runtime::MidiCcGlobalFrameCoordinator::PersistentAuthorProducer
+        producer,
     void* context
 ) {
     return coordinator_.publishPersistentAuthorsGenerated(producer, context);

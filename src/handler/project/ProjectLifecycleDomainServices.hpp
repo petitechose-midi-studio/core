@@ -7,10 +7,8 @@ struct CoreState;
 }
 
 namespace core::persistence {
+class ProductDirectoryCatalog;
 class ProductFileService;
-namespace project_file {
-enum class LoadStatus : uint8_t;
-}
 }  // namespace core::persistence
 
 namespace core::handler {
@@ -25,37 +23,35 @@ public:
         SAVE_FAILED,
         LOAD_FAILED,
         LIST_FAILED,
-        PARTIAL_LOAD,
-        UNSAFE_OVERWRITE,
         DRAFT_ACTIVE,
+        QUEUED,
     };
 
     struct Result {
         Status status = Status::UNAVAILABLE;
         uint32_t bytes = 0;
-        core::persistence::project_file::LoadStatus loadStatus{};
-        bool overwriteSafe = true;
 
-        bool success() const {
-            return status == Status::OK || status == Status::PARTIAL_LOAD;
-        }
+        bool success() const { return status == Status::OK; }
     };
 
     ProjectLifecycleDomainServices() = default;
     explicit ProjectLifecycleDomainServices(core::state::CoreState& state);
-    ProjectLifecycleDomainServices(core::state::CoreState& state,
-                                   core::persistence::ProductFileService& productFiles);
+    ProjectLifecycleDomainServices(
+        core::state::CoreState& state,
+        core::persistence::ProductFileService& productFiles,
+        core::persistence::ProductDirectoryCatalog& productCatalog
+    );
     static ProjectLifecycleDomainServices fromCoreState(core::state::CoreState& state);
     static ProjectLifecycleDomainServices fromCoreState(
         core::state::CoreState& state,
-        core::persistence::ProductFileService& productFiles
+        core::persistence::ProductFileService& productFiles,
+        core::persistence::ProductDirectoryCatalog& productCatalog
     );
 
     Result resetMusicalProject() const;
     const char* currentProjectId() const;
     bool currentProjectDirty() const;
     bool currentProjectHasSavedIdentity() const;
-    bool currentProjectOverwriteSafe() const;
     Result markProjectMutated() const;
     Result saveCurrentProject() const;
     Result saveAsNextProject() const;
@@ -68,6 +64,7 @@ public:
 private:
     core::state::CoreState* state_ = nullptr;
     core::persistence::ProductFileService* product_files_ = nullptr;
+    core::persistence::ProductDirectoryCatalog* product_catalog_ = nullptr;
 };
 
 }  // namespace core::handler

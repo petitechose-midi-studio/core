@@ -179,7 +179,7 @@ FLASHMEM bool clearProjectControlAutomation(
     const macro::MacroAutomationSlotAddress& address
 ) {
     if (!validAddress(address)) return false;
-    const auto removed = removeProjectAutomationCurve(
+    const auto removed = deleteProjectAutomationCurve(
         control.authored.automation,
         control.authored.curves,
         projectControlDestination(address)
@@ -225,7 +225,7 @@ FLASHMEM bool compactProjectControlPagesInDomain(
             ++cursor;
             continue;
         }
-        if (!removeProjectAutomationCurve(
+        if (!deleteProjectAutomationCurve(
                 domain.automation,
                 domain.curves,
                 destination
@@ -503,7 +503,7 @@ FLASHMEM bool replaceProjectControlAutomationInDomain(
     if (!validAddress(address)) return false;
     const auto destination = projectControlDestination(address);
     if (!source.stored()) {
-        const auto removed = removeProjectAutomationCurve(
+        const auto removed = deleteProjectAutomationCurve(
             domain.automation,
             domain.curves,
             destination

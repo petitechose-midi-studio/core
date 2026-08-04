@@ -62,6 +62,60 @@ uint16_t SequencerTrackActivationQueue::sanitizeMask_(uint16_t trackMask) {
     return static_cast<uint16_t>(trackMask & ALL_TRACKS_MASK);
 }
 
+FLASHMEM uint32_t SequencerTrackActivationQueue::nextNonZeroIdentifier_(
+    uint32_t current
+) {
+    ++current;
+    if (current == 0) ++current;
+    return current;
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::sameEntry_(
+    const Entry& entry,
+    const SequencerTrackActivationEntrySnapshot& expected
+) {
+    return static_cast<uint8_t>(entry.phase) == expected.phase &&
+           entry.requiresLocalLoopBoundary ==
+               expected.requiresLocalLoopBoundary &&
+           entry.target == expected.target &&
+           entry.origin == expected.origin &&
+           entry.generation == expected.generation &&
+           entry.operationId == expected.operationId;
+}
+
+FLASHMEM void SequencerTrackActivationQueue::captureExpectedStateLocked_(
+    SequencerTrackActivationExpectedState& out
+) const {
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const auto& entry = entries_[track];
+        out.entries[track] = {
+            static_cast<uint8_t>(entry.phase),
+            entry.requiresLocalLoopBoundary,
+            entry.target,
+            entry.origin,
+            entry.generation,
+            entry.operationId,
+        };
+    }
+    out.nextGeneration = next_generation_;
+    out.nextOperationId = next_operation_id_;
+    out.telemetryRevision = telemetry_revision_.get();
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::expectedStateMatchesLocked_(
+    const SequencerTrackActivationExpectedState& expected
+) const {
+    if (next_generation_ != expected.nextGeneration ||
+        next_operation_id_ != expected.nextOperationId ||
+        telemetry_revision_.get() != expected.telemetryRevision) {
+        return false;
+    }
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        if (!sameEntry_(entries_[track], expected.entries[track])) return false;
+    }
+    return true;
+}
+
 FLASHMEM void SequencerTrackActivationQueue::bumpTelemetryRevision_() {
     telemetry_revision_.set(telemetry_revision_.get() + 1U);
 }
@@ -84,10 +138,8 @@ FLASHMEM bool SequencerTrackActivationQueue::prepare(
         if (isPending_(entries_[track].phase)) return false;
     }
 
-    ++next_generation_;
-    if (next_generation_ == 0) ++next_generation_;
-    ++next_operation_id_;
-    if (next_operation_id_ == 0) ++next_operation_id_;
+    next_generation_ = nextNonZeroIdentifier_(next_generation_);
+    next_operation_id_ = nextNonZeroIdentifier_(next_operation_id_);
     const uint16_t audibleMask = sanitizeMask_(targetAudibleMask);
     out.trackMask = sanitized;
     out.localLoopBoundaryMask = transportPlaying
@@ -97,6 +149,171 @@ FLASHMEM bool SequencerTrackActivationQueue::prepare(
     out.operationId = next_operation_id_;
     out.target = SequencerTrackActivationTarget::AFTER;
     out.origin = origin;
+    return true;
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::planActivation(
+    uint16_t trackMask,
+    uint16_t targetAudibleMask,
+    bool transportPlaying,
+    SequencerTrackActivationPlan& out,
+    SequencerTrackActivationOrigin origin
+) const {
+    out = {};
+    const uint16_t sanitized = sanitizeMask_(trackMask);
+    if (sanitized == 0 || sanitized != trackMask) return false;
+
+    oc::realtime::InterruptGuard lock;
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((sanitized & bit) == 0) continue;
+        const auto phase = entries_[track].phase;
+        if (phase != InternalPhase::IDLE &&
+            phase != InternalPhase::APPLIED &&
+            phase != InternalPhase::CANCELLED) {
+            return false;
+        }
+    }
+
+    captureExpectedStateLocked_(out.expected);
+    const uint16_t audibleMask = sanitizeMask_(targetAudibleMask);
+    out.batch.trackMask = sanitized;
+    out.batch.localLoopBoundaryMask = transportPlaying
+        ? static_cast<uint16_t>(sanitized & audibleMask)
+        : 0;
+    out.batch.generation = nextNonZeroIdentifier_(out.expected.nextGeneration);
+    out.batch.operationId = nextNonZeroIdentifier_(
+        out.expected.nextOperationId
+    );
+    out.batch.target = SequencerTrackActivationTarget::AFTER;
+    out.batch.origin = origin;
+    return true;
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::tryArmPlannedActivation(
+    const SequencerTrackActivationPlan& plan,
+    SequencerTrackActivationBatch& out
+) {
+    // Copy before clearing out so even an aliased plan.batch output remains
+    // well-defined for validation.
+    const SequencerTrackActivationBatch batch = plan.batch;
+    out = {};
+    const uint16_t mask = sanitizeMask_(batch.trackMask);
+    if (!batch.valid() || mask != batch.trackMask ||
+        batch.target != SequencerTrackActivationTarget::AFTER ||
+        (batch.localLoopBoundaryMask & static_cast<uint16_t>(~mask)) != 0 ||
+        batch.generation !=
+            nextNonZeroIdentifier_(plan.expected.nextGeneration) ||
+        batch.operationId !=
+            nextNonZeroIdentifier_(plan.expected.nextOperationId)) {
+        return false;
+    }
+
+    oc::realtime::InterruptGuard lock;
+    if (!expectedStateMatchesLocked_(plan.expected)) return false;
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((mask & bit) == 0) continue;
+        const auto phase = entries_[track].phase;
+        if (phase != InternalPhase::IDLE &&
+            phase != InternalPhase::APPLIED &&
+            phase != InternalPhase::CANCELLED) {
+            return false;
+        }
+    }
+
+    // The validation above is the last fallible operation. These are the first
+    // live writes and make both identifiers official exactly once.
+    next_generation_ = batch.generation;
+    next_operation_id_ = batch.operationId;
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((mask & bit) == 0) continue;
+        entries_[track].generation = batch.generation;
+        entries_[track].operationId = batch.operationId;
+        entries_[track].target = batch.target;
+        entries_[track].origin = batch.origin;
+        entries_[track].requiresLocalLoopBoundary =
+            (batch.localLoopBoundaryMask & bit) != 0 ? 1U : 0U;
+        entries_[track].phase = InternalPhase::ARMED;
+    }
+    out = batch;
+    return true;
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::captureMutationGuard(
+    uint16_t protectedTrackMask,
+    SequencerTrackActivationMutationGuard& out
+) const {
+    out = {};
+    const uint16_t sanitized = sanitizeMask_(protectedTrackMask);
+    if (sanitized == 0U || sanitized != protectedTrackMask) return false;
+
+    oc::realtime::InterruptGuard lock;
+    for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((sanitized & bit) != 0U && isPending_(entries_[track].phase)) {
+            return false;
+        }
+        const auto& entry = entries_[track];
+        if (!packMutationGuardEntry_(entry, out.packedEntries[track])) {
+            return false;
+        }
+        out.generations[track] = entry.generation;
+        out.operationIds[track] = entry.operationId;
+    }
+    out.nextGeneration = next_generation_;
+    out.nextOperationId = next_operation_id_;
+    out.telemetryRevision = telemetry_revision_.get();
+    out.protectedTrackMask = sanitized;
+    return true;
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::mutationGuardMatches(
+    const SequencerTrackActivationMutationGuard& guard
+) const {
+    const uint16_t sanitized = sanitizeMask_(guard.protectedTrackMask);
+    if (!guard.valid() || sanitized != guard.protectedTrackMask) return false;
+
+    oc::realtime::InterruptGuard lock;
+    if (next_generation_ != guard.nextGeneration ||
+        next_operation_id_ != guard.nextOperationId ||
+        telemetry_revision_.get() != guard.telemetryRevision) {
+        return false;
+    }
+    for (uint8_t track = 0U; track < TRACK_COUNT; ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        const auto& entry = entries_[track];
+        uint8_t packed = 0U;
+        if (!packMutationGuardEntry_(entry, packed)) return false;
+        if (guard.generations[track] != entry.generation ||
+            guard.operationIds[track] != entry.operationId ||
+            guard.packedEntries[track] != packed ||
+            ((sanitized & bit) != 0U && isPending_(entry.phase))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::packMutationGuardEntry_(
+    const Entry& entry,
+    uint8_t& out
+) {
+    const uint8_t phase = static_cast<uint8_t>(entry.phase);
+    const uint8_t localBoundary = entry.requiresLocalLoopBoundary;
+    const uint8_t target = static_cast<uint8_t>(entry.target);
+    const uint8_t origin = static_cast<uint8_t>(entry.origin);
+    if (phase > 0x07U || localBoundary > 0x01U || target > 0x01U ||
+        origin > 0x03U) {
+        return false;
+    }
+    out = static_cast<uint8_t>(
+        phase |
+        (localBoundary << 3U) |
+        (target << 4U) |
+        (origin << 5U)
+    );
     return true;
 }
 
@@ -256,33 +473,25 @@ FLASHMEM bool SequencerTrackActivationQueue::publishRealtimeTelemetry() {
     return changed;
 }
 
-FLASHMEM bool SequencerTrackActivationQueue::prepareHistoryTransition(
+FLASHMEM bool SequencerTrackActivationQueue::buildHistoryTransitionPlanLocked_(
     const SequencerTrackActivationHistoryRef& reference,
     SequencerTrackActivationTarget desiredTarget,
     uint16_t targetAudibleMask,
     bool transportPlaying,
-    SequencerTrackActivationHistoryTransition& out
-) {
+    SequencerTrackActivationHistoryTransitionPlan& out
+) const {
     out = {};
     if (!reference.valid()) return false;
     const uint16_t mask = sanitizeMask_(reference.trackMask);
     if (mask != reference.trackMask) return false;
 
-    oc::realtime::InterruptGuard lock;
+    captureExpectedStateLocked_(out.expected);
     uint16_t queuedMask = 0;
     uint16_t cancelledMask = 0;
     for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
         const uint16_t bit = static_cast<uint16_t>(1U << track);
         if ((mask & bit) == 0) continue;
         const auto& entry = entries_[track];
-        out.previous[track] = {
-            static_cast<uint8_t>(entry.phase),
-            entry.requiresLocalLoopBoundary,
-            entry.target,
-            entry.origin,
-            entry.generation,
-            entry.operationId,
-        };
 
         // A newer history operation may have reused this Track's single
         // realtime slot. Sequential Undo/Redo is still safe: the history
@@ -313,34 +522,158 @@ FLASHMEM bool SequencerTrackActivationQueue::prepareHistoryTransition(
     }
 
     const uint16_t audibleMask = sanitizeMask_(targetAudibleMask);
-    uint32_t transitionGeneration = 0;
-    if (queuedMask != 0) {
-        ++next_generation_;
-        if (next_generation_ == 0) ++next_generation_;
-        transitionGeneration = next_generation_;
-    }
-    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
-        const uint16_t bit = static_cast<uint16_t>(1U << track);
-        if ((mask & bit) == 0) continue;
-        auto& entry = entries_[track];
-        if ((cancelledMask & bit) != 0) {
-            entry.phase = InternalPhase::CANCELLED_FROZEN;
-        } else if ((queuedMask & bit) != 0) {
-            entry.generation = transitionGeneration;
-            entry.operationId = reference.operationId;
-            entry.target = desiredTarget;
-            entry.origin = reference.origin;
-            entry.requiresLocalLoopBoundary = transportPlaying &&
-                (audibleMask & bit) != 0 ? 1U : 0U;
-            entry.phase = InternalPhase::ARMED;
-        }
-    }
     out.reference = reference;
     out.desiredTarget = desiredTarget;
     out.touchedMask = mask;
     out.queuedMask = queuedMask;
     out.cancelledMask = cancelledMask;
+    out.localLoopBoundaryMask = transportPlaying
+        ? static_cast<uint16_t>(queuedMask & audibleMask)
+        : 0;
+    out.generation = queuedMask != 0
+        ? nextNonZeroIdentifier_(out.expected.nextGeneration)
+        : 0;
     return true;
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::planHistoryTransition(
+    const SequencerTrackActivationHistoryRef& reference,
+    SequencerTrackActivationTarget desiredTarget,
+    uint16_t targetAudibleMask,
+    bool transportPlaying,
+    SequencerTrackActivationHistoryTransitionPlan& out
+) const {
+    oc::realtime::InterruptGuard lock;
+    return buildHistoryTransitionPlanLocked_(
+        reference,
+        desiredTarget,
+        targetAudibleMask,
+        transportPlaying,
+        out
+    );
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::tryArmPlannedHistoryTransitionLocked_(
+    const SequencerTrackActivationHistoryTransitionPlan& plan,
+    SequencerTrackActivationHistoryTransition& out
+) {
+    const uint16_t mask = sanitizeMask_(plan.reference.trackMask);
+    if (!plan.valid() || mask != plan.reference.trackMask ||
+        plan.touchedMask != mask ||
+        (plan.queuedMask & static_cast<uint16_t>(~mask)) != 0 ||
+        (plan.cancelledMask & static_cast<uint16_t>(~mask)) != 0 ||
+        (plan.queuedMask & plan.cancelledMask) != 0 ||
+        (plan.localLoopBoundaryMask &
+         static_cast<uint16_t>(~plan.queuedMask)) != 0) {
+        return false;
+    }
+    if ((plan.queuedMask == 0 && plan.generation != 0) ||
+        (plan.queuedMask != 0 &&
+         plan.generation !=
+             nextNonZeroIdentifier_(plan.expected.nextGeneration))) {
+        return false;
+    }
+    if (!expectedStateMatchesLocked_(plan.expected)) return false;
+
+    // Re-derive the phase-dependent masks at the gate. This rejects a plan
+    // whose public scalar fields were altered after planning even if its exact
+    // expected-state checkpoint still matches.
+    uint16_t queuedMask = 0;
+    uint16_t cancelledMask = 0;
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((mask & bit) == 0) continue;
+        const auto& entry = entries_[track];
+        const bool sameOperation =
+            entry.phase != InternalPhase::IDLE &&
+            entry.operationId == plan.reference.operationId;
+        if (!sameOperation) {
+            queuedMask = static_cast<uint16_t>(queuedMask | bit);
+            continue;
+        }
+
+        const bool runtimeMatchesEntryTarget = runtimeIsTarget_(entry.phase);
+        const auto runtimeTarget = runtimeMatchesEntryTarget
+            ? entry.target
+            : (entry.target == SequencerTrackActivationTarget::AFTER
+                ? SequencerTrackActivationTarget::BEFORE
+                : SequencerTrackActivationTarget::AFTER);
+        if (runtimeTarget == plan.desiredTarget) {
+            if (isPending_(entry.phase)) {
+                cancelledMask = static_cast<uint16_t>(cancelledMask | bit);
+            }
+        } else {
+            queuedMask = static_cast<uint16_t>(queuedMask | bit);
+        }
+    }
+    if (queuedMask != plan.queuedMask ||
+        cancelledMask != plan.cancelledMask) {
+        return false;
+    }
+
+    out.reference = plan.reference;
+    out.desiredTarget = plan.desiredTarget;
+    out.touchedMask = plan.touchedMask;
+    out.queuedMask = plan.queuedMask;
+    out.cancelledMask = plan.cancelledMask;
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((mask & bit) != 0) {
+            out.previous[track] = plan.expected.entries[track];
+        }
+    }
+
+    // No validation or fallible work remains. A queued transition consumes one
+    // generation; History deliberately reuses its recorded operation id.
+    if (plan.queuedMask != 0) next_generation_ = plan.generation;
+    for (uint8_t track = 0; track < TRACK_COUNT; ++track) {
+        const uint16_t bit = static_cast<uint16_t>(1U << track);
+        if ((mask & bit) == 0) continue;
+        auto& entry = entries_[track];
+        if ((plan.cancelledMask & bit) != 0) {
+            entry.phase = InternalPhase::CANCELLED_FROZEN;
+        } else if ((plan.queuedMask & bit) != 0) {
+            entry.generation = plan.generation;
+            entry.operationId = plan.reference.operationId;
+            entry.target = plan.desiredTarget;
+            entry.origin = plan.reference.origin;
+            entry.requiresLocalLoopBoundary =
+                (plan.localLoopBoundaryMask & bit) != 0 ? 1U : 0U;
+            entry.phase = InternalPhase::ARMED;
+        }
+    }
+    return true;
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::tryArmPlannedHistoryTransition(
+    const SequencerTrackActivationHistoryTransitionPlan& plan,
+    SequencerTrackActivationHistoryTransition& out
+) {
+    out = {};
+    oc::realtime::InterruptGuard lock;
+    return tryArmPlannedHistoryTransitionLocked_(plan, out);
+}
+
+FLASHMEM bool SequencerTrackActivationQueue::prepareHistoryTransition(
+    const SequencerTrackActivationHistoryRef& reference,
+    SequencerTrackActivationTarget desiredTarget,
+    uint16_t targetAudibleMask,
+    bool transportPlaying,
+    SequencerTrackActivationHistoryTransition& out
+) {
+    out = {};
+    oc::realtime::InterruptGuard lock;
+    SequencerTrackActivationHistoryTransitionPlan plan;
+    if (!buildHistoryTransitionPlanLocked_(
+            reference,
+            desiredTarget,
+            targetAudibleMask,
+            transportPlaying,
+            plan
+        )) {
+        return false;
+    }
+    return tryArmPlannedHistoryTransitionLocked_(plan, out);
 }
 
 FLASHMEM void SequencerTrackActivationQueue::commitHistoryTransition(

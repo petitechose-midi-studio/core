@@ -10,6 +10,7 @@
 #include "persistence/SequencerCcLanePersistenceCodec.hpp"
 #include "persistence/SequencerPersistenceEnvelope.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerPatternRegionOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
@@ -128,6 +129,24 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
     source.pattern.setContentLength(32U);
     assert(seq::setPatternPlaybackRegion(source.pattern, {32U, 2U, 5U, 27U}));
     authorTwoLanes(source.pattern);
+    auto chord = oc::note::sequencer::StepSequencerChordSpec::semantic(
+        oc::note::sequencer::StepSequencerChordHarmony::Custom,
+        8U,
+        oc::note::sequencer::StepSequencerChordVoicing::Open,
+        1U,
+        oc::note::sequencer::StepSequencerChordIntervalBasis::ChromaticSemitones
+    );
+    constexpr std::array<uint8_t, 8> intervals{
+        0U, 3U, 5U, 8U, 12U, 17U, 24U, 31U,
+    };
+    for (uint8_t voice = 7U; voice > 0U; --voice) {
+        chord.setCustomInterval(voice, intervals[voice]);
+    }
+    assert(seq::setNodeChordSpec(
+        source.pattern,
+        seq::rootStepNodeId(0U),
+        chord
+    ));
 
     codec::PatternEnvelopeBuffer bytes{};
     const auto encoded = codec::fillPatternEnvelope(
@@ -151,6 +170,27 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
     assert(region.playStart == 2U);
     assert(region.loopStart == 5U);
     assert(region.loopEnd == 27U);
+    const auto* graph = seq::graphView(loaded.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(seq::rootStepNodeId(0U));
+    assert(node != nullptr);
+    assert(oc::note::sequencer::chordSpecsEqual(node->chordSpec, chord));
+    assert(node->chordSpec.voices() == intervals.size());
+    for (uint8_t voice = 0U; voice < intervals.size(); ++voice) {
+        assert(node->chordSpec.customInterval(voice) == intervals[voice]);
+    }
+
+    auto invalidPitchContext = bytes;
+    constexpr uint32_t PITCH_CONTEXT_OFFSET =
+        codec::ENVELOPE_HEADER_SIZE +
+        codec::ENVELOPE_SECTION_HEADER_SIZE +
+        2U;
+    invalidPitchContext.bytes[PITCH_CONTEXT_OFFSET] = 0xFFU;
+    assert(!codec::applyPatternEnvelope(
+        invalidPitchContext.bytes.data(),
+        encoded.size,
+        loaded.pattern
+    ));
 
     bytes.bytes[4] = static_cast<uint8_t>(codec::ENVELOPE_VERSION - 1U);
     assert(!codec::applyPatternEnvelope(

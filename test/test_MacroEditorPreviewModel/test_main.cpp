@@ -1120,7 +1120,7 @@ void test_preview_cache_falls_back_after_curve_directory_compaction() {
         65535U
     );
 
-    assert(mod::removeProjectAutomationCurve(
+    assert(mod::deleteProjectAutomationCurve(
         control.authored.automation,
         control.authored.curves,
         mod::projectControlDestination(first)

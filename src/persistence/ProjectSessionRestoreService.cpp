@@ -16,16 +16,39 @@ FLASHMEM ProjectSessionRestoreService::Result ProjectSessionRestoreService::rest
     core::state::CoreState& state,
     core::persistence::project_file::LoadReport* report
 ) {
+    return restore_(state, nullptr, report);
+}
+
+FLASHMEM ProjectSessionRestoreService::Result ProjectSessionRestoreService::restore(
+    core::state::CoreState& state,
+    const ProductMutationLease& recoveryLease,
+    core::persistence::project_file::LoadReport* report
+) {
+    return restore_(state, &recoveryLease, report);
+}
+
+FLASHMEM ProjectSessionRestoreService::Result ProjectSessionRestoreService::restore_(
+    core::state::CoreState& state,
+    const ProductMutationLease* recoveryLease,
+    core::persistence::project_file::LoadReport* report
+) {
     auto snapshot = core::state::project::makeProjectSnapshot();
     if (!snapshot) {
         return Result{
             .status = Status::DEGRADED,
-            .loadStatus = project_file::LoadStatus::FAILED,
-            .overwriteSafe = false,
         };
     }
     core::persistence::project_file::LoadReport localReport{};
-    auto loaded = store_.loadCurrent(*snapshot, report != nullptr ? report : &localReport);
+    auto loaded = recoveryLease != nullptr
+        ? store_.loadCurrent(
+              *snapshot,
+              *recoveryLease,
+              report != nullptr ? report : &localReport
+          )
+        : store_.loadCurrent(
+              *snapshot,
+              report != nullptr ? report : &localReport
+          );
     if (!loaded) {
         const auto code = loaded.error().code;
         return Result{
@@ -39,16 +62,12 @@ FLASHMEM ProjectSessionRestoreService::Result ProjectSessionRestoreService::rest
         return Result{
             .status = Status::APPLY_FAILED,
             .bytes = loaded.value().bytesRead,
-            .loadStatus = loaded.value().loadStatus,
-            .overwriteSafe = loaded.value().overwriteSafe,
         };
     }
 
     return Result{
         .status = Status::RESTORED,
         .bytes = loaded.value().bytesRead,
-        .loadStatus = loaded.value().loadStatus,
-        .overwriteSafe = loaded.value().overwriteSafe,
     };
 }
 

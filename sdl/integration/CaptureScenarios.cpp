@@ -98,7 +98,9 @@ void prepareSequencerScaleScenario(
 
     state.activeView.set(core::ui::ViewType::SEQUENCER);
     state.sequencer.activeStepProperty.set(core::state::sequencer::StepProperty::NOTE);
-    state.sequencer.setPitchEditMode(core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
+    state.sequencer.setPitchEditMode(
+        core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
+    );
     state.sequencer.setStepDataAt(0, 61, 100, 75, 0);
     if (!state.sequencer.pattern.isEnabled(0)) {
         state.sequencer.pattern.toggle(0);
@@ -165,13 +167,13 @@ void prepareMacroAutomationCleanScenario(core::state::CoreState& state) {
     state.overlays.hideAll();
     state.pages.initDefaults();
     state.pages.control.clear();
-    state.macroUi.reset();
+    state.macroUi.resetInteraction();
+    state.macroUi.resetProjectRuntime();
     state.macroEdit.reset();
     state.trackNavigation.reset();
     state.structureClipboard.clear();
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
 }
 
@@ -277,7 +279,6 @@ void prepareMacroReusableModulatorsScenario(core::state::CoreState& state) {
     }
 
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
 }
 
@@ -384,7 +385,6 @@ void prepareMacroPerformanceRailScenario(core::state::CoreState& state) {
         state.macros,
         state.pages
     );
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(
         state.configRevision.get()
     ));
@@ -719,7 +719,6 @@ void prepareMacroAutoModScenario(core::state::CoreState& state) {
     configureMacroAutomation(state, 0, 0, 0, 0.42f, 4.0f);
     configureMacroModulation(state, 0, 0, 0, 0.65f);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
 }
 
@@ -790,7 +789,6 @@ void prepareMacroCurvePreviewShapesScenario(core::state::CoreState& state) {
         state.macros,
         state.pages
     );
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(
         core::state::macro::nextMacroConfigRevision(
             state.configRevision.get()
@@ -838,7 +836,6 @@ void prepareMacroAutomationCurveShapeScenario(core::state::CoreState& state) {
     state.structureNavigationFocus.set(core::state::StructureNavigationFocus::PAGE);
     configureMacroAutomationShape(state, 0, 0, 0);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
 }
 
@@ -869,7 +866,6 @@ void prepareMacroTrackMultipageAutomationScenario(core::state::CoreState& state)
     configureMacroAutomation(state, 0, 0, 0, 0.25f, 4.0f);
     configureMacroAutomation(state, 0, 2, 1, 0.80f, 8.0f);
     core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(state.configRevision.get()));
 }
 
@@ -1165,7 +1161,9 @@ void prepareSequencerNestedLocalRandomRuntimeScenario(core::state::CoreState& st
     state.sequencer.page.set(0);
     state.sequencer.focusedStep.set(0);
     state.sequencer.activeStepProperty.set(StepProperty::NOTE);
-    state.sequencer.setPitchEditMode(core::state::sequencer::SequencerPitchEditMode::SCALE_DEGREES);
+    state.sequencer.setPitchEditMode(
+        core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
+    );
     state.sequencerTracks.setProjectScaleSettings(StepSequencerScaleSettings{
         .root = 0,
         .type = StepSequencerScaleType::Major,
@@ -1247,8 +1245,8 @@ void prepareSequencerNestedLocalRandomRuntimeScenario(core::state::CoreState& st
 
 void prepareStepPresetCaptureBase(
     core::state::CoreState& state,
-    core::state::sequencer::SequencerStepPresetPickerMode mode =
-        core::state::sequencer::SequencerStepPresetPickerMode::LOAD
+    core::state::sequencer::SequencerPresetLibraryMode mode =
+        core::state::sequencer::SequencerPresetLibraryMode::LOAD
 ) {
     using namespace core::state::sequencer;
     state.activeView.set(core::ui::ViewType::SEQUENCER);
@@ -1258,16 +1256,16 @@ void prepareStepPresetCaptureBase(
     state.sequencer.focusedStep.set(5);
     state.overlays.show(core::ui::OverlayType::SEQ_STEP_EDIT, false);
 
-    auto& picker = state.sequencer.stepPresetPicker;
+    auto& picker = state.sequencer.presetLibrary;
     picker.reset();
     picker.open(mode);
-    picker.frozenTarget.valid = true;
-    picker.frozenTarget.trackIndex = 0;
-    picker.frozenTarget.stepIndex = 5;
-    picker.frozenTarget.projectRevision = state.project.metadata.modifiedCounter;
+    picker.step().target.valid = true;
+    picker.step().target.trackIndex = 0;
+    picker.step().target.stepIndex = 5;
+    picker.step().target.projectRevision = state.project.metadata.modifiedCounter;
     std::snprintf(
-        picker.frozenTarget.contextLabel,
-        sizeof(picker.frozenTarget.contextLabel),
+        picker.step().target.contextLabel,
+        sizeof(picker.step().target.contextLabel),
         "%s",
         "Track 1 - Step 06"
     );
@@ -1281,9 +1279,9 @@ void prepareStepPresetCaptureBase(
     picker.totalEntryCount.set(23);
     picker.truncated.set(true);
     picker.hasNextPage.set(true);
-    picker.selectedIndex.set(mode == SequencerStepPresetPickerMode::SAVE ? 1 : 0);
+    picker.selectedIndex.set(mode == SequencerPresetLibraryMode::SAVE ? 1 : 0);
 
-    auto& descriptor = picker.descriptor;
+    auto& descriptor = picker.step().descriptor;
     descriptor.valid = true;
     std::snprintf(
         descriptor.semanticName,
@@ -1304,7 +1302,6 @@ void prepareStepPresetCaptureBase(
     descriptor.sequenceCount = 2;
     descriptor.cycleSetCount = 1;
     descriptor.scalePolicy = SequencerStepPresetScalePolicy::SCALE_RELATIVE;
-    descriptor.mixedPitchPolicy = true;
     descriptor.adaptation = SequencerStepPresetAdaptation::DESTINATION_SCALE;
     descriptor.footprint = SequencerStepPresetFootprint::REPLACE;
     descriptor.compatibility = SequencerStepPresetCompatibility::WARNING_ADAPTED;
@@ -1348,7 +1345,7 @@ void prepareStepPresetCaptureBase(
         "Preview 2/4 - D4"
     );
     picker.bump();
-    state.overlays.show(core::ui::OverlayType::SEQ_STEP_PRESET, true);
+    state.overlays.show(core::ui::OverlayType::PRESET_LIBRARY, true);
 }
 
 void setStepPresetOperationFeedback(
@@ -1365,8 +1362,8 @@ void setStepPresetOperationFeedback(
     feedback.expiryPolicy =
         core::state::contextual::OperationFeedbackExpiryPolicy::MANUAL;
     feedback.shownAtMs = SDL_GetTicks();
-    state.sequencer.stepPresetPicker.operationFeedback.set(feedback);
-    state.sequencer.stepPresetPicker.bump();
+    state.sequencer.presetLibrary.operationFeedback.set(feedback);
+    state.sequencer.presetLibrary.bump();
 }
 
 void prepareStepPresetOperationScenario(
@@ -1378,13 +1375,13 @@ void prepareStepPresetOperationScenario(
     using namespace core::state::sequencer;
     prepareStepPresetCaptureBase(
         state,
-        saveMode ? SequencerStepPresetPickerMode::SAVE
-                 : SequencerStepPresetPickerMode::LOAD
+        saveMode ? SequencerPresetLibraryMode::SAVE
+                 : SequencerPresetLibraryMode::LOAD
     );
-    auto& picker = state.sequencer.stepPresetPicker;
+    auto& picker = state.sequencer.presetLibrary;
     if (saveMode) {
         picker.selectedIndex.set(0);
-        picker.descriptor = {};
+        picker.step().descriptor = {};
     }
     setStepPresetOperationFeedback(
         state,
@@ -1419,7 +1416,7 @@ bool prepareStepPresetActivationScenario(
         return false;
     }
     queue.publishPrepared(batch);
-    state.sequencer.stepPresetPicker.operationActivationGeneration =
+    state.sequencer.presetLibrary.step().activationGeneration =
         batch.generation;
 
     if (status == FeedbackStatus::APPLIED) {
@@ -1534,7 +1531,6 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
         state.macros,
         state.pages
     );
-    state.statusBar.pageName.set(page.name);
     return true;
 }
 
@@ -1626,12 +1622,12 @@ bool projectSequencerTrackPasteActivationScenario(
         contextual::ContextActionId::PASTE,
         {
             .kind = contextual::ContextEntityKind::TRACK,
-            .track = paste.plan.entry.sourceTrack,
+            .track = paste.plan.entries[0].sourceTrack,
             .item = paste.plan.sourceMask,
         },
         {
             .kind = contextual::ContextEntityKind::TRACK,
-            .track = paste.plan.entry.targetTrack,
+            .track = paste.plan.entries[0].targetTrack,
             .item = paste.plan.targetMask,
         },
         status,
@@ -1889,7 +1885,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "seq-step-preset-browse-page-2") == 0) {
         prepareStepPresetCaptureBase(state);
-        auto& picker = state.sequencer.stepPresetPicker;
+        auto& picker = state.sequencer.presetLibrary;
         picker.setEntry(0, "late-bloom", "Late Bloom", true);
         picker.setEntry(1, "mono-drift", "Mono Drift", true);
         picker.setEntry(2, "odd-pulse", "Odd Pulse", true);
@@ -1899,14 +1895,14 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         picker.hasPreviousPage.set(true);
         picker.hasNextPage.set(false);
         std::snprintf(
-            picker.descriptor.semanticName,
-            sizeof(picker.descriptor.semanticName),
+            picker.step().descriptor.semanticName,
+            sizeof(picker.step().descriptor.semanticName),
             "%s",
             "Late Bloom"
         );
         std::snprintf(
-            picker.descriptor.technicalId,
-            sizeof(picker.descriptor.technicalId),
+            picker.step().descriptor.technicalId,
+            sizeof(picker.step().descriptor.technicalId),
             "%s",
             "late-bloom"
         );
@@ -1916,22 +1912,22 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
 
     if (std::strcmp(scenario, "seq-step-preset-detail-mixed") == 0) {
         prepareStepPresetCaptureBase(state);
-        state.sequencer.stepPresetPicker.detailVisible.set(true);
-        state.sequencer.stepPresetPicker.detailFocus.set(3);
-        state.sequencer.stepPresetPicker.bump();
+        state.sequencer.presetLibrary.detailVisible.set(true);
+        state.sequencer.presetLibrary.detailFocus.set(3);
+        state.sequencer.presetLibrary.bump();
         return true;
     }
 
     if (std::strcmp(scenario, "seq-step-preset-preview-next") == 0) {
         prepareStepPresetCaptureBase(state);
-        auto& picker = state.sequencer.stepPresetPicker;
+        auto& picker = state.sequencer.presetLibrary;
         picker.detailVisible.set(true);
         picker.detailFocus.set(4);
-        picker.descriptor.previewStateIndex = 2;
-        picker.descriptor.previewNote = 65;
+        picker.step().descriptor.previewStateIndex = 2;
+        picker.step().descriptor.previewNote = 65;
         std::snprintf(
-            picker.descriptor.previewSummary,
-            sizeof(picker.descriptor.previewSummary),
+            picker.step().descriptor.previewSummary,
+            sizeof(picker.step().descriptor.previewSummary),
             "%s",
             "Preview 3/4 - F4"
         );
@@ -1942,7 +1938,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
     if (std::strcmp(scenario, "seq-step-preset-overwrite-ready") == 0) {
         prepareStepPresetCaptureBase(
             state,
-            core::state::sequencer::SequencerStepPresetPickerMode::SAVE
+            core::state::sequencer::SequencerPresetLibraryMode::SAVE
         );
         return true;
     }
@@ -1951,9 +1947,9 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         std::strcmp(scenario, "seq-step-preset-overwrite-armed") == 0) {
         prepareStepPresetCaptureBase(
             state,
-            core::state::sequencer::SequencerStepPresetPickerMode::SAVE
+            core::state::sequencer::SequencerPresetLibraryMode::SAVE
         );
-        auto guard = state.sequencer.stepPresetPicker.actionGuard.get();
+        auto guard = state.sequencer.presetLibrary.actionGuard.get();
         guard.phase = std::strcmp(
             scenario,
             "seq-step-preset-overwrite-pressed"
@@ -1967,7 +1963,7 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
                 core::state::contextual::GuardedActionPhase::ARMED
             ? 450
             : 120;
-        state.sequencer.stepPresetPicker.actionGuard.set(guard);
+        state.sequencer.presetLibrary.actionGuard.set(guard);
         setStepPresetOperationFeedback(
             state,
             core::state::contextual::ContextActionId::SAVE,

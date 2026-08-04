@@ -151,31 +151,4 @@ FLASHMEM SequencerStepPastePreviewPlan buildStepPastePreviewPlan(
     return plan;
 }
 
-FLASHMEM bool resizeActiveContentForStepPaste(
-    SequencerState& sequencer,
-    core::state::project::ProjectStepPasteMode mode,
-    uint8_t lastTarget,
-    uint8_t maxStep
-) {
-    if (mode == core::state::project::ProjectStepPasteMode::WRAP) return true;
-
-    const uint8_t required = requiredStepPasteLength(mode, lastTarget);
-    if (required == 0 || required > static_cast<uint8_t>(maxStep + 1U)) return false;
-
-    const uint8_t current = activeContentLength(sequencer);
-    if (current >= required) return true;
-
-    if (isRootContentView(sequencer)) {
-        sequencer.pattern.setContentLength(required);
-        return true;
-    }
-    if (isMicroSequenceContentView(sequencer)) {
-        return resizeActiveMicroSequenceContent(sequencer, required);
-    }
-    if (isCycleStatesContentView(sequencer)) {
-        return resizeActiveCycleStatesContent(sequencer, required);
-    }
-    return false;
-}
-
 }  // namespace core::state::sequencer

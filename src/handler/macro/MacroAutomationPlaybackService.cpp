@@ -284,7 +284,8 @@ void MacroAutomationPlaybackService::captureRuntimeDestination_(
     }
     const auto destination = core::state::shared::MidiCcDestination{
         .identity = {
-            .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+            .port =
+                core::sequencer::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
             .channel = owner.project_tracks_.authored
                 .midiChannels[logical.track],
             .controller = page.cc[logical.macro],
@@ -372,7 +373,8 @@ bool MacroAutomationPlaybackService::appendStaticAuthors_(
             }
             const auto destination = core::state::shared::MidiCcDestination{
                 .identity = {
-                    .port = MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                    .port = core::sequencer::MidiCcGlobalFrameCoordinator::
+                        OUTPUT_PORT,
                     .channel = project_tracks_.authored
                         .midiChannels[trackIndex],
                     .controller = page.cc[macroIndex],

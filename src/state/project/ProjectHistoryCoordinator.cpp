@@ -1,5 +1,6 @@
 #include "state/project/ProjectHistoryCoordinator.hpp"
 
+#include <cassert>
 #include <cstdio>
 
 #include <config/PlatformCompat.hpp>
@@ -28,6 +29,16 @@ static_assert(
 
 namespace {
 
+constexpr uint8_t kRetainedDomainCount = 4U;
+
+constexpr uint8_t retainedDomainIndex(ProjectHistoryDomain domain) {
+    return static_cast<uint8_t>(domain);
+}
+
+constexpr bool retainedDomainValid(ProjectHistoryDomain domain) {
+    return retainedDomainIndex(domain) < kRetainedDomainCount;
+}
+
 FLASHMEM const char* macroActionLabel(uint8_t rawKind) {
     using Kind = core::state::macro::MacroHistoryActionKind;
     switch (static_cast<Kind>(rawKind)) {
@@ -47,7 +58,7 @@ FLASHMEM const char* macroActionLabel(uint8_t rawKind) {
             return "Clear Modulation";
         case Kind::PAGE_STRUCTURE:
             return "Macro Page Structure";
-        case Kind::REMOVE_SLOT:
+        case Kind::DELETE_SLOT:
             return "Delete Macro";
         case Kind::DEPTH_EDIT:
             return "Modulation Depth";
@@ -119,7 +130,7 @@ FLASHMEM const char* sequencerActionLabel(uint8_t rawKind) {
             return "Clear CC Event";
         case Kind::CcLaneSettings:
             return "CC Lane Settings";
-        case Kind::CcLaneRemove:
+        case Kind::CcLaneDelete:
             return "Remove CC Lane";
         case Kind::CcLaneTransitionEdit:
             return "CC Lane Curve";
@@ -154,8 +165,6 @@ FLASHMEM const char* settingsActionLabel(uint8_t rawKind) {
             return "Tempo";
         case Kind::Swing:
             return "Project Swing";
-        case Kind::SyncMode:
-            return "Sync Mode";
         case Kind::RunMode:
             return "Run Mode";
         case Kind::StepPasteMode:
@@ -166,8 +175,6 @@ FLASHMEM const char* settingsActionLabel(uint8_t rawKind) {
             return "Pattern Scale Link";
         case Kind::ClipsInheritScale:
             return "Clip Scale Link";
-        case Kind::Autosave:
-            return "Autosave";
         default:
             return "Project Setting";
     }
@@ -181,6 +188,8 @@ FLASHMEM ProjectHistoryCoordinator::ProjectHistoryCoordinator() {
     sink_.evicted = &ProjectHistoryCoordinator::onEvicted;
     sink_.cleared = &ProjectHistoryCoordinator::onCleared;
     sink_.applied = &ProjectHistoryCoordinator::onApplied;
+    sink_.canRetain = &ProjectHistoryCoordinator::onCanRetain;
+    sink_.retained = &ProjectHistoryCoordinator::onRetained;
 }
 
 FLASHMEM void ProjectHistoryCoordinator::setBranchInvalidatedCallback(
@@ -199,6 +208,25 @@ ProjectHistoryCoordinator::peekUndo() const {
 FLASHMEM const ProjectHistoryCoordinator::Entry*
 ProjectHistoryCoordinator::peekRedo() const {
     return cursor_ >= count_ ? nullptr : &timeline_[cursor_];
+}
+
+FLASHMEM ProjectHistoryRetainedUsage
+ProjectHistoryCoordinator::retainedUsage(ProjectHistoryDomain domain) const {
+    return retainedDomainValid(domain)
+        ? retained_usage_[retainedDomainIndex(domain)]
+        : ProjectHistoryRetainedUsage{};
+}
+
+FLASHMEM uint32_t ProjectHistoryCoordinator::retainedBytes() const {
+    uint32_t total = 0U;
+    for (const auto usage : retained_usage_) total += usage.bytes;
+    return total;
+}
+
+FLASHMEM uint16_t ProjectHistoryCoordinator::retainedSpans() const {
+    uint32_t total = 0U;
+    for (const auto usage : retained_usage_) total += usage.spans;
+    return static_cast<uint16_t>(total);
 }
 
 FLASHMEM void ProjectHistoryCoordinator::clear() {
@@ -292,6 +320,30 @@ FLASHMEM void ProjectHistoryCoordinator::onApplied(
         domain,
         identity,
         direction
+    );
+}
+
+FLASHMEM bool ProjectHistoryCoordinator::onCanRetain(
+    void* context,
+    ProjectHistoryDomain domain,
+    ProjectHistoryRetainedUsage projected
+) {
+    return context != nullptr &&
+        static_cast<ProjectHistoryCoordinator*>(context)->canRetain(
+            domain,
+            projected
+        );
+}
+
+FLASHMEM void ProjectHistoryCoordinator::onRetained(
+    void* context,
+    ProjectHistoryDomain domain,
+    ProjectHistoryRetainedUsage retained
+) {
+    if (context == nullptr) return;
+    static_cast<ProjectHistoryCoordinator*>(context)->setRetainedUsage(
+        domain,
+        retained
     );
 }
 
@@ -433,6 +485,37 @@ FLASHMEM void ProjectHistoryCoordinator::bumpRevision() {
     uint32_t next = revision.get() + 1U;
     if (next == 0U) next = 1U;
     revision.set(next);
+}
+
+FLASHMEM bool ProjectHistoryCoordinator::canRetain(
+    ProjectHistoryDomain domain,
+    ProjectHistoryRetainedUsage projected
+) const {
+    if (!retainedDomainValid(domain) ||
+        projected.bytes > RETAINED_BYTE_BUDGET ||
+        projected.spans > RETAINED_SPAN_BUDGET) {
+        return false;
+    }
+
+    uint32_t bytes = projected.bytes;
+    uint32_t spans = projected.spans;
+    const uint8_t projectedIndex = retainedDomainIndex(domain);
+    for (uint8_t index = 0U; index < retained_usage_.size(); ++index) {
+        if (index == projectedIndex) continue;
+        bytes += retained_usage_[index].bytes;
+        spans += retained_usage_[index].spans;
+    }
+    return bytes <= RETAINED_BYTE_BUDGET &&
+        spans <= RETAINED_SPAN_BUDGET;
+}
+
+FLASHMEM void ProjectHistoryCoordinator::setRetainedUsage(
+    ProjectHistoryDomain domain,
+    ProjectHistoryRetainedUsage retained
+) {
+    assert(canRetain(domain, retained));
+    if (!retainedDomainValid(domain)) return;
+    retained_usage_[retainedDomainIndex(domain)] = retained;
 }
 
 }  // namespace core::state::project

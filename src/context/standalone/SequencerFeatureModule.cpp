@@ -28,6 +28,7 @@
 #include "handler/sequencer/SequencerStepContentHandler.hpp"
 #include "handler/sequencer/SequencerStepHandler.hpp"
 #include "ui/sequencer/SequencerPatternEditorOverlay.hpp"
+#include "ui/sequencer/SequencerChordVoiceRail.hpp"
 #include "ui/sequencer/SequencerStepEditOverlay.hpp"
 #include "ui/project/ProjectTrackEditorOverlay.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
@@ -39,6 +40,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     core::handler::SharedTrackDomainServices sharedTracks,
     core::state::project::ProjectTrackDomainServices trackDomain,
     core::handler::SequencerStepPresetDomainServices stepPresets,
+    core::handler::SequencerChordPresetDomainServices chordPresets,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     OverlayPresentationRegistry& overlayPresentations,
     oc::api::EncoderAPI& encoders,
@@ -62,7 +64,7 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
           stateRefs.trackNavigation,
           stateRefs.sequencer
       ),
-      step_preset_ux_surface_(stateRefs.sequencer, stateRefs.trackActivations),
+      preset_library_ux_surface_(stateRefs.sequencer, stateRefs.trackActivations),
       cc_lane_ux_surface_(
           stateRefs.sequencer,
           stateRefs.sequencerTracks,
@@ -105,8 +107,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             core::context::standalone::ux::priority::SEQUENCER_TRACK_EDIT
         ) ||
          !uxRegistry->add(
-            step_preset_ux_surface_,
-            core::context::standalone::ux::priority::SEQUENCER_STEP_PRESET
+            preset_library_ux_surface_,
+            core::context::standalone::ux::priority::SEQUENCER_PRESET_LIBRARY
         ) ||
          !uxRegistry->add(
             cc_lane_ux_surface_,
@@ -226,29 +228,29 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         );
         lv_obj_move_foreground(strip);
     }
-    step_preset_overlay_ =
+    preset_library_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListSelectorOverlay>(overlayRoot);
-    if (!step_preset_overlay_ || !step_preset_overlay_->getElement()) return;
+    if (!preset_library_overlay_ || !preset_library_overlay_->getElement()) return;
     // Step Preset is a decision surface, not a contextual peek: the sequencer
     // grid and its placeholder widgets must not compete with names, impact,
     // compatibility, or transient operation feedback.
     lv_obj_set_style_bg_opa(
-        step_preset_overlay_->getElement(),
+        preset_library_overlay_->getElement(),
         LV_OPA_COVER,
         LV_PART_MAIN
     );
     if (lv_obj_get_style_bg_opa(
-            step_preset_overlay_->getElement(),
+            preset_library_overlay_->getElement(),
             LV_PART_MAIN
         ) != LV_OPA_COVER) {
         return;
     }
-    step_preset_action_strip_ = core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
-        step_preset_overlay_->getElement(),
+    preset_library_action_strip_ = core::app::makeExtmemUnique<core::ui::ContextActionStrip>(
+        preset_library_overlay_->getElement(),
         core::ui::ContextActionStripOrientation::HORIZONTAL
     );
-    if (!step_preset_action_strip_ || !step_preset_action_strip_->getElement()) return;
-    if (auto* strip = step_preset_action_strip_->getElement()) {
+    if (!preset_library_action_strip_ || !preset_library_action_strip_->getElement()) return;
+    if (auto* strip = preset_library_action_strip_->getElement()) {
         lv_obj_add_flag(strip, LV_OBJ_FLAG_FLOATING);
         lv_obj_align(
             strip,
@@ -257,6 +259,20 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             -::standalone::theme::layout::TRANSPORT_BAR_HEIGHT
         );
         lv_obj_move_foreground(strip);
+    }
+    preset_library_chord_voice_rail_ =
+        core::app::makeExtmemUnique<core::ui::SequencerChordVoiceRail>();
+    if (!preset_library_chord_voice_rail_) return;
+    preset_library_chord_voice_rail_->create(
+        preset_library_overlay_->getElement()
+    );
+    if (auto* rail = preset_library_chord_voice_rail_->element()) {
+        lv_obj_add_flag(rail, LV_OBJ_FLAG_FLOATING);
+        lv_obj_set_width(rail, LV_PCT(90));
+        lv_obj_align(rail, LV_ALIGN_TOP_MID, 0, 50);
+        lv_obj_move_foreground(rail);
+    } else {
+        return;
     }
     cc_lane_overlay_ =
         core::app::makeExtmemUnique<ms::ui::VirtualListKeyValueOverlay>(overlayRoot);
@@ -297,8 +313,8 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
     if (!registerOverlaySurface(
         overlays,
         overlayPresentations,
-        core::ui::OverlayType::SEQ_STEP_PRESET,
-        step_preset_overlay_->getElement()
+        core::ui::OverlayType::PRESET_LIBRARY,
+        preset_library_overlay_->getElement()
     )) return;
     if (!registerOverlaySurface(
         overlays,
@@ -335,8 +351,9 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
         },
         *step_edit_overlay_,
         *step_edit_action_strip_,
-        *step_preset_overlay_,
-        *step_preset_action_strip_
+        *preset_library_overlay_,
+        *preset_library_action_strip_,
+        *preset_library_chord_voice_rail_
     );
     if (!presenter_ || !presenter_->bind()) return;
     pattern_editor_presenter_ =
@@ -463,16 +480,18 @@ FLASHMEM SequencerFeatureModule::SequencerFeatureModule(
             stateRefs.sequencerTracks,
             stateRefs.structureClipboard,
             stateRefs.trackNavigation,
+            stateRefs.patternPitchSettings,
             stateRefs.structureNavigationFocus,
             stateRefs.history,
             stepPresets,
+            chordPresets,
         },
         overlays,
         encoders,
         buttons,
         sequencerViewScopeId,
         oc::ui::lvgl::scopeID(step_edit_overlay_->getElement()),
-        oc::ui::lvgl::scopeID(step_preset_overlay_->getElement())
+        oc::ui::lvgl::scopeID(preset_library_overlay_->getElement())
     );
     if (!step_handler_ || !step_edit_handler_ || !pattern_editor_handler_ ||
         !track_editor_handler_) return;

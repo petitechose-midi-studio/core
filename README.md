@@ -18,10 +18,11 @@ This repository contains the embedded app, UI, state, handlers, persistence, and
 This repo currently targets the standalone device workflow:
 
 - macro view
-- sequencer view
-- transport and status UI
-- persistent macro and sequencer workspaces
-- pattern/set library management
+- step-sequencer and project/modulator views
+- invariant transport and context-scoped controller navigation
+- project/session persistence and file-backed Step/Chord preset libraries
+- Macro Automation, Modulation, CC Lanes and bounded graph editing
+- native/WASM simulation and semantic UX validation
 
 It is not a generic plugin SDK, and the repository structure should be read as an embedded application first.
 
@@ -30,6 +31,8 @@ It is not a generic plugin SDK, and the repository structure should be read as a
 The main PlatformIO environments are defined in [platformio.ini](platformio.ini):
 
 - `dev`: local symlinked `open-control` dependencies
+- `dev_diagnostics`: product behavior with removable performance/memory
+  instrumentation
 - `dev_ux_recorder`: explicit validation build with Teensy semantic UX logs
 - `release`: pinned remote dependencies
 
@@ -96,13 +99,19 @@ The main source tree is:
 
 ```text
 src/
-  config/       platform and timing configuration
-  context/      app composition roots and standalone presenters
-  handler/      input handling and interaction logic
-  persistence/  product filesystem, project/session transactions, and codecs
-  sequencer/    runtime playback and clock services
-  state/        reactive state and workflows
-  ui/           views, components, widgets, top bar, transport bar
+  api/          product facades over OpenControl input APIs
+  app/          application allocation and shared app-level types
+  config/       constants, timing and physical input IDs
+  context/      composition, scopes, overlays, presenters and wiring
+  diagnostics/  removable performance and memory reporting
+  handler/      input interpretation and domain workflows
+  midi/         MIDI transport/runtime helpers
+  persistence/  files, stores, codecs and atomic transactions
+  protocol/     controller/host transport protocol
+  sequencer/    realtime playback, clocks and MIDI frame coordination
+  state/        canonical state, invariants, snapshots and domain policies
+  ui/           view models, retained views and render projections
+  validation/   semantic validation and smoke surfaces
 ```
 
 Development and architecture docs live in [docs/README.md](docs/README.md).
@@ -134,6 +143,8 @@ Current architectural direction:
 For code-local contracts and review rules, start with:
 
 - [docs/README.md](docs/README.md)
+- [docs/DEVELOPER_ONBOARDING.md](docs/DEVELOPER_ONBOARDING.md)
+- [docs/CORE_ARCHITECTURE.md](docs/CORE_ARCHITECTURE.md)
 - [docs/ARCHITECTURE_REVIEW_RULES.md](docs/ARCHITECTURE_REVIEW_RULES.md)
 
 Cross-repository roadmaps, ADRs, and audit evidence live in the canonical

@@ -1,6 +1,5 @@
 #include <cassert>
 #include <cstdint>
-#include <cstring>
 #include <iostream>
 #include <type_traits>
 
@@ -22,8 +21,6 @@ static_assert(std::is_standard_layout_v<contextual::GuardedActionState>);
 static_assert(std::is_trivially_copyable_v<contextual::GuardedActionState>);
 static_assert(std::is_standard_layout_v<contextual::OperationFeedbackState>);
 static_assert(std::is_trivially_copyable_v<contextual::OperationFeedbackState>);
-static_assert(std::is_standard_layout_v<contextual::ContextPath>);
-static_assert(std::is_trivially_copyable_v<contextual::ContextPath>);
 
 contextual::ContextEntityRef trackRef(uint16_t track) {
     contextual::ContextEntityRef ref;
@@ -258,60 +255,6 @@ void test_feedback_expiry_policies_are_explicit() {
     std::cout << "[PASS] feedback explicit expiry policies\n";
 }
 
-void test_context_path_builds_bounded_semantic_segments() {
-    contextual::ContextPath path;
-    assert(contextual::contextPathEmpty(path));
-    assert(std::strcmp(contextual::contextPathText(path), "") == 0);
-    assert(contextual::appendIndexedContextPathSegment(path, "Track", 2));
-    assert(contextual::appendIndexedContextPathSegment(path, "Pattern", 1));
-    assert(contextual::appendIndexedContextPathSegment(path, "Step", 4));
-    assert(std::strcmp(
-               contextual::contextPathText(path),
-               "Track 2 / Pattern 1 / Step 4"
-           ) == 0);
-    assert(path.length == 28);
-    assert(path.segmentCount == 3);
-    assert(!path.truncated);
-
-    contextual::clearContextPath(path);
-    assert(contextual::appendIndexedContextPathSegment(path, "Item", 65535));
-    assert(std::strcmp(contextual::contextPathText(path), "Item 65535") == 0);
-
-    std::cout << "[PASS] bounded semantic context path\n";
-}
-
-void test_context_path_rejects_overflow_atomically() {
-    contextual::ContextPath path;
-    assert(contextual::appendContextPathSegment(path, "Track 2"));
-    const uint8_t originalLength = path.length;
-    const uint8_t originalCount = path.segmentCount;
-    constexpr char tooLong[] =
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-extra";
-    assert(!contextual::appendContextPathSegment(path, tooLong));
-    assert(path.truncated);
-    assert(path.length == originalLength);
-    assert(path.segmentCount == originalCount);
-    assert(std::strcmp(contextual::contextPathText(path), "Track 2") == 0);
-
-    contextual::clearContextPath(path);
-    assert(contextual::appendContextPathSegment(path, "A"));
-    assert(contextual::appendContextPathSegment(path, "B"));
-    assert(contextual::appendContextPathSegment(path, "C"));
-    assert(contextual::appendContextPathSegment(path, "D"));
-    assert(!contextual::appendContextPathSegment(path, "E"));
-    assert(path.truncated);
-    assert(path.segmentCount == contextual::ContextPath::MAX_SEGMENTS);
-    assert(std::strcmp(contextual::contextPathText(path), "A / B / C / D") == 0);
-
-    contextual::clearContextPath(path);
-    assert(!contextual::appendContextPathSegment(path, nullptr));
-    assert(!contextual::appendContextPathSegment(path, ""));
-    assert(!path.truncated);
-    assert(contextual::contextPathEmpty(path));
-
-    std::cout << "[PASS] context path atomic overflow handling\n";
-}
-
 }  // namespace
 
 int main() {
@@ -322,8 +265,6 @@ int main() {
     test_guarded_action_zero_duration_invalid_transitions_and_wrap();
     test_feedback_duration_and_timestamp_wrap();
     test_feedback_expiry_policies_are_explicit();
-    test_context_path_builds_bounded_semantic_segments();
-    test_context_path_rejects_overflow_atomically();
     std::cout << "All contextual action model tests passed\n";
     return 0;
 }

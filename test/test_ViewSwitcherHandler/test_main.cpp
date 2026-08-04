@@ -1,8 +1,9 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <config/App.hpp>
+#include <config/Timing.hpp>
 #include <iostream>
-#include <utility>
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
@@ -11,12 +12,11 @@
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
 
-#include <config/App.hpp>
-#include <config/Timing.hpp>
+#include <utility>
 
 #include "../../src/app/ExtmemAllocator.hpp"
-#include "../../src/handler/view/ViewSwitcherHandler.hpp"
 #include "../../src/handler/macro/MacroPerformanceDomainServices.hpp"
+#include "../../src/handler/view/ViewSwitcherHandler.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
@@ -176,14 +176,14 @@ void authorPendingCcLaneEvent(ViewSwitcherHarness& h) {
         seq::sequencerCcLaneView(h.state.sequencer.pattern)
     ));
     assert(seq::setSequencerCcLaneEvent(*bank, 0U, 0U, 64U).changed());
-    assert(h.state.beginOrContinueSequencerCcLaneEventHistoryCoalescing(
+    assert(seq::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerCcLaneEventHistoryCoalescing(
         0U,
         0U,
         -1,
         64,
         bank.get(),
-        100U
-    ));
+        100U)));
     seq::installSequencerCcLaneBank(h.state.sequencer.pattern, std::move(bank));
 }
 
@@ -468,16 +468,14 @@ void test_selector_physically_restores_project_settings_history() {
     const auto before =
         core::state::project::captureProjectSettingsHistorySnapshot(
             h.state.statusBar,
-            h.state.projectNavigation,
-            h.state.midiSync
+            h.state.projectNavigation
         );
     h.state.statusBar.tempo.set(167.0f);
     h.state.statusBar.tempoDisplay.set(167.0f);
     const auto after =
         core::state::project::captureProjectSettingsHistorySnapshot(
             h.state.statusBar,
-            h.state.projectNavigation,
-            h.state.midiSync
+            h.state.projectNavigation
         );
     assert(h.state.projectSettingsHistory.record(
         before,
@@ -486,12 +484,15 @@ void test_selector_physically_restores_project_settings_history() {
         0U,
         true
     ));
+    h.state.midiSync.mode.set(core::state::MidiSyncMode::SLAVE);
 
     openSelector(h);
     h.tap(Config::ButtonID::LEFT_CENTER);
     assert(h.state.statusBar.tempo.get() == 120.0f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(h.state.statusBar.tempo.get() == 167.0f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
 
     std::cout << "[PASS] physical Undo/Redo restores Project settings\n";
 }
@@ -500,12 +501,14 @@ void test_selector_commits_pending_step_edit_before_global_undo() {
     ViewSwitcherHarness h;
     h.state.activeView.set(core::ui::ViewType::SEQUENCER);
     const uint8_t initial = h.state.sequencer.pattern.note[0];
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+    assert(core::state::sequencer::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         0,
         core::state::sequencer::StepProperty::NOTE,
-        100U
-    ));
+        100U,
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly)));
     assert(h.state.sequencer.setStepNoteAt(0, 72));
+    assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(!h.state.projectHistory.canUndo());
 

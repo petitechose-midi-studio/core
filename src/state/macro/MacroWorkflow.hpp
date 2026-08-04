@@ -13,6 +13,8 @@ struct CoreState;
 
 namespace core::state::macro {
 
+struct MacroUiState;
+
 /**
  * Macro domain workflow for runtime/page synchronization and config edits.
  *
@@ -73,6 +75,15 @@ inline int macroConfigRevisionDirtyIndex(uint32_t revision) {
 struct MacroWorkflow {
     static void syncRuntimeFromActivePage(core::state::MacroState& macros,
                                           const MacroPagesState& pages);
+    /**
+     * Rebuilds the active Macro presentation without changing authored or
+     * runtime-projection revisions, then reapplies retained manual overrides.
+     */
+    static void syncActivePagePresentation(
+        core::state::MacroState& macros,
+        const MacroPagesState& pages,
+        MacroUiState& macroUi
+    ) noexcept;
     static void switchToPage(CoreState& state, uint8_t pageIndex);
     static void switchToTrack(CoreState& state, uint8_t trackIndex);
     static bool setConfig(CoreState& state, uint8_t index, uint8_t channel, uint8_t cc);

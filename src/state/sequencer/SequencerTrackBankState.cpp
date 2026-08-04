@@ -66,7 +66,12 @@ FLASHMEM bool SequencerTrackBankState::setProjectScaleSettings(
 
     project_scale_settings_ = settings;
     project_scale_revision_.set(project_scale_revision_.get() + 1U);
-    for (auto& track : tracks_) {
+    const uint8_t activeTrack = activeTrackIndex();
+    for (uint8_t i = 0; i < TRACK_COUNT; ++i) {
+        // The active bank slot is noncanonical scratch. The editor owns the
+        // active Pattern and its revision while that Track is selected.
+        if (i == activeTrack) continue;
+        auto& track = tracks_[i];
         if (!isPatternScaleOverride(track.scalePolicy)) {
             track.bumpPatternScaleRevision();
         }

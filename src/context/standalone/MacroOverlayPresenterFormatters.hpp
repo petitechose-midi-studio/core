@@ -19,7 +19,7 @@
 #include "ui/strip/ContextActionStrip.hpp"
 #include "ui/macro/MacroEditorPreviewModel.hpp"
 
-namespace core::handler {
+namespace core::sequencer {
 class MidiCcGlobalFrameCoordinator;
 }
 
@@ -38,7 +38,8 @@ struct Source {
     core::state::macro::MacroUiState& macroUi;
     oc::state::Signal<uint32_t>& configRevision;
     core::state::StructureClipboardState* clipboard = nullptr;
-    const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
+    const core::sequencer::MidiCcGlobalFrameCoordinator*
+        midiCcCoordinator = nullptr;
     const core::state::StatusBarState* statusBar = nullptr;
 };
 

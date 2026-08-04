@@ -110,6 +110,102 @@ void test_projects_child_context_resolved_values_and_badges() {
     std::cout << "[PASS] test_projects_child_context_resolved_values_and_badges\n";
 }
 
+void test_child_note_offsets_follow_pattern_pitch_context() {
+    SequencerState sequencer;
+    sequencer.pattern.setContentLength(8);
+    sequencer.pattern.note[0] = 60;
+
+    const auto micro = createMicroSequence(
+        sequencer.pattern,
+        rootStepNodeId(0),
+        2
+    );
+    assert(micro.ok);
+    const auto* graph = core::state::sequencer::graphView(
+        sequencer.pattern
+    );
+    assert(graph != nullptr);
+    const auto* sequence = graph->sequence(micro.id);
+    assert(sequence != nullptr);
+    assert(setNodeNoteOffset(
+        sequencer.pattern,
+        sequence->firstStepNode,
+        1
+    ));
+    assert(enterMicroSequenceContentView(
+        sequencer,
+        rootStepNodeId(0),
+        micro.id
+    ));
+
+    const oc::note::sequencer::StepSequencerScaleSettings cMajor{
+        .root = 0,
+        .type =
+            oc::note::sequencer::StepSequencerScaleType::Major,
+        .mode = oc::note::sequencer::
+            StepSequencerScaleConstraintMode::ConstrainNearest,
+    };
+
+    assert(sequencer.setPitchEditMode(
+        core::state::sequencer::SequencerPitchEditMode::CHROMATIC
+    ));
+    auto projection =
+        core::state::sequencer::resolveActiveContentStepProjection(
+            sequencer,
+            0,
+            cMajor
+        );
+    assert(projection.valid);
+    assert(projection.note == 61);
+
+    auto context =
+        core::state::sequencer::
+            makeSequencerResolvedDisplayProjectionContext(
+                sequencer,
+                cMajor,
+                StepProperty::NOTE
+            );
+    auto display =
+        core::state::sequencer::buildSequencerResolvedStepDisplayState(
+            context,
+            0,
+            true
+        );
+    assert(display.valid);
+    assert(!display.childContentNoteOffsetUsesScaleDegrees);
+
+    assert(sequencer.setPitchEditMode(
+        core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE
+    ));
+    projection =
+        core::state::sequencer::resolveActiveContentStepProjection(
+            sequencer,
+            0,
+            cMajor
+        );
+    assert(projection.valid);
+    assert(projection.note == 62);
+
+    context =
+        core::state::sequencer::
+            makeSequencerResolvedDisplayProjectionContext(
+                sequencer,
+                cMajor,
+                StepProperty::NOTE
+            );
+    display =
+        core::state::sequencer::buildSequencerResolvedStepDisplayState(
+            context,
+            0,
+            true
+        );
+    assert(display.valid);
+    assert(display.childContentNoteOffsetUsesScaleDegrees);
+
+    std::cout
+        << "[PASS] test_child_note_offsets_follow_pattern_pitch_context\n";
+}
+
 void test_projects_chord_badge_for_local_chord_step() {
     core::state::sequencer::SequencerPatternState pattern;
 
@@ -158,6 +254,7 @@ void test_child_grid_uses_runtime_chord_badge_for_inherited_chord() {
     sequencer.expandedVariationTelemetry.reset();
     sequencer.expandedVariationTelemetry.valid = true;
     sequencer.expandedVariationTelemetry.rootStepIndex = 0;
+    sequencer.expandedVariationTelemetry.noteBudgetExceeded = true;
     sequencer.expandedVariationTelemetry.store(
         0,
         childNode,
@@ -184,8 +281,43 @@ void test_child_grid_uses_runtime_chord_badge_for_inherited_chord() {
     assert(badges.chordVoiceCount == 4);
     assert(badges.chordSource ==
            oc::note::sequencer::StepSequencerChordSource::Inherited);
+    assert(badges.expansionLimitReached);
 
     std::cout << "[PASS] test_child_grid_uses_runtime_chord_badge_for_inherited_chord\n";
+}
+
+void test_root_grid_projects_runtime_expansion_limit_warning() {
+    SequencerState sequencer;
+    sequencer.pattern.setContentLength(8);
+    sequencer.pattern.setEnabled(0, true);
+    sequencer.playheadStep.set(0);
+    sequencer.expandedVariationTelemetry.valid = true;
+    sequencer.expandedVariationTelemetry.rootStepIndex = 0;
+    sequencer.expandedVariationTelemetry.noteBudgetExceeded = true;
+
+    auto rootBadges =
+        buildStepContentBadgeProjection(sequencer.pattern, 0);
+    assert(!mergeExpandedTelemetryChordBadgeForNode(
+        rootBadges,
+        sequencer.expandedVariationTelemetry,
+        rootStepNodeId(0),
+        sequencer.playheadStep.get(),
+        0
+    ));
+    assert(rootBadges.expansionLimitReached);
+
+    auto otherBadges =
+        buildStepContentBadgeProjection(sequencer.pattern, 1);
+    assert(!mergeExpandedTelemetryChordBadgeForNode(
+        otherBadges,
+        sequencer.expandedVariationTelemetry,
+        rootStepNodeId(1),
+        sequencer.playheadStep.get(),
+        0
+    ));
+    assert(!otherBadges.expansionLimitReached);
+
+    std::cout << "[PASS] test_root_grid_projects_runtime_expansion_limit_warning\n";
 }
 
 void test_parent_grid_summarizes_final_child_pitch() {
@@ -974,8 +1106,10 @@ int main() {
     test_projects_root_step_content_badges();
     test_invalid_or_missing_graph_has_no_badges();
     test_projects_child_context_resolved_values_and_badges();
+    test_child_note_offsets_follow_pattern_pitch_context();
     test_projects_chord_badge_for_local_chord_step();
     test_child_grid_uses_runtime_chord_badge_for_inherited_chord();
+    test_root_grid_projects_runtime_expansion_limit_warning();
     test_parent_grid_summarizes_final_child_pitch();
     test_parent_tile_displays_final_child_pitch_across_nested_cycles();
     test_child_grid_summarizes_intermediate_child_pitch();

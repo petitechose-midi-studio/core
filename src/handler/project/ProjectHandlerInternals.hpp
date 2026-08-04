@@ -60,7 +60,6 @@ FLASHMEM bool clearProjectName(core::state::project::ProjectNavigationState& nav
 FLASHMEM int tempoFromNormalized(float normalized);
 FLASHMEM float tempoToNormalized(float tempoBpm);
 FLASHMEM float normalizedTurnsForStepRate(int stepCount, float stepsPerTurn);
-FLASHMEM int midiSyncModeIndex(core::state::MidiSyncMode mode);
 FLASHMEM core::state::MidiSyncMode midiSyncModeAt(int index);
 FLASHMEM const char* projectLifecycleFailureLabel(
     ProjectLifecycleDomainServices::Status status,

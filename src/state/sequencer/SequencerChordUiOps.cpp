@@ -13,9 +13,9 @@ FLASHMEM SequencerStepChordUiState resolveStepChordUiState(
 ) {
     SequencerStepChordUiState state{};
     state.rootContext = isRootContentView(sequencer);
-    state.pitchUsesScaleDegrees =
+    state.pitchFollowsScale =
         authoringPattern(sequencer).pitchEditMode ==
-            SequencerPitchEditMode::SCALE_DEGREES;
+            SequencerPitchEditMode::FOLLOW_SCALE;
     state.mode = defaultChordModeForContentContext(state.rootContext);
 
     if (step >= activeContentLength(sequencer)) return state;
@@ -27,8 +27,6 @@ FLASHMEM SequencerStepChordUiState resolveStepChordUiState(
     bool modePresent = false;
     bool localPresent = false;
     if (node != nullptr) {
-        state.pitchUsesScaleDegrees =
-            !node->has(oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC);
         modePresent = node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE);
         localPresent = node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL);
         if (modePresent) state.mode = node->chordMode;
@@ -55,7 +53,7 @@ FLASHMEM SequencerStepChordUiState resolveStepChordUiState(
     state.spec.clamp();
     state.effectiveVoiceCount =
         state.mode == oc::note::sequencer::StepSequencerChordMode::Local
-            ? state.spec.voiceCount
+            ? state.spec.voices()
             : 1;
     return state;
 }
@@ -84,26 +82,31 @@ FLASHMEM void resolveStepChordPreview(
         chordState,
         projection.inheritedChord,
         spanTicks,
-        chord.pitchUsesScaleDegrees
+        chord.pitchFollowsScale
     );
     if (resolution.count == 0) return;
 
     chord.preview.valid = true;
     chord.preview.source = resolution.source;
-    chord.preview.semanticRecipe = resolution.semanticRecipe;
     chord.preview.harmonyAdjustedForPitchMode =
         resolution.harmonyAdjustedForPitchMode;
+    chord.preview.intervalBasisAdjusted = resolution.intervalBasisAdjusted;
     chord.preview.inversionClamped = resolution.inversionClamped;
     chord.preview.rangeLimited = resolution.rangeLimited;
+    chord.preview.rootNote = root.note;
     chord.preview.voiceCount = resolution.count;
     chord.preview.requestedVoiceCount = resolution.requestedVoiceCount;
     chord.preview.effectiveInversion = resolution.effectiveInversion;
     chord.preview.droppedVoiceCount = resolution.droppedVoiceCount;
+    chord.preview.requestedIntervalBasis = resolution.requestedIntervalBasis;
+    chord.preview.intervalBasis = resolution.intervalBasis;
     chord.preview.harmony = resolution.harmony;
     chord.preview.voicing = resolution.voicing;
     chord.preview.spanTicks = spanTicks;
-    chord.scaleConstrained =
-        chord.pitchUsesScaleDegrees && scaleSettings.isConstrained();
+    chord.preview.scaleSettings = scaleSettings;
+    chord.scaleAvailable =
+        scaleSettings.type != oc::note::sequencer::StepSequencerScaleType::Chromatic;
+    chord.intervalsUseScaleDegrees = resolution.intervalUsesScaleDegrees;
     chord.effectiveVoiceCount = resolution.count;
     if (resolution.activeForChildren.valid) {
         chord.spec = resolution.activeForChildren.spec;
@@ -117,6 +120,7 @@ FLASHMEM void resolveStepChordPreview(
             .delayTicks = resolution.voices[i].delayTicks,
             .interval = resolution.voices[i].interval,
             .intervalUsesScaleDegrees = resolution.voices[i].intervalUsesScaleDegrees,
+            .inSelectedScale = resolution.voices[i].inSelectedScale,
         };
     }
     chord.preview.analysis = oc::note::sequencer::analyzeResolvedChord(resolution, root);

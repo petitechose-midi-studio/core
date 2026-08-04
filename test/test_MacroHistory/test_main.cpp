@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -489,7 +490,7 @@ void test_history_admission_rejects_oversized_slot() {
     assert(!history.prepare(
         pages,
         kAddress,
-        macro::MacroHistoryActionKind::REMOVE_SLOT
+        macro::MacroHistoryActionKind::DELETE_SLOT
     ));
     assert(test_support::project_control::readSlot(pages.control, kAddress).present());
     std::cout << "[PASS] oversized Slot is rejected before mutation\n";
@@ -836,7 +837,7 @@ void test_sparse_macro_removal_purges_all_destination_state_atomically() {
     ));
     const auto pageBefore = pages.pageData(0U, 0U);
 
-    assert(history.removeMacroSlot(pages, kAddress));
+    assert(history.deleteMacroSlot(pages, kAddress));
     assert(history.undoCount() == 1U);
     const auto& removedPage = pages.pageData(0U, 0U);
     assert(!removedPage.isMacroActive(kAddress.macro));
@@ -3365,6 +3366,157 @@ void test_multi_macro_take_is_one_atomic_undo_redo_action() {
     std::cout << "[PASS] multi-Macro take is one atomic Undo/Redo action\n";
 }
 
+void seedMaximumAutomationPage(macro::MacroPagesState& pages) {
+    macro::MacroAutomationLane lane{};
+    lane.durationBeats = 32.0f;
+    for (uint16_t point = 0U;
+         point < macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS;
+         ++point) {
+        const float phase = static_cast<float>(point) /
+            static_cast<float>(
+                macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS - 1U
+            );
+        assert(macro::macroAutomationAppendPoint(
+            lane,
+            phase * lane.durationBeats,
+            0.15f + 0.7f * phase
+        ));
+    }
+    for (uint8_t macroIndex = 0U; macroIndex < macro::MACRO_COUNT;
+         ++macroIndex) {
+        assert(test_support::project_control::assignAutomation(
+            pages.control,
+            macro::MacroAutomationSlotAddress{
+                .track = 0U,
+                .page = 0U,
+                .macro = macroIndex,
+            },
+            lane
+        ));
+    }
+}
+
+void commitMaximumAutomationTake(
+    macro::MacroHistoryService& history,
+    macro::MacroPagesState& pages
+) {
+    using namespace core::state::modulation;
+
+    auto change = history.prepareAutomationTake(pages, 0U, 0U, 0x00FFU);
+    assert(change && change->automationTake);
+    auto& payload = *change->automationTake;
+    payload.touchedMask = payload.candidateMask;
+    for (uint8_t macroIndex = 0U; macroIndex < macro::MACRO_COUNT;
+         ++macroIndex) {
+        const auto& before = payload.before[macroIndex];
+        auto& after = payload.after[macroIndex];
+        assert(
+            before.pointCount ==
+            macro::MACRO_AUTOMATION_RECORDING_MAX_POINTS
+        );
+        after.automation = before.automation;
+        after.pointCount = before.pointCount;
+        std::memcpy(
+            after.points.get(),
+            before.points.get(),
+            static_cast<size_t>(after.pointCount) *
+                sizeof(ProjectPackedCurvePoint)
+        );
+        auto& last = after.points[after.pointCount - 1U];
+        last.value = static_cast<int16_t>(
+            last.value == std::numeric_limits<int16_t>::max()
+                ? last.value - 1
+                : last.value + 1
+        );
+    }
+
+    auto staged = core::app::makeExtmemUnique<ProjectControlDomainState>();
+    assert(staged);
+    *staged = pages.control.authored;
+    for (uint8_t macroIndex = 0U; macroIndex < macro::MACRO_COUNT;
+         ++macroIndex) {
+        const auto& after = payload.after[macroIndex];
+        assert(replaceProjectControlAutomationInDomain(
+            *staged,
+            after.address,
+            after.automation,
+            after.points.get(),
+            after.pointCount
+        ));
+    }
+    pages.control.authored = *staged;
+    pages.control.markAuthoredMutation();
+    assert(history.commitPreparedAutomationTake(pages, change));
+}
+
+void test_retained_budget_preserves_automation_and_bounds_page_structure() {
+    constexpr size_t kMaximumAutomationTakeBytes = 132'260U;
+    constexpr size_t kFullPageStructureBytes = 321'492U;
+    constexpr size_t kCompactPageStructureBytes = 161'960U;
+
+    macro::MacroPagesState pages;
+    seedMaximumAutomationPage(pages);
+    macro::MacroHistoryService history;
+    for (uint8_t entry = 0U;
+         entry < macro::MacroHistoryService::ENTRY_LIMIT;
+         ++entry) {
+        commitMaximumAutomationTake(history, pages);
+    }
+    assert(history.undoCount() == macro::MacroHistoryService::ENTRY_LIMIT);
+    assert(
+        history.retainedBytes() ==
+        macro::MacroHistoryService::ENTRY_LIMIT *
+            kMaximumAutomationTakeBytes
+    );
+    assert(history.retainedSpans() == 144U);
+
+    auto page = history.preparePageStructureSnapshot(pages, 0U);
+    assert(page);
+    pages.tracks[0].pages[0].values[0] = 0.25f;
+    ++pages.control.authored.modulation.nextSourceId;
+    assert(history.commitPreparedPageStructureSnapshot(
+        pages,
+        std::move(page)
+    ));
+    assert(history.undoCount() == 6U);
+    assert(
+        history.retainedBytes() ==
+        5U * kMaximumAutomationTakeBytes + kFullPageStructureBytes
+    );
+    assert(history.retainedSpans() == 94U);
+
+    history.clear();
+    for (uint8_t entry = 0U; entry < 4U; ++entry) {
+        auto full = history.preparePageStructureSnapshot(pages, 0U);
+        assert(full);
+        pages.tracks[0].pages[0].values[0] += 0.01f;
+        ++pages.control.authored.modulation.nextSourceId;
+        assert(history.commitPreparedPageStructureSnapshot(
+            pages,
+            std::move(full)
+        ));
+    }
+    assert(history.undoCount() == 3U);
+    assert(history.retainedBytes() == 3U * kFullPageStructureBytes);
+    assert(history.retainedSpans() == 12U);
+
+    history.clear();
+    for (uint8_t entry = 0U; entry < 7U; ++entry) {
+        auto compact = history.preparePageStructureSnapshot(pages, 0U);
+        assert(compact);
+        pages.tracks[0].pages[0].values[0] += 0.01f;
+        assert(history.commitPreparedPageStructureSnapshot(
+            pages,
+            std::move(compact)
+        ));
+    }
+    assert(history.undoCount() == 6U);
+    assert(history.retainedBytes() == 6U * kCompactPageStructureBytes);
+    assert(history.retainedSpans() == 18U);
+    std::cout
+        << "[PASS] retained budget preserves Automation depth and bounds Page structure\n";
+}
+
 }  // namespace
 
 int main() {
@@ -3417,6 +3569,7 @@ int main() {
     test_recorded_shape_id_and_no_change_failures_are_atomic();
     test_recorded_shape_point_capacity_failures_are_atomic();
     test_multi_macro_take_is_one_atomic_undo_redo_action();
+    test_retained_budget_preserves_automation_and_bounds_page_structure();
     test_assignment_history_is_destination_scoped_and_order_stable();
     test_assignment_remove_and_clear_keep_roots_and_unrelated_edges();
     test_sparse_macro_removal_purges_all_destination_state_atomically();

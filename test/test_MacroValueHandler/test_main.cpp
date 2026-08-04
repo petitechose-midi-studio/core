@@ -16,7 +16,7 @@
 #include <oc/time/Time.hpp>
 #include <oc/type/Result.hpp>
 
-#include "../../src/handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "../../src/sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "../../src/handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "../../src/handler/macro/MacroValueHandler.hpp"
 #include "../../src/sequencer/RealtimeMidiQueue.hpp"
@@ -90,7 +90,7 @@ struct MacroValueHarness {
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
     core::handler::MacroPerformanceDomainServices services;
     core::sequencer::RealtimeMidiQueue queue;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator;
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator;
     core::handler::MacroMidiCcRuntimeAdapter adapter;
     core::handler::MacroValueHandler handler;
     core::sequencer::ProjectTrackRuntimeSnapshot runtimeTracks{
@@ -136,7 +136,8 @@ struct MacroValueHarness {
         const core::state::shared::MidiCcCandidate initialAuthor{
             .destination = {
                 .identity = {
-                    .port = core::handler::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                    .port = core::sequencer::MidiCcGlobalFrameCoordinator::
+                        OUTPUT_PORT,
                     .channel = services.activeTrackChannel(),
                     .controller = config.cc,
                 },

@@ -11,6 +11,7 @@
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/ProductFileTestMutation.hpp"
 
 namespace {
 
@@ -81,8 +82,6 @@ void assertLoadedSession(core::persistence::ProjectSessionStore& store,
     project_file::LoadReport report{};
     auto loadedResult = store.loadCurrent(loaded, &report);
     assert(loadedResult);
-    assert(loadedResult.value().loadStatus == project_file::LoadStatus::OK);
-    assert(loadedResult.value().overwriteSafe);
     assert(report.ok());
 
     test_support::CoreStorages storages;
@@ -158,7 +157,9 @@ void test_stale_current_session_tmp_is_replaced() {
     auto store = makeStore(files);
 
     const uint8_t stale[] = {'s', 't', 'a', 'l', 'e'};
-    assert(files.write("tmp/session.current.tmp", 0, stale, sizeof(stale)));
+    assert(core::test::writeProductFileFixture(
+        files, "tmp/session.current.tmp", 0, stale, sizeof(stale)
+    ));
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -184,7 +185,9 @@ void test_current_session_load_recovers_interrupted_backup_commit() {
     auto state = makeCoreState(storages);
     configureSession(state, "p005", "Backup", 5, 0.64f, 76);
     assert(store.saveCurrent(capture(state)));
-    assert(files.rename("session/current.mspj", "session/current.bak"));
+    assert(core::test::renameProductFileFixture(
+        files, "session/current.mspj", "session/current.bak"
+    ));
 
     assertLoadedSession(store, "p005", "Backup", 5, 76);
     assert(std::filesystem::is_regular_file(
@@ -205,7 +208,9 @@ void test_corrupt_current_session_reports_storage_corrupt() {
     auto store = makeStore(files);
 
     const uint8_t corrupt[] = {'n', 'o', 't', 'm', 's', 'p', 'j'};
-    assert(files.write("session/current.mspj", 0, corrupt, sizeof(corrupt)));
+    assert(core::test::writeProductFileFixture(
+        files, "session/current.mspj", 0, corrupt, sizeof(corrupt)
+    ));
 
     project::ProjectSnapshot loaded;
     auto result = store.loadCurrent(loaded);

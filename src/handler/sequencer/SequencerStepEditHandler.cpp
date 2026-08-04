@@ -1,119 +1,132 @@
 #include "SequencerStepEditHandler.hpp"
 
+#include "SequencerChordEditOps.hpp"
+#include "SequencerStepChordEditorWorkflow.hpp"
+#include "SequencerStepContentDraftWorkflow.hpp"
+#include "SequencerStepContextRowWorkflow.hpp"
+#include "SequencerStepEditSessionWorkflow.hpp"
+#include "SequencerStepValueRowWorkflow.hpp"
+
 #include <algorithm>
 
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #include <oc/time/Time.hpp>
 
-#include <utility>
-
 #include "handler/common/NavigationUtils.hpp"
-#include "SequencerStepChordEditorWorkflow.hpp"
-#include "SequencerStepContextRowWorkflow.hpp"
-#include "SequencerStepContentDraftWorkflow.hpp"
-#include "SequencerStepEditSessionWorkflow.hpp"
-#include "SequencerStepValueRowWorkflow.hpp"
-#include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerChordUiOps.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
 
 namespace core::handler {
-namespace step_chord_editor_workflow =
-    core::handler::sequencer::step_chord_editor_workflow;
-namespace step_context_row_workflow =
-    core::handler::sequencer::step_context_row_workflow;
-namespace step_edit_session_workflow =
-    core::handler::sequencer::step_edit_session_workflow;
+namespace step_chord_editor_workflow = core::handler::sequencer::step_chord_editor_workflow;
+namespace step_context_row_workflow = core::handler::sequencer::step_context_row_workflow;
+namespace step_edit_session_workflow = core::handler::sequencer::step_edit_session_workflow;
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
-namespace step_value_row_workflow =
-    core::handler::sequencer::step_value_row_workflow;
+namespace step_value_row_workflow = core::handler::sequencer::step_value_row_workflow;
 
 namespace {
 
 FLASHMEM oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings(
     const core::state::sequencer::SequencerState& sequencer,
-    const core::state::sequencer::SequencerTrackBankState& tracks
-) {
+    const core::state::sequencer::SequencerTrackBankState& tracks) {
     return core::state::sequencer::resolveEffectiveScaleSettings(
         tracks.projectScaleSettings(),
         core::state::sequencer::authoringPattern(sequencer).scalePolicy,
-        core::state::sequencer::authoringPattern(sequencer).scaleOverride
-    );
+        core::state::sequencer::authoringPattern(sequencer).scaleOverride);
 }
 
-FLASHMEM bool editedStepHasChordState(
-    const core::state::sequencer::SequencerState& sequencer,
-    uint8_t step
-) {
-    const auto* graph = core::state::sequencer::graphView(
-        core::state::sequencer::authoringPattern(sequencer)
-    );
+FLASHMEM bool editedStepHasChordState(const core::state::sequencer::SequencerState& sequencer,
+                                      uint8_t step) {
+    const auto* graph =
+        core::state::sequencer::graphView(core::state::sequencer::authoringPattern(sequencer));
     if (graph == nullptr) return false;
-    const auto* node = graph->stepNode(
-        core::state::sequencer::activeContentStepNodeId(sequencer, step)
-    );
-    return node != nullptr &&
-           (node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE) ||
-            node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL));
+    const auto* node =
+        graph->stepNode(core::state::sequencer::activeContentStepNodeId(sequencer, step));
+    return node != nullptr && (node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE) ||
+                               node->has(oc::note::sequencer::STEP_NODE_CHORD_LOCAL));
+}
+
+FLASHMEM core::state::sequencer::SequencerCoalescedPatternPayloadPlan stepEditPayloadPlan(
+    const core::state::sequencer::SequencerState& sequencer, bool mayGrowGraph) {
+    using Plan = core::state::sequencer::SequencerCoalescedPatternPayloadPlan;
+    if (mayGrowGraph) return Plan::FullWithProspectiveGraph;
+    return core::state::sequencer::isChildContentView(sequencer) ? Plan::FullCurrentPayload
+                                                                 : Plan::FlatOnly;
+}
+
+FLASHMEM core::state::sequencer::SequencerHistoryDescriptor stepEditDescriptor(uint8_t step) {
+    return core::state::sequencer::SequencerHistoryDescriptor{
+        .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
+        .stepIndex = step,
+        .property = core::state::sequencer::StepProperty::NOTE,
+    };
+}
+
+FLASHMEM core::state::sequencer::SequencerCoalescedPatternPayloadPlan stepResetPayloadPlan(
+    const core::state::sequencer::SequencerState& sequencer, uint8_t step) {
+    using Plan = core::state::sequencer::SequencerCoalescedPatternPayloadPlan;
+    if (core::state::sequencer::isChildContentView(sequencer)) { return Plan::FullCurrentPayload; }
+
+    const uint8_t row = sequencer.stepEdit.focusedRow.get();
+    if (!step_edit_rows::isProperty(row)) return Plan::FlatOnly;
+
+    const auto* graph =
+        core::state::sequencer::graphView(core::state::sequencer::authoringPattern(sequencer));
+    const auto* node =
+        graph == nullptr
+            ? nullptr
+            : graph->stepNode(core::state::sequencer::activeContentStepNodeId(sequencer, step));
+    return node != nullptr && core::state::sequencer::nodeLocalVariationRange(
+                                  *node, step_edit_rows::propertyForRow(row)) != 0U
+               ? Plan::FullCurrentPayload
+               : Plan::FlatOnly;
 }
 
 }  // namespace
 
 FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
-    StateRefs state,
-    oc::context::OverlayManager<core::ui::OverlayType>& overlays,
-    oc::api::EncoderAPI& encoders,
-    oc::api::ButtonAPI& buttons,
-    oc::type::ScopeID sequencerViewScope,
-    oc::type::ScopeID overlayScope,
-    oc::type::ScopeID stepPresetOverlayScope,
-    TimeProviderFn timeProvider
-)
-    : overlay_state_(state.overlays)
-    , sequencer_(state.sequencer)
-    , tracks_(state.tracks)
-    , structure_clipboard_(state.structureClipboard)
-    , track_ui_(state.trackNavigation)
-    , navigation_focus_(state.navigationFocus)
-    , history_(state.history)
-    , step_presets_(state.stepPresets)
-    , step_preset_picker_(sequencer_, step_presets_, overlays)
-    , overlays_(overlays)
-    , encoders_(encoders)
-    , buttons_(buttons)
-    , sequencer_view_scope_(sequencerViewScope)
-    , overlay_scope_(overlayScope)
-    , step_preset_overlay_scope_(stepPresetOverlayScope)
-    , time_provider_(timeProvider ? timeProvider : core::time_compat::millis)
-{
+    StateRefs state, oc::context::OverlayManager<core::ui::OverlayType>& overlays,
+    oc::api::EncoderAPI& encoders, oc::api::ButtonAPI& buttons,
+    oc::type::ScopeID sequencerViewScope, oc::type::ScopeID overlayScope,
+    oc::type::ScopeID presetLibraryOverlayScope, TimeProviderFn timeProvider)
+    : overlay_state_(state.overlays), sequencer_(state.sequencer), tracks_(state.tracks),
+      structure_clipboard_(state.structureClipboard), track_ui_(state.trackNavigation),
+      pattern_pitch_settings_(state.patternPitchSettings), navigation_focus_(state.navigationFocus),
+      history_(state.history), step_presets_(state.stepPresets), chord_presets_(state.chordPresets),
+      step_preset_library_adapter_(sequencer_, step_presets_),
+      chord_preset_library_adapter_(sequencer_, chord_presets_),
+      preset_library_(sequencer_, overlays), overlays_(overlays), encoders_(encoders),
+      buttons_(buttons), sequencer_view_scope_(sequencerViewScope), overlay_scope_(overlayScope),
+      preset_library_overlay_scope_(presetLibraryOverlayScope),
+      time_provider_(timeProvider ? timeProvider : core::time_compat::millis) {
     setupBindings();
 }
 
 void SequencerStepEditHandler::update(uint32_t nowMs) {
-    const auto pickerOutcome = step_preset_picker_.update(nowMs);
-    if (pickerOutcome == SequencerStepPresetPickerOutcome::APPLIED ||
-        pickerOutcome == SequencerStepPresetPickerOutcome::CANCELLED) {
-        handleStepPresetOutcome(pickerOutcome);
+    if (pitch_context_settings_open_ && pattern_pitch_settings_.flowPhase.get() ==
+                                            core::state::PatternPitchSettingsFlowPhase::CLOSED) {
+        pitch_context_settings_open_ = false;
+        configureOptForFocusedRow();
     }
-    if (step_preset_auto_close_pending_ &&
-        !step_preset_action_press_active_ &&
-        oc::time::deadlineReachedMs(nowMs, step_preset_auto_close_at_ms_)) {
-        closeStepPresetPicker();
+
+    const auto presetResult = preset_library_.update(nowMs);
+    if (presetResult.outcome == SequencerPresetLibraryOutcome::LOADED ||
+        presetResult.outcome == SequencerPresetLibraryOutcome::QUEUED ||
+        presetResult.outcome == SequencerPresetLibraryOutcome::CANCELLED) {
+        handlePresetLibraryResult(presetResult);
+    }
+    if (preset_library_auto_close_pending_ && !preset_library_action_press_active_ &&
+        oc::time::deadlineReachedMs(nowMs, preset_library_auto_close_at_ms_)) {
+        closePresetLibrary();
     }
 }
 
 FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
-    if (!step_edit_session_workflow::openForMacroInPage(
-            sequencer_,
-            history_,
-            overlays_,
-            history_snapshot_,
-            history_snapshot_valid_,
-            indexInPage
-        )) {
+    if (!step_edit_session_workflow::openForMacroInPage(sequencer_, history_, overlays_,
+                                                        indexInPage)) {
         return;
     }
     step_retarget_active_ = false;
@@ -123,22 +136,9 @@ FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) 
 FLASHMEM bool SequencerStepEditHandler::openFocusedStepAtRow(uint8_t row) {
     const uint8_t length = core::state::sequencer::activeContentLength(sequencer_);
     if (length == 0) return false;
-    const uint8_t focused = std::min<uint8_t>(
-        sequencer_.focusedStep.get(),
-        static_cast<uint8_t>(length - 1U)
-    );
-    sequencer_.page.set(core::state::sequencer::activeContentPageForStep(focused));
-    const uint8_t indexInPage = static_cast<uint8_t>(
-        focused % core::state::sequencer::SequencerState::STEPS_PER_PAGE
-    );
-    if (!step_edit_session_workflow::openForMacroInPage(
-            sequencer_,
-            history_,
-            overlays_,
-            history_snapshot_,
-            history_snapshot_valid_,
-            indexInPage
-        )) {
+    const uint8_t focused =
+        std::min<uint8_t>(sequencer_.focusedStep.get(), static_cast<uint8_t>(length - 1U));
+    if (!step_edit_session_workflow::openForStep(sequencer_, history_, overlays_, focused)) {
         return false;
     }
     step_retarget_active_ = false;
@@ -147,13 +147,8 @@ FLASHMEM bool SequencerStepEditHandler::openFocusedStepAtRow(uint8_t row) {
     return true;
 }
 
-FLASHMEM bool SequencerStepEditHandler::openFocusedStepContentAtRow(
-    uint8_t row
-) {
-    if (!step_edit_rows::isChord(row) &&
-        !step_edit_rows::isContext(row)) {
-        return false;
-    }
+FLASHMEM bool SequencerStepEditHandler::openFocusedStepContentAtRow(uint8_t row) {
+    if (!step_edit_rows::isChord(row) && !step_edit_rows::isContext(row)) { return false; }
     if (!openFocusedStepAtRow(row)) return false;
 
     if (step_edit_rows::isChord(row)) {
@@ -168,19 +163,57 @@ FLASHMEM bool SequencerStepEditHandler::openFocusedStepContentAtRow(
     return false;
 }
 
-FLASHMEM void SequencerStepEditHandler::commitStepEditHistory() {
-    step_edit_session_workflow::commitHistory(
-        sequencer_,
-        history_,
-        history_snapshot_,
-        history_snapshot_valid_
-    );
+FLASHMEM bool SequencerStepEditHandler::commitStepEditHistory() {
+    return step_edit_session_workflow::commitHistory(sequencer_, history_);
+}
+
+FLASHMEM bool SequencerStepEditHandler::beginPreparedPatternMutation(
+    core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key,
+    core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor, bool compactGraphOnSeal) {
+    if (sequencer_.stepContentDraft.active.get()) return true;
+    const auto outcome =
+        history_.beginPreparedPatternEdit(owner, key, payloadPlan, descriptor,
+                                             compactGraphOnSeal);
+    if (core::state::sequencer::sequencerHistoryOpenAccepted(outcome)) return true;
+    sequencer_.historyFeedback.showRejection(outcome, oc::time::millis());
+    return false;
+}
+
+FLASHMEM bool SequencerStepEditHandler::sealPreparedPatternMutation(
+    core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key, bool changed,
+    core::state::sequencer::SequencerHistoryDescriptor descriptor) {
+    if (sequencer_.stepContentDraft.active.get()) return true;
+    const auto outcome = history_.sealPreparedPatternEdit(owner, key, changed, descriptor);
+    if (!core::state::sequencer::sequencerPreparedPatternEditSealFailed(outcome)) return true;
+    sequencer_.historyFeedback.showRejection(
+        core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+        oc::time::millis());
+    return false;
+}
+
+FLASHMEM bool SequencerStepEditHandler::commitPreparedPatternMutation(
+    core::state::sequencer::SequencerPreparedPatternEditOwner owner) {
+    if (sequencer_.stepContentDraft.active.get()) return true;
+    if (history_.commitPreparedPatternEdit(owner) !=
+           core::state::sequencer::SequencerPreparedPatternEditCommitOutcome::Failed) {
+        return true;
+    }
+    sequencer_.historyFeedback.showRejection(
+        core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable,
+        oc::time::millis());
+    return false;
 }
 
 FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
     if (sequencer_.stepContentDraft.exitPromptVisible.get()) {
         // Back from the explicit decision surface means Continue editing.
         sequencer_.stepContentDraft.hideExitPrompt();
+        return;
+    }
+
+    if (chordEditorActive() && step_chord_editor_workflow::cancelSubEditor(sequencer_)) {
+        configureOptForFocusedRow();
         return;
     }
 
@@ -192,9 +225,7 @@ FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
             closeChordEditor();
             return;
         }
-        const auto result = sequencer::step_content_draft_workflow::requestBack(
-            sequencer_
-        );
+        const auto result = sequencer::step_content_draft_workflow::requestBack(sequencer_);
         if (result == sequencer::step_content_draft_workflow::BackResult::DISCARDED) {
             closeChordEditor();
         }
@@ -208,30 +239,15 @@ FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
 
     if (core::state::sequencer::isChildContentView(sequencer_) &&
         sequencer_.stepContentDraft.active.get()) {
-        const auto result = sequencer::step_content_draft_workflow::requestBack(
-            sequencer_
-        );
-        if (result !=
-            sequencer::step_content_draft_workflow::BackResult::DISCARDED) {
-            return;
-        }
-        if (step_edit_session_workflow::backToParentContent(
-                sequencer_,
-                history_,
-                history_snapshot_,
-                history_snapshot_valid_
-            )) {
+        const auto result = sequencer::step_content_draft_workflow::requestBack(sequencer_);
+        if (result != sequencer::step_content_draft_workflow::BackResult::DISCARDED) { return; }
+        if (step_edit_session_workflow::backToParentContent(sequencer_, history_)) {
             configureOptForFocusedRow();
         }
         return;
     }
 
-    if (step_edit_session_workflow::backToParentContent(
-            sequencer_,
-            history_,
-            history_snapshot_,
-            history_snapshot_valid_
-        )) {
+    if (step_edit_session_workflow::backToParentContent(sequencer_, history_)) {
         configureOptForFocusedRow();
         return;
     }
@@ -245,14 +261,10 @@ FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
         if (sequencer_.stepContentDraft.active.get()) return;
     }
     step_retarget_active_ = false;
-    step_edit_session_workflow::close(
-        sequencer_,
-        history_,
-        context_release_latch_,
-        overlays_,
-        history_snapshot_,
-        history_snapshot_valid_
-    );
+    if (!step_edit_session_workflow::close(sequencer_, history_, context_release_latch_,
+                                           overlays_)) {
+        return;
+    }
 }
 
 FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
@@ -268,14 +280,9 @@ FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
         return;
     }
 
-    const int current = step_edit_rows::navigationIndexForRow(
-        sequencer_.stepEdit.focusedRow.get()
-    );
+    const int current = step_edit_rows::navigationIndexForRow(sequencer_.stepEdit.focusedRow.get());
     const int next = nav::nextWrappedIndex(
-        delta,
-        current,
-        static_cast<int>(step_edit_rows::NAVIGATION_ORDER.size())
-    );
+        delta, current, static_cast<int>(step_edit_rows::NAVIGATION_ORDER.size()));
     sequencer_.stepEdit.contextHold.clear();
     sequencer_.stepEdit.localVariationEditActive.set(false);
     sequencer_.stepEdit.focusedRow.set(step_edit_rows::rowForNavigationIndex(next));
@@ -285,13 +292,7 @@ FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
 
 FLASHMEM void SequencerStepEditHandler::retargetEditedStep(float delta) {
     if (!nav::hasTurnDelta(delta) || chordEditorActive()) return;
-    if (step_edit_session_workflow::retargetRootStep(
-            sequencer_,
-            history_,
-            history_snapshot_,
-            history_snapshot_valid_,
-            nav::turnStep(delta)
-        )) {
+    if (step_edit_session_workflow::retargetRootStep(sequencer_, history_, nav::turnStep(delta))) {
         configureOptForFocusedRow();
     }
 }
@@ -306,6 +307,20 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
     const uint8_t focusedRow = edit.focusedRow.get();
 
     if (chordEditorActive()) {
+        if (!step_chord_editor_workflow::formulaEditorActive(sequencer_) &&
+            !step_chord_editor_workflow::sourceSelectorActive(sequencer_) &&
+            sequencer_.stepEdit.chordEditor.focusedField.get() ==
+                core::state::sequencer::SequencerChordEditField::PITCH_CONTEXT) {
+            openPitchContextSettings();
+            return;
+        }
+        uint8_t step = 0;
+        if (editedStepInRange(step) &&
+            step_chord_editor_workflow::activateFocusedItem(
+                sequencer_, step, effectiveScaleSettings(sequencer_, tracks_))) {
+            configureOptForFocusedRow();
+            return;
+        }
         backFromStepEdit();
         return;
     }
@@ -325,9 +340,20 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
     if (step_edit_rows::isActivated(focusedRow)) {
         uint8_t abs = 0;
         if (!editedStepInRange(abs)) return;
-        if (core::state::sequencer::toggleActiveContentStep(sequencer_, abs)) {
-            configureOptForFocusedRow();
+        const bool before = core::state::sequencer::activeContentStepEnabled(sequencer_, abs);
+        auto descriptor = stepEditDescriptor(abs);
+        descriptor.hasValue = true;
+        descriptor.beforeValue = before ? 1 : 0;
+        descriptor.afterValue = before ? 0 : 1;
+        constexpr auto owner =
+            core::state::sequencer::SequencerPreparedPatternEditOwner::StepEditSession;
+        if (!beginPreparedPatternMutation(owner, abs, stepEditPayloadPlan(sequencer_, false),
+                                          descriptor)) {
+            return;
         }
+        const bool changed = core::state::sequencer::toggleActiveContentStep(sequencer_, abs);
+        if (!sealPreparedPatternMutation(owner, abs, changed, descriptor)) { return; }
+        if (changed) { configureOptForFocusedRow(); }
         return;
     }
 
@@ -340,32 +366,11 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
 FLASHMEM bool SequencerStepEditHandler::activateFocusedContextRow() {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return false;
+    if (!commitStepEditHistory()) return false;
 
-    const auto result = step_context_row_workflow::openOrCreateFocusedContextChild(
-        sequencer_,
-        step
-    );
+    const auto result =
+        step_context_row_workflow::openOrCreateFocusedContextChild(sequencer_, step);
     if (!result.opened) return false;
-
-    if (!result.draft && history_snapshot_valid_) {
-        core::state::sequencer::SequencerHistoryPatternSnapshot after;
-        if (core::state::sequencer::captureHistorySnapshot(sequencer_, after) &&
-            !core::state::sequencer::sameMusicalHistorySnapshot(history_snapshot_, after)) {
-            history_.recordPattern(
-                std::move(history_snapshot_),
-                std::move(after),
-                core::state::sequencer::SequencerHistoryDescriptor{
-                    .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
-                    .stepIndex = step,
-                    .property = core::state::sequencer::StepProperty::NOTE,
-                }
-            );
-        }
-        history_snapshot_valid_ = false;
-    }
-    if (result.draft) {
-        history_snapshot_valid_ = false;
-    }
 
     overlays_.hide();
     sequencer_.stepEdit.reset();
@@ -378,18 +383,25 @@ FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
         setFocusedChordFieldValue(normalized);
         return;
     }
-    if (step_edit_rows::isChord(sequencer_.stepEdit.focusedRow.get())) {
-        return;
-    }
+    if (step_edit_rows::isChord(sequencer_.stepEdit.focusedRow.get())) { return; }
 
     uint8_t abs = 0;
     if (!editedStepInRange(abs)) return;
-    step_value_row_workflow::setFocusedRowValue(
-        sequencer_,
-        abs,
-        effectiveScaleSettings(sequencer_, tracks_),
-        normalized
-    );
+    auto descriptor = stepEditDescriptor(abs);
+    if (step_edit_rows::isProperty(sequencer_.stepEdit.focusedRow.get())) {
+        descriptor.property = step_edit_rows::propertyForRow(sequencer_.stepEdit.focusedRow.get());
+    }
+    const bool mayGrowGraph =
+        sequencer_.stepEdit.localVariationEditActive.get() && focusedRowSupportsLocalVariation();
+    constexpr auto owner =
+        core::state::sequencer::SequencerPreparedPatternEditOwner::StepEditSession;
+    if (!beginPreparedPatternMutation(owner, abs, stepEditPayloadPlan(sequencer_, mayGrowGraph),
+                                      descriptor)) {
+        return;
+    }
+    const bool changed = step_value_row_workflow::setFocusedRowValue(
+        sequencer_, abs, effectiveScaleSettings(sequencer_, tracks_), normalized);
+    if (!sealPreparedPatternMutation(owner, abs, changed, descriptor)) return;
 }
 
 FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
@@ -397,19 +409,13 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
         configureOptForFocusedChordField();
         return;
     }
-    if (step_edit_rows::isChord(sequencer_.stepEdit.focusedRow.get())) {
-        return;
-    }
+    if (step_edit_rows::isChord(sequencer_.stepEdit.focusedRow.get())) { return; }
 
     uint8_t abs = 0;
     if (!editedStepInRange(abs)) return;
     step_value_row_workflow::configureFocusedRowEncoder(
-        encoders_,
-        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT),
-        sequencer_,
-        abs,
-        effectiveScaleSettings(sequencer_, tracks_)
-    );
+        encoders_, static_cast<oc::type::EncoderID>(Config::EncoderID::OPT), sequencer_, abs,
+        effectiveScaleSettings(sequencer_, tracks_));
 }
 
 FLASHMEM void SequencerStepEditHandler::openChordEditor() {
@@ -417,16 +423,15 @@ FLASHMEM void SequencerStepEditHandler::openChordEditor() {
     if (!editedStepInRange(step)) return;
 
     const bool existed = editedStepHasChordState(sequencer_, step);
-    const auto nodeId =
-        core::state::sequencer::activeContentStepNodeId(sequencer_, step);
+    const auto nodeId = core::state::sequencer::activeContentStepNodeId(sequencer_, step);
     bool startedDraft = false;
-    if (!existed && !sequencer_.stepContentDraft.active.get()) {
+    // Every Chord editor is transactional. Existing Local/Parent state is
+    // copied into the same lightweight Chord draft used for creation; a Chord
+    // opened inside a Micro/Cycle draft keeps using that outer draft.
+    if (!sequencer_.stepContentDraft.active.get()) {
+        if (!commitStepEditHistory()) return;
         startedDraft = core::state::sequencer::beginStepContentDraft(
-            sequencer_,
-            core::state::sequencer::SequencerStepContentDraftKind::CHORD,
-            step,
-            nodeId
-        );
+            sequencer_, core::state::sequencer::SequencerStepContentDraftKind::CHORD, step, nodeId);
         if (!startedDraft) return;
     }
 
@@ -435,40 +440,13 @@ FLASHMEM void SequencerStepEditHandler::openChordEditor() {
         // The seeded musical default is the pristine creation baseline: Back
         // immediately after opening abandons it without a confirmation.
         if (core::state::sequencer::isRootContentView(sequencer_)) {
-            step_chord_editor_workflow::setFocusedFieldValue(
-                sequencer_,
-                step,
-                effectiveScaleSettings(sequencer_, tracks_),
-                1.0f
-            );
-        } else {
             const auto scale = effectiveScaleSettings(sequencer_, tracks_);
-            auto chord = core::state::sequencer::resolveStepChordUiState(
-                sequencer_,
-                step
-            );
-            const auto projection =
-                core::state::sequencer::resolveActiveContentStepProjection(
-                    sequencer_,
-                    step,
-                    scale
-                );
-            core::state::sequencer::resolveStepChordPreview(
-                chord,
-                projection,
-                scale
-            );
-            if (core::state::sequencer::setAuthoringNodeChordSpec(
-                    sequencer_,
-                    nodeId,
-                    chord.spec
-                )) {
-                core::state::sequencer::notifyStepContentDraftMutation(sequencer_);
-            }
+            (void)core::handler::sequencer::chord_edit_ops::createDefaultLocalChord(
+                sequencer_, step,
+                core::state::sequencer::pitchContextUsesScaleDegrees(
+                    core::state::sequencer::authoringPattern(sequencer_).pitchEditMode, scale));
         }
-        if (startedDraft) {
-            core::state::sequencer::markStepContentDraftPristine(sequencer_);
-        }
+        if (startedDraft) { core::state::sequencer::markStepContentDraftPristine(sequencer_); }
     }
     configureOptForFocusedRow();
 }
@@ -479,59 +457,52 @@ FLASHMEM void SequencerStepEditHandler::closeChordEditor() {
 }
 
 FLASHMEM void SequencerStepEditHandler::applyStepContentDraft() {
-    history_.commitCoalescedPatternEdit();
-    if (!sequencer::step_content_draft_workflow::apply(
-            sequencer_,
-            tracks_,
-            history_
-        )) {
-        return;
-    }
+    const bool returnToPitchRow =
+        chordEditorActive() &&
+        sequencer_.stepContentDraft.kind.get() ==
+            core::state::sequencer::SequencerStepContentDraftKind::CHORD;
+    if (!commitStepEditHistory()) return;
+    if (!sequencer::step_content_draft_workflow::apply(sequencer_, tracks_, history_)) { return; }
 
-    // The draft owns its single Undo entry. Rebase the surrounding Step Edit
-    // session so closing the editor cannot record the same change twice.
-    history_snapshot_valid_ = core::state::sequencer::captureHistorySnapshot(
-        sequencer_,
-        history_snapshot_
-    );
+    if (returnToPitchRow) {
+        step_chord_editor_workflow::close(sequencer_);
+        sequencer_.stepEdit.focusedRow.set(step_edit_rows::PROPERTY_OFFSET);
+    }
     configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::confirmStepContentDraftExitChoice() {
     const bool wasChordEditor = chordEditorActive();
-    const bool wasChildContent = core::state::sequencer::isChildContentView(
-        sequencer_
-    );
-    const auto result = sequencer::step_content_draft_workflow::applyExitChoice(
-        sequencer_,
-        tracks_,
-        history_
-    );
+    const bool wasRootChordDraft =
+        wasChordEditor &&
+        sequencer_.stepContentDraft.kind.get() ==
+            core::state::sequencer::SequencerStepContentDraftKind::CHORD;
+    const bool wasChildContent = core::state::sequencer::isChildContentView(sequencer_);
+    const auto result =
+        sequencer::step_content_draft_workflow::applyExitChoice(sequencer_, tracks_, history_);
     using Result = sequencer::step_content_draft_workflow::BackResult;
     if (result != Result::DISCARDED && result != Result::SAVED) return;
 
-    if (result == Result::SAVED) {
-        history_snapshot_valid_ = core::state::sequencer::captureHistorySnapshot(
-            sequencer_,
-            history_snapshot_
-        );
-    }
     if (wasChordEditor) {
+        if (wasRootChordDraft && result == Result::SAVED) {
+            step_chord_editor_workflow::close(sequencer_);
+            sequencer_.stepEdit.focusedRow.set(step_edit_rows::PROPERTY_OFFSET);
+            configureOptForFocusedRow();
+            return;
+        }
         closeChordEditor();
         return;
     }
-    if (wasChildContent && step_edit_session_workflow::backToParentContent(
-            sequencer_,
-            history_,
-            history_snapshot_,
-            history_snapshot_valid_
-        )) {
+    if (wasChildContent && step_edit_session_workflow::backToParentContent(sequencer_, history_)) {
         configureOptForFocusedRow();
     }
 }
 
 FLASHMEM void SequencerStepEditHandler::moveChordEditorFocus(float delta) {
-    step_chord_editor_workflow::moveFocus(sequencer_, delta);
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+    step_chord_editor_workflow::moveFocus(sequencer_, step,
+                                          effectiveScaleSettings(sequencer_, tracks_), delta);
     configureOptForFocusedRow();
 }
 
@@ -540,11 +511,7 @@ FLASHMEM void SequencerStepEditHandler::setFocusedChordFieldValue(float normaliz
     if (!editedStepInRange(step)) return;
 
     step_chord_editor_workflow::setFocusedFieldValue(
-        sequencer_,
-        step,
-        effectiveScaleSettings(sequencer_, tracks_),
-        normalized
-    );
+        sequencer_, step, effectiveScaleSettings(sequencer_, tracks_), normalized);
 }
 
 FLASHMEM void SequencerStepEditHandler::configureOptForFocusedChordField() {
@@ -552,12 +519,8 @@ FLASHMEM void SequencerStepEditHandler::configureOptForFocusedChordField() {
     if (!editedStepInRange(step)) return;
 
     step_chord_editor_workflow::configureFocusedFieldEncoder(
-        encoders_,
-        static_cast<oc::type::EncoderID>(Config::EncoderID::OPT),
-        sequencer_,
-        step,
-        effectiveScaleSettings(sequencer_, tracks_)
-    );
+        encoders_, static_cast<oc::type::EncoderID>(Config::EncoderID::OPT), sequencer_, step,
+        effectiveScaleSettings(sequencer_, tracks_));
 }
 
 FLASHMEM void SequencerStepEditHandler::resetFocusedChordFieldToDefault() {
@@ -565,11 +528,34 @@ FLASHMEM void SequencerStepEditHandler::resetFocusedChordFieldToDefault() {
     if (!editedStepInRange(step)) return;
 
     if (!step_chord_editor_workflow::resetFocusedFieldToDefault(
-            sequencer_,
-            step,
-            effectiveScaleSettings(sequencer_, tracks_)
-        )) return;
+            sequencer_, step, effectiveScaleSettings(sequencer_, tracks_)))
+        return;
     configureOptForFocusedRow();
+}
+
+FLASHMEM void SequencerStepEditHandler::toggleChordSourceSelector() {
+    if (!chordEditorActive() || sequencer_.stepContentDraft.exitPromptVisible.get()) { return; }
+    uint8_t step = 0;
+    if (!editedStepInRange(step)) return;
+    step_chord_editor_workflow::toggleSourceSelector(sequencer_, step,
+                                                     effectiveScaleSettings(sequencer_, tracks_));
+    configureOptForFocusedRow();
+}
+
+FLASHMEM void SequencerStepEditHandler::openPitchContextSettings() {
+    if (!chordEditorActive() || pitch_context_settings_open_) return;
+
+    // Pitch Context is Pattern-global, so it remains a separate Undo record
+    // even when reached from a Chord draft. The projection service also
+    // adapts the current draft formula without publishing it.
+    if (!sequencer_.stepContentDraft.active.get()) {
+        if (!commitStepEditHistory()) return;
+    }
+    sequencer_.stepPropertyInlineSelector.reset();
+    pattern_pitch_settings_.openOverlay();
+    pattern_pitch_settings_.focusedRow.set(3U);
+    overlays_.show(core::ui::OverlayType::PATTERN_PITCH_SETTINGS, true);
+    pitch_context_settings_open_ = true;
 }
 
 FLASHMEM bool SequencerStepEditHandler::chordEditorActive() const {
@@ -582,10 +568,7 @@ FLASHMEM bool SequencerStepEditHandler::editedStepInRange(uint8_t& step) const {
 
 FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage) {
     if (sequencer_.stepContentDraft.exitPromptVisible.get()) return;
-    if (step_edit_session_workflow::shouldCloseFromMacro(
-            sequencer_,
-            indexInPage
-        )) {
+    if (step_edit_session_workflow::shouldCloseFromMacro(sequencer_, indexInPage)) {
         closeStepEdit();
     }
 }
@@ -619,11 +602,8 @@ FLASHMEM bool SequencerStepEditHandler::canPasteFocusedStepContent() const {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return false;
 
-    return step_context_row_workflow::canPasteFocusedContextChild(
-        sequencer_,
-        step,
-        structure_clipboard_
-    );
+    return step_context_row_workflow::canPasteFocusedContextChild(sequencer_, step,
+                                                                  structure_clipboard_);
 }
 
 FLASHMEM void SequencerStepEditHandler::resetFocusedValueRowToDefault() {
@@ -638,33 +618,20 @@ FLASHMEM void SequencerStepEditHandler::resetFocusedValueRowToDefault() {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
 
-    if (!step_value_row_workflow::resetFocusedRowToDefault(sequencer_, step)) return;
+    auto descriptor = stepEditDescriptor(step);
+    if (step_edit_rows::isProperty(sequencer_.stepEdit.focusedRow.get())) {
+        descriptor.property = step_edit_rows::propertyForRow(sequencer_.stepEdit.focusedRow.get());
+    }
+    constexpr auto owner =
+        core::state::sequencer::SequencerPreparedPatternEditOwner::StepEditSession;
+    if (!beginPreparedPatternMutation(owner, step, stepResetPayloadPlan(sequencer_, step),
+                                      descriptor)) {
+        return;
+    }
+    const bool changed = step_value_row_workflow::resetFocusedRowToDefault(sequencer_, step);
+    if (!sealPreparedPatternMutation(owner, step, changed, descriptor)) return;
+    if (!changed) return;
     configureOptForFocusedRow();
-}
-
-FLASHMEM void SequencerStepEditHandler::recordContextMutation(
-    core::state::sequencer::SequencerHistoryPatternSnapshot before,
-    bool beforeCaptured
-) {
-    if (!beforeCaptured) return;
-
-    core::state::sequencer::SequencerHistoryPatternSnapshot after;
-    if (!core::state::sequencer::captureHistorySnapshot(sequencer_, after)) return;
-    if (core::state::sequencer::sameMusicalHistorySnapshot(before, after)) return;
-
-    history_.recordPattern(
-        std::move(before),
-        std::move(after),
-        core::state::sequencer::SequencerHistoryDescriptor{
-            .kind = core::state::sequencer::SequencerHistoryActionKind::StepEdit,
-            .stepIndex = sequencer_.stepEdit.stepIndex.get(),
-            .property = core::state::sequencer::StepProperty::NOTE,
-            .hasValue = false,
-        }
-    );
-
-    history_snapshot_valid_ =
-        core::state::sequencer::captureHistorySnapshot(sequencer_, history_snapshot_);
 }
 
 FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
@@ -672,31 +639,19 @@ FLASHMEM void SequencerStepEditHandler::clearFocusedContextChild() {
     if (!focusedContextHasChild()) return;
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
+    if (!commitStepEditHistory()) return;
 
-    history_.commitCoalescedPatternEdit();
-
-    core::state::sequencer::SequencerHistoryPatternSnapshot before;
-    bool beforeCaptured = false;
-    if (history_snapshot_valid_) {
-        before = std::move(history_snapshot_);
-        beforeCaptured = true;
-        history_snapshot_valid_ = false;
-    } else {
-        beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
-    }
-
-    const bool changed = step_context_row_workflow::clearFocusedContextChild(
-        sequencer_,
-        step
-    );
-    if (!changed) {
-        if (!history_snapshot_valid_ && beforeCaptured) {
-            history_snapshot_ = std::move(before);
-            history_snapshot_valid_ = true;
-        }
+    constexpr auto owner = core::state::sequencer::SequencerPreparedPatternEditOwner::StepContent;
+    const auto descriptor = stepEditDescriptor(step);
+    if (!beginPreparedPatternMutation(
+            owner, step,
+            core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload,
+            descriptor, true)) {
         return;
     }
-    recordContextMutation(std::move(before), beforeCaptured);
+    const bool changed = step_context_row_workflow::clearFocusedContextChild(sequencer_, step);
+    if (!sealPreparedPatternMutation(owner, step, changed, descriptor)) return;
+    if (!commitPreparedPatternMutation(owner)) return;
 }
 
 FLASHMEM void SequencerStepEditHandler::copyFocusedStepContent() {
@@ -705,11 +660,8 @@ FLASHMEM void SequencerStepEditHandler::copyFocusedStepContent() {
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
 
-    step_context_row_workflow::copyFocusedContextChildToClipboard(
-        sequencer_,
-        step,
-        structure_clipboard_
-    );
+    step_context_row_workflow::copyFocusedContextChildToClipboard(sequencer_, step,
+                                                                  structure_clipboard_);
 }
 
 FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
@@ -717,32 +669,19 @@ FLASHMEM void SequencerStepEditHandler::pasteFocusedStepContent() {
     if (!canPasteFocusedStepContent()) return;
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;
+    if (!commitStepEditHistory()) return;
 
-    history_.commitCoalescedPatternEdit();
-
-    core::state::sequencer::SequencerHistoryPatternSnapshot before;
-    bool beforeCaptured = false;
-    if (history_snapshot_valid_) {
-        before = std::move(history_snapshot_);
-        beforeCaptured = true;
-        history_snapshot_valid_ = false;
-    } else {
-        beforeCaptured = core::state::sequencer::captureHistorySnapshot(sequencer_, before);
-    }
-
+    constexpr auto owner = core::state::sequencer::SequencerPreparedPatternEditOwner::StepContent;
+    const auto descriptor = stepEditDescriptor(step);
+    const auto payloadPlan =
+        core::state::sequencer::graphView(sequencer_.pattern) == nullptr
+            ? core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FullWithProspectiveGraph
+            : core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload;
+    if (!beginPreparedPatternMutation(owner, step, payloadPlan, descriptor, true)) { return; }
     const bool changed = step_context_row_workflow::pasteFocusedContextChildFromClipboard(
-        sequencer_,
-        step,
-        structure_clipboard_
-    );
-    if (!changed) {
-        if (!history_snapshot_valid_ && beforeCaptured) {
-            history_snapshot_ = std::move(before);
-            history_snapshot_valid_ = true;
-        }
-        return;
-    }
-    recordContextMutation(std::move(before), beforeCaptured);
+        sequencer_, step, structure_clipboard_);
+    if (!sealPreparedPatternMutation(owner, step, changed, descriptor)) return;
+    if (!commitPreparedPatternMutation(owner)) return;
 }
 
 }  // namespace core::handler

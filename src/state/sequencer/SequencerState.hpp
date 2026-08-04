@@ -12,6 +12,7 @@
 
 #include "SequencerPatternState.hpp"
 #include "SequencerPatternEditorState.hpp"
+#include "SequencerQuickControlsDraft.hpp"
 #include "SequencerStepContentDraftSession.hpp"
 #include "SequencerUiState.hpp"
 
@@ -50,6 +51,7 @@ struct SequencerState {
     oc::note::sequencer::StepSequencerResolvedVariation lastResolvedVariation{};
     oc::note::sequencer::StepSequencerCycleVariationTelemetry cycleVariationTelemetry{};
     oc::note::sequencer::StepSequencerExpandedVariationTelemetry expandedVariationTelemetry{};
+    oc::note::sequencer::StepSequencerRuntimeDiagnostics runtimeDiagnostics{};
 
     /// Active property edited by the 8 macro encoders in Sequencer view
     Signal<StepProperty, 6> activeStepProperty{StepProperty::NOTE};
@@ -59,7 +61,7 @@ struct SequencerState {
     // UI state
     SequencerStepEditOverlayState stepEdit;
     SequencerContextSelectorState contextSelector;
-    SequencerStepPresetPickerState stepPresetPicker;
+    SequencerPresetLibrarySessionState presetLibrary;
     SequencerCcLaneUiState ccLaneUi;
     SequencerStepPropertyInlineSelectorState stepPropertyInlineSelector;
     SequencerStepContentSelectorState stepContentSelector;
@@ -69,6 +71,8 @@ struct SequencerState {
     SequencerPatternQuickControlsState patternQuickControls;
     SequencerPatternEditorState patternEditor;
     SequencerContentViewState contentView;
+    // One lazy detached Pattern used only while Quick Controls is held.
+    SequencerQuickControlsDraftSession quickControlsDraft;
     // One cold PSRAM scratch shared by Chord/Micro/Cycle creation sessions.
     // Published Pattern data remains untouched until explicit Apply/Save.
     SequencerStepContentDraftSession stepContentDraft;
@@ -172,9 +176,6 @@ struct SequencerState {
     }
 
     uint8_t visiblePage() const {
-        if (structureUi.previewAddPageSlot.get()) {
-            return clampPage(page.get());
-        }
         return normalizePage(page.get());
     }
 

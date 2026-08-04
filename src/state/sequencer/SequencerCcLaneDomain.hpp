@@ -113,6 +113,28 @@ struct SequencerCcLaneMutationResult {
     }
 };
 
+enum class SequencerCcLaneBatchMutationStatus : uint8_t {
+    APPLIED = 0,
+    NO_CHANGE,
+    INVALID_ARGUMENT,
+    INVALID_BANK,
+};
+
+/** Result of an allocation-free, unversioned bulk lane transformation. */
+struct SequencerCcLaneBatchMutationResult {
+    SequencerCcLaneBatchMutationStatus status =
+        SequencerCcLaneBatchMutationStatus::INVALID_ARGUMENT;
+
+    [[nodiscard]] bool accepted() const {
+        return status == SequencerCcLaneBatchMutationStatus::APPLIED ||
+               status == SequencerCcLaneBatchMutationStatus::NO_CHANGE;
+    }
+
+    [[nodiscard]] bool changed() const {
+        return status == SequencerCcLaneBatchMutationStatus::APPLIED;
+    }
+};
+
 /** Monotonic non-zero identity used to invalidate held runtime state. */
 [[nodiscard]] constexpr uint16_t nextSequencerCcLaneLifecycleGeneration(
     uint16_t current
@@ -135,8 +157,9 @@ struct SequencerCcLaneMutationResult {
 [[nodiscard]] bool validSequencerCcLaneBank(const SequencerCcLaneBank& bank);
 
 /**
- * Strict decode boundary. Inactive lanes are canonicalized; occupied malformed
- * or future-version data is rejected without partially publishing `out`.
+ * Strict current-format boundary. Every lane, including inactive slots, must
+ * already have its single canonical representation. Invalid or future-version
+ * data is rejected without partially publishing `out`.
  */
 [[nodiscard]] bool decodeCanonicalSequencerCcLaneBank(
     const SequencerCcLaneBank& persisted,
@@ -201,7 +224,7 @@ SequencerCcLaneMutationResult setSequencerCcLaneTransition(
     SequencerCcLaneTransition transition
 );
 
-SequencerCcLaneMutationResult removeSequencerCcLane(
+SequencerCcLaneMutationResult deleteSequencerCcLane(
     SequencerCcLaneBank& bank,
     uint8_t laneIndex
 );
@@ -231,6 +254,20 @@ bool removeSequencerCcLaneBankSpan(
     uint8_t removeAt,
     uint8_t removedLength
 );
+
+/**
+ * Removes every selected step in one stable forward pass, without publishing
+ * bank.revision. At least one source step must remain.
+ *
+ * The removal mask must not contain bits outside oldContentLength. The entire
+ * bank and mask are validated before entry 0 is written.
+ */
+[[nodiscard]] SequencerCcLaneBatchMutationResult
+removeSequencerCcLaneBankStepsUnversioned(
+    SequencerCcLaneBank& bank,
+    uint8_t oldContentLength,
+    const oc::note::sequencer::StepBitMask128& removalMask
+) noexcept;
 
 /**
  * Deterministic value proposed when turning an authored `--` cell.

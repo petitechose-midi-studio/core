@@ -11,8 +11,8 @@
 #include "handler/project/ProjectLifecycleDomainServices.hpp"
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
-#include "state/MidiSyncState.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
@@ -22,8 +22,6 @@
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
-#include "state/sequencer/SequencerState.hpp"
-#include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/StructureClipboardState.hpp"
 
@@ -37,12 +35,9 @@ public:
         oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays;
         oc::state::Signal<core::ui::ViewType, 8>& activeView;
         core::state::project::ProjectNavigationState& navigation;
-        core::state::sequencer::SequencerState& sequencer;
-        core::state::sequencer::SequencerTrackBankState& sequencerTracks;
         core::state::project::ProjectTrackState& projectTracks;
         core::state::project::ProjectTrackDomainServices trackDomain;
         core::state::StatusBarState& statusBar;
-        core::state::MidiSyncState& midiSync;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
         core::state::MacroState& macros;
@@ -56,6 +51,7 @@ public:
     };
 
     ProjectHandler(StateRefs state,
+                   DeviceSettingsDomainServices deviceSettings,
                    SequencerSettingsDomainServices sequencerSettings,
                    MacroEditDomainServices macroEditServices,
                    oc::api::EncoderAPI& encoders,
@@ -70,6 +66,14 @@ public:
     void update(uint32_t nowMs);
 
 private:
+    enum class PendingProjectCatalogAction : uint8_t {
+        NONE = 0,
+        LOAD_PICKER,
+        SAVE_CURRENT,
+        SAVE_RESET_AS_NEW,
+        SAVE_AS_AND_LOAD,
+    };
+
     void setupBindings();
     bool canHandleProjectInput() const;
     bool projectConfirmationActive() const;
@@ -87,7 +91,6 @@ private:
     bool applyFocusedMusicRootStep(int steps);
     bool applyFocusedMusicScaleStep(int steps);
     bool applyFocusedTransportStep(int steps);
-    bool applyFocusedStorageStep(int steps);
     bool applyFocusedRoutingStep(int steps);
     bool applyFocusedNameEditorStep(int steps);
     bool recordProjectSettingsChange(
@@ -101,7 +104,6 @@ private:
     bool setFocusedMusicRootValue(float normalized);
     bool setFocusedMusicScaleValue(float normalized);
     bool setFocusedTransportValue(float normalized);
-    bool setFocusedStorageValue(float normalized);
     bool setFocusedRoutingValue(float normalized);
     [[nodiscard]] bool setRoutingMidiChannel(
         uint8_t track,
@@ -157,6 +159,10 @@ private:
         focusedModulator() const;
     [[nodiscard]] uint16_t focusedModulatorDetailRowCount() const;
     bool activateFocusedProjectAction();
+    bool requestProjectLoadPicker();
+    bool saveCurrentProjectWithFeedback();
+    void beginPendingProjectCatalog(PendingProjectCatalogAction action);
+    void pollPendingProjectCatalog();
     bool loadProjectWithFeedback(const char* projectId);
     bool saveCurrentAndLoadProjectWithFeedback(const char* projectId);
     bool saveAsAndLoadProjectWithFeedback(const char* projectId);
@@ -167,12 +173,10 @@ private:
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;
     core::state::project::ProjectNavigationState& navigation_;
-    core::state::sequencer::SequencerState& sequencer_;
-    core::state::sequencer::SequencerTrackBankState& sequencer_tracks_;
     core::state::project::ProjectTrackState& project_tracks_;
     core::state::project::ProjectTrackDomainServices track_domain_;
     core::state::StatusBarState& status_bar_;
-    core::state::MidiSyncState& midi_sync_;
+    DeviceSettingsDomainServices device_settings_;
     core::state::macro::MacroPagesState& pages_;
     core::state::macro::MacroUiState& macro_ui_;
     core::state::MacroState& macros_;
@@ -194,9 +198,14 @@ private:
     uint32_t settings_gesture_commit_deadline_ms_ = 0U;
     uint8_t routing_gesture_track_ =
         core::state::project::PROJECT_TRACK_COUNT;
+    core::state::project::ProjectNodeId pending_project_catalog_node_ =
+        core::state::project::ProjectNodeId::OVERVIEW_ROOT;
+    uint8_t pending_project_catalog_row_ = 0U;
     bool modulator_bottom_left_was_pressed_ = false;
     bool modulator_bottom_right_was_pressed_ = false;
     bool recorded_shape_capture_button_active_ = false;
+    PendingProjectCatalogAction pending_project_catalog_action_ =
+        PendingProjectCatalogAction::NONE;
 };
 
 }  // namespace core::handler

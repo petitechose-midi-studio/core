@@ -2,7 +2,6 @@
 
 #include <config/PlatformCompat.hpp>
 
-#include "handler/sequencer/SequencerStructureStepOps.hpp"
 #include "state/project/ProjectDomainRules.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 
@@ -65,54 +64,6 @@ FLASHMEM void clearStructureStepPastePreview(
     auto& selection = sequencer.structureUi.stepSelection;
     selection.pastePreviewActive.set(false);
     selection.pastePreview.set(core::state::sequencer::SequencerStepPastePreview::NONE);
-}
-
-FLASHMEM bool commitStructureStepPastePlan(
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::StructureClipboardState& structureClipboard,
-    core::state::project::ProjectStepPasteMode mode,
-    const core::state::sequencer::SequencerStepPastePreviewPlan& plan
-) {
-    if (!structureClipboard.hasSequencerSteps()) return false;
-    if (plan.blocked || !plan.hasEntries()) return false;
-
-    if (!core::state::sequencer::resizeActiveContentForStepPaste(
-            sequencer,
-            mode,
-            plan.lastTarget,
-            core::state::sequencer::maxStepCursorForPaste(sequencer)
-        )) {
-        return false;
-    }
-
-    const auto* sourceGraph = structureClipboard.sequencerGraph.get();
-    bool changed = false;
-    for (uint8_t i = 0; i < plan.count; ++i) {
-        const auto& preview = plan.entries[i];
-        if (!preview.valid) continue;
-        const auto& entry =
-            structureClipboard.sequencerSteps.entries[preview.clipboardIndex];
-        if (!entry.valid) continue;
-        changed = structureClipboard.sequencerSteps.rootContext
-            ? writeRootStepFromClipboardEntry(
-                  sequencer,
-                  entry,
-                  sourceGraph,
-                  preview.targetStep
-              ) || changed
-            : writeChildStepFromClipboardEntry(
-                  sequencer,
-                  entry,
-                  sourceGraph,
-                  preview.targetStep
-              ) || changed;
-    }
-    if (changed) {
-        if (!core::state::sequencer::compactSequencerGraph(sequencer)) {
-            core::state::sequencer::refreshContentView(sequencer);
-        }
-    }
-    return changed;
 }
 
 }  // namespace core::handler

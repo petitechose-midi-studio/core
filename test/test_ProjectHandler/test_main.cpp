@@ -1,8 +1,9 @@
 #include <cassert>
-#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+
+#include <array>
 #include <filesystem>
 #include <iostream>
 
@@ -14,26 +15,28 @@
 #include <oc/core/input/InputBinding.hpp>
 #include <oc/impl/HostFileSystem.hpp>
 
-#include "../../src/handler/project/ProjectHandler.hpp"
+#include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/common/ModulatorNavigationWorkflow.hpp"
+#include "../../src/handler/project/ProjectHandler.hpp"
 #include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/settings/SequencerSettingsDomainServices.hpp"
+#include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/persistence/ProjectFileContainer.hpp"
 #include "../../src/persistence/ProjectFileStore.hpp"
 #include "../../src/persistence/ProjectSnapshotPersistenceCodec.hpp"
 #include "../../src/persistence/ProjectStatePersistenceCodec.hpp"
 #include "../../src/persistence/ProjectTrackStatePersistenceCodec.hpp"
-#include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/modulation/ProjectControlMacroOps.hpp"
 #include "../../src/state/project/ProjectMenuModel.hpp"
 #include "../../src/state/project/ProjectModulatorMenuModel.hpp"
-#include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../../src/state/project/ProjectNameKeyboard.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
+#include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
+#include "../support/ProductFileTestMutation.hpp"
 
 namespace {
 
@@ -51,11 +54,11 @@ std::filesystem::path projectHandlerFsRoot() {
     return std::filesystem::temp_directory_path() / "midi-studio-core-project-handler-test";
 }
 
-using test_support::TestButtonHardware;
-using test_support::TestEncoderHardware;
 using core::state::project::ProjectNodeId;
 using core::state::project::ProjectTab;
 using core::state::sequencer::SequencerHistoryScope;
+using test_support::TestButtonHardware;
+using test_support::TestEncoderHardware;
 
 constexpr float PROJECT_NAME_TEST_OPT_TICKS_PER_ROW =
     (600.0f * 4.0f) /
@@ -67,6 +70,8 @@ struct ProjectHandlerHarness {
     std::string projectFsRootPath;
     oc::impl::HostFileSystem projectFilesystem;
     core::persistence::ProductFileService productFiles;
+    core::app::ExtmemUniquePtr<core::persistence::ProductDirectoryCatalog>
+        productCatalog;
     test_support::CoreStorages storages;
     core::state::CoreState state;
 
@@ -77,6 +82,7 @@ struct ProjectHandlerHarness {
     oc::api::ButtonAPI buttons;
     oc::api::EncoderAPI encoders;
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
+    core::handler::DeviceSettingsDomainServices deviceSettings;
     core::handler::SequencerSettingsDomainServices sequencerSettings;
     core::handler::ProjectHandler handler;
 
@@ -84,27 +90,31 @@ struct ProjectHandlerHarness {
         : projectFsRootPath(projectHandlerFsRoot().string())
         , projectFilesystem(projectFsRootPath.c_str())
         , productFiles(projectFilesystem)
+        , productCatalog(
+              core::app::makeExtmemUniqueCold<
+                  core::persistence::ProductDirectoryCatalog>(productFiles)
+          )
         , state(storages.settings)
         , inputBinding(eventBus, mockTimeMs)
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
         , overlays(state.overlays, buttons)
+        , deviceSettings(core::handler::DeviceSettingsDomainServices::StateRefs{
+              state.midiSync,
+              state.deviceSettingsStore,
+          })
         , sequencerSettings(core::handler::SequencerSettingsDomainServices::StateRefs{
-              state.sequencer,
               state.sequencerTracks,
           })
         , handler(core::handler::ProjectHandler::StateRefs{
                       state.overlays,
                       state.activeView,
                       state.projectNavigation,
-                      state.sequencer,
-                      state.sequencerTracks,
                       state.projectTracks,
                       core::state::project::ProjectTrackDomainServices::fromCoreState(
                           state
                       ),
                       state.statusBar,
-                       state.midiSync,
                        state.pages,
                        state.macroUi,
                        state.macros,
@@ -114,11 +124,13 @@ struct ProjectHandlerHarness {
                        state.projectSettingsHistory,
                        state.structureClipboard,
                        core::handler::SequencerHistoryDomainServices::fromCoreState(state),
-                      core::handler::ProjectLifecycleDomainServices::fromCoreState(
+                       core::handler::ProjectLifecycleDomainServices::fromCoreState(
                           state,
-                          productFiles
+                          productFiles,
+                          *productCatalog
                       ),
                   },
+                  deviceSettings,
                   sequencerSettings,
                   core::handler::MacroEditDomainServices::fromCoreState(state),
                   encoders,
@@ -127,7 +139,9 @@ struct ProjectHandlerHarness {
                   mockTimeMs) {
         std::error_code ec;
         std::filesystem::remove_all(projectHandlerFsRoot(), ec);
+        assert(productCatalog);
         assert(productFiles.init());
+        state.activeView.set(core::ui::ViewType::PROJECT);
         overlays.setActiveViewProvider([]() { return PROJECT_SCOPE; });
         g_now_ms = 0;
     }
@@ -147,6 +161,16 @@ struct ProjectHandlerHarness {
     void tap(Config::ButtonID id) {
         press(id);
         release(id);
+        settleCatalog();
+    }
+
+    void settleCatalog() {
+        while (productCatalog->pending()) {
+            ++g_now_ms;
+            assert(productFiles.persistenceJobs().beginTurn(g_now_ms));
+            productCatalog->advance(g_now_ms, false);
+            handler.update(g_now_ms);
+        }
     }
 
     void advance(uint32_t ms) {
@@ -179,7 +203,7 @@ void saveCurrentProjectSnapshot(ProjectHandlerHarness& h, const char* id) {
     h.state.project.metadata.hasSavedIdentity = true;
     core::state::project::ProjectSnapshot snapshot;
     assert(core::state::project::captureProjectSnapshot(h.state, snapshot));
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     assert(store.save(snapshot));
 }
 
@@ -198,7 +222,7 @@ void writeFutureSequencerProjectFile(ProjectHandlerHarness& h, const char* id) {
     metadata.dirty = false;
 
     project_state_codec::ProjectMetaPayload meta{};
-    project_state_codec::fillMetaPayload(metadata, meta);
+    assert(project_state_codec::fillMetaPayload(metadata, meta));
     std::array<uint8_t, project_state_codec::PROJECT_META_PAYLOAD_SIZE> metaBytes{};
     assert(project_state_codec::encodeMetaPayload(
         meta,
@@ -262,10 +286,12 @@ void writeFutureSequencerProjectFile(ProjectHandlerHarness& h, const char* id) {
     char path[96] = {};
     const int pathLength = std::snprintf(path, sizeof(path), "projects/%s.mspj", id);
     assert(pathLength > 0 && static_cast<size_t>(pathLength) < sizeof(path));
-    const auto written = h.productFiles.write(path, 0, bytes, encoded.bytesWritten);
+    const auto written = core::test::writeProductFileFixture(
+        h.productFiles, path, 0, bytes, encoded.bytesWritten
+    );
     assert(written);
     assert(written.value() == encoded.bytesWritten);
-    assert(h.productFiles.flush(path));
+    assert(core::test::flushProductFileFixture(h.productFiles, path));
 }
 
 void moveProjectNameKeyboardRows(ProjectHandlerHarness& h, int rowsDown) {
@@ -340,7 +366,7 @@ void test_left_top_does_not_back_at_project_tab_root() {
     std::cout << "[PASS] test_left_top_does_not_back_at_project_tab_root\n";
 }
 
-void test_nav_press_activates_storage_autosave_only() {
+void test_storage_project_identity_is_inert_and_navigation_wraps() {
     ProjectHandlerHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
@@ -354,23 +380,22 @@ void test_nav_press_activates_storage_autosave_only() {
     h.turn(Config::EncoderID::NAV, 5.0f);
     assert(h.state.projectNavigation.focusedRow.get() == 5);
 
+    const uint8_t revisionBefore = h.state.projectNavigation.contentRevision.get();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
     h.tap(Config::ButtonID::NAV);
     assert(h.state.projectNavigation.focusedRow.get() == 5);
-    assert(h.state.projectNavigation.autosaveEnabled);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 6);
-
-    h.tap(Config::ButtonID::NAV);
-    assert(!h.state.projectNavigation.autosaveEnabled);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
+    assert(h.state.projectNavigation.contentRevision.get() == revisionBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.projectHistory.undoCount() == historyBefore);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     assert(h.state.projectNavigation.focusedRow.get() == 0);
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 5);
 
-    h.tap(Config::ButtonID::NAV);
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
-
-    std::cout << "[PASS] test_nav_press_activates_storage_autosave_only\n";
+    std::cout << "[PASS] Storage Project identity is inert and navigation wraps\n";
 }
 
 void test_music_scale_root_is_wired_and_undoable() {
@@ -396,6 +421,74 @@ void test_music_scale_root_is_wired_and_undoable() {
     assert(h.state.sequencerTracks.projectScaleSettings().root == 5);
 
     std::cout << "[PASS] test_music_scale_root_is_wired_and_undoable\n";
+}
+
+void test_music_scale_normalized_surface_and_rejections_are_atomic() {
+    ProjectHandlerHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.advance(600);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::MUSIC_SCALE);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 11U);
+    assert(h.state.sequencerHistory.undoCount(SequencerHistoryScope::FullBank) == 1U);
+    assert(h.state.undoProjectHistory());
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 5U);
+
+    const uint8_t undoBefore = h.state.sequencerHistory.undoCount();
+    const uint8_t redoBefore = h.state.sequencerHistory.redoCount();
+    const std::size_t retainedBefore = h.state.sequencerHistory.retainedBytes();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+
+    // NAV is the stepped Project surface. Its first FullBank allocation fails
+    // before any scale, History, redo-branch or dirty/save mutation.
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.tap(Config::ButtonID::NAV);
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+    }
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 5U);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(h.state.sequencerHistory.redoCount() == redoBefore);
+    assert(h.state.sequencerHistory.retainedBytes() == retainedBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(),
+                       "Memory unavailable - unchanged") == 0);
+
+    // OPT is the normalized Project surface. An exact value is a pre-boundary
+    // no-op and therefore never probes FullBank allocation or consumes redo.
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.turn(Config::EncoderID::OPT, 5.0f / 11.0f);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 5U);
+    assert(h.state.sequencerHistory.undoCount() == undoBefore);
+    assert(h.state.sequencerHistory.redoCount() == redoBefore);
+    assert(h.state.sequencerHistory.retainedBytes() == retainedBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+
+    // An unsealed predecessor cannot be crossed by Project Scale. The
+    // handler keeps the current choice and publishes the History-specific
+    // lifecycle reason without probing FullBank allocation.
+    assert(core::state::sequencer::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            0U, core::state::sequencer::StepProperty::NOTE, 100U,
+            core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly)));
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        h.tap(Config::ButtonID::NAV);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    assert(h.state.sequencerTracks.projectScaleSettings().root == 5U);
+    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(),
+                       "History unavailable - unchanged") == 0);
+
+    std::cout << "[PASS] Project NAV/OPT scale surfaces reject atomically and preserve no-op\n";
 }
 
 void test_project_cc_lane_defaults_are_direct_editable_values() {
@@ -497,6 +590,85 @@ void test_transport_values_are_editable_from_project() {
     std::cout << "[PASS] test_transport_values_are_editable_from_project\n";
 }
 
+void test_transport_sync_is_device_persisted_and_project_neutral() {
+    ProjectHandlerHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 2U);
+
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const bool dirtyBefore = h.state.project.metadata.dirty;
+    const auto saveTokenBefore = h.state.projectSessionSaveToken();
+    const int commitsBefore = h.storages.settings.commitCount;
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::MASTER);
+    assert(h.storages.settings.commitCount == commitsBefore + 1);
+
+    core::state::MidiSyncState restored{};
+    assert(h.state.deviceSettingsStore.load(restored));
+    assert(restored.mode.get() == core::state::MidiSyncMode::MASTER);
+
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+    assert(h.storages.settings.commitCount == commitsBefore + 2);
+    assert(h.state.deviceSettingsStore.load(restored));
+    assert(restored.mode.get() == core::state::MidiSyncMode::SLAVE);
+
+    assert(h.state.projectHistory.undoCount() == historyBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    assert(h.state.projectSessionSaveToken() == saveTokenBefore);
+    assert(!h.state.undoProjectHistory());
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+
+    std::cout << "[PASS] Project Transport persists Device Sync without Project mutation\n";
+}
+
+void test_transport_sync_failure_is_visible_retryable_and_project_neutral() {
+    ProjectHandlerHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 2U);
+
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const bool dirtyBefore = h.state.project.metadata.dirty;
+    const auto saveTokenBefore = h.state.projectSessionSaveToken();
+
+    h.storages.settings.setFaultMode(
+        test_support::MemoryStorage::FaultMode::COMMIT_FAIL
+    );
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::AUTO);
+    assert(std::strcmp(
+        h.state.projectNavigation.lifecycleFeedback.get(),
+        "Sync save failed - unchanged"
+    ) == 0);
+    assert(h.state.projectHistory.undoCount() == historyBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    assert(h.state.projectSessionSaveToken() == saveTokenBefore);
+
+    h.storages.settings.setFaultMode(test_support::MemoryStorage::FaultMode::NONE);
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::MASTER);
+    assert(h.state.projectNavigation.lifecycleFeedback.get()[0] == '\0');
+    assert(h.state.projectHistory.undoCount() == historyBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    assert(h.state.projectSessionSaveToken() == saveTokenBefore);
+
+    std::cout << "[PASS] Project Transport Sync failure is visible and retryable\n";
+}
+
 void test_project_setting_values_coalesce_and_use_global_history() {
     ProjectHandlerHarness h;
 
@@ -528,7 +700,7 @@ void test_project_setting_values_coalesce_and_use_global_history() {
     std::cout << "[PASS] Project settings coalesce and use global history\n";
 }
 
-void test_storage_autosave_is_editable_with_opt() {
+void test_storage_project_identity_ignores_opt() {
     ProjectHandlerHarness h;
 
     h.press(Config::ButtonID::LEFT_CENTER);
@@ -536,22 +708,20 @@ void test_storage_autosave_is_editable_with_opt() {
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::STORAGE_ROOT);
 
-    h.turn(Config::EncoderID::NAV, 6.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 6);
+    h.turn(Config::EncoderID::NAV, 5.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 5);
 
+    const uint8_t revisionBefore = h.state.projectNavigation.contentRevision.get();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.projectNavigation.autosaveEnabled);
-
     h.turn(Config::EncoderID::OPT, 0.0f);
-    assert(!h.state.projectNavigation.autosaveEnabled);
+    assert(h.state.projectNavigation.focusedRow.get() == 5);
+    assert(h.state.projectNavigation.contentRevision.get() == revisionBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.projectHistory.undoCount() == historyBefore);
 
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 0);
-
-    h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(!h.state.projectNavigation.autosaveEnabled);
-
-    std::cout << "[PASS] test_storage_autosave_is_editable_with_opt\n";
+    std::cout << "[PASS] Storage Project identity ignores OPT\n";
 }
 
 void test_project_name_editor_uses_physical_action_buttons() {
@@ -627,7 +797,7 @@ void test_overview_save_as_name_editor_persists_named_project() {
     assert(h.state.project.metadata.hasSavedIdentity);
     assert(!h.state.project.metadata.dirty);
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot saved;
     assert(store.load("Q q", saved));
     RestoredProjectHarness restored{saved};
@@ -707,7 +877,7 @@ void test_overview_rename_name_editor_moves_project_file() {
     assert(std::strcmp(h.state.project.metadata.id.data(), "q") == 0);
     assert(std::strcmp(h.state.project.metadata.name.data(), "q") == 0);
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot snapshot;
     assert(store.load("q", snapshot));
     assert(!store.load("p002", snapshot));
@@ -818,7 +988,7 @@ void test_new_project_save_as_new_persists_then_resets() {
     assert(!h.state.sequencer.pattern.isEnabled(2));
     assert(near(h.state.macros.slots[0].value.get(), 0.5f));
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot saved;
     assert(store.load("p001", saved));
 
@@ -870,7 +1040,7 @@ void test_new_project_save_current_persists_saved_identity_then_resets() {
     assert(h.state.sequencer.pattern.length.get() == core::state::sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(!h.state.sequencer.pattern.isEnabled(7));
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot saved;
     assert(store.load("p002", saved));
 
@@ -1009,6 +1179,7 @@ void test_overview_save_and_load_roundtrip_project_file() {
     assert(h.state.projectNavigation.loadProjects.count == 1);
     assert(std::strcmp(h.state.projectNavigation.loadProjects.entries[0].id.data(), "p001") == 0);
 
+    const auto beforeLoadToken = h.state.projectSessionSaveToken();
     h.tap(Config::ButtonID::NAV);
 
     assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded p001") == 0);
@@ -1022,6 +1193,7 @@ void test_overview_save_and_load_roundtrip_project_file() {
     assert(h.state.sequencer.pattern.isEnabled(2));
     assert(h.state.pages.activePageData().cc[0] == 81);
     assert(near(h.state.macros.slots[0].value.get(), 0.63f));
+    assert(h.state.projectSessionSaveToken().session != beforeLoadToken.session);
 
     std::cout << "[PASS] test_overview_save_and_load_roundtrip_project_file\n";
 }
@@ -1042,6 +1214,79 @@ void test_overview_load_missing_project_reports_failure() {
     assert(h.state.statusBar.tempo.get() == 133.0f);
 
     std::cout << "[PASS] test_overview_load_missing_project_reports_failure\n";
+}
+
+void test_load_picker_opens_immediately_and_waits_for_playback_stop() {
+    ProjectHandlerHarness h;
+    saveCurrentProjectSnapshot(h, "p001");
+    h.state.statusBar.playing.set(true);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+
+    assert(h.productCatalog->pending());
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.depth.get() == 1U);
+    assert(!h.state.projectNavigation.loadProjects.scanned);
+    assert(std::strcmp(
+               h.state.projectNavigation.lifecycleFeedback.get(),
+               "Stop playback to browse"
+           ) == 0);
+    auto page = core::state::project::buildProjectMenuPage(
+        h.state.projectNavigation
+    );
+    assert(page.rowCount == 1U);
+    assert(std::strcmp(page.rows[0].label, "Loading projects") == 0);
+    assert(!page.rows[0].enabled);
+
+    for (uint8_t turn = 0U; turn < 3U; ++turn) {
+        ++g_now_ms;
+        assert(h.productFiles.persistenceJobs().beginTurn(g_now_ms));
+        h.productCatalog->advance(g_now_ms, true);
+        h.handler.update(g_now_ms);
+        assert(h.productCatalog->pending());
+        assert(h.state.projectNavigation.currentNode.get() ==
+               ProjectNodeId::LOAD_PROJECT);
+        assert(h.state.projectNavigation.depth.get() == 1U);
+    }
+
+    h.state.statusBar.playing.set(false);
+    h.settleCatalog();
+
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.depth.get() == 1U);
+    assert(h.state.projectNavigation.loadProjects.scanned);
+    assert(h.state.projectNavigation.loadProjects.count == 1U);
+    assert(std::strcmp(
+               h.state.projectNavigation.loadProjects.entries[0].id.data(),
+               "p001"
+           ) == 0);
+    assert(h.state.projectNavigation.lifecycleFeedback.empty());
+
+    std::cout << "[PASS] load picker opens immediately and waits for playback stop\n";
+}
+
+void test_pending_load_picker_can_be_cancelled_during_playback() {
+    ProjectHandlerHarness h;
+    h.state.statusBar.playing.set(true);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.productCatalog->pending());
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::LOAD_PROJECT);
+
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::OVERVIEW_ROOT);
+    assert(h.state.projectNavigation.depth.get() == 0U);
+    h.handler.update(g_now_ms);
+
+    std::cout << "[PASS] pending load picker can be cancelled during playback\n";
 }
 
 void test_load_project_picker_selects_detected_project() {
@@ -1076,10 +1321,11 @@ void test_load_project_picker_selects_detected_project() {
     std::cout << "[PASS] test_load_project_picker_selects_detected_project\n";
 }
 
-void test_future_project_load_reports_read_only_and_blocks_direct_save() {
+void test_future_project_load_is_rejected_atomically() {
     using Status = core::handler::ProjectLifecycleDomainServices::Status;
     ProjectHandlerHarness h;
     writeFutureSequencerProjectFile(h, "future-project");
+    const float tempoBefore = h.state.statusBar.tempo.get();
 
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.tap(Config::ButtonID::NAV);
@@ -1093,93 +1339,23 @@ void test_future_project_load_reports_read_only_and_blocks_direct_save() {
     h.tap(Config::ButtonID::NAV);
     assert(std::strcmp(
                h.state.projectNavigation.lifecycleFeedback.get(),
-               "Loaded read-only future-project"
-           ) == 0);
-    assert(std::strcmp(h.state.project.metadata.id.data(), "future-project") == 0);
-    assert(h.state.project.metadata.hasSavedIdentity);
-    assert(!h.state.project.metadata.overwriteSafe);
-
-    h.tap(Config::ButtonID::LEFT_TOP);
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::OVERVIEW_ROOT);
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(h.state.projectNavigation.focusedRow.get() == 2);
-    h.tap(Config::ButtonID::NAV);
-    assert(std::strcmp(
-               h.state.projectNavigation.lifecycleFeedback.get(),
-               "Save As required future-project"
-           ) == 0);
-    assert(!h.state.project.metadata.overwriteSafe);
+               "Load failed future-project"
+    ) == 0);
+    assert(!h.state.project.metadata.hasSavedIdentity);
+    assert(h.state.statusBar.tempo.get() == tempoBefore);
 
     auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
         h.state,
-        h.productFiles
+        h.productFiles,
+        *h.productCatalog
     );
-    const auto directSave = lifecycle.saveCurrentProject();
-    assert(directSave.status == Status::UNSAFE_OVERWRITE);
-    assert(std::strcmp(h.state.project.metadata.id.data(), "future-project") == 0);
-    assert(!h.state.project.metadata.overwriteSafe);
-
-    const auto saveAs = lifecycle.saveAsNextProject();
-    assert(saveAs.success());
-    assert(std::strcmp(h.state.project.metadata.id.data(), "p001") == 0);
-    assert(h.state.project.metadata.overwriteSafe);
+    const auto tokenBeforeRejectedLoad = h.state.projectSessionSaveToken();
+    const auto directLoad = lifecycle.loadProject("future-project");
+    assert(directLoad.status == Status::LOAD_FAILED);
+    assert(tokenBeforeRejectedLoad == h.state.projectSessionSaveToken());
     assert(h.productFiles.stat("projects/future-project.mspj"));
-    assert(h.productFiles.stat("projects/p001.mspj"));
 
-    std::cout << "[PASS] test_future_project_load_reports_read_only_and_blocks_direct_save\n";
-}
-
-void test_dirty_read_only_project_load_confirmation_forces_save_as() {
-    ProjectHandlerHarness h;
-
-    h.state.statusBar.tempo.set(121.0f);
-    h.state.statusBar.tempoDisplay.set(121.0f);
-    saveCurrentProjectSnapshot(h, "p002");
-    writeFutureSequencerProjectFile(h, "future-project");
-
-    auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
-        h.state,
-        h.productFiles
-    );
-    const auto loadedFuture = lifecycle.loadProject("future-project");
-    assert(loadedFuture.success());
-    assert(!h.state.project.metadata.overwriteSafe);
-
-    h.state.statusBar.tempo.set(199.0f);
-    h.state.statusBar.tempoDisplay.set(199.0f);
-    h.state.markProjectMutated();
-    assert(h.state.project.metadata.dirty);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    h.tap(Config::ButtonID::NAV);
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
-    assert(h.state.projectNavigation.loadProjects.count == 2);
-
-    h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(std::strcmp(
-               h.state.projectNavigation.loadProjects.entries[
-                   h.state.projectNavigation.focusedRow.get()
-               ].id.data(),
-               "p002"
-           ) == 0);
-    h.tap(Config::ButtonID::NAV);
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT_CONFIRM);
-    assert(!h.state.projectNavigation.pendingLoadCanSaveCurrent);
-
-    h.tap(Config::ButtonID::NAV);
-    assert(h.state.projectNavigation.currentNode.get() == ProjectNodeId::LOAD_PROJECT);
-    assert(std::strcmp(h.state.projectNavigation.lifecycleFeedback.get(), "Loaded p002") == 0);
-    assert(std::strcmp(h.state.project.metadata.id.data(), "p002") == 0);
-    assert(h.state.project.metadata.overwriteSafe);
-    assert(h.state.statusBar.tempo.get() == 121.0f);
-
-    core::persistence::ProjectFileStore store(h.productFiles);
-    core::state::project::ProjectSnapshot savedReadOnlyAsNew;
-    assert(store.load("p001", savedReadOnlyAsNew));
-    RestoredProjectHarness restored{savedReadOnlyAsNew};
-    assert(restored.state.statusBar.tempo.get() == 199.0f);
-
-    std::cout << "[PASS] test_dirty_read_only_project_load_confirmation_forces_save_as\n";
+    std::cout << "[PASS] future project load is rejected atomically\n";
 }
 
 void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
@@ -1224,7 +1400,7 @@ void test_dirty_project_load_prompts_save_and_preserves_latest_edits() {
     assert(h.state.sequencer.pattern.note[5] == 74);
     assert(h.state.sequencer.pattern.velocity[5] == 111);
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot loaded;
     assert(store.load("p001", loaded));
 
@@ -1273,7 +1449,7 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
     assert(std::strcmp(h.state.project.metadata.id.data(), "p002") == 0);
     assert(h.state.statusBar.tempo.get() == 144.0f);
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot saveduntitled;
     assert(store.load("p001", saveduntitled));
 
@@ -1294,27 +1470,32 @@ void test_manual_save_as_rejects_invalid_and_duplicate_slugs() {
     ProjectHandlerHarness h;
     auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
         h.state,
-        h.productFiles
+        h.productFiles,
+        *h.productCatalog
     );
 
     h.state.statusBar.tempo.set(132.0f);
     h.state.statusBar.tempoDisplay.set(132.0f);
+    const auto beforeSaveAs = h.state.projectSessionSaveToken();
     auto saved = lifecycle.saveAsProject("live-set.01");
     assert(saved.success());
     assert(std::strcmp(h.state.project.metadata.id.data(), "live-set.01") == 0);
     assert(std::strcmp(h.state.project.metadata.name.data(), "live-set.01") == 0);
+    assert(h.state.projectSessionSaveToken().session != beforeSaveAs.session);
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot snapshot;
     assert(store.load("live-set.01", snapshot));
     RestoredProjectHarness restored{snapshot};
     assert(restored.state.statusBar.tempo.get() == 132.0f);
 
+    const auto beforeRejectedSaves = h.state.projectSessionSaveToken();
     auto duplicate = lifecycle.saveAsProject("live-set.01");
     assert(duplicate.status == Status::ALREADY_EXISTS);
 
     auto invalid = lifecycle.saveAsProject("Live_Set");
     assert(invalid.status == Status::INVALID_ARGUMENT);
+    assert(h.state.projectSessionSaveToken() == beforeRejectedSaves);
 
     std::cout << "[PASS] test_manual_save_as_rejects_invalid_and_duplicate_slugs\n";
 }
@@ -1324,7 +1505,8 @@ void test_rename_current_project_moves_catalogue_file() {
     ProjectHandlerHarness h;
     auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
         h.state,
-        h.productFiles
+        h.productFiles,
+        *h.productCatalog
     );
 
     h.state.statusBar.tempo.set(126.0f);
@@ -1335,23 +1517,27 @@ void test_rename_current_project_moves_catalogue_file() {
     h.state.statusBar.tempoDisplay.set(158.0f);
     h.state.markProjectMutated();
 
+    const auto beforeRename = h.state.projectSessionSaveToken();
     auto renamed = lifecycle.renameCurrentProject("renamed-project");
     assert(renamed.success());
     assert(std::strcmp(h.state.project.metadata.id.data(), "renamed-project") == 0);
     assert(std::strcmp(h.state.project.metadata.name.data(), "renamed-project") == 0);
     assert(!h.state.project.metadata.dirty);
+    assert(h.state.projectSessionSaveToken().session != beforeRename.session);
 
     assert(!h.productFiles.stat("projects/original.project.mspj"));
     assert(h.productFiles.stat("projects/renamed-project.mspj"));
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot snapshot;
     assert(store.load("renamed-project", snapshot));
     RestoredProjectHarness restored{snapshot};
     assert(restored.state.statusBar.tempo.get() == 158.0f);
 
+    const auto beforeInvalidRename = h.state.projectSessionSaveToken();
     auto invalid = lifecycle.renameCurrentProject("bad_name");
     assert(invalid.status == Status::INVALID_ARGUMENT);
+    assert(h.state.projectSessionSaveToken() == beforeInvalidRename);
 
     std::cout << "[PASS] test_rename_current_project_moves_catalogue_file\n";
 }
@@ -1361,7 +1547,8 @@ void test_rename_current_project_rejects_existing_target_without_mutating_state(
     ProjectHandlerHarness h;
     auto lifecycle = core::handler::ProjectLifecycleDomainServices::fromCoreState(
         h.state,
-        h.productFiles
+        h.productFiles,
+        *h.productCatalog
     );
 
     assert(lifecycle.saveAsProject("p001").success());
@@ -1375,15 +1562,17 @@ void test_rename_current_project_rejects_existing_target_without_mutating_state(
     h.state.statusBar.tempoDisplay.set(177.0f);
     h.state.markProjectMutated();
 
+    const auto beforeRejectedRename = h.state.projectSessionSaveToken();
     auto duplicate = lifecycle.renameCurrentProject("p001");
     assert(duplicate.status == Status::ALREADY_EXISTS);
     assert(std::strcmp(h.state.project.metadata.id.data(), "p002") == 0);
     assert(h.state.project.metadata.dirty);
+    assert(h.state.projectSessionSaveToken() == beforeRejectedRename);
 
     assert(h.productFiles.stat("projects/p001.mspj"));
     assert(h.productFiles.stat("projects/p002.mspj"));
 
-    core::persistence::ProjectFileStore store(h.productFiles);
+    core::persistence::ProjectFileStore store(h.productFiles, *h.productCatalog);
     core::state::project::ProjectSnapshot p002;
     assert(store.load("p002", p002));
     RestoredProjectHarness restored{p002};
@@ -2746,14 +2935,17 @@ int main() {
     test_nav_turn_on_overview_actions();
     test_left_top_backs_out_of_nested_project_folder();
     test_left_top_does_not_back_at_project_tab_root();
-    test_nav_press_activates_storage_autosave_only();
+    test_storage_project_identity_is_inert_and_navigation_wraps();
     test_music_scale_root_is_wired_and_undoable();
+    test_music_scale_normalized_surface_and_rejections_are_atomic();
     test_project_cc_lane_defaults_are_direct_editable_values();
     test_left_center_hold_switches_tabs();
     test_left_center_hold_respects_fast_tab_delta();
     test_transport_values_are_editable_from_project();
+    test_transport_sync_is_device_persisted_and_project_neutral();
+    test_transport_sync_failure_is_visible_retryable_and_project_neutral();
     test_project_setting_values_coalesce_and_use_global_history();
-    test_storage_autosave_is_editable_with_opt();
+    test_storage_project_identity_ignores_opt();
     test_project_name_editor_uses_physical_action_buttons();
     test_overview_save_as_name_editor_persists_named_project();
     test_overview_save_as_name_editor_rejects_duplicate_project();
@@ -2766,9 +2958,10 @@ int main() {
     test_routing_output_channels_are_editable();
     test_overview_save_and_load_roundtrip_project_file();
     test_overview_load_missing_project_reports_failure();
+    test_load_picker_opens_immediately_and_waits_for_playback_stop();
+    test_pending_load_picker_can_be_cancelled_during_playback();
     test_load_project_picker_selects_detected_project();
-    test_future_project_load_reports_read_only_and_blocks_direct_save();
-    test_dirty_read_only_project_load_confirmation_forces_save_as();
+    test_future_project_load_is_rejected_atomically();
     test_dirty_project_load_prompts_save_and_preserves_latest_edits();
     test_untitled_dirty_load_prompts_save_as_and_then_loads_target();
     test_manual_save_as_rejects_invalid_and_duplicate_slugs();

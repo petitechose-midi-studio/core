@@ -59,6 +59,13 @@ FLASHMEM bool ProjectHandler::saveCurrentAndLoadProjectWithFeedback(const char* 
 FLASHMEM bool ProjectHandler::saveAsAndLoadProjectWithFeedback(const char* projectId) {
     const auto saved = lifecycle_.saveAsNextProject();
     const char* savedProjectId = lifecycle_.currentProjectId();
+    if (saved.status == ProjectLifecycleDomainServices::Status::QUEUED) {
+        beginPendingProjectCatalog(
+            PendingProjectCatalogAction::SAVE_AS_AND_LOAD
+        );
+        return false;
+    }
+    pending_project_catalog_action_ = PendingProjectCatalogAction::NONE;
     if (!saved.success()) {
         char feedback[32] = {};
         formatProjectLifecycleFeedback(
@@ -82,6 +89,13 @@ FLASHMEM bool ProjectHandler::saveAndResetProjectWithFeedback(bool saveAsNew) {
         ? lifecycle_.saveAsNextProject()
         : lifecycle_.saveCurrentProject();
     const char* savedProjectId = lifecycle_.currentProjectId();
+    if (saved.status == ProjectLifecycleDomainServices::Status::QUEUED) {
+        beginPendingProjectCatalog(
+            PendingProjectCatalogAction::SAVE_RESET_AS_NEW
+        );
+        return false;
+    }
+    pending_project_catalog_action_ = PendingProjectCatalogAction::NONE;
     char feedback[32] = {};
     const char* verb = saved.success()
         ? "Saved"
@@ -166,6 +180,128 @@ FLASHMEM bool ProjectHandler::commitProjectNameEditor() {
     return true;
 }
 
+FLASHMEM bool ProjectHandler::requestProjectLoadPicker() {
+    const auto result = lifecycle_.refreshLoadableProjects();
+    if (result.status == ProjectLifecycleDomainServices::Status::QUEUED) {
+        const bool continuingRequest =
+            pending_project_catalog_action_ ==
+                PendingProjectCatalogAction::LOAD_PICKER &&
+            navigation_.currentNode.get() ==
+                core::state::project::ProjectNodeId::LOAD_PROJECT;
+        if (!continuingRequest) {
+            navigation_.loadProjects.clear();
+            navigation_.notifyContentChanged();
+        }
+        if (navigation_.currentNode.get() !=
+            core::state::project::ProjectNodeId::LOAD_PROJECT) {
+            core::state::project::openProjectLoadPicker(navigation_);
+        }
+        beginPendingProjectCatalog(PendingProjectCatalogAction::LOAD_PICKER);
+        return true;
+    }
+
+    pending_project_catalog_action_ = PendingProjectCatalogAction::NONE;
+    if (!result.success()) {
+        navigation_.setLifecycleFeedback(
+            projectLifecycleFailureLabel(result.status, "List failed")
+        );
+        OC_LOG_WARN("[Project] list projects failed status={}",
+                    static_cast<unsigned>(result.status));
+        return true;
+    }
+
+    if (navigation_.currentNode.get() !=
+        core::state::project::ProjectNodeId::LOAD_PROJECT) {
+        core::state::project::openProjectLoadPicker(navigation_);
+    }
+    if (navigation_.loadProjects.count == 0) {
+        navigation_.setLifecycleFeedback("No projects");
+    } else {
+        navigation_.clearLifecycleFeedback();
+        OC_LOG_INFO("[Project] list projects count={} truncated={}",
+                    static_cast<unsigned>(navigation_.loadProjects.count),
+                    navigation_.loadProjects.truncated ? 1 : 0);
+    }
+    return true;
+}
+
+FLASHMEM bool ProjectHandler::saveCurrentProjectWithFeedback() {
+    const auto result = lifecycle_.saveCurrentProject();
+    const char* projectId = lifecycle_.currentProjectId();
+    if (result.status == ProjectLifecycleDomainServices::Status::QUEUED) {
+        beginPendingProjectCatalog(PendingProjectCatalogAction::SAVE_CURRENT);
+        return true;
+    }
+    pending_project_catalog_action_ = PendingProjectCatalogAction::NONE;
+
+    char feedback[32] = {};
+    const char* verb = result.success()
+        ? "Saved"
+        : projectLifecycleFailureLabel(result.status, "Save failed");
+    formatProjectLifecycleFeedback(feedback, sizeof(feedback), verb, projectId);
+    navigation_.setLifecycleFeedback(feedback);
+    if (result.success()) {
+        OC_LOG_INFO("[Project] save {} bytes={}", projectId, result.bytes);
+    } else {
+        OC_LOG_WARN("[Project] save {} failed status={}",
+                    projectId,
+                    static_cast<unsigned>(result.status));
+    }
+    return true;
+}
+
+FLASHMEM void ProjectHandler::beginPendingProjectCatalog(
+    PendingProjectCatalogAction action
+) {
+    pending_project_catalog_action_ = action;
+    pending_project_catalog_node_ = navigation_.currentNode.get();
+    pending_project_catalog_row_ = navigation_.focusedRow.get();
+    navigation_.setLifecycleFeedback(
+        action == PendingProjectCatalogAction::LOAD_PICKER &&
+                status_bar_.playing.get()
+            ? "Stop playback to browse"
+            : "Loading projects"
+    );
+}
+
+void ProjectHandler::pollPendingProjectCatalog() {
+    if (pending_project_catalog_action_ ==
+        PendingProjectCatalogAction::NONE) return;
+    const bool requestStillCurrent =
+        active_view_.get() == core::ui::ViewType::PROJECT &&
+        !overlays_.hasVisible() &&
+        !navigation_.physicalHoldActive.get() &&
+        navigation_.currentNode.get() == pending_project_catalog_node_ &&
+        navigation_.focusedRow.get() == pending_project_catalog_row_;
+    if (!requestStillCurrent) {
+        pending_project_catalog_action_ =
+            PendingProjectCatalogAction::NONE;
+        return;
+    }
+
+    const auto action = pending_project_catalog_action_;
+    switch (action) {
+        case PendingProjectCatalogAction::LOAD_PICKER:
+            (void)requestProjectLoadPicker();
+            break;
+        case PendingProjectCatalogAction::SAVE_CURRENT:
+            (void)saveCurrentProjectWithFeedback();
+            break;
+        case PendingProjectCatalogAction::SAVE_RESET_AS_NEW:
+            (void)saveAndResetProjectWithFeedback(true);
+            break;
+        case PendingProjectCatalogAction::SAVE_AS_AND_LOAD:
+            if (saveAsAndLoadProjectWithFeedback(
+                    navigation_.pendingLoadProjectId.data()
+                )) {
+                back();
+            }
+            break;
+        case PendingProjectCatalogAction::NONE:
+            break;
+    }
+}
+
 FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
     using core::state::project::ProjectNodeId;
 
@@ -181,8 +317,7 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
     if (node == ProjectNodeId::NEW_PROJECT_CONFIRM) {
         if (row == 0) {
             return saveAndResetProjectWithFeedback(
-                !lifecycle_.currentProjectHasSavedIdentity() ||
-                    !lifecycle_.currentProjectOverwriteSafe()
+                !lifecycle_.currentProjectHasSavedIdentity()
             );
         }
         if (row == 1) {
@@ -203,8 +338,7 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
             core::state::project::openProjectLoadConfirmation(
                 navigation_,
                 projectId,
-                lifecycle_.currentProjectHasSavedIdentity() &&
-                    lifecycle_.currentProjectOverwriteSafe()
+                lifecycle_.currentProjectHasSavedIdentity()
             );
             return true;
         }
@@ -266,44 +400,14 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
         (node == ProjectNodeId::STORAGE_ROOT && row == 4);
     if (loadProjectAction) {
         navigation_.clearLifecycleFeedback();
-        const auto result = lifecycle_.refreshLoadableProjects();
-        if (!result.success()) {
-            navigation_.setLifecycleFeedback(projectLifecycleFailureLabel(result.status, "List failed"));
-            OC_LOG_WARN("[Project] list projects failed status={}",
-                        static_cast<unsigned>(result.status));
-            return true;
-        }
-        core::state::project::openProjectLoadPicker(navigation_);
-        if (navigation_.loadProjects.count == 0) {
-            navigation_.setLifecycleFeedback("No projects");
-        } else {
-            OC_LOG_INFO("[Project] list projects count={} truncated={}",
-                        static_cast<unsigned>(navigation_.loadProjects.count),
-                        navigation_.loadProjects.truncated ? 1 : 0);
-        }
-        return true;
+        return requestProjectLoadPicker();
     }
 
     const bool saveProjectAction =
         (node == ProjectNodeId::OVERVIEW_ROOT && row == 2) ||
         (node == ProjectNodeId::STORAGE_ROOT && row == 0);
     if (saveProjectAction) {
-        const auto result = lifecycle_.saveCurrentProject();
-        const char* projectId = lifecycle_.currentProjectId();
-        char feedback[32] = {};
-        const char* verb = result.success()
-            ? "Saved"
-            : projectLifecycleFailureLabel(result.status, "Save failed");
-        formatProjectLifecycleFeedback(feedback, sizeof(feedback), verb, projectId);
-        navigation_.setLifecycleFeedback(feedback);
-        if (result.success()) {
-            OC_LOG_INFO("[Project] save {} bytes={}", projectId, result.bytes);
-        } else {
-            OC_LOG_WARN("[Project] save {} failed status={}",
-                        projectId,
-                        static_cast<unsigned>(result.status));
-        }
-        return true;
+        return saveCurrentProjectWithFeedback();
     }
 
     const bool saveAsProjectAction =

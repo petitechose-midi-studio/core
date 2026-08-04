@@ -1,0 +1,81 @@
+# UX workflow: canonical Macro selection lifecycle at Macro, Page and Track.
+# Purpose: proves one grammar for sparse selection, Copy, placement, Paste and
+# the two local LEFT_TOP tiers without opening the global View Selector.
+# Expect: capture_changed:macro_items_selected=macro_selection_placing
+# Expect: capture_changed:macro_selection_placing=macro_selection_pasted
+# Expect: capture_changed:page_selected=page_selection_placing
+# Expect: capture_changed:page_selection_placing=page_selection_pasted
+# Expect: capture_changed:track_selected=track_selection_placing
+# Expect: capture_changed:track_selection_placing=track_selection_pasted
+
+0 scenario macro-automation-two-macros
+80 capture screen macro_page_ready
+
+# Page -> Macro, then a stationary NAV hold enters Macro Slot selection.
+180 button NAV down
+260 encoder NAV 1
+340 button NAV up
+500 button NAV down
+1580 tick
+1660 button NAV up
+1840 capture screen macro_selection_empty
+
+# Select two Slots, Copy, move the placement anchor and Paste.
+1940 tap MACRO_1 60
+2120 tap MACRO_2 60
+2320 capture screen macro_items_selected
+2420 tap BOTTOM_RIGHT 60
+2640 capture screen macro_selection_placing
+2740 encoder NAV 1
+2940 capture screen macro_selection_destination
+3040 button BOTTOM_RIGHT down
+4120 tick
+4200 button BOTTOM_RIGHT up
+4440 capture screen macro_selection_pasted
+
+# First Back clears placement while keeping selection armed; second Back exits.
+4540 tap LEFT_TOP 60
+4760 capture screen macro_selection_cleared
+4860 tap LEFT_TOP 60
+5080 capture screen macro_selection_exited
+
+# Page selection uses the same lifecycle and may create the next compact page.
+5200 scenario macro-automation-clean
+5360 button NAV down
+6440 tick
+6520 button NAV up
+6700 tap NAV 60
+6920 capture screen page_selected
+7020 tap BOTTOM_RIGHT 60
+7240 capture screen page_selection_placing
+7340 encoder NAV 1
+7540 capture screen page_selection_destination
+7640 button BOTTOM_RIGHT down
+8720 tick
+8800 button BOTTOM_RIGHT up
+9040 capture screen page_selection_pasted
+9140 tap LEFT_TOP 60
+9360 tap LEFT_TOP 60
+9580 capture screen page_selection_exited
+
+# Track selection is Project-wide even when initiated from Macro.
+9700 scenario macro-automation-clean
+9860 button NAV down
+9940 encoder NAV -1
+10020 button NAV up
+10180 button NAV down
+11260 tick
+11340 button NAV up
+11520 tap NAV 60
+11740 capture screen track_selected
+11840 tap BOTTOM_RIGHT 60
+12060 capture screen track_selection_placing
+12160 encoder NAV 1
+12360 capture screen track_selection_destination
+12460 button BOTTOM_RIGHT down
+13540 tick
+13620 button BOTTOM_RIGHT up
+13860 capture screen track_selection_pasted
+13960 tap LEFT_TOP 60
+14180 tap LEFT_TOP 60
+14400 capture screen track_selection_exited

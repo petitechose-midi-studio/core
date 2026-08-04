@@ -1,12 +1,12 @@
 #pragma once
 
+#include <functional>
+
 #include <oc/state/FixedSubscriptionList.hpp>
 #include <oc/state/Signal.hpp>
 
 #include "handler/common/SharedTrackDomainServices.hpp"
-#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/TrackNavigationState.hpp"
-#include "state/sequencer/SequencerStructureHistory.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
@@ -15,20 +15,12 @@ namespace core::handler {
 /**
  * Owns sequencer page/track navigation and contextual selection state.
  *
- * It previews add slots, switches page/track focus, enters Track/Page/Step
- * selection, and creates previewed structures. Destructive edits live in
- * SequencerStructureEditWorkflow.
+ * It previews Track add slots, switches page/track focus and enters
+ * Track/Page/Step selection. Creation and destructive edits live in the
+ * corresponding edit workflows.
  */
 class SequencerStructureNavigationWorkflow {
 public:
-    enum class CreationResult : uint8_t {
-        APPLIED = 0,
-        NO_CHANGE,
-        HISTORY_UNAVAILABLE,
-        MUTATION_FAILED,
-        ROLLBACK_FAILED,
-    };
-
     struct StateRefs {
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& tracks;
@@ -36,8 +28,8 @@ public:
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         core::state::TrackNavigationState& trackNavigation;
-        SharedTrackDomainServices sharedTracks;
-        SequencerHistoryDomainServices history;
+        /** Borrowed facade; its owner must outlive this workflow. */
+        std::reference_wrapper<const SharedTrackDomainServices> sharedTracks;
     };
 
     explicit SequencerStructureNavigationWorkflow(StateRefs state);
@@ -50,28 +42,23 @@ public:
     bool selectionActive() const;
     bool selectedItemsAvailable() const;
     bool stepFocusActive() const;
-    bool previewingAddSlot() const;
 
     void moveByFocus(float delta);
     void setNavigationFocus(core::state::StructureNavigationFocus focus);
     void enterSelectionModeForCurrentFocus();
     /** Handles one local Back tier; returns true when a selection owned it. */
     bool backSelectionMode();
-    void cancelSelectionMode();
     void toggleSelectionAtCursor();
     void toggleStepSelectionAtVisibleIndex(uint8_t indexInPage);
     void navigateSelection(float delta);
-    CreationResult createPreviewedStructure();
 
 private:
     void bindStateSync();
+    void syncTrackPreviewFromActive(uint8_t activeTrack);
     void movePage(float delta);
     void moveTrack(float delta);
     void moveStep(float delta);
-    bool rollbackTrackCreation(
-        const core::state::sequencer::SequencerHistoryTrackStructureSnapshot& before
-    );
-    void setPagePreview(uint8_t pageIndex, bool addSlot);
+    void setPagePreview(uint8_t pageIndex);
     void setTrackPreview(uint8_t trackIndex, bool addSlot);
     uint8_t maxStepCursor() const;
     uint8_t maxStepPage() const;
@@ -87,9 +74,14 @@ private:
         core::state::StructureNavigationFocus,
         core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     core::state::TrackNavigationState& track_ui_;
-    SharedTrackDomainServices shared_tracks_;
-    SequencerHistoryDomainServices history_;
+    const SharedTrackDomainServices& shared_tracks_;
     oc::state::FixedSubscriptionList<2> subscriptions_;
 };
+
+static_assert(
+    sizeof(void*) != 4U ||
+        sizeof(SequencerStructureNavigationWorkflow) == 48U,
+    "Sequencer Structure navigation exceeds its ARM RAM contract"
+);
 
 }  // namespace core::handler

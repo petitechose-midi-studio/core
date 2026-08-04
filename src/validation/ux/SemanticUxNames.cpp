@@ -129,7 +129,7 @@ FLASHMEM const char* overlayName(core::ui::OverlayType overlay) {
             return "view_selector";
         case core::ui::OverlayType::SEQ_STEP_EDIT:
             return "seq_step_edit";
-        case core::ui::OverlayType::SEQ_STEP_PRESET:
+        case core::ui::OverlayType::PRESET_LIBRARY:
             return "seq_step_preset";
         case core::ui::OverlayType::SEQ_CC_LANE:
             return "seq_cc_lane";

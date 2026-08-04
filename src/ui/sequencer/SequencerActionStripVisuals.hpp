@@ -29,12 +29,14 @@ inline const char* interactionActionIcon(
             return standalone::icons::ACTION_RESET;
         case Action::COPY_CURRENT_STEP:
         case Action::COPY_CURRENT_STRUCTURE:
+        case Action::COPY_STRUCTURE_SELECTION:
         case Action::COPY_STEP_CONTENT:
         case Action::COPY_STEP_SELECTION:
         case Action::COPY_STEP_EDITOR_CONTEXT:
             return standalone::icons::ACTION_COPY;
         case Action::PASTE_CURRENT_STEP:
         case Action::PASTE_CURRENT_STRUCTURE:
+        case Action::PASTE_STRUCTURE_SELECTION:
         case Action::PASTE_STEP_CONTENT:
         case Action::PASTE_STEP_SELECTION:
         case Action::PASTE_STEP_EDITOR_CONTEXT:

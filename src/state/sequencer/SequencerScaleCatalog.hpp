@@ -75,12 +75,12 @@ inline constexpr const char* PATTERN_SCALE_POLICY_LABELS[PATTERN_SCALE_POLICY_CO
 };
 
 inline constexpr SequencerPitchEditMode PITCH_EDIT_MODE_VALUES[PITCH_EDIT_MODE_COUNT] = {
+    SequencerPitchEditMode::FOLLOW_SCALE,
     SequencerPitchEditMode::CHROMATIC,
-    SequencerPitchEditMode::SCALE_DEGREES,
 };
 
 inline constexpr const char* PITCH_EDIT_MODE_LABELS[PITCH_EDIT_MODE_COUNT] = {
-    "Chromatic", "Scale Deg",
+    "Follow Scale", "Chromatic",
 };
 
 template <typename T, int N>

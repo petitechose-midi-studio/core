@@ -5,27 +5,27 @@
 
 #include <oc/note/sequencer/StepSequencerGraph.hpp>
 
-#include "persistence/SequencerPersistencePayloads.hpp"
 #include "persistence/SequencerCcLanePersistenceCodec.hpp"
-#include "state/sequencer/SequencerGraphAssetRecords.hpp"
+#include "persistence/SequencerGraphRecordCodec.hpp"
+#include "persistence/SequencerPersistencePayloads.hpp"
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
 namespace core::persistence::sequencer_codec {
 
-inline constexpr uint8_t ENVELOPE_VERSION = 9;
+inline constexpr uint8_t ENVELOPE_VERSION = 11;
 inline constexpr uint32_t ENVELOPE_HEADER_SIZE = 12;
 inline constexpr uint32_t ENVELOPE_SECTION_HEADER_SIZE = 10;
 inline constexpr uint16_t PATTERN_REGION_RECORD_SIZE = 3;
 inline constexpr uint32_t MAX_GRAPH_ENVELOPE_SIZE =
     3U * ENVELOPE_SECTION_HEADER_SIZE +
     oc::note::sequencer::StepSequencerGraphLimits::MAX_SEQUENCES *
-        state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE +
+        sequencer_graph_record_codec::SEQUENCE_RECORD_SIZE +
     oc::note::sequencer::StepSequencerGraphLimits::MAX_STEP_NODES *
-        state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE +
+        sequencer_graph_record_codec::STEP_NODE_RECORD_SIZE +
     oc::note::sequencer::StepSequencerGraphLimits::MAX_CYCLE_SETS *
-        state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE;
+        sequencer_graph_record_codec::CYCLE_SET_RECORD_SIZE;
 inline constexpr uint32_t MAX_CC_LANE_ENVELOPE_SIZE =
     ENVELOPE_SECTION_HEADER_SIZE + SEQUENCER_CC_LANE_BANK_RECORD_SIZE;
 inline constexpr uint32_t MAX_PATTERN_REGION_ENVELOPE_SIZE =
@@ -47,9 +47,9 @@ inline constexpr uint32_t MAX_SET_ENVELOPE_PAYLOAD_SIZE =
 inline constexpr uint32_t MAX_ENVELOPE_PAYLOAD_SIZE =
     MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE;
 
-static_assert(MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE == 14909U);
-static_assert(MAX_SET_ENVELOPE_PAYLOAD_SIZE == 238224U);
-static_assert(MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE == 238287U);
+static_assert(MAX_PATTERN_ENVELOPE_PAYLOAD_SIZE == 16445U);
+static_assert(MAX_SET_ENVELOPE_PAYLOAD_SIZE == 262800U);
+static_assert(MAX_PROJECT_SEQUENCER_ENVELOPE_PAYLOAD_SIZE == 262863U);
 
 template<uint32_t Capacity>
 struct FixedEnvelopeBuffer {

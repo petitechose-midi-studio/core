@@ -21,7 +21,7 @@ namespace core::ui {
 class ContextActionStrip;
 }
 
-namespace core::handler {
+namespace core::sequencer {
 class MidiCcGlobalFrameCoordinator;
 }
 
@@ -41,7 +41,8 @@ public:
         const core::state::project::ProjectNavigationState& projectNavigation;
         core::state::project::ProjectTrackState& projectTracks;
         core::state::StatusBarState& statusBar;
-        const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
+        const core::sequencer::MidiCcGlobalFrameCoordinator*
+            midiCcCoordinator = nullptr;
     };
 
     SequencerCcLaneOverlayPresenter(

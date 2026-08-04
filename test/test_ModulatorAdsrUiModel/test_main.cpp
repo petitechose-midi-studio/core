@@ -14,63 +14,6 @@ namespace {
 namespace adsr = core::ui::modulation::adsr;
 namespace mod = core::state::modulation;
 
-void test_free_duration_grid_is_monotone_and_reaches_authored_limits() {
-    constexpr auto attack = mod::ModulatorEnvelopeTimeParameter::ATTACK;
-    constexpr auto smooth = mod::ModulatorEnvelopeTimeParameter::SMOOTH;
-    assert(adsr::durationCount(mod::ModulatorTimingMode::FREE, attack) == 256U);
-    assert(adsr::durationAt(0U, mod::ModulatorTimingMode::FREE, attack) == 0U);
-    assert(adsr::durationAt(255U, mod::ModulatorTimingMode::FREE, attack) ==
-           30000U);
-    assert(adsr::durationAt(255U, mod::ModulatorTimingMode::FREE, smooth) ==
-           500U);
-
-    uint16_t previousAttack = 0U;
-    uint16_t previousSmooth = 0U;
-    for (uint16_t index = 0U; index < 256U; ++index) {
-        const uint16_t attackValue = adsr::durationAt(
-            index,
-            mod::ModulatorTimingMode::FREE,
-            attack
-        );
-        const uint16_t smoothValue = adsr::durationAt(
-            index,
-            mod::ModulatorTimingMode::FREE,
-            smooth
-        );
-        assert(attackValue >= previousAttack);
-        assert(smoothValue >= previousSmooth);
-        assert(adsr::durationIndex(
-                   attackValue,
-                   mod::ModulatorTimingMode::FREE,
-                   attack
-               ) <= 255U);
-        previousAttack = attackValue;
-        previousSmooth = smoothValue;
-    }
-}
-
-void test_sync_grid_is_shared_and_smooth_stops_at_half_bar() {
-    constexpr auto attack = mod::ModulatorEnvelopeTimeParameter::ATTACK;
-    constexpr auto smooth = mod::ModulatorEnvelopeTimeParameter::SMOOTH;
-    assert(adsr::durationCount(mod::ModulatorTimingMode::SYNC, attack) == 12U);
-    assert(adsr::durationCount(mod::ModulatorTimingMode::SYNC, smooth) == 7U);
-    assert(adsr::durationAt(0U, mod::ModulatorTimingMode::SYNC, attack) == 0U);
-    assert(adsr::durationAt(11U, mod::ModulatorTimingMode::SYNC, attack) ==
-           12288U);
-    assert(adsr::durationAt(6U, mod::ModulatorTimingMode::SYNC, smooth) ==
-           384U);
-    assert(adsr::durationIndex(
-               12288U,
-               mod::ModulatorTimingMode::SYNC,
-               attack
-           ) == 11U);
-    assert(adsr::durationIndex(
-               384U,
-               mod::ModulatorTimingMode::SYNC,
-               smooth
-           ) == 6U);
-}
-
 void test_preview_uses_effective_feels_and_marks_note_off_without_fake_sustain() {
     mod::ModulatorAdsrParameters parameters{};
     parameters.delay = 12U;
@@ -155,8 +98,6 @@ void test_zero_time_envelope_shows_held_sustain_without_synthetic_ramp() {
 }  // namespace
 
 int main() {
-    test_free_duration_grid_is_monotone_and_reaches_authored_limits();
-    test_sync_grid_is_shared_and_smooth_stops_at_half_bar();
     test_preview_uses_effective_feels_and_marks_note_off_without_fake_sustain();
     test_zero_time_envelope_shows_held_sustain_without_synthetic_ramp();
     std::cout << "ModulatorAdsrUiModel tests passed\n";

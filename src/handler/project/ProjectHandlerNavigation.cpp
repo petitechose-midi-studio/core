@@ -9,17 +9,24 @@
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/modulation/ProjectModulatorSourceSession.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
-#include "ui/modulation/ModulatorAdsrUiModel.hpp"
 
 namespace core::handler {
 
 using namespace project_handler_internal;
-namespace adsr_ui = core::ui::modulation::adsr;
 
 namespace {
 
 const char FEEDBACK_SHARED_SOURCE_READ_ONLY[] PROGMEM =
     "Shared source - Apply then edit";
+
+const char* envelopeFeelFeedbackLabel(
+    core::state::modulation::ModulatorEnvelopeFeel feel
+) {
+    using core::state::modulation::ModulatorEnvelopeFeel;
+    if (feel == ModulatorEnvelopeFeel::TRIPLET) return "Triplet";
+    if (feel == ModulatorEnvelopeFeel::DOTTED) return "Dotted";
+    return "Straight";
+}
 
 }  // namespace
 
@@ -281,7 +288,7 @@ FLASHMEM void ProjectHandler::enterFocusedModulator() {
                         sizeof(feedback),
                         "%s · %s",
                         parameterLabel,
-                        adsr_ui::feelLabel(next)
+                        envelopeFeelFeedbackLabel(next)
                     );
                     navigation_.setLifecycleFeedback(feedback);
                     return;

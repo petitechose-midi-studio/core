@@ -1,54 +1,48 @@
-#include "state/CoreState.hpp"
-
-#include <new>
 #include <cstdio>
-#include <utility>
 
 #include <config/PlatformCompat.hpp>
+#include <new>
 #include <oc/log/Log.hpp>
 #include <oc/time/Time.hpp>
+#include <utility>
+
+#include "state/CoreState.hpp"
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
 #include <wiring.h>
 #endif
 
-#include "state/CoreStateBootstrap.hpp"
-#include "state/CoreStateLifecycle.hpp"
-#include "state/shared/SharedTrackCoordinator.hpp"
 #include "macro/MacroWorkflow.hpp"
 #include "midi/MidiUtils.hpp"
-#include "sequencer/SequencerCcLanePatternOps.hpp"
-#include "sequencer/SequencerContentViewOps.hpp"
-#include "sequencer/SequencerStructureHistory.hpp"
-#include "sequencer/SequencerTrackBankOps.hpp"
+#include "state/CoreStateBootstrap.hpp"
+#include "state/CoreStateLifecycle.hpp"
 #include "state/project/ProjectMenuModel.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
+#include "state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerStructureHistory.hpp"
+#include "state/sequencer/SequencerTrackBankOps.hpp"
+#include "state/shared/SharedTrackCoordinator.hpp"
 
 namespace core::state {
 
 namespace {
 
-constexpr bool macroHistoryResumesManualOverride(
-    macro::MacroHistoryActionKind kind
-) {
+constexpr bool macroHistoryResumesManualOverride(macro::MacroHistoryActionKind kind) {
     switch (kind) {
         case macro::MacroHistoryActionKind::CONVERT_AUTOMATION:
         case macro::MacroHistoryActionKind::PASTE_SLOT:
         case macro::MacroHistoryActionKind::PASTE_DESTINATION:
         case macro::MacroHistoryActionKind::PASTE_AUTOMATION:
         case macro::MacroHistoryActionKind::CLEAR_AUTOMATION:
-        case macro::MacroHistoryActionKind::REMOVE_SLOT:
+        case macro::MacroHistoryActionKind::DELETE_SLOT:
         case macro::MacroHistoryActionKind::RECORD_AUTOMATION:
-        case macro::MacroHistoryActionKind::CREATE_SLOT:
-            return true;
-        default:
-            return false;
+        case macro::MacroHistoryActionKind::CREATE_SLOT: return true;
+        default: return false;
     }
 }
 
-constexpr bool macroHistoryTouchesProjectGraph(
-    macro::MacroHistoryActionKind kind
-) {
+constexpr bool macroHistoryTouchesProjectGraph(macro::MacroHistoryActionKind kind) {
     switch (kind) {
         case macro::MacroHistoryActionKind::PASTE_DESTINATION:
         case macro::MacroHistoryActionKind::PASTE_AUTOMATION:
@@ -58,35 +52,22 @@ constexpr bool macroHistoryTouchesProjectGraph(
         case macro::MacroHistoryActionKind::STATIC_VALUE_EDIT:
         case macro::MacroHistoryActionKind::CREATE_SLOT:
         case macro::MacroHistoryActionKind::MANUAL_OVERRIDE_STATE:
-        case macro::MacroHistoryActionKind::CONFIG_EDIT:
-            return false;
-        default:
-            return true;
+        case macro::MacroHistoryActionKind::CONFIG_EDIT: return false;
+        default: return true;
     }
 }
 
-FLASHMEM bool applyMacroProjectHistory(
-    CoreState& state,
-    bool redo,
-    macro::MacroHistoryActionKind actionKind
-) {
+FLASHMEM bool applyMacroProjectHistory(CoreState& state, bool redo,
+                                       macro::MacroHistoryActionKind actionKind) {
     core::state::macro::MacroAutomationSlotAddress address{};
-    const bool touchesDurableState = redo
-        ? state.macroHistory.projectHistoryRedoTouchesDurableState()
-        : state.macroHistory.projectHistoryUndoTouchesDurableState();
-    const bool applied = redo
-        ? state.macroHistory.redo(
-              state.pages,
-              &address,
-              &state.macroUi.manualOverrides,
-              &state.projectTracks
-          )
-        : state.macroHistory.undo(
-              state.pages,
-              &address,
-              &state.macroUi.manualOverrides,
-              &state.projectTracks
-          );
+    const bool touchesDurableState =
+        redo ? state.macroHistory.projectHistoryRedoTouchesDurableState()
+             : state.macroHistory.projectHistoryUndoTouchesDurableState();
+    const bool applied =
+        redo ? state.macroHistory.redo(state.pages, &address, &state.macroUi.manualOverrides,
+                                       &state.projectTracks)
+             : state.macroHistory.undo(state.pages, &address, &state.macroUi.manualOverrides,
+                                       &state.projectTracks);
     if (!applied) return false;
 
     (void)state.refreshSharedTrackStateFromMacroPages();
@@ -96,10 +77,7 @@ FLASHMEM bool applyMacroProjectHistory(
         float ignored = 0.0f;
         if (state.macroUi.manualOverrides.valueFor(address, ignored)) {
             (void)state.macroUi.manualOverrides.activate(
-                address,
-                state.pages.pageData(address.track, address.page)
-                    .values[address.macro]
-            );
+                address, state.pages.pageData(address.track, address.page).values[address.macro]);
         }
     }
     if (actionKind == macro::MacroHistoryActionKind::PAGE_STRUCTURE) {
@@ -108,35 +86,21 @@ FLASHMEM bool applyMacroProjectHistory(
         // an address that may now refer to a different compacted Page.
         (void)state.macroUi.manualOverrides.clearTrack(address.track);
     }
-    state.macroUi.refreshManualOverrideMask(
-        state.pages.currentActiveTrack(),
-        state.pages.currentActivePage()
-    );
-    state.macroUi.automationEditRevision.set(
-        state.macroUi.automationEditRevision.get() + 1U
-    );
+    state.macroUi.refreshManualOverrideMask(state.pages.currentActiveTrack(),
+                                            state.pages.currentActivePage());
+    state.macroUi.automationEditRevision.set(state.macroUi.automationEditRevision.get() + 1U);
     state.macroUi.runtimeProjectionRevision.set(
         core::state::macro::nextMacroRuntimeProjectionRevision(
             state.macroUi.runtimeProjectionRevision.get(),
-            core::state::macro::kMacroRuntimeProjectionDirtyConfig
-        )
-    );
-    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(
-        state.macros,
-        state.pages
-    );
-    state.statusBar.pageName.set(state.pages.activePageData().name);
+            core::state::macro::kMacroRuntimeProjectionDirtyConfig));
+    core::state::macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     state.macroUi.previewAddPageSlot.set(false);
     state.macroUi.syncPreviewPage(state.pages.currentActivePage());
     state.configRevision.set(core::state::macro::nextMacroConfigRevision(
-        state.configRevision.get(),
-        core::state::macro::kMacroConfigDirtyAll
-    ));
+        state.configRevision.get(), core::state::macro::kMacroConfigDirtyAll));
     if (macroHistoryTouchesProjectGraph(actionKind)) {
         core::state::project::reconcileProjectModulatorNavigationAfterHistory(
-            state.projectNavigation,
-            state.pages.control.authored.modulation
-        );
+            state.projectNavigation, state.pages.control.authored.modulation);
     }
     if (touchesDurableState) state.markProjectMutated();
     return true;
@@ -152,15 +116,49 @@ FLASHMEM bool CoreState::prepareProjectHistoryInteraction() {
     if (macroHistory.hasPendingModulatorAuditionTransaction(pages)) return false;
     if (projectTrackHistory.hasPendingGesture()) return false;
 
-    const bool hadPending = hasPendingSequencerPatternHistoryCoalescing();
-    const bool committed = commitSequencerPatternHistoryCoalescing();
+    if (commitSequencerPatternHistoryCoalescingOutcome() ==
+        sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
+        return false;
+    }
     flushMacroValueHistoryCoalescing();
     projectSettingsHistory.endCoalescing();
-    return !hadPending || committed ||
-           !hasPendingSequencerPatternHistoryCoalescing();
+    return true;
+}
+
+FLASHMEM sequencer::SequencerTrackStructureChronologyResult
+CoreState::openSequencerTrackStructureChronologyBoundary() {
+    using BoundaryStatus =
+        sequencer::SequencerTrackStructureChronologyStatus;
+    using Outcome = sequencer::SequencerPatternHistoryCommitOutcome;
+
+    // Neither transient owner may be reordered or implicitly cancelled by a
+    // Track topology command. Malformed audition pairs are rejected by the
+    // same fail-closed predicate.
+    if (macroHistory.hasPendingModulatorAuditionTransaction(pages)) {
+        return {BoundaryStatus::MacroAuditionBlocked, Outcome::NoPending};
+    }
+    if (projectTrackHistory.hasPendingGesture()) {
+        return {BoundaryStatus::ProjectTrackGestureBlocked, Outcome::NoPending};
+    }
+
+    const auto patternOutcome =
+        commitSequencerPatternHistoryCoalescingOutcome();
+    if (patternOutcome == Outcome::Failed) {
+        return {BoundaryStatus::PatternFailed, Outcome::Failed};
+    }
+
+    // This is the canonical lifecycle authority for Macro value, Settings and
+    // both generic Macro/Sequencer mutation coalescers. Their publications are
+    // complete before the Track transaction captures its failure checkpoint.
+    CoreStateLifecycle::flushProjectMutationCoalescing(*this);
+    return {BoundaryStatus::Opened, patternOutcome};
 }
 
 FLASHMEM bool CoreState::undoProjectHistory() {
+    if (sequencer.stepContentDraft.rejectTransitionIfActive(
+            sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {
+        return false;
+    }
     if (!prepareProjectHistoryInteraction()) return false;
     const auto* entry = projectHistory.peekUndo();
     if (entry == nullptr) return false;
@@ -168,23 +166,15 @@ FLASHMEM bool CoreState::undoProjectHistory() {
     if (entry->domain == project::ProjectHistoryDomain::Macro) {
         return macroHistory.projectHistoryUndoIdentity() == entry->identity &&
                applyMacroProjectHistory(
-                   *this,
-                   false,
-                   static_cast<macro::MacroHistoryActionKind>(entry->actionKind)
-               );
+                   *this, false, static_cast<macro::MacroHistoryActionKind>(entry->actionKind));
     }
     if (entry->domain == project::ProjectHistoryDomain::Sequencer) {
         return sequencerHistory.projectHistoryUndoIdentity() == entry->identity &&
                undoSequencerHistory();
     }
     if (entry->domain == project::ProjectHistoryDomain::Settings) {
-        if (projectSettingsHistory.projectHistoryUndoIdentity() !=
-                entry->identity ||
-            !projectSettingsHistory.undo(
-                statusBar,
-                projectNavigation,
-                midiSync
-            )) {
+        if (projectSettingsHistory.projectHistoryUndoIdentity() != entry->identity ||
+            !projectSettingsHistory.undo(statusBar, projectNavigation)) {
             return false;
         }
         markProjectMutated();
@@ -195,6 +185,10 @@ FLASHMEM bool CoreState::undoProjectHistory() {
 }
 
 FLASHMEM bool CoreState::redoProjectHistory() {
+    if (sequencer.stepContentDraft.rejectTransitionIfActive(
+            sequencer::SequencerStepContentDraftBlockedTransition::HISTORY)) {
+        return false;
+    }
     if (!prepareProjectHistoryInteraction()) return false;
     const auto* entry = projectHistory.peekRedo();
     if (entry == nullptr) return false;
@@ -202,23 +196,15 @@ FLASHMEM bool CoreState::redoProjectHistory() {
     if (entry->domain == project::ProjectHistoryDomain::Macro) {
         return macroHistory.projectHistoryRedoIdentity() == entry->identity &&
                applyMacroProjectHistory(
-                   *this,
-                   true,
-                   static_cast<macro::MacroHistoryActionKind>(entry->actionKind)
-               );
+                   *this, true, static_cast<macro::MacroHistoryActionKind>(entry->actionKind));
     }
     if (entry->domain == project::ProjectHistoryDomain::Sequencer) {
         return sequencerHistory.projectHistoryRedoIdentity() == entry->identity &&
                redoSequencerHistory();
     }
     if (entry->domain == project::ProjectHistoryDomain::Settings) {
-        if (projectSettingsHistory.projectHistoryRedoIdentity() !=
-                entry->identity ||
-            !projectSettingsHistory.redo(
-                statusBar,
-                projectNavigation,
-                midiSync
-            )) {
+        if (projectSettingsHistory.projectHistoryRedoIdentity() != entry->identity ||
+            !projectSettingsHistory.redo(statusBar, projectNavigation)) {
             return false;
         }
         markProjectMutated();
@@ -229,19 +215,14 @@ FLASHMEM bool CoreState::redoProjectHistory() {
 }
 
 FLASHMEM bool CoreState::clearProjectHistory() {
-    const bool hadModulatorTransaction =
-        macroHistory.hasPendingModulatorAuditionTransaction(pages);
+    const bool hadModulatorTransaction = macroHistory.hasPendingModulatorAuditionTransaction(pages);
     if (!macroHistory.abortPendingModulatorAudition(pages)) return false;
     if (hadModulatorTransaction) {
         core::state::project::reconcileProjectModulatorNavigationAfterHistory(
-            projectNavigation,
-            pages.control.authored.modulation,
-            false
-        );
+            projectNavigation, pages.control.authored.modulation, false);
     }
     if (projectTrackHistory.hasPendingGesture()) {
-        (void)project::ProjectTrackDomainServices::fromCoreState(*this)
-            .cancelGesture();
+        (void)project::ProjectTrackDomainServices::fromCoreState(*this).cancelGesture();
     }
     sequencerDomain_.coalescedPatternHistory.clear();
     macroHistory.clear();

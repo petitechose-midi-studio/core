@@ -4,6 +4,7 @@
 #include <oc/diagnostics/Performance.hpp>
 
 #include "config/TimeCompat.hpp"
+#include "diagnostics/StorageQualificationProbe.hpp"
 #include "sequencer/SequencerTiming.hpp"
 
 namespace core::sequencer {
@@ -52,6 +53,7 @@ void SequencerInternalTimerLane::publishRealtimeInputs(const MidiClockSyncRuntim
 }
 
 void SequencerInternalTimerLane::onTimer_() {
+    core::diagnostics::storage_qualification::timerPulse();
     OC_PERF_SCOPE(perfTimer, "sequencer.timer");
     const uint8_t inputIndex = snapshot_bank_.activeIndex();
     const auto& snapshot = snapshot_bank_.activeSnapshot();

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <memory>
 
@@ -103,11 +104,77 @@ void testInvalidAndTruncatedProjectsAreNeverRewritten() {
     std::cout << "[PASS] invalid projects are never rewritten\n";
 }
 
+void testUnsupportedFormatIsInspectableButNeverPublishedOrRewritten() {
+    auto input = std::make_unique<ProjectBytes>();
+    auto output = std::make_unique<ProjectBytes>();
+    assert(input && output);
+    const uint32_t size = encodeDefaultProject(*input);
+    (*input)[4] = static_cast<uint8_t>(
+        project_file::CONTAINER_VERSION_MAJOR + 1U
+    );
+
+    project_file::LoadReport inspectReport{};
+    const auto inspected = inspection::inspectProjectBytes(
+        input->data(),
+        size,
+        &inspectReport
+    );
+    assert(inspected.status == inspection::Status::UNSUPPORTED);
+    assert(
+        inspected.loadStatus ==
+        project_file::LoadStatus::INSPECTION_ISSUES
+    );
+    assert(!inspected.overwriteSafe);
+    assert(
+        inspectReport.status ==
+        project_file::LoadStatus::INSPECTION_ISSUES
+    );
+
+    core::state::project::ProjectSnapshot destination{};
+    std::strncpy(
+        destination.project.metadata.name.data(),
+        "unchanged",
+        destination.project.metadata.name.size() - 1U
+    );
+    project_file::LoadReport decodeReport{};
+    const auto decoded = inspection::decodeProjectBytes(
+        input->data(),
+        size,
+        destination,
+        &decodeReport
+    );
+    assert(decoded.status == inspection::Status::FAILED);
+    assert(
+        std::strcmp(
+            destination.project.metadata.name.data(),
+            "unchanged"
+        ) == 0
+    );
+
+    output->fill(0xA5U);
+    const auto before = *output;
+    project_file::LoadReport rewriteReport{};
+    const auto rewritten = inspection::rewriteProjectBytes(
+        input->data(),
+        size,
+        output->data(),
+        static_cast<uint32_t>(output->size()),
+        &rewriteReport
+    );
+    assert(rewritten.status == inspection::Status::FAILED);
+    assert(rewritten.bytesWritten == 0U);
+    assert(*output == before);
+
+    std::cout
+        << "[PASS] unsupported format is inspection-only\n";
+}
+
 }  // namespace
 
 int main() {
     testCurrentProjectInspectionAndRewrite();
     testInvalidAndTruncatedProjectsAreNeverRewritten();
+    testUnsupportedFormatIsInspectableButNeverPublishedOrRewritten();
     std::cout << "All ProjectFileInspection tests passed\n";
     return 0;
 }

@@ -29,14 +29,19 @@ FLASHMEM bool cloneSequencerCcLaneBank(
     SequencerCcLaneBankPtr& out,
     const SequencerCcLaneBank* source
 ) {
-    if (source == nullptr || sequencerCcLaneCount(*source) == 0) {
+    if (source == nullptr) {
         out.reset();
         return true;
     }
-    SequencerCcLaneBank canonical{};
-    if (!decodeCanonicalSequencerCcLaneBank(*source, canonical)) return false;
-    auto copy = core::app::makeExtmemUnique<SequencerCcLaneBank>(canonical);
+    if (!validSequencerCcLaneBank(*source)) return false;
+    if (sequencerCcLaneCount(*source) == 0U) {
+        out.reset();
+        return true;
+    }
+
+    auto copy = core::app::makeExtmemUnique<SequencerCcLaneBank>();
     if (!copy) return false;
+    *copy = *source;
     out = std::move(copy);
     return true;
 }
@@ -45,17 +50,24 @@ FLASHMEM bool captureSequencerCcLaneBankUsingReservedStorage(
     const SequencerCcLaneBank* source,
     SequencerCcLaneBankPtr& destination
 ) {
-    if (source == nullptr || sequencerCcLaneCount(*source) == 0) {
+    if (source == nullptr) {
         destination.reset();
         return true;
     }
-    SequencerCcLaneBank canonical{};
-    if (!decodeCanonicalSequencerCcLaneBank(*source, canonical)) return false;
-    if (!destination) {
-        destination = core::app::makeExtmemUnique<SequencerCcLaneBank>();
-        if (!destination) return false;
+    if (!validSequencerCcLaneBank(*source)) return false;
+    if (sequencerCcLaneCount(*source) == 0U) {
+        destination.reset();
+        return true;
     }
-    *destination = canonical;
+
+    if (!destination) {
+        auto detached = core::app::makeExtmemUnique<SequencerCcLaneBank>();
+        if (!detached) return false;
+        *detached = *source;
+        destination = std::move(detached);
+        return true;
+    }
+    *destination = *source;
     return true;
 }
 

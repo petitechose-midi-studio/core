@@ -1,12 +1,13 @@
 #include "SequencerMacroPropertyHandler.hpp"
 
-#include <algorithm>
-
-#include <config/PlatformCompat.hpp>
-#include <config/InputIDs.hpp>
-
 #include "SequencerInputUtils.hpp"
 #include "SequencerInteractionPolicyAdapter.hpp"
+
+#include <algorithm>
+#include <config/InputIDs.hpp>
+
+#include <config/PlatformCompat.hpp>
+
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 
@@ -74,6 +75,15 @@ FLASHMEM uint8_t currentNodeLocalVariationRange(
     return core::state::sequencer::nodeLocalVariationRange(*node, property);
 }
 
+FLASHMEM core::state::sequencer::SequencerCoalescedPatternPayloadPlan
+activeContentPayloadPlan(
+    const core::state::sequencer::SequencerState& sequencer
+) {
+    return core::state::sequencer::isRootContentView(sequencer)
+        ? core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly
+        : core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload;
+}
+
 }  // namespace
 
 FLASHMEM SequencerMacroPropertyHandler::SequencerMacroPropertyHandler(
@@ -139,22 +149,38 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
             return;
         }
 
-        history_.beginCoalescedPatternEdit(abs, property, now);
+        const auto beginOutcome = history_.beginCoalescedPatternEdit(
+                abs,
+                property,
+                now,
+                core::state::sequencer::
+                    SequencerCoalescedPatternPayloadPlan::FullWithProspectiveGraph
+            );
+        if (!core::state::sequencer::sequencerHistoryOpenAccepted(beginOutcome)) {
+            sequencer_.historyFeedback.showRejection(beginOutcome, now);
+            return;
+        }
         // Arm the authored-value projection before the graph revision is
         // published. The first redraw must not reuse previous runtime
         // variation telemetry for this direct edit.
         sequencer_.stepInlineFeedback.show(abs, property, now);
-        if (core::state::sequencer::setNodeLocalVariationRange(
-                sequencer_.pattern,
-                nodeId,
-                property,
-                range
-            )) {
-            auto& selector = sequencer_.stepPropertyInlineSelector;
-            selector.macroLocalVariationEditActive.set(true);
-            selector.localVariationStepIndex = abs;
-            sequencer_.invalidateVariationTelemetry();
+        const bool changed = core::state::sequencer::setNodeLocalVariationRange(
+            sequencer_.pattern,
+            nodeId,
+            property,
+            range
+        );
+        if (!history_.sealCoalescedPatternEdit(changed)) {
+            sequencer_.historyFeedback.showRejection(
+                core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable, now);
+            return;
         }
+        if (!changed) return;
+
+        auto& selector = sequencer_.stepPropertyInlineSelector;
+        selector.macroLocalVariationEditActive.set(true);
+        selector.localVariationStepIndex = abs;
+        sequencer_.invalidateVariationTelemetry();
         return;
     }
 
@@ -163,24 +189,43 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
     }
 
     if (sequencer_.stepStatePropertyActive.get()) {
-        history_.beginCoalescedPatternEdit(
-            abs,
-            core::state::sequencer::StepProperty::NOTE,
-            now,
-            true
-        );
-        (void)core::state::sequencer::setActiveContentStepEnabled(
+        const auto beginOutcome =
+            history_.beginCoalescedPatternEdit(
+                abs,
+                core::state::sequencer::StepProperty::NOTE,
+                now,
+                activeContentPayloadPlan(sequencer_),
+                true
+            );
+        if (!core::state::sequencer::sequencerHistoryOpenAccepted(beginOutcome)) {
+            sequencer_.historyFeedback.showRejection(beginOutcome, now);
+            return;
+        }
+        const bool changed = core::state::sequencer::setActiveContentStepEnabled(
             sequencer_,
             abs,
             normalized >= 0.5f
         );
+        if (!history_.sealCoalescedPatternEdit(changed)) {
+            sequencer_.historyFeedback.showRejection(
+                core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable, now);
+        return;
+    }
         return;
     }
 
-    history_.beginCoalescedPatternEdit(abs, property, now);
+    const auto beginOutcome = history_.beginCoalescedPatternEdit(
+            abs,
+            property,
+            now,
+            activeContentPayloadPlan(sequencer_)
+        );
+    if (!core::state::sequencer::sequencerHistoryOpenAccepted(beginOutcome)) {
+        sequencer_.historyFeedback.showRejection(beginOutcome, now);
+        return;
+    }
     sequencer_.stepInlineFeedback.show(abs, property, now);
-
-    core::state::sequencer::setActiveContentStepFromNormalized(
+    const bool changed = core::state::sequencer::setActiveContentStepFromNormalized(
         sequencer_,
         abs,
         property,
@@ -192,6 +237,11 @@ FLASHMEM void SequencerMacroPropertyHandler::handleTurn(uint8_t indexInPage, flo
             sequencer_.pattern.scaleOverride
         )
     );
+    if (!history_.sealCoalescedPatternEdit(changed)) {
+        sequencer_.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable, now);
+        return;
+    }
 }
 
 FLASHMEM void SequencerMacroPropertyHandler::handleFocusedStepTurn(float normalized) {
@@ -206,24 +256,43 @@ FLASHMEM void SequencerMacroPropertyHandler::handleFocusedStepTurn(float normali
     const uint32_t now = now_provider_ ? now_provider_() : 0;
 
     if (sequencer_.stepStatePropertyActive.get()) {
-        history_.beginCoalescedPatternEdit(
-            abs,
-            core::state::sequencer::StepProperty::NOTE,
-            now,
-            true
-        );
-        (void)core::state::sequencer::setActiveContentStepEnabled(
+        const auto beginOutcome =
+            history_.beginCoalescedPatternEdit(
+                abs,
+                core::state::sequencer::StepProperty::NOTE,
+                now,
+                activeContentPayloadPlan(sequencer_),
+                true
+            );
+        if (!core::state::sequencer::sequencerHistoryOpenAccepted(beginOutcome)) {
+            sequencer_.historyFeedback.showRejection(beginOutcome, now);
+            return;
+        }
+        const bool changed = core::state::sequencer::setActiveContentStepEnabled(
             sequencer_,
             abs,
             normalized >= 0.5f
         );
+        if (!history_.sealCoalescedPatternEdit(changed)) {
+            sequencer_.historyFeedback.showRejection(
+                core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable, now);
+        return;
+    }
         return;
     }
 
-    history_.beginCoalescedPatternEdit(abs, property, now);
+    const auto beginOutcome = history_.beginCoalescedPatternEdit(
+            abs,
+            property,
+            now,
+            activeContentPayloadPlan(sequencer_)
+        );
+    if (!core::state::sequencer::sequencerHistoryOpenAccepted(beginOutcome)) {
+        sequencer_.historyFeedback.showRejection(beginOutcome, now);
+        return;
+    }
     sequencer_.stepInlineFeedback.show(abs, property, now);
-
-    core::state::sequencer::setActiveContentStepFromNormalized(
+    const bool changed = core::state::sequencer::setActiveContentStepFromNormalized(
         sequencer_,
         abs,
         property,
@@ -235,6 +304,12 @@ FLASHMEM void SequencerMacroPropertyHandler::handleFocusedStepTurn(float normali
             sequencer_.pattern.scaleOverride
         )
     );
+    if (!history_.sealCoalescedPatternEdit(changed)) {
+        sequencer_.historyFeedback.showRejection(
+            core::state::sequencer::SequencerHistoryRejectionReason::HistoryUnavailable, now);
+        return;
+}
+
 }
 
 }  // namespace core::handler

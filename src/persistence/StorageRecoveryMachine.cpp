@@ -12,12 +12,17 @@ FLASHMEM StorageRecoveryAction StorageRecoveryMachine::update(StorageRecoveryInp
         case StorageRecoveryState::READY:
             if (!input.mediaPresent) {
                 enter_(StorageRecoveryState::MISSING_DEBOUNCE, input.nowMs);
+            } else if (input.reconciliationRequired) {
+                enter_(StorageRecoveryState::DEGRADED, input.nowMs);
             }
             return StorageRecoveryAction::NONE;
 
         case StorageRecoveryState::MISSING_DEBOUNCE:
             if (input.mediaPresent) {
-                enter_(StorageRecoveryState::READY, input.nowMs);
+                // Even a transient observed absence invalidates open handles.
+                // The returning medium must reconcile before ordinary I/O can
+                // become READY again; debounce controls offline reporting only.
+                enter_(StorageRecoveryState::RECOVERY_PENDING, input.nowMs);
                 return StorageRecoveryAction::NONE;
             }
             if (elapsed_(input.nowMs, state_since_ms_, config_.removalDebounceMs)) {

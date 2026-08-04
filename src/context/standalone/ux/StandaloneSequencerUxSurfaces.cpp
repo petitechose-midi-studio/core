@@ -1,4 +1,5 @@
 #include "context/standalone/ux/StandaloneUxSurfaces.hpp"
+#include "context/standalone/ux/StandaloneSequencerPresetLibraryUx.hpp"
 
 #if defined(MS_UX_RECORDER)
 
@@ -13,7 +14,7 @@
 #include "config/Timing.hpp"
 #include "context/standalone/SequencerOverlayPresenterFormatters.hpp"
 #include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "state/contextual/GuardedActionState.hpp"
 #include "state/contextual/OperationFeedbackState.hpp"
 #include "state/StructureClipboardState.hpp"
@@ -34,7 +35,6 @@
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackTransferAction.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
-#include "state/sequencer/SequencerStepPresetModel.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "state/shared/StructureSlotOps.hpp"
 #include "validation/ux/SemanticUxTraceState.hpp"
@@ -144,18 +144,6 @@ FLASHMEM void markIgnored(core::validation::ux::SemanticUxContext& out, const ch
     out.reason = reason;
 }
 
-FLASHMEM const char* stepPresetActionName(
-    core::state::contextual::ContextActionId action
-) {
-    using Action = core::state::contextual::ContextActionId;
-    switch (action) {
-        case Action::APPLY: return "apply_step_preset";
-        case Action::SAVE: return "save_step_preset";
-        case Action::LOAD: return "load_step_presets";
-        default: return nullptr;
-    }
-}
-
 FLASHMEM const char* contextActionReasonName(
     core::state::contextual::ContextActionReason reason
 ) {
@@ -169,7 +157,6 @@ FLASHMEM const char* contextActionReasonName(
         case Reason::WRONG_PAYLOAD: return "wrong_payload";
         case Reason::INVALID_PAYLOAD: return "invalid_payload";
         case Reason::ADAPTED: return "adapted";
-        case Reason::DEFAULTED: return "defaulted";
         case Reason::CORRUPT_ASSET: return "corrupt_asset";
         case Reason::UNSUPPORTED_VERSION: return "unsupported_version";
         case Reason::STALE_TARGET: return "stale_target";
@@ -188,26 +175,6 @@ FLASHMEM const char* contextActionReasonName(
         case Reason::FAILED: return "failed";
     }
     return "unknown";
-}
-
-FLASHMEM const char* stepPresetCompatibilityReasonName(
-    core::state::sequencer::SequencerStepPresetCompatibility compatibility
-) {
-    using Compatibility =
-        core::state::sequencer::SequencerStepPresetCompatibility;
-    switch (compatibility) {
-        case Compatibility::UNKNOWN: return "compatibility_unknown";
-        case Compatibility::READY: return nullptr;
-        case Compatibility::WARNING_ADAPTED: return "adapted";
-        case Compatibility::WARNING_DEFAULTED: return "defaulted";
-        case Compatibility::BLOCKED_CONTEXT: return "wrong_context";
-        case Compatibility::BLOCKED_CAPACITY: return "capacity";
-        case Compatibility::CORRUPT: return "corrupt_asset";
-        case Compatibility::UNSUPPORTED_VERSION: return "unsupported_version";
-        case Compatibility::STORAGE_UNAVAILABLE: return "storage_unavailable";
-        case Compatibility::STALE_TARGET: return "stale_target";
-    }
-    return "compatibility_unknown";
 }
 
 FLASHMEM const char* operationOutcomeName(
@@ -318,6 +285,10 @@ FLASHMEM const char* actionName(SequencerAction action) {
             return "copy_current_structure";
         case SequencerAction::PASTE_CURRENT_STRUCTURE:
             return "paste_current_structure";
+        case SequencerAction::COPY_STRUCTURE_SELECTION:
+            return "copy_structure_selection";
+        case SequencerAction::PASTE_STRUCTURE_SELECTION:
+            return "paste_structure_selection";
         case SequencerAction::COPY_STEP_CONTENT:
             return "copy_step_content";
         case SequencerAction::PASTE_STEP_CONTENT:
@@ -365,6 +336,8 @@ FLASHMEM const char* armActionName(SequencerAction action) {
             return "arm_reset_current_step_deep";
         case SequencerAction::PASTE_CURRENT_STRUCTURE:
             return "arm_paste_current_structure";
+        case SequencerAction::PASTE_STRUCTURE_SELECTION:
+            return "arm_paste_structure_selection";
         case SequencerAction::PASTE_CURRENT_STEP:
             return "arm_paste_current_step";
         case SequencerAction::RESET_STEP_SELECTION_DEEP:
@@ -375,6 +348,8 @@ FLASHMEM const char* armActionName(SequencerAction action) {
             return "arm_clear_current_structure";
         case SequencerAction::COPY_CURRENT_STRUCTURE:
             return "arm_copy_current_structure";
+        case SequencerAction::COPY_STRUCTURE_SELECTION:
+            return "arm_copy_structure_selection";
         case SequencerAction::CLEAR_STEP_CONTENT:
             return "arm_clear_step_content";
         case SequencerAction::COPY_STEP_CONTENT:
@@ -395,7 +370,8 @@ FLASHMEM const char* armActionName(SequencerAction action) {
 }
 
 FLASHMEM bool isPasteAction(SequencerAction action) {
-    return action == SequencerAction::PASTE_CURRENT_STRUCTURE;
+    return action == SequencerAction::PASTE_CURRENT_STRUCTURE ||
+           action == SequencerAction::PASTE_STRUCTURE_SELECTION;
 }
 
 FLASHMEM void fillTrackTransferFacts(
@@ -409,7 +385,7 @@ FLASHMEM void fillTrackTransferFacts(
     out.overwriteMask = plan.overwriteMask;
     out.routePolicy = "preserve_destination";
     if (plan.hasEntries()) {
-        const auto& entry = plan.entry;
+        const auto& entry = plan.entries[0];
         out.mappingIndex = 0;
         out.mappingCount = 1;
         out.sourceTrack = entry.sourceTrack;
@@ -724,6 +700,24 @@ FLASHMEM bool fillResolvedStepUxContext(
 
 }  // namespace
 
+FLASHMEM const char* sequencerUxContextActionReasonName(
+    core::state::contextual::ContextActionReason reason
+) {
+    return contextActionReasonName(reason);
+}
+
+FLASHMEM const char* sequencerUxOperationOutcomeName(
+    core::state::contextual::OperationFeedbackStatus status
+) {
+    return operationOutcomeName(status);
+}
+
+FLASHMEM const char* sequencerUxGuardedActionOutcomeName(
+    core::state::contextual::GuardedActionPhase phase
+) {
+    return guardedActionOutcomeName(phase);
+}
+
 FLASHMEM SequencerPropertySelectorUxSurface::SequencerPropertySelectorUxSurface(
     oc::state::Signal<core::ui::ViewType, 8>& activeView,
     oc::state::Signal<
@@ -832,9 +826,7 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
         }
 
         const bool postDispatchRelease =
-            !sequencer_.contextSelector.visible ||
-            sequencer_.contextSelector.feedback !=
-                core::state::sequencer::SequencerContextSelectorFeedback::NONE;
+            !sequencer_.contextSelector.visible;
         if (postDispatchRelease && context_selector_rotated_) {
             context_selector_target_ = navigation_focus_.get();
         }
@@ -977,224 +969,12 @@ FLASHMEM bool SequencerPropertySelectorUxSurface::captureSemanticUxContext(
     return true;
 }
 
-FLASHMEM SequencerStepPresetUxSurface::SequencerStepPresetUxSurface(
-    core::state::sequencer::SequencerState& sequencer,
-    const core::state::sequencer::SequencerTrackActivationQueue* trackActivations
-) : sequencer_(sequencer), track_activations_(trackActivations) {}
-
-FLASHMEM bool SequencerStepPresetUxSurface::captureSemanticUxContext(
-    const oc::core::input::InputBindingTraceEvent& event,
-    core::validation::ux::SemanticUxContext& out
-) const {
-    namespace seq = core::state::sequencer;
-    namespace contextual = core::state::contextual;
-
-    const auto& picker = sequencer_.stepPresetPicker;
-    if (!picker.visible.get()) return false;
-
-    const auto feedback = picker.operationFeedback.get();
-    const bool feedbackIsSave = feedback.active &&
-        feedback.action == contextual::ContextActionId::SAVE;
-    const bool saveMode = feedbackIsSave ||
-        (!feedback.active &&
-         picker.mode.get() == seq::SequencerStepPresetPickerMode::SAVE);
-    if (picker.detailVisible.get()) {
-        out.mode = saveMode
-            ? "sequencer.step_preset.save.detail"
-            : "sequencer.step_preset.load.detail";
-    } else {
-        out.mode = saveMode
-            ? "sequencer.step_preset.save"
-            : "sequencer.step_preset.load";
-    }
-
-    const bool focusedAsset = picker.entryCount.get() > 0 &&
-        !picker.selectedItemIsNewAsset() &&
-        picker.existingEntryIndexForSelectedItem() < picker.entryCount.get();
-    const auto spec = seq::buildSequencerStepPresetActionSpec(
-        saveMode,
-        picker.selectedItemIsNewAsset(),
-        focusedAsset,
-        picker.frozenTarget,
-        picker.descriptor
-    );
-    const auto variant = contextual::hasHoldAction(spec)
-        ? spec.hold
-        : spec.tap;
-    const auto action = feedback.active ? feedback.action : variant.action;
-
-    out.target = "step";
-    out.targetIndex = static_cast<int16_t>(picker.selectedIndex.get());
-    if (picker.frozenTarget.valid) {
-        out.targetStep = static_cast<int16_t>(picker.frozenTarget.stepIndex);
-    }
-    // Step presets deliberately describe content, never a destination MIDI
-    // route. The frozen destination therefore remains authoritative on apply.
-    out.routePolicy = "preserve_destination";
-    out.projection = "preview";
-    if (picker.descriptor.valid && picker.descriptor.technicalId[0] != '\0') {
-        out.source = picker.descriptor.technicalId;
-    } else if (focusedAsset) {
-        out.source = picker.entryId(picker.existingEntryIndexForSelectedItem());
-    } else if (saveMode && picker.selectedItemIsNewAsset()) {
-        out.source = "new_step_preset";
-    } else {
-        out.source = "no_step_preset";
-    }
-
-    if (picker.detailVisible.get() && picker.descriptor.valid) {
-        switch (picker.detailFocus.get()) {
-            case 0:
-                out.property = "target_context";
-                copyValueLabel(out.valueLabel, picker.frozenTarget.contextLabel);
-                break;
-            case 1:
-                out.property = "content";
-                copyValueLabel(out.valueLabel, picker.descriptor.contentSummary);
-                break;
-            case 2:
-                out.property = "impact";
-                copyValueLabel(
-                    out.valueLabel,
-                    picker.descriptor.footprint == seq::SequencerStepPresetFootprint::REPLACE
-                        ? "replace"
-                        : "add"
-                );
-                break;
-            case 3:
-                out.property = "pitch_policy";
-                copyValueLabel(
-                    out.valueLabel,
-                    picker.descriptor.mixedPitchPolicy
-                        ? "mixed"
-                        : (picker.descriptor.scalePolicy ==
-                               seq::SequencerStepPresetScalePolicy::SCALE_RELATIVE
-                            ? "scale_relative"
-                            : "chromatic")
-                );
-                break;
-            case 4:
-            default:
-                out.property = "preview_state";
-                std::snprintf(
-                    out.valueLabel,
-                    sizeof(out.valueLabel),
-                    "%u/%u",
-                    static_cast<unsigned>(picker.previewStateIndex.get() + 1U),
-                    static_cast<unsigned>(
-                        picker.descriptor.previewStateCount > 0
-                            ? picker.descriptor.previewStateCount
-                            : 1U
-                    )
-                );
-                break;
-        }
-    } else if (picker.descriptor.valid) {
-        // Technical IDs are validated slugs and therefore safe for the
-        // allocation-free NDJSON recorder. The user-facing semantic name is
-        // already visible in the capture and may contain arbitrary UTF-8.
-        out.property = "asset_id";
-        copyValueLabel(out.valueLabel, out.source);
-    } else if (picker.selectedItemIsNewAsset()) {
-        out.property = "new_asset";
-        copyValueLabel(out.valueLabel, "unsaved");
-    } else {
-        out.property = "asset_id";
-        copyValueLabel(out.valueLabel, out.source);
-    }
-
-    if (feedback.active) {
-        out.outcome = operationOutcomeName(feedback.status);
-        out.reason = contextActionReasonName(feedback.reason);
-    } else {
-        out.outcome = guardedActionOutcomeName(picker.actionGuard.get().phase);
-        out.reason = contextActionReasonName(variant.reason);
-        if (!out.outcome) {
-            switch (variant.availability) {
-                case contextual::ContextActionAvailability::AVAILABLE:
-                    out.outcome = "ready";
-                    break;
-                case contextual::ContextActionAvailability::WARNING:
-                    out.outcome = "warning";
-                    break;
-                case contextual::ContextActionAvailability::DISABLED:
-                    out.outcome = "blocked";
-                    break;
-            }
-        }
-    }
-    if (feedback.active && picker.operationActivationGeneration != 0 &&
-        picker.frozenTarget.valid && track_activations_ != nullptr) {
-        using FeedbackStatus = contextual::OperationFeedbackStatus;
-        using ActivationStatus = seq::SequencerTrackActivationStatus;
-        const auto telemetry = track_activations_->telemetry(
-            picker.frozenTarget.trackIndex
-        );
-        const bool terminalMatches =
-            (feedback.status == FeedbackStatus::QUEUED &&
-             telemetry.status == ActivationStatus::QUEUED) ||
-            (feedback.status == FeedbackStatus::APPLIED &&
-             telemetry.status == ActivationStatus::APPLIED) ||
-            (feedback.status == FeedbackStatus::CANCELLED &&
-             telemetry.status == ActivationStatus::CANCELLED);
-        if (terminalMatches &&
-            telemetry.generation == picker.operationActivationGeneration &&
-            telemetry.origin == seq::SequencerTrackActivationOrigin::STEP_PRESET) {
-            out.activationOrigin = "step_preset";
-            out.hasActivationGeneration = true;
-            out.activationGeneration = telemetry.generation;
-        }
-    }
-    if (!out.reason && picker.descriptor.valid) {
-        out.reason = stepPresetCompatibilityReasonName(
-            picker.descriptor.compatibility
-        );
-    }
-    out.hasConflict = true;
-    out.conflict = feedback.active &&
-        (feedback.status == contextual::OperationFeedbackStatus::CONFLICT ||
-         feedback.reason == contextual::ContextActionReason::CONFLICT);
-
-    using ButtonType = oc::core::input::ButtonBindingType;
-    const bool actionGesture =
-        isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::PRESS) ||
-        isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::RELEASE) ||
-        isButton(event, Config::ButtonID::BOTTOM_RIGHT, ButtonType::LONG_PRESS);
-    if (isEncoder(event, Config::EncoderID::NAV)) {
-        out.effect = picker.detailVisible.get()
-            ? "focus_step_preset_detail"
-            : "select_step_preset_asset";
-    } else if (isEncoder(event, Config::EncoderID::OPT)) {
-        if (picker.detailVisible.get() && picker.detailFocus.get() == 4U) {
-            out.effect = "select_step_preset_preview_state";
-        } else {
-            out.effect = "noop";
-            out.outcome = "noop";
-            out.reason = "preview_state_not_focused";
-        }
-    } else if (isButton(event, Config::ButtonID::NAV, ButtonType::RELEASE)) {
-        out.effect = picker.detailVisible.get()
-            ? "show_step_preset_details"
-            : "hide_step_preset_details";
-    } else if (isButton(event, Config::ButtonID::LEFT_TOP, ButtonType::RELEASE) ||
-               isButton(event, Config::ButtonID::LEFT_CENTER, ButtonType::RELEASE)) {
-        out.effect = "close_step_preset_picker";
-    } else if (isButton(event, Config::ButtonID::BOTTOM_LEFT, ButtonType::RELEASE)) {
-        out.effect = saveMode
-            ? "show_step_preset_save_mode"
-            : "show_step_preset_load_mode";
-    } else if (actionGesture) {
-        out.effect = stepPresetActionName(action);
-    }
-    return true;
-}
-
 FLASHMEM SequencerCcLaneUxSurface::SequencerCcLaneUxSurface(
     core::state::sequencer::SequencerState& sequencer,
     core::state::sequencer::SequencerTrackBankState& tracks,
     const core::state::project::ProjectNavigationState& projectNavigation,
     const core::state::project::ProjectTrackState& projectTracks,
-    const core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator
+    const core::sequencer::MidiCcGlobalFrameCoordinator* midiCcCoordinator
 ) : sequencer_(sequencer),
     tracks_(tracks),
     project_navigation_(projectNavigation),
@@ -1305,7 +1085,7 @@ FLASHMEM bool SequencerCcLaneUxSurface::captureSemanticUxContext(
         const core::state::shared::MidiCcDestinationIdentity targetIdentity{
             .port = destination.routePolicy == seq::SequencerCcLaneRoutePolicy::PINNED
                 ? destination.pinnedPort
-                : core::handler::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                : core::sequencer::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
             .channel = out.targetRoute,
             .controller = destination.controller,
         };
@@ -1935,9 +1715,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
             : "existing";
     } else {
         index = sequencer_.structureUi.previewPageIndex.get();
-        out.property = sequencer_.structureUi.previewAddPageSlot.get()
-            ? "add_slot"
-            : "existing";
+        out.property = "existing";
     }
     out.targetIndex = static_cast<int16_t>(index);
     copyIndexLabel(out.valueLabel, index);
@@ -1994,7 +1772,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
         trackPasteLifecycle->activationGeneration != 0 &&
         trackTransferPlan.hasEntries()) {
         const uint8_t activationTarget =
-            trackTransferPlan.entry.targetTrack;
+            trackTransferPlan.entries[0].targetTrack;
         if (activationTarget <
             core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
             projectedTrackPasteActivation = fillTrackPasteActivationFacts(
@@ -2012,7 +1790,7 @@ FLASHMEM bool SequencerStructureUxSurface::captureSemanticUxContext(
         fillTrackTransferFacts(trackTransferPlan, trackPasteLifecycle, out);
         if (track_activations_ != nullptr &&
             trackPasteLifecycle->activationGeneration != 0) {
-            const uint8_t target = trackTransferPlan.entry.targetTrack;
+            const uint8_t target = trackTransferPlan.entries[0].targetTrack;
             if (target < core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
                 projectedTrackPasteActivation = fillTrackPasteActivationFacts(
                     track_activations_->telemetry(target),

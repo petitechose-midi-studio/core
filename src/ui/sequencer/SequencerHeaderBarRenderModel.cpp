@@ -152,7 +152,6 @@ FLASHMEM StripSegmentVisual buildStripSegmentVisual(
     const bool isDestinationBlocked =
         (props.pageDestinationBlockedMask &
          static_cast<uint16_t>(1U << pageIndex)) != 0;
-    const bool isAddSlot = props.previewPageAddSlot && props.addPageIndex == pageIndex;
     const bool isActivePage = (pageIndex == props.activePage);
 
     visual.containerBgOpa = pageItemOpa(pageIndex < stripState.pageCount, isActivePage);
@@ -160,8 +159,6 @@ FLASHMEM StripSegmentVisual buildStripSegmentVisual(
     visual.destinationPreview = isDestinationPreview;
     visual.destinationOverwrite = isDestinationOverwrite;
     visual.destinationBlocked = isDestinationBlocked;
-    visual.drawAddSlot = isAddSlot;
-
     if (validSteps == 0) {
         return visual;
     }

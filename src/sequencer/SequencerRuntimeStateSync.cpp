@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <oc/diagnostics/Performance.hpp>
+
 namespace core::sequencer {
 namespace {
 
@@ -41,6 +43,38 @@ uint16_t projectedExpandedTelemetryOffset(
     return static_cast<uint16_t>(std::min<uint32_t>(selectedOffset, UINT16_MAX));
 }
 
+void recordNewRuntimeDiagnostics(
+    const oc::note::sequencer::StepSequencerRuntimeDiagnostics& previous,
+    const oc::note::sequencer::StepSequencerRuntimeDiagnostics& current
+) {
+    if (current.noteBudgetExceededCount > previous.noteBudgetExceededCount) {
+        OC_PERF_RECORD(
+            "sequencer.expansion.note-budget-exceeded",
+            0U,
+            current.noteBudgetExceededCount - previous.noteBudgetExceededCount,
+            current.noteBudgetExceededCount
+        );
+    }
+    if (current.schedulerCapacityExceededCount >
+        previous.schedulerCapacityExceededCount) {
+        OC_PERF_RECORD(
+            "sequencer.scheduler.capacity-exceeded",
+            0U,
+            current.schedulerCapacityExceededCount -
+                previous.schedulerCapacityExceededCount,
+            current.schedulerCapacityExceededCount
+        );
+    }
+    if (current.depthLimitReachedCount > previous.depthLimitReachedCount) {
+        OC_PERF_RECORD(
+            "sequencer.expansion.depth-limit-reached",
+            0U,
+            current.depthLimitReachedCount - previous.depthLimitReachedCount,
+            current.depthLimitReachedCount
+        );
+    }
+}
+
 }  // namespace
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(
@@ -70,6 +104,9 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
         .graphRevision = source.graphRevision.get(),
         .effectiveSwingPercent = source.effectiveSwingPercent(projectTiming.swingPercent),
         .patternNudgePercent = source.patternNudgePercent.get(),
+        .pitchFollowsScale =
+            source.pitchEditMode ==
+                core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE,
         .effectiveScaleSettings = core::state::sequencer::resolveEffectiveScaleSettings(
             projectScaleSettings,
             source.scalePolicy,
@@ -95,6 +132,9 @@ SequencerRuntimeStateSignature captureRuntimeStateSignature(
         .graphRevision = source.graphRevision,
         .effectiveSwingPercent = source.effectiveSwingPercent,
         .patternNudgePercent = source.patternNudgePercent,
+        .pitchFollowsScale =
+            source.pitchEditMode ==
+                core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE,
         .effectiveScaleSettings = source.effectiveScaleSettings,
     };
 }
@@ -127,6 +167,9 @@ void syncRuntimeState(oc::note::sequencer::StepSequencerRuntimeState& target,
     target.enabledMask = source.enabledMask;
     target.scaleSettings = source.effectiveScaleSettings;
     target.scaleSettings.clamp();
+    target.pitchFollowsScale =
+        source.pitchEditMode ==
+            core::state::sequencer::SequencerPitchEditMode::FOLLOW_SCALE;
     target.variationRanges = source.variationRanges;
     target.variationRanges.clamp();
 
@@ -150,12 +193,16 @@ SequencerRuntimeTelemetrySnapshot captureRuntimeTelemetry(
         .lastResolvedVariation = runtimeState.lastResolvedVariation,
         .cycleVariationTelemetry = runtimeState.cycleVariationTelemetry,
         .expandedVariationTelemetry = runtimeState.expandedVariationTelemetry,
+        .runtimeDiagnostics = runtimeState.runtimeDiagnostics,
     };
 }
 
 void publishRuntimeTelemetry(core::state::sequencer::SequencerState& target,
                              const SequencerRuntimeTelemetrySnapshot& telemetry) {
+    const auto previousDiagnostics = target.runtimeDiagnostics;
     target.expandedVariationTelemetry = telemetry.expandedVariationTelemetry;
+    target.runtimeDiagnostics = telemetry.runtimeDiagnostics;
+    recordNewRuntimeDiagnostics(previousDiagnostics, target.runtimeDiagnostics);
 
     target.playheadStep.set(telemetry.playheadStep);
     target.playheadStepTicks = telemetry.playheadStepTicks == 0 ? 1 : telemetry.playheadStepTicks;

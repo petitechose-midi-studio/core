@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include <oc/note/sequencer/StepSequencerChord.hpp>
@@ -34,21 +35,17 @@ enum class StepContentCreationBlockReason : uint8_t {
 struct StepContentCreationAvailability {
     bool canCreateOrOpen = false;
     bool opensExisting = false;
-    StepContentCreationBlockReason blockedReason =
-        StepContentCreationBlockReason::INACTIVE_CONTEXT;
+    StepContentCreationBlockReason blockedReason = StepContentCreationBlockReason::INACTIVE_CONTEXT;
 };
 
 struct StepContentOpenResult {
     bool opened = false;
     bool created = false;
     bool draft = false;
-    StepContentCreationBlockReason blockedReason =
-        StepContentCreationBlockReason::INACTIVE_CONTEXT;
+    StepContentCreationBlockReason blockedReason = StepContentCreationBlockReason::INACTIVE_CONTEXT;
     StepContentChildKind childKind = StepContentChildKind::MICRO_SEQUENCE;
-    SequencerGraphNodeId ownerNodeId =
-        oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
-    uint16_t contentId =
-        oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    SequencerGraphNodeId ownerNodeId = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
+    uint16_t contentId = oc::note::sequencer::StepSequencerGraphLimits::INVALID_ID;
 };
 
 bool isRootContentView(const SequencerState& sequencer);
@@ -105,135 +102,125 @@ struct SequencerChildContentSummary {
     oc::note::sequencer::StepSequencerVariationRanges localVariation{};
 };
 
-SequencerGraphNodeId activeContentStepNodeId(
-    const SequencerState& sequencer,
-    uint8_t step
-);
+SequencerGraphNodeId activeContentStepNodeId(const SequencerState& sequencer, uint8_t step);
 SequencerContentStepProjection resolveActiveContentStepProjection(
-    const SequencerState& sequencer,
-    uint8_t step,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-);
+    const SequencerState& sequencer, uint8_t step,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
 SequencerContentStepProjection resolveActiveContentOwnerProjection(
-    const SequencerState& sequencer,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-);
+    const SequencerState& sequencer, oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
 SequencerContentStepProjection resolveContentFrameOwnerProjection(
-    const SequencerState& sequencer,
-    uint8_t frameDepth,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-);
+    const SequencerState& sequencer, uint8_t frameDepth,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
 SequencerContentPlaybackProjection resolveActiveContentPlaybackProjection(
-    const SequencerState& sequencer,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-);
+    const SequencerState& sequencer, oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
 bool resolveRepresentativeChildContentNote(
-    const SequencerState& sequencer,
-    const SequencerContentStepProjection& projection,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
-    uint8_t& outNote
-);
+    const SequencerState& sequencer, const SequencerContentStepProjection& projection,
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings, uint8_t& outNote);
 bool resolveRepresentativeChildContentSummary(
-    const SequencerState& sequencer,
-    const SequencerContentStepProjection& projection,
+    const SequencerState& sequencer, const SequencerContentStepProjection& projection,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
-    SequencerChildContentSummary& outSummary
-);
-bool stepContentProjectionHasAnyChild(
-    const SequencerContentStepProjection& projection
-);
-bool stepContentProjectionHasChild(
-    const SequencerContentStepProjection& projection,
-    StepContentChildKind childKind
-);
-int16_t stepContentProjectionOffsetForProperty(
-    const SequencerContentStepProjection& projection,
-    StepProperty property
-);
+    SequencerChildContentSummary& outSummary);
+bool stepContentProjectionHasAnyChild(const SequencerContentStepProjection& projection);
+bool stepContentProjectionHasChild(const SequencerContentStepProjection& projection,
+                                   StepContentChildKind childKind);
+int16_t stepContentProjectionOffsetForProperty(const SequencerContentStepProjection& projection,
+                                               StepProperty property);
 StepContentCreationAvailability activeContentChildCreationAvailability(
-    const SequencerState& sequencer,
-    uint8_t step,
-    StepContentChildKind childKind,
-    uint8_t length
-);
-StepContentOpenResult openOrCreateActiveContentChild(
-    SequencerState& sequencer,
-    uint8_t step,
-    StepContentChildKind childKind,
-    uint8_t length
-);
-bool activeContentStepCanReceiveChildContent(
-    const SequencerState& sequencer,
-    uint8_t step
-);
-bool activeContentStepHasChildContent(
-    const SequencerState& sequencer,
-    uint8_t step,
-    StepContentChildKind childKind
-);
-bool clipboardCanPasteActiveContentChild(
-    const core::state::StructureClipboardState& clipboard,
-    StepContentChildKind childKind
-);
-bool copyActiveContentChildToClipboard(
-    const SequencerState& sequencer,
-    uint8_t step,
-    StepContentChildKind childKind,
-    core::state::StructureClipboardState& clipboard
-);
-bool clearActiveContentChild(
-    SequencerState& sequencer,
-    uint8_t step,
-    StepContentChildKind childKind
-);
-bool pasteActiveContentChildFromClipboard(
-    SequencerState& sequencer,
-    uint8_t step,
-    StepContentChildKind childKind,
-    const core::state::StructureClipboardState& clipboard
-);
-bool copyActiveContentChildrenToClipboard(
-    const SequencerState& sequencer,
-    uint8_t step,
-    core::state::StructureClipboardState& clipboard
-);
+    const SequencerState& sequencer, uint8_t step, StepContentChildKind childKind, uint8_t length);
+StepContentOpenResult openOrCreateActiveContentChild(SequencerState& sequencer, uint8_t step,
+                                                     StepContentChildKind childKind,
+                                                     uint8_t length);
+bool activeContentStepCanReceiveChildContent(const SequencerState& sequencer, uint8_t step);
+bool activeContentStepHasChildContent(const SequencerState& sequencer, uint8_t step,
+                                      StepContentChildKind childKind);
+bool clipboardCanPasteActiveContentChild(const core::state::StructureClipboardState& clipboard,
+                                         StepContentChildKind childKind);
+bool copyActiveContentChildToClipboard(const SequencerState& sequencer, uint8_t step,
+                                       StepContentChildKind childKind,
+                                       core::state::StructureClipboardState& clipboard);
+bool clearActiveContentChild(SequencerState& sequencer, uint8_t step,
+                             StepContentChildKind childKind);
+bool pasteActiveContentChildFromClipboard(SequencerState& sequencer, uint8_t step,
+                                          StepContentChildKind childKind,
+                                          const core::state::StructureClipboardState& clipboard);
+bool clearActiveContentChildPreservingGraphOwner(SequencerState& sequencer, uint8_t step,
+                                                 StepContentChildKind childKind);
+bool pasteActiveContentChildFromClipboardPreservingGraphOwner(
+    SequencerState& sequencer, uint8_t step, StepContentChildKind childKind,
+    const core::state::StructureClipboardState& clipboard);
+bool copyActiveContentChildrenToClipboard(const SequencerState& sequencer, uint8_t step,
+                                          core::state::StructureClipboardState& clipboard);
 bool clearActiveContentChildren(SequencerState& sequencer, uint8_t step);
-bool pasteActiveContentChildrenFromClipboard(
-    SequencerState& sequencer,
-    uint8_t step,
-    const core::state::StructureClipboardState& clipboard
-);
+bool pasteActiveContentChildrenFromClipboard(SequencerState& sequencer, uint8_t step,
+                                             const core::state::StructureClipboardState& clipboard);
+// Prepared Pattern transactions must retain the live Graph owner allocated
+// before mutation. These variants defer view/draft settlement so the central
+// seal can compact with pre-reserved storage and finalize only after admission.
+bool clearActiveContentChildrenPreservingGraphOwner(SequencerState& sequencer, uint8_t step);
+bool pasteActiveContentChildrenFromClipboardPreservingGraphOwner(
+    SequencerState& sequencer, uint8_t step, const core::state::StructureClipboardState& clipboard);
 
-bool enterMicroSequenceContentView(
-    SequencerState& sequencer,
-    uint8_t parentStep,
-    SequencerGraphSequenceId sequenceId
-);
-bool enterMicroSequenceContentView(
-    SequencerState& sequencer,
-    SequencerGraphNodeId ownerNodeId,
-    SequencerGraphSequenceId sequenceId
-);
-bool enterCycleStatesContentView(
-    SequencerState& sequencer,
-    SequencerGraphNodeId ownerNodeId,
-    SequencerGraphCycleSetId cycleSetId
-);
+bool enterMicroSequenceContentView(SequencerState& sequencer, uint8_t parentStep,
+                                   SequencerGraphSequenceId sequenceId);
+bool enterMicroSequenceContentView(SequencerState& sequencer, SequencerGraphNodeId ownerNodeId,
+                                   SequencerGraphSequenceId sequenceId);
+bool enterCycleStatesContentView(SequencerState& sequencer, SequencerGraphNodeId ownerNodeId,
+                                 SequencerGraphCycleSetId cycleSetId);
 bool leaveContentView(SequencerState& sequencer);
 void refreshContentView(SequencerState& sequencer);
 bool compactSequencerGraph(SequencerState& sequencer);
+
+// Small, non-owning snapshot of the active Graph navigation path. A prepared
+// transaction may compact live Graph storage before it copies replacement
+// payloads; keeping the remapped path here lets it defer every observable UI
+// write until after the musical transaction has committed.
+struct SequencerPreparedGraphContentPath {
+    bool valid = false;
+    bool compacted = false;
+    uint8_t stackDepth = 0;
+    std::array<
+        SequencerContentViewFrame,
+        SequencerContentViewState::MAX_CHILD_DEPTH
+    > frames{};
+};
+
+static_assert(
+    sizeof(SequencerPreparedGraphContentPath) <= 64U,
+    "prepared Graph path must remain a bounded scalar transaction sidecar"
+);
+
+[[nodiscard]] SequencerPreparedGraphContentPath
+capturePreparedSequencerGraphContentPath(const SequencerState& sequencer);
+[[nodiscard]] bool remapPreparedSequencerGraphContentPath(
+    SequencerPreparedGraphContentPath& path,
+    const SequencerGraphCompactionRemap& remap,
+    bool compacted);
+[[nodiscard]] uint8_t preparedSequencerContentLength(
+    const SequencerState& sequencer,
+    const SequencerPreparedGraphContentPath& path);
+[[nodiscard]] SequencerGraphNodeId preparedSequencerContentStepNodeId(
+    const SequencerState& sequencer,
+    const SequencerPreparedGraphContentPath& path,
+    uint8_t step);
+// Called only after the prepared History commit has crossed its no-fail
+// publication boundary. It allocates nothing and publishes one view revision.
+void publishPreparedSequencerGraphContentPath(
+    SequencerState& sequencer,
+    const SequencerPreparedGraphContentPath& path);
+
+// Completes view remapping only after the prepared transaction has captured,
+// synchronized and admitted its compacted Graph. It never allocates.
+void finalizePreparedSequencerGraphMutation(SequencerState& sequencer,
+                                            const SequencerGraphCompactionRemap& remap,
+                                            bool compacted);
 
 uint8_t activeContentLength(const SequencerState& sequencer);
 uint8_t activeContentPageCount(const SequencerState& sequencer);
 uint8_t normalizeActiveContentPage(const SequencerState& sequencer, uint8_t page);
 uint8_t activeContentPageStartStep(const SequencerState& sequencer, uint8_t page);
 uint8_t activeContentPageForStep(uint8_t step);
-bool resolveActiveContentStepInPage(
-    const SequencerState& sequencer,
-    uint8_t page,
-    uint8_t indexInPage,
-    uint8_t& outStep
-);
+bool resolveActiveContentStepInPage(const SequencerState& sequencer, uint8_t page,
+                                    uint8_t indexInPage, uint8_t& outStep);
 bool activeContentStepInPattern(const SequencerState& sequencer, uint8_t step);
 bool rotateActiveContentSteps(SequencerState& sequencer, int offsetSteps);
 
@@ -241,25 +228,15 @@ bool toggleActiveContentStep(SequencerState& sequencer, uint8_t step);
 bool activeContentStepEnabled(const SequencerState& sequencer, uint8_t step);
 bool setActiveContentStepEnabled(SequencerState& sequencer, uint8_t step, bool enabled);
 bool setActiveContentStepFromNormalized(
-    SequencerState& sequencer,
-    uint8_t step,
-    StepProperty property,
-    float normalized,
+    SequencerState& sequencer, uint8_t step, StepProperty property, float normalized,
     SequencerPitchEditMode pitchEditMode,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-);
-bool resetActiveContentStepPropertyToDefault(
-    SequencerState& sequencer,
-    uint8_t step,
-    StepProperty property
-);
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
+bool resetActiveContentStepPropertyToDefault(SequencerState& sequencer, uint8_t step,
+                                             StepProperty property);
 float activeContentStepPropertyToNormalized(
-    const SequencerState& sequencer,
-    uint8_t step,
-    StepProperty property,
+    const SequencerState& sequencer, uint8_t step, StepProperty property,
     SequencerPitchEditMode pitchEditMode,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
-);
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings);
 bool resizeActiveMicroSequenceContent(SequencerState& sequencer, uint8_t length);
 bool resizeActiveCycleStatesContent(SequencerState& sequencer, uint8_t length);
 

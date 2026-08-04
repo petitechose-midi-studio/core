@@ -16,7 +16,7 @@ enum class BackResult : uint8_t {
 
 [[nodiscard]] bool apply(
     core::state::sequencer::SequencerState& sequencer,
-    const core::state::sequencer::SequencerTrackBankState& tracks,
+    core::state::sequencer::SequencerTrackBankState& tracks,
     const core::handler::SequencerHistoryDomainServices& history
 );
 
@@ -31,7 +31,7 @@ void moveExitChoice(
 
 [[nodiscard]] BackResult applyExitChoice(
     core::state::sequencer::SequencerState& sequencer,
-    const core::state::sequencer::SequencerTrackBankState& tracks,
+    core::state::sequencer::SequencerTrackBankState& tracks,
     const core::handler::SequencerHistoryDomainServices& history
 );
 

@@ -58,7 +58,6 @@ struct StripSegmentVisual {
     bool drawValidFill = false;
     lv_area_t validArea{};
     lv_color_t validColor = lv_color_black();
-    bool drawAddSlot = false;
 };
 
 struct CursorLayout {

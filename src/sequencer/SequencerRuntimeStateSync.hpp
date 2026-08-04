@@ -35,6 +35,7 @@ struct SequencerRuntimeStateSignature {
     uint32_t graphRevision = 0;
     uint8_t effectiveSwingPercent = 0;
     int8_t patternNudgePercent = 0;
+    bool pitchFollowsScale = true;
     oc::note::sequencer::StepSequencerScaleSettings effectiveScaleSettings{};
 
     bool matches(const SequencerRuntimeStateSignature& other) const {
@@ -51,6 +52,7 @@ struct SequencerRuntimeStateSignature {
                graphRevision == other.graphRevision &&
                effectiveSwingPercent == other.effectiveSwingPercent &&
                patternNudgePercent == other.patternNudgePercent &&
+               pitchFollowsScale == other.pitchFollowsScale &&
                effectiveScaleSettings.root == other.effectiveScaleSettings.root &&
                effectiveScaleSettings.type == other.effectiveScaleSettings.type &&
                effectiveScaleSettings.mode == other.effectiveScaleSettings.mode;
@@ -74,6 +76,7 @@ struct SequencerRuntimeTelemetrySnapshot {
     oc::note::sequencer::StepSequencerResolvedVariation lastResolvedVariation{};
     oc::note::sequencer::StepSequencerCycleVariationTelemetry cycleVariationTelemetry{};
     oc::note::sequencer::StepSequencerExpandedVariationTelemetry expandedVariationTelemetry{};
+    oc::note::sequencer::StepSequencerRuntimeDiagnostics runtimeDiagnostics{};
 };
 
 SequencerRuntimeStateSignature captureRuntimeStateSignature(

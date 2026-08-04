@@ -4,16 +4,24 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 
 #include <oc/impl/HostFileSystem.hpp>
 
 #include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/persistence/ProjectFileStore.hpp"
+#include "../../src/persistence/ProjectFileWorkspace.hpp"
+#include "../../src/persistence/ProjectSessionStore.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../../src/state/project/ProjectSlug.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/ProductFileTestMutation.hpp"
+
+#if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+#error "This test requires native EXTMEM failure injection"
+#endif
 
 namespace {
 
@@ -148,9 +156,31 @@ project::ProjectSnapshot capture(core::state::CoreState& state) {
     return snapshot;
 }
 
-core::persistence::ProjectFileStore makeStore(core::persistence::ProductFileService& files) {
+core::persistence::ProjectFileStore makeStore(
+    core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog
+) {
     assert(files.init());
-    return core::persistence::ProjectFileStore(files);
+    return core::persistence::ProjectFileStore(files, catalog);
+}
+
+oc::type::Result<core::persistence::ProjectListResult> listProjectsSettled(
+    core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog,
+    core::persistence::ProjectFileStore& store,
+    core::persistence::ProjectListEntry* entries,
+    uint8_t capacity
+) {
+    auto listed = store.listProjects(entries, capacity);
+    for (uint32_t nowMs = 1U;
+         !listed && listed.error().code == oc::type::ErrorCode::HARDWARE_BUSY &&
+         nowMs <= 3U;
+         ++nowMs) {
+        assert(files.persistenceJobs().beginTurn(nowMs));
+        catalog.advance(nowMs, false);
+        listed = store.listProjects(entries, capacity);
+    }
+    return listed;
 }
 
 void assertLoadedProject(core::persistence::ProjectFileStore& store,
@@ -160,8 +190,6 @@ void assertLoadedProject(core::persistence::ProjectFileStore& store,
     project_file::LoadReport report{};
     auto loadedResult = store.load("p321", loaded, &report);
     assert(loadedResult);
-    assert(loadedResult.value().loadStatus == project_file::LoadStatus::OK);
-    assert(loadedResult.value().overwriteSafe);
     assert(report.ok());
 
     test_support::CoreStorages storages;
@@ -182,7 +210,8 @@ void test_save_load_project_snapshot_roundtrip() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -210,7 +239,8 @@ void test_save_overwrites_existing_project_through_backup_commit() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto first = makeCoreState(storages);
@@ -234,10 +264,13 @@ void test_stale_tmp_is_replaced_on_save() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     const uint8_t stale[] = {'s', 't', 'a', 'l', 'e'};
-    assert(files.write("tmp/p321.mspj.tmp", 0, stale, sizeof(stale)));
+    assert(core::test::writeProductFileFixture(
+        files, "tmp/p321.mspj.tmp", 0, stale, sizeof(stale)
+    ));
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -257,13 +290,16 @@ void test_load_recovers_interrupted_backup_commit() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
     configureProject(state, "Backup", 4);
     assert(store.save(capture(state)));
-    assert(files.rename("projects/p321.mspj", "projects/p321.mspj.bak"));
+    assert(core::test::renameProductFileFixture(
+        files, "projects/p321.mspj", "projects/p321.mspj.bak"
+    ));
 
     assertLoadedProject(store, "Backup", 4);
     assert(std::filesystem::is_regular_file(
@@ -276,31 +312,40 @@ void test_load_recovers_interrupted_backup_commit() {
     std::cout << "[PASS] test_load_recovers_interrupted_backup_commit\n";
 }
 
-void test_load_recovers_corrupt_current_from_valid_backup() {
+void test_load_rejects_corrupt_current_with_unmapped_backup() {
     resetTestRoot();
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
     configureProject(state, "Backup", 4);
     assert(store.save(capture(state)));
-    assert(files.rename("projects/p321.mspj", "projects/p321.mspj.bak"));
+    assert(core::test::renameProductFileFixture(
+        files, "projects/p321.mspj", "projects/p321.mspj.bak"
+    ));
 
     const uint8_t corrupt[] = {'b', 'r', 'o', 'k', 'e', 'n'};
-    assert(files.write("projects/p321.mspj", 0, corrupt, sizeof(corrupt)));
+    assert(core::test::writeProductFileFixture(
+        files, "projects/p321.mspj", 0, corrupt, sizeof(corrupt)
+    ));
 
-    assertLoadedProject(store, "Backup", 4);
+    project::ProjectSnapshot loaded;
+    project_file::LoadReport report{};
+    auto result = store.load("p321", loaded, &report);
+    assert(!result);
+    assert(result.error().code == oc::type::ErrorCode::STORAGE_CORRUPT);
     assert(std::filesystem::is_regular_file(
         testRoot() / "midi-studio" / "projects" / "p321.mspj"
     ));
-    assert(!std::filesystem::exists(
+    assert(std::filesystem::is_regular_file(
         testRoot() / "midi-studio" / "projects" / "p321.mspj.bak"
     ));
 
-    std::cout << "[PASS] test_load_recovers_corrupt_current_from_valid_backup\n";
+    std::cout << "[PASS] test_load_rejects_corrupt_current_with_unmapped_backup\n";
 }
 
 void test_load_reports_corrupt_backup_when_current_is_missing() {
@@ -308,10 +353,13 @@ void test_load_reports_corrupt_backup_when_current_is_missing() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     const uint8_t corrupt[] = {'b', 'r', 'o', 'k', 'e', 'n'};
-    assert(files.write("projects/p321.mspj.bak", 0, corrupt, sizeof(corrupt)));
+    assert(core::test::writeProductFileFixture(
+        files, "projects/p321.mspj.bak", 0, corrupt, sizeof(corrupt)
+    ));
 
     project::ProjectSnapshot loaded;
     project_file::LoadReport report{};
@@ -328,7 +376,8 @@ void test_save_propagates_current_stat_error_before_commit() {
 
     CurrentStatFailureFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -350,7 +399,8 @@ void test_list_projects_returns_saved_projects_sorted() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto p003 = makeCoreState(storages);
@@ -362,11 +412,15 @@ void test_list_projects_returns_saved_projects_sorted() {
     assert(store.save(capture(p001)));
 
     const uint8_t invalid[] = {'x'};
-    assert(files.write("projects/BROKEN_.mspj", 0, invalid, sizeof(invalid)));
-    assert(files.write("projects/p999.bin", 0, invalid, sizeof(invalid)));
+    assert(core::test::writeProductFileFixture(
+        files, "projects/BROKEN_.mspj", 0, invalid, sizeof(invalid)
+    ));
+    assert(core::test::writeProductFileFixture(
+        files, "projects/p999.bin", 0, invalid, sizeof(invalid)
+    ));
 
     core::persistence::ProjectListEntry entries[4]{};
-    auto listed = store.listProjects(entries, 4);
+    auto listed = listProjectsSettled(files, catalog, store, entries, 4);
     assert(listed);
     assert(listed.value().count == 2);
     assert(!listed.value().truncated);
@@ -383,7 +437,8 @@ void test_save_load_and_list_max_length_project_slug() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -403,7 +458,7 @@ void test_save_load_and_list_max_length_project_slug() {
     assert(std::strcmp(loaded.project.metadata.name.data(), slug.data()) == 0);
 
     core::persistence::ProjectListEntry entries[1]{};
-    auto listed = store.listProjects(entries, 1);
+    auto listed = listProjectsSettled(files, catalog, store, entries, 1);
     assert(listed);
     assert(listed.value().count == 1);
     assert(std::strcmp(entries[0].id, slug.data()) == 0);
@@ -416,25 +471,161 @@ void test_list_projects_reports_truncation() {
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     core::persistence::ProductFileService files(filesystem);
-    auto store = makeStore(files);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    auto store = makeStore(files, catalog);
 
     test_support::CoreStorages storages;
-    auto p001 = makeCoreState(storages);
-    configureProject(p001, "First", 1, "p001");
-    assert(store.save(capture(p001)));
-
     auto p002 = makeCoreState(storages);
     configureProject(p002, "Second", 2, "p002");
     assert(store.save(capture(p002)));
 
+    auto p001 = makeCoreState(storages);
+    configureProject(p001, "First", 1, "p001");
+    assert(store.save(capture(p001)));
+
     core::persistence::ProjectListEntry entries[1]{};
-    auto listed = store.listProjects(entries, 1);
+    auto listed = listProjectsSettled(files, catalog, store, entries, 1);
     assert(listed);
     assert(listed.value().count == 1);
     assert(listed.value().truncated);
     assert(std::strcmp(entries[0].id, "p001") == 0);
 
     std::cout << "[PASS] test_list_projects_reports_truncation\n";
+}
+
+void test_read_workspace_does_not_allocate_write_scratch() {
+    {
+        core::persistence::ProjectFileReadWorkspace workspace;
+        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        assert(workspace.prepare());
+        assert(workspace.data() != nullptr);
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 2U);
+    }
+
+    {
+        core::persistence::ProjectFileWriteWorkspace workspace;
+        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        assert(!workspace.prepare());
+        assert(workspace.data() != nullptr);
+        assert(core::app::testing::extmemAllocationAttempt == 2U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+    }
+
+    std::cout << "[PASS] read workspace skips write scratch allocation\n";
+}
+
+void test_project_pool_prewarm_reports_resource_exhausted_without_fallback() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    assert(files.init());
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(2U);
+        auto prepared = files.prepareProjectWorkspace();
+        assert(!prepared);
+        assert(prepared.error().code == oc::type::ErrorCode::RESOURCE_EXHAUSTED);
+        assert(core::app::testing::extmemAllocationAttempt == 2U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+    }
+    assert(files.prepareProjectWorkspace());
+
+    std::cout << "[PASS] Project pool prewarm fails closed without fallback\n";
+}
+
+void test_file_and_session_stores_share_one_lease_checked_workspace() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    core::persistence::ProductFileService files(filesystem);
+    core::persistence::ProductDirectoryCatalog catalog(files);
+    assert(files.init());
+    core::persistence::ProjectSessionStore session(files);
+    core::persistence::ProjectFileStore manual(files, catalog);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(3U);
+        assert(session.prepareWorkspace());
+        assert(core::app::testing::extmemAllocationAttempt == 2U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 3U);
+    }
+
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProject(state, "SharedPool", 7U);
+    auto snapshot = capture(state);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        auto saved = manual.save(snapshot);
+        assert(saved);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
+    }
+
+    project::ProjectSnapshot loaded;
+    auto result = manual.load("p321", loaded);
+    assert(result);
+
+    auto readLeaseResult = files.acquireMutation(
+        core::persistence::ProductMutationOwner::PROJECT
+    );
+    assert(readLeaseResult);
+    auto readLease = std::move(readLeaseResult.value());
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        auto sharedRead = files.projectReadWorkspace(readLease);
+        assert(sharedRead);
+        assert(sharedRead.value()->prepare());
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+        assert(core::app::testing::extmemAllocationFailureOrdinal == 1U);
+    }
+    assert(files.releaseMutation(readLease));
+
+    assert(session.beginSaveCurrent(snapshot));
+    auto prewarmBusy = files.prepareProjectWorkspace();
+    assert(!prewarmBusy);
+    assert(prewarmBusy.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        auto blockedSave = manual.save(snapshot);
+        assert(!blockedSave);
+        assert(blockedSave.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        auto blockedLoad = manual.load("p321", loaded);
+        assert(!blockedLoad);
+        assert(blockedLoad.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+        assert(core::app::testing::extmemAllocationAttempt == 0U);
+    }
+    session.cancelSaveCurrent();
+
+    auto assetLeaseResult = files.acquireMutation(
+        core::persistence::ProductMutationOwner::ASSET
+    );
+    assert(assetLeaseResult);
+    auto assetLease = std::move(assetLeaseResult.value());
+    auto rejectedBorrow = files.projectWriteWorkspace(assetLease);
+    assert(!rejectedBorrow);
+    assert(rejectedBorrow.error().code == oc::type::ErrorCode::INVALID_STATE);
+    assert(files.releaseMutation(assetLease));
+
+    assert(session.beginSaveCurrent(snapshot));
+    auto preparedSave = session.advanceSaveCurrent();
+    assert(preparedSave);
+    assert(session.saveCurrentInProgress());
+    files.markMediaUnavailable();
+    auto staleAdvance = session.advanceSaveCurrent();
+    assert(!staleAdvance);
+    assert(staleAdvance.error().code == oc::type::ErrorCode::INVALID_STATE);
+    assert(!session.saveCurrentInProgress());
+
+    std::cout << "[PASS] file/session stores share one lease-checked workspace\n";
 }
 
 }  // namespace
@@ -444,11 +635,14 @@ int main() {
     std::cout << "ProjectFileStore tests\n";
     std::cout << "==============================================\n\n";
 
+    test_read_workspace_does_not_allocate_write_scratch();
+    test_project_pool_prewarm_reports_resource_exhausted_without_fallback();
+    test_file_and_session_stores_share_one_lease_checked_workspace();
     test_save_load_project_snapshot_roundtrip();
     test_save_overwrites_existing_project_through_backup_commit();
     test_stale_tmp_is_replaced_on_save();
     test_load_recovers_interrupted_backup_commit();
-    test_load_recovers_corrupt_current_from_valid_backup();
+    test_load_rejects_corrupt_current_with_unmapped_backup();
     test_load_reports_corrupt_backup_when_current_is_missing();
     test_save_propagates_current_stat_error_before_commit();
     test_list_projects_returns_saved_projects_sorted();

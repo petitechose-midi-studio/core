@@ -6,9 +6,9 @@
 #include <oc/type/Result.hpp>
 
 #include "persistence/ProductFileService.hpp"
+#include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProjectFileLimits.hpp"
 #include "persistence/ProjectLoadReport.hpp"
-#include "persistence/ProjectFileWorkspace.hpp"
 #include "state/project/ProjectSnapshot.hpp"
 
 namespace core::persistence {
@@ -20,9 +20,6 @@ struct ProjectSaveResult {
 
 struct ProjectLoadResult {
     uint32_t bytesRead = 0;
-    core::persistence::project_file::LoadStatus loadStatus =
-        core::persistence::project_file::LoadStatus::OK;
-    bool overwriteSafe = true;
     char projectPath[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
 };
 
@@ -41,7 +38,10 @@ public:
     static constexpr uint32_t MAX_PROJECT_FILE_SIZE = PROJECT_FILE_MAX_SIZE;
     static constexpr uint32_t WRITE_CHUNK_SIZE = PROJECT_FILE_WRITE_CHUNK_SIZE;
 
-    explicit ProjectFileStore(ProductFileService& files);
+    ProjectFileStore(
+        ProductFileService& files,
+        ProductDirectoryCatalog& catalog
+    );
 
     oc::type::Result<ProjectSaveResult> save(
         const core::state::project::ProjectSnapshot& snapshot
@@ -55,6 +55,7 @@ public:
 
     oc::type::Result<ProjectListResult> listProjects(ProjectListEntry* entries,
                                                      uint8_t capacity);
+    oc::type::Result<void> nextProjectId(char* out, size_t outSize);
 
 private:
     struct ProjectPaths {
@@ -67,11 +68,19 @@ private:
     static bool buildPaths_(const char* projectId, ProjectPaths& out);
     static bool validProjectId_(const char* projectId);
 
-    static bool listProjectsVisitor_(const oc::interface::DirectoryEntry& entry,
-                                     void* context);
+    static oc::type::Result<ProjectSaveResult> saveWithPaths_(
+        ProductFileService& files,
+        const core::state::project::ProjectSnapshot& snapshot,
+        const ProjectPaths& paths
+    );
 
     ProductFileService& files_;
-    ProjectFileWorkspace workspace_;
+    ProductDirectoryCatalog& catalog_;
 };
+
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+static_assert(sizeof(ProjectFileStore) == 8U, "project file store ABI drift");
+static_assert(alignof(ProjectFileStore) == 4U, "project file store alignment drift");
+#endif
 
 }  // namespace core::persistence

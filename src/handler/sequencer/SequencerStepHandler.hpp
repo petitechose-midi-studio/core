@@ -5,24 +5,25 @@
  * @brief Standalone sequencer step editing bindings
  */
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 
 #include "handler/common/ButtonReleaseLatch.hpp"
 #include "handler/common/SharedTrackDomainServices.hpp"
-#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/sequencer/SequencerContextSelectorWorkflow.hpp"
+#include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/sequencer/SequencerStructureEditWorkflow.hpp"
 #include "handler/sequencer/SequencerStructureNavigationWorkflow.hpp"
+#include "state/StatusBarState.hpp"
+#include "state/StructureSelectionInteractionPolicy.hpp"
+#include "state/macro/MacroPagesState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/project/ProjectTrackState.hpp"
-#include "state/StatusBarState.hpp"
 #include "state/sequencer/SequencerState.hpp"
-#include "state/macro/MacroPagesState.hpp"
 
 namespace core::validation::ux {
 struct StructureUxTraceState;
@@ -45,9 +46,8 @@ public:
     struct StateRefs {
         core::state::sequencer::SequencerState& sequencer;
         core::state::sequencer::SequencerTrackBankState& tracks;
-        oc::state::Signal<
-            core::state::StructureNavigationFocus,
-            core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
+        oc::state::Signal<core::state::StructureNavigationFocus,
+                          core::state::kStructureNavigationFocusMaxSubscribers>& navigationFocus;
         core::state::TrackNavigationState& trackNavigation;
         core::state::project::ProjectNavigationState& projectNavigation;
         core::state::project::ProjectTrackState& projectTracks;
@@ -60,13 +60,11 @@ public:
         core::state::StatusBarState* statusBar = nullptr;
     };
 
-    SequencerStepHandler(StateRefs state,
-                        oc::api::EncoderAPI& encoders,
-                        oc::api::ButtonAPI& buttons,
-                        oc::type::ScopeID scopeId
+    SequencerStepHandler(StateRefs state, oc::api::EncoderAPI& encoders,
+                         oc::api::ButtonAPI& buttons, oc::type::ScopeID scopeId
 #if defined(MS_UX_RECORDER)
-                        ,
-                        core::validation::ux::StructureUxTraceState* uxTraceState = nullptr
+                         ,
+                         core::validation::ux::StructureUxTraceState* uxTraceState = nullptr
 #endif
     );
 
@@ -86,12 +84,12 @@ public:
     void attachStepEditHandler(SequencerStepEditHandler& handler);
     void attachPatternEditorHandler(SequencerPatternEditorHandler& handler);
     void attachTrackEditorHandler(ProjectTrackEditorHandler& handler);
-
 private:
     void setupBindings();
 
     void toggleStep(uint8_t indexInPage);
     bool selectionHasItems() const;
+    core::state::StructureSelectionInteractionPolicy selectionInteractionPolicy() const;
     bool childPatternContentActionsAvailable() const;
     bool currentStructureBottomActionsAvailable() const;
     bool focusedStepHasChildContent() const;
@@ -105,21 +103,16 @@ private:
     void moveStepContentDraftExitChoice(float delta);
     void confirmStepContentDraftExitChoice();
     void continueStepContentDraft();
-    void recordFocusedContentEdit(
-        core::state::sequencer::SequencerHistoryPatternSnapshot before,
-        bool beforeCaptured
-    );
-    void handleContextSelectorRelease(uint32_t nowMs);
+    void handleContextSelectorRelease();
 
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;
     core::state::StructureClipboardState& structure_clipboard_;
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
+    oc::state::Signal<core::state::StructureNavigationFocus,
+                      core::state::kStructureNavigationFocusMaxSubscribers>& navigation_focus_;
     core::state::TrackNavigationState& track_ui_;
-    SequencerStructureNavigationWorkflow navigation_workflow_;
     SequencerStructureEditWorkflow edit_workflow_;
+    SequencerStructureNavigationWorkflow navigation_workflow_;
     SequencerHistoryDomainServices history_;
     SequencerContextSelectorWorkflow context_selector_workflow_;
     oc::api::EncoderAPI& encoders_;
@@ -134,5 +127,17 @@ private:
     core::validation::ux::StructureUxTraceState* ux_trace_state_ = nullptr;
 #endif
 };
+
+#if defined(MS_UX_RECORDER)
+static_assert(
+    sizeof(void*) != 4U || sizeof(SequencerStepHandler) == 260U,
+    "Sequencer Step handler exceeds its ARM UX-recorder PSRAM contract"
+);
+#else
+static_assert(
+    sizeof(void*) != 4U || sizeof(SequencerStepHandler) == 256U,
+    "Sequencer Step handler exceeds its ARM PSRAM contract"
+);
+#endif
 
 }  // namespace core::handler

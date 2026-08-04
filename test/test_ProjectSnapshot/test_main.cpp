@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstring>
@@ -8,6 +9,9 @@
 #include "../../src/state/modulation/ProjectControlMacroOps.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../../src/state/project/ProjectTrackDomainOps.hpp"
+#include "../../src/state/sequencer/SequencerCcLaneDomain.hpp"
+#include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerScaleState.hpp"
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../support/CoreStorages.hpp"
@@ -185,6 +189,12 @@ void configureProjectSession(core::state::CoreState& state) {
     assert(project::setProjectTrackMidiChannel(state.projectTracks, 1U, 9U).changed());
     state.sequencer.setStepDataAt(0, 66, 111, 88);
     state.sequencer.pattern.toggle(0);
+    assert(sequencer::ensureGraphRoot(state.sequencer.pattern));
+    auto* ccLanes = sequencer::ensureSequencerCcLaneBank(state.sequencer.pattern);
+    assert(ccLanes != nullptr);
+    sequencer::SequencerCcLaneDraft ccLane{};
+    ccLane.destination.controller = 74U;
+    assert(sequencer::createSequencerCcLane(*ccLanes, 0U, ccLane).changed());
     state.sequencer.focusedStep.set(0);
     state.sequencer.page.set(0);
 }
@@ -291,10 +301,12 @@ void test_snapshot_project_track_authority_wins_on_apply() {
     snapshot.projectTracks.midiChannels[1] = 12;
 
     state.resetMusicalProject();
+    const auto beforeApply = state.projectSessionSaveToken();
     assert(project::applyProjectSnapshot(state, snapshot));
 
     assert(state.sequencerTracks.activeTrackIndex() == 1);
     assert(state.projectTracks.authored.midiChannels[1] == 12);
+    assert(state.projectSessionSaveToken().session != beforeApply.session);
 
     std::cout << "[PASS] test_snapshot_project_track_authority_wins_on_apply\n";
 }
@@ -308,17 +320,40 @@ void test_incremental_capture_completes_the_same_snapshot_contract() {
     project::ProjectSnapshotCapture capture;
     assert(capture.begin(state, snapshot));
 
-    for (uint8_t phase = 0; phase < 3; ++phase) {
+    uint16_t advances = 0U;
+    uint32_t maxSmallSlice = 0U;
+    uint32_t maxSequencerSlice = 0U;
+    project::ProjectSnapshotCapture::Progress complete{};
+    while (capture.active() && advances < 192U) {
+        const auto sliceKind = capture.nextSliceKind();
         const auto progress = capture.advance();
-        assert(progress.status == project::ProjectSnapshotCapture::Status::IN_PROGRESS);
-        assert(progress.modifiedCounter == 42);
-        assert(capture.active());
+        ++advances;
+        assert(progress.modifiedCounter == 42U);
+        if (sliceKind == project::ProjectSnapshotCapture::SliceKind::SEQUENCER) {
+            maxSequencerSlice = std::max(maxSequencerSlice, progress.workBytes);
+            assert(progress.workBytes <= 16384U);
+        } else {
+            maxSmallSlice = std::max(maxSmallSlice, progress.workBytes);
+            assert(progress.workBytes <= 4096U);
+        }
+        if (progress.status == project::ProjectSnapshotCapture::Status::COMPLETE) {
+            complete = progress;
+            break;
+        }
+        assert(progress.status ==
+               project::ProjectSnapshotCapture::Status::IN_PROGRESS);
     }
 
-    const auto complete = capture.advance();
     assert(complete.status == project::ProjectSnapshotCapture::Status::COMPLETE);
     assert(complete.modifiedCounter == 42);
+    assert(advances > 64U);
+    assert(maxSmallSlice == 4096U);
+    assert(maxSequencerSlice ==
+           sizeof(oc::note::sequencer::StepSequencerGraph));
     assert(!capture.active());
+    assert(capture.complete());
+    assert(capture.guard() != nullptr);
+    assert(state.projectSessionSaveTokenMatches(capture.guard()->token));
     assert(snapshot.project.metadata.modifiedCounter == 42);
     assert(snapshot.macroTracks[1].pages[0].cc[0] == 74);
     assert(snapshot.sequencer.flat.tracks[1].note[0] == 66);
@@ -346,6 +381,35 @@ void test_incremental_capture_rejects_a_mixed_revision() {
     assert(!capture.active());
 
     std::cout << "[PASS] test_incremental_capture_rejects_a_mixed_revision\n";
+}
+
+void test_incremental_capture_rejects_a_same_mutation_second_request() {
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProjectSession(state);
+    state.markProjectMutated();
+    const auto firstToken = state.projectSessionSaveToken();
+
+    project::ProjectSnapshot snapshot;
+    project::ProjectSnapshotCapture capture;
+    assert(capture.begin(state, snapshot));
+    assert(capture.advance().status ==
+           project::ProjectSnapshotCapture::Status::IN_PROGRESS);
+
+    const auto secondToken = state.requestProjectSessionSave();
+    assert(secondToken.session == firstToken.session);
+    assert(secondToken.mutationEpoch == firstToken.mutationEpoch);
+    assert(secondToken.modifiedCounter == firstToken.modifiedCounter);
+    assert(secondToken.requestId == firstToken.requestId + 1U);
+
+    const auto stale = capture.advance();
+    assert(stale.status == project::ProjectSnapshotCapture::Status::STALE);
+    assert(stale.modifiedCounter == firstToken.modifiedCounter);
+    assert(!capture.active());
+    assert(capture.guard() == nullptr);
+
+    std::cout
+        << "[PASS] incremental capture rejects same-mutation request\n";
 }
 
 void test_incremental_capture_rejects_an_authored_only_revision_change() {
@@ -402,10 +466,12 @@ void test_snapshot_rejects_invalid_project_tracks_before_live_mutation() {
     const auto beforeTracks = state.projectTracks.authored;
     const uint8_t beforeNote = state.sequencer.pattern.note[0];
     const uint32_t beforeModified = state.project.metadata.modifiedCounter;
+    const auto beforeToken = state.projectSessionSaveToken();
     assert(!project::applyProjectSnapshot(state, invalid));
     assert(project::sameProjectTrackSnapshot(state.projectTracks.authored, beforeTracks));
     assert(state.sequencer.pattern.note[0] == beforeNote);
     assert(state.project.metadata.modifiedCounter == beforeModified);
+    assert(state.projectSessionSaveToken() == beforeToken);
 
     std::cout << "[PASS] invalid Project Tracks fail before live mutation\n";
 }
@@ -607,6 +673,7 @@ void test_project_load_and_reset_do_not_discard_an_active_step_draft() {
         0
     ));
 
+    const auto beforeBlockedTransitions = state.projectSessionSaveToken();
     assert(!project::applyProjectSnapshot(state, baseline));
     assert(state.sequencer.stepContentDraft.active.get());
     assert(state.sequencer.pattern.note[0] == 93);
@@ -620,6 +687,7 @@ void test_project_load_and_reset_do_not_discard_an_active_step_draft() {
     assert(state.sequencer.pattern.note[0] == 93);
     assert(state.sequencer.stepContentDraft.blockedTransition ==
            sequencer::SequencerStepContentDraftBlockedTransition::RESET);
+    assert(state.projectSessionSaveToken() == beforeBlockedTransitions);
 
     std::cout
         << "[PASS] Project load/reset preserve an active Step draft\n";
@@ -638,6 +706,7 @@ int main() {
     test_snapshot_project_track_authority_wins_on_apply();
     test_incremental_capture_completes_the_same_snapshot_contract();
     test_incremental_capture_rejects_a_mixed_revision();
+    test_incremental_capture_rejects_a_same_mutation_second_request();
     test_incremental_capture_rejects_an_authored_only_revision_change();
     test_incremental_capture_rejects_a_project_track_revision_change();
     test_snapshot_rejects_invalid_project_tracks_before_live_mutation();

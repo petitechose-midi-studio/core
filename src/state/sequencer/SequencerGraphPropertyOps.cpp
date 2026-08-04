@@ -57,7 +57,7 @@ FLASHMEM bool setNodeNoteOffset(SequencerPatternState& pattern,
     if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
 
     auto& node = graph->stepNodes[nodeId];
-    bool changed = initializeNodePitchPolicy(node, pattern.pitchEditMode);
+    bool changed = false;
     if (offset == 0) {
         changed = assignFlag(node.flags, STEP_NODE_NOTE_OFFSET, false) || changed;
         if (node.noteOffset != 0) {
@@ -157,7 +157,7 @@ FLASHMEM bool setNodeChordMode(SequencerPatternState& pattern,
 
     auto& node = graph->stepNodes[nodeId];
     const auto nextMode = sanitizeChordMode(mode);
-    bool changed = initializeNodePitchPolicy(node, pattern.pitchEditMode);
+    bool changed = false;
     if (node.chordMode != nextMode) {
         node.chordMode = nextMode;
         changed = true;
@@ -176,7 +176,7 @@ FLASHMEM bool setNodeChordSpec(SequencerPatternState& pattern,
 
     spec.clamp();
     auto& node = graph->stepNodes[nodeId];
-    bool changed = initializeNodePitchPolicy(node, pattern.pitchEditMode);
+    bool changed = false;
     if (node.chordMode != oc::note::sequencer::StepSequencerChordMode::Local) {
         node.chordMode = oc::note::sequencer::StepSequencerChordMode::Local;
         changed = true;
@@ -202,7 +202,7 @@ FLASHMEM bool clearNodeChordState(SequencerPatternState& pattern, SequencerGraph
     if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
 
     auto& node = graph->stepNodes[nodeId];
-    bool changed = initializeNodePitchPolicy(node, pattern.pitchEditMode);
+    bool changed = false;
     if (node.chordMode != oc::note::sequencer::StepSequencerChordMode::Single) {
         node.chordMode = oc::note::sequencer::StepSequencerChordMode::Single;
         changed = true;
@@ -258,9 +258,6 @@ FLASHMEM bool setNodeLocalVariationRange(SequencerPatternState& pattern,
     auto* graph = mutableGraph(pattern);
     if (graph == nullptr || !hasStepNode(*graph, nodeId)) return false;
 
-    const bool policyChanged = property == StepProperty::NOTE &&
-        initializeNodePitchPolicy(graph->stepNodes[nodeId], pattern.pitchEditMode);
-
     auto next = graph->stepNodes[nodeId].localVariation;
     switch (property) {
         case StepProperty::NOTE:
@@ -287,8 +284,7 @@ FLASHMEM bool setNodeLocalVariationRange(SequencerPatternState& pattern,
         currentClamped.velocity == next.velocity &&
         currentClamped.gatePercent == next.gatePercent &&
         currentClamped.nudge == next.nudge) {
-        bump(pattern, policyChanged);
-        return policyChanged;
+        return false;
     }
 
     current = next;

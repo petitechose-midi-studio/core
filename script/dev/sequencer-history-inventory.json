@@ -1,0 +1,810 @@
+{
+  "schemaVersion": 1,
+  "scope": "L-R08-09 raw Sequencer History API retirement slice 1",
+  "recordingBoundary": {
+    "entryRecordingCallTotal": 44,
+    "expectedMigratedRemovalTotal": 38,
+    "expectedProviderForwardTotal": 1,
+    "expectedCoalescedPreparedTotal": 1,
+    "expectedTotal": 8,
+    "memberDispatch": {
+      "methods": [
+        "recordPattern",
+        "recordFlatPattern",
+        "recordFullBank",
+        "recordStructure",
+        "recordPreparedPattern",
+        "recordPreparedSynchronizedPattern",
+        "recordPreparedFullBank",
+        "recordPreparedStructure"
+      ],
+      "expectedMethodCount": 8,
+      "expectedTotal": 8,
+      "expectedSinkTotal": 4,
+      "expectedServiceAdapterTotal": 4,
+      "expectedSinkClassifications": {
+        "post-fallible": 0,
+        "prepared": 4,
+        "rollback-aware": 0
+      },
+      "groups": [
+        {
+          "path": "src/handler/sequencer/SequencerCcLaneWorkflow.cpp",
+          "method": "recordPreparedPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "prepared"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerPatternEditorHandler.cpp",
+          "method": "recordPreparedPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "prepared"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStepContentDraftWorkflow.cpp",
+          "method": "recordPreparedPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "prepared"
+        },
+        {
+          "path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp",
+          "method": "recordPreparedPattern",
+          "count": 1,
+          "role": "sink",
+          "classification": "prepared"
+        },
+        {
+          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+          "method": "recordPreparedPattern",
+          "count": 2,
+          "role": "service-adapter",
+          "coalescedPreparedCount": 1
+        },
+        {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "method": "recordPreparedPattern",
+          "count": 2,
+          "role": "service-adapter",
+          "providerForwardCount": 1
+        }
+      ]
+    },
+    "coreStateAdapter": {
+      "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+      "method": "recordPreparedSequencerStructureHistory",
+      "expectedCount": 0
+    },
+    "internalForwards": {
+      "path": "src/state/sequencer/SequencerHistory.cpp",
+      "expectedTotal": 0,
+      "groups": []
+    },
+    "explicitExclusions": []
+  },
+  "retiredRawApi": {
+    "roots": [
+      "src",
+      "test"
+    ],
+    "identifiers": [
+      "RecordPatternFn",
+      "RecordPatternChangeFn",
+      "RecordFullBankFn",
+      "CanRecordFullBankFn",
+      "RecordPreparedFullBankFn",
+      "RecordStructureFn",
+      "recordPattern",
+      "recordFlatPattern",
+      "recordPatternChange",
+      "recordPatternWithStorage",
+      "recordFullBank",
+      "recordStructure",
+      "canRecordSynchronizedPattern",
+      "recordPreparedSynchronizedPattern",
+      "recordPreparedFullBank",
+      "recordPreparedStructure",
+      "recordSequencerPatternHistory",
+      "recordSequencerBankHistory",
+      "canRecordSequencerBankHistory",
+      "recordPreparedSequencerBankHistory",
+      "recordSequencerStructureHistory",
+      "recordSequencerTrackStructureHistoryChange",
+      "recordPatternFromCoreState",
+      "recordFlatPatternFromCoreState",
+      "recordPatternChangeFromCoreState",
+      "recordPreparedSynchronizedPatternFromCoreState",
+      "recordFullBankFromCoreState",
+      "canRecordFullBankFromCoreState",
+      "recordPreparedFullBankFromCoreState",
+      "recordStructureFromCoreState"
+    ],
+    "targetedIdentifiers": [
+      {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
+        "identifier": "canRecordFullBank"
+      },
+      {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "identifier": "canRecordFullBank"
+      }
+    ],
+    "mutationLayers": [
+      {
+        "name": "domain-facade",
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
+        "identifier": "canRecordFullBank"
+      },
+      {
+        "name": "core-state",
+        "path": "src/state/CoreState.hpp",
+        "identifier": "recordSequencerPatternHistory"
+      },
+      {
+        "name": "history-service",
+        "path": "src/state/sequencer/SequencerHistory.cpp",
+        "identifier": "recordPatternWithStorage"
+      },
+      {
+        "name": "structure-helper",
+        "path": "src/handler/sequencer/SequencerStructureHistoryUtils.hpp",
+        "identifier": "recordSequencerTrackStructureHistoryChange"
+      },
+      {
+        "name": "test-clients",
+        "path": "test/Regression.cpp",
+        "identifier": "recordPattern"
+      }
+    ],
+    "expectedTotal": 0
+  },
+  "preparedPatternLifecycle": {
+    "ownerDeclaration": {
+      "path": "src/state/sequencer/SequencerHistory.hpp",
+      "enum": "SequencerPreparedPatternEditOwner",
+      "expectedCount": 8,
+      "owners": [
+        "PatternPitch",
+        "PropertySelector",
+        "StepContent",
+        "StepEditSession",
+        "StepToggle",
+        "PatternEditor",
+        "PageStructure",
+        "QuickControls"
+      ]
+    },
+    "methods": [
+      "beginPreparedPatternEdit",
+      "preparedPatternEditReady",
+      "sealPreparedPatternEdit",
+      "commitPreparedPatternEdit",
+      "abortPreparedPatternEdit",
+      "applyPreparedQuickControlsEdit"
+    ],
+    "centralAuthority": {
+      "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+      "qualifier": "CoreState",
+      "definitions": {
+        "beginOrContinueSequencerPreparedPatternEdit": 1,
+        "sequencerPreparedPatternEditReady": 1,
+        "sealSequencerPreparedPatternEdit": 1,
+        "commitSequencerPreparedPatternEdit": 1,
+        "abortSequencerPreparedPatternEdit": 1,
+        "applySequencerPreparedQuickControlsEdit": 1
+      }
+    },
+    "serviceAdapter": {
+      "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+      "calls": {
+        "beginPreparedPatternEdit": 1,
+        "preparedPatternEditReady": 1,
+        "sealPreparedPatternEdit": 1,
+        "commitPreparedPatternEdit": 1,
+        "abortPreparedPatternEdit": 1,
+        "applyPreparedQuickControlsEdit": 1
+      }
+    },
+    "expectedSurfaceCount": 9,
+    "expectedSurfaceCallTotals": {
+      "beginPreparedPatternEdit": 10,
+      "preparedPatternEditReady": 1,
+      "sealPreparedPatternEdit": 10,
+      "commitPreparedPatternEdit": 10,
+      "abortPreparedPatternEdit": 2,
+      "applyPreparedQuickControlsEdit": 1
+    },
+    "expectedCallTotals": {
+      "beginPreparedPatternEdit": 11,
+      "preparedPatternEditReady": 2,
+      "sealPreparedPatternEdit": 11,
+      "commitPreparedPatternEdit": 11,
+      "abortPreparedPatternEdit": 3,
+      "applyPreparedQuickControlsEdit": 2
+    },
+    "forbiddenRawMethods": [
+      "captureHistorySnapshot",
+      "captureFlatHistorySnapshot",
+      "recordPattern",
+      "recordFlatPattern"
+    ],
+    "expectedForbiddenRawCallTotal": 0,
+    "expectedRawCallExemptionTotal": 0,
+    "rawCallExemptions": [],
+    "surfaces": [
+      {
+        "path": "src/handler/sequencer/PatternPitchSettingsHandler.cpp",
+        "ownerReferences": {
+          "PatternPitch": 3
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 0,
+          "sealPreparedPatternEdit": 1,
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPropertySelectorHandler.cpp",
+        "ownerReferences": {
+          "PropertySelector": 5
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 2,
+          "preparedPatternEditReady": 0,
+          "sealPreparedPatternEdit": 2,
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerStepContentActions.cpp",
+        "ownerReferences": {
+          "StepContent": 1
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 2,
+          "preparedPatternEditReady": 0,
+          "sealPreparedPatternEdit": 2,
+          "commitPreparedPatternEdit": 2,
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerStepEditHandler.cpp",
+        "ownerReferences": {
+          "StepEditSession": 3,
+          "StepContent": 2
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 0,
+          "sealPreparedPatternEdit": 1,
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp",
+        "ownerReferences": {
+          "StepEditSession": 1
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 0,
+          "preparedPatternEditReady": 0,
+          "sealPreparedPatternEdit": 0,
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerStepHandler.cpp",
+        "ownerReferences": {
+          "StepToggle": 1
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 0,
+          "sealPreparedPatternEdit": 1,
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPatternEditorHandler.cpp",
+        "ownerReferences": {
+          "PatternEditor": 5
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 0,
+          "sealPreparedPatternEdit": 2,
+          "commitPreparedPatternEdit": 2,
+          "abortPreparedPatternEdit": 0,
+          "applyPreparedQuickControlsEdit": 0
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPreparedPageStructureTransaction.cpp",
+        "ownerReferences": {
+          "PageStructure": 1
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 1,
+          "sealPreparedPatternEdit": 1,
+          "commitPreparedPatternEdit": 1,
+          "abortPreparedPatternEdit": 1,
+          "applyPreparedQuickControlsEdit": 0
+        }
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
+        "ownerReferences": {
+          "QuickControls": 1
+        },
+        "calls": {
+          "beginPreparedPatternEdit": 1,
+          "preparedPatternEditReady": 0,
+          "sealPreparedPatternEdit": 0,
+          "commitPreparedPatternEdit": 0,
+          "abortPreparedPatternEdit": 1,
+          "applyPreparedQuickControlsEdit": 1
+        }
+      }
+    ]
+  },
+  "preparedFullBankLifecycle": {
+    "ownerDeclaration": {
+      "path": "src/state/sequencer/SequencerHistory.hpp",
+      "enum": "SequencerPreparedFullBankEditOwner",
+      "expectedCount": 2,
+      "owners": [
+        "ProjectScale",
+        "SequencerSettingsScale"
+      ]
+    },
+    "method": "applyPreparedProjectScaleChoice",
+    "centralAuthority": {
+      "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+      "qualifier": "CoreState",
+      "expectedDefinitionCount": 1
+    },
+    "serviceAdapter": {
+      "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+      "qualifier": "SequencerHistoryDomainServices",
+      "expectedDefinitionCount": 1
+    },
+    "trustedCommit": {
+      "method": "commitAdmittedFullBank",
+      "declaration": {
+        "path": "src/state/sequencer/SequencerHistory.hpp",
+        "expectedCount": 1
+      },
+      "implementation": {
+        "path": "src/state/sequencer/SequencerHistory.cpp",
+        "qualifier": "SequencerHistoryService",
+        "expectedDefinitionCount": 1
+      },
+      "centralCall": {
+        "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+        "function": "applyPreparedProjectScaleChoice",
+        "expectedCallCount": 1
+      },
+      "defensiveForward": {
+        "path": "src/state/sequencer/SequencerHistory.cpp",
+        "function": "recordPreparedFullBank",
+        "expectedCallCount": 0
+      },
+      "globalSourceCalls": {
+        "path": "src",
+        "expectedCallCount": 1
+      },
+      "forbiddenHandlerRoot": {
+        "path": "src/handler",
+        "expectedCallCount": 0
+      }
+    },
+    "expectedSurfaceFileCount": 2,
+    "expectedSurfaceCount": 3,
+    "expectedSurfaceCallTotal": 3,
+    "forbiddenRawMethods": [
+      "captureSequencerFullBankHistoryBefore",
+      "captureSequencerFullBankHistoryAfter",
+      "recordSequencerFullBankHistoryChange",
+      "captureHistorySnapshot",
+      "recordFullBank",
+      "recordPreparedFullBank"
+    ],
+    "expectedForbiddenRawCallTotal": 0,
+    "surfaces": [
+      {
+        "path": "src/handler/project/ProjectHandlerValueEditing.cpp",
+        "surfaceCount": 2,
+        "ownerReferences": {
+          "ProjectScale": 2
+        },
+        "callCount": 2
+      },
+      {
+        "path": "src/handler/settings/SequencerSettingsHandler.cpp",
+        "surfaceCount": 1,
+        "ownerReferences": {
+          "SequencerSettingsScale": 1
+        },
+        "callCount": 1
+      }
+    ],
+    "activeSpareProviders": {
+      "path": "src/state/sequencer/SequencerHistory.cpp",
+      "providers": [
+        {
+          "function": "reserveHistoryTrackBankSnapshotStorage",
+          "expectedActiveTrackBindingCount": 1,
+          "expectedSkipGuardCount": 1,
+          "expectedGraphResetCount": 1,
+          "expectedCcResetCount": 1,
+          "expectedActiveScratchClearCount": 0,
+          "expectedDraftGuardCount": 0,
+          "expectedSnapshotActiveGuardCount": 0,
+          "expectedEditorGraphRouteCount": 0,
+          "expectedEditorCcRouteCount": 0,
+          "expectedGraphCaptureCallCount": 0,
+          "expectedDataCaptureCallCount": 0
+        },
+        {
+          "function": "captureHistoryTrackBankGraphUsingReservedStorage",
+          "expectedActiveTrackBindingCount": 1,
+          "expectedSkipGuardCount": 0,
+          "expectedGraphResetCount": 0,
+          "expectedCcResetCount": 0,
+          "expectedActiveScratchClearCount": 0,
+          "expectedDraftGuardCount": 0,
+          "expectedSnapshotActiveGuardCount": 1,
+          "expectedEditorGraphRouteCount": 1,
+          "expectedEditorCcRouteCount": 0,
+          "expectedGraphCaptureCallCount": 0,
+          "expectedDataCaptureCallCount": 0
+        },
+        {
+          "function": "captureHistoryTrackBankDataUsingReservedStorage",
+          "expectedActiveTrackBindingCount": 1,
+          "expectedSkipGuardCount": 0,
+          "expectedGraphResetCount": 0,
+          "expectedCcResetCount": 0,
+          "expectedActiveScratchClearCount": 0,
+          "expectedDraftGuardCount": 0,
+          "expectedSnapshotActiveGuardCount": 1,
+          "expectedEditorGraphRouteCount": 0,
+          "expectedEditorCcRouteCount": 1,
+          "expectedGraphCaptureCallCount": 0,
+          "expectedDataCaptureCallCount": 0
+        },
+        {
+          "function": "captureHistoryTrackBankSnapshotUsingReservedStorage",
+          "expectedActiveTrackBindingCount": 1,
+          "expectedSkipGuardCount": 0,
+          "expectedGraphResetCount": 0,
+          "expectedCcResetCount": 0,
+          "expectedActiveScratchClearCount": 0,
+          "expectedDraftGuardCount": 0,
+          "expectedSnapshotActiveGuardCount": 1,
+          "expectedEditorGraphRouteCount": 0,
+          "expectedEditorCcRouteCount": 0,
+          "expectedGraphCaptureCallCount": 1,
+          "expectedDataCaptureCallCount": 1
+        },
+        {
+          "function": "applyHistorySnapshot",
+          "expectedActiveTrackBindingCount": 1,
+          "expectedSkipGuardCount": 2,
+          "expectedGraphResetCount": 0,
+          "expectedCcResetCount": 0,
+          "expectedActiveScratchClearCount": 2,
+          "expectedDraftGuardCount": 0,
+          "expectedSnapshotActiveGuardCount": 0,
+          "expectedEditorGraphRouteCount": 0,
+          "expectedEditorCcRouteCount": 0,
+          "expectedGraphCaptureCallCount": 0,
+          "expectedDataCaptureCallCount": 0
+        }
+      ]
+    }
+  },
+  "preparedTrackStructureLifecycle": {
+    "transactionPath": "src/handler/sequencer/SequencerPreparedTrackStructureTransaction.cpp",
+    "forbiddenRawMethods": [
+      "recordStructure",
+      "recordPreparedStructure"
+    ],
+    "expectedForbiddenRawCallTotal": 0,
+    "admissionGate": {
+      "method": "canCommitAdmittedStructure",
+      "declaration": {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
+        "expectedCount": 1
+      },
+      "implementation": {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "qualifier": "SequencerHistoryDomainServices",
+        "expectedDefinitionCount": 1
+      },
+      "memberDispatch": {
+        "path": "src",
+        "expectedTotal": 4,
+        "groups": [
+          {
+            "path": "src/handler/sequencer/SequencerPreparedTrackStructureTransaction.cpp",
+            "count": 2
+          },
+          {
+            "path": "src/handler/sequencer/SequencerStructureTrackTransferTransaction.cpp",
+            "count": 2
+          }
+        ]
+      }
+    },
+    "trustedCommit": {
+      "method": "commitAdmittedStructure",
+      "memberDispatch": {
+        "path": "src",
+        "expectedTotal": 4,
+        "groups": [
+          {
+            "path": "src/handler/sequencer/SequencerPreparedTrackStructureTransaction.cpp",
+            "count": 1
+          },
+          {
+            "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+            "count": 1
+          },
+          {
+            "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+            "count": 1
+          },
+          {
+            "path": "src/handler/sequencer/SequencerStructureTrackTransferTransaction.cpp",
+            "count": 1
+          }
+        ]
+      },
+      "stateDeclaration": {
+        "path": "src/state/sequencer/SequencerHistory.hpp",
+        "expectedCount": 1
+      },
+      "stateImplementation": {
+        "path": "src/state/sequencer/SequencerHistory.cpp",
+        "qualifier": "SequencerHistoryService",
+        "expectedDefinitionCount": 1
+      },
+      "defensiveForward": {
+        "path": "src/state/sequencer/SequencerHistory.cpp",
+        "function": "recordPreparedStructure",
+        "expectedCallCount": 0
+      },
+      "stateSourceCalls": {
+        "path": "src/state",
+        "expectedCallCount": 1
+      },
+      "coreAuthority": {
+        "method": "commitAdmittedSequencerStructureHistory",
+        "declaration": {
+          "path": "src/state/CoreState.hpp",
+          "expectedCount": 1
+        },
+        "implementation": {
+          "path": "src/state/CoreStateSequencerHistoryRecording.cpp",
+          "qualifier": "CoreState",
+          "expectedDefinitionCount": 1
+        },
+        "expectedSinkCallCount": 1
+      },
+      "serviceFacade": {
+        "declaration": {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.hpp",
+          "expectedCount": 1
+        },
+        "implementation": {
+          "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+          "qualifier": "SequencerHistoryDomainServices",
+          "expectedDefinitionCount": 1
+        }
+      },
+      "coreAdapter": {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "function": "commitAdmittedStructureFromCoreState",
+        "expectedDefinitionCount": 1,
+        "downstreamMethod": "commitAdmittedSequencerStructureHistory",
+        "expectedDownstreamCallCount": 1,
+        "binding": "commitAdmittedStructureFromCoreState",
+        "expectedBindingCount": 1
+      },
+      "transactionGateway": {
+        "function": "commitAdmittedStructure",
+        "expectedUnqualifiedOccurrenceCount": 2,
+        "expectedMemberForwardCount": 1,
+        "tailFunction": "commitPreparedSequencerTrackStructureTransaction",
+        "expectedTailCallCount": 1
+      }
+    }
+  },
+  "coalescedBegins": {
+    "method": "beginCoalescedPatternEdit",
+    "expectedTotal": 7,
+    "expectedBusinessTotal": 6,
+    "expectedAdapterTotal": 1,
+    "groups": [
+      {
+        "path": "src/handler/sequencer/SequencerMacroPropertyHandler.cpp",
+        "count": 5,
+        "role": "business"
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
+        "count": 1,
+        "role": "business"
+      },
+      {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "count": 1,
+        "role": "adapter"
+      }
+    ]
+  },
+  "coalescedSeals": {
+    "method": "sealCoalescedPatternEdit",
+    "expectedTotal": 7,
+    "expectedBusinessTotal": 6,
+    "expectedAdapterTotal": 1,
+    "groups": [
+      {
+        "path": "src/handler/sequencer/SequencerMacroPropertyHandler.cpp",
+        "count": 5,
+        "role": "business"
+      },
+      {
+        "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp",
+        "count": 1,
+        "role": "business"
+      },
+      {
+        "path": "src/handler/sequencer/SequencerHistoryDomainServices.cpp",
+        "count": 1,
+        "role": "adapter"
+      }
+    ]
+  },
+  "dOomPublication": {
+    "outcomeHeader": {
+      "path": "src/state/sequencer/SequencerHistoryOutcomes.hpp",
+      "enums": [
+        {
+          "name": "SequencerHistoryRejectionReason",
+          "members": [
+            "Blocked",
+            "ResourceUnavailable",
+            "HistoryUnavailable"
+          ]
+        },
+        {
+          "name": "SequencerHistoryOpenOutcome",
+          "members": [
+            "Blocked",
+            "ResourceUnavailable",
+            "HistoryUnavailable",
+            "Started",
+            "Continued"
+          ]
+        },
+        {
+          "name": "SequencerHistoryGestureOutcome",
+          "members": [
+            "Blocked",
+            "ResourceUnavailable",
+            "HistoryUnavailable",
+            "NoChange",
+            "Committed"
+          ]
+        }
+      ]
+    },
+    "surfaceIdentifiers": [
+      {"path": "src/handler/sequencer/PatternPitchSettingsHandler.cpp", "identifier": "showRejection", "expectedCount": 3},
+      {"path": "src/handler/sequencer/SequencerCcLaneWorkflow.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 12},
+      {"path": "src/handler/sequencer/SequencerCcLaneWorkflow.cpp", "identifier": "HISTORY_UNAVAILABLE", "expectedCount": 7},
+      {"path": "src/handler/sequencer/SequencerMacroPropertyHandler.cpp", "identifier": "showRejection", "expectedCount": 10},
+      {"path": "src/handler/sequencer/SequencerPatternEditorHandler.cpp", "identifier": "showRejection", "expectedCount": 2},
+      {"path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.cpp", "identifier": "showRejection", "expectedCount": 3},
+      {"path": "src/handler/sequencer/SequencerPreparedPageStructureTransaction.cpp", "identifier": "showRejection", "expectedCount": 4},
+      {"path": "src/handler/sequencer/SequencerPropertySelectorHandler.cpp", "identifier": "showRejection", "expectedCount": 8},
+      {"path": "src/handler/sequencer/SequencerStepContentActions.cpp", "identifier": "showRejection", "expectedCount": 2},
+      {"path": "src/handler/sequencer/SequencerStepContentDraftWorkflow.cpp", "identifier": "showRejection", "expectedCount": 2},
+      {"path": "src/handler/sequencer/SequencerStepEditHandler.cpp", "identifier": "showRejection", "expectedCount": 3},
+      {"path": "src/handler/sequencer/SequencerStepEditSessionWorkflow.cpp", "identifier": "showRejection", "expectedCount": 2},
+      {"path": "src/handler/sequencer/SequencerStepHandler.cpp", "identifier": "showRejection", "expectedCount": 4},
+      {"path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 6},
+      {"path": "src/handler/sequencer/SequencerStepPresetDomainServices.cpp", "identifier": "HISTORY_UNAVAILABLE", "expectedCount": 1},
+      {"path": "src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "identifier": "ALLOCATION_UNAVAILABLE", "expectedCount": 2},
+      {"path": "src/handler/sequencer/SequencerStepPresetLibraryAdapter.cpp", "identifier": "HISTORY_UNAVAILABLE", "expectedCount": 2},
+      {"path": "src/handler/settings/SequencerSettingsHandler.cpp", "identifier": "showRejection", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "identifier": "showRejection", "expectedCount": 5}
+    ],
+    "stringLiterals": [
+      {"path": "src/handler/project/ProjectHandlerValueEditing.cpp", "literal": "Memory unavailable - unchanged", "expectedCount": 1},
+      {"path": "src/handler/project/ProjectHandlerValueEditing.cpp", "literal": "History unavailable - unchanged", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "literal": "EDIT BLOCKED", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "literal": "Edit unavailable", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "literal": "Memory unavailable", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "literal": "History unavailable", "expectedCount": 1},
+      {"path": "src/state/sequencer/SequencerUiState.cpp", "literal": "State unchanged", "expectedCount": 1}
+    ],
+    "forbiddenIdentifiers": [
+      "SequencerHistoryOpenOutcome::Failed",
+      "SequencerPreparedPatternEditBeginOutcome::Failed",
+      "SequencerPreparedFullBankEditOutcome::Failed"
+    ],
+    "typedBeginMethods": [
+      "beginOrContinueSequencerPatternHistoryCoalescing",
+      "beginOrContinueSequencerPreparedPatternEdit",
+      "beginCoalescedPatternEdit",
+      "beginPreparedPatternEdit"
+    ],
+    "quickControlsRetainedBools": {
+      "path": "src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp",
+      "members": [
+        "history_retry_required_",
+        "nested_step_draft_"
+      ]
+    }
+  },
+  "failureInjection": {
+    "macro": "MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION",
+    "cmakePath": "CMakeLists.txt",
+    "platformioPath": "platformio.ini",
+    "platformioEnvironment": "native",
+    "nativeTarget": "midi_studio_core_native",
+    "requiredCmakeGuards": [
+      "MS_CORE_BUILD_TESTS",
+      "BUILD_TESTING"
+    ],
+    "allocatorPath": "src/app/ExtmemAllocator.hpp",
+    "expectedAllocatorGuardCount": 6,
+    "expectedSeamNamespaceCount": 1,
+    "guardedHelpers": [
+      "makeExtmemUnique",
+      "makeExtmemUniqueCold",
+      "makeExtmemUniqueCopy",
+      "makeExtmemUniqueForOverwrite",
+      "makeExtmemUniqueArrayForOverwrite"
+    ],
+    "allowedTestUses": {
+      "test/support/SequencerHistoryTransactionAssertions.hpp": 1,
+      "test/test_ProjectFileStore/test_main.cpp": 1,
+      "test/test_ProjectHistoryCoordinator/test_main.cpp": 1,
+      "test/test_ProjectSessionAutosaveService/test_main.cpp": 1,
+      "test/test_SequencerCoalescedPatternTransactions/test_main.cpp": 10,
+      "test/test_SequencerHistory/test_main.cpp": 1,
+      "test/test_SequencerHistoryQualification/test_main.cpp": 1,
+      "test/test_SequencerMacroPropertyHandler/test_main.cpp": 1,
+      "test/test_SequencerPatternEditorHandler/test_main.cpp": 5,
+      "test/test_SequencerPreparedTrackStructureTransaction/test_main.cpp": 1,
+      "test/test_MacroDirectTrackStructureTransaction/test_main.cpp": 1,
+      "test/test_SequencerStructureTrackTransferTransaction/test_main.cpp": 1,
+      "test/test_SequencerQuickControlsContainment/test_main.cpp": 1,
+      "test/test_SequencerCcLaneWorkflow/test_main.cpp": 1,
+      "test/test_SequencerStepContentDraftWorkflow/test_main.cpp": 1,
+      "test/test_SequencerStepPresetDomainServices/test_main.cpp": 1,
+      "test/test_SequencerTrackBankOps/test_main.cpp": 1,
+      "test/test_StructureClipboardState/test_main.cpp": 1
+    }
+  }
+}

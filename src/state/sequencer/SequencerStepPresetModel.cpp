@@ -6,6 +6,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "config/Timing.hpp"
+#include "state/sequencer/SequencerPresetLibraryActionPolicy.hpp"
 
 namespace core::state::sequencer {
 
@@ -69,15 +70,13 @@ FLASHMEM bool sequencerStepPresetCanApply(
     SequencerStepPresetCompatibility compatibility
 ) {
     return compatibility == SequencerStepPresetCompatibility::READY ||
-           compatibility == SequencerStepPresetCompatibility::WARNING_ADAPTED ||
-           compatibility == SequencerStepPresetCompatibility::WARNING_DEFAULTED;
+           compatibility == SequencerStepPresetCompatibility::WARNING_ADAPTED;
 }
 
 FLASHMEM bool sequencerStepPresetHasWarning(
     SequencerStepPresetCompatibility compatibility
 ) {
-    return compatibility == SequencerStepPresetCompatibility::WARNING_ADAPTED ||
-           compatibility == SequencerStepPresetCompatibility::WARNING_DEFAULTED;
+    return compatibility == SequencerStepPresetCompatibility::WARNING_ADAPTED;
 }
 
 FLASHMEM const char* sequencerStepPresetCompatibilityLabel(
@@ -86,8 +85,9 @@ FLASHMEM const char* sequencerStepPresetCompatibilityLabel(
     switch (compatibility) {
         case SequencerStepPresetCompatibility::READY: return "Ready";
         case SequencerStepPresetCompatibility::WARNING_ADAPTED: return "Adapted";
-        case SequencerStepPresetCompatibility::WARNING_DEFAULTED: return "Defaults";
         case SequencerStepPresetCompatibility::BLOCKED_CONTEXT: return "Wrong context";
+        case SequencerStepPresetCompatibility::BLOCKED_PITCH_CONTEXT:
+            return "Pitch context";
         case SequencerStepPresetCompatibility::BLOCKED_CAPACITY: return "Graph full";
         case SequencerStepPresetCompatibility::CORRUPT: return "Corrupt";
         case SequencerStepPresetCompatibility::UNSUPPORTED_VERSION: return "Newer version";
@@ -103,6 +103,7 @@ FLASHMEM contextual::ContextActionReason sequencerStepPresetCompatibilityReason(
 ) {
     switch (compatibility) {
         case SequencerStepPresetCompatibility::BLOCKED_CONTEXT:
+        case SequencerStepPresetCompatibility::BLOCKED_PITCH_CONTEXT:
             return contextual::ContextActionReason::INCOMPATIBLE;
         case SequencerStepPresetCompatibility::BLOCKED_CAPACITY:
             return contextual::ContextActionReason::CAPACITY;
@@ -118,8 +119,6 @@ FLASHMEM contextual::ContextActionReason sequencerStepPresetCompatibilityReason(
             return contextual::ContextActionReason::PENDING;
         case SequencerStepPresetCompatibility::WARNING_ADAPTED:
             return contextual::ContextActionReason::ADAPTED;
-        case SequencerStepPresetCompatibility::WARNING_DEFAULTED:
-            return contextual::ContextActionReason::DEFAULTED;
         default:
             return contextual::ContextActionReason::NONE;
     }
@@ -191,39 +190,14 @@ FLASHMEM contextual::ContextActionSpec buildSequencerStepPresetActionSpec(
     spec.source = sourceRef(descriptor);
     spec.target = targetRef(target);
 
-    if (saveMode) {
-        if (selectedNewAsset) {
-            spec.tap.action = contextual::ContextActionId::SAVE;
-            spec.tap.impact = contextual::ContextActionImpact::CONSTRUCTIVE;
-            spec.tap.availability = target.valid
-                ? contextual::ContextActionAvailability::AVAILABLE
-                : contextual::ContextActionAvailability::DISABLED;
-            spec.tap.reason = target.valid
-                ? contextual::ContextActionReason::NONE
-                : contextual::ContextActionReason::CONFLICT;
-            spec.tap.visual = {
-                contextual::ContextIconId::SAVE,
-                contextual::ContextTone::GREEN,
-            };
-            return spec;
-        }
-
-        spec.hold.action = contextual::ContextActionId::SAVE;
-        spec.hold.impact = contextual::ContextActionImpact::OVERWRITE;
-        spec.hold.availability = hasFocusedAsset && target.valid
-            ? contextual::ContextActionAvailability::WARNING
-            : contextual::ContextActionAvailability::DISABLED;
-        spec.hold.reason = hasFocusedAsset && target.valid
-            ? contextual::ContextActionReason::NONE
-            : contextual::ContextActionReason::NO_ACTION;
-        spec.hold.visual = {
-            contextual::ContextIconId::SAVE,
-            contextual::ContextTone::AMBER,
-        };
-        spec.guard = {
-            contextual::ContextGuardKind::HOLD,
-            static_cast<uint16_t>(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS),
-        };
+    if (preset_library_action_policy::projectSaveAction(
+            spec,
+            saveMode,
+            selectedNewAsset,
+            hasFocusedAsset,
+            target.valid,
+            contextual::ContextActionReason::CONFLICT
+        )) {
         return spec;
     }
 
@@ -231,28 +205,28 @@ FLASHMEM contextual::ContextActionSpec buildSequencerStepPresetActionSpec(
         sequencerStepPresetCompatibilityReason(descriptor.compatibility);
     if (!hasFocusedAsset || !descriptor.valid ||
         !sequencerStepPresetCanApply(descriptor.compatibility)) {
-        spec.tap.action = contextual::ContextActionId::APPLY;
+        spec.tap.action = contextual::ContextActionId::LOAD;
         spec.tap.impact = contextual::ContextActionImpact::CONSTRUCTIVE;
         spec.tap.availability = contextual::ContextActionAvailability::DISABLED;
         spec.tap.reason = hasFocusedAsset
             ? compatibilityReason
             : contextual::ContextActionReason::NO_ACTION;
         spec.tap.visual = {
-            contextual::ContextIconId::APPLY,
+            contextual::ContextIconId::LOAD,
             contextual::ContextTone::GREEN,
         };
         return spec;
     }
 
     if (descriptor.footprint == SequencerStepPresetFootprint::FREE) {
-        spec.tap.action = contextual::ContextActionId::APPLY;
+        spec.tap.action = contextual::ContextActionId::LOAD;
         spec.tap.impact = contextual::ContextActionImpact::CONSTRUCTIVE;
         spec.tap.availability = sequencerStepPresetHasWarning(descriptor.compatibility)
             ? contextual::ContextActionAvailability::WARNING
             : contextual::ContextActionAvailability::AVAILABLE;
         spec.tap.reason = compatibilityReason;
         spec.tap.visual = {
-            contextual::ContextIconId::APPLY,
+            contextual::ContextIconId::LOAD,
             sequencerStepPresetHasWarning(descriptor.compatibility)
                 ? contextual::ContextTone::AMBER
                 : contextual::ContextTone::GREEN,
@@ -260,12 +234,12 @@ FLASHMEM contextual::ContextActionSpec buildSequencerStepPresetActionSpec(
         return spec;
     }
 
-    spec.hold.action = contextual::ContextActionId::APPLY;
+    spec.hold.action = contextual::ContextActionId::LOAD;
     spec.hold.impact = contextual::ContextActionImpact::OVERWRITE;
     spec.hold.availability = contextual::ContextActionAvailability::WARNING;
     spec.hold.reason = compatibilityReason;
     spec.hold.visual = {
-        contextual::ContextIconId::APPLY,
+        contextual::ContextIconId::LOAD,
         contextual::ContextTone::AMBER,
     };
     spec.guard = {

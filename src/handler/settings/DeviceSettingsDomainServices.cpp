@@ -6,60 +6,82 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "state/MidiSyncSettingsPolicy.hpp"
+
 namespace core::handler {
 
 namespace {
 
-constexpr int MODE_COUNT = 3;
-constexpr int FOLLOW_COUNT = 2;
-constexpr int FALLBACK_COUNT = 7;
-constexpr int LOCK_COUNT = 8;
+namespace policy = core::state::midi_sync_policy;
+using ApplyResult = DeviceSettingsDomainServices::ApplyResult;
+using ApplyStatus = DeviceSettingsDomainServices::ApplyStatus;
 
-constexpr core::state::MidiSyncMode MODE_VALUES[MODE_COUNT] = {
-    core::state::MidiSyncMode::MASTER,
-    core::state::MidiSyncMode::SLAVE,
-    core::state::MidiSyncMode::AUTO,
-};
-
-constexpr bool FOLLOW_VALUES[FOLLOW_COUNT] = {false, true};
-constexpr uint16_t FALLBACK_VALUES[FALLBACK_COUNT] = {150, 250, 500, 750, 1000, 1500, 2000};
-constexpr uint8_t LOCK_VALUES[LOCK_COUNT] = {1, 2, 3, 4, 6, 8, 12, 24};
-
-template <typename T, int N>
-int findChoiceIndex(const T& value, const T (&choices)[N], int fallback = 0) {
-    for (int i = 0; i < N; ++i) {
-        if (choices[i] == value) return i;
+template <typename T, size_t N>
+int findChoiceIndex(
+    const T& value,
+    const std::array<T, N>& choices,
+    int fallback = 0
+) {
+    for (size_t i = 0; i < N; ++i) {
+        if (choices[i] == value) return static_cast<int>(i);
     }
-    return std::clamp(fallback, 0, N - 1);
+    return std::clamp(fallback, 0, static_cast<int>(N) - 1);
+}
+
+FLASHMEM ApplyResult applyResult(
+    ApplyStatus status,
+    core::persistence::PersistenceWriteStatus persistenceStatus =
+        core::persistence::PersistenceWriteStatus::OK
+) {
+    return ApplyResult{
+        .status = status,
+        .persistenceStatus = persistenceStatus,
+    };
 }
 
 }  // namespace
 
 FLASHMEM DeviceSettingsDomainServices::DeviceSettingsDomainServices(StateRefs state)
     : midi_sync_(&state.midiSync)
-    , settings_(&state.settings) {}
+    , store_(&state.store) {}
 
 FLASHMEM int DeviceSettingsDomainServices::currentChoiceIndex(uint8_t row) const {
     switch (row) {
         case 0:
             return findChoiceIndex(
                 midi_sync_->mode.get(),
-                MODE_VALUES,
-                findChoiceIndex(core::state::MidiSyncMode::AUTO, MODE_VALUES, 0)
+                policy::MODES,
+                findChoiceIndex(
+                    core::state::MidiSyncMode::AUTO,
+                    policy::MODES,
+                    0
+                )
             );
         case 1:
-            return findChoiceIndex(midi_sync_->followTransport.get(), FOLLOW_VALUES, 1);
+            return findChoiceIndex(
+                midi_sync_->followTransport.get(),
+                policy::FOLLOW_TRANSPORT,
+                1
+            );
         case 2:
             return findChoiceIndex(
                 midi_sync_->autoFallbackMs.get(),
-                FALLBACK_VALUES,
-                findChoiceIndex(static_cast<uint16_t>(500), FALLBACK_VALUES, 0)
+                policy::AUTO_FALLBACK_MS,
+                findChoiceIndex(
+                    static_cast<uint16_t>(500),
+                    policy::AUTO_FALLBACK_MS,
+                    0
+                )
             );
         case 3:
             return findChoiceIndex(
                 midi_sync_->autoLockClockCount.get(),
-                LOCK_VALUES,
-                findChoiceIndex(static_cast<uint8_t>(6), LOCK_VALUES, 0)
+                policy::AUTO_LOCK_CLOCKS,
+                findChoiceIndex(
+                    static_cast<uint8_t>(6),
+                    policy::AUTO_LOCK_CLOCKS,
+                    0
+                )
             );
         default:
             return 0;
@@ -68,59 +90,137 @@ FLASHMEM int DeviceSettingsDomainServices::currentChoiceIndex(uint8_t row) const
 
 FLASHMEM int DeviceSettingsDomainServices::choiceCount(uint8_t row) const {
     switch (row) {
-        case 0: return MODE_COUNT;
-        case 1: return FOLLOW_COUNT;
-        case 2: return FALLBACK_COUNT;
-        case 3: return LOCK_COUNT;
+        case 0: return static_cast<int>(policy::MODES.size());
+        case 1: return static_cast<int>(policy::FOLLOW_TRANSPORT.size());
+        case 2: return static_cast<int>(policy::AUTO_FALLBACK_MS.size());
+        case 3: return static_cast<int>(policy::AUTO_LOCK_CLOCKS.size());
         default: return 0;
     }
 }
 
-FLASHMEM void DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceIndex) const {
+FLASHMEM DeviceSettingsDomainServices::ApplyResult
+DeviceSettingsDomainServices::applyMidiSyncMode(
+    core::state::MidiSyncMode mode
+) const {
+    if (!policy::validMode(mode)) {
+        return applyResult(
+            ApplyStatus::INVALID_SELECTION,
+            core::persistence::PersistenceWriteStatus::INVALID_CONFIG
+        );
+    }
+    return applyChoice(0U, findChoiceIndex(mode, policy::MODES, 0));
+}
+
+FLASHMEM DeviceSettingsDomainServices::ApplyResult
+DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceIndex) const {
     auto status = core::persistence::PersistenceWriteStatus::OK;
+    int appliedIndex = 0;
 
     switch (row) {
         case 0: {
-            const int idx = std::clamp(choiceIndex, 0, MODE_COUNT - 1);
-            midi_sync_->mode.set(MODE_VALUES[idx]);
-            status = settings_->saveMidiSyncModeStatus(midi_sync_->mode.get());
+            appliedIndex = std::clamp(
+                choiceIndex,
+                0,
+                static_cast<int>(policy::MODES.size()) - 1
+            );
+            if (midi_sync_->mode.get() == policy::MODES[appliedIndex]) {
+                return applyResult(ApplyStatus::NO_CHANGE);
+            }
+            status = store_->saveMidiSyncModeStatus(
+                policy::MODES[appliedIndex]
+            );
             break;
         }
         case 1: {
-            const int idx = std::clamp(choiceIndex, 0, FOLLOW_COUNT - 1);
-            midi_sync_->followTransport.set(FOLLOW_VALUES[idx]);
-            status = settings_->saveMidiFollowTransportStatus(midi_sync_->followTransport.get());
+            appliedIndex = std::clamp(
+                choiceIndex,
+                0,
+                static_cast<int>(policy::FOLLOW_TRANSPORT.size()) - 1
+            );
+            if (midi_sync_->followTransport.get() ==
+                policy::FOLLOW_TRANSPORT[appliedIndex]) {
+                return applyResult(ApplyStatus::NO_CHANGE);
+            }
+            status = store_->saveMidiFollowTransportStatus(
+                policy::FOLLOW_TRANSPORT[appliedIndex]
+            );
             break;
         }
         case 2: {
-            const int idx = std::clamp(choiceIndex, 0, FALLBACK_COUNT - 1);
-            midi_sync_->autoFallbackMs.set(FALLBACK_VALUES[idx]);
-            status = settings_->saveMidiAutoFallbackMsStatus(midi_sync_->autoFallbackMs.get());
+            appliedIndex = std::clamp(
+                choiceIndex,
+                0,
+                static_cast<int>(policy::AUTO_FALLBACK_MS.size()) - 1
+            );
+            if (midi_sync_->autoFallbackMs.get() ==
+                policy::AUTO_FALLBACK_MS[appliedIndex]) {
+                return applyResult(ApplyStatus::NO_CHANGE);
+            }
+            status = store_->saveMidiAutoFallbackMsStatus(
+                policy::AUTO_FALLBACK_MS[appliedIndex]
+            );
             break;
         }
         case 3: {
-            const int idx = std::clamp(choiceIndex, 0, LOCK_COUNT - 1);
-            midi_sync_->autoLockClockCount.set(LOCK_VALUES[idx]);
-            status = settings_->saveMidiAutoLockClockCountStatus(midi_sync_->autoLockClockCount.get());
+            appliedIndex = std::clamp(
+                choiceIndex,
+                0,
+                static_cast<int>(policy::AUTO_LOCK_CLOCKS.size()) - 1
+            );
+            if (midi_sync_->autoLockClockCount.get() ==
+                policy::AUTO_LOCK_CLOCKS[appliedIndex]) {
+                return applyResult(ApplyStatus::NO_CHANGE);
+            }
+            status = store_->saveMidiAutoLockClockCountStatus(
+                policy::AUTO_LOCK_CLOCKS[appliedIndex]
+            );
             break;
         }
         default:
-            return;
+            return applyResult(
+                ApplyStatus::INVALID_SELECTION,
+                core::persistence::PersistenceWriteStatus::INVALID_CONFIG
+            );
     }
 
     if (status != core::persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[DeviceSettings] Failed to stage settings row {}: {}",
                     row,
                     core::persistence::persistenceWriteStatusLabel(status));
-        return;
+        return applyResult(ApplyStatus::PERSISTENCE_FAILED, status);
     }
 
-    const auto commitStatus = settings_->commitStatus();
+    const auto commitStatus = store_->commitStatus();
     if (commitStatus != core::persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[DeviceSettings] Failed to commit settings row {}: {}",
                     row,
                     core::persistence::persistenceWriteStatusLabel(commitStatus));
+        return applyResult(ApplyStatus::PERSISTENCE_FAILED, commitStatus);
     }
+
+    switch (row) {
+        case 0:
+            midi_sync_->mode.set(policy::MODES[appliedIndex]);
+            break;
+        case 1:
+            midi_sync_->followTransport.set(
+                policy::FOLLOW_TRANSPORT[appliedIndex]
+            );
+            break;
+        case 2:
+            midi_sync_->autoFallbackMs.set(
+                policy::AUTO_FALLBACK_MS[appliedIndex]
+            );
+            break;
+        case 3:
+            midi_sync_->autoLockClockCount.set(
+                policy::AUTO_LOCK_CLOCKS[appliedIndex]
+            );
+            break;
+        default:
+            break;
+    }
+    return applyResult(ApplyStatus::APPLIED);
 }
 
 }  // namespace core::handler

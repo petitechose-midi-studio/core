@@ -5,9 +5,11 @@
 #include "state/sequencer/SequencerCcLaneRouting.hpp"
 #include "state/shared/MidiCcDestinationResolver.hpp"
 
-namespace core::handler {
-
+namespace core::sequencer {
 class MidiCcGlobalFrameCoordinator;
+}
+
+namespace core::handler {
 
 struct SequencerCcLaneLiveProjection {
     bool lanePresent = false;
@@ -20,7 +22,7 @@ struct SequencerCcLaneLiveProjection {
 
 /** Read the last committed arbiter frame for one exact Track/Lane author. */
 SequencerCcLaneLiveProjection projectSequencerCcLaneLive(
-    const MidiCcGlobalFrameCoordinator* coordinator,
+    const core::sequencer::MidiCcGlobalFrameCoordinator* coordinator,
     core::state::sequencer::SequencerCcLaneAddress address,
     const core::state::sequencer::SequencerCcLane& lane,
     const core::state::sequencer::SequencerCcTrackRoute& trackRoute

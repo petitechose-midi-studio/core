@@ -6,7 +6,7 @@
 #include <oc/diagnostics/Performance.hpp>
 #include <oc/note/clock/ClockConstants.hpp>
 
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "sequencer/ProjectTrackRuntimeSnapshotBank.hpp"
 #include "sequencer/SequencerRuntimeSnapshotBank.hpp"
 
@@ -113,7 +113,7 @@ FLASHMEM SequencerPlaybackService::SequencerPlaybackService(
     const SequencerRuntimeGraphBank& runtimeGraphBank,
     core::state::sequencer::SequencerTrackActivationQueue* trackActivations,
     SequencerCcLaneRuntime* ccLaneRuntime,
-    core::handler::MidiCcGlobalFrameCoordinator* ccCoordinator,
+    MidiCcGlobalFrameCoordinator* ccCoordinator,
     SequencerCcLaneRuntime* ccPredictiveLaneRuntime
 )
     : sequencer_(sequencer)
@@ -372,7 +372,7 @@ void SequencerPlaybackService::processCcRuntime_(
                 inputs[track] = {
                     .lanes = laneSnapshot ? laneSnapshot->lanesForTrack(track) : nullptr,
                     .route = core::state::sequencer::makeSequencerCcTrackRoute(
-                        core::handler::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                        MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
                         projectTrackChannel(projectTracks, track)
                     ),
                     .step = static_cast<uint8_t>(

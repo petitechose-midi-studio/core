@@ -35,7 +35,9 @@
 
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
+#include "app/ExtmemAllocator.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
+#include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
@@ -132,12 +134,12 @@ int main(int argc, char** argv) {
     }
 
     // 2. Create storages and state (specific to core)
-    oc::impl::FileStorage settingsStorage(kStorageFiles[0]);
-    if (!settingsStorage.init()) {
+    oc::impl::FileStorage deviceSettingsStorage(kStorageFiles[0]);
+    if (!deviceSettingsStorage.init()) {
         fprintf(stderr, "Failed to open storage files\n");
         return 1;
     }
-    core::state::CoreState coreState(settingsStorage);
+    core::state::CoreState coreState(deviceSettingsStorage);
 
     std::filesystem::path productFileRoot = uxScript
         ? std::filesystem::path(uxOutput) / "product-files"
@@ -163,9 +165,14 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "Failed to initialize product file service\n");
         return 1;
     }
-    ms::entry::SdlProjectSessionRuntime projectSessionRuntime(productFiles, coreState);
-    reportProjectSessionRestore(projectSessionRuntime.restoreResult());
-
+    auto productDirectoryCatalog =
+        core::app::makeExtmemUniqueCold<core::persistence::ProductDirectoryCatalog>(
+            productFiles
+        );
+    if (!productDirectoryCatalog) {
+        std::fprintf(stderr, "Failed to allocate product directory catalog\n");
+        return 1;
+    }
     const int bridge_udp_port = ms::bridge::udp_port(argc, argv, 8000);
     std::string bindingTracePath;
     sdl::integration::InputBindingTraceWriter bindingTrace;
@@ -217,6 +224,26 @@ int main(int argc, char** argv) {
             );
         });
 
+    ms::entry::SdlProjectSessionRuntime projectSessionRuntime(
+        productFiles,
+        coreState,
+        0U,
+        &app,
+        [](void* context, uint32_t nowMs, bool playbackActive) {
+            auto* app = static_cast<oc::app::OpenControlApp*>(context);
+            if (!app || app->contexts().activeId() !=
+                            static_cast<uint8_t>(Config::ContextID::STANDALONE)) {
+                return;
+            }
+            auto* activeContext = app->contexts().active();
+            if (activeContext) {
+                static_cast<core::context::StandaloneContext*>(activeContext)
+                    ->advancePersistence(nowMs, playbackActive);
+            }
+        }
+    );
+    reportProjectSessionRestore(projectSessionRuntime.restoreResult());
+
     if (!app.midiAPI()) {
         std::fprintf(stderr, "Sequencer runtime init failed: MIDI API unavailable\n");
         return 1;
@@ -251,7 +278,12 @@ int main(int argc, char** argv) {
 
     // 4. Register contexts and start
     // Note: Contexts use Screen::root() which is configured to HwSimulator's screenArea
-    core::app::registerContexts(app, coreState, productFiles);
+    core::app::registerContexts(
+        app,
+        coreState,
+        productFiles,
+        *productDirectoryCatalog
+    );
     app.begin();
 
     if (uxScript) {

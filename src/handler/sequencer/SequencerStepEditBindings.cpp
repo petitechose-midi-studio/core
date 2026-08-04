@@ -7,6 +7,7 @@
 #include "config/Timing.hpp"
 #include "SequencerInteractionPolicyAdapter.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#include "state/sequencer/SequencerPresetLibraryEntryPolicy.hpp"
 
 namespace core::handler {
 namespace interaction_policy = core::handler::sequencer::interaction_policy;
@@ -77,10 +78,30 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(overlay_scope_)
         .when([this]() {
-            return !sequencer_.stepContentDraft.active.get() &&
-                   !sequencer_.stepContentDraft.exitPromptVisible.get();
+            return core::state::sequencer::preset_library_entry_policy::
+                canOpenStepPresets(sequencer_);
         })
-        .then([this]() { openStepPresetPicker(); });
+        .then([this]() {
+            preset_open_release_latch_.arm(Config::ButtonID::NAV);
+            openStepPresetLibrary();
+        });
+
+    // Chord Presets belong to the active Chord draft. Formula and Source keep
+    // their own NAV grammar; only the six-field Chord surface opens the
+    // library.
+    buttons_.button(Config::ButtonID::NAV)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
+        .scope(overlay_scope_)
+        .when([this]() {
+            return core::state::sequencer::preset_library_entry_policy::
+                canOpenChordPresets(sequencer_);
+        })
+        .then([this]() {
+            if (chord_presets_.captureTarget().valid) {
+                preset_open_release_latch_.arm(Config::ButtonID::NAV);
+                openChordPresetLibrary();
+            }
+        });
 
     // Close without reverting live edits.
     buttons_.button(Config::ButtonID::LEFT_TOP)
@@ -101,11 +122,16 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
     buttons_.button(Config::ButtonID::LEFT_CENTER)
         .release()
         .scope(overlay_scope_)
-        // LEFT_CENTER owns only root-Step retargeting. In child, Chord and
-        // modal contexts it is deliberately a no-op; LEFT_TOP is the single
-        // Back gesture and therefore the only path that may open a safe-exit
-        // prompt.
-        .then([this]() { step_retarget_active_ = false; });
+        // In Chord detail LEFT_CENTER owns the non-destructive Source sheet.
+        // Elsewhere it only releases root-Step retargeting. BOTTOM_CENTER
+        // remains globally reserved for Transport.
+        .then([this]() {
+            if (chordEditorActive()) {
+                toggleChordSourceSelector();
+                return;
+            }
+            step_retarget_active_ = false;
+        });
 
     buttons_.button(Config::ButtonID::LEFT_BOTTOM)
         .press()
@@ -246,48 +272,75 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
 
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
-        .scope(step_preset_overlay_scope_)
-        .then([this](float delta) { moveStepPresetItem(delta); });
+        .scope(preset_library_overlay_scope_)
+        .then([this](float delta) {
+            movePresetLibraryItem(delta);
+        });
 
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
-        .scope(step_preset_overlay_scope_)
-        .then([this](float delta) { moveStepPresetPreviewState(delta); });
+        .scope(preset_library_overlay_scope_)
+        .then([this](float delta) {
+            // The active adapter decides whether the focused detail row is
+            // adjustable. Chord details deliberately consume OPT without
+            // leaking into the invoking editor.
+            adjustPresetLibraryDetail(delta);
+        });
+
+    buttons_.button(Config::ButtonID::NAV)
+        .press()
+        .scope(preset_library_overlay_scope_)
+        .then([this]() {
+            // Some input backends quarantine the opener's physical release
+            // during the scope transition. In that case the next deliberate
+            // press proves the old gesture ended and clears the stale latch
+            // before its matching release is handled.
+            (void)preset_open_release_latch_.consume(Config::ButtonID::NAV);
+        });
 
     buttons_.button(Config::ButtonID::NAV)
         .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { toggleStepPresetDetail(); });
+        .scope(preset_library_overlay_scope_)
+        .then([this]() {
+            if (preset_open_release_latch_.consume(Config::ButtonID::NAV)) {
+                return;
+            }
+            enterPresetLibraryDetail();
+        });
 
     buttons_.button(Config::ButtonID::LEFT_TOP)
         .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { closeStepPresetPicker(); });
+        .scope(preset_library_overlay_scope_)
+        .then([this]() { backFromPresetLibrary(); });
 
     buttons_.button(Config::ButtonID::LEFT_CENTER)
         .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { closeStepPresetPicker(); });
+        .scope(preset_library_overlay_scope_)
+        .then([]() {});
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { toggleStepPresetMode(); });
+        .scope(preset_library_overlay_scope_)
+        .then([this]() { togglePresetLibraryMode(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .press()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { beginStepPresetActionGuard(); });
+        .scope(preset_library_overlay_scope_)
+        .then([this]() {
+            beginPresetLibraryActionGuard();
+        });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { releaseStepPresetAction(); });
+        .scope(preset_library_overlay_scope_)
+        .then([this]() { releasePresetLibraryAction(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
-        .scope(step_preset_overlay_scope_)
-        .then([this]() { commitStepPresetActionGuard(); });
+        .scope(preset_library_overlay_scope_)
+        .then([this]() {
+            commitPresetLibraryActionGuard();
+        });
 }
 
 }  // namespace core::handler

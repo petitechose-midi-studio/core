@@ -12,6 +12,9 @@ enum class Status : uint8_t {
     INVALID_DOMAIN,
     BUFFER_TOO_SMALL,
     SCRATCH_ALLOCATION_FAILED,
+    INCOMPLETE_PAYLOAD_SET,
+    UNSUPPORTED_VERSION,
+    INVALID_PAYLOAD,
 };
 
 struct EncodeResult {
@@ -47,8 +50,6 @@ struct DecodeResult {
     Status status = Status::INVALID_ARGUMENT;
     ChunkStatus automationStatus = ChunkStatus::MISSING;
     ChunkStatus modulationStatus = ChunkStatus::MISSING;
-    bool partial = false;
-    bool overwriteSafe = true;
 
     [[nodiscard]] bool decoded() const { return status == Status::OK; }
 };
@@ -64,8 +65,9 @@ struct DecodeResult {
 );
 
 /**
- * Decodes only the current control payloads into one temporary EXTMEM domain,
- * then publishes once. The two current chunks recover independently.
+ * Decodes only the current control payload pair into one temporary EXTMEM
+ * domain, then publishes once. Both chunks are required, exact-current and
+ * valid; absence never means "use defaults".
  */
 [[nodiscard]] DecodeResult decodeProjectControlPayloads(
     const ChunkPayloadView& automation,

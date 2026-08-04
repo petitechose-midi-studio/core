@@ -48,6 +48,8 @@ enum class SequencerStepContentDraftBlockedTransition : uint8_t {
     VIEW,
     PROJECT_LOAD,
     RESET,
+    STRUCTURE_EDIT,
+    HISTORY,
 };
 
 /** Hot, bounded authoring payload for a new Chord. */
@@ -73,8 +75,8 @@ struct SequencerStepChordDraftState {
 };
 
 static_assert(
-    sizeof(SequencerStepChordDraftState) <= 24,
-    "Chord authoring must remain a small local POD"
+    sizeof(SequencerStepChordDraftState) <= 28,
+    "Eight-voice Chord authoring must remain a small local POD"
 );
 
 /** Data owned by a Step-content authoring session in hot RAM. */
@@ -101,7 +103,7 @@ struct SequencerStepContentDraftOwnedState {
 };
 
 static_assert(
-    sizeof(SequencerStepContentDraftOwnedState) <= 48,
+    sizeof(SequencerStepContentDraftOwnedState) <= 56,
     "Step draft owned hot state must remain one PSRAM handle, one Chord POD, "
     "and bounded scalar metadata"
 );
@@ -141,6 +143,9 @@ struct SequencerStepContentDraftSession
     void clearFailure();
     void noteFailure(SequencerStepContentDraftFailure nextFailure);
     void noteBlockedTransition(
+        SequencerStepContentDraftBlockedTransition transition
+    );
+    [[nodiscard]] bool rejectTransitionIfActive(
         SequencerStepContentDraftBlockedTransition transition
     );
     void resetSession();

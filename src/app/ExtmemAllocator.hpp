@@ -13,10 +13,79 @@
 #endif
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-#include <wiring.h>
+#include <smalloc.h>
 #endif
 
 namespace core::app {
+
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+/**
+ * Strict PSRAM allocator. Teensy's public extmem_malloc() falls back to the
+ * internal heap; transaction and retained EXTMEM owners must fail instead.
+ */
+inline void* allocateExtmemStrict(std::size_t bytes) noexcept {
+    if (bytes == 0U) return nullptr;
+    if (extmem_smalloc_pool.pool == nullptr) {
+#if OC_ENABLE_STATS
+        core::diagnostics::trackExtmemAllocationFailure();
+#endif
+        return nullptr;
+    }
+    void* allocated = sm_malloc_pool(&extmem_smalloc_pool, bytes);
+#if OC_ENABLE_STATS
+    if (allocated == nullptr) {
+        core::diagnostics::trackExtmemAllocationFailure();
+    }
+#endif
+    return allocated;
+}
+
+inline void freeExtmemStrict(void* ptr) noexcept {
+    if (ptr == nullptr) return;
+    sm_free_pool(&extmem_smalloc_pool, ptr);
+}
+#endif
+
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+namespace testing {
+
+inline std::size_t extmemAllocationFailureOrdinal = 0U;
+inline std::size_t extmemAllocationAttempt = 0U;
+
+inline void resetExtmemAllocationFailure() {
+    extmemAllocationFailureOrdinal = 0U;
+    extmemAllocationAttempt = 0U;
+}
+
+inline void failExtmemAllocationOn(std::size_t ordinal) {
+    extmemAllocationFailureOrdinal = ordinal;
+    extmemAllocationAttempt = 0U;
+}
+
+inline bool consumeExtmemAllocationFailure() {
+    if (extmemAllocationFailureOrdinal == 0U) return false;
+    ++extmemAllocationAttempt;
+    if (extmemAllocationAttempt != extmemAllocationFailureOrdinal) return false;
+    extmemAllocationFailureOrdinal = 0U;
+    return true;
+}
+
+class ScopedExtmemAllocationFailure {
+public:
+    explicit ScopedExtmemAllocationFailure(std::size_t ordinal) {
+        failExtmemAllocationOn(ordinal);
+    }
+
+    ~ScopedExtmemAllocationFailure() {
+        resetExtmemAllocationFailure();
+    }
+
+    ScopedExtmemAllocationFailure(const ScopedExtmemAllocationFailure&) = delete;
+    ScopedExtmemAllocationFailure& operator=(const ScopedExtmemAllocationFailure&) = delete;
+};
+
+}  // namespace testing
+#endif
 
 template <typename T>
 struct ExtmemDeleter {
@@ -27,7 +96,7 @@ struct ExtmemDeleter {
 #if OC_ENABLE_STATS
         core::diagnostics::trackExtmemFree(ptr);
 #endif
-        extmem_free(ptr);
+        freeExtmemStrict(ptr);
 #else
         delete ptr;
 #endif
@@ -45,7 +114,7 @@ struct ExtmemArrayDeleter {
 #if OC_ENABLE_STATS
         core::diagnostics::trackExtmemFree(ptr);
 #endif
-        extmem_free(ptr);
+        freeExtmemStrict(ptr);
 #else
         delete[] ptr;
 #endif
@@ -57,8 +126,34 @@ using ExtmemUniqueArray = std::unique_ptr<T[], ExtmemArrayDeleter<T>>;
 
 template <typename T, typename... Args>
 ExtmemUniquePtr<T> makeExtmemUnique(Args&&... args) {
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    if (testing::consumeExtmemAllocationFailure()) return ExtmemUniquePtr<T>(nullptr);
+#endif
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    void* memory = extmem_malloc(sizeof(T));
+    void* memory = allocateExtmemStrict(sizeof(T));
+    if (!memory) return ExtmemUniquePtr<T>(nullptr);
+#if OC_ENABLE_STATS
+    core::diagnostics::trackExtmemAllocation(memory);
+#endif
+    return ExtmemUniquePtr<T>(new(memory) T(std::forward<Args>(args)...));
+#else
+    return ExtmemUniquePtr<T>(new T(std::forward<Args>(args)...));
+#endif
+}
+
+/**
+ * Cold-path counterpart of makeExtmemUnique().
+ *
+ * Modal transactions use the same strict PSRAM ownership and failure seam,
+ * but keep their type-specific allocation machinery out of scarce ITCM.
+ */
+template <typename T, typename... Args>
+static FLASHMEM ExtmemUniquePtr<T> makeExtmemUniqueCold(Args&&... args) {
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    if (testing::consumeExtmemAllocationFailure()) return ExtmemUniquePtr<T>(nullptr);
+#endif
+#if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
+    void* memory = allocateExtmemStrict(sizeof(T));
     if (!memory) return ExtmemUniquePtr<T>(nullptr);
 #if OC_ENABLE_STATS
     core::diagnostics::trackExtmemAllocation(memory);
@@ -81,8 +176,11 @@ ExtmemUniquePtr<T> makeExtmemUniqueCopy(const T& source) {
     static_assert(std::is_trivially_copyable_v<T>);
     static_assert(std::is_trivially_destructible_v<T>);
     static_assert(std::is_copy_constructible_v<T>);
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    if (testing::consumeExtmemAllocationFailure()) return ExtmemUniquePtr<T>(nullptr);
+#endif
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    void* memory = extmem_malloc(sizeof(T));
+    void* memory = allocateExtmemStrict(sizeof(T));
     if (!memory) return ExtmemUniquePtr<T>(nullptr);
 #if OC_ENABLE_STATS
     core::diagnostics::trackExtmemAllocation(memory);
@@ -104,8 +202,11 @@ template <typename T>
 ExtmemUniquePtr<T> makeExtmemUniqueForOverwrite() {
     static_assert(std::is_trivially_default_constructible_v<T>);
     static_assert(std::is_trivially_destructible_v<T>);
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    if (testing::consumeExtmemAllocationFailure()) return ExtmemUniquePtr<T>(nullptr);
+#endif
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    void* memory = extmem_malloc(sizeof(T));
+    void* memory = allocateExtmemStrict(sizeof(T));
     if (!memory) return ExtmemUniquePtr<T>(nullptr);
 #if OC_ENABLE_STATS
     core::diagnostics::trackExtmemAllocation(memory);
@@ -128,8 +229,11 @@ ExtmemUniqueArray<T> makeExtmemUniqueArrayForOverwrite(std::size_t count) {
     if (count == 0U || count > std::numeric_limits<std::size_t>::max() / sizeof(T)) {
         return ExtmemUniqueArray<T>(nullptr);
     }
+#if defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+    if (testing::consumeExtmemAllocationFailure()) return ExtmemUniqueArray<T>(nullptr);
+#endif
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    void* memory = extmem_malloc(sizeof(T) * count);
+    void* memory = allocateExtmemStrict(sizeof(T) * count);
     if (!memory) return ExtmemUniqueArray<T>(nullptr);
 #if OC_ENABLE_STATS
     core::diagnostics::trackExtmemAllocation(memory);

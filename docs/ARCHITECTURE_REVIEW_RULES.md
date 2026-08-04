@@ -36,11 +36,17 @@ These rules exist to keep `core` readable and maintainable as the codebase grows
 
 ## Required Checks
 
+- run `python script/dev/check-architecture-contracts.py`
 - run `ms test core`
-- run `pio run -e dev`
+- run `ms build core --target teensy --env dev`
 - keep Teensy builds above the configured RAM1, RAM2, and PSRAM headroom floors;
   change a floor only with fresh hardware measurements and an explicit rationale
 - run `pwsh ./script/dev/check-downstream-compat.ps1` when exported headers move or change
 - keep durable architecture rationale in the relevant `.hpp` contract comment
 - keep codebase-scale status and evidence current in `petitechose-audio-docs`
 - avoid adding historical plans or audits back to the standard docs entry path
+
+The >800-line inventory printed by the architecture gate is advisory. Review a
+large file for mixed authority, lifecycle, dependency direction, duplication,
+hot-path work, or unclear memory ownership; do not split it only to reduce its
+line count.

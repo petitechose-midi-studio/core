@@ -4,9 +4,10 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/AtomicProductFile.hpp"
+
 namespace core::protocol::filesystem {
 
-using oc::interface::DirectoryEntry;
 using oc::type::Result;
 using internal::ByteReader;
 using internal::ByteWriter;
@@ -20,68 +21,21 @@ using internal::writeFrameHeader;
 namespace {
 
 FLASHMEM bool isRecoverySafeRequest(FileSystemRpcMessageId messageId) {
-    switch (messageId) {
-        case FileSystemRpcMessageId::CAPABILITIES_REQUEST:
-        case FileSystemRpcMessageId::STAT_REQUEST:
-        case FileSystemRpcMessageId::LIST_REQUEST:
-        case FileSystemRpcMessageId::READ_REQUEST:
-            return true;
-        default:
-            return false;
-    }
-}
-
-struct ListBuildContext {
-    ByteWriter* writer = nullptr;
-    uint16_t startIndex = 0;
-    uint8_t maxEntries = 0;
-    uint16_t visited = 0;
-    uint8_t written = 0;
-    bool hasMore = false;
-};
-
-FLASHMEM bool listVisitor(const DirectoryEntry& entry, void* context) {
-    auto* list = static_cast<ListBuildContext*>(context);
-    if (!list || !list->writer) return false;
-
-    if (list->visited++ < list->startIndex) {
-        return true;
-    }
-
-    if (list->written >= list->maxEntries) {
-        list->hasMore = true;
-        return false;
-    }
-
-    const size_t nameLength = std::strlen(entry.name);
-    const size_t encodedSize = 1 + nameLength + 1 + 4 + 1;
-    if (nameLength > UINT8_MAX || list->writer->remaining() < encodedSize) {
-        list->hasMore = true;
-        return false;
-    }
-
-    if (!list->writer->writeString(entry.name, oc::interface::FILESYSTEM_MAX_NAME_LENGTH) ||
-        !list->writer->writeU8(static_cast<uint8_t>(mapFileType(entry.type))) ||
-        !list->writer->writeU32(entry.sizeBytes) ||
-        !list->writer->writeBool(entry.nameTruncated)) {
-        list->hasMore = true;
-        return false;
-    }
-
-    ++list->written;
-    return true;
+    return messageId == FileSystemRpcMessageId::CAPABILITIES_REQUEST;
 }
 
 }  // namespace
 
 FLASHMEM FileSystemRpcHandler::FileSystemRpcHandler(
-    core::persistence::ProductFileService& files
-) : FileSystemRpcHandler(files, Config{}) {}
+    core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog
+) : FileSystemRpcHandler(files, catalog, Config{}) {}
 
 FLASHMEM FileSystemRpcHandler::FileSystemRpcHandler(
     core::persistence::ProductFileService& files,
+    core::persistence::ProductDirectoryCatalog& catalog,
     Config config
-) : files_(files), config_(config) {}
+) : files_(files), catalog_(catalog), config_(config) {}
 
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
     const uint8_t* request,
@@ -91,7 +45,51 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
     size_t responseSize
 ) {
     expireWriteSession_(nowMs);
+    updateConditionalRecovery_(nowMs);
+    if (conditionalRecoveryState_ == FileSystemRpcConditionalRecoveryState::BLOCKED) {
+        auto frame = FileSystemRpcCodec::decodeFrame(request, requestSize);
+        if (!frame) {
+            return encodeError_(
+                0,
+                FileSystemRpcStatus::INVALID_MESSAGE,
+                response,
+                responseSize
+            );
+        }
+        if (!isRecoverySafeRequest(frame.value().messageId)) {
+            const auto blockedStatus =
+                conditionalRecoveryStatus_ == FileSystemRpcStatus::UNSUPPORTED ||
+                conditionalRecoveryStatus_ == FileSystemRpcStatus::TOO_LARGE
+                ? conditionalRecoveryStatus_
+                : (files_.storageState() == core::persistence::ProductStorageState::ABSENT
+                    ? FileSystemRpcStatus::STORAGE_ERROR
+                    : FileSystemRpcStatus::BUSY);
+            return encodeError_(
+                frame.value().requestId,
+                blockedStatus,
+                response,
+                responseSize
+            );
+        }
+    }
+    return handleAdmittedFrame(
+        request,
+        requestSize,
+        nowMs,
+        response,
+        responseSize,
+        nullptr
+    );
+}
 
+FLASHMEM Result<size_t> FileSystemRpcHandler::handleAdmittedFrame(
+    const uint8_t* request,
+    size_t requestSize,
+    uint32_t nowMs,
+    uint8_t* response,
+    size_t responseSize,
+    core::persistence::ProductPersistenceWorkMeasurement* measurement
+) {
     auto frame = FileSystemRpcCodec::decodeFrame(request, requestSize);
     if (!frame) {
         return encodeError_(0, FileSystemRpcStatus::INVALID_MESSAGE, response, responseSize);
@@ -100,36 +98,13 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
         return encodeError_(frame.value().requestId, FileSystemRpcStatus::UNSUPPORTED, response, responseSize);
     }
 
-    if (!conditionalRecoveryChecked_) {
-        const auto recoveryStatus = recoverConditionalMutation_();
-        conditionalRecoveryChecked_ = true;
-        conditionalRecoveryStatus_ = recoveryStatus;
-        if (recoveryStatus == FileSystemRpcStatus::OK) {
-            if (conditionalRecoveryState_ !=
-                FileSystemRpcConditionalRecoveryState::CORRUPT_JOURNAL_QUARANTINED) {
-                conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::READY;
-            }
-        } else {
-            conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::BLOCKED;
-        }
-    }
-    if (conditionalRecoveryState_ == FileSystemRpcConditionalRecoveryState::BLOCKED &&
-        !isRecoverySafeRequest(frame.value().messageId)) {
-        return encodeError_(
-            frame.value().requestId,
-            conditionalRecoveryStatus_,
-            response,
-            responseSize
-        );
-    }
-
     switch (frame.value().messageId) {
         case FileSystemRpcMessageId::STAT_REQUEST:
             return handleStat_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::CAPABILITIES_REQUEST:
             return handleCapabilities_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::LIST_REQUEST:
-            return handleList_(frame.value(), response, responseSize);
+            return handleList_(frame.value(), response, responseSize, measurement);
         case FileSystemRpcMessageId::READ_REQUEST:
             return handleRead_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::WRITE_BEGIN_REQUEST:
@@ -147,9 +122,9 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
         case FileSystemRpcMessageId::RENAME_REQUEST:
             return handleRename_(frame.value(), response, responseSize);
         case FileSystemRpcMessageId::CONDITIONAL_REPLACE_REQUEST:
-            return handleConditionalReplace_(frame.value(), response, responseSize);
+            return handleConditionalReplace_(frame.value(), nowMs, response, responseSize);
         case FileSystemRpcMessageId::CONDITIONAL_DELETE_REQUEST:
-            return handleConditionalDelete_(frame.value(), response, responseSize);
+            return handleConditionalDelete_(frame.value(), nowMs, response, responseSize);
         default:
             return encodeError_(frame.value().requestId, FileSystemRpcStatus::INVALID_MESSAGE, response, responseSize);
     }
@@ -157,18 +132,42 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleFrame(
 
 void FileSystemRpcHandler::update(uint32_t nowMs) {
     expireWriteSession_(nowMs);
+    updateConditionalRecovery_(nowMs);
 }
 
 bool FileSystemRpcHandler::hasActiveWriteSession() const {
-    return writeSession_.active;
+    return writeSession_.lease.valid() &&
+           files_.owns(
+               writeSession_.lease,
+               core::persistence::ProductMutationOwner::FILESYSTEM_RPC
+           );
+}
+
+bool FileSystemRpcHandler::writeSessionIdleExpired(uint32_t nowMs) const {
+    return hasActiveWriteSession() &&
+           static_cast<uint32_t>(nowMs - writeSession_.lastActivityMs) >=
+               config_.writeSessionTimeoutMs;
 }
 
 FLASHMEM void FileSystemRpcHandler::abortWriteSession() {
-    if (writeSession_.active) {
-        files_.abortWrite();
-        (void)files_.remove(writeSession_.tmpPath);
+    if (writeSession_.lease.valid() && files_.owns(writeSession_.lease)) {
+        (void)files_.abortWrite(writeSession_.lease);
+        (void)core::persistence::deleteProductFileIfExists(
+            files_,
+            writeSession_.lease,
+            writeSession_.tmpPath
+        );
     }
-    clearWriteSession_();
+    (void)releaseWriteSession_();
+}
+
+FLASHMEM Result<size_t> FileSystemRpcHandler::encodeErrorResponse(
+    uint16_t requestId,
+    FileSystemRpcStatus status,
+    uint8_t* response,
+    size_t responseSize
+) const {
+    return encodeError_(requestId, status, response, responseSize);
 }
 
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleCapabilities_(
@@ -182,10 +181,9 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleCapabilities_(
 
     ByteWriter writer(response, responseSize);
     constexpr uint32_t features =
-        FILESYSTEM_RPC_FEATURE_CAPABILITIES |
-        FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS |
-        FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT |
-        FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS;
+        FILESYSTEM_RPC_FEATURE_CAPABILITIES | FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS |
+        FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT | FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS |
+        FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS;
     if (!writeFrameHeader(writer, FileSystemRpcMessageId::CAPABILITIES_RESPONSE, frame.requestId) ||
         !writer.writeU8(static_cast<uint8_t>(FileSystemRpcStatus::OK)) ||
         !writer.writeU8(FILESYSTEM_RPC_SCHEMA) ||
@@ -237,7 +235,8 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleStat_(
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleList_(
     const FileSystemRpcFrame& frame,
     uint8_t* response,
-    size_t responseSize
+    size_t responseSize,
+    core::persistence::ProductPersistenceWorkMeasurement* measurement
 ) {
     uint16_t startIndex = 0;
     uint8_t maxEntries = 0;
@@ -266,21 +265,67 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleList_(
     const size_t hasMoreOffset = writer.position();
     if (!writer.writeU8(0)) return bufferTooSmall();
 
-    ListBuildContext context{&writer, startIndex, maxEntries, 0, 0, false};
-    auto list = files_.list(path, listVisitor, &context);
-    if (!list) {
+    core::persistence::ProductPersistenceWorkUsage directUsage{};
+    core::persistence::ProductPersistenceWorkMeasurement directMeasurement{};
+    if (measurement == nullptr) {
+        auto measured = files_.measurePersistenceWork(directUsage);
+        if (!measured) {
+            const size_t size = encodeStatusOnly(
+                FileSystemRpcMessageId::LIST_RESPONSE,
+                frame.requestId,
+                FileSystemRpcStatus::BUSY,
+                response,
+                responseSize
+            );
+            return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
+        }
+        directMeasurement = std::move(measured.value());
+        measurement = &directMeasurement;
+    }
+
+    const auto prepared = catalog_.prepareRawExternal(path, *measurement);
+    if (!prepared) {
         const size_t size = encodeStatusOnly(
             FileSystemRpcMessageId::LIST_RESPONSE,
             frame.requestId,
-            mapError(list.error()),
+            mapError(prepared.error()),
             response,
             responseSize
         );
         return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
     }
 
-    writer.patchU8(countOffset, context.written);
-    writer.patchU8(hasMoreOffset, context.hasMore ? 1 : 0);
+    uint16_t entryCount = 0U;
+    const auto* entries = catalog_.rawEntries(path, entryCount);
+    if (entries == nullptr) {
+        const size_t size = encodeStatusOnly(
+            FileSystemRpcMessageId::LIST_RESPONSE,
+            frame.requestId,
+            FileSystemRpcStatus::BUSY,
+            response,
+            responseSize
+        );
+        return size > 0 ? Result<size_t>::ok(size) : bufferTooSmall();
+    }
+
+    uint8_t written = 0U;
+    uint16_t index = startIndex < entryCount ? startIndex : entryCount;
+    for (; index < entryCount && written < maxEntries; ++index) {
+        const auto& entry = entries[index];
+        const size_t nameLength = std::strlen(entry.name);
+        const size_t encodedSize = 1U + nameLength + 1U + 4U + 1U;
+        if (nameLength > UINT8_MAX || writer.remaining() < encodedSize) break;
+        if (!writer.writeString(entry.name, oc::interface::FILESYSTEM_MAX_NAME_LENGTH) ||
+            !writer.writeU8(static_cast<uint8_t>(mapFileType(entry.type))) ||
+            !writer.writeU32(entry.sizeBytes) ||
+            !writer.writeBool(entry.nameTruncated)) {
+            break;
+        }
+        ++written;
+    }
+
+    writer.patchU8(countOffset, written);
+    writer.patchU8(hasMoreOffset, index < entryCount ? 1U : 0U);
     return Result<size_t>::ok(writer.position());
 }
 

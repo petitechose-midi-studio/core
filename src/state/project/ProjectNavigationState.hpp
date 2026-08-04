@@ -135,7 +135,6 @@ struct ProjectNavigationState {
     ModulatorDestinationPickerLevel destinationPickerLevel =
         ModulatorDestinationPickerLevel::TRACK;
 
-    bool autosaveEnabled = true;
     bool scaleConstrainEnabled = true;
     bool patternsInheritScale = true;
     bool clipsInheritScale = true;

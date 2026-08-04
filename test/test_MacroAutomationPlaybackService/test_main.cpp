@@ -10,7 +10,7 @@
 #include <oc/time/Time.hpp>
 #include <oc/type/Result.hpp>
 
-#include "../../src/handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "../../src/sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "../../src/handler/macro/MacroAutomationPlaybackService.hpp"
 #include "../../src/handler/macro/MacroAutomationTiming.hpp"
 #include "../../src/handler/macro/MacroMidiCcRuntimeAdapter.hpp"
@@ -141,7 +141,7 @@ private:
     core::state::CoreState& state_;
     oc::api::MidiAPI& midi_;
     core::sequencer::RealtimeMidiQueue queue_{};
-    core::handler::MidiCcGlobalFrameCoordinator coordinator_;
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator_;
     core::handler::MacroMidiCcRuntimeAdapter adapter_;
     core::handler::MacroAutomationPlaybackService playback_;
     core::sequencer::ProjectTrackRuntimeSnapshot runtime_tracks_{

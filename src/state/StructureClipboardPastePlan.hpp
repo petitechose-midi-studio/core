@@ -87,19 +87,11 @@ struct ClipboardTransferPlan {
     ClipboardTransferReason reason = ClipboardTransferReason::EMPTY_CLIPBOARD;
     std::array<ClipboardTransferPlanEntry, MAX_ENTRIES> entries{};
 
-    // Compatibility mirror for the existing single-Track presenters and
-    // transaction call sites while the multi-entry path shares the same plan.
-    ClipboardTransferPlanEntry entry{};
-    bool hasEntry = false;
-
-    bool hasEntries() const { return count > 0U || hasEntry; }
+    bool hasEntries() const { return count > 0U; }
     bool canCommit() const {
-        if (availability == ClipboardTransferAvailability::DISABLED) {
-            return false;
-        }
-        return sourceCount > 0U
-            ? count == sourceCount
-            : hasEntry;
+        return availability != ClipboardTransferAvailability::DISABLED &&
+               sourceCount > 0U &&
+               count == sourceCount;
     }
 };
 

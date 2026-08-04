@@ -250,7 +250,6 @@ void testEmptyRoundTripAndPreflightAtomicity() {
     assert(result.decoded());
     assert(result.automationStatus == codec::ChunkStatus::CURRENT);
     assert(result.modulationStatus == codec::ChunkStatus::CURRENT);
-    assert(!result.partial && result.overwriteSafe);
     assert(std::memcmp(&empty, &decoded, sizeof(empty)) == 0);
 
     std::vector<uint8_t> shortBuffer(63U, 0xA5U);
@@ -278,7 +277,7 @@ void testRichCurrentRoundTripIsCanonical() {
         modulationView(bytes, encoded),
         decoded
     );
-    assert(result.decoded() && !result.partial && result.overwriteSafe);
+    assert(result.decoded());
     assert(decoded.automation.entryCount == 1U);
     assert(decoded.modulation.sourceCount == 3U);
     assert(decoded.modulation.outputBindingCount == 3U);
@@ -314,6 +313,47 @@ void testRichCurrentRoundTripIsCanonical() {
     std::cout << "[PASS] rich current round-trip is canonical\n";
 }
 
+void testPayloadPairPresenceIsAtomic() {
+    Domain absent{};
+    absent.automation.entryCount = 7U;
+    absent.modulation.sourceCount = 9U;
+    const auto bothMissing = codec::decodeProjectControlPayloads(
+        {},
+        {},
+        absent
+    );
+    assert(!bothMissing.decoded());
+    assert(
+        bothMissing.status ==
+        codec::Status::INCOMPLETE_PAYLOAD_SET
+    );
+    assert(absent.automation.entryCount == 7U);
+    assert(absent.modulation.sourceCount == 9U);
+
+    const auto source = makeRichDomain();
+    std::vector<uint8_t> bytes;
+    const auto encoded = encode(*source, bytes);
+    Domain incomplete{};
+    incomplete.automation.entryCount = 7U;
+    incomplete.modulation.sourceCount = 9U;
+    const auto oneMissing = codec::decodeProjectControlPayloads(
+        automationView(bytes, encoded),
+        {},
+        incomplete
+    );
+    assert(!oneMissing.decoded());
+    assert(
+        oneMissing.status ==
+        codec::Status::INCOMPLETE_PAYLOAD_SET
+    );
+    assert(oneMissing.automationStatus == codec::ChunkStatus::CURRENT);
+    assert(oneMissing.modulationStatus == codec::ChunkStatus::MISSING);
+    assert(incomplete.automation.entryCount == 7U);
+    assert(incomplete.modulation.sourceCount == 9U);
+
+    std::cout << "[PASS] Project Control payload pair is atomic\n";
+}
+
 void testPreviousVersionsAreRejectedStrictly() {
     const auto source = makeRichDomain();
     std::vector<uint8_t> bytes;
@@ -322,39 +362,49 @@ void testPreviousVersionsAreRejectedStrictly() {
     auto oldAutomation = automationView(bytes, encoded);
     --oldAutomation.versionMinor;
     Domain automationRejected{};
+    automationRejected.automation.entryCount = 7U;
+    automationRejected.modulation.sourceCount = 9U;
     const auto automationResult = codec::decodeProjectControlPayloads(
         oldAutomation,
         modulationView(bytes, encoded),
         automationRejected
     );
-    assert(automationResult.decoded());
+    assert(!automationResult.decoded());
+    assert(
+        automationResult.status ==
+        codec::Status::UNSUPPORTED_VERSION
+    );
     assert(automationResult.automationStatus ==
            codec::ChunkStatus::UNSUPPORTED_VERSION);
     assert(automationResult.modulationStatus == codec::ChunkStatus::CURRENT);
-    assert(automationResult.partial && !automationResult.overwriteSafe);
-    assert(automationRejected.automation.entryCount == 0U);
-    assert(automationRejected.modulation.sourceCount == 3U);
+    assert(automationRejected.automation.entryCount == 7U);
+    assert(automationRejected.modulation.sourceCount == 9U);
 
     auto oldModulation = modulationView(bytes, encoded);
     --oldModulation.versionMinor;
     Domain modulationRejected{};
+    modulationRejected.automation.entryCount = 7U;
+    modulationRejected.modulation.sourceCount = 9U;
     const auto modulationResult = codec::decodeProjectControlPayloads(
         automationView(bytes, encoded),
         oldModulation,
         modulationRejected
     );
-    assert(modulationResult.decoded());
+    assert(!modulationResult.decoded());
+    assert(
+        modulationResult.status ==
+        codec::Status::UNSUPPORTED_VERSION
+    );
     assert(modulationResult.automationStatus == codec::ChunkStatus::CURRENT);
     assert(modulationResult.modulationStatus ==
            codec::ChunkStatus::UNSUPPORTED_VERSION);
-    assert(modulationResult.partial && !modulationResult.overwriteSafe);
-    assert(modulationRejected.automation.entryCount == 1U);
-    assert(modulationRejected.modulation.sourceCount == 0U);
+    assert(modulationRejected.automation.entryCount == 7U);
+    assert(modulationRejected.modulation.sourceCount == 9U);
 
     std::cout << "[PASS] previous versions are rejected strictly\n";
 }
 
-void testInvalidCurrentChunkRecoversItsPeerOnly() {
+void testInvalidCurrentChunkRejectsThePairAtomically() {
     const auto source = makeRichDomain();
     std::vector<uint8_t> bytes;
     const auto encoded = encode(*source, bytes);
@@ -365,20 +415,23 @@ void testInvalidCurrentChunkRecoversItsPeerOnly() {
     bytes[sourceDirectory + firstReservedByte] = 1U;
 
     Domain decoded{};
+    decoded.automation.entryCount = 7U;
+    decoded.modulation.sourceCount = 9U;
     const auto result = codec::decodeProjectControlPayloads(
         automationView(bytes, encoded),
         modulationView(bytes, encoded),
         decoded
     );
-    assert(result.decoded());
+    assert(!result.decoded());
+    assert(result.status == codec::Status::INVALID_PAYLOAD);
     assert(result.automationStatus == codec::ChunkStatus::CURRENT);
     assert(result.modulationStatus == codec::ChunkStatus::INVALID_PAYLOAD);
-    assert(result.partial && !result.overwriteSafe);
-    assert(decoded.automation.entryCount == 1U);
-    assert(decoded.modulation.sourceCount == 0U);
-    assert(decoded.curves.recordCount == 1U);
+    assert(decoded.automation.entryCount == 7U);
+    assert(decoded.modulation.sourceCount == 9U);
+    assert(decoded.curves.recordCount == 0U);
 
-    std::cout << "[PASS] invalid current chunk recovers its peer only\n";
+    std::cout
+        << "[PASS] invalid current chunk rejects the pair atomically\n";
 }
 
 void testMaximumAutomationPointBudgetRoundTrips() {
@@ -417,7 +470,7 @@ void testMaximumAutomationPointBudgetRoundTrips() {
         modulationView(bytes, encoded),
         decoded
     );
-    assert(result.decoded() && !result.partial);
+    assert(result.decoded());
     assert(decoded.curves.pointCount == mod::PROJECT_CURVE_POINT_CAPACITY);
 
     std::cout << "[PASS] maximum shared point budget round-trips\n";
@@ -428,8 +481,9 @@ void testMaximumAutomationPointBudgetRoundTrips() {
 int main() {
     testEmptyRoundTripAndPreflightAtomicity();
     testRichCurrentRoundTripIsCanonical();
+    testPayloadPairPresenceIsAtomic();
     testPreviousVersionsAreRejectedStrictly();
-    testInvalidCurrentChunkRecoversItsPeerOnly();
+    testInvalidCurrentChunkRejectsThePairAtomically();
     testMaximumAutomationPointBudgetRoundTrips();
     std::cout << "All ProjectControlPersistenceCodec tests passed\n";
     return 0;

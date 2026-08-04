@@ -11,6 +11,73 @@
 *(.text.*_M_manager*)
 *(.text.*9subscribe*)
 
+/* Subscription teardown is lifecycle-only.  Cancellation made reset() large
+ * enough for GCC to emit standalone std::array destructors for the retained
+ * subscription banks; keep both the primitive and those loops out of ITCM. */
+*(.text._ZN2oc5state12Subscription5resetEv*)
+*(.text._ZNSt5arrayIN2oc5state12SubscriptionE*D*Ev)
+
+/* Prepared FullBank History owners are created and destroyed only around
+ * authored transactions.  Template helpers emitted outside their FLASHMEM
+ * callers belong beside the cold provider, not in realtime code RAM. */
+*(.text._ZN4core3app16makeExtmemUniqueINS_5state9sequencer30SequencerHistoryFullBankChangeE*)
+*(.text._ZNSt15__uniq_ptr_implIN4core5state9sequencer30SequencerHistoryFullBankChangeE*)
+
+/* Page/Step/Track Structure plans are human-rate authored transactions.
+ * Select ordinary per-function sections by object so dead action families remain
+ * eligible for --gc-sections instead of sharing one monolithic .flashmem. */
+*SequencerPreparedPageStructureMutationPlan.cpp.o(.text* .rodata*)
+*SequencerPreparedPageStructureTransaction.cpp.o(.text* .rodata*)
+*SequencerDirectTrackStructureTransaction.cpp.o(.text* .rodata*)
+*MacroDirectTrackStructureTransaction.cpp.o(.text* .rodata*)
+*SequencerPreparedTrackStructurePlanValidation.cpp.o(.text* .rodata*)
+*SequencerPreparedTrackStructureTransaction.cpp.o(.text* .rodata*)
+*SequencerStructureTrackTransferTransaction.cpp.o(.text* .rodata*)
+
+/* Track Structure coordination, exact History snapshots, and owner rotation
+ * execute only at authored transaction/replay boundaries. Their explicitly
+ * FLASHMEM entry points can cause GCC to emit lambdas, Signal setters, array
+ * comparisons, and fill clones back into ordinary sections; keep the whole
+ * cold ownership surface together in cached Flash. */
+*SharedTrackDomainServices.cpp.o(.text* .rodata*)
+*SequencerHistory.cpp.o(.text* .rodata*)
+*SequencerStructureHistory.cpp.o(.text* .rodata*)
+*SequencerTrackBankOps.cpp.o(.text* .rodata*)
+
+/* Project read/write workspace allocation is a storage-boundary operation.
+ * These inline helpers may be emitted by more than one persistence unit. */
+*(.text._ZN4core11persistence24ProjectFileReadWorkspace7prepareEv*)
+*(.text._ZN4core11persistence25ProjectFileWriteWorkspace7prepareEv*)
+
+/* Persistence coordination, file transactions, filesystem RPC and full media
+ * reconciliation execute only at explicit storage, boot, or hot-swap
+ * boundaries.  They are never part of audio, MIDI publication, automation,
+ * sequencer tick, or retained UI rendering.  Keep both their compiler-emitted
+ * helpers and constant tables in cached Flash; only the tiny sampling gate in
+ * main remains eligible for ITCM. */
+*(.text.*StorageRecoveryRuntimeManager*)
+*AtomicProductFile.cpp.o(.text* .rodata*)
+*ProductFileTransactionJournal.cpp.o(.text* .rodata*)
+*ProductFileTransactionJournalCodec.cpp.o(.text* .rodata*)
+*ProductAssetFileStore.cpp.o(.text* .rodata*)
+*ProductFileService.cpp.o(.text* .rodata*)
+*ProjectWorkspacePool.cpp.o(.text* .rodata*)
+*ProductPersistenceCoordinator.cpp.o(.text* .rodata*)
+*ProductStorageRecoveryService.cpp.o(.text* .rodata*)
+*ProjectFileTransactions.cpp.o(.text* .rodata*)
+*ProjectSaveTransaction.cpp.o(.text* .rodata*)
+*ProjectSessionRestoreService.cpp.o(.text* .rodata*)
+*ProjectSessionStore.cpp.o(.text* .rodata*)
+*StorageRecoveryMachine.cpp.o(.text* .rodata*)
+*FileSystemRpc*.cpp.o(.text* .rodata*)
+
+/* Snapshot batches and their compiler-emitted Graph/Signal helpers are used by
+ * authored History transactions, never playback. Keep COMDAT selection from
+ * moving these cold accessors into ITCM as callsites evolve. */
+*SequencerSnapshotOps.cpp.o(.text* .rodata*)
+*(.text._ZNK2oc4note9sequencer18StepSequencerGraph8sequenceEt*)
+*(.text._ZNK2oc4note9sequencer18StepSequencerGraph8cycleSetEt*)
+
 /* Logging formatting is an error/diagnostic path, never a realtime path. */
 *(.text._ZN2oc3log6detail*)
 *(.rodata._ZN2oc3log6detail*)

@@ -9,12 +9,8 @@ namespace core::persistence::project_file_inspection {
 
 enum class Status : uint8_t {
     CURRENT = 0,
-    PARTIAL,
+    UNSUPPORTED,
     FAILED,
-};
-
-struct RewriteOptions {
-    bool allowPartialOutput = false;
 };
 
 struct Result {
@@ -45,8 +41,7 @@ Result rewriteProjectBytes(
     uint32_t size,
     uint8_t* out,
     uint32_t outCapacity,
-    core::persistence::project_file::LoadReport* report = nullptr,
-    RewriteOptions options = {}
+    core::persistence::project_file::LoadReport* report = nullptr
 );
 
 const char* statusName(Status status);

@@ -20,13 +20,10 @@
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 
-namespace core::handler {
-class MidiCcGlobalFrameCoordinator;
-}
-
 namespace core::sequencer {
 
 class SequencerRealtimeLane;
+class MidiCcGlobalFrameCoordinator;
 
 /**
  * Standalone sequencer runtime orchestrator.
@@ -49,7 +46,7 @@ public:
         core::state::StatusBarState& statusBar;
         core::state::MidiSyncState& midiSync;
         core::state::sequencer::SequencerTrackActivationQueue& trackActivations;
-        core::handler::MidiCcGlobalFrameCoordinator** ccCoordinatorPublication = nullptr;
+        MidiCcGlobalFrameCoordinator** ccCoordinatorPublication = nullptr;
         const oc::state::Signal<uint32_t>* runtimeProjectRevision = nullptr;
     };
 
@@ -86,7 +83,7 @@ private:
     core::state::StatusBarState& status_bar_state_;
     core::state::MidiSyncState& midi_sync_state_;
     core::state::sequencer::SequencerTrackActivationQueue& track_activations_;
-    core::handler::MidiCcGlobalFrameCoordinator** cc_coordinator_publication_ = nullptr;
+    MidiCcGlobalFrameCoordinator** cc_coordinator_publication_ = nullptr;
     const oc::state::Signal<uint32_t>* runtime_project_revision_ = nullptr;
     uint32_t consumed_runtime_project_revision_ = 0;
     MidiClockSyncService midi_clock_sync_;

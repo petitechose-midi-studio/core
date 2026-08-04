@@ -3,7 +3,6 @@
 #include <array>
 #include <cstdint>
 
-#include "state/MidiSyncState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/project/ProjectHistoryEventSink.hpp"
 #include "state/project/ProjectNavigationState.hpp"
@@ -13,13 +12,11 @@ namespace core::state::project {
 enum class ProjectSettingsHistoryActionKind : uint8_t {
     Tempo = 0,
     Swing,
-    SyncMode,
     RunMode,
     StepPasteMode,
     CcLaneDefault,
     PatternsInheritScale,
     ClipsInheritScale,
-    Autosave,
 };
 
 struct ProjectSettingsHistorySnapshot {
@@ -27,12 +24,9 @@ struct ProjectSettingsHistorySnapshot {
     ProjectStepPasteMode stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
     std::array<uint8_t, PROJECT_CC_LANE_DEFAULT_COUNT>
         ccLaneDefaultControllers = PROJECT_CC_LANE_DEFAULT_CONTROLLERS;
-    MidiSyncMode syncMode = MidiSyncMode::AUTO;
     uint8_t swingPercent = PROJECT_SWING_DEFAULT_PERCENT;
     uint8_t runMode = PROJECT_RUN_MODE_DEFAULT;
-    bool patternsInheritScale = true;
-    bool clipsInheritScale = true;
-    bool autosaveEnabled = true;
+    uint8_t scaleInheritanceFlags = 0x03U;
 };
 
 struct ProjectSettingsHistoryEntry {
@@ -44,10 +38,12 @@ struct ProjectSettingsHistoryEntry {
     bool occupied = false;
 };
 
+static_assert(sizeof(ProjectSettingsHistorySnapshot) == 12U);
+static_assert(sizeof(ProjectSettingsHistoryEntry) == 28U);
+
 [[nodiscard]] ProjectSettingsHistorySnapshot captureProjectSettingsHistorySnapshot(
     const StatusBarState& statusBar,
-    const ProjectNavigationState& navigation,
-    const MidiSyncState& midiSync
+    const ProjectNavigationState& navigation
 );
 
 [[nodiscard]] bool sameProjectSettingsHistorySnapshot(
@@ -58,7 +54,6 @@ struct ProjectSettingsHistoryEntry {
 [[nodiscard]] bool applyProjectSettingsHistorySnapshot(
     StatusBarState& statusBar,
     ProjectNavigationState& navigation,
-    MidiSyncState& midiSync,
     const ProjectSettingsHistorySnapshot& snapshot
 );
 
@@ -81,13 +76,11 @@ public:
 
     [[nodiscard]] bool undo(
         StatusBarState& statusBar,
-        ProjectNavigationState& navigation,
-        MidiSyncState& midiSync
+        ProjectNavigationState& navigation
     );
     [[nodiscard]] bool redo(
         StatusBarState& statusBar,
-        ProjectNavigationState& navigation,
-        MidiSyncState& midiSync
+        ProjectNavigationState& navigation
     );
     void clear();
     void discardRedoBranch();

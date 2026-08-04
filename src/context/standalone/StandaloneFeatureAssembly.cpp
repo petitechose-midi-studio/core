@@ -18,9 +18,11 @@
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "handler/macro/MacroStructureDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
+#include "handler/sequencer/SequencerChordPresetDomainServices.hpp"
 #include "handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
+#include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "state/CoreState.hpp"
 #include "ui/transportbar/ContextSoftkeyBar.hpp"
@@ -31,6 +33,7 @@ namespace core::context::standalone {
 FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
     core::state::CoreState& state,
     core::persistence::ProductFileService& productFiles,
+    core::persistence::ProductDirectoryCatalog& productCatalog,
     oc::context::OverlayManager<core::ui::OverlayType>& overlays,
     OverlayPresentationRegistry& overlayPresentations,
     oc::api::EncoderAPI& encoders,
@@ -111,7 +114,16 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
         },
         core::handler::SharedTrackDomainServices::fromCoreState(state),
         core::state::project::ProjectTrackDomainServices::fromCoreState(state),
-        core::handler::SequencerStepPresetDomainServices::fromCoreState(state, productFiles),
+        core::handler::SequencerStepPresetDomainServices::fromCoreState(
+            state,
+            productFiles,
+            productCatalog
+        ),
+        core::handler::SequencerChordPresetDomainServices::fromCoreState(
+            state,
+            productFiles,
+            productCatalog
+        ),
         overlays,
         overlayPresentations,
         encoders,
@@ -130,20 +142,23 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
 #if OC_ENABLE_STATS
     core::diagnostics::logMemoryFootprint("standalone-feature-sequencer");
 #endif
+    const core::handler::DeviceSettingsDomainServices deviceSettingsServices{
+        core::handler::DeviceSettingsDomainServices::StateRefs{
+            state.midiSync,
+            state.deviceSettingsStore,
+        }
+    };
     project_feature_ =
         core::app::makeExtmemUnique<core::context::standalone::ProjectFeatureModule>(
             core::context::standalone::ProjectFeatureModule::StateRefs{
                 state.overlays,
                 state.activeView,
                 state.projectNavigation,
-                state.sequencer,
-                state.sequencerTracks,
                 state.projectTracks,
                 core::state::project::ProjectTrackDomainServices::fromCoreState(
                     state
                 ),
                 state.statusBar,
-                state.midiSync,
                 state.pages,
                 state.macroUi,
                 state.macros,
@@ -155,12 +170,13 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                 core::handler::SequencerHistoryDomainServices::fromCoreState(state),
                 core::handler::ProjectLifecycleDomainServices::fromCoreState(
                     state,
-                    productFiles
+                    productFiles,
+                    productCatalog
                 ),
             },
+            deviceSettingsServices,
             core::handler::SequencerSettingsDomainServices{
                 core::handler::SequencerSettingsDomainServices::StateRefs{
-                    state.sequencer,
                     state.sequencerTracks,
                 }
             },
@@ -187,15 +203,9 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.sequencerTracks,
             core::handler::SequencerHistoryDomainServices::fromCoreState(state),
         },
-        core::handler::DeviceSettingsDomainServices{
-            core::handler::DeviceSettingsDomainServices::StateRefs{
-                state.midiSync,
-                state.settings,
-            }
-        },
+        deviceSettingsServices,
         core::handler::SequencerSettingsDomainServices{
             core::handler::SequencerSettingsDomainServices::StateRefs{
-                state.sequencer,
                 state.sequencerTracks,
             }
         },

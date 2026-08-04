@@ -1,0 +1,54 @@
+# UX workflow: canonical Sequencer Pattern and Track selection lifecycle.
+# Purpose: proves that the same mechanical grammar used by Macro remains true
+# while Sequencer keeps its own Pattern and Project-wide Track transactions.
+# Step selection is covered by structure/step-selection.ux.
+# Expect: capture_changed:pattern_selected=pattern_selection_placing
+# Expect: capture_changed:pattern_selection_placing=pattern_selection_pasted
+# Expect: capture_changed:track_selected=track_selection_placing
+# Expect: capture_changed:track_selection_placing=track_selection_pasted
+
+0 scenario sequencer
+80 capture screen pattern_ready
+
+# Stationary NAV hold enters Pattern selection; Copy previews the next page.
+180 button NAV down
+1260 tick
+1340 button NAV up
+1520 tap NAV 60
+1740 capture screen pattern_selected
+1840 tap BOTTOM_RIGHT 60
+2060 capture screen pattern_selection_placing
+2160 encoder NAV 1
+2360 capture screen pattern_selection_destination
+2460 button BOTTOM_RIGHT down
+3540 tick
+3620 button BOTTOM_RIGHT up
+3860 capture screen pattern_selection_pasted
+
+# Back clears the placement first, then exits the armed selection.
+3960 tap LEFT_TOP 60
+4180 capture screen pattern_selection_cleared
+4280 tap LEFT_TOP 60
+4500 capture screen pattern_selection_exited
+
+# Pattern -> Track, then repeat the same lifecycle with a Project-wide payload.
+4600 button NAV down
+4680 encoder NAV -1
+4760 button NAV up
+4920 button NAV down
+6000 tick
+6080 button NAV up
+6260 tap NAV 60
+6480 capture screen track_selected
+6580 tap BOTTOM_RIGHT 60
+6800 capture screen track_selection_placing
+6900 encoder NAV 1
+7100 capture screen track_selection_destination
+7200 button BOTTOM_RIGHT down
+8280 tick
+8360 button BOTTOM_RIGHT up
+8680 capture screen track_selection_pasted
+8780 tap LEFT_TOP 60
+9000 capture screen track_selection_cleared
+9100 tap LEFT_TOP 60
+9320 capture screen track_selection_exited

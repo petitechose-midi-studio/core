@@ -71,6 +71,27 @@ void assignShape(
     ).changed());
 }
 
+bool domainSlotPresent(
+    const modulation::ProjectControlDomainState& domain,
+    const macro::MacroAutomationSlotAddress& address
+) {
+    const auto destination = modulation::projectControlDestination(address);
+    if (modulation::findProjectAutomationCurve(
+            domain.automation,
+            destination
+        ) != nullptr) {
+        return true;
+    }
+    for (uint16_t index = 0U;
+         index < domain.modulation.outputBindingCount;
+         ++index) {
+        if (domain.modulation.outputBindings[index].destination == destination) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void test_track_clear_removes_note_route_without_deleting_root_source() {
     modulation::ProjectControlState control;
     modulation::ModulatorAdsrDraft source{};
@@ -98,6 +119,46 @@ void test_track_clear_removes_note_route_without_deleting_root_source() {
     assert(control.authored.modulation.sources[0].id == created.sourceId);
     assert(control.authored.modulation.triggerBindingCount == 0U);
     std::cout << "[PASS] Track clear removes its route and keeps root ADSR\n";
+}
+
+void test_detached_track_clear_mutates_only_the_requested_domain() {
+    modulation::ProjectControlState control;
+    const macro::MacroAutomationSlotAddress removed{
+        .track = 2,
+        .page = 3,
+        .macro = 1,
+    };
+    const macro::MacroAutomationSlotAddress retained{
+        .track = 5,
+        .page = 3,
+        .macro = 1,
+    };
+    assignLane(control, removed, 2U);
+    assignLane(control, retained, 2U);
+
+    auto detached = control.authored;
+    const auto liveBefore = control.authored;
+    assert(ops::clearTracksInDomain(
+        detached,
+        static_cast<uint16_t>(1U << removed.track)
+    ));
+    assert(!domainSlotPresent(detached, removed));
+    assert(domainSlotPresent(detached, retained));
+    assert(std::memcmp(
+        &control.authored,
+        &liveBefore,
+        sizeof(control.authored)
+    ) == 0);
+
+    const auto detachedBeforeInvalid = detached;
+    assert(!ops::clearTracksInDomain(detached, 0U));
+    assert(std::memcmp(
+        &detached,
+        &detachedBeforeInvalid,
+        sizeof(detached)
+    ) == 0);
+
+    std::cout << "[PASS] Detached Track clear is scoped and leaves live control untouched\n";
 }
 
 void test_page_compaction_remaps_complete_project_destinations() {
@@ -253,6 +314,58 @@ void test_track_structure_copy_captures_all_page_automation() {
     std::cout << "[PASS] Track copy carries Project control and Global Depth\n";
 }
 
+void test_detached_track_replace_builds_the_final_domain_offline() {
+    modulation::ProjectControlState sourceControl;
+    assignLane(sourceControl, {.track = 1, .page = 2, .macro = 3}, 2U);
+    assignShape(sourceControl, {.track = 1, .page = 7, .macro = 4}, 24576U);
+    core::state::StructureClipboardState clipboard;
+    macro::MacroTrackData track;
+    assert(clipboard.storeMacroTrack(track, sourceControl, 1U));
+    assert(clipboard.macroAutomationSet);
+
+    modulation::ProjectControlState liveControl;
+    assignLane(liveControl, {.track = 6, .page = 1, .macro = 0}, 3U);
+    assignLane(liveControl, {.track = 4, .page = 1, .macro = 0}, 2U);
+    const auto liveBefore = liveControl.authored;
+    auto detached = liveControl.authored;
+
+    assert(ops::replaceTrackFromClipboardInDomain(
+        detached,
+        6U,
+        clipboard.macroAutomationSet.get()
+    ));
+    assert(!domainSlotPresent(
+        detached,
+        {.track = 6, .page = 1, .macro = 0}
+    ));
+    assert(domainSlotPresent(
+        detached,
+        {.track = 6, .page = 2, .macro = 3}
+    ));
+    assert(modulation::projectModulationDestinationScaleQ15(
+        detached.modulation,
+        modulation::projectControlDestination(
+            {.track = 6, .page = 7, .macro = 4}
+        )
+    ) == 24576U);
+    assert(domainSlotPresent(
+        detached,
+        {.track = 4, .page = 1, .macro = 0}
+    ));
+    assert(std::memcmp(
+        &liveControl.authored,
+        &liveBefore,
+        sizeof(liveControl.authored)
+    ) == 0);
+    assert(modulation::validProjectModulationDomain(
+        detached.modulation,
+        detached.curves,
+        &detached.automation
+    ));
+
+    std::cout << "[PASS] Detached Track replace prepares complete control offline\n";
+}
+
 void test_malformed_clipboard_is_rejected_before_destination_mutation() {
     modulation::ProjectControlState control;
     const macro::MacroAutomationSlotAddress destAddress{
@@ -313,10 +426,12 @@ void test_malformed_clipboard_is_rejected_before_destination_mutation() {
 
 int main() {
     test_track_clear_removes_note_route_without_deleting_root_source();
+    test_detached_track_clear_mutates_only_the_requested_domain();
     test_page_compaction_remaps_complete_project_destinations();
     test_empty_page_clipboard_replaces_existing_control_with_empty_scope();
     test_empty_structure_copy_does_not_allocate_control_clipboard();
     test_track_structure_copy_captures_all_page_automation();
+    test_detached_track_replace_builds_the_final_domain_offline();
     test_malformed_clipboard_is_rejected_before_destination_mutation();
 
     std::cout << "\nAll MacroStructureAutomationOps tests passed.\n";

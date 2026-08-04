@@ -1,8 +1,5 @@
 #pragma once
 
-#include "sequencer/SequencerState.hpp"
-#include "sequencer/SequencerTrackBankState.hpp"
-
 namespace core::state {
 
 struct CoreState;
@@ -10,9 +7,8 @@ struct CoreState;
 /**
  * Centralizes CoreState lifecycle side effects.
  *
- * Runtime code calls CoreState's public methods; this helper keeps delayed
- * persistence, pending sequencer apply, factory reset, and transient UI reset
- * behavior in one implementation boundary.
+ * Runtime code calls CoreState's public methods; this helper keeps factory
+ * reset and transient UI reset behavior in one implementation boundary.
  */
 struct CoreStateLifecycle {
     static void update(CoreState& state);
@@ -22,24 +18,9 @@ struct CoreStateLifecycle {
     static void resetStandaloneTransientUi(CoreState& state);
     static void resetMusicalProject(CoreState& state);
 
-    [[nodiscard]] static bool queuePendingSequencerApply(
-        CoreState& state,
-        sequencer::SequencerState& staged,
-        bool merge = false
-    );
-    [[nodiscard]] static bool queuePendingSequencerBankApply(
-        CoreState& state,
-        sequencer::SequencerTrackBankState& stagedBank,
-        sequencer::SequencerState& staged
-    );
-    static void clearPendingSequencerApply(CoreState& state);
-
 private:
-    static void applyPendingSequencerApplyIfReady(CoreState& state);
     static void updateMutationCoalescers_(CoreState& state);
-    static void updatePendingSharedTrackPersist_(CoreState& state);
     static void flushMutationCoalescers_(CoreState& state);
-    static void flushPendingSharedTrackPersist_(CoreState& state);
     static void persistFactoryDefaults_(CoreState& state);
     static void resetMacroDomain_(CoreState& state);
     static void resetSequencerDomain_(CoreState& state);

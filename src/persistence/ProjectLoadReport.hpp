@@ -25,15 +25,16 @@ enum class LoadCode : uint8_t {
     CHUNK_PAYLOAD_INVALID,
     UNKNOWN_CHUNK,
     DUPLICATE_CHUNK,
+    MISSING_REQUIRED_CHUNK,
+    UNEXPECTED_CHUNK,
+    UNSUPPORTED_CHUNK_FLAGS,
     OUTPUT_CAPACITY_EXCEEDED,
-    MISSING_OPTIONAL_CHUNK,
-    DEFAULTED_CHUNK,
     UNSUPPORTED_CHUNK_VERSION,
 };
 
 enum class LoadStatus : uint8_t {
     OK = 0,
-    PARTIAL,
+    INSPECTION_ISSUES,
     FAILED,
 };
 
@@ -64,6 +65,7 @@ struct LoadReport {
              uint8_t sourceMinor = 0,
              uint8_t targetMajor = 0,
              uint8_t targetMinor = 0);
+    void markRejected();
 
     bool ok() const { return status == LoadStatus::OK; }
     bool hasIssues() const { return status != LoadStatus::OK; }

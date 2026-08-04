@@ -7,14 +7,20 @@ namespace core::state::sequencer {
 FLASHMEM SequencerPatternQuickControlsState::SequencerPatternQuickControlsState() = default;
 FLASHMEM SequencerPatternQuickControlsState::~SequencerPatternQuickControlsState() = default;
 
+FLASHMEM void SequencerPatternQuickControlsState::bumpPreview() {
+    previewRevision.set(previewRevision.get() + 1U);
+}
+
 FLASHMEM SequencerContentViewState::SequencerContentViewState() = default;
 FLASHMEM SequencerContentViewState::~SequencerContentViewState() = default;
 
 FLASHMEM SequencerStepEditOverlayState::SequencerStepEditOverlayState() = default;
 FLASHMEM SequencerStepEditOverlayState::~SequencerStepEditOverlayState() = default;
 
-FLASHMEM SequencerStepPresetPickerState::SequencerStepPresetPickerState() = default;
-FLASHMEM SequencerStepPresetPickerState::~SequencerStepPresetPickerState() = default;
+FLASHMEM SequencerPresetLibrarySessionState::
+SequencerPresetLibrarySessionState() = default;
+FLASHMEM SequencerPresetLibrarySessionState::
+~SequencerPresetLibrarySessionState() = default;
 
 FLASHMEM SequencerStepSelectionState::SequencerStepSelectionState() = default;
 FLASHMEM SequencerStepSelectionState::~SequencerStepSelectionState() = default;
@@ -36,7 +42,9 @@ FLASHMEM void SequencerContentViewState::reset() {
 
 FLASHMEM void SequencerChordEditorState::reset() {
     active.set(false);
-    focusedField.set(SequencerChordEditField::MODE);
+    focusedField.set(SequencerChordEditField::SHAPE);
+    subEditor.set({});
+    formulaSnapshot.reset();
 }
 
 FLASHMEM void SequencerStepEditOverlayState::reset() {
@@ -54,64 +62,73 @@ FLASHMEM void SequencerContextSelectorState::bump() {
 FLASHMEM void SequencerContextSelectorState::reset() {
     visible = false;
     previewFocus = core::state::StructureNavigationFocus::PAGE;
-    feedback = SequencerContextSelectorFeedback::NONE;
-    feedbackUntilMs = 0;
     bump();
 }
 
-FLASHMEM void SequencerStepPresetPickerState::open(
-    SequencerStepPresetPickerMode nextMode
+FLASHMEM void SequencerPresetLibrarySessionState::open(
+    SequencerPresetLibraryMode nextMode,
+    SequencerPresetLibraryKind kind
 ) {
+    clearCatalog();
+    libraryKind.set(kind);
     mode.set(nextMode);
     selectedIndex.set(0);
     detailVisible.set(false);
     detailFocus.set(0);
     inspecting.set(false);
     previewStateIndex.set(0);
-    operationActivationGeneration = 0;
+    previewGeneration.set(0);
+    if (kind == SequencerPresetLibraryKind::CHORD) {
+        payload.emplace<SequencerChordPresetLibraryState>();
+    } else {
+        payload.emplace<SequencerStepPresetLibraryState>();
+    }
     actionGuard.set({});
     operationFeedback.set({});
-    feedback.set(SequencerStepPresetFeedback::NONE);
+    feedback.set(SequencerPresetLibraryFeedback::NONE);
     revision.set(revision.get() + 1U);
     visible.set(true);
 }
 
-FLASHMEM void SequencerStepPresetPickerState::reset() {
+FLASHMEM void SequencerPresetLibrarySessionState::reset() {
     visible.set(false);
-    mode.set(SequencerStepPresetPickerMode::LOAD);
+    libraryKind.set(SequencerPresetLibraryKind::STEP);
+    mode.set(SequencerPresetLibraryMode::LOAD);
     selectedIndex.set(0);
-    entryCount.set(0);
-    truncated.set(false);
-    hasPreviousPage.set(false);
-    hasNextPage.set(false);
-    totalEntryCount.set(0);
+    clearCatalog();
     detailVisible.set(false);
     detailFocus.set(0);
     inspecting.set(false);
     previewStateIndex.set(0);
     previewGeneration.set(0);
-    feedback.set(SequencerStepPresetFeedback::NONE);
+    feedback.set(SequencerPresetLibraryFeedback::NONE);
     actionGuard.set({});
     operationFeedback.set({});
+    payload.emplace<SequencerStepPresetLibraryState>();
+    revision.set(revision.get() + 1U);
+}
+
+FLASHMEM void SequencerPresetLibrarySessionState::clearCatalog() {
+    entryCount.set(0);
+    truncated.set(false);
+    hasPreviousPage.set(false);
+    hasNextPage.set(false);
+    totalEntryCount.set(0);
     for (uint8_t i = 0; i < ENTRY_CAPACITY; ++i) {
         entryIds[i][0] = '\0';
         entryNames[i][0] = '\0';
         entryMetadataReadable[i] = false;
     }
-    frozenTarget = {};
-    descriptor = {};
-    operationActivationGeneration = 0;
-    revision.set(revision.get() + 1U);
 }
 
-FLASHMEM void SequencerStepPresetPickerState::setFeedback(
-    SequencerStepPresetFeedback nextFeedback
+FLASHMEM void SequencerPresetLibrarySessionState::setFeedback(
+    SequencerPresetLibraryFeedback nextFeedback
 ) {
     feedback.set(nextFeedback);
     revision.set(revision.get() + 1U);
 }
 
-FLASHMEM void SequencerStepPresetPickerState::setEntry(
+FLASHMEM void SequencerPresetLibrarySessionState::setEntry(
     uint8_t index,
     const char* id,
     const char* semanticName,
@@ -127,21 +144,45 @@ FLASHMEM void SequencerStepPresetPickerState::setEntry(
     entryMetadataReadable[index] = metadataReadable;
 }
 
-FLASHMEM const char* SequencerStepPresetPickerState::entryId(uint8_t index) const {
+FLASHMEM const char* SequencerPresetLibrarySessionState::entryId(
+    uint8_t index
+) const {
     return index < ENTRY_CAPACITY ? entryIds[index].data() : "";
 }
 
-FLASHMEM const char* SequencerStepPresetPickerState::entryName(uint8_t index) const {
+FLASHMEM const char* SequencerPresetLibrarySessionState::entryName(
+    uint8_t index
+) const {
     return index < ENTRY_CAPACITY ? entryNames[index].data() : "";
 }
 
-FLASHMEM bool SequencerStepPresetPickerState::entryHasReadableMetadata(
+FLASHMEM bool SequencerPresetLibrarySessionState::entryHasReadableMetadata(
     uint8_t index
 ) const {
     return index < ENTRY_CAPACITY && entryMetadataReadable[index];
 }
 
-FLASHMEM uint8_t SequencerStepPresetPickerState::itemCount() const {
+FLASHMEM SequencerStepPresetLibraryState&
+SequencerPresetLibrarySessionState::step() {
+    return *std::get_if<SequencerStepPresetLibraryState>(&payload);
+}
+
+FLASHMEM const SequencerStepPresetLibraryState&
+SequencerPresetLibrarySessionState::step() const {
+    return *std::get_if<SequencerStepPresetLibraryState>(&payload);
+}
+
+FLASHMEM SequencerChordPresetLibraryState&
+SequencerPresetLibrarySessionState::chord() {
+    return *std::get_if<SequencerChordPresetLibraryState>(&payload);
+}
+
+FLASHMEM const SequencerChordPresetLibraryState&
+SequencerPresetLibrarySessionState::chord() const {
+    return *std::get_if<SequencerChordPresetLibraryState>(&payload);
+}
+
+FLASHMEM uint8_t SequencerPresetLibrarySessionState::itemCount() const {
     const uint8_t existing = entryCount.get();
     const uint8_t offset = newAssetItemOffset();
     if (offset > 0) {
@@ -151,22 +192,35 @@ FLASHMEM uint8_t SequencerStepPresetPickerState::itemCount() const {
     return existing;
 }
 
-FLASHMEM uint8_t SequencerStepPresetPickerState::newAssetItemOffset() const {
-    return mode.get() == SequencerStepPresetPickerMode::SAVE &&
-           !hasPreviousPage.get() ? 1U : 0U;
+FLASHMEM uint8_t
+SequencerPresetLibrarySessionState::newAssetItemOffset() const {
+    // Save-new is a first-class command, not an asset belonging to a
+    // particular catalog page. Keep it reachable from every Save page.
+    return mode.get() == SequencerPresetLibraryMode::SAVE ? 1U : 0U;
 }
 
-FLASHMEM bool SequencerStepPresetPickerState::selectedItemIsNewAsset() const {
+FLASHMEM bool
+SequencerPresetLibrarySessionState::selectedItemIsNewAsset() const {
     return newAssetItemOffset() > 0 && selectedIndex.get() == 0;
 }
 
-FLASHMEM uint8_t SequencerStepPresetPickerState::existingEntryIndexForSelectedItem() const {
+FLASHMEM bool
+SequencerPresetLibrarySessionState::selectedItemIsExistingAsset() const {
+    return entryCount.get() > 0U &&
+           !selectedItemIsNewAsset() &&
+           existingEntryIndexForSelectedItem() < entryCount.get();
+}
+
+FLASHMEM uint8_t
+SequencerPresetLibrarySessionState::
+existingEntryIndexForSelectedItem() const {
     const uint8_t selected = selectedIndex.get();
     const uint8_t offset = newAssetItemOffset();
     return selected < offset ? 0 : static_cast<uint8_t>(selected - offset);
 }
 
-FLASHMEM void SequencerStepPresetPickerState::clampSelection() {
+FLASHMEM void
+SequencerPresetLibrarySessionState::clampSelection() {
     const uint8_t count = itemCount();
     if (count == 0) {
         selectedIndex.set(0);
@@ -177,7 +231,7 @@ FLASHMEM void SequencerStepPresetPickerState::clampSelection() {
     }
 }
 
-FLASHMEM void SequencerStepPresetPickerState::bump() {
+FLASHMEM void SequencerPresetLibrarySessionState::bump() {
     revision.set(revision.get() + 1U);
 }
 
@@ -282,6 +336,31 @@ FLASHMEM void SequencerHistoryFeedbackState::show(
     visible.set(true);
 }
 
+FLASHMEM void SequencerHistoryFeedbackState::showRejection(SequencerHistoryRejectionReason reason,
+                                                           uint32_t nowMs) {
+    const char* detail = "Edit unavailable";
+    switch (reason) {
+        case SequencerHistoryRejectionReason::ResourceUnavailable:
+            detail = "Memory unavailable";
+            break;
+        case SequencerHistoryRejectionReason::HistoryUnavailable:
+            detail = "History unavailable";
+            break;
+        case SequencerHistoryRejectionReason::Blocked: break;
+    }
+    show("EDIT BLOCKED", detail, "State unchanged", nowMs);
+}
+
+FLASHMEM void SequencerHistoryFeedbackState::showRejection(SequencerHistoryOpenOutcome outcome,
+                                                           uint32_t nowMs) {
+    showRejection(sequencerHistoryRejectionFor(outcome), nowMs);
+}
+
+FLASHMEM void SequencerHistoryFeedbackState::showRejection(SequencerHistoryGestureOutcome outcome,
+                                                           uint32_t nowMs) {
+    showRejection(sequencerHistoryRejectionFor(outcome), nowMs);
+}
+
 FLASHMEM void SequencerHistoryFeedbackState::reset() {
     visible.set(false);
     hideAtMs = 0;
@@ -301,6 +380,7 @@ FLASHMEM void SequencerPatternQuickControlsState::reset() {
     feedbackVisible.set(false);
     focusedItem.set(PatternQuickControlItem::LENGTH);
     offsetSteps.set(0);
+    previewRevision.set(0);
     hideAtMs = 0;
 }
 
@@ -355,7 +435,6 @@ FLASHMEM SequencerStructureUiState::SequencerStructureUiState() = default;
 FLASHMEM SequencerStructureUiState::~SequencerStructureUiState() = default;
 
 FLASHMEM void SequencerStructureUiState::reset() {
-    previewAddPageSlot.set(false);
     previewPageIndex.set(0);
     pageHold.clear();
     pageSelection.reset(core::state::StructureSelectionScope::PAGE);

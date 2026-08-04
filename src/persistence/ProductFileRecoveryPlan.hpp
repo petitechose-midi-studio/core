@@ -1,0 +1,70 @@
+#pragma once
+
+#include <cstdint>
+
+#include <oc/type/Result.hpp>
+
+#include "persistence/ProductFileTransactionJournalInternal.hpp"
+
+namespace core::persistence {
+
+/** Allocation-free continuation for the ordinary two-slot transaction journal. */
+class ProductFileRecoveryPlan {
+public:
+    oc::type::Result<void> begin(
+        ProductFileService& files,
+        const ProductMutationLease& recoveryLease
+    );
+    oc::type::Result<bool> advance(
+        ProductFileService& files,
+        const ProductMutationLease& recoveryLease
+    );
+
+    void reset();
+    bool active() const;
+    bool complete() const;
+
+private:
+    enum class Step : uint8_t {
+        IDLE = 0,
+        SELECT_JOURNAL,
+        INSPECT_FINAL,
+        INSPECT_TMP,
+        INSPECT_BACKUP,
+        REMOVE_CURRENT,
+        RESTORE_BACKUP,
+        FLUSH_RESTORED,
+        BACK_UP_CURRENT,
+        FLUSH_BACKUP,
+        PERSIST_BACKED_UP,
+        PROMOTE_TMP,
+        FLUSH_PROMOTED,
+        PERSIST_PROMOTED,
+        CLEAN_TMP,
+        CLEAN_BACKUP,
+        PERSIST_TERMINAL,
+        COMPLETE,
+        FAILED,
+    };
+
+    oc::type::Result<bool> decide_();
+    oc::type::Result<bool> fail_(oc::type::Error error);
+    oc::type::Result<bool> finish_(ProductFileTransactionPhase phase);
+    oc::type::Result<bool> restoreBackup_(bool removeCurrent);
+    oc::type::Result<bool> promoteTemporary_();
+
+    product_file_transaction::JournalWorkspace workspace_{};
+    product_file_transaction::FileState final_{};
+    product_file_transaction::FileState tmp_{};
+    product_file_transaction::FileState backup_{};
+    ProductFileTransactionPhase terminal_phase_ =
+        ProductFileTransactionPhase::NONE;
+    Step step_ = Step::IDLE;
+};
+
+static_assert(
+    sizeof(ProductFileRecoveryPlan) <= 768U,
+    "ordinary recovery continuation exceeds PSRAM control ceiling"
+);
+
+}  // namespace core::persistence

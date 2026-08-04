@@ -253,7 +253,7 @@ FLASHMEM bool replaceSlotInDomain(
         return false;
     }
     if (current.automation.stored() &&
-        !removeProjectAutomationCurve(
+        !deleteProjectAutomationCurve(
             domain.automation,
             domain.curves,
             projectControlDestination(address)

@@ -298,9 +298,6 @@ void MacroFeatureModule::update(uint32_t nowMs) {
     if (value_handler_) {
         value_handler_->update(nowMs);
     }
-    if (performance_handler_) {
-        performance_handler_->update(nowMs);
-    }
     if (edit_handler_) {
         edit_handler_->update(nowMs);
     }

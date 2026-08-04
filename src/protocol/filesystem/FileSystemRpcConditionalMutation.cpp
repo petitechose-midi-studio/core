@@ -1,13 +1,15 @@
 #include "protocol/filesystem/FileSystemRpcInternal.hpp"
 
+#include <cstring>
+#include <utility>
+
 #include <config/PlatformCompat.hpp>
 
+#include "protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
 #include "protocol/filesystem/FileSystemRpcConditionalTransaction.hpp"
-#include "protocol/filesystem/FileSystemRpcDigest.hpp"
 
 namespace core::protocol::filesystem {
 
-using oc::type::ErrorCode;
 using oc::type::Result;
 using internal::ByteReader;
 using internal::ByteWriter;
@@ -18,6 +20,19 @@ using internal::writeFrameHeader;
 namespace mutation = conditional_mutation;
 
 namespace {
+
+FLASHMEM FileSystemRpcStatus normalizeMutationPathInPlace(
+    core::persistence::ProductFileService& files,
+    char* path,
+    size_t pathSize
+) {
+    char raw[oc::interface::FILESYSTEM_MAX_PATH_LENGTH + 1] = {};
+    if (path == nullptr || pathSize == 0U || pathSize > sizeof(raw)) {
+        return FileSystemRpcStatus::INVALID_ARGUMENT;
+    }
+    std::memcpy(raw, path, pathSize);
+    return mutation::normalizeMutationPath(files, raw, path, pathSize);
+}
 
 FLASHMEM Result<size_t> encodeConditionalResponse(
     FileSystemRpcMessageId messageId,
@@ -46,9 +61,77 @@ FLASHMEM Result<size_t> encodeConditionalResponse(
     return Result<size_t>::ok(writer.position());
 }
 
+FileSystemRpcMessageId conditionalResponseId(FileSystemRpcMessageId requestId) {
+    return requestId == FileSystemRpcMessageId::CONDITIONAL_DELETE_REQUEST
+        ? FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE
+        : FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE;
+}
+
+FLASHMEM FileSystemRpcStatus prepareConditionalMutation(
+    core::persistence::ProductFileService& files,
+    const FileSystemRpcFrame& frame,
+    mutation::Journal& journal
+) {
+    const uint8_t* expected = nullptr;
+    ByteReader reader(frame.payload, frame.payloadSize);
+    if (!reader.readU32(journal.operationId) ||
+        !reader.readBytes(expected, FILESYSTEM_RPC_SHA256_SIZE)) {
+        return FileSystemRpcStatus::INVALID_ARGUMENT;
+    }
+    mutation::copyDigest(journal.expectedSourceSha256, expected);
+
+    if (frame.messageId == FileSystemRpcMessageId::CONDITIONAL_REPLACE_REQUEST) {
+        const uint8_t* replacement = nullptr;
+        journal.kind = mutation::Kind::REPLACE;
+        if (!reader.readBytes(replacement, FILESYSTEM_RPC_SHA256_SIZE) ||
+            !readPath(reader, journal.currentPath, sizeof(journal.currentPath)) ||
+            !readPath(reader, journal.stagingPath, sizeof(journal.stagingPath)) ||
+            reader.remaining() != 0U) {
+            return FileSystemRpcStatus::INVALID_ARGUMENT;
+        }
+        mutation::copyDigest(journal.replacementSha256, replacement);
+
+        const auto currentStatus = normalizeMutationPathInPlace(
+            files, journal.currentPath, sizeof(journal.currentPath)
+        );
+        const auto stagingStatus = normalizeMutationPathInPlace(
+            files, journal.stagingPath, sizeof(journal.stagingPath)
+        );
+        if (currentStatus != FileSystemRpcStatus::OK ||
+            stagingStatus != FileSystemRpcStatus::OK ||
+            mutation::pathEquals(journal.currentPath, journal.stagingPath) ||
+            mutation::isReservedPath(journal.currentPath) ||
+            mutation::isReservedPath(journal.stagingPath) ||
+            mutation::containsFatShortNameAliasSyntax(journal.currentPath) ||
+            mutation::containsFatShortNameAliasSyntax(journal.stagingPath) ||
+            !mutation::isStagingPath(journal.stagingPath)) {
+            return FileSystemRpcStatus::INVALID_ARGUMENT;
+        }
+        return FileSystemRpcStatus::OK;
+    }
+
+    if (frame.messageId != FileSystemRpcMessageId::CONDITIONAL_DELETE_REQUEST) {
+        return FileSystemRpcStatus::INVALID_ARGUMENT;
+    }
+    journal.kind = mutation::Kind::DELETE;
+    if (!readPath(reader, journal.currentPath, sizeof(journal.currentPath)) ||
+        reader.remaining() != 0U) {
+        return FileSystemRpcStatus::INVALID_ARGUMENT;
+    }
+    const auto currentStatus = normalizeMutationPathInPlace(
+        files, journal.currentPath, sizeof(journal.currentPath)
+    );
+    if (currentStatus != FileSystemRpcStatus::OK ||
+        mutation::isReservedPath(journal.currentPath) ||
+        mutation::containsFatShortNameAliasSyntax(journal.currentPath)) {
+        return FileSystemRpcStatus::INVALID_ARGUMENT;
+    }
+    return FileSystemRpcStatus::OK;
+}
+
 }  // namespace
 
-FLASHMEM bool internal::isConditionalMutationReservedPath(
+FLASHMEM bool internal::isProtocolReservedPath(
     core::persistence::ProductFileService& files,
     const char* productPath
 ) {
@@ -58,370 +141,231 @@ FLASHMEM bool internal::isConditionalMutationReservedPath(
 }
 
 FLASHMEM FileSystemRpcStatus FileSystemRpcHandler::recoverConditionalMutation_() {
-    if (writeSession_.active || files_.writeSessionActive()) {
+    if (hasActiveWriteSession()) {
         return FileSystemRpcStatus::BUSY;
     }
-    mutation::Journal journal{};
-    bool present = false;
-    bool corrupt = false;
-    const auto loaded = mutation::readJournal(files_, journal, present, corrupt);
-    if (loaded != FileSystemRpcStatus::OK) {
-        if (!corrupt) return loaded;
-        const auto quarantined = mutation::quarantineCorruptJournal(files_);
-        if (quarantined != FileSystemRpcStatus::OK) return quarantined;
+
+    const auto state = files_.storageState();
+    if (state != core::persistence::ProductStorageState::READY) {
+        switch (state) {
+            case core::persistence::ProductStorageState::ABSENT:
+                return FileSystemRpcStatus::STORAGE_ERROR;
+            case core::persistence::ProductStorageState::EXHAUSTED:
+                return FileSystemRpcStatus::TOO_LARGE;
+            default:
+                return FileSystemRpcStatus::BUSY;
+        }
+    }
+
+    auto acquired = files_.acquireMutation(
+        core::persistence::ProductMutationOwner::FILESYSTEM_RPC
+    );
+    if (!acquired) return internal::mapError(acquired.error());
+    auto lease = std::move(acquired.value());
+
+    bool quarantined = false;
+    auto status = mutation::recoverPendingMutation(files_, lease, quarantined);
+    if (quarantined) {
         conditionalRecoveryState_ =
             FileSystemRpcConditionalRecoveryState::CORRUPT_JOURNAL_QUARANTINED;
-        // This is an orphaned journal stream, not a user staging asset.
-        return mutation::removeIfExists(files_, mutation::JOURNAL_STAGING_PATH);
     }
-    const auto stagingCleanup =
-        mutation::removeIfExists(files_, mutation::JOURNAL_STAGING_PATH);
-    if (stagingCleanup != FileSystemRpcStatus::OK) return stagingCleanup;
-    if (!present) return FileSystemRpcStatus::OK;
-    const auto executed = mutation::executeJournal(files_, journal);
-    return executed.status;
+
+    auto released = files_.releaseMutation(lease);
+    if (!released && status == FileSystemRpcStatus::OK) {
+        status = internal::mapError(released.error());
+    }
+    if (status != FileSystemRpcStatus::OK &&
+        files_.storageState() == core::persistence::ProductStorageState::READY) {
+        (void)files_.requireRecovery(mutation::recoveryError(status));
+    }
+    return status;
+}
+
+bool FileSystemRpcHandler::conditionalRecoveryDue_(uint32_t nowMs) const {
+    if (conditionalRecoveryState_ == FileSystemRpcConditionalRecoveryState::NOT_CHECKED) {
+        return true;
+    }
+    if (conditionalRecoveryIdentity_ != files_.storageIdentity()) {
+        return true;
+    }
+    return conditionalRecoveryState_ == FileSystemRpcConditionalRecoveryState::BLOCKED &&
+           static_cast<int32_t>(nowMs - conditionalRecoveryRetryAtMs_) >= 0;
+}
+
+FLASHMEM void FileSystemRpcHandler::updateConditionalRecovery_(uint32_t nowMs) {
+    if (!conditionalRecoveryDue_(nowMs)) return;
+
+    const auto status = recoverConditionalMutation_();
+    conditionalRecoveryStatus_ = status;
+    conditionalRecoveryIdentity_ = files_.storageIdentity();
+    if (status == FileSystemRpcStatus::OK) {
+        if (conditionalRecoveryState_ !=
+            FileSystemRpcConditionalRecoveryState::CORRUPT_JOURNAL_QUARANTINED) {
+            conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::READY;
+        }
+        conditionalRecoveryRetryAtMs_ = 0;
+        return;
+    }
+
+    conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::BLOCKED;
+    conditionalRecoveryRetryAtMs_ = nowMs + CONDITIONAL_RECOVERY_RETRY_MS;
+}
+
+FLASHMEM Result<size_t> FileSystemRpcHandler::beginCooperativeConditionalMutation_(
+    const FileSystemRpcFrame& frame,
+    mutation::ConditionalMutationPlan& plan,
+    uint8_t* response,
+    size_t responseSize
+) {
+    mutation::Journal journal{};
+    const auto responseId = conditionalResponseId(frame.messageId);
+    const auto prepared = prepareConditionalMutation(files_, frame, journal);
+    if (prepared != FileSystemRpcStatus::OK) {
+        return encodeConditionalResponse(
+            responseId,
+            frame.requestId,
+            prepared,
+            FileSystemRpcMutationOutcome::NONE,
+            FileSystemRpcMutationSubject::NONE,
+            journal.operationId,
+            nullptr,
+            response,
+            responseSize
+        );
+    }
+
+    auto acquired = files_.acquireMutation(
+        core::persistence::ProductMutationOwner::FILESYSTEM_RPC
+    );
+    if (!acquired) {
+        return encodeConditionalResponse(
+            responseId,
+            frame.requestId,
+            internal::mapError(acquired.error()),
+            FileSystemRpcMutationOutcome::NONE,
+            FileSystemRpcMutationSubject::NONE,
+            journal.operationId,
+            nullptr,
+            response,
+            responseSize
+        );
+    }
+    auto lease = std::move(acquired.value());
+    auto begun = plan.begin(files_, std::move(lease), journal);
+    if (!begun) {
+        if (lease.valid() && files_.owns(lease)) {
+            (void)files_.releaseMutation(lease);
+        }
+        return encodeConditionalResponse(
+            responseId,
+            frame.requestId,
+            internal::mapError(begun.error()),
+            FileSystemRpcMutationOutcome::NONE,
+            FileSystemRpcMutationSubject::NONE,
+            journal.operationId,
+            nullptr,
+            response,
+            responseSize
+        );
+    }
+    return Result<size_t>::ok(0U);
+}
+
+FLASHMEM Result<size_t> FileSystemRpcHandler::advanceCooperativeConditionalMutation_(
+    mutation::ConditionalMutationPlan& plan,
+    uint16_t requestId,
+    uint32_t nowMs,
+    uint8_t* response,
+    size_t responseSize
+) {
+    if (plan.active() && !plan.advance(files_, response, responseSize)) {
+        return Result<size_t>::ok(0U);
+    }
+
+    if (!plan.terminal()) {
+        return encodeConditionalResponse(
+            plan.responseMessageId(),
+            requestId,
+            FileSystemRpcStatus::INVALID_STATE,
+            FileSystemRpcMutationOutcome::NONE,
+            FileSystemRpcMutationSubject::NONE,
+            plan.operationId(),
+            nullptr,
+            response,
+            responseSize
+        );
+    }
+
+    conditionalRecoveryIdentity_ = files_.storageIdentity();
+    if (plan.recoveryRequired()) {
+        conditionalRecoveryStatus_ = plan.status();
+        conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::BLOCKED;
+        conditionalRecoveryRetryAtMs_ = nowMs + CONDITIONAL_RECOVERY_RETRY_MS;
+    } else {
+        conditionalRecoveryStatus_ = FileSystemRpcStatus::OK;
+        conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::READY;
+        conditionalRecoveryRetryAtMs_ = 0U;
+    }
+
+    return encodeConditionalResponse(
+        plan.responseMessageId(),
+        requestId,
+        plan.status(),
+        plan.outcome(),
+        plan.subject(),
+        plan.operationId(),
+        plan.observedDigest(),
+        response,
+        responseSize
+    );
+}
+
+FLASHMEM void FileSystemRpcHandler::cancelCooperativeConditionalMutation_(
+    mutation::ConditionalMutationPlan& plan
+) {
+    plan.cancel(files_);
+    if (!plan.recoveryRequired()) return;
+
+    conditionalRecoveryStatus_ = plan.status();
+    conditionalRecoveryIdentity_ = files_.storageIdentity();
+    conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::BLOCKED;
+    conditionalRecoveryRetryAtMs_ = 0U;
 }
 
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleConditionalReplace_(
     const FileSystemRpcFrame& frame,
+    uint32_t nowMs,
     uint8_t* response,
     size_t responseSize
 ) {
-    uint32_t operationId = 0;
-    const uint8_t* expected = nullptr;
-    const uint8_t* replacement = nullptr;
-    char currentRaw[PATH_BUFFER_SIZE] = {};
-    char stagingRaw[PATH_BUFFER_SIZE] = {};
-    ByteReader reader(frame.payload, frame.payloadSize);
-    if (!reader.readU32(operationId) ||
-        !reader.readBytes(expected, FILESYSTEM_RPC_SHA256_SIZE) ||
-        !reader.readBytes(replacement, FILESYSTEM_RPC_SHA256_SIZE) ||
-        !readPath(reader, currentRaw, sizeof(currentRaw)) ||
-        !readPath(reader, stagingRaw, sizeof(stagingRaw)) ||
-        reader.remaining() != 0) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE,
-            frame.requestId,
-            FileSystemRpcStatus::INVALID_ARGUMENT,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
-        );
-    }
-    if (writeSession_.active || files_.writeSessionActive()) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE,
-            frame.requestId,
-            FileSystemRpcStatus::BUSY,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
-        );
-    }
-
-    mutation::Journal journal{};
-    journal.kind = mutation::Kind::REPLACE;
-    journal.operationId = operationId;
-    mutation::copyDigest(journal.expectedSourceSha256, expected);
-    mutation::copyDigest(journal.replacementSha256, replacement);
-    const auto currentPathStatus = mutation::normalizeMutationPath(
-        files_, currentRaw, journal.currentPath, sizeof(journal.currentPath)
+    mutation::ConditionalMutationPlan plan{};
+    auto result = beginCooperativeConditionalMutation_(
+        frame, plan, response, responseSize
     );
-    const auto stagingPathStatus = mutation::normalizeMutationPath(
-        files_, stagingRaw, journal.stagingPath, sizeof(journal.stagingPath)
-    );
-    if (currentPathStatus != FileSystemRpcStatus::OK ||
-        stagingPathStatus != FileSystemRpcStatus::OK ||
-        // FAT is case-insensitive: differently cased spellings may still name
-        // the same physical file. Never let idempotent cleanup unlink the
-        // canonical source through such an alias.
-        mutation::pathEquals(journal.currentPath, journal.stagingPath) ||
-        mutation::isReservedPath(journal.currentPath) ||
-        mutation::isReservedPath(journal.stagingPath) ||
-        mutation::containsFatShortNameAliasSyntax(journal.currentPath) ||
-        mutation::containsFatShortNameAliasSyntax(journal.stagingPath) ||
-        !mutation::isStagingPath(journal.stagingPath)) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE,
-            frame.requestId,
-            FileSystemRpcStatus::INVALID_ARGUMENT,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
+    while (result && result.value() == 0U && plan.active()) {
+        result = advanceCooperativeConditionalMutation_(
+            plan, frame.requestId, nowMs, response, responseSize
         );
     }
-
-    auto current = mutation::readDigest(files_, journal.currentPath);
-    if (current.status == FileSystemRpcStatus::OK &&
-        mutation::digestEquals(current.sha256, journal.replacementSha256)) {
-        auto backup = files_.stat(mutation::BACKUP_PATH);
-        const bool unexpectedBackup =
-            backup || backup.error().code != ErrorCode::RESOURCE_NOT_FOUND;
-        const auto stagingCleanup =
-            mutation::removeIfExists(files_, journal.stagingPath);
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE,
-            frame.requestId,
-            unexpectedBackup
-                ? FileSystemRpcStatus::INVALID_STATE
-                : stagingCleanup,
-            !unexpectedBackup && stagingCleanup == FileSystemRpcStatus::OK
-                ? FileSystemRpcMutationOutcome::ALREADY_APPLIED
-                : FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
-        );
-    }
-    if (current.status != FileSystemRpcStatus::OK ||
-        !mutation::digestEquals(current.sha256, journal.expectedSourceSha256)) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE,
-            frame.requestId,
-            current.status == FileSystemRpcStatus::OK
-                ? FileSystemRpcStatus::PRECONDITION_FAILED
-                : current.status,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::SOURCE,
-            operationId,
-            current.status == FileSystemRpcStatus::OK ? current.sha256 : nullptr,
-            response,
-            responseSize
-        );
-    }
-    auto staging = mutation::readDigest(files_, journal.stagingPath);
-    if (staging.status != FileSystemRpcStatus::OK ||
-        !mutation::digestEquals(staging.sha256, journal.replacementSha256)) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE,
-            frame.requestId,
-            staging.status == FileSystemRpcStatus::OK
-                ? FileSystemRpcStatus::PRECONDITION_FAILED
-                : staging.status,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::STAGING,
-            operationId,
-            staging.status == FileSystemRpcStatus::OK ? staging.sha256 : nullptr,
-            response,
-            responseSize
-        );
-    }
-
-    auto backup = files_.stat(mutation::BACKUP_PATH);
-    if (backup || backup.error().code != ErrorCode::RESOURCE_NOT_FOUND) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE,
-            frame.requestId,
-            FileSystemRpcStatus::INVALID_STATE,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
-        );
-    }
-
-    conditionalRecoveryChecked_ = false;
-    conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::NOT_CHECKED;
-    conditionalRecoveryStatus_ = FileSystemRpcStatus::OK;
-    auto journalStatus = mutation::writeJournal(files_, journal);
-    if (journalStatus == FileSystemRpcStatus::OK) {
-        const auto executed = mutation::executeJournal(files_, journal);
-        journalStatus = executed.status;
-        if (executed.status == FileSystemRpcStatus::OK) {
-            conditionalRecoveryChecked_ = true;
-            conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::READY;
-        }
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE,
-            frame.requestId,
-            executed.status,
-            executed.status == FileSystemRpcStatus::OK
-                ? FileSystemRpcMutationOutcome::APPLIED
-                : FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
-        );
-    }
-    return encodeConditionalResponse(
-        FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE,
-        frame.requestId,
-        journalStatus,
-        FileSystemRpcMutationOutcome::NONE,
-        FileSystemRpcMutationSubject::NONE,
-        operationId,
-        nullptr,
-        response,
-        responseSize
-    );
+    return result;
 }
 
 FLASHMEM Result<size_t> FileSystemRpcHandler::handleConditionalDelete_(
     const FileSystemRpcFrame& frame,
+    uint32_t nowMs,
     uint8_t* response,
     size_t responseSize
 ) {
-    uint32_t operationId = 0;
-    const uint8_t* expected = nullptr;
-    char currentRaw[PATH_BUFFER_SIZE] = {};
-    ByteReader reader(frame.payload, frame.payloadSize);
-    if (!reader.readU32(operationId) ||
-        !reader.readBytes(expected, FILESYSTEM_RPC_SHA256_SIZE) ||
-        !readPath(reader, currentRaw, sizeof(currentRaw)) ||
-        reader.remaining() != 0) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE,
-            frame.requestId,
-            FileSystemRpcStatus::INVALID_ARGUMENT,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
-        );
-    }
-    if (writeSession_.active || files_.writeSessionActive()) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE,
-            frame.requestId,
-            FileSystemRpcStatus::BUSY,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
-        );
-    }
-
-    mutation::Journal journal{};
-    journal.kind = mutation::Kind::DELETE;
-    journal.operationId = operationId;
-    mutation::copyDigest(journal.expectedSourceSha256, expected);
-    const auto currentPathStatus = mutation::normalizeMutationPath(
-        files_, currentRaw, journal.currentPath, sizeof(journal.currentPath)
+    mutation::ConditionalMutationPlan plan{};
+    auto result = beginCooperativeConditionalMutation_(
+        frame, plan, response, responseSize
     );
-    if (currentPathStatus != FileSystemRpcStatus::OK ||
-        mutation::isReservedPath(journal.currentPath) ||
-        mutation::containsFatShortNameAliasSyntax(journal.currentPath)) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE,
-            frame.requestId,
-            FileSystemRpcStatus::INVALID_ARGUMENT,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
+    while (result && result.value() == 0U && plan.active()) {
+        result = advanceCooperativeConditionalMutation_(
+            plan, frame.requestId, nowMs, response, responseSize
         );
     }
-
-    auto current = mutation::readDigest(files_, journal.currentPath);
-    if (current.status == FileSystemRpcStatus::NOT_FOUND) {
-        auto backup = files_.stat(mutation::BACKUP_PATH);
-        const bool unexpectedBackup =
-            backup || backup.error().code != ErrorCode::RESOURCE_NOT_FOUND;
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE,
-            frame.requestId,
-            unexpectedBackup
-                ? FileSystemRpcStatus::INVALID_STATE
-                : FileSystemRpcStatus::OK,
-            unexpectedBackup
-                ? FileSystemRpcMutationOutcome::NONE
-                : FileSystemRpcMutationOutcome::ALREADY_APPLIED,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
-        );
-    }
-    if (current.status != FileSystemRpcStatus::OK ||
-        !mutation::digestEquals(current.sha256, journal.expectedSourceSha256)) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE,
-            frame.requestId,
-            current.status == FileSystemRpcStatus::OK
-                ? FileSystemRpcStatus::PRECONDITION_FAILED
-                : current.status,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::SOURCE,
-            operationId,
-            current.status == FileSystemRpcStatus::OK ? current.sha256 : nullptr,
-            response,
-            responseSize
-        );
-    }
-
-    auto backup = files_.stat(mutation::BACKUP_PATH);
-    if (backup || backup.error().code != ErrorCode::RESOURCE_NOT_FOUND) {
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE,
-            frame.requestId,
-            FileSystemRpcStatus::INVALID_STATE,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
-        );
-    }
-
-    conditionalRecoveryChecked_ = false;
-    conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::NOT_CHECKED;
-    conditionalRecoveryStatus_ = FileSystemRpcStatus::OK;
-    auto journalStatus = mutation::writeJournal(files_, journal);
-    if (journalStatus == FileSystemRpcStatus::OK) {
-        const auto executed = mutation::executeJournal(files_, journal);
-        journalStatus = executed.status;
-        if (executed.status == FileSystemRpcStatus::OK) {
-            conditionalRecoveryChecked_ = true;
-            conditionalRecoveryState_ = FileSystemRpcConditionalRecoveryState::READY;
-        }
-        return encodeConditionalResponse(
-            FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE,
-            frame.requestId,
-            executed.status,
-            executed.status == FileSystemRpcStatus::OK
-                ? FileSystemRpcMutationOutcome::APPLIED
-                : FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
-            operationId,
-            nullptr,
-            response,
-            responseSize
-        );
-    }
-    return encodeConditionalResponse(
-        FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE,
-        frame.requestId,
-        journalStatus,
-        FileSystemRpcMutationOutcome::NONE,
-        FileSystemRpcMutationSubject::NONE,
-        operationId,
-        nullptr,
-        response,
-        responseSize
-    );
+    return result;
 }
 
 }  // namespace core::protocol::filesystem

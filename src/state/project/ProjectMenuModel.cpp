@@ -218,7 +218,7 @@ FLASHMEM void buildOverviewRows(ProjectMenuPage& page) {
 
 FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
                                          ProjectMenuContext context) {
-    if (context.projectHasSavedIdentity && context.projectOverwriteSafe) {
+    if (context.projectHasSavedIdentity) {
         auto saveAndReset = row(
             "Save & Reset",
             "",
@@ -234,9 +234,6 @@ FLASHMEM void buildNewProjectConfirmRows(ProjectMenuPage& page,
             ProjectMenuRowKind::Action,
             ProjectNodeId::NEW_PROJECT_CONFIRM
         );
-        if (context.projectHasSavedIdentity && !context.projectOverwriteSafe) {
-            copyRowValue(saveAsNew, projectIdentityLabel(context));
-        }
         addRow(page, saveAsNew);
     }
     addRow(page, row("Don't Save", "Reset", ProjectMenuRowKind::Action, ProjectNodeId::NEW_PROJECT_CONFIRM));
@@ -341,7 +338,6 @@ FLASHMEM void buildStorageRows(ProjectMenuPage& page, ProjectMenuContext context
     auto projectRow = row("Project", "", ProjectMenuRowKind::Disabled, ProjectNodeId::STORAGE_ROOT, false, false);
     copyRowValue(projectRow, projectIdentityLabel(context));
     addRow(page, projectRow);
-    addRow(page, row("Autosave", "On", ProjectMenuRowKind::Toggle, ProjectNodeId::STORAGE_ROOT));
 }
 
 FLASHMEM void buildProjectNameEditorRows(ProjectMenuPage& page,
@@ -368,7 +364,18 @@ FLASHMEM void buildProjectNameEditorRows(ProjectMenuPage& page,
 
 FLASHMEM void buildLoadProjectRows(ProjectMenuPage& page,
                                    const ProjectNavigationState& navigation) {
-    if (!navigation.loadProjects.scanned || navigation.loadProjects.count == 0) {
+    if (!navigation.loadProjects.scanned) {
+        addRow(page, row(
+            "Loading projects",
+            "Please wait",
+            ProjectMenuRowKind::Disabled,
+            ProjectNodeId::LOAD_PROJECT,
+            false,
+            false
+        ));
+        return;
+    }
+    if (navigation.loadProjects.count == 0) {
         addRow(page, row(
             "No projects",
             "Save first",
@@ -472,13 +479,11 @@ FLASHMEM uint32_t revisionFor(const ProjectNavigationState& navigation,
                               ProjectMenuContext context) {
     context.projectScale.clamp();
     const uint32_t flags =
-        (navigation.autosaveEnabled ? 0x01u : 0u) |
-        (navigation.scaleConstrainEnabled ? 0x02u : 0u) |
-        (navigation.patternsInheritScale ? 0x04u : 0u) |
-        (navigation.clipsInheritScale ? 0x08u : 0u) |
-        (context.projectDirty ? 0x10u : 0u) |
-        (context.projectHasSavedIdentity ? 0x20u : 0u) |
-        (context.projectOverwriteSafe ? 0x40u : 0u);
+        (navigation.scaleConstrainEnabled ? 0x01u : 0u) |
+        (navigation.patternsInheritScale ? 0x02u : 0u) |
+        (navigation.clipsInheritScale ? 0x04u : 0u) |
+        (context.projectDirty ? 0x08u : 0u) |
+        (context.projectHasSavedIdentity ? 0x10u : 0u);
     const uint32_t scaleBits =
         (static_cast<uint32_t>(context.projectScale.root & 0x0FU) << 8) |
         ((static_cast<uint32_t>(context.projectScale.type) & 0x0FU) << 12) |
@@ -529,10 +534,6 @@ FLASHMEM uint32_t revisionFor(const ProjectNavigationState& navigation,
     return revision;
 }
 
-FLASHMEM const char* boolValue(bool enabled) {
-    return enabled ? "On" : "Off";
-}
-
 FLASHMEM const char* inheritValue(bool inherit) {
     return inherit ? "Inherit" : "Override";
 }
@@ -556,9 +557,6 @@ FLASHMEM void applyDynamicValues(ProjectMenuPage& page,
         case ProjectNodeId::MUSIC_SCALE:
             if (page.rowCount > 3) page.rows[3].value = inheritValue(navigation.patternsInheritScale);
             if (page.rowCount > 4) page.rows[4].value = inheritValue(navigation.clipsInheritScale);
-            break;
-        case ProjectNodeId::STORAGE_ROOT:
-            if (page.rowCount > 6) page.rows[6].value = boolValue(navigation.autosaveEnabled);
             break;
         case ProjectNodeId::TRANSPORT_ROOT:
             if (page.rowCount > 1) setRowValue(page.rows[1], navigation.transportSwingPercent, "%");

@@ -6,10 +6,10 @@
 
 #include "handler/common/ModulatorNavigationWorkflow.hpp"
 #include "state/macro/MacroWorkflow.hpp"
+#include "state/modulation/ModulationDepthParameterMapping.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
 
 namespace core::handler {
 
@@ -21,7 +21,7 @@ const char MODULATOR_PREVIEW_PENDING_FEEDBACK[] PROGMEM =
 }  // namespace project_handler_internal
 
 using namespace project_handler_internal;
-namespace depth_ui = core::ui::modulation::depth;
+namespace depth_parameter = core::state::modulation::depth;
 
 namespace {
 
@@ -291,14 +291,14 @@ FLASHMEM void ProjectHandler::startDestinationPickerAudition() {
             begun.bindingId
         );
         const auto scale = binding != nullptr
-            ? depth_ui::scaleFor(
+            ? depth_parameter::scaleFor(
                   pages_.control.authored.modulation,
                   pages_.control.authored.curves,
                   *binding
               )
-            : depth_ui::Scale::STANDARD;
+            : depth_parameter::Scale::STANDARD;
         const int percent = binding != nullptr
-            ? depth_ui::amountQ15ToPercent(binding->amountQ15, scale)
+            ? depth_parameter::amountQ15ToPercent(binding->amountQ15, scale)
             : 0;
         char feedback[48]{};
         std::snprintf(

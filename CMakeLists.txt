@@ -15,6 +15,8 @@ set(MS_CORE_OPEN_CONTROL_ROOT
 
 set(MS_CORE_OC_FRAMEWORK_DIR "${MS_CORE_OPEN_CONTROL_ROOT}/framework")
 set(MS_CORE_OC_NOTE_DIR "${MS_CORE_OPEN_CONTROL_ROOT}/note")
+set(MS_CORE_OC_HAL_COMMON_DIR "${MS_CORE_OPEN_CONTROL_ROOT}/hal-common")
+set(MS_DEVICE_SUPPORT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/device-support")
 
 set(MS_CORE_NOTIFICATION_QUEUE_CAPACITY 96)
 
@@ -24,6 +26,10 @@ endif()
 
 if(NOT EXISTS "${MS_CORE_OC_NOTE_DIR}/src/oc/note/clock/ClockConstants.hpp")
     message(FATAL_ERROR "open-control note not found at ${MS_CORE_OC_NOTE_DIR}")
+endif()
+
+if(NOT EXISTS "${MS_CORE_OC_HAL_COMMON_DIR}/src/oc/hal/common/embedded/ButtonDef.hpp")
+    message(FATAL_ERROR "open-control HAL Common not found at ${MS_CORE_OC_HAL_COMMON_DIR}")
 endif()
 
 if(NOT TARGET oc_framework_native)
@@ -50,6 +56,20 @@ endif()
 
 target_compile_features(oc_framework_native PUBLIC cxx_std_20)
 target_compile_features(oc_note_native PUBLIC cxx_std_20)
+
+# The versioned device-support boundary is intentionally independent of the
+# full Core native library. Its sole implementation owns the LVGL PSRAM pool;
+# public board/config headers are exercised by a separate strict-C++17 test.
+add_library(ms_device_support_native STATIC
+    "${MS_DEVICE_SUPPORT_DIR}/src/ms/device_support/v1/LvglMemory.cpp")
+set_target_properties(ms_device_support_native PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(ms_device_support_native
+    PUBLIC "${MS_DEVICE_SUPPORT_DIR}/src"
+    PRIVATE "${MS_CORE_OC_FRAMEWORK_DIR}/src")
+add_library(ms::device_support_native ALIAS ms_device_support_native)
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsCoreSources.cmake")
 
@@ -81,17 +101,57 @@ option(
 if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
+    # Native tests can fail one EXTMEM allocation deterministically. The hook
+    # is absent from firmware and from non-test native builds.
+    target_compile_definitions(
+        midi_studio_core_native
+        PUBLIC MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION=1)
+
     add_test(
-        NAME check_PerformanceArchitecture
+        NAME check_ArchitectureContracts
         COMMAND "${Python3_EXECUTABLE}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-performance-architecture.py")
-    set_tests_properties(check_PerformanceArchitecture PROPERTIES LABELS core)
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-architecture-contracts.py")
+    set_tests_properties(check_ArchitectureContracts PROPERTIES LABELS core)
+
+    # The 202-case architecture-checker mutation suite is a tooling meta-test,
+    # not a product regression test. Keep it explicit so `ms test core` stays
+    # interactive; run this target only when the checker itself changes.
+    add_custom_target(check-architecture-contracts-self-test
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-architecture-contracts.py"
+                "--self-test"
+        USES_TERMINAL)
+
+    add_test(
+        NAME check_SequencerHistoryInventory
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-sequencer-history-inventory.py")
+    set_tests_properties(check_SequencerHistoryInventory PROPERTIES LABELS core)
+
+    add_test(
+        NAME check_SequencerHistoryInventorySelfTest
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/check-sequencer-history-inventory.py"
+                "--self-test")
+    set_tests_properties(check_SequencerHistoryInventorySelfTest PROPERTIES LABELS core)
 
     add_test(
         NAME check_TeensyMemoryBudgetParser
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-memory-budget.py")
     set_tests_properties(check_TeensyMemoryBudgetParser PROPERTIES LABELS core)
+
+    add_test(
+        NAME check_TeensyElfTopology
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-elf-topology.py")
+    set_tests_properties(check_TeensyElfTopology PROPERTIES LABELS core)
+
+    add_test(
+        NAME check_TeensyPostLinkGateV1
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-post-link-gate.py")
+    set_tests_properties(check_TeensyPostLinkGateV1 PROPERTIES LABELS core)
 
     add_test(
         NAME check_TeensyDiagnosticsPlacement
@@ -103,7 +163,51 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_*/test_main.cpp")
 
     set(MS_CORE_NATIVE_TEST_TARGETS)
+
+    set(MS_DEVICE_SUPPORT_CONTRACT_TEST_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/test_main.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/include_version.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/include_timing.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/include_input_ids.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/include_input_config.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/include_display.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/include_hardware.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/include_buffers.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/include_lvgl_memory.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/include_lv_conf.cpp")
+    list(REMOVE_ITEM MS_CORE_NATIVE_TESTS
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/test_main.cpp")
+
+    add_executable(test_DeviceSupportContract
+        ${MS_DEVICE_SUPPORT_CONTRACT_TEST_SOURCES})
+    set_target_properties(test_DeviceSupportContract PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF)
+    target_compile_definitions(test_DeviceSupportContract PRIVATE
+        OC_MAX_BUTTONS=48)
+    target_include_directories(test_DeviceSupportContract
+        BEFORE PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/test/device_support_stubs")
+    target_include_directories(test_DeviceSupportContract
+        PRIVATE
+            "${MS_DEVICE_SUPPORT_DIR}/src"
+            "${MS_CORE_OC_FRAMEWORK_DIR}/src"
+            "${MS_CORE_OC_HAL_COMMON_DIR}/src")
+    target_link_libraries(test_DeviceSupportContract
+        PRIVATE ms::device_support_native)
+    if(MSVC)
+        target_compile_options(test_DeviceSupportContract PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(test_DeviceSupportContract PRIVATE -UNDEBUG)
+    endif()
+    add_test(NAME test_DeviceSupportContract COMMAND test_DeviceSupportContract)
+    set_tests_properties(test_DeviceSupportContract PROPERTIES
+        LABELS "core;device-support")
+    list(APPEND MS_CORE_NATIVE_TEST_TARGETS test_DeviceSupportContract)
+
     set(MS_CORE_PERSISTENCE_IO_TESTS
+        test_AtomicProductFile
         test_CoreStatePersistence
         test_FileSystemRpc
         test_ProductFileService
@@ -126,6 +230,13 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
             PRIVATE
                 "${CMAKE_CURRENT_SOURCE_DIR}/test"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        if(test_name STREQUAL test_StorageQualificationProbe)
+            target_sources("${test_name}" PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/diagnostics/StorageQualificationProbe.cpp")
+            target_compile_definitions("${test_name}" PRIVATE
+                MS_STORAGE_QUALIFICATION=1
+                OC_ENABLE_STATS=1)
+        endif()
         if(test_name STREQUAL test_ModulatorSparklineModel)
             target_include_directories("${test_name}"
                 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../ui/src")

@@ -9,6 +9,128 @@ RGB565_FRAME_BYTES = 320 * 240 * 2
 
 _NM_SYMBOL_RE = re.compile(r"^(\d+)\s+(\d+)\s+([A-Za-z])\s+(.+)$")
 
+PAGE_STRUCTURE_BUILDER_FLASH_MARKERS = (
+    "buildSequencerPageSelectionPasteMutationPlan(",
+    "buildSequencerPageClearMutationPlan(",
+    "buildSequencerPageDeleteMutationPlan(",
+    "buildSequencerPagePasteMutationPlan(",
+    "buildSequencerStepPasteMutationPlan(",
+    "buildSequencerFocusedStepResetMutationPlan(",
+    "buildSequencerStepSelectionResetMutationPlan(",
+    "buildSequencerPageSelectionResetMutationPlan(",
+    "buildSequencerPageSelectionDeleteOrDeepResetMutationPlan(",
+)
+
+PAGE_STRUCTURE_HELPER_FLASH_MARKERS = (
+    "SequencerStructureEditWorkflow::pastePageSelectionAfterBoundary(",
+    "SequencerStructureEditWorkflow::clearCurrentPageAfterBoundary(",
+    "SequencerStructureEditWorkflow::deleteCurrentPageAfterBoundary(",
+    "SequencerStructureEditWorkflow::pasteCurrentPageAfterBoundary(",
+    "SequencerStructureEditWorkflow::pasteStepClipboardAfterBoundary(",
+    "SequencerStructureEditWorkflow::resetFocusedStepAfterBoundary(",
+    "SequencerStructureEditWorkflow::resetStepSelectionAfterBoundary(",
+    "SequencerStructureEditWorkflow::resetPageSelectionAfterBoundary(",
+    "SequencerStructureEditWorkflow::deleteOrResetPageSelectionAfterBoundary(",
+)
+
+PAGE_STRUCTURE_TRANSACTION_FLASH_MARKERS = (
+    "SequencerPreparedPageStructureTransaction::openBoundary()",
+    "SequencerPreparedPageStructureTransaction::execute(",
+)
+
+PAGE_STRUCTURE_GRAPH_FLASH_MARKERS = (
+    "oc::note::sequencer::StepSequencerGraph::sequence(",
+    "oc::note::sequencer::StepSequencerGraph::cycleSet(",
+)
+
+PAGE_STRUCTURE_FLASH_MARKERS = (
+    *PAGE_STRUCTURE_BUILDER_FLASH_MARKERS,
+    *PAGE_STRUCTURE_HELPER_FLASH_MARKERS,
+    *PAGE_STRUCTURE_TRANSACTION_FLASH_MARKERS,
+    *PAGE_STRUCTURE_GRAPH_FLASH_MARKERS,
+)
+
+TRACK_STRUCTURE_ADAPTER_FLASH_MARKERS = (
+    "executeSequencerCreateTrackStructure(",
+    "executeSequencerRemoveCurrentTrackStructure(",
+    "executeSequencerRemoveSelectionTrackStructure(",
+    "(anonymous namespace)::captureIntent(",
+    "(anonymous namespace)::executeDirect(",
+    "(anonymous namespace)::intentStillMatches(",
+    "(anonymous namespace)::buildPlan(void const*, core::handler::SequencerPreparedTrackStructureAction",
+    "(anonymous namespace)::revalidate(void const*, core::handler::SequencerPreparedTrackStructurePlan const&",
+    "(anonymous namespace)::reconcileCommitted(void*, core::handler::SequencerPreparedTrackStructurePlan const&",
+    "(anonymous namespace)::settleSuccessful(void*, core::handler::SequencerPreparedTrackStructurePlan const&",
+)
+
+TRACK_STRUCTURE_WORKFLOW_FLASH_MARKERS = (
+    "SequencerStructureEditWorkflow::createPreviewedTrackStructure(",
+    "SequencerStructureEditWorkflow::beginSelectionHoldAction(",
+    "SequencerStructureEditWorkflow::currentTrackRemoveIntentMatches(",
+    "SequencerStructureEditWorkflow::selectionTrackRemoveIntentMatches(",
+    "SequencerStructureEditWorkflow::applyLatchedCurrentTrackShortPress(",
+    "SequencerStructureEditWorkflow::applyLatchedTrackSelectionShortPress(",
+    "SequencerStructureEditWorkflow::applyLatchedTrackSelectionLongPress(",
+)
+
+TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS = (
+    "(anonymous namespace)::reconcilePreparedTrackPresentationFromCoreState(",
+    "SharedTrackDomainServices::reconcilePreparedMacroTrackTransfer(",
+    "SharedTrackDomainServices::canReconcilePreparedSequencerActiveTrackPresentation(",
+    "SharedTrackDomainServices::reconcilePreparedSequencerActiveTrackPresentation(",
+    "CoreState::reconcilePreparedSequencerActiveTrackPresentation(",
+    "CoreState::reconcilePreparedMacroTrackTransfer(",
+    "MacroWorkflow::syncActivePagePresentation(",
+)
+
+TRACK_TRANSFER_FLASH_MARKERS = (
+    "prepareSequencerTrackTransfer(",
+    "commitPreparedSequencerTrackTransfer(",
+    "executeSequencerTrackTransfer(",
+    "(anonymous namespace)::clipboardPayloadFingerprint(",
+    "(anonymous namespace)::prepareMacroStructureTransfer(",
+    "(anonymous namespace)::statusForChronology(",
+)
+
+TRACK_STRUCTURE_FLASH_MARKERS = (
+    *TRACK_STRUCTURE_ADAPTER_FLASH_MARKERS,
+    *TRACK_STRUCTURE_WORKFLOW_FLASH_MARKERS,
+    *TRACK_STRUCTURE_PRESENTATION_FLASH_MARKERS,
+    *TRACK_TRANSFER_FLASH_MARKERS,
+)
+
+MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS = (
+    "executeMacroDeleteTrackStructure(",
+    "executeMacroResetTrackStructure(",
+    "executeMacroPasteTrackStructure(",
+    "executeMacroCreateTrackStructure(",
+    "executePrepared(core::handler::(anonymous namespace)::DirectContext&)",
+    "executeDirect(core::state::CoreState&",
+    "validIntent(core::handler::(anonymous namespace)::DirectContext const&)",
+    "pasteSourcesMatch(core::handler::(anonymous namespace)::DirectContext const&)",
+    "intentStillMatches(core::handler::(anonymous namespace)::DirectContext const&)",
+    "clearManualAndMaybeSync(core::handler::(anonymous namespace)::DirectContext&",
+    "settleNoChange(void*, core::handler::SequencerPreparedTrackStructurePlan const&)",
+    "settleSuccessful(void*, core::handler::SequencerPreparedTrackStructurePlan const&)",
+    "reconcileCommitted(void*, core::handler::SequencerPreparedTrackStructurePlan const&",
+    "prepareMacroAfter(void const*, core::handler::SequencerPreparedTrackStructurePlan const&",
+    "buildPlan(void const*, core::handler::SequencerPreparedTrackStructureAction",
+    "revalidate(void const*, core::handler::SequencerPreparedTrackStructurePlan const&",
+)
+
+COUPLED_HISTORY_REPLAY_FLASH_MARKERS = (
+    "CoreState::traverseSequencerHistory_(",
+    "CoreState::armPreparedSequencerHistoryActivation_(",
+    "CoreState::traversePreparedSequencerStructureHistory_(",
+    "CoreState::traverseGenericSequencerHistory_(",
+    "CoreState::publishSequencerHistoryTraversal_(",
+    "SequencerHistoryService::prepareStructureHistoryReplay(",
+    "SequencerHistoryService::commitPreparedStructureHistoryReplay(",
+    "prepareHistoryStructureReplayOwners(",
+    "commitPreparedHistoryStructureReplayState(",
+    "SequencerPreparedStructureHistoryReplay::reset()",
+)
+
 
 def _symbols(nm_output: str) -> tuple[tuple[int, int, str, str], ...]:
     symbols: list[tuple[int, int, str, str]] = []
@@ -53,7 +175,13 @@ def product_placement_violations(nm_output: str) -> tuple[str, ...]:
     symbols = _symbols(nm_output)
     violations: list[str] = []
 
-    flash_markers = ("FatFormatter::makeFat32(",)
+    flash_markers = (
+        "FatFormatter::makeFat32(",
+        *PAGE_STRUCTURE_FLASH_MARKERS,
+        *TRACK_STRUCTURE_FLASH_MARKERS,
+        *MACRO_DIRECT_TRACK_STRUCTURE_FLASH_MARKERS,
+        *COUPLED_HISTORY_REPLAY_FLASH_MARKERS,
+    )
     for marker in flash_markers:
         matches = _code_addresses(symbols, marker)
         if not matches:

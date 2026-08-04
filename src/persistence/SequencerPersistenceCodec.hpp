@@ -9,9 +9,9 @@ namespace core::persistence::sequencer_codec {
 /**
  * Converts sequencer state to/from byte-oriented persistence payloads.
  *
- * Codec functions sanitize length, masks, MIDI values, focused step, page, and
- * step property on read/write so persisted bytes cannot put SequencerState into
- * an invalid runtime shape.
+ * This is a strict current-format boundary. Encoders reject non-canonical
+ * runtime state and decoders reject malformed bytes; neither side repairs,
+ * clamps, defaults, or migrates values.
  */
 bool fillPatternPayload(const state::sequencer::SequencerPatternState& source,
                         uint8_t* out,

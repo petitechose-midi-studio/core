@@ -78,12 +78,16 @@ void test_macro_config_change_marks_project_and_revision() {
     std::cout << "[PASS] Macro edits remain Project mutations without a slot store\n";
 }
 
-void test_pending_settings_save_survives_storage_reopen() {
+void test_device_settings_recovery_does_not_persist_project_track_state() {
     CoreStorages storage;
 
     {
         core::state::CoreState state(storage.settings);
         storage.settings.setAvailable(false);
+        state.midiSync.mode.set(core::state::MidiSyncMode::SLAVE);
+        state.midiSync.followTransport.set(false);
+        state.midiSync.autoFallbackMs.set(750U);
+        state.midiSync.autoLockClockCount.set(12U);
         assert(state.setSharedTrackState(0x0003U, 1U));
         state.flush();
 
@@ -93,11 +97,16 @@ void test_pending_settings_save_survives_storage_reopen() {
     }
 
     core::state::CoreState restored(storage.settings);
-    assert(restored.currentSharedTrackEnabledMask() == 0x0003U);
-    assert(restored.currentSharedActiveTrack() == 1U);
+    assert(restored.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+    assert(!restored.midiSync.followTransport.get());
+    assert(restored.midiSync.autoFallbackMs.get() == 750U);
+    assert(restored.midiSync.autoLockClockCount.get() == 12U);
+    assert(restored.currentSharedTrackEnabledMask() == 0x0001U);
+    assert(restored.currentSharedActiveTrack() == 0U);
 
     drainNotifications();
-    std::cout << "[PASS] settings recovery republishes authoritative RAM state\n";
+    std::cout
+        << "[PASS] settings recovery persists only device settings; Track stays Project-owned\n";
 }
 
 void test_new_project_boundary_resets_runtime_activation() {
@@ -132,7 +141,7 @@ void test_new_project_boundary_resets_runtime_activation() {
 int main() {
     test_core_state_owns_only_settings_storage();
     test_macro_config_change_marks_project_and_revision();
-    test_pending_settings_save_survives_storage_reopen();
+    test_device_settings_recovery_does_not_persist_project_track_state();
     test_new_project_boundary_resets_runtime_activation();
     return 0;
 }

@@ -32,6 +32,7 @@ struct StorageRecoveryConfig {
 struct StorageRecoveryInput {
     bool mediaPresent = true;
     bool playing = false;
+    bool reconciliationRequired = false;
     uint32_t nowMs = 0;
 };
 

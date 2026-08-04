@@ -11,7 +11,7 @@
 
 #include "config/TimeCompat.hpp"
 #include "app/ExtmemAllocator.hpp"
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerCcLaneRuntime.hpp"
 #include "sequencer/SequencerInternalTimerLane.hpp"
@@ -34,8 +34,9 @@ public:
               core::app::makeExtmemUnique<SequencerCcLaneRuntime>()
           )
         , ccCoordinator(
-              core::app::makeExtmemUnique<
-                  core::handler::MidiCcGlobalFrameCoordinator>(midiQueue)
+              core::app::makeExtmemUnique<MidiCcGlobalFrameCoordinator>(
+                  midiQueue
+              )
           )
         , playback(sequencer,
                    statusBar,
@@ -60,7 +61,7 @@ public:
                playback.ccTemporalScratchValid();
     }
 
-    core::handler::MidiCcGlobalFrameCoordinator* coordinator() const {
+    MidiCcGlobalFrameCoordinator* coordinator() const {
         return ccCoordinator.get();
     }
 
@@ -69,8 +70,7 @@ public:
     core::app::ExtmemUniquePtr<SequencerCcLaneRuntime> ccLaneRuntime;
     core::app::ExtmemUniquePtr<SequencerCcLaneRuntime>
         ccPredictiveLaneRuntime;
-    core::app::ExtmemUniquePtr<core::handler::MidiCcGlobalFrameCoordinator>
-        ccCoordinator;
+    core::app::ExtmemUniquePtr<MidiCcGlobalFrameCoordinator> ccCoordinator;
     SequencerPlaybackService playback;
     SequencerInternalTimerLane timer;
 };

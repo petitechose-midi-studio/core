@@ -37,7 +37,7 @@
 #define LV_MEM_POOL_INCLUDE "LvglMemory.hpp"
 #define LV_MEM_POOL_ALLOC getLvglMemoryPool
 
-// NO LV_DEF_REFR_PERIOD - set at runtime by Bridge via Config::Timing::LVGL_HZ
+// NO LV_DEF_REFR_PERIOD - Bridge owns it via Config::Timing::LVGL_SERVICE_HZ
 #define LV_DPI_DEF 130
 
 #define LV_USE_OS LV_OS_NONE

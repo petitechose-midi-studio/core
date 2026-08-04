@@ -28,7 +28,7 @@ bool validPlanBounds(const ProjectModulationRuntimePlan& plan) {
 FLASHMEM uint16_t adsrRouteSignature(
     const ProjectModulationRuntimeSource& source
 ) {
-    // A compact compatibility fingerprint lets the fixed 32-byte DAHDSR
+    // A compact route-continuity fingerprint lets the fixed 32-byte DAHDSR
     // state retain its phase across harmless parameter edits while clearing
     // accepted-note facts whenever any authored gate-routing fact changes.
     uint32_t hash = 2166136261U;

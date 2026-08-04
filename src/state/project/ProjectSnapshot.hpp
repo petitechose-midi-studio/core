@@ -6,6 +6,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/modulation/ProjectControlDomainState.hpp"
+#include "state/project/ProjectSaveToken.hpp"
 #include "state/project/ProjectState.hpp"
 #include "state/project/ProjectTrackState.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
@@ -48,9 +49,15 @@ public:
         FAILED,
     };
 
+    enum class SliceKind : uint8_t {
+        SMALL = 0,
+        SEQUENCER,
+    };
+
     struct Progress {
         Status status = Status::IDLE;
         uint32_t modifiedCounter = 0;
+        uint32_t workBytes = 0;
     };
 
     bool begin(const core::state::CoreState& state, ProjectSnapshot& snapshot);
@@ -58,24 +65,64 @@ public:
     void cancel();
 
     bool active() const;
+    bool complete() const;
+    const ProjectCaptureGuard* guard() const;
+    SliceKind nextSliceKind() const;
 
 private:
+    enum class BoundaryMode : uint8_t {
+        // Yielded captures require every Project transaction to be closed.
+        COOPERATIVE_QUIESCENT = 0,
+        // Non-yielding compatibility captures may observe live coalesced edits,
+        // but boundaryReady_ still rejects rollback-capable transactions.
+        SYNCHRONOUS_CURRENT_STATE,
+    };
+
     enum class Phase : uint8_t {
         IDLE = 0,
         PROJECT,
         MACROS,
         AUTOMATION,
-        SEQUENCER,
+        SEQUENCER_GRAPH,
+        SEQUENCER_DATA,
         COMPLETE,
     };
+
+    static bool boundaryReady_(
+        const core::state::CoreState& state,
+        BoundaryMode mode
+    );
+    bool begin_(
+        const core::state::CoreState& state,
+        ProjectSnapshot& snapshot,
+        BoundaryMode mode
+    );
+    static bool captureSynchronously_(
+        const core::state::CoreState& state,
+        ProjectSnapshot& snapshot
+    );
+    bool guardMatches_() const;
+
+    friend ProjectSnapshotPtr captureProjectSnapshotOwned(
+        const core::state::CoreState& state
+    );
+    friend bool captureProjectSnapshot(
+        const core::state::CoreState& state,
+        ProjectSnapshot& out
+    );
 
     const core::state::CoreState* state_ = nullptr;
     ProjectSnapshot* snapshot_ = nullptr;
     Phase phase_ = Phase::IDLE;
-    uint32_t modified_counter_ = 0;
-    uint32_t authored_revision_ = 0;
-    uint32_t project_track_revision_ = 0;
-
+    BoundaryMode mode_ = BoundaryMode::COOPERATIVE_QUIESCENT;
+    ProjectCaptureGuard guard_{};
+    uint32_t automation_offset_ = 0U;
+    uint8_t macro_track_ = 0U;
+    uint8_t sequencer_track_ = 0U;
+    uint8_t frozen_active_track_ = 0U;
+    uint8_t frozen_focused_step_ = 0U;
+    core::state::sequencer::StepProperty frozen_active_step_property_ =
+        core::state::sequencer::StepProperty::NOTE;
 };
 
 ProjectSnapshotPtr makeProjectSnapshot();

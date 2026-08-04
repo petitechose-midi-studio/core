@@ -147,18 +147,6 @@ FLASHMEM float normalizedTurnsForStepRate(int stepCount, float stepsPerTurn) {
     return static_cast<float>(stepCount - 1) / stepsPerTurn;
 }
 
-FLASHMEM int midiSyncModeIndex(core::state::MidiSyncMode mode) {
-    switch (mode) {
-        case core::state::MidiSyncMode::MASTER:
-            return 0;
-        case core::state::MidiSyncMode::SLAVE:
-            return 1;
-        case core::state::MidiSyncMode::AUTO:
-        default:
-            return 2;
-    }
-}
-
 FLASHMEM core::state::MidiSyncMode midiSyncModeAt(int index) {
     switch (wrapIndex(index, 3)) {
         case 0:
@@ -189,11 +177,10 @@ FLASHMEM const char* projectLifecycleFailureLabel(
             return "Load failed";
         case Status::LIST_FAILED:
             return "List failed";
-        case Status::UNSAFE_OVERWRITE:
-            return "Save As required";
         case Status::DRAFT_ACTIVE:
             return "Finish Step draft";
-        case Status::PARTIAL_LOAD:
+        case Status::QUEUED:
+            return "Loading projects";
         case Status::OK:
         default:
             return fallback;
@@ -203,21 +190,10 @@ FLASHMEM const char* projectLifecycleFailureLabel(
 FLASHMEM const char* projectLoadFeedbackLabel(
     const ProjectLifecycleDomainServices::Result& result
 ) {
-    namespace project_file = core::persistence::project_file;
     if (!result.success()) {
         return projectLifecycleFailureLabel(result.status, "Load failed");
     }
-    if (!result.overwriteSafe) {
-        return "Loaded read-only";
-    }
-    switch (result.loadStatus) {
-        case project_file::LoadStatus::PARTIAL:
-            return "Loaded partial";
-        case project_file::LoadStatus::OK:
-        case project_file::LoadStatus::FAILED:
-        default:
-            return "Loaded";
-    }
+    return "Loaded";
 }
 
 FLASHMEM void formatProjectLifecycleFeedback(

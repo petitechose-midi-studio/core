@@ -9,6 +9,100 @@
 namespace core::state::sequencer {
 
 /**
+ * Non-owning flat Pattern view used by a prepared active-Track rotation.
+ *
+ * SequencerPatternSnapshot deliberately does not carry the Pattern-owned CC
+ * revision, so the caller supplies it beside the immutable snapshot. Both
+ * values must remain alive and unchanged through commit.
+ */
+struct SequencerTrackFlatSnapshotView {
+    const SequencerPatternSnapshot* snapshot = nullptr;
+    uint32_t ccLaneRevision = 0U;
+};
+
+enum class SequencerActiveTrackIncomingOwnerPolicy : uint8_t {
+    Preserve = 0,
+    Reset,
+};
+
+/**
+ * Scalar precondition and immutable flat views for one no-publish rotation.
+ *
+ * The owner identities are captured during prepare and revalidated immediately
+ * before commit. No Graph, CC bank or flat snapshot is owned by this plan.
+ */
+struct SequencerPreparedActiveTrackRotation {
+    SequencerTrackFlatSnapshotView expectedOutgoing{};
+    SequencerTrackFlatSnapshotView expectedIncoming{};
+    SequencerTrackFlatSnapshotView finalOutgoing{};
+    SequencerTrackFlatSnapshotView finalIncoming{};
+
+    const oc::note::sequencer::StepSequencerGraph* expectedEditorGraphOwner = nullptr;
+    const SequencerCcLaneBank* expectedEditorCcLaneOwner = nullptr;
+    const oc::note::sequencer::StepSequencerGraph* expectedOutgoingGraphOwner = nullptr;
+    const SequencerCcLaneBank* expectedOutgoingCcLaneOwner = nullptr;
+    const oc::note::sequencer::StepSequencerGraph* expectedIncomingGraphOwner = nullptr;
+    const SequencerCcLaneBank* expectedIncomingCcLaneOwner = nullptr;
+
+    uint16_t expectedEnabledMask = 0U;
+    uint8_t outgoingTrack = SequencerTrackBankState::TRACK_COUNT;
+    uint8_t incomingTrack = SequencerTrackBankState::TRACK_COUNT;
+    SequencerActiveTrackIncomingOwnerPolicy incomingOwnerPolicy =
+        SequencerActiveTrackIncomingOwnerPolicy::Preserve;
+};
+
+static_assert(
+    sizeof(void*) != 4U || sizeof(SequencerPreparedActiveTrackRotation) <= 80U,
+    "active-Track rotation must remain a bounded scalar ARM plan"
+);
+static_assert(
+    sizeof(SequencerPreparedActiveTrackRotation) <= 128U,
+    "active-Track rotation must remain a bounded native plan"
+);
+
+/** Exact allocation-free comparison of persisted flat bytes and revisions. */
+[[nodiscard]] bool sequencerPatternMatchesFlatSnapshot(
+    const SequencerPatternState& pattern,
+    SequencerTrackFlatSnapshotView expected
+) noexcept;
+
+/**
+ * Captures the three live Graph/CC owner identities and validates both the
+ * expected-before and final flat views without mutating live state.
+ */
+[[nodiscard]] bool prepareActiveTrackOwnerRotation(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t incomingTrack,
+    SequencerTrackFlatSnapshotView expectedOutgoing,
+    SequencerTrackFlatSnapshotView expectedIncoming,
+    SequencerTrackFlatSnapshotView finalOutgoing,
+    SequencerTrackFlatSnapshotView finalIncoming,
+    SequencerActiveTrackIncomingOwnerPolicy incomingOwnerPolicy,
+    SequencerPreparedActiveTrackRotation& out
+) noexcept;
+
+/** Side-effect-free final revalidation for a prepared owner rotation. */
+[[nodiscard]] bool preparedActiveTrackOwnerRotationMatches(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    const SequencerPreparedActiveTrackRotation& prepared
+) noexcept;
+
+/**
+ * Allocation-free, no-fail commit after preparedActiveTrackOwnerRotationMatches().
+ *
+ * Rotates editor/outgoing/incoming Graph and CC owners, installs the two final
+ * flat views and resets Track-scoped transient editor state. Shared topology
+ * and all higher-level publication/settlement remain caller-owned.
+ */
+void rotateActiveTrackOwnersNoPublish(
+    SequencerTrackBankState& bank,
+    SequencerState& active,
+    const SequencerPreparedActiveTrackRotation& prepared
+) noexcept;
+
+/**
  * Synchronizes the active sequencer editor with the persisted per-track bank.
  *
  * Switching tracks stores the current editor, loads the target track, and clears
@@ -24,8 +118,9 @@ namespace core::state::sequencer {
     const SequencerState& active
 );
 
-// Avoids graph cloning when the active editor and bank track already own the
-// same graph revision; falls back to a full copy if that contract is not met.
+// Avoids a Graph allocation when graph revisions are already synchronized.
+// Pattern-owned CC lanes are still copied so a switched Track's spare bank
+// payload can never be mistaken for the active editor merely by revision.
 [[nodiscard]] bool storeActiveTrackPreservingGraph(
     SequencerTrackBankState& bank,
     const SequencerState& active
@@ -47,15 +142,6 @@ void applyTrackBankSnapshot(
     SequencerTrackBankState& bank,
     SequencerState& active,
     const SequencerTrackBankSnapshot& snapshot
-);
-
-// Installs a fully decoded bank by transferring graph ownership. The staged
-// objects are consumed and no PSRAM allocation occurs during the commit.
-void installTrackBankState(
-    SequencerTrackBankState& bank,
-    SequencerState& active,
-    SequencerTrackBankState& stagedBank,
-    SequencerState& stagedActive
 );
 
 }  // namespace core::state::sequencer

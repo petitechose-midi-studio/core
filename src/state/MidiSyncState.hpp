@@ -10,7 +10,7 @@ namespace core::state {
  * Stores user MIDI sync settings and runtime clock-source projection.
  *
  * Runtime services update activeSource/externalClockPresent; durable settings
- * are loaded and saved through CoreSettings.
+ * are loaded and saved through persistence::DeviceSettingsStore.
  */
 enum class MidiSyncMode : uint8_t {
     MASTER = 0,

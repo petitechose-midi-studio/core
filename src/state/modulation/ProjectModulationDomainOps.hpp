@@ -204,7 +204,7 @@ ProjectModulationResult duplicateProjectAutomationCurve(
     const ModulationDestination& source,
     const ModulationDestination& destination
 );
-ProjectModulationResult removeProjectAutomationCurve(
+ProjectModulationResult deleteProjectAutomationCurve(
     ProjectAutomationCurveDirectory& automation,
     ProjectCurveArena& arena,
     const ModulationDestination& destination

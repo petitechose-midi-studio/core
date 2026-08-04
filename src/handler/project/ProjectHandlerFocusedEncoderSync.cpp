@@ -5,18 +5,19 @@
 #include <config/PlatformCompat.hpp>
 
 #include "state/modulation/ProjectControlMacroOps.hpp"
+#include "state/modulation/ModulationDepthParameterMapping.hpp"
+#include "state/modulation/ModulatorEnvelopeParameterMapping.hpp"
+#include "state/modulation/ModulatorLfoParameterMapping.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/modulation/ProjectModulatorSourceSession.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
-#include "ui/modulation/ModulatorAdsrUiModel.hpp"
-#include "ui/modulation/ModulatorLfoUiModel.hpp"
 
 namespace core::handler {
 
 using namespace project_handler_internal;
-namespace adsr_ui = core::ui::modulation::adsr;
-namespace depth_ui = core::ui::modulation::depth;
+namespace depth_parameter = core::state::modulation::depth;
+namespace envelope_parameter = core::state::modulation::envelope;
+namespace lfo_parameter = core::state::modulation::lfo;
 
 namespace {
 
@@ -26,19 +27,23 @@ FLASHMEM void configureModulationDepthEncoder(
     const core::state::modulation::ModulationBindingState* binding
 ) {
     const auto scale = binding != nullptr
-        ? depth_ui::scaleFor(
+        ? depth_parameter::scaleFor(
               control.authored.modulation,
               control.authored.curves,
               *binding
           )
-        : depth_ui::Scale::STANDARD;
+        : depth_parameter::Scale::STANDARD;
     const float position = binding != nullptr
-        ? depth_ui::normalizedPosition(binding->amountQ15)
+        ? depth_parameter::normalizedPosition(binding->amountQ15)
         : 0.5f;
-    if (depth_ui::stepCount(scale) > 255) {
+    if (depth_parameter::stepCount(scale) > 255) {
         configureOptContinuous(encoders, position);
     } else {
-        configureOptDiscrete(encoders, depth_ui::stepCount(scale), position);
+        configureOptDiscrete(
+            encoders,
+            depth_parameter::stepCount(scale),
+            position
+        );
     }
 }
 
@@ -85,10 +90,10 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         } else {
             configureOptDiscrete(
                 encoders_,
-                core::ui::modulation::lfo::RATE_COUNT,
+                lfo_parameter::RATE_COUNT,
                 indexToNormalized(
-                    core::ui::modulation::lfo::rateIndex(lfo.periodTicks),
-                    core::ui::modulation::lfo::RATE_COUNT
+                    lfo_parameter::rateIndex(lfo.periodTicks),
+                    lfo_parameter::RATE_COUNT
                 )
             );
         }
@@ -207,10 +212,10 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
             case Item::SHAPE:
                 configureOptDiscrete(
                     encoders_,
-                    core::ui::modulation::lfo::SHAPE_COUNT,
+                    lfo_parameter::SHAPE_COUNT,
                     indexToNormalized(
                         static_cast<int>(source->parameters.lfo.shape),
-                        core::ui::modulation::lfo::SHAPE_COUNT
+                        lfo_parameter::SHAPE_COUNT
                     )
                 );
                 return;
@@ -231,12 +236,12 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 } else {
                     configureOptDiscrete(
                         encoders_,
-                        core::ui::modulation::lfo::RATE_COUNT,
+                        lfo_parameter::RATE_COUNT,
                         indexToNormalized(
-                            core::ui::modulation::lfo::rateIndex(
+                            lfo_parameter::rateIndex(
                                 lfo.periodTicks
                             ),
-                            core::ui::modulation::lfo::RATE_COUNT
+                            lfo_parameter::RATE_COUNT
                         )
                     );
                 }
@@ -330,12 +335,15 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 const auto timing = modulatorAdsrTiming(
                     source->parameters.adsr.traits
                 );
-                const int count = adsr_ui::durationCount(timing, parameter);
+                const int count = envelope_parameter::durationCount(
+                    timing,
+                    parameter
+                );
                 configureOptDiscrete(
                     encoders_,
                     count,
                     indexToNormalized(
-                        adsr_ui::durationIndex(
+                        envelope_parameter::durationIndex(
                             modulatorEnvelopeDuration(
                                 source->parameters.adsr,
                                 parameter
@@ -461,7 +469,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 configureOptDiscrete(
                     encoders_,
                     3,
-                    indexToNormalized(midiSyncModeIndex(midi_sync_.mode.get()), 3)
+                    indexToNormalized(device_settings_.currentChoiceIndex(0U), 3)
                 );
                 return;
             case 3:
@@ -470,16 +478,6 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                     project::PROJECT_RUN_MODE_COUNT,
                     indexToNormalized(navigation_.transportRunMode, project::PROJECT_RUN_MODE_COUNT)
                 );
-                return;
-            default:
-                return;
-        }
-    }
-
-    if (node == ProjectNodeId::STORAGE_ROOT) {
-        switch (row) {
-            case 6:
-                configureOptDiscrete(encoders_, 2, navigation_.autosaveEnabled ? 1.0f : 0.0f);
                 return;
             default:
                 return;

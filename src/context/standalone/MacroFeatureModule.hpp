@@ -11,7 +11,7 @@
 #include <oc/state/Signal.hpp>
 
 #include "app/ExtmemAllocator.hpp"
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/macro/MacroEditDomainServices.hpp"
 #include "handler/macro/MacroAutomationPlaybackService.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
@@ -89,7 +89,8 @@ public:
         core::state::StatusBarState& statusBar;
         core::state::macro::MacroHistoryService& macroHistory;
         const oc::state::Signal<uint32_t>* runtimeOwnerRevision = nullptr;
-        core::handler::MidiCcGlobalFrameCoordinator* midiCcCoordinator = nullptr;
+        core::sequencer::MidiCcGlobalFrameCoordinator*
+            midiCcCoordinator = nullptr;
     };
 
     MacroFeatureModule(StateRefs stateRefs,

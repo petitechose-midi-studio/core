@@ -1,6 +1,8 @@
 #include "handler/sequencer/SequencerStructureTrackTransferTransaction.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstring>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -23,6 +25,9 @@ using Graph = oc::note::sequencer::StepSequencerGraph;
 using GraphPtr = PreparedSequencerTrackTransfer::GraphPtr;
 using PatternSnapshot = core::state::sequencer::SequencerPatternSnapshot;
 using TrackBank = core::state::sequencer::SequencerTrackBankState;
+
+constexpr uint64_t kClipboardFingerprintOffset = 1469598103934665603ULL;
+constexpr uint64_t kClipboardFingerprintPrime = 1099511628211ULL;
 
 struct SourcePayload {
     const PatternSnapshot* snapshot = nullptr;
@@ -91,6 +96,93 @@ sourceMacroTrack(
         : nullptr;
 }
 
+FLASHMEM uint64_t appendFingerprint(
+    uint64_t hash,
+    const void* bytes,
+    std::size_t size
+) noexcept {
+    const uint8_t present = bytes != nullptr ? 1U : 0U;
+    hash ^= present;
+    hash *= kClipboardFingerprintPrime;
+    if (bytes == nullptr) return hash;
+    const auto* cursor = static_cast<const uint8_t*>(bytes);
+    for (std::size_t index = 0U; index < size; ++index) {
+        hash ^= cursor[index];
+        hash *= kClipboardFingerprintPrime;
+    }
+    return hash;
+}
+
+FLASHMEM uint64_t clipboardPayloadFingerprint(
+    const core::state::StructureClipboardState& clipboard,
+    const core::state::ClipboardTransferPlan& plan
+) noexcept {
+    uint64_t hash = kClipboardFingerprintOffset;
+    const auto kind = clipboard.kind.get();
+    const uint32_t revision = clipboard.revision.get();
+    hash = appendFingerprint(hash, &kind, sizeof(kind));
+    hash = appendFingerprint(hash, &revision, sizeof(revision));
+    hash = appendFingerprint(hash, &plan.sourceMask, sizeof(plan.sourceMask));
+    hash = appendFingerprint(hash, &plan.targetMask, sizeof(plan.targetMask));
+    for (uint8_t index = 0U; index < plan.count; ++index) {
+        const auto& entry = plan.entries[index];
+        hash = appendFingerprint(
+            hash,
+            &entry.clipboardIndex,
+            sizeof(entry.clipboardIndex)
+        );
+        hash = appendFingerprint(
+            hash,
+            &entry.sourceTrack,
+            sizeof(entry.sourceTrack)
+        );
+        hash = appendFingerprint(
+            hash,
+            &entry.targetTrack,
+            sizeof(entry.targetTrack)
+        );
+        const SourcePayload source = sourcePayload(clipboard, entry);
+        hash = appendFingerprint(
+            hash,
+            source.snapshot,
+            source.snapshot == nullptr ? 0U : sizeof(*source.snapshot)
+        );
+        hash = appendFingerprint(
+            hash,
+            source.graph,
+            source.graph == nullptr ? 0U : sizeof(*source.graph)
+        );
+        hash = appendFingerprint(
+            hash,
+            source.ccLanes,
+            source.ccLanes == nullptr ? 0U : sizeof(*source.ccLanes)
+        );
+        const auto* macroTrack = sourceMacroTrack(clipboard, entry);
+        hash = appendFingerprint(
+            hash,
+            macroTrack,
+            macroTrack == nullptr ? 0U : sizeof(*macroTrack)
+        );
+    }
+    if (kind == core::state::StructureClipboardKind::SEQUENCER_TRACK_SELECTION) {
+        const auto* selection = clipboard.sequencerTrackSelection.get();
+        const auto* control = selection != nullptr
+            ? selection->projectControl.get()
+            : nullptr;
+        hash = appendFingerprint(
+            hash,
+            control,
+            control == nullptr ? 0U : sizeof(*control)
+        );
+    }
+    return hash;
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
 FLASHMEM bool prepareMacroStructureTransfer(
     const core::state::macro::MacroPagesState& pages,
     const core::state::StructureClipboardState& clipboard,
@@ -105,7 +197,7 @@ FLASHMEM bool prepareMacroStructureTransfer(
         !core::state::sequencer::
             captureMacroTrackStructureHistoryBefore(
                 pages,
-                prepared.historyMask,
+                prepared.plan.targetMask,
                 *prepared.history
             )) {
         return false;
@@ -153,6 +245,13 @@ FLASHMEM bool prepareMacroStructureTransfer(
             )) {
         return false;
     }
+    if (std::memcmp(
+            payload->beforeControl.get(),
+            payload->afterControl.get(),
+            sizeof(*payload->beforeControl)
+        ) == 0) {
+        payload->afterControl.reset();
+    }
     payload->afterCaptured = true;
     return true;
 }
@@ -198,6 +297,30 @@ FLASHMEM bool sameStableProjection(
            core::state::sameSequencerTrackClipboardTransferIdentity(prepared, live);
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#elif defined(_MSC_VER)
+__declspec(noinline)
+#endif
+FLASHMEM SequencerTrackTransferStatus statusForChronology(
+    const core::state::sequencer::SequencerTrackStructureChronologyResult&
+        chronology
+) noexcept {
+    using Status = core::state::sequencer::
+        SequencerTrackStructureChronologyStatus;
+    using Pattern = core::state::sequencer::
+        SequencerPatternHistoryCommitOutcome;
+    if (chronology.status == Status::Opened &&
+        chronology.predecessorPattern != Pattern::Failed) {
+        return SequencerTrackTransferStatus::READY;
+    }
+    if (chronology.status == Status::MacroAuditionBlocked ||
+        chronology.status == Status::ProjectTrackGestureBlocked) {
+        return SequencerTrackTransferStatus::STALE;
+    }
+    return SequencerTrackTransferStatus::HISTORY_UNAVAILABLE;
+}
+
 FLASHMEM void updateCommitTimeRoutes(
     PreparedSequencerTrackTransfer& prepared,
     const core::state::ClipboardTransferPlan& livePlan
@@ -207,10 +330,6 @@ FLASHMEM void updateCommitTimeRoutes(
         const auto& live = livePlan.entries[index];
         destination.targetMidiChannel = live.targetMidiChannel;
         destination.targetRouteValid = live.targetRouteValid;
-    }
-    if (prepared.plan.count > 0U) {
-        prepared.plan.entry = prepared.plan.entries[0];
-        prepared.plan.hasEntry = true;
     }
     prepared.plan.availability = livePlan.availability;
     prepared.plan.reason = livePlan.reason;
@@ -223,6 +342,7 @@ FLASHMEM SequencerTrackTransferResult resultFromPrepared(
     return {
         status,
         prepared.plan,
+        prepared.chronology,
         prepared.activationBatch.generation,
         prepared.activationBatch.operationId,
     };
@@ -233,7 +353,7 @@ FLASHMEM SequencerTrackTransferResult resultFromPrepared(
 FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     const core::state::sequencer::SequencerTrackBankState& tracks,
     const core::state::project::ProjectTrackState& projectTracks,
-    const core::state::sequencer::SequencerState& sequencer,
+    core::state::sequencer::SequencerState& sequencer,
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,
     const SequencerHistoryDomainServices& history,
@@ -244,7 +364,10 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
     core::state::macro::MacroPagesState* macroPages
 ) {
     PreparedSequencerTrackTransfer prepared;
-    if (sequencer.stepContentDraft.active.get()) {
+    if (sequencer.stepContentDraft.rejectTransitionIfActive(
+            core::state::sequencer::
+                SequencerStepContentDraftBlockedTransition::TRACK
+        )) {
         prepared.status = SequencerTrackTransferStatus::INCONSISTENT_STATE;
         return prepared;
     }
@@ -267,6 +390,28 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         prepared.plan.availability = core::state::ClipboardTransferAvailability::DISABLED;
         return prepared;
     }
+
+    prepared.chronology = history.openTrackStructureChronologyBoundary();
+    prepared.status = statusForChronology(prepared.chronology);
+    if (prepared.status != SequencerTrackTransferStatus::READY) {
+        prepared.plan.availability =
+            core::state::ClipboardTransferAvailability::DISABLED;
+        if (prepared.status == SequencerTrackTransferStatus::HISTORY_UNAVAILABLE) {
+            prepared.plan.reason =
+                core::state::ClipboardTransferReason::HISTORY_UNAVAILABLE;
+        }
+        return prepared;
+    }
+    if (!sharedTracks.capturePreparedTrackStructureSettlementCheckpoint(
+            prepared.settlementCheckpoint
+        )) {
+        prepared.status = SequencerTrackTransferStatus::PUBLICATION_UNAVAILABLE;
+        prepared.plan.availability =
+            core::state::ClipboardTransferAvailability::DISABLED;
+        return prepared;
+    }
+    prepared.clipboardPayloadFingerprint =
+        clipboardPayloadFingerprint(clipboard, prepared.plan);
 
     prepared.initialEnabledMask = tracks.currentEnabledMask();
     prepared.initialProjectMutedMask = projectTracks.authored.mutedMask;
@@ -450,6 +595,11 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         prepared.history->before,
         prepared.history->after
     );
+    if (prepared.clipboardPayloadFingerprint !=
+            clipboardPayloadFingerprint(clipboard, prepared.plan)) {
+        prepared.status = SequencerTrackTransferStatus::STALE;
+        return prepared;
+    }
     if (core::state::sequencer::sameMusicalHistoryStructureSnapshot(
             prepared.history->before,
             prepared.history->after
@@ -479,7 +629,7 @@ FLASHMEM PreparedSequencerTrackTransfer prepareSequencerTrackTransfer(
         prepared.history->activationAfterAudibleMask =
             prepared.nextAudibleMask;
     }
-    if (!history.canRecordStructure(*prepared.history)) {
+    if (!history.canCommitAdmittedStructure(*prepared.history)) {
         prepared.status = SequencerTrackTransferStatus::HISTORY_UNAVAILABLE;
         prepared.plan.availability = core::state::ClipboardTransferAvailability::DISABLED;
         prepared.plan.reason = core::state::ClipboardTransferReason::HISTORY_UNAVAILABLE;
@@ -497,14 +647,13 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
     const core::state::StructureClipboardState& clipboard,
     const SharedTrackDomainServices& sharedTracks,
     const SequencerHistoryDomainServices& history,
-    PreparedSequencerTrackTransfer prepared,
+    PreparedSequencerTrackTransfer&& prepared,
     core::state::macro::MacroPagesState* macroPages
 ) {
-    if (sequencer.stepContentDraft.active.get()) {
-        sequencer.stepContentDraft.noteBlockedTransition(
+    if (sequencer.stepContentDraft.rejectTransitionIfActive(
             core::state::sequencer::
                 SequencerStepContentDraftBlockedTransition::TRACK
-        );
+        )) {
         return resultFromPrepared(
             SequencerTrackTransferStatus::INCONSISTENT_STATE,
             prepared
@@ -521,7 +670,17 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
         ) != prepared.initialAudibleMask ||
         tracks.activeTrackIndex() != prepared.previousActiveTrack ||
         sharedTracks.enabledMask() != prepared.initialEnabledMask ||
-        sharedTracks.activeTrack() != prepared.previousActiveTrack) {
+        sharedTracks.activeTrack() != prepared.previousActiveTrack ||
+        prepared.clipboardPayloadFingerprint !=
+            clipboardPayloadFingerprint(clipboard, prepared.plan) ||
+        !core::state::sequencer::liveHistoryStructureSnapshotMatches(
+            tracks,
+            sequencer,
+            prepared.history->before
+        ) ||
+        !sharedTracks.preparedTrackStructureSettlementCheckpointMatches(
+            prepared.settlementCheckpoint
+        )) {
         return resultFromPrepared(SequencerTrackTransferStatus::STALE, prepared);
     }
     const auto* macroStructure =
@@ -566,7 +725,13 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
             macroTrackStructureHistoryChanged(*prepared.history)) {
         return resultFromPrepared(SequencerTrackTransferStatus::NO_CHANGE, prepared);
     }
-    if (!history.canRecordStructure(*prepared.history)) {
+    if (!sharedTracks.canPublishPreparedSequencerState()) {
+        return resultFromPrepared(
+            SequencerTrackTransferStatus::PUBLICATION_UNAVAILABLE,
+            prepared
+        );
+    }
+    if (!history.canCommitAdmittedStructure(*prepared.history)) {
         prepared.plan.availability = core::state::ClipboardTransferAvailability::DISABLED;
         prepared.plan.reason = core::state::ClipboardTransferReason::HISTORY_UNAVAILABLE;
         return resultFromPrepared(SequencerTrackTransferStatus::HISTORY_UNAVAILABLE, prepared);
@@ -577,16 +742,14 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
         return resultFromPrepared(SequencerTrackTransferStatus::STALE, prepared);
     }
 
-    if (macroStructure != nullptr &&
-        !core::state::sequencer::applyMacroTrackStructureHistory(
-            *macroPages,
-            *macroStructure,
-            true
-        )) {
-        return resultFromPrepared(
-            SequencerTrackTransferStatus::STALE,
-            prepared
-        );
+    // No recoverable branch, allocation or reconstructive rollback is allowed
+    // beyond the atomic activation arm.
+    if (macroStructure != nullptr) {
+        core::state::sequencer::
+            commitAdmittedMacroTrackStructureHistoryAfter(
+                *macroPages,
+                *macroStructure
+            );
     }
 
     if ((prepared.plan.targetMask & previousActiveBit) == 0) {
@@ -601,25 +764,23 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
 
     for (uint8_t index = 0; index < prepared.plan.count; ++index) {
         const auto& destination = prepared.plan.entries[index];
-        const SourcePayload source =
-            sourcePayload(clipboard, destination);
-        // Payload identity was checked immediately above and the clipboard is
-        // immutable during this synchronous commit.
         auto& target = tracks.track(destination.targetTrack);
+        const auto& afterTrack =
+            prepared.history->after.tracks[destination.targetTrack];
         core::state::sequencer::installTrackContentSnapshotWithOwnedPayload(
             target,
-            *source.snapshot,
+            afterTrack.flat,
             std::move(prepared.bankGraphAt(index)),
             std::move(prepared.bankCcLanesAt(index))
         );
     }
 
     const auto& firstDestination = prepared.plan.entries[0];
-    const SourcePayload firstSource =
-        sourcePayload(clipboard, firstDestination);
+    const auto& firstAfter =
+        prepared.history->after.tracks[firstDestination.targetTrack];
     core::state::sequencer::installTrackContentSnapshotToEditorWithOwnedPayload(
         sequencer,
-        *firstSource.snapshot,
+        firstAfter.flat,
         std::move(prepared.editorGraph),
         std::move(prepared.editorCcLanes)
     );
@@ -636,7 +797,7 @@ FLASHMEM SequencerTrackTransferResult commitPreparedSequencerTrackTransfer(
             macroStructure->capturedTrackMask
         );
     }
-    history.recordPreparedStructure(std::move(prepared.history));
+    history.commitAdmittedStructure(std::move(prepared.history));
     if (prepared.activationQueue != nullptr) {
         prepared.activationQueue->publishPrepared(prepared.activationBatch);
     }

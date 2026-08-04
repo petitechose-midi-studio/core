@@ -16,8 +16,8 @@ enum class Tone : uint8_t {
     NUDGE,
     CHORD,
     CHORD_MODE,
-    CHORD_VOICE,
-    CHORD_HARMONY,
+    CHORD_FORMULA,
+    CHORD_SHAPE,
     CHORD_INVERSION,
     CHORD_VOICING,
     CHORD_STRUM,
@@ -44,10 +44,10 @@ inline constexpr uint32_t color(Tone tone) {
             return standalone::theme::color::STEP_CHORD;
         case Tone::CHORD_MODE:
             return standalone::theme::color::STEP_CHORD_MODE;
-        case Tone::CHORD_VOICE:
-            return standalone::theme::color::STEP_CHORD_VOICE;
-        case Tone::CHORD_HARMONY:
-            return standalone::theme::color::STEP_CHORD_HARMONY;
+        case Tone::CHORD_FORMULA:
+            return standalone::theme::color::STEP_CHORD_FORMULA;
+        case Tone::CHORD_SHAPE:
+            return standalone::theme::color::STEP_CHORD_SHAPE;
         case Tone::CHORD_INVERSION:
             return standalone::theme::color::STEP_CHORD_INVERSION;
         case Tone::CHORD_VOICING:
@@ -82,10 +82,10 @@ inline constexpr const char* label(Tone tone) {
             return "Chord";
         case Tone::CHORD_MODE:
             return "Chord mode";
-        case Tone::CHORD_VOICE:
-            return "Chord voices";
-        case Tone::CHORD_HARMONY:
-            return "Chord harmony";
+        case Tone::CHORD_FORMULA:
+            return "Chord formula";
+        case Tone::CHORD_SHAPE:
+            return "Chord shape";
         case Tone::CHORD_INVERSION:
             return "Chord inversion";
         case Tone::CHORD_VOICING:

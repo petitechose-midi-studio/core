@@ -23,9 +23,10 @@ ClipboardTransferPlan basePlan() {
     plan.sourceMask = 0x0001;
     plan.targetMask = 0x0010;
     plan.createMask = 0x0010;
-    plan.entry.sourceTrack = 0;
-    plan.entry.targetTrack = 4;
-    plan.hasEntry = true;
+    plan.sourceCount = 1;
+    plan.count = 1;
+    plan.entries[0].sourceTrack = 0;
+    plan.entries[0].targetTrack = 4;
     return plan;
 }
 

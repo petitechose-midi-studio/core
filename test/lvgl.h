@@ -19,6 +19,7 @@ struct lv_area_t {
     lv_coord_t y2 = 0;
 };
 struct lv_timer_t {};
+struct lv_event_t {};
 
 inline constexpr lv_opa_t LV_OPA_TRANSP = 0;
 inline constexpr lv_opa_t LV_OPA_60 = 153;

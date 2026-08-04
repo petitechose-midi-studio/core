@@ -46,12 +46,7 @@ FLASHMEM bool sameChordSpec(
     const oc::note::sequencer::StepSequencerChordSpec& lhs,
     const oc::note::sequencer::StepSequencerChordSpec& rhs
 ) {
-    return lhs.voiceCount == rhs.voiceCount &&
-           lhs.harmonyData == rhs.harmonyData &&
-           lhs.voicingData == rhs.voicingData &&
-           lhs.inversionData == rhs.inversionData &&
-           lhs.strum == rhs.strum &&
-           lhs.velocityCurve == rhs.velocityCurve;
+    return oc::note::sequencer::chordSpecsEqual(lhs, rhs);
 }
 
 }  // namespace
@@ -243,6 +238,14 @@ FLASHMEM void SequencerStepContentDraftSession::noteBlockedTransition(
     failure = SequencerStepContentDraftFailure::TRANSITION_BLOCKED;
     blockedTransition = transition;
     touch();
+}
+
+FLASHMEM bool SequencerStepContentDraftSession::rejectTransitionIfActive(
+    SequencerStepContentDraftBlockedTransition transition
+) {
+    if (!active.get()) return false;
+    noteBlockedTransition(transition);
+    return true;
 }
 
 FLASHMEM void SequencerStepContentDraftSession::resetSession() {

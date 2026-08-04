@@ -12,7 +12,9 @@
 #include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerChordUiOps.hpp"
+#include "state/sequencer/SequencerExpansionBudgetProjection.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
+#include "state/sequencer/SequencerPresetLibraryEntryPolicy.hpp"
 #include "state/sequencer/SequencerResolvedDisplayProjectionOps.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
@@ -21,8 +23,10 @@
 #include "state/sequencer/StepPropertyDisplay.hpp"
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerActionStripVisuals.hpp"
+#include "ui/sequencer/SequencerStepContentDraftTransitionLabels.hpp"
 #include "ui/sequencer/StepSemanticVisuals.hpp"
 #include "ui/sequencer/StepPropertyVisuals.hpp"
+#include "ui/theme/StandaloneTheme.hpp"
 
 namespace core::context::standalone::sequencer_overlay_presenter {
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
@@ -66,22 +70,15 @@ FLASHMEM const char* draftFailureLabel(
     const core::state::sequencer::SequencerStepContentDraftSession& draft
 ) {
     using Failure = core::state::sequencer::SequencerStepContentDraftFailure;
-    using Transition =
-        core::state::sequencer::SequencerStepContentDraftBlockedTransition;
     switch (draft.failure) {
         case Failure::OUT_OF_MEMORY: return "APPLY FAILED · OUT OF MEMORY";
         case Failure::HISTORY_UNAVAILABLE: return "APPLY FAILED · HISTORY FULL";
         case Failure::PUBLISH_FAILED: return "APPLY FAILED · PUBLISH";
         case Failure::UNPUBLISHABLE_MUTATION: return "APPLY FAILED · INVALID EDIT";
         case Failure::TRANSITION_BLOCKED:
-            switch (draft.blockedTransition) {
-                case Transition::TRACK: return "APPLY BEFORE CHANGING TRACK";
-                case Transition::VIEW: return "APPLY BEFORE CHANGING VIEW";
-                case Transition::PROJECT_LOAD: return "APPLY BEFORE LOADING";
-                case Transition::RESET: return "APPLY BEFORE RESET";
-                case Transition::NONE:
-                default: return "APPLY OR DISCARD DRAFT";
-            }
+            return core::ui::sequencer::standaloneStepContentDraftTransitionLabel(
+                draft.blockedTransition
+            );
         case Failure::NONE:
         default: return nullptr;
     }
@@ -151,12 +148,30 @@ FLASHMEM uint32_t buildStepEditDataRevision(
         revision,
         static_cast<uint32_t>(sequencer.stepEdit.chordEditor.focusedField.get())
     );
+    const auto& chordSubEditor =
+        sequencer.stepEdit.chordEditor.subEditor.get();
+    revision = mixRevision(
+        revision,
+        chordSubEditor.formulaEditorActive ? 1U : 0U
+    );
+    revision = mixRevision(
+        revision,
+        chordSubEditor.focusedFormulaItem
+    );
+    revision = mixRevision(
+        revision,
+        chordSubEditor.sourceSelectorActive ? 1U : 0U
+    );
+    revision = mixRevision(
+        revision,
+        static_cast<uint32_t>(chordSubEditor.focusedSourceChoice)
+    );
     revision = mixRevision(revision, static_cast<uint32_t>(step));
     revision = mixRevision(revision, static_cast<uint32_t>(len));
     return revision;
 }
 
-FLASHMEM ms::ui::KeyValueRow makeIconRow(
+FLASHMEM StepEditKeyValueRow makeIconRow(
     const char* key,
     const char* value,
     const char* icon,
@@ -456,10 +471,15 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
         return data;
     }
 
+    const bool stepPresetLibraryAvailable =
+        core::state::sequencer::preset_library_entry_policy::
+            canOpenStepPresets(sequencer);
     std::snprintf(
         data.meta.data(),
         data.meta.size(),
-        "P%u · S%u/%u · %s · HOLD NAV",
+        stepPresetLibraryAvailable
+            ? "P%u S%u/%u %s · NAV hold: Presets"
+            : "P%u S%u/%u %s",
         static_cast<unsigned>(
             core::state::sequencer::activeContentPageForStep(step)
         ) + 1U,
@@ -495,6 +515,8 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     );
 
     if (chordDetailMode) {
+        const auto& chordSubEditor =
+            sequencer.stepEdit.chordEditor.subEditor.get();
         core::state::sequencer::resolveStepChordPreview(
             chordUi,
             projection,
@@ -504,8 +526,32 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
             data,
             chordUi,
             sequencer.stepEdit.chordEditor.focusedField.get(),
-            projection.enabled
+            chordSubEditor.formulaEditorActive,
+            chordSubEditor.focusedFormulaItem,
+            chordSubEditor.sourceSelectorActive,
+            chordSubEditor.focusedSourceChoice,
+            projection.enabled,
+            core::state::sequencer::preset_library_entry_policy::
+                canOpenChordPresets(sequencer)
         );
+        const auto expansionBudget =
+            core::state::sequencer::projectSequencerExpansionBudget(
+                sequencer,
+                source.tracks.projectScaleSettings(),
+                step
+            );
+        if (expansionBudget.noteBudgetExceeded) {
+            constexpr uint32_t LIMIT_WARNING_COLOR =
+                ::standalone::theme::color::STEP_PITCH;
+            copyText(
+                data.meta.data(),
+                data.meta.size(),
+                "16-note expansion limit"
+            );
+            data.overlayProps.meta = data.meta.data();
+            data.overlayProps.metaColor = LIMIT_WARNING_COLOR;
+            data.overlayProps.titleColor = LIMIT_WARNING_COLOR;
+        }
 
         const uint32_t revision = buildStepEditDataRevision(
             source,

@@ -1,5 +1,7 @@
 #include "state/project/ProjectSnapshot.hpp"
 
+#include <algorithm>
+#include <cstring>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
@@ -17,6 +19,14 @@
 namespace core::state::project {
 
 namespace {
+
+constexpr uint32_t PROJECT_CAPTURE_SMALL_SLICE_BYTES = 4096U;
+
+static_assert(sizeof(ProjectState) + sizeof(ProjectTrackSnapshot) <=
+              PROJECT_CAPTURE_SMALL_SLICE_BYTES);
+static_assert(sizeof(core::state::macro::MacroTrackData) <=
+              PROJECT_CAPTURE_SMALL_SLICE_BYTES);
+static_assert(sizeof(core::state::modulation::ProjectControlDomainState) == 159516U);
 
 FLASHMEM ProjectState projectStateFromRuntime(
     const core::state::CoreState& state,
@@ -83,20 +93,55 @@ FLASHMEM void applyProjectEditing(core::state::CoreState& state,
 
 }  // namespace
 
+FLASHMEM bool ProjectSnapshotCapture::boundaryReady_(
+    const core::state::CoreState& state,
+    BoundaryMode mode
+) {
+    if (mode == BoundaryMode::COOPERATIVE_QUIESCENT) {
+        return !state.hasPendingProjectTransaction();
+    }
+    return !state.macroHistory.hasPendingModulatorAuditionTransaction(state.pages) &&
+           !state.projectTrackHistory.hasPendingGesture();
+}
+
 FLASHMEM bool ProjectSnapshotCapture::begin(const core::state::CoreState& state,
                                             ProjectSnapshot& snapshot) {
+    return begin_(state, snapshot, BoundaryMode::COOPERATIVE_QUIESCENT);
+}
+
+FLASHMEM bool ProjectSnapshotCapture::begin_(const core::state::CoreState& state,
+                                             ProjectSnapshot& snapshot,
+                                             BoundaryMode mode) {
     cancel();
-    if (!snapshot.projectControl ||
-        state.macroHistory.hasPendingModulatorAuditionTransaction(state.pages) ||
-        state.projectTrackHistory.hasPendingGesture()) {
+    if (!snapshot.projectControl || !boundaryReady_(state, mode)) {
+        return false;
+    }
+    mode_ = mode;
+
+    guard_ = {
+        .token = state.projectSessionSaveToken(),
+        .authoredRevision = state.pages.control.authoredRevision,
+        .projectTrackRevision = state.projectTracks.revision.get(),
+    };
+    frozen_active_track_ = state.sequencerTracks.activeTrackIndex();
+    frozen_focused_step_ = state.sequencer.focusedStep.get();
+    frozen_active_step_property_ = state.sequencer.activeStepProperty.get();
+    if (!core::state::sequencer::reserveHistoryTrackBankSnapshotStorage(
+            state.sequencerTracks,
+            state.sequencer,
+            snapshot.sequencer
+        ) ||
+        !boundaryReady_(state, mode_) ||
+        !state.projectSessionSaveTokenMatches(guard_.token) ||
+        state.pages.control.authoredRevision != guard_.authoredRevision ||
+        state.projectTracks.revision.get() != guard_.projectTrackRevision ||
+        state.sequencerTracks.activeTrackIndex() != frozen_active_track_) {
+        cancel();
         return false;
     }
 
     state_ = &state;
     snapshot_ = &snapshot;
-    modified_counter_ = state.project.metadata.modifiedCounter;
-    authored_revision_ = state.pages.control.authoredRevision;
-    project_track_revision_ = state.projectTracks.revision.get();
     phase_ = Phase::PROJECT;
     return true;
 }
@@ -106,51 +151,125 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
         return {.status = Status::IDLE};
     }
 
-    if (state_->macroHistory.hasPendingModulatorAuditionTransaction(state_->pages) ||
-        state_->projectTrackHistory.hasPendingGesture() ||
-        state_->project.metadata.modifiedCounter != modified_counter_ ||
-        state_->pages.control.authoredRevision != authored_revision_ ||
-        state_->projectTracks.revision.get() != project_track_revision_) {
-        const uint32_t modifiedCounter = modified_counter_;
+    if (!guardMatches_()) {
+        const uint32_t modifiedCounter = guard_.token.modifiedCounter;
         cancel();
         return {.status = Status::STALE, .modifiedCounter = modifiedCounter};
     }
 
     OC_PERF_SCOPE(perfCaptureSlice, "persistence.project-snapshot.capture-slice");
     OC_PERF_UNITS(perfCaptureSlice, static_cast<uint32_t>(phase_), 0);
+    uint32_t workBytes = 0U;
 
     switch (phase_) {
         case Phase::PROJECT:
             captureProjectTrackSnapshot(state_->projectTracks, snapshot_->projectTracks);
             snapshot_->project = projectStateFromRuntime(*state_, snapshot_->projectTracks);
+            workBytes = sizeof(ProjectTrackSnapshot) + sizeof(ProjectState);
             phase_ = Phase::MACROS;
             break;
 
-        case Phase::MACROS:
-            snapshot_->macroTracks = state_->pages.tracks;
-            state_->pages.captureSharedTrackState(
-                snapshot_->sharedTrackEnabledMask,
-                snapshot_->sharedTrackActive
+        case Phase::MACROS: {
+            snapshot_->macroTracks[macro_track_] = state_->pages.tracks[macro_track_];
+            workBytes = sizeof(core::state::macro::MacroTrackData);
+            ++macro_track_;
+            if (macro_track_ == core::state::macro::TRACK_COUNT) {
+                state_->pages.captureSharedTrackState(
+                    snapshot_->sharedTrackEnabledMask,
+                    snapshot_->sharedTrackActive
+                );
+                workBytes += sizeof(snapshot_->sharedTrackEnabledMask) +
+                    sizeof(snapshot_->sharedTrackActive);
+                phase_ = Phase::AUTOMATION;
+            }
+            break;
+        }
+
+        case Phase::AUTOMATION: {
+            const uint32_t remaining =
+                sizeof(core::state::modulation::ProjectControlDomainState) -
+                automation_offset_;
+            workBytes = std::min<uint32_t>(
+                PROJECT_CAPTURE_SMALL_SLICE_BYTES,
+                remaining
             );
-            phase_ = Phase::AUTOMATION;
+            std::memcpy(
+                reinterpret_cast<uint8_t*>(snapshot_->projectControl.get()) +
+                    automation_offset_,
+                reinterpret_cast<const uint8_t*>(&state_->pages.control.authored) +
+                    automation_offset_,
+                workBytes
+            );
+            automation_offset_ += workBytes;
+            if (automation_offset_ ==
+                sizeof(core::state::modulation::ProjectControlDomainState)) {
+                phase_ = Phase::SEQUENCER_GRAPH;
+            }
             break;
+        }
 
-        case Phase::AUTOMATION:
-            *snapshot_->projectControl = state_->pages.control.authored;
-            phase_ = Phase::SEQUENCER;
-            break;
-
-        case Phase::SEQUENCER:
-            if (!core::state::sequencer::captureHistorySnapshot(
+        case Phase::SEQUENCER_GRAPH:
+            if (!core::state::sequencer::
+                    captureHistoryTrackBankGraphUsingReservedStorage(
                     state_->sequencerTracks,
                     state_->sequencer,
-                    snapshot_->sequencer
+                    sequencer_track_,
+                    snapshot_->sequencer,
+                    &workBytes
                 )) {
-                const uint32_t modifiedCounter = modified_counter_;
+                const uint32_t modifiedCounter = guard_.token.modifiedCounter;
                 cancel();
-                return {.status = Status::FAILED, .modifiedCounter = modifiedCounter};
+                return {
+                    .status = Status::FAILED,
+                    .modifiedCounter = modifiedCounter,
+                    .workBytes = workBytes,
+                };
             }
-            phase_ = Phase::COMPLETE;
+            phase_ = Phase::SEQUENCER_DATA;
+            break;
+
+        case Phase::SEQUENCER_DATA:
+            if (!core::state::sequencer::
+                    captureHistoryTrackBankDataUsingReservedStorage(
+                        state_->sequencerTracks,
+                        state_->sequencer,
+                        sequencer_track_,
+                        snapshot_->sequencer,
+                        &workBytes
+                    )) {
+                const uint32_t modifiedCounter = guard_.token.modifiedCounter;
+                cancel();
+                return {
+                    .status = Status::FAILED,
+                    .modifiedCounter = modifiedCounter,
+                    .workBytes = workBytes,
+                };
+            }
+            ++sequencer_track_;
+            if (sequencer_track_ ==
+                core::state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
+                if (!core::state::sequencer::
+                        finalizeHistoryTrackBankSnapshotUsingReservedStorage(
+                            state_->sequencerTracks,
+                            frozen_active_track_,
+                            frozen_focused_step_,
+                            frozen_active_step_property_,
+                            snapshot_->sequencer
+                        )) {
+                    const uint32_t modifiedCounter = guard_.token.modifiedCounter;
+                    cancel();
+                    return {
+                        .status = Status::FAILED,
+                        .modifiedCounter = modifiedCounter,
+                        .workBytes = workBytes,
+                    };
+                }
+                // Conservative accounting for the small bank/focus metadata.
+                workBytes += 64U;
+                phase_ = Phase::COMPLETE;
+            } else {
+                phase_ = Phase::SEQUENCER_GRAPH;
+            }
             break;
 
         case Phase::COMPLETE:
@@ -158,43 +277,82 @@ FLASHMEM ProjectSnapshotCapture::Progress ProjectSnapshotCapture::advance() {
             return {.status = Status::IDLE};
     }
 
-    if (state_->macroHistory.hasPendingModulatorAuditionTransaction(state_->pages) ||
-        state_->project.metadata.modifiedCounter != modified_counter_ ||
-        state_->pages.control.authoredRevision != authored_revision_ ||
-        state_->projectTracks.revision.get() != project_track_revision_) {
-        const uint32_t modifiedCounter = modified_counter_;
+    if (!guardMatches_()) {
+        const uint32_t modifiedCounter = guard_.token.modifiedCounter;
         cancel();
-        return {.status = Status::STALE, .modifiedCounter = modifiedCounter};
+        return {
+            .status = Status::STALE,
+            .modifiedCounter = modifiedCounter,
+            .workBytes = workBytes,
+        };
     }
 
     if (phase_ != Phase::COMPLETE) {
-        return {.status = Status::IN_PROGRESS, .modifiedCounter = modified_counter_};
+        return {.status = Status::IN_PROGRESS,
+                .modifiedCounter = guard_.token.modifiedCounter,
+                .workBytes = workBytes};
     }
 
-    const uint32_t modifiedCounter = modified_counter_;
-    cancel();
-    return {.status = Status::COMPLETE, .modifiedCounter = modifiedCounter};
+    return {.status = Status::COMPLETE,
+            .modifiedCounter = guard_.token.modifiedCounter,
+            .workBytes = workBytes};
 }
 
 FLASHMEM void ProjectSnapshotCapture::cancel() {
     state_ = nullptr;
     snapshot_ = nullptr;
     phase_ = Phase::IDLE;
-    modified_counter_ = 0;
-    authored_revision_ = 0;
-    project_track_revision_ = 0;
+    mode_ = BoundaryMode::COOPERATIVE_QUIESCENT;
+    guard_ = {};
+    automation_offset_ = 0U;
+    macro_track_ = 0U;
+    sequencer_track_ = 0U;
+    frozen_active_track_ = 0U;
+    frozen_focused_step_ = 0U;
+    frozen_active_step_property_ = core::state::sequencer::StepProperty::NOTE;
 }
 
 FLASHMEM bool ProjectSnapshotCapture::active() const {
-    return phase_ != Phase::IDLE;
+    return phase_ != Phase::IDLE && phase_ != Phase::COMPLETE;
 }
 
-namespace {
+FLASHMEM bool ProjectSnapshotCapture::complete() const {
+    return phase_ == Phase::COMPLETE;
+}
 
-FLASHMEM bool captureToCompletion(const core::state::CoreState& state,
-                                  ProjectSnapshot& snapshot) {
+FLASHMEM const ProjectCaptureGuard* ProjectSnapshotCapture::guard() const {
+    return phase_ == Phase::IDLE ? nullptr : &guard_;
+}
+
+FLASHMEM ProjectSnapshotCapture::SliceKind
+ProjectSnapshotCapture::nextSliceKind() const {
+    return phase_ == Phase::SEQUENCER_GRAPH ||
+                   phase_ == Phase::SEQUENCER_DATA
+        ? SliceKind::SEQUENCER
+        : SliceKind::SMALL;
+}
+
+FLASHMEM bool ProjectSnapshotCapture::guardMatches_() const {
+    return state_ != nullptr &&
+           boundaryReady_(*state_, mode_) &&
+           state_->projectSessionSaveTokenMatches(guard_.token) &&
+           state_->pages.control.authoredRevision == guard_.authoredRevision &&
+           state_->projectTracks.revision.get() == guard_.projectTrackRevision &&
+           state_->sequencerTracks.activeTrackIndex() == frozen_active_track_;
+}
+
+FLASHMEM bool ProjectSnapshotCapture::captureSynchronously_(
+    const core::state::CoreState& state,
+    ProjectSnapshot& snapshot
+) {
     ProjectSnapshotCapture capture;
-    if (!capture.begin(state, snapshot)) return false;
+    if (!capture.begin_(
+            state,
+            snapshot,
+            BoundaryMode::SYNCHRONOUS_CURRENT_STATE
+        )) {
+        return false;
+    }
 
     while (capture.active()) {
         const auto progress = capture.advance();
@@ -207,17 +365,17 @@ FLASHMEM bool captureToCompletion(const core::state::CoreState& state,
     return false;
 }
 
-}  // namespace
-
 FLASHMEM ProjectSnapshotPtr captureProjectSnapshotOwned(const core::state::CoreState& state) {
     OC_PERF_SCOPE(perfCapture, "persistence.project-snapshot.allocate-and-capture");
     auto snapshot = makeProjectSnapshot();
-    if (!snapshot || !captureToCompletion(state, *snapshot)) return {};
+    if (!snapshot || !ProjectSnapshotCapture::captureSynchronously_(state, *snapshot)) {
+        return {};
+    }
     return snapshot;
 }
 
 FLASHMEM bool captureProjectSnapshot(const core::state::CoreState& state, ProjectSnapshot& out) {
-    return captureToCompletion(state, out);
+    return ProjectSnapshotCapture::captureSynchronously_(state, out);
 }
 
 FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
@@ -284,20 +442,19 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
 
     state.sharedTrackEnabledMask.set(state.sequencerTracks.currentEnabledMask());
     state.sharedTrackActive.set(state.sequencerTracks.activeTrackIndex());
-    state.clearPendingSequencerApply();
     if (!state.clearProjectHistory()) return false;
     core::state::project::reconcileProjectModulatorNavigationAfterHistory(
         state.projectNavigation,
         state.pages.control.authored.modulation,
         false
     );
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     // Manual is Project-scoped runtime intent: it survives navigation and UI
     // teardown, but never crosses a load boundary or enters persistence.
     state.macroUi.resetInteraction();
     state.macroUi.resetProjectRuntime();
     state.requestMacroRuntimeOwnerActivation();
     state.requestSequencerRuntimeProjectReset();
+    if (!state.advanceProjectSessionIdentity_()) return false;
     return true;
 }
 

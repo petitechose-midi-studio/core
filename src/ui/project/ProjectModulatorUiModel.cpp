@@ -8,6 +8,8 @@
 #include <config/PlatformCompat.hpp>
 
 #include "midi/MidiUtils.hpp"
+#include "state/modulation/ModulationDepthParameterMapping.hpp"
+#include "state/modulation/ModulatorLfoParameterMapping.hpp"
 #include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectControlRuntime.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
@@ -15,7 +17,6 @@
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
 #include "ui/font/StandaloneIcons.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
 #include "ui/modulation/ModulatorLfoUiModel.hpp"
 #include "ui/modulation/ModulatorAdsrUiModel.hpp"
 #include "ui/modulation/ModulatorSparklineModel.hpp"
@@ -26,7 +27,8 @@ namespace {
 
 using namespace core::state::modulation;
 namespace adsr_ui = core::ui::modulation::adsr;
-namespace depth_ui = core::ui::modulation::depth;
+namespace depth_parameter = core::state::modulation::depth;
+namespace lfo_parameter = core::state::modulation::lfo;
 namespace project_modulators = core::state::project::modulators;
 
 const char LABEL_FREE[] PROGMEM = "Free";
@@ -92,14 +94,14 @@ FLASHMEM int defaultBindingDepthPercent(
     const core::state::project::ProjectNavigationState& navigation,
     ModulatorId requestedSource
 ) {
-    auto scale = depth_ui::Scale::STANDARD;
+    auto scale = depth_parameter::Scale::STANDARD;
     if (valid(requestedSource)) {
         const auto* source = findProjectModulator(
             pages.control.authored.modulation,
             requestedSource
         );
         if (source != nullptr) {
-            scale = depth_ui::scaleFor(
+            scale = depth_parameter::scaleFor(
                 *source,
                 pages.control.authored.curves
             );
@@ -108,9 +110,9 @@ FLASHMEM int defaultBindingDepthPercent(
                navigation.creatingModulatorKind ==
                    ModulatorKind::RECORDED_SHAPE) {
         // New Recorded Shapes are authored in the canonical bipolar domain.
-        scale = depth_ui::Scale::RECORDED_SHAPE_BIPOLAR;
+        scale = depth_parameter::Scale::RECORDED_SHAPE_BIPOLAR;
     }
-    return depth_ui::amountQ15ToPercent(8192, scale);
+    return depth_parameter::amountQ15ToPercent(8192, scale);
 }
 
 FLASHMEM const char* adsrCurveCardLabel(ModulatorAdsrCurve curve) {
@@ -155,13 +157,13 @@ FLASHMEM void formatRate(char* out,
         return;
     }
     const char* label = core::ui::modulation::lfo::rateLabel(
-        core::ui::modulation::lfo::rateIndex(lfo.periodTicks)
+        lfo_parameter::rateIndex(lfo.periodTicks)
     );
     if (!compact) {
         std::snprintf(out, size, "%s", label);
         return;
     }
-    const uint8_t index = core::ui::modulation::lfo::rateIndex(
+    const uint8_t index = lfo_parameter::rateIndex(
         lfo.periodTicks
     );
     std::snprintf(
@@ -751,9 +753,9 @@ FLASHMEM void populateDestinationRow(
         static_cast<unsigned>(destination.page + 1U),
         static_cast<unsigned>(destination.macro + 1U)
     );
-    const int16_t percent = depth_ui::amountQ15ToPercent(
+    const int16_t percent = depth_parameter::amountQ15ToPercent(
         binding->amountQ15,
-        depth_ui::scaleFor(
+        depth_parameter::scaleFor(
             graph,
             pages.control.authored.curves,
             *binding
@@ -881,9 +883,9 @@ FLASHMEM void populateDestinationPickerRow(
             pages.control.audition.bindingId
         );
         const int16_t percent = binding != nullptr
-            ? depth_ui::amountQ15ToPercent(
+            ? depth_parameter::amountQ15ToPercent(
                   binding->amountQ15,
-                  depth_ui::scaleFor(
+                  depth_parameter::scaleFor(
                       pages.control.authored.modulation,
                       pages.control.authored.curves,
                       *binding

@@ -14,18 +14,18 @@
 
 #include <oc/api/MidiAPI.hpp>
 #include <oc/interface/IMidi.hpp>
-#include <oc/note/sequencer/StepSequencerChord.hpp>
 #include <oc/time/Time.hpp>
 
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "sequencer/ProjectTrackRuntimeSnapshotBank.hpp"
 #include "state/macro/MacroConstants.hpp"
+#include "support/AdvancingMicrosClock.hpp"
 #include "support/ProjectTrackRuntimeSnapshotTestFixture.hpp"
 
 namespace {
 
-using core::handler::MidiCcGlobalFrameCoordinator;
-using core::handler::MidiCcGlobalFrameStatus;
+using core::sequencer::MidiCcGlobalFrameCoordinator;
+using core::sequencer::MidiCcGlobalFrameStatus;
 using core::sequencer::RealtimeMidiEvent;
 using core::sequencer::RealtimeMidiEventType;
 using core::sequencer::RealtimeMidiQueue;
@@ -42,7 +42,7 @@ using core::state::shared::MidiCcResolveStatus;
 using core::state::shared::MidiCcRouteValidity;
 namespace mod = core::state::modulation;
 
-uint32_t fakeMicros = 0;
+test_support::AdvancingMicrosClock testClock;
 
 class MockMidiTransport final : public oc::interface::IMidi {
 public:
@@ -184,8 +184,8 @@ void drain(
     oc::api::MidiAPI& midi,
     uint32_t deadlineUs
 ) {
-    fakeMicros = deadlineUs;
-    queue.drainDue(midi, fakeMicros, 100000);
+    testClock.freezeAt(deadlineUs);
+    queue.drainDue(midi, testClock.currentUs(), 100000U);
 }
 
 void test_one_global_frame_uses_manual_lane_macro_priority() {
@@ -518,7 +518,7 @@ void test_strict_source_validation() {
     assert(!coordinator.publishPersistentAuthors(&invalid, 1));
     assert(!coordinator.publishPersistentAuthors(
         nullptr,
-        core::handler::MidiCcPersistentAuthorFrame::MAX_CANDIDATES + 1U
+        core::sequencer::MidiCcPersistentAuthorFrame::MAX_CANDIDATES + 1U
     ));
     const std::array duplicateBase{
         candidate(MidiCcCandidateClass::MACRO_COMPUTED, 1U, 10U),
@@ -666,7 +666,7 @@ void test_identical_lane_frame_is_not_republished_or_reinvalidated() {
 void test_exact_320_candidate_envelope_and_measurements() {
     static std::array<
         MidiCcCandidate,
-        core::handler::MidiCcPersistentAuthorFrame::MAX_CANDIDATES
+        core::sequencer::MidiCcPersistentAuthorFrame::MAX_CANDIDATES
     > persistent{};
     static std::array<MidiCcCandidate, 64> laneCandidates{};
     static std::array<MidiCcCandidate, MidiCcResolutionTelemetry::MAX_CANDIDATES>
@@ -729,9 +729,6 @@ void test_exact_320_candidate_envelope_and_measurements() {
     constexpr size_t queueEventStorageBytes =
         RealtimeMidiQueue::MAX_QUEUE_DEPTH * sizeof(RealtimeMidiEvent);
     static_assert(queueEventStorageBytes == 4608U);
-    static_assert(
-        oc::note::sequencer::StepSequencerChordSpec::MAX_VOICES == 8U
-    );
     std::cout << "[MEASURE] sizeof RealtimeMidiEvent="
               << sizeof(RealtimeMidiEvent)
               << ", queue event storage=" << queueEventStorageBytes
@@ -1210,7 +1207,7 @@ void test_full_temporal_spool_drains_due_before_retrying_source_revision() {
 
 int main() {
     std::cout.setf(std::ios::unitbuf);
-    oc::time::setMicrosProvider([]() { return fakeMicros; });
+    testClock.install();
 
     test_one_global_frame_uses_manual_lane_macro_priority();
     test_physical_dispatch_cache_and_removed_pending_retry();

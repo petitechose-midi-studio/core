@@ -102,7 +102,7 @@ public:
     ) const;
     bool resumeSources(uint8_t index) const;
     bool clearModulation(uint8_t index) const;
-    bool removeSlot(uint8_t index) const;
+    bool deleteSlot(uint8_t index) const;
     bool copyModulation(uint8_t index) const;
     [[nodiscard]] bool hasModulationAssignmentClipboard() const;
     macro::automation_clipboard_ops::MacroTypedPastePreflight

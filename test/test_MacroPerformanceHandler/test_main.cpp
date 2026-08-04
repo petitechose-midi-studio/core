@@ -94,7 +94,6 @@ struct MacroPerformanceHarness {
     void tick(uint32_t nowMs) {
         g_now_ms = nowMs;
         inputBinding.processTick();
-        handler.update(nowMs);
     }
 
     void press(Config::ButtonID id) {
@@ -185,7 +184,6 @@ void test_nav_turn_switches_enabled_macro_page_directly() {
     assert(h.state.macroUi.previewPageIndex.get() == 1);
     assert(h.state.pages.currentActivePage() == 1);
     assert(!h.state.macroUi.previewAddPageSlot.get());
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Page 2") == 0);
     assert(!h.state.macroUi.clutchActive.get());
 
     drainNotifications();
@@ -213,7 +211,6 @@ void test_nav_focus_track_turn_switches_context_to_highlighted_macro_track() {
     assert(h.state.pages.currentActivePage() == 3);
     assert(h.performanceServices.activeTrackChannel() == 9);
     assert(h.performanceServices.activeConfig(0).cc == 91);
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Track 2 Page 4") == 0);
 
     drainNotifications();
 
@@ -239,6 +236,448 @@ void test_macro_track_cursor_can_cross_gaps_and_reach_any_track() {
     assert(h.state.pages.currentActivePage() == 2);
 
     std::cout << "[PASS] test_macro_track_cursor_can_cross_gaps_and_reach_any_track\n";
+}
+
+void test_shared_track_publication_cannot_retarget_macro_short_release() {
+    {
+        MacroPerformanceHarness h;
+        assert(h.state.setSharedTrackState(0x0003U, 0U));
+        drainNotifications();
+        h.state.pages.tracks[0U].pages[0U].cc[0U] = 41U;
+        h.state.pages.tracks[1U].pages[0U].cc[0U] = 99U;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+        h.state.trackNavigation.syncPreviewTrack(0U);
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        assert(h.state.setSharedTrackState(0x0003U, 1U));
+        drainNotifications();
+        assert(h.state.trackNavigation.previewTrackIndex.get() == 0U);
+
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+        drainNotifications();
+
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+        assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
+        assert(h.state.pages.tracks[0U].pages[0U].cc[0U] == 41U);
+        assert(h.state.pages.tracks[1U].pages[0U].cc[0U] == 99U);
+    }
+
+    {
+        MacroPerformanceHarness h;
+        assert(h.state.setSharedTrackState(0x0003U, 0U));
+        drainNotifications();
+        h.state.pages.tracks[0U].pages[0U].cc[0U] = 41U;
+        h.state.pages.tracks[1U].pages[0U].cc[0U] = 99U;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+        h.state.trackNavigation.syncPreviewTrack(0U);
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.clipboard.hasMacroTrack());
+        assert(h.clipboard.macroTrack.pages[0U].cc[0U] == 41U);
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::PASTE);
+        assert(h.state.setSharedTrackState(0x0003U, 1U));
+        drainNotifications();
+        assert(h.state.trackNavigation.previewTrackIndex.get() == 0U);
+
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        drainNotifications();
+
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::NONE);
+        assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
+        assert(h.clipboard.macroTrack.pages[0U].cc[0U] == 41U);
+        assert(h.state.pages.tracks[1U].pages[0U].cc[0U] == 99U);
+    }
+
+    {
+        MacroPerformanceHarness h;
+        assert(h.state.setSharedTrackState(0x0003U, 0U));
+        drainNotifications();
+        h.state.pages.tracks[0U].pages[0U].cc[0U] = 41U;
+        h.state.pages.tracks[1U].pages[0U].cc[0U] = 99U;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+        h.state.trackNavigation.syncPreviewTrack(0U);
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.setSharedTrackState(0x0003U, 1U));
+        drainNotifications();
+        assert(h.state.trackNavigation.previewTrackIndex.get() == 0U);
+        h.state.trackNavigation.hold.clear();
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+        drainNotifications();
+
+        assert(!h.state.trackNavigation.hold.active());
+        assert(h.state.trackNavigation.previewTrackIndex.get() == 1U);
+        assert(h.state.pages.tracks[0U].pages[0U].cc[0U] == 41U);
+        assert(h.state.pages.tracks[1U].pages[0U].cc[0U] == 99U);
+    }
+
+    std::cout << "[PASS] Shared Track drift cannot retarget Macro short release\n";
+}
+
+void test_short_actions_without_visual_hold_are_target_exact() {
+    {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        auto& track = h.state.pages.activeTrackData();
+        track.enabledPageMask = 0x0003U;
+        track.pages[0U].cc[0U] = 41U;
+        track.pages[1U].cc[0U] = 99U;
+        h.state.pages.syncActiveTrackCache();
+        assert(!h.clipboard.hasMacroPage());
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        assert(!h.state.macroUi.pageHold.active());
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        assert(h.state.pages.currentActivePage() == 1U);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+        assert(!h.clipboard.hasMacroPage());
+        assert(track.pages[0U].cc[0U] == 41U);
+        assert(track.pages[1U].cc[0U] == 99U);
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.clipboard.hasMacroPage());
+        assert(h.clipboard.macroPage.cc[0U] == 99U);
+    }
+
+    drainNotifications();
+
+    {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        h.state.pages.activeTrackData().pages[0U].cc[0U] = 41U;
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        assert(!h.state.macroUi.pageHold.active());
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        assert(h.state.macroUi.previewAddPageSlot.get());
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+        h.turn(Config::EncoderID::NAV, -1.0f);
+        assert(!h.state.macroUi.previewAddPageSlot.get());
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(!h.clipboard.hasMacroPage());
+        assert(h.state.pages.activeTrackData().pages[0U].cc[0U] == 41U);
+    }
+
+    drainNotifications();
+
+    {
+        MacroPerformanceHarness h;
+        assert(h.state.setSharedTrackState(0x0003U, 0U));
+        drainNotifications();
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        h.state.pages.tracks[0U].pages[0U].cc[0U] = 41U;
+        h.state.pages.tracks[1U].pages[0U].cc[0U] = 99U;
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        assert(!h.state.macroUi.pageHold.active());
+        assert(h.state.setSharedTrackState(0x0003U, 1U));
+        drainNotifications();
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+
+        assert(h.state.pages.tracks[0U].pages[0U].cc[0U] == 41U);
+        assert(h.state.pages.tracks[1U].pages[0U].cc[0U] == 99U);
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.pages.tracks[1U].pages[0U].cc[0U] == 0U);
+    }
+
+    drainNotifications();
+    std::cout << "[PASS] short actions without visual hold are target exact\n";
+}
+
+void test_cross_button_structure_chords_preserve_first_owner() {
+    {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        auto& track = h.state.pages.activeTrackData();
+        track.enabledPageMask = 0x0003U;
+        track.pages[0U].cc[0U] = 41U;
+        track.pages[1U].cc[0U] = 99U;
+        h.state.pages.syncActiveTrackCache();
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.clipboard.hasMacroPage());
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.macroUi.pageHold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.state.macroUi.pageHold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.state.macroUi.pageHold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+        assert(!h.state.macroUi.pageHold.active());
+        assert(track.pages[1U].cc[0U] == 99U);
+    }
+
+    drainNotifications();
+
+    {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        auto& track = h.state.pages.activeTrackData();
+        track.enabledPageMask = 0x0003U;
+        track.pages[0U].cc[0U] = 41U;
+        track.pages[1U].cc[0U] = 99U;
+        h.state.pages.syncActiveTrackCache();
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.clipboard.hasMacroPage());
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.state.macroUi.pageHold.action.get() ==
+               core::state::StructureHoldAction::PASTE);
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.macroUi.pageHold.action.get() ==
+               core::state::StructureHoldAction::PASTE);
+
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+        assert(h.state.macroUi.pageHold.action.get() ==
+               core::state::StructureHoldAction::PASTE);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(!h.state.macroUi.pageHold.active());
+        assert(track.pages[0U].cc[0U] == 41U);
+        assert(track.pages[1U].cc[0U] == 99U);
+    }
+
+    drainNotifications();
+    std::cout << "[PASS] cross-button Structure chords preserve first owner\n";
+}
+
+void configureMacroHoldTrackFixture(MacroPerformanceHarness& h) {
+    assert(h.state.setSharedTrackState(0x0003U, 0U));
+    drainNotifications();
+    h.state.pages.tracks[0U].pages[0U].cc[0U] = 41U;
+    h.state.pages.tracks[1U].pages[0U].cc[0U] = 99U;
+    h.navigationFocus.set(core::state::StructureNavigationFocus::TRACK);
+    h.state.trackNavigation.syncPreviewTrack(0U);
+}
+
+void test_replaced_macro_holds_are_owner_exact() {
+    {
+        MacroPerformanceHarness h;
+        configureMacroHoldTrackFixture(h);
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.state.trackNavigation.hold.clear();
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+
+        assert(!h.state.trackNavigation.hold.active());
+        assert(h.state.pages.tracks[0U].pages[0U].cc[0U] == 41U);
+    }
+
+    {
+        MacroPerformanceHarness h;
+        configureMacroHoldTrackFixture(h);
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        const uint32_t capturedAcquisition =
+            h.state.trackNavigation.hold.acquisitionId();
+        h.state.trackNavigation.hold.clear();
+        h.state.trackNavigation.hold.begin(
+            core::state::StructureHoldAction::REMOVE,
+            0U
+        );
+        const uint32_t replacementAcquisition =
+            h.state.trackNavigation.hold.acquisitionId();
+        assert(replacementAcquisition != capturedAcquisition);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        assert(h.state.trackNavigation.hold.acquisitionId() ==
+               replacementAcquisition);
+        assert(h.state.pages.currentTrackEnabledMask() == 0x0003U);
+        assert(h.state.pages.tracks[0U].pages[0U].cc[0U] == 41U);
+        h.state.trackNavigation.hold.clear();
+    }
+
+    {
+        MacroPerformanceHarness h;
+        configureMacroHoldTrackFixture(h);
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.state.trackNavigation.hold.clear();
+        h.state.trackNavigation.hold.begin(
+            core::state::StructureHoldAction::PASTE,
+            77U
+        );
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::PASTE);
+        assert(h.state.trackNavigation.hold.startedAtMs.get() == 77U);
+        assert(h.state.pages.tracks[0U].pages[0U].cc[0U] == 41U);
+        h.state.trackNavigation.hold.clear();
+    }
+
+    {
+        MacroPerformanceHarness h;
+        configureMacroHoldTrackFixture(h);
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.state.trackNavigation.hold.clear();
+        h.state.trackNavigation.hold.begin(
+            core::state::StructureHoldAction::REMOVE,
+            77U
+        );
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        assert(h.state.trackNavigation.hold.startedAtMs.get() == 77U);
+        assert(h.state.pages.tracks[0U].pages[0U].cc[0U] == 41U);
+        h.state.trackNavigation.hold.clear();
+    }
+
+    {
+        MacroPerformanceHarness h;
+        configureMacroHoldTrackFixture(h);
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        h.state.trackNavigation.hold.clear();
+        h.state.trackNavigation.hold.begin(
+            core::state::StructureHoldAction::REMOVE,
+            77U
+        );
+        h.tick(0U);
+        h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        assert(h.state.trackNavigation.hold.startedAtMs.get() == 77U);
+        assert(h.state.pages.currentTrackEnabledMask() == 0x0003U);
+        assert(h.state.pages.tracks[0U].pages[0U].cc[0U] == 41U);
+        h.state.trackNavigation.hold.clear();
+    }
+
+    {
+        MacroPerformanceHarness h;
+        configureMacroHoldTrackFixture(h);
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.clipboard.macroTrack.pages[0U].cc[0U] == 41U);
+        h.state.pages.tracks[0U].pages[0U].cc[0U] = 42U;
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.state.trackNavigation.hold.clear();
+        h.state.trackNavigation.hold.begin(
+            core::state::StructureHoldAction::PASTE,
+            77U
+        );
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::PASTE);
+        assert(h.state.trackNavigation.hold.startedAtMs.get() == 77U);
+        assert(h.clipboard.macroTrack.pages[0U].cc[0U] == 41U);
+        assert(h.state.pages.tracks[0U].pages[0U].cc[0U] == 42U);
+        h.state.trackNavigation.hold.clear();
+    }
+
+    {
+        MacroPerformanceHarness h;
+        configureMacroHoldTrackFixture(h);
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+        assert(h.clipboard.macroTrack.pages[0U].cc[0U] == 41U);
+        h.state.pages.tracks[0U].pages[0U].cc[0U] = 42U;
+
+        h.press(Config::ButtonID::BOTTOM_RIGHT);
+        h.state.trackNavigation.hold.clear();
+        h.state.trackNavigation.hold.begin(
+            core::state::StructureHoldAction::PASTE,
+            77U
+        );
+        h.tick(0U);
+        h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        h.release(Config::ButtonID::BOTTOM_RIGHT);
+
+        assert(h.state.trackNavigation.hold.action.get() ==
+               core::state::StructureHoldAction::PASTE);
+        assert(h.state.trackNavigation.hold.startedAtMs.get() == 77U);
+        assert(h.clipboard.macroTrack.pages[0U].cc[0U] == 41U);
+        assert(h.state.pages.tracks[0U].pages[0U].cc[0U] == 42U);
+        h.state.trackNavigation.hold.clear();
+    }
+
+    {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::PAGE);
+        auto& track = h.state.pages.activeTrackData();
+        track.enabledPageMask = 0x0003U;
+        track.pages[0U].cc[0U] = 41U;
+        track.pages[1U].cc[0U] = 99U;
+        h.state.pages.syncActiveTrackCache();
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        const uint32_t capturedAcquisition =
+            h.state.macroUi.pageHold.acquisitionId();
+        h.state.macroUi.pageHold.clear();
+        h.state.macroUi.pageHold.begin(
+            core::state::StructureHoldAction::REMOVE,
+            0U
+        );
+        const uint32_t replacementAcquisition =
+            h.state.macroUi.pageHold.acquisitionId();
+        assert(replacementAcquisition != capturedAcquisition);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+
+        assert(h.state.macroUi.pageHold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        assert(h.state.macroUi.pageHold.acquisitionId() ==
+               replacementAcquisition);
+        assert(track.enabledPageMask == 0x0003U);
+        assert(track.pages[0U].cc[0U] == 41U);
+        assert(track.pages[1U].cc[0U] == 99U);
+        h.state.macroUi.pageHold.clear();
+    }
+
+    {
+        MacroPerformanceHarness h;
+        h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+        auto& page = h.state.pages.activePageData();
+        page.setMacroActive(0U, true);
+        page.cc[0U] = 74U;
+        h.state.macroUi.focusedMacroSlot.set(0U);
+
+        h.press(Config::ButtonID::BOTTOM_LEFT);
+        const uint32_t capturedAcquisition =
+            h.state.macroUi.pageHold.acquisitionId();
+        h.state.macroUi.pageHold.clear();
+        h.state.macroUi.pageHold.begin(
+            core::state::StructureHoldAction::REMOVE,
+            0U
+        );
+        const uint32_t replacementAcquisition =
+            h.state.macroUi.pageHold.acquisitionId();
+        assert(replacementAcquisition != capturedAcquisition);
+        h.tick(0U);
+        h.tick(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+        h.release(Config::ButtonID::BOTTOM_LEFT);
+
+        assert(h.state.macroUi.pageHold.action.get() ==
+               core::state::StructureHoldAction::REMOVE);
+        assert(h.state.macroUi.pageHold.acquisitionId() ==
+               replacementAcquisition);
+        assert(page.isMacroActive(0U));
+        assert(page.cc[0U] == 74U);
+        h.state.macroUi.pageHold.clear();
+    }
+
+    drainNotifications();
+    std::cout << "[PASS] replaced Macro holds remain owner exact\n";
 }
 
 void test_macro_page_hot_surface_exposes_terminal_add_and_creates() {
@@ -1005,7 +1444,6 @@ void test_delete_intermediate_macro_page_compacts_complete_page_state() {
         manual
     ));
     assert(std::fabs(manual - 0.81f) < 0.0001f);
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Shifted Page") == 0);
 
     assert(h.state.projectHistory.undoCount() == 1U);
     assert(h.state.undoProjectHistory());
@@ -1021,7 +1459,6 @@ void test_delete_intermediate_macro_page_compacts_complete_page_state() {
         h.state.pages.control,
         {.track = 0U, .page = 2U, .macro = 3U}
     ).automation.stored());
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Deleted") == 0);
     assert(h.state.redoProjectHistory());
     assert(track.enabledPageMask == 0x0003U);
     assert(h.state.pages.currentActivePage() == 1U);
@@ -1030,7 +1467,6 @@ void test_delete_intermediate_macro_page_compacts_complete_page_state() {
         h.state.pages.control,
         {.track = 0U, .page = 1U, .macro = 3U}
     ).automation.id);
-    assert(std::strcmp(h.state.statusBar.pageName.get(), "Shifted Page") == 0);
 
     // Removing the last Page returns focus to the previous surviving Page.
     assert(h.structureServices.deletePage(1U));
@@ -1430,6 +1866,10 @@ int main() {
     test_nav_turn_switches_enabled_macro_page_directly();
     test_nav_focus_track_turn_switches_context_to_highlighted_macro_track();
     test_macro_track_cursor_can_cross_gaps_and_reach_any_track();
+    test_shared_track_publication_cannot_retarget_macro_short_release();
+    test_short_actions_without_visual_hold_are_target_exact();
+    test_cross_button_structure_chords_preserve_first_owner();
+    test_replaced_macro_holds_are_owner_exact();
     test_macro_page_hot_surface_exposes_terminal_add_and_creates();
     test_macro_track_hot_surface_crosses_sparse_free_slots_and_creates_exactly();
     test_track_focus_outside_structure_targets_the_active_track();

@@ -376,7 +376,7 @@ void test_note_range_uses_semitones_or_effective_scale_degrees() {
     assert(projection.targetValue == 61);
 
     auto scaleDegrees = chromatic;
-    scaleDegrees.pitchEditMode = seq::SequencerPitchEditMode::SCALE_DEGREES;
+    scaleDegrees.pitchEditMode = seq::SequencerPitchEditMode::FOLLOW_SCALE;
     scaleDegrees.effectiveScaleSettings = {
         .root = 0,
         .type = oc::note::sequencer::StepSequencerScaleType::Major,
@@ -388,9 +388,11 @@ void test_note_range_uses_semitones_or_effective_scale_degrees() {
         0
     );
     assert(projection.delta == 1);
-    assert(projection.targetValue == 62);
+    assert(projection.targetValue == 61);
 
     auto constrained = chromatic;
+    constrained.pitchEditMode =
+        seq::SequencerPitchEditMode::FOLLOW_SCALE;
     constrained.effectiveScaleSettings = scaleDegrees.effectiveScaleSettings;
     constrained.effectiveScaleSettings.mode =
         oc::note::sequencer::StepSequencerScaleConstraintMode::ConstrainNearest;

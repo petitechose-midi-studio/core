@@ -17,6 +17,7 @@ struct SequencerChordVoicePreview {
     uint16_t delayTicks = 0;
     int16_t interval = 0;
     bool intervalUsesScaleDegrees = false;
+    bool inSelectedScale = true;
 };
 
 struct SequencerChordPreview {
@@ -26,19 +27,25 @@ struct SequencerChordPreview {
     bool valid = false;
     oc::note::sequencer::StepSequencerChordSource source =
         oc::note::sequencer::StepSequencerChordSource::Single;
-    bool semanticRecipe = false;
     bool harmonyAdjustedForPitchMode = false;
+    bool intervalBasisAdjusted = false;
     bool inversionClamped = false;
     bool rangeLimited = false;
+    uint8_t rootNote = 0;
     uint8_t voiceCount = 0;
     uint8_t requestedVoiceCount = 1;
     uint8_t effectiveInversion = 0;
     uint8_t droppedVoiceCount = 0;
+    oc::note::sequencer::StepSequencerChordIntervalBasis requestedIntervalBasis =
+        oc::note::sequencer::StepSequencerChordIntervalBasis::FollowPitchContext;
+    oc::note::sequencer::StepSequencerChordIntervalBasis intervalBasis =
+        oc::note::sequencer::StepSequencerChordIntervalBasis::ChromaticSemitones;
     oc::note::sequencer::StepSequencerChordHarmony harmony =
         oc::note::sequencer::StepSequencerChordHarmony::DiatonicTriad;
     oc::note::sequencer::StepSequencerChordVoicing voicing =
         oc::note::sequencer::StepSequencerChordVoicing::Close;
     uint16_t spanTicks = 1;
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings{};
     std::array<SequencerChordVoicePreview, MAX_VOICES> voices{};
     oc::note::sequencer::StepSequencerChordAnalysis analysis{};
 };
@@ -46,8 +53,9 @@ struct SequencerChordPreview {
 struct SequencerStepChordUiState {
     bool valid = false;
     bool rootContext = true;
-    bool pitchUsesScaleDegrees = true;
-    bool scaleConstrained = false;
+    bool pitchFollowsScale = true;
+    bool scaleAvailable = false;
+    bool intervalsUseScaleDegrees = false;
     oc::note::sequencer::StepSequencerChordMode mode =
         oc::note::sequencer::StepSequencerChordMode::Single;
     oc::note::sequencer::StepSequencerChordSpec spec{};

@@ -1,35 +1,58 @@
 #include <cassert>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+
+#include <array>
+#include <vector>
+
 #include <filesystem>
 #include <iostream>
 #include <iterator>
-#include <vector>
-
 #include <oc/impl/HostFileSystem.hpp>
 #include <oc/interface/ITransport.hpp>
 
+#include "../../src/persistence/AtomicProductFile.hpp"
+#include "../../src/persistence/ProductFileRecoveryPlan.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
+#include "../../src/persistence/ProjectSessionAutosaveService.hpp"
+#include "../../src/persistence/ProjectSessionStore.hpp"
+#include "../../src/protocol/filesystem/FileSystemJobRpc.hpp"
 #include "../../src/protocol/filesystem/FileSystemRpc.hpp"
+#include "../../src/protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
+#include "../../src/protocol/filesystem/FileSystemRpcConditionalTransaction.hpp"
+#include "../../src/protocol/filesystem/FileSystemRpcInternal.hpp"
+#include "../../src/state/CoreState.hpp"
+#include "../support/CoreStorages.hpp"
+#include "../support/ProductFileTestMutation.hpp"
 
 namespace {
 
+using core::persistence::ProductDirectoryCatalog;
 using core::persistence::ProductFileService;
-using core::protocol::filesystem::FileSystemRpcCodec;
 using core::protocol::filesystem::FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_CAPABILITIES;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT;
+using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS;
 using core::protocol::filesystem::FILESYSTEM_RPC_MAX_CHUNK_SIZE;
 using core::protocol::filesystem::FILESYSTEM_RPC_MAX_LIST_ENTRIES;
+using core::protocol::filesystem::FILESYSTEM_RPC_MAX_UPLOAD_SIZE;
 using core::protocol::filesystem::FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE;
 using core::protocol::filesystem::FILESYSTEM_RPC_SCHEMA;
-using core::protocol::filesystem::FileSystemRpcFileType;
+using core::protocol::filesystem::FILESYSTEM_RPC_TOTAL_WRITE_TIMEOUT_MS;
+using core::protocol::filesystem::FileSystemJobCommand;
+using core::protocol::filesystem::FileSystemJobError;
+using core::protocol::filesystem::FileSystemJobResponse;
+using core::protocol::filesystem::FileSystemJobRpcCodec;
+using core::protocol::filesystem::FileSystemJobState;
+using core::protocol::filesystem::FileSystemRpcCodec;
 using core::protocol::filesystem::FileSystemRpcConditionalRecoveryState;
-using core::protocol::filesystem::FileSystemRpcMessageId;
 using core::protocol::filesystem::FileSystemRpcEndpoint;
+using core::protocol::filesystem::FileSystemRpcFileType;
 using core::protocol::filesystem::FileSystemRpcHandler;
+using core::protocol::filesystem::FileSystemRpcMessageId;
 using core::protocol::filesystem::FileSystemRpcMutationOutcome;
 using core::protocol::filesystem::FileSystemRpcMutationSubject;
 using core::protocol::filesystem::FileSystemRpcStatus;
@@ -75,6 +98,53 @@ void appendU32(std::vector<uint8_t>& bytes, uint32_t value) {
     bytes.push_back(static_cast<uint8_t>(value >> 8U));
     bytes.push_back(static_cast<uint8_t>(value >> 16U));
     bytes.push_back(static_cast<uint8_t>(value >> 24U));
+}
+
+void appendU16(std::vector<uint8_t>& bytes, uint16_t value) {
+    bytes.push_back(static_cast<uint8_t>(value));
+    bytes.push_back(static_cast<uint8_t>(value >> 8U));
+}
+
+std::vector<uint8_t> makeCanonicalLegacyRequest(FileSystemRpcMessageId messageId) {
+    const char* name = FileSystemRpcCodec::messageName(messageId);
+    const size_t nameLength = std::strlen(name);
+    assert(nameLength <= UINT8_MAX);
+    std::vector<uint8_t> frame;
+    frame.reserve(5U + nameLength);
+    frame.push_back(static_cast<uint8_t>(messageId));
+    frame.push_back(static_cast<uint8_t>(nameLength));
+    frame.insert(frame.end(), name, name + nameLength);
+    frame.push_back(FILESYSTEM_RPC_SCHEMA);
+    appendU16(frame, 0x1234U);
+    return frame;
+}
+
+std::vector<uint8_t> makeJobRequest(FileSystemJobCommand command, uint16_t requestId,
+                                    uint32_t clientNonce, uint32_t jobId, uint32_t totalDeadlineMs,
+                                    const uint8_t* innerRequest = nullptr,
+                                    size_t innerRequestSize = 0U) {
+    using namespace core::protocol::filesystem;
+    std::vector<uint8_t> frame;
+    constexpr size_t nameLength = sizeof(FILESYSTEM_JOB_RPC_REQUEST_NAME) - 1U;
+    frame.reserve(1U + 1U + nameLength + 1U + 2U + FILESYSTEM_JOB_RPC_REQUEST_HEADER_BYTES +
+                  innerRequestSize);
+    frame.push_back(FILESYSTEM_JOB_RPC_REQUEST_ID);
+    frame.push_back(static_cast<uint8_t>(nameLength));
+    frame.insert(frame.end(), FILESYSTEM_JOB_RPC_REQUEST_NAME,
+                 FILESYSTEM_JOB_RPC_REQUEST_NAME + nameLength);
+    frame.push_back(FILESYSTEM_JOB_RPC_SCHEMA);
+    appendU16(frame, requestId);
+    frame.push_back(static_cast<uint8_t>(command));
+    frame.push_back(0U);
+    appendU16(frame, 0U);
+    appendU32(frame, clientNonce);
+    appendU32(frame, jobId);
+    appendU32(frame, totalDeadlineMs);
+    if (innerRequestSize != 0U) {
+        assert(innerRequest);
+        frame.insert(frame.end(), innerRequest, innerRequest + innerRequestSize);
+    }
+    return frame;
 }
 
 std::vector<uint8_t> makeCrcInvalidConditionalDeleteJournal() {
@@ -145,6 +215,7 @@ void resetTestRoot() {
 struct Harness {
     oc::impl::HostFileSystem filesystem;
     ProductFileService service;
+    ProductDirectoryCatalog catalog;
     FileSystemRpcHandler handler;
     uint8_t request[1024] = {};
     uint8_t response[1024] = {};
@@ -152,7 +223,8 @@ struct Harness {
     Harness()
         : filesystem(testRoot().string().c_str()),
           service(filesystem),
-          handler(service, FileSystemRpcHandler::Config{100}) {
+          catalog(service),
+          handler(service, catalog, FileSystemRpcHandler::Config{100}) {
         auto init = service.init();
         assert(init);
     }
@@ -189,6 +261,86 @@ void assertProductFileEquals(
     }
 }
 
+void assertProductReadBlocked(
+    ProductFileService& service,
+    const char* path
+) {
+    const auto info = service.stat(path);
+    assert(!info);
+    assert(info.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+}
+
+void completeExternalProductRecovery(ProductFileService& service) {
+    namespace conditional =
+        core::protocol::filesystem::conditional_mutation;
+    auto acquired = service.beginRecovery();
+    assert(acquired);
+    auto lease = std::move(acquired.value());
+    assert(service.ensureLayout(lease));
+
+    core::persistence::ProductFileRecoveryPlan ordinary;
+    assert(ordinary.begin(service, lease));
+    while (ordinary.active()) {
+        const auto advanced = ordinary.advance(service, lease);
+        assert(advanced);
+    }
+    assert(ordinary.complete());
+
+    conditional::Journal journal{};
+    bool present = false;
+    bool corrupt = false;
+    const auto loaded = conditional::readJournal(
+        service,
+        lease,
+        journal,
+        present,
+        corrupt
+    );
+    bool quarantined = false;
+    if (loaded != FileSystemRpcStatus::OK) {
+        assert(corrupt);
+        assert(conditional::recoverPendingMutation(
+            service,
+            lease,
+            quarantined
+        ) == FileSystemRpcStatus::OK);
+    } else {
+        assert(conditional::removeIfExists(
+            service,
+            lease,
+            conditional::JOURNAL_STAGING_PATH
+        ) == FileSystemRpcStatus::OK);
+        if (present) {
+            conditional::ConditionalMutationPlan plan;
+            assert(plan.beginRecovery(service, lease, journal));
+            std::array<uint8_t, FILESYSTEM_RPC_MAX_CHUNK_SIZE> scratch{};
+            while (plan.active()) {
+                const auto workClass = plan.nextWorkClass();
+                const auto quota = workClass ==
+                        conditional::ConditionalPlanWorkClass::ORDINARY_IO
+                    ? core::persistence::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO
+                    : core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE;
+                core::persistence::ProductPersistenceWorkUsage usage{};
+                {
+                    auto measuredResult = service.measurePersistenceWork(usage);
+                    assert(measuredResult);
+                    auto measurement = std::move(measuredResult.value());
+                    (void)plan.advance(
+                        service,
+                        scratch.data(),
+                        scratch.size()
+                    );
+                }
+                assert(usage.bytes <= quota.maxBytes());
+                assert(usage.filesystemCalls <= quota.maxFilesystemCalls());
+            }
+            assert(plan.terminal());
+            assert(plan.status() == FileSystemRpcStatus::OK);
+        }
+    }
+    assert(service.completeRecovery(lease, true));
+}
+
 void assertCorruptJournalIsQuarantinedOnce(
     const uint8_t* journal,
     size_t journalSize
@@ -199,31 +351,36 @@ void assertCorruptJournalIsQuarantinedOnce(
     static constexpr uint8_t backupData[] = {'b', 'a', 'c', 'k', 'u', 'p'};
     static constexpr uint8_t stagingData[] = {'s', 't', 'a', 'g', 'e'};
     static constexpr uint8_t staleEvidence[] = {'o', 'l', 'd'};
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "projects/preserved.bin",
         0,
         projectData,
         sizeof(projectData)
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/rpc-conditional.backup",
         0,
         backupData,
         sizeof(backupData)
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/user-step-preset-stage.mssp",
         0,
         stagingData,
         sizeof(stagingData)
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH,
         0,
         staleEvidence,
         sizeof(staleEvidence)
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/rpc-conditional.journal",
         0,
         journal,
@@ -300,7 +457,7 @@ void assertCorruptJournalIsQuarantinedOnce(
 
     // A fresh handler sees no durable journal to replay. The fixed quarantine
     // evidence remains intact, so the same corruption cannot loop on reboot.
-    FileSystemRpcHandler restarted(h.service);
+    FileSystemRpcHandler restarted(h.service, h.catalog);
     requestSize = FileSystemRpcCodec::encodeCapabilitiesRequest(
         83,
         h.request,
@@ -334,9 +491,18 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
     explicit FaultInjectingFileSystem(const char* rootPath)
         : delegate(rootPath) {}
 
-    oc::type::Result<void> init() override { return delegate.init(); }
+    void resetWorkCounters() {
+        filesystemCalls = 0U;
+        ioBytes = 0U;
+    }
+
+    oc::type::Result<void> init() override {
+        ++filesystemCalls;
+        return delegate.init();
+    }
     bool available() const override { return delegate.available(); }
     oc::type::Result<oc::interface::FileInfo> stat(const char* path) override {
+        ++filesystemCalls;
         if (failFinalStat && path &&
             std::strcmp(path, "/midi-studio/projects/stat-fail.bin") == 0) {
             return oc::type::Result<oc::interface::FileInfo>::err(
@@ -350,15 +516,18 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
         oc::interface::DirectoryEntryVisitor visitor,
         void* context
     ) override {
+        ++filesystemCalls;
         return delegate.list(path, visitor, context);
     }
     oc::type::Result<void> createDirectory(const char* path) override {
+        ++filesystemCalls;
         return delegate.createDirectory(path);
     }
     oc::type::Result<void> remove(
         const char* path,
         oc::interface::RemoveMode mode = oc::interface::RemoveMode::FILE_OR_EMPTY_DIRECTORY
     ) override {
+        ++filesystemCalls;
         if (failConditionalBackupRemove && path &&
             std::strcmp(path, "/midi-studio/tmp/rpc-conditional.backup") == 0) {
             return oc::type::Result<void>::err(
@@ -368,6 +537,7 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
         return delegate.remove(path, mode);
     }
     oc::type::Result<void> rename(const char* fromPath, const char* toPath) override {
+        ++filesystemCalls;
         if (failConditionalJournalPromotion && fromPath && toPath &&
             std::strcmp(
                 fromPath,
@@ -415,7 +585,10 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
         uint8_t* buffer,
         size_t size
     ) override {
-        return delegate.read(path, offset, buffer, size);
+        ++filesystemCalls;
+        auto result = delegate.read(path, offset, buffer, size);
+        if (result) ioBytes += result.value();
+        return result;
     }
     oc::type::Result<size_t> write(
         const char* path,
@@ -423,29 +596,40 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
         const uint8_t* data,
         size_t size
     ) override {
-        return delegate.write(path, offset, data, size);
+        ++filesystemCalls;
+        auto result = delegate.write(path, offset, data, size);
+        if (result) ioBytes += result.value();
+        return result;
     }
     oc::type::Result<void> flush(const char* path) override {
+        ++filesystemCalls;
         return delegate.flush(path);
     }
     oc::type::Result<void> beginWrite(const char* path, uint32_t expectedSize) override {
+        ++filesystemCalls;
         return delegate.beginWrite(path, expectedSize);
     }
     oc::type::Result<size_t> appendWrite(const uint8_t* data, size_t size) override {
+        ++filesystemCalls;
         if (!shortAppend || size == 0) {
-            return delegate.appendWrite(data, size);
+            auto result = delegate.appendWrite(data, size);
+            if (result) ioBytes += result.value();
+            return result;
         }
         const size_t shortSize = size - 1U;
         auto written = delegate.appendWrite(data, shortSize);
         if (!written) {
             return written;
         }
+        ioBytes += written.value();
         return oc::type::Result<size_t>::ok(shortSize);
     }
     oc::type::Result<void> finishWrite() override {
+        ++filesystemCalls;
         return delegate.finishWrite();
     }
     void abortWrite() override {
+        ++filesystemCalls;
         delegate.abortWrite();
     }
 
@@ -458,25 +642,16 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
     bool failConditionalRestore = false;
     bool failConditionalBackupRemove = false;
     bool failConditionalJournalPromotion = false;
+    uint32_t filesystemCalls = 0U;
+    size_t ioBytes = 0U;
 };
 
-FileSystemRpcStatus writeFileViaRpc(
-    FileSystemRpcHandler& handler,
-    uint16_t sessionId,
-    const char* path,
-    const uint8_t* data,
-    uint16_t size
-) {
+FileSystemRpcStatus writeFileViaRpc(FileSystemRpcHandler& handler, uint16_t sessionId,
+                                    const char* path, const uint8_t* data, uint16_t size) {
     uint8_t request[1024] = {};
     uint8_t response[1024] = {};
-    size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
-        100,
-        sessionId,
-        path,
-        size,
-        request,
-        sizeof(request)
-    );
+    size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(100, sessionId, path, size,
+                                                                     request, sizeof(request));
     assert(requestSize > 0);
     auto handled = handler.handleFrame(request, requestSize, 10, response, sizeof(response));
     assert(handled);
@@ -484,15 +659,8 @@ FileSystemRpcStatus writeFileViaRpc(
     assert(write && write.value().status == FileSystemRpcStatus::OK);
 
     if (size > 0) {
-        requestSize = FileSystemRpcCodec::encodeWriteChunkRequest(
-            101,
-            sessionId,
-            0,
-            data,
-            size,
-            request,
-            sizeof(request)
-        );
+        requestSize = FileSystemRpcCodec::encodeWriteChunkRequest(101, sessionId, 0, data, size,
+                                                                  request, sizeof(request));
         assert(requestSize > 0);
         handled = handler.handleFrame(request, requestSize, 20, response, sizeof(response));
         assert(handled);
@@ -500,12 +668,8 @@ FileSystemRpcStatus writeFileViaRpc(
         assert(write && write.value().status == FileSystemRpcStatus::OK);
     }
 
-    requestSize = FileSystemRpcCodec::encodeWriteCommitRequest(
-        102,
-        sessionId,
-        request,
-        sizeof(request)
-    );
+    requestSize =
+        FileSystemRpcCodec::encodeWriteCommitRequest(102, sessionId, request, sizeof(request));
     assert(requestSize > 0);
     handled = handler.handleFrame(request, requestSize, 30, response, sizeof(response));
     assert(handled);
@@ -517,11 +681,1239 @@ FileSystemRpcStatus writeFileViaRpc(
 bool listContains(const core::protocol::filesystem::FileSystemRpcListResponse& response,
                   const char* name) {
     for (uint8_t i = 0; i < response.entryCount; ++i) {
-        if (std::strcmp(response.entries[i].name, name) == 0) {
-            return true;
-        }
+        if (std::strcmp(response.entries[i].name, name) == 0) { return true; }
     }
     return false;
+}
+
+void test_job_codec_matches_bridge_golden_vectors() {
+    using namespace core::protocol::filesystem;
+    constexpr std::array<uint8_t, 33> requestGolden = {
+        0xFC, 0x0C, 0x46, 0x73, 0x4A, 0x6F, 0x62, 0x52, 0x65, 0x71, 0x75,
+        0x65, 0x73, 0x74, 0x01, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    };
+    const auto request =
+        FileSystemJobRpcCodec::decodeRequest(requestGolden.data(), requestGolden.size());
+    assert(request);
+    assert(request.value().requestId == 0x1234U);
+    assert(request.value().command == FileSystemJobCommand::CAPABILITIES);
+    assert(request.value().clientNonce == 0U);
+    assert(request.value().jobId == 0U);
+    assert(request.value().totalDeadlineMs == 0U);
+    assert(request.value().innerRequestSize == 0U);
+    assert(FileSystemJobRpcCodec::isJobRequestId(0xFCU));
+    assert(!FileSystemJobRpcCodec::isJobRequestId(0xFBU));
+
+    FileSystemJobResponse capabilities{};
+    capabilities.requestId = 0x1234U;
+    capabilities.command = FileSystemJobCommand::CAPABILITIES;
+    std::array<uint8_t, 96> encoded{};
+    const auto encodedSize =
+        FileSystemJobRpcCodec::encodeResponse(capabilities, encoded.data(), encoded.size());
+    assert(encodedSize);
+    constexpr std::array<uint8_t, 62> responseGolden = {
+        0xFD, 0x0D, 0x46, 0x73, 0x4A, 0x6F, 0x62, 0x52, 0x65, 0x73, 0x70, 0x6F, 0x6E,
+        0x73, 0x65, 0x01, 0x34, 0x12, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x02, 0x00, 0x00, 0x3F, 0x00, 0x00, 0x00, 0x00, 0x7F, 0x00, 0x00, 0x00, 0x7F,
+        0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x30, 0x75, 0x00, 0x00,
+    };
+    assert(encodedSize.value() == responseGolden.size());
+    assert(std::memcmp(encoded.data(), responseGolden.data(), responseGolden.size()) == 0);
+
+    const auto decoded = FileSystemJobRpcCodec::decodeResponse(encoded.data(), encodedSize.value());
+    assert(decoded);
+    assert(decoded.value().requestId == 0x1234U);
+    assert(decoded.value().command == FileSystemJobCommand::CAPABILITIES);
+    assert(decoded.value().body == encoded.data() + 38U);
+    assert(decoded.value().bodySize == FILESYSTEM_JOB_RPC_CAPABILITIES_BYTES);
+
+    constexpr uint8_t abc[] = {'a', 'b', 'c'};
+    constexpr std::array<uint8_t, FILESYSTEM_RPC_SHA256_SIZE> abcSha256 = {
+        0xBA, 0x78, 0x16, 0xBF, 0x8F, 0x01, 0xCF, 0xEA, 0x41, 0x41, 0x40,
+        0xDE, 0x5D, 0xAE, 0x22, 0x23, 0xB0, 0x03, 0x61, 0xA3, 0x96, 0x17,
+        0x7A, 0x9C, 0xB4, 0x10, 0xFF, 0x61, 0xF2, 0x00, 0x15, 0xAD,
+    };
+    std::array<uint8_t, FILESYSTEM_RPC_SHA256_SIZE> digest{};
+    assert(core::protocol::filesystem::conditional_mutation::hashBytes(abc, sizeof(abc),
+                                                                       digest.data()));
+    assert(digest == abcSha256);
+
+    std::cout << "[PASS] job codec matches Bridge golden capability vectors\n";
+}
+
+void test_job_codec_start_subset_and_request_validation() {
+    using namespace core::protocol::filesystem;
+    constexpr std::array<FileSystemRpcMessageId, 6> supported = {
+        FileSystemRpcMessageId::WRITE_COMMIT_REQUEST,
+        FileSystemRpcMessageId::MKDIR_REQUEST,
+        FileSystemRpcMessageId::DELETE_REQUEST,
+        FileSystemRpcMessageId::RENAME_REQUEST,
+        FileSystemRpcMessageId::CONDITIONAL_REPLACE_REQUEST,
+        FileSystemRpcMessageId::CONDITIONAL_DELETE_REQUEST,
+    };
+    constexpr std::array<FileSystemRpcMessageId, 7> ordinary = {
+        FileSystemRpcMessageId::STAT_REQUEST,         FileSystemRpcMessageId::LIST_REQUEST,
+        FileSystemRpcMessageId::READ_REQUEST,         FileSystemRpcMessageId::WRITE_BEGIN_REQUEST,
+        FileSystemRpcMessageId::WRITE_CHUNK_REQUEST,  FileSystemRpcMessageId::WRITE_ABORT_REQUEST,
+        FileSystemRpcMessageId::CAPABILITIES_REQUEST,
+    };
+    for (const auto messageId : supported) {
+        const auto inner = makeCanonicalLegacyRequest(messageId);
+        assert(FileSystemJobRpcCodec::isSupportedStartRequest(inner.data(), inner.size()));
+    }
+    for (const auto messageId : ordinary) {
+        const auto inner = makeCanonicalLegacyRequest(messageId);
+        assert(!FileSystemJobRpcCodec::isSupportedStartRequest(inner.data(), inner.size()));
+    }
+
+    const auto inner = makeCanonicalLegacyRequest(FileSystemRpcMessageId::DELETE_REQUEST);
+    const auto start =
+        makeJobRequest(FileSystemJobCommand::START, 7U, 0x10203040U, 0U,
+                       FILESYSTEM_JOB_RPC_MAX_DEADLINE_MS, inner.data(), inner.size());
+    const auto decoded = FileSystemJobRpcCodec::decodeRequest(start.data(), start.size());
+    assert(decoded);
+    assert(decoded.value().requestId == 7U);
+    assert(decoded.value().command == FileSystemJobCommand::START);
+    assert(decoded.value().clientNonce == 0x10203040U);
+    assert(decoded.value().jobId == 0U);
+    assert(decoded.value().totalDeadlineMs == FILESYSTEM_JOB_RPC_MAX_DEADLINE_MS);
+    assert(decoded.value().innerRequest == start.data() + 33U);
+    assert(decoded.value().innerRequestSize == inner.size());
+
+    constexpr size_t applicationOffset = 17U;
+    auto malformed = start;
+    malformed[0] = FILESYSTEM_JOB_RPC_RESPONSE_ID;
+    assert(!FileSystemJobRpcCodec::decodeRequest(malformed.data(), malformed.size()));
+    malformed = start;
+    malformed[2] ^= 0x01U;
+    assert(!FileSystemJobRpcCodec::decodeRequest(malformed.data(), malformed.size()));
+    malformed = start;
+    malformed[14] = 2U;
+    assert(!FileSystemJobRpcCodec::decodeRequest(malformed.data(), malformed.size()));
+    malformed = start;
+    malformed[applicationOffset] = 0xFFU;
+    assert(!FileSystemJobRpcCodec::decodeRequest(malformed.data(), malformed.size()));
+    malformed = start;
+    malformed[applicationOffset + 1U] = 1U;
+    assert(!FileSystemJobRpcCodec::decodeRequest(malformed.data(), malformed.size()));
+    malformed = start;
+    malformed[applicationOffset + 2U] = 1U;
+    assert(!FileSystemJobRpcCodec::decodeRequest(malformed.data(), malformed.size()));
+    malformed = start;
+    std::fill(malformed.begin() + applicationOffset + 4U,
+              malformed.begin() + applicationOffset + 8U, 0U);
+    assert(!FileSystemJobRpcCodec::decodeRequest(malformed.data(), malformed.size()));
+
+    const auto zeroDeadline =
+        makeJobRequest(FileSystemJobCommand::START, 8U, 1U, 0U, 0U, inner.data(), inner.size());
+    assert(!FileSystemJobRpcCodec::decodeRequest(zeroDeadline.data(), zeroDeadline.size()));
+    const auto excessiveDeadline =
+        makeJobRequest(FileSystemJobCommand::START, 8U, 1U, 0U,
+                       FILESYSTEM_JOB_RPC_MAX_DEADLINE_MS + 1U, inner.data(), inner.size());
+    assert(
+        !FileSystemJobRpcCodec::decodeRequest(excessiveDeadline.data(), excessiveDeadline.size()));
+    const auto pollWithBody =
+        makeJobRequest(FileSystemJobCommand::POLL, 9U, 1U, 2U, 0U, inner.data(), inner.size());
+    assert(!FileSystemJobRpcCodec::decodeRequest(pollWithBody.data(), pollWithBody.size()));
+    for (size_t truncated = 0U; truncated < 33U; ++truncated) {
+        assert(!FileSystemJobRpcCodec::decodeRequest(start.data(), truncated));
+    }
+
+    std::cout << "[PASS] job codec start subset and request validation\n";
+}
+
+void test_job_codec_response_semantics_and_retention() {
+    using namespace core::protocol::filesystem;
+    std::array<uint8_t, 96> encoded{};
+    FileSystemJobResponse accepted{};
+    accepted.requestId = 10U;
+    accepted.command = FileSystemJobCommand::START;
+    accepted.state = FileSystemJobState::ACCEPTED;
+    accepted.clientNonce = 0xABCDEF01U;
+    accepted.jobId = 42U;
+    accepted.retryAfterMs = FILESYSTEM_JOB_RPC_RETRY_AFTER_MS;
+    auto encodedSize =
+        FileSystemJobRpcCodec::encodeResponse(accepted, encoded.data(), encoded.size());
+    assert(encodedSize);
+    auto decoded = FileSystemJobRpcCodec::decodeResponse(encoded.data(), encodedSize.value());
+    assert(decoded);
+    assert(decoded.value().state == FileSystemJobState::ACCEPTED);
+    assert(decoded.value().jobId == 42U);
+
+    std::array<uint8_t, 96> legacyResponse{};
+    const size_t legacyResponseSize = core::protocol::filesystem::internal::encodeStatusOnly(
+        FileSystemRpcMessageId::DELETE_RESPONSE, 99U, FileSystemRpcStatus::OK,
+        legacyResponse.data(), legacyResponse.size());
+    assert(legacyResponseSize > 0U);
+    FileSystemJobResponse completed{};
+    completed.requestId = 11U;
+    completed.command = FileSystemJobCommand::POLL;
+    completed.state = FileSystemJobState::COMPLETED;
+    completed.flags = FILESYSTEM_JOB_RPC_FLAG_TERMINAL_RETAINED;
+    completed.clientNonce = 0xABCDEF01U;
+    completed.jobId = 42U;
+    completed.progressPerMille = FILESYSTEM_JOB_RPC_MAX_PROGRESS_PER_MILLE;
+    completed.body = legacyResponse.data();
+    completed.bodySize = legacyResponseSize;
+    encodedSize = FileSystemJobRpcCodec::encodeResponse(completed, encoded.data(), encoded.size());
+    assert(encodedSize);
+    decoded = FileSystemJobRpcCodec::decodeResponse(encoded.data(), encodedSize.value());
+    assert(decoded);
+    assert(decoded.value().state == FileSystemJobState::COMPLETED);
+    assert(decoded.value().bodySize == legacyResponseSize);
+    assert(std::memcmp(decoded.value().body, legacyResponse.data(), legacyResponseSize) == 0);
+
+    auto invalid = completed;
+    invalid.flags = 0x80U;
+    assert(!FileSystemJobRpcCodec::encodeResponse(invalid, encoded.data(), encoded.size()));
+    invalid = completed;
+    invalid.body = nullptr;
+    invalid.bodySize = 0U;
+    assert(!FileSystemJobRpcCodec::encodeResponse(invalid, encoded.data(), encoded.size()));
+    invalid = completed;
+    invalid.state = FileSystemJobState::CANCELLED;
+    invalid.flags = 0U;
+    invalid.body = nullptr;
+    invalid.bodySize = 0U;
+    assert(!FileSystemJobRpcCodec::encodeResponse(invalid, encoded.data(), encoded.size()));
+    invalid = accepted;
+    invalid.state = FileSystemJobState::REJECTED;
+    assert(!FileSystemJobRpcCodec::encodeResponse(invalid, encoded.data(), encoded.size()));
+    std::array<uint8_t, 8> tooSmall{};
+    assert(!FileSystemJobRpcCodec::encodeResponse(accepted, tooSmall.data(), tooSmall.size()));
+
+    FileSystemJobResponse capabilities{};
+    capabilities.requestId = 12U;
+    encodedSize =
+        FileSystemJobRpcCodec::encodeResponse(capabilities, encoded.data(), encoded.size());
+    assert(encodedSize);
+    auto malformed = encoded;
+    malformed[42U] |= 0x40U;
+    assert(!FileSystemJobRpcCodec::decodeResponse(malformed.data(), encodedSize.value()));
+
+    assert(FileSystemJobRpcCodec::terminalRetained(40'000U, 10'000U));
+    assert(!FileSystemJobRpcCodec::terminalRetained(40'001U, 10'000U));
+    assert(FileSystemJobRpcCodec::terminalRetained(29'995U, UINT32_MAX - 4U));
+    assert(!FileSystemJobRpcCodec::terminalRetained(29'996U, UINT32_MAX - 4U));
+
+    std::cout << "[PASS] job codec response semantics and terminal retention\n";
+}
+
+void test_endpoint_job_control_is_immediate_bounded_and_io_free() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    g_now_ms = 100U;
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    core::persistence::ProductPersistenceWorkUsage receiveUsage{};
+    auto measuredResult = service.measurePersistenceWork(receiveUsage);
+    assert(measuredResult);
+    {
+        auto measured = std::move(measuredResult.value());
+        const auto capabilities =
+            makeJobRequest(FileSystemJobCommand::CAPABILITIES, 80U, 0U, 0U, 0U);
+        transport.emit(capabilities.data(), capabilities.size());
+        assert(transport.sendCount == 1U);
+        const auto decodedCapabilities =
+            FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(decodedCapabilities);
+        assert(decodedCapabilities.value().requestId == 80U);
+        assert(decodedCapabilities.value().command == FileSystemJobCommand::CAPABILITIES);
+
+        std::array<uint8_t, 128> innerOne{};
+        const size_t innerOneSize = FileSystemRpcCodec::encodeMkdirRequest(
+            81U, "projects/job-one", innerOne.data(), innerOne.size());
+        assert(innerOneSize > 0U);
+        const auto startOne = makeJobRequest(FileSystemJobCommand::START, 81U, 0x10000001U, 0U,
+                                             1'000U, innerOne.data(), innerOneSize);
+        transport.emit(startOne.data(), startOne.size());
+        assert(transport.sendCount == 2U);
+        auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response);
+        assert(response.value().state == FileSystemJobState::ACCEPTED);
+        assert(response.value().clientNonce == 0x10000001U);
+        const uint32_t firstJobId = response.value().jobId;
+        assert(firstJobId != 0U);
+
+        std::array<uint8_t, 128> innerTwo{};
+        const size_t innerTwoSize = FileSystemRpcCodec::encodeMkdirRequest(
+            82U, "projects/job-two", innerTwo.data(), innerTwo.size());
+        assert(innerTwoSize > 0U);
+        const auto startTwo = makeJobRequest(FileSystemJobCommand::START, 82U, 0x10000002U, 0U,
+                                             1'000U, innerTwo.data(), innerTwoSize);
+        transport.emit(startTwo.data(), startTwo.size());
+        assert(transport.sendCount == 3U);
+        response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+        assert(response.value().jobId != firstJobId);
+        assert(service.persistenceJobs().depth() == 2U);
+
+        std::array<uint8_t, 128> innerThree{};
+        const size_t innerThreeSize = FileSystemRpcCodec::encodeMkdirRequest(
+            83U, "projects/job-three", innerThree.data(), innerThree.size());
+        assert(innerThreeSize > 0U);
+        const auto startThree = makeJobRequest(FileSystemJobCommand::START, 83U, 0x10000003U, 0U,
+                                               1'000U, innerThree.data(), innerThreeSize);
+        transport.emit(startThree.data(), startThree.size());
+        response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response);
+        assert(response.value().state == FileSystemJobState::REJECTED);
+        assert(response.value().error == FileSystemJobError::RESOURCE_EXHAUSTED);
+
+        auto duplicate = startOne;
+        duplicate[15U] = 84U;
+        duplicate[16U] = 0U;
+        transport.emit(duplicate.data(), duplicate.size());
+        response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response);
+        assert(response.value().jobId == firstJobId);
+        assert(response.value().state == FileSystemJobState::PENDING);
+        assert((response.value().flags & FILESYSTEM_JOB_RPC_FLAG_DUPLICATE_START) != 0U);
+
+        auto conflictInner = innerOne;
+        conflictInner[innerOneSize - 1U] ^= 0x01U;
+        const auto conflict = makeJobRequest(FileSystemJobCommand::START, 85U, 0x10000001U, 0U,
+                                             1'000U, conflictInner.data(), innerOneSize);
+        transport.emit(conflict.data(), conflict.size());
+        response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response);
+        assert(response.value().state == FileSystemJobState::REJECTED);
+        assert(response.value().error == FileSystemJobError::CONFLICT);
+        assert(response.value().jobId == firstJobId);
+
+        const auto wrongTuple =
+            makeJobRequest(FileSystemJobCommand::POLL, 86U, 0x10000001U, firstJobId + 1U, 0U);
+        transport.emit(wrongTuple.data(), wrongTuple.size());
+        response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response);
+        assert(response.value().state == FileSystemJobState::REJECTED);
+        assert(response.value().error == FileSystemJobError::NOT_FOUND);
+
+        const auto poll =
+            makeJobRequest(FileSystemJobCommand::POLL, 87U, 0x10000001U, firstJobId, 0U);
+        transport.emit(poll.data(), poll.size());
+        response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response);
+        assert(response.value().state == FileSystemJobState::PENDING);
+        assert(response.value().retryAfterMs == FILESYSTEM_JOB_RPC_RETRY_AFTER_MS);
+
+        const auto cancel =
+            makeJobRequest(FileSystemJobCommand::CANCEL, 88U, 0x10000001U, firstJobId, 0U);
+        transport.emit(cancel.data(), cancel.size());
+        response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response);
+        assert(response.value().state == FileSystemJobState::CANCEL_PENDING);
+    }
+    assert(receiveUsage.filesystemCalls == 0U);
+    assert(receiveUsage.bytes == 0U);
+    assert(receiveUsage.allocations == 0U);
+
+    endpoint.end();
+    std::cout << "[PASS] endpoint job control is immediate, bounded and I/O-free\n";
+}
+
+void test_endpoint_job_malformed_frames_fail_before_admission() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    g_now_ms = 90U;
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    const auto inner = makeCanonicalLegacyRequest(FileSystemRpcMessageId::MKDIR_REQUEST);
+    const auto valid = makeJobRequest(FileSystemJobCommand::START, 89U, 0x09000001U, 0U, 100U,
+                                      inner.data(), inner.size());
+    core::persistence::ProductPersistenceWorkUsage receiveUsage{};
+    {
+        auto measuredResult = service.measurePersistenceWork(receiveUsage);
+        assert(measuredResult);
+        auto measured = std::move(measuredResult.value());
+
+        auto invalidFlags = valid;
+        invalidFlags[18U] = 1U;
+        transport.emit(invalidFlags.data(), invalidFlags.size());
+        auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response);
+        assert(response.value().state == FileSystemJobState::REJECTED);
+        assert(response.value().error == FileSystemJobError::INVALID_MESSAGE);
+        assert(service.persistenceJobs().depth() == 0U);
+
+        auto invalidInner = valid;
+        invalidInner[35U] ^= 0x01U;
+        transport.emit(invalidInner.data(), invalidInner.size());
+        response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response);
+        assert(response.value().state == FileSystemJobState::REJECTED);
+        assert(response.value().error == FileSystemJobError::INVALID_MESSAGE);
+        assert(service.persistenceJobs().depth() == 0U);
+
+        std::vector<uint8_t> oversizedInner(FILESYSTEM_JOB_RPC_MAX_INNER_REQUEST_BYTES + 1U, 0U);
+        std::copy(inner.begin(), inner.end(), oversizedInner.begin());
+        const auto oversized = makeJobRequest(FileSystemJobCommand::START, 90U, 0x09000002U, 0U,
+                                              100U, oversizedInner.data(), oversizedInner.size());
+        transport.emit(oversized.data(), oversized.size());
+        response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(response);
+        assert(response.value().state == FileSystemJobState::REJECTED);
+        assert(response.value().error == FileSystemJobError::RESOURCE_EXHAUSTED);
+        assert(service.persistenceJobs().depth() == 0U);
+
+        const uint32_t sentBeforeUnaddressable = transport.sendCount;
+        auto zeroNonce = valid;
+        std::fill(zeroNonce.begin() + 21U, zeroNonce.begin() + 25U, 0U);
+        transport.emit(zeroNonce.data(), zeroNonce.size());
+        assert(transport.sendCount == sentBeforeUnaddressable);
+        auto badEnvelope = valid;
+        badEnvelope[2U] ^= 0x01U;
+        transport.emit(badEnvelope.data(), badEnvelope.size());
+        assert(transport.sendCount == sentBeforeUnaddressable);
+    }
+    assert(receiveUsage.filesystemCalls == 0U);
+    assert(receiveUsage.bytes == 0U);
+    assert(receiveUsage.allocations == 0U);
+
+    endpoint.end();
+    std::cout << "[PASS] malformed job frames fail before admission or payload copy\n";
+}
+
+void test_endpoint_job_completion_is_polled_retained_and_not_unsolicited() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    g_now_ms = 100U;
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    std::array<uint8_t, 128> inner{};
+    const size_t innerSize = FileSystemRpcCodec::encodeMkdirRequest(90U, "projects/polled-job",
+                                                                    inner.data(), inner.size());
+    assert(innerSize > 0U);
+    const auto start = makeJobRequest(FileSystemJobCommand::START, 90U, 0x20000001U, 0U, 1'000U,
+                                      inner.data(), innerSize);
+    transport.emit(start.data(), start.size());
+    assert(transport.sendCount == 1U);
+    auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t jobId = response.value().jobId;
+
+    core::persistence::ProductPersistenceWorkUsage playbackUsage{};
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    {
+        auto measuredResult = service.measurePersistenceWork(playbackUsage);
+        assert(measuredResult);
+        auto measured = std::move(measuredResult.value());
+        endpoint.advance(g_now_ms, true);
+    }
+    assert(playbackUsage.filesystemCalls == 0U);
+    assert(transport.sendCount == 1U);
+    assert(!service.stat("projects/polled-job"));
+    assert(service.persistenceJobs().depth() == 1U);
+
+    const auto poll = makeJobRequest(FileSystemJobCommand::POLL, 91U, 0x20000001U, jobId, 0U);
+    transport.emit(poll.data(), poll.size());
+    assert(transport.sendCount == 2U);
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::PENDING);
+
+    ++g_now_ms;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(service.stat("projects/polled-job"));
+    assert(transport.sendCount == 2U);
+
+    transport.emit(poll.data(), poll.size());
+    assert(transport.sendCount == 3U);
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::COMPLETED);
+    assert(response.value().progressPerMille == 1'000U);
+    assert((response.value().flags & FILESYSTEM_JOB_RPC_FLAG_TERMINAL_RETAINED) != 0U);
+    const auto innerResponse =
+        FileSystemRpcCodec::decodeStatusResponse(response.value().body, response.value().bodySize);
+    assert(innerResponse);
+    assert(innerResponse.value().requestId == 90U);
+    assert(innerResponse.value().status == FileSystemRpcStatus::OK);
+
+    auto duplicate = start;
+    duplicate[15U] = 92U;
+    transport.emit(duplicate.data(), duplicate.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::COMPLETED);
+    assert(response.value().jobId == jobId);
+    assert((response.value().flags & FILESYSTEM_JOB_RPC_FLAG_DUPLICATE_START) != 0U);
+
+    g_now_ms = 101U + FILESYSTEM_JOB_RPC_TERMINAL_RETENTION_MS;
+    transport.emit(poll.data(), poll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::COMPLETED);
+
+    ++g_now_ms;
+    transport.emit(poll.data(), poll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::REJECTED);
+    assert(response.value().error == FileSystemJobError::NOT_FOUND);
+
+    g_now_ms = UINT32_MAX - 5U;
+    const size_t rolloverInnerSize = FileSystemRpcCodec::encodeMkdirRequest(
+        93U, "projects/rollover-job", inner.data(), inner.size());
+    const auto rolloverStart = makeJobRequest(FileSystemJobCommand::START, 93U, 0x20000002U, 0U,
+                                              1'000U, inner.data(), rolloverInnerSize);
+    transport.emit(rolloverStart.data(), rolloverStart.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t rolloverJobId = response.value().jobId;
+    ++g_now_ms;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    const auto rolloverPoll =
+        makeJobRequest(FileSystemJobCommand::POLL, 94U, 0x20000002U, rolloverJobId, 0U);
+    g_now_ms = 29'995U;
+    transport.emit(rolloverPoll.data(), rolloverPoll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::COMPLETED);
+    ++g_now_ms;
+    transport.emit(rolloverPoll.data(), rolloverPoll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::REJECTED);
+    assert(response.value().error == FileSystemJobError::NOT_FOUND);
+
+    endpoint.end();
+    std::cout << "[PASS] job completion is poll-only and retained inclusively\n";
+}
+
+void test_endpoint_job_safe_cancel_deadline_and_media_are_typed() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    g_now_ms = 1'000U;
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    std::array<uint8_t, 128> inner{};
+    size_t innerSize = FileSystemRpcCodec::encodeMkdirRequest(100U, "projects/cancelled-job",
+                                                              inner.data(), inner.size());
+    assert(innerSize > 0U);
+    auto start = makeJobRequest(FileSystemJobCommand::START, 100U, 0x30000001U, 0U, 1'000U,
+                                inner.data(), innerSize);
+    transport.emit(start.data(), start.size());
+    auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t cancelJobId = response.value().jobId;
+    const auto cancel =
+        makeJobRequest(FileSystemJobCommand::CANCEL, 101U, 0x30000001U, cancelJobId, 0U);
+    transport.emit(cancel.data(), cancel.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::CANCEL_PENDING);
+    const uint32_t sentBeforeCancelUnwind = transport.sendCount;
+    g_now_ms += 1'000U;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(transport.sendCount == sentBeforeCancelUnwind);
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(!service.stat("projects/cancelled-job"));
+    const auto cancelPoll =
+        makeJobRequest(FileSystemJobCommand::POLL, 102U, 0x30000001U, cancelJobId, 0U);
+    transport.emit(cancelPoll.data(), cancelPoll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::CANCELLED);
+    assert(response.value().error == FileSystemJobError::CANCELLED);
+
+    g_now_ms = 3'000U;
+    innerSize = FileSystemRpcCodec::encodeMkdirRequest(103U, "projects/expired-job", inner.data(),
+                                                       inner.size());
+    start = makeJobRequest(FileSystemJobCommand::START, 103U, 0x30000002U, 0U, 10U, inner.data(),
+                           innerSize);
+    transport.emit(start.data(), start.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t deadlineJobId = response.value().jobId;
+    g_now_ms += 10U;
+    const auto lateCancel =
+        makeJobRequest(FileSystemJobCommand::CANCEL, 104U, 0x30000002U, deadlineJobId, 0U);
+    transport.emit(lateCancel.data(), lateCancel.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::PENDING);
+    assert(response.value().error == FileSystemJobError::NONE);
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(!service.stat("projects/expired-job"));
+    const auto deadlinePoll =
+        makeJobRequest(FileSystemJobCommand::POLL, 104U, 0x30000002U, deadlineJobId, 0U);
+    transport.emit(deadlinePoll.data(), deadlinePoll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::FAILED);
+    assert(response.value().error == FileSystemJobError::DEADLINE_EXCEEDED);
+
+    g_now_ms = 4'000U;
+    innerSize = FileSystemRpcCodec::encodeMkdirRequest(105U, "projects/media-job", inner.data(),
+                                                       inner.size());
+    start = makeJobRequest(FileSystemJobCommand::START, 105U, 0x30000003U, 0U, 1'000U, inner.data(),
+                           innerSize);
+    transport.emit(start.data(), start.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t mediaJobId = response.value().jobId;
+    service.markMediaUnavailable();
+    endpoint.advance(g_now_ms, true);
+    const auto mediaPoll =
+        makeJobRequest(FileSystemJobCommand::POLL, 106U, 0x30000003U, mediaJobId, 0U);
+    transport.emit(mediaPoll.data(), mediaPoll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::FAILED);
+    assert(response.value().error == FileSystemJobError::MEDIA_CHANGED);
+
+    endpoint.end();
+    std::cout << "[PASS] safe cancel, deadline and media failures are typed\n";
+}
+
+void test_endpoint_job_terminal_cache_has_exact_bounded_capacity() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    g_now_ms = 4'000U;
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    std::array<uint8_t, 128> inner{};
+    char path[48] = {};
+    for (uint8_t index = 0U; index < 32U; ++index) {
+        const int pathLength =
+            std::snprintf(path, sizeof(path), "projects/cache-%02u", static_cast<unsigned>(index));
+        assert(pathLength > 0 && static_cast<size_t>(pathLength) < sizeof(path));
+        const size_t innerSize = FileSystemRpcCodec::encodeMkdirRequest(
+            static_cast<uint16_t>(120U + index), path, inner.data(), inner.size());
+        assert(innerSize > 0U);
+        const auto start =
+            makeJobRequest(FileSystemJobCommand::START, static_cast<uint16_t>(120U + index),
+                           0x40000001U + index, 0U, 1'000U, inner.data(), innerSize);
+        transport.emit(start.data(), start.size());
+        const auto accepted =
+            FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+        assert(accepted);
+        assert(accepted.value().state == FileSystemJobState::ACCEPTED);
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        assert(service.persistenceJobs().depth() == 0U);
+        ++g_now_ms;
+    }
+
+    const size_t overflowInnerSize = FileSystemRpcCodec::encodeMkdirRequest(
+        152U, "projects/cache-overflow", inner.data(), inner.size());
+    const auto overflow = makeJobRequest(FileSystemJobCommand::START, 152U, 0x40000021U, 0U, 1'000U,
+                                         inner.data(), overflowInnerSize);
+    transport.emit(overflow.data(), overflow.size());
+    auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::REJECTED);
+    assert(response.value().error == FileSystemJobError::RESOURCE_EXHAUSTED);
+    assert(service.persistenceJobs().depth() == 0U);
+
+    g_now_ms += FILESYSTEM_JOB_RPC_TERMINAL_RETENTION_MS + 1U;
+    transport.emit(overflow.data(), overflow.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::ACCEPTED);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    endpoint.end();
+    std::cout << "[PASS] terminal cache retains exactly 32 records without eviction\n";
+}
+
+void test_endpoint_job_write_commit_reuses_upload_identity() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    g_now_ms = 5'000U;
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    constexpr uint16_t sessionId = 0x4321U;
+    constexpr uint8_t payload[] = {'j', 'o', 'b'};
+    std::array<uint8_t, 256> request{};
+    size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        160U, sessionId, "projects/job-upload.bin", sizeof(payload), request.data(),
+        request.size());
+    assert(requestSize > 0U);
+    transport.emit(request.data(), requestSize);
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    auto write = FileSystemRpcCodec::decodeWriteResponse(transport.sent, transport.sentSize);
+    assert(write && write.value().status == FileSystemRpcStatus::OK);
+    assert(service.persistenceJobs().depth() == 1U);
+    const uint32_t uploadJobId = service.persistenceJobs().activeJobId();
+    assert(uploadJobId != 0U);
+
+    ++g_now_ms;
+    requestSize = FileSystemRpcCodec::encodeWriteChunkRequest(
+        161U, sessionId, 0U, payload, sizeof(payload), request.data(), request.size());
+    transport.emit(request.data(), requestSize);
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    write = FileSystemRpcCodec::decodeWriteResponse(transport.sent, transport.sentSize);
+    assert(write && write.value().status == FileSystemRpcStatus::OK);
+    assert(service.persistenceJobs().depth() == 1U);
+    assert(service.persistenceJobs().activeJobId() == uploadJobId);
+
+    std::array<uint8_t, 96> commitInner{};
+    const size_t commitInnerSize = FileSystemRpcCodec::encodeWriteCommitRequest(
+        162U, sessionId, commitInner.data(), commitInner.size());
+    const auto start = makeJobRequest(FileSystemJobCommand::START, 162U, 0x50000001U, 0U, 1'000U,
+                                      commitInner.data(), commitInnerSize);
+    transport.emit(start.data(), start.size());
+    auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    assert(response.value().jobId == uploadJobId);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    const auto secondOwner = makeJobRequest(FileSystemJobCommand::START, 163U, 0x50000002U, 0U,
+                                            1'000U, commitInner.data(), commitInnerSize);
+    transport.emit(secondOwner.data(), secondOwner.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::REJECTED);
+    assert(response.value().error == FileSystemJobError::CONFLICT);
+    assert(response.value().jobId == uploadJobId);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    bool lateCancelObserved = false;
+    uint32_t sentAfterLateCancel = transport.sendCount;
+    for (uint8_t advances = 0U; advances < 32U && service.persistenceJobs().depth() != 0U;
+         ++advances) {
+        ++g_now_ms;
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        const bool journalPresent = std::filesystem::exists(testRoot() / "midi-studio" / "tmp" /
+                                                            "rpc-product-file-a.journal") ||
+                                    std::filesystem::exists(testRoot() / "midi-studio" / "tmp" /
+                                                            "rpc-product-file-b.journal");
+        if (!lateCancelObserved && journalPresent && service.persistenceJobs().depth() != 0U) {
+            const auto cancel =
+                makeJobRequest(FileSystemJobCommand::CANCEL, 163U, 0x50000001U, uploadJobId, 0U);
+            transport.emit(cancel.data(), cancel.size());
+            response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+            assert(response);
+            assert(response.value().state == FileSystemJobState::PENDING);
+            assert((response.value().flags & FILESYSTEM_JOB_RPC_FLAG_CANCEL_TOO_LATE) != 0U);
+            lateCancelObserved = true;
+            sentAfterLateCancel = transport.sendCount;
+        }
+    }
+    assert(lateCancelObserved);
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(transport.sendCount == sentAfterLateCancel);
+    assertProductFileEquals(service, "projects/job-upload.bin", payload, sizeof(payload));
+
+    const auto poll =
+        makeJobRequest(FileSystemJobCommand::POLL, 164U, 0x50000001U, uploadJobId, 0U);
+    transport.emit(poll.data(), poll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::COMPLETED);
+    write =
+        FileSystemRpcCodec::decodeWriteResponse(response.value().body, response.value().bodySize);
+    assert(write);
+    assert(write.value().requestId == 162U);
+    assert(write.value().status == FileSystemRpcStatus::OK);
+    assert(write.value().sessionId == sessionId);
+
+    const auto terminalCancel =
+        makeJobRequest(FileSystemJobCommand::CANCEL, 165U, 0x50000001U, uploadJobId, 0U);
+    transport.emit(terminalCancel.data(), terminalCancel.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::COMPLETED);
+    assert((response.value().flags & FILESYSTEM_JOB_RPC_FLAG_CANCEL_TOO_LATE) != 0U);
+
+    endpoint.end();
+    std::cout << "[PASS] job commit reuses the sole upload coordinator identity\n";
+}
+
+void test_endpoint_job_conditional_journal_rejects_late_cancel() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    g_now_ms = 5'500U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    assert(core::test::writeProductFileFixture(service, "library/step-presets/job-current.mssp", 0U,
+                                               reinterpret_cast<const uint8_t*>("old"), 3U));
+    assert(core::test::writeProductFileFixture(service, "tmp/job-staging.mssp", 0U,
+                                               reinterpret_cast<const uint8_t*>("new"), 3U));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+    std::array<uint8_t, 256> inner{};
+    const size_t innerSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        166U, 0x434F4E44U, "library/step-presets/job-current.mssp", "tmp/job-staging.mssp",
+        SHA256_OLD, SHA256_NEW, inner.data(), inner.size());
+    assert(innerSize > 0U);
+    const auto start = makeJobRequest(FileSystemJobCommand::START, 166U, 0x55000001U, 0U, 1'000U,
+                                      inner.data(), innerSize);
+    transport.emit(start.data(), start.size());
+    auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t jobId = response.value().jobId;
+
+    bool journalDurable = false;
+    for (uint8_t advances = 0U; advances < 32U && !journalDurable; ++advances) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        journalDurable = static_cast<bool>(service.stat("tmp/rpc-conditional.journal"));
+        ++g_now_ms;
+    }
+    assert(journalDurable);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    const auto cancel = makeJobRequest(FileSystemJobCommand::CANCEL, 167U, 0x55000001U, jobId, 0U);
+    transport.emit(cancel.data(), cancel.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::PENDING);
+    assert((response.value().flags & FILESYSTEM_JOB_RPC_FLAG_CANCEL_TOO_LATE) != 0U);
+    const uint32_t sentAfterCancel = transport.sendCount;
+
+    for (uint8_t advances = 0U; advances < 64U && service.persistenceJobs().depth() != 0U;
+         ++advances) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++g_now_ms;
+    }
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(transport.sendCount == sentAfterCancel);
+    assertProductFileEquals(service, "library/step-presets/job-current.mssp",
+                            reinterpret_cast<const uint8_t*>("new"), 3U);
+
+    const auto poll = makeJobRequest(FileSystemJobCommand::POLL, 168U, 0x55000001U, jobId, 0U);
+    transport.emit(poll.data(), poll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::COMPLETED);
+    const auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        response.value().body, response.value().bodySize);
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::OK);
+    assert(mutation.value().outcome == FileSystemRpcMutationOutcome::APPLIED);
+
+    assert(core::test::writeProductFileFixture(service,
+                                               "library/step-presets/job-deadline-current.mssp", 0U,
+                                               reinterpret_cast<const uint8_t*>("old"), 3U));
+    assert(core::test::writeProductFileFixture(service, "tmp/job-deadline-stage.mssp", 0U,
+                                               reinterpret_cast<const uint8_t*>("new"), 3U));
+    const uint32_t deadlineAdmittedAt = g_now_ms;
+    const size_t deadlineInnerSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        169U, 0x44454144U, "library/step-presets/job-deadline-current.mssp",
+        "tmp/job-deadline-stage.mssp", SHA256_OLD, SHA256_NEW, inner.data(), inner.size());
+    const auto deadlineStart = makeJobRequest(FileSystemJobCommand::START, 169U, 0x55000002U, 0U,
+                                              100U, inner.data(), deadlineInnerSize);
+    transport.emit(deadlineStart.data(), deadlineStart.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t deadlineJobId = response.value().jobId;
+    journalDurable = false;
+    for (uint8_t advances = 0U; advances < 32U && !journalDurable; ++advances) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        journalDurable = static_cast<bool>(service.stat("tmp/rpc-conditional.journal"));
+        ++g_now_ms;
+    }
+    assert(journalDurable);
+    g_now_ms = deadlineAdmittedAt + 100U;
+    for (uint8_t advances = 0U; advances < 64U && service.persistenceJobs().depth() != 0U;
+         ++advances) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++g_now_ms;
+    }
+    assert(service.persistenceJobs().depth() == 0U);
+    assertProductFileEquals(service, "library/step-presets/job-deadline-current.mssp",
+                            reinterpret_cast<const uint8_t*>("new"), 3U);
+    const auto deadlinePoll =
+        makeJobRequest(FileSystemJobCommand::POLL, 170U, 0x55000002U, deadlineJobId, 0U);
+    transport.emit(deadlinePoll.data(), deadlinePoll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::FAILED);
+    assert(response.value().error == FileSystemJobError::DEADLINE_EXCEEDED);
+
+    endpoint.end();
+    std::cout << "[PASS] conditional journal rejects late cancel/deadline safely\n";
+}
+
+void test_endpoint_job_rename_and_conditional_delete_complete() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    g_now_ms = 5'800U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    const uint8_t oldBytes[] = {'o', 'l', 'd'};
+    assert(core::test::writeProductFileFixture(service, "projects/job-rename-source.bin", 0U,
+                                               oldBytes, sizeof(oldBytes)));
+    assert(core::test::writeProductFileFixture(service, "library/step-presets/job-delete.mssp", 0U,
+                                               oldBytes, sizeof(oldBytes)));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+    std::array<uint8_t, 256> inner{};
+    size_t innerSize = FileSystemRpcCodec::encodeRenameRequest(
+        169U, "projects/job-rename-source.bin", "projects/job-rename-target.bin", inner.data(),
+        inner.size());
+    auto start = makeJobRequest(FileSystemJobCommand::START, 169U, 0x58000001U, 0U, 1'000U,
+                                inner.data(), innerSize);
+    transport.emit(start.data(), start.size());
+    auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t renameJobId = response.value().jobId;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(!service.stat("projects/job-rename-source.bin"));
+    assertProductFileEquals(service, "projects/job-rename-target.bin", oldBytes, sizeof(oldBytes));
+    const auto renamePoll =
+        makeJobRequest(FileSystemJobCommand::POLL, 170U, 0x58000001U, renameJobId, 0U);
+    transport.emit(renamePoll.data(), renamePoll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::COMPLETED);
+    auto status =
+        FileSystemRpcCodec::decodeStatusResponse(response.value().body, response.value().bodySize);
+    assert(status && status.value().status == FileSystemRpcStatus::OK);
+
+    ++g_now_ms;
+    innerSize = FileSystemRpcCodec::encodeConditionalDeleteRequest(
+        171U, 0x44454C45U, "library/step-presets/job-delete.mssp", SHA256_OLD, inner.data(),
+        inner.size());
+    start = makeJobRequest(FileSystemJobCommand::START, 171U, 0x58000002U, 0U, 1'000U, inner.data(),
+                           innerSize);
+    transport.emit(start.data(), start.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t deleteJobId = response.value().jobId;
+    for (uint8_t advances = 0U; advances < 64U && service.persistenceJobs().depth() != 0U;
+         ++advances) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++g_now_ms;
+    }
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(!service.stat("library/step-presets/job-delete.mssp"));
+    const auto deletePoll =
+        makeJobRequest(FileSystemJobCommand::POLL, 172U, 0x58000002U, deleteJobId, 0U);
+    transport.emit(deletePoll.data(), deletePoll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::COMPLETED);
+    const auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        response.value().body, response.value().bodySize);
+    assert(mutation);
+    assert(mutation.value().status == FileSystemRpcStatus::OK);
+    assert(mutation.value().outcome == FileSystemRpcMutationOutcome::APPLIED);
+
+    innerSize = FileSystemRpcCodec::encodeRenameRequest(173U, "projects/missing-source.bin",
+                                                        "projects/unused-target.bin", inner.data(),
+                                                        inner.size());
+    start = makeJobRequest(FileSystemJobCommand::START, 173U, 0x58000003U, 0U, 1'000U, inner.data(),
+                           innerSize);
+    transport.emit(start.data(), start.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t failedLegacyJobId = response.value().jobId;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    const auto failedLegacyPoll =
+        makeJobRequest(FileSystemJobCommand::POLL, 174U, 0x58000003U, failedLegacyJobId, 0U);
+    transport.emit(failedLegacyPoll.data(), failedLegacyPoll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::COMPLETED);
+    assert(response.value().error == FileSystemJobError::NONE);
+    status =
+        FileSystemRpcCodec::decodeStatusResponse(response.value().body, response.value().bodySize);
+    assert(status && status.value().status == FileSystemRpcStatus::NOT_FOUND);
+
+    endpoint.end();
+    std::cout << "[PASS] job rename and conditional delete complete exactly\n";
+}
+
+void test_endpoint_job_safe_cancel_unwinds_reversible_conditional_plan() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    g_now_ms = 5'900U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    assert(core::test::writeProductFileFixture(service,
+                                               "library/step-presets/job-safe-current.mssp", 0U,
+                                               reinterpret_cast<const uint8_t*>("old"), 3U));
+    assert(core::test::writeProductFileFixture(service, "tmp/job-safe-stage.mssp", 0U,
+                                               reinterpret_cast<const uint8_t*>("new"), 3U));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+    std::array<uint8_t, 256> inner{};
+    const size_t innerSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        173U, 0x53414645U, "library/step-presets/job-safe-current.mssp", "tmp/job-safe-stage.mssp",
+        SHA256_OLD, SHA256_NEW, inner.data(), inner.size());
+    const auto start = makeJobRequest(FileSystemJobCommand::START, 173U, 0x59000001U, 0U, 1'000U,
+                                      inner.data(), innerSize);
+    transport.emit(start.data(), start.size());
+    auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t jobId = response.value().jobId;
+
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(service.persistenceJobs().depth() == 1U);
+    assert(!service.stat("tmp/rpc-conditional.journal"));
+
+    const auto cancel = makeJobRequest(FileSystemJobCommand::CANCEL, 174U, 0x59000001U, jobId, 0U);
+    transport.emit(cancel.data(), cancel.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::CANCEL_PENDING);
+
+    ++g_now_ms;
+    core::persistence::ProductPersistenceWorkUsage playbackUsage{};
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    {
+        auto measuredResult = service.measurePersistenceWork(playbackUsage);
+        assert(measuredResult);
+        auto measured = std::move(measuredResult.value());
+        endpoint.advance(g_now_ms, true);
+    }
+    assert(playbackUsage.filesystemCalls == 0U);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    ++g_now_ms;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(service.persistenceJobs().depth() == 0U);
+    assertProductFileEquals(service, "library/step-presets/job-safe-current.mssp",
+                            reinterpret_cast<const uint8_t*>("old"), 3U);
+    assertProductFileEquals(service, "tmp/job-safe-stage.mssp",
+                            reinterpret_cast<const uint8_t*>("new"), 3U);
+    assert(!service.stat("tmp/rpc-conditional.journal"));
+
+    const auto poll = makeJobRequest(FileSystemJobCommand::POLL, 175U, 0x59000001U, jobId, 0U);
+    transport.emit(poll.data(), poll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::CANCELLED);
+    assert(response.value().error == FileSystemJobError::CANCELLED);
+
+    assert(core::test::writeProductFileFixture(service,
+                                               "library/step-presets/job-media-current.mssp", 0U,
+                                               reinterpret_cast<const uint8_t*>("old"), 3U));
+    assert(core::test::writeProductFileFixture(service, "tmp/job-media-stage.mssp", 0U,
+                                               reinterpret_cast<const uint8_t*>("new"), 3U));
+    ++g_now_ms;
+    const size_t mediaInnerSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        176U, 0x4D454449U, "library/step-presets/job-media-current.mssp",
+        "tmp/job-media-stage.mssp", SHA256_OLD, SHA256_NEW, inner.data(), inner.size());
+    const auto mediaStart = makeJobRequest(FileSystemJobCommand::START, 176U, 0x59000002U, 0U,
+                                           1'000U, inner.data(), mediaInnerSize);
+    transport.emit(mediaStart.data(), mediaStart.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t mediaJobId = response.value().jobId;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    service.markMediaUnavailable();
+    filesystem.resetWorkCounters();
+    endpoint.advance(g_now_ms, true);
+    assert(filesystem.filesystemCalls == 0U);
+    assert(filesystem.ioBytes == 0U);
+    const auto mediaPoll =
+        makeJobRequest(FileSystemJobCommand::POLL, 177U, 0x59000002U, mediaJobId, 0U);
+    transport.emit(mediaPoll.data(), mediaPoll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::FAILED);
+    assert(response.value().error == FileSystemJobError::MEDIA_CHANGED);
+
+    endpoint.end();
+    std::cout << "[PASS] reversible plan cancel/media unwind stays playback-safe\n";
+}
+
+void test_endpoint_job_recursive_delete_cancel_too_late_continues() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    g_now_ms = 6'000U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    auto leaseResult = service.acquireMutation(core::persistence::ProductMutationOwner::PROJECT);
+    assert(leaseResult);
+    auto lease = std::move(leaseResult.value());
+    assert(service.createDirectory(lease, "projects/job-delete/a"));
+    const uint8_t payload[] = {'x'};
+    assert(service.write(lease, "projects/job-delete/a/value.bin", 0U, payload, sizeof(payload)));
+    assert(service.releaseMutation(lease));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+    std::array<uint8_t, 256> inner{};
+    const size_t innerSize = FileSystemRpcCodec::encodeDeleteRequest(
+        170U, "projects/job-delete", true, inner.data(), inner.size());
+    const auto start = makeJobRequest(FileSystemJobCommand::START, 170U, 0x60000001U, 0U, 1'000U,
+                                      inner.data(), innerSize);
+    transport.emit(start.data(), start.size());
+    auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t jobId = response.value().jobId;
+
+    for (uint8_t advance = 0U; advance < 3U; ++advance) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++g_now_ms;
+    }
+    assert(!std::filesystem::exists(testRoot() / "midi-studio" / "projects" / "job-delete"));
+    assert(std::filesystem::exists(testRoot() / "midi-studio" / "tmp" / "rpc-d"));
+
+    const auto cancel = makeJobRequest(FileSystemJobCommand::CANCEL, 171U, 0x60000001U, jobId, 0U);
+    transport.emit(cancel.data(), cancel.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::PENDING);
+    assert((response.value().flags & FILESYSTEM_JOB_RPC_FLAG_CANCEL_TOO_LATE) != 0U);
+    const uint32_t sentAfterCancel = transport.sendCount;
+
+    for (uint8_t advances = 0U; advances < 32U && service.persistenceJobs().depth() != 0U;
+         ++advances) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++g_now_ms;
+    }
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(transport.sendCount == sentAfterCancel);
+    assert(!std::filesystem::exists(testRoot() / "midi-studio" / "tmp" / "rpc-d"));
+
+    const auto poll = makeJobRequest(FileSystemJobCommand::POLL, 172U, 0x60000001U, jobId, 0U);
+    transport.emit(poll.data(), poll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::COMPLETED);
+    const auto deleted =
+        FileSystemRpcCodec::decodeStatusResponse(response.value().body, response.value().bodySize);
+    assert(deleted && deleted.value().status == FileSystemRpcStatus::OK);
+
+    transport.emit(cancel.data(), cancel.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::COMPLETED);
+    assert((response.value().flags & FILESYSTEM_JOB_RPC_FLAG_CANCEL_TOO_LATE) != 0U);
+
+    endpoint.end();
+    std::cout << "[PASS] hidden recursive delete rejects late cancel and continues\n";
+}
+
+void test_endpoint_job_deadline_after_hide_finishes_recovery_safe() {
+    using namespace core::protocol::filesystem;
+    resetTestRoot();
+    constexpr uint32_t admittedAtMs = 7'000U;
+    g_now_ms = admittedAtMs;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    auto leaseResult = service.acquireMutation(core::persistence::ProductMutationOwner::PROJECT);
+    assert(leaseResult);
+    auto lease = std::move(leaseResult.value());
+    assert(service.createDirectory(lease, "projects/job-deadline/a"));
+    const uint8_t payload[] = {'d'};
+    assert(service.write(lease, "projects/job-deadline/a/value.bin", 0U, payload, sizeof(payload)));
+    assert(service.releaseMutation(lease));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+    std::array<uint8_t, 256> inner{};
+    const size_t innerSize = FileSystemRpcCodec::encodeDeleteRequest(
+        180U, "projects/job-deadline", true, inner.data(), inner.size());
+    const auto start = makeJobRequest(FileSystemJobCommand::START, 180U, 0x70000001U, 0U, 100U,
+                                      inner.data(), innerSize);
+    transport.emit(start.data(), start.size());
+    auto response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response && response.value().state == FileSystemJobState::ACCEPTED);
+    const uint32_t jobId = response.value().jobId;
+
+    for (uint8_t advance = 0U; advance < 3U; ++advance) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++g_now_ms;
+    }
+    assert(!std::filesystem::exists(testRoot() / "midi-studio" / "projects" / "job-deadline"));
+    assert(std::filesystem::exists(testRoot() / "midi-studio" / "tmp" / "rpc-d"));
+
+    g_now_ms = admittedAtMs + 100U;
+    for (uint8_t advances = 0U; advances < 32U && service.persistenceJobs().depth() != 0U;
+         ++advances) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++g_now_ms;
+    }
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(!std::filesystem::exists(testRoot() / "midi-studio" / "tmp" / "rpc-d"));
+    assert(service.storageState() == core::persistence::ProductStorageState::READY);
+
+    const auto poll = makeJobRequest(FileSystemJobCommand::POLL, 181U, 0x70000001U, jobId, 0U);
+    transport.emit(poll.data(), poll.size());
+    response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
+    assert(response);
+    assert(response.value().state == FileSystemJobState::FAILED);
+    assert(response.value().error == FileSystemJobError::DEADLINE_EXCEEDED);
+
+    endpoint.end();
+    std::cout << "[PASS] deadline after hide completes cleanup before failure\n";
 }
 
 void test_stat_and_read_roundtrip() {
@@ -529,7 +1921,9 @@ void test_stat_and_read_roundtrip() {
     Harness h;
 
     const uint8_t payload[] = {'p', 'r', 'o', 'j', 'e', 'c', 't'};
-    auto written = h.service.write("projects/demo.bin", 0, payload, sizeof(payload));
+    auto written = core::test::writeProductFileFixture(
+        h.service, "projects/demo.bin", 0, payload, sizeof(payload)
+    );
     assert(written);
 
     size_t requestSize = FileSystemRpcCodec::encodeStatRequest(
@@ -592,6 +1986,7 @@ void test_capabilities_roundtrip() {
     assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS) != 0);
     assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT) != 0);
     assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS) != 0);
+    assert((caps.value().featureFlags & FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS) != 0);
 
     std::cout << "[PASS] test_capabilities_roundtrip\n";
 }
@@ -601,9 +1996,9 @@ void test_list_is_paginated_and_bounded() {
     Harness h;
 
     const uint8_t byte = 1;
-    assert(h.service.write("projects/a.bin", 0, &byte, 1));
-    assert(h.service.write("projects/b.bin", 0, &byte, 1));
-    assert(h.service.write("projects/c.bin", 0, &byte, 1));
+    assert(core::test::writeProductFileFixture(h.service, "projects/a.bin", 0, &byte, 1));
+    assert(core::test::writeProductFileFixture(h.service, "projects/b.bin", 0, &byte, 1));
+    assert(core::test::writeProductFileFixture(h.service, "projects/c.bin", 0, &byte, 1));
 
     const size_t requestSize = FileSystemRpcCodec::encodeListRequest(
         11,
@@ -791,7 +2186,8 @@ void test_write_session_aborts_on_short_append() {
     filesystem.shortAppend = true;
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog, FileSystemRpcHandler::Config{100});
     uint8_t request[1024] = {};
     uint8_t response[1024] = {};
 
@@ -838,7 +2234,8 @@ void test_write_commit_propagates_final_stat_error() {
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog, FileSystemRpcHandler::Config{100});
     uint8_t request[1024] = {};
     uint8_t response[1024] = {};
 
@@ -891,17 +2288,20 @@ void test_write_commit_propagates_final_stat_error() {
     std::cout << "[PASS] test_write_commit_propagates_final_stat_error\n";
 }
 
-void test_write_commit_restores_previous_file_when_promotion_fails() {
+void test_write_commit_requires_recovery_when_promotion_fails() {
     resetTestRoot();
 
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog, FileSystemRpcHandler::Config{100});
 
     const uint8_t previous[] = {'o', 'l', 'd'};
     const uint8_t replacement[] = {'n', 'e', 'w'};
-    assert(service.write("projects/rollback.bin", 0, previous, sizeof(previous)));
+    assert(core::test::writeProductFileFixture(
+        service, "projects/rollback.bin", 0, previous, sizeof(previous)
+    ));
     filesystem.failTmpPromotion = true;
 
     assert(writeFileViaRpc(
@@ -912,28 +2312,52 @@ void test_write_commit_restores_previous_file_when_promotion_fails() {
                sizeof(replacement)
            ) == FileSystemRpcStatus::STORAGE_ERROR);
     assert(!handler.hasActiveWriteSession());
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assertProductReadBlocked(service, "projects/rollback.bin");
+    assertProductReadBlocked(service, "tmp/rpc-write-1250.tmp");
+    assertProductReadBlocked(service, "tmp/rpc-backup-1250.tmp");
+    assert(!filesystem.delegate.stat("/midi-studio/projects/rollback.bin"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-write-1250.tmp"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-backup-1250.tmp"));
+    assert(
+        filesystem.delegate.stat("/midi-studio/tmp/rpc-product-file-a.journal") ||
+        filesystem.delegate.stat("/midi-studio/tmp/rpc-product-file-b.journal")
+    );
+
+    filesystem.failTmpPromotion = false;
+    completeExternalProductRecovery(service);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::READY);
 
     uint8_t loaded[8] = {};
     auto read = service.read("projects/rollback.bin", 0, loaded, sizeof(loaded));
-    assert(read && read.value() == sizeof(previous));
-    assert(std::memcmp(loaded, previous, sizeof(previous)) == 0);
+    assert(read && read.value() == sizeof(replacement));
+    assert(std::memcmp(loaded, replacement, sizeof(replacement)) == 0);
     assert(!service.stat("tmp/rpc-write-1250.tmp"));
     assert(!service.stat("tmp/rpc-backup-1250.tmp"));
+    assert(
+        filesystem.delegate.stat("/midi-studio/tmp/rpc-product-file-a.journal") ||
+        filesystem.delegate.stat("/midi-studio/tmp/rpc-product-file-b.journal")
+    );
 
-    std::cout << "[PASS] test_write_commit_restores_previous_file_when_promotion_fails\n";
+    std::cout << "[PASS] test_write_commit_requires_recovery_when_promotion_fails\n";
 }
 
-void test_write_commit_retains_backup_when_rollback_fails() {
+void test_write_recovery_retains_backup_when_restore_fails() {
     resetTestRoot();
 
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service, FileSystemRpcHandler::Config{100});
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog, FileSystemRpcHandler::Config{100});
 
     const uint8_t previous[] = {'s', 'a', 'f', 'e'};
     const uint8_t replacement[] = {'n', 'e', 'w'};
-    assert(service.write("projects/backup-retained.bin", 0, previous, sizeof(previous)));
+    assert(core::test::writeProductFileFixture(
+        service, "projects/backup-retained.bin", 0, previous, sizeof(previous)
+    ));
     filesystem.failTmpPromotion = true;
     filesystem.failBackupRestore = true;
 
@@ -945,15 +2369,51 @@ void test_write_commit_retains_backup_when_rollback_fails() {
                sizeof(replacement)
            ) == FileSystemRpcStatus::STORAGE_ERROR);
     assert(!handler.hasActiveWriteSession());
-    assert(!service.stat("projects/backup-retained.bin"));
-    assert(!service.stat("tmp/rpc-write-1251.tmp"));
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(!filesystem.delegate.stat(
+        "/midi-studio/projects/backup-retained.bin"
+    ));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-write-1251.tmp"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-backup-1251.tmp"));
+
+    assert(filesystem.delegate.remove("/midi-studio/tmp/rpc-write-1251.tmp"));
+    filesystem.failTmpPromotion = false;
+
+    auto acquired = service.beginRecovery();
+    assert(acquired);
+    auto lease = std::move(acquired.value());
+    assert(service.ensureLayout(lease));
+    auto failedRecovery =
+        core::persistence::recoverPendingProductFileTransaction(service, lease);
+    assert(!failedRecovery);
+    assert(failedRecovery.error().code ==
+           oc::type::ErrorCode::STORAGE_WRITE_FAILED);
+    assert(service.completeRecovery(
+        lease,
+        false,
+        failedRecovery.error().code
+    ));
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-backup-1251.tmp"));
+
+    filesystem.failBackupRestore = false;
+    completeExternalProductRecovery(service);
 
     uint8_t loaded[8] = {};
-    auto read = service.read("tmp/rpc-backup-1251.tmp", 0, loaded, sizeof(loaded));
+    auto read = service.read(
+        "projects/backup-retained.bin",
+        0,
+        loaded,
+        sizeof(loaded)
+    );
     assert(read && read.value() == sizeof(previous));
     assert(std::memcmp(loaded, previous, sizeof(previous)) == 0);
+    assert(!service.stat("tmp/rpc-write-1251.tmp"));
+    assert(!service.stat("tmp/rpc-backup-1251.tmp"));
 
-    std::cout << "[PASS] test_write_commit_retains_backup_when_rollback_fails\n";
+    std::cout << "[PASS] test_write_recovery_retains_backup_when_restore_fails\n";
 }
 
 void test_write_session_abort_and_timeout_cleanup() {
@@ -1086,7 +2546,9 @@ void test_file_management_operations() {
     assert(folder.value().type == oc::interface::FileType::DIRECTORY);
 
     const uint8_t payload[] = {'r', 'p', 'c'};
-    assert(h.service.write("projects/rpc-folder/source.bin", 0, payload, sizeof(payload)));
+    assert(core::test::writeProductFileFixture(
+        h.service, "projects/rpc-folder/source.bin", 0, payload, sizeof(payload)
+    ));
 
     requestSize = FileSystemRpcCodec::encodeRenameRequest(
         48,
@@ -1141,16 +2603,89 @@ void test_file_management_operations() {
     std::cout << "[PASS] test_file_management_operations\n";
 }
 
+void test_storage_gate_maps_busy_exhausted_absent_and_io_failures() {
+    using core::protocol::filesystem::internal::mapError;
+    using oc::type::Error;
+    using oc::type::ErrorCode;
+
+    assert(mapError(Error{ErrorCode::HARDWARE_BUSY, "busy"}) ==
+           FileSystemRpcStatus::BUSY);
+    assert(mapError(Error{ErrorCode::RESOURCE_EXHAUSTED, "exhausted"}) ==
+           FileSystemRpcStatus::TOO_LARGE);
+    assert(mapError(Error{ErrorCode::HARDWARE_NOT_FOUND, "absent"}) ==
+           FileSystemRpcStatus::STORAGE_ERROR);
+    assert(mapError(Error{ErrorCode::HARDWARE_INIT_FAILED, "init"}) ==
+           FileSystemRpcStatus::STORAGE_ERROR);
+    assert(mapError(Error{ErrorCode::HARDWARE_TIMEOUT, "timeout"}) ==
+           FileSystemRpcStatus::STORAGE_ERROR);
+    assert(mapError(Error{ErrorCode::STORAGE_WRITE_FAILED, "write"}) ==
+           FileSystemRpcStatus::STORAGE_ERROR);
+
+    resetTestRoot();
+    Harness busyHarness;
+    auto heldResult = busyHarness.service.acquireMutation(
+        core::persistence::ProductMutationOwner::ASSET
+    );
+    assert(heldResult);
+    auto held = std::move(heldResult.value());
+    size_t requestSize = FileSystemRpcCodec::encodeStatRequest(
+        58,
+        "projects/busy.bin",
+        busyHarness.request,
+        sizeof(busyHarness.request)
+    );
+    size_t responseSize = busyHarness.transact(requestSize, 0);
+    auto blocked = FileSystemRpcCodec::decodeStatusResponse(
+        busyHarness.response,
+        responseSize
+    );
+    assert(blocked && blocked.value().status == FileSystemRpcStatus::BUSY);
+    assert(busyHarness.service.releaseMutation(held));
+
+    resetTestRoot();
+    Harness absentHarness;
+    absentHarness.service.markMediaUnavailable();
+    requestSize = FileSystemRpcCodec::encodeStatRequest(
+        59,
+        "projects/absent.bin",
+        absentHarness.request,
+        sizeof(absentHarness.request)
+    );
+    responseSize = absentHarness.transact(requestSize, 0);
+    const auto absent = FileSystemRpcCodec::decodeStatusResponse(
+        absentHarness.response,
+        responseSize
+    );
+    assert(absent && absent.value().status == FileSystemRpcStatus::STORAGE_ERROR);
+
+    requestSize = FileSystemRpcCodec::encodeCapabilitiesRequest(
+        60,
+        absentHarness.request,
+        sizeof(absentHarness.request)
+    );
+    responseSize = absentHarness.transact(requestSize, 1);
+    const auto capabilities = FileSystemRpcCodec::decodeCapabilitiesResponse(
+        absentHarness.response,
+        responseSize
+    );
+    assert(capabilities && capabilities.value().status == FileSystemRpcStatus::OK);
+
+    std::cout
+        << "[PASS] test_storage_gate_maps_busy_exhausted_absent_and_io_failures\n";
+}
+
 void test_conditional_replace_is_cas_and_idempotent() {
     resetTestRoot();
     Harness h;
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "library/step-presets/demo.mssp",
         0,
         reinterpret_cast<const uint8_t*>("old"),
         3
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/step-preset-stage.mssp",
         0,
         reinterpret_cast<const uint8_t*>("new"),
@@ -1210,13 +2745,15 @@ void test_conditional_replace_is_cas_and_idempotent() {
 void test_conditional_replace_rejects_source_and_staging_mismatch() {
     resetTestRoot();
     Harness h;
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "library/step-presets/demo.mssp",
         0,
         reinterpret_cast<const uint8_t*>("old"),
         3
     ));
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/step-preset-stage.mssp",
         0,
         reinterpret_cast<const uint8_t*>("tampered"),
@@ -1272,7 +2809,8 @@ void test_conditional_replace_rejects_source_and_staging_mismatch() {
 void test_conditional_replace_rejects_case_alias_of_same_fat_path() {
     resetTestRoot();
     Harness h;
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/conditional-alias.mssp",
         0,
         reinterpret_cast<const uint8_t*>("new"),
@@ -1316,7 +2854,8 @@ void test_conditional_replace_rejects_case_alias_of_same_fat_path() {
 void test_conditional_delete_is_cas_and_idempotent() {
     resetTestRoot();
     Harness h;
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "library/step-presets/delete.mssp",
         0,
         reinterpret_cast<const uint8_t*>("delete-me"),
@@ -1360,19 +2899,22 @@ void test_conditional_delete_is_cas_and_idempotent() {
     std::cout << "[PASS] test_conditional_delete_is_cas_and_idempotent\n";
 }
 
-void test_conditional_replace_recovers_interrupted_promotion() {
+void test_conditional_replace_requires_full_recovery_authority() {
     resetTestRoot();
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service);
-    assert(service.write(
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog);
+    assert(core::test::writeProductFileFixture(
+        service,
         "library/step-presets/demo.mssp",
         0,
         reinterpret_cast<const uint8_t*>("old"),
         3
     ));
-    assert(service.write(
+    assert(core::test::writeProductFileFixture(
+        service,
         "tmp/step-preset-stage.mssp",
         0,
         reinterpret_cast<const uint8_t*>("new"),
@@ -1400,10 +2942,18 @@ void test_conditional_replace_recovers_interrupted_promotion() {
         handled.value()
     );
     assert(mutation && mutation.value().status == FileSystemRpcStatus::STORAGE_ERROR);
-    assert(!service.stat("library/step-presets/demo.mssp"));
-    assert(service.stat("tmp/rpc-conditional.backup"));
-    assert(service.stat("tmp/rpc-conditional.journal"));
-    assert(service.stat("tmp/step-preset-stage.mssp"));
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assertProductReadBlocked(service, "library/step-presets/demo.mssp");
+    assertProductReadBlocked(service, "tmp/rpc-conditional.backup");
+    assertProductReadBlocked(service, "tmp/rpc-conditional.journal");
+    assertProductReadBlocked(service, "tmp/step-preset-stage.mssp");
+    assert(!filesystem.delegate.stat(
+        "/midi-studio/library/step-presets/demo.mssp"
+    ));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.backup"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/step-preset-stage.mssp"));
 
     filesystem.failConditionalPromotion = false;
     filesystem.failConditionalRestore = false;
@@ -1415,6 +2965,23 @@ void test_conditional_replace_recovers_interrupted_promotion() {
     );
     handled = handler.handleFrame(request, requestSize, 1, response, sizeof(response));
     assert(handled);
+    auto blocked = FileSystemRpcCodec::decodeStatusResponse(response, handled.value());
+    assert(blocked && blocked.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.backup"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal"));
+
+    handled = handler.handleFrame(request, requestSize, 500, response, sizeof(response));
+    assert(handled);
+    blocked = FileSystemRpcCodec::decodeStatusResponse(response, handled.value());
+    assert(blocked && blocked.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+
+    completeExternalProductRecovery(service);
+    handled = handler.handleFrame(request, requestSize, 501, response, sizeof(response));
+    assert(handled);
     auto stat = FileSystemRpcCodec::decodeStatResponse(response, handled.value());
     assert(stat && stat.value().status == FileSystemRpcStatus::OK);
 
@@ -1424,16 +2991,19 @@ void test_conditional_replace_recovers_interrupted_promotion() {
     assert(!service.stat("tmp/rpc-conditional.backup"));
     assert(!service.stat("tmp/rpc-conditional.journal"));
 
-    std::cout << "[PASS] test_conditional_replace_recovers_interrupted_promotion\n";
+    std::cout
+        << "[PASS] test_conditional_replace_requires_full_recovery_authority\n";
 }
 
-void test_conditional_delete_recovers_interrupted_cleanup() {
+void test_conditional_delete_requires_full_recovery_authority() {
     resetTestRoot();
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service);
-    assert(service.write(
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog);
+    assert(core::test::writeProductFileFixture(
+        service,
         "library/step-presets/delete.mssp",
         0,
         reinterpret_cast<const uint8_t*>("delete-me"),
@@ -1458,9 +3028,16 @@ void test_conditional_delete_recovers_interrupted_cleanup() {
         handled.value()
     );
     assert(mutation && mutation.value().status == FileSystemRpcStatus::STORAGE_ERROR);
-    assert(!service.stat("library/step-presets/delete.mssp"));
-    assert(service.stat("tmp/rpc-conditional.backup"));
-    assert(service.stat("tmp/rpc-conditional.journal"));
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assertProductReadBlocked(service, "library/step-presets/delete.mssp");
+    assertProductReadBlocked(service, "tmp/rpc-conditional.backup");
+    assertProductReadBlocked(service, "tmp/rpc-conditional.journal");
+    assert(!filesystem.delegate.stat(
+        "/midi-studio/library/step-presets/delete.mssp"
+    ));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.backup"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal"));
 
     filesystem.failConditionalBackupRemove = false;
     requestSize = FileSystemRpcCodec::encodeStatRequest(
@@ -1471,12 +3048,30 @@ void test_conditional_delete_recovers_interrupted_cleanup() {
     );
     handled = handler.handleFrame(request, requestSize, 1, response, sizeof(response));
     assert(handled);
+    auto blocked = FileSystemRpcCodec::decodeStatusResponse(response, handled.value());
+    assert(blocked && blocked.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.backup"));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal"));
+
+    handled = handler.handleFrame(request, requestSize, 500, response, sizeof(response));
+    assert(handled);
+    blocked = FileSystemRpcCodec::decodeStatusResponse(response, handled.value());
+    assert(blocked && blocked.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+
+    completeExternalProductRecovery(service);
+    handled = handler.handleFrame(request, requestSize, 501, response, sizeof(response));
+    assert(handled);
     auto stat = FileSystemRpcCodec::decodeStatResponse(response, handled.value());
     assert(stat && stat.value().status == FileSystemRpcStatus::NOT_FOUND);
     assert(!service.stat("tmp/rpc-conditional.backup"));
     assert(!service.stat("tmp/rpc-conditional.journal"));
 
-    std::cout << "[PASS] test_conditional_delete_recovers_interrupted_cleanup\n";
+    std::cout
+        << "[PASS] test_conditional_delete_requires_full_recovery_authority\n";
 }
 
 void test_conditional_journal_promotion_failure_is_non_mutating() {
@@ -1484,14 +3079,17 @@ void test_conditional_journal_promotion_failure_is_non_mutating() {
     FaultInjectingFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
-    FileSystemRpcHandler handler(service);
-    assert(service.write(
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog);
+    assert(core::test::writeProductFileFixture(
+        service,
         "library/step-presets/demo.mssp",
         0,
         reinterpret_cast<const uint8_t*>("old"),
         3
     ));
-    assert(service.write(
+    assert(core::test::writeProductFileFixture(
+        service,
         "tmp/step-preset-stage.mssp",
         0,
         reinterpret_cast<const uint8_t*>("new"),
@@ -1528,6 +3126,43 @@ void test_conditional_journal_promotion_failure_is_non_mutating() {
     assert(mutation.value().outcome == FileSystemRpcMutationOutcome::NONE);
 
     uint8_t loaded[8] = {};
+    auto blockedRead = service.read(
+        "library/step-presets/demo.mssp",
+        0,
+        loaded,
+        sizeof(loaded)
+    );
+    assert(!blockedRead);
+    assert(blockedRead.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+    blockedRead = service.read(
+        "tmp/step-preset-stage.mssp",
+        0,
+        loaded,
+        sizeof(loaded)
+    );
+    assert(!blockedRead);
+    assert(blockedRead.error().code == oc::type::ErrorCode::HARDWARE_BUSY);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(filesystem.delegate.stat(
+        "/midi-studio/library/step-presets/demo.mssp"
+    ));
+    assert(filesystem.delegate.stat("/midi-studio/tmp/step-preset-stage.mssp"));
+    assert(!filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.backup"));
+    assert(!filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal"));
+    assert(!filesystem.delegate.stat("/midi-studio/tmp/rpc-conditional.journal.tmp"));
+
+    handler.update(499);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    handler.update(500);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+
+    completeExternalProductRecovery(service);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::READY);
+
     auto read = service.read(
         "library/step-presets/demo.mssp",
         0,
@@ -1554,7 +3189,8 @@ void test_orphan_conditional_journal_staging_is_cleaned_on_recovery() {
     resetTestRoot();
     Harness h;
     const uint8_t partial[] = {'F', 'S', 'T', 'X'};
-    assert(h.service.write(
+    assert(core::test::writeProductFileFixture(
+        h.service,
         "tmp/rpc-conditional.journal.tmp",
         0,
         partial,
@@ -1636,7 +3272,7 @@ void test_conditional_replace_rejects_fat_short_name_alias_syntax() {
         << "[PASS] test_conditional_replace_rejects_fat_short_name_alias_syntax\n";
 }
 
-void test_conditional_transaction_paths_are_protocol_reserved() {
+void test_protocol_transaction_paths_are_reserved() {
     resetTestRoot();
     Harness h;
     const size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
@@ -1678,7 +3314,7 @@ void test_conditional_transaction_paths_are_protocol_reserved() {
     assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
 
     const uint8_t byte = 1;
-    assert(h.service.write("tmp/source.bin", 0, &byte, 1));
+    assert(core::test::writeProductFileFixture(h.service, "tmp/source.bin", 0, &byte, 1));
     nextRequestSize = FileSystemRpcCodec::encodeRenameRequest(
         73,
         "tmp/source.bin",
@@ -1728,21 +3364,59 @@ void test_conditional_transaction_paths_are_protocol_reserved() {
     status = FileSystemRpcCodec::decodeStatusResponse(h.response, nextResponseSize);
     assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
 
-    std::cout << "[PASS] test_conditional_transaction_paths_are_protocol_reserved\n";
+    nextRequestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        77,
+        0x2003,
+        "tmp/rpc-product-file-a.journal",
+        4,
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    write = FileSystemRpcCodec::decodeWriteResponse(h.response, nextResponseSize);
+    assert(write && write.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+    assert(!h.handler.hasActiveWriteSession());
+
+    nextRequestSize = FileSystemRpcCodec::encodeDeleteRequest(
+        78,
+        "TMP/RPC-PRODUCT-FILE-B.JOURNAL",
+        false,
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    status = FileSystemRpcCodec::decodeStatusResponse(h.response, nextResponseSize);
+    assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
+    nextRequestSize = FileSystemRpcCodec::encodeMkdirRequest(
+        79,
+        "TMP/RPC-D",
+        h.request,
+        sizeof(h.request)
+    );
+    nextResponseSize = h.transact(nextRequestSize);
+    status = FileSystemRpcCodec::decodeStatusResponse(h.response, nextResponseSize);
+    assert(status && status.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
+    std::cout << "[PASS] test_protocol_transaction_paths_are_reserved\n";
 }
 
 void test_endpoint_answers_only_filesystem_requests() {
     resetTestRoot();
+    g_now_ms = 0U;
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
 
     const uint8_t payload[] = {'o', 'k'};
-    assert(service.write("projects/endpoint.bin", 0, payload, sizeof(payload)));
+    assert(core::test::writeProductFileFixture(
+        service, "projects/endpoint.bin", 0, payload, sizeof(payload)
+    ));
 
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
-    FileSystemRpcEndpoint endpoint(transport, service, nowMs);
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
     assert(endpoint.active());
     assert(transport.onReceive);
@@ -1759,8 +3433,22 @@ void test_endpoint_answers_only_filesystem_requests() {
         sizeof(request)
     );
     assert(requestSize > 0);
-    transport.emit(request, requestSize);
-    assert(transport.sendCount == 1);
+    core::persistence::ProductPersistenceWorkUsage receiveUsage{};
+    {
+        auto measuredResult = service.measurePersistenceWork(receiveUsage);
+        assert(measuredResult);
+        auto measured = std::move(measuredResult.value());
+        transport.emit(request, requestSize);
+    }
+    assert(receiveUsage.filesystemCalls == 0U);
+    assert(receiveUsage.bytes == 0U);
+    assert(transport.sendCount == 0U);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(transport.sendCount == 1U);
+    assert(service.persistenceJobs().depth() == 0U);
 
     auto stat = FileSystemRpcCodec::decodeStatResponse(transport.sent, transport.sentSize);
     assert(stat);
@@ -1775,17 +3463,227 @@ void test_endpoint_answers_only_filesystem_requests() {
     std::cout << "[PASS] test_endpoint_answers_only_filesystem_requests\n";
 }
 
-void test_endpoint_update_expires_abandoned_write_session() {
+void test_endpoint_recursive_delete_is_hide_first_and_one_node_per_turn() {
     resetTestRoot();
+    g_now_ms = 10U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    auto leaseResult = service.acquireMutation(
+        core::persistence::ProductMutationOwner::PROJECT
+    );
+    assert(leaseResult);
+    auto lease = std::move(leaseResult.value());
+    assert(service.createDirectory(lease, "projects/delete-tree/a/b"));
+    const uint8_t payload[] = {'d', 'e', 'l'};
+    assert(service.write(
+        lease,
+        "projects/delete-tree/a/b/deep.bin",
+        0U,
+        payload,
+        sizeof(payload)
+    ));
+    assert(service.write(
+        lease,
+        "projects/delete-tree/root.bin",
+        0U,
+        payload,
+        sizeof(payload)
+    ));
+    assert(service.releaseMutation(lease));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    uint8_t request[256] = {};
+    const size_t requestSize = FileSystemRpcCodec::encodeDeleteRequest(
+        0x5151U,
+        "projects/delete-tree",
+        true,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+    assert(transport.sendCount == 0U);
+
+    // Admission only retains the PSRAM continuation and mutation lease.
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(filesystem.filesystemCalls == 0U);
+    assert(transport.sendCount == 0U);
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "delete-tree"
+    ));
+
+    // The pre-hide check is bounded to the marker and canonical stat.
+    ++g_now_ms;
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(filesystem.filesystemCalls == 2U);
+    assert(transport.sendCount == 0U);
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "delete-tree"
+    ));
+
+    // One atomic rename removes the canonical tree before any child deletion.
+    ++g_now_ms;
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(filesystem.filesystemCalls == 1U);
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "delete-tree"
+    ));
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
+    ));
+
+    // A retained destructive continuation freezes completely during playback.
+    ++g_now_ms;
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, true);
+    assert(filesystem.filesystemCalls == 0U);
+    assert(transport.sendCount == 0U);
+
+    uint8_t cleanupAdvances = 0U;
+    while (transport.sendCount == 0U && cleanupAdvances < 32U) {
+        ++g_now_ms;
+        ++cleanupAdvances;
+        filesystem.resetWorkCounters();
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        assert(filesystem.filesystemCalls <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_TREE_CLEANUP
+                   .maxFilesystemCalls());
+    }
+
+    assert(cleanupAdvances > 3U);
+    assert(cleanupAdvances < 32U);
+    assert(transport.sendCount == 1U);
+    const auto deleted = FileSystemRpcCodec::decodeStatusResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(deleted);
+    assert(deleted.value().requestId == 0x5151U);
+    assert(deleted.value().messageId == FileSystemRpcMessageId::DELETE_RESPONSE);
+    assert(deleted.value().status == FileSystemRpcStatus::OK);
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::READY);
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
+    ));
+
+    endpoint.end();
+    std::cout << "[PASS] endpoint recursive delete is hide-first and bounded ("
+              << static_cast<unsigned>(cleanupAdvances) << " cleanup advances)\n";
+}
+
+void test_endpoint_recursive_delete_deadline_preserves_recovery_marker() {
+    resetTestRoot();
+    g_now_ms = 100U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    auto leaseResult = service.acquireMutation(
+        core::persistence::ProductMutationOwner::PROJECT
+    );
+    assert(leaseResult);
+    auto lease = std::move(leaseResult.value());
+    assert(service.createDirectory(lease, "projects/deadline-tree/a"));
+    const uint8_t payload[] = {'x'};
+    assert(service.write(
+        lease,
+        "projects/deadline-tree/a/value.bin",
+        0U,
+        payload,
+        sizeof(payload)
+    ));
+    assert(service.releaseMutation(lease));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    uint8_t request[256] = {};
+    const size_t requestSize = FileSystemRpcCodec::encodeDeleteRequest(
+        0x5252U,
+        "projects/deadline-tree",
+        true,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+
+    // Construct the continuation, precheck both paths, then atomically hide.
+    for (uint8_t advance = 0U; advance < 3U; ++advance) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++g_now_ms;
+    }
+    assert(transport.sendCount == 0U);
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "deadline-tree"
+    ));
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
+    ));
+
+    // The exact total deadline unwinds only control state: canonical content
+    // stays hidden and the fixed marker remains for the recovery-priority job.
+    g_now_ms = 100U + FILESYSTEM_RPC_TOTAL_WRITE_TIMEOUT_MS;
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(filesystem.filesystemCalls == 0U);
+    assert(transport.sendCount == 1U);
+    const auto expired = FileSystemRpcCodec::decodeStatusResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(expired);
+    assert(expired.value().requestId == 0x5252U);
+    assert(expired.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(!std::filesystem::exists(
+        testRoot() / "midi-studio" / "projects" / "deadline-tree"
+    ));
+    assert(std::filesystem::exists(
+        testRoot() / "midi-studio" / "tmp" / "rpc-d"
+    ));
+
+    endpoint.end();
+    std::cout
+        << "[PASS] recursive delete deadline preserves recovery marker\n";
+}
+
+void test_endpoint_advance_expires_abandoned_write_session() {
+    resetTestRoot();
+    g_now_ms = 0U;
 
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     ProductFileService service(filesystem);
     assert(service.init());
 
+    ProductDirectoryCatalog catalog(service);
     FakeTransport transport;
     FileSystemRpcEndpoint endpoint(
         transport,
         service,
+        catalog,
         nowMs,
         FileSystemRpcHandler::Config{100}
     );
@@ -1803,6 +3701,11 @@ void test_endpoint_update_expires_abandoned_write_session() {
     );
     assert(requestSize > 0);
     transport.emit(request, requestSize);
+    assert(transport.sendCount == 0U);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
     auto response = FileSystemRpcCodec::decodeWriteResponse(
         transport.sent,
         transport.sentSize
@@ -1810,14 +3713,703 @@ void test_endpoint_update_expires_abandoned_write_session() {
     assert(response);
     assert(response.value().status == FileSystemRpcStatus::OK);
     assert(service.stat("tmp/rpc-write-1234.tmp"));
+    assert(service.persistenceJobs().depth() == 1U);
 
-    g_now_ms = 1101;
-    endpoint.update();
+    // Timeout cleanup is filesystem work and therefore remains stopped-only.
+    g_now_ms = 1100U;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    core::persistence::ProductPersistenceWorkUsage playbackUsage{};
+    {
+        auto measuredResult = service.measurePersistenceWork(playbackUsage);
+        assert(measuredResult);
+        auto measured = std::move(measuredResult.value());
+        endpoint.advance(g_now_ms, true);
+    }
+    assert(playbackUsage.filesystemCalls == 0U);
+    assert(service.stat("tmp/rpc-write-1234.tmp"));
+    assert(service.persistenceJobs().depth() == 1U);
+
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
     assert(!service.stat("tmp/rpc-write-1234.tmp"));
     assert(!service.stat("projects/abandoned.bin"));
+    assert(service.persistenceJobs().depth() == 0U);
 
     endpoint.end();
-    std::cout << "[PASS] test_endpoint_update_expires_abandoned_write_session\n";
+    std::cout << "[PASS] test_endpoint_advance_expires_abandoned_write_session\n";
+}
+
+void test_endpoint_retains_one_legacy_frame_and_rejects_excess() {
+    resetTestRoot();
+    g_now_ms = 0U;
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    uint8_t request[64] = {};
+    core::persistence::ProductPersistenceWorkUsage receiveUsage{};
+    {
+        auto measuredResult = service.measurePersistenceWork(receiveUsage);
+        assert(measuredResult);
+        auto measured = std::move(measuredResult.value());
+        for (uint16_t requestId = 61U; requestId <= 63U; ++requestId) {
+            const size_t requestSize = FileSystemRpcCodec::encodeCapabilitiesRequest(
+                requestId,
+                request,
+                sizeof(request)
+            );
+            assert(requestSize > 0U);
+            transport.emit(request, requestSize);
+        }
+    }
+
+    assert(receiveUsage.filesystemCalls == 0U);
+    assert(receiveUsage.bytes == 0U);
+    assert(service.persistenceJobs().depth() == 1U);
+    assert(service.persistenceJobs().highWater() == 1U);
+    assert(transport.sendCount == 2U);
+    auto busy = FileSystemRpcCodec::decodeStatusResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(busy);
+    assert(busy.value().requestId == 63U);
+    assert(busy.value().status == FileSystemRpcStatus::BUSY);
+
+    assert(service.persistenceJobs().beginTurn(0U));
+    endpoint.advance(0U, false);
+    assert(transport.sendCount == 3U);
+    auto first = FileSystemRpcCodec::decodeCapabilitiesResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(first && first.value().requestId == 61U);
+    assert(service.persistenceJobs().depth() == 0U);
+
+    endpoint.end();
+    std::cout << "[PASS] endpoint one-frame legacy lease rejects excess\n";
+}
+
+void test_endpoint_playback_rejects_without_filesystem_work() {
+    resetTestRoot();
+    g_now_ms = 0U;
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    const uint8_t payload[] = {'p'};
+    assert(core::test::writeProductFileFixture(
+        service, "projects/playback.bin", 0U, payload, sizeof(payload)
+    ));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+    uint8_t request[128] = {};
+    const size_t requestSize = FileSystemRpcCodec::encodeStatRequest(
+        64U,
+        "projects/playback.bin",
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+    assert(service.persistenceJobs().beginTurn(0U));
+
+    core::persistence::ProductPersistenceWorkUsage usage{};
+    {
+        auto measuredResult = service.measurePersistenceWork(usage);
+        assert(measuredResult);
+        auto measured = std::move(measuredResult.value());
+        endpoint.advance(0U, true);
+    }
+    assert(usage.filesystemCalls == 0U);
+    assert(usage.bytes == 0U);
+    assert(service.persistenceJobs().depth() == 0U);
+    auto busy = FileSystemRpcCodec::decodeStatusResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(busy);
+    assert(busy.value().requestId == 64U);
+    assert(busy.value().status == FileSystemRpcStatus::BUSY);
+
+    endpoint.end();
+    std::cout << "[PASS] playback rejection performs zero filesystem work\n";
+}
+
+void test_endpoint_total_upload_deadline_is_not_refreshed_by_chunks() {
+    resetTestRoot();
+    g_now_ms = 1000U;
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    uint8_t request[128] = {};
+    size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        65U,
+        0x2345U,
+        "projects/total-deadline.bin",
+        2U,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(service.stat("tmp/rpc-write-2345.tmp"));
+
+    const uint8_t firstByte = 0x5AU;
+    g_now_ms = 9000U;
+    requestSize = FileSystemRpcCodec::encodeWriteChunkRequest(
+        66U,
+        0x2345U,
+        0U,
+        &firstByte,
+        1U,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    auto chunk = FileSystemRpcCodec::decodeWriteResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(chunk && chunk.value().status == FileSystemRpcStatus::OK);
+    assert(chunk.value().bytesWritten == 1U);
+
+    g_now_ms = 1000U + FILESYSTEM_RPC_TOTAL_WRITE_TIMEOUT_MS;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(!service.stat("tmp/rpc-write-2345.tmp"));
+    assert(!service.stat("projects/total-deadline.bin"));
+    assert(service.persistenceJobs().depth() == 0U);
+
+    endpoint.end();
+    std::cout << "[PASS] total upload deadline is absolute\n";
+}
+
+void test_aged_autosave_aborts_upload_before_promotion() {
+    resetTestRoot();
+
+    oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    test_support::CoreStorages storages;
+    core::state::CoreState state(storages.settings);
+    state.project.metadata.hasSavedIdentity = true;
+    std::strncpy(
+        state.project.metadata.id.data(),
+        "rpc-autosave",
+        state.project.metadata.id.size() - 1U
+    );
+    state.sequencer.pattern.setContentLength(8U);
+    state.sequencer.setStepDataAt(0U, 85U, 100U, 75U);
+    state.sequencer.pattern.toggle(0U);
+    state.markProjectMutated();
+
+    core::persistence::ProjectSessionStore sessionStore(service);
+    core::persistence::ProjectSessionAutosaveService autosave(sessionStore, 1U);
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    const uint32_t admittedAt = state.projectSessionSaveTimestampMs() + 1U;
+    g_now_ms = admittedAt;
+    uint8_t request[128] = {};
+    const size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        75U,
+        0x4567U,
+        "projects/aged-upload.bin",
+        4U,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    const auto admitted = autosave.update(state, g_now_ms);
+    assert(admitted.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    assert(service.persistenceJobs().depth() == 2U);
+    assert(service.persistenceJobs().highWater() == 2U);
+    assert(service.stat("tmp/rpc-write-4567.tmp"));
+    core::persistence::ProductPersistenceJobSnapshot autosaveSnapshot{};
+    assert(autosave.inspectPersistenceJob(autosaveSnapshot));
+    assert(autosaveSnapshot.state ==
+           core::persistence::ProductPersistenceJobState::DEFERRED);
+    assert(autosaveSnapshot.metrics.advances == 0U);
+
+    g_now_ms = admittedAt +
+        core::persistence::PRODUCT_PERSISTENCE_AUTOSAVE_MAX_DEFERRAL_MS - 1U;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    const auto stillDeferred = autosave.update(state, g_now_ms);
+    assert(stillDeferred.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    assert(service.stat("tmp/rpc-write-4567.tmp"));
+    assert(autosave.inspectPersistenceJob(autosaveSnapshot));
+    assert(autosaveSnapshot.state ==
+           core::persistence::ProductPersistenceJobState::DEFERRED);
+
+    g_now_ms = admittedAt +
+        core::persistence::PRODUCT_PERSISTENCE_AUTOSAVE_MAX_DEFERRAL_MS;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    const auto promoted = autosave.update(state, g_now_ms);
+    assert(promoted.status ==
+           core::persistence::ProjectSessionAutosaveService::Status::SAVING);
+    assert(!service.stat("tmp/rpc-write-4567.tmp"));
+    assert(!service.stat("projects/aged-upload.bin"));
+    assert(service.persistenceJobs().depth() == 1U);
+    assert(autosave.inspectPersistenceJob(autosaveSnapshot));
+    assert(autosaveSnapshot.state ==
+           core::persistence::ProductPersistenceJobState::ACTIVE);
+    assert(autosaveSnapshot.metrics.advances == 0U);
+
+    core::persistence::ProjectSessionAutosaveService::Result saved{};
+    for (uint16_t turn = 0U; turn < 384U; ++turn) {
+        ++g_now_ms;
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        saved = autosave.update(state, g_now_ms);
+        if (saved.status !=
+            core::persistence::ProjectSessionAutosaveService::Status::SAVING) {
+            break;
+        }
+    }
+    assert(saved.saved());
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(service.stat("session/current.mspj"));
+
+    endpoint.end();
+    std::cout << "[PASS] aged autosave safely aborts upload before promotion\n";
+}
+
+void test_upload_size_limit_is_inclusive() {
+    resetTestRoot();
+    Harness h;
+
+    size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        67U,
+        0x3456U,
+        "projects/max-upload.bin",
+        FILESYSTEM_RPC_MAX_UPLOAD_SIZE,
+        h.request,
+        sizeof(h.request)
+    );
+    assert(requestSize > 0U);
+    size_t responseSize = h.transact(requestSize);
+    auto accepted = FileSystemRpcCodec::decodeWriteResponse(
+        h.response,
+        responseSize
+    );
+    assert(accepted && accepted.value().status == FileSystemRpcStatus::OK);
+    assert(h.handler.hasActiveWriteSession());
+    h.handler.abortWriteSession();
+
+    requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        68U,
+        0x3457U,
+        "projects/oversize-upload.bin",
+        FILESYSTEM_RPC_MAX_UPLOAD_SIZE + 1U,
+        h.request,
+        sizeof(h.request)
+    );
+    assert(requestSize > 0U);
+    responseSize = h.transact(requestSize);
+    auto rejected = FileSystemRpcCodec::decodeWriteResponse(
+        h.response,
+        responseSize
+    );
+    assert(rejected && rejected.value().status == FileSystemRpcStatus::TOO_LARGE);
+    assert(!h.handler.hasActiveWriteSession());
+
+    std::cout << "[PASS] upload size limit is inclusive\n";
+}
+
+void test_endpoint_commit_yields_between_bounded_durable_phases() {
+    resetTestRoot();
+    g_now_ms = 100U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    constexpr uint16_t sessionId = 0x4567U;
+    const uint8_t payload[] = {'s', 'l', 'i', 'c', 'e', 'd'};
+    uint8_t request[256] = {};
+    size_t requestSize = FileSystemRpcCodec::encodeWriteBeginRequest(
+        69U,
+        sessionId,
+        "projects/cooperative-commit.bin",
+        sizeof(payload),
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(transport.sendCount == 1U);
+
+    ++g_now_ms;
+    requestSize = FileSystemRpcCodec::encodeWriteChunkRequest(
+        70U,
+        sessionId,
+        0U,
+        payload,
+        sizeof(payload),
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(transport.sendCount == 2U);
+
+    ++g_now_ms;
+    requestSize = FileSystemRpcCodec::encodeWriteCommitRequest(
+        71U,
+        sessionId,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+
+    uint8_t commitAdvances = 0U;
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    ++commitAdvances;
+    assert(filesystem.filesystemCalls <=
+           core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
+               .maxFilesystemCalls());
+    assert(filesystem.ioBytes <=
+           core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE.maxBytes());
+    assert(transport.sendCount == 2U);
+    ++g_now_ms;
+
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, true);
+    assert(filesystem.filesystemCalls == 0U);
+    assert(filesystem.ioBytes == 0U);
+    assert(transport.sendCount == 2U);
+    ++g_now_ms;
+
+    while (transport.sendCount == 2U && commitAdvances < 32U) {
+        filesystem.resetWorkCounters();
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++commitAdvances;
+        ++g_now_ms;
+        assert(filesystem.filesystemCalls <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
+                   .maxFilesystemCalls());
+        assert(filesystem.ioBytes <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
+                   .maxBytes());
+    }
+
+    assert(commitAdvances > 1U);
+    assert(commitAdvances < 32U);
+    assert(transport.sendCount == 3U);
+    auto committed = FileSystemRpcCodec::decodeWriteResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(committed);
+    assert(committed.value().requestId == 71U);
+    assert(committed.value().status == FileSystemRpcStatus::OK);
+    assert(service.persistenceJobs().depth() == 0U);
+    assertProductFileEquals(
+        service,
+        "projects/cooperative-commit.bin",
+        payload,
+        sizeof(payload)
+    );
+    assert(!service.stat("tmp/rpc-write-4567.tmp"));
+    assert(!service.stat("tmp/rpc-backup-4567.tmp"));
+
+    endpoint.end();
+    std::cout << "[PASS] endpoint cooperative commit phases ("
+              << static_cast<unsigned>(commitAdvances) << " advances)\n";
+}
+
+void test_endpoint_conditional_replace_is_cooperative_and_playback_safe() {
+    resetTestRoot();
+    g_now_ms = 200U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    assert(core::test::writeProductFileFixture(
+        service,
+        "library/step-presets/cooperative.mssp",
+        0U,
+        reinterpret_cast<const uint8_t*>("old"),
+        3U
+    ));
+    assert(core::test::writeProductFileFixture(
+        service,
+        "tmp/cooperative-stage.mssp",
+        0U,
+        reinterpret_cast<const uint8_t*>("new"),
+        3U
+    ));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+
+    uint8_t request[256] = {};
+    constexpr uint32_t operationId = 0x43505243U;
+    const size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        72U,
+        operationId,
+        "library/step-presets/cooperative.mssp",
+        "tmp/cooperative-stage.mssp",
+        SHA256_OLD,
+        SHA256_NEW,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+
+    // The admission turn only parses the frame, acquires the global mutation
+    // lease and retains the continuation. It performs no filesystem work.
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    uint8_t mutationAdvances = 1U;
+    assert(filesystem.filesystemCalls == 0U);
+    assert(filesystem.ioBytes == 0U);
+    assert(transport.sendCount == 0U);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    // A retained durable operation is frozen while music is active.
+    ++g_now_ms;
+    filesystem.resetWorkCounters();
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, true);
+    assert(filesystem.filesystemCalls == 0U);
+    assert(filesystem.ioBytes == 0U);
+    assert(transport.sendCount == 0U);
+
+    while (transport.sendCount == 0U && mutationAdvances < 64U) {
+        ++g_now_ms;
+        filesystem.resetWorkCounters();
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        ++mutationAdvances;
+        assert(filesystem.filesystemCalls <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE
+                   .maxFilesystemCalls());
+        assert(filesystem.ioBytes <=
+               core::persistence::PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO.maxBytes());
+    }
+
+    assert(mutationAdvances > 2U);
+    assert(mutationAdvances < 64U);
+    assert(transport.sendCount == 1U);
+    const auto mutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(mutation);
+    assert(mutation.value().requestId == 72U);
+    assert(mutation.value().operationId == operationId);
+    assert(mutation.value().status == FileSystemRpcStatus::OK);
+    assert(mutation.value().outcome == FileSystemRpcMutationOutcome::APPLIED);
+    assert(service.persistenceJobs().depth() == 0U);
+    assertProductFileEquals(
+        service,
+        "library/step-presets/cooperative.mssp",
+        reinterpret_cast<const uint8_t*>("new"),
+        3U
+    );
+    assert(!service.stat("tmp/cooperative-stage.mssp"));
+    assert(!service.stat("tmp/rpc-conditional.backup"));
+    assert(!service.stat("tmp/rpc-conditional.journal.tmp"));
+    assert(!service.stat("tmp/rpc-conditional.journal"));
+
+    endpoint.end();
+    std::cout << "[PASS] endpoint cooperative conditional replace ("
+              << static_cast<unsigned>(mutationAdvances) << " advances)\n";
+}
+
+void test_endpoint_reaps_conditional_continuation_after_media_invalidation() {
+    resetTestRoot();
+    g_now_ms = 300U;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    assert(core::test::writeProductFileFixture(
+        service,
+        "library/step-presets/media-loss.mssp",
+        0U,
+        reinterpret_cast<const uint8_t*>("old"),
+        3U
+    ));
+    assert(core::test::writeProductFileFixture(
+        service,
+        "tmp/media-loss-stage.mssp",
+        0U,
+        reinterpret_cast<const uint8_t*>("new"),
+        3U
+    ));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+    uint8_t request[256] = {};
+    const size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        73U,
+        0x4D454449U,
+        "library/step-presets/media-loss.mssp",
+        "tmp/media-loss-stage.mssp",
+        SHA256_OLD,
+        SHA256_NEW,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, false);
+    assert(transport.sendCount == 0U);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    service.markMediaUnavailable();
+    filesystem.resetWorkCounters();
+    ++g_now_ms;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, true);
+    assert(filesystem.filesystemCalls == 0U);
+    assert(filesystem.ioBytes == 0U);
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(transport.sendCount == 1U);
+    const auto unavailable = FileSystemRpcCodec::decodeStatusResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(unavailable);
+    assert(unavailable.value().requestId == 73U);
+    assert(unavailable.value().status == FileSystemRpcStatus::STORAGE_ERROR);
+
+    endpoint.end();
+    std::cout << "[PASS] media invalidation reaps conditional continuation\n";
+}
+
+void test_endpoint_deadline_cancels_durable_conditional_into_recovery() {
+    resetTestRoot();
+    constexpr uint32_t admittedAtMs = 400U;
+    g_now_ms = admittedAtMs;
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    assert(core::test::writeProductFileFixture(
+        service,
+        "library/step-presets/deadline.mssp",
+        0U,
+        reinterpret_cast<const uint8_t*>("old"),
+        3U
+    ));
+    assert(core::test::writeProductFileFixture(
+        service,
+        "tmp/deadline-stage.mssp",
+        0U,
+        reinterpret_cast<const uint8_t*>("new"),
+        3U
+    ));
+
+    ProductDirectoryCatalog catalog(service);
+    FakeTransport transport;
+    FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
+    endpoint.begin();
+    uint8_t request[256] = {};
+    const size_t requestSize = FileSystemRpcCodec::encodeConditionalReplaceRequest(
+        74U,
+        0x44454144U,
+        "library/step-presets/deadline.mssp",
+        "tmp/deadline-stage.mssp",
+        SHA256_OLD,
+        SHA256_NEW,
+        request,
+        sizeof(request)
+    );
+    assert(requestSize > 0U);
+    transport.emit(request, requestSize);
+
+    bool journalDurable = false;
+    for (uint8_t advances = 0U; advances < 32U && !journalDurable; ++advances) {
+        assert(service.persistenceJobs().beginTurn(g_now_ms));
+        endpoint.advance(g_now_ms, false);
+        journalDurable = static_cast<bool>(
+            service.stat("tmp/rpc-conditional.journal")
+        );
+        ++g_now_ms;
+    }
+    assert(journalDurable);
+    assert(transport.sendCount == 0U);
+    assert(service.persistenceJobs().depth() == 1U);
+
+    g_now_ms = admittedAtMs + FILESYSTEM_RPC_TOTAL_WRITE_TIMEOUT_MS;
+    assert(service.persistenceJobs().beginTurn(g_now_ms));
+    endpoint.advance(g_now_ms, true);
+    assert(transport.sendCount == 1U);
+    const auto expired = FileSystemRpcCodec::decodeStatusResponse(
+        transport.sent,
+        transport.sentSize
+    );
+    assert(expired);
+    assert(expired.value().requestId == 74U);
+    assert(expired.value().status == FileSystemRpcStatus::BUSY);
+    assert(service.persistenceJobs().depth() == 0U);
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::DEGRADED);
+    assert(filesystem.stat("/midi-studio/tmp/rpc-conditional.journal"));
+    uint8_t current[3] = {};
+    const auto read = filesystem.read(
+        "/midi-studio/library/step-presets/deadline.mssp",
+        0U,
+        current,
+        sizeof(current)
+    );
+    assert(read && read.value() == sizeof(current));
+    assert(std::memcmp(current, "old", sizeof(current)) == 0);
+
+    endpoint.end();
+    std::cout << "[PASS] conditional deadline preserves durable recovery evidence\n";
 }
 
 }  // namespace
@@ -1827,6 +4419,20 @@ int main() {
     std::cout << "FileSystemRpc tests\n";
     std::cout << "==============================================\n\n";
 
+    test_job_codec_matches_bridge_golden_vectors();
+    test_job_codec_start_subset_and_request_validation();
+    test_job_codec_response_semantics_and_retention();
+    test_endpoint_job_control_is_immediate_bounded_and_io_free();
+    test_endpoint_job_malformed_frames_fail_before_admission();
+    test_endpoint_job_completion_is_polled_retained_and_not_unsolicited();
+    test_endpoint_job_safe_cancel_deadline_and_media_are_typed();
+    test_endpoint_job_terminal_cache_has_exact_bounded_capacity();
+    test_endpoint_job_write_commit_reuses_upload_identity();
+    test_endpoint_job_conditional_journal_rejects_late_cancel();
+    test_endpoint_job_rename_and_conditional_delete_complete();
+    test_endpoint_job_safe_cancel_unwinds_reversible_conditional_plan();
+    test_endpoint_job_recursive_delete_cancel_too_late_continues();
+    test_endpoint_job_deadline_after_hide_finishes_recovery_safe();
     test_stat_and_read_roundtrip();
     test_capabilities_roundtrip();
     test_list_is_paginated_and_bounded();
@@ -1834,26 +4440,38 @@ int main() {
     test_write_session_commits_empty_file();
     test_write_session_aborts_on_short_append();
     test_write_commit_propagates_final_stat_error();
-    test_write_commit_restores_previous_file_when_promotion_fails();
-    test_write_commit_retains_backup_when_rollback_fails();
+    test_write_commit_requires_recovery_when_promotion_fails();
+    test_write_recovery_retains_backup_when_restore_fails();
     test_write_session_abort_and_timeout_cleanup();
     test_invalid_path_maps_to_error_status();
     test_read_error_response_is_decodable();
     test_file_management_operations();
+    test_storage_gate_maps_busy_exhausted_absent_and_io_failures();
     test_conditional_replace_is_cas_and_idempotent();
     test_conditional_replace_rejects_source_and_staging_mismatch();
     test_conditional_replace_rejects_case_alias_of_same_fat_path();
     test_conditional_delete_is_cas_and_idempotent();
-    test_conditional_replace_recovers_interrupted_promotion();
-    test_conditional_delete_recovers_interrupted_cleanup();
+    test_conditional_replace_requires_full_recovery_authority();
+    test_conditional_delete_requires_full_recovery_authority();
     test_conditional_journal_promotion_failure_is_non_mutating();
     test_orphan_conditional_journal_staging_is_cleaned_on_recovery();
     test_truncated_conditional_journal_is_quarantined_once();
     test_bad_crc_conditional_journal_is_quarantined_once();
     test_conditional_replace_rejects_fat_short_name_alias_syntax();
-    test_conditional_transaction_paths_are_protocol_reserved();
+    test_protocol_transaction_paths_are_reserved();
     test_endpoint_answers_only_filesystem_requests();
-    test_endpoint_update_expires_abandoned_write_session();
+    test_endpoint_recursive_delete_is_hide_first_and_one_node_per_turn();
+    test_endpoint_recursive_delete_deadline_preserves_recovery_marker();
+    test_endpoint_advance_expires_abandoned_write_session();
+    test_endpoint_retains_one_legacy_frame_and_rejects_excess();
+    test_endpoint_playback_rejects_without_filesystem_work();
+    test_endpoint_total_upload_deadline_is_not_refreshed_by_chunks();
+    test_aged_autosave_aborts_upload_before_promotion();
+    test_upload_size_limit_is_inclusive();
+    test_endpoint_commit_yields_between_bounded_durable_phases();
+    test_endpoint_conditional_replace_is_cooperative_and_playback_safe();
+    test_endpoint_reaps_conditional_continuation_after_media_invalidation();
+    test_endpoint_deadline_cancels_durable_conditional_into_recovery();
 
     resetTestRoot();
 

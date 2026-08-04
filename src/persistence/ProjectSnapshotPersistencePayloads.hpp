@@ -10,7 +10,7 @@ namespace core::persistence::project_snapshot_codec {
 inline constexpr uint8_t PROJECT_SNAPSHOT_CHUNK_VERSION_MAJOR = 1;
 inline constexpr uint8_t PROJECT_SNAPSHOT_CHUNK_VERSION_MINOR = 2;
 inline constexpr uint8_t PROJECT_MACRO_STATE_CHUNK_VERSION_MINOR = 3;
-inline constexpr uint8_t PROJECT_SEQUENCER_STATE_CHUNK_VERSION_MINOR = 3;
+inline constexpr uint8_t PROJECT_SEQUENCER_STATE_CHUNK_VERSION_MINOR = 4;
 inline constexpr uint8_t PROJECT_MACRO_AUTOMATION_CHUNK_VERSION_MINOR =
     core::persistence::project_control_codec::PROJECT_AUTOMATION_CHUNK_VERSION_MINOR;
 inline constexpr uint8_t PROJECT_MODULATION_GRAPH_CHUNK_VERSION_MINOR =

@@ -7,6 +7,7 @@
 
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerPatternRegionOps.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "ui/sequencer/SequencerCcLaneGridProjection.hpp"
 #include "ui/theme/StandaloneTheme.hpp"
 
@@ -20,7 +21,8 @@ FLASHMEM SequencerCcLaneGridProps buildSequencerCcLaneGridProps(
     const auto& ui = source.sequencer.ccLaneUi;
     if (ui.mode != seq::SequencerCcLaneUiMode::LANE_GRID) return {};
 
-    const auto* bank = seq::sequencerCcLaneView(source.sequencer.pattern);
+    const auto& pattern = seq::authoringPattern(source.sequencer);
+    const auto* bank = seq::sequencerCcLaneView(pattern);
     if (bank == nullptr || ui.focusedLane >= bank->lanes.size()) return {};
     const auto& lane = bank->lanes[ui.focusedLane];
     if (!lane.occupied) return {};
@@ -39,9 +41,9 @@ FLASHMEM SequencerCcLaneGridProps buildSequencerCcLaneGridProps(
     };
     const uint8_t length = std::max<uint8_t>(
         1U,
-        source.sequencer.pattern.length.get()
+        pattern.length.get()
     );
-    const auto region = seq::patternPlaybackRegion(source.sequencer.pattern);
+    const auto region = seq::patternPlaybackRegion(pattern);
     const uint8_t start = static_cast<uint8_t>(
         (ui.focusedStep / seq::SequencerPatternState::STEPS_PER_PAGE) *
         seq::SequencerPatternState::STEPS_PER_PAGE

@@ -12,7 +12,7 @@
 #include <oc/interface/IMidi.hpp>
 #include <oc/type/Result.hpp>
 
-#include "handler/common/MidiCcGlobalFrameCoordinator.hpp"
+#include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
 #include "handler/macro/MacroMidiCcRuntimeAdapter.hpp"
 #include "handler/macro/MacroPerformanceDomainServices.hpp"
 #include "state/MacroState.hpp"
@@ -75,7 +75,7 @@ struct Harness {
     oc::api::MidiAPI midi;
     core::handler::MacroPerformanceDomainServices services;
     core::sequencer::RealtimeMidiQueue queue;
-    core::handler::MidiCcGlobalFrameCoordinator coordinator;
+    core::sequencer::MidiCcGlobalFrameCoordinator coordinator;
     core::handler::MacroMidiCcRuntimeAdapter adapter;
     core::sequencer::ProjectTrackRuntimeSnapshot runtimeTracks{
         test_support::makeAllAudibleProjectTrackRuntimeSnapshot()
@@ -112,7 +112,9 @@ struct Harness {
         macros[1].value.set(0.80f);
     }
 
-    core::handler::MidiCcGlobalFrameResult resolveAndDrain(uint32_t deadlineUs = 0) {
+    core::sequencer::MidiCcGlobalFrameResult resolveAndDrain(
+        uint32_t deadlineUs = 0
+    ) {
         const auto result = coordinator.resolveLive(deadlineUs, runtimeTracks);
         queue.drainDue(midi, deadlineUs, UINT32_MAX);
         return result;
@@ -132,7 +134,8 @@ core::state::shared::MidiCcCandidate makeCandidate(
     return {
         .destination = {
             .identity = {
-                .port = core::handler::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
+                .port =
+                    core::sequencer::MidiCcGlobalFrameCoordinator::OUTPUT_PORT,
                 .channel = channel,
                 .controller = controller,
             },
@@ -330,7 +333,7 @@ void test_persistent_frame_accepts_full_base_and_live_capacity() {
     Harness h;
     std::array<
         core::state::shared::MidiCcCandidate,
-        core::handler::MidiCcPersistentAuthorFrame::MAX_CANDIDATES
+        core::sequencer::MidiCcPersistentAuthorFrame::MAX_CANDIDATES
     > authors{};
     uint16_t count = 0U;
     for (uint8_t track = 0U; track < 16U; ++track) {

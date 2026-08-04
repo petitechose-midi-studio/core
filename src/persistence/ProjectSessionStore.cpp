@@ -7,10 +7,10 @@
 namespace core::persistence {
 
 FLASHMEM ProjectSessionStore::ProjectSessionStore(ProductFileService& files)
-    : files_(files), save_transaction_(files_, workspace_) {}
+    : files_(files), save_transaction_(files_) {}
 
 FLASHMEM bool ProjectSessionStore::prepareWorkspace() {
-    return workspace_.prepare();
+    return static_cast<bool>(files_.prepareProjectWorkspace());
 }
 
 FLASHMEM oc::type::Result<ProjectSaveResult> ProjectSessionStore::saveCurrent(
@@ -28,6 +28,25 @@ FLASHMEM oc::type::Result<ProjectSaveResult> ProjectSessionStore::saveCurrent(
     );
 }
 
+FLASHMEM oc::type::Result<ProjectSaveResult> ProjectSessionStore::saveCurrent(
+    const core::state::project::ProjectSnapshot& snapshot,
+    const ProductMutationLease& recoveryLease,
+    ProjectSaveStage* failedStage
+) {
+    return project_file_transactions::saveToCompletionWithRecoveryLease(
+        save_transaction_,
+        snapshot,
+        {
+            .directory = "session",
+            .current = CURRENT_SESSION_PATH,
+            .backup = CURRENT_SESSION_BACKUP_PATH,
+            .tmp = CURRENT_SESSION_TMP_PATH,
+        },
+        recoveryLease,
+        failedStage
+    );
+}
+
 FLASHMEM oc::type::Result<void> ProjectSessionStore::beginSaveCurrent(
     const core::state::project::ProjectSnapshot& snapshot
 ) {
@@ -42,8 +61,26 @@ FLASHMEM oc::type::Result<void> ProjectSessionStore::beginSaveCurrent(
     );
 }
 
-FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSessionStore::advanceSaveCurrent() {
-    return save_transaction_.advance();
+FLASHMEM oc::type::Result<void> ProjectSessionStore::beginSaveCurrent(
+    const core::state::project::ProjectSnapshot& snapshot,
+    const ProductMutationLease& recoveryLease
+) {
+    return save_transaction_.beginWithRecoveryLease(
+        snapshot,
+        {
+            .directory = "session",
+            .current = CURRENT_SESSION_PATH,
+            .backup = CURRENT_SESSION_BACKUP_PATH,
+            .tmp = CURRENT_SESSION_TMP_PATH,
+        },
+        recoveryLease
+    );
+}
+
+FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSessionStore::advanceSaveCurrent(
+    ProjectSaveStage* attemptedStage
+) {
+    return save_transaction_.advance(attemptedStage);
 }
 
 FLASHMEM void ProjectSessionStore::cancelSaveCurrent() {
@@ -58,6 +95,10 @@ bool ProjectSessionStore::saveCurrentWriteSessionActive() const {
     return save_transaction_.writeSessionActive();
 }
 
+ProjectSaveStage ProjectSessionStore::saveCurrentStage() const {
+    return save_transaction_.stage();
+}
+
 FLASHMEM oc::type::Result<ProjectLoadResult> ProjectSessionStore::loadCurrent(
     core::state::project::ProjectSnapshot& out,
     core::persistence::project_file::LoadReport* report
@@ -68,7 +109,27 @@ FLASHMEM oc::type::Result<ProjectLoadResult> ProjectSessionStore::loadCurrent(
         );
     }
     return project_file_transactions::loadWithBackup(
-        files_, workspace_, CURRENT_SESSION_PATH, CURRENT_SESSION_BACKUP_PATH, out, report
+        files_, CURRENT_SESSION_PATH, CURRENT_SESSION_BACKUP_PATH, out, report
+    );
+}
+
+FLASHMEM oc::type::Result<ProjectLoadResult> ProjectSessionStore::loadCurrent(
+    core::state::project::ProjectSnapshot& out,
+    const ProductMutationLease& recoveryLease,
+    core::persistence::project_file::LoadReport* report
+) {
+    if (save_transaction_.active()) {
+        return oc::type::Result<ProjectLoadResult>::err(
+            {oc::type::ErrorCode::INVALID_STATE, "project session save active"}
+        );
+    }
+    return project_file_transactions::loadWithBackup(
+        files_,
+        recoveryLease,
+        CURRENT_SESSION_PATH,
+        CURRENT_SESSION_BACKUP_PATH,
+        out,
+        report
     );
 }
 

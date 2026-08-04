@@ -16,6 +16,5 @@ struct ObjectPair {
 
 ObjectPair createCentered(lv_obj_t* parent, uint32_t colorHex);
 void setVisible(const ObjectPair& icon, bool visible);
-void drawCentered(lv_layer_t* layer, const lv_area_t& area, uint32_t colorHex, lv_opa_t opa);
 
 }  // namespace core::ui::add_slot_icon

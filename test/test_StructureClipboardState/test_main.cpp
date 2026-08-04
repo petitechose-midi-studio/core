@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <iostream>
+#include <vector>
 
 #include "state/StructureClipboardState.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -16,6 +17,53 @@ namespace {
 
 namespace macro = core::state::macro;
 namespace sequencer = core::state::sequencer;
+
+#if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+#error "StructureClipboardState tests require deterministic EXTMEM failure injection"
+#endif
+
+using PayloadBytes = std::vector<unsigned char>;
+
+void assignAutomation(
+    macro::MacroPagesState& pages,
+    const macro::MacroAutomationSlotAddress& address,
+    float firstValue,
+    float lastValue
+) {
+    macro::MacroAutomationLane lane;
+    lane.active = true;
+    lane.durationBeats = 1.0f;
+    assert(macro::macroAutomationAppendPoint(lane, 0.0f, firstValue));
+    assert(macro::macroAutomationAppendPoint(lane, 1.0f, lastValue));
+    assert(test_support::project_control::assignAutomation(
+        pages.control,
+        address,
+        lane
+    ));
+}
+
+PayloadBytes snapshotAutomationPayload(
+    const core::state::MacroAutomationClipboard& payload
+) {
+    PayloadBytes bytes(sizeof(payload));
+    std::memcpy(bytes.data(), &payload, bytes.size());
+    return bytes;
+}
+
+void assertAutomationClipboardUnchanged(
+    const core::state::StructureClipboardState& clipboard,
+    const core::state::MacroAutomationClipboard* owner,
+    uint32_t revision,
+    const PayloadBytes& bytes
+) {
+    assert(clipboard.kind.get() ==
+           core::state::StructureClipboardKind::MACRO_AUTOMATION);
+    assert(clipboard.revision.get() == revision);
+    assert(clipboard.macroAutomationSet.get() == owner);
+    assert(owner != nullptr);
+    assert(bytes.size() == sizeof(*owner));
+    assert(std::memcmp(bytes.data(), owner, bytes.size()) == 0);
+}
 
 void test_cross_domain_copy_releases_inactive_owned_payloads() {
     core::state::StructureClipboardState clipboard;
@@ -41,30 +89,121 @@ void test_cross_domain_copy_releases_inactive_owned_payloads() {
     std::cout << "[PASS] test_cross_domain_copy_releases_inactive_owned_payloads\n";
 }
 
-void test_rejected_copy_clears_previous_clipboard() {
+void test_rejected_copy_preserves_previous_clipboard() {
     core::state::StructureClipboardState clipboard;
     const macro::MacroAutomationSlotAddress address{};
-    macro::MacroAutomationLane lane;
-    lane.active = true;
-    lane.durationBeats = 1.0f;
-    assert(macro::macroAutomationAppendPoint(lane, 0.0f, 0.25f));
-    assert(macro::macroAutomationAppendPoint(lane, 1.0f, 0.75f));
     macro::MacroPagesState pages;
-    assert(test_support::project_control::assignAutomation(
-        pages.control,
-        address,
-        lane
-    ));
+    assignAutomation(pages, address, 0.25f, 0.75f);
     assert(clipboard.storeMacroAutomation(pages.control, address));
     assert(clipboard.hasMacroAutomation());
 
+    const auto* owner = clipboard.macroAutomationSet.get();
+    const uint32_t revision = clipboard.revision.get();
+    const auto bytes = snapshotAutomationPayload(*owner);
+
     core::state::SequencerStepsClipboard emptySteps;
     assert(!clipboard.storeSequencerSteps(emptySteps, nullptr));
-    assert(clipboard.kind.get() == core::state::StructureClipboardKind::NONE);
-    assert(clipboard.macroAutomationSet == nullptr);
+    assertAutomationClipboardUnchanged(
+        clipboard,
+        owner,
+        revision,
+        bytes
+    );
     assert(clipboard.sequencerGraph == nullptr);
 
-    std::cout << "[PASS] test_rejected_copy_clears_previous_clipboard\n";
+    std::cout << "[PASS] test_rejected_copy_preserves_previous_clipboard\n";
+}
+
+void test_maximal_oom_preserves_bytes_and_success_replaces_once() {
+    core::state::StructureClipboardState clipboard;
+    const macro::MacroAutomationSlotAddress address{};
+    macro::MacroPagesState originalPages;
+    assignAutomation(originalPages, address, 0.2f, 0.8f);
+    assert(clipboard.storeMacroAutomation(originalPages.control, address));
+
+    const auto* originalOwner = clipboard.macroAutomationSet.get();
+    const auto originalAddress = reinterpret_cast<uintptr_t>(originalOwner);
+    const uint32_t originalRevision = clipboard.revision.get();
+    const auto originalBytes = snapshotAutomationPayload(*originalOwner);
+
+    macro::MacroPagesState replacementPages;
+    assignAutomation(replacementPages, address, 0.1f, 0.9f);
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(1U);
+        assert(!clipboard.storeMacroAutomation(
+            replacementPages.control,
+            address
+        ));
+        assert(core::app::testing::extmemAllocationAttempt == 1U);
+    }
+    assertAutomationClipboardUnchanged(
+        clipboard,
+        originalOwner,
+        originalRevision,
+        originalBytes
+    );
+
+    assert(clipboard.storeMacroAutomation(replacementPages.control, address));
+    assert(clipboard.revision.get() == originalRevision + 1U);
+    assert(reinterpret_cast<uintptr_t>(clipboard.macroAutomationSet.get()) !=
+           originalAddress);
+    assert(std::memcmp(
+        originalBytes.data(),
+        clipboard.macroAutomationSet.get(),
+        originalBytes.size()
+    ) != 0);
+
+    std::cout
+        << "[PASS] maximal clipboard OOM preserves bytes; success swaps once\n";
+}
+
+void test_two_allocation_replacement_preserves_at_each_failure() {
+    core::state::StructureClipboardState clipboard;
+    const macro::MacroAutomationSlotAddress address{};
+    macro::MacroPagesState originalPages;
+    assignAutomation(originalPages, address, 0.3f, 0.7f);
+    assert(clipboard.storeMacroAutomation(originalPages.control, address));
+
+    const auto* originalOwner = clipboard.macroAutomationSet.get();
+    const auto originalAddress = reinterpret_cast<uintptr_t>(originalOwner);
+    const uint32_t originalRevision = clipboard.revision.get();
+    const auto originalBytes = snapshotAutomationPayload(*originalOwner);
+
+    macro::MacroPagesState replacementPages;
+    replacementPages.tracks[0U].enabledPageMask = 0x0001U;
+    for (std::size_t ordinal = 1U; ordinal <= 2U; ++ordinal) {
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            assert(!clipboard.storeMacroPageSelection(
+                replacementPages,
+                0U,
+                0x0001U
+            ));
+            assert(core::app::testing::extmemAllocationAttempt == ordinal);
+        }
+        assertAutomationClipboardUnchanged(
+            clipboard,
+            originalOwner,
+            originalRevision,
+            originalBytes
+        );
+    }
+
+    assert(clipboard.storeMacroPageSelection(
+        replacementPages,
+        0U,
+        0x0001U
+    ));
+    assert(clipboard.kind.get() ==
+           core::state::StructureClipboardKind::MACRO_PAGE_SELECTION);
+    assert(clipboard.revision.get() == originalRevision + 1U);
+    assert(clipboard.macroAutomationSet == nullptr);
+    assert(clipboard.macroPageSelection != nullptr);
+    assert(reinterpret_cast<uintptr_t>(clipboard.macroPageSelection.get()) !=
+           originalAddress);
+
+    std::cout
+        << "[PASS] two-allocation replacement is failure-atomic at each ordinal\n";
 }
 
 void test_invalid_macro_automation_copy_reports_failure() {
@@ -291,7 +430,9 @@ void test_macro_slot_selection_clipboard_keeps_sparse_full_slot_metadata() {
 
 int main() {
     test_cross_domain_copy_releases_inactive_owned_payloads();
-    test_rejected_copy_clears_previous_clipboard();
+    test_rejected_copy_preserves_previous_clipboard();
+    test_maximal_oom_preserves_bytes_and_success_replaces_once();
+    test_two_allocation_replacement_preserves_at_each_failure();
     test_invalid_macro_automation_copy_reports_failure();
     test_macro_clipboards_store_only_the_selected_semantic_domain();
     test_modulation_assignment_clipboard_references_shared_source_only();

@@ -85,49 +85,6 @@ const char* feedbackLabel(const contextual::OperationFeedbackState& feedback) {
     return "";
 }
 
-const char* iconFor(contextual::ContextIconId icon) {
-    using Icon = contextual::ContextIconId;
-    switch (icon) {
-        case Icon::CREATE:
-        case Icon::APPLY:
-            return ::standalone::icons::ACTION_APPLY;
-        case Icon::ENTER:
-            return ::standalone::icons::ACTION_VALIDATE;
-        case Icon::EDIT:
-            return ::standalone::icons::SETTINGS_GEAR;
-        case Icon::CLEAR: return ::standalone::icons::ACTION_CLEAR;
-        case Icon::REMOVE: return ::standalone::icons::ACTION_REMOVE;
-        case Icon::ROUTE_INHERITED:
-            return ::standalone::icons::ROUTING;
-        case Icon::ROUTE_PINNED:
-            return ::standalone::icons::ROUTE_PIN;
-        case Icon::CONFLICT: return ::standalone::icons::STATUS_CONFLICT;
-        case Icon::ERROR: return ::standalone::icons::STATUS_ERROR;
-        case Icon::QUEUED: return ::standalone::icons::STATUS_QUEUED;
-        case Icon::APPLIED: return ::standalone::icons::ACTION_VALIDATE;
-        case Icon::NO_ROUTE: return ::standalone::icons::STATUS_ERROR;
-        case Icon::WARNING: return ::standalone::icons::STATUS_WARNING;
-        case Icon::HOLD:
-            return ::standalone::icons::ACTION_OVERWRITE;
-        default:
-            return ::standalone::icons::MIDI_CC;
-    }
-}
-
-core::ui::ContextActionStripTone stripTone(contextual::ContextTone tone) {
-    using Tone = contextual::ContextTone;
-    using StripTone = core::ui::ContextActionStripTone;
-    switch (tone) {
-        case Tone::GREEN: return StripTone::POSITIVE;
-        case Tone::BLUE: return StripTone::CONSTRUCTIVE;
-        case Tone::AMBER: return StripTone::WARNING;
-        case Tone::RED: return StripTone::DESTRUCTIVE;
-        case Tone::DEFAULT:
-        case Tone::NEUTRAL:
-        default: return StripTone::NEUTRAL;
-    }
-}
-
 const char* winnerLabel(core::state::shared::MidiCcCandidateClass winner) {
     using Winner = core::state::shared::MidiCcCandidateClass;
     switch (winner) {
@@ -590,9 +547,13 @@ FLASHMEM void SequencerCcLaneOverlayPresenter::renderActionStrip() {
         if (out.visualState == core::ui::ContextActionStripVisualState::HIDDEN) continue;
         const auto visualPolicy =
             cc_lane_overlay_visuals::projectedVisualPolicy(action, feedback);
-        out.tone = stripTone(visualPolicy.tone);
+        out.tone = cc_lane_overlay_visuals::stripTone(
+            visualPolicy.tone
+        );
         out.showIcon = true;
-        out.icon = iconFor(visualPolicy.icon);
+        out.icon = cc_lane_overlay_visuals::iconGlyph(
+            visualPolicy.icon
+        );
         out.iconUsesStandaloneFont = true;
         out.iconSize = ::standalone::icons::Size::M;
         const bool guardMatches = contextual::hasHoldAction(spec) &&

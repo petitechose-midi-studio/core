@@ -53,7 +53,8 @@ bool nodeEnabled(const Node& node);
 ResolvedStep applyNode(
     ResolvedStep parent,
     const Node& node,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    bool noteOffsetsUseScaleDegrees
 );
 ResolvedStep contentBaseForKind(
     ResolvedStep owner,
@@ -82,6 +83,7 @@ bool resolveRepresentativeChildContentStep(
     uint32_t localCycleIndex,
     uint8_t microPlayIndex,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    bool noteOffsetsUseScaleDegrees,
     SequencerChildContentSummary* outSummary = nullptr
 );
 
@@ -108,11 +110,13 @@ bool validateFrame(const SequencerState& sequencer, SequencerContentViewFrame& f
 ResolvedStep resolveOwnerStepAtDepth(
     const SequencerState& sequencer,
     oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
-    uint8_t frameDepth
+    uint8_t frameDepth,
+    bool noteOffsetsUseScaleDegrees
 );
 ResolvedStep resolveOwnerStep(
     const SequencerState& sequencer,
-    oc::note::sequencer::StepSequencerScaleSettings scaleSettings
+    oc::note::sequencer::StepSequencerScaleSettings scaleSettings,
+    bool noteOffsetsUseScaleDegrees
 );
 SequencerGraphNodeId stepNodeIdForFrame(
     const SequencerState& sequencer,

@@ -16,6 +16,7 @@
 #include "context/standalone/StandaloneUiAssembly.hpp"
 #include "diagnostics/MemoryFootprintReporter.hpp"
 #include "handler/sequencer/SequencerInputUtils.hpp"
+#include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "protocol/filesystem/FileSystemRpc.hpp"
 #include "config/TimeCompat.hpp"
@@ -33,8 +34,11 @@ namespace input_utils = core::handler::sequencer::input_utils;
 // Constructor and destructor must be in .cpp where handler types are complete
 FLASHMEM StandaloneContext::StandaloneContext(
     core::state::CoreState& state,
-    core::persistence::ProductFileService& productFiles
-) : core_state_(state), product_files_(productFiles) {}
+    core::persistence::ProductFileService& productFiles,
+    core::persistence::ProductDirectoryCatalog& productCatalog
+) : core_state_(state),
+    product_files_(productFiles),
+    product_catalog_(productCatalog) {}
 
 FLASHMEM StandaloneContext::~StandaloneContext() = default;
 
@@ -111,8 +115,12 @@ void StandaloneContext::update() {
     if (feature_assembly_) {
         feature_assembly_->update(core::time_compat::millis());
     }
+}
+
+void StandaloneContext::advancePersistence(uint32_t nowMs, bool playbackActive) {
+    product_catalog_.advance(nowMs, playbackActive);
     if (filesystem_rpc_endpoint_) {
-        filesystem_rpc_endpoint_->update();
+        filesystem_rpc_endpoint_->advance(nowMs, playbackActive);
     }
 }
 
@@ -210,6 +218,7 @@ FLASHMEM bool StandaloneContext::createFeatureAssembly() {
     feature_assembly_ = core::app::makeExtmemUnique<core::context::standalone::StandaloneFeatureAssembly>(
         core_state_,
         product_files_,
+        product_catalog_,
         overlay_assembly_->controller(),
         overlay_assembly_->presentationRegistry(),
         encoders(),
@@ -272,7 +281,10 @@ FLASHMEM bool StandaloneContext::createFileSystemRpcEndpoint() {
         core::app::makeExtmemUnique<core::protocol::filesystem::FileSystemRpcEndpoint>(
             frames(),
             product_files_,
-            &core::time_compat::millis
+            product_catalog_,
+            &core::time_compat::millis,
+            core::protocol::filesystem::FileSystemRpcHandler::Config{},
+            &core::time_compat::micros
         );
     if (!filesystem_rpc_endpoint_) {
         OC_LOG_ERROR("Filesystem RPC endpoint allocation failed");

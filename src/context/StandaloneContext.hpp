@@ -23,6 +23,7 @@
  * CoreState is received from main.cpp (survives context switches).
  */
 
+#include <cstdint>
 #include <memory>
 
 #include "app/ExtmemAllocator.hpp"
@@ -39,6 +40,7 @@ struct CoreState;
 }
 
 namespace core::persistence {
+class ProductDirectoryCatalog;
 class ProductFileService;
 }
 
@@ -82,7 +84,8 @@ public:
      * @param state Reference to global CoreState (owned by main.cpp)
      */
     StandaloneContext(core::state::CoreState& state,
-                      core::persistence::ProductFileService& productFiles);
+                      core::persistence::ProductFileService& productFiles,
+                      core::persistence::ProductDirectoryCatalog& productCatalog);
 
     ~StandaloneContext() override;
 
@@ -95,6 +98,7 @@ public:
     // IContext interface
     oc::type::Result<void> init() override;
     void update() override;
+    void advancePersistence(uint32_t nowMs, bool playbackActive);
     const char* getName() const override { return "Standalone"; }
 
 protected:
@@ -126,6 +130,7 @@ private:
 
     core::state::CoreState& core_state_;  // External reference (survives context switches)
     core::persistence::ProductFileService& product_files_;
+    core::persistence::ProductDirectoryCatalog& product_catalog_;
 
 #if defined(MS_UX_RECORDER)
     core::validation::ux::SemanticUxSurfaceRegistry ux_surface_registry_;

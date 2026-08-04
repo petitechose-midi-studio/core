@@ -11,27 +11,35 @@
 #include <oc/impl/HostFileSystem.hpp>
 
 #include "../../src/persistence/ProductFileService.hpp"
+#include "../support/ProductFileTestMutation.hpp"
+#include "../../src/persistence/SequencerGraphAssetCodec.hpp"
 #include "../../src/persistence/StepPresetFileStore.hpp"
+#include "../../src/state/sequencer/SequencerGraphAsset.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
-#include "../../src/state/sequencer/SequencerGraphPresetWorkflow.hpp"
 #include "../../src/state/sequencer/SequencerState.hpp"
 
 namespace {
 
+namespace asset_codec =
+    core::persistence::sequencer_graph_asset_codec;
+
 using core::persistence::ProductFileService;
+using core::persistence::ProductDirectoryCatalog;
 using core::persistence::StepPresetFileListEntry;
 using core::persistence::StepPresetFileStore;
 using core::state::sequencer::SequencerState;
+using core::state::sequencer::SequencerStepGraphPreset;
 using core::state::sequencer::StepProperty;
+using core::state::sequencer::applyStepGraphPreset;
+using core::state::sequencer::captureStepGraphPreset;
 using core::state::sequencer::createMicroSequence;
 using core::state::sequencer::graphView;
-using core::state::sequencer::loadFocusedStepGraphPreset;
 using core::state::sequencer::nodeLocalVariationRange;
 using core::state::sequencer::rootStepNodeId;
-using core::state::sequencer::saveFocusedStepGraphPreset;
 using core::state::sequencer::setNodeLocalVariationRange;
 using core::state::sequencer::setNodeNoteOffset;
 using core::state::sequencer::setNodeVelocityOffset;
+using core::state::sequencer::setStepGraphPresetMetadata;
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
 
 std::filesystem::path testRoot() {
@@ -84,20 +92,82 @@ void assertLoadedIntoTarget(const SequencerState& target) {
     assert(nodeLocalVariationRange(*child, StepProperty::NOTE) == 4);
 }
 
+asset_codec::EncodeResult encodeFocusedPreset(
+    const SequencerState& source,
+    const char* presetId,
+    const char* semanticName,
+    uint8_t* out,
+    uint16_t capacity
+) {
+    SequencerStepGraphPreset preset{};
+    assert(captureStepGraphPreset(
+        source,
+        source.focusedStep.get(),
+        {},
+        preset,
+        nullptr
+    ));
+    assert(setStepGraphPresetMetadata(
+        preset,
+        presetId,
+        semanticName,
+        preset.scalePolicy,
+        preset.sourceScale
+    ));
+    return asset_codec::encode(preset, out, capacity);
+}
+
+oc::type::Result<core::persistence::StepPresetFileListResult> listSettled(
+    ProductFileService& files,
+    ProductDirectoryCatalog& catalog,
+    StepPresetFileStore& store,
+    StepPresetFileListEntry* entries,
+    uint8_t capacity
+) {
+    auto listed = store.list(entries, capacity);
+    for (uint32_t nowMs = 1U;
+         !listed && listed.error().code == oc::type::ErrorCode::HARDWARE_BUSY &&
+         nowMs <= ProductDirectoryCatalog::MAX_ENTRIES + 2U;
+         ++nowMs) {
+        assert(files.persistenceJobs().beginTurn(nowMs));
+        catalog.advance(nowMs, false);
+        listed = store.list(entries, capacity);
+    }
+    return listed;
+}
+
+void applyFocusedPreset(
+    SequencerState& target,
+    const uint8_t* data,
+    uint16_t size
+) {
+    SequencerStepGraphPreset preset{};
+    assert(asset_codec::decode(data, size, preset, nullptr));
+    assert(applyStepGraphPreset(
+        target,
+        target.focusedStep.get(),
+        preset,
+        nullptr
+    ));
+}
+
 void test_step_preset_file_store_roundtrip_and_lists_files() {
     resetTestRoot();
     oc::impl::HostFileSystem filesystem(testRoot().string().c_str());
     assert(filesystem.init());
     ProductFileService productFiles(filesystem);
     assert(productFiles.init());
-    StepPresetFileStore store(productFiles);
+    ProductDirectoryCatalog catalog(productFiles);
+    StepPresetFileStore store(productFiles, catalog);
 
     SequencerState source;
     prepareSource(source);
 
     std::array<uint8_t, StepPresetFileStore::MAX_FILE_SIZE> payload{};
-    const auto encoded = saveFocusedStepGraphPreset(
+    const auto encoded = encodeFocusedPreset(
         source,
+        "step-preset-001",
+        "Step preset 001",
         payload.data(),
         static_cast<uint16_t>(payload.size())
     );
@@ -113,7 +183,7 @@ void test_step_preset_file_store_roundtrip_and_lists_files() {
     ));
 
     StepPresetFileListEntry entries[4]{};
-    const auto listed = store.list(entries, 4);
+    const auto listed = listSettled(productFiles, catalog, store, entries, 4);
     assert(listed);
     assert(listed.value().count == 1);
     assert(!listed.value().truncated);
@@ -140,11 +210,11 @@ void test_step_preset_file_store_roundtrip_and_lists_files() {
     target.focusedStep.set(6);
     target.pattern.setEnabled(6, false);
     assert(target.setStepDataAt(6, 41, 11, 32, 5, 100));
-    const auto applied = loadFocusedStepGraphPreset(target, loadedPayload.data(), loadedSize);
-    assert(applied.ok());
+    applyFocusedPreset(target, loadedPayload.data(), loadedSize);
     assertLoadedIntoTarget(target);
 
-    assert(productFiles.rename(
+    assert(core::test::renameProductFileFixture(
+        productFiles,
         "library/step-presets/step-preset-001.mssp",
         "library/step-presets/step-preset-001.mssp.bak"
     ));
@@ -175,13 +245,16 @@ void test_remove_is_exact_and_cleans_atomic_sidecars() {
     assert(filesystem.init());
     ProductFileService productFiles(filesystem);
     assert(productFiles.init());
-    StepPresetFileStore store(productFiles);
+    ProductDirectoryCatalog catalog(productFiles);
+    StepPresetFileStore store(productFiles, catalog);
 
     SequencerState source;
     prepareSource(source);
     std::array<uint8_t, StepPresetFileStore::MAX_FILE_SIZE> payload{};
-    const auto encoded = saveFocusedStepGraphPreset(
+    const auto encoded = encodeFocusedPreset(
         source,
+        "step-preset-007",
+        "Step preset 007",
         payload.data(),
         static_cast<uint16_t>(payload.size())
     );
@@ -191,10 +264,14 @@ void test_remove_is_exact_and_cleans_atomic_sidecars() {
     const char* const backup =
         "library/step-presets/step-preset-007.mssp.bak";
     const char* const tmp = "tmp/step-preset-007.mssp.tmp";
-    assert(productFiles.write(backup, 0, payload.data(), encoded.bytesWritten));
-    assert(productFiles.flush(backup));
-    assert(productFiles.write(tmp, 0, payload.data(), encoded.bytesWritten));
-    assert(productFiles.flush(tmp));
+    assert(core::test::writeProductFileFixture(
+        productFiles, backup, 0, payload.data(), encoded.bytesWritten
+    ));
+    assert(core::test::flushProductFileFixture(productFiles, backup));
+    assert(core::test::writeProductFileFixture(
+        productFiles, tmp, 0, payload.data(), encoded.bytesWritten
+    ));
+    assert(core::test::flushProductFileFixture(productFiles, tmp));
 
     const auto invalid = store.remove("../step-preset-007");
     assert(!invalid);

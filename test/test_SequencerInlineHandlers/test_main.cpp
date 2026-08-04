@@ -1,7 +1,7 @@
 #include <cassert>
 #include <cstring>
-#include <iostream>
 
+#include <iostream>
 #include <oc/api/ButtonAPI.hpp>
 #include <oc/api/EncoderAPI.hpp>
 #include <oc/context/OverlayManager.hpp>
@@ -11,27 +11,54 @@
 
 #include "../../src/handler/sequencer/PatternPitchSettingsDomainServices.hpp"
 #include "../../src/handler/sequencer/PatternPitchSettingsHandler.hpp"
+#include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "../../src/handler/sequencer/SequencerPropertySelectorHandler.hpp"
-#include "../../src/handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
+#include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
 
 namespace {
 
 uint32_t g_now_ms = 0;
+bool g_prepared_begin_seen = false;
+core::state::sequencer::SequencerCoalescedPatternPayloadPlan g_prepared_payload_plan =
+    core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly;
 
-uint32_t mockTimeMs() {
-    return g_now_ms;
-}
+uint32_t mockTimeMs() { return g_now_ms; }
 
 using test_support::TestButtonHardware;
 using test_support::TestEncoderHardware;
 
 using StepProperty = core::state::sequencer::StepProperty;
+
+core::state::sequencer::SequencerPreparedPatternEditBeginOutcome rejectPreparedPatternEdit(
+    void*, core::state::sequencer::SequencerPreparedPatternEditOwner, uint8_t,
+    core::state::sequencer::SequencerCoalescedPatternPayloadPlan payloadPlan,
+    core::state::sequencer::SequencerHistoryDescriptor, bool) {
+    g_prepared_begin_seen = true;
+    g_prepared_payload_plan = payloadPlan;
+    return core::state::sequencer::SequencerPreparedPatternEditBeginOutcome::ResourceUnavailable;
+}
+
+core::state::sequencer::SequencerPatternHistoryCommitOutcome noPendingPatternEdit(void*) {
+    return core::state::sequencer::SequencerPatternHistoryCommitOutcome::NoPending;
+}
+
+core::handler::SequencerHistoryDomainServices preparedHistoryServices(core::state::CoreState& state,
+                                                                      bool rejectPreparedEdits) {
+    if (!rejectPreparedEdits) {
+        return core::handler::SequencerHistoryDomainServices::fromCoreState(state);
+    }
+    static constexpr core::handler::SequencerHistoryDomainServices::Operations operations{
+        .commitCoalescedPatternEdit = noPendingPatternEdit,
+        .beginPreparedPatternEdit = rejectPreparedPatternEdit,
+    };
+    return core::handler::SequencerHistoryDomainServices::fromStaticOperations<operations>(nullptr);
+}
 
 struct SequencerInlineHarness {
     static constexpr oc::type::ScopeID SEQUENCER_SCOPE = 701;
@@ -40,9 +67,9 @@ struct SequencerInlineHarness {
 
     test_support::CoreStorages storages;
     core::state::CoreState state;
-    oc::state::Signal<
-        core::state::StructureNavigationFocus,
-        core::state::kStructureNavigationFocusMaxSubscribers> navigationFocus;
+    oc::state::Signal<core::state::StructureNavigationFocus,
+                      core::state::kStructureNavigationFocusMaxSubscribers>
+        navigationFocus;
 
     oc::core::event::EventBus eventBus;
     oc::core::input::InputBinding inputBinding;
@@ -56,46 +83,33 @@ struct SequencerInlineHarness {
     core::handler::SequencerPatternQuickControlsHandler patternQuickControlsHandler;
     core::handler::SequencerMacroPropertyHandler macroPropertyHandler;
 
-    SequencerInlineHarness()
-        : state(storages.settings)
-        , navigationFocus(core::state::StructureNavigationFocus::PAGE)
-        , inputBinding(eventBus, mockTimeMs)
-        , buttons(inputBinding, buttonHw)
-        , encoders(inputBinding, encoderHw)
-        , overlayManager(state.overlays, buttons)
-        , propertySelectorHandler(
+    explicit SequencerInlineHarness(bool rejectPreparedEdits = false)
+        : state(storages.settings), navigationFocus(core::state::StructureNavigationFocus::PAGE),
+          inputBinding(eventBus, mockTimeMs), buttons(inputBinding, buttonHw),
+          encoders(inputBinding, encoderHw), overlayManager(state.overlays, buttons),
+          propertySelectorHandler(
               core::handler::SequencerPropertySelectorHandler::StateRefs{
                   state.overlays,
                   state.sequencer,
                   state.trackNavigation,
                   navigationFocus,
-                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+                  preparedHistoryServices(state, rejectPreparedEdits),
               },
-              encoders,
-              buttons,
-              SEQUENCER_SCOPE,
-              mockTimeMs
-          )
-        , patternPitchSettingsHandler(
+              encoders, buttons, SEQUENCER_SCOPE, mockTimeMs),
+          patternPitchSettingsHandler(
               core::handler::PatternPitchSettingsHandler::StateRefs{
                   state.patternPitchSettings,
                   state.sequencer,
-                  core::handler::SequencerHistoryDomainServices::fromCoreState(state),
+                  preparedHistoryServices(state, rejectPreparedEdits),
               },
               core::handler::PatternPitchSettingsDomainServices{
                   core::handler::PatternPitchSettingsDomainServices::StateRefs{
                       state.sequencer,
                       state.sequencerTracks,
-                  }
-              },
-              overlayManager,
-              encoders,
-              buttons,
-              SEQUENCER_SCOPE,
-              PITCH_SETTINGS_SCOPE,
-              PITCH_SELECTOR_SCOPE
-          )
-        , patternQuickControlsHandler(
+                  }},
+              overlayManager, encoders, buttons, SEQUENCER_SCOPE, PITCH_SETTINGS_SCOPE,
+              PITCH_SELECTOR_SCOPE),
+          patternQuickControlsHandler(
               core::handler::SequencerPatternQuickControlsHandler::StateRefs{
                   state.overlays,
                   state.sequencer,
@@ -103,11 +117,8 @@ struct SequencerInlineHarness {
                   navigationFocus,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
-              encoders,
-              buttons,
-              SEQUENCER_SCOPE
-          )
-        , macroPropertyHandler(
+              encoders, buttons, SEQUENCER_SCOPE),
+          macroPropertyHandler(
               core::handler::SequencerMacroPropertyHandler::StateRefs{
                   state.overlays,
                   state.sequencer,
@@ -116,21 +127,16 @@ struct SequencerInlineHarness {
                   navigationFocus,
                   core::handler::SequencerHistoryDomainServices::fromCoreState(state),
               },
-              encoders,
-              buttons,
-              SEQUENCER_SCOPE,
-              mockTimeMs
-          ) {
+              encoders, buttons, SEQUENCER_SCOPE, mockTimeMs) {
         overlayManager.setActiveViewProvider([]() { return SEQUENCER_SCOPE; });
-        overlayManager.registerCleanup(
-            core::ui::OverlayType::PATTERN_PITCH_SETTINGS,
-            PITCH_SETTINGS_SCOPE
-        );
-        overlayManager.registerCleanup(
-            core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR,
-            PITCH_SELECTOR_SCOPE
-        );
+        overlayManager.registerCleanup(core::ui::OverlayType::PATTERN_PITCH_SETTINGS,
+                                       PITCH_SETTINGS_SCOPE);
+        overlayManager.registerCleanup(core::ui::OverlayType::PATTERN_PITCH_SETTINGS_SELECTOR,
+                                       PITCH_SELECTOR_SCOPE);
         g_now_ms = 0;
+        g_prepared_begin_seen = false;
+        g_prepared_payload_plan =
+            core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly;
     }
 
     void press(Config::ButtonID id) {
@@ -160,7 +166,6 @@ struct SequencerInlineHarness {
         encoderHw.setPosition(encoderId, value);
         eventBus.emit(oc::core::event::EncoderChangedEvent(encoderId, value));
     }
-
 };
 
 void openPropertySelector(SequencerInlineHarness& h) {
@@ -208,7 +213,40 @@ void test_property_selector_left_top_closes_without_reverting_selected_property(
     assert(h.state.sequencer.activeStepProperty.get() == StepProperty::NUDGE);
     assert(h.state.sequencerHistory.undoCount() == 0);
 
-    std::cout << "[PASS] test_property_selector_left_top_closes_without_reverting_selected_property\n";
+    std::cout
+        << "[PASS] test_property_selector_left_top_closes_without_reverting_selected_property\n";
+}
+
+void test_property_selector_stays_open_when_history_barrier_fails() {
+    namespace seq = core::state::sequencer;
+    SequencerInlineHarness h;
+    openPropertySelector(h);
+
+    constexpr auto owner = seq::SequencerPreparedPatternEditOwner::PatternPitch;
+    const auto descriptor = seq::SequencerHistoryDescriptor{
+        .kind = seq::SequencerHistoryActionKind::PatternSettings,
+        .trackIndex = 0U,
+    };
+    assert(h.state.beginOrContinueSequencerPreparedPatternEdit(
+               owner, 0U, seq::SequencerCoalescedPatternPayloadPlan::FlatOnly, descriptor) ==
+           seq::SequencerPreparedPatternEditBeginOutcome::Started);
+
+    const uint32_t feedbackRevisionBefore = h.state.sequencer.historyFeedback.revision.get();
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevisionBefore + 1U);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "History unavailable") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
+
+    assert(h.state.sealSequencerPreparedPatternEdit(owner, 0U, false, descriptor) ==
+           seq::SequencerPreparedPatternEditSealOutcome::Cleared);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    std::cout << "[PASS] Property Selector remains owned across failed history barrier\n";
 }
 
 void test_property_selector_apply_keeps_selected_property() {
@@ -233,7 +271,8 @@ void test_property_selector_does_not_open_when_pattern_quick_controls_are_active
     h.tap(Config::ButtonID::LEFT_BOTTOM);
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
 
-    std::cout << "[PASS] test_property_selector_does_not_open_when_pattern_quick_controls_are_active\n";
+    std::cout
+        << "[PASS] test_property_selector_does_not_open_when_pattern_quick_controls_are_active\n";
 }
 
 void test_track_focus_remains_distinct_from_pattern_outside_structure() {
@@ -281,14 +320,8 @@ void test_state_is_a_direct_step_property() {
 
     assert(h.state.undoSequencerHistory());
     assert(!h.state.sequencer.pattern.isEnabled(0));
-    assert(std::strcmp(
-        h.state.sequencer.historyFeedback.line2.data(),
-        "Step 01 State"
-    ) == 0);
-    assert(std::strcmp(
-        h.state.sequencer.historyFeedback.line3.data(),
-        "On -> Off"
-    ) == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Step 01 State") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "On -> Off") == 0);
     assert(h.state.redoSequencerHistory());
     assert(h.state.sequencer.pattern.isEnabled(0));
 
@@ -340,6 +373,31 @@ void test_property_selector_edits_active_property_variation_range() {
     std::cout << "[PASS] test_property_selector_edits_active_property_variation_range\n";
 }
 
+void test_property_selector_rejected_prepare_blocks_edit_and_feedback() {
+    SequencerInlineHarness h(true);
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    openPropertySelector(h);
+
+    g_now_ms = 100;
+    const uint32_t feedbackDeadline = h.state.sequencer.patternVariationFeedback.hideAtMs;
+    const uint32_t historyFeedbackRevision = h.state.sequencer.historyFeedback.revision.get();
+    h.turn(Config::EncoderID::OPT, 1.0f);
+
+    assert(g_prepared_begin_seen);
+    assert(g_prepared_payload_plan ==
+           core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly);
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 0);
+    assert(h.state.sequencer.patternVariationFeedback.hideAtMs == feedbackDeadline);
+    assert(h.state.sequencerHistory.undoCount() == 0);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencer.historyFeedback.revision.get() == historyFeedbackRevision + 1U);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Memory unavailable") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
+
+    std::cout << "[PASS] Property Selector resource rejection is visible and atomic\n";
+}
+
 void test_property_selector_left_top_commits_live_variation_edit() {
     SequencerInlineHarness h;
     h.state.sequencer.activeStepProperty.set(StepProperty::GATE);
@@ -379,10 +437,7 @@ void test_property_selector_left_top_commits_live_local_random_edit() {
     assert(graph != nullptr);
     const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
     assert(node != nullptr);
-    assert(
-        core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) ==
-        127
-    );
+    assert(core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 127);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
@@ -393,13 +448,30 @@ void test_property_selector_left_top_commits_live_local_random_edit() {
     graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
     if (graph != nullptr) {
         node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
-        assert(
-            node == nullptr ||
-            core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0
-        );
+        assert(node == nullptr ||
+               core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0);
     }
 
     std::cout << "[PASS] test_property_selector_left_top_commits_live_local_random_edit\n";
+}
+
+void test_property_selector_local_exact_return_closes_without_history() {
+    SequencerInlineHarness h;
+    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    assert(core::state::sequencer::ensureGraphRoot(h.state.sequencer.pattern));
+
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_3, 1.0f);
+    h.turn(Config::EncoderID::MACRO_3, 0.0f);
+
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    h.tap(Config::ButtonID::LEFT_TOP);
+    assert(!h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+    assert(h.state.sequencerHistory.undoCount() == 0);
+
+    std::cout << "[PASS] test_property_selector_local_exact_return_closes_without_history\n";
 }
 
 void test_step_property_selector_left_bottom_is_secondary_random_layer() {
@@ -427,10 +499,7 @@ void test_step_property_selector_left_bottom_is_secondary_random_layer() {
     assert(graph != nullptr);
     const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
     assert(node != nullptr);
-    assert(
-        core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) ==
-        127
-    );
+    assert(core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 127);
 
     h.release(Config::ButtonID::LEFT_BOTTOM);
     assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
@@ -445,10 +514,8 @@ void test_step_property_selector_left_bottom_is_secondary_random_layer() {
     graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
     if (graph != nullptr) {
         node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
-        assert(
-            node == nullptr ||
-            core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0
-        );
+        assert(node == nullptr ||
+               core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0);
     }
 
     std::cout << "[PASS] test_step_property_selector_left_bottom_is_secondary_random_layer\n";
@@ -480,6 +547,58 @@ void test_property_selector_global_and_local_random_have_separate_undo() {
     assert(core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 127);
 
     assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 127);
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    if (graph != nullptr) {
+        node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+        assert(node == nullptr ||
+               core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0);
+    }
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 0);
+
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 127);
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    if (graph != nullptr) {
+        node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+        assert(node == nullptr ||
+               core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0);
+    }
+    assert(h.state.redoSequencerHistory());
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+    assert(node != nullptr);
+    assert(core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 127);
+
+    std::cout << "[PASS] test_property_selector_global_and_local_random_have_separate_undo\n";
+}
+
+void test_property_selector_local_then_global_undo_follows_chronology() {
+    SequencerInlineHarness h;
+    h.state.sequencer.pattern.setContentLength(8);
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    h.state.sequencer.pattern.velocity[2] = 64;
+
+    h.press(Config::ButtonID::LEFT_BOTTOM);
+    assert(h.state.sequencer.stepPropertyInlineSelector.selecting.get());
+
+    g_now_ms = 100;
+    h.turn(Config::EncoderID::MACRO_3, 1.0f);
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    h.tap(Config::ButtonID::LEFT_TOP);
+
+    assert(h.state.sequencerHistory.undoCount() == 2);
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 127);
+    const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+    assert(node != nullptr);
+    assert(core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 127);
+
+    assert(h.state.undoSequencerHistory());
     assert(h.state.sequencer.pattern.variationRanges.velocity == 0);
     graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
     assert(graph != nullptr);
@@ -491,13 +610,21 @@ void test_property_selector_global_and_local_random_have_separate_undo() {
     graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
     if (graph != nullptr) {
         node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
-        assert(
-            node == nullptr ||
-            core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0
-        );
+        assert(node == nullptr ||
+               core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 0);
     }
 
-    std::cout << "[PASS] test_property_selector_global_and_local_random_have_separate_undo\n";
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 0);
+    graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
+    assert(graph != nullptr);
+    node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
+    assert(node != nullptr);
+    assert(core::state::sequencer::nodeLocalVariationRange(*node, StepProperty::VELOCITY) == 127);
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.variationRanges.velocity == 127);
+
+    std::cout << "[PASS] test_property_selector_local_then_global_undo_follows_chronology\n";
 }
 
 void test_property_selector_does_not_edit_probability_variation() {
@@ -557,6 +684,74 @@ void test_pattern_pitch_settings_are_undoable() {
     std::cout << "[PASS] test_pattern_pitch_settings_are_undoable\n";
 }
 
+void test_pattern_pitch_rejected_prepare_blocks_projection_and_feedback() {
+    SequencerInlineHarness h(true);
+    const auto ownerNode = core::state::sequencer::rootStepNodeId(0);
+    assert(core::state::sequencer::beginStepContentDraft(
+        h.state.sequencer, core::state::sequencer::SequencerStepContentDraftKind::MICRO_SEQUENCE, 0,
+        ownerNode));
+    const auto* draftBefore = h.state.sequencer.stepContentDraft.pattern();
+    assert(draftBefore != nullptr);
+    assert(draftBefore->scalePolicy ==
+           core::state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT);
+    openPatternPitchSettings(h);
+
+    h.tap(Config::ButtonID::NAV);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    const uint32_t feedbackRevision = h.state.sequencer.historyFeedback.revision.get();
+    h.tap(Config::ButtonID::NAV);
+
+    assert(g_prepared_begin_seen);
+    assert(g_prepared_payload_plan ==
+           core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly);
+    assert(h.state.sequencer.pattern.scalePolicy ==
+           core::state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT);
+    const auto* draftAfter = h.state.sequencer.stepContentDraft.pattern();
+    assert(draftAfter != nullptr);
+    assert(draftAfter->scalePolicy ==
+           core::state::sequencer::SequencerPatternScalePolicy::INHERIT_PROJECT);
+    assert(h.state.patternPitchSettings.flowPhase.get() ==
+           core::state::PatternPitchSettingsFlowPhase::VALUE_SELECTOR);
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision + 1U);
+    assert(h.state.sequencer.historyFeedback.visible.get());
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line1.data(), "EDIT BLOCKED") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line2.data(), "Memory unavailable") == 0);
+    assert(std::strcmp(h.state.sequencer.historyFeedback.line3.data(), "State unchanged") == 0);
+    assert(h.state.sequencerHistory.undoCount() == 0);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+
+    std::cout << "[PASS] Pattern Pitch resource rejection is visible and atomic\n";
+}
+
+void test_pattern_pitch_payload_plan_tracks_enabled_graph() {
+    {
+        SequencerInlineHarness h(true);
+        assert(core::state::sequencer::ensureGraphRoot(h.state.sequencer.pattern));
+        openPatternPitchSettings(h);
+        h.tap(Config::ButtonID::NAV);
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        h.tap(Config::ButtonID::NAV);
+        assert(g_prepared_begin_seen);
+        assert(g_prepared_payload_plan ==
+               core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload);
+    }
+
+    {
+        SequencerInlineHarness h(true);
+        assert(core::state::sequencer::ensureGraphRoot(h.state.sequencer.pattern));
+        h.state.sequencer.pattern.graph->enabled = false;
+        openPatternPitchSettings(h);
+        h.tap(Config::ButtonID::NAV);
+        h.turn(Config::EncoderID::NAV, 1.0f);
+        h.tap(Config::ButtonID::NAV);
+        assert(g_prepared_begin_seen);
+        assert(g_prepared_payload_plan ==
+               core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly);
+    }
+
+    std::cout << "[PASS] test_pattern_pitch_payload_plan_tracks_enabled_graph\n";
+}
+
 void test_pattern_quick_controls_short_tap_opens_one_edit_layer() {
     SequencerInlineHarness h;
 
@@ -608,46 +803,32 @@ void test_pattern_quick_controls_open_defaults_to_length_and_cycles_order() {
     SequencerInlineHarness h;
 
     openPatternQuickControls(h);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::LENGTH
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::LENGTH);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::DIVISION
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::DIVISION);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::OFFSET
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::OFFSET);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::SWING
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::SWING);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::NUDGE
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::NUDGE);
 
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::LENGTH
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::LENGTH);
 
     h.turn(Config::EncoderID::NAV, -1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::NUDGE
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::NUDGE);
 
     std::cout << "[PASS] test_pattern_quick_controls_open_defaults_to_length_and_cycles_order\n";
 }
@@ -658,7 +839,9 @@ void test_pattern_quick_controls_left_top_is_cancel_not_local_history() {
 
     holdPatternQuickControls(h);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.pattern.length.get() != 8);
+    assert(h.state.sequencer.pattern.length.get() == 8);
+    assert(core::state::sequencer::authoringPattern(h.state.sequencer)
+               .length.get() != 8);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
@@ -677,16 +860,17 @@ void test_pattern_quick_controls_length_undo_redo_workflow() {
     h.state.sequencer.pattern.setContentLength(8);
 
     holdPatternQuickControls(h);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::LENGTH
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::LENGTH);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    const uint8_t appliedLength = h.state.sequencer.pattern.length.get();
+    const uint8_t appliedLength =
+        core::state::sequencer::authoringPattern(h.state.sequencer).length.get();
     assert(appliedLength != 8);
+    assert(h.state.sequencer.pattern.length.get() == 8);
     h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(h.state.sequencer.pattern.length.get() == appliedLength);
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     assert(h.state.undoProjectHistory());
@@ -720,23 +904,27 @@ void test_pattern_quick_controls_offset_undo_redo_workflow() {
     holdPatternQuickControls(h);
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::OFFSET
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::OFFSET);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.pattern.isEnabled(0));
-    assert(h.state.sequencer.pattern.isEnabled(6));
-    assert(h.state.sequencer.pattern.isEnabled(7));
-    assert(h.state.sequencer.pattern.note[0] == 62);
-    assert(h.state.sequencer.pattern.note[6] == 67);
-    assert(h.state.sequencer.pattern.note[7] == 60);
-    assert(h.state.sequencer.pattern.velocity[0] == 91);
-    assert(h.state.sequencer.pattern.velocity[6] == 103);
-    assert(h.state.sequencer.pattern.velocity[7] == 80);
+    const auto& preview =
+        core::state::sequencer::authoringPattern(h.state.sequencer);
+    assert(preview.isEnabled(0));
+    assert(preview.isEnabled(6));
+    assert(preview.isEnabled(7));
+    assert(preview.note[0] == 62);
+    assert(preview.note[6] == 67);
+    assert(preview.note[7] == 60);
+    assert(preview.velocity[0] == 91);
+    assert(preview.velocity[6] == 103);
+    assert(preview.velocity[7] == 80);
+    assert(h.state.sequencer.pattern.isEnabled(1));
+    assert(!h.state.sequencer.pattern.isEnabled(6));
     h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencer.pattern.isEnabled(6));
+    assert(!h.state.sequencer.pattern.isEnabled(1));
 
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencer.pattern.isEnabled(0));
@@ -771,16 +959,18 @@ void test_pattern_quick_controls_division_undo_redo_workflow() {
 
     holdPatternQuickControls(h);
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::DIVISION
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::DIVISION);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    const uint8_t appliedDivision = h.state.sequencer.pattern.stepsPerBeat.get();
+    const uint8_t appliedDivision =
+        core::state::sequencer::authoringPattern(h.state.sequencer)
+            .stepsPerBeat.get();
     assert(appliedDivision != initialDivision);
+    assert(h.state.sequencer.pattern.stepsPerBeat.get() == initialDivision);
     h.release(Config::ButtonID::LEFT_CENTER);
 
     assert(h.state.sequencerHistory.undoCount() == 1);
+    assert(h.state.sequencer.pattern.stepsPerBeat.get() == appliedDivision);
 
     assert(h.state.undoProjectHistory());
     assert(h.state.sequencer.pattern.stepsPerBeat.get() == initialDivision);
@@ -800,24 +990,26 @@ void test_pattern_quick_controls_swing_and_nudge_workflow() {
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::SWING
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::SWING);
     h.turn(Config::EncoderID::OPT, 1.0f);
-    assert(h.state.sequencer.pattern.swingOffsetPercent.get() == 75);
+    assert(h.state.sequencer.pattern.swingOffsetPercent.get() == 0);
+    assert(core::state::sequencer::authoringPattern(h.state.sequencer)
+               .swingOffsetPercent.get() == 75);
     h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.pattern.swingOffsetPercent.get() == 75);
     assert(h.state.sequencerHistory.undoCount() == 1);
 
     holdPatternQuickControls(h);
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::NUDGE
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::NUDGE);
     h.turn(Config::EncoderID::OPT, 0.0f);
-    assert(h.state.sequencer.pattern.patternNudgePercent.get() == -50);
+    assert(h.state.sequencer.pattern.patternNudgePercent.get() == 0);
+    assert(core::state::sequencer::authoringPattern(h.state.sequencer)
+               .patternNudgePercent.get() == -50);
     h.release(Config::ButtonID::LEFT_CENTER);
+    assert(h.state.sequencer.pattern.patternNudgePercent.get() == -50);
     assert(h.state.sequencerHistory.undoCount() == 2);
 
     std::cout << "[PASS] test_pattern_quick_controls_swing_and_nudge_workflow\n";
@@ -830,16 +1022,12 @@ void test_pattern_quick_controls_opt_edits_focused_pattern_prop_without_hold() {
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.turn(Config::EncoderID::NAV, 1.0f);
     h.turn(Config::EncoderID::NAV, 1.0f);
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::SWING
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::SWING);
     h.release(Config::ButtonID::LEFT_CENTER);
     assert(!h.state.sequencer.patternQuickControls.selecting.get());
-    assert(
-        h.state.sequencer.patternQuickControls.focusedItem.get() ==
-        core::state::sequencer::PatternQuickControlItem::SWING
-    );
+    assert(h.state.sequencer.patternQuickControls.focusedItem.get() ==
+           core::state::sequencer::PatternQuickControlItem::SWING);
 
     g_now_ms = 100;
     h.turn(Config::EncoderID::OPT, 1.0f);
@@ -900,19 +1088,25 @@ void test_pattern_quick_controls_respect_blocking_states() {
 
 int main() {
     test_property_selector_left_top_closes_without_reverting_selected_property();
+    test_property_selector_stays_open_when_history_barrier_fails();
     test_property_selector_apply_keeps_selected_property();
     test_property_selector_does_not_open_when_pattern_quick_controls_are_active();
     test_track_focus_remains_distinct_from_pattern_outside_structure();
     test_state_is_a_direct_step_property();
     test_property_selector_is_unavailable_during_step_selection();
     test_property_selector_edits_active_property_variation_range();
+    test_property_selector_rejected_prepare_blocks_edit_and_feedback();
     test_property_selector_left_top_commits_live_variation_edit();
     test_property_selector_left_top_commits_live_local_random_edit();
+    test_property_selector_local_exact_return_closes_without_history();
     test_step_property_selector_left_bottom_is_secondary_random_layer();
     test_property_selector_global_and_local_random_have_separate_undo();
+    test_property_selector_local_then_global_undo_follows_chronology();
     test_property_selector_does_not_edit_probability_variation();
     test_pattern_quick_controls_do_not_edit_variation_range();
     test_pattern_pitch_settings_are_undoable();
+    test_pattern_pitch_rejected_prepare_blocks_projection_and_feedback();
+    test_pattern_pitch_payload_plan_tracks_enabled_graph();
     test_pattern_quick_controls_short_tap_opens_one_edit_layer();
     test_pattern_quick_controls_hold_keeps_one_edit_layer();
     test_pattern_quick_controls_are_pattern_focus_only();

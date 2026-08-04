@@ -7,11 +7,12 @@
 
 #include "persistence/StepPresetFileStore.hpp"
 #include "state/project/ProjectState.hpp"
-#include "state/sequencer/SequencerGraphAssetCodec.hpp"
+#include "state/sequencer/SequencerGraphAsset.hpp"
 #include "state/sequencer/SequencerStepPresetModel.hpp"
 #include "state/sequencer/SequencerTrackActivationQueue.hpp"
 
 namespace core::persistence {
+class ProductDirectoryCatalog;
 class ProductFileService;
 }
 
@@ -24,6 +25,8 @@ namespace core::handler {
 enum class SequencerStepPresetStatus : uint8_t {
     OK = 0,
     STORAGE_UNAVAILABLE,
+    ALLOCATION_UNAVAILABLE,
+    HISTORY_UNAVAILABLE,
     EMPTY,
     INCOMPATIBLE,
     CAPACITY,
@@ -54,6 +57,7 @@ struct SequencerStepPresetInspectResult {
     core::state::sequencer::SequencerGraphAssetStatus assetStatus =
         core::state::sequencer::SequencerGraphAssetStatus::OK;
     oc::type::ErrorCode fileError = oc::type::ErrorCode::OK;
+    uint16_t bytes = 0;
     core::state::sequencer::SequencerStepPresetDescriptor descriptor{};
 
     bool inspected() const {
@@ -91,12 +95,16 @@ public:
     using Entry = core::persistence::StepPresetFileListEntry;
 
     SequencerStepPresetDomainServices() = default;
-    SequencerStepPresetDomainServices(core::state::CoreState& state,
-                                      core::persistence::ProductFileService& files);
+    SequencerStepPresetDomainServices(
+        core::state::CoreState& state,
+        core::persistence::ProductFileService& files,
+        core::persistence::ProductDirectoryCatalog& catalog
+    );
 
     static SequencerStepPresetDomainServices fromCoreState(
         core::state::CoreState& state,
-        core::persistence::ProductFileService& files
+        core::persistence::ProductFileService& files,
+        core::persistence::ProductDirectoryCatalog& catalog
     );
 
     SequencerStepPresetListResult listPresetsPage(
@@ -142,8 +150,18 @@ public:
     ) const;
 
 private:
+    SequencerStepPresetInspectResult inspectPresetPrepared(
+        const char* presetId,
+        const core::state::sequencer::SequencerStepPresetTarget& target,
+        uint8_t previewStateIndex,
+        uint32_t generation,
+        uint8_t* encodedWorkspace,
+        core::state::sequencer::SequencerStepGraphPreset* preparedPreset
+    ) const;
+
     core::state::CoreState* state_ = nullptr;
     core::persistence::ProductFileService* files_ = nullptr;
+    core::persistence::ProductDirectoryCatalog* catalog_ = nullptr;
 };
 
 }  // namespace core::handler

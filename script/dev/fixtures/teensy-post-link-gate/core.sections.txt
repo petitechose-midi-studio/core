@@ -1,0 +1,13 @@
+Section Headers:
+  [Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al
+  [ 1] .text.headers     PROGBITS        60000000 001000 001404 00  WA  0   0  4
+  [ 2] .text.code        PROGBITS        60001404 002404 0c1248 00  AX  0   0  8
+  [ 3] .text.progmem     PROGBITS        600c264c 0c364c 008000 00  AX  0   0  4
+  [ 4] .text.itcm        PROGBITS        00000000 0f7000 0475a0 00  AX  0   0 16
+  [ 5] .ARM.exidx        ARM_EXIDX       000475a0 13e5a0 000008 00  AL  4   0  4
+  [ 6] .data             PROGBITS        20000000 13f000 010000 00  WA  0   0 4096
+  [ 7] .bss              NOBITS          20010000 14f000 002900 00  WA  0   0 32
+  [ 8] .bss.dma          NOBITS          20200000 151900 029ca0 00  WA  0   0 32
+  [ 9] .bss.extram       NOBITS          70000000 17b5a0 41a760 00  WA  0   0 32
+  [10] .text.csf         PROGBITS        6014d800 17b800 000400 00  WA  0   0 1024
+  [11] .debug_frame      PROGBITS        00000000 17bc00 0024a8 00      0   0  4

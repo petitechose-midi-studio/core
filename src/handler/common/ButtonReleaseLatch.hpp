@@ -26,11 +26,23 @@ public:
         return consumeId(static_cast<oc::type::ButtonID>(button));
     }
 
+    template <typename ButtonIdT>
+    bool isArmed(ButtonIdT button) const {
+        return isArmedId(static_cast<oc::type::ButtonID>(button));
+    }
+
     void clear() {
         armed_.fill(false);
     }
 
 private:
+    bool isArmedId(oc::type::ButtonID button) const {
+        for (std::size_t i = 0; i < Capacity; ++i) {
+            if (armed_[i] && buttons_[i] == button) return true;
+        }
+        return false;
+    }
+
     bool armId(oc::type::ButtonID button) {
         for (std::size_t i = 0; i < Capacity; ++i) {
             if (armed_[i] && buttons_[i] == button) {

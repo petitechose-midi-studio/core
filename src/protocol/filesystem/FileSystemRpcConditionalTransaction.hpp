@@ -9,6 +9,7 @@ namespace core::protocol::filesystem::conditional_mutation {
 
 inline constexpr const char* JOURNAL_STAGING_PATH =
     "tmp/rpc-conditional.journal.tmp";
+inline constexpr const char* JOURNAL_PATH = "tmp/rpc-conditional.journal";
 inline constexpr const char* BACKUP_PATH = "tmp/rpc-conditional.backup";
 
 enum class Kind : uint8_t {
@@ -34,6 +35,7 @@ bool pathEquals(const char* lhs, const char* rhs);
 bool isReservedPath(const char* normalized);
 bool isStagingPath(const char* normalized);
 bool containsFatShortNameAliasSyntax(const char* normalized);
+oc::type::ErrorCode recoveryError(FileSystemRpcStatus status);
 
 FileSystemRpcStatus normalizeMutationPath(
     core::persistence::ProductFileService& files,
@@ -43,24 +45,34 @@ FileSystemRpcStatus normalizeMutationPath(
 );
 FileSystemRpcStatus removeIfExists(
     core::persistence::ProductFileService& files,
+    const core::persistence::ProductMutationLease& lease,
     const char* path
 );
 FileSystemRpcStatus writeJournal(
     core::persistence::ProductFileService& files,
+    const core::persistence::ProductMutationLease& lease,
     const Journal& journal
 );
 FileSystemRpcStatus readJournal(
     core::persistence::ProductFileService& files,
+    const core::persistence::ProductMutationLease& lease,
     Journal& journal,
     bool& present,
     bool& corrupt
 );
 FileSystemRpcStatus quarantineCorruptJournal(
-    core::persistence::ProductFileService& files
+    core::persistence::ProductFileService& files,
+    const core::persistence::ProductMutationLease& lease
 );
 ExecutionResult executeJournal(
     core::persistence::ProductFileService& files,
+    const core::persistence::ProductMutationLease& lease,
     const Journal& journal
+);
+FileSystemRpcStatus recoverPendingMutation(
+    core::persistence::ProductFileService& files,
+    const core::persistence::ProductMutationLease& lease,
+    bool& quarantined
 );
 
 }  // namespace core::protocol::filesystem::conditional_mutation

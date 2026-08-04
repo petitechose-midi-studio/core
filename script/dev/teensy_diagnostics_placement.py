@@ -4,17 +4,25 @@ import re
 FLASH_START = 0x60000000
 RAM2_START = 0x20200000
 RAM2_END = 0x20280000
+EXTRAM_START = 0x70000000
+EXTRAM_END = 0x70800000
+PSRAM_SPAN_TABLE_BYTES = 12_408
 
 _NM_SYMBOL_RE = re.compile(r"^(\d+)\s+(\d+)\s+([A-Za-z])\s+(.+)$")
 
 
-def _symbols(nm_output: str) -> tuple[tuple[int, str, str], ...]:
-    symbols: list[tuple[int, str, str]] = []
+def _symbols(nm_output: str) -> tuple[tuple[int, int, str, str], ...]:
+    symbols: list[tuple[int, int, str, str]] = []
     for line in nm_output.splitlines():
         match = _NM_SYMBOL_RE.match(line.strip())
         if match is None:
             continue
-        symbols.append((int(match.group(1)), match.group(3), match.group(4)))
+        symbols.append((
+            int(match.group(1)),
+            int(match.group(2)),
+            match.group(3),
+            match.group(4),
+        ))
     return tuple(symbols)
 
 
@@ -24,7 +32,7 @@ def diagnostics_placement_violations(nm_output: str) -> tuple[str, ...]:
 
     reporter_methods = tuple(
         address
-        for address, symbol_type, name in symbols
+        for address, _size, symbol_type, name in symbols
         if symbol_type in "TtWw"
         and "core::diagnostics::PerformanceReporter::" in name
     )
@@ -42,7 +50,7 @@ def diagnostics_placement_violations(nm_output: str) -> tuple[str, ...]:
     for marker in required_flash_symbols:
         matches = tuple(
             address
-            for address, symbol_type, name in symbols
+            for address, _size, symbol_type, name in symbols
             if symbol_type in "TtWw" and marker in name
         )
         if not matches:
@@ -53,7 +61,7 @@ def diagnostics_placement_violations(nm_output: str) -> tuple[str, ...]:
     for storage_marker in ("reporterStorage", "memoryHighWaterStorage"):
         storage = tuple(
             address
-            for address, symbol_type, name in symbols
+            for address, _size, symbol_type, name in symbols
             if symbol_type in "BbDd" and storage_marker in name
         )
         if not storage:
@@ -68,6 +76,24 @@ def diagnostics_placement_violations(nm_output: str) -> tuple[str, ...]:
                 "diagnostics reporter samples and counters must stay in RAM2"
             )
 
+    span_tables = tuple(
+        (address, size)
+        for address, size, symbol_type, name in symbols
+        if symbol_type in "BbDd" and "psramSpanTable" in name
+    )
+    if len(span_tables) != 1:
+        violations.append(
+            "diagnostics must contain exactly one authoritative PSRAM span table"
+        )
+    else:
+        address, size = span_tables[0]
+        if address < EXTRAM_START or address >= EXTRAM_END:
+            violations.append("diagnostics PSRAM span table must stay in EXTRAM")
+        if size != PSRAM_SPAN_TABLE_BYTES:
+            violations.append(
+                "diagnostics PSRAM span table must be exactly 12408 bytes"
+            )
+
     return tuple(violations)
 
 
@@ -80,14 +106,22 @@ def normal_build_diagnostics_violations(nm_output: str) -> tuple[str, ...]:
         "core::diagnostics::beginMemoryFootprintTracking()",
         "core::diagnostics::trackExtmemAllocation(",
         "core::diagnostics::trackExtmemFree(",
+        "core::diagnostics::trackExtmemAllocationFailure()",
+        "core::diagnostics::dynamicMemorySnapshot()",
         "core::diagnostics::recordDynamicMemorySample(",
         "core::diagnostics::logMemoryFootprint(",
+        "core::diagnostics::storage_qualification::TraceBuffer",
+        "storage_qualification::(anonymous namespace)::traceStorage",
+        "storage_qualification::(anonymous namespace)::updateCold(",
+        "storage_qualification::(anonymous namespace)::kRecordLine",
         "reporterStorage",
         "memoryHighWaterStorage",
+        "psramSpanTable",
+        "core::diagnostics::detail::PsramSpanTracker",
     )
     violations: list[str] = []
     for marker in forbidden_markers:
-        if any(marker in name for _address, _symbol_type, name in symbols):
+        if any(marker in name for _address, _size, _symbol_type, name in symbols):
             violations.append(
                 f"normal firmware contains opt-in diagnostics symbol: {marker}"
             )

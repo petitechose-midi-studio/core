@@ -93,7 +93,11 @@ void test_chord_quick_row_sets_and_resets_root_chord() {
     const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(3));
     assert(node != nullptr);
     assert(node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
-    assert(node->chordSpec.voiceCount == oc::note::sequencer::StepSequencerChordSpec::MAX_VOICES);
+    assert(node->chordSpec.voices() == 3);
+    assert(
+        node->chordSpec.harmony() ==
+        oc::note::sequencer::StepSequencerChordHarmony::Major
+    );
 
     assert(step_value_row_workflow::resetFocusedRowToDefault(sequencer, 3));
     graph = core::state::sequencer::graphView(sequencer.pattern);

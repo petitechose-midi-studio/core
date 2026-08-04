@@ -31,8 +31,7 @@ using Core::VERSION;
 // ═══════════════════════════════════════════════════════════════════════════
 
 enum class ContextID : uint8_t {
-    STANDALONE = 0,  // First for debug (skipping BootContext)
-    BOOT = 1,
+    STANDALONE = 0,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

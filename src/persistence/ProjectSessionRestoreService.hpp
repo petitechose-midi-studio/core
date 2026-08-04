@@ -11,6 +11,7 @@ struct CoreState;
 namespace core::persistence {
 
 class ProjectSessionStore;
+class ProductMutationLease;
 
 class ProjectSessionRestoreService {
 public:
@@ -24,8 +25,6 @@ public:
     struct Result {
         Status status = Status::MISSING;
         uint32_t bytes = 0;
-        project_file::LoadStatus loadStatus = project_file::LoadStatus::OK;
-        bool overwriteSafe = true;
 
         bool restored() const {
             return status == Status::RESTORED;
@@ -36,8 +35,19 @@ public:
 
     Result restore(core::state::CoreState& state,
                    core::persistence::project_file::LoadReport* report = nullptr);
+    Result restore(
+        core::state::CoreState& state,
+        const ProductMutationLease& recoveryLease,
+        core::persistence::project_file::LoadReport* report = nullptr
+    );
 
 private:
+    Result restore_(
+        core::state::CoreState& state,
+        const ProductMutationLease* recoveryLease,
+        core::persistence::project_file::LoadReport* report
+    );
+
     ProjectSessionStore& store_;
 };
 

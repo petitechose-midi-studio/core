@@ -2,35 +2,46 @@
 #undef NDEBUG
 #endif
 
-#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
-#include <filesystem>
-#include <iostream>
+#include <array>
 #include <string>
 #include <vector>
+
+#include <filesystem>
+#include <iostream>
 
 #include <oc/impl/HostFileSystem.hpp>
 #include <oc/interface/IFileSystem.hpp>
 
+#include "../../src/app/ExtmemAllocator.hpp"
 #include "../../src/handler/sequencer/SequencerStepPresetDomainServices.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
+#include "../../src/persistence/SequencerGraphAssetCodec.hpp"
 #include "../../src/persistence/StepPresetFileStore.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/project/ProjectTrackDomainOps.hpp"
-#include "../../src/state/sequencer/SequencerGraphAssetCodec.hpp"
+#include "../../src/state/sequencer/SequencerGraphAsset.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerHistory.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/CoreStorages.hpp"
 
+#if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
+#error "This test requires native EXTMEM failure injection"
+#endif
+
 namespace {
+
+namespace asset_codec =
+    core::persistence::sequencer_graph_asset_codec;
 
 using core::handler::SequencerStepPresetActionResult;
 using core::handler::SequencerStepPresetActivation;
 using core::handler::SequencerStepPresetDomainServices;
 using core::handler::SequencerStepPresetStatus;
+using core::persistence::ProductDirectoryCatalog;
 using core::persistence::ProductFileService;
 using core::persistence::StepPresetFileListEntry;
 using core::persistence::StepPresetFileStore;
@@ -91,7 +102,7 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
         if (result && mutateAfterNextPresetRead && !mutationDone && path != nullptr &&
             std::strstr(path, mutationPathFragment.c_str()) != nullptr) {
             constexpr uint32_t semanticOffset =
-                core::state::sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
+                asset_codec::BASE_HEADER_SIZE + 4U +
                 SequencerStepGraphPreset::TECHNICAL_ID_SIZE;
             const uint8_t replacement = 'T';
             const auto changed = delegate.write(
@@ -151,7 +162,9 @@ struct Harness {
     core::state::CoreState state;
     FaultInjectingFileSystem filesystem;
     ProductFileService files;
+    ProductDirectoryCatalog catalog;
     SequencerStepPresetDomainServices presets;
+    uint32_t nowMs = 0U;
 
     Harness()
         : state(
@@ -159,8 +172,13 @@ struct Harness {
           )
         , filesystem(testRoot().string().c_str())
         , files(filesystem)
+        , catalog(files)
         , presets(
-              SequencerStepPresetDomainServices::fromCoreState(state, files)
+              SequencerStepPresetDomainServices::fromCoreState(
+                  state,
+                  files,
+                  catalog
+              )
           ) {
         resetTestRoot();
         assert(filesystem.init());
@@ -168,12 +186,20 @@ struct Harness {
     }
 
     ~Harness() { resetTestRoot(); }
+
+    void advanceCatalog() {
+        ++nowMs;
+        assert(files.persistenceJobs().beginTurn(nowMs));
+        catalog.advance(nowMs, false);
+    }
 };
 
 std::vector<uint8_t> encodePreset(
     const char* technicalId,
     const char* semanticName,
-    uint8_t note = 67
+    uint8_t note = 67,
+    SequencerStepGraphPreset::ScalePolicy scalePolicy =
+        SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
 ) {
     SequencerState source;
     source.pattern.setContentLength(8);
@@ -186,11 +212,22 @@ std::vector<uint8_t> encodePreset(
     );
     assert(sequence.ok);
 
+    const oc::note::sequencer::StepSequencerScaleSettings sourceScale =
+        scalePolicy == SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
+        ? oc::note::sequencer::StepSequencerScaleSettings{
+              .root = 5,
+              .type =
+                  oc::note::sequencer::StepSequencerScaleType::HarmonicMinor,
+              .mode = oc::note::sequencer::
+                  StepSequencerScaleConstraintMode::ConstrainNearest,
+          }
+        : oc::note::sequencer::StepSequencerScaleSettings{};
     SequencerStepGraphPreset preset{};
     SequencerGraphAssetReport report{};
     assert(core::state::sequencer::captureStepGraphPreset(
         source,
         2,
+        sourceScale,
         preset,
         &report
     ));
@@ -198,14 +235,14 @@ std::vector<uint8_t> encodePreset(
         preset,
         technicalId,
         semanticName,
-        SequencerStepGraphPreset::ScalePolicy::CHROMATIC,
-        {}
+        scalePolicy,
+        sourceScale
     ));
 
     std::vector<uint8_t> bytes(
-        core::state::sequencer::STEP_GRAPH_PRESET_MAX_ENCODED_SIZE
+        asset_codec::MAX_ENCODED_SIZE
     );
-    const auto encoded = core::state::sequencer::encodeStepGraphPreset(
+    const auto encoded = asset_codec::encode(
         preset,
         bytes.data(),
         static_cast<uint16_t>(bytes.size())
@@ -268,6 +305,7 @@ std::vector<uint8_t> encodeRandomCyclePreset(
     assert(core::state::sequencer::captureStepGraphPreset(
         source,
         2,
+        {},
         preset,
         &report
     ));
@@ -279,9 +317,9 @@ std::vector<uint8_t> encodeRandomCyclePreset(
         {}
     ));
     std::vector<uint8_t> bytes(
-        core::state::sequencer::STEP_GRAPH_PRESET_MAX_ENCODED_SIZE
+        asset_codec::MAX_ENCODED_SIZE
     );
-    const auto encoded = core::state::sequencer::encodeStepGraphPreset(
+    const auto encoded = asset_codec::encode(
         preset,
         bytes.data(),
         static_cast<uint16_t>(bytes.size())
@@ -300,10 +338,11 @@ std::vector<uint8_t> asPreviousVersion(std::vector<uint8_t> bytes) {
 
 void saveBytes(
     ProductFileService& files,
+    ProductDirectoryCatalog& catalog,
     const char* id,
     const std::vector<uint8_t>& bytes
 ) {
-    StepPresetFileStore store(files);
+    StepPresetFileStore store(files, catalog);
     assert(store.save(
         id,
         bytes.data(),
@@ -311,8 +350,12 @@ void saveBytes(
     ));
 }
 
-std::vector<uint8_t> loadBytes(ProductFileService& files, const char* id) {
-    StepPresetFileStore store(files);
+std::vector<uint8_t> loadBytes(
+    ProductFileService& files,
+    ProductDirectoryCatalog& catalog,
+    const char* id
+) {
+    StepPresetFileStore store(files, catalog);
     std::vector<uint8_t> bytes(StepPresetFileStore::MAX_FILE_SIZE);
     uint16_t size = 0;
     assert(store.load(
@@ -323,6 +366,29 @@ std::vector<uint8_t> loadBytes(ProductFileService& files, const char* id) {
     ));
     bytes.resize(size);
     return bytes;
+}
+
+core::handler::SequencerStepPresetListResult listPresetsSettled(
+    Harness& h,
+    StepPresetFileListEntry* entries,
+    uint8_t capacity
+) {
+    auto listed = h.presets.listPresetsPage(
+        entries,
+        capacity,
+        nullptr,
+        core::persistence::StepPresetFilePageDirection::FORWARD
+    );
+    while (listed.status == SequencerStepPresetStatus::QUEUED) {
+        h.advanceCatalog();
+        listed = h.presets.listPresetsPage(
+            entries,
+            capacity,
+            nullptr,
+            core::persistence::StepPresetFilePageDirection::FORWARD
+        );
+    }
+    return listed;
 }
 
 void prepareTarget(Harness& h, uint8_t step = 5) {
@@ -491,60 +557,50 @@ void assertManagerRefusalLeavesAssetUnchanged(
     const char* expectedName,
     SequencerStepPresetStatus expectedStatus
 ) {
-    const auto before = loadBytes(h.files, id);
+    const auto before = loadBytes(h.files, h.catalog, id);
     const auto renamed = h.presets.renamePreset(id, expectedName, "New Name");
     assert(renamed.status == expectedStatus);
-    assert(loadBytes(h.files, id) == before);
+    assert(loadBytes(h.files, h.catalog, id) == before);
     const auto removed = h.presets.deletePreset(id, expectedName);
     assert(removed.status == expectedStatus);
-    assert(loadBytes(h.files, id) == before);
+    assert(loadBytes(h.files, h.catalog, id) == before);
 }
 
 void test_manager_rename_reorders_and_delete_is_guarded() {
     Harness h;
-    saveBytes(h.files, "preset-z", encodePreset("preset-z", "Zulu"));
-    saveBytes(h.files, "preset-a", encodePreset("preset-a", "Alpha"));
-    saveBytes(h.files, "preset-b", encodePreset("preset-b", "Bravo"));
+    saveBytes(h.files, h.catalog, "preset-z", encodePreset("preset-z", "Zulu"));
+    saveBytes(h.files, h.catalog, "preset-a", encodePreset("preset-a", "Alpha"));
+    saveBytes(h.files, h.catalog, "preset-b", encodePreset("preset-b", "Bravo"));
 
     StepPresetFileListEntry entries[4]{};
-    auto listed = h.presets.listPresetsPage(
-        entries,
-        4,
-        nullptr,
-        core::persistence::StepPresetFilePageDirection::FORWARD
-    );
+    auto listed = listPresetsSettled(h, entries, 4);
     assert(listed.ok() && listed.count == 3);
     assert(std::strcmp(entries[0].id, "preset-a") == 0);
     assert(std::strcmp(entries[1].id, "preset-b") == 0);
     assert(std::strcmp(entries[2].id, "preset-z") == 0);
 
-    const auto before = loadBytes(h.files, "preset-z");
+    const auto before = loadBytes(h.files, h.catalog, "preset-z");
     const auto staleRename = h.presets.renamePreset(
         "preset-z",
         "Wrong Name",
         "Able"
     );
     assert(staleRename.status == SequencerStepPresetStatus::STALE_TARGET);
-    assert(loadBytes(h.files, "preset-z") == before);
+    assert(loadBytes(h.files, h.catalog, "preset-z") == before);
 
     const auto renamed = h.presets.renamePreset("preset-z", "Zulu", "Able");
     assert(renamed.ok());
-    listed = h.presets.listPresetsPage(
-        entries,
-        4,
-        nullptr,
-        core::persistence::StepPresetFilePageDirection::FORWARD
-    );
+    listed = listPresetsSettled(h, entries, 4);
     assert(listed.ok() && listed.count == 3);
     assert(std::strcmp(entries[0].id, "preset-z") == 0);
     assert(std::strcmp(entries[0].semanticName, "Able") == 0);
     assert(std::strcmp(entries[1].id, "preset-a") == 0);
     assert(std::strcmp(entries[2].id, "preset-b") == 0);
 
-    const auto renamedBytes = loadBytes(h.files, "preset-z");
+    const auto renamedBytes = loadBytes(h.files, h.catalog, "preset-z");
     assert(renamedBytes.size() == before.size());
     constexpr size_t semanticOffset =
-        core::state::sequencer::STEP_GRAPH_PRESET_BASE_HEADER_SIZE + 4U +
+        asset_codec::BASE_HEADER_SIZE + 4U +
         SequencerStepGraphPreset::TECHNICAL_ID_SIZE;
     constexpr size_t semanticEnd =
         semanticOffset + SequencerStepGraphPreset::SEMANTIC_NAME_SIZE;
@@ -555,10 +611,10 @@ void test_manager_rename_reorders_and_delete_is_guarded() {
 
     const auto staleDelete = h.presets.deletePreset("preset-z", "Zulu");
     assert(staleDelete.status == SequencerStepPresetStatus::STALE_TARGET);
-    assert(loadBytes(h.files, "preset-z") == renamedBytes);
+    assert(loadBytes(h.files, h.catalog, "preset-z") == renamedBytes);
     const auto removed = h.presets.deletePreset("preset-z", "Able");
     assert(removed.ok());
-    StepPresetFileStore store(h.files);
+    StepPresetFileStore store(h.files, h.catalog);
     const auto exists = store.exists("preset-z");
     assert(exists && !exists.value());
 
@@ -569,7 +625,7 @@ void test_manager_refuses_previous_future_and_partial_without_mutation() {
     Harness h;
 
     auto previous = asPreviousVersion(encodePreset("previous", "Previous"));
-    saveBytes(h.files, "previous", previous);
+    saveBytes(h.files, h.catalog, "previous", previous);
     assertManagerRefusalLeavesAssetUnchanged(
         h,
         "previous",
@@ -581,7 +637,7 @@ void test_manager_refuses_previous_future_and_partial_without_mutation() {
     future[4] = static_cast<uint8_t>(
         SequencerStepGraphPreset::CURRENT_FORMAT_VERSION + 1U
     );
-    saveBytes(h.files, "future", future);
+    saveBytes(h.files, h.catalog, "future", future);
     assertManagerRefusalLeavesAssetUnchanged(
         h,
         "future",
@@ -591,7 +647,7 @@ void test_manager_refuses_previous_future_and_partial_without_mutation() {
 
     auto partial = encodePreset("partial", "Partial");
     partial.pop_back();
-    saveBytes(h.files, "partial", partial);
+    saveBytes(h.files, h.catalog, "partial", partial);
     assertManagerRefusalLeavesAssetUnchanged(
         h,
         "partial",
@@ -602,11 +658,117 @@ void test_manager_refuses_previous_future_and_partial_without_mutation() {
     std::cout << "[PASS] test_manager_refuses_previous_future_and_partial_without_mutation\n";
 }
 
+void test_step_presets_require_one_matching_pattern_pitch_context() {
+    using Compatibility =
+        core::state::sequencer::SequencerStepPresetCompatibility;
+    using PitchMode =
+        core::state::sequencer::SequencerPitchEditMode;
+
+    Harness h;
+    saveBytes(
+        h.files,
+        h.catalog,
+        "chromatic",
+        encodePreset(
+            "chromatic",
+            "Chromatic",
+            67,
+            SequencerStepGraphPreset::ScalePolicy::CHROMATIC
+        )
+    );
+    saveBytes(
+        h.files,
+        h.catalog,
+        "relative",
+        encodePreset(
+            "relative",
+            "Relative",
+            67,
+            SequencerStepGraphPreset::ScalePolicy::SCALE_RELATIVE
+        )
+    );
+
+    const auto followTarget = h.presets.captureTarget();
+    const auto chromaticInFollow = h.presets.inspectPreset(
+        "chromatic",
+        followTarget,
+        0,
+        1
+    );
+    assert(
+        chromaticInFollow.status ==
+        SequencerStepPresetStatus::INCOMPATIBLE
+    );
+    assert(
+        chromaticInFollow.descriptor.compatibility ==
+        Compatibility::BLOCKED_PITCH_CONTEXT
+    );
+    assert(
+        std::strcmp(
+            chromaticInFollow.descriptor.adaptationSummary,
+            "Requires Chromatic"
+        ) == 0
+    );
+
+    const auto relativeInFollow = h.presets.inspectPreset(
+        "relative",
+        followTarget,
+        0,
+        2
+    );
+    assert(relativeInFollow.status == SequencerStepPresetStatus::OK);
+    assert(
+        relativeInFollow.descriptor.compatibility ==
+            Compatibility::READY ||
+        relativeInFollow.descriptor.compatibility ==
+            Compatibility::WARNING_ADAPTED
+    );
+
+    assert(h.state.sequencer.setPitchEditMode(PitchMode::CHROMATIC));
+    const auto chromaticTarget = h.presets.captureTarget();
+    const auto chromaticInChromatic = h.presets.inspectPreset(
+        "chromatic",
+        chromaticTarget,
+        0,
+        3
+    );
+    assert(chromaticInChromatic.status == SequencerStepPresetStatus::OK);
+    assert(
+        chromaticInChromatic.descriptor.compatibility ==
+        Compatibility::READY
+    );
+
+    const auto relativeInChromatic = h.presets.inspectPreset(
+        "relative",
+        chromaticTarget,
+        0,
+        4
+    );
+    assert(
+        relativeInChromatic.status ==
+        SequencerStepPresetStatus::INCOMPATIBLE
+    );
+    assert(
+        relativeInChromatic.descriptor.compatibility ==
+        Compatibility::BLOCKED_PITCH_CONTEXT
+    );
+    assert(
+        std::strcmp(
+            relativeInChromatic.descriptor.adaptationSummary,
+            "Requires Follow Scale"
+        ) == 0
+    );
+
+    std::cout
+        << "[PASS] Step presets require one matching Pitch Context\n";
+}
+
 void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
     Harness h;
     prepareTarget(h);
     saveBytes(
         h.files,
+        h.catalog,
         "apply-source",
         encodePreset("apply-source", "Step Source")
     );
@@ -625,12 +787,14 @@ void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
     assert(stale.status == SequencerStepPresetStatus::STALE_TARGET);
     assertInvariantUnchanged(h.state, beforeWrongPreview);
 
-    assert(h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+    assert(core::state::sequencer::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerPatternHistoryCoalescing(
         target.stepIndex,
         core::state::sequencer::StepProperty::VELOCITY,
-        100
-    ));
+        100,
+        core::state::sequencer::SequencerCoalescedPatternPayloadPlan::FlatOnly)));
     h.state.sequencer.pattern.velocity[target.stepIndex] = 77;
+    assert(h.state.sealSequencerPatternHistoryCoalescing(true));
     const auto beforePendingEdit = captureInvariant(h.state);
     const auto pendingRejected = h.presets.applyPreset(
         "apply-source",
@@ -643,11 +807,70 @@ void test_apply_preflight_failures_leave_every_live_domain_unchanged() {
     std::cout << "[PASS] test_apply_preflight_failures_leave_every_live_domain_unchanged\n";
 }
 
+void test_apply_allocation_failure_matrix_is_atomic_and_bounded() {
+    constexpr std::size_t APPLY_ALLOCATION_ATTEMPTS = 8U;
+    static_assert(APPLY_ALLOCATION_ATTEMPTS <= 12U,
+                  "Step preset apply exceeded its frozen allocation-attempt budget");
+
+    for (std::size_t ordinal = 1U; ordinal <= APPLY_ALLOCATION_ATTEMPTS; ++ordinal) {
+        Harness h;
+        prepareTarget(h);
+        saveBytes(h.files, h.catalog, "apply-allocation-source",
+                  encodePreset("apply-allocation-source", "Allocation Source"));
+        const auto target = h.presets.captureTarget();
+        const auto inspected = h.presets.inspectPreset("apply-allocation-source", target, 0U, 1U);
+        assert(inspected.inspected());
+        const auto before = captureInvariant(h.state);
+
+        {
+            core::app::testing::ScopedExtmemAllocationFailure failure(ordinal);
+            const auto result = h.presets.applyPreset("apply-allocation-source", target,
+                                                      inspected.descriptor.previewKey);
+            if (ordinal == 7U) {
+                // Graph compaction owns an optional scratch allocation. Its
+                // failure deliberately falls back to the uncompacted graph
+                // and must not reject an otherwise admitted musical edit.
+                assert(result.ok());
+                assert(result.activation == SequencerStepPresetActivation::APPLIED);
+            } else {
+                assert(result.status == SequencerStepPresetStatus::ALLOCATION_UNAVAILABLE);
+            }
+            assert(core::app::testing::extmemAllocationAttempt == ordinal);
+            assert(core::app::testing::extmemAllocationFailureOrdinal == 0U);
+        }
+
+        if (ordinal == 7U) {
+            assert(h.state.sequencerHistory.undoCount() == 1U);
+        } else {
+            assertInvariantUnchanged(h.state, before);
+        }
+    }
+
+    Harness h;
+    prepareTarget(h);
+    saveBytes(h.files, h.catalog, "apply-max-plus-one", encodePreset("apply-max-plus-one", "Max Plus One"));
+    const auto target = h.presets.captureTarget();
+    const auto inspected = h.presets.inspectPreset("apply-max-plus-one", target, 0U, 1U);
+    assert(inspected.inspected());
+    {
+        core::app::testing::ScopedExtmemAllocationFailure failure(APPLY_ALLOCATION_ATTEMPTS + 1U);
+        const auto result =
+            h.presets.applyPreset("apply-max-plus-one", target, inspected.descriptor.previewKey);
+        assert(result.ok());
+        assert(core::app::testing::extmemAllocationAttempt == APPLY_ALLOCATION_ATTEMPTS);
+        assert(core::app::testing::extmemAllocationFailureOrdinal ==
+               APPLY_ALLOCATION_ATTEMPTS + 1U);
+    }
+
+    std::cout << "[PASS] Step preset Apply freezes 8 allocation outcomes and max+1\n";
+}
+
 void test_random_cycle_preview_is_stable_and_generation_admission_is_exact() {
     Harness h;
     prepareTarget(h);
     saveBytes(
         h.files,
+        h.catalog,
         "random-cycle",
         encodeRandomCyclePreset("random-cycle", "Random Cycle")
     );
@@ -723,6 +946,7 @@ void test_apply_second_read_payload_change_is_stale_and_non_mutating() {
     prepareTarget(h);
     saveBytes(
         h.files,
+        h.catalog,
         "race-source",
         encodePreset("race-source", "Step Source")
     );
@@ -743,8 +967,8 @@ void test_apply_second_read_payload_change_is_stale_and_non_mutating() {
 
     SequencerStepGraphPreset mutated{};
     SequencerGraphAssetReport report{};
-    const auto bytes = loadBytes(h.files, "race-source");
-    assert(core::state::sequencer::decodeStepGraphPreset(
+    const auto bytes = loadBytes(h.files, h.catalog, "race-source");
+    assert(asset_codec::decode(
         bytes.data(),
         static_cast<uint16_t>(bytes.size()),
         mutated,
@@ -761,6 +985,7 @@ void test_apply_activation_conflict_leaves_preexisting_queue_and_state_unchanged
     prepareTarget(h);
     saveBytes(
         h.files,
+        h.catalog,
         "queued-source",
         encodePreset("queued-source", "Queued Source")
     );
@@ -803,7 +1028,7 @@ void test_apply_future_and_partial_assets_do_not_mutate_live_state() {
     future[4] = static_cast<uint8_t>(
         SequencerStepGraphPreset::CURRENT_FORMAT_VERSION + 1U
     );
-    saveBytes(h.files, "apply-future", future);
+    saveBytes(h.files, h.catalog, "apply-future", future);
     auto inspected = h.presets.inspectPreset("apply-future", target, 0, 1);
     auto before = captureInvariant(h.state);
     auto result = h.presets.applyPreset(
@@ -816,7 +1041,7 @@ void test_apply_future_and_partial_assets_do_not_mutate_live_state() {
 
     auto partial = encodePreset("apply-partial", "Partial");
     partial.pop_back();
-    saveBytes(h.files, "apply-partial", partial);
+    saveBytes(h.files, h.catalog, "apply-partial", partial);
     inspected = h.presets.inspectPreset("apply-partial", target, 0, 1);
     before = captureInvariant(h.state);
     result = h.presets.applyPreset(
@@ -835,6 +1060,7 @@ void test_apply_stopped_preserves_destination_route_and_undoes_exactly() {
     prepareTarget(h);
     saveBytes(
         h.files,
+        h.catalog,
         "apply-valid",
         encodePreset("apply-valid", "Valid Source", 67)
     );
@@ -900,6 +1126,7 @@ void test_apply_playing_is_queued_and_undo_before_boundary_cancels_it() {
     h.state.statusBar.playing.set(true);
     saveBytes(
         h.files,
+        h.catalog,
         "apply-queued",
         encodePreset("apply-queued", "Queued Source", 72)
     );
@@ -961,7 +1188,9 @@ void test_apply_playing_is_queued_and_undo_before_boundary_cancels_it() {
 int main() {
     test_manager_rename_reorders_and_delete_is_guarded();
     test_manager_refuses_previous_future_and_partial_without_mutation();
+    test_step_presets_require_one_matching_pattern_pitch_context();
     test_apply_preflight_failures_leave_every_live_domain_unchanged();
+    test_apply_allocation_failure_matrix_is_atomic_and_bounded();
     test_random_cycle_preview_is_stable_and_generation_admission_is_exact();
     test_apply_second_read_payload_change_is_stale_and_non_mutating();
     test_apply_activation_conflict_leaves_preexisting_queue_and_state_unchanged();

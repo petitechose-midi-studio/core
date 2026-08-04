@@ -13,11 +13,12 @@
 #include "state/macro/MacroHistory.hpp"
 #include "state/macro/MacroPagesState.hpp"
 #include "state/macro/MacroUiState.hpp"
+#include "state/modulation/ModulationDepthParameterMapping.hpp"
+#include "state/modulation/ModulatorLfoParameterMapping.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/modulation/ProjectModulatorSourceSession.hpp"
 #include "state/project/ProjectModulatorMenuModel.hpp"
 #include "state/project/ProjectNavigationState.hpp"
-#include "ui/modulation/ModulationDepthUiModel.hpp"
 #include "ui/modulation/ModulatorLfoUiModel.hpp"
 
 namespace core::context::standalone::ux {
@@ -167,7 +168,7 @@ FLASHMEM void formatSourcePrimary(
                 sizeof(out),
                 "%s",
                 core::ui::modulation::lfo::rateLabel(
-                    core::ui::modulation::lfo::rateIndex(lfo.periodTicks)
+                    core::state::modulation::lfo::rateIndex(lfo.periodTicks)
                 )
             );
         }
@@ -204,9 +205,10 @@ FLASHMEM void formatBindingDepth(
     const core::state::modulation::ProjectControlState& control,
     const ModulationBindingState& binding
 ) {
-    const int16_t percent = core::ui::modulation::depth::amountQ15ToPercent(
+    const int16_t percent =
+        core::state::modulation::depth::amountQ15ToPercent(
         binding.amountQ15,
-        core::ui::modulation::depth::scaleFor(
+        core::state::modulation::depth::scaleFor(
             control.authored.modulation,
             control.authored.curves,
             binding

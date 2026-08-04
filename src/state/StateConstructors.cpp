@@ -16,9 +16,7 @@ FLASHMEM MacroState::MacroState() {
 
 FLASHMEM MacroState::~MacroState() = default;
 
-FLASHMEM StatusBarState::StatusBarState() {
-    pageName.set("Page 1");
-}
+FLASHMEM StatusBarState::StatusBarState() = default;
 
 FLASHMEM StatusBarState::~StatusBarState() = default;
 

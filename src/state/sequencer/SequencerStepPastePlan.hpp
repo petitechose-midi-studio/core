@@ -19,9 +19,7 @@ struct SequencerStepPastePreviewEntry {
     SequencerStepPastePreview preview = SequencerStepPastePreview::NONE;
 };
 
-/**
- * Shared step-paste destination plan used by both UI preview and paste commit.
- */
+/** Shared bounded destination plan used by the Step-paste UI preview. */
 struct SequencerStepPastePreviewPlan {
     bool blocked = false;
     uint8_t count = 0;
@@ -56,13 +54,6 @@ SequencerStepPastePreviewPlan buildStepPastePreviewPlan(
     uint8_t activeLength,
     uint8_t maxStep,
     core::state::project::ProjectStepPasteMode mode
-);
-
-bool resizeActiveContentForStepPaste(
-    SequencerState& sequencer,
-    core::state::project::ProjectStepPasteMode mode,
-    uint8_t lastTarget,
-    uint8_t maxStep
 );
 
 }  // namespace core::state::sequencer

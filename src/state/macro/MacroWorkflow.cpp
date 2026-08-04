@@ -7,6 +7,7 @@
 
 #include "state/CoreState.hpp"
 #include "state/macro/MacroAutomationDomain.hpp"
+#include "state/macro/MacroUiState.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 
@@ -52,6 +53,27 @@ FLASHMEM void MacroWorkflow::syncRuntimeFromActivePage(core::state::MacroState& 
     }
 }
 
+FLASHMEM void MacroWorkflow::syncActivePagePresentation(
+    core::state::MacroState& macros,
+    const MacroPagesState& pages,
+    MacroUiState& macroUi
+) noexcept {
+    syncRuntimeFromActivePage(macros, pages);
+    const uint8_t track = pages.currentActiveTrack();
+    const uint8_t page = pages.currentActivePage();
+    macroUi.refreshManualOverrideMask(track, page);
+    for (uint8_t macro = 0U; macro < MACRO_COUNT; ++macro) {
+        float manualValue = 0.0f;
+        if (!macroUi.manualOverrides.valueFor(
+                MacroAutomationSlotAddress{track, page, macro},
+                manualValue
+            )) {
+            continue;
+        }
+        setRuntimeValue(macros, macro, manualValue);
+    }
+}
+
 FLASHMEM void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
     if (pageIndex >= PAGE_COUNT) return;
 
@@ -62,7 +84,6 @@ FLASHMEM void MacroWorkflow::switchToPage(CoreState& state, uint8_t pageIndex) {
     if (!configsMatch(previousConfigs, state.pages.activeConfigs)) {
         state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
     }
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     syncRuntimeFromActivePage(state.macros, state.pages);
 }
 
@@ -76,7 +97,6 @@ FLASHMEM void MacroWorkflow::switchToTrack(CoreState& state, uint8_t trackIndex)
     if (!configsMatch(previousConfigs, state.pages.activeConfigs)) {
         state.configRevision.set(nextMacroConfigRevision(state.configRevision.get()));
     }
-    state.statusBar.pageName.set(state.pages.activePageData().name);
     syncRuntimeFromActivePage(state.macros, state.pages);
 }
 

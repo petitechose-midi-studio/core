@@ -11,9 +11,25 @@ oc::type::Result<ProjectSaveResult> saveToCompletion(
     AtomicProductFilePaths paths
 );
 
+oc::type::Result<ProjectSaveResult> saveToCompletionWithRecoveryLease(
+    ProjectSaveTransaction& transaction,
+    const core::state::project::ProjectSnapshot& snapshot,
+    AtomicProductFilePaths paths,
+    const ProductMutationLease& recoveryLease,
+    ProjectSaveStage* failedStage = nullptr
+);
+
 oc::type::Result<ProjectLoadResult> loadWithBackup(
     ProductFileService& files,
-    ProjectFileWorkspace& workspace,
+    const char* current,
+    const char* backup,
+    core::state::project::ProjectSnapshot& out,
+    core::persistence::project_file::LoadReport* report
+);
+
+oc::type::Result<ProjectLoadResult> loadWithBackup(
+    ProductFileService& files,
+    const ProductMutationLease& recoveryLease,
     const char* current,
     const char* backup,
     core::state::project::ProjectSnapshot& out,

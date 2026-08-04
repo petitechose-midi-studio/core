@@ -27,7 +27,9 @@
 
 #include <config/App.hpp>
 #include "app/AppLogic.hpp"
+#include "app/ExtmemAllocator.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
+#include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProductFileService.hpp"
 #include "sequencer/SequencerRuntimeService.hpp"
 #include "state/CoreState.hpp"
@@ -38,20 +40,29 @@ static void tick_core_state(void* user) {
 
 int main(int argc, char** argv) {
     static sdl::SdlEnvironment env;
-    static desktop::MemoryStorage settingsStorage;
+    static desktop::MemoryStorage deviceSettingsStorage;
     static std::optional<core::state::CoreState> coreState;
     static oc::impl::HostFileSystem productFilesystem("/midi-studio-wasm");
     static core::persistence::ProductFileService productFiles(productFilesystem);
+    static core::app::ExtmemUniquePtr<core::persistence::ProductDirectoryCatalog>
+        productDirectoryCatalog;
     static std::unique_ptr<core::sequencer::SequencerRuntimeService> standaloneSequencerRuntime;
 
-    if (!settingsStorage.init()) {
+    if (!deviceSettingsStorage.init()) {
         return 1;
     }
     if (!coreState) {
-        coreState.emplace(settingsStorage);
+        coreState.emplace(deviceSettingsStorage);
     }
     if (!productFilesystem.init() || !productFiles.init()) {
         return 1;
+    }
+    if (!productDirectoryCatalog) {
+        productDirectoryCatalog =
+            core::app::makeExtmemUniqueCold<core::persistence::ProductDirectoryCatalog>(
+                productFiles
+            );
+        if (!productDirectoryCatalog) return 1;
     }
 
     if (!env.init(argc, argv)) {
@@ -103,7 +114,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    core::app::registerContexts(app, *coreState, productFiles);
+    core::app::registerContexts(
+        app,
+        *coreState,
+        productFiles,
+        *productDirectoryCatalog
+    );
     app.begin();
 
     return ms::entry::run_wasm(env, app, &(*coreState), tick_core_state);

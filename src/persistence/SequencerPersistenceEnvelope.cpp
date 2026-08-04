@@ -10,9 +10,10 @@
 #include "app/ExtmemAllocator.hpp"
 #include "persistence/PersistenceBinaryCodec.hpp"
 #include "persistence/SequencerCcLanePersistenceCodec.hpp"
+#include "persistence/SequencerGraphRecordCodec.hpp"
 #include "persistence/SequencerPersistenceCodec.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
-#include "state/sequencer/SequencerGraphAssetRecords.hpp"
+#include "state/sequencer/SequencerGraphCanonicalPolicy.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerPatternRegionOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
@@ -23,15 +24,13 @@ namespace {
 
 using oc::note::sequencer::STEP_NODE_CHILD_SEQUENCE;
 using oc::note::sequencer::STEP_NODE_CYCLE_SET;
-using oc::note::sequencer::STEP_NODE_PITCH_CHROMATIC;
-using oc::note::sequencer::StepSequencerChordSpec;
-using oc::note::sequencer::StepSequencerCycleStateSet;
 using oc::note::sequencer::StepSequencerGraph;
 using oc::note::sequencer::StepSequencerGraphLimits;
-using oc::note::sequencer::StepSequencerSequence;
 using oc::note::sequencer::StepSequencerSequenceKind;
-using oc::note::sequencer::StepSequencerStepNode;
 namespace binary = core::persistence::binary_codec;
+namespace graph_record = core::persistence::sequencer_graph_record_codec;
+namespace graph_policy =
+    core::state::sequencer::graph_canonical_policy;
 
 constexpr uint32_t kEnvelopeMagic = 0x53514534;  // "SQE4"
 constexpr uint8_t kEnvelopeVersion = ENVELOPE_VERSION;
@@ -74,9 +73,6 @@ struct SectionHeader {
     uint16_t byteSize = 0;
 };
 
-using SequenceRecord = core::state::sequencer::SequencerGraphSequenceRecord;
-using StepNodeRecord = core::state::sequencer::SequencerGraphStepNodeRecord;
-using CycleSetRecord = core::state::sequencer::SequencerGraphCycleSetRecord;
 using GraphPtr = core::app::ExtmemUniquePtr<StepSequencerGraph>;
 using CcLanePtr = state::sequencer::SequencerCcLaneBankPtr;
 
@@ -162,16 +158,61 @@ FLASHMEM bool hasPersistableGraph(const StepSequencerGraph* graph) {
     for (uint16_t i = 0; i < count; ++i) {
         const auto& node = graph->stepNodes[i];
         if (node.flags != 0) return true;
-        auto localVariation = node.localVariation;
-        localVariation.clamp();
-        if (localVariation.pitchSemitones != 0 ||
-            localVariation.velocity != 0 ||
-            localVariation.gatePercent != 0 ||
-            localVariation.nudge != 0) {
+        if (node.localVariation.pitchSemitones != 0 ||
+            node.localVariation.velocity != 0 ||
+            node.localVariation.gatePercent != 0 ||
+            node.localVariation.nudge != 0) {
             return true;
         }
     }
     return false;
+}
+
+FLASHMEM bool graphRecordsAreCanonical(
+    const StepSequencerGraph& graph
+) {
+    if (!graph.enabled ||
+        graph.stepNodeCount >
+            graph.stepNodes.size() ||
+        graph.sequenceCount >
+            graph.sequences.size() ||
+        graph.cycleSetCount >
+            graph.cycleSets.size()) {
+        return false;
+    }
+
+    const auto* root = graph.sequence(graph.rootSequenceId);
+    if (root == nullptr ||
+        root->kind != StepSequencerSequenceKind::RootPattern ||
+        root->firstStepNode != 0U ||
+        root->length !=
+            state::sequencer::SequencerPatternState::MAX_STEPS) {
+        return false;
+    }
+
+    for (uint8_t i = 0; i < graph.sequenceCount; ++i) {
+        const auto& sequence = graph.sequences[i];
+        if (!graph_policy::sequenceIsCanonical(sequence) ||
+            graph.sequence(i) == nullptr) {
+            return false;
+        }
+    }
+    for (uint8_t i = 0; i < graph.cycleSetCount; ++i) {
+        if (graph.cycleSet(i) == nullptr) return false;
+    }
+    for (uint16_t i = 0; i < graph.stepNodeCount; ++i) {
+        const auto& node = graph.stepNodes[i];
+        if (!graph_policy::stepNodeIsCanonical(node)) return false;
+        if ((node.flags & STEP_NODE_CHILD_SEQUENCE) != 0 &&
+            graph.sequence(node.childSequenceId) == nullptr) {
+            return false;
+        }
+        if ((node.flags & STEP_NODE_CYCLE_SET) != 0 &&
+            graph.cycleSet(node.cycleSetId) == nullptr) {
+            return false;
+        }
+    }
+    return true;
 }
 
 FLASHMEM bool hasPersistableCcLanes(
@@ -243,26 +284,22 @@ FLASHMEM state::sequencer::SequencerPatternPlaybackRegion snapshotPlaybackRegion
 FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
                                const StepSequencerGraph* graph,
                                uint8_t track) {
+    if (graph == nullptr) return true;
+    if (!graphRecordsAreCanonical(*graph)) return false;
     if (!hasPersistableGraph(graph)) return true;
 
-    const auto sequenceCount = static_cast<uint16_t>(
-        std::min<uint16_t>(graph->sequenceCount, graph->sequences.size())
-    );
-    const auto nodeCount = static_cast<uint16_t>(
-        std::min<uint16_t>(graph->stepNodeCount, graph->stepNodes.size())
-    );
-    const auto cycleSetCount = static_cast<uint16_t>(
-        std::min<uint16_t>(graph->cycleSetCount, graph->cycleSets.size())
-    );
+    const uint16_t sequenceCount = graph->sequenceCount;
+    const uint16_t nodeCount = graph->stepNodeCount;
+    const uint16_t cycleSetCount = graph->cycleSetCount;
 
     const uint16_t sequenceBytes = static_cast<uint16_t>(
-        sequenceCount * state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE
+        sequenceCount * graph_record::SEQUENCE_RECORD_SIZE
     );
     const uint16_t nodeBytes = static_cast<uint16_t>(
-        nodeCount * state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE
+        nodeCount * graph_record::STEP_NODE_RECORD_SIZE
     );
     const uint16_t cycleSetBytes = static_cast<uint16_t>(
-        cycleSetCount * state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE
+        cycleSetCount * graph_record::CYCLE_SET_RECORD_SIZE
     );
 
     uint8_t* sequenceData = nullptr;
@@ -270,19 +307,19 @@ FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
     uint8_t* cycleSetData = nullptr;
     if (!writer.reserveSection(SectionId::GraphSequences,
                                track,
-                               state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE,
+                               graph_record::SEQUENCE_RECORD_SIZE,
                                sequenceCount,
                                sequenceBytes,
                                sequenceData) ||
         !writer.reserveSection(SectionId::GraphStepNodes,
                                track,
-                               state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE,
+                               graph_record::STEP_NODE_RECORD_SIZE,
                                nodeCount,
                                nodeBytes,
                                nodeData) ||
         !writer.reserveSection(SectionId::GraphCycleSets,
                                track,
-                               state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE,
+                               graph_record::CYCLE_SET_RECORD_SIZE,
                                cycleSetCount,
                                cycleSetBytes,
                                cycleSetData)) {
@@ -290,68 +327,30 @@ FLASHMEM bool addGraphSections(EnvelopeWriter& writer,
     }
 
     for (uint16_t i = 0; i < sequenceCount; ++i) {
-        const auto& source = graph->sequences[i];
-        const SequenceRecord record{
-            .kind = static_cast<uint8_t>(source.kind),
-            .firstStepNode = source.firstStepNode,
-            .length = source.length,
-            .offset = source.offset,
-        };
-        if (!state::sequencer::encodeSequencerGraphSequenceRecord(
-                record,
-                sequenceData +
-                    i * state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE,
-                state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE
+        if (!graph_record::encodeSequence(
+                graph->sequences[i],
+                sequenceData + i * graph_record::SEQUENCE_RECORD_SIZE,
+                graph_record::SEQUENCE_RECORD_SIZE
             )) {
             return false;
         }
     }
 
     for (uint16_t i = 0; i < nodeCount; ++i) {
-        const auto& source = graph->stepNodes[i];
-        const StepNodeRecord record{
-            .flags = source.flags,
-            .noteOffset = source.noteOffset,
-            .velocityOffset = source.velocityOffset,
-            .gateOffset = source.gateOffset,
-            .nudgeOffset = source.nudgeOffset,
-            .probabilityOffset = source.probabilityOffset,
-            .childSequenceId = source.childSequenceId,
-            .cycleSetId = source.cycleSetId,
-            .localVariationPitchSemitones = source.localVariation.pitchSemitones,
-            .localVariationVelocity = source.localVariation.velocity,
-            .localVariationGatePercent = source.localVariation.gatePercent,
-            .localVariationNudge = source.localVariation.nudge,
-            .chordMode = static_cast<uint8_t>(source.chordMode),
-            .chordVoiceCount = source.chordSpec.voiceCount,
-            .chordHarmonyData = source.chordSpec.harmonyData,
-            .chordVoicingData = source.chordSpec.voicingData,
-            .chordInversionData = source.chordSpec.inversionData,
-            .chordStrum = source.chordSpec.strum,
-            .chordVelocityCurve = source.chordSpec.velocityCurve,
-        };
-        if (!state::sequencer::encodeSequencerGraphStepNodeRecord(
-                record,
-                nodeData +
-                    i * state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE,
-                state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE
+        if (!graph_record::encodeStepNode(
+                graph->stepNodes[i],
+                nodeData + i * graph_record::STEP_NODE_RECORD_SIZE,
+                graph_record::STEP_NODE_RECORD_SIZE
             )) {
             return false;
         }
     }
 
     for (uint16_t i = 0; i < cycleSetCount; ++i) {
-        const auto& source = graph->cycleSets[i];
-        const CycleSetRecord record{
-            .firstStateNode = source.firstStateNode,
-            .length = source.length,
-            .offset = source.offset,
-        };
-        if (!state::sequencer::encodeSequencerGraphCycleSetRecord(
-                record,
-                cycleSetData +
-                    i * state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE,
-                state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE
+        if (!graph_record::encodeCycleSet(
+                graph->cycleSets[i],
+                cycleSetData + i * graph_record::CYCLE_SET_RECORD_SIZE,
+                graph_record::CYCLE_SET_RECORD_SIZE
             )) {
             return false;
         }
@@ -444,9 +443,8 @@ FLASHMEM bool findSections(const uint8_t* data,
                     return false;
             }
         } else {
-            // Unknown or misplaced sections cannot be preserved by this
-            // decoder. Refuse the envelope so the containing project becomes
-            // explicitly partial/non-overwrite-safe instead of losing bytes.
+            // Current-format envelopes have one exact section vocabulary.
+            // Unknown or misplaced data is unsupported and never published.
             return false;
         }
 
@@ -550,7 +548,9 @@ FLASHMEM bool linkCycleSetValid(const StepSequencerGraph& graph, uint16_t id) {
     return graph.cycleSet(id) != nullptr;
 }
 
-FLASHMEM bool graphIsPersistableAfterSanitize(const StepSequencerGraph& graph) {
+FLASHMEM bool graphHasCanonicalPersistedContent(
+    const StepSequencerGraph& graph
+) {
     return hasPersistableGraph(&graph);
 }
 
@@ -565,23 +565,25 @@ FLASHMEM bool decodeGraphSections(
         sections.cycleSets.data != nullptr;
     if (!hasAnyGraphSection) return true;
 
-    if (sections.sequences.data == nullptr || sections.stepNodes.data == nullptr) {
+    if (sections.sequences.data == nullptr ||
+        sections.stepNodes.data == nullptr ||
+        sections.cycleSets.data == nullptr) {
         return false;
     }
     if (!sectionHasExactRecordShape(
             sections.sequences,
-            state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE
+            graph_record::SEQUENCE_RECORD_SIZE
         ) ||
         !sectionHasExactRecordShape(
             sections.stepNodes,
-            state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE
+            graph_record::STEP_NODE_RECORD_SIZE
         )) {
         return false;
     }
     if (sections.cycleSets.data != nullptr &&
         !sectionHasExactRecordShape(
             sections.cycleSets,
-            state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE
+            graph_record::CYCLE_SET_RECORD_SIZE
         )) {
         return false;
     }
@@ -603,74 +605,33 @@ FLASHMEM bool decodeGraphSections(
     graph->cycleSetCount = static_cast<uint8_t>(sections.cycleSets.count);
 
     for (uint16_t i = 0; i < sections.sequences.count; ++i) {
-        SequenceRecord record{};
-        if (!state::sequencer::decodeSequencerGraphSequenceRecord(
-                sections.sequences.data +
-                    i * state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE,
-                state::sequencer::SEQUENCER_GRAPH_SEQUENCE_RECORD_SIZE,
-                record
+        if (!graph_record::decodeSequence(
+                sections.sequences.data + i * graph_record::SEQUENCE_RECORD_SIZE,
+                graph_record::SEQUENCE_RECORD_SIZE,
+                graph->sequences[i]
             )) {
             return false;
         }
-        graph->sequences[i] = StepSequencerSequence{
-            .kind = static_cast<StepSequencerSequenceKind>(record.kind),
-            .firstStepNode = record.firstStepNode,
-            .length = record.length,
-            .offset = record.offset,
-        };
     }
 
     for (uint16_t i = 0; i < sections.stepNodes.count; ++i) {
-        StepNodeRecord record{};
-        if (!state::sequencer::decodeSequencerGraphStepNodeRecord(
-                sections.stepNodes.data +
-                    i * state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE,
-                state::sequencer::SEQUENCER_GRAPH_STEP_NODE_RECORD_SIZE,
-                record
+        if (!graph_record::decodeStepNode(
+                sections.stepNodes.data + i * graph_record::STEP_NODE_RECORD_SIZE,
+                graph_record::STEP_NODE_RECORD_SIZE,
+                graph->stepNodes[i]
             )) {
             return false;
         }
-        StepSequencerChordSpec chordSpec{};
-        if (!state::sequencer::decodeSequencerGraphChordSpec(record, chordSpec)) {
-            return false;
-        }
-        graph->stepNodes[i] = StepSequencerStepNode{
-            .flags = record.flags,
-            .noteOffset = record.noteOffset,
-            .velocityOffset = record.velocityOffset,
-            .gateOffset = record.gateOffset,
-            .nudgeOffset = record.nudgeOffset,
-            .probabilityOffset = record.probabilityOffset,
-            .localVariation = oc::note::sequencer::StepSequencerVariationRanges{
-                .pitchSemitones = record.localVariationPitchSemitones,
-                .velocity = record.localVariationVelocity,
-                .gatePercent = record.localVariationGatePercent,
-                .nudge = record.localVariationNudge,
-            },
-            .chordMode =
-                state::sequencer::sanitizeSequencerGraphChordMode(record.chordMode),
-            .chordSpec = chordSpec,
-            .childSequenceId = record.childSequenceId,
-            .cycleSetId = record.cycleSetId,
-        };
-        graph->stepNodes[i].localVariation.clamp();
     }
 
     for (uint16_t i = 0; i < sections.cycleSets.count; ++i) {
-        CycleSetRecord record{};
-        if (!state::sequencer::decodeSequencerGraphCycleSetRecord(
-                sections.cycleSets.data +
-                    i * state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE,
-                state::sequencer::SEQUENCER_GRAPH_CYCLE_SET_RECORD_SIZE,
-                record
+        if (!graph_record::decodeCycleSet(
+                sections.cycleSets.data + i * graph_record::CYCLE_SET_RECORD_SIZE,
+                graph_record::CYCLE_SET_RECORD_SIZE,
+                graph->cycleSets[i]
             )) {
             return false;
         }
-        graph->cycleSets[i] = StepSequencerCycleStateSet{
-            .firstStateNode = record.firstStateNode,
-            .length = record.length,
-            .offset = record.offset,
-        };
     }
 
     const auto* root = graph->sequence(graph->rootSequenceId);
@@ -692,8 +653,15 @@ FLASHMEM bool decodeGraphSections(
             return false;
         }
     }
+    for (uint8_t i = 0; i < graph->sequenceCount; ++i) {
+        if (graph->sequence(i) == nullptr) return false;
+    }
+    for (uint8_t i = 0; i < graph->cycleSetCount; ++i) {
+        if (graph->cycleSet(i) == nullptr) return false;
+    }
 
-    if (!graphIsPersistableAfterSanitize(*graph)) {
+    if (!graphRecordsAreCanonical(*graph) ||
+        !graphHasCanonicalPersistedContent(*graph)) {
         return false;
     }
 
@@ -723,7 +691,7 @@ FLASHMEM bool decodeCcLaneSection(
         )) {
         return false;
     }
-    if (state::sequencer::sequencerCcLaneCount(decoded) == 0) return true;
+    if (state::sequencer::sequencerCcLaneCount(decoded) == 0) return false;
     out = core::app::makeExtmemUnique<state::sequencer::SequencerCcLaneBank>(decoded);
     return static_cast<bool>(out);
 }
@@ -745,26 +713,46 @@ FLASHMEM uint16_t readU16At(const SectionView& flat, uint16_t offset) {
     );
 }
 
-FLASHMEM uint8_t projectActiveTrack(const SectionView& flat) {
-    const uint8_t requested =
-        state::sequencer::SequencerTrackBankState::clampTrackIndex(flat.data[0]);
-    return state::sequencer::SequencerTrackBankState::sanitizeActiveTrack(
-        readU16At(flat, 1),
-        requested
-    );
+FLASHMEM bool projectActiveTrack(
+    const SectionView& flat,
+    uint8_t& out
+) {
+    if (flat.data == nullptr ||
+        flat.byteSize != PROJECT_SEQUENCER_PAYLOAD_SIZE) {
+        return false;
+    }
+    const uint8_t activeTrack = flat.data[0];
+    const uint16_t enabledMask = readU16At(flat, 1U);
+    if (activeTrack >=
+            state::sequencer::SequencerTrackBankState::TRACK_COUNT ||
+        enabledMask == 0U ||
+        (enabledMask & static_cast<uint16_t>(1U << activeTrack)) == 0U) {
+        return false;
+    }
+    out = activeTrack;
+    return true;
 }
 
-FLASHMEM uint8_t setActiveTrack(const SectionView& flat) {
-    const uint8_t trackCount = static_cast<uint8_t>(std::min<uint16_t>(
-        flat.data[0] == 0 ? 1 : flat.data[0],
-        state::sequencer::SequencerTrackBankState::TRACK_COUNT
-    ));
-    const uint8_t requested =
-        std::min<uint8_t>(flat.data[1], static_cast<uint8_t>(trackCount - 1U));
-    return state::sequencer::SequencerTrackBankState::sanitizeActiveTrack(
-        readU16At(flat, 2),
-        requested
-    );
+FLASHMEM bool setActiveTrack(
+    const SectionView& flat,
+    uint8_t& out
+) {
+    if (flat.data == nullptr ||
+        flat.byteSize != SET_PAYLOAD_SIZE ||
+        flat.data[0] !=
+            state::sequencer::SequencerTrackBankState::TRACK_COUNT) {
+        return false;
+    }
+    const uint8_t activeTrack = flat.data[1];
+    const uint16_t enabledMask = readU16At(flat, 2U);
+    if (activeTrack >=
+            state::sequencer::SequencerTrackBankState::TRACK_COUNT ||
+        enabledMask == 0U ||
+        (enabledMask & static_cast<uint16_t>(1U << activeTrack)) == 0U) {
+        return false;
+    }
+    out = activeTrack;
+    return true;
 }
 
 FLASHMEM bool decodeTrackGraphs(
@@ -994,8 +982,9 @@ FLASHMEM bool applyProjectSequencerEnvelope(const uint8_t* data,
     PatternRegionArray regions{};
     GraphPtr activeGraph;
     CcLanePtr activeLanes;
-    const uint8_t activeTrack = projectActiveTrack(flat);
-    if (!decodePatternRegions(
+    uint8_t activeTrack = 0U;
+    if (!projectActiveTrack(flat, activeTrack) ||
+        !decodePatternRegions(
             flat,
             graphs,
             EnvelopeKind::ProjectSequencer,
@@ -1092,8 +1081,9 @@ FLASHMEM bool applySetEnvelope(const uint8_t* data,
     PatternRegionArray regions{};
     GraphPtr activeGraph;
     CcLanePtr activeLanes;
-    const uint8_t activeTrack = setActiveTrack(flat);
-    if (!decodePatternRegions(
+    uint8_t activeTrack = 0U;
+    if (!setActiveTrack(flat, activeTrack) ||
+        !decodePatternRegions(
             flat,
             graphs,
             EnvelopeKind::Set,

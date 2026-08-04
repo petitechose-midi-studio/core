@@ -151,6 +151,12 @@ FLASHMEM StepGridFrameState buildStepGridFrameState(
             sequencer.playheadStep.get(),
             sequencer.playheadStepTickOffset.get()
         );
+        if (!sequencer.contentView.isChildContent() &&
+            sequencer.expandedVariationTelemetry.valid &&
+            sequencer.expandedVariationTelemetry.noteBudgetExceeded &&
+            sequencer.expandedVariationTelemetry.rootStepIndex == absoluteStep) {
+            tile.contentBadges.expansionLimitReached = true;
+        }
     }
 
     return frame;
