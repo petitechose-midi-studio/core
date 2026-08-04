@@ -30,7 +30,6 @@ env:
 jobs:
   firmware_release:
     name: firmware (release)
-    if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -61,6 +60,24 @@ jobs:
         run: |
           set -euo pipefail
           python -m platformio run -e release
+
+      - name: Collect qualified firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp ".pio/build/release/firmware.hex" "dist/midi-studio-default-firmware.hex"
+          cp ".pio/build/release/firmware.elf" "dist/midi-studio-default-firmware.elf"
+          cp ".pio/build/release/firmware.map" "dist/midi-studio-default-firmware.map"
+          cp ".pio/build/release/post-link/report.json" "dist/midi-studio-default-post-link.json"
+          cp "script/release/profiles/core-product-profile-v1.json" "dist/midi-studio-default-product-profile.json"
+
+      - name: Upload qualified firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: midi-studio-default-firmware
+          path: dist/
+          retention-days: 14
 
   unit_tests:
     name: unit tests
