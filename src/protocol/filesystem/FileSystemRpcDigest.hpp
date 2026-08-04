@@ -38,6 +38,9 @@ public:
     const uint8_t* digest() const { return digest_; }
 
 private:
+    friend bool hashBytes(const uint8_t* data, size_t size,
+                          uint8_t output[FILESYSTEM_RPC_SHA256_SIZE]);
+
     enum class Step : uint8_t {
         IDLE = 0,
         STAT,
@@ -69,6 +72,9 @@ static_assert(
 
 bool digestEquals(const uint8_t* lhs, const uint8_t* rhs);
 void copyDigest(uint8_t* destination, const uint8_t* source);
+
+/** Hash one already-resident byte range without allocation or filesystem I/O. */
+bool hashBytes(const uint8_t* data, size_t size, uint8_t output[FILESYSTEM_RPC_SHA256_SIZE]);
 
 DigestReadResult readDigest(
     core::persistence::ProductFileService& files,

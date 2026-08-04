@@ -181,10 +181,9 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleCapabilities_(
 
     ByteWriter writer(response, responseSize);
     constexpr uint32_t features =
-        FILESYSTEM_RPC_FEATURE_CAPABILITIES |
-        FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS |
-        FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT |
-        FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS;
+        FILESYSTEM_RPC_FEATURE_CAPABILITIES | FILESYSTEM_RPC_FEATURE_WRITE_SESSIONS |
+        FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT | FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS |
+        FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS;
     if (!writeFrameHeader(writer, FileSystemRpcMessageId::CAPABILITIES_RESPONSE, frame.requestId) ||
         !writer.writeU8(static_cast<uint8_t>(FileSystemRpcStatus::OK)) ||
         !writer.writeU8(FILESYSTEM_RPC_SCHEMA) ||

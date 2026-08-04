@@ -7,8 +7,9 @@
 #include <oc/interface/ITransport.hpp>
 #include <oc/type/Result.hpp>
 
-#include "persistence/ProductFileService.hpp"
 #include "persistence/ProductDirectoryCatalog.hpp"
+#include "persistence/ProductFileService.hpp"
+#include "protocol/filesystem/FileSystemJobRpc.hpp"
 
 namespace core::persistence {
 class ProductFileCommitPlan;
@@ -38,6 +39,7 @@ inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT = 1u << 2;
 // Schema 1 remains wire-compatible. Clients MUST discover this optional
 // extension before sending message ids 0xF8..0xFB to older firmware.
 inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS = 1u << 3;
+inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS = 1u << 4;
 inline constexpr const char* FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH =
     "tmp/rpc-conditional.journal.corrupt";
 
@@ -506,6 +508,15 @@ public:
     bool active() const;
 
 private:
+    static constexpr uint8_t JOB_RECORD_NONE = 0xFFU;
+    static constexpr uint8_t JOB_RECORD_COUNT = 32U;
+    static constexpr size_t JOB_TERMINAL_RESPONSE_BYTES = 72U;
+
+    static constexpr uint8_t JOB_FLAG_OCCUPIED = 1U << 0U;
+    static constexpr uint8_t JOB_FLAG_CANCEL_REQUESTED = 1U << 1U;
+    static constexpr uint8_t JOB_FLAG_CANCEL_TOO_LATE = 1U << 2U;
+    static constexpr uint8_t JOB_FLAG_DEADLINE_REACHED = 1U << 3U;
+
     enum class PendingOperation : uint8_t {
         FRAME = 0,
         WRITE_COMMIT,
@@ -521,13 +532,60 @@ private:
         uint16_t sessionId = 0;
         PendingOperation operation = PendingOperation::FRAME;
         bool uploadContinuation = false;
+        uint8_t jobRecordIndex = JOB_RECORD_NONE;
     };
 
+    struct JobRecord {
+        uint8_t terminalResponse[JOB_TERMINAL_RESPONSE_BYTES] = {};
+        uint8_t requestDigest[FILESYSTEM_RPC_SHA256_SIZE] = {};
+        uint32_t clientNonce = 0U;
+        uint32_t jobId = 0U;
+        uint32_t innerSize = 0U;
+        uint32_t admittedAtMs = 0U;
+        uint32_t deadlineMs = 0U;
+        uint32_t terminalAtMs = 0U;
+        uint32_t mediaGeneration = 0U;
+        FileSystemJobState state = FileSystemJobState::NONE;
+        FileSystemJobError error = FileSystemJobError::NONE;
+        uint8_t responseSize = 0U;
+        uint8_t flags = 0U;
+    };
+
+    static_assert(sizeof(JobRecord) <= 136U,
+                  "filesystem job record exceeds compact PSRAM contract");
+
     void handleReceive_(const uint8_t* data, size_t size);
+    void handleJobReceive_(const uint8_t* data, size_t size);
+    void handleJobStart_(const FileSystemJobRequest& request, uint32_t nowMs);
+    void sendJobResponse_(const FileSystemJobResponse& response);
+    void sendJobRejected_(const FileSystemJobRequest& request, FileSystemJobError error,
+                          uint32_t jobId = 0U);
+    void sendJobRecordResponse_(const FileSystemJobRequest& request, const JobRecord& record,
+                                uint8_t flags = 0U);
     void sendError_(const uint8_t* data, size_t size, FileSystemRpcStatus status);
     void sendErrorForRequest_(uint16_t requestId, FileSystemRpcStatus status);
     PendingFrame* emptyFrame_();
     PendingFrame* activeFrame_();
+    PendingFrame* frameForJobRecord_(uint8_t recordIndex);
+    JobRecord* freeJobRecord_();
+    JobRecord* jobRecordForNonce_(uint32_t clientNonce);
+    JobRecord* jobRecordForIdentity_(uint32_t clientNonce, uint32_t jobId);
+    JobRecord* jobRecordForFrame_(const PendingFrame& frame);
+    uint8_t jobRecordIndex_(const JobRecord& record) const;
+    void resetJobRecord_(JobRecord& record);
+    void reapExpiredJobRecords_(uint32_t nowMs);
+    bool jobIrreversible_(const PendingFrame& frame) const;
+    bool advanceJobInterruption_(PendingFrame& frame, JobRecord& record, uint32_t nowMs,
+                                 bool playbackActive);
+    bool prepareJobAdvance_(PendingFrame& frame, JobRecord& record, uint32_t nowMs,
+                            bool playbackActive);
+    void terminalizeJobResponse_(PendingFrame& frame, bool responseValid, size_t responseSize,
+                                 uint32_t nowMs);
+    void failStaleFrame_(PendingFrame& frame, uint32_t nowMs, FileSystemRpcStatus legacyStatus,
+                         FileSystemJobError jobError);
+    void terminalizeJob_(PendingFrame& frame, FileSystemJobState state, FileSystemJobError error,
+                         uint32_t nowMs, const uint8_t* response = nullptr,
+                         size_t responseSize = 0U);
     void clearFrame_(PendingFrame& frame);
     void cancelFrameOperation_(PendingFrame& frame);
     void cancelPendingJobs_();
@@ -546,16 +604,15 @@ private:
     FileSystemRpcHandler handler_;
     PendingFrame pending_[2]{};
     uint8_t response_[FILESYSTEM_RPC_RESPONSE_BUFFER_SIZE] = {};
+    JobRecord job_records_[JOB_RECORD_COUNT]{};
     core::persistence::ProductPersistenceJobToken upload_job_{};
     uint32_t upload_started_ms_ = 0;
     bool active_ = false;
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(
-    sizeof(FileSystemRpcEndpoint) <= 98'304U,
-    "filesystem RPC endpoint exceeds retained PSRAM ceiling"
-);
+static_assert(sizeof(FileSystemRpcEndpoint) <= 106'496U,
+              "filesystem RPC endpoint exceeds retained PSRAM ceiling");
 #endif
 
 }  // namespace core::protocol::filesystem

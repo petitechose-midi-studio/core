@@ -234,6 +234,17 @@ FLASHMEM void copyDigest(uint8_t* destination, const uint8_t* source) {
     std::memcpy(destination, source, FILESYSTEM_RPC_SHA256_SIZE);
 }
 
+FLASHMEM bool hashBytes(const uint8_t* data, size_t size,
+                        uint8_t output[FILESYSTEM_RPC_SHA256_SIZE]) {
+    if ((!data && size != 0U) || !output) return false;
+    DigestReadPlan plan;
+    plan.begin();
+    plan.update_(data, size);
+    plan.finish_();
+    copyDigest(output, plan.digest_);
+    return true;
+}
+
 FLASHMEM DigestReadResult readDigest(
     core::persistence::ProductFileService& files,
     const core::persistence::ProductMutationLease& lease,

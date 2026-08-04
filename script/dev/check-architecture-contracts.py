@@ -940,6 +940,12 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     save_header = "src/persistence/ProjectSaveTransaction.hpp"
     session_header = "src/persistence/ProjectSessionStore.hpp"
     rpc_header = "src/protocol/filesystem/FileSystemRpc.hpp"
+    job_rpc_header = "src/protocol/filesystem/FileSystemJobRpc.hpp"
+    job_rpc_source = "src/protocol/filesystem/FileSystemJobRpc.cpp"
+    rpc_endpoint = "src/protocol/filesystem/FileSystemRpcEndpoint.cpp"
+    rpc_handler = "src/protocol/filesystem/FileSystemRpcHandler.cpp"
+    rpc_digest = "src/protocol/filesystem/FileSystemRpcDigest.cpp"
+    conditional_plan = "src/protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
     recovery_source = "src/persistence/ProductStorageRecoveryService.cpp"
     recovery_header = "src/persistence/ProductStorageRecoveryService.hpp"
     atomic_header = "src/persistence/AtomicProductFile.hpp"
@@ -968,6 +974,35 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*64U", "session store must remain 64 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*276U", "RPC write session must remain 276 B on ARM"),
         (rpc_header, r"sizeof\(FileSystemRpcHandler\)\s*==\s*304U", "RPC handler must remain 304 B on ARM"),
+        (rpc_header, r"FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS\s*=\s*1u\s*<<\s*4", "legacy capabilities must reserve persistence-job feature bit 4"),
+        (rpc_header, r"JOB_RECORD_COUNT\s*=\s*32U", "RPC endpoint must retain exactly 32 job records"),
+        (rpc_header, r"JOB_TERMINAL_RESPONSE_BYTES\s*=\s*72U", "each job record must retain at most 72 response bytes"),
+        (rpc_header, r"sizeof\(JobRecord\)\s*<=\s*136U", "job metadata must remain compact"),
+        (rpc_header, r"PendingFrame\s+pending_\s*\[\s*2\s*\]", "RPC endpoint must retain exactly two payload slots"),
+        (rpc_header, r"JobRecord\s+job_records_\s*\[\s*JOB_RECORD_COUNT\s*\]", "RPC endpoint must preallocate its terminal cache"),
+        (rpc_header, r"sizeof\(FileSystemRpcEndpoint\)\s*<=\s*106'496U", "RPC endpoint must remain inside its PSRAM ceiling"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_REQUEST_ID\s*=\s*0xFCU", "job request id must match Bridge v1"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_RESPONSE_ID\s*=\s*0xFDU", "job response id must match Bridge v1"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_REQUEST_NAME\s*\[\s*\]\s*=\s*\"FsJobRequest\"", "job request name must match Bridge v1"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_RESPONSE_NAME\s*\[\s*\]\s*=\s*\"FsJobResponse\"", "job response name must match Bridge v1"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_REQUEST_HEADER_BYTES\s*=\s*16U", "job request header must remain 16 B"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_RESPONSE_HEADER_BYTES\s*=\s*20U", "job response header must remain 20 B"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_CAPABILITIES_BYTES\s*=\s*24U", "job capability body must remain 24 B"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_MAX_INNER_REQUEST_BYTES\s*=\s*32'512U", "job inner request ceiling must match the retained slot"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_MAX_INNER_RESPONSE_BYTES\s*=\s*32'512U", "job inner response wire ceiling must match Bridge v1"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_MAX_DEADLINE_MS\s*=\s*10'000U", "job deadline ceiling must remain 10 seconds"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_TERMINAL_RETENTION_MS\s*=\s*30'000U", "terminal retention must remain 30 seconds"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_MAX_CONCURRENT\s*=\s*2U", "job capability must expose the exact coordinator capacity"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_RETRY_AFTER_MS\s*=\s*5U", "job polling interval must remain 5 ms"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_FEATURES\s*=\s*FILESYSTEM_JOB_RPC_FEATURE_START\s*\|\s*FILESYSTEM_JOB_RPC_FEATURE_POLL\s*\|\s*FILESYSTEM_JOB_RPC_FEATURE_CANCEL\s*\|\s*FILESYSTEM_JOB_RPC_FEATURE_TERMINAL_RETENTION\s*\|\s*FILESYSTEM_JOB_RPC_FEATURE_TYPED_ERRORS\s*\|\s*FILESYSTEM_JOB_RPC_FEATURE_LEGACY_MAPPING", "job capabilities must publish the exact Bridge feature mask"),
+        (job_rpc_header, r"FILESYSTEM_JOB_RPC_RESPONSE_FLAGS\s*=\s*FILESYSTEM_JOB_RPC_FLAG_DUPLICATE_START\s*\|\s*FILESYSTEM_JOB_RPC_FLAG_LEGACY_MAPPED\s*\|\s*FILESYSTEM_JOB_RPC_FLAG_TERMINAL_RETAINED\s*\|\s*FILESYSTEM_JOB_RPC_FLAG_CANCEL_TOO_LATE", "job responses must retain the exact Bridge flag mask"),
+        (job_rpc_source, r"nowMs\s*-\s*terminalAtMs\)\s*<=\s*FILESYSTEM_JOB_RPC_TERMINAL_RETENTION_MS", "terminal retention must remain inclusive and rollover-safe"),
+        (rpc_handler, r"FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS\s*\|\s*FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS", "legacy capabilities must publish bit 4 only with the provider"),
+        (rpc_endpoint, r"pending\.size\s*!=\s*0U\s*&&\s*pending\.jobRecordIndex\s*==\s*JOB_RECORD_NONE", "legacy compatibility must retain exactly one frame"),
+        (rpc_endpoint, r"record->jobId\s*=\s*upload_job_\.id\s*\(\s*\)", "write commit must reuse the upload coordinator identity"),
+        (rpc_endpoint, r"deadlineAfterMs\s*=\s*0U", "provider deadlines must be enforced by the retained job record"),
+        (rpc_digest, r"bool\s+hashBytes\s*\([^)]*uint8_t\s+output\s*\[\s*FILESYSTEM_RPC_SHA256_SIZE\s*\]", "in-memory request identity must reuse allocation-free SHA-256"),
+        (conditional_plan, r"return\s+journal_started_\s*\|\|\s*promotion_\.mapped\s*\(\s*\)", "conditional cancellation must expose its durable boundary"),
         (service_header, r"ProductPersistenceCoordinator\s+coordinator_\s*\{\s*\}", "file service must embed exactly one coordinator"),
         (service_header, r"ProductPersistenceJobCoordinator\s+job_coordinator_\s*\{\s*\}", "file service must own exactly one job coordinator"),
         (service_source, r"job_coordinator_\.invalidateAll\s*\(\s*\)", "media removal must invalidate every persistence job"),
@@ -993,6 +1028,165 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         ),
     ):
         require(rel, pattern, description)
+
+    supported_start_bodies = cpp_function_bodies(
+        files.get(job_rpc_source, ""),
+        "FileSystemJobRpcCodec::isSupportedStartRequest",
+    )
+    if len(supported_start_bodies) != 1:
+        errors.append(
+            f"{job_rpc_source}: supported job subset must have one balanced "
+            f"definition (found {len(supported_start_bodies)})"
+        )
+    else:
+        supported_cases = set(
+            re.findall(
+                r"case\s+FileSystemRpcMessageId::([A-Z0-9_]+)\s*:",
+                cpp_code_mask(supported_start_bodies[0]),
+            )
+        )
+        expected_cases = {
+            "WRITE_COMMIT_REQUEST",
+            "MKDIR_REQUEST",
+            "DELETE_REQUEST",
+            "RENAME_REQUEST",
+            "CONDITIONAL_REPLACE_REQUEST",
+            "CONDITIONAL_DELETE_REQUEST",
+        }
+        if supported_cases != expected_cases:
+            errors.append(
+                f"{job_rpc_source}: durable job subset drifted "
+                f"(expected {sorted(expected_cases)}, found {sorted(supported_cases)})"
+            )
+
+    for helper in (
+        "decodeCommand",
+        "decodeState",
+        "decodeError",
+        "writeEnvelope",
+        "readEnvelope",
+        "isLegacyResponseId",
+        "canonicalLegacyFrame",
+        "responseSemanticsValid",
+        "writeCapabilities",
+        "capabilitiesValid",
+    ):
+        require(
+            job_rpc_source,
+            rf"FLASHMEM\s+bool\s+{helper}\s*\(",
+            f"cold job codec helper {helper} must remain outside ITCM",
+        )
+
+    receive_io = re.compile(
+        r"\b(?:files_|handler_)\."
+        r"(?:createDirectory|remove|rename|write|flush|beginWrite|appendWrite|"
+        r"finishWrite|abortWrite|abortWriteSession|handleAdmittedFrame|"
+        r"beginCooperative[A-Za-z0-9_]*|advanceCooperative[A-Za-z0-9_]*|"
+        r"cancelCooperative[A-Za-z0-9_]*)\s*\("
+        r"|\b(?:claimAdvance|measurePersistenceWork)\s*\("
+        r"|\b(?:cancelFrameOperation_|advanceJobInterruption_|prepareJobAdvance_|"
+        r"advanceUploadTimeout_)\s*\("
+    )
+    for function_name in (
+        "FileSystemRpcEndpoint::handleReceive_",
+        "FileSystemRpcEndpoint::handleJobReceive_",
+        "FileSystemRpcEndpoint::handleJobStart_",
+    ):
+        bodies = cpp_function_bodies(files.get(rpc_endpoint, ""), function_name)
+        if len(bodies) != 1:
+            errors.append(
+                f"{rpc_endpoint}: {function_name} must have one balanced "
+                f"definition (found {len(bodies)})"
+            )
+            continue
+        if receive_io.search(cpp_code_mask(bodies[0])):
+            errors.append(
+                f"{rpc_endpoint}: {function_name} must remain filesystem-I/O-free"
+            )
+
+    provider_sources = (
+        job_rpc_header,
+        job_rpc_source,
+        rpc_header,
+        rpc_endpoint,
+        rpc_digest,
+        conditional_plan,
+    )
+    forbidden_runtime_owner = re.compile(
+        r"\b(?:malloc|calloc|realloc|free)\s*\("
+        r"|\bnew\s+(?!\()"
+        r"|\bstd::(?:vector|deque|list|map|multimap|unordered_map|unordered_set|"
+        r"set|multiset|queue|priority_queue|thread|mutex|recursive_mutex|"
+        r"condition_variable)\b"
+        r"|\b(?:xTaskCreate|TaskHandle_t|QueueHandle_t|SemaphoreHandle_t)\b"
+    )
+    for rel in provider_sources:
+        if forbidden_runtime_owner.search(cpp_code_mask(files.get(rel, ""))):
+            errors.append(
+                f"{rel}: persistence-job provider must not add runtime allocation, "
+                "dynamic containers, tasks, channels or mutexes"
+            )
+
+    advance_bodies = cpp_function_bodies(
+        files.get(rpc_endpoint, ""),
+        "FileSystemRpcEndpoint::advance",
+    )
+    if len(advance_bodies) != 1:
+        errors.append(
+            f"{rpc_endpoint}: endpoint advance must have one balanced definition "
+            f"(found {len(advance_bodies)})"
+        )
+    else:
+        advance_body = cpp_code_mask(advance_bodies[0])
+        if re.search(r"\b(?:reapExpiredJobRecords_|job_records_)\b", advance_body):
+            errors.append(
+                f"{rpc_endpoint}: 1920 Hz advance must not scan the 32-record cache"
+            )
+        if re.search(
+            r"if\s*\(\s*jobRecord\s*\)\s*\{\s*"
+            r"terminalizeJobResponse_\s*\(.*?\)\s*;\s*\}\s*"
+            r"else\s+if\s*\(\s*response\s*&&\s*"
+            r"response\.value\s*\(\s*\)\s*>\s*0U\s*\)\s*\{\s*"
+            r"transport_\.send\s*\(",
+            advance_body,
+            flags=re.DOTALL,
+        ) is None:
+            errors.append(
+                f"{rpc_endpoint}: job completion must remain poll-only while legacy "
+                "completion keeps its response"
+            )
+
+    require_ordered_function(
+        rpc_endpoint,
+        "FileSystemRpcEndpoint::handleJobStart_",
+        (
+            r"JobRecord\s*\*\s*record\s*=\s*freeJobRecord_\s*\(\s*\)",
+            r"record->flags\s*=\s*JOB_FLAG_OCCUPIED",
+            r"auto\s+admitted\s*=\s*jobs\.admit\s*\(",
+        ),
+        "a terminal record must be reserved before ordinary coordinator admission",
+    )
+    require_ordered_function(
+        rpc_endpoint,
+        "FileSystemRpcEndpoint::handleReceive_",
+        (
+            r"FileSystemJobRpcCodec::isJobRequestId\s*\(",
+            r"FileSystemRpcCodec::isFileSystemRequestId\s*\(",
+            r"pending\.jobRecordIndex\s*==\s*JOB_RECORD_NONE",
+            r"PendingFrame\s*\*\s*frame\s*=\s*emptyFrame_\s*\(\s*\)",
+        ),
+        "job dispatch and the one-frame legacy lease must precede slot admission",
+    )
+    require_ordered_function(
+        rpc_endpoint,
+        "FileSystemRpcEndpoint::handleJobReceive_",
+        (
+            r"FileSystemJobRpcCodec::decodeRequest\s*\(",
+            r"reapExpiredJobRecords_\s*\(",
+            r"switch\s*\(\s*request\.command\s*\)",
+        ),
+        "terminal cache expiry must run only after strict control-frame decoding",
+    )
     require(
         main_source,
         r"productFileService->markMediaUnavailable\s*\(",
@@ -4314,6 +4508,56 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
         "{CutMode::BEFORE, CutMode::AFTER}",
         "{CutMode::BEFORE}",
     )
+    job_request_id_drifts = mutate(
+        "src/protocol/filesystem/FileSystemJobRpc.hpp",
+        "inline constexpr uint8_t FILESYSTEM_JOB_RPC_REQUEST_ID = 0xFCU;",
+        "inline constexpr uint8_t FILESYSTEM_JOB_RPC_REQUEST_ID = 0xFEU;",
+    )
+    job_capability_widens_slots = mutate(
+        "src/protocol/filesystem/FileSystemJobRpc.hpp",
+        "inline constexpr uint8_t FILESYSTEM_JOB_RPC_MAX_CONCURRENT = 2U;",
+        "inline constexpr uint8_t FILESYSTEM_JOB_RPC_MAX_CONCURRENT = 3U;",
+    )
+    job_subset_wraps_query = mutate(
+        "src/protocol/filesystem/FileSystemJobRpc.cpp",
+        "        case FileSystemRpcMessageId::MKDIR_REQUEST:",
+        "        case FileSystemRpcMessageId::LIST_REQUEST:",
+    )
+    job_record_cache_shrinks = mutate(
+        "src/protocol/filesystem/FileSystemRpc.hpp",
+        "    static constexpr uint8_t JOB_RECORD_COUNT = 32U;",
+        "    static constexpr uint8_t JOB_RECORD_COUNT = 31U;",
+    )
+    legacy_second_slot_reopens = mutate(
+        "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
+        "pending.jobRecordIndex == JOB_RECORD_NONE",
+        "pending.jobRecordIndex != JOB_RECORD_NONE",
+    )
+    hot_loop_scans_terminal_cache = mutate(
+        "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
+        "void FileSystemRpcEndpoint::advance(uint32_t nowMs, bool playbackActive) {\n"
+        "    if (!active_) return;",
+        "void FileSystemRpcEndpoint::advance(uint32_t nowMs, bool playbackActive) {\n"
+        "    if (!active_) return;\n"
+        "    reapExpiredJobRecords_(nowMs);",
+    )
+    provider_allocates_after_start = mutate(
+        "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
+        "    using conditional_mutation::hashBytes;",
+        "    using conditional_mutation::hashBytes;\n"
+        "    auto* forbiddenRuntimeOwner = new uint8_t;",
+    )
+    job_codec_helper_returns_to_itcm = mutate(
+        "src/protocol/filesystem/FileSystemJobRpc.cpp",
+        "FLASHMEM bool responseSemanticsValid(",
+        "bool responseSemanticsValid(",
+    )
+    job_control_performs_abort = mutate(
+        "src/protocol/filesystem/FileSystemRpcEndpoint.cpp",
+        "    const FileSystemJobRequest& request = decoded.value();",
+        "    const FileSystemJobRequest& request = decoded.value();\n"
+        "    handler_.abortWriteSession();",
+    )
 
     return (
         (
@@ -4397,6 +4641,86 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
                 fault_campaign_omits_after_cuts
             )),
             "fault campaign without after-boundary cuts is rejected",
+        ),
+        (
+            job_request_id_drifts[
+                "src/protocol/filesystem/FileSystemJobRpc.hpp"
+            ]
+            != fixture["src/protocol/filesystem/FileSystemJobRpc.hpp"]
+            and bool(persistence_lease_contract_errors(job_request_id_drifts)),
+            "persistence-job request id drift is rejected",
+        ),
+        (
+            job_capability_widens_slots[
+                "src/protocol/filesystem/FileSystemJobRpc.hpp"
+            ]
+            != fixture["src/protocol/filesystem/FileSystemJobRpc.hpp"]
+            and bool(
+                persistence_lease_contract_errors(job_capability_widens_slots)
+            ),
+            "persistence-job capacity beyond the coordinator is rejected",
+        ),
+        (
+            job_subset_wraps_query[
+                "src/protocol/filesystem/FileSystemJobRpc.cpp"
+            ]
+            != fixture["src/protocol/filesystem/FileSystemJobRpc.cpp"]
+            and bool(persistence_lease_contract_errors(job_subset_wraps_query)),
+            "persistence-job subset wrapping a query is rejected",
+        ),
+        (
+            job_record_cache_shrinks[
+                "src/protocol/filesystem/FileSystemRpc.hpp"
+            ]
+            != fixture["src/protocol/filesystem/FileSystemRpc.hpp"]
+            and bool(persistence_lease_contract_errors(job_record_cache_shrinks)),
+            "persistence-job terminal cache drift is rejected",
+        ),
+        (
+            legacy_second_slot_reopens[
+                "src/protocol/filesystem/FileSystemRpcEndpoint.cpp"
+            ]
+            != fixture["src/protocol/filesystem/FileSystemRpcEndpoint.cpp"]
+            and bool(persistence_lease_contract_errors(legacy_second_slot_reopens)),
+            "second legacy compatibility frame is rejected",
+        ),
+        (
+            hot_loop_scans_terminal_cache[
+                "src/protocol/filesystem/FileSystemRpcEndpoint.cpp"
+            ]
+            != fixture["src/protocol/filesystem/FileSystemRpcEndpoint.cpp"]
+            and bool(
+                persistence_lease_contract_errors(hot_loop_scans_terminal_cache)
+            ),
+            "terminal cache scan in the 1920 Hz loop is rejected",
+        ),
+        (
+            provider_allocates_after_start[
+                "src/protocol/filesystem/FileSystemRpcEndpoint.cpp"
+            ]
+            != fixture["src/protocol/filesystem/FileSystemRpcEndpoint.cpp"]
+            and bool(
+                persistence_lease_contract_errors(provider_allocates_after_start)
+            ),
+            "runtime allocation in the persistence-job provider is rejected",
+        ),
+        (
+            job_codec_helper_returns_to_itcm[
+                "src/protocol/filesystem/FileSystemJobRpc.cpp"
+            ]
+            != fixture["src/protocol/filesystem/FileSystemJobRpc.cpp"]
+            and bool(
+                persistence_lease_contract_errors(job_codec_helper_returns_to_itcm)
+            ),
+            "persistence-job codec helper returning to ITCM is rejected",
+        ),
+        (
+            job_control_performs_abort[
+                "src/protocol/filesystem/FileSystemRpcEndpoint.cpp"
+            ]
+            != fixture["src/protocol/filesystem/FileSystemRpcEndpoint.cpp"]
+            and bool(persistence_lease_contract_errors(job_control_performs_abort)),
+            "filesystem work in a persistence-job control callback is rejected",
         ),
     )
 

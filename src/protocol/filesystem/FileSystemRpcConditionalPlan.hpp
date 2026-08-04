@@ -45,6 +45,7 @@ public:
     bool active() const;
     bool terminal() const;
     bool recoveryRequired() const { return recovery_required_; }
+    bool irreversible() const { return journal_started_ || promotion_.mapped(); }
     ConditionalPlanWorkClass nextWorkClass() const;
     FileSystemRpcMessageId responseMessageId() const;
     FileSystemRpcStatus status() const { return status_; }
