@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import teensy_elf_topology as elf_topology
+
 from teensy_elf_topology import (
     CLASSIFIED_ITCM_SECTIONS,
     TOPOLOGY_CONTRACT_VERSION,
@@ -20,6 +22,22 @@ def fixture(name: str, kind: str) -> str:
 
 
 def main() -> int:
+    assert elf_topology.__all__ == (
+        "TOPOLOGY_CONTRACT_VERSION",
+        "ITCM_ORIGIN",
+        "ITCM_SIZE",
+        "ITCM_END",
+        "ITCM_BANK_SIZE",
+        "FLEXRAM_BANK_COUNT",
+        "CLASSIFIED_ITCM_SECTIONS",
+        "REQUIRED_LINKER_SYMBOLS",
+        "ElfSection",
+        "ElfSymbol",
+        "parse_readelf_sections",
+        "parse_nm_symbols",
+        "topology_violations",
+        "topology_summary",
+    )
     assert TOPOLOGY_CONTRACT_VERSION == 1
     assert CLASSIFIED_ITCM_SECTIONS == (".text.itcm", ".ARM.exidx")
 

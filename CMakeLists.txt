@@ -128,6 +128,12 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     set_tests_properties(check_TeensyElfTopology PROPERTIES LABELS core)
 
     add_test(
+        NAME check_TeensyPostLinkGateV1
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-post-link-gate.py")
+    set_tests_properties(check_TeensyPostLinkGateV1 PROPERTIES LABELS core)
+
+    add_test(
         NAME check_TeensyDiagnosticsPlacement
         COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-teensy-diagnostics-placement.py")

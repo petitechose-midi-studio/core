@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
+"""Compatibility façade for the legacy Core memory-budget API.
+
+Parsing is delegated to the shared v1 post-link provider. The old budget shape
+remains only for the current Core PlatformIO adapter and expires at L-R11-02R.
+"""
 
 from dataclasses import dataclass
-import re
+from pathlib import Path
+import sys
 
 
-_RAM1_RE = re.compile(
-    r"RAM1:\s+variables:(\d+),\s+code:(\d+),\s+padding:(\d+)"
-    r"\s+free for local variables:(\d+)"
-)
-_RAM2_RE = re.compile(r"RAM2:.*free for malloc/new:(\d+)")
-_EXTRAM_RE = re.compile(r"EXTRAM: variables:(\d+)")
+_RELEASE_DIR = Path(__file__).resolve().parents[1] / "release"
+if str(_RELEASE_DIR) not in sys.path:
+    sys.path.insert(0, str(_RELEASE_DIR))
+
+from teensy_post_link_gate_v1 import parse_teensy_size as _parse_v1  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -32,18 +37,14 @@ class TeensyMemoryBudget:
 
 
 def parse_teensy_size(output: str) -> TeensyMemoryUsage:
-    ram1 = _RAM1_RE.search(output)
-    ram2 = _RAM2_RE.search(output)
-    extram = _EXTRAM_RE.search(output)
-    if ram1 is None or ram2 is None or extram is None:
-        raise ValueError("teensy_size output does not contain RAM1, RAM2, and EXTRAM usage")
+    usage = _parse_v1(output)
     return TeensyMemoryUsage(
-        ram1_variables=int(ram1.group(1)),
-        ram1_code=int(ram1.group(2)),
-        ram1_padding=int(ram1.group(3)),
-        ram1_free=int(ram1.group(4)),
-        ram2_free=int(ram2.group(1)),
-        extram_variables=int(extram.group(1)),
+        ram1_variables=usage.ram1_variables,
+        ram1_code=usage.ram1_code,
+        ram1_padding=usage.ram1_padding,
+        ram1_free=usage.ram1_free,
+        ram2_free=usage.ram2_free,
+        extram_variables=usage.extram_variables,
     )
 
 
@@ -82,3 +83,12 @@ def summary(usage: TeensyMemoryUsage, budget: TeensyMemoryBudget) -> str:
         f"RAM2 free={usage.ram2_free}B/{budget.ram2_min_free}B min, "
         f"PSRAM static free={extram_free}B/{budget.extram_min_free}B min"
     )
+
+
+__all__ = (
+    "TeensyMemoryUsage",
+    "TeensyMemoryBudget",
+    "parse_teensy_size",
+    "budget_violations",
+    "summary",
+)
