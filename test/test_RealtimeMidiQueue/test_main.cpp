@@ -176,14 +176,17 @@ void test_wrap_aware_deadline_keeps_cc_before_note_on() {
            core::sequencer::RealtimeMidiEventType::NoteOn);
 }
 
-void test_full_resolver_cc_envelope_is_atomic_between_note_phases() {
+void test_current_capacity_retains_full_cc_batch_between_note_phases() {
     core::sequencer::RealtimeMidiQueue queue;
     static_assert(core::sequencer::RealtimeMidiQueue::MAX_QUEUE_DEPTH == 576U);
+    constexpr size_t notePhaseCapacity =
+        core::sequencer::RealtimeMidiQueue::NOTE_EVENT_PHASE_CAPACITY;
+    static_assert(notePhaseCapacity == 128U);
     std::array<
         core::sequencer::RealtimeMidiEvent,
         core::sequencer::RealtimeMidiQueue::MAX_RESOLVED_CC_EVENTS_PER_FRAME
     > ccBatch{};
-    for (uint8_t i = 0; i < 128; ++i) {
+    for (uint8_t i = 0; i < notePhaseCapacity; ++i) {
         assert(queue.push(event(
             core::sequencer::RealtimeMidiEventType::NoteOff,
             1000,
@@ -219,13 +222,13 @@ void test_full_resolver_cc_envelope_is_atomic_between_note_phases() {
     fakeMicros = 1000;
     queue.drainDue(midi, fakeMicros, UINT32_MAX);
     assert(transport.messages.size() == queue.capacity());
-    for (size_t i = 0; i < 128; ++i) {
+    for (size_t i = 0; i < notePhaseCapacity; ++i) {
         assert(transport.messages[i].type ==
                core::sequencer::RealtimeMidiEventType::NoteOff);
     }
-    constexpr size_t ccEnd = 128U +
+    constexpr size_t ccEnd = notePhaseCapacity +
         core::sequencer::RealtimeMidiQueue::MAX_RESOLVED_CC_EVENTS_PER_FRAME;
-    for (size_t i = 128; i < ccEnd; ++i) {
+    for (size_t i = notePhaseCapacity; i < ccEnd; ++i) {
         assert(transport.messages[i].type ==
                core::sequencer::RealtimeMidiEventType::ControlChange);
     }
@@ -234,7 +237,8 @@ void test_full_resolver_cc_envelope_is_atomic_between_note_phases() {
                core::sequencer::RealtimeMidiEventType::NoteOn);
     }
 
-    std::cout << "[PASS] exact 128 Off + 320 CC + 128 On envelope\n";
+    std::cout
+        << "[PASS] current 128 Off + 320 CC + 128 On capacity composition\n";
 }
 
 void test_note_off_batch_displaces_note_on_then_cc_never_note_off() {
@@ -595,7 +599,7 @@ int main() {
     test_packed_event_preserves_invalid_metadata_for_validation();
     test_late_cc_is_never_dropped();
     test_wrap_aware_deadline_keeps_cc_before_note_on();
-    test_full_resolver_cc_envelope_is_atomic_between_note_phases();
+    test_current_capacity_retains_full_cc_batch_between_note_phases();
     test_note_off_batch_displaces_note_on_then_cc_never_note_off();
     test_note_off_replacement_is_atomic_on_failure();
     test_lifecycle_observer_reports_cc_dispatch_and_every_pending_removal();

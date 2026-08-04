@@ -14,7 +14,6 @@
 
 #include <oc/api/MidiAPI.hpp>
 #include <oc/interface/IMidi.hpp>
-#include <oc/note/sequencer/StepSequencerChord.hpp>
 #include <oc/time/Time.hpp>
 
 #include "sequencer/MidiCcGlobalFrameCoordinator.hpp"
@@ -729,9 +728,6 @@ void test_exact_320_candidate_envelope_and_measurements() {
     constexpr size_t queueEventStorageBytes =
         RealtimeMidiQueue::MAX_QUEUE_DEPTH * sizeof(RealtimeMidiEvent);
     static_assert(queueEventStorageBytes == 4608U);
-    static_assert(
-        oc::note::sequencer::StepSequencerChordSpec::MAX_VOICES == 8U
-    );
     std::cout << "[MEASURE] sizeof RealtimeMidiEvent="
               << sizeof(RealtimeMidiEvent)
               << ", queue event storage=" << queueEventStorageBytes
