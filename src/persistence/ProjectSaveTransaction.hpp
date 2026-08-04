@@ -5,7 +5,6 @@
 #include <oc/type/Result.hpp>
 
 #include "persistence/AtomicProductFile.hpp"
-#include "persistence/ProjectFileWorkspace.hpp"
 #include "state/project/ProjectSnapshot.hpp"
 
 namespace core::persistence {
@@ -36,10 +35,7 @@ struct ProjectSaveProgress {
  */
 class ProjectSaveTransaction {
 public:
-    ProjectSaveTransaction(
-        ProductFileService& files,
-        ProjectFileWriteWorkspace& workspace
-    );
+    explicit ProjectSaveTransaction(ProductFileService& files);
     ~ProjectSaveTransaction();
     ProjectSaveTransaction(const ProjectSaveTransaction&) = delete;
     ProjectSaveTransaction& operator=(const ProjectSaveTransaction&) = delete;
@@ -101,7 +97,6 @@ private:
     void cleanupTmp_(const ProductMutationLease& lease);
 
     ProductFileService& files_;
-    ProjectFileWriteWorkspace& workspace_;
     const core::state::project::ProjectSnapshot* snapshot_ = nullptr;
     AtomicProductFilePaths paths_{};
     Phase phase_ = Phase::IDLE;
@@ -114,7 +109,7 @@ private:
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(ProjectSaveTransaction) == 52U, "project save lease ABI drift");
+static_assert(sizeof(ProjectSaveTransaction) == 48U, "project save lease ABI drift");
 static_assert(alignof(ProjectSaveTransaction) == 4U, "project save alignment drift");
 #endif
 

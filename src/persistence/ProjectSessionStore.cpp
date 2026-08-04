@@ -7,10 +7,10 @@
 namespace core::persistence {
 
 FLASHMEM ProjectSessionStore::ProjectSessionStore(ProductFileService& files)
-    : files_(files), save_transaction_(files_, workspace_) {}
+    : files_(files), save_transaction_(files_) {}
 
 FLASHMEM bool ProjectSessionStore::prepareWorkspace() {
-    return workspace_.prepare();
+    return static_cast<bool>(files_.prepareProjectWorkspace());
 }
 
 FLASHMEM oc::type::Result<ProjectSaveResult> ProjectSessionStore::saveCurrent(
@@ -109,7 +109,7 @@ FLASHMEM oc::type::Result<ProjectLoadResult> ProjectSessionStore::loadCurrent(
         );
     }
     return project_file_transactions::loadWithBackup(
-        files_, workspace_, CURRENT_SESSION_PATH, CURRENT_SESSION_BACKUP_PATH, out, report
+        files_, CURRENT_SESSION_PATH, CURRENT_SESSION_BACKUP_PATH, out, report
     );
 }
 
@@ -126,7 +126,6 @@ FLASHMEM oc::type::Result<ProjectLoadResult> ProjectSessionStore::loadCurrent(
     return project_file_transactions::loadWithBackup(
         files_,
         recoveryLease,
-        workspace_,
         CURRENT_SESSION_PATH,
         CURRENT_SESSION_BACKUP_PATH,
         out,

@@ -9,7 +9,6 @@
 #include "persistence/ProductDirectoryCatalog.hpp"
 #include "persistence/ProjectFileLimits.hpp"
 #include "persistence/ProjectLoadReport.hpp"
-#include "persistence/ProjectFileWorkspace.hpp"
 #include "state/project/ProjectSnapshot.hpp"
 
 namespace core::persistence {
@@ -71,18 +70,16 @@ private:
 
     static oc::type::Result<ProjectSaveResult> saveWithPaths_(
         ProductFileService& files,
-        ProjectFileWriteWorkspace& workspace,
         const core::state::project::ProjectSnapshot& snapshot,
         const ProjectPaths& paths
     );
 
     ProductFileService& files_;
     ProductDirectoryCatalog& catalog_;
-    ProjectFileWriteWorkspace workspace_;
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(ProjectFileStore) == 16U, "project file store ABI drift");
+static_assert(sizeof(ProjectFileStore) == 8U, "project file store ABI drift");
 static_assert(alignof(ProjectFileStore) == 4U, "project file store alignment drift");
 #endif
 

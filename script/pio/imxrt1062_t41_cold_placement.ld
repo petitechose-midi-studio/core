@@ -61,6 +61,7 @@
 *ProductFileTransactionJournalCodec.cpp.o(.text* .rodata*)
 *ProductAssetFileStore.cpp.o(.text* .rodata*)
 *ProductFileService.cpp.o(.text* .rodata*)
+*ProjectWorkspacePool.cpp.o(.text* .rodata*)
 *ProductPersistenceCoordinator.cpp.o(.text* .rodata*)
 *ProductStorageRecoveryService.cpp.o(.text* .rodata*)
 *ProjectFileTransactions.cpp.o(.text* .rodata*)

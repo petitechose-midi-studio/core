@@ -7,6 +7,7 @@
 
 #include "persistence/AtomicProductFile.hpp"
 #include "persistence/ProjectFileLimits.hpp"
+#include "persistence/ProjectFileWorkspace.hpp"
 #include "persistence/ProjectSnapshotPersistenceCodec.hpp"
 
 namespace core::persistence::project_file_transactions {
@@ -18,7 +19,6 @@ using oc::type::ErrorCode;
 FLASHMEM oc::type::Result<ProjectLoadResult> loadFromPath(
     ProductFileService& files,
     const ProductMutationLease& lease,
-    ProjectFileReadWorkspace& workspace,
     const char* path,
     core::state::project::ProjectSnapshot& out,
     core::persistence::project_file::LoadReport* report
@@ -40,6 +40,13 @@ FLASHMEM oc::type::Result<ProjectLoadResult> loadFromPath(
         }
         fileSize = info.value().sizeBytes;
     }
+    auto borrowedWorkspace = files.projectReadWorkspace(lease);
+    if (!borrowedWorkspace) {
+        return oc::type::Result<ProjectLoadResult>::err(
+            borrowedWorkspace.error()
+        );
+    }
+    auto& workspace = *borrowedWorkspace.value();
     if (!workspace.prepare()) {
         return oc::type::Result<ProjectLoadResult>::err(
             {ErrorCode::RESOURCE_EXHAUSTED, "project load buffer"}
@@ -112,7 +119,6 @@ FLASHMEM void copyReport(core::persistence::project_file::LoadReport* target,
 FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackupUsingLease(
     ProductFileService& files,
     const ProductMutationLease& lease,
-    ProjectFileReadWorkspace& workspace,
     const char* current,
     const char* backup,
     core::state::project::ProjectSnapshot& out,
@@ -122,7 +128,7 @@ FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackupUsingLease(
     // for the backup. Retaining both reports inflated every Project load stack
     // even though the two decodes are strictly sequential.
     core::persistence::project_file::LoadReport attemptReport{};
-    auto loaded = loadFromPath(files, lease, workspace, current, out, &attemptReport);
+    auto loaded = loadFromPath(files, lease, current, out, &attemptReport);
     if (!shouldTryBackup(loaded)) {
         copyReport(report, attemptReport);
         return loaded;
@@ -130,7 +136,7 @@ FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackupUsingLease(
 
     copyReport(report, attemptReport);
     attemptReport = {};
-    auto backupLoaded = loadFromPath(files, lease, workspace, backup, out, &attemptReport);
+    auto backupLoaded = loadFromPath(files, lease, backup, out, &attemptReport);
     if (!backupLoaded) {
         const bool currentMissing = loaded.error().code == ErrorCode::RESOURCE_NOT_FOUND;
         const bool backupMissing =
@@ -202,7 +208,6 @@ FLASHMEM oc::type::Result<ProjectSaveResult> saveToCompletionWithRecoveryLease(
 
 FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackup(
     ProductFileService& files,
-    ProjectFileReadWorkspace& workspace,
     const char* current,
     const char* backup,
     core::state::project::ProjectSnapshot& out,
@@ -216,7 +221,6 @@ FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackup(
     auto result = loadWithBackupUsingLease(
         files,
         lease,
-        workspace,
         current,
         backup,
         out,
@@ -230,7 +234,6 @@ FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackup(
 FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackup(
     ProductFileService& files,
     const ProductMutationLease& recoveryLease,
-    ProjectFileReadWorkspace& workspace,
     const char* current,
     const char* backup,
     core::state::project::ProjectSnapshot& out,
@@ -244,7 +247,6 @@ FLASHMEM oc::type::Result<ProjectLoadResult> loadWithBackup(
     return loadWithBackupUsingLease(
         files,
         recoveryLease,
-        workspace,
         current,
         backup,
         out,

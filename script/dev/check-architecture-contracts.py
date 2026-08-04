@@ -39,6 +39,7 @@ COLD_PLACEMENT_CONTRACT_SELECTORS = (
     "*ProductFileTransactionJournalCodec.cpp.o(.text* .rodata*)",
     "*ProductAssetFileStore.cpp.o(.text* .rodata*)",
     "*ProductFileService.cpp.o(.text* .rodata*)",
+    "*ProjectWorkspacePool.cpp.o(.text* .rodata*)",
     "*ProductPersistenceCoordinator.cpp.o(.text* .rodata*)",
     "*ProductStorageRecoveryService.cpp.o(.text* .rodata*)",
     "*ProjectFileTransactions.cpp.o(.text* .rodata*)",
@@ -844,6 +845,8 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     service_header = "src/persistence/ProductFileService.hpp"
     service_source = "src/persistence/ProductFileService.cpp"
     project_workspace = "src/persistence/ProjectFileWorkspace.hpp"
+    project_workspace_pool = "src/persistence/ProjectWorkspacePool.hpp"
+    project_workspace_pool_source = "src/persistence/ProjectWorkspacePool.cpp"
     project_transactions_header = "src/persistence/ProjectFileTransactions.hpp"
     save_header = "src/persistence/ProjectSaveTransaction.hpp"
     save_source = "src/persistence/ProjectSaveTransaction.cpp"
@@ -882,7 +885,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (coordinator, r"sizeof\(ProductMutationLease\)\s*==\s*4", "lease must remain 4 B"),
         (coordinator, r"sizeof\(ProductPersistenceCoordinator\)\s*==\s*20", "coordinator must remain 20 B"),
         (job_coordinator, r"sizeof\(ProductPersistenceJobCoordinator\)\s*<=\s*128U", "job coordinator must remain at most 128 B"),
-        (service_header, r"sizeof\(ProductFileService\)\s*==\s*160U", "file service must remain 160 B on ARM"),
+        (service_header, r"sizeof\(ProductFileService\)\s*==\s*168U", "file service plus Project pool must remain 168 B on ARM"),
         (project_workspace, r"class\s+ProjectFileReadWorkspace\s*\{", "Project read workspace capability must remain explicit"),
         (project_workspace, r"class\s+ProjectFileWriteWorkspace\s+final\s*:\s*public\s+ProjectFileReadWorkspace", "Project write workspace must derive only from the read capability"),
         (project_workspace, r"ExtmemUniquePtr\s*<\s*ProjectFileBuffer\s*>\s+buffer_", "Project workspaces must own exactly one file buffer"),
@@ -891,15 +894,19 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (project_workspace, r"alignof\(ProjectFileBuffer\)\s*==\s*8U", "Project file/commit buffer must remain 8-byte aligned"),
         (project_workspace, r"sizeof\(ProjectFileReadWorkspace\)\s*==\s*4U", "Project read workspace must remain one ARM pointer"),
         (project_workspace, r"sizeof\(ProjectFileWriteWorkspace\)\s*==\s*8U", "Project write workspace must remain two ARM pointers"),
-        (project_transactions_header, r"ProjectFileReadWorkspace&\s+workspace", "both public Project load APIs must accept read capability only", 2),
-        (save_header, r"ProjectFileWriteWorkspace&\s+workspace", "Project save transaction must require write capability", 2),
-        (project_store_header, r"ProjectFileWriteWorkspace&\s+workspace", "Project save helper must require write capability"),
-        (project_store_header, r"ProjectFileWriteWorkspace\s+workspace_", "Project file store must retain one write-capable workspace"),
-        (project_store_header, r"sizeof\(ProjectFileStore\)\s*==\s*16U", "Project file store must remain 16 B on ARM"),
-        (session_header, r"ProjectFileWriteWorkspace\s+workspace_", "Project session store must retain one write-capable workspace"),
+        (project_workspace_pool, r"class\s+ProjectWorkspacePool\s+final", "Project workspace pool must remain one final owner"),
+        (project_workspace_pool, r"writer_storage_\s*\[\s*2U\s*\*\s*sizeof\(void\*\)\s*\]", "Project pool control must remain exactly two pointers"),
+        (project_workspace_pool, r"sizeof\(ProjectWorkspacePool\)\s*==\s*8U", "Project pool must remain 8 B on ARM"),
+        (project_workspace_pool_source, r"new\s*\(\s*writer_storage_\s*\)\s*ProjectFileWriteWorkspace", "Project pool must placement-own the sole writer", 3),
+        (service_header, r"ProjectWorkspacePool\s+project_workspace_\s*\{\s*\}", "file service must own the sole Project workspace pool"),
+        (service_source, r"ProductFileService::prepareProjectWorkspace\s*\(\s*\).*?mutationActive\s*\(\s*\).*?project_workspace_\.prepare\s*\(\s*\)", "Project prewarm must reject an active mutation before preparing"),
+        (service_source, r"ProductFileService::ownsProjectWorkspaceLease_.*?ProductMutationOwner::PROJECT.*?ProductMutationOwner::RECOVERY", "Project pool borrow must accept only exact Project or Recovery owners"),
+        (project_transactions, r"files\.projectReadWorkspace\s*\(\s*lease\s*\)", "Project load must borrow only read capability under its lease"),
+        (save_source, r"files_\.projectWriteWorkspace\s*\(\s*lease\s*\)", "Project save/cancel must revalidate write capability", 2),
+        (project_store_header, r"sizeof\(ProjectFileStore\)\s*==\s*8U", "Project file store must remain two references on ARM"),
         (project_codec_source, r"sizeof\(Storage\)\s*==\s*436855U", "Project encode scratch must remain exactly 436,855 B"),
-        (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*52U", "Project save must remain 52 B on ARM"),
-        (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*64U", "session store must remain 64 B on ARM"),
+        (save_header, r"sizeof\(ProjectSaveTransaction\)\s*==\s*48U", "Project save must remain 48 B on ARM"),
+        (session_header, r"sizeof\(ProjectSessionStore\)\s*==\s*52U", "session store must remain 52 B on ARM"),
         (rpc_header, r"sizeof\(WriteSession\)\s*==\s*276U", "RPC write session must remain 276 B on ARM"),
         (rpc_header, r"sizeof\(FileSystemRpcHandler\)\s*==\s*304U", "RPC handler must remain 304 B on ARM"),
         (rpc_header, r"FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS\s*=\s*1u\s*<<\s*4", "legacy capabilities must reserve persistence-job feature bit 4"),
@@ -949,10 +956,15 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (atomic_test, r"for\s*\(\s*CutMode\s+mode\s*:\s*\{\s*CutMode::BEFORE\s*,\s*CutMode::AFTER\s*\}\s*\)", "fault campaign must enumerate cuts before and after every boundary"),
         (project_store_test, r"ProjectFileReadWorkspace\s+workspace", "direct Project test must exercise a fresh read workspace"),
         (project_store_test, r"ProjectFileWriteWorkspace\s+workspace", "direct Project test must exercise a fresh write workspace"),
-        (project_store_test, r"ScopedExtmemAllocationFailure\s+failure\s*\(\s*2U\s*\)", "direct Project test must arm the second allocation twice", 2),
+        (project_store_test, r"ScopedExtmemAllocationFailure\s+failure\s*\(\s*2U\s*\)", "Project split and pool tests must arm the second allocation", 3),
         (project_store_test, r"extmemAllocationAttempt\s*==\s*1U", "fresh Project read must stop after one allocation"),
         (project_store_test, r"extmemAllocationFailureOrdinal\s*==\s*2U", "fresh Project read must leave allocation two armed"),
-        (project_store_test, r"extmemAllocationAttempt\s*==\s*2U", "fresh Project write must reach the scratch allocation"),
+        (project_store_test, r"extmemAllocationAttempt\s*==\s*2U", "fresh writer and pool prewarm must each reach the scratch allocation", 3),
+        (project_store_test, r"prepared\.error\(\)\.code\s*==\s*oc::type::ErrorCode::RESOURCE_EXHAUSTED", "Project pool allocation failure must return stable resource exhaustion"),
+        (project_store_test, r"void\s+test_file_and_session_stores_share_one_lease_checked_workspace", "direct Project test must prove the central shared pool"),
+        (project_store_test, r"blockedSave\.error\(\)\.code\s*==\s*oc::type::ErrorCode::HARDWARE_BUSY", "concurrent manual save must return stable busy"),
+        (project_store_test, r"blockedLoad\.error\(\)\.code\s*==\s*oc::type::ErrorCode::HARDWARE_BUSY", "concurrent manual load must return stable busy"),
+        (project_store_test, r"staleAdvance\.error\(\)\.code\s*==\s*oc::type::ErrorCode::INVALID_STATE", "media invalidation must reject a stale pooled save phase"),
         (
             service_source,
             r"ProductFileService::initForRecovery\s*\(\s*\)\s*\{.*?"
@@ -965,6 +977,8 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
 
     workspace_scope = (
         project_workspace,
+        project_workspace_pool,
+        project_workspace_pool_source,
         project_transactions_header,
         project_transactions,
         save_header,
@@ -983,6 +997,18 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
             cpp_code_mask(files.get(rel, "")),
         ):
             errors.append(f"{rel}: Project load must not depend on write capability")
+        if re.search(
+            r"\bprojectWriteWorkspace\s*\(",
+            cpp_code_mask(files.get(rel, "")),
+        ):
+            errors.append(f"{rel}: Project load must not borrow write capability")
+
+    for rel in (save_header, project_store_header, session_header):
+        if re.search(
+            r"\bProjectFile(?:Read|Write)Workspace\s+\w+_",
+            cpp_code_mask(files.get(rel, "")),
+        ):
+            errors.append(f"{rel}: duplicate retained Project workspace owner")
 
     read_workspace_bodies = cpp_type_bodies(
         files.get(project_workspace, ""),
@@ -4565,9 +4591,9 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
         "    handler_.abortWriteSession();",
     )
     project_load_widens_to_write = mutate(
-        "src/persistence/ProjectFileTransactions.hpp",
-        "    ProjectFileReadWorkspace& workspace,\n",
-        "    ProjectFileWriteWorkspace& workspace,\n",
+        "src/persistence/ProjectFileTransactions.cpp",
+        "files.projectReadWorkspace(lease)",
+        "files.projectWriteWorkspace(lease)",
     )
 
     return (
@@ -4577,9 +4603,9 @@ def persistence_self_test_checks() -> tuple[tuple[bool, str], ...]:
         ),
         (
             project_load_widens_to_write[
-                "src/persistence/ProjectFileTransactions.hpp"
+                "src/persistence/ProjectFileTransactions.cpp"
             ]
-            != fixture["src/persistence/ProjectFileTransactions.hpp"]
+            != fixture["src/persistence/ProjectFileTransactions.cpp"]
             and bool(persistence_lease_contract_errors(project_load_widens_to_write)),
             "Project load widened to write capability is rejected",
         ),

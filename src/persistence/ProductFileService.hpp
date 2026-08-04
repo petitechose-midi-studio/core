@@ -8,6 +8,7 @@
 
 #include "persistence/ProductPersistenceCoordinator.hpp"
 #include "persistence/ProductPersistenceJobCoordinator.hpp"
+#include "persistence/ProjectWorkspacePool.hpp"
 
 namespace core::persistence {
 
@@ -105,6 +106,15 @@ public:
     bool owns(const ProductMutationLease& lease, ProductMutationOwner owner) const {
         return coordinator_.owns(lease, owner);
     }
+    /** Prewarm the sole Project writer only while no mutation owns it. */
+    oc::type::Result<void> prepareProjectWorkspace();
+    /** Checked, non-retainable borrows under the exact Project/Recovery lease. */
+    oc::type::Result<ProjectFileReadWorkspace*> projectReadWorkspace(
+        const ProductMutationLease& lease
+    );
+    oc::type::Result<ProjectFileWriteWorkspace*> projectWriteWorkspace(
+        const ProductMutationLease& lease
+    );
     ProductPersistenceJobCoordinator& persistenceJobs() { return job_coordinator_; }
     const ProductPersistenceJobCoordinator& persistenceJobs() const {
         return job_coordinator_;
@@ -216,6 +226,7 @@ private:
     void noteNodes_(uint8_t nodes);
     void noteAllocations_(uint8_t allocations);
     void endWorkMeasurement_(ProductPersistenceWorkUsage* usage);
+    bool ownsProjectWorkspaceLease_(const ProductMutationLease& lease) const;
 
     friend class ProductPersistenceWorkMeasurement;
 
@@ -224,10 +235,11 @@ private:
     ProductPersistenceJobCoordinator job_coordinator_{};
     ProductPersistenceWorkUsage* work_usage_ = nullptr;
     uint32_t write_lease_id_ = 0;
+    ProjectWorkspacePool project_workspace_{};
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(ProductFileService) == 160U, "product file service exceeds LOCK-S");
+static_assert(sizeof(ProductFileService) == 168U, "product file service exceeds LOCK-S");
 static_assert(alignof(ProductFileService) == 4U, "product file service alignment drift");
 #endif
 
