@@ -58,8 +58,8 @@ FLASHMEM void ProjectHandler::endProjectSettingsGesture() {
 FLASHMEM bool ProjectHandler::applyFocusedProjectStep(int steps) {
     if (steps == 0) return false;
     const bool applied = applyFocusedMusicRootStep(steps) || applyFocusedMusicScaleStep(steps) ||
-                         applyFocusedTransportStep(steps) || applyFocusedStorageStep(steps) ||
-                         applyFocusedRoutingStep(steps) || applyFocusedNameEditorStep(steps);
+                         applyFocusedTransportStep(steps) || applyFocusedRoutingStep(steps) ||
+                         applyFocusedNameEditorStep(steps);
     if (applied) { navigation_.clearLifecycleFeedback(); }
     return applied;
 }
@@ -195,28 +195,6 @@ FLASHMEM bool ProjectHandler::applyFocusedTransportStep(int steps) {
     }
 }
 
-FLASHMEM bool ProjectHandler::applyFocusedStorageStep(int steps) {
-    if (navigation_.currentNode.get() != core::state::project::ProjectNodeId::STORAGE_ROOT) {
-        return false;
-    }
-
-    if (steps == 0) return false;
-
-    const uint8_t row = navigation_.focusedRow.get();
-    switch (row) {
-        case 6: {
-            const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
-            navigation_.autosaveEnabled = !navigation_.autosaveEnabled;
-            navigation_.notifyContentChanged();
-            return recordProjectSettingsChange(
-                before, core::state::project::ProjectSettingsHistoryActionKind::Autosave, 0U,
-                false);
-        }
-        default: return false;
-    }
-}
-
 FLASHMEM bool ProjectHandler::applyFocusedNameEditorStep(int steps) {
     if (!isProjectNameEditorNode(navigation_.currentNode.get()) || steps == 0) { return false; }
 
@@ -248,8 +226,8 @@ FLASHMEM bool ProjectHandler::applyFocusedRoutingStep(int steps) {
 
 FLASHMEM bool ProjectHandler::setFocusedProjectValue(float normalized) {
     return setFocusedMusicRootValue(normalized) || setFocusedMusicScaleValue(normalized) ||
-           setFocusedTransportValue(normalized) || setFocusedStorageValue(normalized) ||
-           setFocusedRoutingValue(normalized) || setFocusedModulatorValue(normalized) ||
+           setFocusedTransportValue(normalized) || setFocusedRoutingValue(normalized) ||
+           setFocusedModulatorValue(normalized) ||
            setFocusedNameEditorValue(normalized);
 }
 
@@ -383,27 +361,6 @@ FLASHMEM bool ProjectHandler::setFocusedTransportValue(float normalized) {
             navigation_.notifyContentChanged();
             return recordProjectSettingsChange(
                 before, core::state::project::ProjectSettingsHistoryActionKind::RunMode, 0U, true);
-        }
-        default: return false;
-    }
-}
-
-FLASHMEM bool ProjectHandler::setFocusedStorageValue(float normalized) {
-    if (navigation_.currentNode.get() != core::state::project::ProjectNodeId::STORAGE_ROOT) {
-        return false;
-    }
-
-    const uint8_t row = navigation_.focusedRow.get();
-    switch (row) {
-        case 6: {
-            const auto before = core::state::project::captureProjectSettingsHistorySnapshot(
-                status_bar_, navigation_, midi_sync_);
-            const bool next = normalized >= 0.5f;
-            if (next == navigation_.autosaveEnabled) return true;
-            navigation_.autosaveEnabled = next;
-            navigation_.notifyContentChanged();
-            return recordProjectSettingsChange(
-                before, core::state::project::ProjectSettingsHistoryActionKind::Autosave, 0U, true);
         }
         default: return false;
     }

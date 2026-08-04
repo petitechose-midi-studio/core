@@ -104,13 +104,6 @@ FLASHMEM bool activateValueRow(ProjectNavigationState& navigation,
                 return true;
             }
             return false;
-        case ProjectNodeId::STORAGE_ROOT:
-            if (rowIndex == 6) {
-                navigation.autosaveEnabled = !navigation.autosaveEnabled;
-                navigation.notifyContentChanged();
-                return true;
-            }
-            return false;
         case ProjectNodeId::TRANSPORT_ROOT:
             if (rowIndex == 1) {
                 navigation.transportSwingPercent = static_cast<uint8_t>(

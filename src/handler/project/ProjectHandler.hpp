@@ -91,7 +91,6 @@ private:
     bool applyFocusedMusicRootStep(int steps);
     bool applyFocusedMusicScaleStep(int steps);
     bool applyFocusedTransportStep(int steps);
-    bool applyFocusedStorageStep(int steps);
     bool applyFocusedRoutingStep(int steps);
     bool applyFocusedNameEditorStep(int steps);
     bool recordProjectSettingsChange(
@@ -105,7 +104,6 @@ private:
     bool setFocusedMusicRootValue(float normalized);
     bool setFocusedMusicScaleValue(float normalized);
     bool setFocusedTransportValue(float normalized);
-    bool setFocusedStorageValue(float normalized);
     bool setFocusedRoutingValue(float normalized);
     [[nodiscard]] bool setRoutingMidiChannel(
         uint8_t track,

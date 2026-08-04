@@ -484,16 +484,6 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
         }
     }
 
-    if (node == ProjectNodeId::STORAGE_ROOT) {
-        switch (row) {
-            case 6:
-                configureOptDiscrete(encoders_, 2, navigation_.autosaveEnabled ? 1.0f : 0.0f);
-                return;
-            default:
-                return;
-        }
-    }
-
     if (node == ProjectNodeId::ROUTING_ROOT &&
         row < core::state::project::PROJECT_TRACK_COUNT) {
         const uint8_t channel =

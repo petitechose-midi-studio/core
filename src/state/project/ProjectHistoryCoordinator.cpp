@@ -177,8 +177,6 @@ FLASHMEM const char* settingsActionLabel(uint8_t rawKind) {
             return "Pattern Scale Link";
         case Kind::ClipsInheritScale:
             return "Clip Scale Link";
-        case Kind::Autosave:
-            return "Autosave";
         default:
             return "Project Setting";
     }

@@ -29,7 +29,6 @@ FLASHMEM ProjectSettingsHistorySnapshot captureProjectSettingsHistorySnapshot(
     out.runMode = sanitizeProjectRunMode(navigation.transportRunMode);
     out.patternsInheritScale = navigation.patternsInheritScale;
     out.clipsInheritScale = navigation.clipsInheritScale;
-    out.autosaveEnabled = navigation.autosaveEnabled;
     return out;
 }
 
@@ -44,8 +43,7 @@ FLASHMEM bool sameProjectSettingsHistorySnapshot(
            lhs.swingPercent == rhs.swingPercent &&
            lhs.runMode == rhs.runMode &&
            lhs.patternsInheritScale == rhs.patternsInheritScale &&
-           lhs.clipsInheritScale == rhs.clipsInheritScale &&
-           lhs.autosaveEnabled == rhs.autosaveEnabled;
+           lhs.clipsInheritScale == rhs.clipsInheritScale;
 }
 
 FLASHMEM bool applyProjectSettingsHistorySnapshot(
@@ -78,7 +76,6 @@ FLASHMEM bool applyProjectSettingsHistorySnapshot(
     navigation.transportRunMode = sanitizeProjectRunMode(snapshot.runMode);
     navigation.patternsInheritScale = snapshot.patternsInheritScale;
     navigation.clipsInheritScale = snapshot.clipsInheritScale;
-    navigation.autosaveEnabled = snapshot.autosaveEnabled;
     navigation.notifyContentChanged();
     return !sameProjectSettingsHistorySnapshot(
         before,

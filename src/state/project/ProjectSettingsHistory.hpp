@@ -19,7 +19,6 @@ enum class ProjectSettingsHistoryActionKind : uint8_t {
     CcLaneDefault,
     PatternsInheritScale,
     ClipsInheritScale,
-    Autosave,
 };
 
 struct ProjectSettingsHistorySnapshot {
@@ -32,7 +31,6 @@ struct ProjectSettingsHistorySnapshot {
     uint8_t runMode = PROJECT_RUN_MODE_DEFAULT;
     bool patternsInheritScale = true;
     bool clipsInheritScale = true;
-    bool autosaveEnabled = true;
 };
 
 struct ProjectSettingsHistoryEntry {

@@ -141,6 +141,17 @@ MEMORY_FOOTPRINT_REPORTER_SOURCE = (
     "src/diagnostics/MemoryFootprintReporter.cpp"
 )
 DIAGNOSTICS_PLACEMENT_GATE = "script/dev/teensy_diagnostics_placement.py"
+PROJECT_NAVIGATION_STATE_HEADER = (
+    "src/state/project/ProjectNavigationState.hpp"
+)
+PROJECT_MENU_MODEL_SOURCE = "src/state/project/ProjectMenuModel.cpp"
+PROJECT_SETTINGS_HISTORY_HEADER = (
+    "src/state/project/ProjectSettingsHistory.hpp"
+)
+PROJECT_HANDLER_HEADER = "src/handler/project/ProjectHandler.hpp"
+PROJECT_HANDLER_TEST = "test/test_ProjectHandler/test_main.cpp"
+PROJECT_MENU_MODEL_TEST = "test/test_ProjectMenuModel/test_main.cpp"
+SDL_PROJECT_SESSION_RUNTIME = "sdl/entry/SdlProjectSessionRuntime.hpp"
 
 STRICT_EXTMEM_CALL = re.compile(
     r"\b(?:allocate|free)ExtmemStrict\s*\("
@@ -1197,6 +1208,66 @@ def psram_tracker_contract_errors(files: dict[str, str]) -> list[str]:
                 f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: public snapshot must not "
                 "loop or access the PSRAM table"
             )
+
+    return errors
+
+
+def autosave_policy_contract_errors(files: dict[str, str]) -> list[str]:
+    """Freeze D-AUTOSAVE-v1 as always-on recovery with no pseudo-policy."""
+    errors: list[str] = []
+
+    retired_symbols = (
+        "autosaveEnabled",
+        "applyFocusedStorageStep",
+        "setFocusedStorageValue",
+        "ProjectSettingsHistoryActionKind::Autosave",
+        "AutosavePolicy",
+        "autosavePolicy",
+        "autosave_enabled",
+    )
+    for rel, content in sorted(files.items()):
+        if not rel.startswith(("src/", "test/test_ProjectHandler/",
+                               "test/test_ProjectMenuModel/")):
+            continue
+        for symbol in retired_symbols:
+            if symbol in content:
+                errors.append(f"{rel}: retired autosave policy symbol {symbol}")
+
+    menu = files.get(PROJECT_MENU_MODEL_SOURCE, "")
+    if re.search(r'row\s*\(\s*"Autosave"', menu):
+        errors.append(
+            f"{PROJECT_MENU_MODEL_SOURCE}: recovery autosave must not be a menu row"
+        )
+
+    settings_history = files.get(PROJECT_SETTINGS_HISTORY_HEADER, "")
+    if re.search(r"\bAutosave\s*,", settings_history):
+        errors.append(
+            f"{PROJECT_SETTINGS_HISTORY_HEADER}: recovery policy must not enter Project history"
+        )
+
+    coordinator = files.get(PROJECT_HISTORY_COORDINATOR_SOURCE, "")
+    if "Kind::Autosave" in coordinator or 'return "Autosave"' in coordinator:
+        errors.append(
+            f"{PROJECT_HISTORY_COORDINATOR_SOURCE}: retired Autosave action label"
+        )
+
+    firmware_updates = files.get("main.cpp", "").count(
+        "projectSessionAutosaveService->update("
+    )
+    if firmware_updates != 1:
+        errors.append(
+            "main.cpp: firmware must retain exactly one always-on recovery update "
+            f"(found {firmware_updates})"
+        )
+
+    sdl_updates = files.get(SDL_PROJECT_SESSION_RUNTIME, "").count(
+        "autosave_->update("
+    )
+    if sdl_updates != 1:
+        errors.append(
+            f"{SDL_PROJECT_SESSION_RUNTIME}: SDL must retain exactly one always-on "
+            f"recovery update (found {sdl_updates})"
+        )
 
     return errors
 
@@ -5359,6 +5430,95 @@ def psram_tracker_self_test() -> int:
     return 0
 
 
+def autosave_policy_self_test() -> int:
+    paths = (
+        PROJECT_NAVIGATION_STATE_HEADER,
+        PROJECT_MENU_MODEL_SOURCE,
+        PROJECT_SETTINGS_HISTORY_HEADER,
+        PROJECT_HISTORY_COORDINATOR_SOURCE,
+        PROJECT_HANDLER_HEADER,
+        PROJECT_HANDLER_TEST,
+        PROJECT_MENU_MODEL_TEST,
+        "main.cpp",
+        SDL_PROJECT_SESSION_RUNTIME,
+    )
+    fixture = {
+        rel: (ROOT / rel).read_text(encoding="utf-8")
+        for rel in paths
+    }
+
+    def mutate(rel: str, before: str, after: str) -> dict[str, str]:
+        result = dict(fixture)
+        result[rel] = result[rel].replace(before, after, 1)
+        return result
+
+    mutations = (
+        (
+            PROJECT_NAVIGATION_STATE_HEADER,
+            "    bool scaleConstrainEnabled = true;",
+            "    bool autosaveEnabled = true;\n"
+            "    bool scaleConstrainEnabled = true;",
+            "restored Project autosave field is rejected",
+        ),
+        (
+            PROJECT_MENU_MODEL_SOURCE,
+            "    addRow(page, projectRow);",
+            "    addRow(page, projectRow);\n"
+            "    addRow(page, row(\"Autosave\", \"On\", "
+            "ProjectMenuRowKind::Toggle, ProjectNodeId::STORAGE_ROOT));",
+            "restored Autosave menu row is rejected",
+        ),
+        (
+            PROJECT_SETTINGS_HISTORY_HEADER,
+            "    ClipsInheritScale,",
+            "    ClipsInheritScale,\n    Autosave,",
+            "restored Project history action is rejected",
+        ),
+        (
+            PROJECT_HANDLER_HEADER,
+            "    bool applyFocusedRoutingStep(int steps);",
+            "    bool applyFocusedStorageStep(int steps);\n"
+            "    bool applyFocusedRoutingStep(int steps);",
+            "restored storage pseudo-value handler is rejected",
+        ),
+        (
+            "main.cpp",
+            "projectSessionAutosaveService->update(",
+            "retiredProjectSessionAutosaveUpdate(",
+            "missing firmware always-on update is rejected",
+        ),
+        (
+            SDL_PROJECT_SESSION_RUNTIME,
+            "autosave_->update(",
+            "retiredAutosaveUpdate(",
+            "missing SDL always-on update is rejected",
+        ),
+    )
+
+    checks: list[tuple[bool, str]] = [(
+        not autosave_policy_contract_errors(fixture),
+        "the checked-in D-AUTOSAVE-v1 contract is accepted",
+    )]
+    for rel, before, after, description in mutations:
+        mutated = mutate(rel, before, after)
+        checks.append((
+            mutated[rel] != fixture[rel]
+            and bool(autosave_policy_contract_errors(mutated)),
+            description,
+        ))
+
+    failures = [description for ok, description in checks if not ok]
+    if failures:
+        for failure in failures:
+            print(f"SELF-TEST ERROR: {failure}")
+        return 1
+    print(
+        "Autosave policy architecture self-tests: "
+        f"OK ({len(checks)}/{len(checks)})"
+    )
+    return 0
+
+
 def self_test() -> int:
     step_draft_fixture = {
         path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
@@ -7763,6 +7923,8 @@ def main(show_inventory: bool = False) -> int:
         "CMakeLists.txt",
         "sdl/entry/SdlProjectSessionRuntime.hpp",
         "test/test_AtomicProductFile/test_main.cpp",
+        "test/test_ProjectHandler/test_main.cpp",
+        "test/test_ProjectMenuModel/test_main.cpp",
         "test/test_ProjectFileStore/test_main.cpp",
         DIAGNOSTICS_PLACEMENT_GATE,
     ):
@@ -7772,6 +7934,7 @@ def main(show_inventory: bool = False) -> int:
     errors.extend(persistence_lease_contract_errors(contract_sources))
     errors.extend(history_admission_contract_errors(contract_sources))
     errors.extend(psram_tracker_contract_errors(contract_sources))
+    errors.extend(autosave_policy_contract_errors(contract_sources))
 
     platformio = PLATFORMIO.read_text(encoding="utf-8")
     if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
@@ -8093,6 +8256,11 @@ if __name__ == "__main__":
         help="run only the deterministic L-R14-07 tracker fixtures",
     )
     parser.add_argument(
+        "--self-test-autosave-policy",
+        action="store_true",
+        help="run only the deterministic D-AUTOSAVE-v1 fixtures",
+    )
+    parser.add_argument(
         "--inventory",
         action="store_true",
         help="print the full advisory >800-line inventory",
@@ -8103,6 +8271,7 @@ if __name__ == "__main__":
         args.self_test_persistence,
         args.self_test_history_admission,
         args.self_test_psram_tracker,
+        args.self_test_autosave_policy,
     )) > 1:
         parser.error("choose exactly one architecture self-test")
     if args.self_test:
@@ -8113,4 +8282,6 @@ if __name__ == "__main__":
         sys.exit(history_admission_self_test())
     if args.self_test_psram_tracker:
         sys.exit(psram_tracker_self_test())
+    if args.self_test_autosave_policy:
+        sys.exit(autosave_policy_self_test())
     sys.exit(main(args.inventory))
