@@ -11,6 +11,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 RELEASE_DIR = ROOT / "script" / "release"
+ACTIVE_CORE_PROFILE = RELEASE_DIR / "profiles" / "core-product-profile-v1.json"
 if str(RELEASE_DIR) not in sys.path:
     sys.path.insert(0, str(RELEASE_DIR))
 
@@ -56,11 +57,15 @@ def main() -> int:
     core_policy = gate.load_product_policy(
         FIXTURES / "core-product-profile-v1.json"
     )
+    active_core_policy = gate.load_product_policy(ACTIVE_CORE_PROFILE)
     bitwig_policy = gate.load_product_policy(
         FIXTURES / "bitwig-product-profile-v1.json"
     )
     assert core_policy.profile_id == "midi-studio-core-teensy41"
     assert core_policy.vector_name == "R04-current"
+    assert active_core_policy.profile_id == "midi-studio-core-teensy41"
+    assert active_core_policy.profile_version == "release-2026.08"
+    assert active_core_policy.vector_name == "release-current"
     assert bitwig_policy.profile_id == "midi-studio-bitwig-teensy41"
     assert bitwig_policy.vector_name == "R11-initial"
     bitwig_final_policy = gate.load_product_policy(
@@ -70,8 +75,15 @@ def main() -> int:
     assert bitwig_final_policy.ram2_free_exact == 353120
 
     core = evaluated("core", "core-product-profile-v1.json")
+    active_core = gate.evaluate_post_link(
+        active_core_policy,
+        text("core.teensy-size.txt"),
+        text("core.sections.txt"),
+        text("core.symbols.txt"),
+    )
     bitwig = evaluated("bitwig", "bitwig-product-profile-v1.json")
     assert core.violations == (), core.violations
+    assert active_core.violations == (), active_core.violations
     assert bitwig.violations == (), bitwig.violations
     assert core.physical_itcm_bytes == core.copy_itcm_bytes == 292264
     assert bitwig.physical_itcm_bytes == bitwig.copy_itcm_bytes == 273752

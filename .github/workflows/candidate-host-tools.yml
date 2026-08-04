@@ -1,9 +1,13 @@
 name: Candidate Host Tools
 
-run-name: Host Tools Candidate ${{ github.event_name == 'push' && github.sha || inputs.source_sha }}
+run-name: Host Tools Candidate ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.source_sha }}
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
   workflow_dispatch:
@@ -23,42 +27,53 @@ on:
         type: string
 
 concurrency:
-  group: candidate-host-tools-${{ github.event_name == 'push' && github.sha || inputs.source_sha }}
+  group: candidate-host-tools-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.source_sha }}
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
   resolve_inputs:
     name: resolve candidate inputs
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       source_sha: ${{ steps.resolve.outputs.source_sha }}
       tooling_sha: ${{ steps.resolve.outputs.tooling_sha }}
       candidate_tag: ${{ steps.resolve.outputs.candidate_tag }}
+      qualification_run_id: ${{ steps.resolve.outputs.qualification_run_id }}
       open_control_framework_sha: ${{ steps.resolve_bom.outputs.open_control_framework_sha }}
       open_control_note_sha: ${{ steps.resolve_bom.outputs.open_control_note_sha }}
     steps:
       - name: Checkout source ref
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'push' && github.sha || inputs.source_sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Resolve source SHA and tooling SHA
         id: resolve
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "push" ]; then
-            source_sha="${{ github.sha }}"
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            if [ "${{ github.event.workflow_run.event }}" != "push" ] || [ "${{ github.event.workflow_run.head_branch }}" != "main" ]; then
+              echo "automatic candidate requires a CI push run on main" >&2
+              exit 1
+            fi
+            source_sha="${{ github.event.workflow_run.head_sha }}"
             tooling_sha="$(python -c 'import json; from pathlib import Path; print(json.loads(Path(".github/release-tooling.json").read_text(encoding="utf-8"))["sha"])')"
+            qualification_run_id="${{ github.event.workflow_run.id }}"
           else
             source_sha="${{ inputs.source_sha }}"
             tooling_sha="${{ inputs.tooling_sha }}"
+            qualification_run_id=""
           fi
           if ! [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
             echo "invalid source SHA: $source_sha" >&2
@@ -73,6 +88,32 @@ jobs:
             echo "source SHA is not reachable from main: $source_sha" >&2
             exit 1
           fi
+          if [ -z "$qualification_run_id" ]; then
+            qualification_run_id="$(gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+              -f head_sha="$source_sha" \
+              -f status=success \
+              -f per_page=100 \
+              --jq '.workflow_runs[0].id // empty')"
+            if [ -z "$qualification_run_id" ]; then
+              echo "no successful CI run exists for source SHA: $source_sha" >&2
+              exit 1
+            fi
+          fi
+          qualified_sha="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${qualification_run_id}" --jq '.head_sha')"
+          qualified_name="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${qualification_run_id}" --jq '.name')"
+          qualified_conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${qualification_run_id}" --jq '.conclusion')"
+          if [ "$qualified_sha" != "$source_sha" ] || [ "$qualified_name" != "CI" ] || [ "$qualified_conclusion" != "success" ]; then
+            echo "CI run ${qualification_run_id} does not qualify source SHA ${source_sha}" >&2
+            exit 1
+          fi
+          successful_unit_jobs="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${qualification_run_id}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.name == "unit tests" and .conclusion == "success")] | length')"
+          if [ "$successful_unit_jobs" -lt 1 ]; then
+            echo "CI run ${qualification_run_id} has no successful unit tests job" >&2
+            exit 1
+          fi
           tooling_repo="$(mktemp -d)"
           git -C "$tooling_repo" init -q
           git -C "$tooling_repo" remote add origin https://github.com/petitechose-midi-studio/ms-dev-env.git
@@ -84,6 +125,7 @@ jobs:
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "tooling_sha=$tooling_sha" >> "$GITHUB_OUTPUT"
           echo "candidate_tag=rc-core-host-tools-${source_sha}-tooling-${tooling_sha}" >> "$GITHUB_OUTPUT"
+          echo "qualification_run_id=$qualification_run_id" >> "$GITHUB_OUTPUT"
 
       - name: Resolve native OpenControl BOM
         id: resolve_bom
@@ -356,6 +398,12 @@ jobs:
             "cmake": "system"
           }
           EOF
+          cat > artifacts/config.json <<'EOF'
+          {
+            "qualified_ci_run_id": "${{ needs.resolve_inputs.outputs.qualification_run_id }}",
+            "qualified_ci_workflow": "CI"
+          }
+          EOF
           ls -la artifacts
 
       - name: Write candidate manifest, checksums, and signature
@@ -378,6 +426,7 @@ jobs:
             --checksums-path ../artifacts/checksums.txt \
             --sig-path ../artifacts/candidate.json.sig \
             --recipe-base-dir .. \
+            --recipe-path .github/workflows/ci.yml \
             --recipe-path .github/workflows/candidate-host-tools.yml \
             --recipe-path CMakeLists.txt \
             --recipe-path cmake/MsCoreSources.cmake \
@@ -403,6 +452,7 @@ jobs:
             --recipe-path tools/ms_core_file_tool/main.cpp \
             --recipe-path tools/ms_core_file_tool/StepGraphPresetTool.hpp \
             --recipe-path tools/ms_core_file_tool/StepGraphPresetTool.cpp \
+            --config-json ../artifacts/config.json \
             --toolchain-json ../artifacts/toolchain.json
 
       - name: Publish signed candidate release

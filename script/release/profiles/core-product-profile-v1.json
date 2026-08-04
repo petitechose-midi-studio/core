@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "profile": {
+    "id": "midi-studio-core-teensy41",
+    "version": "release-2026.08",
+    "activeMemoryVector": "release-current"
+  },
+  "baseline": {
+    "coreCommit": "ff5b1c8aa0ab194ede22589053d5496f23bed1aa",
+    "flashCodeBytes": 1083640,
+    "flashDataBytes": 276932,
+    "flashHeadersBytes": 8516,
+    "ram1VariablesBytes": 76032,
+    "itcmBytes": 291432,
+    "ram1LocalAndStackFreeBytes": 153344,
+    "ram2VariablesBytes": 171168,
+    "ram2FreeBytes": 353120,
+    "psramStaticBytes": 4302688
+  },
+  "linker": {
+    "itcmBankBytes": 32768,
+    "itcmBanksExact": 9
+  },
+  "memoryVectors": {
+    "release-current": {
+      "itcmBanksExact": 9,
+      "flash": {
+        "codeMaxBytes": 1126400,
+        "dataMaxBytes": 286720,
+        "headersMaxBytes": 10240
+      },
+      "ram1": {
+        "variablesMaxBytes": 86016,
+        "itcmMaxBytes": 294912,
+        "itcmSlackMinBytes": 0,
+        "localAndStackFreeMinBytes": 143360
+      },
+      "ram2": {
+        "variablesMaxBytes": 196608,
+        "freeMinBytes": 327680
+      },
+      "psram": {
+        "capacityBytes": 8388608,
+        "staticMaxBytes": 6291456,
+        "staticFreeMinBytes": 2097152
+      }
+    }
+  }
+}

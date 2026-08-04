@@ -1,9 +1,13 @@
 name: Candidate
 
-run-name: Candidate ${{ github.event_name == 'push' && github.sha || inputs.source_sha }}
+run-name: Candidate ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.source_sha }}
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
   workflow_dispatch:
@@ -23,14 +27,14 @@ on:
         type: string
 
 concurrency:
-  group: candidate-${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || inputs.source_sha }}
+  group: candidate-${{ github.workflow }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.source_sha }}
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: read
 
 env:
-  PLATFORMIO_VERSION: "6.1.18"
   GIT_CONFIG_COUNT: 2
   GIT_CONFIG_KEY_0: init.defaultBranch
   GIT_CONFIG_VALUE_0: main
@@ -40,31 +44,41 @@ env:
 jobs:
   resolve_inputs:
     name: resolve candidate inputs
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       source_sha: ${{ steps.resolve.outputs.source_sha }}
       tooling_sha: ${{ steps.resolve.outputs.tooling_sha }}
       candidate_tag: ${{ steps.resolve.outputs.candidate_tag }}
+      qualification_run_id: ${{ steps.resolve.outputs.qualification_run_id }}
     steps:
       - name: Checkout source ref
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'push' && github.sha || inputs.source_sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Resolve source SHA and tooling SHA
         id: resolve
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "push" ]; then
-            source_sha="${{ github.sha }}"
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            if [ "${{ github.event.workflow_run.event }}" != "push" ] || [ "${{ github.event.workflow_run.head_branch }}" != "main" ]; then
+              echo "automatic candidate requires a CI push run on main" >&2
+              exit 1
+            fi
+            source_sha="${{ github.event.workflow_run.head_sha }}"
             tooling_sha="$(python -c 'import json; from pathlib import Path; print(json.loads(Path(".github/release-tooling.json").read_text(encoding="utf-8"))["sha"])')"
+            qualification_run_id="${{ github.event.workflow_run.id }}"
           else
             source_sha="${{ inputs.source_sha }}"
             tooling_sha="${{ inputs.tooling_sha }}"
+            qualification_run_id=""
           fi
           if ! [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
             echo "invalid source SHA: $source_sha" >&2
@@ -79,6 +93,32 @@ jobs:
             echo "source SHA is not reachable from main: $source_sha" >&2
             exit 1
           fi
+          if [ -z "$qualification_run_id" ]; then
+            qualification_run_id="$(gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" \
+              -f head_sha="$source_sha" \
+              -f status=success \
+              -f per_page=100 \
+              --jq '.workflow_runs[0].id // empty')"
+            if [ -z "$qualification_run_id" ]; then
+              echo "no successful CI run exists for source SHA: $source_sha" >&2
+              exit 1
+            fi
+          fi
+          qualified_sha="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${qualification_run_id}" --jq '.head_sha')"
+          qualified_name="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${qualification_run_id}" --jq '.name')"
+          qualified_conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${qualification_run_id}" --jq '.conclusion')"
+          if [ "$qualified_sha" != "$source_sha" ] || [ "$qualified_name" != "CI" ] || [ "$qualified_conclusion" != "success" ]; then
+            echo "CI run ${qualification_run_id} does not qualify source SHA ${source_sha}" >&2
+            exit 1
+          fi
+          successful_unit_jobs="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${qualification_run_id}/jobs?per_page=100" \
+            --jq '[.jobs[] | select(.name == "unit tests" and .conclusion == "success")] | length')"
+          if [ "$successful_unit_jobs" -lt 1 ]; then
+            echo "CI run ${qualification_run_id} has no successful unit tests job" >&2
+            exit 1
+          fi
           tooling_repo="$(mktemp -d)"
           git -C "$tooling_repo" init -q
           git -C "$tooling_repo" remote add origin https://github.com/petitechose-midi-studio/ms-dev-env.git
@@ -90,6 +130,7 @@ jobs:
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "tooling_sha=$tooling_sha" >> "$GITHUB_OUTPUT"
           echo "candidate_tag=rc-${source_sha}-tooling-${tooling_sha}" >> "$GITHUB_OUTPUT"
+          echo "qualification_run_id=$qualification_run_id" >> "$GITHUB_OUTPUT"
 
   dispatch_marker:
     name: register dispatch
@@ -113,78 +154,13 @@ jobs:
           path: dispatch/marker.json
           retention-days: 1
 
-  build:
-    name: candidate build (release)
-    needs: resolve_inputs
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout source SHA
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.resolve_inputs.outputs.source_sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Validate source SHA
-        shell: bash
-        run: |
-          set -euo pipefail
-          sha="$(git rev-parse HEAD)"
-          if [ "$sha" != "${{ needs.resolve_inputs.outputs.source_sha }}" ]; then
-            echo "Checked out SHA does not match input" >&2
-            echo "input=${{ needs.resolve_inputs.outputs.source_sha }}" >&2
-            echo "head=$sha" >&2
-            exit 1
-          fi
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Install PlatformIO
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install "platformio==${PLATFORMIO_VERSION}"
-
-      - name: Cache PlatformIO
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.platformio
-          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini', 'oc-sdk.ini', 'oc-native-sdk.ini') }}
-
-      - name: Build release firmware
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m platformio run -e release
-
-      - name: Collect candidate firmware
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp ".pio/build/release/firmware.hex" "dist/midi-studio-default-firmware.hex"
-          ls -la dist
-
-      - name: Upload candidate firmware
-        uses: actions/upload-artifact@v7
-        with:
-          name: midi-studio-default-firmware
-          path: dist/midi-studio-default-firmware.hex
-
   metadata:
     name: candidate metadata
-    needs:
-      - resolve_inputs
-      - build
+    needs: resolve_inputs
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
+      actions: read
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -214,6 +190,15 @@ jobs:
         with:
           name: midi-studio-default-firmware
           path: artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ needs.resolve_inputs.outputs.qualification_run_id }}
+
+      - name: Validate qualified firmware evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python script/release/validate_core_candidate_artifacts.py \
+            --artifacts-dir artifacts
 
       - name: Generate candidate metadata inputs
         shell: bash
@@ -225,6 +210,26 @@ jobs:
               "id": "firmware-default",
               "filename": "midi-studio-default-firmware.hex",
               "kind": "firmware"
+            },
+            {
+              "id": "firmware-default-elf",
+              "filename": "midi-studio-default-firmware.elf",
+              "kind": "elf"
+            },
+            {
+              "id": "firmware-default-map",
+              "filename": "midi-studio-default-firmware.map",
+              "kind": "link-map"
+            },
+            {
+              "id": "firmware-default-post-link",
+              "filename": "midi-studio-default-post-link.json",
+              "kind": "post-link-report"
+            },
+            {
+              "id": "firmware-default-product-profile",
+              "filename": "midi-studio-default-product-profile.json",
+              "kind": "product-profile"
             }
           ]
           EOF
@@ -248,6 +253,13 @@ jobs:
             "platformio": "6.1.18"
           }
           EOF
+          cat > artifacts/config.json <<'EOF'
+          {
+            "qualified_ci_run_id": "${{ needs.resolve_inputs.outputs.qualification_run_id }}",
+            "qualified_ci_workflow": "CI",
+            "post_link_profile": "midi-studio-core-teensy41@release-2026.08/release-current"
+          }
+          EOF
 
       - name: Write candidate manifest, checksums, and signature
         shell: bash
@@ -269,10 +281,16 @@ jobs:
             --checksums-path ../artifacts/checksums.txt \
             --sig-path ../artifacts/candidate.json.sig \
             --recipe-base-dir .. \
+            --recipe-path .github/workflows/ci.yml \
             --recipe-path .github/workflows/candidate.yml \
             --recipe-path platformio.ini \
             --recipe-path oc-sdk.ini \
             --recipe-path oc-native-sdk.ini \
+            --recipe-path script/pio/check_memory_budget.py \
+            --recipe-path script/release/teensy_post_link_gate_v1.py \
+            --recipe-path script/release/profiles/core-product-profile-v1.json \
+            --recipe-path script/release/validate_core_candidate_artifacts.py \
+            --config-json ../artifacts/config.json \
             --toolchain-json ../artifacts/toolchain.json
 
       - name: Publish signed candidate release
