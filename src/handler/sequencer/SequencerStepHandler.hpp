@@ -128,9 +128,16 @@ private:
 #endif
 };
 
+#if defined(MS_UX_RECORDER)
+static_assert(
+    sizeof(void*) != 4U || sizeof(SequencerStepHandler) == 260U,
+    "Sequencer Step handler exceeds its ARM UX-recorder PSRAM contract"
+);
+#else
 static_assert(
     sizeof(void*) != 4U || sizeof(SequencerStepHandler) == 256U,
     "Sequencer Step handler exceeds its ARM PSRAM contract"
 );
+#endif
 
 }  // namespace core::handler
