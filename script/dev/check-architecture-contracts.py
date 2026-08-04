@@ -152,6 +152,24 @@ PROJECT_HANDLER_HEADER = "src/handler/project/ProjectHandler.hpp"
 PROJECT_HANDLER_TEST = "test/test_ProjectHandler/test_main.cpp"
 PROJECT_MENU_MODEL_TEST = "test/test_ProjectMenuModel/test_main.cpp"
 SDL_PROJECT_SESSION_RUNTIME = "sdl/entry/SdlProjectSessionRuntime.hpp"
+DEVICE_SETTINGS_DOMAIN_HEADER = (
+    "src/handler/settings/DeviceSettingsDomainServices.hpp"
+)
+DEVICE_SETTINGS_DOMAIN_SOURCE = (
+    "src/handler/settings/DeviceSettingsDomainServices.cpp"
+)
+DEVICE_SETTINGS_HANDLER_SOURCE = (
+    "src/handler/settings/DeviceSettingsHandler.cpp"
+)
+DEVICE_SETTINGS_CODEC_SOURCE = "src/persistence/DeviceSettingsCodec.cpp"
+DEVICE_SETTINGS_STORE_SOURCE = "src/persistence/DeviceSettingsStore.cpp"
+MIDI_SYNC_STATE_SOURCE = "src/state/MidiSyncState.cpp"
+PROJECT_HANDLER_VALUE_EDITING = (
+    "src/handler/project/ProjectHandlerValueEditing.cpp"
+)
+PROJECT_SETTINGS_HISTORY_SOURCE = (
+    "src/state/project/ProjectSettingsHistory.cpp"
+)
 
 STRICT_EXTMEM_CALL = re.compile(
     r"\b(?:allocate|free)ExtmemStrict\s*\("
@@ -1267,6 +1285,114 @@ def autosave_policy_contract_errors(files: dict[str, str]) -> list[str]:
         errors.append(
             f"{SDL_PROJECT_SESSION_RUNTIME}: SDL must retain exactly one always-on "
             f"recovery update (found {sdl_updates})"
+        )
+
+    return errors
+
+
+def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
+    """Freeze L-R07-01 persist-first command and its R-07-02 carry."""
+    errors: list[str] = []
+
+    header = files.get(DEVICE_SETTINGS_DOMAIN_HEADER, "")
+    for marker in (
+        "enum class ApplyStatus",
+        "struct ApplyResult",
+        "PersistenceWriteStatus persistenceStatus",
+        "[[nodiscard]] ApplyResult applyMidiSyncMode(",
+        "[[nodiscard]] ApplyResult applyChoice(",
+    ):
+        if marker not in header:
+            errors.append(
+                f"{DEVICE_SETTINGS_DOMAIN_HEADER}: missing typed command marker {marker}"
+            )
+
+    source = files.get(DEVICE_SETTINGS_DOMAIN_SOURCE, "")
+    mode_bodies = cpp_function_bodies(
+        source,
+        "DeviceSettingsDomainServices::applyMidiSyncMode",
+    )
+    if len(mode_bodies) != 1:
+        errors.append(
+            f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: applyMidiSyncMode must have one "
+            f"balanced definition (found {len(mode_bodies)})"
+        )
+    else:
+        mode_body = cpp_code_mask(mode_bodies[0])
+        if "policy::validMode(mode)" not in mode_body or \
+                "return applyChoice(0U," not in mode_body:
+            errors.append(
+                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: typed mode command must "
+                "validate then delegate to row-zero persistence"
+            )
+
+    choice_bodies = cpp_function_bodies(
+        source,
+        "DeviceSettingsDomainServices::applyChoice",
+    )
+    if len(choice_bodies) != 1:
+        errors.append(
+            f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: applyChoice must have one "
+            f"balanced definition (found {len(choice_bodies)})"
+        )
+    else:
+        choice_body = cpp_code_mask(choice_bodies[0])
+        no_change = choice_body.find("ApplyStatus::NO_CHANGE")
+        stage = choice_body.find("saveMidiSyncModeStatus")
+        commit = choice_body.find("commitStatus")
+        publish = choice_body.find("midi_sync_->mode.set")
+        if not (0 <= no_change < stage < commit < publish):
+            errors.append(
+                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: mode command order must be "
+                "no-change, stage, commit, live publication"
+            )
+        if choice_body.count("ApplyStatus::PERSISTENCE_FAILED") != 2:
+            errors.append(
+                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: stage and commit failures "
+                "must both return structured persistence failure"
+            )
+
+    handler_bodies = cpp_function_bodies(
+        files.get(DEVICE_SETTINGS_HANDLER_SOURCE, ""),
+        "DeviceSettingsHandler::applySelectorAndClose",
+    )
+    if len(handler_bodies) != 1:
+        errors.append(
+            f"{DEVICE_SETTINGS_HANDLER_SOURCE}: applySelectorAndClose must "
+            f"have one balanced definition (found {len(handler_bodies)})"
+        )
+    else:
+        handler_body = cpp_code_mask(handler_bodies[0])
+        apply_pos = handler_body.find("services_.applyChoice")
+        guard_pos = handler_body.find("if (!result.success()) return;")
+        close_pos = handler_body.find("modal::hideIfCurrent")
+        if not (0 <= apply_pos < guard_pos < close_pos):
+            errors.append(
+                f"{DEVICE_SETTINGS_HANDLER_SOURCE}: selector must consume the "
+                "result and remain open on persistence failure"
+            )
+
+    expected_writers = {
+        DEVICE_SETTINGS_DOMAIN_SOURCE: (r"midi_sync_->mode\.set\s*\(", 1),
+        DEVICE_SETTINGS_CODEC_SOURCE: (r"midiSync\.mode\.set\s*\(", 1),
+        DEVICE_SETTINGS_STORE_SOURCE: (r"midiSync\.mode\.set\s*\(", 1),
+        MIDI_SYNC_STATE_SOURCE: (r"\bmode\.set\s*\(", 1),
+        PROJECT_HANDLER_VALUE_EDITING: (r"midi_sync_\.mode\.set\s*\(", 2),
+        PROJECT_SETTINGS_HISTORY_SOURCE: (r"midiSync\.mode\.set\s*\(", 1),
+    }
+    for rel, (pattern, expected) in expected_writers.items():
+        actual = len(re.findall(pattern, cpp_code_mask(files.get(rel, ""))))
+        if actual != expected:
+            errors.append(
+                f"{rel}: L-R07-01 mode-writer inventory must remain {expected} "
+                f"(found {actual}); Project migration belongs to L-R07-02"
+            )
+
+    project_history = files.get(PROJECT_SETTINGS_HISTORY_HEADER, "")
+    if "SyncMode," not in project_history:
+        errors.append(
+            f"{PROJECT_SETTINGS_HISTORY_HEADER}: L-R07-01 must not consume the "
+            "L-R07-02 Project-history cleanup"
         )
 
     return errors
@@ -5519,6 +5645,93 @@ def autosave_policy_self_test() -> int:
     return 0
 
 
+def midi_sync_command_self_test() -> int:
+    paths = (
+        DEVICE_SETTINGS_DOMAIN_HEADER,
+        DEVICE_SETTINGS_DOMAIN_SOURCE,
+        DEVICE_SETTINGS_HANDLER_SOURCE,
+        DEVICE_SETTINGS_CODEC_SOURCE,
+        DEVICE_SETTINGS_STORE_SOURCE,
+        MIDI_SYNC_STATE_SOURCE,
+        PROJECT_HANDLER_VALUE_EDITING,
+        PROJECT_SETTINGS_HISTORY_HEADER,
+        PROJECT_SETTINGS_HISTORY_SOURCE,
+    )
+    fixture = {
+        rel: (ROOT / rel).read_text(encoding="utf-8")
+        for rel in paths
+    }
+
+    def mutate(rel: str, before: str, after: str) -> dict[str, str]:
+        result = dict(fixture)
+        result[rel] = result[rel].replace(before, after, 1)
+        return result
+
+    mutations = (
+        (
+            DEVICE_SETTINGS_DOMAIN_HEADER,
+            "    [[nodiscard]] ApplyResult applyMidiSyncMode(",
+            "    void applyMidiSyncMode(",
+            "untyped MIDI Sync command is rejected",
+        ),
+        (
+            DEVICE_SETTINGS_DOMAIN_SOURCE,
+            "    const auto commitStatus = store_->commitStatus();",
+            "    midi_sync_->mode.set(policy::MODES[appliedIndex]);\n"
+            "    const auto commitStatus = store_->commitStatus();",
+            "live publication before commit is rejected",
+        ),
+        (
+            DEVICE_SETTINGS_DOMAIN_SOURCE,
+            "return applyResult(ApplyStatus::NO_CHANGE);",
+            "return applyResult(ApplyStatus::APPLIED);",
+            "same-value command performing persistence is rejected",
+        ),
+        (
+            DEVICE_SETTINGS_DOMAIN_SOURCE,
+            "return applyResult(ApplyStatus::PERSISTENCE_FAILED, status);",
+            "return applyResult(ApplyStatus::APPLIED);",
+            "swallowed stage failure is rejected",
+        ),
+        (
+            DEVICE_SETTINGS_HANDLER_SOURCE,
+            "    if (!result.success()) return;",
+            "    (void)result;",
+            "selector closing on failure is rejected",
+        ),
+        (
+            PROJECT_HANDLER_VALUE_EDITING,
+            "            midi_sync_.mode.set(midiSyncModeAt(next));",
+            "            midi_sync_.mode.set(midiSyncModeAt(next));\n"
+            "            midi_sync_.mode.set(midiSyncModeAt(next));",
+            "unclassified extra Project writer is rejected",
+        ),
+    )
+
+    checks: list[tuple[bool, str]] = [(
+        not midi_sync_command_contract_errors(fixture),
+        "the checked-in L-R07-01 command contract is accepted",
+    )]
+    for rel, before, after, description in mutations:
+        mutated = mutate(rel, before, after)
+        checks.append((
+            mutated[rel] != fixture[rel]
+            and bool(midi_sync_command_contract_errors(mutated)),
+            description,
+        ))
+
+    failures = [description for ok, description in checks if not ok]
+    if failures:
+        for failure in failures:
+            print(f"SELF-TEST ERROR: {failure}")
+        return 1
+    print(
+        "MIDI Sync command architecture self-tests: "
+        f"OK ({len(checks)}/{len(checks)})"
+    )
+    return 0
+
+
 def self_test() -> int:
     step_draft_fixture = {
         path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
@@ -7935,6 +8148,7 @@ def main(show_inventory: bool = False) -> int:
     errors.extend(history_admission_contract_errors(contract_sources))
     errors.extend(psram_tracker_contract_errors(contract_sources))
     errors.extend(autosave_policy_contract_errors(contract_sources))
+    errors.extend(midi_sync_command_contract_errors(contract_sources))
 
     platformio = PLATFORMIO.read_text(encoding="utf-8")
     if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
@@ -8261,6 +8475,11 @@ if __name__ == "__main__":
         help="run only the deterministic D-AUTOSAVE-v1 fixtures",
     )
     parser.add_argument(
+        "--self-test-midi-sync-command",
+        action="store_true",
+        help="run only the deterministic L-R07-01 command fixtures",
+    )
+    parser.add_argument(
         "--inventory",
         action="store_true",
         help="print the full advisory >800-line inventory",
@@ -8272,6 +8491,7 @@ if __name__ == "__main__":
         args.self_test_history_admission,
         args.self_test_psram_tracker,
         args.self_test_autosave_policy,
+        args.self_test_midi_sync_command,
     )) > 1:
         parser.error("choose exactly one architecture self-test")
     if args.self_test:
@@ -8284,4 +8504,6 @@ if __name__ == "__main__":
         sys.exit(psram_tracker_self_test())
     if args.self_test_autosave_policy:
         sys.exit(autosave_policy_self_test())
+    if args.self_test_midi_sync_command:
+        sys.exit(midi_sync_command_self_test())
     sys.exit(main(args.inventory))

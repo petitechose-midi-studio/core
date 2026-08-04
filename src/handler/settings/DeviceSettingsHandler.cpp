@@ -95,7 +95,8 @@ FLASHMEM void DeviceSettingsHandler::applySelectorAndClose() {
     const uint8_t row = selector.editingRow.get();
     const int choice = selector.selectedIndex.get();
 
-    services_.applyChoice(row, choice);
+    const auto result = services_.applyChoice(row, choice);
+    if (!result.success()) return;
 
     modal::hideIfCurrent(overlays_, core::ui::OverlayType::DEVICE_SETTINGS_SELECTOR);
     device_settings_.closeSelector();
