@@ -28,10 +28,6 @@ if(NOT EXISTS "${MS_CORE_OC_NOTE_DIR}/src/oc/note/clock/ClockConstants.hpp")
     message(FATAL_ERROR "open-control note not found at ${MS_CORE_OC_NOTE_DIR}")
 endif()
 
-if(NOT EXISTS "${MS_CORE_OC_HAL_COMMON_DIR}/src/oc/hal/common/embedded/ButtonDef.hpp")
-    message(FATAL_ERROR "open-control HAL Common not found at ${MS_CORE_OC_HAL_COMMON_DIR}")
-endif()
-
 if(NOT TARGET oc_framework_native)
     set(OC_FRAMEWORK_BUILD_TESTS OFF CACHE BOOL "Build OpenControl framework tests" FORCE)
     add_subdirectory(
@@ -97,6 +93,11 @@ option(
     MS_CORE_BUILD_TESTS
     "Build and register MIDI Studio core unit tests"
     ${MS_CORE_BUILD_TESTS_DEFAULT})
+
+if(MS_CORE_BUILD_TESTS AND BUILD_TESTING AND
+   NOT EXISTS "${MS_CORE_OC_HAL_COMMON_DIR}/src/oc/hal/common/embedded/ButtonDef.hpp")
+    message(FATAL_ERROR "open-control HAL Common not found at ${MS_CORE_OC_HAL_COMMON_DIR}")
+endif()
 
 if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
