@@ -4095,7 +4095,8 @@ void test_page_clear_prepared_workflow_commits_nochange_and_oom_is_atomic() {
         assert(sequencer.focusedStep.get() == 12U);
         assert(sequencer.structureUi.previewPageIndex.get() == 1U);
         assert(sequencer.structureUi.pageHold.action.get() ==
-               core::state::StructureHoldAction::REMOVE);
+               core::state::StructureHoldAction::NONE);
+        assert(sequencer.structureUi.pageHold.startedAtMs.get() == 0U);
         assert(h.state.sequencerHistory.undoCount() == 0U);
         assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     }
@@ -7118,6 +7119,41 @@ void test_step_focus_bottom_left_resets_focused_step_only() {
     std::cout << "[PASS] test_step_focus_bottom_left_resets_focused_step_only\n";
 }
 
+void test_step_focus_empty_reset_release_clears_hold() {
+    SequencerStepHarness h;
+    auto& sequencer = h.state.sequencer;
+    sequencer.pattern.setContentLength(16U);
+    sequencer.focusedStep.set(3U);
+    h.navigationFocus.set(core::state::StructureNavigationFocus::STEP);
+    sequencer.pattern.note[3U] = 74U;
+    sequencer.pattern.setEnabled(3U, true);
+    assert(seq::storeActiveTrack(h.state.sequencerTracks, sequencer));
+
+    h.tap(Config::ButtonID::BOTTOM_LEFT);
+    assert(!sequencer.pattern.isEnabled(3U));
+    assert(sequencer.structureUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::NONE);
+    const uint8_t undoAfterReset = h.state.sequencerHistory.undoCount();
+
+    h.press(Config::ButtonID::BOTTOM_LEFT);
+    assert(sequencer.structureUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::REMOVE);
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS / 2U);
+    h.release(Config::ButtonID::BOTTOM_LEFT);
+
+    assert(sequencer.structureUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::NONE);
+    assert(sequencer.structureUi.pageHold.startedAtMs.get() == 0U);
+    assert(h.state.sequencerHistory.undoCount() == undoAfterReset);
+
+    h.advance(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS);
+    assert(sequencer.structureUi.pageHold.action.get() ==
+           core::state::StructureHoldAction::NONE);
+    assert(h.state.sequencerHistory.undoCount() == undoAfterReset);
+
+    std::cout << "[PASS] test_step_focus_empty_reset_release_clears_hold\n";
+}
+
 void test_step_focus_copy_paste_copies_complete_step_without_selection() {
     SequencerStepHarness h;
     h.state.sequencer.pattern.setContentLength(8);
@@ -8203,6 +8239,7 @@ int main() {
     test_track_creation_history_unavailable_is_atomic_and_keeps_add_slot_open();
     test_macro_press_on_future_page_does_not_wrap_to_existing_step();
     test_step_focus_bottom_left_resets_focused_step_only();
+    test_step_focus_empty_reset_release_clears_hold();
     test_step_focus_copy_paste_copies_complete_step_without_selection();
     test_step_selection_copy_paste_extends_sparse_root_steps();
     test_step_selection_macro_long_press_consumes_release_without_toggling();

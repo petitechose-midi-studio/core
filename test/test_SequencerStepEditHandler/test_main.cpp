@@ -1817,7 +1817,8 @@ void test_step_edit_chord_row_opens_transactional_editor_and_applies_once() {
 
     h.tap(Config::ButtonID::BOTTOM_RIGHT);
     assert(!h.state.sequencer.stepContentDraft.active.get());
-    assert(h.state.sequencer.stepEdit.chordEditor.active.get());
+    assert(!h.state.sequencer.stepEdit.chordEditor.active.get());
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == NOTE_ROW);
     const auto* graph = core::state::sequencer::graphView(h.state.sequencer.pattern);
     assert(graph != nullptr);
     const auto* node = graph->stepNode(core::state::sequencer::rootStepNodeId(2));
@@ -1825,9 +1826,6 @@ void test_step_edit_chord_row_opens_transactional_editor_and_applies_once() {
     assert(node->chordMode == oc::note::sequencer::StepSequencerChordMode::Local);
     assert(h.state.sequencerHistory.undoCount() == 1);
 
-    h.tap(Config::ButtonID::LEFT_TOP);
-    assert(!h.state.sequencer.stepEdit.chordEditor.active.get());
-    assert(h.state.sequencer.stepEdit.visible.get());
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.stepEdit.visible.get());
     assert(h.state.sequencerHistory.undoCount() == 1);
@@ -1845,6 +1843,30 @@ void test_step_edit_chord_row_opens_transactional_editor_and_applies_once() {
     assert(node->has(oc::note::sequencer::STEP_NODE_CHORD_MODE));
 
     std::cout << "[PASS] test_step_edit_chord_row_opens_transactional_editor_and_applies_once\n";
+}
+
+void test_step_edit_chord_apply_restores_pitch_opt() {
+    SequencerStepEditHarness h;
+    h.state.sequencer.pattern.setContentLength(8U);
+    h.state.sequencer.pattern.note[2U] = 60U;
+    h.state.sequencer.pattern.setEnabled(2U, true);
+
+    openStepEdit(h, 2U);
+    h.release(Config::MACRO_BUTTONS[2U]);
+    focusStepEditRow(h, CHORD_ROW);
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.sequencer.stepEdit.chordEditor.active.get());
+
+    h.tap(Config::ButtonID::BOTTOM_RIGHT);
+    assert(!h.state.sequencer.stepContentDraft.active.get());
+    assert(!h.state.sequencer.stepEdit.chordEditor.active.get());
+    assert(h.state.sequencer.stepEdit.visible.get());
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == NOTE_ROW);
+
+    h.turn(Config::EncoderID::OPT, 1.0f);
+    assert(h.state.sequencer.pattern.note[2U] == 127U);
+
+    std::cout << "[PASS] test_step_edit_chord_apply_restores_pitch_opt\n";
 }
 
 void test_step_draft_apply_coexists_with_adjacent_global_history() {
@@ -1958,7 +1980,7 @@ void test_step_edit_chord_detail_edits_all_chord_fields() {
     assert(!h.state.sequencer.stepContentDraft.active.get());
     assert(!h.state.sequencer.stepEdit.chordEditor.active.get());
     assert(h.state.sequencer.stepEdit.visible.get());
-    assert(h.state.sequencer.stepEdit.focusedRow.get() == CHORD_ROW);
+    assert(h.state.sequencer.stepEdit.focusedRow.get() == NOTE_ROW);
 
     h.tap(Config::ButtonID::LEFT_TOP);
     assert(!h.state.sequencer.stepEdit.visible.get());
@@ -3396,6 +3418,7 @@ int main() {
     test_step_edit_context_paste_prepares_graphless_destination();
     test_step_edit_musical_row_bottom_left_resets_row_to_default();
     test_step_edit_chord_row_opens_transactional_editor_and_applies_once();
+    test_step_edit_chord_apply_restores_pitch_opt();
     test_step_draft_apply_coexists_with_adjacent_global_history();
     test_step_edit_chord_detail_edits_all_chord_fields();
     test_scale_context_drives_shape_formula_without_local_basis_toggle();

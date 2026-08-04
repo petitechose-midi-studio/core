@@ -457,14 +457,26 @@ FLASHMEM void SequencerStepEditHandler::closeChordEditor() {
 }
 
 FLASHMEM void SequencerStepEditHandler::applyStepContentDraft() {
+    const bool returnToPitchRow =
+        chordEditorActive() &&
+        sequencer_.stepContentDraft.kind.get() ==
+            core::state::sequencer::SequencerStepContentDraftKind::CHORD;
     if (!commitStepEditHistory()) return;
     if (!sequencer::step_content_draft_workflow::apply(sequencer_, tracks_, history_)) { return; }
 
+    if (returnToPitchRow) {
+        step_chord_editor_workflow::close(sequencer_);
+        sequencer_.stepEdit.focusedRow.set(step_edit_rows::PROPERTY_OFFSET);
+    }
     configureOptForFocusedRow();
 }
 
 FLASHMEM void SequencerStepEditHandler::confirmStepContentDraftExitChoice() {
     const bool wasChordEditor = chordEditorActive();
+    const bool wasRootChordDraft =
+        wasChordEditor &&
+        sequencer_.stepContentDraft.kind.get() ==
+            core::state::sequencer::SequencerStepContentDraftKind::CHORD;
     const bool wasChildContent = core::state::sequencer::isChildContentView(sequencer_);
     const auto result =
         sequencer::step_content_draft_workflow::applyExitChoice(sequencer_, tracks_, history_);
@@ -472,6 +484,12 @@ FLASHMEM void SequencerStepEditHandler::confirmStepContentDraftExitChoice() {
     if (result != Result::DISCARDED && result != Result::SAVED) return;
 
     if (wasChordEditor) {
+        if (wasRootChordDraft && result == Result::SAVED) {
+            step_chord_editor_workflow::close(sequencer_);
+            sequencer_.stepEdit.focusedRow.set(step_edit_rows::PROPERTY_OFFSET);
+            configureOptForFocusedRow();
+            return;
+        }
         closeChordEditor();
         return;
     }

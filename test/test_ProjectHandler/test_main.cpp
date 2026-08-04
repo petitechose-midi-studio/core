@@ -1135,6 +1135,79 @@ void test_overview_load_missing_project_reports_failure() {
     std::cout << "[PASS] test_overview_load_missing_project_reports_failure\n";
 }
 
+void test_load_picker_opens_immediately_and_waits_for_playback_stop() {
+    ProjectHandlerHarness h;
+    saveCurrentProjectSnapshot(h, "p001");
+    h.state.statusBar.playing.set(true);
+
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+
+    assert(h.productCatalog->pending());
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.depth.get() == 1U);
+    assert(!h.state.projectNavigation.loadProjects.scanned);
+    assert(std::strcmp(
+               h.state.projectNavigation.lifecycleFeedback.get(),
+               "Stop playback to browse"
+           ) == 0);
+    auto page = core::state::project::buildProjectMenuPage(
+        h.state.projectNavigation
+    );
+    assert(page.rowCount == 1U);
+    assert(std::strcmp(page.rows[0].label, "Loading projects") == 0);
+    assert(!page.rows[0].enabled);
+
+    for (uint8_t turn = 0U; turn < 3U; ++turn) {
+        ++g_now_ms;
+        assert(h.productFiles.persistenceJobs().beginTurn(g_now_ms));
+        h.productCatalog->advance(g_now_ms, true);
+        h.handler.update(g_now_ms);
+        assert(h.productCatalog->pending());
+        assert(h.state.projectNavigation.currentNode.get() ==
+               ProjectNodeId::LOAD_PROJECT);
+        assert(h.state.projectNavigation.depth.get() == 1U);
+    }
+
+    h.state.statusBar.playing.set(false);
+    h.settleCatalog();
+
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.depth.get() == 1U);
+    assert(h.state.projectNavigation.loadProjects.scanned);
+    assert(h.state.projectNavigation.loadProjects.count == 1U);
+    assert(std::strcmp(
+               h.state.projectNavigation.loadProjects.entries[0].id.data(),
+               "p001"
+           ) == 0);
+    assert(h.state.projectNavigation.lifecycleFeedback.empty());
+
+    std::cout << "[PASS] load picker opens immediately and waits for playback stop\n";
+}
+
+void test_pending_load_picker_can_be_cancelled_during_playback() {
+    ProjectHandlerHarness h;
+    h.state.statusBar.playing.set(true);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.productCatalog->pending());
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::LOAD_PROJECT);
+
+    h.press(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_TOP);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::OVERVIEW_ROOT);
+    assert(h.state.projectNavigation.depth.get() == 0U);
+    h.handler.update(g_now_ms);
+
+    std::cout << "[PASS] pending load picker can be cancelled during playback\n";
+}
+
 void test_load_project_picker_selects_detected_project() {
     ProjectHandlerHarness h;
 
@@ -2802,6 +2875,8 @@ int main() {
     test_routing_output_channels_are_editable();
     test_overview_save_and_load_roundtrip_project_file();
     test_overview_load_missing_project_reports_failure();
+    test_load_picker_opens_immediately_and_waits_for_playback_stop();
+    test_pending_load_picker_can_be_cancelled_during_playback();
     test_load_project_picker_selects_detected_project();
     test_future_project_load_is_rejected_atomically();
     test_dirty_project_load_prompts_save_and_preserves_latest_edits();

@@ -82,8 +82,10 @@ FLASHMEM bool ProjectHandler::physicalHoldActive() const {
 
 FLASHMEM bool ProjectHandler::regularProjectInputActive() const {
     return canHandleProjectInput() && !navigation_.physicalHoldActive.get() &&
-           pending_project_catalog_action_ ==
-               PendingProjectCatalogAction::NONE;
+           (pending_project_catalog_action_ ==
+                PendingProjectCatalogAction::NONE ||
+            pending_project_catalog_action_ ==
+                PendingProjectCatalogAction::LOAD_PICKER);
 }
 
 FLASHMEM void ProjectHandler::enterPhysicalHoldLayer() {

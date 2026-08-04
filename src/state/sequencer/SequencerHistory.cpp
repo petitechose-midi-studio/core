@@ -1216,6 +1216,24 @@ FLASHMEM bool reservePreparedActiveTrackSynchronization(
     return synchronization.reserved;
 }
 
+FLASHMEM bool prepareActiveTrackSynchronizationFromSnapshot(
+    const SequencerTrackBankState& bank, uint8_t trackIndex,
+    const SequencerHistoryPatternSnapshot& after,
+    SequencerPreparedActiveTrackSynchronization& synchronization) {
+    synchronization.reset();
+    const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    synchronization.trackIndex = targetTrack;
+    synchronization.storage = SequencerHistoryPatternStorage::FullGraph;
+    if (targetTrack != bank.activeTrackIndex() || !after.ccLanesCaptured) return false;
+    if (!cloneGraph(after.graph, synchronization.payload.graph) ||
+        !cloneSequencerCcLaneBank(synchronization.payload.ccLanes, after.ccLanes.get())) {
+        return false;
+    }
+    synchronization.reserved = true;
+    synchronization.captured = true;
+    return true;
+}
+
 FLASHMEM bool preparedActiveTrackSynchronizationMatches(
     const SequencerTrackBankState& bank,
     const SequencerPreparedActiveTrackSynchronization& synchronization) {

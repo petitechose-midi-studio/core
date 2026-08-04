@@ -533,6 +533,12 @@ bool reservePreparedActiveTrackSynchronization(
     const SequencerTrackBankState& bank, const SequencerState& after, uint8_t trackIndex,
     SequencerCoalescedPatternPayloadPlan plan,
     SequencerPreparedActiveTrackSynchronization& synchronization);
+// Prepares an exact detached After snapshot for allocation-free publication to
+// the active Track mirror. All allocation happens before the live editor write.
+bool prepareActiveTrackSynchronizationFromSnapshot(
+    const SequencerTrackBankState& bank, uint8_t trackIndex,
+    const SequencerHistoryPatternSnapshot& after,
+    SequencerPreparedActiveTrackSynchronization& synchronization);
 bool preparedActiveTrackSynchronizationMatches(
     const SequencerTrackBankState& bank,
     const SequencerPreparedActiveTrackSynchronization& synchronization);

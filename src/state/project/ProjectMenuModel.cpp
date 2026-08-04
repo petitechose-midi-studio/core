@@ -365,7 +365,18 @@ FLASHMEM void buildProjectNameEditorRows(ProjectMenuPage& page,
 
 FLASHMEM void buildLoadProjectRows(ProjectMenuPage& page,
                                    const ProjectNavigationState& navigation) {
-    if (!navigation.loadProjects.scanned || navigation.loadProjects.count == 0) {
+    if (!navigation.loadProjects.scanned) {
+        addRow(page, row(
+            "Loading projects",
+            "Please wait",
+            ProjectMenuRowKind::Disabled,
+            ProjectNodeId::LOAD_PROJECT,
+            false,
+            false
+        ));
+        return;
+    }
+    if (navigation.loadProjects.count == 0) {
         addRow(page, row(
             "No projects",
             "Save first",

@@ -601,8 +601,10 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                 edit_workflow_.clearHoldAction();
                 return;
             }
+            // A physical release always terminates the STEP/PAGE hold, even
+            // when the short action is a no-op (for example an empty step).
+            edit_workflow_.clearHoldAction();
             if (trackFocusActive()) {
-                edit_workflow_.clearHoldAction();
                 if (!publishPatternHistoryBarrier(sequencer_,
                                                   commitPatternHistoryBarrier(history_))) {
                     return;

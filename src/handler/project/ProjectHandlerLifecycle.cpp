@@ -183,6 +183,19 @@ FLASHMEM bool ProjectHandler::commitProjectNameEditor() {
 FLASHMEM bool ProjectHandler::requestProjectLoadPicker() {
     const auto result = lifecycle_.refreshLoadableProjects();
     if (result.status == ProjectLifecycleDomainServices::Status::QUEUED) {
+        const bool continuingRequest =
+            pending_project_catalog_action_ ==
+                PendingProjectCatalogAction::LOAD_PICKER &&
+            navigation_.currentNode.get() ==
+                core::state::project::ProjectNodeId::LOAD_PROJECT;
+        if (!continuingRequest) {
+            navigation_.loadProjects.clear();
+            navigation_.notifyContentChanged();
+        }
+        if (navigation_.currentNode.get() !=
+            core::state::project::ProjectNodeId::LOAD_PROJECT) {
+            core::state::project::openProjectLoadPicker(navigation_);
+        }
         beginPendingProjectCatalog(PendingProjectCatalogAction::LOAD_PICKER);
         return true;
     }
@@ -197,10 +210,14 @@ FLASHMEM bool ProjectHandler::requestProjectLoadPicker() {
         return true;
     }
 
-    core::state::project::openProjectLoadPicker(navigation_);
+    if (navigation_.currentNode.get() !=
+        core::state::project::ProjectNodeId::LOAD_PROJECT) {
+        core::state::project::openProjectLoadPicker(navigation_);
+    }
     if (navigation_.loadProjects.count == 0) {
         navigation_.setLifecycleFeedback("No projects");
     } else {
+        navigation_.clearLifecycleFeedback();
         OC_LOG_INFO("[Project] list projects count={} truncated={}",
                     static_cast<unsigned>(navigation_.loadProjects.count),
                     navigation_.loadProjects.truncated ? 1 : 0);
@@ -239,7 +256,12 @@ FLASHMEM void ProjectHandler::beginPendingProjectCatalog(
     pending_project_catalog_action_ = action;
     pending_project_catalog_node_ = navigation_.currentNode.get();
     pending_project_catalog_row_ = navigation_.focusedRow.get();
-    navigation_.setLifecycleFeedback("Loading projects");
+    navigation_.setLifecycleFeedback(
+        action == PendingProjectCatalogAction::LOAD_PICKER &&
+                status_bar_.playing.get()
+            ? "Stop playback to browse"
+            : "Loading projects"
+    );
 }
 
 void ProjectHandler::pollPendingProjectCatalog() {
