@@ -82,6 +82,7 @@ struct ProjectHandlerHarness {
     oc::api::ButtonAPI buttons;
     oc::api::EncoderAPI encoders;
     oc::context::OverlayManager<core::ui::OverlayType> overlays;
+    core::handler::DeviceSettingsDomainServices deviceSettings;
     core::handler::SequencerSettingsDomainServices sequencerSettings;
     core::handler::ProjectHandler handler;
 
@@ -98,6 +99,10 @@ struct ProjectHandlerHarness {
         , buttons(inputBinding, buttonHw)
         , encoders(inputBinding, encoderHw)
         , overlays(state.overlays, buttons)
+        , deviceSettings(core::handler::DeviceSettingsDomainServices::StateRefs{
+              state.midiSync,
+              state.deviceSettingsStore,
+          })
         , sequencerSettings(core::handler::SequencerSettingsDomainServices::StateRefs{
               state.sequencerTracks,
           })
@@ -110,7 +115,6 @@ struct ProjectHandlerHarness {
                           state
                       ),
                       state.statusBar,
-                       state.midiSync,
                        state.pages,
                        state.macroUi,
                        state.macros,
@@ -120,12 +124,13 @@ struct ProjectHandlerHarness {
                        state.projectSettingsHistory,
                        state.structureClipboard,
                        core::handler::SequencerHistoryDomainServices::fromCoreState(state),
-                      core::handler::ProjectLifecycleDomainServices::fromCoreState(
+                       core::handler::ProjectLifecycleDomainServices::fromCoreState(
                           state,
                           productFiles,
                           *productCatalog
                       ),
                   },
+                  deviceSettings,
                   sequencerSettings,
                   core::handler::MacroEditDomainServices::fromCoreState(state),
                   encoders,
@@ -583,6 +588,85 @@ void test_transport_values_are_editable_from_project() {
     assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::MASTER);
 
     std::cout << "[PASS] test_transport_values_are_editable_from_project\n";
+}
+
+void test_transport_sync_is_device_persisted_and_project_neutral() {
+    ProjectHandlerHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 2U);
+
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const bool dirtyBefore = h.state.project.metadata.dirty;
+    const auto saveTokenBefore = h.state.projectSessionSaveToken();
+    const int commitsBefore = h.storages.settings.commitCount;
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::MASTER);
+    assert(h.storages.settings.commitCount == commitsBefore + 1);
+
+    core::state::MidiSyncState restored{};
+    assert(h.state.deviceSettingsStore.load(restored));
+    assert(restored.mode.get() == core::state::MidiSyncMode::MASTER);
+
+    h.turn(Config::EncoderID::OPT, 0.5f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+    assert(h.storages.settings.commitCount == commitsBefore + 2);
+    assert(h.state.deviceSettingsStore.load(restored));
+    assert(restored.mode.get() == core::state::MidiSyncMode::SLAVE);
+
+    assert(h.state.projectHistory.undoCount() == historyBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    assert(h.state.projectSessionSaveToken() == saveTokenBefore);
+    assert(!h.state.undoProjectHistory());
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE);
+
+    std::cout << "[PASS] Project Transport persists Device Sync without Project mutation\n";
+}
+
+void test_transport_sync_failure_is_visible_retryable_and_project_neutral() {
+    ProjectHandlerHarness h;
+
+    h.press(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 2U);
+
+    const uint8_t historyBefore = h.state.projectHistory.undoCount();
+    const uint32_t modifiedBefore = h.state.project.metadata.modifiedCounter;
+    const bool dirtyBefore = h.state.project.metadata.dirty;
+    const auto saveTokenBefore = h.state.projectSessionSaveToken();
+
+    h.storages.settings.setFaultMode(
+        test_support::MemoryStorage::FaultMode::COMMIT_FAIL
+    );
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::AUTO);
+    assert(std::strcmp(
+        h.state.projectNavigation.lifecycleFeedback.get(),
+        "Sync save failed - unchanged"
+    ) == 0);
+    assert(h.state.projectHistory.undoCount() == historyBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    assert(h.state.projectSessionSaveToken() == saveTokenBefore);
+
+    h.storages.settings.setFaultMode(test_support::MemoryStorage::FaultMode::NONE);
+    h.turn(Config::EncoderID::OPT, 0.0f);
+    assert(h.state.midiSync.mode.get() == core::state::MidiSyncMode::MASTER);
+    assert(h.state.projectNavigation.lifecycleFeedback.get()[0] == '\0');
+    assert(h.state.projectHistory.undoCount() == historyBefore);
+    assert(h.state.project.metadata.modifiedCounter == modifiedBefore);
+    assert(h.state.project.metadata.dirty == dirtyBefore);
+    assert(h.state.projectSessionSaveToken() == saveTokenBefore);
+
+    std::cout << "[PASS] Project Transport Sync failure is visible and retryable\n";
 }
 
 void test_project_setting_values_coalesce_and_use_global_history() {
@@ -2785,6 +2869,8 @@ int main() {
     test_left_center_hold_switches_tabs();
     test_left_center_hold_respects_fast_tab_delta();
     test_transport_values_are_editable_from_project();
+    test_transport_sync_is_device_persisted_and_project_neutral();
+    test_transport_sync_failure_is_visible_retryable_and_project_neutral();
     test_project_setting_values_coalesce_and_use_global_history();
     test_storage_project_identity_ignores_opt();
     test_project_name_editor_uses_physical_action_buttons();

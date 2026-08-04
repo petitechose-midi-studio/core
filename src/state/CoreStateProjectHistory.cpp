@@ -174,7 +174,7 @@ FLASHMEM bool CoreState::undoProjectHistory() {
     }
     if (entry->domain == project::ProjectHistoryDomain::Settings) {
         if (projectSettingsHistory.projectHistoryUndoIdentity() != entry->identity ||
-            !projectSettingsHistory.undo(statusBar, projectNavigation, midiSync)) {
+            !projectSettingsHistory.undo(statusBar, projectNavigation)) {
             return false;
         }
         markProjectMutated();
@@ -204,7 +204,7 @@ FLASHMEM bool CoreState::redoProjectHistory() {
     }
     if (entry->domain == project::ProjectHistoryDomain::Settings) {
         if (projectSettingsHistory.projectHistoryRedoIdentity() != entry->identity ||
-            !projectSettingsHistory.redo(statusBar, projectNavigation, midiSync)) {
+            !projectSettingsHistory.redo(statusBar, projectNavigation)) {
             return false;
         }
         markProjectMutated();

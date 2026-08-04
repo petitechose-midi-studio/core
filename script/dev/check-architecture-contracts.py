@@ -149,8 +149,13 @@ PROJECT_SETTINGS_HISTORY_HEADER = (
     "src/state/project/ProjectSettingsHistory.hpp"
 )
 PROJECT_HANDLER_HEADER = "src/handler/project/ProjectHandler.hpp"
+PROJECT_HANDLER_SOURCE = "src/handler/project/ProjectHandler.cpp"
 PROJECT_HANDLER_TEST = "test/test_ProjectHandler/test_main.cpp"
 PROJECT_MENU_MODEL_TEST = "test/test_ProjectMenuModel/test_main.cpp"
+PROJECT_HISTORY_COORDINATOR_TEST = (
+    "test/test_ProjectHistoryCoordinator/test_main.cpp"
+)
+VIEW_SWITCHER_HANDLER_TEST = "test/test_ViewSwitcherHandler/test_main.cpp"
 SDL_PROJECT_SESSION_RUNTIME = "sdl/entry/SdlProjectSessionRuntime.hpp"
 DEVICE_SETTINGS_DOMAIN_HEADER = (
     "src/handler/settings/DeviceSettingsDomainServices.hpp"
@@ -167,8 +172,21 @@ MIDI_SYNC_STATE_SOURCE = "src/state/MidiSyncState.cpp"
 PROJECT_HANDLER_VALUE_EDITING = (
     "src/handler/project/ProjectHandlerValueEditing.cpp"
 )
+PROJECT_HANDLER_FOCUSED_ENCODER = (
+    "src/handler/project/ProjectHandlerFocusedEncoderSync.cpp"
+)
 PROJECT_SETTINGS_HISTORY_SOURCE = (
     "src/state/project/ProjectSettingsHistory.cpp"
+)
+CORE_STATE_PROJECT_HISTORY_SOURCE = "src/state/CoreStateProjectHistory.cpp"
+PROJECT_FEATURE_MODULE_HEADER = (
+    "src/context/standalone/ProjectFeatureModule.hpp"
+)
+PROJECT_FEATURE_MODULE_SOURCE = (
+    "src/context/standalone/ProjectFeatureModule.cpp"
+)
+STANDALONE_FEATURE_ASSEMBLY_SOURCE = (
+    "src/context/standalone/StandaloneFeatureAssembly.cpp"
 )
 
 STRICT_EXTMEM_CALL = re.compile(
@@ -1291,7 +1309,7 @@ def autosave_policy_contract_errors(files: dict[str, str]) -> list[str]:
 
 
 def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
-    """Freeze L-R07-01 persist-first command and its R-07-02 carry."""
+    """Freeze final R-07 Device ownership and persist-first publication."""
     errors: list[str] = []
 
     header = files.get(DEVICE_SETTINGS_DOMAIN_HEADER, "")
@@ -1372,27 +1390,164 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
                 "result and remain open on persistence failure"
             )
 
+    project_header = files.get(PROJECT_HANDLER_HEADER, "")
+    for marker in (
+        "DeviceSettingsDomainServices deviceSettings,",
+        "DeviceSettingsDomainServices device_settings_;",
+    ):
+        if marker not in project_header:
+            errors.append(
+                f"{PROJECT_HANDLER_HEADER}: missing Device command dependency {marker}"
+            )
+    for duplicate in ("MidiSyncState& midiSync", "midi_sync_"):
+        if duplicate in project_header:
+            errors.append(
+                f"{PROJECT_HANDLER_HEADER}: duplicate Project MIDI Sync state {duplicate}"
+            )
+
+    project_source = files.get(PROJECT_HANDLER_SOURCE, "")
+    if ", device_settings_(deviceSettings)" not in project_source:
+        errors.append(
+            f"{PROJECT_HANDLER_SOURCE}: Device command value must be retained by Project"
+        )
+
+    project_edits = cpp_code_mask(
+        files.get(PROJECT_HANDLER_VALUE_EDITING, "")
+    )
+    if project_edits.count("device_settings_.applyMidiSyncMode(") != 2:
+        errors.append(
+            f"{PROJECT_HANDLER_VALUE_EDITING}: NAV and OPT must each use the "
+            "typed Device MIDI Sync command exactly once"
+        )
+    for retired in (
+        "ProjectSettingsHistoryActionKind::SyncMode",
+        "midi_sync_",
+    ):
+        if retired in project_edits:
+            errors.append(
+                f"{PROJECT_HANDLER_VALUE_EDITING}: retired Project Sync owner {retired}"
+            )
+    if "Sync save failed - unchanged" not in files.get(
+        PROJECT_HANDLER_VALUE_EDITING, ""
+    ):
+        errors.append(
+            f"{PROJECT_HANDLER_VALUE_EDITING}: persistence failure must remain visible"
+        )
+    focused_encoder = cpp_code_mask(
+        files.get(PROJECT_HANDLER_FOCUSED_ENCODER, "")
+    )
+    if focused_encoder.count("device_settings_.currentChoiceIndex(0U)") != 1 or \
+            "midi_sync_" in focused_encoder:
+        errors.append(
+            f"{PROJECT_HANDLER_FOCUSED_ENCODER}: Clock projection must read "
+            "only through the Device service"
+        )
+
+    feature_header = files.get(PROJECT_FEATURE_MODULE_HEADER, "")
+    feature_source = files.get(PROJECT_FEATURE_MODULE_SOURCE, "")
+    assembly = files.get(STANDALONE_FEATURE_ASSEMBLY_SOURCE, "")
+    if "DeviceSettingsDomainServices deviceSettings," not in feature_header or \
+            "        deviceSettings," not in feature_source:
+        errors.append(
+            f"{PROJECT_FEATURE_MODULE_HEADER}: Project feature must forward the "
+            "Device command value"
+        )
+    if "MidiSyncState& midiSync" in feature_header:
+        errors.append(
+            f"{PROJECT_FEATURE_MODULE_HEADER}: duplicate MIDI Sync state dependency"
+        )
+    if assembly.count("deviceSettingsServices") != 3:
+        errors.append(
+            f"{STANDALONE_FEATURE_ASSEMBLY_SOURCE}: one composed Device service "
+            "must feed both Project and Settings"
+        )
+
+    history_header = files.get(PROJECT_SETTINGS_HISTORY_HEADER, "")
+    history_source = files.get(PROJECT_SETTINGS_HISTORY_SOURCE, "")
+    history_graph = history_header + "\n" + history_source
+    for retired in (
+        "SyncMode",
+        "syncMode",
+        "MidiSyncState",
+        "midiSync",
+    ):
+        if retired in history_graph:
+            errors.append(
+                f"Project Settings history: retired MIDI Sync dependency {retired}"
+            )
+    for marker in (
+        "uint8_t scaleInheritanceFlags = 0x03U;",
+        "static_assert(sizeof(ProjectSettingsHistorySnapshot) == 12U);",
+        "static_assert(sizeof(ProjectSettingsHistoryEntry) == 28U);",
+    ):
+        if marker not in history_header:
+            errors.append(
+                f"{PROJECT_SETTINGS_HISTORY_HEADER}: missing compact history marker {marker}"
+            )
+
+    core_history = cpp_code_mask(
+        files.get(CORE_STATE_PROJECT_HISTORY_SOURCE, "")
+    )
+    for marker in (
+        "projectSettingsHistory.undo(statusBar, projectNavigation)",
+        "projectSettingsHistory.redo(statusBar, projectNavigation)",
+    ):
+        if marker not in core_history:
+            errors.append(
+                f"{CORE_STATE_PROJECT_HISTORY_SOURCE}: Settings traversal must "
+                f"remain Device-independent ({marker})"
+            )
+
+    coordinator = files.get(PROJECT_HISTORY_COORDINATOR_SOURCE, "")
+    if 'return "Sync Mode";' in coordinator:
+        errors.append(
+            f"{PROJECT_HISTORY_COORDINATOR_SOURCE}: retired Sync Mode history label"
+        )
+    coordinator_test = files.get(PROJECT_HISTORY_COORDINATOR_TEST, "")
+    if "test_remaining_project_settings_labels_survive_sync_cleanup" not in \
+            coordinator_test:
+        errors.append(
+            f"{PROJECT_HISTORY_COORDINATOR_TEST}: remaining Settings labels need proof"
+        )
+
+    menu = files.get(PROJECT_MENU_MODEL_SOURCE, "")
+    if menu.count('row("Clock", clockModeValue(context.clockMode)') != 1:
+        errors.append(
+            f"{PROJECT_MENU_MODEL_SOURCE}: Transport Clock Device control must remain visible"
+        )
+
     expected_writers = {
         DEVICE_SETTINGS_DOMAIN_SOURCE: (r"midi_sync_->mode\.set\s*\(", 1),
         DEVICE_SETTINGS_CODEC_SOURCE: (r"midiSync\.mode\.set\s*\(", 1),
         DEVICE_SETTINGS_STORE_SOURCE: (r"midiSync\.mode\.set\s*\(", 1),
         MIDI_SYNC_STATE_SOURCE: (r"\bmode\.set\s*\(", 1),
-        PROJECT_HANDLER_VALUE_EDITING: (r"midi_sync_\.mode\.set\s*\(", 2),
-        PROJECT_SETTINGS_HISTORY_SOURCE: (r"midiSync\.mode\.set\s*\(", 1),
+        PROJECT_HANDLER_VALUE_EDITING: (r"midi_sync_\.mode\.set\s*\(", 0),
+        PROJECT_SETTINGS_HISTORY_SOURCE: (r"midiSync\.mode\.set\s*\(", 0),
     }
     for rel, (pattern, expected) in expected_writers.items():
         actual = len(re.findall(pattern, cpp_code_mask(files.get(rel, ""))))
         if actual != expected:
             errors.append(
-                f"{rel}: L-R07-01 mode-writer inventory must remain {expected} "
-                f"(found {actual}); Project migration belongs to L-R07-02"
+                f"{rel}: final R-07 mode-writer inventory must remain {expected} "
+                f"(found {actual})"
             )
 
-    project_history = files.get(PROJECT_SETTINGS_HISTORY_HEADER, "")
-    if "SyncMode," not in project_history:
+    handler_test = files.get(PROJECT_HANDLER_TEST, "")
+    for marker in (
+        "test_transport_sync_is_device_persisted_and_project_neutral",
+        "test_transport_sync_failure_is_visible_retryable_and_project_neutral",
+        "projectSessionSaveToken() == saveTokenBefore",
+    ):
+        if marker not in handler_test:
+            errors.append(
+                f"{PROJECT_HANDLER_TEST}: missing Project-neutral Sync proof {marker}"
+            )
+    view_test = files.get(VIEW_SWITCHER_HANDLER_TEST, "")
+    if view_test.count(
+        "h.state.midiSync.mode.get() == core::state::MidiSyncMode::SLAVE"
+    ) < 2:
         errors.append(
-            f"{PROJECT_SETTINGS_HISTORY_HEADER}: L-R07-01 must not consume the "
-            "L-R07-02 Project-history cleanup"
+            f"{VIEW_SWITCHER_HANDLER_TEST}: Undo/Redo must both preserve Device Sync"
         )
 
     return errors
@@ -5653,9 +5808,21 @@ def midi_sync_command_self_test() -> int:
         DEVICE_SETTINGS_CODEC_SOURCE,
         DEVICE_SETTINGS_STORE_SOURCE,
         MIDI_SYNC_STATE_SOURCE,
+        PROJECT_HANDLER_HEADER,
+        PROJECT_HANDLER_SOURCE,
         PROJECT_HANDLER_VALUE_EDITING,
+        PROJECT_HANDLER_FOCUSED_ENCODER,
         PROJECT_SETTINGS_HISTORY_HEADER,
         PROJECT_SETTINGS_HISTORY_SOURCE,
+        CORE_STATE_PROJECT_HISTORY_SOURCE,
+        PROJECT_HISTORY_COORDINATOR_SOURCE,
+        PROJECT_MENU_MODEL_SOURCE,
+        PROJECT_FEATURE_MODULE_HEADER,
+        PROJECT_FEATURE_MODULE_SOURCE,
+        STANDALONE_FEATURE_ASSEMBLY_SOURCE,
+        PROJECT_HANDLER_TEST,
+        PROJECT_HISTORY_COORDINATOR_TEST,
+        VIEW_SWITCHER_HANDLER_TEST,
     )
     fixture = {
         rel: (ROOT / rel).read_text(encoding="utf-8")
@@ -5701,16 +5868,62 @@ def midi_sync_command_self_test() -> int:
         ),
         (
             PROJECT_HANDLER_VALUE_EDITING,
-            "            midi_sync_.mode.set(midiSyncModeAt(next));",
-            "            midi_sync_.mode.set(midiSyncModeAt(next));\n"
-            "            midi_sync_.mode.set(midiSyncModeAt(next));",
-            "unclassified extra Project writer is rejected",
+            "                device_settings_.applyMidiSyncMode(midiSyncModeAt(next))",
+            "                (midi_sync_.mode.set(midiSyncModeAt(next)), "
+            "DeviceSettingsDomainServices::ApplyResult{})",
+            "restored direct Project writer is rejected",
+        ),
+        (
+            PROJECT_HANDLER_VALUE_EDITING,
+            '    navigation.setLifecycleFeedback("Sync save failed - unchanged");',
+            "    (void)navigation;",
+            "silent Project persistence failure is rejected",
+        ),
+        (
+            PROJECT_HANDLER_FOCUSED_ENCODER,
+            "device_settings_.currentChoiceIndex(0U)",
+            "midiSyncModeIndex(midi_sync_.mode.get())",
+            "duplicate Project Clock projection state is rejected",
+        ),
+        (
+            PROJECT_SETTINGS_HISTORY_HEADER,
+            "    Swing,\n    RunMode,",
+            "    Swing,\n    SyncMode,\n    RunMode,",
+            "restored Project Sync history action is rejected",
+        ),
+        (
+            PROJECT_SETTINGS_HISTORY_HEADER,
+            "    uint8_t scaleInheritanceFlags = 0x03U;",
+            "    uint8_t scaleInheritanceFlags = 0x03U;\n"
+            "    uint8_t syncMode = 0U;",
+            "restored Project Sync snapshot field is rejected",
+        ),
+        (
+            STANDALONE_FEATURE_ASSEMBLY_SOURCE,
+            "        deviceSettingsServices,",
+            "        core::handler::DeviceSettingsDomainServices{\n"
+            "            {state.midiSync, state.deviceSettingsStore}\n"
+            "        },",
+            "separate Project composition path is rejected",
+        ),
+        (
+            PROJECT_MENU_MODEL_SOURCE,
+            '    addRow(page, row("Clock", clockModeValue(context.clockMode),',
+            '    addRow(page, row("Clock Removed", "",',
+            "removing the Transport Clock Device control is rejected",
+        ),
+        (
+            VIEW_SWITCHER_HANDLER_TEST,
+            "    assert(h.state.midiSync.mode.get() == "
+            "core::state::MidiSyncMode::SLAVE);",
+            "    (void)h.state.midiSync.mode.get();",
+            "Undo/Redo Sync-independence proof removal is rejected",
         ),
     )
 
     checks: list[tuple[bool, str]] = [(
         not midi_sync_command_contract_errors(fixture),
-        "the checked-in L-R07-01 command contract is accepted",
+        "the checked-in final R-07 ownership contract is accepted",
     )]
     for rel, before, after, description in mutations:
         mutated = mutate(rel, before, after)
@@ -8137,7 +8350,9 @@ def main(show_inventory: bool = False) -> int:
         "sdl/entry/SdlProjectSessionRuntime.hpp",
         "test/test_AtomicProductFile/test_main.cpp",
         "test/test_ProjectHandler/test_main.cpp",
+        "test/test_ProjectHistoryCoordinator/test_main.cpp",
         "test/test_ProjectMenuModel/test_main.cpp",
+        "test/test_ViewSwitcherHandler/test_main.cpp",
         "test/test_ProjectFileStore/test_main.cpp",
         DIAGNOSTICS_PLACEMENT_GATE,
     ):

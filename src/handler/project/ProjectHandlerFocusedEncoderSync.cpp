@@ -469,7 +469,7 @@ FLASHMEM void ProjectHandler::syncFocusedEncoder() {
                 configureOptDiscrete(
                     encoders_,
                     3,
-                    indexToNormalized(midiSyncModeIndex(midi_sync_.mode.get()), 3)
+                    indexToNormalized(device_settings_.currentChoiceIndex(0U), 3)
                 );
                 return;
             case 3:

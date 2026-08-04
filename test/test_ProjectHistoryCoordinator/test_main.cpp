@@ -776,6 +776,24 @@ void test_empty_and_typed_labels_follow_history_revision() {
     std::cout << "[PASS] empty and typed labels track the public revision\n";
 }
 
+void test_remaining_project_settings_labels_survive_sync_cleanup() {
+    project::ProjectHistoryCoordinator history;
+    char label[48]{};
+    constexpr uintptr_t kRunMode = 0x301U;
+
+    history.eventSink().notifyCommitted(
+        project::ProjectHistoryDomain::Settings,
+        kRunMode,
+        static_cast<uint8_t>(
+            project::ProjectSettingsHistoryActionKind::RunMode
+        )
+    );
+    history.formatUndoLabel(label, sizeof(label));
+    assert(std::strcmp(label, "Undo Run Mode") == 0);
+
+    std::cout << "[PASS] remaining Project Settings labels survive Sync cleanup\n";
+}
+
 void test_active_step_draft_blocks_local_and_global_history_before_boundaries() {
     {
         Harness h;
@@ -865,6 +883,7 @@ int main() {
     test_sequencer_scope_eviction_prunes_a_cross_domain_middle_entry();
     test_redo_eviction_keeps_only_the_reachable_prefix();
     test_empty_and_typed_labels_follow_history_revision();
+    test_remaining_project_settings_labels_survive_sync_cleanup();
     test_active_step_draft_blocks_local_and_global_history_before_boundaries();
 
     std::cout << "\nAll ProjectHistoryCoordinator tests passed.\n";

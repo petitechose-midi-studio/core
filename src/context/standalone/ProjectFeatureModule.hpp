@@ -12,7 +12,6 @@
 #include "handler/project/ProjectLifecycleDomainServices.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/settings/SequencerSettingsDomainServices.hpp"
-#include "state/MidiSyncState.hpp"
 #include "state/MacroEditState.hpp"
 #include "state/MacroState.hpp"
 #include "state/project/ProjectNavigationState.hpp"
@@ -37,7 +36,6 @@ public:
         core::state::project::ProjectTrackState& projectTracks;
         core::state::project::ProjectTrackDomainServices trackDomain;
         core::state::StatusBarState& statusBar;
-        core::state::MidiSyncState& midiSync;
         core::state::macro::MacroPagesState& pages;
         core::state::macro::MacroUiState& macroUi;
         core::state::MacroState& macros;
@@ -51,6 +49,7 @@ public:
     };
 
     ProjectFeatureModule(StateRefs stateRefs,
+                         core::handler::DeviceSettingsDomainServices deviceSettings,
                          core::handler::SequencerSettingsDomainServices sequencerSettings,
                          core::handler::MacroEditDomainServices macroEditServices,
                          oc::api::EncoderAPI& encoders,

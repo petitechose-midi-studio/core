@@ -165,8 +165,6 @@ FLASHMEM const char* settingsActionLabel(uint8_t rawKind) {
             return "Tempo";
         case Kind::Swing:
             return "Project Swing";
-        case Kind::SyncMode:
-            return "Sync Mode";
         case Kind::RunMode:
             return "Run Mode";
         case Kind::StepPasteMode:

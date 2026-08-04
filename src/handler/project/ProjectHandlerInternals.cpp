@@ -147,18 +147,6 @@ FLASHMEM float normalizedTurnsForStepRate(int stepCount, float stepsPerTurn) {
     return static_cast<float>(stepCount - 1) / stepsPerTurn;
 }
 
-FLASHMEM int midiSyncModeIndex(core::state::MidiSyncMode mode) {
-    switch (mode) {
-        case core::state::MidiSyncMode::MASTER:
-            return 0;
-        case core::state::MidiSyncMode::SLAVE:
-            return 1;
-        case core::state::MidiSyncMode::AUTO:
-        default:
-            return 2;
-    }
-}
-
 FLASHMEM core::state::MidiSyncMode midiSyncModeAt(int index) {
     switch (wrapIndex(index, 3)) {
         case 0:

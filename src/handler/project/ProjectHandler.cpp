@@ -19,6 +19,7 @@ const char FEEDBACK_PREVIEW_PENDING[] PROGMEM = "Preview - Apply or Back";
 }  // namespace
 
 FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
+                                        DeviceSettingsDomainServices deviceSettings,
                                         SequencerSettingsDomainServices sequencerSettings,
                                         MacroEditDomainServices macroEditServices,
                                         oc::api::EncoderAPI& encoders,
@@ -31,7 +32,7 @@ FLASHMEM ProjectHandler::ProjectHandler(StateRefs state,
     , project_tracks_(state.projectTracks)
     , track_domain_(state.trackDomain)
     , status_bar_(state.statusBar)
-    , midi_sync_(state.midiSync)
+    , device_settings_(deviceSettings)
     , pages_(state.pages)
     , macro_ui_(state.macroUi)
     , macros_(state.macros)

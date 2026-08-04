@@ -142,6 +142,12 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
 #if OC_ENABLE_STATS
     core::diagnostics::logMemoryFootprint("standalone-feature-sequencer");
 #endif
+    const core::handler::DeviceSettingsDomainServices deviceSettingsServices{
+        core::handler::DeviceSettingsDomainServices::StateRefs{
+            state.midiSync,
+            state.deviceSettingsStore,
+        }
+    };
     project_feature_ =
         core::app::makeExtmemUnique<core::context::standalone::ProjectFeatureModule>(
             core::context::standalone::ProjectFeatureModule::StateRefs{
@@ -153,7 +159,6 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                     state
                 ),
                 state.statusBar,
-                state.midiSync,
                 state.pages,
                 state.macroUi,
                 state.macros,
@@ -169,6 +174,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
                     productCatalog
                 ),
             },
+            deviceSettingsServices,
             core::handler::SequencerSettingsDomainServices{
                 core::handler::SequencerSettingsDomainServices::StateRefs{
                     state.sequencerTracks,
@@ -197,12 +203,7 @@ FLASHMEM StandaloneFeatureAssembly::StandaloneFeatureAssembly(
             state.sequencerTracks,
             core::handler::SequencerHistoryDomainServices::fromCoreState(state),
         },
-        core::handler::DeviceSettingsDomainServices{
-            core::handler::DeviceSettingsDomainServices::StateRefs{
-                state.midiSync,
-                state.deviceSettingsStore,
-            }
-        },
+        deviceSettingsServices,
         core::handler::SequencerSettingsDomainServices{
             core::handler::SequencerSettingsDomainServices::StateRefs{
                 state.sequencerTracks,
