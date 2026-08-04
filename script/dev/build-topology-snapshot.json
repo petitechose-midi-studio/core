@@ -44,7 +44,7 @@
     "core/.github/release-tooling.json": "9ac98d99fdb0b5f83a249a3b2e50a5f92e75674e8bba6d38b0cc420a738003a7",
     "core/.github/workflows/candidate.yml": "b75f74d421e8db52c7d44e3fdbec6be2962b502a0bc0d52c2c8414bd5fc64f6a",
     "core/.github/workflows/ci.yml": "4f80c3fa1367ee5ad6196dc4227af459969a36d32d28836724d7486e7387792c",
-    "core/CMakeLists.txt": "8be8e5ca8f5fbc23182da88f1b3d42f53aa8120f2828039ce5eeb6c13f514804",
+    "core/CMakeLists.txt": "080b36ea4bccecf44cc6efb69d9b892dbe7dc0eb292623cb74ab5615e266157a",
     "core/cmake/MsCoreSources.cmake": "0bfe864d1c00f8fd383e67f1d2ecdf25b19b19ef047a8c4d2e6cec763c8aece4",
     "core/library.json": "54c23dc4b513a85b4528944fb2630e4f93f5d9c8561423341d8ca2b727d0b4b9",
     "core/oc-native-sdk.ini": "e1a87b717aa40d5d1eddac0c7c4a179932d25373cd2b0bc0679b72cf9782a3a5",
@@ -274,7 +274,7 @@
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "coreNativeCmakeImplementations": {
-      "count": 316,
+      "count": 317,
       "paths": [
         "src/context/standalone/MacroOverlayInvalidationBindings.cpp",
         "src/context/standalone/MacroViewActivationContract.cpp",
@@ -406,6 +406,7 @@
         "src/persistence/ProjectSnapshotPersistenceCodec.cpp",
         "src/persistence/ProjectStatePersistenceCodec.cpp",
         "src/persistence/ProjectTrackStatePersistenceCodec.cpp",
+        "src/persistence/ProjectWorkspacePool.cpp",
         "src/persistence/SequencerCcLanePersistenceCodec.cpp",
         "src/persistence/SequencerGraphAssetCodec.cpp",
         "src/persistence/SequencerGraphRecordCodec.cpp",
@@ -593,10 +594,10 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "45d4212ad18ded78dfd350b0cc46381072aac8404c47b20a5c20195e389608ac"
+      "sha256": "b207a09ec0be8a2c09b3a8cdfc53750aa47cdcc5993456a3654dd5338f553ffe"
     },
     "coreSdlWasmImplementations": {
-      "count": 402,
+      "count": 403,
       "paths": [
         "src/context/StandaloneContext.cpp",
         "src/context/standalone/DeviceSettingsSelectorPresenter.cpp",
@@ -762,6 +763,7 @@
         "src/persistence/ProjectSnapshotPersistenceCodec.cpp",
         "src/persistence/ProjectStatePersistenceCodec.cpp",
         "src/persistence/ProjectTrackStatePersistenceCodec.cpp",
+        "src/persistence/ProjectWorkspacePool.cpp",
         "src/persistence/SequencerCcLanePersistenceCodec.cpp",
         "src/persistence/SequencerGraphAssetCodec.cpp",
         "src/persistence/SequencerGraphRecordCodec.cpp",
@@ -1001,10 +1003,10 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "b5905d438c2f3429aeb5283394648eb39856d090d516b08fc910184ef54d4d5f"
+      "sha256": "aff71ea2d725cfb311f8552fe12cdb145bf94befbaf18da5ff549b7829511609"
     },
     "coreTeensyImplementations": {
-      "count": 402,
+      "count": 403,
       "paths": [
         "src/config/platform-teensy/LvglMemory.cpp",
         "src/context/StandaloneContext.cpp",
@@ -1171,6 +1173,7 @@
         "src/persistence/ProjectSnapshotPersistenceCodec.cpp",
         "src/persistence/ProjectStatePersistenceCodec.cpp",
         "src/persistence/ProjectTrackStatePersistenceCodec.cpp",
+        "src/persistence/ProjectWorkspacePool.cpp",
         "src/persistence/SequencerCcLanePersistenceCodec.cpp",
         "src/persistence/SequencerGraphAssetCodec.cpp",
         "src/persistence/SequencerGraphRecordCodec.cpp",
@@ -1409,15 +1412,16 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "5e89cd447d9635f4a10093f87089bc98c76492e2e6048add9712e8d63d704492"
+      "sha256": "dd062f9b600651a934a0567b86baa721214e6f2c3ec3f9ec034ca563e6fbb17e"
     },
     "coreTotalHeaders": {
-      "count": 448,
+      "count": 451,
       "paths": [
         "src/api/InputAPI.hpp",
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
         "src/app/OverlayTypes.hpp",
+        "src/app/PhaseRetainingDeadline.hpp",
         "src/app/ViewTypes.hpp",
         "src/config/App.hpp",
         "src/config/InputIDs.hpp",
@@ -1465,6 +1469,7 @@
         "src/context/standalone/ux/StandaloneUxSurfaces.hpp",
         "src/diagnostics/MemoryFootprintReporter.hpp",
         "src/diagnostics/PerformanceReporter.hpp",
+        "src/diagnostics/PsramSpanTracker.hpp",
         "src/diagnostics/StorageQualificationProbe.hpp",
         "src/handler/common/ButtonReleaseLatch.hpp",
         "src/handler/common/ModalSelectionUtils.hpp",
@@ -1591,6 +1596,7 @@
         "src/persistence/ProjectStatePersistenceCodec.hpp",
         "src/persistence/ProjectStatePersistencePayloads.hpp",
         "src/persistence/ProjectTrackStatePersistenceCodec.hpp",
+        "src/persistence/ProjectWorkspacePool.hpp",
         "src/persistence/SequencerCcLanePersistenceCodec.hpp",
         "src/persistence/SequencerGraphAssetCodec.hpp",
         "src/persistence/SequencerGraphRecordCodec.hpp",
@@ -1863,10 +1869,10 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "26d3c9c0cd711ace201a5e2828ea9b65db06e5d83d67073a61eb21486add1464"
+      "sha256": "3eca7abb65367f1cd72b90e3780dce0c80e16d9297d5032dd30e8bc6cfa12d0d"
     },
     "coreTotalImplementations": {
-      "count": 403,
+      "count": 404,
       "paths": [
         "src/config/platform-teensy/LvglMemory.cpp",
         "src/context/StandaloneContext.cpp",
@@ -2033,6 +2039,7 @@
         "src/persistence/ProjectSnapshotPersistenceCodec.cpp",
         "src/persistence/ProjectStatePersistenceCodec.cpp",
         "src/persistence/ProjectTrackStatePersistenceCodec.cpp",
+        "src/persistence/ProjectWorkspacePool.cpp",
         "src/persistence/SequencerCcLanePersistenceCodec.cpp",
         "src/persistence/SequencerGraphAssetCodec.cpp",
         "src/persistence/SequencerGraphRecordCodec.cpp",
@@ -2272,7 +2279,7 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "f1b13e5e23c3d7f21c3b42cd5b23fd6a8c2be7047232266a5d23632770e0ee86"
+      "sha256": "e3d2aae5eece1c0f81667949bfe1659f0bc24563ac4f57bc99adb58d3bf28e29"
     },
     "deviceSupportHeaders": {
       "count": 9,
