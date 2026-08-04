@@ -133,6 +133,14 @@ MACRO_HISTORY_HEADER = "src/state/macro/MacroHistory.hpp"
 MACRO_HISTORY_SOURCE = "src/state/macro/MacroHistory.cpp"
 SEQUENCER_HISTORY_HEADER = "src/state/sequencer/SequencerHistory.hpp"
 SEQUENCER_HISTORY_SOURCE = "src/state/sequencer/SequencerHistory.cpp"
+PSRAM_SPAN_TRACKER_HEADER = "src/diagnostics/PsramSpanTracker.hpp"
+MEMORY_FOOTPRINT_REPORTER_HEADER = (
+    "src/diagnostics/MemoryFootprintReporter.hpp"
+)
+MEMORY_FOOTPRINT_REPORTER_SOURCE = (
+    "src/diagnostics/MemoryFootprintReporter.cpp"
+)
+DIAGNOSTICS_PLACEMENT_GATE = "script/dev/teensy_diagnostics_placement.py"
 
 STRICT_EXTMEM_CALL = re.compile(
     r"\b(?:allocate|free)ExtmemStrict\s*\("
@@ -1021,6 +1029,174 @@ def history_admission_contract_errors(files: dict[str, str]) -> list[str]:
         ),
         "global admission must substitute one domain then test both caps",
     )
+
+    return errors
+
+
+def psram_tracker_contract_errors(files: dict[str, str]) -> list[str]:
+    """Freeze L-R14-07 capacity, placement and masked publication."""
+    errors: list[str] = []
+
+    def require(
+        rel: str,
+        pattern: str,
+        description: str,
+        count: int = 1,
+    ) -> None:
+        found = regex_count_dotall(pattern, files.get(rel, ""))
+        if found != count:
+            errors.append(
+                f"{rel}: {description} (expected {count}, found {found})"
+            )
+
+    for contract in (
+        (
+            PSRAM_SPAN_TRACKER_HEADER,
+            r"PSRAM_SPAN_CAPACITY\s*=\s*1'034U",
+            "authoritative all-owner capacity must remain 1,034",
+        ),
+        (
+            PSRAM_SPAN_TRACKER_HEADER,
+            r"sizeof\(PsramSpan\)\s*==\s*12U",
+            "offset-based tracker entry must remain exactly 12 B",
+        ),
+        (
+            PSRAM_SPAN_TRACKER_HEADER,
+            r"PSRAM_SPAN_TABLE_BYTES\s*==\s*12'408U",
+            "authoritative table must remain exactly 12,408 B",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            r"EXTMEM\s+detail::PsramSpanTable\s+psramSpanTable\s*;",
+            "tracker table must be static diagnostics PSRAM",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            r"DMAMEM\s+uint8_t\s+memoryHighWaterStorage",
+            "compact published tracker state must remain in RAM2",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            r"sizeof\(MemoryHighWater\)\s*<=\s*128U",
+            "compact diagnostics state must remain within 128 B",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_HEADER,
+            r"bool\s+psramLargestBlockValid\s*=\s*false",
+            "public telemetry must distinguish true zero from invalid largest",
+        ),
+        (
+            DIAGNOSTICS_PLACEMENT_GATE,
+            r"PSRAM_SPAN_TABLE_BYTES\s*=\s*12_408",
+            "post-link gate must enforce exact tracker table bytes",
+        ),
+        (
+            DIAGNOSTICS_PLACEMENT_GATE,
+            r"EXTRAM_START.*?psramSpanTable.*?PSRAM_SPAN_TABLE_BYTES",
+            "post-link gate must enforce PSRAM table placement and size",
+        ),
+        (
+            DIAGNOSTICS_PLACEMENT_GATE,
+            r'"psramSpanTable".*?"core::diagnostics::detail::PsramSpanTracker"',
+            "normal firmware gate must reject tracker table and code",
+        ),
+    ):
+        require(*contract)
+
+    tracker_code = cpp_code_mask(files.get(PSRAM_SPAN_TRACKER_HEADER, ""))
+    if re.search(r"\b(?:new|delete|malloc|calloc|realloc|free)\b", tracker_code):
+        errors.append(
+            f"{PSRAM_SPAN_TRACKER_HEADER}: tracker must remain allocation-free"
+        )
+    if "InterruptGuard" in tracker_code:
+        errors.append(
+            f"{PSRAM_SPAN_TRACKER_HEADER}: table work must remain outside the mask"
+        )
+
+    memory_types = cpp_type_bodies(
+        files.get(MEMORY_FOOTPRINT_REPORTER_SOURCE, ""),
+        "MemoryHighWater",
+    )
+    if len(memory_types) != 1:
+        errors.append(
+            f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: MemoryHighWater must have "
+            f"one balanced definition (found {len(memory_types)})"
+        )
+    elif "PsramSpanTable" in cpp_code_mask(memory_types[0]):
+        errors.append(
+            f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: tracker table must not be "
+            "embedded in RAM2 state"
+        )
+
+    publication_bodies = cpp_function_bodies(
+        files.get(MEMORY_FOOTPRINT_REPORTER_SOURCE, ""),
+        "publishPsramTracker",
+    )
+    if len(publication_bodies) != 1:
+        errors.append(
+            f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: publishPsramTracker must have "
+            f"one balanced definition (found {len(publication_bodies)})"
+        )
+    else:
+        publication = cpp_code_mask(publication_bodies[0])
+        guard = publication.find("oc::realtime::InterruptGuard lock;")
+        if guard < 0:
+            errors.append(
+                f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: tracker publication "
+                "must own one explicit interrupt guard"
+            )
+        else:
+            masked_publication = publication[guard:]
+            assignment_count = len(re.findall(
+                r"state\.psramPublished\.[A-Za-z0-9_]+\s*=\s*"
+                r"snapshot\.[A-Za-z0-9_]+\s*;",
+                masked_publication,
+            ))
+            if assignment_count != 8:
+                errors.append(
+                    f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: LOCK-T publication "
+                    f"must contain exactly eight scalar field assignments (found "
+                    f"{assignment_count})"
+                )
+            if re.search(
+                r"\b(?:for|while)\s*\(|psramSpanTable|sm_[A-Za-z0-9_]+\s*\(",
+                masked_publication,
+            ):
+                errors.append(
+                    f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: LOCK-T publication "
+                    "must not loop, scan PSRAM or call the allocator"
+                )
+
+    snapshot_bodies = cpp_function_bodies(
+        files.get(MEMORY_FOOTPRINT_REPORTER_SOURCE, ""),
+        "dynamicMemorySnapshot",
+    )
+    if len(snapshot_bodies) != 1:
+        errors.append(
+            f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: dynamicMemorySnapshot must "
+            f"have one balanced definition (found {len(snapshot_bodies)})"
+        )
+    else:
+        snapshot_body = cpp_code_mask(snapshot_bodies[0])
+        published_reads = len(re.findall(
+            r"state\.psramPublished\.[A-Za-z0-9_]+",
+            snapshot_body,
+        ))
+        failure_reads = len(re.findall(
+            r"state\.psramAllocationFailures\b",
+            snapshot_body,
+        ))
+        if published_reads != 8 or failure_reads != 1:
+            errors.append(
+                f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: LOCK-T snapshot must "
+                "contain eight published reads plus one failure-counter read "
+                f"(found {published_reads}+{failure_reads})"
+            )
+        if re.search(r"\b(?:for|while)\s*\(|psramSpanTable", snapshot_body):
+            errors.append(
+                f"{MEMORY_FOOTPRINT_REPORTER_SOURCE}: public snapshot must not "
+                "loop or access the PSRAM table"
+            )
 
     return errors
 
@@ -5095,6 +5271,94 @@ def history_admission_self_test() -> int:
     return 0
 
 
+def psram_tracker_self_test() -> int:
+    paths = (
+        PSRAM_SPAN_TRACKER_HEADER,
+        MEMORY_FOOTPRINT_REPORTER_HEADER,
+        MEMORY_FOOTPRINT_REPORTER_SOURCE,
+        DIAGNOSTICS_PLACEMENT_GATE,
+    )
+    fixture = {
+        rel: (ROOT / rel).read_text(encoding="utf-8")
+        for rel in paths
+    }
+
+    def mutate(rel: str, before: str, after: str) -> dict[str, str]:
+        result = dict(fixture)
+        result[rel] = result[rel].replace(before, after, 1)
+        return result
+
+    mutations = (
+        (
+            PSRAM_SPAN_TRACKER_HEADER,
+            "PSRAM_SPAN_CAPACITY = 1'034U",
+            "PSRAM_SPAN_CAPACITY = 1'033U",
+            "all-owner capacity drift is rejected",
+        ),
+        (
+            PSRAM_SPAN_TRACKER_HEADER,
+            "PSRAM_SPAN_TABLE_BYTES == 12'408U",
+            "PSRAM_SPAN_TABLE_BYTES == 12'407U",
+            "table-byte drift is rejected",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            "EXTMEM detail::PsramSpanTable psramSpanTable;",
+            "DMAMEM detail::PsramSpanTable psramSpanTable;",
+            "table moved back to RAM2 is rejected",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            "    state.psramPublished.largestBlockValid = "
+            "snapshot.largestBlockValid;",
+            "",
+            "seven-field partial publication is rejected",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_SOURCE,
+            "    state.psramPublished.poolBytes = snapshot.poolBytes;",
+            "    (void)psramSpanTable[0];\n"
+            "    state.psramPublished.poolBytes = snapshot.poolBytes;",
+            "PSRAM table access under mask is rejected",
+        ),
+        (
+            MEMORY_FOOTPRINT_REPORTER_HEADER,
+            "bool psramLargestBlockValid = false;",
+            "bool legacyLargestBlockState = false;",
+            "ambiguous largest-block validity is rejected",
+        ),
+        (
+            DIAGNOSTICS_PLACEMENT_GATE,
+            '"core::diagnostics::detail::PsramSpanTracker",',
+            '"legacy::PsramSpanTracker",',
+            "normal-image tracker-code escape is rejected",
+        ),
+    )
+
+    checks: list[tuple[bool, str]] = [(
+        not psram_tracker_contract_errors(fixture),
+        "the checked-in L-R14-07 tracker contract is accepted",
+    )]
+    for rel, before, after, description in mutations:
+        mutated = mutate(rel, before, after)
+        checks.append((
+            mutated[rel] != fixture[rel]
+            and bool(psram_tracker_contract_errors(mutated)),
+            description,
+        ))
+
+    failures = [description for ok, description in checks if not ok]
+    if failures:
+        for failure in failures:
+            print(f"SELF-TEST ERROR: {failure}")
+        return 1
+    print(
+        "PSRAM tracker architecture self-tests: "
+        f"OK ({len(checks)}/{len(checks)})"
+    )
+    return 0
+
+
 def self_test() -> int:
     step_draft_fixture = {
         path.relative_to(ROOT).as_posix(): path.read_text(encoding="utf-8")
@@ -7500,12 +7764,14 @@ def main(show_inventory: bool = False) -> int:
         "sdl/entry/SdlProjectSessionRuntime.hpp",
         "test/test_AtomicProductFile/test_main.cpp",
         "test/test_ProjectFileStore/test_main.cpp",
+        DIAGNOSTICS_PLACEMENT_GATE,
     ):
         contract_sources[rel] = (ROOT / rel).read_text(encoding="utf-8")
     errors.extend(step_draft_transition_contract_errors(contract_sources))
     errors.extend(extmem_lifetime_contract_errors(contract_sources))
     errors.extend(persistence_lease_contract_errors(contract_sources))
     errors.extend(history_admission_contract_errors(contract_sources))
+    errors.extend(psram_tracker_contract_errors(contract_sources))
 
     platformio = PLATFORMIO.read_text(encoding="utf-8")
     if "board_build.ldscript = script/pio/imxrt1062_t41_product.ld" not in platformio:
@@ -7822,6 +8088,11 @@ if __name__ == "__main__":
         help="run only the deterministic D-UNDO admission fixtures",
     )
     parser.add_argument(
+        "--self-test-psram-tracker",
+        action="store_true",
+        help="run only the deterministic L-R14-07 tracker fixtures",
+    )
+    parser.add_argument(
         "--inventory",
         action="store_true",
         help="print the full advisory >800-line inventory",
@@ -7831,6 +8102,7 @@ if __name__ == "__main__":
         args.self_test,
         args.self_test_persistence,
         args.self_test_history_admission,
+        args.self_test_psram_tracker,
     )) > 1:
         parser.error("choose exactly one architecture self-test")
     if args.self_test:
@@ -7839,4 +8111,6 @@ if __name__ == "__main__":
         sys.exit(persistence_self_test())
     if args.self_test_history_admission:
         sys.exit(history_admission_self_test())
+    if args.self_test_psram_tracker:
+        sys.exit(psram_tracker_self_test())
     sys.exit(main(args.inventory))
