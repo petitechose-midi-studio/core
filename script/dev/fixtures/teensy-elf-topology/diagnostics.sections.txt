@@ -1,0 +1,8 @@
+Section Headers:
+  [Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al
+  [ 1] .text.headers     PROGBITS        60000000 001000 001404 00  WA  0   0  4
+  [ 2] .text.code        PROGBITS        60001404 002404 0c3600 00  AX  0   0  8
+  [ 3] .text.itcm        PROGBITS        00000000 0f8000 0484f0 00  AX  0   0 16
+  [ 4] .ARM.exidx        ARM_EXIDX       000484f0 1404f0 000008 00  AL  3   0  4
+  [ 5] .data             PROGBITS        20000000 141000 011160 00  WA  0   0 4096
+  [ 6] .debug_frame      PROGBITS        00000000 153000 002600 00      0   0  4

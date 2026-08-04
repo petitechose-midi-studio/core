@@ -1,0 +1,4 @@
+_etext T 484f8
+_flexram_bank_config A aaafffff
+_itcm_block_count A a
+_stext T 0

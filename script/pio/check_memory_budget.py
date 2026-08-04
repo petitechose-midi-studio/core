@@ -24,6 +24,10 @@ from teensy_diagnostics_placement import (  # noqa: E402
     normal_build_diagnostics_violations,
 )
 from teensy_product_placement import product_placement_violations  # noqa: E402
+from teensy_elf_topology import (  # noqa: E402
+    topology_summary,
+    topology_violations,
+)
 
 
 def project_option(action_env, name: str, default: int) -> int:
@@ -60,6 +64,17 @@ def arm_nm_path(action_env) -> Path:
     raise RuntimeError(f"arm-none-eabi-nm not found under {package_dir}")
 
 
+def arm_readelf_path(action_env) -> Path:
+    package_dir = Path(
+        action_env.PioPlatform().get_package_dir("toolchain-gccarmnoneeabi-teensy")
+    )
+    for name in ("arm-none-eabi-readelf", "arm-none-eabi-readelf.exe"):
+        candidate = package_dir / "bin" / name
+        if candidate.exists():
+            return candidate
+    raise RuntimeError(f"arm-none-eabi-readelf not found under {package_dir}")
+
+
 def elf_placement_violations(action_env, elf_path: Path) -> tuple[str, ...]:
     result = subprocess.run(
         [str(arm_nm_path(action_env)), "-S", "--radix=d", "-C", str(elf_path)],
@@ -75,6 +90,35 @@ def elf_placement_violations(action_env, elf_path: Path) -> tuple[str, ...]:
     else:
         violations += normal_build_diagnostics_violations(result.stdout)
     return violations
+
+
+def elf_topology_metadata(action_env, elf_path: Path) -> tuple[str, str]:
+    sections = subprocess.run(
+        [str(arm_readelf_path(action_env)), "-W", "-S", str(elf_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if sections.returncode != 0:
+        raise RuntimeError(
+            f"arm-none-eabi-readelf failed for {elf_path}:\n{sections.stderr}"
+        )
+
+    symbols = subprocess.run(
+        [
+            str(arm_nm_path(action_env)),
+            "--defined-only",
+            "--format=posix",
+            "--radix=x",
+            str(elf_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if symbols.returncode != 0:
+        raise RuntimeError(f"arm-none-eabi-nm failed for {elf_path}:\n{symbols.stderr}")
+    return sections.stdout, symbols.stdout
 
 
 def check_memory_budget(target, source, env) -> None:
@@ -99,13 +143,19 @@ def check_memory_budget(target, source, env) -> None:
         extram_min_free=project_option(env, "custom_extram_min_free", 2097152),
     )
     print(summary(usage, budget))
+    section_metadata, symbol_metadata = elf_topology_metadata(env, elf_path)
+    topology_errors = topology_violations(section_metadata, symbol_metadata)
+    if not topology_errors:
+        print(topology_summary(section_metadata, symbol_metadata))
     violations = budget_violations(usage, budget) + elf_placement_violations(
         env,
         elf_path,
-    )
+    ) + topology_errors
     if violations:
         details = "\n".join(f"  - {item}" for item in violations)
-        raise RuntimeError(f"Teensy memory or placement gate failed:\n{details}")
+        raise RuntimeError(
+            f"Teensy memory, placement, or ELF topology gate failed:\n{details}"
+        )
 
 
 pio_env.AddPostAction(
