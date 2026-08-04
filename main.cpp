@@ -734,7 +734,11 @@ FLASHMEM void setup() {
     core::diagnostics::storage_qualification::begin();
 
     OC_LOG_INFO("=== MIDI Studio Core Boot ===");
-    OC_LOG_INFO("App {}Hz, LVGL {}Hz", Config::Timing::APP_HZ, Config::Timing::LVGL_HZ);
+    OC_LOG_INFO(
+        "App {}Hz, LVGL {}Hz",
+        Config::Timing::INPUT_APP_ADMISSION_HZ,
+        Config::Timing::LVGL_SERVICE_HZ
+    );
 
 #if defined(MS_PROJECT_STORE_SMOKE)
     const bool storageReady = initStorage();
@@ -776,8 +780,10 @@ FLASHMEM void setup() {
 }
 
 // Timing constants for main loop
-constexpr uint32_t APP_PERIOD_US = 1'000'000 / Config::Timing::APP_HZ;
-constexpr uint32_t LVGL_PERIOD_US = 1'000'000 / Config::Timing::LVGL_HZ;
+constexpr uint32_t APP_PERIOD_US =
+    1'000'000U / Config::Timing::INPUT_APP_ADMISSION_HZ;
+constexpr uint32_t LVGL_PERIOD_US =
+    1'000'000U / Config::Timing::LVGL_SERVICE_HZ;
 void loop() {
 #if defined(MS_PROJECT_STORE_SMOKE)
     static uint32_t lastHeartbeatMs = 0;
@@ -874,7 +880,7 @@ void loop() {
         }
 #endif
 
-        // Refresh LVGL at lower frequency to reduce CPU load.
+        // Service LVGL on its independently owned lower cadence.
         lvglAccumulator += APP_PERIOD_US;
         if (lvglAccumulator >= LVGL_PERIOD_US) {
             lvglAccumulator = 0;
