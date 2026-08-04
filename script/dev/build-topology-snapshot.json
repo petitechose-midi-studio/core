@@ -1,7 +1,7 @@
 {
   "conditionalSupplierLots": {
     "L-R18-02F": "evidence-only-existing-list",
-    "L-R18-02H": "activate-targets-and-explicit-owned-lists",
+    "L-R18-02H": "evidence-only-existing-lists",
     "L-R18-02N": "activate-explicit-owned-list",
     "L-R18-02U": "activate-target-and-explicit-owned-list"
   },
@@ -147,28 +147,28 @@
     },
     "halCommon": {
       "cleanExpected": true,
-      "commit": "4ead7b65eb5bfa5af4036b96fe53bb6bc0ca24f7",
-      "tree": "2220845278ef11239b866676a41e877b67f151d2"
+      "commit": "633a6e7adc55d4a445a6ed356bf4da9ebbb04d7e",
+      "tree": "92e3688c3905869991e23fb6bbf9c878ac18ff7b"
     },
     "halMidi": {
       "cleanExpected": true,
-      "commit": "f1f080449cc37378977a30aa344a7a6b4b209c27",
-      "tree": "35593afd04c16b51ca7cc2a7493cd1b0d110a615"
+      "commit": "973b0edb5cb86db5353527b434e80ec47e8f7381",
+      "tree": "4caa5cc1dbf017994e6ec0f44fc34a4e56eca09f"
     },
     "halNet": {
       "cleanExpected": true,
-      "commit": "f37a8ed152ee0c02a2926ceed4ff011c36a249fe",
-      "tree": "27c11b560877bb9d57be455b97289c515bf7ab34"
+      "commit": "250d5bab37d8853dc8fd4584febbca85248488d0",
+      "tree": "aad9ce8f9adb1aefef8d4efa017e5cccbedd478c"
     },
     "halSdl": {
       "cleanExpected": true,
-      "commit": "44f1af89940ecd6dc2cfc3f8b0a99bf253931734",
-      "tree": "5d7662e36252e990bdc742e6311dcd6e259915e2"
+      "commit": "3aec45393b08a5b7d7948cf4649e3748797c4914",
+      "tree": "27bfaef6ceb334848d756ba6ddc884fb7d941a92"
     },
     "halTeensy": {
       "cleanExpected": true,
-      "commit": "9dbe63fda48be34134277f24fc559d900dc9a76f",
-      "tree": "5f24a8e4614cf83024b1306012fb5b3b72bd4ef6"
+      "commit": "870365a29755c1d90e2da36df337d5922a4a40f7",
+      "tree": "b2594f540c8d155db6b4ff639c14c860f8f02b58"
     },
     "note": {
       "cleanExpected": true,
@@ -2379,12 +2379,13 @@
       }
     },
     "halCommon": {
-      "cmakeExplicitSourceList": false,
-      "cmakeLibraryTargets": [],
+      "cmakeExplicitSourceList": true,
+      "cmakeLibraryTargets": [
+        "oc_hal_common"
+      ],
       "cmakeRecursiveGlob": false,
       "platformioSourceFilter": [
-        "+<**/*.cpp>",
-        "-<main.cpp>"
+        "-<*>"
       ],
       "sources": {
         "count": 0,
@@ -2393,8 +2394,10 @@
       }
     },
     "halMidi": {
-      "cmakeExplicitSourceList": false,
-      "cmakeLibraryTargets": [],
+      "cmakeExplicitSourceList": true,
+      "cmakeLibraryTargets": [
+        "oc_hal_midi"
+      ],
       "cmakeRecursiveGlob": false,
       "platformioSourceFilter": null,
       "sources": {
@@ -2406,8 +2409,12 @@
       }
     },
     "halNet": {
-      "cmakeExplicitSourceList": false,
-      "cmakeLibraryTargets": [],
+      "cmakeExplicitSourceList": true,
+      "cmakeLibraryTargets": [
+        "oc_hal_net",
+        "oc_hal_net_native",
+        "oc_hal_net_wasm"
+      ],
       "cmakeRecursiveGlob": false,
       "platformioSourceFilter": null,
       "sources": {
@@ -2420,8 +2427,10 @@
       }
     },
     "halSdl": {
-      "cmakeExplicitSourceList": false,
-      "cmakeLibraryTargets": [],
+      "cmakeExplicitSourceList": true,
+      "cmakeLibraryTargets": [
+        "oc_hal_sdl"
+      ],
       "cmakeRecursiveGlob": false,
       "platformioSourceFilter": null,
       "sources": {
@@ -2433,12 +2442,19 @@
       }
     },
     "halTeensy": {
-      "cmakeExplicitSourceList": false,
-      "cmakeLibraryTargets": [],
+      "cmakeExplicitSourceList": true,
+      "cmakeLibraryTargets": [
+        "oc_hal_teensy"
+      ],
       "cmakeRecursiveGlob": false,
       "platformioSourceFilter": [
-        "+<**/*.cpp>",
-        "-<main.cpp>"
+        "+<oc/hal/teensy/BuiltInSD.cpp>",
+        "+<oc/hal/teensy/HighResolutionClock.cpp>",
+        "+<oc/hal/teensy/Ili9341.cpp>",
+        "+<oc/hal/teensy/QualificationTelemetry.cpp>",
+        "+<oc/hal/teensy/SDCardBackend.cpp>",
+        "+<oc/hal/teensy/SDFileSystemBackend.cpp>",
+        "+<oc/hal/teensy/UsbMidi.cpp>"
       ],
       "sources": {
         "count": 8,
