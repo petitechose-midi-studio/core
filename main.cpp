@@ -22,6 +22,7 @@
 #include <config/platform-teensy/Hardware.hpp>
 #endif
 #include "app/ExtmemAllocator.hpp"
+#include "app/PhaseRetainingDeadline.hpp"
 #include "context/StandaloneContext.hpp"
 #include "context/standalone/StandaloneSequencerRuntimeHook.hpp"
 #include "diagnostics/StorageQualificationProbe.hpp"
@@ -803,12 +804,11 @@ void loop() {
     }
     delay(25);
 #else
-    static uint32_t lastMicros = 0;
-    static uint32_t lvglAccumulator = 0;
+    static core::app::PhaseRetainingDeadline<APP_PERIOD_US> appDeadline;
+    static core::app::PhaseRetainingDeadline<LVGL_PERIOD_US> lvglDeadline;
 
     const uint32_t now = micros();
-    if (now - lastMicros < APP_PERIOD_US) return;
-    lastMicros = now;
+    if (!appDeadline.consumeIfDue(now)) return;
     core::diagnostics::storage_qualification::foregroundBegin();
     {
         OC_PERF_SCOPE(perfMainLoop, "main.loop");
@@ -880,10 +880,9 @@ void loop() {
         }
 #endif
 
-        // Service LVGL on its independently owned lower cadence.
-        lvglAccumulator += APP_PERIOD_US;
-        if (lvglAccumulator >= LVGL_PERIOD_US) {
-            lvglAccumulator = 0;
+        // Use actual elapsed foreground time while retaining LVGL phase and
+        // consuming at most one service deadline in this pass.
+        if (lvglDeadline.consumeIfDue(micros())) {
             lvgl->refresh();
         }
     }
