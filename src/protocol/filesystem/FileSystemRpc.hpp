@@ -349,6 +349,7 @@ private:
         uint32_t expectedSize = 0;
         uint32_t writtenBytes = 0;
         uint32_t lastActivityMs = 0;
+        uint32_t payloadCrc32State = 0;
         core::persistence::ProductMutationLease lease{};
         uint16_t sessionId = 0;
         char finalPath[PATH_BUFFER_SIZE] = {};
@@ -357,7 +358,7 @@ private:
     };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-    static_assert(sizeof(WriteSession) == 276U, "filesystem RPC write lease ABI drift");
+    static_assert(sizeof(WriteSession) == 280U, "filesystem RPC write lease ABI drift");
 #endif
 
     oc::type::Result<size_t> handleStat_(const FileSystemRpcFrame& frame,
@@ -479,7 +480,7 @@ private:
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(FileSystemRpcHandler) == 304U, "filesystem RPC handler ABI drift");
+static_assert(sizeof(FileSystemRpcHandler) == 308U, "filesystem RPC handler ABI drift");
 static_assert(alignof(FileSystemRpcHandler) == 4U, "filesystem RPC handler alignment drift");
 #endif
 

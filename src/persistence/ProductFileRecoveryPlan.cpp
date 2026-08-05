@@ -1,6 +1,10 @@
 #include "persistence/ProductFileRecoveryPlan.hpp"
 
+#include <algorithm>
+
 #include <config/PlatformCompat.hpp>
+
+#include "persistence/PersistenceChecksum.hpp"
 
 namespace core::persistence {
 
@@ -15,18 +19,12 @@ const char kRecoveryPlanLease[] PROGMEM =
     "exact product recovery lease required";
 const char kRecoveryPlanState[] PROGMEM =
     "ordinary recovery continuation is not active";
-const char kRolledBackMissing[] PROGMEM =
-    "rolled-back product file is missing";
-const char kUnexpectedRolledBack[] PROGMEM =
-    "unexpected rolled-back product file";
-const char kAmbiguousTemporary[] PROGMEM =
-    "ambiguous product file and temporary";
-const char kInvalidTemporary[] PROGMEM =
-    "invalid product file temporary";
-const char kPromotedSize[] PROGMEM =
-    "promoted product file size mismatch";
 const char kLostTopology[] PROGMEM =
     "product file transaction lost old and new";
+const char kRecoveryIntegrityScratch[] PROGMEM =
+    "product file recovery integrity scratch unavailable";
+const char kRecoveryIntegrityShortRead[] PROGMEM =
+    "short product file recovery integrity read";
 
 oc::type::Error recoveryError(ErrorCode code, const char* context) {
     return {code, context};
@@ -55,7 +53,9 @@ FLASHMEM oc::type::Result<void> ProductFileRecoveryPlan::begin(
 
 FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advance(
     ProductFileService& files,
-    const ProductMutationLease& recoveryLease
+    const ProductMutationLease& recoveryLease,
+    uint8_t* scratch,
+    size_t scratchSize
 ) {
     if (!active() ||
         !files.owns(recoveryLease, ProductMutationOwner::RECOVERY)) {
@@ -107,6 +107,41 @@ FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advance(
             );
             if (!value) return fail_(value.error());
             backup_ = value.value();
+            return beginNextIntegrityCheck_();
+        }
+        case Step::VERIFY_FINAL: {
+            auto verified = advanceIntegrityCheck_(
+                files,
+                recoveryLease,
+                workspace_.path(transaction::FINAL_PATH),
+                scratch,
+                scratchSize
+            );
+            if (!verified) return fail_(verified.error());
+            if (!verified.value()) return oc::type::Result<bool>::ok(false);
+            final_valid_ =
+                checksum::crc32Finish(integrity_crc_state_) ==
+                workspace_.expectedCrc32;
+            if (tmp_.exists && tmp_.size == workspace_.expectedSize) {
+                beginIntegrityCheck_();
+                step_ = Step::VERIFY_TMP;
+                return oc::type::Result<bool>::ok(false);
+            }
+            return decide_();
+        }
+        case Step::VERIFY_TMP: {
+            auto verified = advanceIntegrityCheck_(
+                files,
+                recoveryLease,
+                workspace_.path(transaction::TMP_PATH),
+                scratch,
+                scratchSize
+            );
+            if (!verified) return fail_(verified.error());
+            if (!verified.value()) return oc::type::Result<bool>::ok(false);
+            tmp_valid_ =
+                checksum::crc32Finish(integrity_crc_state_) ==
+                workspace_.expectedCrc32;
             return decide_();
         }
         case Step::REMOVE_CURRENT: {
@@ -128,6 +163,14 @@ FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advance(
             step_ = Step::FLUSH_RESTORED;
             return oc::type::Result<bool>::ok(false);
         }
+        case Step::REMOVE_UNVERIFIED_CURRENT: {
+            auto removed = files.remove(
+                recoveryLease,
+                workspace_.path(transaction::FINAL_PATH)
+            );
+            if (!removed) return fail_(removed.error());
+            return finish_(ProductFileTransactionPhase::ROLLED_BACK);
+        }
         case Step::FLUSH_RESTORED: {
             auto flushed = files.flush(
                 recoveryLease,
@@ -143,6 +186,8 @@ FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advance(
                 workspace_.path(transaction::BACKUP_PATH)
             );
             if (!renamed) return fail_(renamed.error());
+            backup_ = final_;
+            final_ = {};
             step_ = Step::FLUSH_BACKUP;
             return oc::type::Result<bool>::ok(false);
         }
@@ -172,6 +217,8 @@ FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advance(
                 workspace_.path(transaction::FINAL_PATH)
             );
             if (!promoted) return fail_(promoted.error());
+            final_ = tmp_;
+            tmp_ = {};
             step_ = Step::FLUSH_PROMOTED;
             return oc::type::Result<bool>::ok(false);
         }
@@ -181,6 +228,32 @@ FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advance(
                 workspace_.path(transaction::FINAL_PATH)
             );
             if (!flushed) return fail_(flushed.error());
+            beginIntegrityCheck_();
+            step_ = Step::VERIFY_PROMOTED;
+            return oc::type::Result<bool>::ok(false);
+        }
+        case Step::VERIFY_PROMOTED: {
+            auto verified = advanceIntegrityCheck_(
+                files,
+                recoveryLease,
+                workspace_.path(transaction::FINAL_PATH),
+                scratch,
+                scratchSize
+            );
+            if (!verified) return fail_(verified.error());
+            if (!verified.value()) return oc::type::Result<bool>::ok(false);
+            if (checksum::crc32Finish(integrity_crc_state_) !=
+                workspace_.expectedCrc32) {
+                if (backup_.exists) return restoreBackup_(true);
+                if (!workspace_.hadCurrent) {
+                    terminal_phase_ = ProductFileTransactionPhase::ROLLED_BACK;
+                    step_ = Step::REMOVE_UNVERIFIED_CURRENT;
+                    return oc::type::Result<bool>::ok(false);
+                }
+                return fail_(
+                    recoveryError(ErrorCode::STORAGE_CORRUPT, kLostTopology)
+                );
+            }
             step_ = Step::PERSIST_PROMOTED;
             return oc::type::Result<bool>::ok(false);
         }
@@ -244,7 +317,11 @@ FLASHMEM void ProductFileRecoveryPlan::reset() {
     tmp_ = {};
     backup_ = {};
     terminal_phase_ = ProductFileTransactionPhase::NONE;
+    integrity_crc_state_ = 0U;
+    integrity_offset_ = 0U;
     step_ = Step::IDLE;
+    final_valid_ = false;
+    tmp_valid_ = false;
 }
 
 FLASHMEM bool ProductFileRecoveryPlan::active() const {
@@ -257,69 +334,101 @@ FLASHMEM bool ProductFileRecoveryPlan::complete() const {
 }
 
 FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::decide_() {
-    const bool finalExact = final_.exists && final_.size == workspace_.expectedSize;
-    const bool tmpExact = tmp_.exists && tmp_.size == workspace_.expectedSize;
-
-    if (workspace_.phase == ProductFileTransactionPhase::ROLLED_BACK) {
-        if (workspace_.hadCurrent) {
-            if (final_.exists) return finish_(ProductFileTransactionPhase::ROLLED_BACK);
-            if (backup_.exists) return restoreBackup_(false);
-            return fail_(recoveryError(ErrorCode::STORAGE_CORRUPT, kRolledBackMissing));
-        }
-        if (!final_.exists) return finish_(ProductFileTransactionPhase::ROLLED_BACK);
-        if (finalExact) return finish_(ProductFileTransactionPhase::COMMITTED);
-        return fail_(recoveryError(ErrorCode::STORAGE_CORRUPT, kUnexpectedRolledBack));
-    }
-
-    if (workspace_.phase == ProductFileTransactionPhase::COMMITTED && finalExact) {
-        return finish_(ProductFileTransactionPhase::COMMITTED);
-    }
-
-    if (final_.exists && tmp_.exists) {
-        if (workspace_.phase == ProductFileTransactionPhase::PREPARED &&
-            workspace_.hadCurrent && !backup_.exists && tmpExact) {
+    switch (transaction::decideRecovery(
+        workspace_,
+        final_,
+        final_valid_,
+        tmp_,
+        tmp_valid_,
+        backup_
+    )) {
+        case transaction::RecoveryAction::FINISH_COMMITTED:
+            return finish_(ProductFileTransactionPhase::COMMITTED);
+        case transaction::RecoveryAction::FINISH_ROLLED_BACK:
+            return finish_(ProductFileTransactionPhase::ROLLED_BACK);
+        case transaction::RecoveryAction::RESTORE_BACKUP:
+            return restoreBackup_(false);
+        case transaction::RecoveryAction::REMOVE_CURRENT_AND_RESTORE_BACKUP:
+            return restoreBackup_(true);
+        case transaction::RecoveryAction::BACK_UP_CURRENT_AND_PROMOTE_TMP:
             step_ = Step::BACK_UP_CURRENT;
             return oc::type::Result<bool>::ok(false);
-        }
-        if (transaction::phaseTerminal(workspace_.phase)) {
-            return workspace_.phase == ProductFileTransactionPhase::COMMITTED &&
-                           finalExact
-                ? finish_(ProductFileTransactionPhase::COMMITTED)
-                : finish_(ProductFileTransactionPhase::ROLLED_BACK);
-        }
-        return fail_(recoveryError(ErrorCode::STORAGE_CORRUPT, kAmbiguousTemporary));
+        case transaction::RecoveryAction::PROMOTE_TMP:
+            return promoteTemporary_();
+        case transaction::RecoveryAction::REMOVE_CURRENT_AND_ROLL_BACK:
+            terminal_phase_ = ProductFileTransactionPhase::ROLLED_BACK;
+            step_ = Step::REMOVE_UNVERIFIED_CURRENT;
+            return oc::type::Result<bool>::ok(false);
+        case transaction::RecoveryAction::FAIL_CORRUPT:
+        default:
+            return fail_(recoveryError(ErrorCode::STORAGE_CORRUPT, kLostTopology));
     }
+}
 
-    if (!final_.exists && tmp_.exists) {
-        if (!tmpExact) {
-            if (backup_.exists) return restoreBackup_(false);
-            if (!workspace_.hadCurrent) {
-                return finish_(ProductFileTransactionPhase::ROLLED_BACK);
-            }
-            return fail_(recoveryError(ErrorCode::STORAGE_CORRUPT, kInvalidTemporary));
-        }
-        return promoteTemporary_();
-    }
+FLASHMEM void ProductFileRecoveryPlan::beginIntegrityCheck_() {
+    integrity_crc_state_ = checksum::CRC32_INITIAL_STATE;
+    integrity_offset_ = 0U;
+}
 
-    if (final_.exists && !tmp_.exists) {
-        if (backup_.exists) {
-            return finalExact
-                ? finish_(ProductFileTransactionPhase::COMMITTED)
-                : restoreBackup_(true);
-        }
-        if (workspace_.phase == ProductFileTransactionPhase::PREPARED &&
-            workspace_.hadCurrent) {
-            return finish_(ProductFileTransactionPhase::ROLLED_BACK);
-        }
-        if (finalExact) return finish_(ProductFileTransactionPhase::COMMITTED);
-        return fail_(recoveryError(ErrorCode::STORAGE_CORRUPT, kPromotedSize));
+FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advanceIntegrityCheck_(
+    ProductFileService& files,
+    const ProductMutationLease& lease,
+    const char* path,
+    uint8_t* scratch,
+    size_t scratchSize
+) {
+    if (integrity_offset_ == workspace_.expectedSize) {
+        return oc::type::Result<bool>::ok(true);
     }
+    if (scratch == nullptr || scratchSize == 0U) {
+        return oc::type::Result<bool>::err(
+            recoveryError(ErrorCode::INVALID_ARGUMENT, kRecoveryIntegrityScratch)
+        );
+    }
+    const size_t remaining = workspace_.expectedSize - integrity_offset_;
+    const size_t requested = std::min(
+        remaining,
+        std::min(scratchSize, PRODUCT_FILE_INTEGRITY_CHUNK_SIZE)
+    );
+    auto read = files.read(
+        lease,
+        path,
+        integrity_offset_,
+        scratch,
+        requested
+    );
+    if (!read) return oc::type::Result<bool>::err(read.error());
+    if (read.value() == 0U || read.value() > requested) {
+        return oc::type::Result<bool>::err(
+            recoveryError(ErrorCode::STORAGE_READ_FAILED,
+                          kRecoveryIntegrityShortRead)
+        );
+    }
+    integrity_crc_state_ = checksum::crc32Update(
+        integrity_crc_state_,
+        scratch,
+        read.value()
+    );
+    integrity_offset_ += static_cast<uint32_t>(read.value());
+    return oc::type::Result<bool>::ok(
+        integrity_offset_ == workspace_.expectedSize
+    );
+}
 
-    if (backup_.exists) return restoreBackup_(false);
-    if (!workspace_.hadCurrent) {
-        return finish_(ProductFileTransactionPhase::ROLLED_BACK);
+FLASHMEM oc::type::Result<bool>
+ProductFileRecoveryPlan::beginNextIntegrityCheck_() {
+    if (!workspace_.hasExpectedCrc32) return decide_();
+    if (final_.exists && final_.size == workspace_.expectedSize) {
+        beginIntegrityCheck_();
+        step_ = Step::VERIFY_FINAL;
+        return oc::type::Result<bool>::ok(false);
     }
-    return fail_(recoveryError(ErrorCode::STORAGE_CORRUPT, kLostTopology));
+    if (tmp_.exists && tmp_.size == workspace_.expectedSize) {
+        beginIntegrityCheck_();
+        step_ = Step::VERIFY_TMP;
+        return oc::type::Result<bool>::ok(false);
+    }
+    return decide_();
 }
 
 FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::fail_(

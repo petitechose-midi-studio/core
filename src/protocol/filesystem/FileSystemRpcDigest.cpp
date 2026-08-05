@@ -4,6 +4,7 @@
 
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/PersistenceChecksum.hpp"
 #include "protocol/filesystem/FileSystemRpcInternal.hpp"
 
 namespace core::protocol::filesystem::conditional_mutation {
@@ -35,6 +36,7 @@ FLASHMEM void DigestReadPlan::begin() {
     total_bytes_ = 0U;
     file_size_ = 0U;
     offset_ = 0U;
+    crc32_state_ = core::persistence::checksum::CRC32_INITIAL_STATE;
     status_ = FileSystemRpcStatus::STORAGE_ERROR;
     step_ = Step::STAT;
 }
@@ -106,6 +108,11 @@ bool DigestReadPlan::nextAdvanceReadsData() const {
 
 FLASHMEM void DigestReadPlan::update_(const uint8_t* data, size_t size) {
     if (!data || size == 0U) return;
+    crc32_state_ = core::persistence::checksum::crc32Update(
+        crc32_state_,
+        data,
+        size
+    );
     total_bytes_ += size;
     while (size > 0U) {
         const size_t available = sizeof(block_) - block_size_;
@@ -122,6 +129,7 @@ FLASHMEM void DigestReadPlan::update_(const uint8_t* data, size_t size) {
 }
 
 FLASHMEM void DigestReadPlan::finish_() {
+    crc32_state_ = core::persistence::checksum::crc32Finish(crc32_state_);
     const uint64_t bitLength = total_bytes_ * 8ULL;
     block_[block_size_++] = 0x80;
     if (block_size_ > 56U) {
@@ -260,6 +268,7 @@ FLASHMEM DigestReadResult readDigest(
     result.status = plan.status();
     if (result.status == FileSystemRpcStatus::OK) {
         copyDigest(result.sha256, plan.digest());
+        result.crc32 = plan.crc32();
     }
     return result;
 }

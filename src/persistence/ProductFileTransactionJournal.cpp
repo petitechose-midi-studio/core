@@ -1,7 +1,10 @@
 #include "persistence/AtomicProductFile.hpp"
 
+#include <algorithm>
+
 #include <config/PlatformCompat.hpp>
 
+#include "persistence/PersistenceChecksum.hpp"
 #include "persistence/ProductFileTransactionJournalInternal.hpp"
 
 namespace core::persistence {
@@ -20,6 +23,53 @@ using product_file_transaction::selectLatest;
 using product_file_transaction::TMP_PATH;
 
 namespace {
+
+// Synchronous asset and legacy boot recovery share the global mutation lease,
+// so one cold PSRAM scratch is sufficient and avoids a 512-byte RAM1 stack
+// spike. Cooperative Project/RPC/recovery paths retain and supply their own
+// PSRAM scratch instead.
+EXTMEM uint8_t synchronousIntegrityScratch[PRODUCT_FILE_INTEGRITY_CHUNK_SIZE] = {};
+static_assert(sizeof(synchronousIntegrityScratch) == 512U);
+
+FLASHMEM oc::type::Result<bool> payloadMatches(
+    ProductFileService& files,
+    const ProductMutationLease& lease,
+    const char* path,
+    uint32_t expectedSize,
+    uint32_t expectedCrc32
+) {
+    uint32_t state = checksum::CRC32_INITIAL_STATE;
+    uint32_t offset = 0U;
+    while (offset < expectedSize) {
+        const size_t requested = std::min<size_t>(
+            expectedSize - offset,
+            sizeof(synchronousIntegrityScratch)
+        );
+        auto read = files.read(
+            lease,
+            path,
+            offset,
+            synchronousIntegrityScratch,
+            requested
+        );
+        if (!read) return oc::type::Result<bool>::err(read.error());
+        if (read.value() == 0U || read.value() > requested) {
+            return oc::type::Result<bool>::err(
+                {ErrorCode::STORAGE_READ_FAILED,
+                 "short product file integrity read"}
+            );
+        }
+        state = checksum::crc32Update(
+            state,
+            synchronousIntegrityScratch,
+            read.value()
+        );
+        offset += static_cast<uint32_t>(read.value());
+    }
+    return oc::type::Result<bool>::ok(
+        checksum::crc32Finish(state) == expectedCrc32
+    );
+}
 
 FLASHMEM oc::type::Result<void> finishCommitted(
     ProductFileService& files,
@@ -141,6 +191,24 @@ FLASHMEM oc::type::Result<void> promoteTemporary(
             flushed.error()
         );
     }
+    if (workspace.hasExpectedCrc32) {
+        auto valid = payloadMatches(
+            files,
+            lease,
+            workspace.path(FINAL_PATH),
+            workspace.expectedSize,
+            workspace.expectedCrc32
+        );
+        if (!valid) return oc::type::Result<void>::err(valid.error());
+        if (!valid.value()) {
+            if (workspace.hadCurrent) {
+                return restoreBackup(files, lease, workspace, true);
+            }
+            auto removed = files.remove(lease, workspace.path(FINAL_PATH));
+            if (!removed) return removed;
+            return finishRolledBack(files, lease, workspace);
+        }
+    }
     auto phase = persistPhase(
         files,
         lease,
@@ -175,31 +243,50 @@ FLASHMEM oc::type::Result<void> recoverSelected(
     const FileState final = finalResult.value();
     const FileState tmp = tmpResult.value();
     const FileState backup = backupResult.value();
-    const bool finalExact = final.exists && final.size == workspace.expectedSize;
-    const bool tmpExact = tmp.exists && tmp.size == workspace.expectedSize;
-
-    if (workspace.phase == ProductFileTransactionPhase::ROLLED_BACK) {
-        if (workspace.hadCurrent) {
-            if (final.exists) return finishRolledBack(files, lease, workspace);
-            if (backup.exists) return restoreBackup(files, lease, workspace, false);
-            return oc::type::Result<void>::err(
-                {ErrorCode::STORAGE_CORRUPT, "rolled-back product file is missing"}
-            );
-        }
-        if (!final.exists) return finishRolledBack(files, lease, workspace);
-        if (finalExact) return finishCommitted(files, lease, workspace);
-        return oc::type::Result<void>::err(
-            {ErrorCode::STORAGE_CORRUPT, "unexpected rolled-back product file"}
+    bool finalValid = false;
+    bool tmpValid = false;
+    if (workspace.hasExpectedCrc32 && final.exists &&
+        final.size == workspace.expectedSize) {
+        auto valid = payloadMatches(
+            files,
+            lease,
+            workspace.path(FINAL_PATH),
+            workspace.expectedSize,
+            workspace.expectedCrc32
         );
+        if (!valid) return oc::type::Result<void>::err(valid.error());
+        finalValid = valid.value();
+    }
+    if (workspace.hasExpectedCrc32 && tmp.exists &&
+        tmp.size == workspace.expectedSize) {
+        auto valid = payloadMatches(
+            files,
+            lease,
+            workspace.path(TMP_PATH),
+            workspace.expectedSize,
+            workspace.expectedCrc32
+        );
+        if (!valid) return oc::type::Result<void>::err(valid.error());
+        tmpValid = valid.value();
     }
 
-    if (workspace.phase == ProductFileTransactionPhase::COMMITTED && finalExact) {
-        return finishCommitted(files, lease, workspace);
-    }
-
-    if (final.exists && tmp.exists) {
-        if (workspace.phase == ProductFileTransactionPhase::PREPARED &&
-            workspace.hadCurrent && !backup.exists && tmpExact) {
+    switch (product_file_transaction::decideRecovery(
+        workspace,
+        final,
+        finalValid,
+        tmp,
+        tmpValid,
+        backup
+    )) {
+        case product_file_transaction::RecoveryAction::FINISH_COMMITTED:
+            return finishCommitted(files, lease, workspace);
+        case product_file_transaction::RecoveryAction::FINISH_ROLLED_BACK:
+            return finishRolledBack(files, lease, workspace);
+        case product_file_transaction::RecoveryAction::RESTORE_BACKUP:
+            return restoreBackup(files, lease, workspace, false);
+        case product_file_transaction::RecoveryAction::REMOVE_CURRENT_AND_RESTORE_BACKUP:
+            return restoreBackup(files, lease, workspace, true);
+        case product_file_transaction::RecoveryAction::BACK_UP_CURRENT_AND_PROMOTE_TMP: {
             auto backedUp = files.rename(
                 lease,
                 workspace.path(FINAL_PATH),
@@ -223,52 +310,20 @@ FLASHMEM oc::type::Result<void> recoverSelected(
             }
             return promoteTemporary(files, lease, workspace);
         }
-        if (phaseTerminal(workspace.phase)) {
-            return workspace.phase == ProductFileTransactionPhase::COMMITTED &&
-                           finalExact
-                ? finishCommitted(files, lease, workspace)
-                : finishRolledBack(files, lease, workspace);
+        case product_file_transaction::RecoveryAction::PROMOTE_TMP:
+            return promoteTemporary(files, lease, workspace);
+        case product_file_transaction::RecoveryAction::REMOVE_CURRENT_AND_ROLL_BACK: {
+            auto removed = files.remove(lease, workspace.path(FINAL_PATH));
+            if (!removed) return removed;
+            return finishRolledBack(files, lease, workspace);
         }
-        return oc::type::Result<void>::err(
-            {ErrorCode::STORAGE_CORRUPT, "ambiguous product file and temporary"}
-        );
-    }
-
-    if (!final.exists && tmp.exists) {
-        if (!tmpExact) {
-            if (backup.exists) return restoreBackup(files, lease, workspace, false);
-            if (!workspace.hadCurrent) return finishRolledBack(files, lease, workspace);
+        case product_file_transaction::RecoveryAction::FAIL_CORRUPT:
+        default:
             return oc::type::Result<void>::err(
-                {ErrorCode::STORAGE_CORRUPT, "invalid product file temporary"}
+                {ErrorCode::STORAGE_CORRUPT,
+                 "product file transaction has no valid recovery candidate"}
             );
-        }
-        return promoteTemporary(files, lease, workspace);
     }
-
-    if (final.exists && !tmp.exists) {
-        if (backup.exists) {
-            if (finalExact) return finishCommitted(files, lease, workspace);
-            return restoreBackup(files, lease, workspace, true);
-        }
-        if (workspace.phase == ProductFileTransactionPhase::PREPARED &&
-            workspace.hadCurrent) {
-            return finishRolledBack(files, lease, workspace);
-        }
-        if (finalExact) return finishCommitted(files, lease, workspace);
-        if (workspace.phase == ProductFileTransactionPhase::ROLLED_BACK &&
-            workspace.hadCurrent) {
-            return finishRolledBack(files, lease, workspace);
-        }
-        return oc::type::Result<void>::err(
-            {ErrorCode::STORAGE_CORRUPT, "promoted product file size mismatch"}
-        );
-    }
-
-    if (backup.exists) return restoreBackup(files, lease, workspace, false);
-    if (!workspace.hadCurrent) return finishRolledBack(files, lease, workspace);
-    return oc::type::Result<void>::err(
-        {ErrorCode::STORAGE_CORRUPT, "product file transaction lost old and new"}
-    );
 }
 
 FLASHMEM oc::type::Result<void> executeCommit(
@@ -320,6 +375,20 @@ FLASHMEM oc::type::Result<void> executeCommit(
     if (!promoted) return promoted;
     auto finalFlushed = files.flush(lease, workspace.path(FINAL_PATH));
     if (!finalFlushed) return finalFlushed;
+    auto finalValid = payloadMatches(
+        files,
+        lease,
+        workspace.path(FINAL_PATH),
+        workspace.expectedSize,
+        workspace.expectedCrc32
+    );
+    if (!finalValid) return oc::type::Result<void>::err(finalValid.error());
+    if (!finalValid.value()) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::STORAGE_CORRUPT,
+             "promoted product file checksum mismatch"}
+        );
+    }
     auto promotedPhase = persistPhase(
         files,
         lease,
@@ -364,7 +433,8 @@ static FLASHMEM oc::type::Result<void> commitWithWorkspace(
     const char* current,
     const char* backup,
     const char* tmp,
-    uint32_t expectedSize
+    uint32_t expectedSize,
+    uint32_t expectedCrc32
 ) {
     auto selected = selectLatest(files, lease, workspace);
     if (!selected) {
@@ -388,6 +458,8 @@ static FLASHMEM oc::type::Result<void> commitWithWorkspace(
     auto normalized = normalizePaths(files, workspace, current, tmp, backup);
     if (!normalized) return normalized;
     workspace.expectedSize = expectedSize;
+    workspace.expectedCrc32 = expectedCrc32;
+    workspace.hasExpectedCrc32 = true;
 
     auto tmpInfo = inspectFile(files, lease, workspace.path(TMP_PATH));
     if (!tmpInfo) return oc::type::Result<void>::err(tmpInfo.error());
@@ -398,6 +470,20 @@ static FLASHMEM oc::type::Result<void> commitWithWorkspace(
     }
     auto tmpFlushed = files.flush(lease, workspace.path(TMP_PATH));
     if (!tmpFlushed) return tmpFlushed;
+    auto tmpValid = payloadMatches(
+        files,
+        lease,
+        workspace.path(TMP_PATH),
+        expectedSize,
+        expectedCrc32
+    );
+    if (!tmpValid) return oc::type::Result<void>::err(tmpValid.error());
+    if (!tmpValid.value()) {
+        return oc::type::Result<void>::err(
+            {ErrorCode::STORAGE_CORRUPT,
+             "product file temporary checksum mismatch"}
+        );
+    }
 
     auto currentInfo = inspectFile(files, lease, workspace.path(FINAL_PATH));
     if (!currentInfo) return oc::type::Result<void>::err(currentInfo.error());
@@ -449,7 +535,8 @@ FLASHMEM oc::type::Result<void> commitProductFileTemp(
     const char* current,
     const char* backup,
     const char* tmp,
-    uint32_t expectedSize
+    uint32_t expectedSize,
+    uint32_t expectedCrc32
 ) {
     if (!files.owns(lease) || current == nullptr || backup == nullptr || tmp == nullptr) {
         return oc::type::Result<void>::err(
@@ -465,7 +552,8 @@ FLASHMEM oc::type::Result<void> commitProductFileTemp(
         current,
         backup,
         tmp,
-        expectedSize
+        expectedSize,
+        expectedCrc32
     );
 }
 

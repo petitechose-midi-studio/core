@@ -153,7 +153,7 @@ inline constexpr ProductPersistenceWorkQuota
 inline constexpr ProductPersistenceWorkQuota PRODUCT_PERSISTENCE_QUOTA_PROJECT_ENCODE =
     ProductPersistenceWorkQuota::limited(524288U, 0U, 0U, 0U, 0U);
 inline constexpr ProductPersistenceWorkQuota PRODUCT_PERSISTENCE_QUOTA_PROMOTION_PHASE =
-    ProductPersistenceWorkQuota::limited(603U, 8U, 0U, 0U, 1U);
+    ProductPersistenceWorkQuota::limited(607U, 8U, 0U, 0U, 1U);
 inline constexpr ProductPersistenceWorkQuota PRODUCT_PERSISTENCE_QUOTA_RAW_CATALOG =
     ProductPersistenceWorkQuota::limited(19456U, 1U, 0U, 257U, 0U);
 inline constexpr ProductPersistenceWorkQuota PRODUCT_PERSISTENCE_QUOTA_ASSET_METADATA =

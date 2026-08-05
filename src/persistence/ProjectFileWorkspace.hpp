@@ -3,11 +3,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <new>
 #include <type_traits>
 
 #include "app/ExtmemAllocator.hpp"
 #include "persistence/ProductFileCommitPlan.hpp"
+#include "persistence/PersistenceChecksum.hpp"
 #include "persistence/ProjectFileLimits.hpp"
 #include "persistence/ProjectSnapshotPersistenceCodec.hpp"
 
@@ -64,6 +66,24 @@ public:
         return codec_workspace_;
     }
 
+    void resetPayloadCrc32() {
+        const uint32_t state = checksum::CRC32_INITIAL_STATE;
+        std::memcpy(buffer().commitPlanStorage, &state, sizeof(state));
+    }
+
+    void updatePayloadCrc32(const uint8_t* data, size_t size) {
+        uint32_t state = 0U;
+        std::memcpy(&state, buffer().commitPlanStorage, sizeof(state));
+        state = checksum::crc32Update(state, data, size);
+        std::memcpy(buffer().commitPlanStorage, &state, sizeof(state));
+    }
+
+    uint32_t payloadCrc32() {
+        uint32_t state = 0U;
+        std::memcpy(&state, buffer().commitPlanStorage, sizeof(state));
+        return checksum::crc32Finish(state);
+    }
+
     ProductFileCommitPlan& resetCommitPlan() {
         return *new (buffer().commitPlanStorage) ProductFileCommitPlan{};
     }
@@ -79,7 +99,7 @@ private:
 };
 
 #if defined(ARDUINO_TEENSY41) && !defined(OC_DESKTOP)
-static_assert(sizeof(ProjectFileBuffer) == 526176U, "project file buffer ABI drift");
+static_assert(sizeof(ProjectFileBuffer) == 526208U, "project file buffer ABI drift");
 static_assert(alignof(ProjectFileBuffer) == 8U, "project file buffer alignment drift");
 static_assert(sizeof(ProjectFileReadWorkspace) == 4U, "project read workspace ABI drift");
 static_assert(sizeof(ProjectFileWriteWorkspace) == 8U, "project write workspace ABI drift");

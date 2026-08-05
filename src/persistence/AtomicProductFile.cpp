@@ -5,6 +5,8 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/diagnostics/Performance.hpp>
 
+#include "persistence/PersistenceChecksum.hpp"
+
 namespace core::persistence {
 
 namespace {
@@ -89,6 +91,7 @@ FLASHMEM oc::type::Result<void> replaceProductFileAtomically(
     auto deleteTmp = deleteProductFileIfExists(files, lease, paths.tmp);
     if (!deleteTmp) return deleteTmp;
 
+    const uint32_t expectedCrc32 = checksum::crc32(data, size);
     auto write = writeProductFileTemp(files, lease, paths.tmp, data, size, chunkSize);
     if (!write) {
         (void)deleteProductFileIfExists(files, lease, paths.tmp);
@@ -101,7 +104,8 @@ FLASHMEM oc::type::Result<void> replaceProductFileAtomically(
         paths.current,
         paths.backup,
         paths.tmp,
-        size
+        size,
+        expectedCrc32
     );
     if (!commit) {
         if (!files.recoveryRequired(lease)) {

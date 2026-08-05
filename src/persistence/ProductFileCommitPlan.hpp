@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include <oc/type/Result.hpp>
@@ -21,16 +22,20 @@ public:
         const char* current,
         const char* backup,
         const char* tmp,
-        uint32_t expectedSize
+        uint32_t expectedSize,
+        uint32_t expectedCrc32
     );
     oc::type::Result<bool> advance(
         ProductFileService& files,
-        const ProductMutationLease& lease
+        const ProductMutationLease& lease,
+        uint8_t* scratch,
+        size_t scratchSize
     );
 
     void reset();
     bool active() const;
     bool complete() const;
+    bool nextAdvanceReadsData() const;
     bool mapped() const { return mapped_; }
     bool requiresRecoveryOnFailure() const { return recovery_required_on_error_; }
 
@@ -43,6 +48,7 @@ private:
         CLEAN_CORRUPT_SLOT,
         INSPECT_TMP,
         FLUSH_TMP,
+        VERIFY_TMP,
         INSPECT_CURRENT,
         INSPECT_BACKUP,
         CLEAN_STALE_BACKUP,
@@ -50,6 +56,7 @@ private:
         BACK_UP_CURRENT,
         PERSIST_BACKED_UP,
         PROMOTE_TMP,
+        VERIFY_PROMOTED,
         PERSIST_PROMOTED,
         CLEAN_BACKUP,
         PERSIST_COMMITTED,
@@ -59,6 +66,17 @@ private:
 
     oc::type::Result<bool> selectSlots_();
     oc::type::Result<bool> initializeCommitWorkspace_();
+    void beginIntegrityCheck_();
+    oc::type::Result<bool> advanceIntegrityCheck_(
+        ProductFileService& files,
+        const ProductMutationLease& lease,
+        const char* path,
+        uint8_t* scratch,
+        size_t scratchSize,
+        Step successStep,
+        bool recoveryRequired,
+        const char* mismatchContext
+    );
     oc::type::Result<bool> fail_(oc::type::Error error, bool recoveryRequired);
     product_file_transaction::JournalWorkspace& workspace_();
     const product_file_transaction::JournalWorkspace& workspace_() const;
@@ -70,6 +88,9 @@ private:
     product_file_transaction::FileState current_{};
     product_file_transaction::FileState backup_{};
     uint32_t expected_size_ = 0U;
+    uint32_t expected_crc32_ = 0U;
+    uint32_t integrity_crc_state_ = 0U;
+    uint32_t integrity_offset_ = 0U;
     Step step_ = Step::IDLE;
     uint8_t active_workspace_ = 0U;
     uint8_t selected_slot_ = 0U;

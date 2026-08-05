@@ -10,6 +10,7 @@ namespace core::protocol::filesystem::conditional_mutation {
 struct DigestReadResult {
     FileSystemRpcStatus status = FileSystemRpcStatus::STORAGE_ERROR;
     uint8_t sha256[FILESYSTEM_RPC_SHA256_SIZE] = {};
+    uint32_t crc32 = 0U;
 };
 
 /**
@@ -36,6 +37,7 @@ public:
     FileSystemRpcStatus status() const { return status_; }
     uint32_t fileSize() const { return file_size_; }
     const uint8_t* digest() const { return digest_; }
+    uint32_t crc32() const { return crc32_state_; }
 
 private:
     friend bool hashBytes(const uint8_t* data, size_t size,
@@ -60,6 +62,7 @@ private:
     uint64_t total_bytes_ = 0U;
     uint32_t file_size_ = 0U;
     uint32_t offset_ = 0U;
+    uint32_t crc32_state_ = 0U;
     uint8_t digest_[FILESYSTEM_RPC_SHA256_SIZE] = {};
     FileSystemRpcStatus status_ = FileSystemRpcStatus::STORAGE_ERROR;
     Step step_ = Step::IDLE;
