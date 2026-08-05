@@ -35,61 +35,74 @@ endif()
 # ==============================================================================
 # Paths
 # ==============================================================================
-set(SDL_DIR "${CMAKE_SOURCE_DIR}")
-set(MIDI_STUDIO_ROOT "${SDL_DIR}/..")
-set(OPEN_CONTROL_ROOT "${MIDI_STUDIO_ROOT}/../../open-control")
-set(MS_UI_ROOT "${MIDI_STUDIO_ROOT}/../ui")
-set(CONFIG_DIR "${MIDI_STUDIO_ROOT}/src/config")
-set(CORE_SRC "${MIDI_STUDIO_ROOT}/src")
+set(SDL_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+get_filename_component(MS_CORE_DIR "${SDL_DIR}/.." ABSOLUTE)
+set(CONFIG_DIR "${MS_CORE_DIR}/src/config")
+set(CORE_SRC "${MS_CORE_DIR}/src")
+
+set(OPEN_CONTROL_FRAMEWORK_DIR "" CACHE PATH "Exact OpenControl Framework checkout")
+set(OPEN_CONTROL_UI_LVGL_DIR "" CACHE PATH "Exact OpenControl UI-LVGL checkout")
+set(OPEN_CONTROL_UI_COMPONENTS_DIR "" CACHE PATH "Exact OpenControl UI-LVGL Components checkout")
+set(OPEN_CONTROL_HAL_SDL_DIR "" CACHE PATH "Exact OpenControl HAL SDL checkout")
+set(OPEN_CONTROL_HAL_NET_DIR "" CACHE PATH "Exact OpenControl HAL Net checkout")
+set(OPEN_CONTROL_HAL_MIDI_DIR "" CACHE PATH "Exact OpenControl HAL MIDI checkout")
+set(OPEN_CONTROL_NOTE_DIR "" CACHE PATH "Exact OpenControl Note checkout")
+set(MIDI_STUDIO_UI_DIR "" CACHE PATH "Exact MIDI Studio UI checkout")
+set(LVGL_DIR "" CACHE PATH "Exact LVGL source checkout")
+
+function(require_dependency_root variable sentinel label)
+    if(NOT DEFINED ${variable} OR "${${variable}}" STREQUAL "")
+        message(FATAL_ERROR "${label} root is required: -D${variable}=<exact-checkout>")
+    endif()
+    get_filename_component(root "${${variable}}" ABSOLUTE)
+    if(NOT EXISTS "${root}/${sentinel}")
+        message(FATAL_ERROR "${label} sentinel not found: ${root}/${sentinel}")
+    endif()
+    set(${variable} "${root}" PARENT_SCOPE)
+endfunction()
+
+require_dependency_root(OPEN_CONTROL_FRAMEWORK_DIR
+    "cmake/OpenControlFrameworkSources.cmake" "OpenControl Framework")
+require_dependency_root(OPEN_CONTROL_UI_LVGL_DIR
+    "cmake/OpenControlUiLvglSources.cmake" "OpenControl UI-LVGL")
+require_dependency_root(OPEN_CONTROL_UI_COMPONENTS_DIR
+    "cmake/OpenControlUiLvglComponentsSources.cmake" "OpenControl UI-LVGL Components")
+require_dependency_root(OPEN_CONTROL_HAL_SDL_DIR
+    "cmake/OpenControlHalSdlSources.cmake" "OpenControl HAL SDL")
+require_dependency_root(OPEN_CONTROL_HAL_NET_DIR
+    "cmake/OpenControlHalNetSources.cmake" "OpenControl HAL Net")
+require_dependency_root(OPEN_CONTROL_HAL_MIDI_DIR
+    "cmake/OpenControlHalMidiSources.cmake" "OpenControl HAL MIDI")
+require_dependency_root(OPEN_CONTROL_NOTE_DIR
+    "cmake/OpenControlNoteSources.cmake" "OpenControl Note")
+require_dependency_root(MIDI_STUDIO_UI_DIR
+    "cmake/MidiStudioUiSources.cmake" "MIDI Studio UI")
+require_dependency_root(LVGL_DIR "CMakeLists.txt" "LVGL")
 
 # App config (core or plugin)
 if(NOT DEFINED APP_PATH)
     set(APP_PATH "${SDL_DIR}")
+endif()
+get_filename_component(APP_PATH "${APP_PATH}" ABSOLUTE)
+if(NOT EXISTS "${APP_PATH}/app.cmake")
+    message(FATAL_ERROR "App configuration not found: ${APP_PATH}/app.cmake")
 endif()
 include("${APP_PATH}/app.cmake")
 message(STATUS "App: ${APP_ID}")
 
 # Output directory (can be overridden by -DBIN_OUTPUT_DIR=...)
 if(NOT DEFINED BIN_OUTPUT_DIR)
-    set(BIN_OUTPUT_DIR "${MIDI_STUDIO_ROOT}/bin")
-endif()
-
-# CI and reproducible consumers provide an exact LVGL checkout. Keep the
-# PlatformIO lookup temporarily for existing local simulator workflows.
-set(LVGL_DIR "" CACHE PATH "Path to an LVGL source checkout")
-if(NOT LVGL_DIR)
-    if(EXISTS "${MIDI_STUDIO_ROOT}/.pio/libdeps/dev")
-        set(PIO_LIBDEPS "${MIDI_STUDIO_ROOT}/.pio/libdeps/dev")
-    else()
-        set(PIO_LIBDEPS "${MIDI_STUDIO_ROOT}/.pio/libdeps/release")
-    endif()
-
-    function(pio_dep NAME OUT)
-        if(EXISTS "${PIO_LIBDEPS}/${NAME}")
-            set(${OUT} "${PIO_LIBDEPS}/${NAME}" PARENT_SCOPE)
-        elseif(EXISTS "${PIO_LIBDEPS}/${NAME}.pio-link")
-            file(READ "${PIO_LIBDEPS}/${NAME}.pio-link" LINK)
-            string(REGEX MATCH "symlink://([^\"]+)" _ "${LINK}")
-            set(${OUT} "${MIDI_STUDIO_ROOT}/${CMAKE_MATCH_1}" PARENT_SCOPE)
-        endif()
-    endfunction()
-
-    pio_dep(lvgl LVGL_DIR)
-endif()
-
-if(NOT LVGL_DIR OR NOT EXISTS "${LVGL_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR
-        "LVGL source not found. Pass -DLVGL_DIR=<exact-lvgl-checkout> or install Core PlatformIO dependencies.")
+    set(BIN_OUTPUT_DIR "${MS_CORE_DIR}/bin")
 endif()
 
 # Open Control paths
-set(OC_FRAMEWORK "${OPEN_CONTROL_ROOT}/framework/src")
-set(OC_UI_LVGL "${OPEN_CONTROL_ROOT}/ui-lvgl/src")
-set(OC_UI_COMPONENTS "${OPEN_CONTROL_ROOT}/ui-lvgl-components")
-set(OC_HAL_SDL "${OPEN_CONTROL_ROOT}/hal-sdl/src")
-set(OC_HAL_NET "${OPEN_CONTROL_ROOT}/hal-net/src")
-set(OC_HAL_MIDI "${OPEN_CONTROL_ROOT}/hal-midi/src")
-set(OC_NOTE "${OPEN_CONTROL_ROOT}/note/src")
+set(OC_FRAMEWORK "${OPEN_CONTROL_FRAMEWORK_DIR}/src")
+set(OC_UI_LVGL "${OPEN_CONTROL_UI_LVGL_DIR}/src")
+set(OC_UI_COMPONENTS "${OPEN_CONTROL_UI_COMPONENTS_DIR}")
+set(OC_HAL_SDL "${OPEN_CONTROL_HAL_SDL_DIR}/src")
+set(OC_HAL_NET "${OPEN_CONTROL_HAL_NET_DIR}/src")
+set(OC_HAL_MIDI "${OPEN_CONTROL_HAL_MIDI_DIR}/src")
+set(OC_NOTE "${OPEN_CONTROL_NOTE_DIR}/src")
 
 # ==============================================================================
 # Dependencies
@@ -166,9 +179,14 @@ endif()
 set(LV_BUILD_CONF_DIR "${LV_CONF_DIR}" CACHE STRING "" FORCE)
 set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-add_subdirectory(${LVGL_DIR} ${CMAKE_BINARY_DIR}/lvgl)
+add_subdirectory("${LVGL_DIR}" "${CMAKE_BINARY_DIR}/lvgl")
 target_include_directories(lvgl PUBLIC ${LV_CONF_DIR})
-target_compile_definitions(lvgl PUBLIC LV_CONF_INCLUDE_SIMPLE)
+# Select the app-specific LVGL configuration explicitly.  Several dependency
+# roots legitimately contain their own lv_conf.h, so relying on include search
+# order can silently select a firmware configuration for the SDL/WASM target.
+target_compile_definitions(lvgl PUBLIC
+    LV_CONF_INCLUDE_SIMPLE
+    LV_CONF_PATH="${LV_CONF_DIR}/lv_conf.h")
 if(BUILD_NATIVE AND DEFINED SDL2_INCLUDE)
     target_include_directories(lvgl PUBLIC ${SDL2_INCLUDE})
 endif()
@@ -180,30 +198,45 @@ target_compile_options(lvgl PRIVATE $<$<COMPILE_LANGUAGE:C>:-include string.h>)
 # ==============================================================================
 # Sources
 # ==============================================================================
-file(GLOB_RECURSE SRC_FRAMEWORK CONFIGURE_DEPENDS "${OC_FRAMEWORK}/*.cpp")
-file(GLOB_RECURSE SRC_UI_LVGL CONFIGURE_DEPENDS "${OC_UI_LVGL}/*.cpp")
-file(GLOB_RECURSE SRC_UI_COMPONENTS CONFIGURE_DEPENDS "${OC_UI_COMPONENTS}/src/*.cpp")
-file(GLOB_RECURSE SRC_MS_UI CONFIGURE_DEPENDS "${MS_UI_ROOT}/src/*.cpp")
-file(GLOB_RECURSE SRC_HAL_SDL CONFIGURE_DEPENDS "${OC_HAL_SDL}/*.cpp")
-file(GLOB_RECURSE SRC_HAL_MIDI CONFIGURE_DEPENDS "${OC_HAL_MIDI}/*.cpp")
-file(GLOB_RECURSE SRC_NOTE CONFIGURE_DEPENDS "${OC_NOTE}/*.cpp")
+include("${OPEN_CONTROL_FRAMEWORK_DIR}/cmake/OpenControlFrameworkSources.cmake")
+include("${OPEN_CONTROL_UI_LVGL_DIR}/cmake/OpenControlUiLvglSources.cmake")
+include("${OPEN_CONTROL_UI_COMPONENTS_DIR}/cmake/OpenControlUiLvglComponentsSources.cmake")
+include("${OPEN_CONTROL_HAL_SDL_DIR}/cmake/OpenControlHalSdlSources.cmake")
+include("${OPEN_CONTROL_HAL_NET_DIR}/cmake/OpenControlHalNetSources.cmake")
+include("${OPEN_CONTROL_HAL_MIDI_DIR}/cmake/OpenControlHalMidiSources.cmake")
+include("${OPEN_CONTROL_NOTE_DIR}/cmake/OpenControlNoteSources.cmake")
+include("${MIDI_STUDIO_UI_DIR}/cmake/MidiStudioUiSources.cmake")
+
+set(SRC_FRAMEWORK ${OC_FRAMEWORK_SOURCES})
+set(SRC_UI_LVGL ${OC_UI_LVGL_SOURCES})
+set(SRC_UI_COMPONENTS ${OC_UI_LVGL_COMPONENTS_SOURCES})
+set(SRC_MS_UI ${MS_UI_SOURCES})
+set(SRC_HAL_SDL ${OC_HAL_SDL_SOURCES})
+set(SRC_HAL_MIDI ${OC_HAL_MIDI_SOURCES})
+set(SRC_NOTE ${OC_NOTE_SOURCES})
 
 # HAL Net: WASM only uses WebSocket
 if(BUILD_WASM)
-    set(SRC_HAL_NET "${OC_HAL_NET}/oc/hal/net/WebSocketTransport.cpp")
+    set(SRC_HAL_NET ${OC_HAL_NET_WASM_SOURCES})
 else()
-    file(GLOB_RECURSE SRC_HAL_NET CONFIGURE_DEPENDS "${OC_HAL_NET}/*.cpp")
+    set(SRC_HAL_NET ${OC_HAL_NET_NATIVE_SOURCES})
 endif()
 
 # App sources
-file(GLOB_RECURSE SRC_APP CONFIGURE_DEPENDS "${APP_SRC_DIR}/*.cpp" "${APP_SRC_DIR}/*.c")
-list(FILTER SRC_APP EXCLUDE REGEX ".*/main\\.cpp$")
-list(FILTER SRC_APP EXCLUDE REGEX ".*/platform-teensy/.*")
-list(FILTER SRC_APP EXCLUDE REGEX ".*/name\\.c$")
-list(FILTER SRC_UI_LVGL EXCLUDE REGEX ".*/main\\.cpp$")
+if(NOT DEFINED APP_SOURCES)
+    message(FATAL_ERROR "${APP_PATH}/app.cmake must publish APP_SOURCES")
+endif()
+set(SRC_APP ${APP_SOURCES})
 if(APP_EXTRA_SOURCES)
     list(APPEND SRC_APP ${APP_EXTRA_SOURCES})
 endif()
+
+foreach(source IN LISTS SRC_FRAMEWORK SRC_UI_LVGL SRC_UI_COMPONENTS SRC_MS_UI
+        SRC_HAL_SDL SRC_HAL_NET SRC_HAL_MIDI SRC_NOTE SRC_APP)
+    if(NOT EXISTS "${source}")
+        message(FATAL_ERROR "Declared SDL/WASM source not found: ${source}")
+    endif()
+endforeach()
 
 # SDL layer
 if(BUILD_WASM)
@@ -232,9 +265,10 @@ add_executable(${APP_EXE_NAME}
     ${SRC_HAL_SDL} ${SRC_HAL_NET} ${SRC_HAL_MIDI} ${SRC_UI_COMPONENTS} ${SRC_NOTE})
 
 target_include_directories(${APP_EXE_NAME} PRIVATE
-    ${SDL_DIR} ${LV_CONF_DIR} ${CONFIG_DIR} ${APP_SRC_DIR} ${CORE_SRC} ${MS_UI_ROOT}/src
+    ${SDL_DIR} ${LV_CONF_DIR} ${CONFIG_DIR} ${APP_SRC_DIR} ${CORE_SRC}
+    ${MS_CORE_DIR}/device-support/src ${MIDI_STUDIO_UI_DIR}/src
     ${OC_FRAMEWORK} ${OC_UI_LVGL} ${OC_HAL_SDL} ${OC_HAL_NET} ${OC_HAL_MIDI} ${OC_NOTE}
-    ${OC_UI_COMPONENTS}/include)
+    ${OC_UI_COMPONENTS}/include ${APP_EXTRA_INCLUDES})
 
 target_compile_definitions(${APP_EXE_NAME} PRIVATE
     OC_DESKTOP=1

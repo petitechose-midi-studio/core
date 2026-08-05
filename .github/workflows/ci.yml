@@ -17,19 +17,21 @@ env:
   PLATFORMIO_VERSION: "6.1.18"
   MS_DEV_ENV_REPOSITORY: petitechose-midi-studio/ms-dev-env
   MS_DEV_ENV_SHA: ec565d041d6b1e61c5bc5cd6d2b8cf8af5f8162f
-  MIDI_STUDIO_BITWIG_SHA: 75af17b0bace74d5085f8e28a7a8af59afb6a540
+  MIDI_STUDIO_BITWIG_SHA: 6c0a4348a72a37f7253d1297540cac25624c7795
   OPEN_CONTROL_FRAMEWORK_SHA: 43c574ac9c7b4a8b0bba9ae5992393c8bf03ab9f
-  OPEN_CONTROL_NOTE_SHA: 863ead7ab70a965617c7df0a60eb4750e538c2af
+  OPEN_CONTROL_NOTE_SHA: 3983c387f04954b22500a6c36d6e9444ef1139c7
 
   OPEN_CONTROL_HAL_TEENSY_SHA: 015ba6f91a23c1d7b6f58c2abfcea09ff83dcf4a
   OPEN_CONTROL_HAL_MIDI_SHA: d18a6cc2437d3ecd1b974d05be17be3e0e02aeac
   OPEN_CONTROL_HAL_NET_SHA: 2207e6befc4b18fad5e4db870ba5ca8aab13aa29
   OPEN_CONTROL_HAL_SDL_SHA: f8755529b4240bf05547d3ab6eadc92d823882c3
-  OPEN_CONTROL_UI_LVGL_SHA: 9827f5933ae826f30dd6df856966a769f19f6ef2
-  OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA: b40208f1d3b6038e9ef0275b5a0f360fcb9ebf04
-  MIDI_STUDIO_UI_SHA: bd822d51a08d60172b04f3d8aae3f825d1ec717d
+  OPEN_CONTROL_UI_LVGL_SHA: 3884a808e8478009e10d70c74cd7f7050e619803
+  OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA: 235839489dbbd875e9580a009a1ec228352dcc09
+  MIDI_STUDIO_UI_SHA: 137e49f39c0ed1dd6391af300b764614d39658fb
   OPEN_CONTROL_HAL_COMMON_SHA: e3aa784055554922d130bba8065422d11a7dcd02
   LVGL_SHA: 85aa60d18b3d5e5588d7b247abf90198f07c8a63
+  EMSDK_VERSION: 4.0.23
+  EMSDK_SHA: c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56
 jobs:
   firmware_release:
     name: firmware (release)
@@ -327,14 +329,153 @@ jobs:
             -DAPP_PATH="${GITHUB_WORKSPACE}/workspace/midi-studio/core/sdl" \
             -DBIN_OUTPUT_DIR="${GITHUB_WORKSPACE}/workspace/bin" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DOPEN_CONTROL_FRAMEWORK_DIR="${GITHUB_WORKSPACE}/workspace/open-control/framework" \
+            -DOPEN_CONTROL_UI_LVGL_DIR="${GITHUB_WORKSPACE}/workspace/open-control/ui-lvgl" \
+            -DOPEN_CONTROL_UI_COMPONENTS_DIR="${GITHUB_WORKSPACE}/workspace/open-control/ui-lvgl-components" \
+            -DOPEN_CONTROL_HAL_SDL_DIR="${GITHUB_WORKSPACE}/workspace/open-control/hal-sdl" \
+            -DOPEN_CONTROL_HAL_NET_DIR="${GITHUB_WORKSPACE}/workspace/open-control/hal-net" \
+            -DOPEN_CONTROL_HAL_MIDI_DIR="${GITHUB_WORKSPACE}/workspace/open-control/hal-midi" \
+            -DOPEN_CONTROL_NOTE_DIR="${GITHUB_WORKSPACE}/workspace/open-control/note" \
+            -DMIDI_STUDIO_UI_DIR="${GITHUB_WORKSPACE}/workspace/midi-studio/ui" \
             -DLVGL_DIR="${GITHUB_WORKSPACE}/workspace/deps/lvgl"
           cmake --build workspace/.build/core-sdl-native --parallel
           test -x workspace/bin/core/native/midi_studio_core
 
+  sdl_wasm:
+    name: SDL WASM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout core
+        uses: actions/checkout@v6
+        with:
+          path: workspace/midi-studio/core
+          persist-credentials: false
+
+      - name: Checkout framework
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/framework
+          ref: ${{ env.OPEN_CONTROL_FRAMEWORK_SHA }}
+          path: workspace/open-control/framework
+          persist-credentials: false
+
+      - name: Checkout note
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/note
+          ref: ${{ env.OPEN_CONTROL_NOTE_SHA }}
+          path: workspace/open-control/note
+          persist-credentials: false
+
+      - name: Checkout HAL MIDI
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-midi
+          ref: ${{ env.OPEN_CONTROL_HAL_MIDI_SHA }}
+          path: workspace/open-control/hal-midi
+          persist-credentials: false
+
+      - name: Checkout HAL Net
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-net
+          ref: ${{ env.OPEN_CONTROL_HAL_NET_SHA }}
+          path: workspace/open-control/hal-net
+          persist-credentials: false
+
+      - name: Checkout HAL SDL
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-sdl
+          ref: ${{ env.OPEN_CONTROL_HAL_SDL_SHA }}
+          path: workspace/open-control/hal-sdl
+          persist-credentials: false
+
+      - name: Checkout UI LVGL
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/ui-lvgl
+          ref: ${{ env.OPEN_CONTROL_UI_LVGL_SHA }}
+          path: workspace/open-control/ui-lvgl
+          persist-credentials: false
+
+      - name: Checkout UI LVGL Components
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/ui-lvgl-components
+          ref: ${{ env.OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA }}
+          path: workspace/open-control/ui-lvgl-components
+          persist-credentials: false
+
+      - name: Checkout UI
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ui
+          ref: ${{ env.MIDI_STUDIO_UI_SHA }}
+          path: workspace/midi-studio/ui
+          persist-credentials: false
+
+      - name: Checkout LVGL
+        uses: actions/checkout@v6
+        with:
+          repository: lvgl/lvgl
+          ref: ${{ env.LVGL_SHA }}
+          path: workspace/deps/lvgl
+          persist-credentials: false
+
+      - name: Checkout emsdk
+        uses: actions/checkout@v6
+        with:
+          repository: emscripten-core/emsdk
+          ref: ${{ env.EMSDK_SHA }}
+          path: workspace/deps/emsdk
+          persist-credentials: false
+
+      - name: Install pinned Emscripten
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace/deps/emsdk/emsdk install "$EMSDK_VERSION"
+          workspace/deps/emsdk/emsdk activate "$EMSDK_VERSION"
+
+      - name: Build SDL WASM
+        shell: bash
+        run: |
+          set -euo pipefail
+          source workspace/deps/emsdk/emsdk_env.sh
+          emcmake cmake \
+            -S workspace/midi-studio/core/sdl \
+            -B workspace/.build/core-sdl-wasm \
+            -G Ninja \
+            -DAPP_PATH="${GITHUB_WORKSPACE}/workspace/midi-studio/core/sdl" \
+            -DBIN_OUTPUT_DIR="${GITHUB_WORKSPACE}/workspace/bin" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOPEN_CONTROL_FRAMEWORK_DIR="${GITHUB_WORKSPACE}/workspace/open-control/framework" \
+            -DOPEN_CONTROL_UI_LVGL_DIR="${GITHUB_WORKSPACE}/workspace/open-control/ui-lvgl" \
+            -DOPEN_CONTROL_UI_COMPONENTS_DIR="${GITHUB_WORKSPACE}/workspace/open-control/ui-lvgl-components" \
+            -DOPEN_CONTROL_HAL_SDL_DIR="${GITHUB_WORKSPACE}/workspace/open-control/hal-sdl" \
+            -DOPEN_CONTROL_HAL_NET_DIR="${GITHUB_WORKSPACE}/workspace/open-control/hal-net" \
+            -DOPEN_CONTROL_HAL_MIDI_DIR="${GITHUB_WORKSPACE}/workspace/open-control/hal-midi" \
+            -DOPEN_CONTROL_NOTE_DIR="${GITHUB_WORKSPACE}/workspace/open-control/note" \
+            -DMIDI_STUDIO_UI_DIR="${GITHUB_WORKSPACE}/workspace/midi-studio/ui" \
+            -DLVGL_DIR="${GITHUB_WORKSPACE}/workspace/deps/lvgl"
+          cmake --build workspace/.build/core-sdl-wasm --parallel
+          test -s workspace/bin/core/wasm/midi_studio_core.html
+          test -s workspace/bin/core/wasm/midi_studio_core.js
+          test -s workspace/bin/core/wasm/midi_studio_core.wasm
+
+      - name: Upload linked WASM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: midi-studio-core-wasm
+          path: workspace/bin/core/wasm/
+          retention-days: 7
+
   unit_tests:
     name: unit tests
     if: ${{ always() }}
-    needs: [native_tests, sdl_native]
+    needs: [native_tests, sdl_native, sdl_wasm]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -343,7 +484,9 @@ jobs:
         env:
           NATIVE_TESTS_RESULT: ${{ needs.native_tests.result }}
           SDL_NATIVE_RESULT: ${{ needs.sdl_native.result }}
+          SDL_WASM_RESULT: ${{ needs.sdl_wasm.result }}
         run: |
           set -euo pipefail
           test "$NATIVE_TESTS_RESULT" = "success"
           test "$SDL_NATIVE_RESULT" = "success"
+          test "$SDL_WASM_RESULT" = "success"

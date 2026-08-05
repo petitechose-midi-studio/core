@@ -18,7 +18,7 @@ from typing import Any, Iterable, Sequence
 
 CORE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SNAPSHOT = Path(__file__).with_name("build-topology-snapshot.json")
-TOOL_VERSION = 1
+TOOL_VERSION = 2
 HISTORICAL_F07 = {
     "coreImplementations": 382,
     "coreHeaders": 426,
@@ -227,38 +227,58 @@ def quoted_cmake_values(body: str) -> list[str]:
     return re.findall(r'"([^"\r\n]+)"', body)
 
 
+def cmake_owned_source_paths(
+    repo: Path, relative_file: str, variable: str
+) -> list[str]:
+    source_list = repo / relative_file
+    require_file(source_list, relative_file)
+    text = source_list.read_text(encoding="utf-8")
+    bodies = extract_cmake_command_bodies(text, "set", variable)
+    if len(bodies) != 1:
+        raise InventoryError(
+            f"expected one {variable} declaration in {relative_file}"
+        )
+    paths = re.findall(
+        r"(?m)^\s+(src/[^\s\)]+\.(?:c|cc|cpp))\s*$", bodies[0]
+    )
+    if not paths:
+        raise InventoryError(f"no owned sources found in {relative_file}")
+    if paths != sorted(set(paths)):
+        raise InventoryError(f"owned source list is not sorted/unique: {relative_file}")
+    return paths
+
+
 def expand_core_native_sources(core: Path, tracked: set[str]) -> list[str]:
     recipe = (core / "cmake" / "MsCoreSources.cmake").read_text(encoding="utf-8")
-    pattern_bodies = extract_cmake_command_bodies(
-        recipe, "set", "MS_CORE_NATIVE_SOURCE_PATTERNS"
-    )
     extra_bodies = extract_cmake_command_bodies(
         recipe, "set", "MS_CORE_NATIVE_EXTRA_SOURCES"
     ) + extract_cmake_command_bodies(
         recipe, "list", "MS_CORE_NATIVE_EXTRA_SOURCES", append=True
     )
-    if len(pattern_bodies) != 1 or not extra_bodies:
+    if not extra_bodies:
         raise InventoryError("unable to identify the Core native source declarations")
 
-    source_specs = []
-    for value in quoted_cmake_values(pattern_bodies[0]):
-        prefix = "${MS_CORE_SOURCE_ROOT}/"
-        if value.startswith(prefix):
-            source_specs.append(value[len(prefix) :])
-
-    selected: set[str] = set()
-    for spec in source_specs:
-        if "*" not in spec:
-            selected.add(f"src/{spec}")
-            continue
-        first_wildcard = spec.index("*")
-        base_text = spec[:first_wildcard].rstrip("/")
-        base_dir = core / "src" / PurePosixPath(base_text)
-        suffix = PurePosixPath(spec).suffix or ".cpp"
-        if not base_dir.is_dir():
-            raise InventoryError(f"Core native glob base is missing: {base_text}")
-        for path in base_dir.rglob(f"*{suffix}"):
-            selected.add(path.relative_to(core).as_posix())
+    product_sources = cmake_owned_source_paths(
+        core, "cmake/MsCoreProductSources.cmake", "MS_CORE_PRODUCT_SOURCE_PATHS"
+    )
+    native_prefixes = (
+        "src/state/",
+        "src/protocol/",
+        "src/persistence/",
+        "src/sequencer/",
+        "src/validation/ux/",
+        "src/handler/common/",
+        "src/handler/macro/",
+        "src/handler/project/",
+        "src/handler/sequencer/",
+        "src/handler/settings/",
+        "src/handler/transport/",
+        "src/handler/view/",
+    )
+    selected: set[str] = {
+        path for path in product_sources if path.startswith(native_prefixes)
+    }
+    selected.add("src/validation/project/ProjectModulationBenchmark.cpp")
 
     for body in extra_bodies:
         for value in quoted_cmake_values(body):
@@ -435,6 +455,15 @@ def yaml_scalar(text: str, name: str) -> str | None:
     return match.group(1) if match else None
 
 
+def shell_scalar(text: str, name: str) -> str | None:
+    match = re.search(
+        rf'^\s*{re.escape(name)}=["\']?([^"\'\s#]+)',
+        text,
+        flags=re.MULTILINE,
+    )
+    return match.group(1) if match else None
+
+
 def workflow_sha_map(text: str) -> dict[str, str]:
     return dict(
         sorted(
@@ -454,12 +483,19 @@ def cmake_minimum(text: str) -> str | None:
     return match.group(1) if match else None
 
 
-def source_metadata(repo: Path, tracked: list[str]) -> dict[str, Any]:
+def source_metadata(
+    repo: Path,
+    tracked: list[str],
+    *,
+    owned_list: tuple[str, str] | None = None,
+    library_exclusions: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
     sources = [
         path
         for path in tracked
         if path.startswith("src/") and PurePosixPath(path).suffix in COMPILABLE_SUFFIXES
     ]
+    library_sources = [path for path in sources if path not in library_exclusions]
     cmake_path = repo / "CMakeLists.txt"
     cmake_text = cmake_path.read_text(encoding="utf-8") if cmake_path.is_file() else ""
     manifest_path = repo / "library.json"
@@ -472,21 +508,98 @@ def source_metadata(repo: Path, tracked: list[str]) -> dict[str, Any]:
     has_recursive_glob = "GLOB_RECURSE" in cmake_text
     has_explicit_source_list = bool(library_targets) and not has_recursive_glob
     src_filter = None
+    src_dir = "src"
     if isinstance(manifest, dict):
-        src_filter = manifest.get("build", {}).get("srcFilter")
+        build = manifest.get("build", {})
+        src_filter = build.get("srcFilter")
+        src_dir = build.get("srcDir", "src")
+    owned_paths = (
+        cmake_owned_source_paths(repo, owned_list[0], owned_list[1])
+        if owned_list is not None
+        else None
+    )
+    owned_exact = owned_paths == library_sources if owned_paths is not None else False
+    if owned_paths is not None and not owned_exact:
+        missing = sorted(set(library_sources) - set(owned_paths))
+        extra = sorted(set(owned_paths) - set(library_sources))
+        raise InventoryError(
+            f"owned source mismatch for {repo}: missing={missing} extra={extra}"
+        )
+    target_source_variable = None
+    if owned_list is not None:
+        owned_list_text = (repo / owned_list[0]).read_text(encoding="utf-8")
+        target_source_variables = [owned_list[1]] + re.findall(
+            rf"\bset\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+"
+            rf"\$\{{{re.escape(owned_list[1])}\}}",
+            owned_list_text,
+        )
+        target_source_variable = next(
+            (
+                variable
+                for variable in target_source_variables
+                if f"${{{variable}}}" in cmake_text
+            ),
+            None,
+        )
+    target_uses_owned_list = target_source_variable is not None
+    if owned_list is not None and not target_uses_owned_list:
+        raise InventoryError(
+            f"CMake target does not consume {owned_list[1]} for {repo}"
+        )
+    platformio_filter_exact = False
+    if owned_list is not None:
+        if not isinstance(src_filter, list) or not all(
+            isinstance(rule, str) for rule in src_filter
+        ):
+            raise InventoryError(f"explicit PlatformIO source filter missing for {repo}")
+        source_prefix = src_dir.rstrip("/") + "/"
+        relative_candidates = [
+            path[len(source_prefix) :]
+            for path in sources
+            if path.startswith(source_prefix)
+        ]
+        selected = [
+            f"{source_prefix}{path}"
+            for path in apply_pio_filters(relative_candidates, src_filter)
+        ]
+        platformio_filter_exact = selected == library_sources
+        if not platformio_filter_exact:
+            missing = sorted(set(library_sources) - set(selected))
+            extra = sorted(set(selected) - set(library_sources))
+            raise InventoryError(
+                f"PlatformIO source filter mismatch for {repo}: "
+                f"missing={missing} extra={extra}"
+            )
     return {
         "sources": path_set_record(sources),
+        "librarySources": path_set_record(library_sources),
+        "ownedSourceList": (
+            {
+                "file": owned_list[0],
+                "variable": owned_list[1],
+                "exact": owned_exact,
+                "consumedByCmakeTarget": target_uses_owned_list,
+                "targetVariable": target_source_variable,
+            }
+            if owned_list is not None
+            else None
+        ),
         "cmakeLibraryTargets": library_targets,
         "cmakeRecursiveGlob": has_recursive_glob,
         "cmakeExplicitSourceList": has_explicit_source_list,
         "platformioSourceFilter": src_filter,
+        "platformioSourceFilterExact": platformio_filter_exact,
     }
 
 
 def classify_supplier_lots(metadata: dict[str, dict[str, Any]]) -> dict[str, Any]:
     framework = metadata["framework"]
     note = metadata["note"]
-    ui_lvgl = metadata["uiLvgl"]
+    ui_members = (
+        metadata["uiLvgl"],
+        metadata["uiLvglComponents"],
+        metadata["ui"],
+    )
     hal_members = [metadata[name] for name in ("halCommon", "halTeensy", "halSdl", "halMidi", "halNet")]
     return {
         "L-R18-02F": (
@@ -502,11 +615,18 @@ def classify_supplier_lots(metadata: dict[str, dict[str, Any]]) -> dict[str, Any
         "L-R18-02N": (
             "activate-explicit-owned-list"
             if not note["cmakeExplicitSourceList"]
+            or not note["ownedSourceList"]["exact"]
+            or not note["platformioSourceFilterExact"]
             else "evidence-only-existing-list"
         ),
         "L-R18-02U": (
             "activate-target-and-explicit-owned-list"
-            if not ui_lvgl["cmakeExplicitSourceList"]
+            if any(
+                not member["cmakeExplicitSourceList"]
+                or not member["ownedSourceList"]["exact"]
+                or not member["platformioSourceFilterExact"]
+                for member in ui_members
+            )
             else "evidence-only-existing-list"
         ),
     }
@@ -518,6 +638,7 @@ def input_hashes(repositories: dict[str, Path]) -> dict[str, str]:
         "core/cmake/MsCoreProjectFileTool.cmake": (
             repositories["core"] / "cmake" / "MsCoreProjectFileTool.cmake"
         ),
+        "core/cmake/MsCoreProductSources.cmake": repositories["core"] / "cmake" / "MsCoreProductSources.cmake",
         "core/cmake/MsCoreSources.cmake": repositories["core"] / "cmake" / "MsCoreSources.cmake",
         "core/platformio.ini": repositories["core"] / "platformio.ini",
         "core/library.json": repositories["core"] / "library.json",
@@ -525,6 +646,7 @@ def input_hashes(repositories: dict[str, Path]) -> dict[str, str]:
         "core/oc-native-sdk.ini": repositories["core"] / "oc-native-sdk.ini",
         "core/sdl/CMakeLists.txt": repositories["core"] / "sdl" / "CMakeLists.txt",
         "core/sdl/app.cmake": repositories["core"] / "sdl" / "app.cmake",
+        "core/sdl/build.sh": repositories["core"] / "sdl" / "build.sh",
         "core/sdl/cmake/libremidi.cmake": repositories["core"] / "sdl" / "cmake" / "libremidi.cmake",
         "core/.github/release-tooling.json": repositories["core"] / ".github" / "release-tooling.json",
         "core/.github/workflows/ci.yml": repositories["core"] / ".github" / "workflows" / "ci.yml",
@@ -532,13 +654,18 @@ def input_hashes(repositories: dict[str, Path]) -> dict[str, str]:
         "core/.github/workflows/candidate-host-tools.yml": repositories["core"] / ".github" / "workflows" / "candidate-host-tools.yml",
         "core/script/dev/check-build-topology.py": Path(__file__).resolve(),
         "bitwig/CMakeLists.txt": repositories["bitwig"] / "CMakeLists.txt",
+        "bitwig/cmake/MidiStudioBitwigSources.cmake": repositories["bitwig"] / "cmake" / "MidiStudioBitwigSources.cmake",
         "bitwig/platformio.ini": repositories["bitwig"] / "platformio.ini",
         "bitwig/sdl/app.cmake": repositories["bitwig"] / "sdl" / "app.cmake",
         "bitwig/.github/release-tooling.json": repositories["bitwig"] / ".github" / "release-tooling.json",
         "bitwig/.github/workflows/ci.yml": repositories["bitwig"] / ".github" / "workflows" / "ci.yml",
         "bitwig/.github/workflows/candidate-firmware.yml": repositories["bitwig"] / ".github" / "workflows" / "candidate-firmware.yml",
         "ui/CMakeLists.txt": repositories["ui"] / "CMakeLists.txt",
+        "ui/cmake/MidiStudioUiSources.cmake": repositories["ui"] / "cmake" / "MidiStudioUiSources.cmake",
         "ui/library.json": repositories["ui"] / "library.json",
+        "note/cmake/OpenControlNoteSources.cmake": repositories["note"] / "cmake" / "OpenControlNoteSources.cmake",
+        "uiLvgl/cmake/OpenControlUiLvglSources.cmake": repositories["uiLvgl"] / "cmake" / "OpenControlUiLvglSources.cmake",
+        "uiLvglComponents/cmake/OpenControlUiLvglComponentsSources.cmake": repositories["uiLvglComponents"] / "cmake" / "OpenControlUiLvglComponentsSources.cmake",
     }
     for label, path in inputs.items():
         require_file(path, label)
@@ -573,6 +700,20 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
     ui_sources = filtered_paths(tracked["ui"], "src", IMPLEMENTATION_SUFFIXES)
     ui_c_sources = filtered_paths(tracked["ui"], "src", C_SOURCE_SUFFIXES)
 
+    declared_core_sources = cmake_owned_source_paths(
+        core, "cmake/MsCoreProductSources.cmake", "MS_CORE_PRODUCT_SOURCE_PATHS"
+    )
+    if declared_core_sources != core_sources:
+        raise InventoryError("Core owned product source list differs from tracked implementations")
+    declared_bitwig_sources = cmake_owned_source_paths(
+        bitwig,
+        "cmake/MidiStudioBitwigSources.cmake",
+        "MS_PLUGIN_BITWIG_SOURCE_PATHS",
+    )
+    expected_bitwig_sources = sorted(bitwig_sources + bitwig_c_sources)
+    if declared_bitwig_sources != expected_bitwig_sources:
+        raise InventoryError("Bitwig owned source list differs from tracked implementations")
+
     core_pio_text = (core / "platformio.ini").read_text(encoding="utf-8")
     core_pio = parse_platformio(core_pio_text)
     bitwig_pio_text = (bitwig / "platformio.ini").read_text(encoding="utf-8")
@@ -597,6 +738,7 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
         core / "cmake" / "MsCoreProjectFileTool.cmake"
     ).read_text(encoding="utf-8")
     sdl_cmake_text = (core / "sdl" / "CMakeLists.txt").read_text(encoding="utf-8")
+    sdl_build_text = (core / "sdl" / "build.sh").read_text(encoding="utf-8")
     libremidi_cmake_text = (
         core / "sdl" / "cmake" / "libremidi.cmake"
     ).read_text(encoding="utf-8")
@@ -650,11 +792,27 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
         "halNet",
         "note",
         "uiLvgl",
+        "uiLvglComponents",
+        "ui",
     )
-    supplier_metadata = {
-        name: source_metadata(repositories[name], tracked[name])
-        for name in supplier_names
+    owned_supplier_lists = {
+        "note": ("cmake/OpenControlNoteSources.cmake", "OC_NOTE_SOURCE_PATHS"),
+        "uiLvgl": ("cmake/OpenControlUiLvglSources.cmake", "OC_UI_LVGL_SOURCE_PATHS"),
+        "uiLvglComponents": (
+            "cmake/OpenControlUiLvglComponentsSources.cmake",
+            "OC_UI_LVGL_COMPONENTS_SOURCE_PATHS",
+        ),
+        "ui": ("cmake/MidiStudioUiSources.cmake", "MS_UI_SOURCE_PATHS"),
     }
+    supplier_metadata = {}
+    for name in supplier_names:
+        exclusions = frozenset(("src/main.cpp",)) if name == "uiLvgl" else frozenset()
+        supplier_metadata[name] = source_metadata(
+            repositories[name],
+            tracked[name],
+            owned_list=owned_supplier_lists.get(name),
+            library_exclusions=exclusions,
+        )
 
     core_oc_sdk = (core / "oc-sdk.ini").read_text(encoding="utf-8")
     core_native_sdk = (core / "oc-native-sdk.ini").read_text(encoding="utf-8")
@@ -692,9 +850,24 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
     app_extra_source_append_uses = len(
         re.findall(r"list\s*\(\s*APPEND\s+SRC_APP\s+\$\{APP_EXTRA_SOURCES\}", sdl_cmake_text)
     )
+    required_sdl_roots = (
+        "OPEN_CONTROL_FRAMEWORK_DIR",
+        "OPEN_CONTROL_UI_LVGL_DIR",
+        "OPEN_CONTROL_UI_COMPONENTS_DIR",
+        "OPEN_CONTROL_HAL_SDL_DIR",
+        "OPEN_CONTROL_HAL_NET_DIR",
+        "OPEN_CONTROL_HAL_MIDI_DIR",
+        "OPEN_CONTROL_NOTE_DIR",
+        "MIDI_STUDIO_UI_DIR",
+        "LVGL_DIR",
+    )
+    explicit_sdl_roots = all(
+        f"require_dependency_root({name}" in sdl_cmake_text
+        for name in required_sdl_roots
+    )
 
     inventory = {
-        "schema": 1,
+        "schema": 2,
         "toolVersion": TOOL_VERSION,
         "historicalF07": HISTORICAL_F07,
         "repositories": external_identities,
@@ -816,6 +989,12 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
                 "platformio": yaml_scalar(core_ci, "PLATFORMIO_VERSION"),
                 "msDevEnv": yaml_scalar(core_ci, "MS_DEV_ENV_SHA"),
                 "declaredRepositoryPins": workflow_sha_map(core_ci),
+                "emsdkVersion": yaml_scalar(core_ci, "EMSDK_VERSION"),
+                "finalWasmLink": (
+                    "sdl_wasm:" in core_ci
+                    and "midi_studio_core.wasm" in core_ci
+                    and "needs: [native_tests, sdl_native, sdl_wasm]" in core_ci
+                ),
             },
             "coreCandidate": {
                 "platformio": yaml_scalar(core_candidate, "PLATFORMIO_VERSION"),
@@ -832,14 +1011,22 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
             },
         },
         "sdlTopology": {
-            "explicitDependencyRoots": False,
-            "implicitSiblingRoots": True,
-            "pioLibdepsFallback": ".pio/libdeps/dev" in sdl_cmake_text,
+            "explicitDependencyRoots": explicit_sdl_roots,
+            "implicitSiblingRoots": (
+                "../../open-control" in sdl_cmake_text
+                or "../ui" in sdl_cmake_text
+            ),
+            "pioLibdepsFallback": ".pio/libdeps" in sdl_cmake_text,
             "consumerRecursiveSourceGlobs": len(re.findall(r"file\s*\(\s*GLOB_RECURSE", sdl_cmake_text)),
             "appExtraIncludesDeclarations": app_extra_include_declarations,
             "appExtraIncludesTargetUses": app_extra_include_target_uses,
             "appExtraSourcesAppendUses": app_extra_source_append_uses,
             "bitwigDeviceSupportIncludeRootExposed": "device-support/src" in sdl_cmake_text,
+            "emsdk": {
+                "version": shell_scalar(sdl_build_text, "EMSDK_VERSION"),
+                "revision": shell_scalar(sdl_build_text, "EMSDK_REVISION"),
+                "floatingLatest": bool(re.search(r"\b(?:install|activate)\s+latest\b", sdl_build_text)),
+            },
         },
         "suppliers": supplier_metadata,
         "conditionalSupplierLots": classify_supplier_lots(supplier_metadata),

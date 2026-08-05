@@ -5,6 +5,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS_DIR="$SCRIPT_DIR/tools"
 CORE_DIR="$SCRIPT_DIR/.."
+WORKSPACE_DIR="$(cd "$CORE_DIR/../.." && pwd)"
 
 # App configuration (can be overridden via argument)
 APP_PATH="$SCRIPT_DIR"
@@ -15,6 +16,9 @@ ZIG_VERSION="0.15.2"
 NINJA_VERSION="v1.13.2"
 SDL2_VERSION="2.32.10"
 WATCHEXEC_VERSION="2.3.2"
+EMSDK_VERSION="4.0.23"
+EMSDK_REVISION="c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56"
+LVGL_REVISION="85aa60d18b3d5e5588d7b247abf90198f07c8a63"
 
 # ═══════════════════════════════════════════════════════════════════
 # Colors & Logging
@@ -198,6 +202,36 @@ setup_ninja() {
     export PATH="$TOOLS_DIR/ninja:$PATH"
 }
 
+setup_lvgl() {
+    local lvgl_dir="$TOOLS_DIR/lvgl"
+    if [[ ! -d "$lvgl_dir/.git" ]]; then
+        log "Cloning LVGL ${DIM}$LVGL_REVISION${NC}"
+        git clone --filter=blob:none --no-checkout https://github.com/lvgl/lvgl.git "$lvgl_dir"
+    fi
+    if [[ -n "$(git -C "$lvgl_dir" status --porcelain)" ]]; then
+        fail "LVGL tool checkout is dirty: $lvgl_dir"
+    fi
+    if [[ "$(git -C "$lvgl_dir" rev-parse HEAD 2>/dev/null || true)" != "$LVGL_REVISION" ]]; then
+        git -C "$lvgl_dir" fetch --depth 1 origin "$LVGL_REVISION"
+        git -C "$lvgl_dir" checkout --detach "$LVGL_REVISION"
+    fi
+}
+
+set_dependency_cmake_args() {
+    setup_lvgl
+    DEPENDENCY_CMAKE_ARGS=(
+        -DOPEN_CONTROL_FRAMEWORK_DIR="$WORKSPACE_DIR/open-control/framework"
+        -DOPEN_CONTROL_UI_LVGL_DIR="$WORKSPACE_DIR/open-control/ui-lvgl"
+        -DOPEN_CONTROL_UI_COMPONENTS_DIR="$WORKSPACE_DIR/open-control/ui-lvgl-components"
+        -DOPEN_CONTROL_HAL_SDL_DIR="$WORKSPACE_DIR/open-control/hal-sdl"
+        -DOPEN_CONTROL_HAL_NET_DIR="$WORKSPACE_DIR/open-control/hal-net"
+        -DOPEN_CONTROL_HAL_MIDI_DIR="$WORKSPACE_DIR/open-control/hal-midi"
+        -DOPEN_CONTROL_NOTE_DIR="$WORKSPACE_DIR/open-control/note"
+        -DMIDI_STUDIO_UI_DIR="$WORKSPACE_DIR/midi-studio/ui"
+        -DLVGL_DIR="$TOOLS_DIR/lvgl"
+    )
+}
+
 setup_native_tools() {
     mkdir -p "$TOOLS_DIR"
     if [[ ! -f "$TOOLS_DIR/zig/zig.exe" ]]; then
@@ -219,24 +253,30 @@ setup_native_tools() {
         mv "$TOOLS_DIR/SDL2-$SDL2_VERSION/x86_64-w64-mingw32" "$TOOLS_DIR/SDL2"
         rm -rf "$TOOLS_DIR/SDL2-$SDL2_VERSION" "$TOOLS_DIR/sdl2.zip"
     fi
-    [[ -d "$CORE_DIR/.pio/libdeps" ]] || (cd "$CORE_DIR" && pio pkg install >/dev/null 2>&1)
+    set_dependency_cmake_args
     return 0
 }
 
 setup_wasm_tools() {
     local EMSDK="$TOOLS_DIR/emsdk"
-    if ! command -v emcc &>/dev/null; then
-        if [[ ! -d "$EMSDK" ]]; then
-            log "Installing Emscripten ${DIM}(this may take a while)${NC}"
-            git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$EMSDK"
-            "$EMSDK/emsdk.bat" install latest && "$EMSDK/emsdk.bat" activate latest
-        fi
-        export PATH="$EMSDK/upstream/emscripten:$PATH"
-        local NODE_DIR=$(ls -d "$EMSDK/node/"*64bit 2>/dev/null | head -1)
-        [[ -d "$NODE_DIR" ]] && export PATH="$NODE_DIR/bin:$PATH"
+    if [[ ! -d "$EMSDK/.git" ]]; then
+        log "Cloning emsdk ${DIM}$EMSDK_REVISION${NC}"
+        git clone --filter=blob:none --no-checkout https://github.com/emscripten-core/emsdk.git "$EMSDK"
     fi
+    if [[ -n "$(git -C "$EMSDK" status --porcelain)" ]]; then
+        fail "emsdk tool checkout is dirty: $EMSDK"
+    fi
+    if [[ "$(git -C "$EMSDK" rev-parse HEAD 2>/dev/null || true)" != "$EMSDK_REVISION" ]]; then
+        git -C "$EMSDK" fetch --depth 1 origin "$EMSDK_REVISION"
+        git -C "$EMSDK" checkout --detach "$EMSDK_REVISION"
+    fi
+    log "Activating Emscripten ${DIM}$EMSDK_VERSION${NC}"
+    "$EMSDK/emsdk.bat" install "$EMSDK_VERSION"
+    "$EMSDK/emsdk.bat" activate "$EMSDK_VERSION"
+    # shellcheck disable=SC1091
+    source "$EMSDK/emsdk_env.sh" >/dev/null
     setup_ninja
-    [[ -d "$CORE_DIR/.pio/libdeps" ]] || (cd "$CORE_DIR" && pio pkg install >/dev/null 2>&1)
+    set_dependency_cmake_args
     return 0
 }
 
@@ -267,7 +307,9 @@ do_build_native() {
             -DCMAKE_TOOLCHAIN_FILE="$SCRIPT_DIR/zig-toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DSDL2_ROOT="$TOOLS_DIR/SDL2" \
-            -DAPP_PATH="$APP_PATH"; then
+            -DBIN_OUTPUT_DIR="$SCRIPT_DIR/bin" \
+            -DAPP_PATH="$APP_PATH" \
+            "${DEPENDENCY_CMAKE_ARGS[@]}"; then
             echo "$BUILD_OUTPUT"
             fail "CMake configuration failed"
         fi
@@ -298,7 +340,9 @@ do_build_wasm() {
         cd "$BUILD_DIR"
         if ! run_with_spinner "Configuring" python "$EMSDK/upstream/emscripten/emcmake.py" cmake "$SCRIPT_DIR" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DAPP_PATH="$APP_PATH"; then
+            -DBIN_OUTPUT_DIR="$SCRIPT_DIR/bin" \
+            -DAPP_PATH="$APP_PATH" \
+            "${DEPENDENCY_CMAKE_ARGS[@]}"; then
             echo "$BUILD_OUTPUT"
             fail "CMake configuration failed"
         fi
