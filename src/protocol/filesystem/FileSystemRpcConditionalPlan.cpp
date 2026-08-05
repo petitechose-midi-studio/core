@@ -233,7 +233,12 @@ FLASHMEM bool ConditionalMutationPlan::advance(
         case Step::REVALIDATE_STAGING:
             return advanceRevalidatedStaging_(files, scratch, scratchSize);
         case Step::ADVANCE_PROMOTION: {
-            auto advanced = promotion_.advance(files, leaseRef_());
+            auto advanced = promotion_.advance(
+                files,
+                leaseRef_(),
+                scratch,
+                scratchSize
+            );
             if (!advanced) {
                 return finish_(
                     files,
@@ -462,12 +467,15 @@ ConditionalPlanWorkClass ConditionalMutationPlan::nextWorkClass() const {
         case Step::CHECK_ALREADY_APPLIED_BACKUP:
         case Step::CHECK_BACKUP:
             return ConditionalPlanWorkClass::METADATA;
+        case Step::ADVANCE_PROMOTION:
+            return promotion_.nextAdvanceReadsData()
+                ? ConditionalPlanWorkClass::ORDINARY_IO
+                : ConditionalPlanWorkClass::PROMOTION;
         case Step::IDLE:
         case Step::COMPLETE:
         case Step::FAILED:
         case Step::CLEAN_ALREADY_APPLIED_STAGING:
         case Step::WRITE_JOURNAL:
-        case Step::ADVANCE_PROMOTION:
         case Step::CLEAN_MAPPED_STAGING:
         case Step::CLEAN_MAPPED_BACKUP:
         case Step::DELETE_MOVE_CURRENT:
@@ -702,7 +710,8 @@ FLASHMEM bool ConditionalMutationPlan::advanceRevalidatedStaging_(
         journal_.currentPath,
         BACKUP_PATH,
         journal_.stagingPath,
-        staging_size_
+        staging_size_,
+        digest_.crc32()
     );
     if (!begun) {
         return finish_(

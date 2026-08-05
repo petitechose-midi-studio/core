@@ -280,8 +280,15 @@ void completeExternalProductRecovery(ProductFileService& service) {
 
     core::persistence::ProductFileRecoveryPlan ordinary;
     assert(ordinary.begin(service, lease));
+    std::array<uint8_t, core::persistence::PRODUCT_FILE_INTEGRITY_CHUNK_SIZE>
+        ordinaryScratch{};
     while (ordinary.active()) {
-        const auto advanced = ordinary.advance(service, lease);
+        const auto advanced = ordinary.advance(
+            service,
+            lease,
+            ordinaryScratch.data(),
+            ordinaryScratch.size()
+        );
         assert(advanced);
     }
     assert(ordinary.complete());
@@ -607,10 +614,21 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
     }
     oc::type::Result<void> beginWrite(const char* path, uint32_t expectedSize) override {
         ++filesystemCalls;
+        corruptingUploadStream = corruptUploadAppend && path &&
+            std::strstr(path, "/midi-studio/tmp/rpc-write-") != nullptr;
         return delegate.beginWrite(path, expectedSize);
     }
     oc::type::Result<size_t> appendWrite(const uint8_t* data, size_t size) override {
         ++filesystemCalls;
+        if (corruptingUploadStream && size > 0U) {
+            assert(size <= FILESYSTEM_RPC_MAX_CHUNK_SIZE);
+            std::array<uint8_t, FILESYSTEM_RPC_MAX_CHUNK_SIZE> corrupted{};
+            std::memcpy(corrupted.data(), data, size);
+            corrupted[0] ^= 0x80U;
+            auto result = delegate.appendWrite(corrupted.data(), size);
+            if (result) ioBytes += result.value();
+            return result;
+        }
         if (!shortAppend || size == 0) {
             auto result = delegate.appendWrite(data, size);
             if (result) ioBytes += result.value();
@@ -626,15 +644,20 @@ struct FaultInjectingFileSystem : oc::interface::IFileSystem {
     }
     oc::type::Result<void> finishWrite() override {
         ++filesystemCalls;
-        return delegate.finishWrite();
+        auto result = delegate.finishWrite();
+        corruptingUploadStream = false;
+        return result;
     }
     void abortWrite() override {
         ++filesystemCalls;
         delegate.abortWrite();
+        corruptingUploadStream = false;
     }
 
     oc::impl::HostFileSystem delegate;
     bool shortAppend = false;
+    bool corruptUploadAppend = false;
+    bool corruptingUploadStream = false;
     bool failFinalStat = false;
     bool failTmpPromotion = false;
     bool failBackupRestore = false;
@@ -2226,6 +2249,49 @@ void test_write_session_aborts_on_short_append() {
     assert(!service.stat("tmp/rpc-write-1237.tmp"));
 
     std::cout << "[PASS] test_write_session_aborts_on_short_append\n";
+}
+
+void test_write_commit_rejects_same_size_backend_corruption_before_mapping() {
+    resetTestRoot();
+
+    FaultInjectingFileSystem filesystem(testRoot().string().c_str());
+    ProductFileService service(filesystem);
+    assert(service.init());
+    ProductDirectoryCatalog catalog(service);
+    FileSystemRpcHandler handler(service, catalog, FileSystemRpcHandler::Config{100});
+    const uint8_t previous[] = {'s', 'a', 'f', 'e'};
+    const uint8_t replacement[] = {'n', 'e', 'w', '!'};
+    assert(core::test::writeProductFileFixture(
+        service,
+        "projects/integrity.bin",
+        0U,
+        previous,
+        sizeof(previous)
+    ));
+
+    filesystem.corruptUploadAppend = true;
+    assert(writeFileViaRpc(
+               handler,
+               0x1238,
+               "projects/integrity.bin",
+               replacement,
+               sizeof(replacement)
+           ) == FileSystemRpcStatus::STORAGE_ERROR);
+    assert(!handler.hasActiveWriteSession());
+    assert(service.storageState() ==
+           core::persistence::ProductStorageState::READY);
+    assertProductFileEquals(
+        service,
+        "projects/integrity.bin",
+        previous,
+        sizeof(previous)
+    );
+    assert(!service.stat("tmp/rpc-write-1238.tmp"));
+    assert(!service.stat("tmp/rpc-backup-1238.tmp"));
+    assert(!service.stat("tmp/rpc-product-file-a.journal"));
+    assert(!service.stat("tmp/rpc-product-file-b.journal"));
+
+    std::cout << "[PASS] same-size RPC backend corruption rejected before mapping\n";
 }
 
 void test_write_commit_propagates_final_stat_error() {
@@ -4439,6 +4505,7 @@ int main() {
     test_write_session_commits_atomically();
     test_write_session_commits_empty_file();
     test_write_session_aborts_on_short_append();
+    test_write_commit_rejects_same_size_backend_corruption_before_mapping();
     test_write_commit_propagates_final_stat_error();
     test_write_commit_requires_recovery_when_promotion_fails();
     test_write_recovery_retains_backup_when_restore_fails();

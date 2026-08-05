@@ -308,7 +308,12 @@ FLASHMEM bool ProductStorageRecoveryPlan::advance(
             return false;
         }
         case Step::ADVANCE_ORDINARY: {
-            auto advanced = ordinary_.advance(files, lease_);
+            auto advanced = ordinary_.advance(
+                files,
+                lease_,
+                scratch_.data(),
+                scratch_.size()
+            );
             if (!advanced) {
                 return fail_(
                     files,

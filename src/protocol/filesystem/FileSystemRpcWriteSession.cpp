@@ -7,6 +7,7 @@
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/AtomicProductFile.hpp"
+#include "persistence/PersistenceChecksum.hpp"
 #include "persistence/ProductFileCommitPlan.hpp"
 
 namespace core::protocol::filesystem {
@@ -156,6 +157,8 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteBegin_(
     writeSession_.sessionId = sessionId;
     writeSession_.expectedSize = expectedSize;
     writeSession_.writtenBytes = 0;
+    writeSession_.payloadCrc32State =
+        core::persistence::checksum::CRC32_INITIAL_STATE;
     writeSession_.lastActivityMs = nowMs;
 
     const size_t size = encodeWriteResponse(
@@ -221,6 +224,12 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::handleWriteChunk_(
             (void)releaseWriteSession_();
         } else {
             bytesWritten = static_cast<uint16_t>(written.value());
+            writeSession_.payloadCrc32State =
+                core::persistence::checksum::crc32Update(
+                    writeSession_.payloadCrc32State,
+                    chunk,
+                    bytesWritten
+                );
             writeSession_.writtenBytes += bytesWritten;
             writeSession_.lastActivityMs = nowMs;
         }
@@ -303,7 +312,10 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::beginCooperativeWriteCommit_(
                 writeSession_.finalPath,
                 writeSession_.backupPath,
                 writeSession_.tmpPath,
-                writeSession_.expectedSize
+                writeSession_.expectedSize,
+                core::persistence::checksum::crc32Finish(
+                    writeSession_.payloadCrc32State
+                )
             );
             if (begun) return Result<size_t>::ok(0U);
             status = mapError(begun.error());
@@ -346,7 +358,12 @@ FLASHMEM Result<size_t> FileSystemRpcHandler::advanceCooperativeWriteCommit_(
     if (!hasActiveWriteSession() || writeSession_.sessionId != sessionId) {
         status = FileSystemRpcStatus::INVALID_STATE;
     } else {
-        auto advanced = plan.advance(files_, writeSession_.lease);
+        auto advanced = plan.advance(
+            files_,
+            writeSession_.lease,
+            response,
+            responseSize
+        );
         if (advanced && !advanced.value()) return Result<size_t>::ok(0U);
         if (!advanced) {
             status = mapError(advanced.error());

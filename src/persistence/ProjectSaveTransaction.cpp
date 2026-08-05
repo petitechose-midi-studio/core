@@ -210,6 +210,7 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
 
         case Phase::BEGIN_WRITE: {
             OC_PERF_SCOPE(perfBeginWrite, "persistence.project-save.begin-write");
+            workspace.resetPayloadCrc32();
             auto beginWrite = files_.beginWrite(lease, paths_.tmp, encoded_size_);
             if (!beginWrite) {
                 const auto error = beginWrite.error();
@@ -244,6 +245,10 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
                 cancel_(lease, releaseLeaseOnCompletion);
                 return oc::type::Result<ProjectSaveProgress>::err(error);
             }
+            workspace.updatePayloadCrc32(
+                workspace.data() + write_offset_,
+                chunkSize
+            );
             write_offset_ += chunkSize;
             OC_PERF_UNITS(perfWrite, chunkSize, write_offset_);
 
@@ -273,6 +278,9 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
 
         case Phase::COMMIT: {
             OC_PERF_SCOPE(perfCommit, "persistence.project-save.commit");
+            const uint32_t expectedCrc32 = commit_plan_started_
+                ? 0U
+                : workspace.payloadCrc32();
             auto& commitPlan = commit_plan_started_
                 ? workspace.commitPlan()
                 : workspace.resetCommitPlan();
@@ -283,7 +291,8 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
                     paths_.current,
                     paths_.backup,
                     paths_.tmp,
-                    encoded_size_
+                    encoded_size_,
+                    expectedCrc32
                 );
                 if (!begun) {
                     const auto error = begun.error();
@@ -293,7 +302,12 @@ FLASHMEM oc::type::Result<ProjectSaveProgress> ProjectSaveTransaction::advance_(
                 commit_plan_started_ = true;
             }
 
-            auto committed = commitPlan.advance(files_, lease);
+            auto committed = commitPlan.advance(
+                files_,
+                lease,
+                workspace.data(),
+                workspace.capacity()
+            );
             if (!committed) {
                 const auto error = committed.error();
                 if (commitPlan.requiresRecoveryOnFailure()) {

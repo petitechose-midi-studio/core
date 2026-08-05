@@ -1,11 +1,13 @@
 #include "persistence/ProductFileCommitPlan.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/AtomicProductFile.hpp"
+#include "persistence/PersistenceChecksum.hpp"
 
 namespace core::persistence {
 
@@ -34,6 +36,14 @@ const char kCommitPlanSequenceExhausted[] PROGMEM =
     "product file journal sequence exhausted";
 const char kCommitPlanTmpSize[] PROGMEM =
     "product file temporary size mismatch";
+const char kCommitPlanTmpIntegrity[] PROGMEM =
+    "product file temporary checksum mismatch";
+const char kCommitPlanPromotedIntegrity[] PROGMEM =
+    "promoted product file checksum mismatch";
+const char kCommitPlanIntegrityScratch[] PROGMEM =
+    "product file integrity scratch unavailable";
+const char kCommitPlanIntegrityShortRead[] PROGMEM =
+    "short product file integrity read";
 const char kCommitPlanBackupTopology[] PROGMEM =
     "invalid product file backup topology";
 
@@ -49,7 +59,8 @@ FLASHMEM oc::type::Result<void> ProductFileCommitPlan::begin(
     const char* current,
     const char* backup,
     const char* tmp,
-    uint32_t expectedSize
+    uint32_t expectedSize,
+    uint32_t expectedCrc32
 ) {
     if (active()) {
         return oc::type::Result<void>::err(
@@ -80,13 +91,16 @@ FLASHMEM oc::type::Result<void> ProductFileCommitPlan::begin(
     }
     slots_[0] = {};
     expected_size_ = expectedSize;
+    expected_crc32_ = expectedCrc32;
     step_ = Step::READ_SLOT_A;
     return oc::type::Result<void>::ok();
 }
 
 FLASHMEM oc::type::Result<bool> ProductFileCommitPlan::advance(
     ProductFileService& files,
-    const ProductMutationLease& lease
+    const ProductMutationLease& lease,
+    uint8_t* scratch,
+    size_t scratchSize
 ) {
     if (!active() || !files.owns(lease)) {
         return fail_(
@@ -167,9 +181,21 @@ FLASHMEM oc::type::Result<bool> ProductFileCommitPlan::advance(
                 workspace_().path(transaction::TMP_PATH)
             );
             if (!flushed) return fail_(flushed.error(), false);
-            step_ = Step::INSPECT_CURRENT;
+            beginIntegrityCheck_();
+            step_ = Step::VERIFY_TMP;
             return oc::type::Result<bool>::ok(false);
         }
+        case Step::VERIFY_TMP:
+            return advanceIntegrityCheck_(
+                files,
+                lease,
+                workspace_().path(transaction::TMP_PATH),
+                scratch,
+                scratchSize,
+                Step::INSPECT_CURRENT,
+                false,
+                kCommitPlanTmpIntegrity
+            );
         case Step::INSPECT_CURRENT: {
             auto current = transaction::inspectFile(
                 files,
@@ -270,9 +296,21 @@ FLASHMEM oc::type::Result<bool> ProductFileCommitPlan::advance(
                 workspace_().path(transaction::FINAL_PATH)
             );
             if (!flushed) return fail_(flushed.error(), true);
-            step_ = Step::PERSIST_PROMOTED;
+            beginIntegrityCheck_();
+            step_ = Step::VERIFY_PROMOTED;
             return oc::type::Result<bool>::ok(false);
         }
+        case Step::VERIFY_PROMOTED:
+            return advanceIntegrityCheck_(
+                files,
+                lease,
+                workspace_().path(transaction::FINAL_PATH),
+                scratch,
+                scratchSize,
+                Step::PERSIST_PROMOTED,
+                true,
+                kCommitPlanPromotedIntegrity
+            );
         case Step::PERSIST_PROMOTED: {
             auto persisted = transaction::persistPhase(
                 files,
@@ -328,6 +366,9 @@ FLASHMEM void ProductFileCommitPlan::reset() {
     current_ = {};
     backup_ = {};
     expected_size_ = 0U;
+    expected_crc32_ = 0U;
+    integrity_crc_state_ = 0U;
+    integrity_offset_ = 0U;
     step_ = Step::IDLE;
     active_workspace_ = 0U;
     selected_slot_ = 0U;
@@ -344,6 +385,11 @@ FLASHMEM bool ProductFileCommitPlan::active() const {
 
 FLASHMEM bool ProductFileCommitPlan::complete() const {
     return step_ == Step::COMPLETE;
+}
+
+FLASHMEM bool ProductFileCommitPlan::nextAdvanceReadsData() const {
+    return (step_ == Step::VERIFY_TMP || step_ == Step::VERIFY_PROMOTED) &&
+           integrity_offset_ < expected_size_;
 }
 
 FLASHMEM oc::type::Result<bool> ProductFileCommitPlan::selectSlots_() {
@@ -420,8 +466,73 @@ ProductFileCommitPlan::initializeCommitWorkspace_() {
         );
     }
     workspace.expectedSize = expected_size_;
+    workspace.expectedCrc32 = expected_crc32_;
+    workspace.hasExpectedCrc32 = true;
     workspace.hadCurrent = false;
     step_ = Step::INSPECT_TMP;
+    return oc::type::Result<bool>::ok(false);
+}
+
+FLASHMEM void ProductFileCommitPlan::beginIntegrityCheck_() {
+    integrity_crc_state_ = checksum::CRC32_INITIAL_STATE;
+    integrity_offset_ = 0U;
+}
+
+FLASHMEM oc::type::Result<bool> ProductFileCommitPlan::advanceIntegrityCheck_(
+    ProductFileService& files,
+    const ProductMutationLease& lease,
+    const char* path,
+    uint8_t* scratch,
+    size_t scratchSize,
+    Step successStep,
+    bool recoveryRequired,
+    const char* mismatchContext
+) {
+    if (integrity_offset_ < expected_size_) {
+        if (scratch == nullptr || scratchSize == 0U) {
+            return fail_(
+                planError(ErrorCode::INVALID_ARGUMENT, kCommitPlanIntegrityScratch),
+                recoveryRequired
+            );
+        }
+        const size_t remaining = expected_size_ - integrity_offset_;
+        const size_t requested = std::min(
+            remaining,
+            std::min(scratchSize, PRODUCT_FILE_INTEGRITY_CHUNK_SIZE)
+        );
+        auto read = files.read(
+            lease,
+            path,
+            integrity_offset_,
+            scratch,
+            requested
+        );
+        if (!read) return fail_(read.error(), recoveryRequired);
+        if (read.value() == 0U || read.value() > requested) {
+            return fail_(
+                planError(ErrorCode::STORAGE_READ_FAILED,
+                          kCommitPlanIntegrityShortRead),
+                recoveryRequired
+            );
+        }
+        integrity_crc_state_ = checksum::crc32Update(
+            integrity_crc_state_,
+            scratch,
+            read.value()
+        );
+        integrity_offset_ += static_cast<uint32_t>(read.value());
+        if (integrity_offset_ < expected_size_) {
+            return oc::type::Result<bool>::ok(false);
+        }
+    }
+
+    if (checksum::crc32Finish(integrity_crc_state_) != expected_crc32_) {
+        return fail_(
+            planError(ErrorCode::STORAGE_CORRUPT, mismatchContext),
+            recoveryRequired
+        );
+    }
+    step_ = successStep;
     return oc::type::Result<bool>::ok(false);
 }
 

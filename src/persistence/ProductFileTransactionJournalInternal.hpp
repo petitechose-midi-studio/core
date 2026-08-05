@@ -30,9 +30,11 @@ struct JournalWorkspace {
     JournalStorage storage{};
     uint64_t sequence = 0;
     uint32_t expectedSize = 0;
+    uint32_t expectedCrc32 = 0;
     ProductFileTransactionPhase phase = ProductFileTransactionPhase::NONE;
     uint8_t activeSlot = NO_ACTIVE_SLOT;
     bool hadCurrent = false;
+    bool hasExpectedCrc32 = false;
 
     char* path(PathIndex index) { return storage.paths[index]; }
     const char* path(PathIndex index) const { return storage.paths[index]; }
@@ -45,6 +47,17 @@ struct JournalSelection {
 struct FileState {
     bool exists = false;
     uint32_t size = 0;
+};
+
+enum class RecoveryAction : uint8_t {
+    FINISH_COMMITTED = 0,
+    FINISH_ROLLED_BACK,
+    RESTORE_BACKUP,
+    REMOVE_CURRENT_AND_RESTORE_BACKUP,
+    BACK_UP_CURRENT_AND_PROMOTE_TMP,
+    PROMOTE_TMP,
+    REMOVE_CURRENT_AND_ROLL_BACK,
+    FAIL_CORRUPT,
 };
 
 enum class JournalSlotState : uint8_t {
@@ -97,6 +110,15 @@ oc::type::Result<FileState> inspectFile(
     ProductFileService& files,
     const ProductMutationLease& lease,
     const char* path
+);
+
+RecoveryAction decideRecovery(
+    const JournalWorkspace& workspace,
+    FileState final,
+    bool finalValid,
+    FileState tmp,
+    bool tmpValid,
+    FileState backup
 );
 
 oc::type::Result<void> cleanupMappedPath(

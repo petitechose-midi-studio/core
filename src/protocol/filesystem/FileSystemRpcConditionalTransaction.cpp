@@ -107,7 +107,8 @@ FLASHMEM ExecutionResult executeReplace(
             journal.currentPath,
             BACKUP_PATH,
             journal.stagingPath,
-            stagingInfo.value().sizeBytes
+            stagingInfo.value().sizeBytes,
+            staging.crc32
         );
         if (!promoted) return {mapError(promoted.error()), false};
 
@@ -157,7 +158,8 @@ FLASHMEM ExecutionResult executeReplace(
             journal.currentPath,
             BACKUP_PATH,
             journal.stagingPath,
-            stagingInfo.value().sizeBytes
+            stagingInfo.value().sizeBytes,
+            staging.crc32
         );
         if (!promoted) return {mapError(promoted.error()), false};
         if (removeJournalLast(files, lease) != FileSystemRpcStatus::OK) {
