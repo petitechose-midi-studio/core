@@ -37,6 +37,14 @@ struct MidiClockSyncRuntimeConfig {
  */
 class MidiClockSyncService {
 public:
+    /** Coherent transport values selected by the latest `update()` call. */
+    struct TransportSnapshot {
+        uint32_t tick = 0U;
+        uint32_t tickPeriodUs = 0U;
+        bool playing = false;
+        bool usingExternalSource = false;
+    };
+
     struct UiProjectionSnapshot {
         enum DirtyBits : uint8_t {
             PLAYING = 1U << 0,
@@ -67,15 +75,15 @@ public:
     void onStart();
     void onContinue();
     void onStop();
+    [[nodiscard]] TransportSnapshot transportSnapshot() const;
     UiProjectionSnapshot takeUiProjectionSnapshot();
-
-    uint32_t tick() const { return current_tick_; }
-    bool playing() const { return current_playing_; }
-    bool usingExternalSource() const { return using_external_source_; }
 
     bool consumeResyncRequest();
 
 private:
+    static constexpr uint32_t DEFAULT_TICK_PERIOD_US =
+        60000000U / (120U * 24U);
+
     void queuePlayingProjection_(bool playing);
     void queueTempoDisplayProjection_(float tempo);
     void queueSyncExternalSourceProjection_(bool active);
@@ -84,6 +92,7 @@ private:
     void queueActiveSourceProjection_(core::state::ClockSourceActive source);
     void queueExternalClockPresentProjection_(bool present);
     void updateSourceSelection_(uint32_t nowMs);
+    void updateActiveTickPeriod_();
     void resetExternalTempoEstimator_();
     void updateMasterClockOutput_();
     void updateDisplayedTempo_(uint32_t nowMs);
@@ -106,6 +115,7 @@ private:
     InternalTransportClock internal_clock_;
 
     uint32_t current_tick_ = 0;
+    uint32_t active_tick_period_us_ = DEFAULT_TICK_PERIOD_US;
     bool current_playing_ = false;
 
     uint32_t external_tick_ = 0;

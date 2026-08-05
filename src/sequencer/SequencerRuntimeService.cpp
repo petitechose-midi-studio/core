@@ -16,7 +16,6 @@
 #include "sequencer/SequencerCcLaneRuntime.hpp"
 #include "sequencer/SequencerInternalTimerLane.hpp"
 #include "sequencer/SequencerPlaybackService.hpp"
-#include "sequencer/SequencerTiming.hpp"
 
 namespace core::sequencer {
 
@@ -184,7 +183,6 @@ void SequencerRuntimeService::update() {
     const uint32_t nowUs = core::time_compat::micros();
     const uint32_t nowMs = oc::time::millis();
     const auto clockConfig = captureClockSyncRuntimeConfig_();
-    const uint32_t tickPeriodUs = tickPeriodUsForTempo(clockConfig.tempo);
     const auto activationPublication =
         track_activations_.captureRuntimePublication();
     bool graphGenerationReady =
@@ -208,10 +206,10 @@ void SequencerRuntimeService::update() {
         );
     }
 
-    bool timerOwnsTransport = false;
+    ClockDomainUpdateResult clockDomain{};
     {
         OC_PERF_SCOPE(perfClock, "sequencer.clock-domain");
-        timerOwnsTransport = updateClockDomainOwnership_(clockConfig, nowMs);
+        clockDomain = updateClockDomainOwnership_(clockConfig, nowMs);
     }
 
     const bool resyncRequested = midi_clock_sync_.consumeResyncRequest();
@@ -219,7 +217,7 @@ void SequencerRuntimeService::update() {
     bool usingInternalTimerPath = false;
 
 #ifdef ARDUINO
-    if (timerOwnsTransport) {
+    if (clockDomain.timerOwnsTransport) {
         runtime_graph_bank_.publishPrepared([this, &clockConfig, snapshotIndex,
                                              &activationPublication,
                                              graphGenerationReady]() {
@@ -238,6 +236,7 @@ void SequencerRuntimeService::update() {
         if (!usingInternalTimerPath) {
             OC_LOG_WARN("{}", "[SequencerRuntime] failed to start internal playback timer");
             midi_clock_sync_.update(clockConfig, nowMs, true);
+            clockDomain.transport = midi_clock_sync_.transportSnapshot();
         }
     } else {
         realtime_lane_->timer.stop();
@@ -277,14 +276,14 @@ void SequencerRuntimeService::update() {
             *realtime_lane_->projectTrackSnapshots.snapshot(snapshotIndex);
         realtime_lane_->playback.update(
             runtimeSnapshot,
-            midi_clock_sync_.tick(),
-            midi_clock_sync_.playing(),
+            clockDomain.transport.tick,
+            clockDomain.transport.playing,
             nowUs,
-            tickPeriodUs,
+            clockDomain.transport.tickPeriodUs,
             projectTracks,
             true,
             snapshot_bank_.laneSnapshot(snapshotIndex),
-            !midi_clock_sync_.usingExternalSource()
+            !clockDomain.transport.usingExternalSource
         );
         track_activations_.publishRealtimeTelemetry();
         drainRealtimeMidiQueue_(core::time_compat::micros());
@@ -329,27 +328,39 @@ MidiClockSyncRuntimeConfig SequencerRuntimeService::captureClockSyncRuntimeConfi
     };
 }
 
-bool SequencerRuntimeService::updateClockDomainOwnership_(
+SequencerRuntimeService::ClockDomainUpdateResult
+SequencerRuntimeService::updateClockDomainOwnership_(
     const MidiClockSyncRuntimeConfig& config,
     uint32_t nowMs
 ) {
 #ifdef ARDUINO
+    const auto previousTransport = midi_clock_sync_.transportSnapshot();
     const bool predictedTimerOwnsTransport =
-        config.mode != core::state::MidiSyncMode::SLAVE && !midi_clock_sync_.usingExternalSource();
+        config.mode != core::state::MidiSyncMode::SLAVE &&
+        !previousTransport.usingExternalSource;
 
     midi_clock_sync_.update(config, nowMs, !predictedTimerOwnsTransport);
 
+    auto transport = midi_clock_sync_.transportSnapshot();
     const bool actualTimerOwnsTransport =
-        config.mode != core::state::MidiSyncMode::SLAVE && !midi_clock_sync_.usingExternalSource();
+        config.mode != core::state::MidiSyncMode::SLAVE &&
+        !transport.usingExternalSource;
 
     if (actualTimerOwnsTransport != predictedTimerOwnsTransport) {
         midi_clock_sync_.update(config, nowMs, !actualTimerOwnsTransport);
+        transport = midi_clock_sync_.transportSnapshot();
     }
 
-    return actualTimerOwnsTransport;
+    return {
+        .timerOwnsTransport = actualTimerOwnsTransport,
+        .transport = transport,
+    };
 #else
     midi_clock_sync_.update(config, nowMs);
-    return false;
+    return {
+        .timerOwnsTransport = false,
+        .transport = midi_clock_sync_.transportSnapshot(),
+    };
 #endif
 }
 

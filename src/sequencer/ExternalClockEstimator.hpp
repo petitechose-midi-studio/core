@@ -19,6 +19,9 @@ public:
 
     bool bpmValid() const { return bpm_valid_; }
     float bpmEstimate() const { return bpm_estimate_; }
+    // Zero until the first valid interval. Warm-up uses the latest interval;
+    // the established estimate uses the existing filtered tempo authority.
+    uint32_t tickPeriodUsEstimate() const;
 
 private:
     void pushIntervalUs_(uint32_t intervalUs);
