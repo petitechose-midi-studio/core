@@ -45,7 +45,7 @@
     "core/.github/release-tooling.json": "9ac98d99fdb0b5f83a249a3b2e50a5f92e75674e8bba6d38b0cc420a738003a7",
     "core/.github/workflows/candidate-host-tools.yml": "7224120588501e1f5ea62130550d3abc1ab657825489ca9b06e68d32e511ea8a",
     "core/.github/workflows/candidate.yml": "73d8662cfcb574dec18ed8ba9c851f2c9a6a0e5580face778bf495c45d333068",
-    "core/.github/workflows/ci.yml": "5bdc6606f3179e70fa0ec6b12f3aa164162a5a291fb1af39cf312727d1ffcca3",
+    "core/.github/workflows/ci.yml": "1fc42deb7cf58db7e39962b4d9c18f5f11b4d1e9904858a2864af6e0f3161a68",
     "core/CMakeLists.txt": "b323e3afd29a7c1c0ac80f3c5d3f9783e00afb4658c011abc4b2ae8cb5a4c59a",
     "core/cmake/MsCoreProductSources.cmake": "e0156488d08515ed749c9f229e431a191a200aa67946516481501e22f6fc2c6f",
     "core/cmake/MsCoreProjectFileTool.cmake": "3646bff81f12b9c8f3b4ef7283b53a46b86ea9a345ed217c87a2762a3a68f531",
@@ -2844,7 +2844,7 @@
         "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
         "MIDI_STUDIO_BITWIG_SHA": "6c0a4348a72a37f7253d1297540cac25624c7795",
         "MIDI_STUDIO_UI_SHA": "137e49f39c0ed1dd6391af300b764614d39658fb",
-        "MS_DEV_ENV_SHA": "ec565d041d6b1e61c5bc5cd6d2b8cf8af5f8162f",
+        "MS_DEV_ENV_SHA": "99b95d7ced17461f0aec0d245b82c515b48439a9",
         "OPEN_CONTROL_FRAMEWORK_SHA": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
         "OPEN_CONTROL_HAL_COMMON_SHA": "e3aa784055554922d130bba8065422d11a7dcd02",
         "OPEN_CONTROL_HAL_MIDI_SHA": "d18a6cc2437d3ecd1b974d05be17be3e0e02aeac",
@@ -2857,7 +2857,7 @@
       },
       "emsdkVersion": "4.0.23",
       "finalWasmLink": true,
-      "msDevEnv": "ec565d041d6b1e61c5bc5cd6d2b8cf8af5f8162f",
+      "msDevEnv": "99b95d7ced17461f0aec0d245b82c515b48439a9",
       "platformio": "6.1.18"
     }
   }
