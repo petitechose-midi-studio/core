@@ -17,9 +17,11 @@ env:
   PLATFORMIO_VERSION: "6.1.18"
   MS_DEV_ENV_REPOSITORY: petitechose-midi-studio/ms-dev-env
   MS_DEV_ENV_SHA: ec565d041d6b1e61c5bc5cd6d2b8cf8af5f8162f
+  MIDI_STUDIO_BITWIG_SHA: 75af17b0bace74d5085f8e28a7a8af59afb6a540
   OPEN_CONTROL_FRAMEWORK_SHA: 43c574ac9c7b4a8b0bba9ae5992393c8bf03ab9f
   OPEN_CONTROL_NOTE_SHA: 863ead7ab70a965617c7df0a60eb4750e538c2af
 
+  OPEN_CONTROL_HAL_TEENSY_SHA: 015ba6f91a23c1d7b6f58c2abfcea09ff83dcf4a
   OPEN_CONTROL_HAL_MIDI_SHA: d18a6cc2437d3ecd1b974d05be17be3e0e02aeac
   OPEN_CONTROL_HAL_NET_SHA: 2207e6befc4b18fad5e4db870ba5ca8aab13aa29
   OPEN_CONTROL_HAL_SDL_SHA: f8755529b4240bf05547d3ab6eadc92d823882c3
@@ -100,6 +102,14 @@ jobs:
           path: workspace/open-control/framework
           persist-credentials: false
 
+      - name: Checkout Bitwig
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/plugin-bitwig
+          ref: ${{ env.MIDI_STUDIO_BITWIG_SHA }}
+          path: workspace/midi-studio/plugin-bitwig
+          persist-credentials: false
+
       - name: Checkout note
         uses: actions/checkout@v6
         with:
@@ -116,6 +126,54 @@ jobs:
           path: workspace/open-control/hal-common
           persist-credentials: false
 
+      - name: Checkout HAL Teensy
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-teensy
+          ref: ${{ env.OPEN_CONTROL_HAL_TEENSY_SHA }}
+          path: workspace/open-control/hal-teensy
+          persist-credentials: false
+
+      - name: Checkout HAL MIDI
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-midi
+          ref: ${{ env.OPEN_CONTROL_HAL_MIDI_SHA }}
+          path: workspace/open-control/hal-midi
+          persist-credentials: false
+
+      - name: Checkout HAL Net
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-net
+          ref: ${{ env.OPEN_CONTROL_HAL_NET_SHA }}
+          path: workspace/open-control/hal-net
+          persist-credentials: false
+
+      - name: Checkout HAL SDL
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-sdl
+          ref: ${{ env.OPEN_CONTROL_HAL_SDL_SHA }}
+          path: workspace/open-control/hal-sdl
+          persist-credentials: false
+
+      - name: Checkout UI LVGL
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/ui-lvgl
+          ref: ${{ env.OPEN_CONTROL_UI_LVGL_SHA }}
+          path: workspace/open-control/ui-lvgl
+          persist-credentials: false
+
+      - name: Checkout UI LVGL Components
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/ui-lvgl-components
+          ref: ${{ env.OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA }}
+          path: workspace/open-control/ui-lvgl-components
+          persist-credentials: false
+
       - name: Checkout UI
         uses: actions/checkout@v6
         with:
@@ -129,6 +187,10 @@ jobs:
         with:
           path: workspace/midi-studio/core
           persist-credentials: false
+
+      - name: Build topology
+        working-directory: workspace/midi-studio/core
+        run: python script/dev/check-build-topology.py --workspace-root "${{ github.workspace }}/workspace" --check
 
       - name: Setup ms runtime
         uses: ./workspace/.github/actions/setup-ms-runtime

@@ -497,6 +497,7 @@ def input_hashes(repositories: dict[str, Path]) -> dict[str, str]:
         "core/.github/release-tooling.json": repositories["core"] / ".github" / "release-tooling.json",
         "core/.github/workflows/ci.yml": repositories["core"] / ".github" / "workflows" / "ci.yml",
         "core/.github/workflows/candidate.yml": repositories["core"] / ".github" / "workflows" / "candidate.yml",
+        "core/.github/workflows/candidate-host-tools.yml": repositories["core"] / ".github" / "workflows" / "candidate-host-tools.yml",
         "core/script/dev/check-build-topology.py": Path(__file__).resolve(),
         "bitwig/CMakeLists.txt": repositories["bitwig"] / "CMakeLists.txt",
         "bitwig/platformio.ini": repositories["bitwig"] / "platformio.ini",
