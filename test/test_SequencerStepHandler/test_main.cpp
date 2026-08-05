@@ -14,6 +14,7 @@
 #include <oc/core/event/EventBus.hpp>
 #include <oc/core/event/Events.hpp>
 #include <oc/core/input/InputBinding.hpp>
+#include <tuple>
 #include <utility>
 
 #include "../../src/app/ExtmemAllocator.hpp"
@@ -526,7 +527,46 @@ struct PreparedEditorUiInvariant {
     uint8_t contentViewStackDepth = 0U;
     uint64_t contentViewFramesHash = 0U;
 
-    bool operator==(const PreparedEditorUiInvariant&) const = default;
+    auto members() const {
+        return std::tie(navigationFocus,
+                        page,
+                        focusedStep,
+                        previewPageIndex,
+                        holdAction,
+                        holdStartedAtMs,
+                        pageSelectionActive,
+                        pageSelectionPlacing,
+                        pageSelectionScope,
+                        pageSelectionCursor,
+                        pageSelectionSelectedMask,
+                        pageSelectionDestinationMask,
+                        pageSelectionOverwriteMask,
+                        pageSelectionPasteBlocked,
+                        pageSelectionClipboardRevision,
+                        stepSelectionActive,
+                        stepSelectionPlacing,
+                        stepSelectionCursor,
+                        stepSelectionMaskHash,
+                        stepPastePreviewActive,
+                        stepPastePreview,
+                        stepSelectionClipboardRevision,
+                        contentViewKind,
+                        contentViewParentStep,
+                        contentViewOwnerNodeId,
+                        contentViewSequenceId,
+                        contentViewCycleSetId,
+                        contentViewLength,
+                        contentViewDepth,
+                        contentViewRevision,
+                        contentViewRootPage,
+                        contentViewRootFocus,
+                        contentViewStackDepth,
+                        contentViewFramesHash);
+    }
+
+    bool operator==(const PreparedEditorUiInvariant& other) const {
+        return members() == other.members();
+    }
 };
 
 PreparedEditorUiInvariant capturePreparedEditorUiInvariant(
@@ -613,7 +653,21 @@ struct PreparedClipboardInvariant {
     const void* ccOwner = nullptr;
     uint64_t ccHash = 0U;
 
-    bool operator==(const PreparedClipboardInvariant&) const = default;
+    auto members() const {
+        return std::tie(kind,
+                        revision,
+                        pageHash,
+                        stepHash,
+                        pageSelectionHash,
+                        graphOwner,
+                        graphHash,
+                        ccOwner,
+                        ccHash);
+    }
+
+    bool operator==(const PreparedClipboardInvariant& other) const {
+        return members() == other.members();
+    }
 };
 
 PreparedClipboardInvariant capturePreparedClipboardInvariant(
@@ -668,7 +722,40 @@ struct PreparedProductInvariant {
     bool statusBeat = false;
     uint64_t statusTrackActivityHash = 0U;
 
-    bool operator==(const PreparedProductInvariant&) const = default;
+    auto members() const {
+        return std::tie(bankActiveTrack,
+                        bankEnabledMask,
+                        sharedActiveTrack,
+                        sharedEnabledMask,
+                        runtimeProjectRevision,
+                        activationPendingMask,
+                        activationRuntimeQueuedMask,
+                        activationRuntimeCancelledMask,
+                        activationRuntimeGenerationsHash,
+                        activationTelemetryHash,
+                        activationRealtimeHash,
+                        historyFeedbackVisible,
+                        historyFeedbackRevision,
+                        historyFeedbackLinesHash,
+                        historyFeedbackHideAtMs,
+                        statusNoteIn,
+                        statusNoteOut,
+                        statusCcIn,
+                        statusCcOut,
+                        statusPlaying,
+                        statusTempoHash,
+                        statusTempoDisplayHash,
+                        statusSyncExternal,
+                        statusSyncInput,
+                        statusTempoLocked,
+                        statusTransportLocked,
+                        statusBeat,
+                        statusTrackActivityHash);
+    }
+
+    bool operator==(const PreparedProductInvariant& other) const {
+        return members() == other.members();
+    }
 };
 
 PreparedProductInvariant capturePreparedProductInvariant(
@@ -1375,7 +1462,30 @@ struct TrackMacroInvariant {
     uint32_t runtimeProjectionRevision = 0U;
     uint32_t runtimeOwnerRevision = 0U;
 
-    bool operator==(const TrackMacroInvariant&) const = default;
+    auto members() const {
+        return std::tie(tracksHash,
+                        activeConfigsHash,
+                        controlAuthoredHash,
+                        manualOverridesHash,
+                        contextSelectorHash,
+                        runtimeValues,
+                        enabledTrackMask,
+                        enabledPageMask,
+                        manualMask,
+                        activeTrack,
+                        activePage,
+                        manualRevision,
+                        rejectedActivationCount,
+                        controlAuthoredRevision,
+                        configRevision,
+                        automationEditRevision,
+                        runtimeProjectionRevision,
+                        runtimeOwnerRevision);
+    }
+
+    bool operator==(const TrackMacroInvariant& other) const {
+        return members() == other.members();
+    }
 };
 
 TrackMacroInvariant captureTrackMacroInvariant(const SequencerStepHarness& h) {
