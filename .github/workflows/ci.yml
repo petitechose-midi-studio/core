@@ -29,6 +29,7 @@ env:
   OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA: b40208f1d3b6038e9ef0275b5a0f360fcb9ebf04
   MIDI_STUDIO_UI_SHA: bd822d51a08d60172b04f3d8aae3f825d1ec717d
   OPEN_CONTROL_HAL_COMMON_SHA: e3aa784055554922d130bba8065422d11a7dcd02
+  LVGL_SHA: 85aa60d18b3d5e5588d7b247abf90198f07c8a63
 jobs:
   firmware_release:
     name: firmware (release)
@@ -81,8 +82,8 @@ jobs:
           path: dist/
           retention-days: 14
 
-  unit_tests:
-    name: unit tests
+  native_tests:
+    name: native tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -219,3 +220,130 @@ jobs:
       - name: Test
         working-directory: workspace
         run: uv run ms test core
+
+  sdl_native:
+    name: SDL native
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout core
+        uses: actions/checkout@v6
+        with:
+          path: workspace/midi-studio/core
+          persist-credentials: false
+
+      - name: Checkout framework
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/framework
+          ref: ${{ env.OPEN_CONTROL_FRAMEWORK_SHA }}
+          path: workspace/open-control/framework
+          persist-credentials: false
+
+      - name: Checkout note
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/note
+          ref: ${{ env.OPEN_CONTROL_NOTE_SHA }}
+          path: workspace/open-control/note
+          persist-credentials: false
+
+      - name: Checkout HAL MIDI
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-midi
+          ref: ${{ env.OPEN_CONTROL_HAL_MIDI_SHA }}
+          path: workspace/open-control/hal-midi
+          persist-credentials: false
+
+      - name: Checkout HAL Net
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-net
+          ref: ${{ env.OPEN_CONTROL_HAL_NET_SHA }}
+          path: workspace/open-control/hal-net
+          persist-credentials: false
+
+      - name: Checkout HAL SDL
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/hal-sdl
+          ref: ${{ env.OPEN_CONTROL_HAL_SDL_SHA }}
+          path: workspace/open-control/hal-sdl
+          persist-credentials: false
+
+      - name: Checkout UI LVGL
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/ui-lvgl
+          ref: ${{ env.OPEN_CONTROL_UI_LVGL_SHA }}
+          path: workspace/open-control/ui-lvgl
+          persist-credentials: false
+
+      - name: Checkout UI LVGL Components
+        uses: actions/checkout@v6
+        with:
+          repository: open-control/ui-lvgl-components
+          ref: ${{ env.OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA }}
+          path: workspace/open-control/ui-lvgl-components
+          persist-credentials: false
+
+      - name: Checkout UI
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/ui
+          ref: ${{ env.MIDI_STUDIO_UI_SHA }}
+          path: workspace/midi-studio/ui
+          persist-credentials: false
+
+      - name: Checkout LVGL
+        uses: actions/checkout@v6
+        with:
+          repository: lvgl/lvgl
+          ref: ${{ env.LVGL_SHA }}
+          path: workspace/deps/lvgl
+          persist-credentials: false
+
+      - name: Install native dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev \
+            libsdl2-dev \
+            libudev-dev \
+            libusb-1.0-0-dev \
+            ninja-build
+
+      - name: Build SDL native
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake \
+            -S workspace/midi-studio/core/sdl \
+            -B workspace/.build/core-sdl-native \
+            -G Ninja \
+            -DAPP_PATH="${GITHUB_WORKSPACE}/workspace/midi-studio/core/sdl" \
+            -DBIN_OUTPUT_DIR="${GITHUB_WORKSPACE}/workspace/bin" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLVGL_DIR="${GITHUB_WORKSPACE}/workspace/deps/lvgl"
+          cmake --build workspace/.build/core-sdl-native --parallel
+          test -x workspace/bin/core/native/midi_studio_core
+
+  unit_tests:
+    name: unit tests
+    if: ${{ always() }}
+    needs: [native_tests, sdl_native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require native qualification
+        shell: bash
+        env:
+          NATIVE_TESTS_RESULT: ${{ needs.native_tests.result }}
+          SDL_NATIVE_RESULT: ${{ needs.sdl_native.result }}
+        run: |
+          set -euo pipefail
+          test "$NATIVE_TESTS_RESULT" = "success"
+          test "$SDL_NATIVE_RESULT" = "success"

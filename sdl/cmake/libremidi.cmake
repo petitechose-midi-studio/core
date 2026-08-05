@@ -6,7 +6,7 @@ include(FetchContent)
 
 FetchContent_Declare(libremidi
     GIT_REPOSITORY https://github.com/celtera/libremidi.git
-    GIT_TAG v5.4.1
+    GIT_TAG 34fbdfc6d4eb32fe5792bc310fa63aba7cdad4dd
     GIT_SHALLOW TRUE
 )
 
