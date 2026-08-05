@@ -372,6 +372,18 @@ def cmake_scalar(text: str, variable: str) -> str | None:
     return match.group(1) if match else None
 
 
+def cmake_target_cxx_standard(text: str, target: str) -> int:
+    match = re.search(
+        rf"\btarget_compile_features\s*\(\s*{re.escape(target)}\s+"
+        rf"(?:PUBLIC|PRIVATE|INTERFACE)\s+cxx_std_(\d+)\s*\)",
+        text,
+        re.DOTALL,
+    )
+    if match is None:
+        raise InventoryError(f"CMake C++ standard not found for target: {target}")
+    return int(match.group(1))
+
+
 def macro_defaults(framework: Path) -> dict[str, int]:
     config = (framework / "src" / "oc" / "Config.hpp").read_text(encoding="utf-8")
     cobs = (framework / "src" / "oc" / "codec" / "CobsCodec.hpp").read_text(
@@ -503,6 +515,9 @@ def classify_supplier_lots(metadata: dict[str, dict[str, Any]]) -> dict[str, Any
 def input_hashes(repositories: dict[str, Path]) -> dict[str, str]:
     inputs = {
         "core/CMakeLists.txt": repositories["core"] / "CMakeLists.txt",
+        "core/cmake/MsCoreProjectFileTool.cmake": (
+            repositories["core"] / "cmake" / "MsCoreProjectFileTool.cmake"
+        ),
         "core/cmake/MsCoreSources.cmake": repositories["core"] / "cmake" / "MsCoreSources.cmake",
         "core/platformio.ini": repositories["core"] / "platformio.ini",
         "core/library.json": repositories["core"] / "library.json",
@@ -578,6 +593,9 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
 
     defaults = macro_defaults(framework)
     core_cmake_text = (core / "CMakeLists.txt").read_text(encoding="utf-8")
+    project_file_tool_cmake_text = (
+        core / "cmake" / "MsCoreProjectFileTool.cmake"
+    ).read_text(encoding="utf-8")
     sdl_cmake_text = (core / "sdl" / "CMakeLists.txt").read_text(encoding="utf-8")
     libremidi_cmake_text = (
         core / "sdl" / "cmake" / "libremidi.cmake"
@@ -708,6 +726,12 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
                 "buttonBindings": defaults["OC_MAX_BUTTON_BINDINGS"],
                 "encoderBindings": defaults["OC_MAX_ENCODER_BINDINGS"],
                 "cobsFrame": defaults["OC_COBS_MAX_FRAME_SIZE"],
+            },
+            "coreProjectFileTool": {
+                "cxxStandard": cmake_target_cxx_standard(
+                    project_file_tool_cmake_text,
+                    "ms_core_project_file_open_control_native",
+                ),
             },
             "deviceSupportNative": {
                 "cxxStandard": 17,

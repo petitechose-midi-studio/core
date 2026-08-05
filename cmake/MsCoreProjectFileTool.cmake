@@ -9,7 +9,10 @@ function(ms_core_add_project_file_tool)
         PUBLIC
             "${MS_CORE_OC_FRAMEWORK_DIR}/src"
             "${MS_CORE_OC_NOTE_DIR}/src")
-    target_compile_features(ms_core_project_file_open_control_native PUBLIC cxx_std_17)
+    # The project-file graph contains designated initializers in both Core and
+    # OpenControl Note. GNU++17 accepts them as an extension, but MSVC correctly
+    # requires the portable C++20 language mode used by every Host Tools build.
+    target_compile_features(ms_core_project_file_open_control_native PUBLIC cxx_std_20)
 
     add_library(ms_core_project_file_native STATIC
         ${MS_CORE_PROJECT_FILE_CORE_SOURCES})
