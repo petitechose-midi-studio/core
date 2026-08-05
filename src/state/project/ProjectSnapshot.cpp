@@ -8,6 +8,7 @@
 #include <oc/diagnostics/Performance.hpp>
 
 #include "state/CoreState.hpp"
+#include "state/CoreStateLifecycle.hpp"
 #include "state/macro/MacroWorkflow.hpp"
 #include "state/project/ProjectDomainRules.hpp"
 #include "state/project/ProjectMenuModel.hpp"
@@ -388,6 +389,7 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
         return false;
     }
     if (state.macroHistory.hasPendingModulatorAuditionTransaction(state.pages) ||
+        state.projectTrackHistory.hasPendingGesture() ||
         !snapshot.projectControl ||
         !validProjectTrackSnapshot(snapshot.projectTracks) ||
         !core::state::modulation::validProjectModulationDomain(
@@ -455,6 +457,7 @@ FLASHMEM bool applyProjectSnapshot(core::state::CoreState& state,
     state.requestMacroRuntimeOwnerActivation();
     state.requestSequencerRuntimeProjectReset();
     if (!state.advanceProjectSessionIdentity_()) return false;
+    core::state::CoreStateLifecycle::consumeProjectReplacementMutationCoalescing(state);
     return true;
 }
 

@@ -14,6 +14,8 @@ struct CoreStateLifecycle {
     static void update(CoreState& state);
     static void flush(CoreState& state);
     static void flushProjectMutationCoalescing(CoreState& state);
+    /** Discards outgoing/load-generated mutation marks after Project replacement. */
+    static void consumeProjectReplacementMutationCoalescing(CoreState& state);
     static void factoryReset(CoreState& state);
     static void resetStandaloneTransientUi(CoreState& state);
     static void resetMusicalProject(CoreState& state);

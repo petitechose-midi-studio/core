@@ -310,7 +310,9 @@ void test_full_bank_project_apply_stays_within_notification_capacity() {
     assert(core::state::project::applyProjectSnapshot(state, snapshot));
     sampleQueue(queue, peakPending);
 
-    constexpr size_t EXPECTED_PROJECT_APPLY_PEAK = 76;
+    // Fourteen generic mutation-coalescer subscriptions are consumed by the
+    // Project replacement owner. All independent UI/runtime observers remain.
+    constexpr size_t EXPECTED_PROJECT_APPLY_PEAK = 62;
     if (peakPending != EXPECTED_PROJECT_APPLY_PEAK) {
         std::cerr << "Unexpected synchronous Project apply peak: " << peakPending
                   << "/" << oc::state::NotificationQueue::maxPending() << "\n";
