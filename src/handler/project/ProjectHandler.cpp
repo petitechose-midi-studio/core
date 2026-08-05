@@ -212,11 +212,20 @@ void ProjectHandler::update(uint32_t nowMs) {
     }
 }
 
-FLASHMEM void ProjectHandler::resetProject() {
+FLASHMEM bool ProjectHandler::resetProject() {
     commitPendingRoutingGesture();
     endProjectSettingsGesture();
     (void)cancelRecordedShapeCapture();
-    lifecycle_.resetMusicalProject();
+    const auto result = lifecycle_.resetMusicalProject();
+    if (!result.success()) {
+        navigation_.setLifecycleFeedback(
+            projectLifecycleFailureLabel(result.status, "Reset failed")
+        );
+        OC_LOG_WARN("[Project] reset failed status={}",
+                    static_cast<unsigned>(result.status));
+        return false;
+    }
+    return true;
 }
 
 FLASHMEM void ProjectHandler::back() {

@@ -168,7 +168,7 @@ private:
     bool saveAsAndLoadProjectWithFeedback(const char* projectId);
     bool saveAndResetProjectWithFeedback(bool saveAsNew);
     bool commitProjectNameEditor();
-    void resetProject();
+    [[nodiscard]] bool resetProject();
     void back();
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
     oc::state::Signal<core::ui::ViewType, 8>& active_view_;

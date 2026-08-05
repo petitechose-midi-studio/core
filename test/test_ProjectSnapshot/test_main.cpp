@@ -217,7 +217,8 @@ void test_snapshot_capture_apply_restores_project_session() {
     assert(state.macroUi.manualOverrides.activate(capturedProjectAddress, 0.91f) ==
            core::state::macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
 
-    state.resetMusicalProject();
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
     assert(state.statusBar.tempo.get() == 120.0f);
     assert(state.sequencer.pattern.length.get() == sequencer::SequencerPatternState::DEFAULT_LENGTH);
     assert(state.sharedTrackActive.get() == 0);
@@ -302,7 +303,8 @@ void test_snapshot_project_track_authority_wins_on_apply() {
     assert(project::captureProjectSnapshot(state, snapshot));
     snapshot.projectTracks.midiChannels[1] = 12;
 
-    state.resetMusicalProject();
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
     const auto beforeApply = state.projectSessionSaveToken();
     assert(project::applyProjectSnapshot(state, snapshot));
 
@@ -486,7 +488,8 @@ void test_snapshot_rejects_active_project_track_gesture_before_live_mutation() {
     project::ProjectSnapshot incoming;
     assert(project::captureProjectSnapshot(state, incoming));
 
-    state.resetMusicalProject();
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
     std::strncpy(
         state.project.metadata.name.data(),
         "outgoing",
@@ -722,7 +725,8 @@ void test_full_project_reset_discards_an_unrecoverable_audition_pair() {
     state.pages.control.audition = {};
     assert(state.hasPendingProjectTransaction());
 
-    state.resetMusicalProject();
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
     assert(!state.hasPendingProjectTransaction());
     assert(!state.pages.control.audition.active());
     assert(state.pages.control.authored.modulation.sourceCount == 0U);
@@ -735,7 +739,7 @@ void test_full_project_reset_discards_an_unrecoverable_audition_pair() {
         << "[PASS] full Project reset discards unrecoverable audition pair\n";
 }
 
-void test_project_load_and_reset_do_not_discard_an_active_step_draft() {
+void test_project_load_and_reset_reject_an_active_step_draft() {
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
 
@@ -757,7 +761,8 @@ void test_project_load_and_reset_do_not_discard_an_active_step_draft() {
     assert(state.sequencer.stepContentDraft.blockedTransition ==
            sequencer::SequencerStepContentDraftBlockedTransition::PROJECT_LOAD);
 
-    state.resetMusicalProject();
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::DraftActive);
     assert(state.sequencer.stepContentDraft.active.get());
     assert(state.sequencer.pattern.note[0] == 93);
     assert(state.sequencer.stepContentDraft.blockedTransition ==
@@ -765,7 +770,7 @@ void test_project_load_and_reset_do_not_discard_an_active_step_draft() {
     assert(state.projectSessionSaveToken() == beforeBlockedTransitions);
 
     std::cout
-        << "[PASS] Project load/reset preserve an active Step draft\n";
+        << "[PASS] Project load/reset reject an active Step draft\n";
 }
 
 }  // namespace
@@ -793,7 +798,7 @@ int main() {
     test_inconsistent_audition_state_is_blocked_fail_closed();
     test_snapshot_apply_reconciles_a_removed_modulator_selection();
     test_full_project_reset_discards_an_unrecoverable_audition_pair();
-    test_project_load_and_reset_do_not_discard_an_active_step_draft();
+    test_project_load_and_reset_reject_an_active_step_draft();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

@@ -126,7 +126,8 @@ void test_new_project_boundary_resets_runtime_activation() {
     state.sequencerTrackActivations.publishPrepared(activation);
     const uint32_t revisionBefore = state.sequencerRuntimeProjectRevision.get();
 
-    state.resetMusicalProject();
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
     assert(state.sequencerRuntimeProjectRevision.get() != revisionBefore);
     assert(state.sequencerTrackActivations.pendingTrackMask() == 0U);
     assert(state.sequencerTrackActivations.telemetry(0U).status ==

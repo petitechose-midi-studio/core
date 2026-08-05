@@ -359,7 +359,8 @@ void test_snapshot_and_reset_boundaries_see_or_purge_the_central_cc_transaction(
     assert(h.workflow.openLane(0U));
     assert(h.workflow.editFocusedEvent(1.0f, 200U));
     assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
-    h.state.resetMusicalProject();
+    assert(h.state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
     assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
     assert(!h.state.projectHistory.canUndo());
     assert(h.state.sequencerHistory.undoCount() == 0U);

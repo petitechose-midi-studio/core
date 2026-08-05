@@ -957,6 +957,44 @@ void test_new_project_confirmation_cancel_preserves_state() {
     std::cout << "[PASS] test_new_project_confirmation_cancel_preserves_state\n";
 }
 
+void test_new_project_reset_failure_is_visible_and_keeps_confirmation() {
+    namespace seq = core::state::sequencer;
+
+    ProjectHandlerHarness h;
+    h.state.statusBar.tempo.set(149.0f);
+    assert(h.state.sequencer.setStepNoteAt(0U, 73U));
+
+    h.tap(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::NEW_PROJECT_CONFIRM);
+    h.turn(Config::EncoderID::NAV, 1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 1U);
+
+    const auto beforeSaveToken = h.state.projectSessionSaveToken();
+    assert(seq::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            0U,
+            seq::StepProperty::NOTE,
+            g_now_ms,
+            seq::SequencerCoalescedPatternPayloadPlan::FlatOnly
+        )
+    ));
+    h.tap(Config::ButtonID::NAV);
+
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::NEW_PROJECT_CONFIRM);
+    assert(h.state.projectNavigation.focusedRow.get() == 1U);
+    assert(std::strcmp(
+               h.state.projectNavigation.lifecycleFeedback.get(),
+               "Reset failed"
+           ) == 0);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencer.pattern.note[0] == 73U);
+    assert(h.state.statusBar.tempo.get() == 149.0f);
+    assert(h.state.projectSessionSaveToken() == beforeSaveToken);
+    std::cout << "[PASS] failed Project reset remains visible and retryable\n";
+}
+
 void test_new_project_save_as_new_persists_then_resets() {
     ProjectHandlerHarness h;
 
@@ -1420,7 +1458,8 @@ void test_untitled_dirty_load_prompts_save_as_and_then_loads_target() {
     h.state.statusBar.tempoDisplay.set(144.0f);
     saveCurrentProjectSnapshot(h, "p002");
 
-    h.state.resetMusicalProject();
+    assert(h.state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
     assert(!h.state.project.metadata.hasSavedIdentity);
     assert(h.state.project.metadata.id[0] == '\0');
     assert(std::strcmp(h.state.project.metadata.name.data(), "untitled") == 0);
@@ -1553,7 +1592,8 @@ void test_rename_current_project_rejects_existing_target_without_mutating_state(
 
     assert(lifecycle.saveAsProject("p001").success());
 
-    h.state.resetMusicalProject();
+    assert(h.state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
     h.state.statusBar.tempo.set(141.0f);
     h.state.statusBar.tempoDisplay.set(141.0f);
     assert(lifecycle.saveAsProject("p002").success());
@@ -2953,6 +2993,7 @@ int main() {
     test_overview_rename_name_editor_moves_project_file();
     test_new_project_resets_musical_project_state();
     test_new_project_confirmation_cancel_preserves_state();
+    test_new_project_reset_failure_is_visible_and_keeps_confirmation();
     test_new_project_save_as_new_persists_then_resets();
     test_new_project_save_current_persists_saved_identity_then_resets();
     test_routing_output_channels_are_editable();

@@ -162,6 +162,8 @@ struct ProjectNavigationState {
 
     ~ProjectNavigationState();
 
+    /** Clears context-owned navigation while preserving snapshot-backed settings. */
+    void resetTransient();
     void reset();
     void notifyContentChanged();
     void setLifecycleFeedback(const char* message);

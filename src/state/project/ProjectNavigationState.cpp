@@ -32,7 +32,7 @@ FLASHMEM bool ProjectBrowserState::add(const char* id, uint32_t sizeBytes) {
     return true;
 }
 
-FLASHMEM void ProjectNavigationState::reset() {
+FLASHMEM void ProjectNavigationState::resetTransient() {
     activeTab.set(ProjectTab::OVERVIEW);
     currentNode.set(ProjectNodeId::OVERVIEW_ROOT);
     depth.set(0);
@@ -54,13 +54,6 @@ FLASHMEM void ProjectNavigationState::reset() {
     destinationPickerPage = 0;
     destinationPickerLevel = ModulatorDestinationPickerLevel::TRACK;
     modulatorGuard.set({});
-    scaleConstrainEnabled = true;
-    patternsInheritScale = true;
-    clipsInheritScale = true;
-    stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
-    ccLaneDefaultControllers = PROJECT_CC_LANE_DEFAULT_CONTROLLERS;
-    transportSwingPercent = 0;
-    transportRunMode = 0;
     pendingLoadProjectId = {};
     editingProjectSlug = {};
     projectNameKeyIndex = PROJECT_NAME_KEYBOARD_DEFAULT_INDEX;
@@ -76,6 +69,17 @@ FLASHMEM void ProjectNavigationState::reset() {
         ProjectNodeId::OVERVIEW_ROOT,
     };
     focusedRowByDepth = {};
+}
+
+FLASHMEM void ProjectNavigationState::reset() {
+    resetTransient();
+    scaleConstrainEnabled = true;
+    patternsInheritScale = true;
+    clipsInheritScale = true;
+    stepPasteMode = PROJECT_STEP_PASTE_MODE_DEFAULT;
+    ccLaneDefaultControllers = PROJECT_CC_LANE_DEFAULT_CONTROLLERS;
+    transportSwingPercent = 0;
+    transportRunMode = 0;
 }
 
 FLASHMEM void ProjectNavigationState::notifyContentChanged() {

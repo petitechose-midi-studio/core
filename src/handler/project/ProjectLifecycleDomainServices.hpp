@@ -25,6 +25,7 @@ public:
         LIST_FAILED,
         DRAFT_ACTIVE,
         QUEUED,
+        RESET_FAILED,
     };
 
     struct Result {

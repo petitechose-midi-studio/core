@@ -73,6 +73,12 @@ struct CoreState;
 struct CoreStateBootstrap;
 struct CoreStateLifecycle;
 
+enum class ProjectResetOutcome : uint8_t {
+    Completed = 0,
+    DraftActive,
+    HistoryUnavailable,
+};
+
 namespace testing {
 struct ProjectSessionTokenTestAccess;
 }
@@ -356,7 +362,8 @@ public:
     void flush();
     void flushProjectMutationCoalescing();
     void resetStandaloneTransientUi();
-    void resetMusicalProject();
+    /** Replaces the Project only after all rejectable admission checks pass. */
+    [[nodiscard]] ProjectResetOutcome resetMusicalProject();
     void requestMacroRuntimeOwnerActivation();
     void requestSequencerRuntimeProjectReset();
     void markMacroValueEdited(uint8_t index);

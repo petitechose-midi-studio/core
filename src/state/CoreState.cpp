@@ -182,17 +182,28 @@ FLASHMEM void CoreState::flushProjectMutationCoalescing() {
 FLASHMEM void CoreState::resetStandaloneTransientUi() {
     if (commitSequencerPatternHistoryCoalescingOutcome() ==
         sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
-        return;
+        OC_LOG_ERROR(
+            "[CoreState] Invalid Sequencer history discarded during Standalone teardown"
+        );
+        // The departing context cannot recover this transient owner. Keep the
+        // published Pattern authoritative and preserve committed undo entries.
+        sequencerDomain_.coalescedPatternHistory.clear();
     }
     CoreStateLifecycle::resetStandaloneTransientUi(*this);
 }
 
-FLASHMEM void CoreState::resetMusicalProject() {
+FLASHMEM ProjectResetOutcome CoreState::resetMusicalProject() {
+    if (sequencer.stepContentDraft.rejectTransitionIfActive(
+            sequencer::SequencerStepContentDraftBlockedTransition::RESET
+        )) {
+        return ProjectResetOutcome::DraftActive;
+    }
     if (commitSequencerPatternHistoryCoalescingOutcome() ==
         sequencer::SequencerPatternHistoryCommitOutcome::Failed) {
-        return;
+        return ProjectResetOutcome::HistoryUnavailable;
     }
     CoreStateLifecycle::resetMusicalProject(*this);
+    return ProjectResetOutcome::Completed;
 }
 
 FLASHMEM void CoreState::requestMacroRuntimeOwnerActivation() {

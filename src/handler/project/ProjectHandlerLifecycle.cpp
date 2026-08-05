@@ -110,7 +110,7 @@ FLASHMEM bool ProjectHandler::saveAndResetProjectWithFeedback(bool saveAsNew) {
     }
 
     OC_LOG_INFO("[Project] save {} before reset bytes={}", savedProjectId, saved.bytes);
-    resetProject();
+    if (!resetProject()) return true;
     navigation_.setLifecycleFeedback(feedback);
     return true;
 }
@@ -321,7 +321,7 @@ FLASHMEM bool ProjectHandler::activateFocusedProjectAction() {
             );
         }
         if (row == 1) {
-            resetProject();
+            (void)resetProject();
             return true;
         }
         if (row == 2) {
