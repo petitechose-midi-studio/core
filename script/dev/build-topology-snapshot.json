@@ -6,8 +6,25 @@
     "L-R18-02U": "evidence-only-existing-list"
   },
   "dependencies": {
+    "bitwigDevLibraries": [
+      "ms-device-support",
+      "ms-ui",
+      "oc-framework",
+      "oc-hal-common",
+      "oc-hal-teensy",
+      "oc-note",
+      "oc-ui-lvgl",
+      "oc-ui-lvgl-components"
+    ],
     "bitwigDevUsesLocalSymlinks": true,
+    "bitwigFullCoreActive": false,
+    "bitwigIgnoredLibraries": [],
     "bitwigReleaseImportsCoreOcSdk": true,
+    "bitwigReleaseLibraries": [
+      "${oc_sdk_deps.lib_deps}",
+      "ms-device-support",
+      "ms-ui"
+    ],
     "coreNativePins": {
       "oc-framework": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
       "oc-note": "3983c387f04954b22500a6c36d6e9444ef1139c7"
@@ -40,12 +57,12 @@
     "bitwig/.github/workflows/ci.yml": "6bda6ceb5b977546a9165e437be72524a97be608312a0a506f3cffb1916dc0b5",
     "bitwig/CMakeLists.txt": "2a6e5998a2bced40d5d3cef5f1ce2239f44bfedf1429850ce7d9f7f1aed14920",
     "bitwig/cmake/MidiStudioBitwigSources.cmake": "3cf5ed1ec09e37f0204445721244a4056db25b20b1a85082128b1677d893b174",
-    "bitwig/platformio.ini": "e3bd982e61bcd0c7c488de58efc013ca81a1af06157813a782c2c0f57b3cf9d5",
+    "bitwig/platformio.ini": "695869056f9939b8c10893f81abe8a1d859e15786945e3d22a46972a24798165",
     "bitwig/sdl/app.cmake": "1fb132597404331082690c7f7af6cd71f3f878262f77e2183ad6c1aa851676a8",
     "core/.github/release-tooling.json": "9ac98d99fdb0b5f83a249a3b2e50a5f92e75674e8bba6d38b0cc420a738003a7",
     "core/.github/workflows/candidate-host-tools.yml": "7224120588501e1f5ea62130550d3abc1ab657825489ca9b06e68d32e511ea8a",
     "core/.github/workflows/candidate.yml": "73d8662cfcb574dec18ed8ba9c851f2c9a6a0e5580face778bf495c45d333068",
-    "core/.github/workflows/ci.yml": "1fc42deb7cf58db7e39962b4d9c18f5f11b4d1e9904858a2864af6e0f3161a68",
+    "core/.github/workflows/ci.yml": "61d1562bcc333f026c42faeb2672a6dafa0ea82caf1f2d8f78bf1c085c07ac60",
     "core/CMakeLists.txt": "b323e3afd29a7c1c0ac80f3c5d3f9783e00afb4658c011abc4b2ae8cb5a4c59a",
     "core/cmake/MsCoreProductSources.cmake": "e0156488d08515ed749c9f229e431a191a200aa67946516481501e22f6fc2c6f",
     "core/cmake/MsCoreProjectFileTool.cmake": "3646bff81f12b9c8f3b4ef7283b53a46b86ea9a345ed217c87a2762a3a68f531",
@@ -54,7 +71,7 @@
     "core/oc-native-sdk.ini": "2f573afa1b04c370bc72f63aa23b437bd5e3bf37c6c5e901f5f98f95bbda5e6b",
     "core/oc-sdk.ini": "a0ba3e1677f3196a32e74124824a550f51ea07ff460fa0d03f54772598e289ca",
     "core/platformio.ini": "1b75d707c3862671a1b7d86509aaeb6c2850cca7aab552d92c3b433d7336098f",
-    "core/script/dev/check-build-topology.py": "c9b98b57ee31846b0eca756a15da84fbef036f3fa0f9246f727b729533981f22",
+    "core/script/dev/check-build-topology.py": "59edaa472463071b193da8a81f89fa8b74ca827f572a4177a376b53ee6194629",
     "core/sdl/CMakeLists.txt": "5a43409b71f67f2993dc61213e519f3d902e265c4eddae21bec9c22f30ba2bc6",
     "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
     "core/sdl/build.sh": "0f484e1330c7836e11da47e167d0c62ec2af152b695f69011a915daf6f174b91",
@@ -145,8 +162,8 @@
   "repositories": {
     "bitwig": {
       "cleanExpected": true,
-      "commit": "6c0a4348a72a37f7253d1297540cac25624c7795",
-      "tree": "858b3152763a9ab24d4fd44e8c7ad74fe96c5959"
+      "commit": "a04a4c888d6064dcd7e805a9148fa64f3b11b795",
+      "tree": "8f9309142201b2bd99a4c85e65a0cf01d83665e2"
     },
     "core": {
       "cleanExpected": true,
@@ -203,7 +220,7 @@
       "tree": "0a5e77dc3b4414aa4ec06751e564f7ccfa7c3489"
     }
   },
-  "schema": 2,
+  "schema": 3,
   "sdlTopology": {
     "appExtraIncludesDeclarations": 2,
     "appExtraIncludesTargetUses": 1,
@@ -1432,9 +1449,8 @@
       "sha256": "dd062f9b600651a934a0567b86baa721214e6f2c3ec3f9ec034ca563e6fbb17e"
     },
     "coreTotalHeaders": {
-      "count": 451,
+      "count": 450,
       "paths": [
-        "src/api/InputAPI.hpp",
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
         "src/app/OverlayTypes.hpp",
@@ -1886,7 +1902,7 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "3eca7abb65367f1cd72b90e3780dce0c80e16d9297d5032dd30e8bc6cfa12d0d"
+      "sha256": "3bf751e876684da7f8bd87c22b9c10db3a10600d10b3784de42802393266f96d"
     },
     "coreTotalImplementations": {
       "count": 404,
@@ -2809,7 +2825,7 @@
       }
     }
   },
-  "toolVersion": 2,
+  "toolVersion": 3,
   "tooling": {
     "bitwigCandidate": {
       "platformio": "6.1.18",
@@ -2842,7 +2858,7 @@
       "declaredRepositoryPins": {
         "EMSDK_SHA": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
         "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
-        "MIDI_STUDIO_BITWIG_SHA": "6c0a4348a72a37f7253d1297540cac25624c7795",
+        "MIDI_STUDIO_BITWIG_SHA": "a04a4c888d6064dcd7e805a9148fa64f3b11b795",
         "MIDI_STUDIO_UI_SHA": "137e49f39c0ed1dd6391af300b764614d39658fb",
         "MS_DEV_ENV_SHA": "99b95d7ced17461f0aec0d245b82c515b48439a9",
         "OPEN_CONTROL_FRAMEWORK_SHA": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
