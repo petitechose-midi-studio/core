@@ -21,9 +21,9 @@
       "oc-ui-lvgl-components": "b40208f1d3b6038e9ef0275b5a0f360fcb9ebf04"
     },
     "libremidi": {
-      "immutableCommit": false,
+      "immutableCommit": true,
       "repository": "https://github.com/celtera/libremidi.git",
-      "revision": "v5.4.1"
+      "revision": "34fbdfc6d4eb32fe5792bc310fa63aba7cdad4dd"
     }
   },
   "historicalF07": {
@@ -44,17 +44,17 @@
     "core/.github/release-tooling.json": "9ac98d99fdb0b5f83a249a3b2e50a5f92e75674e8bba6d38b0cc420a738003a7",
     "core/.github/workflows/candidate-host-tools.yml": "7224120588501e1f5ea62130550d3abc1ab657825489ca9b06e68d32e511ea8a",
     "core/.github/workflows/candidate.yml": "73d8662cfcb574dec18ed8ba9c851f2c9a6a0e5580face778bf495c45d333068",
-    "core/.github/workflows/ci.yml": "9fdd0ecf4c9a0d83cef333176bd3e011b792012bf2629a76f1b127e128c6e57a",
-    "core/CMakeLists.txt": "8a5fc07cda462d637ae8eab3fad8fc8c970e1da53bef2014168e3beede9fa4ea",
+    "core/.github/workflows/ci.yml": "fc7f6a5f3014a5cec202c7bfa9d7bb96948ae2bb9eea55d70b7902d66663a87e",
+    "core/CMakeLists.txt": "b323e3afd29a7c1c0ac80f3c5d3f9783e00afb4658c011abc4b2ae8cb5a4c59a",
     "core/cmake/MsCoreSources.cmake": "0bfe864d1c00f8fd383e67f1d2ecdf25b19b19ef047a8c4d2e6cec763c8aece4",
     "core/library.json": "54c23dc4b513a85b4528944fb2630e4f93f5d9c8561423341d8ca2b727d0b4b9",
     "core/oc-native-sdk.ini": "289d568f0a0fe7c9da9a27c0bdded498ccc84551f1b24c9e0c104231cbfcb843",
     "core/oc-sdk.ini": "cd6b44a0b1acc52a9a20bc1146d59b4755239af0b09371637c39e4afd5be2653",
     "core/platformio.ini": "73f60b1f009fb8eef65427e5b7e47627c6f24ff603fc9f20f0246566466ebaaf",
-    "core/script/dev/check-build-topology.py": "a91f9195fed0c6476954d64efb5f07e4294b119c10b4b550122a9d098632f159",
-    "core/sdl/CMakeLists.txt": "e4f97e7e92c7ea49079e16120de5ff53bff6309827540c44bfc24f8ee8138f22",
+    "core/script/dev/check-build-topology.py": "7734d5b30c8e11a67df0f805313fc1f02a00d128f0234134a56af0c503e58812",
+    "core/sdl/CMakeLists.txt": "7b3ec6057bf02d3c2a1ebea589cc58359a30edf74b3f9de2c2fffe13e4d5fb98",
     "core/sdl/app.cmake": "58c458699e02af603c5e9b74100a18d3458e64185df3e69a670d2da15ceafb45",
-    "core/sdl/cmake/libremidi.cmake": "42ed6541b7ba8ac0e5e188760b200b161e37f65d381fe24dbd102cfc8b8a3b61",
+    "core/sdl/cmake/libremidi.cmake": "728bebe77a438d805e09e9e633c2b30073b218d9b3f8560c83d7f79f96b541eb",
     "ui/CMakeLists.txt": "55e09ff826465112f49b20d19805bc663c0e8b084ef3bcb50ca87bb2391d3cbd",
     "ui/library.json": "e91999750744ac3279b794c1dbc6d1e464201a3a401fe6c3bb15449dd98cb9bd"
   },
@@ -81,7 +81,7 @@
       "buttonBindings": 64,
       "buttons": 64,
       "cobsFrame": 4096,
-      "cxxStandard": 20,
+      "cxxStandard": 17,
       "encoderBindings": 32,
       "pendingNotifications": 96
     },
@@ -2562,6 +2562,7 @@
     },
     "coreCi": {
       "declaredRepositoryPins": {
+        "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
         "MIDI_STUDIO_BITWIG_SHA": "75af17b0bace74d5085f8e28a7a8af59afb6a540",
         "MIDI_STUDIO_UI_SHA": "bd822d51a08d60172b04f3d8aae3f825d1ec717d",
         "MS_DEV_ENV_SHA": "ec565d041d6b1e61c5bc5cd6d2b8cf8af5f8162f",

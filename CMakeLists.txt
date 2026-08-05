@@ -4,7 +4,7 @@ project(petitechose_midi_studio_core LANGUAGES CXX)
 
 include(CTest)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
@@ -50,8 +50,8 @@ if(NOT TARGET oc_note_native)
         "${CMAKE_BINARY_DIR}/open-control-note")
 endif()
 
-target_compile_features(oc_framework_native PUBLIC cxx_std_20)
-target_compile_features(oc_note_native PUBLIC cxx_std_20)
+target_compile_features(oc_framework_native PUBLIC cxx_std_17)
+target_compile_features(oc_note_native PUBLIC cxx_std_17)
 
 # The versioned device-support boundary is intentionally independent of the
 # full Core native library. Its sole implementation owns the LVGL PSRAM pool;

@@ -9,7 +9,7 @@ function(ms_core_add_project_file_tool)
         PUBLIC
             "${MS_CORE_OC_FRAMEWORK_DIR}/src"
             "${MS_CORE_OC_NOTE_DIR}/src")
-    target_compile_features(ms_core_project_file_open_control_native PUBLIC cxx_std_20)
+    target_compile_features(ms_core_project_file_open_control_native PUBLIC cxx_std_17)
 
     add_library(ms_core_project_file_native STATIC
         ${MS_CORE_PROJECT_FILE_CORE_SOURCES})

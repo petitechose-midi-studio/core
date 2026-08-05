@@ -579,6 +579,16 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
     defaults = macro_defaults(framework)
     core_cmake_text = (core / "CMakeLists.txt").read_text(encoding="utf-8")
     sdl_cmake_text = (core / "sdl" / "CMakeLists.txt").read_text(encoding="utf-8")
+    libremidi_cmake_text = (
+        core / "sdl" / "cmake" / "libremidi.cmake"
+    ).read_text(encoding="utf-8")
+    libremidi_match = re.search(
+        r"GIT_TAG\s+([^\s\)]+)",
+        libremidi_cmake_text,
+    )
+    if libremidi_match is None:
+        raise InventoryError("libremidi FetchContent revision is missing")
+    libremidi_revision = libremidi_match.group(1)
     bitwig_cmake_text = (bitwig / "CMakeLists.txt").read_text(encoding="utf-8")
     core_teensy_flags = pio_values(core_pio, "env:teensy_base", "build_flags")
     core_native_flags = pio_values(core_pio, "env:native", "build_flags")
@@ -763,11 +773,10 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
             "bitwigDevUsesLocalSymlinks": "symlink://" in "\n".join(pio_values(bitwig_pio, "env:dev", "lib_deps")),
             "libremidi": {
                 "repository": "https://github.com/celtera/libremidi.git",
-                "revision": re.search(
-                    r"GIT_TAG\s+([^\s\)]+)",
-                    (core / "sdl" / "cmake" / "libremidi.cmake").read_text(encoding="utf-8"),
-                ).group(1),
-                "immutableCommit": False,
+                "revision": libremidi_revision,
+                "immutableCommit": bool(
+                    re.fullmatch(r"[0-9a-f]{40}", libremidi_revision)
+                ),
             },
         },
         "tooling": {

@@ -35,16 +35,6 @@ static_assert(PRODUCER_ENVELOPE_COUNT == 832U);
 static_assert(RealtimeMidiQueue::NOTE_EVENT_PHASE_CAPACITY == 128U);
 static_assert(RealtimeMidiQueue::MAX_QUEUE_DEPTH == 576U);
 
-template <typename Expansion>
-uint8_t requestedNoteCount(const Expansion& expansion) {
-    if constexpr (requires { expansion.requestedNoteCount; }) {
-        return expansion.requestedNoteCount;
-    } else {
-        // The older compatible Note API exposes only the retained count.
-        return expansion.count;
-    }
-}
-
 note::StepSequencerRuntimeState baseState() {
     note::StepSequencerRuntimeState state{};
     state.length = note::StepSequencerRuntimeState::MAX_STEPS;
@@ -130,7 +120,7 @@ ProducerEnvelope buildProducerEnvelope() {
             true
         );
         assert(expansion.count == NOTES_PER_TRACK);
-        assert(requestedNoteCount(expansion) == NOTES_PER_TRACK);
+        assert(expansion.requestedNoteCount == NOTES_PER_TRACK);
         assert(!expansion.noteBudgetExceeded);
 
         for (uint8_t index = 0U; index < expansion.count; ++index) {

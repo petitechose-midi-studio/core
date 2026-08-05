@@ -54,25 +54,33 @@ if(NOT DEFINED BIN_OUTPUT_DIR)
     set(BIN_OUTPUT_DIR "${MIDI_STUDIO_ROOT}/bin")
 endif()
 
-# PlatformIO deps
-if(EXISTS "${MIDI_STUDIO_ROOT}/.pio/libdeps/dev")
-    set(PIO_LIBDEPS "${MIDI_STUDIO_ROOT}/.pio/libdeps/dev")
-else()
-    set(PIO_LIBDEPS "${MIDI_STUDIO_ROOT}/.pio/libdeps/release")
+# CI and reproducible consumers provide an exact LVGL checkout. Keep the
+# PlatformIO lookup temporarily for existing local simulator workflows.
+set(LVGL_DIR "" CACHE PATH "Path to an LVGL source checkout")
+if(NOT LVGL_DIR)
+    if(EXISTS "${MIDI_STUDIO_ROOT}/.pio/libdeps/dev")
+        set(PIO_LIBDEPS "${MIDI_STUDIO_ROOT}/.pio/libdeps/dev")
+    else()
+        set(PIO_LIBDEPS "${MIDI_STUDIO_ROOT}/.pio/libdeps/release")
+    endif()
+
+    function(pio_dep NAME OUT)
+        if(EXISTS "${PIO_LIBDEPS}/${NAME}")
+            set(${OUT} "${PIO_LIBDEPS}/${NAME}" PARENT_SCOPE)
+        elseif(EXISTS "${PIO_LIBDEPS}/${NAME}.pio-link")
+            file(READ "${PIO_LIBDEPS}/${NAME}.pio-link" LINK)
+            string(REGEX MATCH "symlink://([^\"]+)" _ "${LINK}")
+            set(${OUT} "${MIDI_STUDIO_ROOT}/${CMAKE_MATCH_1}" PARENT_SCOPE)
+        endif()
+    endfunction()
+
+    pio_dep(lvgl LVGL_DIR)
 endif()
 
-# Resolve symlinked PIO dependency
-function(pio_dep NAME OUT)
-    if(EXISTS "${PIO_LIBDEPS}/${NAME}")
-        set(${OUT} "${PIO_LIBDEPS}/${NAME}" PARENT_SCOPE)
-    elseif(EXISTS "${PIO_LIBDEPS}/${NAME}.pio-link")
-        file(READ "${PIO_LIBDEPS}/${NAME}.pio-link" LINK)
-        string(REGEX MATCH "symlink://([^\"]+)" _ "${LINK}")
-        set(${OUT} "${MIDI_STUDIO_ROOT}/${CMAKE_MATCH_1}" PARENT_SCOPE)
-    endif()
-endfunction()
-
-pio_dep(lvgl LVGL_DIR)
+if(NOT LVGL_DIR OR NOT EXISTS "${LVGL_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR
+        "LVGL source not found. Pass -DLVGL_DIR=<exact-lvgl-checkout> or install Core PlatformIO dependencies.")
+endif()
 
 # Open Control paths
 set(OC_FRAMEWORK "${OPEN_CONTROL_ROOT}/framework/src")
