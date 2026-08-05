@@ -19,8 +19,8 @@ namespace core::ui {
 class DeviceSettingsView : public oc::ui::lvgl::IView {
 public:
     struct StateRefs {
-        core::state::DeviceSettingsState& settings;
-        core::state::MidiSyncState& midiSync;
+        const core::state::DeviceSettingsState& settings;
+        const core::state::MidiSyncState& midiSync;
     };
 
     DeviceSettingsView(lv_obj_t* parent, StateRefs stateRefs);

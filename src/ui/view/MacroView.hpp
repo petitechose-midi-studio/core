@@ -43,21 +43,21 @@ public:
     static constexpr uint8_t ROWS = 2;
 
     struct StateRefs {
-        core::state::MacroState& macros;
-        core::state::macro::MacroPagesState& pages;
-        core::state::macro::MacroUiState& macroUi;
-        core::state::TrackNavigationState& trackNavigation;
-        oc::state::Signal<
+        const core::state::MacroState& macros;
+        const core::state::macro::MacroPagesState& pages;
+        const core::state::macro::MacroUiState& macroUi;
+        const core::state::TrackNavigationState& trackNavigation;
+        const oc::state::Signal<
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
-        oc::state::Signal<uint8_t, 8>& sharedTrackActive;
-        oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
-        core::state::StructureClipboardState& structureClipboard;
-        oc::state::Signal<uint32_t>& configRevision;
-        core::state::StatusBarState& statusBar;
-        core::state::MacroEditState& macroEdit;
-        core::state::ViewSelectorState& viewSelector;
-        core::state::DeviceSettingsState& deviceSettings;
+        const oc::state::Signal<uint8_t, 8>& sharedTrackActive;
+        const oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
+        const core::state::StructureClipboardState& structureClipboard;
+        const oc::state::Signal<uint32_t>& configRevision;
+        const core::state::StatusBarState& statusBar;
+        const core::state::MacroEditState& macroEdit;
+        const core::state::ViewSelectorState& viewSelector;
+        const core::state::DeviceSettingsState& deviceSettings;
     };
 
     MacroView(lv_obj_t* parent, StateRefs stateRefs);

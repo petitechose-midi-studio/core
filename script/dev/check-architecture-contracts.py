@@ -200,6 +200,18 @@ DIRECT_SMALLOC_MUTATION_CALL = re.compile(
     r"\bsm_(?:malloc|calloc|realloc|free)_pool\s*\("
 )
 
+UI_PRODUCT_STATE_REFERENCE = re.compile(
+    r"(?P<prefix_const>\bconst\s+)?"
+    r"(?P<type>"
+    r"\bcore::state::(?:[A-Za-z_][A-Za-z0-9_]*::)*"
+    r"[A-Za-z_][A-Za-z0-9_]*[a-z][A-Za-z0-9_]*|"
+    r"\boc::state::(?:Signal|SignalString|SignalVector|DerivedSignal)\s*<"
+    r"(?:(?![;{}]).)*?>"
+    r")"
+    r"\s*(?P<suffix_const>const\s+)?&(?!&)",
+    flags=re.DOTALL,
+)
+
 HOT_UI_FLASHMEM = re.compile(
     r"FLASHMEM\s+[^\n]*\b(?:"
     r"CoalescedLvglRenderScheduler::(?:request|resumePending|onTimer|canDrain|drain)|"
@@ -417,6 +429,23 @@ def product_implementation_files():
 
 def relative(path: Path) -> str:
     return path.relative_to(SOURCE_ROOT).as_posix()
+
+
+def ui_product_state_reference_errors(rel: str, content_code: str) -> list[str]:
+    if not rel.startswith("ui/"):
+        return []
+
+    errors: list[str] = []
+    for match in UI_PRODUCT_STATE_REFERENCE.finditer(content_code):
+        if match.group("prefix_const") or match.group("suffix_const"):
+            continue
+        line = content_code.count("\n", 0, match.start()) + 1
+        state_type = " ".join(match.group("type").split())
+        errors.append(
+            f"{rel}:{line}: UI product-state reference must be read-only: "
+            f"const {state_type}&"
+        )
+    return errors
 
 
 def cold_placement_contract_errors(cold_placement: str) -> list[str]:
@@ -5373,6 +5402,7 @@ def main(show_inventory: bool = False) -> int:
                 errors.append(dependency_error)
 
         errors.extend(mutation_contract_errors(rel, content))
+        errors.extend(ui_product_state_reference_errors(rel, content_code))
 
         for marker in FORBIDDEN_LEGACY:
             if marker in content:

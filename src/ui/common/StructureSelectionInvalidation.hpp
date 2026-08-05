@@ -20,7 +20,7 @@ inline constexpr size_t STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT = 9U;
 template <size_t MaxSignals>
 OC_ALWAYS_INLINE bool watchStructureSelectionInvalidation(
     oc::state::StaticWatchGroup<MaxSignals>& watcher,
-    core::state::StructureSelectionState& selection
+    const core::state::StructureSelectionState& selection
 ) {
     return watcher.watchAll(
         selection.active,

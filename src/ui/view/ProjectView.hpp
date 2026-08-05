@@ -31,14 +31,14 @@ namespace core::ui {
 class ProjectView : public oc::ui::lvgl::IView {
 public:
     struct StateRefs {
-        core::state::project::ProjectNavigationState& navigation;
-        core::state::project::ProjectState& project;
-        core::state::macro::MacroPagesState& pages;
-        core::state::macro::MacroUiState& macroUi;
-        core::state::project::ProjectTrackState& projectTracks;
-        core::state::sequencer::SequencerTrackBankState& sequencerTracks;
-        core::state::StatusBarState& statusBar;
-        core::state::MidiSyncState& midiSync;
+        const core::state::project::ProjectNavigationState& navigation;
+        const core::state::project::ProjectState& project;
+        const core::state::macro::MacroPagesState& pages;
+        const core::state::macro::MacroUiState& macroUi;
+        const core::state::project::ProjectTrackState& projectTracks;
+        const core::state::sequencer::SequencerTrackBankState& sequencerTracks;
+        const core::state::StatusBarState& statusBar;
+        const core::state::MidiSyncState& midiSync;
     };
 
     ProjectView(lv_obj_t* parent, StateRefs stateRefs);
