@@ -1,4 +1,5 @@
 #include <cassert>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -22,7 +23,20 @@ struct RawHeaderView {
     uint32_t reserved0 = 0;
 };
 
+struct RawDirectoryEntryView {
+    uint32_t id = 0;
+    uint8_t versionMajor = 0;
+    uint8_t versionMinor = 0;
+    uint16_t flags = 0;
+    uint32_t offset = 0;
+    uint32_t size = 0;
+    uint32_t crc32 = 0;
+};
+
 static_assert(sizeof(RawHeaderView) == 28, "Unexpected raw header view size");
+static_assert(sizeof(RawDirectoryEntryView) == 20, "Unexpected raw directory entry size");
+
+using ContainerBytes = std::array<uint8_t, 192>;
 
 bool reportHas(const LoadReport& report, LoadCode code) {
     for (uint8_t i = 0; i < report.itemCount; ++i) {
@@ -35,6 +49,87 @@ uint32_t firstChunkPayloadOffset(const uint8_t* bytes) {
     RawHeaderView header{};
     std::memcpy(&header, bytes, sizeof(header));
     return header.payloadOffset;
+}
+
+RawHeaderView readHeader(const ContainerBytes& bytes) {
+    RawHeaderView header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    return header;
+}
+
+void writeHeader(ContainerBytes& bytes, const RawHeaderView& header) {
+    std::memcpy(bytes.data(), &header, sizeof(header));
+}
+
+RawDirectoryEntryView readDirectoryEntry(const ContainerBytes& bytes,
+                                         const RawHeaderView& header,
+                                         uint16_t index) {
+    RawDirectoryEntryView entry{};
+    const uint32_t offset =
+        header.directoryOffset + static_cast<uint32_t>(index) * sizeof(entry);
+    std::memcpy(&entry, bytes.data() + offset, sizeof(entry));
+    return entry;
+}
+
+void writeDirectoryEntry(ContainerBytes& bytes,
+                         const RawHeaderView& header,
+                         uint16_t index,
+                         const RawDirectoryEntryView& entry) {
+    const uint32_t offset =
+        header.directoryOffset + static_cast<uint32_t>(index) * sizeof(entry);
+    std::memcpy(bytes.data() + offset, &entry, sizeof(entry));
+}
+
+void insertAnonymousByte(ContainerBytes& bytes, uint32_t& size, uint32_t offset) {
+    assert(offset <= size);
+    assert(size < bytes.size());
+    std::memmove(bytes.data() + offset + 1U, bytes.data() + offset, size - offset);
+    bytes[offset] = 0xA5U;
+    ++size;
+}
+
+uint32_t encodeCanonicalTwoChunkFixture(ContainerBytes& bytes) {
+    const uint8_t first[] = {1U, 2U, 3U, 4U};
+    const uint8_t second[] = {3U, 4U};
+    const ChunkView chunks[] = {
+        {
+            .id = chunkIdValue(ChunkId::PROJECT_META),
+            .versionMajor = 1U,
+            .versionMinor = 0U,
+            .flags = 0U,
+            .data = first,
+            .size = sizeof(first),
+        },
+        {
+            .id = chunkIdValue(ChunkId::TRANSPORT),
+            .versionMajor = 1U,
+            .versionMinor = 0U,
+            .flags = 0U,
+            .data = second,
+            .size = sizeof(second),
+        },
+    };
+    const auto encoded = encode(
+        chunks,
+        static_cast<uint16_t>(std::size(chunks)),
+        1U,
+        bytes.data(),
+        static_cast<uint32_t>(bytes.size())
+    );
+    assert(encoded.status == Status::OK);
+    return encoded.bytesWritten;
+}
+
+void assertNonCanonicalLayoutRejected(const ContainerBytes& bytes, uint32_t size) {
+    DecodedChunkView decoded[4] = {};
+    LoadReport report{};
+    const auto result = scan(bytes.data(), size, decoded, 4U, &report);
+    assert(result.status == Status::INVALID_CONTAINER);
+    assert(result.chunkCount == 0U);
+    assert(!result.overwriteSafe);
+    assert(report.failed());
+    assert(!report.overwriteSafe);
+    assert(reportHas(report, LoadCode::CHUNK_DIRECTORY_INVALID));
 }
 
 void test_roundtrip_known_chunks() {
@@ -244,6 +339,72 @@ void test_encode_reports_required_size_when_buffer_too_small() {
     std::cout << "[PASS] test_encode_reports_required_size_when_buffer_too_small\n";
 }
 
+void test_noncanonical_byte_regions_are_rejected_before_chunk_publication() {
+    ContainerBytes canonical{};
+    const uint32_t canonicalSize = encodeCanonicalTwoChunkFixture(canonical);
+
+    {
+        auto candidate = canonical;
+        uint32_t candidateSize = canonicalSize;
+        auto header = readHeader(candidate);
+        insertAnonymousByte(candidate, candidateSize, header.directoryOffset);
+        ++header.directoryOffset;
+        ++header.payloadOffset;
+        writeHeader(candidate, header);
+        for (uint16_t i = 0U; i < header.chunkCount; ++i) {
+            auto entry = readDirectoryEntry(candidate, header, i);
+            ++entry.offset;
+            writeDirectoryEntry(candidate, header, i, entry);
+        }
+        assertNonCanonicalLayoutRejected(candidate, candidateSize);
+    }
+
+    {
+        auto candidate = canonical;
+        uint32_t candidateSize = canonicalSize;
+        auto header = readHeader(candidate);
+        insertAnonymousByte(candidate, candidateSize, header.payloadOffset);
+        ++header.payloadOffset;
+        for (uint16_t i = 0U; i < header.chunkCount; ++i) {
+            auto entry = readDirectoryEntry(candidate, header, i);
+            ++entry.offset;
+            writeDirectoryEntry(candidate, header, i, entry);
+        }
+        writeHeader(candidate, header);
+        assertNonCanonicalLayoutRejected(candidate, candidateSize);
+    }
+
+    {
+        auto candidate = canonical;
+        uint32_t candidateSize = canonicalSize;
+        const auto header = readHeader(candidate);
+        const auto first = readDirectoryEntry(candidate, header, 0U);
+        auto second = readDirectoryEntry(candidate, header, 1U);
+        insertAnonymousByte(candidate, candidateSize, first.offset + first.size);
+        ++second.offset;
+        writeDirectoryEntry(candidate, header, 1U, second);
+        assertNonCanonicalLayoutRejected(candidate, candidateSize);
+    }
+
+    {
+        auto candidate = canonical;
+        const auto header = readHeader(candidate);
+        const auto first = readDirectoryEntry(candidate, header, 0U);
+        auto second = readDirectoryEntry(candidate, header, 1U);
+        second.offset = first.offset + 2U;
+        writeDirectoryEntry(candidate, header, 1U, second);
+        assertNonCanonicalLayoutRejected(candidate, canonicalSize - second.size);
+    }
+
+    {
+        auto candidate = canonical;
+        candidate[canonicalSize] = 0xA5U;
+        assertNonCanonicalLayoutRejected(candidate, canonicalSize + 1U);
+    }
+
+    std::cout << "[PASS] noncanonical byte regions reject before chunk publication\n";
+}
+
 }  // namespace
 
 int main() {
@@ -257,6 +418,7 @@ int main() {
     test_invalid_magic_fails();
     test_noncurrent_container_versions_can_be_scanned_for_inspection_only();
     test_encode_reports_required_size_when_buffer_too_small();
+    test_noncanonical_byte_regions_are_rejected_before_chunk_publication();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";

@@ -4,6 +4,7 @@
 #include <fstream>
 #include <filesystem>
 #include <iostream>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -19,13 +20,22 @@
 
 #include "persistence/ProjectFileLimits.hpp"
 #include "persistence/ProjectFileInspection.hpp"
+#include "persistence/SequencerGraphAssetCodec.hpp"
 #include "StepGraphPresetTool.hpp"
 
 namespace {
 
 namespace inspection = core::persistence::project_file_inspection;
 namespace project_file = core::persistence::project_file;
+namespace step_graph_asset_codec =
+    core::persistence::sequencer_graph_asset_codec;
 namespace step_graph_preset_tool = core::tools::ms_core_file_tool;
+
+enum class ReadFileStatus {
+    OK,
+    IO_ERROR,
+    TOO_LARGE,
+};
 
 struct Args {
     std::string command;
@@ -134,15 +144,38 @@ std::filesystem::path pathFromUtf8(const std::string& text) {
     return std::filesystem::path(utf8);
 }
 
-bool readFile(const std::string& path, std::vector<uint8_t>& out) {
+uint32_t inputSizeLimitForCommand(const std::string& command) {
+    if (step_graph_preset_tool::isStepGraphPresetCommand(command)) {
+        return step_graph_asset_codec::MAX_ENCODED_SIZE;
+    }
+    return core::persistence::PROJECT_FILE_MAX_SIZE;
+}
+
+ReadFileStatus readFile(
+    const std::string& path,
+    uint32_t maxSize,
+    std::vector<uint8_t>& out
+) {
     std::ifstream file(pathFromUtf8(path), std::ios::binary | std::ios::ate);
-    if (!file) return false;
-    const auto size = file.tellg();
-    if (size < 0) return false;
+    if (!file) return ReadFileStatus::IO_ERROR;
+    const auto end = file.tellg();
+    if (end == std::ifstream::pos_type(-1)) return ReadFileStatus::IO_ERROR;
+    const auto size = static_cast<std::streamoff>(end);
+    if (size < 0) return ReadFileStatus::IO_ERROR;
+    if (static_cast<uint64_t>(size) > maxSize) {
+        return ReadFileStatus::TOO_LARGE;
+    }
     file.seekg(0, std::ios::beg);
+    if (!file) return ReadFileStatus::IO_ERROR;
     out.resize(static_cast<size_t>(size));
-    if (out.empty()) return true;
-    return static_cast<bool>(file.read(reinterpret_cast<char*>(out.data()), size));
+    if (out.empty()) return ReadFileStatus::OK;
+    if (!file.read(
+            reinterpret_cast<char*>(out.data()),
+            static_cast<std::streamsize>(size)
+        )) {
+        return ReadFileStatus::IO_ERROR;
+    }
+    return ReadFileStatus::OK;
 }
 
 bool writeFile(const std::string& path, const uint8_t* data, uint32_t size) {
@@ -308,7 +341,12 @@ bool parseArgs(int argc, char** argv, Args& out) {
     return true;
 }
 
-int runMain(int argc, char** argv) {
+int allocationFailureExit() {
+    std::cerr << "Memory allocation failed\n";
+    return 70;
+}
+
+int runMain(int argc, char** argv) try {
     Args args;
     if (!parseArgs(argc, argv, args)) {
         printUsage();
@@ -316,7 +354,18 @@ int runMain(int argc, char** argv) {
     }
 
     std::vector<uint8_t> input;
-    if (!readFile(args.inputPath, input)) {
+    const uint32_t inputSizeLimit = inputSizeLimitForCommand(args.command);
+    const ReadFileStatus readStatus = readFile(
+        args.inputPath,
+        inputSizeLimit,
+        input
+    );
+    if (readStatus == ReadFileStatus::TOO_LARGE) {
+        std::cerr << "Input file exceeds command limit of "
+                  << inputSizeLimit << " bytes: " << args.inputPath << "\n";
+        return 66;
+    }
+    if (readStatus != ReadFileStatus::OK) {
         std::cerr << "Failed to read input file: " << args.inputPath << "\n";
         return 66;
     }
@@ -375,6 +424,8 @@ int runMain(int argc, char** argv) {
         return statusExitCode(result.status);
     }
     return statusExitCode(result.status);
+} catch (const std::bad_alloc&) {
+    return allocationFailureExit();
 }
 
 #ifdef _WIN32
@@ -412,7 +463,7 @@ std::string utf8FromWide(const wchar_t* text) {
 }  // namespace
 
 #ifdef _WIN32
-int wmain(int argc, wchar_t** wideArgv) {
+int wmain(int argc, wchar_t** wideArgv) try {
     SetConsoleOutputCP(CP_UTF8);
     std::vector<std::string> storage;
     storage.reserve(static_cast<size_t>(argc));
@@ -423,6 +474,8 @@ int wmain(int argc, wchar_t** wideArgv) {
     }
     for (auto& argument : storage) argv.push_back(argument.data());
     return runMain(argc, argv.data());
+} catch (const std::bad_alloc&) {
+    return allocationFailureExit();
 }
 #else
 int main(int argc, char** argv) {

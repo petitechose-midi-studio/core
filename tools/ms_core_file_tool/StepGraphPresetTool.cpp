@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
-#include <limits>
 #include <iostream>
 #include <sstream>
 #include <utility>
@@ -179,7 +178,7 @@ int runStepGraphPresetCommand(
     sequencer::SequencerStepGraphPreset preset{};
     sequencer::SequencerGraphAssetReport report{};
     sequencer::SequencerGraphAssetStatus status = sequencer::SequencerGraphAssetStatus::OK;
-    if (input.size() > std::numeric_limits<uint16_t>::max()) {
+    if (input.size() > asset_codec::MAX_ENCODED_SIZE) {
         status = sequencer::SequencerGraphAssetStatus::INVALID_ARGUMENT;
         report.status = status;
     } else if (!asset_codec::decode(

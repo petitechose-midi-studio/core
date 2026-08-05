@@ -156,6 +156,15 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
 
     set(MS_CORE_NATIVE_TEST_TARGETS)
 
+    add_test(
+        NAME test_CoreFileToolInputLimits
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/script/dev/test-core-file-tool-input-limits.py"
+                --tool "$<TARGET_FILE:ms-core-file-tool>")
+    set_tests_properties(test_CoreFileToolInputLimits PROPERTIES
+        LABELS "core;host-tool")
+    list(APPEND MS_CORE_NATIVE_TEST_TARGETS ms-core-file-tool)
+
     set(MS_DEVICE_SUPPORT_CONTRACT_TEST_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/test_main.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/test/test_DeviceSupportContract/include_version.cpp"

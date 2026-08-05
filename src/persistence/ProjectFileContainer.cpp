@@ -346,7 +346,6 @@ FLASHMEM ScanResult scan(const uint8_t* data,
     if (header.headerSize != kHeaderSize ||
         header.directoryEntrySize != kDirectoryEntrySize ||
         header.chunkCount > MAX_CHUNKS ||
-        header.directoryOffset < kHeaderSize ||
         header.reserved0 != 0U) {
         report(effectiveReport, LoadSeverity::FATAL, LoadCode::INVALID_HEADER);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
@@ -354,9 +353,35 @@ FLASHMEM ScanResult scan(const uint8_t* data,
 
     const uint32_t directoryBytes =
         static_cast<uint32_t>(header.chunkCount) * kDirectoryEntrySize;
-    if (!rangeInside(header.directoryOffset, directoryBytes, size) ||
-        header.payloadOffset < header.directoryOffset + directoryBytes ||
+    uint32_t expectedPayloadOffset = 0U;
+    if (addOverflow(kHeaderSize, directoryBytes, expectedPayloadOffset) ||
+        header.directoryOffset != kHeaderSize ||
+        header.payloadOffset != expectedPayloadOffset ||
         header.payloadOffset > size) {
+        report(effectiveReport, LoadSeverity::FATAL, LoadCode::CHUNK_DIRECTORY_INVALID);
+        return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
+    }
+
+    // The encoder defines one canonical v1 layout: directory entries and their
+    // payloads cover the complete file in directory order. Validate that whole
+    // structure before exposing even a partial chunk view. Future data belongs
+    // in an explicit versioned chunk, never in anonymous gaps or suffix bytes.
+    uint32_t payloadCursor = header.payloadOffset;
+    for (uint16_t i = 0; i < header.chunkCount; ++i) {
+        ChunkDirectoryEntry entry{};
+        const uint32_t entryOffset =
+            header.directoryOffset + static_cast<uint32_t>(i) * kDirectoryEntrySize;
+        uint32_t entryEnd = 0U;
+        if (!readChunkDirectoryEntry(data + entryOffset, size - entryOffset, entry) ||
+            entry.offset != payloadCursor ||
+            addOverflow(entry.offset, entry.size, entryEnd) ||
+            entryEnd > size) {
+            report(effectiveReport, LoadSeverity::FATAL, LoadCode::CHUNK_DIRECTORY_INVALID);
+            return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
+        }
+        payloadCursor = entryEnd;
+    }
+    if (payloadCursor != size) {
         report(effectiveReport, LoadSeverity::FATAL, LoadCode::CHUNK_DIRECTORY_INVALID);
         return {.status = Status::INVALID_CONTAINER, .chunkCount = 0, .overwriteSafe = false};
     }

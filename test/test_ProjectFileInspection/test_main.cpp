@@ -35,6 +35,14 @@ uint32_t encodeDefaultProject(ProjectBytes& bytes) {
     return encoded.bytesWritten;
 }
 
+bool reportHas(const project_file::LoadReport& report,
+               project_file::LoadCode code) {
+    for (uint8_t i = 0U; i < report.itemCount; ++i) {
+        if (report.items[i].code == code) return true;
+    }
+    return false;
+}
+
 void testCurrentProjectInspectionAndRewrite() {
     auto input = std::make_unique<ProjectBytes>();
     auto output = std::make_unique<ProjectBytes>();
@@ -169,12 +177,68 @@ void testUnsupportedFormatIsInspectableButNeverPublishedOrRewritten() {
         << "[PASS] unsupported format is inspection-only\n";
 }
 
+void testNonCanonicalProjectIsNeverPublishedOrRewritten() {
+    auto input = std::make_unique<ProjectBytes>();
+    auto output = std::make_unique<ProjectBytes>();
+    assert(input && output);
+    const uint32_t canonicalSize = encodeDefaultProject(*input);
+    assert(canonicalSize < input->size());
+    (*input)[canonicalSize] = 0xA5U;
+    const uint32_t nonCanonicalSize = canonicalSize + 1U;
+
+    project_file::LoadReport inspectReport{};
+    const auto inspected = inspection::inspectProjectBytes(
+        input->data(),
+        nonCanonicalSize,
+        &inspectReport
+    );
+    assert(inspected.status == inspection::Status::FAILED);
+    assert(inspected.containerStatus == project_file::Status::INVALID_CONTAINER);
+    assert(inspectReport.failed());
+    assert(reportHas(inspectReport, project_file::LoadCode::CHUNK_DIRECTORY_INVALID));
+
+    core::state::project::ProjectSnapshot destination{};
+    std::strncpy(
+        destination.project.metadata.name.data(),
+        "unchanged",
+        destination.project.metadata.name.size() - 1U
+    );
+    project_file::LoadReport decodeReport{};
+    const auto decoded = inspection::decodeProjectBytes(
+        input->data(),
+        nonCanonicalSize,
+        destination,
+        &decodeReport
+    );
+    assert(decoded.status == inspection::Status::FAILED);
+    assert(
+        std::strcmp(destination.project.metadata.name.data(), "unchanged") == 0
+    );
+
+    output->fill(0xA5U);
+    const auto before = *output;
+    project_file::LoadReport rewriteReport{};
+    const auto rewritten = inspection::rewriteProjectBytes(
+        input->data(),
+        nonCanonicalSize,
+        output->data(),
+        static_cast<uint32_t>(output->size()),
+        &rewriteReport
+    );
+    assert(rewritten.status == inspection::Status::FAILED);
+    assert(rewritten.bytesWritten == 0U);
+    assert(*output == before);
+
+    std::cout << "[PASS] noncanonical project is never published or rewritten\n";
+}
+
 }  // namespace
 
 int main() {
     testCurrentProjectInspectionAndRewrite();
     testInvalidAndTruncatedProjectsAreNeverRewritten();
     testUnsupportedFormatIsInspectableButNeverPublishedOrRewritten();
+    testNonCanonicalProjectIsNeverPublishedOrRewritten();
     std::cout << "All ProjectFileInspection tests passed\n";
     return 0;
 }
