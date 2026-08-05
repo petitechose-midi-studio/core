@@ -46,12 +46,13 @@
     "core/.github/workflows/candidate.yml": "73d8662cfcb574dec18ed8ba9c851f2c9a6a0e5580face778bf495c45d333068",
     "core/.github/workflows/ci.yml": "fc7f6a5f3014a5cec202c7bfa9d7bb96948ae2bb9eea55d70b7902d66663a87e",
     "core/CMakeLists.txt": "b323e3afd29a7c1c0ac80f3c5d3f9783e00afb4658c011abc4b2ae8cb5a4c59a",
+    "core/cmake/MsCoreProjectFileTool.cmake": "3646bff81f12b9c8f3b4ef7283b53a46b86ea9a345ed217c87a2762a3a68f531",
     "core/cmake/MsCoreSources.cmake": "0bfe864d1c00f8fd383e67f1d2ecdf25b19b19ef047a8c4d2e6cec763c8aece4",
     "core/library.json": "54c23dc4b513a85b4528944fb2630e4f93f5d9c8561423341d8ca2b727d0b4b9",
     "core/oc-native-sdk.ini": "289d568f0a0fe7c9da9a27c0bdded498ccc84551f1b24c9e0c104231cbfcb843",
     "core/oc-sdk.ini": "cd6b44a0b1acc52a9a20bc1146d59b4755239af0b09371637c39e4afd5be2653",
     "core/platformio.ini": "73f60b1f009fb8eef65427e5b7e47627c6f24ff603fc9f20f0246566466ebaaf",
-    "core/script/dev/check-build-topology.py": "7734d5b30c8e11a67df0f805313fc1f02a00d128f0234134a56af0c503e58812",
+    "core/script/dev/check-build-topology.py": "afa02cf836deefcbf86501ada14f298c2f03fab5bd2282275353aef89fa7fa2c",
     "core/sdl/CMakeLists.txt": "7b3ec6057bf02d3c2a1ebea589cc58359a30edf74b3f9de2c2fffe13e4d5fb98",
     "core/sdl/app.cmake": "58c458699e02af603c5e9b74100a18d3458e64185df3e69a670d2da15ceafb45",
     "core/sdl/cmake/libremidi.cmake": "728bebe77a438d805e09e9e633c2b30073b218d9b3f8560c83d7f79f96b541eb",
@@ -92,6 +93,9 @@
       "cxxStandard": "gnu++17",
       "encoderBindings": 32,
       "pendingNotifications": 96
+    },
+    "coreProjectFileTool": {
+      "cxxStandard": 20
     },
     "coreTeensy": {
       "board": "teensy41",
