@@ -123,6 +123,17 @@ FLASHMEM void CoreStateLifecycle::flushProjectMutationCoalescing(CoreState& stat
     flushMutationCoalescers_(state);
 }
 
+FLASHMEM void CoreStateLifecycle::consumeProjectReplacementMutationCoalescing(
+    CoreState& state
+) {
+    if (state.macroDomain_.mutationCoalescer) {
+        state.macroDomain_.mutationCoalescer->consumePendingChangesWithoutAction();
+    }
+    if (state.sequencerDomain_.mutationCoalescer) {
+        state.sequencerDomain_.mutationCoalescer->consumePendingChangesWithoutAction();
+    }
+}
+
 FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     if (state.sequencer.stepContentDraft.active.get()) {
         state.sequencer.stepContentDraft.noteBlockedTransition(

@@ -8,6 +8,7 @@
 #include "../../src/state/macro/MacroWorkflow.hpp"
 #include "../../src/state/modulation/ProjectControlMacroOps.hpp"
 #include "../../src/state/project/ProjectSnapshot.hpp"
+#include "../../src/state/project/ProjectTrackDomainServices.hpp"
 #include "../../src/state/project/ProjectTrackDomainOps.hpp"
 #include "../../src/state/sequencer/SequencerCcLaneDomain.hpp"
 #include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
@@ -15,6 +16,7 @@
 #include "../../src/state/sequencer/SequencerScaleState.hpp"
 #include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../support/CoreStorages.hpp"
+#include "../support/NotificationTestUtils.hpp"
 #include "../support/ProjectControlTestUtils.hpp"
 
 namespace {
@@ -476,6 +478,79 @@ void test_snapshot_rejects_invalid_project_tracks_before_live_mutation() {
     std::cout << "[PASS] invalid Project Tracks fail before live mutation\n";
 }
 
+void test_snapshot_rejects_active_project_track_gesture_before_live_mutation() {
+    test_support::CoreStorages storages;
+    auto state = makeCoreState(storages);
+    configureProjectSession(state);
+
+    project::ProjectSnapshot incoming;
+    assert(project::captureProjectSnapshot(state, incoming));
+
+    state.resetMusicalProject();
+    std::strncpy(
+        state.project.metadata.name.data(),
+        "outgoing",
+        state.project.metadata.name.size() - 1U
+    );
+    state.statusBar.tempo.set(101.0f);
+    state.sequencer.pattern.note[0] = 91U;
+
+    auto tracks = project::ProjectTrackDomainServices::fromCoreState(state);
+    assert(tracks.beginGesture(project::ProjectTrackHistoryActionKind::Delay, 3U));
+    assert(tracks.setDelayMs(3U, 42));
+    assert(tracks.hasActiveGesture());
+
+    const auto tracksBefore = state.projectTracks.authored;
+    const auto tokenBefore = state.projectSessionSaveToken();
+    assert(!project::applyProjectSnapshot(state, incoming));
+
+    assert(tracks.hasActiveGesture());
+    assert(std::strcmp(state.project.metadata.name.data(), "outgoing") == 0);
+    assert(state.statusBar.tempo.get() == 101.0f);
+    assert(state.sequencer.pattern.note[0] == 91U);
+    assert(project::sameProjectTrackSnapshot(state.projectTracks.authored, tracksBefore));
+    assert(state.projectSessionSaveToken() == tokenBefore);
+
+    assert(tracks.cancelGesture());
+    test_support::drainNotifications();
+    std::cout << "[PASS] active Project Track gesture rejects load before mutation\n";
+}
+
+void test_snapshot_apply_consumes_deferred_mutation_callbacks() {
+    test_support::CoreStorages sourceStorages;
+    test_support::CoreStorages liveStorages;
+    auto source = makeCoreState(sourceStorages);
+    auto live = makeCoreState(liveStorages);
+    configureProjectSession(source);
+
+    project::ProjectSnapshot incoming;
+    assert(project::captureProjectSnapshot(source, incoming));
+    incoming.project.metadata.modifiedCounter = 17U;
+    incoming.project.metadata.dirty = false;
+
+    test_support::drainNotifications();
+    live.flush();
+    test_support::drainNotifications();
+
+    assert(project::applyProjectSnapshot(live, incoming));
+    const auto appliedToken = live.projectSessionSaveToken();
+    assert(live.project.metadata.modifiedCounter == 17U);
+    assert(!live.project.metadata.dirty);
+    assert(!live.hasPendingProjectSessionSave());
+
+    test_support::drainNotifications();
+    assert(!live.hasPendingProjectMutationCoalescing());
+    live.flush();
+    test_support::drainNotifications();
+
+    assert(live.project.metadata.modifiedCounter == 17U);
+    assert(!live.project.metadata.dirty);
+    assert(live.projectSessionSaveToken() == appliedToken);
+    assert(!live.hasPendingProjectSessionSave());
+
+    std::cout << "[PASS] Project load callbacks do not dirty loaded snapshot\n";
+}
+
 void test_snapshot_boundaries_reject_an_active_modulator_audition() {
     test_support::CoreStorages storages;
     auto state = makeCoreState(storages);
@@ -710,6 +785,8 @@ int main() {
     test_incremental_capture_rejects_an_authored_only_revision_change();
     test_incremental_capture_rejects_a_project_track_revision_change();
     test_snapshot_rejects_invalid_project_tracks_before_live_mutation();
+    test_snapshot_rejects_active_project_track_gesture_before_live_mutation();
+    test_snapshot_apply_consumes_deferred_mutation_callbacks();
     test_snapshot_boundaries_reject_an_active_modulator_audition();
     test_incremental_capture_becomes_stale_when_an_audition_starts();
     test_clear_project_history_rolls_back_audition_before_clearing();
