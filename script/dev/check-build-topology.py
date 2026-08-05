@@ -33,7 +33,6 @@ COMPILABLE_SUFFIXES = IMPLEMENTATION_SUFFIXES | C_SOURCE_SUFFIXES
 HEADER_SUFFIXES = frozenset((".h", ".hh", ".hpp"))
 ALLOWED_WRITE_DIRTY_PATHS = frozenset(
     (
-        "script/dev/check-build-topology.py",
         "script/dev/build-topology-snapshot.json",
     )
 )
@@ -144,6 +143,24 @@ def sha256_bytes(data: bytes) -> str:
 
 def sha256_file(path: Path) -> str:
     return sha256_bytes(path.read_bytes())
+
+
+def sha256_git_file(repo: Path, path: Path) -> str:
+    try:
+        relative_path = path.resolve().relative_to(repo.resolve()).as_posix()
+    except ValueError as error:
+        raise InventoryError(f"tracked input is outside {repo}: {path}") from error
+    result = subprocess.run(
+        ("git", "-C", str(repo), "show", f"HEAD:{relative_path}"),
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise InventoryError(
+            f"unable to read tracked input {relative_path} from {repo}: {detail}"
+        )
+    return sha256_bytes(result.stdout)
 
 
 def path_set_record(paths: Iterable[str]) -> dict[str, Any]:
@@ -510,7 +527,10 @@ def input_hashes(repositories: dict[str, Path]) -> dict[str, str]:
     }
     for label, path in inputs.items():
         require_file(path, label)
-    return {label: sha256_file(path) for label, path in sorted(inputs.items())}
+    return {
+        label: sha256_git_file(repositories[label.split("/", 1)[0]], path)
+        for label, path in sorted(inputs.items())
+    }
 
 
 def build_inventory(workspace_root: Path) -> dict[str, Any]:
