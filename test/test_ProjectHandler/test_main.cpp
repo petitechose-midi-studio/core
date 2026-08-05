@@ -1278,6 +1278,8 @@ void test_load_picker_opens_immediately_and_waits_for_playback_stop() {
     assert(page.rowCount == 1U);
     assert(std::strcmp(page.rows[0].label, "Loading projects") == 0);
     assert(!page.rows[0].enabled);
+    const uint8_t pendingRevision =
+        h.state.projectNavigation.contentRevision.get();
 
     for (uint8_t turn = 0U; turn < 3U; ++turn) {
         ++g_now_ms;
@@ -1288,6 +1290,8 @@ void test_load_picker_opens_immediately_and_waits_for_playback_stop() {
         assert(h.state.projectNavigation.currentNode.get() ==
                ProjectNodeId::LOAD_PROJECT);
         assert(h.state.projectNavigation.depth.get() == 1U);
+        assert(h.state.projectNavigation.contentRevision.get() ==
+               pendingRevision);
     }
 
     h.state.statusBar.playing.set(false);
@@ -1325,6 +1329,41 @@ void test_pending_load_picker_can_be_cancelled_during_playback() {
     h.handler.update(g_now_ms);
 
     std::cout << "[PASS] pending load picker can be cancelled during playback\n";
+}
+
+void test_pending_save_does_not_block_load_picker_during_playback() {
+    ProjectHandlerHarness h;
+    h.state.statusBar.playing.set(true);
+
+    h.turn(Config::EncoderID::NAV, 2.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 2U);
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+
+    assert(h.productCatalog->pending());
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::OVERVIEW_ROOT);
+    assert(std::strcmp(
+               h.state.projectNavigation.lifecycleFeedback.get(),
+               "Stop playback to save"
+           ) == 0);
+
+    h.turn(Config::EncoderID::NAV, -1.0f);
+    assert(h.state.projectNavigation.focusedRow.get() == 1U);
+    h.handler.update(++g_now_ms);
+
+    h.press(Config::ButtonID::NAV);
+    h.release(Config::ButtonID::NAV);
+    assert(h.state.projectNavigation.currentNode.get() ==
+           ProjectNodeId::LOAD_PROJECT);
+    assert(h.state.projectNavigation.depth.get() == 1U);
+    assert(std::strcmp(
+               h.state.projectNavigation.lifecycleFeedback.get(),
+               "Stop playback to browse"
+           ) == 0);
+
+    std::cout
+        << "[PASS] pending save does not block load picker during playback\n";
 }
 
 void test_load_project_picker_selects_detected_project() {
@@ -3001,6 +3040,7 @@ int main() {
     test_overview_load_missing_project_reports_failure();
     test_load_picker_opens_immediately_and_waits_for_playback_stop();
     test_pending_load_picker_can_be_cancelled_during_playback();
+    test_pending_save_does_not_block_load_picker_during_playback();
     test_load_project_picker_selects_detected_project();
     test_future_project_load_is_rejected_atomically();
     test_dirty_project_load_prompts_save_and_preserves_latest_edits();

@@ -1,4 +1,6 @@
 #include "handler/project/ProjectHandlerInternals.hpp"
+#include <cstring>
+
 #include <config/PlatformCompat.hpp>
 #include <oc/log/Log.hpp>
 
@@ -256,12 +258,16 @@ FLASHMEM void ProjectHandler::beginPendingProjectCatalog(
     pending_project_catalog_action_ = action;
     pending_project_catalog_node_ = navigation_.currentNode.get();
     pending_project_catalog_row_ = navigation_.focusedRow.get();
-    navigation_.setLifecycleFeedback(
-        action == PendingProjectCatalogAction::LOAD_PICKER &&
-                status_bar_.playing.get()
-            ? "Stop playback to browse"
-            : "Loading projects"
-    );
+    const bool playbackActive = status_bar_.playing.get();
+    const char* feedback =
+        !playbackActive
+            ? "Loading projects"
+            : action == PendingProjectCatalogAction::LOAD_PICKER
+                ? "Stop playback to browse"
+                : "Stop playback to save";
+    if (std::strcmp(navigation_.lifecycleFeedback.get(), feedback) != 0) {
+        navigation_.setLifecycleFeedback(feedback);
+    }
 }
 
 void ProjectHandler::pollPendingProjectCatalog() {
