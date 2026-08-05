@@ -18,7 +18,7 @@ from typing import Any, Iterable, Sequence
 
 CORE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SNAPSHOT = Path(__file__).with_name("build-topology-snapshot.json")
-TOOL_VERSION = 2
+TOOL_VERSION = 3
 HISTORICAL_F07 = {
     "coreImplementations": 382,
     "coreHeaders": 426,
@@ -326,6 +326,18 @@ def pio_values(
         return sections[section][key]
     except KeyError as error:
         raise InventoryError(f"missing PlatformIO declaration [{section}] {key}") from error
+
+
+def pio_optional_values(
+    sections: dict[str, dict[str, list[str]]], section: str, key: str
+) -> list[str]:
+    return sections.get(section, {}).get(key, [])
+
+
+def pio_dependency_names(values: Sequence[str]) -> list[str]:
+    return sorted(
+        {value.split("=", 1)[0].strip() for value in values if value.strip()}
+    )
 
 
 def pio_first(
@@ -729,8 +741,22 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
         and PurePosixPath(path).name not in ("main.cpp", "name.c")
     )
 
-    bitwig_ignored = set(pio_values(bitwig_pio, "env", "lib_ignore"))
-    bitwig_core_sources: list[str] = [] if "ms-core" in bitwig_ignored else core_sources
+    bitwig_ignored = set(pio_optional_values(bitwig_pio, "env", "lib_ignore"))
+    bitwig_dev_dependencies = pio_dependency_names(
+        pio_values(bitwig_pio, "env:dev", "lib_deps")
+    )
+    bitwig_release_dependencies = pio_dependency_names(
+        pio_values(bitwig_pio, "env:release", "lib_deps")
+    )
+    bitwig_declared_dependencies = set(
+        bitwig_dev_dependencies + bitwig_release_dependencies
+    )
+    bitwig_core_sources = (
+        core_sources
+        if "ms-core" in bitwig_declared_dependencies
+        and "ms-core" not in bitwig_ignored
+        else []
+    )
 
     defaults = macro_defaults(framework)
     core_cmake_text = (core / "CMakeLists.txt").read_text(encoding="utf-8")
@@ -867,7 +893,7 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
     )
 
     inventory = {
-        "schema": 2,
+        "schema": 3,
         "toolVersion": TOOL_VERSION,
         "historicalF07": HISTORICAL_F07,
         "repositories": external_identities,
@@ -968,6 +994,10 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
             "coreNativePins": pin_map(core_native_sdk),
             "bitwigReleaseImportsCoreOcSdk": "${oc_sdk_deps.lib_deps}" in bitwig_pio_text,
             "bitwigDevUsesLocalSymlinks": "symlink://" in "\n".join(pio_values(bitwig_pio, "env:dev", "lib_deps")),
+            "bitwigDevLibraries": bitwig_dev_dependencies,
+            "bitwigReleaseLibraries": bitwig_release_dependencies,
+            "bitwigIgnoredLibraries": sorted(bitwig_ignored),
+            "bitwigFullCoreActive": bool(bitwig_core_sources),
             "libremidi": {
                 "repository": "https://github.com/celtera/libremidi.git",
                 "revision": libremidi_revision,
@@ -1117,6 +1147,14 @@ build_flags =
     assert extract_defines(pio_values(pio, "env:test", "build_flags")) == {
         "OC_MAX_BUTTONS": "48"
     }
+    assert pio_optional_values(pio, "env:test", "lib_ignore") == []
+    assert pio_dependency_names(
+        [
+            "ms-ui=symlink://../ui",
+            "ms-device-support=symlink://../core/device-support",
+            "${oc_sdk_deps.lib_deps}",
+        ]
+    ) == ["${oc_sdk_deps.lib_deps}", "ms-device-support", "ms-ui"]
 
     cmake = 'set(TEST_VALUES "${ROOT}/a.cpp" "${ROOT}/b.cpp")\nlist(APPEND TEST_VALUES "${ROOT}/c.cpp")'
     set_bodies = extract_cmake_command_bodies(cmake, "set", "TEST_VALUES")
@@ -1149,7 +1187,7 @@ env:
         path.write_bytes(b"topology\n")
         assert sha256_file(path) == sha256_bytes(b"topology\n")
 
-    print("PASS build-topology self-test (8 contracts)")
+    print("PASS build-topology self-test (10 contracts)")
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
