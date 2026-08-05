@@ -333,6 +333,39 @@ void test_auto_lock_and_fallback() {
     std::cout << "[PASS] test_auto_lock_and_fallback\n";
 }
 
+void test_auto_intermittent_clocks_restart_acquisition() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{midi};
+
+    sync.mode.set(core::state::MidiSyncMode::AUTO);
+    sync.autoLockClockCount.set(3U);
+    sync.autoFallbackMs.set(100U);
+
+    stepService(service, sync, status, 0U);
+
+    service.onClock(10'000U, 10U);
+    stepService(service, sync, status, 10U);
+    service.onClock(250'000U, 250U);
+    stepService(service, sync, status, 250U);
+    service.onClock(500'000U, 500U);
+    stepService(service, sync, status, 500U);
+    assert(!service.transportSnapshot().usingExternalSource);
+
+    service.onClock(520'000U, 520U);
+    stepService(service, sync, status, 520U);
+    assert(!service.transportSnapshot().usingExternalSource);
+
+    service.onClock(540'000U, 540U);
+    stepService(service, sync, status, 540U);
+    assert(service.transportSnapshot().usingExternalSource);
+    assert(service.transportSnapshot().tick == 0U);
+
+    std::cout << "[PASS] intermittent AUTO clocks restart acquisition\n";
+}
+
 void test_auto_latches_start_before_lock() {
     core::state::MidiSyncState sync;
     core::state::StatusBarState status;
@@ -361,6 +394,7 @@ void test_auto_latches_start_before_lock() {
 
     assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
     assert(service.transportSnapshot().playing);
+    assert(service.transportSnapshot().tick == 3U);
     assert(status.playing.get());
 
     std::cout << "[PASS] test_auto_latches_start_before_lock\n";
@@ -408,6 +442,7 @@ void test_auto_clock_only_plays_after_lock() {
     sync.mode.set(core::state::MidiSyncMode::AUTO);
     sync.followTransport.set(true);
     sync.autoLockClockCount.set(3);
+    sync.autoFallbackMs.set(100U);
 
     stepService(service, sync, status, 0);
     assert(!service.transportSnapshot().playing);
@@ -419,7 +454,22 @@ void test_auto_clock_only_plays_after_lock() {
 
     assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
     assert(service.transportSnapshot().playing);
+    assert(service.transportSnapshot().tick == 0U);
     assert(status.playing.get());
+
+    service.onClock(40'000, 40);
+    stepService(service, sync, status, 40);
+    assert(service.transportSnapshot().tick == 1U);
+
+    stepService(service, sync, status, 200U);
+    assert(!service.transportSnapshot().usingExternalSource);
+
+    service.onClock(210'000U, 210U);
+    service.onClock(220'000U, 220U);
+    service.onClock(230'000U, 230U);
+    stepService(service, sync, status, 230U);
+    assert(service.transportSnapshot().usingExternalSource);
+    assert(service.transportSnapshot().tick == 0U);
 
     std::cout << "[PASS] test_auto_clock_only_plays_after_lock\n";
 }
@@ -618,6 +668,7 @@ int main() {
     test_master_retries_rejected_transport_edges_without_advancing_ownership();
     test_slave_follows_external_clock_and_transport();
     test_auto_lock_and_fallback();
+    test_auto_intermittent_clocks_restart_acquisition();
     test_auto_latches_start_before_lock();
     test_slave_clock_only_infers_play_state();
     test_auto_clock_only_plays_after_lock();

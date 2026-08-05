@@ -11,7 +11,17 @@ constexpr uint8_t MIN_AUTO_LOCK_CLOCKS = 1;
 constexpr uint8_t MAX_AUTO_LOCK_CLOCKS = 96;
 }  // namespace
 
-void ClockSourceSelector::recordClock(core::state::MidiSyncMode mode, uint8_t autoLockClockCount) {
+void ClockSourceSelector::recordClock(core::state::MidiSyncMode mode,
+                                      uint8_t autoLockClockCount,
+                                      uint16_t autoFallbackMs,
+                                      uint32_t nowMs,
+                                      uint32_t lastExternalClockMs) {
+    if (mode == core::state::MidiSyncMode::AUTO && clock_streak_ > 0U &&
+        externalClockTimedOut_(autoFallbackMs, nowMs, lastExternalClockMs)) {
+        clock_streak_ = 0U;
+        locked_ = false;
+    }
+
     if (clock_streak_ < 255) {
         clock_streak_ += 1;
     }
@@ -35,8 +45,7 @@ ClockSourceSelector::UpdateResult ClockSourceSelector::update(
         clock_streak_ = 0;
         resetExternalTempo = true;
     } else if (mode == core::state::MidiSyncMode::AUTO) {
-        const uint32_t elapsed = nowMs - lastExternalClockMs;
-        if (locked_ && elapsed > fallbackMs_(autoFallbackMs)) {
+        if (externalClockTimedOut_(autoFallbackMs, nowMs, lastExternalClockMs)) {
             locked_ = false;
             clock_streak_ = 0;
             resetExternalTempo = true;
@@ -65,7 +74,7 @@ bool ClockSourceSelector::hasExternalClockSignal(uint16_t autoFallbackMs,
                                                  uint32_t nowMs,
                                                  uint32_t lastExternalClockMs) const {
     if (lastExternalClockMs == 0) return false;
-    return (nowMs - lastExternalClockMs) <= fallbackMs_(autoFallbackMs);
+    return !externalClockTimedOut_(autoFallbackMs, nowMs, lastExternalClockMs);
 }
 
 uint8_t ClockSourceSelector::lockClockCount_(uint8_t autoLockClockCount) const {
@@ -74,6 +83,12 @@ uint8_t ClockSourceSelector::lockClockCount_(uint8_t autoLockClockCount) const {
 
 uint16_t ClockSourceSelector::fallbackMs_(uint16_t autoFallbackMs) const {
     return std::clamp(autoFallbackMs, MIN_AUTO_FALLBACK_MS, MAX_AUTO_FALLBACK_MS);
+}
+
+bool ClockSourceSelector::externalClockTimedOut_(uint16_t autoFallbackMs,
+                                                 uint32_t nowMs,
+                                                 uint32_t lastExternalClockMs) const {
+    return (nowMs - lastExternalClockMs) > fallbackMs_(autoFallbackMs);
 }
 
 }  // namespace core::sequencer
