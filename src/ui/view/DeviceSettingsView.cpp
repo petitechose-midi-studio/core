@@ -47,13 +47,11 @@ FLASHMEM DeviceSettingsView::~DeviceSettingsView() {
 FLASHMEM void DeviceSettingsView::onActivate() {
     if (!container_) return;
 
-    state_refs_.settings.openView();
     RetainedViewRenderPolicy::show(container_);
     if (render_scheduler_) render_scheduler_->request(1U, true);
 }
 
 FLASHMEM void DeviceSettingsView::onDeactivate() {
-    state_refs_.settings.closeView();
     if (render_scheduler_) render_scheduler_->pause();
     RetainedViewRenderPolicy::hide(container_);
 }

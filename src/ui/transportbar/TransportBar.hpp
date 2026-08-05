@@ -18,7 +18,7 @@ namespace core::ui {
 
 class TransportBar : public oc::ui::lvgl::IComponent {
 public:
-    TransportBar(lv_obj_t* parent, core::state::StatusBarState& state);
+    TransportBar(lv_obj_t* parent, const core::state::StatusBarState& state);
     ~TransportBar() override;
 
     TransportBar(const TransportBar&) = delete;
@@ -32,7 +32,7 @@ public:
 private:
     using StateIndicator = oc::ui::lvgl::StateIndicator;
 
-    core::state::StatusBarState& state_;
+    const core::state::StatusBarState& state_;
 
     lv_obj_t* container_ = nullptr;
     lv_obj_t* tempo_indicator_container_ = nullptr;

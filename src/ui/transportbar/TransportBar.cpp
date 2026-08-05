@@ -27,7 +27,10 @@ const lv_color_t COLOR_TEMPO_UNLOCKED = lv_color_hex(theme::color::TEXT_SECONDAR
 const lv_color_t COLOR_LOCK = lv_color_hex(theme::color::MIDI_IN_ACTIVE);
 }  // namespace
 
-FLASHMEM TransportBar::TransportBar(lv_obj_t* parent, core::state::StatusBarState& state)
+FLASHMEM TransportBar::TransportBar(
+    lv_obj_t* parent,
+    const core::state::StatusBarState& state
+)
     : state_(state) {
     createLayout(parent);
     setupBindings();

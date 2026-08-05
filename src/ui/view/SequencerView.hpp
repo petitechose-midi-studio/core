@@ -38,22 +38,22 @@ namespace core::ui {
 class SequencerView : public oc::ui::lvgl::IView {
 public:
     struct StateRefs {
-        core::state::sequencer::SequencerState& sequencer;
-        core::state::sequencer::SequencerTrackBankState& tracks;
-        core::state::project::ProjectTrackState& projectTracks;
-        core::state::TrackNavigationState& trackNavigation;
-        oc::state::Signal<
+        const core::state::sequencer::SequencerState& sequencer;
+        const core::state::sequencer::SequencerTrackBankState& tracks;
+        const core::state::project::ProjectTrackState& projectTracks;
+        const core::state::TrackNavigationState& trackNavigation;
+        const oc::state::Signal<
             core::state::StructureNavigationFocus,
             core::state::kStructureNavigationFocusMaxSubscribers>& structureNavigationFocus;
-        oc::state::Signal<uint8_t, 8>& sharedTrackActive;
-        oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
-        core::state::StructureClipboardState& structureClipboard;
-        core::state::StatusBarState& statusBar;
-        core::state::ViewSelectorState& viewSelector;
-        core::state::DeviceSettingsState& deviceSettings;
-        core::state::SequencerSettingsState& sequencerSettings;
-        core::state::project::ProjectNavigationState& projectNavigation;
-        core::state::sequencer::SequencerTrackActivationQueue& trackActivations;
+        const oc::state::Signal<uint8_t, 8>& sharedTrackActive;
+        const oc::state::Signal<uint16_t, 16>& sharedTrackEnabledMask;
+        const core::state::StructureClipboardState& structureClipboard;
+        const core::state::StatusBarState& statusBar;
+        const core::state::ViewSelectorState& viewSelector;
+        const core::state::DeviceSettingsState& deviceSettings;
+        const core::state::SequencerSettingsState& sequencerSettings;
+        const core::state::project::ProjectNavigationState& projectNavigation;
+        const core::state::sequencer::SequencerTrackActivationQueue& trackActivations;
     };
 
     explicit SequencerView(lv_obj_t* parent, StateRefs stateRefs);

@@ -61,6 +61,7 @@ FLASHMEM StandaloneUiAssembly::~StandaloneUiAssembly() {
         project_view_->onDeactivate();
     }
     if (device_settings_view_) {
+        core_state_.deviceSettings.closeView();
         device_settings_view_->onDeactivate();
     }
 
@@ -172,10 +173,12 @@ FLASHMEM void StandaloneUiAssembly::activateDeviceSettingsView() const {
     core::ui::RetainedViewRenderPolicy::attach(
         device_settings_view_->getElement(), full_view_host_
     );
+    core_state_.deviceSettings.openView();
     device_settings_view_->onActivate();
 }
 
 FLASHMEM void StandaloneUiAssembly::deactivateDeviceSettingsView() const {
+    core_state_.deviceSettings.closeView();
     device_settings_view_->onDeactivate();
     oc::ui::lvgl::RetainedSurfaceParkingLot::park(
         device_settings_view_->getElement(), device_settings_view_parking_host_
