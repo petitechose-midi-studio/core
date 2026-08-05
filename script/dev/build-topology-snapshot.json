@@ -51,11 +51,11 @@
     "core/oc-native-sdk.ini": "289d568f0a0fe7c9da9a27c0bdded498ccc84551f1b24c9e0c104231cbfcb843",
     "core/oc-sdk.ini": "cd6b44a0b1acc52a9a20bc1146d59b4755239af0b09371637c39e4afd5be2653",
     "core/platformio.ini": "73f60b1f009fb8eef65427e5b7e47627c6f24ff603fc9f20f0246566466ebaaf",
-    "core/script/dev/check-build-topology.py": "589b7ba5b0d7979b00310db4745896b66b0e83a14de979ea7ddbeac622356cfc",
+    "core/script/dev/check-build-topology.py": "a91f9195fed0c6476954d64efb5f07e4294b119c10b4b550122a9d098632f159",
     "core/sdl/CMakeLists.txt": "e4f97e7e92c7ea49079e16120de5ff53bff6309827540c44bfc24f8ee8138f22",
     "core/sdl/app.cmake": "58c458699e02af603c5e9b74100a18d3458e64185df3e69a670d2da15ceafb45",
     "core/sdl/cmake/libremidi.cmake": "42ed6541b7ba8ac0e5e188760b200b161e37f65d381fe24dbd102cfc8b8a3b61",
-    "ui/CMakeLists.txt": "443c632292c238de6e96fa2aeb532106321a772fb1ffd3440f064bb6746cb635",
+    "ui/CMakeLists.txt": "55e09ff826465112f49b20d19805bc663c0e8b084ef3bcb50ca87bb2391d3cbd",
     "ui/library.json": "e91999750744ac3279b794c1dbc6d1e464201a3a401fe6c3bb15449dd98cb9bd"
   },
   "profiles": {
