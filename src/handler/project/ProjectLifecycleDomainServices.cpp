@@ -128,15 +128,15 @@ ProjectLifecycleDomainServices::resetMusicalProject() const {
     if (state_ == nullptr) {
         return unavailable();
     }
-    if (state_->sequencer.stepContentDraft.active.get()) {
-        state_->sequencer.stepContentDraft.noteBlockedTransition(
-            core::state::sequencer::
-                SequencerStepContentDraftBlockedTransition::RESET
-        );
-        return Result{.status = Status::DRAFT_ACTIVE};
+    switch (state_->resetMusicalProject()) {
+        case core::state::ProjectResetOutcome::Completed:
+            return Result{.status = Status::OK};
+        case core::state::ProjectResetOutcome::DraftActive:
+            return Result{.status = Status::DRAFT_ACTIVE};
+        case core::state::ProjectResetOutcome::HistoryUnavailable:
+            return Result{.status = Status::RESET_FAILED};
     }
-    state_->resetMusicalProject();
-    return Result{.status = Status::OK};
+    return Result{.status = Status::RESET_FAILED};
 }
 
 FLASHMEM const char* ProjectLifecycleDomainServices::currentProjectId() const {

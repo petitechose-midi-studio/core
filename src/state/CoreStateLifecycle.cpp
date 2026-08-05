@@ -6,6 +6,7 @@
 
 #include "state/CoreState.hpp"
 #include "state/macro/MacroWorkflow.hpp"
+#include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/SequencerTrackBankOps.hpp"
 
 namespace core::state {
@@ -135,12 +136,7 @@ FLASHMEM void CoreStateLifecycle::consumeProjectReplacementMutationCoalescing(
 }
 
 FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
-    if (state.sequencer.stepContentDraft.active.get()) {
-        state.sequencer.stepContentDraft.noteBlockedTransition(
-            sequencer::SequencerStepContentDraftBlockedTransition::RESET
-        );
-        return;
-    }
+    sequencer::abandonStepContentDraft(state.sequencer);
     state.macroEdit.reset();
     state.macroUi.resetInteraction();
     reprojectActiveMacroManualOverrides(state);
@@ -155,19 +151,13 @@ FLASHMEM void CoreStateLifecycle::resetStandaloneTransientUi(CoreState& state) {
     state.sequencer.stepPropertyInlineSelector.reset();
     state.sequencer.patternQuickControls.reset();
     state.sequencer.structureUi.reset();
-    state.projectNavigation.reset();
+    state.projectNavigation.resetTransient();
     state.projectTrackEditor.reset();
     state.deviceSettings.reset();
     state.sequencerSettings.reset();
 }
 
 FLASHMEM void CoreStateLifecycle::resetMusicalProject(CoreState& state) {
-    if (state.sequencer.stepContentDraft.active.get()) {
-        state.sequencer.stepContentDraft.noteBlockedTransition(
-            sequencer::SequencerStepContentDraftBlockedTransition::RESET
-        );
-        return;
-    }
     const bool historyBoundaryCleared = state.clearProjectHistory();
     state.project.reset();
     state.projectTracks.reset();

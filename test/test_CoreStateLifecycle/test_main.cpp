@@ -10,6 +10,8 @@
 
 #include "../../src/state/CoreState.hpp"
 #include "../../src/state/macro/MacroWorkflow.hpp"
+#include "../../src/state/sequencer/SequencerGraphOps.hpp"
+#include "../../src/state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "../support/CoreStorages.hpp"
 
 namespace {
@@ -188,6 +190,14 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     state.sequencer.stepEdit.visible.set(true);
     state.sequencer.stepPropertyInlineSelector.selecting.set(true);
     state.sequencer.patternQuickControls.selecting.set(true);
+    state.projectNavigation.scaleConstrainEnabled = false;
+    state.projectNavigation.patternsInheritScale = false;
+    state.projectNavigation.clipsInheritScale = false;
+    state.projectNavigation.stepPasteMode =
+        core::state::project::ProjectStepPasteMode::WRAP;
+    state.projectNavigation.ccLaneDefaultControllers = {2U, 12U, 75U, 72U};
+    state.projectNavigation.transportSwingPercent = 31U;
+    state.projectNavigation.transportRunMode = 2U;
     state.setSharedTrackState(state.currentSharedTrackEnabledMask(), 3);
     const auto manualAddress = core::state::macro::MacroAutomationSlotAddress{
         .track = state.pages.currentActiveTrack(),
@@ -229,6 +239,15 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(!state.sequencer.stepEdit.visible.get());
     assert(!state.sequencer.stepPropertyInlineSelector.selecting.get());
     assert(!state.sequencer.patternQuickControls.selecting.get());
+    assert(!state.projectNavigation.scaleConstrainEnabled);
+    assert(!state.projectNavigation.patternsInheritScale);
+    assert(!state.projectNavigation.clipsInheritScale);
+    assert(state.projectNavigation.stepPasteMode ==
+           core::state::project::ProjectStepPasteMode::WRAP);
+    assert((state.projectNavigation.ccLaneDefaultControllers ==
+            std::array<uint8_t, 4>{2U, 12U, 75U, 72U}));
+    assert(state.projectNavigation.transportSwingPercent == 31U);
+    assert(state.projectNavigation.transportRunMode == 2U);
     float manualValue = 0.0f;
     assert(state.macroUi.manualOverrides.valueFor(manualAddress, manualValue));
     assert(manualValue > 0.60f && manualValue < 0.62f);
@@ -239,6 +258,135 @@ void test_reset_standalone_transient_ui_clears_context_owned_state() {
     assert(state.macroRuntimeOwnerRevision.get() == beforeRuntimeOwnerRevision);
     assert(state.projectSessionSaveToken() == beforeSaveToken);
     std::cout << "[PASS] test_reset_standalone_transient_ui_clears_context_owned_state\n";
+}
+
+void test_standalone_teardown_abandons_unpublished_step_draft() {
+    namespace seq = core::state::sequencer;
+
+    CoreStorages storage;
+    storage.initAll();
+    core::state::CoreState state(storage.settings);
+
+    const uint8_t publishedNote = state.sequencer.pattern.note[0];
+    const auto beforeSaveToken = state.projectSessionSaveToken();
+    assert(seq::beginStepContentDraft(
+        state.sequencer,
+        seq::SequencerStepContentDraftKind::CHORD,
+        0U,
+        seq::rootStepNodeId(0U)
+    ));
+    state.projectNavigation.currentNode.set(
+        core::state::project::ProjectNodeId::MUSIC_SCALE
+    );
+    state.projectNavigation.focusedRow.set(3U);
+
+    state.resetStandaloneTransientUi();
+
+    assert(!state.sequencer.stepContentDraft.active.get());
+    assert(state.sequencer.pattern.note[0] == publishedNote);
+    assert(state.projectNavigation.currentNode.get() ==
+           core::state::project::ProjectNodeId::OVERVIEW_ROOT);
+    assert(state.projectNavigation.focusedRow.get() == 0U);
+    assert(state.projectSessionSaveToken() == beforeSaveToken);
+    std::cout << "[PASS] standalone teardown abandons unpublished Step draft\n";
+}
+
+void test_standalone_teardown_discards_only_invalid_pending_pattern_owner() {
+    namespace seq = core::state::sequencer;
+
+    CoreStorages storage;
+    storage.initAll();
+    core::state::CoreState state(storage.settings);
+
+    assert(seq::sequencerHistoryOpenAccepted(
+        state.beginOrContinueSequencerPatternHistoryCoalescing(
+            0U,
+            seq::StepProperty::NOTE,
+            100U,
+            seq::SequencerCoalescedPatternPayloadPlan::FlatOnly
+        )
+    ));
+    assert(state.sequencer.setStepNoteAt(0U, 70U));
+    assert(state.sealSequencerPatternHistoryCoalescing(true));
+    assert(state.commitSequencerPatternHistoryCoalescingOutcome() ==
+           seq::SequencerPatternHistoryCommitOutcome::Committed);
+    const uint8_t committedUndoCount = state.sequencerHistory.undoCount();
+    assert(committedUndoCount == 1U);
+
+    assert(seq::sequencerHistoryOpenAccepted(
+        state.beginOrContinueSequencerPatternHistoryCoalescing(
+            0U,
+            seq::StepProperty::NOTE,
+            200U,
+            seq::SequencerCoalescedPatternPayloadPlan::FlatOnly
+        )
+    ));
+    assert(state.sequencer.setStepNoteAt(0U, 72U));
+    const auto beforeSaveToken = state.projectSessionSaveToken();
+
+    state.resetStandaloneTransientUi();
+
+    assert(!state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(state.sequencer.pattern.note[0] == 72U);
+    assert(state.sequencerHistory.undoCount() == committedUndoCount);
+    assert(state.projectSessionSaveToken() == beforeSaveToken);
+    std::cout << "[PASS] Standalone teardown discards only invalid Pattern owner\n";
+}
+
+void test_musical_project_reset_rejects_active_step_draft() {
+    namespace seq = core::state::sequencer;
+
+    CoreStorages storage;
+    storage.initAll();
+    core::state::CoreState state(storage.settings);
+
+    state.statusBar.tempo.set(147.0f);
+    const uint8_t publishedNote = state.sequencer.pattern.note[0];
+    const auto beforeSaveToken = state.projectSessionSaveToken();
+    assert(seq::beginStepContentDraft(
+        state.sequencer,
+        seq::SequencerStepContentDraftKind::CHORD,
+        0U,
+        seq::rootStepNodeId(0U)
+    ));
+
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::DraftActive);
+    assert(state.sequencer.stepContentDraft.active.get());
+    assert(state.sequencer.stepContentDraft.blockedTransition ==
+           seq::SequencerStepContentDraftBlockedTransition::RESET);
+    assert(state.sequencer.pattern.note[0] == publishedNote);
+    assert(state.statusBar.tempo.get() == 147.0f);
+    assert(state.projectSessionSaveToken() == beforeSaveToken);
+    std::cout << "[PASS] musical Project reset rejects active Step draft\n";
+}
+
+void test_musical_project_reset_reports_unavailable_pattern_history() {
+    namespace seq = core::state::sequencer;
+
+    CoreStorages storage;
+    storage.initAll();
+    core::state::CoreState state(storage.settings);
+
+    state.statusBar.tempo.set(153.0f);
+    assert(state.sequencer.setStepNoteAt(0U, 71U));
+    const auto beforeSaveToken = state.projectSessionSaveToken();
+    assert(seq::sequencerHistoryOpenAccepted(
+        state.beginOrContinueSequencerPatternHistoryCoalescing(
+            0U,
+            seq::StepProperty::NOTE,
+            100U,
+            seq::SequencerCoalescedPatternPayloadPlan::FlatOnly
+        )
+    ));
+
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::HistoryUnavailable);
+    assert(state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(state.sequencer.pattern.note[0] == 71U);
+    assert(state.statusBar.tempo.get() == 153.0f);
+    assert(state.projectSessionSaveToken() == beforeSaveToken);
+    std::cout << "[PASS] musical Project reset reports unavailable Pattern history\n";
 }
 
 void test_flush_preserves_project_session_identity() {
@@ -262,7 +410,8 @@ void test_musical_project_reset_activates_one_new_macro_runtime_owner() {
 
     const uint32_t beforeRevision = state.macroRuntimeOwnerRevision.get();
     const auto beforeSaveToken = state.projectSessionSaveToken();
-    state.resetMusicalProject();
+    assert(state.resetMusicalProject() ==
+           core::state::ProjectResetOutcome::Completed);
     assert(state.macroRuntimeOwnerRevision.get() == beforeRevision + 1U);
     const auto afterSaveToken = state.projectSessionSaveToken();
     assert(afterSaveToken.session != beforeSaveToken.session);
@@ -294,6 +443,10 @@ int main() {
     test_core_state_update_expires_inline_feedback();
     test_core_state_update_expires_status_bar_pulses();
     test_reset_standalone_transient_ui_clears_context_owned_state();
+    test_standalone_teardown_abandons_unpublished_step_draft();
+    test_standalone_teardown_discards_only_invalid_pending_pattern_owner();
+    test_musical_project_reset_rejects_active_step_draft();
+    test_musical_project_reset_reports_unavailable_pattern_history();
     test_flush_preserves_project_session_identity();
     test_musical_project_reset_activates_one_new_macro_runtime_owner();
     test_macro_runtime_owner_revision_skips_zero_on_wrap();
