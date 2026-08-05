@@ -2,23 +2,23 @@
   "conditionalSupplierLots": {
     "L-R18-02F": "evidence-only-existing-list",
     "L-R18-02H": "evidence-only-existing-lists",
-    "L-R18-02N": "activate-explicit-owned-list",
-    "L-R18-02U": "activate-target-and-explicit-owned-list"
+    "L-R18-02N": "evidence-only-existing-list",
+    "L-R18-02U": "evidence-only-existing-list"
   },
   "dependencies": {
     "bitwigDevUsesLocalSymlinks": true,
     "bitwigReleaseImportsCoreOcSdk": true,
     "coreNativePins": {
       "oc-framework": "43c574ac9c7b4a8b0bba9ae5992393c8bf03ab9f",
-      "oc-note": "863ead7ab70a965617c7df0a60eb4750e538c2af"
+      "oc-note": "3983c387f04954b22500a6c36d6e9444ef1139c7"
     },
     "coreReleasePins": {
       "oc-framework": "43c574ac9c7b4a8b0bba9ae5992393c8bf03ab9f",
       "oc-hal-common": "e3aa784055554922d130bba8065422d11a7dcd02",
       "oc-hal-teensy": "015ba6f91a23c1d7b6f58c2abfcea09ff83dcf4a",
-      "oc-note": "863ead7ab70a965617c7df0a60eb4750e538c2af",
-      "oc-ui-lvgl": "9827f5933ae826f30dd6df856966a769f19f6ef2",
-      "oc-ui-lvgl-components": "b40208f1d3b6038e9ef0275b5a0f360fcb9ebf04"
+      "oc-note": "3983c387f04954b22500a6c36d6e9444ef1139c7",
+      "oc-ui-lvgl": "3884a808e8478009e10d70c74cd7f7050e619803",
+      "oc-ui-lvgl-components": "235839489dbbd875e9580a009a1ec228352dcc09"
     },
     "libremidi": {
       "immutableCommit": true,
@@ -38,26 +38,33 @@
     "bitwig/.github/release-tooling.json": "f2c0e0d84b67754ce8b727968d129f3c6325e3f5b4424b2ac7ed1581d33ebcb1",
     "bitwig/.github/workflows/candidate-firmware.yml": "1afc1aabd83159b1b4cfc839b28126aec90a9982a450a3814ea34490f8c9b5eb",
     "bitwig/.github/workflows/ci.yml": "6bda6ceb5b977546a9165e437be72524a97be608312a0a506f3cffb1916dc0b5",
-    "bitwig/CMakeLists.txt": "0155f2e03509da4117bcaa086cebaf0268efb119e56208c47885a87263ed4156",
+    "bitwig/CMakeLists.txt": "2a6e5998a2bced40d5d3cef5f1ce2239f44bfedf1429850ce7d9f7f1aed14920",
+    "bitwig/cmake/MidiStudioBitwigSources.cmake": "3cf5ed1ec09e37f0204445721244a4056db25b20b1a85082128b1677d893b174",
     "bitwig/platformio.ini": "e3bd982e61bcd0c7c488de58efc013ca81a1af06157813a782c2c0f57b3cf9d5",
-    "bitwig/sdl/app.cmake": "54cabe3ae1e370a0ae8871c9b715ec72f432cf5bbdb32baccc6d8b13b5c6c5e9",
+    "bitwig/sdl/app.cmake": "1fb132597404331082690c7f7af6cd71f3f878262f77e2183ad6c1aa851676a8",
     "core/.github/release-tooling.json": "9ac98d99fdb0b5f83a249a3b2e50a5f92e75674e8bba6d38b0cc420a738003a7",
     "core/.github/workflows/candidate-host-tools.yml": "7224120588501e1f5ea62130550d3abc1ab657825489ca9b06e68d32e511ea8a",
     "core/.github/workflows/candidate.yml": "73d8662cfcb574dec18ed8ba9c851f2c9a6a0e5580face778bf495c45d333068",
-    "core/.github/workflows/ci.yml": "fc7f6a5f3014a5cec202c7bfa9d7bb96948ae2bb9eea55d70b7902d66663a87e",
+    "core/.github/workflows/ci.yml": "4b717ece41059295399c7eb9b48faf19a21ee3ccc55059c97e33171070431209",
     "core/CMakeLists.txt": "b323e3afd29a7c1c0ac80f3c5d3f9783e00afb4658c011abc4b2ae8cb5a4c59a",
+    "core/cmake/MsCoreProductSources.cmake": "e0156488d08515ed749c9f229e431a191a200aa67946516481501e22f6fc2c6f",
     "core/cmake/MsCoreProjectFileTool.cmake": "3646bff81f12b9c8f3b4ef7283b53a46b86ea9a345ed217c87a2762a3a68f531",
-    "core/cmake/MsCoreSources.cmake": "0bfe864d1c00f8fd383e67f1d2ecdf25b19b19ef047a8c4d2e6cec763c8aece4",
+    "core/cmake/MsCoreSources.cmake": "ebbbc095e92775086f950462ab162d67e2b5fb297b05bac8804f5bc411b51a83",
     "core/library.json": "54c23dc4b513a85b4528944fb2630e4f93f5d9c8561423341d8ca2b727d0b4b9",
-    "core/oc-native-sdk.ini": "289d568f0a0fe7c9da9a27c0bdded498ccc84551f1b24c9e0c104231cbfcb843",
-    "core/oc-sdk.ini": "cd6b44a0b1acc52a9a20bc1146d59b4755239af0b09371637c39e4afd5be2653",
-    "core/platformio.ini": "73f60b1f009fb8eef65427e5b7e47627c6f24ff603fc9f20f0246566466ebaaf",
-    "core/script/dev/check-build-topology.py": "afa02cf836deefcbf86501ada14f298c2f03fab5bd2282275353aef89fa7fa2c",
-    "core/sdl/CMakeLists.txt": "7b3ec6057bf02d3c2a1ebea589cc58359a30edf74b3f9de2c2fffe13e4d5fb98",
-    "core/sdl/app.cmake": "58c458699e02af603c5e9b74100a18d3458e64185df3e69a670d2da15ceafb45",
+    "core/oc-native-sdk.ini": "b9bfc2231d165cc9a12d1fb1f5b9ee08f5f36693739b1df8702bb67aec0a7af2",
+    "core/oc-sdk.ini": "f7feee34cd6ee013139239ef440cb0e14d01754b2d0fff0455b5935f52659b00",
+    "core/platformio.ini": "1b75d707c3862671a1b7d86509aaeb6c2850cca7aab552d92c3b433d7336098f",
+    "core/script/dev/check-build-topology.py": "c9b98b57ee31846b0eca756a15da84fbef036f3fa0f9246f727b729533981f22",
+    "core/sdl/CMakeLists.txt": "5a43409b71f67f2993dc61213e519f3d902e265c4eddae21bec9c22f30ba2bc6",
+    "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
+    "core/sdl/build.sh": "0f484e1330c7836e11da47e167d0c62ec2af152b695f69011a915daf6f174b91",
     "core/sdl/cmake/libremidi.cmake": "728bebe77a438d805e09e9e633c2b30073b218d9b3f8560c83d7f79f96b541eb",
-    "ui/CMakeLists.txt": "55e09ff826465112f49b20d19805bc663c0e8b084ef3bcb50ca87bb2391d3cbd",
-    "ui/library.json": "e91999750744ac3279b794c1dbc6d1e464201a3a401fe6c3bb15449dd98cb9bd"
+    "note/cmake/OpenControlNoteSources.cmake": "4d8928c67b1cd2814716ccb1998db1fb708d64968fa39aa6fda2f5fdf7ce830c",
+    "ui/CMakeLists.txt": "381a454aee7465a850b4cbe63110925d7c44bad738f4345ec65148c7d212f9d9",
+    "ui/cmake/MidiStudioUiSources.cmake": "551d0f351729389cf64ba35d2f3f3f904a66d68c7e36adb1db76aec5ff8d1707",
+    "ui/library.json": "659123c85723e1cdde1a38e7f5e63f6112c5066e6d42863cf2911ddd3183cd5d",
+    "uiLvgl/cmake/OpenControlUiLvglSources.cmake": "40180b7221ab5565cd7b095c06d299145587583850d6339192afecc497a73ae3",
+    "uiLvglComponents/cmake/OpenControlUiLvglComponentsSources.cmake": "12832007c339eacc120f8fcdca14d0c177b9618576ef2faf38398d37628bbf25"
   },
   "profiles": {
     "bitwigCmakeTests": {
@@ -138,8 +145,8 @@
   "repositories": {
     "bitwig": {
       "cleanExpected": true,
-      "commit": "75af17b0bace74d5085f8e28a7a8af59afb6a540",
-      "tree": "c5d8b90aff8280c47fe78a1fd4ea01ceccc211ae"
+      "commit": "6c0a4348a72a37f7253d1297540cac25624c7795",
+      "tree": "858b3152763a9ab24d4fd44e8c7ad74fe96c5959"
     },
     "core": {
       "cleanExpected": true,
@@ -177,35 +184,40 @@
     },
     "note": {
       "cleanExpected": true,
-      "commit": "863ead7ab70a965617c7df0a60eb4750e538c2af",
-      "tree": "8b1ed3702cfbd3fadae54bb6dcc5222e6d19519a"
+      "commit": "3983c387f04954b22500a6c36d6e9444ef1139c7",
+      "tree": "0dde5954871a2544c9d86d421f7dff89041e8dfa"
     },
     "ui": {
       "cleanExpected": true,
-      "commit": "bd822d51a08d60172b04f3d8aae3f825d1ec717d",
-      "tree": "866514c9c707b9edd8f22bbbd4dad35fe746c7ae"
+      "commit": "137e49f39c0ed1dd6391af300b764614d39658fb",
+      "tree": "2d477b99f754d321446fe212cd7a4fde143d444c"
     },
     "uiLvgl": {
       "cleanExpected": true,
-      "commit": "9827f5933ae826f30dd6df856966a769f19f6ef2",
-      "tree": "0807729a9f23913d5fbdf56cf906242c872350e4"
+      "commit": "3884a808e8478009e10d70c74cd7f7050e619803",
+      "tree": "b890a89daf24c69d79b96f3c6e0fed93285d9559"
     },
     "uiLvglComponents": {
       "cleanExpected": true,
-      "commit": "b40208f1d3b6038e9ef0275b5a0f360fcb9ebf04",
-      "tree": "f18d6bc23df1ef37e60c9666a2ca330b3dd3c66b"
+      "commit": "235839489dbbd875e9580a009a1ec228352dcc09",
+      "tree": "0a5e77dc3b4414aa4ec06751e564f7ccfa7c3489"
     }
   },
-  "schema": 1,
+  "schema": 2,
   "sdlTopology": {
     "appExtraIncludesDeclarations": 2,
-    "appExtraIncludesTargetUses": 0,
+    "appExtraIncludesTargetUses": 1,
     "appExtraSourcesAppendUses": 1,
-    "bitwigDeviceSupportIncludeRootExposed": false,
-    "consumerRecursiveSourceGlobs": 9,
-    "explicitDependencyRoots": false,
-    "implicitSiblingRoots": true,
-    "pioLibdepsFallback": true
+    "bitwigDeviceSupportIncludeRootExposed": true,
+    "consumerRecursiveSourceGlobs": 0,
+    "emsdk": {
+      "floatingLatest": false,
+      "revision": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
+      "version": "4.0.23"
+    },
+    "explicitDependencyRoots": true,
+    "implicitSiblingRoots": false,
+    "pioLibdepsFallback": false
   },
   "sourceSets": {
     "bitwigCSources": {
@@ -2341,6 +2353,33 @@
         "unity"
       ],
       "cmakeRecursiveGlob": false,
+      "librarySources": {
+        "count": 20,
+        "paths": [
+          "src/oc/api/ButtonAPI.cpp",
+          "src/oc/api/EncoderAPI.cpp",
+          "src/oc/api/MidiAPI.cpp",
+          "src/oc/app/AppBuilder.cpp",
+          "src/oc/app/OpenControlApp.cpp",
+          "src/oc/context/ContextManager.cpp",
+          "src/oc/core/event/EventBus.cpp",
+          "src/oc/core/event/EventTypesMacroSanity.cpp",
+          "src/oc/core/input/BindingHandle.cpp",
+          "src/oc/core/input/ButtonBuilder.cpp",
+          "src/oc/core/input/ComboBuilder.cpp",
+          "src/oc/core/input/EncoderBuilder.cpp",
+          "src/oc/core/input/EncoderLogic.cpp",
+          "src/oc/core/input/GestureDetector.cpp",
+          "src/oc/core/input/InputBinding.cpp",
+          "src/oc/diagnostics/Performance.cpp",
+          "src/oc/log/Log.cpp",
+          "src/oc/state/NotificationQueue.cpp",
+          "src/oc/state/Signal.cpp",
+          "src/oc/time/Time.cpp"
+        ],
+        "sha256": "5f959f1c66cbed58ef17ca3a09593437d08d4d7d77cbc1428e722d76a822d8e1"
+      },
+      "ownedSourceList": null,
       "platformioSourceFilter": [
         "+<oc/api/ButtonAPI.cpp>",
         "+<oc/api/EncoderAPI.cpp>",
@@ -2363,6 +2402,7 @@
         "+<oc/state/Signal.cpp>",
         "+<oc/time/Time.cpp>"
       ],
+      "platformioSourceFilterExact": false,
       "sources": {
         "count": 20,
         "paths": [
@@ -2396,9 +2436,16 @@
         "oc_hal_common"
       ],
       "cmakeRecursiveGlob": false,
+      "librarySources": {
+        "count": 0,
+        "paths": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "ownedSourceList": null,
       "platformioSourceFilter": [
         "-<*>"
       ],
+      "platformioSourceFilterExact": false,
       "sources": {
         "count": 0,
         "paths": [],
@@ -2411,7 +2458,16 @@
         "oc_hal_midi"
       ],
       "cmakeRecursiveGlob": false,
+      "librarySources": {
+        "count": 1,
+        "paths": [
+          "src/oc/hal/midi/LibreMidiTransport.cpp"
+        ],
+        "sha256": "fcc283a664835e755c2f84c6094ccfe728e6a5ae09f8749de282376822f9b847"
+      },
+      "ownedSourceList": null,
       "platformioSourceFilter": null,
+      "platformioSourceFilterExact": false,
       "sources": {
         "count": 1,
         "paths": [
@@ -2428,7 +2484,17 @@
         "oc_hal_net_wasm"
       ],
       "cmakeRecursiveGlob": false,
+      "librarySources": {
+        "count": 2,
+        "paths": [
+          "src/oc/hal/net/UdpTransport.cpp",
+          "src/oc/hal/net/WebSocketTransport.cpp"
+        ],
+        "sha256": "4c81744ef97fb772c04389f9257e3ce4a0705ec5be595ac3787ebed05ffea554"
+      },
+      "ownedSourceList": null,
       "platformioSourceFilter": null,
+      "platformioSourceFilterExact": false,
       "sources": {
         "count": 2,
         "paths": [
@@ -2444,7 +2510,16 @@
         "oc_hal_sdl"
       ],
       "cmakeRecursiveGlob": false,
+      "librarySources": {
+        "count": 1,
+        "paths": [
+          "src/oc/hal/sdl/InputMapper.cpp"
+        ],
+        "sha256": "9139ce488ecede12f253f75c54e5484300bbf7d2a8fbc1b152770551f6364ef0"
+      },
+      "ownedSourceList": null,
       "platformioSourceFilter": null,
+      "platformioSourceFilterExact": false,
       "sources": {
         "count": 1,
         "paths": [
@@ -2459,6 +2534,21 @@
         "oc_hal_teensy"
       ],
       "cmakeRecursiveGlob": false,
+      "librarySources": {
+        "count": 8,
+        "paths": [
+          "src/main.cpp",
+          "src/oc/hal/teensy/BuiltInSD.cpp",
+          "src/oc/hal/teensy/HighResolutionClock.cpp",
+          "src/oc/hal/teensy/Ili9341.cpp",
+          "src/oc/hal/teensy/QualificationTelemetry.cpp",
+          "src/oc/hal/teensy/SDCardBackend.cpp",
+          "src/oc/hal/teensy/SDFileSystemBackend.cpp",
+          "src/oc/hal/teensy/UsbMidi.cpp"
+        ],
+        "sha256": "fa546d0981ec5e9a55eaa96aa5c2036b477de6f118e897d4548237667d801d23"
+      },
+      "ownedSourceList": null,
       "platformioSourceFilter": [
         "+<oc/hal/teensy/BuiltInSD.cpp>",
         "+<oc/hal/teensy/HighResolutionClock.cpp>",
@@ -2468,6 +2558,7 @@
         "+<oc/hal/teensy/SDFileSystemBackend.cpp>",
         "+<oc/hal/teensy/UsbMidi.cpp>"
       ],
+      "platformioSourceFilterExact": false,
       "sources": {
         "count": 8,
         "paths": [
@@ -2484,15 +2575,47 @@
       }
     },
     "note": {
-      "cmakeExplicitSourceList": false,
+      "cmakeExplicitSourceList": true,
       "cmakeLibraryTargets": [
         "oc_note_native"
       ],
-      "cmakeRecursiveGlob": true,
+      "cmakeRecursiveGlob": false,
+      "librarySources": {
+        "count": 10,
+        "paths": [
+          "src/oc/note/clock/InternalClock.cpp",
+          "src/oc/note/sequencer/StepSequencerChord.cpp",
+          "src/oc/note/sequencer/StepSequencerChordPreset.cpp",
+          "src/oc/note/sequencer/StepSequencerChordProjection.cpp",
+          "src/oc/note/sequencer/StepSequencerChordSpec.cpp",
+          "src/oc/note/sequencer/StepSequencerEngine.cpp",
+          "src/oc/note/sequencer/StepSequencerExpander.cpp",
+          "src/oc/note/sequencer/StepSequencerGraph.cpp",
+          "src/oc/note/sequencer/StepSequencerPlaybackRegion.cpp",
+          "src/oc/note/sequencer/StepSequencerState.cpp"
+        ],
+        "sha256": "acee9674cabebd65f4a46d8d841d3b08b24f274699a38a2e78d43d5a38582f2e"
+      },
+      "ownedSourceList": {
+        "consumedByCmakeTarget": true,
+        "exact": true,
+        "file": "cmake/OpenControlNoteSources.cmake",
+        "targetVariable": "OC_NOTE_SOURCES",
+        "variable": "OC_NOTE_SOURCE_PATHS"
+      },
       "platformioSourceFilter": [
-        "+<**/*.cpp>",
-        "-<main.cpp>"
+        "+<oc/note/clock/InternalClock.cpp>",
+        "+<oc/note/sequencer/StepSequencerChord.cpp>",
+        "+<oc/note/sequencer/StepSequencerChordPreset.cpp>",
+        "+<oc/note/sequencer/StepSequencerChordProjection.cpp>",
+        "+<oc/note/sequencer/StepSequencerChordSpec.cpp>",
+        "+<oc/note/sequencer/StepSequencerEngine.cpp>",
+        "+<oc/note/sequencer/StepSequencerExpander.cpp>",
+        "+<oc/note/sequencer/StepSequencerGraph.cpp>",
+        "+<oc/note/sequencer/StepSequencerPlaybackRegion.cpp>",
+        "+<oc/note/sequencer/StepSequencerState.cpp>"
       ],
+      "platformioSourceFilterExact": true,
       "sources": {
         "count": 10,
         "paths": [
@@ -2510,14 +2633,109 @@
         "sha256": "acee9674cabebd65f4a46d8d841d3b08b24f274699a38a2e78d43d5a38582f2e"
       }
     },
-    "uiLvgl": {
-      "cmakeExplicitSourceList": false,
-      "cmakeLibraryTargets": [],
-      "cmakeRecursiveGlob": false,
-      "platformioSourceFilter": [
-        "+<**/*.cpp>",
-        "-<main.cpp>"
+    "ui": {
+      "cmakeExplicitSourceList": true,
+      "cmakeLibraryTargets": [
+        "midi_studio_ui"
       ],
+      "cmakeRecursiveGlob": false,
+      "librarySources": {
+        "count": 12,
+        "paths": [
+          "src/ms/ui/ViewContainer.cpp",
+          "src/ms/ui/component/LayoutOverlay.cpp",
+          "src/ms/ui/component/LayoutView.cpp",
+          "src/ms/ui/component/VirtualListOverlay.cpp",
+          "src/ms/ui/font/CoreFonts.cpp",
+          "src/ms/ui/widget/BaseSelector.cpp",
+          "src/ms/ui/widget/CurvePreviewWidget.cpp",
+          "src/ms/ui/widget/ListOverlay.cpp",
+          "src/ms/ui/widget/MenuListView.cpp",
+          "src/ms/ui/widget/StringListSelector.cpp",
+          "src/ms/ui/widget/VirtualListKeyValueOverlay.cpp",
+          "src/ms/ui/widget/VirtualListSelectorOverlay.cpp"
+        ],
+        "sha256": "7f0dde994b7b010f6c969eb75afcfb3625416f66a2ccb32b978445a5687dbfbc"
+      },
+      "ownedSourceList": {
+        "consumedByCmakeTarget": true,
+        "exact": true,
+        "file": "cmake/MidiStudioUiSources.cmake",
+        "targetVariable": "MS_UI_SOURCES",
+        "variable": "MS_UI_SOURCE_PATHS"
+      },
+      "platformioSourceFilter": [
+        "+<ms/ui/ViewContainer.cpp>",
+        "+<ms/ui/component/LayoutOverlay.cpp>",
+        "+<ms/ui/component/LayoutView.cpp>",
+        "+<ms/ui/component/VirtualListOverlay.cpp>",
+        "+<ms/ui/font/CoreFonts.cpp>",
+        "+<ms/ui/widget/BaseSelector.cpp>",
+        "+<ms/ui/widget/CurvePreviewWidget.cpp>",
+        "+<ms/ui/widget/ListOverlay.cpp>",
+        "+<ms/ui/widget/MenuListView.cpp>",
+        "+<ms/ui/widget/StringListSelector.cpp>",
+        "+<ms/ui/widget/VirtualListKeyValueOverlay.cpp>",
+        "+<ms/ui/widget/VirtualListSelectorOverlay.cpp>"
+      ],
+      "platformioSourceFilterExact": true,
+      "sources": {
+        "count": 12,
+        "paths": [
+          "src/ms/ui/ViewContainer.cpp",
+          "src/ms/ui/component/LayoutOverlay.cpp",
+          "src/ms/ui/component/LayoutView.cpp",
+          "src/ms/ui/component/VirtualListOverlay.cpp",
+          "src/ms/ui/font/CoreFonts.cpp",
+          "src/ms/ui/widget/BaseSelector.cpp",
+          "src/ms/ui/widget/CurvePreviewWidget.cpp",
+          "src/ms/ui/widget/ListOverlay.cpp",
+          "src/ms/ui/widget/MenuListView.cpp",
+          "src/ms/ui/widget/StringListSelector.cpp",
+          "src/ms/ui/widget/VirtualListKeyValueOverlay.cpp",
+          "src/ms/ui/widget/VirtualListSelectorOverlay.cpp"
+        ],
+        "sha256": "7f0dde994b7b010f6c969eb75afcfb3625416f66a2ccb32b978445a5687dbfbc"
+      }
+    },
+    "uiLvgl": {
+      "cmakeExplicitSourceList": true,
+      "cmakeLibraryTargets": [
+        "oc_ui_lvgl"
+      ],
+      "cmakeRecursiveGlob": false,
+      "librarySources": {
+        "count": 8,
+        "paths": [
+          "src/oc/ui/lvgl/Bridge.cpp",
+          "src/oc/ui/lvgl/FontLoader.cpp",
+          "src/oc/ui/lvgl/FontUtils.cpp",
+          "src/oc/ui/lvgl/PausableTimer.cpp",
+          "src/oc/ui/lvgl/RetainedSurfaceParkingLot.cpp",
+          "src/oc/ui/lvgl/Screen.cpp",
+          "src/oc/ui/lvgl/SdlBridge.cpp",
+          "src/oc/ui/lvgl/StaticSurfaceInvalidation.cpp"
+        ],
+        "sha256": "36781bc67dce355fd2c9bdcf75f20e810176dbcfa3dbcbbf66e44ffa52e6c4e1"
+      },
+      "ownedSourceList": {
+        "consumedByCmakeTarget": true,
+        "exact": true,
+        "file": "cmake/OpenControlUiLvglSources.cmake",
+        "targetVariable": "OC_UI_LVGL_SOURCES",
+        "variable": "OC_UI_LVGL_SOURCE_PATHS"
+      },
+      "platformioSourceFilter": [
+        "+<oc/ui/lvgl/Bridge.cpp>",
+        "+<oc/ui/lvgl/FontLoader.cpp>",
+        "+<oc/ui/lvgl/FontUtils.cpp>",
+        "+<oc/ui/lvgl/PausableTimer.cpp>",
+        "+<oc/ui/lvgl/RetainedSurfaceParkingLot.cpp>",
+        "+<oc/ui/lvgl/Screen.cpp>",
+        "+<oc/ui/lvgl/SdlBridge.cpp>",
+        "+<oc/ui/lvgl/StaticSurfaceInvalidation.cpp>"
+      ],
+      "platformioSourceFilterExact": true,
       "sources": {
         "count": 9,
         "paths": [
@@ -2533,9 +2751,65 @@
         ],
         "sha256": "e6c62fa7832483c352b7e5ab14ff6b6018a2f70977178ddcc5962fa2b7cfeb7e"
       }
+    },
+    "uiLvglComponents": {
+      "cmakeExplicitSourceList": true,
+      "cmakeLibraryTargets": [
+        "oc_ui_lvgl_components"
+      ],
+      "cmakeRecursiveGlob": false,
+      "librarySources": {
+        "count": 9,
+        "paths": [
+          "src/component/ParameterEnum.cpp",
+          "src/component/ParameterKnob.cpp",
+          "src/component/ParameterSwitch.cpp",
+          "src/widget/ButtonWidget.cpp",
+          "src/widget/EnumWidget.cpp",
+          "src/widget/KnobWidget.cpp",
+          "src/widget/Label.cpp",
+          "src/widget/StateIndicator.cpp",
+          "src/widget/VirtualList.cpp"
+        ],
+        "sha256": "ad39e813d9d85020a7f32e26db9153b87b406e8d3fc762c1bed62ec3ca65230c"
+      },
+      "ownedSourceList": {
+        "consumedByCmakeTarget": true,
+        "exact": true,
+        "file": "cmake/OpenControlUiLvglComponentsSources.cmake",
+        "targetVariable": "OC_UI_LVGL_COMPONENTS_SOURCES",
+        "variable": "OC_UI_LVGL_COMPONENTS_SOURCE_PATHS"
+      },
+      "platformioSourceFilter": [
+        "+<component/ParameterEnum.cpp>",
+        "+<component/ParameterKnob.cpp>",
+        "+<component/ParameterSwitch.cpp>",
+        "+<widget/ButtonWidget.cpp>",
+        "+<widget/EnumWidget.cpp>",
+        "+<widget/KnobWidget.cpp>",
+        "+<widget/Label.cpp>",
+        "+<widget/StateIndicator.cpp>",
+        "+<widget/VirtualList.cpp>"
+      ],
+      "platformioSourceFilterExact": true,
+      "sources": {
+        "count": 9,
+        "paths": [
+          "src/component/ParameterEnum.cpp",
+          "src/component/ParameterKnob.cpp",
+          "src/component/ParameterSwitch.cpp",
+          "src/widget/ButtonWidget.cpp",
+          "src/widget/EnumWidget.cpp",
+          "src/widget/KnobWidget.cpp",
+          "src/widget/Label.cpp",
+          "src/widget/StateIndicator.cpp",
+          "src/widget/VirtualList.cpp"
+        ],
+        "sha256": "ad39e813d9d85020a7f32e26db9153b87b406e8d3fc762c1bed62ec3ca65230c"
+      }
     }
   },
-  "toolVersion": 1,
+  "toolVersion": 2,
   "tooling": {
     "bitwigCandidate": {
       "platformio": "6.1.18",
@@ -2566,9 +2840,10 @@
     },
     "coreCi": {
       "declaredRepositoryPins": {
+        "EMSDK_SHA": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
         "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
-        "MIDI_STUDIO_BITWIG_SHA": "75af17b0bace74d5085f8e28a7a8af59afb6a540",
-        "MIDI_STUDIO_UI_SHA": "bd822d51a08d60172b04f3d8aae3f825d1ec717d",
+        "MIDI_STUDIO_BITWIG_SHA": "6c0a4348a72a37f7253d1297540cac25624c7795",
+        "MIDI_STUDIO_UI_SHA": "137e49f39c0ed1dd6391af300b764614d39658fb",
         "MS_DEV_ENV_SHA": "ec565d041d6b1e61c5bc5cd6d2b8cf8af5f8162f",
         "OPEN_CONTROL_FRAMEWORK_SHA": "43c574ac9c7b4a8b0bba9ae5992393c8bf03ab9f",
         "OPEN_CONTROL_HAL_COMMON_SHA": "e3aa784055554922d130bba8065422d11a7dcd02",
@@ -2576,10 +2851,12 @@
         "OPEN_CONTROL_HAL_NET_SHA": "2207e6befc4b18fad5e4db870ba5ca8aab13aa29",
         "OPEN_CONTROL_HAL_SDL_SHA": "f8755529b4240bf05547d3ab6eadc92d823882c3",
         "OPEN_CONTROL_HAL_TEENSY_SHA": "015ba6f91a23c1d7b6f58c2abfcea09ff83dcf4a",
-        "OPEN_CONTROL_NOTE_SHA": "863ead7ab70a965617c7df0a60eb4750e538c2af",
-        "OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA": "b40208f1d3b6038e9ef0275b5a0f360fcb9ebf04",
-        "OPEN_CONTROL_UI_LVGL_SHA": "9827f5933ae826f30dd6df856966a769f19f6ef2"
+        "OPEN_CONTROL_NOTE_SHA": "3983c387f04954b22500a6c36d6e9444ef1139c7",
+        "OPEN_CONTROL_UI_LVGL_COMPONENTS_SHA": "235839489dbbd875e9580a009a1ec228352dcc09",
+        "OPEN_CONTROL_UI_LVGL_SHA": "3884a808e8478009e10d70c74cd7f7050e619803"
       },
+      "emsdkVersion": "4.0.23",
+      "finalWasmLink": true,
       "msDevEnv": "ec565d041d6b1e61c5bc5cd6d2b8cf8af5f8162f",
       "platformio": "6.1.18"
     }

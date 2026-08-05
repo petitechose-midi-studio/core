@@ -15,12 +15,16 @@ set(APP_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/../src")
 set(APP_MAIN_NATIVE "${CMAKE_CURRENT_LIST_DIR}/main-native.cpp")
 set(APP_MAIN_WASM "${CMAKE_CURRENT_LIST_DIR}/main-wasm.cpp")
 
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/MsCoreProductSources.cmake")
+set(APP_SOURCES ${MS_CORE_PRODUCT_SOURCES})
+list(FILTER APP_SOURCES EXCLUDE REGEX "/platform-teensy/")
+
 # -----------------------------------------------------------------------------
 # Additional include directories (relative to this file)
 # -----------------------------------------------------------------------------
 set(APP_EXTRA_INCLUDES "")
 
 # -----------------------------------------------------------------------------
-# Additional sources (glob patterns relative to APP_SRC_DIR)
+# Additional concrete source paths
 # -----------------------------------------------------------------------------
 set(APP_EXTRA_SOURCES "")

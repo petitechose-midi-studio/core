@@ -1,23 +1,13 @@
 get_filename_component(MS_CORE_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(MS_CORE_SOURCE_ROOT "${MS_CORE_ROOT_DIR}/src")
 
-set(MS_CORE_NATIVE_SOURCE_PATTERNS
-    "${MS_CORE_SOURCE_ROOT}/state/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/protocol/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/persistence/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/sequencer/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/validation/ux/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/validation/project/ProjectModulationBenchmark.cpp"
-    "${MS_CORE_SOURCE_ROOT}/handler/common/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/handler/macro/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/handler/project/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/handler/sequencer/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/handler/settings/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/handler/transport/*.cpp"
-    "${MS_CORE_SOURCE_ROOT}/handler/view/*.cpp")
+include("${CMAKE_CURRENT_LIST_DIR}/MsCoreProductSources.cmake")
 
-file(GLOB_RECURSE MS_CORE_NATIVE_SOURCES CONFIGURE_DEPENDS
-    ${MS_CORE_NATIVE_SOURCE_PATTERNS})
+set(MS_CORE_NATIVE_SOURCES ${MS_CORE_PRODUCT_SOURCES})
+list(FILTER MS_CORE_NATIVE_SOURCES INCLUDE REGEX
+    "/src/(state|protocol|persistence|sequencer|validation/ux|handler/(common|macro|project|sequencer|settings|transport|view))/.+\\.cpp$")
+list(APPEND MS_CORE_NATIVE_SOURCES
+    "${MS_CORE_SOURCE_ROOT}/validation/project/ProjectModulationBenchmark.cpp")
 
 set(MS_CORE_NATIVE_EXTRA_SOURCES
     "${MS_CORE_SOURCE_ROOT}/context/standalone/MacroOverlayInvalidationBindings.cpp"
@@ -143,6 +133,7 @@ function(ms_core_assert_sources_exist)
 endfunction()
 
 ms_core_assert_sources_exist(
+    ${MS_CORE_PRODUCT_SOURCES}
     ${MS_CORE_NATIVE_EXTRA_SOURCES}
     ${MS_CORE_PROJECT_FILE_OPEN_CONTROL_SOURCES}
     ${MS_CORE_PROJECT_FILE_CORE_SOURCES})

@@ -31,10 +31,10 @@ http://localhost:8000/midi_studio_core.html
 ## Requirements
 
 - Git Bash on Windows, or a Unix-like shell.
-- PlatformIO CLI for dependency installation through `pio pkg install`.
 - Python 3 for the local HTTP server.
 - CMake/Ninja-compatible host tools. On Windows the script downloads Zig,
-  Ninja, SDL2, Emscripten, and watchexec under `sdl/tools/` when needed.
+  Ninja, SDL2, pinned LVGL, Emscripten `4.0.23`, and watchexec under
+  `sdl/tools/` when needed.
 
 ## Commands
 
@@ -321,18 +321,29 @@ Run a WASM command from Git Bash:
 ./build.sh wasm
 ```
 
-The script installs or activates Emscripten under `sdl/tools/emsdk` if `emcc`
-is not already on `PATH`.
+The script installs and activates the exact Emscripten `4.0.23` toolchain under
+`sdl/tools/emsdk`. A system `emcc` never overrides this build contract.
 
-### PlatformIO dependencies missing
+### Dependency root rejected
 
-From `midi-studio/core`:
+Direct CMake callers must provide every dependency checkout explicitly:
 
 ```bash
-pio pkg install
+cmake -S sdl -B build \
+  -DOPEN_CONTROL_FRAMEWORK_DIR=/path/to/framework \
+  -DOPEN_CONTROL_UI_LVGL_DIR=/path/to/ui-lvgl \
+  -DOPEN_CONTROL_UI_COMPONENTS_DIR=/path/to/ui-lvgl-components \
+  -DOPEN_CONTROL_HAL_SDL_DIR=/path/to/hal-sdl \
+  -DOPEN_CONTROL_HAL_NET_DIR=/path/to/hal-net \
+  -DOPEN_CONTROL_HAL_MIDI_DIR=/path/to/hal-midi \
+  -DOPEN_CONTROL_NOTE_DIR=/path/to/note \
+  -DMIDI_STUDIO_UI_DIR=/path/to/midi-studio-ui \
+  -DLVGL_DIR=/path/to/lvgl
 ```
 
-The SDL build also attempts this automatically when `.pio/libdeps` is missing.
+Each root is sentinel-checked during configuration. `build.sh` supplies the
+canonical workspace roots and its pinned local LVGL checkout automatically;
+it never reads `.pio/libdeps`.
 
 ### Clean generated simulator outputs
 
