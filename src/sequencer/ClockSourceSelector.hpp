@@ -21,7 +21,11 @@ public:
         bool resetExternalTempo = false;
     };
 
-    void recordClock(core::state::MidiSyncMode mode, uint8_t autoLockClockCount);
+    void recordClock(core::state::MidiSyncMode mode,
+                     uint8_t autoLockClockCount,
+                     uint16_t autoFallbackMs,
+                     uint32_t nowMs,
+                     uint32_t lastExternalClockMs);
     UpdateResult update(core::state::MidiSyncMode mode,
                         uint16_t autoFallbackMs,
                         uint32_t nowMs,
@@ -35,6 +39,9 @@ public:
 private:
     uint8_t lockClockCount_(uint8_t autoLockClockCount) const;
     uint16_t fallbackMs_(uint16_t autoFallbackMs) const;
+    bool externalClockTimedOut_(uint16_t autoFallbackMs,
+                                uint32_t nowMs,
+                                uint32_t lastExternalClockMs) const;
 
     uint8_t clock_streak_ = 0;
     bool locked_ = false;

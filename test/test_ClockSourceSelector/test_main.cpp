@@ -14,9 +14,9 @@ void test_auto_locks_after_configured_clock_count() {
     assert(!result.useExternal);
     assert(!result.externalSignal);
 
-    selector.recordClock(MidiSyncMode::AUTO, 3);
-    selector.recordClock(MidiSyncMode::AUTO, 3);
-    selector.recordClock(MidiSyncMode::AUTO, 3);
+    selector.recordClock(MidiSyncMode::AUTO, 3, 100, 10, 0);
+    selector.recordClock(MidiSyncMode::AUTO, 3, 100, 20, 10);
+    selector.recordClock(MidiSyncMode::AUTO, 3, 100, 30, 20);
 
     result = selector.update(MidiSyncMode::AUTO, 100, 30, 30);
     assert(result.useExternal);
@@ -29,7 +29,7 @@ void test_auto_locks_after_configured_clock_count() {
 void test_auto_falls_back_after_signal_timeout() {
     core::sequencer::ClockSourceSelector selector;
 
-    selector.recordClock(MidiSyncMode::AUTO, 1);
+    selector.recordClock(MidiSyncMode::AUTO, 1, 100, 10, 0);
     auto result = selector.update(MidiSyncMode::AUTO, 100, 10, 10);
     assert(result.useExternal);
 
@@ -37,6 +37,11 @@ void test_auto_falls_back_after_signal_timeout() {
     assert(!result.useExternal);
     assert(!result.externalSignal);
     assert(result.resetExternalTempo);
+
+    selector.recordClock(MidiSyncMode::AUTO, 1, 100, 210, 10);
+    result = selector.update(MidiSyncMode::AUTO, 100, 210, 210);
+    assert(result.useExternal);
+    assert(result.externalSignal);
 
     std::cout << "[PASS] test_auto_falls_back_after_signal_timeout\n";
 }
@@ -56,7 +61,7 @@ void test_slave_uses_external_even_before_signal() {
 void test_master_clears_lock() {
     core::sequencer::ClockSourceSelector selector;
 
-    selector.recordClock(MidiSyncMode::AUTO, 1);
+    selector.recordClock(MidiSyncMode::AUTO, 1, 100, 10, 0);
     assert(selector.locked());
 
     const auto result = selector.update(MidiSyncMode::MASTER, 100, 10, 10);
@@ -67,6 +72,29 @@ void test_master_clears_lock() {
     std::cout << "[PASS] test_master_clears_lock\n";
 }
 
+void test_auto_intermittent_clocks_do_not_accumulate_toward_lock() {
+    core::sequencer::ClockSourceSelector selector;
+
+    selector.recordClock(MidiSyncMode::AUTO, 3, 100, 10, 0);
+    auto result = selector.update(MidiSyncMode::AUTO, 100, 200, 10);
+    assert(!result.useExternal);
+    assert(!selector.locked());
+
+    selector.recordClock(MidiSyncMode::AUTO, 3, 100, 250, 10);
+    selector.recordClock(MidiSyncMode::AUTO, 3, 100, 500, 250);
+    result = selector.update(MidiSyncMode::AUTO, 100, 500, 500);
+    assert(!result.useExternal);
+    assert(!selector.locked());
+
+    selector.recordClock(MidiSyncMode::AUTO, 3, 100, 520, 500);
+    selector.recordClock(MidiSyncMode::AUTO, 3, 100, 540, 520);
+    result = selector.update(MidiSyncMode::AUTO, 100, 540, 540);
+    assert(result.useExternal);
+    assert(selector.locked());
+
+    std::cout << "[PASS] intermittent AUTO clocks restart acquisition streak\n";
+}
+
 }  // namespace
 
 int main() {
@@ -74,6 +102,7 @@ int main() {
     test_auto_falls_back_after_signal_timeout();
     test_slave_uses_external_even_before_signal();
     test_master_clears_lock();
+    test_auto_intermittent_clocks_do_not_accumulate_toward_lock();
 
     std::cout << "All ClockSourceSelector tests passed\n";
     return 0;

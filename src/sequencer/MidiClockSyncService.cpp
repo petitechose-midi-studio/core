@@ -173,10 +173,16 @@ void MidiClockSyncService::onClock(uint64_t timestampUs, uint32_t hostNowMs) {
         return;
     }
 
+    clock_source_selector_.recordClock(
+        runtime_config_.mode,
+        runtime_config_.autoLockClockCount,
+        runtime_config_.autoFallbackMs,
+        hostNowMs,
+        last_external_clock_ms_
+    );
     external_clock_estimator_.recordClock(timestampUs);
     external_tick_ += 1;
     last_external_clock_ms_ = hostNowMs;
-    clock_source_selector_.recordClock(runtime_config_.mode, runtime_config_.autoLockClockCount);
 
     pending_sync_input_pulse_ = true;
 }
@@ -206,7 +212,6 @@ void MidiClockSyncService::updateActiveTickPeriod_() {
 
 void MidiClockSyncService::resetExternalTempoEstimator_() {
     external_clock_estimator_.reset();
-    external_transport_seen_ = false;
 }
 
 FLASHMEM void MidiClockSyncService::onStart() {
@@ -279,6 +284,13 @@ void MidiClockSyncService::updateSourceSelection_(uint32_t nowMs) {
         resync_requested_ = true;
 
         if (using_external_source_) {
+            // AUTO acquisition clocks establish source trust, not elapsed
+            // musical time. Without an explicit transport edge, begin the
+            // inferred clock-only session at its first playable tick.
+            if (mode == core::state::MidiSyncMode::AUTO &&
+                !external_transport_seen_) {
+                external_tick_ = 0U;
+            }
             if (!external_transport_seen_ && !external_playing_) {
                 external_playing_ = runtime_config_.playing;
             }
@@ -289,6 +301,11 @@ void MidiClockSyncService::updateSourceSelection_(uint32_t nowMs) {
                                             : hasExternalClockSignal_(nowMs));
             }
         } else {
+            // Falling back ends the previous external transport session. A
+            // transport edge received while AUTO is acquiring a new source
+            // can then be latched without being erased by estimator resets.
+            external_transport_seen_ = false;
+            external_playing_ = false;
             internal_clock_.reset();
             internal_clock_.setPlaying(runtime_config_.playing);
             internal_clock_.setBpm(runtime_config_.tempo);
@@ -296,6 +313,11 @@ void MidiClockSyncService::updateSourceSelection_(uint32_t nowMs) {
             last_master_tick_sent_ = internal_clock_.tick();
             last_master_playing_ = runtime_config_.playing;
         }
+    }
+
+    if (mode == core::state::MidiSyncMode::MASTER) {
+        external_transport_seen_ = false;
+        external_playing_ = false;
     }
 
     queueActiveSourceProjection_(using_external_source_
