@@ -134,6 +134,7 @@ void MidiClockSyncService::update(const MidiClockSyncRuntimeConfig& config,
                                   bool driveTransport) {
     runtime_config_ = config;
     updateSourceSelection_(nowMs);
+    updateActiveTickPeriod_();
     pushSyncIndicators_();
 
     if (using_external_source_) {
@@ -178,6 +179,29 @@ void MidiClockSyncService::onClock(uint64_t timestampUs, uint32_t hostNowMs) {
     clock_source_selector_.recordClock(runtime_config_.mode, runtime_config_.autoLockClockCount);
 
     pending_sync_input_pulse_ = true;
+}
+
+MidiClockSyncService::TransportSnapshot
+MidiClockSyncService::transportSnapshot() const {
+    return {
+        .tick = current_tick_,
+        .tickPeriodUs = active_tick_period_us_,
+        .playing = current_playing_,
+        .usingExternalSource = using_external_source_,
+    };
+}
+
+void MidiClockSyncService::updateActiveTickPeriod_() {
+    if (using_external_source_) {
+        const uint32_t externalPeriodUs =
+            external_clock_estimator_.tickPeriodUsEstimate();
+        if (externalPeriodUs > 0U) {
+            active_tick_period_us_ = externalPeriodUs;
+            return;
+        }
+    }
+
+    active_tick_period_us_ = tickPeriodUsForTempo(runtime_config_.tempo);
 }
 
 void MidiClockSyncService::resetExternalTempoEstimator_() {

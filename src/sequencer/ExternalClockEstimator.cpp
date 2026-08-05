@@ -9,6 +9,8 @@ namespace {
 constexpr uint32_t MIN_CLOCK_INTERVAL_US = 2500;
 constexpr uint32_t MAX_CLOCK_INTERVAL_US = 250000;
 constexpr uint8_t MIN_INTERVAL_SAMPLES = 6;
+constexpr float MIDI_CLOCK_PPQN = 24.0f;
+constexpr float MICROSECONDS_PER_MINUTE = 60000000.0f;
 constexpr float MIN_BPM = 20.0f;
 constexpr float MAX_BPM = 666.0f;
 constexpr float TEMPO_ALPHA_STABLE = 0.18f;
@@ -54,6 +56,26 @@ void ExternalClockEstimator::recordClock(uint64_t timestampUs) {
     }
 
     last_clock_us_ = timestampUs;
+}
+
+uint32_t ExternalClockEstimator::tickPeriodUsEstimate() const {
+    if (bpm_valid_) {
+        const float periodUs =
+            MICROSECONDS_PER_MINUTE / (bpm_estimate_ * MIDI_CLOCK_PPQN);
+        return std::max<uint32_t>(
+            1U,
+            static_cast<uint32_t>(periodUs + 0.5f)
+        );
+    }
+
+    if (interval_count_ == 0U) {
+        return 0U;
+    }
+
+    const uint8_t latestIndex = interval_write_idx_ == 0U
+        ? static_cast<uint8_t>(interval_us_.size() - 1U)
+        : static_cast<uint8_t>(interval_write_idx_ - 1U);
+    return interval_us_[latestIndex];
 }
 
 void ExternalClockEstimator::pushIntervalUs_(uint32_t intervalUs) {
@@ -109,7 +131,7 @@ float ExternalClockEstimator::estimateTempoFromIntervals_() const {
         return 0.0f;
     }
 
-    return 60000000.0f / (meanUs * 24.0f);
+    return MICROSECONDS_PER_MINUTE / (meanUs * MIDI_CLOCK_PPQN);
 }
 
 }  // namespace core::sequencer

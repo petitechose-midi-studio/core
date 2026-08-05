@@ -64,8 +64,16 @@ public:
     void stop();
 
 private:
+    struct ClockDomainUpdateResult {
+        bool timerOwnsTransport = false;
+        MidiClockSyncService::TransportSnapshot transport{};
+    };
+
     MidiClockSyncRuntimeConfig captureClockSyncRuntimeConfig_() const;
-    bool updateClockDomainOwnership_(const MidiClockSyncRuntimeConfig& config, uint32_t nowMs);
+    ClockDomainUpdateResult updateClockDomainOwnership_(
+        const MidiClockSyncRuntimeConfig& config,
+        uint32_t nowMs
+    );
     void publishPlaybackUiFromTimerPath_(uint32_t nowMs);
     void stopPlayback_();
     void drainRealtimeMidiQueue_(uint32_t nowUs);

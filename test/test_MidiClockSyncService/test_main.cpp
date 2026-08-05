@@ -182,8 +182,8 @@ void test_master_without_transport_drive_does_not_emit_realtime() {
     stepService(service, sync, status, 0, false);
     stepService(service, sync, status, 100, false);
 
-    assert(service.playing());
-    assert(service.tick() == 0);
+    assert(service.transportSnapshot().playing);
+    assert(service.transportSnapshot().tick == 0);
     assert(transport.start_sent == 0);
     assert(transport.clock_sent == 0);
     assert(transport.stop_sent == 0);
@@ -285,8 +285,8 @@ void test_slave_follows_external_clock_and_transport() {
     service.onClock(40'000, 40);
     stepService(service, sync, status, 40);
 
-    assert(service.playing());
-    assert(service.tick() == 4);
+    assert(service.transportSnapshot().playing);
+    assert(service.transportSnapshot().tick == 4);
     assert(status.tempoLocked.get());
     assert(status.transportLocked.get());
     assert(transport.clock_sent == 0);
@@ -294,7 +294,7 @@ void test_slave_follows_external_clock_and_transport() {
 
     service.onStop();
     stepService(service, sync, status, 60);
-    assert(!service.playing());
+    assert(!service.transportSnapshot().playing);
 
     std::cout << "[PASS] test_slave_follows_external_clock_and_transport\n";
 }
@@ -360,7 +360,7 @@ void test_auto_latches_start_before_lock() {
     stepService(service, sync, status, 30);
 
     assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
-    assert(service.playing());
+    assert(service.transportSnapshot().playing);
     assert(status.playing.get());
 
     std::cout << "[PASS] test_auto_latches_start_before_lock\n";
@@ -378,7 +378,7 @@ void test_slave_clock_only_infers_play_state() {
     sync.autoFallbackMs.set(120);
 
     stepService(service, sync, status, 0);
-    assert(!service.playing());
+    assert(!service.transportSnapshot().playing);
 
     uint32_t now = 10;
     for (int i = 0; i < 6; ++i) {
@@ -387,12 +387,12 @@ void test_slave_clock_only_infers_play_state() {
         now += 20;
     }
 
-    assert(service.playing());
+    assert(service.transportSnapshot().playing);
     assert(status.playing.get());
 
     // With no explicit stop event, loss of external clock should still stop playback.
     stepService(service, sync, status, now + 250);
-    assert(!service.playing());
+    assert(!service.transportSnapshot().playing);
     assert(!status.playing.get());
 
     std::cout << "[PASS] test_slave_clock_only_infers_play_state\n";
@@ -410,7 +410,7 @@ void test_auto_clock_only_plays_after_lock() {
     sync.autoLockClockCount.set(3);
 
     stepService(service, sync, status, 0);
-    assert(!service.playing());
+    assert(!service.transportSnapshot().playing);
 
     service.onClock(10'000, 10);
     service.onClock(20'000, 20);
@@ -418,7 +418,7 @@ void test_auto_clock_only_plays_after_lock() {
     stepService(service, sync, status, 30);
 
     assert(sync.activeSource.get() == core::state::ClockSourceActive::EXTERNAL);
-    assert(service.playing());
+    assert(service.transportSnapshot().playing);
     assert(status.playing.get());
 
     std::cout << "[PASS] test_auto_clock_only_plays_after_lock\n";
@@ -539,6 +539,72 @@ void test_external_tempo_tracks_fast_change() {
     std::cout << "[PASS] test_external_tempo_tracks_fast_change\n";
 }
 
+void test_transport_snapshot_uses_measured_slave_period() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{midi};
+
+    sync.mode.set(core::state::MidiSyncMode::SLAVE);
+    status.tempo.set(60.0f);
+    stepService(service, sync, status, 0U);
+
+    const uint32_t configuredPeriod =
+        core::sequencer::tickPeriodUsForTempo(60.0f);
+    auto snapshot = service.transportSnapshot();
+    assert(snapshot.usingExternalSource);
+    assert(snapshot.tickPeriodUs == configuredPeriod);
+
+    service.onClock(10'000U, 10U);
+    stepService(service, sync, status, 10U);
+    assert(service.transportSnapshot().tickPeriodUs == configuredPeriod);
+
+    service.onClock(30'000U, 30U);
+    stepService(service, sync, status, 30U);
+    snapshot = service.transportSnapshot();
+    assert(snapshot.tick == 2U);
+    assert(snapshot.usingExternalSource);
+    assert(snapshot.tickPeriodUs == 20'000U);
+
+    std::cout << "[PASS] transport snapshot uses measured slave period\n";
+}
+
+void test_transport_snapshot_switches_period_with_auto_source() {
+    core::state::MidiSyncState sync;
+    core::state::StatusBarState status;
+    MockMidiTransport transport;
+    oc::api::MidiAPI midi{transport};
+    core::sequencer::MidiClockSyncService service{midi};
+
+    sync.mode.set(core::state::MidiSyncMode::AUTO);
+    sync.autoLockClockCount.set(3U);
+    sync.autoFallbackMs.set(100U);
+    status.tempo.set(100.0f);
+    const uint32_t configuredPeriod =
+        core::sequencer::tickPeriodUsForTempo(100.0f);
+
+    stepService(service, sync, status, 0U);
+    auto snapshot = service.transportSnapshot();
+    assert(!snapshot.usingExternalSource);
+    assert(snapshot.tickPeriodUs == configuredPeriod);
+
+    service.onClock(10'000U, 10U);
+    service.onClock(30'000U, 30U);
+    service.onClock(50'000U, 50U);
+    stepService(service, sync, status, 50U);
+    snapshot = service.transportSnapshot();
+    assert(snapshot.usingExternalSource);
+    assert(snapshot.tickPeriodUs == 20'000U);
+
+    stepService(service, sync, status, 200U);
+    snapshot = service.transportSnapshot();
+    assert(!snapshot.usingExternalSource);
+    assert(snapshot.tickPeriodUs == configuredPeriod);
+
+    std::cout << "[PASS] transport snapshot switches period with AUTO source\n";
+}
+
 }  // namespace
 
 int main() {
@@ -559,6 +625,8 @@ int main() {
     test_external_source_updates_displayed_tempo_and_activity();
     test_external_tempo_precision_low_mid();
     test_external_tempo_tracks_fast_change();
+    test_transport_snapshot_uses_measured_slave_period();
+    test_transport_snapshot_switches_period_with_auto_source();
 
     std::cout << "\n==============================================\n";
     std::cout << "All tests passed\n";
