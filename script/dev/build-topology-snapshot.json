@@ -9,11 +9,11 @@
     "bitwigDevUsesLocalSymlinks": true,
     "bitwigReleaseImportsCoreOcSdk": true,
     "coreNativePins": {
-      "oc-framework": "43c574ac9c7b4a8b0bba9ae5992393c8bf03ab9f",
+      "oc-framework": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
       "oc-note": "3983c387f04954b22500a6c36d6e9444ef1139c7"
     },
     "coreReleasePins": {
-      "oc-framework": "43c574ac9c7b4a8b0bba9ae5992393c8bf03ab9f",
+      "oc-framework": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
       "oc-hal-common": "e3aa784055554922d130bba8065422d11a7dcd02",
       "oc-hal-teensy": "015ba6f91a23c1d7b6f58c2abfcea09ff83dcf4a",
       "oc-note": "3983c387f04954b22500a6c36d6e9444ef1139c7",
@@ -45,14 +45,14 @@
     "core/.github/release-tooling.json": "9ac98d99fdb0b5f83a249a3b2e50a5f92e75674e8bba6d38b0cc420a738003a7",
     "core/.github/workflows/candidate-host-tools.yml": "7224120588501e1f5ea62130550d3abc1ab657825489ca9b06e68d32e511ea8a",
     "core/.github/workflows/candidate.yml": "73d8662cfcb574dec18ed8ba9c851f2c9a6a0e5580face778bf495c45d333068",
-    "core/.github/workflows/ci.yml": "4b717ece41059295399c7eb9b48faf19a21ee3ccc55059c97e33171070431209",
+    "core/.github/workflows/ci.yml": "be5ab2b3b1db267925dc73dfb1525daf1059113b0b25ff752e92d2fd86e6889b",
     "core/CMakeLists.txt": "b323e3afd29a7c1c0ac80f3c5d3f9783e00afb4658c011abc4b2ae8cb5a4c59a",
     "core/cmake/MsCoreProductSources.cmake": "e0156488d08515ed749c9f229e431a191a200aa67946516481501e22f6fc2c6f",
     "core/cmake/MsCoreProjectFileTool.cmake": "3646bff81f12b9c8f3b4ef7283b53a46b86ea9a345ed217c87a2762a3a68f531",
     "core/cmake/MsCoreSources.cmake": "ebbbc095e92775086f950462ab162d67e2b5fb297b05bac8804f5bc411b51a83",
     "core/library.json": "54c23dc4b513a85b4528944fb2630e4f93f5d9c8561423341d8ca2b727d0b4b9",
-    "core/oc-native-sdk.ini": "b9bfc2231d165cc9a12d1fb1f5b9ee08f5f36693739b1df8702bb67aec0a7af2",
-    "core/oc-sdk.ini": "f7feee34cd6ee013139239ef440cb0e14d01754b2d0fff0455b5935f52659b00",
+    "core/oc-native-sdk.ini": "2f573afa1b04c370bc72f63aa23b437bd5e3bf37c6c5e901f5f98f95bbda5e6b",
+    "core/oc-sdk.ini": "67d8eae2512dc3b1c68c2d686066c99fa452b0ecb2f3dcb1c5246f3486e75507",
     "core/platformio.ini": "1b75d707c3862671a1b7d86509aaeb6c2850cca7aab552d92c3b433d7336098f",
     "core/script/dev/check-build-topology.py": "c9b98b57ee31846b0eca756a15da84fbef036f3fa0f9246f727b729533981f22",
     "core/sdl/CMakeLists.txt": "5a43409b71f67f2993dc61213e519f3d902e265c4eddae21bec9c22f30ba2bc6",
@@ -154,8 +154,8 @@
     },
     "framework": {
       "cleanExpected": true,
-      "commit": "43c574ac9c7b4a8b0bba9ae5992393c8bf03ab9f",
-      "tree": "cec11eabf1e71e6dc432d9d6981fe97c370ecb60"
+      "commit": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
+      "tree": "90ceb695e945420d17eb3a652370034f5ff53dd1"
     },
     "halCommon": {
       "cleanExpected": true,
@@ -2845,7 +2845,7 @@
         "MIDI_STUDIO_BITWIG_SHA": "6c0a4348a72a37f7253d1297540cac25624c7795",
         "MIDI_STUDIO_UI_SHA": "137e49f39c0ed1dd6391af300b764614d39658fb",
         "MS_DEV_ENV_SHA": "ec565d041d6b1e61c5bc5cd6d2b8cf8af5f8162f",
-        "OPEN_CONTROL_FRAMEWORK_SHA": "43c574ac9c7b4a8b0bba9ae5992393c8bf03ab9f",
+        "OPEN_CONTROL_FRAMEWORK_SHA": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
         "OPEN_CONTROL_HAL_COMMON_SHA": "e3aa784055554922d130bba8065422d11a7dcd02",
         "OPEN_CONTROL_HAL_MIDI_SHA": "d18a6cc2437d3ecd1b974d05be17be3e0e02aeac",
         "OPEN_CONTROL_HAL_NET_SHA": "2207e6befc4b18fad5e4db870ba5ca8aab13aa29",
