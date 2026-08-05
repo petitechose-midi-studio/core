@@ -136,12 +136,7 @@ const char* codeName(project_file::LoadCode code) {
 }
 
 std::filesystem::path pathFromUtf8(const std::string& text) {
-    std::u8string utf8;
-    utf8.reserve(text.size());
-    for (const unsigned char byte : text) {
-        utf8.push_back(static_cast<char8_t>(byte));
-    }
-    return std::filesystem::path(utf8);
+    return std::filesystem::u8path(text);
 }
 
 uint32_t inputSizeLimitForCommand(const std::string& command) {
