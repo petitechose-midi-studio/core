@@ -912,12 +912,11 @@ FLASHMEM bool FileSystemRpcEndpoint::prepareJobAdvance_(PendingFrame& frame, Job
 FLASHMEM void FileSystemRpcEndpoint::terminalizeJobResponse_(PendingFrame& frame,
                                                              bool responseValid,
                                                              size_t responseSize, uint32_t nowMs) {
-    JobRecord* record = jobRecordForFrame_(frame);
-    if (!record) return;
-    if ((record->flags & JOB_FLAG_DEADLINE_REACHED) != 0U) {
-        terminalizeJob_(frame, FileSystemJobState::FAILED, FileSystemJobError::DEADLINE_EXCEEDED,
-                        nowMs);
-    } else if (responseValid) {
+    // Reversible work is interrupted and terminalized before reaching this
+    // point. Once a durable boundary has been crossed, the canonical provider
+    // response is authoritative even if the interruption deadline was latched
+    // while recovery-safe work completed.
+    if (responseValid) {
         terminalizeJob_(frame, FileSystemJobState::COMPLETED, FileSystemJobError::NONE, nowMs,
                         response_, responseSize);
     } else {
@@ -960,8 +959,7 @@ FLASHMEM void FileSystemRpcEndpoint::terminalizeJob_(PendingFrame& frame, FileSy
     record->error = error;
     record->terminalAtMs = nowMs;
     record->responseSize = static_cast<uint8_t>(responseSize);
-    record->flags &= static_cast<uint8_t>(JOB_FLAG_OCCUPIED | JOB_FLAG_CANCEL_TOO_LATE |
-                                          JOB_FLAG_DEADLINE_REACHED);
+    record->flags &= static_cast<uint8_t>(JOB_FLAG_OCCUPIED | JOB_FLAG_CANCEL_TOO_LATE);
     if (responseSize != 0U) { std::memcpy(record->terminalResponse, response, responseSize); }
 }
 

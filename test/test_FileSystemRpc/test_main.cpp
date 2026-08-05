@@ -1379,7 +1379,7 @@ void test_endpoint_job_terminal_cache_has_exact_bounded_capacity() {
     std::cout << "[PASS] terminal cache retains exactly 32 records without eviction\n";
 }
 
-void test_endpoint_job_write_commit_reuses_upload_identity() {
+void test_endpoint_job_write_commit_retains_late_completion_and_identity() {
     using namespace core::protocol::filesystem;
     resetTestRoot();
     g_now_ms = 5'000U;
@@ -1422,6 +1422,7 @@ void test_endpoint_job_write_commit_reuses_upload_identity() {
     std::array<uint8_t, 96> commitInner{};
     const size_t commitInnerSize = FileSystemRpcCodec::encodeWriteCommitRequest(
         162U, sessionId, commitInner.data(), commitInner.size());
+    const uint32_t commitAdmittedAtMs = g_now_ms;
     const auto start = makeJobRequest(FileSystemJobCommand::START, 162U, 0x50000001U, 0U, 1'000U,
                                       commitInner.data(), commitInnerSize);
     transport.emit(start.data(), start.size());
@@ -1461,6 +1462,9 @@ void test_endpoint_job_write_commit_reuses_upload_identity() {
             assert((response.value().flags & FILESYSTEM_JOB_RPC_FLAG_CANCEL_TOO_LATE) != 0U);
             lateCancelObserved = true;
             sentAfterLateCancel = transport.sendCount;
+            // Cross the deadline only after the journal made the commit
+            // irreversible; the eventual canonical response must still win.
+            g_now_ms = commitAdmittedAtMs + 1'000U;
         }
     }
     assert(lateCancelObserved);
@@ -1473,6 +1477,7 @@ void test_endpoint_job_write_commit_reuses_upload_identity() {
     transport.emit(poll.data(), poll.size());
     response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
     assert(response && response.value().state == FileSystemJobState::COMPLETED);
+    assert(response.value().error == FileSystemJobError::NONE);
     write =
         FileSystemRpcCodec::decodeWriteResponse(response.value().body, response.value().bodySize);
     assert(write);
@@ -1488,10 +1493,10 @@ void test_endpoint_job_write_commit_reuses_upload_identity() {
     assert((response.value().flags & FILESYSTEM_JOB_RPC_FLAG_CANCEL_TOO_LATE) != 0U);
 
     endpoint.end();
-    std::cout << "[PASS] job commit reuses the sole upload coordinator identity\n";
+    std::cout << "[PASS] job commit retains late durable completion and upload identity\n";
 }
 
-void test_endpoint_job_conditional_journal_rejects_late_cancel() {
+void test_endpoint_job_conditional_journal_retains_late_completion() {
     using namespace core::protocol::filesystem;
     resetTestRoot();
     g_now_ms = 5'500U;
@@ -1597,11 +1602,16 @@ void test_endpoint_job_conditional_journal_rejects_late_cancel() {
     transport.emit(deadlinePoll.data(), deadlinePoll.size());
     response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
     assert(response);
-    assert(response.value().state == FileSystemJobState::FAILED);
-    assert(response.value().error == FileSystemJobError::DEADLINE_EXCEEDED);
+    assert(response.value().state == FileSystemJobState::COMPLETED);
+    assert(response.value().error == FileSystemJobError::NONE);
+    const auto deadlineMutation = FileSystemRpcCodec::decodeConditionalMutationResponse(
+        response.value().body, response.value().bodySize);
+    assert(deadlineMutation);
+    assert(deadlineMutation.value().status == FileSystemRpcStatus::OK);
+    assert(deadlineMutation.value().outcome == FileSystemRpcMutationOutcome::APPLIED);
 
     endpoint.end();
-    std::cout << "[PASS] conditional journal rejects late cancel/deadline safely\n";
+    std::cout << "[PASS] conditional journal retains late durable completion\n";
 }
 
 void test_endpoint_job_rename_and_conditional_delete_complete() {
@@ -1878,7 +1888,7 @@ void test_endpoint_job_recursive_delete_cancel_too_late_continues() {
     std::cout << "[PASS] hidden recursive delete rejects late cancel and continues\n";
 }
 
-void test_endpoint_job_deadline_after_hide_finishes_recovery_safe() {
+void test_endpoint_job_deadline_after_hide_retains_completion() {
     using namespace core::protocol::filesystem;
     resetTestRoot();
     constexpr uint32_t admittedAtMs = 7'000U;
@@ -1932,11 +1942,14 @@ void test_endpoint_job_deadline_after_hide_finishes_recovery_safe() {
     transport.emit(poll.data(), poll.size());
     response = FileSystemJobRpcCodec::decodeResponse(transport.sent, transport.sentSize);
     assert(response);
-    assert(response.value().state == FileSystemJobState::FAILED);
-    assert(response.value().error == FileSystemJobError::DEADLINE_EXCEEDED);
+    assert(response.value().state == FileSystemJobState::COMPLETED);
+    assert(response.value().error == FileSystemJobError::NONE);
+    const auto deleted =
+        FileSystemRpcCodec::decodeStatusResponse(response.value().body, response.value().bodySize);
+    assert(deleted && deleted.value().status == FileSystemRpcStatus::OK);
 
     endpoint.end();
-    std::cout << "[PASS] deadline after hide completes cleanup before failure\n";
+    std::cout << "[PASS] deadline after hide retains completed cleanup result\n";
 }
 
 void test_stat_and_read_roundtrip() {
@@ -4493,12 +4506,12 @@ int main() {
     test_endpoint_job_completion_is_polled_retained_and_not_unsolicited();
     test_endpoint_job_safe_cancel_deadline_and_media_are_typed();
     test_endpoint_job_terminal_cache_has_exact_bounded_capacity();
-    test_endpoint_job_write_commit_reuses_upload_identity();
-    test_endpoint_job_conditional_journal_rejects_late_cancel();
+    test_endpoint_job_write_commit_retains_late_completion_and_identity();
+    test_endpoint_job_conditional_journal_retains_late_completion();
     test_endpoint_job_rename_and_conditional_delete_complete();
     test_endpoint_job_safe_cancel_unwinds_reversible_conditional_plan();
     test_endpoint_job_recursive_delete_cancel_too_late_continues();
-    test_endpoint_job_deadline_after_hide_finishes_recovery_safe();
+    test_endpoint_job_deadline_after_hide_retains_completion();
     test_stat_and_read_roundtrip();
     test_capabilities_roundtrip();
     test_list_is_paginated_and_bounded();
