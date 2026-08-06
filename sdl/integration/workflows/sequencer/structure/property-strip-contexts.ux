@@ -2,17 +2,18 @@
 # Purpose: keeps Pattern quick controls intact, proves Step LEFT_CENTER owns
 # State/Chance/Note/Velocity/Gate/Nudge, and Step LEFT_BOTTOM exposes semantic
 # Chord/Micro/Cycle entry without an intermediate generic Step Editor.
+# Expect: capture_match:root_pattern_initial=pattern_quick_selector_closed
 # Expect: capture_changed:step_state_on=step_state_off, capture_changed:step_content_chord_selected=chord_editor_open, capture_changed:root_pattern_initial=pattern_after_step_edit
 
 0 scenario sequencer
-50 capture screen root_pattern_initial
+300 capture screen root_pattern_initial
 
 # Pattern keeps its direct quick controls on LEFT_CENTER and musical property
 # selector on LEFT_BOTTOM.
-150 button LEFT_CENTER down
-350 capture screen pattern_quick_selector_open
-400 button LEFT_CENTER up
-600 capture screen pattern_quick_selector_closed
+350 button LEFT_CENTER down
+550 capture screen pattern_quick_selector_open
+600 button LEFT_CENTER up
+650 capture screen pattern_quick_selector_closed
 700 button LEFT_BOTTOM down
 900 capture screen pattern_property_selector_open
 950 button LEFT_BOTTOM up

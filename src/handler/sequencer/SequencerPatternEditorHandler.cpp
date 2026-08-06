@@ -207,7 +207,11 @@ FLASHMEM void SequencerPatternEditorHandler::close() {
 FLASHMEM void SequencerPatternEditorHandler::update(uint32_t nowMs) {
     (void)nowMs;
     if (!sequencer_.patternEditor.active.get()) {
-        if (!commitPendingEdit()) return;
+        // An inactive retained editor owns no chronology barrier. Polling the
+        // global Sequencer history here used to commit unrelated coalesced
+        // encoder gestures every frame and reject foreign prepared families
+        // while they were still open.
+        if (edit_pending_ && !commitPendingEdit()) return;
         randomize_.cancel();
         if (overlays_.isCurrent(core::ui::OverlayType::SEQ_PATTERN_EDIT)) { overlays_.hide(); }
         return;
