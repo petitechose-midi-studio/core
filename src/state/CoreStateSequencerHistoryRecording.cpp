@@ -399,6 +399,8 @@ CoreState::beginOrContinueSequencerPatternHistoryCoalescing(
         if (pending.payloadPlan != payloadPlan) return Outcome::Blocked;
         if (!pending.sealed ||
             !pending.preparedPatternChange ||
+            !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
+                sequencer.pattern) ||
             !sequencer::preparedActiveTrackSynchronizationMatches(sequencerTracks,
                                                                   pending.synchronization)) {
             return Outcome::HistoryUnavailable;
@@ -661,6 +663,8 @@ FLASHMEM bool CoreState::sealSequencerPatternHistoryCoalescing(bool mutationChan
         pending.kind != SequencerDomainState::CoalescedPatternHistory::Kind::StepProperty ||
         pending.sealed || !pending.preparedPatternChange ||
         pending.activeTrack != sequencerTracks.activeTrackIndex() ||
+        !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
+            sequencer.pattern) ||
         !sequencer::preparedActiveTrackSynchronizationMatches(sequencerTracks,
                                                               pending.synchronization)) {
         return false;
@@ -1065,10 +1069,8 @@ CoreState::commitSequencerPatternHistoryCoalescing_() {
         pending.kind == SequencerDomainState::CoalescedPatternHistory::Kind::PreparedFamily;
     const bool activeTarget = targetTrack == sequencerTracks.activeTrackIndex();
     if (!pending.sealed || !pending.preparedPatternChange ||
-        (preparedFamily && !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
-                               targetTrack == sequencerTracks.activeTrackIndex()
-                                   ? sequencer.pattern
-                                   : sequencerTracks.track(targetTrack))) ||
+        !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
+            activeTarget ? sequencer.pattern : sequencerTracks.track(targetTrack)) ||
         !sequencer::preparedHistoryPatternAfterMatchesTrack(
             sequencerTracks, sequencer, targetTrack, pending.preparedPatternChange->after,
             pending.preparedPatternChange->storage) ||
