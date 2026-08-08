@@ -64,8 +64,12 @@ def require_file(path: Path, label: str) -> None:
 def workspace_repositories(workspace_root: Path) -> dict[str, Path]:
     root = workspace_root.resolve()
     repositories = {
-        "core": root / "midi-studio" / "core",
+        # The checker inventories the Core checkout that owns this script so it
+        # remains usable from an isolated Git worktree. The workspace root owns
+        # every external repository path.
+        "core": CORE_ROOT,
         "bitwig": root / "midi-studio" / "plugin-bitwig",
+        "deviceSupport": root / "midi-studio" / "device-support",
         "ui": root / "midi-studio" / "ui",
         "framework": root / "open-control" / "framework",
         "halCommon": root / "open-control" / "hal-common",
@@ -80,6 +84,7 @@ def workspace_repositories(workspace_root: Path) -> dict[str, Path]:
     sentinels = {
         "core": "platformio.ini",
         "bitwig": "platformio.ini",
+        "deviceSupport": "src/ms/device_support/v1/Version.hpp",
         "ui": "library.json",
         "framework": "src/oc/Config.hpp",
         "halCommon": "library.json",
@@ -95,10 +100,6 @@ def workspace_repositories(workspace_root: Path) -> dict[str, Path]:
         require_file(repo / sentinels[name], f"{name} sentinel")
         if not (repo / ".git").exists():
             raise InventoryError(f"{name} is not a Git worktree: {repo}")
-    if repositories["core"].resolve() != CORE_ROOT.resolve():
-        raise InventoryError(
-            "--workspace-root resolves a different Core checkout than this checker"
-        )
     return repositories
 
 
@@ -239,7 +240,7 @@ def cmake_owned_source_paths(
             f"expected one {variable} declaration in {relative_file}"
         )
     paths = re.findall(
-        r"(?m)^\s+((?:device-support/)?src/[^\s\)]+\.(?:c|cc|cpp))\s*$",
+        r"(?m)^\s+(src/[^\s\)]+\.(?:c|cc|cpp))\s*$",
         bodies[0],
     )
     if not paths:
@@ -336,9 +337,21 @@ def pio_optional_values(
 
 
 def pio_dependency_names(values: Sequence[str]) -> list[str]:
-    return sorted(
-        {value.split("=", 1)[0].strip() for value in values if value.strip()}
-    )
+    names: set[str] = set()
+    for raw_value in values:
+        value = raw_value.strip()
+        if not value:
+            continue
+        if "=" in value:
+            names.add(value.split("=", 1)[0].strip())
+            continue
+        if value.startswith("${"):
+            names.add(value)
+            continue
+        source = value.split("#", 1)[0].rstrip("/")
+        name = PurePosixPath(source.replace("\\", "/")).name
+        names.add(name.removesuffix(".git"))
+    return sorted(names)
 
 
 def pio_first(
@@ -666,6 +679,8 @@ def input_hashes(repositories: dict[str, Path]) -> dict[str, str]:
         "core/.github/workflows/candidate.yml": repositories["core"] / ".github" / "workflows" / "candidate.yml",
         "core/.github/workflows/candidate-host-tools.yml": repositories["core"] / ".github" / "workflows" / "candidate-host-tools.yml",
         "core/script/dev/check-build-topology.py": Path(__file__).resolve(),
+        "deviceSupport/library.json": repositories["deviceSupport"] / "library.json",
+        "deviceSupport/platformio.ini": repositories["deviceSupport"] / "platformio.ini",
         "bitwig/CMakeLists.txt": repositories["bitwig"] / "CMakeLists.txt",
         "bitwig/cmake/MidiStudioBitwigSources.cmake": repositories["bitwig"] / "cmake" / "MidiStudioBitwigSources.cmake",
         "bitwig/platformio.ini": repositories["bitwig"] / "platformio.ini",
@@ -701,10 +716,10 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
     core_c_sources = filtered_paths(tracked["core"], "src", C_SOURCE_SUFFIXES)
     core_headers = filtered_paths(tracked["core"], "src", HEADER_SUFFIXES)
     device_support_sources = filtered_paths(
-        tracked["core"], "device-support/src", IMPLEMENTATION_SUFFIXES
+        tracked["deviceSupport"], "src", IMPLEMENTATION_SUFFIXES
     )
     device_support_headers = filtered_paths(
-        tracked["core"], "device-support/src", HEADER_SUFFIXES
+        tracked["deviceSupport"], "src", HEADER_SUFFIXES
     )
     bitwig_sources = filtered_paths(
         tracked["bitwig"], "src", IMPLEMENTATION_SUFFIXES
@@ -716,11 +731,10 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
     declared_core_sources = cmake_owned_source_paths(
         core, "cmake/MsCoreProductSources.cmake", "MS_CORE_PRODUCT_SOURCE_PATHS"
     )
-    expected_core_product_sources = sorted(core_sources + device_support_sources)
+    expected_core_product_sources = sorted(core_sources)
     if declared_core_sources != expected_core_product_sources:
         raise InventoryError(
-            "Core owned product source list differs from tracked "
-            "Core/device-support implementations"
+            "Core owned product source list differs from tracked Core implementations"
         )
     declared_bitwig_sources = cmake_owned_source_paths(
         bitwig,
@@ -744,8 +758,14 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
         path
         for path in declared_core_sources
         if "/platform-teensy/" not in f"/{path}/"
-        and "/device-support/" not in f"/{path}/"
         and PurePosixPath(path).name not in ("main.cpp", "name.c")
+    )
+
+    core_dev_dependencies = pio_dependency_names(
+        pio_values(core_pio, "env:dev", "lib_deps")
+    )
+    core_release_dependencies = pio_dependency_names(
+        pio_values(core_pio, "env:release", "lib_deps")
     )
 
     bitwig_ignored = set(pio_optional_values(bitwig_pio, "env", "lib_ignore"))
@@ -892,6 +912,7 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
         "OPEN_CONTROL_HAL_MIDI_DIR",
         "OPEN_CONTROL_NOTE_DIR",
         "MIDI_STUDIO_UI_DIR",
+        "MS_DEVICE_SUPPORT_DIR",
         "LVGL_DIR",
     )
     explicit_sdl_roots = all(
@@ -999,6 +1020,8 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
         "dependencies": {
             "coreReleasePins": pin_map(core_oc_sdk),
             "coreNativePins": pin_map(core_native_sdk),
+            "coreDevLibraries": core_dev_dependencies,
+            "coreReleaseLibraries": core_release_dependencies,
             "bitwigReleaseImportsCoreOcSdk": "${oc_sdk_deps.lib_deps}" in bitwig_pio_text,
             "bitwigDevUsesLocalSymlinks": "symlink://" in "\n".join(pio_values(bitwig_pio, "env:dev", "lib_deps")),
             "bitwigDevLibraries": bitwig_dev_dependencies,
@@ -1058,7 +1081,7 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
             "appExtraIncludesDeclarations": app_extra_include_declarations,
             "appExtraIncludesTargetUses": app_extra_include_target_uses,
             "appExtraSourcesAppendUses": app_extra_source_append_uses,
-            "bitwigDeviceSupportIncludeRootExposed": "device-support/src" in sdl_cmake_text,
+            "bitwigDeviceSupportIncludeRootExposed": "${MS_DEVICE_SUPPORT_DIR}/src" in sdl_cmake_text,
             "emsdk": {
                 "version": shell_scalar(sdl_build_text, "EMSDK_VERSION"),
                 "revision": shell_scalar(sdl_build_text, "EMSDK_REVISION"),
@@ -1158,10 +1181,10 @@ build_flags =
     assert pio_dependency_names(
         [
             "ms-ui=symlink://../ui",
-            "ms-device-support=symlink://../core/device-support",
+            "symlink://../device-support",
             "${oc_sdk_deps.lib_deps}",
         ]
-    ) == ["${oc_sdk_deps.lib_deps}", "ms-device-support", "ms-ui"]
+    ) == ["${oc_sdk_deps.lib_deps}", "device-support", "ms-ui"]
 
     cmake = 'set(TEST_VALUES "${ROOT}/a.cpp" "${ROOT}/b.cpp")\nlist(APPEND TEST_VALUES "${ROOT}/c.cpp")'
     set_bodies = extract_cmake_command_bodies(cmake, "set", "TEST_VALUES")

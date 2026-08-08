@@ -16,7 +16,9 @@ set(MS_CORE_OPEN_CONTROL_ROOT
 set(MS_CORE_OC_FRAMEWORK_DIR "${MS_CORE_OPEN_CONTROL_ROOT}/framework")
 set(MS_CORE_OC_NOTE_DIR "${MS_CORE_OPEN_CONTROL_ROOT}/note")
 set(MS_CORE_OC_HAL_COMMON_DIR "${MS_CORE_OPEN_CONTROL_ROOT}/hal-common")
-set(MS_DEVICE_SUPPORT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/device-support")
+set(MS_DEVICE_SUPPORT_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../device-support"
+    CACHE PATH "Path to the MIDI Studio device-support checkout")
 
 set(MS_CORE_NOTIFICATION_QUEUE_CAPACITY 96)
 
@@ -26,6 +28,10 @@ endif()
 
 if(NOT EXISTS "${MS_CORE_OC_NOTE_DIR}/src/oc/note/clock/ClockConstants.hpp")
     message(FATAL_ERROR "open-control note not found at ${MS_CORE_OC_NOTE_DIR}")
+endif()
+
+if(NOT EXISTS "${MS_DEVICE_SUPPORT_DIR}/src/ms/device_support/v1/Version.hpp")
+    message(FATAL_ERROR "MIDI Studio device-support not found at ${MS_DEVICE_SUPPORT_DIR}")
 endif()
 
 if(NOT TARGET oc_framework_native)

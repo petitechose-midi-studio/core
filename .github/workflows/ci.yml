@@ -16,8 +16,9 @@ concurrency:
 env:
   PLATFORMIO_VERSION: "6.1.18"
   MS_DEV_ENV_REPOSITORY: petitechose-midi-studio/ms-dev-env
-  MS_DEV_ENV_SHA: 964923fe4e26766b8e8398fa027dafebe61a9052
-  MIDI_STUDIO_BITWIG_SHA: a04a4c888d6064dcd7e805a9148fa64f3b11b795
+  MS_DEV_ENV_SHA: 35f0fb397eded334328ff7c2a43bf673ac02e2f8
+  MIDI_STUDIO_BITWIG_SHA: 2c127b3db8cc2fd38cac72d42ed266ff169c8a76
+  MIDI_STUDIO_DEVICE_SUPPORT_SHA: c9f18d9a3762d4fbf80425dea12f801196a51c4a
   OPEN_CONTROL_FRAMEWORK_SHA: f6be8f51ff80f5f5f82ec7c589a984730445f9b4
   OPEN_CONTROL_NOTE_SHA: 3983c387f04954b22500a6c36d6e9444ef1139c7
 
@@ -191,6 +192,14 @@ jobs:
           path: workspace/midi-studio/core
           persist-credentials: false
 
+      - name: Checkout device support
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/device-support
+          ref: ${{ env.MIDI_STUDIO_DEVICE_SUPPORT_SHA }}
+          path: workspace/midi-studio/device-support
+          persist-credentials: false
+
       - name: Build topology
         working-directory: workspace/midi-studio/core
         run: python script/dev/check-build-topology.py --workspace-root "${{ github.workspace }}/workspace" --check
@@ -232,6 +241,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: workspace/midi-studio/core
+          persist-credentials: false
+
+      - name: Checkout device support
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/device-support
+          ref: ${{ env.MIDI_STUDIO_DEVICE_SUPPORT_SHA }}
+          path: workspace/midi-studio/device-support
           persist-credentials: false
 
       - name: Checkout framework
@@ -337,6 +354,7 @@ jobs:
             -DOPEN_CONTROL_HAL_MIDI_DIR="${GITHUB_WORKSPACE}/workspace/open-control/hal-midi" \
             -DOPEN_CONTROL_NOTE_DIR="${GITHUB_WORKSPACE}/workspace/open-control/note" \
             -DMIDI_STUDIO_UI_DIR="${GITHUB_WORKSPACE}/workspace/midi-studio/ui" \
+            -DMS_DEVICE_SUPPORT_DIR="${GITHUB_WORKSPACE}/workspace/midi-studio/device-support" \
             -DLVGL_DIR="${GITHUB_WORKSPACE}/workspace/deps/lvgl"
           cmake --build workspace/.build/core-sdl-native --parallel
           test -x workspace/bin/core/native/midi_studio_core
@@ -350,6 +368,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: workspace/midi-studio/core
+          persist-credentials: false
+
+      - name: Checkout device support
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/device-support
+          ref: ${{ env.MIDI_STUDIO_DEVICE_SUPPORT_SHA }}
+          path: workspace/midi-studio/device-support
           persist-credentials: false
 
       - name: Checkout framework
@@ -459,6 +485,7 @@ jobs:
             -DOPEN_CONTROL_HAL_MIDI_DIR="${GITHUB_WORKSPACE}/workspace/open-control/hal-midi" \
             -DOPEN_CONTROL_NOTE_DIR="${GITHUB_WORKSPACE}/workspace/open-control/note" \
             -DMIDI_STUDIO_UI_DIR="${GITHUB_WORKSPACE}/workspace/midi-studio/ui" \
+            -DMS_DEVICE_SUPPORT_DIR="${GITHUB_WORKSPACE}/workspace/midi-studio/device-support" \
             -DLVGL_DIR="${GITHUB_WORKSPACE}/workspace/deps/lvgl"
           cmake --build workspace/.build/core-sdl-wasm --parallel
           test -s workspace/bin/core/wasm/midi_studio_core.html

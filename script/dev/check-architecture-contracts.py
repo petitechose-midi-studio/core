@@ -2,6 +2,7 @@
 
 import argparse
 import functools
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -10,6 +11,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ROOT = ROOT / "src"
+DEVICE_SUPPORT_ROOT = Path(
+    os.environ.get("MS_DEVICE_SUPPORT_DIR", ROOT.parent / "device-support")
+).resolve()
 PLATFORMIO = ROOT / "platformio.ini"
 PRODUCT_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_product.ld"
 UX_LINKER = ROOT / "script" / "pio" / "imxrt1062_t41_ux_recorder.ld"
@@ -5363,8 +5367,7 @@ def main(show_inventory: bool = False) -> int:
             )
 
     device_input_config = (
-        ROOT
-        / "device-support"
+        DEVICE_SUPPORT_ROOT
         / "src"
         / "ms"
         / "device_support"

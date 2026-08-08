@@ -7,7 +7,7 @@
   },
   "dependencies": {
     "bitwigDevLibraries": [
-      "ms-device-support",
+      "device-support",
       "ms-ui",
       "oc-framework",
       "oc-hal-common",
@@ -22,13 +22,28 @@
     "bitwigReleaseImportsCoreOcSdk": true,
     "bitwigReleaseLibraries": [
       "${oc_sdk_deps.lib_deps}",
-      "ms-device-support",
+      "device-support",
       "ms-ui"
+    ],
+    "coreDevLibraries": [
+      "device-support",
+      "ms-ui",
+      "oc-framework",
+      "oc-hal-common",
+      "oc-hal-teensy",
+      "oc-note",
+      "oc-ui-lvgl",
+      "oc-ui-lvgl-components"
     ],
     "coreNativePins": {
       "oc-framework": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
       "oc-note": "3983c387f04954b22500a6c36d6e9444ef1139c7"
     },
+    "coreReleaseLibraries": [
+      "${oc_sdk_deps.lib_deps}",
+      "device-support",
+      "ms-ui"
+    ],
     "coreReleasePins": {
       "oc-framework": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
       "oc-hal-common": "e3aa784055554922d130bba8065422d11a7dcd02",
@@ -52,30 +67,32 @@
     "teensyImplementations": 381
   },
   "inputSha256": {
-    "bitwig/.github/release-tooling.json": "f2c0e0d84b67754ce8b727968d129f3c6325e3f5b4424b2ac7ed1581d33ebcb1",
-    "bitwig/.github/workflows/candidate-firmware.yml": "1afc1aabd83159b1b4cfc839b28126aec90a9982a450a3814ea34490f8c9b5eb",
+    "bitwig/.github/release-tooling.json": "af598e493bb64edde1362fcd74f4db564fc6dc5be9a2ea85f143daa643999fe0",
+    "bitwig/.github/workflows/candidate-firmware.yml": "ca3cc93317ea5994ad3f86e25eac351135ac1c5c81b49039d1e225fd2c99b622",
     "bitwig/.github/workflows/ci.yml": "6bda6ceb5b977546a9165e437be72524a97be608312a0a506f3cffb1916dc0b5",
     "bitwig/CMakeLists.txt": "2a6e5998a2bced40d5d3cef5f1ce2239f44bfedf1429850ce7d9f7f1aed14920",
     "bitwig/cmake/MidiStudioBitwigSources.cmake": "3cf5ed1ec09e37f0204445721244a4056db25b20b1a85082128b1677d893b174",
-    "bitwig/platformio.ini": "695869056f9939b8c10893f81abe8a1d859e15786945e3d22a46972a24798165",
+    "bitwig/platformio.ini": "8675c10548e6f4e51b6fd97bdb85b00eba2ff6589f2ba9e535b3cf75625ae221",
     "bitwig/sdl/app.cmake": "1fb132597404331082690c7f7af6cd71f3f878262f77e2183ad6c1aa851676a8",
-    "core/.github/release-tooling.json": "9ac98d99fdb0b5f83a249a3b2e50a5f92e75674e8bba6d38b0cc420a738003a7",
-    "core/.github/workflows/candidate-host-tools.yml": "7224120588501e1f5ea62130550d3abc1ab657825489ca9b06e68d32e511ea8a",
-    "core/.github/workflows/candidate.yml": "73d8662cfcb574dec18ed8ba9c851f2c9a6a0e5580face778bf495c45d333068",
-    "core/.github/workflows/ci.yml": "0f16da40a5d10a5d23ca4375f440728e04d6bcfa24f5bf3cfdaf96cd7bbc993f",
-    "core/CMakeLists.txt": "e0f8809c71423aa16fc40cb6131f80e44c432be4fe872e3190eadace3981f795",
-    "core/cmake/MsCoreProductSources.cmake": "e05bcc80e3bfd71b342e00fb7fb3adb14c57f540fd873eb55ff3292b545992b1",
+    "core/.github/release-tooling.json": "af598e493bb64edde1362fcd74f4db564fc6dc5be9a2ea85f143daa643999fe0",
+    "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
+    "core/.github/workflows/candidate.yml": "d1a68d0ae1c562b231904c3ab5f392f982a0fca04ec24d11305ddfc9a1ce41fc",
+    "core/.github/workflows/ci.yml": "03e2d23323a276d08e7362fe40d57dfc5e41667d6500ca9944491afde37032f9",
+    "core/CMakeLists.txt": "4516b9f6834c6ae75e84a2083d913158ec83f17dde2998e5a54df9062728e7b8",
+    "core/cmake/MsCoreProductSources.cmake": "553eb12883364bfaa5776e4e91838efac5909940a732175c28d7b434bfc149fa",
     "core/cmake/MsCoreProjectFileTool.cmake": "c54fcccc2d26351a69c2f85aaf7c2378e6418ba03713e70c02f826a546c1159f",
     "core/cmake/MsCoreSources.cmake": "ebbbc095e92775086f950462ab162d67e2b5fb297b05bac8804f5bc411b51a83",
-    "core/library.json": "1322cf2a56c0e28ae2e06373790f5cbfcd44bf1644de6e9dba2ca28506ef3991",
+    "core/library.json": "efacc17920e3ecd47bdcfe0954b36b3b0a8e945f2167ccefb2cfb0a492c63203",
     "core/oc-native-sdk.ini": "2f573afa1b04c370bc72f63aa23b437bd5e3bf37c6c5e901f5f98f95bbda5e6b",
     "core/oc-sdk.ini": "62d663b940eb7c4171269baef14fa2a0d8908596edcd00e729ea495c86ca284c",
-    "core/platformio.ini": "60e9abbbc4aae25e2a1da8077606d72250827e7ee3cbcc7ee064ba78c0775cdc",
-    "core/script/dev/check-build-topology.py": "9d710048065b529f198bb0346f14ba93918f54da48f17611b5e433d63a620c48",
-    "core/sdl/CMakeLists.txt": "5a43409b71f67f2993dc61213e519f3d902e265c4eddae21bec9c22f30ba2bc6",
-    "core/sdl/app.cmake": "de6d91a91ccc846c9ad0e24b97e3490d028d621ab5618637a26309b0c9c0c5be",
+    "core/platformio.ini": "43cd1031fb678cc7c79ee24bb38b226baadce3f16a5af8cc448227ef8c12570c",
+    "core/script/dev/check-build-topology.py": "9c47fd777849acc2d9c78fd0a6879253b7ddf693bec4d012d1e764d379b27a99",
+    "core/sdl/CMakeLists.txt": "23543ef2ebb62d84377e5e8ee89ffe01e08aad49bec7e5f28346e2d6ffacef12",
+    "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
     "core/sdl/build.sh": "0f484e1330c7836e11da47e167d0c62ec2af152b695f69011a915daf6f174b91",
     "core/sdl/cmake/libremidi.cmake": "728bebe77a438d805e09e9e633c2b30073b218d9b3f8560c83d7f79f96b541eb",
+    "deviceSupport/library.json": "13a6d12ead206723952bf3dd62148512fbb790c7a3a7786d413c6415da83ba41",
+    "deviceSupport/platformio.ini": "da61c9aee265fac63b873d20ad918c035f0c2609e976e2f9720247751589ee4e",
     "note/cmake/OpenControlNoteSources.cmake": "4d8928c67b1cd2814716ccb1998db1fb708d64968fa39aa6fda2f5fdf7ce830c",
     "ui/CMakeLists.txt": "381a454aee7465a850b4cbe63110925d7c44bad738f4345ec65148c7d212f9d9",
     "ui/cmake/MidiStudioUiSources.cmake": "551d0f351729389cf64ba35d2f3f3f904a66d68c7e36adb1db76aec5ff8d1707",
@@ -162,12 +179,17 @@
   "repositories": {
     "bitwig": {
       "cleanExpected": true,
-      "commit": "a04a4c888d6064dcd7e805a9148fa64f3b11b795",
-      "tree": "8f9309142201b2bd99a4c85e65a0cf01d83665e2"
+      "commit": "2c127b3db8cc2fd38cac72d42ed266ff169c8a76",
+      "tree": "d996e3b27fd43789464e1146f89f092177da69ce"
     },
     "core": {
       "cleanExpected": true,
       "identityPolicy": "tracked-input-and-source-set-content"
+    },
+    "deviceSupport": {
+      "cleanExpected": true,
+      "commit": "c9f18d9a3762d4fbf80425dea12f801196a51c4a",
+      "tree": "c13599158fa4e83a694f72b68072504b7375158c"
     },
     "framework": {
       "cleanExpected": true,
@@ -253,9 +275,9 @@
     "bitwigDeviceSupportImplementations": {
       "count": 1,
       "paths": [
-        "device-support/src/ms/device_support/v1/LvglMemory.cpp"
+        "src/ms/device_support/v1/LvglMemory.cpp"
       ],
-      "sha256": "c82e0e49bba5203ec63401d55708b8c7ed1c459eddeb206fc855c42446aeb5fe"
+      "sha256": "9bccbd2affc64da51c7b839d5d1874980f2c85c3a9130d51709e6ae363b568c7"
     },
     "bitwigImplementations": {
       "count": 39,
@@ -1040,9 +1062,8 @@
       "sha256": "aff71ea2d725cfb311f8552fe12cdb145bf94befbaf18da5ff549b7829511609"
     },
     "coreTeensyImplementations": {
-      "count": 403,
+      "count": 402,
       "paths": [
-        "device-support/src/ms/device_support/v1/LvglMemory.cpp",
         "src/context/StandaloneContext.cpp",
         "src/context/standalone/DeviceSettingsSelectorPresenter.cpp",
         "src/context/standalone/MacroFeatureModule.cpp",
@@ -1446,7 +1467,7 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "dd473bb76f840e78541efdf94205b0c710ee1f90a00a0d926da2a88a20d7a9e5"
+      "sha256": "27718a477395ad10e788b9b5814338a7845bf1c8f6836beadc47aee3de254a7d"
     },
     "coreTotalHeaders": {
       "count": 443,
@@ -2309,25 +2330,25 @@
     "deviceSupportHeaders": {
       "count": 10,
       "paths": [
-        "device-support/src/lv_conf.h",
-        "device-support/src/ms/device_support/v1/Buffers.hpp",
-        "device-support/src/ms/device_support/v1/ControlLayout.hpp",
-        "device-support/src/ms/device_support/v1/Display.hpp",
-        "device-support/src/ms/device_support/v1/Hardware.hpp",
-        "device-support/src/ms/device_support/v1/InputConfig.hpp",
-        "device-support/src/ms/device_support/v1/InputIds.hpp",
-        "device-support/src/ms/device_support/v1/LvglMemory.hpp",
-        "device-support/src/ms/device_support/v1/Timing.hpp",
-        "device-support/src/ms/device_support/v1/Version.hpp"
+        "src/lv_conf.h",
+        "src/ms/device_support/v1/Buffers.hpp",
+        "src/ms/device_support/v1/ControlLayout.hpp",
+        "src/ms/device_support/v1/Display.hpp",
+        "src/ms/device_support/v1/Hardware.hpp",
+        "src/ms/device_support/v1/InputConfig.hpp",
+        "src/ms/device_support/v1/InputIds.hpp",
+        "src/ms/device_support/v1/LvglMemory.hpp",
+        "src/ms/device_support/v1/Timing.hpp",
+        "src/ms/device_support/v1/Version.hpp"
       ],
-      "sha256": "9c71f214651b639eecd0983ffa7e92c520b59676241bb37e0c01f65cd606f04c"
+      "sha256": "9cd530f6a65ce5c92e6411ce620d2474fc12820b62cbb99e88f392fc495494c9"
     },
     "deviceSupportImplementations": {
       "count": 1,
       "paths": [
-        "device-support/src/ms/device_support/v1/LvglMemory.cpp"
+        "src/ms/device_support/v1/LvglMemory.cpp"
       ],
-      "sha256": "c82e0e49bba5203ec63401d55708b8c7ed1c459eddeb206fc855c42446aeb5fe"
+      "sha256": "9bccbd2affc64da51c7b839d5d1874980f2c85c3a9130d51709e6ae363b568c7"
     },
     "uiCSources": {
       "count": 0,
@@ -2830,7 +2851,7 @@
       "releaseTooling": {
         "ref": "main",
         "repo": "petitechose-midi-studio/ms-dev-env",
-        "sha": "745452dd13111c83ca57191c0b16df7a47634d4d"
+        "sha": "35f0fb397eded334328ff7c2a43bf673ac02e2f8"
       }
     },
     "cmakeMinimum": {
@@ -2844,16 +2865,17 @@
       "releaseTooling": {
         "ref": "main",
         "repo": "petitechose-midi-studio/ms-dev-env",
-        "sha": "6a434b56c564dfded5184be2dd23762226d1a387"
+        "sha": "35f0fb397eded334328ff7c2a43bf673ac02e2f8"
       }
     },
     "coreCi": {
       "declaredRepositoryPins": {
         "EMSDK_SHA": "c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56",
         "LVGL_SHA": "85aa60d18b3d5e5588d7b247abf90198f07c8a63",
-        "MIDI_STUDIO_BITWIG_SHA": "a04a4c888d6064dcd7e805a9148fa64f3b11b795",
+        "MIDI_STUDIO_BITWIG_SHA": "2c127b3db8cc2fd38cac72d42ed266ff169c8a76",
+        "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "c9f18d9a3762d4fbf80425dea12f801196a51c4a",
         "MIDI_STUDIO_UI_SHA": "137e49f39c0ed1dd6391af300b764614d39658fb",
-        "MS_DEV_ENV_SHA": "964923fe4e26766b8e8398fa027dafebe61a9052",
+        "MS_DEV_ENV_SHA": "35f0fb397eded334328ff7c2a43bf673ac02e2f8",
         "OPEN_CONTROL_FRAMEWORK_SHA": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
         "OPEN_CONTROL_HAL_COMMON_SHA": "e3aa784055554922d130bba8065422d11a7dcd02",
         "OPEN_CONTROL_HAL_MIDI_SHA": "d18a6cc2437d3ecd1b974d05be17be3e0e02aeac",
@@ -2866,7 +2888,7 @@
       },
       "emsdkVersion": "4.0.23",
       "finalWasmLink": true,
-      "msDevEnv": "964923fe4e26766b8e8398fa027dafebe61a9052",
+      "msDevEnv": "35f0fb397eded334328ff7c2a43bf673ac02e2f8",
       "platformio": "6.1.18"
     }
   }
