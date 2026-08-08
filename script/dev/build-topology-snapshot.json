@@ -63,17 +63,17 @@
     "core/.github/workflows/candidate-host-tools.yml": "7224120588501e1f5ea62130550d3abc1ab657825489ca9b06e68d32e511ea8a",
     "core/.github/workflows/candidate.yml": "73d8662cfcb574dec18ed8ba9c851f2c9a6a0e5580face778bf495c45d333068",
     "core/.github/workflows/ci.yml": "0f16da40a5d10a5d23ca4375f440728e04d6bcfa24f5bf3cfdaf96cd7bbc993f",
-    "core/CMakeLists.txt": "b323e3afd29a7c1c0ac80f3c5d3f9783e00afb4658c011abc4b2ae8cb5a4c59a",
-    "core/cmake/MsCoreProductSources.cmake": "e0156488d08515ed749c9f229e431a191a200aa67946516481501e22f6fc2c6f",
-    "core/cmake/MsCoreProjectFileTool.cmake": "3646bff81f12b9c8f3b4ef7283b53a46b86ea9a345ed217c87a2762a3a68f531",
+    "core/CMakeLists.txt": "e0f8809c71423aa16fc40cb6131f80e44c432be4fe872e3190eadace3981f795",
+    "core/cmake/MsCoreProductSources.cmake": "e05bcc80e3bfd71b342e00fb7fb3adb14c57f540fd873eb55ff3292b545992b1",
+    "core/cmake/MsCoreProjectFileTool.cmake": "c54fcccc2d26351a69c2f85aaf7c2378e6418ba03713e70c02f826a546c1159f",
     "core/cmake/MsCoreSources.cmake": "ebbbc095e92775086f950462ab162d67e2b5fb297b05bac8804f5bc411b51a83",
-    "core/library.json": "54c23dc4b513a85b4528944fb2630e4f93f5d9c8561423341d8ca2b727d0b4b9",
+    "core/library.json": "1322cf2a56c0e28ae2e06373790f5cbfcd44bf1644de6e9dba2ca28506ef3991",
     "core/oc-native-sdk.ini": "2f573afa1b04c370bc72f63aa23b437bd5e3bf37c6c5e901f5f98f95bbda5e6b",
     "core/oc-sdk.ini": "62d663b940eb7c4171269baef14fa2a0d8908596edcd00e729ea495c86ca284c",
-    "core/platformio.ini": "1b75d707c3862671a1b7d86509aaeb6c2850cca7aab552d92c3b433d7336098f",
-    "core/script/dev/check-build-topology.py": "59edaa472463071b193da8a81f89fa8b74ca827f572a4177a376b53ee6194629",
+    "core/platformio.ini": "60e9abbbc4aae25e2a1da8077606d72250827e7ee3cbcc7ee064ba78c0775cdc",
+    "core/script/dev/check-build-topology.py": "9d710048065b529f198bb0346f14ba93918f54da48f17611b5e433d63a620c48",
     "core/sdl/CMakeLists.txt": "5a43409b71f67f2993dc61213e519f3d902e265c4eddae21bec9c22f30ba2bc6",
-    "core/sdl/app.cmake": "c8e4660621c7bfad3d487a5ac6427a92d999de18a3ce97d9f0fcffe2f3705f73",
+    "core/sdl/app.cmake": "de6d91a91ccc846c9ad0e24b97e3490d028d621ab5618637a26309b0c9c0c5be",
     "core/sdl/build.sh": "0f484e1330c7836e11da47e167d0c62ec2af152b695f69011a915daf6f174b91",
     "core/sdl/cmake/libremidi.cmake": "728bebe77a438d805e09e9e633c2b30073b218d9b3f8560c83d7f79f96b541eb",
     "note/cmake/OpenControlNoteSources.cmake": "4d8928c67b1cd2814716ccb1998db1fb708d64968fa39aa6fda2f5fdf7ce830c",
@@ -1042,7 +1042,7 @@
     "coreTeensyImplementations": {
       "count": 403,
       "paths": [
-        "src/config/platform-teensy/LvglMemory.cpp",
+        "device-support/src/ms/device_support/v1/LvglMemory.cpp",
         "src/context/StandaloneContext.cpp",
         "src/context/standalone/DeviceSettingsSelectorPresenter.cpp",
         "src/context/standalone/MacroFeatureModule.cpp",
@@ -1446,10 +1446,10 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "dd062f9b600651a934a0567b86baa721214e6f2c3ec3f9ec034ca563e6fbb17e"
+      "sha256": "dd473bb76f840e78541efdf94205b0c710ee1f90a00a0d926da2a88a20d7a9e5"
     },
     "coreTotalHeaders": {
-      "count": 448,
+      "count": 443,
       "paths": [
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
@@ -1461,11 +1461,6 @@
         "src/config/TimeCompat.hpp",
         "src/config/Timing.hpp",
         "src/config/Version.hpp",
-        "src/config/platform-teensy/Buffer.hpp",
-        "src/config/platform-teensy/Hardware.hpp",
-        "src/config/platform-teensy/HardwareDisplay.hpp",
-        "src/config/platform-teensy/LvglMemory.hpp",
-        "src/config/platform-teensy/lv_conf.h",
         "src/context/StandaloneContext.hpp",
         "src/context/standalone/ActiveViewLifecyclePlan.hpp",
         "src/context/standalone/DeviceSettingsSelectorPresenter.hpp",
@@ -1900,12 +1895,11 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "304d48f1aa4a7b4380976b2541719069eaac01995d2e5cdedadcf1c45002dfb3"
+      "sha256": "2eac0ed455af72f59812d433deef508251b77a90451699748fe0af3059f0e80e"
     },
     "coreTotalImplementations": {
-      "count": 404,
+      "count": 403,
       "paths": [
-        "src/config/platform-teensy/LvglMemory.cpp",
         "src/context/StandaloneContext.cpp",
         "src/context/standalone/DeviceSettingsSelectorPresenter.cpp",
         "src/context/standalone/MacroFeatureModule.cpp",
@@ -2310,13 +2304,14 @@
         "src/validation/ux/SemanticUxSurface.cpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.cpp"
       ],
-      "sha256": "e3d2aae5eece1c0f81667949bfe1659f0bc24563ac4f57bc99adb58d3bf28e29"
+      "sha256": "aff71ea2d725cfb311f8552fe12cdb145bf94befbaf18da5ff549b7829511609"
     },
     "deviceSupportHeaders": {
-      "count": 9,
+      "count": 10,
       "paths": [
         "device-support/src/lv_conf.h",
         "device-support/src/ms/device_support/v1/Buffers.hpp",
+        "device-support/src/ms/device_support/v1/ControlLayout.hpp",
         "device-support/src/ms/device_support/v1/Display.hpp",
         "device-support/src/ms/device_support/v1/Hardware.hpp",
         "device-support/src/ms/device_support/v1/InputConfig.hpp",
@@ -2325,7 +2320,7 @@
         "device-support/src/ms/device_support/v1/Timing.hpp",
         "device-support/src/ms/device_support/v1/Version.hpp"
       ],
-      "sha256": "aae56c0f321936bc4f8ece083cb6a7d694717abb3262ee80b5660de321a8c44b"
+      "sha256": "9c71f214651b639eecd0983ffa7e92c520b59676241bb37e0c01f65cd606f04c"
     },
     "deviceSupportImplementations": {
       "count": 1,

@@ -5353,14 +5353,34 @@ def main(show_inventory: bool = False) -> int:
 
     app_config = (SOURCE_ROOT / "config" / "App.hpp").read_text(encoding="utf-8")
     for marker in (
+        "#include <ms/device_support/v1/InputConfig.hpp>",
+        "using ms::device_support::v1::input::CONFIG;",
+    ):
+        if marker not in app_config:
+            errors.append(
+                "config/App.hpp: input config must remain a facade over "
+                f"ms-device-support ({marker})"
+            )
+
+    device_input_config = (
+        ROOT
+        / "device-support"
+        / "src"
+        / "ms"
+        / "device_support"
+        / "v1"
+        / "InputConfig.hpp"
+    ).read_text(encoding="utf-8")
+    for marker in (
         "ReleaseRoutingPolicy::OwnerOnly",
         "GestureRoutingPolicy::PressScoped",
         "BindingAmbiguityPolicy::FailClosed",
         "GlobalRoutingPolicy::ExplicitPassThroughOnly",
     ):
-        if marker not in app_config:
+        if marker not in device_input_config:
             errors.append(
-                "config/App.hpp: strict physical-button routing must keep "
+                "device-support InputConfig.hpp: strict physical-button routing "
+                "must keep "
                 f"{marker}"
             )
 

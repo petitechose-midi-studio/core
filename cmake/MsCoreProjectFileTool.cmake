@@ -19,7 +19,8 @@ function(ms_core_add_project_file_tool)
     target_compile_definitions(ms_core_project_file_native PUBLIC OC_LOG)
     target_include_directories(ms_core_project_file_native
         PUBLIC
-            "${CMAKE_CURRENT_SOURCE_DIR}/src")
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+            "${MS_DEVICE_SUPPORT_DIR}/src")
     target_link_libraries(ms_core_project_file_native
         PUBLIC
             ms_core_project_file_open_control_native)

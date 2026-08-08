@@ -13,7 +13,7 @@
 
 #include <cstdint>
 
-#include <oc/core/input/InputConfig.hpp>
+#include <ms/device_support/v1/InputConfig.hpp>
 
 namespace Config {
 
@@ -41,17 +41,7 @@ enum class ContextID : uint8_t {
 namespace Input {
 // Strict physical-button contract: docs/INPUT_BINDINGS.md.
 // Encoder turns remain instantaneous and keep their scoped routing.
-constexpr oc::core::input::InputConfig CONFIG = {
-    .longPressMs = Timing::LONG_PRESS_MS,
-    .doubleTapWindowMs = Timing::DOUBLE_TAP_MS,
-    .latchThresholdMs = Timing::LATCH_THRESHOLD_MS,
-    .debounceMs = Timing::DEBOUNCE_MS,
-    .releaseRoutingPolicy = oc::core::input::ReleaseRoutingPolicy::OwnerOnly,
-    .gestureRoutingPolicy = oc::core::input::GestureRoutingPolicy::PressScoped,
-    .ambiguityPolicy = oc::core::input::BindingAmbiguityPolicy::FailClosed,
-    .globalRoutingPolicy =
-        oc::core::input::GlobalRoutingPolicy::ExplicitPassThroughOnly,
-};
+using ms::device_support::v1::input::CONFIG;
 }  // namespace Input
 
 }  // namespace Config

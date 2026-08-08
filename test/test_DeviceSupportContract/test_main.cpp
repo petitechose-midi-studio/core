@@ -4,6 +4,7 @@
 #include <type_traits>
 
 #include <ms/device_support/v1/Buffers.hpp>
+#include <ms/device_support/v1/ControlLayout.hpp>
 #include <ms/device_support/v1/Hardware.hpp>
 #include <ms/device_support/v1/InputConfig.hpp>
 #include <ms/device_support/v1/LvglMemory.hpp>
@@ -32,6 +33,16 @@ static_assert(static_cast<oc::type::ButtonID>(device::ButtonID::NAV) == 40);
 static_assert(static_cast<oc::type::EncoderID>(device::EncoderID::MACRO_1) ==
               301);
 static_assert(static_cast<oc::type::EncoderID>(device::EncoderID::OPT) == 410);
+static_assert(device::control::MACRO_ENCODERS.size() == device::MACRO_COUNT);
+static_assert(device::control::MACRO_BUTTONS.size() == device::MACRO_COUNT);
+static_assert(
+    device::control::MACRO_ENCODERS.front() == device::EncoderID::MACRO_1);
+static_assert(
+    device::control::MACRO_ENCODERS.back() == device::EncoderID::MACRO_8);
+static_assert(
+    device::control::MACRO_BUTTONS.front() == device::ButtonID::MACRO_1);
+static_assert(
+    device::control::MACRO_BUTTONS.back() == device::ButtonID::MACRO_8);
 
 static_assert(device::input::CONFIG.longPressMs == 500);
 static_assert(device::input::CONFIG.doubleTapWindowMs == 300);
@@ -113,6 +124,13 @@ static_assert(sizeof(device::buffers::lvgl) == 153'600);
 static_assert(device::LVGL_MEMORY_POOL_SIZE_BYTES == 4'096'000);
 
 int main() {
+    std::uint8_t macroIndex = 0xff;
+    assert(device::control::macroEncoderIndex(301, macroIndex));
+    assert(macroIndex == 0);
+    assert(device::control::macroButtonIndex(38, macroIndex));
+    assert(macroIndex == 7);
+    assert(!device::control::macroEncoderIndex(0, macroIndex));
+
     std::uint8_t* const first =
         getLvglMemoryPool(device::LVGL_MEMORY_POOL_SIZE_BYTES);
     std::uint8_t* const second = getLvglMemoryPool(1);

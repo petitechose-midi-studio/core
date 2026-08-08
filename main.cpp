@@ -18,8 +18,9 @@
 #include <config/App.hpp>
 #include <config/PlatformCompat.hpp>
 #if !defined(MS_PROJECT_STORE_SMOKE)
-#include <config/platform-teensy/Buffer.hpp>
-#include <config/platform-teensy/Hardware.hpp>
+#include <ms/device_support/v1/Buffers.hpp>
+#include <ms/device_support/v1/Display.hpp>
+#include <ms/device_support/v1/Hardware.hpp>
 #endif
 #include "app/ExtmemAllocator.hpp"
 #include "app/PhaseRetainingDeadline.hpp"
@@ -51,6 +52,8 @@
 // =============================================================================
 
 #if !defined(MS_PROJECT_STORE_SMOKE)
+namespace device = ms::device_support::v1;
+
 static std::optional<oc::hal::teensy::Ili9341> display;
 static std::optional<oc::ui::lvgl::Bridge> lvgl;
 static std::optional<oc::hal::teensy::CD74HC4067> mux;
@@ -520,19 +523,26 @@ static FLASHMEM void checkOrHalt(const oc::type::Result<void>& result, const cha
 
 static FLASHMEM void initDisplay() {
     display = oc::hal::teensy::Ili9341(
-        Hardware::Display::CONFIG,
-        {.framebuffer = Buffer::framebuffer, .diff1 = Buffer::diff1, .diff2 = Buffer::diff2});
+        device::display::CONFIG,
+        {.framebuffer = device::buffers::framebuffer,
+         .diff1 = device::buffers::diff1,
+         .diff2 = device::buffers::diff2});
     checkOrHalt(display->init(), "Display");
 }
 
 static FLASHMEM void initLVGL() {
-    lvgl = oc::ui::lvgl::Bridge(*display, Buffer::lvgl, oc::hal::teensy::defaultTimeProvider,
-                                 Hardware::LVGL::CONFIG);
+    lvgl = oc::ui::lvgl::Bridge(
+        *display,
+        device::buffers::lvgl,
+        oc::hal::teensy::defaultTimeProvider,
+        device::display::LVGL_CONFIG);
     checkOrHalt(lvgl->init(), "LVGL");
 }
 
 static FLASHMEM void initMux() {
-    mux = oc::hal::teensy::CD74HC4067(Hardware::Mux::CONFIG, oc::hal::teensy::gpio());
+    mux = oc::hal::teensy::CD74HC4067(
+        device::mux::CONFIG,
+        oc::hal::teensy::gpio());
     checkOrHalt(mux->init(), "MUX");
 }
 #endif
@@ -646,12 +656,12 @@ static FLASHMEM void initApp() {
     oc::hal::teensy::AppBuilder appBuilder;
     appBuilder.midi()
         .frames()
-        .encoders(Hardware::Encoder::ENCODERS)
+        .encoders(device::encoder::ENCODERS)
         .buttons(
-            Hardware::Button::BUTTONS,
+            device::button::BUTTONS,
             *mux,
             Config::Timing::DEBOUNCE_MS,
-            Hardware::Mux::BUTTON_READS_PER_APP_TICK
+            device::mux::BUTTON_READS_PER_APP_TICK
         )
         .inputConfig(Config::Input::CONFIG);
 

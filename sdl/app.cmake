@@ -18,6 +18,7 @@ set(APP_MAIN_WASM "${CMAKE_CURRENT_LIST_DIR}/main-wasm.cpp")
 include("${CMAKE_CURRENT_LIST_DIR}/../cmake/MsCoreProductSources.cmake")
 set(APP_SOURCES ${MS_CORE_PRODUCT_SOURCES})
 list(FILTER APP_SOURCES EXCLUDE REGEX "/platform-teensy/")
+list(FILTER APP_SOURCES EXCLUDE REGEX "/device-support/")
 
 # -----------------------------------------------------------------------------
 # Additional include directories (relative to this file)

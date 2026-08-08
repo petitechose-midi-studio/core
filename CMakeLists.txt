@@ -74,6 +74,7 @@ target_compile_definitions(midi_studio_core_native PUBLIC OC_LOG)
 target_include_directories(midi_studio_core_native
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${MS_DEVICE_SUPPORT_DIR}/src"
     PRIVATE
         # Native Core tests intentionally compile a small set of UI projection
         # sources. Their font/icon headers include LVGL types, supplied by the
