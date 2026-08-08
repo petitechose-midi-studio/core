@@ -48,6 +48,7 @@ set(OPEN_CONTROL_HAL_NET_DIR "" CACHE PATH "Exact OpenControl HAL Net checkout")
 set(OPEN_CONTROL_HAL_MIDI_DIR "" CACHE PATH "Exact OpenControl HAL MIDI checkout")
 set(OPEN_CONTROL_NOTE_DIR "" CACHE PATH "Exact OpenControl Note checkout")
 set(MIDI_STUDIO_UI_DIR "" CACHE PATH "Exact MIDI Studio UI checkout")
+set(MS_DEVICE_SUPPORT_DIR "" CACHE PATH "Exact MIDI Studio device-support checkout")
 set(LVGL_DIR "" CACHE PATH "Exact LVGL source checkout")
 
 function(require_dependency_root variable sentinel label)
@@ -77,6 +78,8 @@ require_dependency_root(OPEN_CONTROL_NOTE_DIR
     "cmake/OpenControlNoteSources.cmake" "OpenControl Note")
 require_dependency_root(MIDI_STUDIO_UI_DIR
     "cmake/MidiStudioUiSources.cmake" "MIDI Studio UI")
+require_dependency_root(MS_DEVICE_SUPPORT_DIR
+    "src/ms/device_support/v1/Version.hpp" "MIDI Studio device-support")
 require_dependency_root(LVGL_DIR "CMakeLists.txt" "LVGL")
 
 # App config (core or plugin)
@@ -266,7 +269,7 @@ add_executable(${APP_EXE_NAME}
 
 target_include_directories(${APP_EXE_NAME} PRIVATE
     ${SDL_DIR} ${LV_CONF_DIR} ${CONFIG_DIR} ${APP_SRC_DIR} ${CORE_SRC}
-    ${MS_CORE_DIR}/device-support/src ${MIDI_STUDIO_UI_DIR}/src
+    ${MS_DEVICE_SUPPORT_DIR}/src ${MIDI_STUDIO_UI_DIR}/src
     ${OC_FRAMEWORK} ${OC_UI_LVGL} ${OC_HAL_SDL} ${OC_HAL_NET} ${OC_HAL_MIDI} ${OC_NOTE}
     ${OC_UI_COMPONENTS}/include ${APP_EXTRA_INCLUDES})
 

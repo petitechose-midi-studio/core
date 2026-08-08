@@ -45,6 +45,7 @@ jobs:
       tooling_sha: ${{ steps.resolve.outputs.tooling_sha }}
       candidate_tag: ${{ steps.resolve.outputs.candidate_tag }}
       qualification_run_id: ${{ steps.resolve.outputs.qualification_run_id }}
+      device_support_sha: ${{ steps.resolve.outputs.device_support_sha }}
       open_control_framework_sha: ${{ steps.resolve_bom.outputs.open_control_framework_sha }}
       open_control_note_sha: ${{ steps.resolve_bom.outputs.open_control_note_sha }}
     steps:
@@ -122,8 +123,25 @@ jobs:
             echo "tooling SHA is not reachable from ms-dev-env main: $tooling_sha" >&2
             exit 1
           fi
+          device_support_sha="$(python - <<'PY'
+          from pathlib import Path
+          import re
+
+          text = Path("platformio.ini").read_text(encoding="utf-8")
+          match = re.search(
+              r"(?m)^\s*https://github\.com/"
+              r"petitechose-midi-studio/device-support\.git#"
+              r"([0-9a-f]{40})\s*$",
+              text,
+          )
+          if match is None:
+              raise SystemExit("release device-support dependency is not commit-pinned")
+          print(match.group(1))
+          PY
+          )"
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "tooling_sha=$tooling_sha" >> "$GITHUB_OUTPUT"
+          echo "device_support_sha=$device_support_sha" >> "$GITHUB_OUTPUT"
           echo "candidate_tag=rc-core-host-tools-${source_sha}-tooling-${tooling_sha}" >> "$GITHUB_OUTPUT"
           echo "qualification_run_id=$qualification_run_id" >> "$GITHUB_OUTPUT"
 
@@ -275,12 +293,21 @@ jobs:
           path: deps/open-control/note
           persist-credentials: false
 
+      - name: Checkout device support
+        uses: actions/checkout@v6
+        with:
+          repository: petitechose-midi-studio/device-support
+          ref: ${{ needs.resolve_inputs.outputs.device_support_sha }}
+          path: deps/midi-studio/device-support
+          persist-credentials: false
+
       - name: Configure host file tool
         shell: bash
         run: |
           set -euo pipefail
           cmake -S . -B build/core-native \
             -DMS_CORE_OPEN_CONTROL_ROOT="$PWD/deps/open-control" \
+            -DMS_DEVICE_SUPPORT_DIR="$PWD/deps/midi-studio/device-support" \
             -DMS_CORE_BUILD_TESTS=OFF \
             -DCMAKE_BUILD_TYPE=Release
 
@@ -384,6 +411,11 @@ jobs:
               "id": "core",
               "repo": "petitechose-midi-studio/core",
               "sha": "${{ needs.resolve_inputs.outputs.source_sha }}"
+            },
+            {
+              "id": "device-support",
+              "repo": "petitechose-midi-studio/device-support",
+              "sha": "${{ needs.resolve_inputs.outputs.device_support_sha }}"
             },
             {
               "id": "ms-dev-env",
