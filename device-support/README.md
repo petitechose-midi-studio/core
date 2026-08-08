@@ -2,8 +2,8 @@
 
 `ms-device-support` is the narrow, versioned Teensy 4.1 hardware boundary
 shared by MIDI Studio firmware products. It contains board constants, input
-IDs and policy, display/buffer configuration, `lv_conf.h`, and the single LVGL
-PSRAM provider.
+IDs and stable control layout, input policy, display/buffer configuration,
+`lv_conf.h`, and the single LVGL PSRAM provider.
 
 Consumers include only the contract they use, for example:
 
