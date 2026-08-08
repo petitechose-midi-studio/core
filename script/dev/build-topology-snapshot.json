@@ -1449,7 +1449,7 @@
       "sha256": "dd062f9b600651a934a0567b86baa721214e6f2c3ec3f9ec034ca563e6fbb17e"
     },
     "coreTotalHeaders": {
-      "count": 450,
+      "count": 448,
       "paths": [
         "src/app/AppLogic.hpp",
         "src/app/ExtmemAllocator.hpp",
@@ -1804,8 +1804,6 @@
         "src/state/shared/MidiCcDestinationResolver.hpp",
         "src/state/shared/SharedTrackCoordinator.hpp",
         "src/state/shared/StructureSlotOps.hpp",
-        "src/ui/OverlayTypes.hpp",
-        "src/ui/ViewTypes.hpp",
         "src/ui/common/AddSlotIcon.hpp",
         "src/ui/common/CoalescedLvglRenderScheduler.hpp",
         "src/ui/common/GlobalTrackNavigationStripModel.hpp",
@@ -1902,7 +1900,7 @@
         "src/validation/ux/SequencerCcLaneSemanticGesture.hpp",
         "src/validation/ux/SequencerTrackTransferSemanticProjection.hpp"
       ],
-      "sha256": "3bf751e876684da7f8bd87c22b9c10db3a10600d10b3784de42802393266f96d"
+      "sha256": "304d48f1aa4a7b4380976b2541719069eaac01995d2e5cdedadcf1c45002dfb3"
     },
     "coreTotalImplementations": {
       "count": 404,

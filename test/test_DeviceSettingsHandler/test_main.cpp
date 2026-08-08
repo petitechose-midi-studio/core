@@ -15,7 +15,7 @@
 #include "../../src/handler/settings/DeviceSettingsHandler.hpp"
 #include "../../src/state/DeviceSettingsState.hpp"
 #include "../../src/state/MidiSyncState.hpp"
-#include "../../src/ui/OverlayTypes.hpp"
+#include "../../src/app/OverlayTypes.hpp"
 #include "../support/InputTestHardware.hpp"
 #include "../support/MemoryStorage.hpp"
 
