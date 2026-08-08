@@ -500,12 +500,13 @@ FLASHMEM bool capturePreparedSynchronizationPayloadUsingReservedStorage(
     const SequencerTrackBankState& bank, const SequencerState& after,
     SequencerPreparedActiveTrackSynchronization& synchronization) {
     if (synchronization.storage == SequencerHistoryPatternStorage::FlatOnly) {
-        const auto& target = bank.track(synchronization.trackIndex);
-        if (!sameGraph(graphView(target), graphView(after.pattern)) ||
-            !sameOptionalSequencerCcLaneBank(sequencerCcLaneView(target),
-                                             sequencerCcLaneView(after.pattern))) {
-            return false;
-        }
+        // The active editor is the canonical cold-payload owner. A restored
+        // FullBank snapshot deliberately leaves the corresponding bank slot
+        // as noncanonical scratch with no Graph/CC owners, so a flat mirror
+        // synchronization must neither compare nor copy those owners. Core's
+        // prepared owner proof protects the canonical editor payload.
+        (void)bank;
+        (void)after;
         synchronization.payload.reset();
         return true;
     }
@@ -1319,12 +1320,10 @@ FLASHMEM bool reservePreparedActiveTrackSynchronization(
     synchronization.storage = storage;
     if (targetTrack != bank.activeTrackIndex()) return false;
     if (storage == SequencerHistoryPatternStorage::FlatOnly) {
-        const auto& target = bank.track(targetTrack);
-        synchronization.reserved =
-            sameGraph(graphView(target), graphView(after.pattern)) &&
-            sameOptionalSequencerCcLaneBank(sequencerCcLaneView(target),
-                                            sequencerCcLaneView(after.pattern));
-        return synchronization.reserved;
+        // No detached cold-payload owner is needed for a flat-only mirror.
+        // The active bank slot may legitimately be empty after restoration.
+        synchronization.reserved = true;
+        return true;
     }
     synchronization.reserved =
         reserveHistoryPatternPayloadStorage(after.pattern, synchronization.payload);
@@ -1417,15 +1416,13 @@ FLASHMEM bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
     }
     synchronization.captured = false;
     if (synchronization.storage == SequencerHistoryPatternStorage::FlatOnly) {
-        const auto& target = bank.track(synchronization.trackIndex);
-        synchronization.captured =
-            sameGraph(graphView(target), graphView(after)) &&
-            sameOptionalSequencerCcLaneBank(
-                sequencerCcLaneView(target),
-                sequencerCcLaneView(after)
-            );
-        if (synchronization.captured) synchronization.payload.reset();
-        return synchronization.captured;
+        // Detached flat candidates never own or publish Graph/CC payload.
+        // Their canonical payload identity is validated by the enclosing
+        // prepared Pattern transaction before this synchronization is used.
+        (void)after;
+        synchronization.payload.reset();
+        synchronization.captured = true;
+        return true;
     }
     synchronization.captured = captureHistoryPatternPayloadUsingReservedStorage(
         after,
@@ -1437,9 +1434,8 @@ FLASHMEM bool refreshPreparedActiveTrackSynchronizationUsingReservedStorage(
 namespace {
 
 FLASHMEM void publishPreparedActiveTrackSynchronizationUsingFlat(
-    SequencerTrackBankState& bank, const SequencerState& active,
-    const SequencerPatternSnapshot& flat, uint32_t ccLaneRevision,
-    bool ccLanesCaptured, bool validateFlatPayload,
+    SequencerTrackBankState& bank, const SequencerPatternSnapshot& flat,
+    uint32_t ccLaneRevision, bool ccLanesCaptured,
     SequencerPreparedActiveTrackSynchronization synchronization) {
     if (!synchronization.captured ||
         !preparedActiveTrackSynchronizationMatches(bank, synchronization)) {
@@ -1447,12 +1443,8 @@ FLASHMEM void publishPreparedActiveTrackSynchronizationUsingFlat(
     }
     auto& target = bank.track(synchronization.trackIndex);
     if (synchronization.storage == SequencerHistoryPatternStorage::FlatOnly) {
-        if (validateFlatPayload &&
-            (!sameGraph(graphView(target), graphView(active.pattern)) ||
-             !sameOptionalSequencerCcLaneBank(sequencerCcLaneView(target),
-                                              sequencerCcLaneView(active.pattern)))) {
-            return;
-        }
+        // Preserve the active slot's noncanonical cold-payload topology. In
+        // particular, restoration intentionally leaves Graph/CC null here.
         applyFlatSnapshotPreservingColdPayload(target, flat);
         synchronizeHistoryPatternRevisionSignals(target, flat, ccLaneRevision);
         return;
@@ -1476,25 +1468,21 @@ FLASHMEM void publishPreparedActiveTrackSynchronization(
     captureSnapshot(active.pattern, flat);
     publishPreparedActiveTrackSynchronizationUsingFlat(
         bank,
-        active,
         flat,
         active.pattern.ccLaneRevision.get(),
-        true,
         true,
         std::move(synchronization));
 }
 
 FLASHMEM void publishPreparedActiveTrackSynchronization(
-    SequencerTrackBankState& bank, const SequencerState& active,
+    SequencerTrackBankState& bank, const SequencerState&,
     const SequencerHistoryPatternSnapshot& sealedAfter,
     SequencerPreparedActiveTrackSynchronization synchronization) {
     publishPreparedActiveTrackSynchronizationUsingFlat(
         bank,
-        active,
         sealedAfter.flat,
         sealedAfter.ccLaneRevision,
         sealedAfter.ccLanesCaptured,
-        false,
         std::move(synchronization));
 }
 
@@ -1718,14 +1706,9 @@ FLASHMEM bool preparedHistoryPatternAfterMatchesTrack(const SequencerTrackBankSt
     // A->B->A Track round trip. Core normalizes all revisions to `after`
     // immediately before publication.
     if (storage == SequencerHistoryPatternStorage::FlatOnly) {
-        if (targetTrack == bank.activeTrackIndex()) {
-            const auto& bankTarget = bank.track(targetTrack);
-            if (!sameGraph(graphView(bankTarget), graphView(active.pattern)) ||
-                !sameOptionalSequencerCcLaneBank(sequencerCcLaneView(bankTarget),
-                                                 sequencerCcLaneView(active.pattern))) {
-                return false;
-            }
-        }
+        // The active bank slot is noncanonical scratch and may intentionally
+        // have no cold owners after FullBank restoration. The enclosing Core
+        // transaction validates the canonical editor owner proof separately.
         return true;
     }
     if (!sameGraph(graphView(target), after.graph.get())) return false;

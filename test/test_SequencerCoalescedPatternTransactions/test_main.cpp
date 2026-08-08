@@ -15,6 +15,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "state/CoreState.hpp"
+#include "state/project/ProjectSnapshot.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerHistory.hpp"
@@ -284,6 +285,13 @@ void initializePayload(Harness& h, InitialPayload payload) {
     assert((seq::sequencerCcLaneView(pattern) != nullptr) == hasInitialCc(payload));
 }
 
+void restoreThroughCanonicalFullBankSnapshot(Harness& h) {
+    auto snapshot = core::state::project::captureProjectSnapshotOwned(h.state);
+    assert(snapshot != nullptr);
+    assert(core::state::project::applyProjectSnapshot(h.state, *snapshot));
+    h.settle();
+}
+
 void assertOnePublicationAfterQueuedNotifications(Harness& h, const tx::StateInvariant& before) {
     test_support::drainNotifications();
     h.state.flushProjectMutationCoalescing();
@@ -483,6 +491,48 @@ void test_same_key_continuation_and_commit_allocate_nothing() {
     assert(h.state.sequencer.pattern.note[kStep] == 62U);
 
     std::cout << "[PASS] same-key continuation and commit allocate nothing\n";
+}
+
+void test_restored_active_scratch_coalesces_flat_step_property_edits() {
+    Harness h;
+    initializePayload(h, InitialPayload::GraphAndCc);
+    restoreThroughCanonicalFullBankSnapshot(h);
+
+    const auto* const editorGraphOwner = h.state.sequencer.pattern.graph.get();
+    const auto* const editorCcOwner = h.state.sequencer.pattern.ccLanes.get();
+    assert(editorGraphOwner != nullptr);
+    assert(editorCcOwner != nullptr);
+    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
+    assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
+
+    const uint8_t initialVelocity = h.state.sequencer.pattern.velocity[kStep];
+    const auto before = tx::captureStateInvariant(h.state);
+
+    assert(seq::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            kStep, seq::StepProperty::VELOCITY, 100U, PayloadPlan::FlatOnly)));
+    assert(h.state.sequencer.setStepVelocityAt(kStep, 101U));
+    assert(h.state.sealSequencerPatternHistoryCoalescing(true));
+
+    assert(seq::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            kStep, seq::StepProperty::VELOCITY, 200U, PayloadPlan::FlatOnly)));
+    assert(h.state.sequencer.setStepVelocityAt(kStep, 102U));
+    assert(h.state.sealSequencerPatternHistoryCoalescing(true));
+    assert(h.state.commitSequencerPatternHistoryCoalescing());
+
+    assert(h.state.sequencer.pattern.graph.get() == editorGraphOwner);
+    assert(h.state.sequencer.pattern.ccLanes.get() == editorCcOwner);
+    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
+    assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
+    assertOnePublicationAfterQueuedNotifications(h, before);
+
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.velocity[kStep] == initialVelocity);
+    assert(h.state.redoSequencerHistory());
+    assert(h.state.sequencer.pattern.velocity[kStep] == 102U);
+
+    std::cout << "[PASS] restored active scratch preserves one flat-property Undo gesture\n";
 }
 
 void test_same_key_no_op_keeps_the_last_real_after_and_refreshes_timeout() {
@@ -1087,6 +1137,7 @@ int main() {
     test_typed_domain_commit_adapter_distinguishes_failure_from_empty_boundary();
     test_core_state_flush_commits_pending_step_without_allocation_and_global_redoes();
     test_same_key_continuation_and_commit_allocate_nothing();
+    test_restored_active_scratch_coalesces_flat_step_property_edits();
     test_same_key_no_op_keeps_the_last_real_after_and_refreshes_timeout();
     test_same_key_payload_plan_drift_is_rejected_without_publication();
     test_timeout_boundary_is_exact_and_commit_allocates_nothing();

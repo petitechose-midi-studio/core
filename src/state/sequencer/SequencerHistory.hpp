@@ -524,7 +524,10 @@ bool captureHistoryTrackBankSnapshotUsingReservedStorage(const SequencerTrackBan
 // failed reservation leaves a discardable, possibly partial object and must
 // never be retried. Revalidate matches immediately before the first live write,
 // capture afterwards, then transfer the captured payload exactly once. A
-// reserved-but-not-captured synchronization is never publishable.
+// reserved-but-not-captured synchronization is never publishable. FlatOnly
+// synchronization mirrors flat bytes while preserving the active bank slot's
+// noncanonical cold-payload topology; the enclosing Pattern change proves the
+// canonical editor Graph/CC owners independently.
 bool reservePreparedActiveTrackSynchronization(
     const SequencerTrackBankState& bank, const SequencerState& after, uint8_t trackIndex,
     SequencerHistoryPatternStorage storage,

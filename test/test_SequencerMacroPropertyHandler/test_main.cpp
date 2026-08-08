@@ -21,12 +21,14 @@
 #include "../../src/handler/sequencer/SequencerInputUtils.hpp"
 #include "../../src/handler/sequencer/SequencerMacroPropertyHandler.hpp"
 #include "../../src/state/CoreState.hpp"
+#include "../../src/state/project/ProjectSnapshot.hpp"
 #include "../../src/state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "../../src/state/sequencer/SequencerContentViewOps.hpp"
 #include "../../src/state/sequencer/SequencerGraphOps.hpp"
 #include "../../src/state/sequencer/SequencerTrackBankOps.hpp"
 #include "../support/CoreStorages.hpp"
 #include "../support/InputTestHardware.hpp"
+#include "../support/NotificationTestUtils.hpp"
 #include "../support/SequencerHistoryTransactionAssertions.hpp"
 
 #if !defined(MS_CORE_ENABLE_EXTMEM_FAILURE_INJECTION)
@@ -820,6 +822,72 @@ void test_macro_property_edits_coalesce_until_idle() {
     std::cout << "[PASS] test_macro_property_edits_coalesce_until_idle\n";
 }
 
+void test_restored_root_payload_velocity_edits_coalesce_until_idle() {
+    SequencerMacroPropertyHarness h;
+    auto& pattern = h.state.sequencer.pattern;
+    pattern.setContentLength(8U);
+    pattern.velocity[0U] = 0U;
+    h.state.sequencer.activeStepProperty.set(StepProperty::VELOCITY);
+    assert(core::state::sequencer::ensureGraphRoot(pattern));
+    assert(core::state::sequencer::setNodeLocalVariationRange(
+        pattern,
+        core::state::sequencer::rootStepNodeId(0U),
+        StepProperty::NOTE,
+        2U));
+    auto* cc = core::state::sequencer::ensureSequencerCcLaneBank(pattern);
+    assert(cc != nullptr);
+    core::state::sequencer::SequencerCcLaneDraft draft{};
+    draft.destination.controller = 74U;
+    assert(core::state::sequencer::createSequencerCcLane(*cc, 0U, draft).changed());
+    assert(core::state::sequencer::setSequencerCcLaneEvent(
+        *cc, 0U, 0U, 91U).changed());
+    pattern.bumpCcLaneRevision();
+    assert(core::state::sequencer::initializeTrackBankFromActive(
+        h.state.sequencerTracks, h.state.sequencer));
+
+    test_support::drainNotifications();
+    h.state.flushProjectMutationCoalescing();
+    test_support::drainNotifications();
+    h.state.flushProjectMutationCoalescing();
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
+    auto snapshot = core::state::project::captureProjectSnapshotOwned(h.state);
+    assert(snapshot != nullptr);
+    assert(core::state::project::applyProjectSnapshot(h.state, *snapshot));
+    test_support::drainNotifications();
+    h.state.flushProjectMutationCoalescing();
+    h.state.acknowledgeProjectSessionSave(h.state.projectSessionSaveToken());
+
+    const auto* const editorGraphOwner = h.state.sequencer.pattern.graph.get();
+    const auto* const editorCcOwner = h.state.sequencer.pattern.ccLanes.get();
+    assert(editorGraphOwner != nullptr);
+    assert(editorCcOwner != nullptr);
+    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
+    assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
+
+    g_now_ms = 100U;
+    h.turn(Config::EncoderID::MACRO_1, 0.25F);
+    g_now_ms = 200U;
+    h.turn(Config::EncoderID::MACRO_1, 1.0F);
+
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(h.state.sequencer.pattern.velocity[0U] == 127U);
+    h.advance(699U);
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    h.advance(700U);
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+    assert(h.state.sequencer.pattern.graph.get() == editorGraphOwner);
+    assert(h.state.sequencer.pattern.ccLanes.get() == editorCcOwner);
+    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
+    assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
+    assert(h.state.undoSequencerHistory());
+    assert(h.state.sequencer.pattern.velocity[0U] == 0U);
+
+    std::cout
+        << "[PASS] restored root Graph+CC velocity gesture coalesces into one Undo\n";
+}
+
 void test_macro_property_step_change_commits_previous_coalesced_edit() {
     SequencerMacroPropertyHarness h;
     h.state.sequencer.pattern.setContentLength(8);
@@ -951,6 +1019,7 @@ int main() {
     test_left_bottom_selector_does_not_randomize_probability();
     test_left_center_quick_controls_do_not_randomize_step();
     test_macro_property_edits_coalesce_until_idle();
+    test_restored_root_payload_velocity_edits_coalesce_until_idle();
     test_macro_property_step_change_commits_previous_coalesced_edit();
     test_macro_property_track_change_commits_pending_coalesced_edit();
     test_macro_property_pending_edit_undoes_with_single_command();

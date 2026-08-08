@@ -1482,7 +1482,7 @@ void test_partial_pattern_reservation_is_discardable() {
     std::cout << "[PASS] partial prepared bundles remain safely discardable\n";
 }
 
-void test_generic_publication_resynchronizes_switched_track_payloads() {
+void test_flat_preparation_ignores_scratch_payload_and_generic_publication_resynchronizes() {
     Harness h;
     initializeActivePayload(h, PayloadKind::GraphAndCc);
     authorPayload(
@@ -1511,11 +1511,14 @@ void test_generic_publication_resynchronizes_switched_track_payloads() {
     );
 
     PreparedPattern staleFlat;
-    assert(!preparePattern(
+    assert(preparePattern(
         h,
         seq::SequencerHistoryPatternStorage::FlatOnly,
         staleFlat
     ));
+    assert(staleFlat.change != nullptr);
+    assert(staleFlat.synchronization.reserved);
+    assert(!staleFlat.synchronization.captured);
 
     h.state.sequencer.pattern.setEnabled(2U, true);
     test_support::drainNotifications();
@@ -1544,7 +1547,9 @@ void test_generic_publication_resynchronizes_switched_track_payloads() {
         h.state.sequencer.pattern.ccLaneRevision.get()
     );
 
-    std::cout << "[PASS] generic publication fully resynchronizes switched Track payloads\n";
+    std::cout
+        << "[PASS] Flat preparation ignores scratch payload; generic publication "
+           "resynchronizes it\n";
 }
 
 void test_flat_sync_accepts_coherent_cold_payload_revision_drift() {
@@ -3771,7 +3776,7 @@ int main() {
     test_pattern_noop_admission_preserves_live_state();
     test_pattern_identity_and_flat_cc_drift_are_rejected();
     test_partial_pattern_reservation_is_discardable();
-    test_generic_publication_resynchronizes_switched_track_payloads();
+    test_flat_preparation_ignores_scratch_payload_and_generic_publication_resynchronizes();
     test_flat_sync_accepts_coherent_cold_payload_revision_drift();
     test_prepared_publication_is_exact_during_notification_drain();
     test_legacy_prepared_pattern_preserves_pending_bank_synchronization();

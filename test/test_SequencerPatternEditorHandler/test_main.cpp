@@ -180,6 +180,62 @@ void test_external_track_switch_commits_old_owner_then_closes() {
     assert(h.state.sequencerTracks.activeTrackIndex() == 1);
 }
 
+void test_inactive_editor_does_not_reject_foreign_prepared_history() {
+    namespace seq = core::state::sequencer;
+    Harness h;
+    constexpr auto owner = seq::SequencerPreparedPatternEditOwner::QuickControls;
+    constexpr uint8_t key = 0U;
+    const auto descriptor = seq::SequencerHistoryDescriptor{
+        .kind = seq::SequencerHistoryActionKind::QuickControls,
+        .trackIndex = 0U,
+    };
+
+    assert(h.state.beginOrContinueSequencerPreparedPatternEdit(
+               owner,
+               key,
+               seq::SequencerCoalescedPatternPayloadPlan::FullCurrentPayload,
+               descriptor
+           ) == seq::SequencerPreparedPatternEditBeginOutcome::Started);
+    const uint32_t feedbackRevision =
+        h.state.sequencer.historyFeedback.revision.get();
+
+    h.handler.update(20U);
+    h.handler.update(40U);
+    h.handler.update(60U);
+
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
+    assert(h.state.abortSequencerPreparedPatternEdit(owner, key) ==
+           seq::SequencerPreparedPatternEditAbortOutcome::Aborted);
+}
+
+void test_inactive_editor_does_not_fragment_foreign_coalesced_gesture() {
+    namespace seq = core::state::sequencer;
+    Harness h;
+    constexpr uint8_t step = 0U;
+
+    assert(seq::sequencerHistoryOpenAccepted(
+        h.state.beginOrContinueSequencerPatternHistoryCoalescing(
+            step,
+            seq::StepProperty::VELOCITY,
+            100U,
+            seq::SequencerCoalescedPatternPayloadPlan::FlatOnly
+        )
+    ));
+    assert(h.state.sequencer.setStepVelocityAt(step, 101U));
+    assert(h.state.sealSequencerPatternHistoryCoalescing(true));
+
+    h.handler.update(120U);
+    h.handler.update(140U);
+    h.handler.update(160U);
+
+    assert(h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(h.state.commitSequencerPatternHistoryCoalescingOutcome() ==
+           seq::SequencerPatternHistoryCommitOutcome::Committed);
+    assert(h.state.sequencerHistory.undoCount() == 1U);
+}
+
 void test_randomize_preview_reroll_and_cancel_never_publish() {
     Harness h;
     assert(h.state.sequencer.pattern.setContentLength(16));
@@ -366,6 +422,8 @@ int main() {
     test_retained_navigation_uses_modifier_grammar_without_history();
     test_opt_edits_coalesce_per_field_and_restore_exact_region();
     test_external_track_switch_commits_old_owner_then_closes();
+    test_inactive_editor_does_not_reject_foreign_prepared_history();
+    test_inactive_editor_does_not_fragment_foreign_coalesced_gesture();
     test_randomize_preview_reroll_and_cancel_never_publish();
     test_randomize_apply_is_one_exact_flat_history_entry();
     test_randomize_apply_stops_at_failed_history_barrier();

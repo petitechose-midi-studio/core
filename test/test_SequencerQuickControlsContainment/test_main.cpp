@@ -23,6 +23,7 @@
 #include "handler/sequencer/SequencerHistoryDomainServices.hpp"
 #include "handler/sequencer/SequencerPatternQuickControlsHandler.hpp"
 #include "state/CoreState.hpp"
+#include "state/project/ProjectSnapshot.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -497,6 +498,69 @@ void test_open_allocation_contract_and_failure_matrix() {
         << "[PASS] Open allocation sequence is D/raw owners/Change/Before/After/sync\n";
 }
 
+void test_restored_project_opens_quick_controls_with_active_scratch_empty() {
+    Harness h;
+    preparePayload(h, PayloadKind::GraphAndCc);
+    assert(seq::initializeTrackBankFromActive(
+        h.state.sequencerTracks, h.state.sequencer));
+    settlePreparedFixture(h);
+
+    auto snapshot = core::state::project::captureProjectSnapshotOwned(h.state);
+    assert(snapshot != nullptr);
+    assert(core::state::project::applyProjectSnapshot(h.state, *snapshot));
+    settlePreparedFixture(h);
+
+    assert(h.state.sequencer.pattern.graph != nullptr);
+    assert(h.state.sequencer.pattern.ccLanes != nullptr);
+    assert(h.state.sequencerTracks.track(0U).graph == nullptr);
+    assert(h.state.sequencerTracks.track(0U).ccLanes == nullptr);
+    const uint32_t feedbackRevision =
+        h.state.sequencer.historyFeedback.revision.get();
+
+    holdOpen(h);
+    h.release(Config::ButtonID::LEFT_CENTER);
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(!h.state.sequencer.quickControlsDraft.active());
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
+
+    holdOpen(h);
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
+    h.tap(Config::ButtonID::LEFT_TOP);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(!h.state.sequencer.quickControlsDraft.active());
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+
+    std::cout << "[PASS] restored Project opens Quick Controls with empty active scratch\n";
+}
+
+void test_open_then_release_without_edit_is_a_clean_no_change() {
+    for (const auto kind : {PayloadKind::FlatOnly, PayloadKind::GraphAndCc}) {
+        Harness h;
+        preparePayload(h, kind);
+        assert(seq::initializeTrackBankFromActive(
+            h.state.sequencerTracks, h.state.sequencer));
+        settlePreparedFixture(h);
+        const uint32_t feedbackRevision =
+            h.state.sequencer.historyFeedback.revision.get();
+
+        holdOpen(h);
+        h.release(Config::ButtonID::LEFT_CENTER);
+
+        assert(!h.state.sequencer.patternQuickControls.selecting.get());
+        assert(!h.state.sequencer.quickControlsDraft.active());
+        assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+        assert(h.state.sequencerHistory.undoCount() == 0U);
+        assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
+    }
+
+    std::cout << "[PASS] untouched Quick Controls release closes as NoChange\n";
+}
+
 void test_preview_offset_keeps_live_immutable_then_cancel_is_no_write() {
     for (const auto kind : {
              PayloadKind::FlatOnly,
@@ -852,6 +916,19 @@ void test_raw_disabled_graph_and_empty_cc_owners_are_preserved() {
         *h.state.sequencer.pattern.ccLanes) == 0U);
     const auto* liveGraph = h.state.sequencer.pattern.graph.get();
     const auto* liveCc = h.state.sequencer.pattern.ccLanes.get();
+    const uint32_t feedbackRevision =
+        h.state.sequencer.historyFeedback.revision.get();
+
+    holdOpen(h);
+    h.release(Config::ButtonID::LEFT_CENTER);
+
+    assert(!h.state.sequencer.patternQuickControls.selecting.get());
+    assert(!h.state.sequencer.quickControlsDraft.active());
+    assert(!h.state.hasPendingSequencerPatternHistoryCoalescing());
+    assert(h.state.sequencer.pattern.graph.get() == liveGraph);
+    assert(h.state.sequencer.pattern.ccLanes.get() == liveCc);
+    assert(h.state.sequencerHistory.undoCount() == 0U);
+    assert(h.state.sequencer.historyFeedback.revision.get() == feedbackRevision);
 
     holdOpen(h);
     assert(previewPattern(h).graph != nullptr);
@@ -868,7 +945,8 @@ void test_raw_disabled_graph_and_empty_cc_owners_are_preserved() {
     assert(seq::sequencerCcLaneCount(
         *h.state.sequencer.pattern.ccLanes) == 0U);
     assert(h.state.sequencerHistory.undoCount() == 0U);
-    std::cout << "[PASS] raw disabled Graph and empty CC owner presence survives Cancel\n";
+    std::cout
+        << "[PASS] raw disabled Graph and empty CC owners survive NoChange and Cancel\n";
 }
 
 }  // namespace
@@ -881,6 +959,8 @@ int main() {
     test_direct_failure_is_atomic();
     test_direct_graph_cc_offset_is_undoable();
     test_open_allocation_contract_and_failure_matrix();
+    test_restored_project_opens_quick_controls_with_active_scratch_empty();
+    test_open_then_release_without_edit_is_a_clean_no_change();
     test_preview_offset_keeps_live_immutable_then_cancel_is_no_write();
     test_graph_cc_apply_is_allocation_free_and_undoable();
     test_flat_dimensions_preview_and_apply_once();
