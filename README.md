@@ -88,6 +88,17 @@ ms ux run core --select sequencer/editing/step-edit-chord.ux
 ms ux run core --select sequencer/editing/step-edit-chord-strum.ux
 ```
 
+### Semantic UX ownership
+
+`src/validation/ux` owns the product-agnostic semantic validation port, data
+types, registry and recorder. `src/context/standalone/ux` owns the
+product-specific adapters that read Standalone state and project it onto those
+generic semantic surfaces. The dependency therefore flows from Standalone
+adapters to the validation port, never in the reverse direction. Recorder
+instrumentation remains behind `MS_UX_RECORDER` and is absent from normal
+firmware builds; firmware enables it only in the dedicated `dev_ux_recorder`
+environment.
+
 The `ms release dependencies --dry-run` command is an alignment/readiness check:
 it reports dirty repos and the dependency promotion plan, but does not run tests
 or mutate dependency pins. Once dependency repos are clean and merged, use the
