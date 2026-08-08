@@ -239,7 +239,8 @@ def cmake_owned_source_paths(
             f"expected one {variable} declaration in {relative_file}"
         )
     paths = re.findall(
-        r"(?m)^\s+(src/[^\s\)]+\.(?:c|cc|cpp))\s*$", bodies[0]
+        r"(?m)^\s+((?:device-support/)?src/[^\s\)]+\.(?:c|cc|cpp))\s*$",
+        bodies[0],
     )
     if not paths:
         raise InventoryError(f"no owned sources found in {relative_file}")
@@ -715,8 +716,12 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
     declared_core_sources = cmake_owned_source_paths(
         core, "cmake/MsCoreProductSources.cmake", "MS_CORE_PRODUCT_SOURCE_PATHS"
     )
-    if declared_core_sources != core_sources:
-        raise InventoryError("Core owned product source list differs from tracked implementations")
+    expected_core_product_sources = sorted(core_sources + device_support_sources)
+    if declared_core_sources != expected_core_product_sources:
+        raise InventoryError(
+            "Core owned product source list differs from tracked "
+            "Core/device-support implementations"
+        )
     declared_bitwig_sources = cmake_owned_source_paths(
         bitwig,
         "cmake/MidiStudioBitwigSources.cmake",
@@ -732,12 +737,14 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
     bitwig_pio = parse_platformio(bitwig_pio_text)
     core_native_sources = expand_core_native_sources(core, set(tracked["core"]))
     core_teensy_sources = apply_pio_filters(
-        core_sources, pio_values(core_pio, "env:teensy_base", "build_src_filter")
+        declared_core_sources,
+        pio_values(core_pio, "env:teensy_base", "build_src_filter"),
     )
     core_sdl_sources = sorted(
         path
-        for path in core_sources
+        for path in declared_core_sources
         if "/platform-teensy/" not in f"/{path}/"
+        and "/device-support/" not in f"/{path}/"
         and PurePosixPath(path).name not in ("main.cpp", "name.c")
     )
 

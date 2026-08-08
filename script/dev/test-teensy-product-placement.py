@@ -110,7 +110,7 @@ def main() -> int:
 54856 1888 T core::sequencer::SequencerCcLaneRuntime::buildMusicalTickFrame(void)
 97048 752 T core::ui::MacroView::processRenderFlags(unsigned long)
 86548 702 T core::ui::StepGrid::renderTile(void)
-539099136 153600 B Buffer::lvgl
+539099136 153600 B ms::device_support::v1::buffers::lvgl
 """
     assert len(PAGE_STRUCTURE_BUILDER_FLASH_MARKERS) == 9
     assert len(PAGE_STRUCTURE_HELPER_FLASH_MARKERS) == 9
@@ -137,8 +137,8 @@ def main() -> int:
         "34348 324 T core::handler::MacroValueHandler::handleValueChange",
         "1610620000 324 T core::handler::MacroValueHandler::handleValueChange",
     ).replace(
-        "539099136 153600 B Buffer::lvgl",
-        "539099136 230400 B Buffer::lvgl",
+        "539099136 153600 B ms::device_support::v1::buffers::lvgl",
+        "539099136 230400 B ms::device_support::v1::buffers::lvgl",
     )
     violations = product_placement_violations(invalid)
     assert "Signal subscription setup must execute from Flash" in violations

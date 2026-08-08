@@ -1,7 +1,7 @@
 # Canonical tracked implementation inventory for Core consumers.
 # Supported graphs derive their intentional platform exclusions from this list.
 set(MS_CORE_PRODUCT_SOURCE_PATHS
-    src/config/platform-teensy/LvglMemory.cpp
+    device-support/src/ms/device_support/v1/LvglMemory.cpp
     src/context/StandaloneContext.cpp
     src/context/standalone/DeviceSettingsSelectorPresenter.cpp
     src/context/standalone/MacroFeatureModule.cpp

@@ -29,6 +29,7 @@
   "export": {
     "include": [
       "src",
+      "device-support/src",
       "asset",
       "script"
     ],
@@ -46,7 +47,7 @@
       "-D TEENSY_OPT_SMALLEST_CODE",
       "-D LV_CONF_INCLUDE_SIMPLE",
       "-D LV_LVGL_H_INCLUDE_SIMPLE",
-      "-I src/config/platform-teensy"
+      "-I device-support/src"
     ],
     "srcFilter": [
       "+<*.c>",

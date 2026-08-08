@@ -232,7 +232,8 @@ def product_placement_violations(nm_output: str) -> tuple[str, ...]:
     lvgl_buffers = tuple(
         (address, size)
         for address, size, symbol_type, name in symbols
-        if symbol_type in "BbDdVv" and name == "Buffer::lvgl"
+        if symbol_type in "BbDdVv"
+        and name == "ms::device_support::v1::buffers::lvgl"
     )
     if not lvgl_buffers:
         violations.append("RGB565 LVGL draw buffer is missing from the ELF")
