@@ -55,6 +55,14 @@ public:
         bool ccOutPulse = false;
         bool beatPulse = false;
         std::array<uint8_t, TRACK_COUNT> trackVelocity{};
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+        std::array<
+            uint8_t,
+            core::state::sequencer::DrumTrackUxPrototypeState::
+                RUNTIME_LANE_CAPACITY> drumLaneSteps{};
+        uint16_t drumLaneValidMask = 0U;
+        bool drumPlaying = false;
+#endif
     };
 
     SequencerPlaybackService(core::state::sequencer::SequencerState& sequencer,

@@ -141,7 +141,7 @@ private:
         2U * core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT>
         structure_selection_watcher_;
 #if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    oc::state::StaticWatchGroup<43> grid_watcher_;
+    oc::state::StaticWatchGroup<44> grid_watcher_;
 #else
     oc::state::StaticWatchGroup<42> grid_watcher_;
 #endif

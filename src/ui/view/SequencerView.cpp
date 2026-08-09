@@ -57,33 +57,6 @@ FLASHMEM uint32_t drumPropertyColor(DrumProperty property) {
     }
 }
 
-FLASHMEM float drumPropertyNormalized(
-    const core::state::sequencer::DrumTrackUxPrototypeState& prototype,
-    uint8_t lane,
-    uint8_t step
-) {
-    const auto& lanePattern = prototype.drumTrack->pattern.lanes[lane];
-    switch (prototype.property) {
-        case DrumProperty::STATE:
-            return prototype.drumTrack->pattern.stepEnabled(lane, step)
-                ? 1.0f
-                : 0.0f;
-        case DrumProperty::PROBABILITY:
-            return static_cast<float>(lanePattern.probability[step]) / 100.0f;
-        case DrumProperty::GATE:
-            return std::min<float>(
-                1.0f,
-                static_cast<float>(lanePattern.gate[step]) / 400.0f
-            );
-        case DrumProperty::NUDGE:
-            return static_cast<float>(lanePattern.nudge[step] + 50) / 100.0f;
-        case DrumProperty::VELOCITY:
-        case DrumProperty::COUNT:
-        default:
-            return static_cast<float>(lanePattern.velocity[step]) / 127.0f;
-    }
-}
-
 FLASHMEM void drawDrumPrototypeRect(
     lv_layer_t* layer,
     const lv_area_t& area,
@@ -323,6 +296,18 @@ FLASHMEM void SequencerView::drawDrumTrackUxPrototypeGrid(
         LV_TEXT_ALIGN_LEFT
     );
 
+    const uint8_t pageStart = static_cast<uint8_t>(
+        prototype.page *
+        core::state::sequencer::DrumTrackUxPrototypeState::STEPS_PER_PAGE
+    );
+    const lv_coord_t gridStart = static_cast<lv_coord_t>(
+        surface.x1 + DRUM_LABEL_WIDTH
+    );
+    const lv_coord_t gridEnd = static_cast<lv_coord_t>(
+        gridStart + cellWidth *
+            core::state::sequencer::DrumTrackUxPrototypeState::STEPS_PER_PAGE
+    );
+
     for (uint8_t row = 0;
          row < core::state::sequencer::
              DrumTrackUxPrototypeState::VISIBLE_LANE_COUNT;
@@ -391,50 +376,246 @@ FLASHMEM void SequencerView::drawDrumTrackUxPrototypeGrid(
         for (uint8_t column = 0;
              column < core::state::sequencer::
                  DrumTrackUxPrototypeState::STEPS_PER_PAGE;
-            ++column) {
+             ++column) {
             const uint8_t step = prototype.visibleStep(column);
             const bool available = step < laneLength;
             const bool active = available &&
                 prototype.drumTrack->pattern.stepEnabled(lane, step);
             const lv_coord_t cellX = static_cast<lv_coord_t>(
-                surface.x1 + DRUM_LABEL_WIDTH + column * cellWidth
+                gridStart + column * cellWidth
             );
             const lv_area_t cellArea{
                 .x1 = static_cast<lv_coord_t>(cellX + 1),
-                .y1 = static_cast<lv_coord_t>(rowY + 2),
+                .y1 = static_cast<lv_coord_t>(rowY + 1),
                 .x2 = static_cast<lv_coord_t>(cellX + cellWidth - 2),
                 .y2 = static_cast<lv_coord_t>(
-                    rowY + DRUM_LANE_HEIGHT - 3
+                    rowY + DRUM_LANE_HEIGHT - 2
                 ),
             };
-            const float normalized = available
-                ? drumPropertyNormalized(prototype, lane, step)
-                : 0.0f;
-            const lv_opa_t fillOpacity = !available
-                ? LV_OPA_10
-                : active
-                ? static_cast<lv_opa_t>(
-                      45U + static_cast<uint16_t>(normalized * 175.0f)
-                  )
-                : LV_OPA_TRANSP;
             const bool focused = selected &&
                 focus == core::state::StructureNavigationFocus::STEP &&
                 step == prototype.focusedStep;
+
+            // Each lane owns its own beat division. The persistent separator
+            // makes mixed 1/8, 1/16, ... timelines legible in one overview.
+            if (available && stepsPerBeat > 0U &&
+                step % stepsPerBeat == 0U) {
+                const lv_area_t beatLine{
+                    .x1 = cellX,
+                    .y1 = static_cast<lv_coord_t>(rowY + 1),
+                    .x2 = cellX,
+                    .y2 = static_cast<lv_coord_t>(
+                        rowY + DRUM_LANE_HEIGHT - 2
+                    ),
+                };
+                drawDrumPrototypeRect(
+                    layer,
+                    beatLine,
+                    theme::color::STEP_DIVISION,
+                    LV_OPA_30
+                );
+            }
+
+            // Available/unused cells remain a quiet rhythmic scaffold. Focus
+            // is an outline only and never replaces musical data encoding.
             drawDrumPrototypeRect(
                 layer,
                 cellArea,
-                available
-                    ? drumPropertyColor(prototype.property)
-                    : theme::color::INACTIVE,
-                fillOpacity,
+                available ? theme::color::STEP_STATE : theme::color::INACTIVE,
+                available ? LV_OPA_10 : LV_OPA_20,
                 focused ? 2 : selected && available ? 1 : 0,
                 focused
                     ? LV_OPA_COVER
                     : selected && available
                     ? LV_OPA_70
                     : LV_OPA_TRANSP,
-                2
+                1
             );
+
+            if (!active) continue;
+
+            const uint8_t velocity = lanePattern.velocity[step];
+            const uint16_t gate = lanePattern.gate[step];
+            const int8_t nudge = lanePattern.nudge[step];
+            const uint8_t probability = lanePattern.probability[step];
+            const lv_coord_t innerWidth = std::max<lv_coord_t>(
+                2,
+                static_cast<lv_coord_t>(cellWidth - 4)
+            );
+            const lv_coord_t innerBottom = static_cast<lv_coord_t>(
+                rowY + DRUM_LANE_HEIGHT - 3
+            );
+            const lv_coord_t maxHitHeight = static_cast<lv_coord_t>(
+                DRUM_LANE_HEIGHT - 5
+            );
+            const lv_coord_t hitHeight = static_cast<lv_coord_t>(
+                2 + (static_cast<uint16_t>(velocity) *
+                         static_cast<uint16_t>(maxHitHeight - 2)) /
+                        127U
+            );
+            const lv_coord_t nominalOnset = static_cast<lv_coord_t>(cellX + 2);
+            const lv_coord_t nudgeOffset = static_cast<lv_coord_t>(
+                (static_cast<int32_t>(nudge) * innerWidth) / 100
+            );
+            const lv_coord_t onset = std::clamp<lv_coord_t>(
+                static_cast<lv_coord_t>(nominalOnset + nudgeOffset),
+                static_cast<lv_coord_t>(gridStart + 1),
+                static_cast<lv_coord_t>(gridEnd - 2)
+            );
+            const lv_coord_t gateWidth = std::max<lv_coord_t>(
+                2,
+                static_cast<lv_coord_t>(
+                    (static_cast<uint32_t>(gate) * innerWidth) / 100U
+                )
+            );
+            const lv_coord_t gateEnd = std::clamp<lv_coord_t>(
+                static_cast<lv_coord_t>(onset + gateWidth - 1),
+                onset,
+                static_cast<lv_coord_t>(gridEnd - 2)
+            );
+            const lv_area_t hitArea{
+                .x1 = onset,
+                .y1 = static_cast<lv_coord_t>(innerBottom - hitHeight + 1),
+                .x2 = gateEnd,
+                .y2 = innerBottom,
+            };
+            const lv_opa_t velocityOpacity = static_cast<lv_opa_t>(
+                70U + (static_cast<uint16_t>(velocity) * 170U) / 127U
+            );
+            drawDrumPrototypeRect(
+                layer,
+                hitArea,
+                theme::color::STEP_GATE,
+                velocityOpacity,
+                0,
+                LV_OPA_TRANSP,
+                1
+            );
+
+            // A compact onset marker preserves the Velocity identity while
+            // the body's width communicates Gate.
+            const lv_area_t onsetArea{
+                .x1 = onset,
+                .y1 = hitArea.y1,
+                .x2 = static_cast<lv_coord_t>(
+                    std::min<lv_coord_t>(gateEnd, onset + 1)
+                ),
+                .y2 = hitArea.y2,
+            };
+            drawDrumPrototypeRect(
+                layer,
+                onsetArea,
+                theme::color::STEP_VELOCITY,
+                LV_OPA_COVER
+            );
+
+            if (nudge != 0) {
+                const lv_area_t nudgeArea{
+                    .x1 = std::min(nominalOnset, onset),
+                    .y1 = static_cast<lv_coord_t>(rowY + 1),
+                    .x2 = std::max(nominalOnset, onset),
+                    .y2 = static_cast<lv_coord_t>(rowY + 2),
+                };
+                drawDrumPrototypeRect(
+                    layer,
+                    nudgeArea,
+                    theme::color::STEP_NUDGE,
+                    LV_OPA_COVER
+                );
+            }
+
+            if (probability < 100U) {
+                const lv_coord_t chanceX = std::clamp<lv_coord_t>(
+                    static_cast<lv_coord_t>(onset + 2),
+                    static_cast<lv_coord_t>(cellX + 2),
+                    static_cast<lv_coord_t>(cellX + cellWidth - 4)
+                );
+                const lv_area_t chanceArea{
+                    .x1 = chanceX,
+                    .y1 = static_cast<lv_coord_t>(rowY + 2),
+                    .x2 = static_cast<lv_coord_t>(chanceX + 2),
+                    .y2 = static_cast<lv_coord_t>(rowY + 4),
+                };
+                drawDrumPrototypeRect(
+                    layer,
+                    chanceArea,
+                    theme::color::STEP_CHANCE,
+                    LV_OPA_COVER,
+                    0,
+                    LV_OPA_TRANSP,
+                    2
+                );
+            }
+        }
+
+        // Loop end remains visible even when this lane is not focused.
+        if (laneLength > pageStart &&
+            laneLength <= static_cast<uint8_t>(
+                pageStart + core::state::sequencer::
+                    DrumTrackUxPrototypeState::STEPS_PER_PAGE
+            )) {
+            const uint8_t endColumn = static_cast<uint8_t>(
+                laneLength - pageStart
+            );
+            const lv_coord_t endX = static_cast<lv_coord_t>(
+                gridStart + endColumn * cellWidth
+            );
+            const lv_area_t loopCap{
+                .x1 = static_cast<lv_coord_t>(endX - 1),
+                .y1 = static_cast<lv_coord_t>(rowY + 1),
+                .x2 = endX,
+                .y2 = static_cast<lv_coord_t>(
+                    rowY + DRUM_LANE_HEIGHT - 2
+                ),
+            };
+            drawDrumPrototypeRect(
+                layer,
+                loopCap,
+                theme::color::STEP_LENGTH,
+                LV_OPA_80
+            );
+            const lv_area_t loopHook{
+                .x1 = static_cast<lv_coord_t>(endX - 4),
+                .y1 = static_cast<lv_coord_t>(rowY + 1),
+                .x2 = endX,
+                .y2 = static_cast<lv_coord_t>(rowY + 2),
+            };
+            drawDrumPrototypeRect(
+                layer,
+                loopHook,
+                theme::color::STEP_LENGTH,
+                LV_OPA_80
+            );
+        }
+
+        const uint16_t laneBit = static_cast<uint16_t>(1U << lane);
+        if (prototype.playbackActive &&
+            (prototype.playheadValidMask & laneBit) != 0U) {
+            const uint8_t playhead = prototype.playheadSteps[lane];
+            if (playhead >= pageStart &&
+                playhead < static_cast<uint8_t>(
+                    pageStart + core::state::sequencer::
+                        DrumTrackUxPrototypeState::STEPS_PER_PAGE
+                )) {
+                const lv_coord_t playheadX = static_cast<lv_coord_t>(
+                    gridStart + (playhead - pageStart) * cellWidth +
+                    cellWidth / 2
+                );
+                const lv_area_t playheadArea{
+                    .x1 = playheadX,
+                    .y1 = rowY,
+                    .x2 = playheadX,
+                    .y2 = static_cast<lv_coord_t>(
+                        rowY + DRUM_LANE_HEIGHT - 1
+                    ),
+                };
+                drawDrumPrototypeRect(
+                    layer,
+                    playheadArea,
+                    theme::color::PLAY_ACTIVE,
+                    LV_OPA_COVER
+                );
+            }
         }
     }
 }
@@ -679,6 +860,9 @@ FLASHMEM void SequencerView::bindGridState() {
 #if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
     grid_watcher_.watch(
         state_refs_.sequencer.drumTrackUxPrototype.revision
+    );
+    grid_watcher_.watch(
+        state_refs_.sequencer.drumTrackUxPrototype.playbackRevision
     );
 #endif
     grid_tick_watcher_.bind<&SequencerView::requestGridTickRender>(

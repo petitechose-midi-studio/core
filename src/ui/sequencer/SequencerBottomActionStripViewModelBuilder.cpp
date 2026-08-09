@@ -16,6 +16,9 @@
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerStepPastePlan.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+#include "state/sequencer/DrumPatternState.hpp"
+#endif
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerActionStripVisuals.hpp"
 #include "ui/sequencer/SequencerTrackPastePendingViewModel.hpp"
@@ -351,67 +354,33 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         const auto& prototype = source.sequencer.drumTrackUxPrototype;
         if (!prototype.gridVisible()) return props;
         if (prototype.selectorVisible()) return props;
-
-        props.slots[0] = SlotProps{
-            .visualState = Visual::ACTIVE,
-            .tone = Tone::NEUTRAL,
-            .showIcon = false,
-            .icon = nullptr,
-            .showLabel = true,
-        };
-        std::snprintf(
-            props.slots[0].labelText.data(),
-            props.slots[0].labelText.size(),
-            "< P%u",
-            static_cast<unsigned>(prototype.page + 1U)
+        const uint8_t length = prototype.drumTrack->pattern.effectiveLength(
+            prototype.selectedLane
         );
-        props.slots[1] = SlotProps{
-            .visualState = Visual::ACTIVE,
-            .tone = Tone::CONSTRUCTIVE,
-            .showIcon = false,
-            .icon = nullptr,
-            .showLabel = true,
-        };
-        std::snprintf(
-            props.slots[1].labelText.data(),
-            props.slots[1].labelText.size(),
-            "OPT %s",
-            source.navigationFocus.get() ==
-                    core::state::StructureNavigationFocus::STEP
-                ? prototype.property == core::state::sequencer::
-                          DrumTrackUxPrototypeProperty::STATE
-                    ? "STATE"
-                    : prototype.property == core::state::sequencer::
-                          DrumTrackUxPrototypeProperty::PROBABILITY
-                    ? "CHANCE"
-                    : prototype.property == core::state::sequencer::
-                          DrumTrackUxPrototypeProperty::GATE
-                    ? "GATE"
-                    : prototype.property == core::state::sequencer::
-                          DrumTrackUxPrototypeProperty::NUDGE
-                    ? "NUDGE"
-                    : "VEL"
-                : prototype.dimension == core::state::sequencer::
-                          DrumTrackUxPrototypeDimension::MODE
-                    ? "MODE"
-                    : prototype.dimension == core::state::sequencer::
-                          DrumTrackUxPrototypeDimension::DIVISION
-                    ? "DIV"
-                    : "LEN"
+        const uint8_t pageCount = std::max<uint8_t>(
+            1U,
+            static_cast<uint8_t>(
+                (length + prototype.STEPS_PER_PAGE - 1U) /
+                prototype.STEPS_PER_PAGE
+            )
         );
-        props.slots[2] = SlotProps{
-            .visualState = Visual::ACTIVE,
-            .tone = Tone::NEUTRAL,
-            .showIcon = false,
-            .icon = nullptr,
-            .showLabel = true,
-        };
-        std::snprintf(
-            props.slots[2].labelText.data(),
-            props.slots[2].labelText.size(),
-            "P%u >",
-            static_cast<unsigned>(prototype.page + 1U)
+        const Visual pagingVisual = pageCount > 1U
+            ? Visual::ACTIVE
+            : Visual::DISABLED;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_BACKWARD,
+            pagingVisual,
+            Tone::NEUTRAL
         );
+        // BOTTOM_CENTER remains the global Transport control. Keeping this
+        // slot empty avoids presenting OPT as a button action.
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_BACKWARD,
+            pagingVisual,
+            Tone::NEUTRAL
+        );
+        props.slots[2].iconRotated180 = true;
         return props;
     }
 #endif

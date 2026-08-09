@@ -122,6 +122,7 @@ FLASHMEM bool sameSlotProps(const ContextActionStripSlotProps& lhs, const Contex
            sameText(lhs.icon, rhs.icon) &&
            lhs.iconUsesStandaloneFont == rhs.iconUsesStandaloneFont &&
            lhs.iconSize == rhs.iconSize &&
+           lhs.iconRotated180 == rhs.iconRotated180 &&
            lhs.showLabel == rhs.showLabel &&
            sameText(lhs.label, rhs.label) &&
            lhs.labelText == rhs.labelText &&
@@ -343,6 +344,11 @@ FLASHMEM void ContextActionStrip::renderSlot(size_t index, const ContextActionSt
         }
         lv_obj_set_style_text_color(slot.icon, color, 0);
         lv_obj_set_style_text_opa(slot.icon, textOpa, 0);
+        lv_obj_set_style_transform_rotation(
+            slot.icon,
+            props.iconRotated180 ? 1800 : 0,
+            0
+        );
         lv_obj_clear_flag(slot.icon, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(slot.icon, LV_OBJ_FLAG_HIDDEN);

@@ -21,6 +21,13 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
             .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
             .scope(sequencer_view_scope_)
             .when([this]() {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+                if (sequencer_.drumTrackUxPrototype.gridVisible()) {
+                    return !overlay_state_.hasVisible() &&
+                           navigation_focus_.get() ==
+                               core::state::StructureNavigationFocus::STEP;
+                }
+#endif
                 const auto policy = interaction_policy::build(
                     sequencer_,
                     track_ui_,
@@ -78,6 +85,9 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(overlay_scope_)
         .when([this]() {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+            if (drumStepEditActive()) return false;
+#endif
             return core::state::sequencer::preset_library_entry_policy::
                 canOpenStepPresets(sequencer_);
         })
@@ -93,6 +103,9 @@ FLASHMEM void SequencerStepEditHandler::setupBindings() {
         .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(overlay_scope_)
         .when([this]() {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+            if (drumStepEditActive()) return false;
+#endif
             return core::state::sequencer::preset_library_entry_policy::
                 canOpenChordPresets(sequencer_);
         })

@@ -9,6 +9,13 @@
 
 namespace core::state::sequencer {
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+static_assert(
+    DrumTrackUxPrototypeState::RUNTIME_LANE_CAPACITY == DRUM_MAX_LANES,
+    "Drum UI/runtime lane projections must share one fixed capacity"
+);
+#endif
+
 FLASHMEM SequencerPatternQuickControlsState::SequencerPatternQuickControlsState() = default;
 FLASHMEM SequencerPatternQuickControlsState::~SequencerPatternQuickControlsState() = default;
 
@@ -56,6 +63,10 @@ FLASHMEM void SequencerStepEditOverlayState::reset() {
     stepIndex.set(0);
     focusedRow.set(0);
     localVariationEditActive.set(false);
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    drumContext = false;
+    drumLane = 0;
+#endif
     chordEditor.reset();
     contextHold.clear();
 }
@@ -464,6 +475,10 @@ FLASHMEM void DrumTrackUxPrototypeState::reset() {
     selectorSnapshotTimingMode = 0;
     selectorSnapshotLength = 0;
     selectorSnapshotStepsPerBeat = 0;
+    playheadSteps.fill(0U);
+    playheadValidMask = 0U;
+    playbackActive = false;
+    playbackRevision.set(playbackRevision.get() + 1U);
     if (!drumTrack) {
         drumTrack = core::app::makeExtmemUnique<DrumTrackState>();
     }
@@ -727,10 +742,7 @@ FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepVelocity(
 ) {
     if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
     const uint8_t step = visibleStep(indexInPage);
-    if (!drumTrack ||
-        step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
-    if (!drumTrack->pattern.setStepVelocity(selectedLane, step, velocity)) return;
-    bump();
+    (void)setStepVelocity(selectedLane, step, velocity);
 }
 
 FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepEnabled(
@@ -739,10 +751,7 @@ FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepEnabled(
 ) {
     if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
     const uint8_t step = visibleStep(indexInPage);
-    if (!drumTrack ||
-        step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
-    if (!drumTrack->pattern.setStepEnabled(selectedLane, step, enabled)) return;
-    bump();
+    (void)setStepEnabled(selectedLane, step, enabled);
 }
 
 FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepGate(
@@ -751,10 +760,7 @@ FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepGate(
 ) {
     if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
     const uint8_t step = visibleStep(indexInPage);
-    if (!drumTrack ||
-        step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
-    if (!drumTrack->pattern.setStepGate(selectedLane, step, gatePercent)) return;
-    bump();
+    (void)setStepGate(selectedLane, step, gatePercent);
 }
 
 FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepNudge(
@@ -763,10 +769,7 @@ FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepNudge(
 ) {
     if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
     const uint8_t step = visibleStep(indexInPage);
-    if (!drumTrack ||
-        step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
-    if (!drumTrack->pattern.setStepNudge(selectedLane, step, nudgePercent)) return;
-    bump();
+    (void)setStepNudge(selectedLane, step, nudgePercent);
 }
 
 FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepProbability(
@@ -775,16 +778,110 @@ FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepProbability(
 ) {
     if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
     const uint8_t step = visibleStep(indexInPage);
-    if (!drumTrack ||
-        step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
-    if (!drumTrack->pattern.setStepProbability(
-            selectedLane,
-            step,
-            probability
-        )) {
-        return;
+    (void)setStepProbability(selectedLane, step, probability);
+}
+
+FLASHMEM bool DrumTrackUxPrototypeState::stepInRange(
+    uint8_t lane,
+    uint8_t step
+) const {
+    return gridVisible() && lane < LANE_COUNT && step < MAX_STEPS &&
+           lane < drumTrack->kit.laneCount &&
+           step < drumTrack->pattern.effectiveLength(lane);
+}
+
+FLASHMEM bool DrumTrackUxPrototypeState::focusStep(
+    uint8_t lane,
+    uint8_t step
+) {
+    if (!stepInRange(lane, step)) return false;
+    const bool changed = selectedLane != lane || focusedStep != step ||
+                         page != static_cast<uint8_t>(step / STEPS_PER_PAGE);
+    selectedLane = lane;
+    focusedStep = step;
+    page = static_cast<uint8_t>(step / STEPS_PER_PAGE);
+    if (changed) bump();
+    return true;
+}
+
+FLASHMEM bool DrumTrackUxPrototypeState::setStepEnabled(
+    uint8_t lane,
+    uint8_t step,
+    bool enabled
+) {
+    if (!stepInRange(lane, step) ||
+        !drumTrack->pattern.setStepEnabled(lane, step, enabled)) {
+        return false;
     }
     bump();
+    return true;
+}
+
+FLASHMEM bool DrumTrackUxPrototypeState::setStepVelocity(
+    uint8_t lane,
+    uint8_t step,
+    uint8_t velocity
+) {
+    if (!stepInRange(lane, step) ||
+        !drumTrack->pattern.setStepVelocity(lane, step, velocity)) {
+        return false;
+    }
+    bump();
+    return true;
+}
+
+FLASHMEM bool DrumTrackUxPrototypeState::setStepGate(
+    uint8_t lane,
+    uint8_t step,
+    uint16_t gatePercent
+) {
+    if (!stepInRange(lane, step) ||
+        !drumTrack->pattern.setStepGate(lane, step, gatePercent)) {
+        return false;
+    }
+    bump();
+    return true;
+}
+
+FLASHMEM bool DrumTrackUxPrototypeState::setStepNudge(
+    uint8_t lane,
+    uint8_t step,
+    int8_t nudgePercent
+) {
+    if (!stepInRange(lane, step) ||
+        !drumTrack->pattern.setStepNudge(lane, step, nudgePercent)) {
+        return false;
+    }
+    bump();
+    return true;
+}
+
+FLASHMEM bool DrumTrackUxPrototypeState::setStepProbability(
+    uint8_t lane,
+    uint8_t step,
+    uint8_t probability
+) {
+    if (!stepInRange(lane, step) ||
+        !drumTrack->pattern.setStepProbability(lane, step, probability)) {
+        return false;
+    }
+    bump();
+    return true;
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::publishPlayback(
+    const std::array<uint8_t, RUNTIME_LANE_CAPACITY>& laneSteps,
+    uint16_t validMask,
+    bool playing
+) {
+    if (playheadSteps == laneSteps && playheadValidMask == validMask &&
+        playbackActive == playing) {
+        return;
+    }
+    playheadSteps = laneSteps;
+    playheadValidMask = validMask;
+    playbackActive = playing;
+    playbackRevision.set(playbackRevision.get() + 1U);
 }
 #endif
 

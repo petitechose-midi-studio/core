@@ -75,6 +75,15 @@ private:
     void setupBindings();
 
     void openForMacroInPage(uint8_t indexInPage);
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    [[nodiscard]] bool drumStepEditActive() const;
+    bool openDrumStepEditor(uint8_t lane, uint8_t step, uint8_t row);
+    void closeDrumStepEditor();
+    void syncDrumPropertyForFocusedRow();
+    void setDrumFocusedValue(float normalized);
+    void configureDrumOpt();
+    void resetDrumFocusedValue();
+#endif
     void backFromStepEdit();
     bool commitStepEditHistory();
     void closeStepEdit();

@@ -102,62 +102,6 @@ using DrumDimension =
     core::state::sequencer::DrumTrackUxPrototypeDimension;
 using DrumProperty = core::state::sequencer::DrumTrackUxPrototypeProperty;
 
-FLASHMEM core::state::sequencer::StepProperty drumStepProperty(
-    DrumProperty property
-) {
-    using StepProperty = core::state::sequencer::StepProperty;
-    switch (property) {
-        case DrumProperty::PROBABILITY: return StepProperty::PROBABILITY;
-        case DrumProperty::GATE: return StepProperty::GATE;
-        case DrumProperty::NUDGE: return StepProperty::NUDGE;
-        case DrumProperty::STATE:
-        case DrumProperty::VELOCITY:
-        case DrumProperty::COUNT:
-        default: return StepProperty::VELOCITY;
-    }
-}
-
-FLASHMEM input_utils::StepPropertyEncoderConfig drumPropertyEncoderConfig(
-    DrumProperty property
-) {
-    if (property != DrumProperty::STATE) {
-        return input_utils::encoderConfigForProperty(
-            drumStepProperty(property)
-        );
-    }
-    input_utils::StepPropertyEncoderConfig config;
-    config.discreteSteps = 2U;
-    return config;
-}
-
-FLASHMEM float drumStepPropertyToNormalized(
-    const core::state::sequencer::DrumTrackUxPrototypeState& prototype,
-    uint8_t step
-) {
-    if (!prototype.drumTrack || step >= prototype.MAX_STEPS) return 0.0f;
-    const auto& lane =
-        prototype.drumTrack->pattern.lanes[prototype.selectedLane];
-    switch (prototype.property) {
-        case DrumProperty::STATE:
-            return prototype.drumTrack->pattern.stepEnabled(
-                prototype.selectedLane,
-                step
-            ) ? 1.0f : 0.0f;
-        case DrumProperty::PROBABILITY:
-            return input_utils::probabilityToNormalized(
-                lane.probability[step]
-            );
-        case DrumProperty::GATE:
-            return input_utils::gatePercentToNormalized(lane.gate[step]);
-        case DrumProperty::NUDGE:
-            return input_utils::nudgeToNormalized(lane.nudge[step]);
-        case DrumProperty::VELOCITY:
-        case DrumProperty::COUNT:
-        default:
-            return input_utils::indexToNormalized(lane.velocity[step], 128);
-    }
-}
-
 FLASHMEM input_utils::StepPropertyEncoderConfig drumDimensionEncoderConfig(
     DrumDimension dimension
 ) {
@@ -515,11 +459,18 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPatternQuickControlOptValue()
 FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumTrackUxPrototypeValues() {
     const auto& prototype = sequencer_.drumTrackUxPrototype;
 
-    ensureMacroEncoderConfig(drumPropertyEncoderConfig(prototype.property));
+    ensureMacroEncoderConfig(
+        input_utils::encoderConfigForDrumProperty(prototype.property)
+    );
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         const uint8_t step = prototype.visibleStep(i);
-        const float normalized = drumStepPropertyToNormalized(prototype, step);
+        const float normalized = input_utils::drumStepPropertyToNormalized(
+            prototype,
+            prototype.selectedLane,
+            step,
+            prototype.property
+        );
         if (!macro_position_valid_[i] ||
             hasMeaningfulEncoderDelta(macro_position_cache_[i], normalized)) {
             encoders_.setPosition(Config::MACRO_ENCODERS[i], normalized);
@@ -536,9 +487,16 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumTrackUxPrototypeValues() 
     if (navigation_focus_.get() ==
             core::state::StructureNavigationFocus::STEP &&
         !prototype.selectorVisible()) {
-        ensureOptEncoderConfig(drumPropertyEncoderConfig(prototype.property));
+        ensureOptEncoderConfig(
+            input_utils::encoderConfigForDrumProperty(prototype.property)
+        );
         syncOptPosition(
-            drumStepPropertyToNormalized(prototype, prototype.focusedStep)
+            input_utils::drumStepPropertyToNormalized(
+                prototype,
+                prototype.selectedLane,
+                prototype.focusedStep,
+                prototype.property
+            )
         );
         return;
     }

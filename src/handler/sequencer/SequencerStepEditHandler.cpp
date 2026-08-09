@@ -6,6 +6,7 @@
 #include "SequencerStepContextRowWorkflow.hpp"
 #include "SequencerStepEditSessionWorkflow.hpp"
 #include "SequencerStepValueRowWorkflow.hpp"
+#include "handler/sequencer/SequencerInputUtils.hpp"
 
 #include <algorithm>
 
@@ -19,6 +20,9 @@
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 #include "state/sequencer/SequencerStepEditRows.hpp"
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+#include "state/sequencer/DrumPatternState.hpp"
+#endif
 
 namespace core::handler {
 namespace step_chord_editor_workflow = core::handler::sequencer::step_chord_editor_workflow;
@@ -26,6 +30,7 @@ namespace step_context_row_workflow = core::handler::sequencer::step_context_row
 namespace step_edit_session_workflow = core::handler::sequencer::step_edit_session_workflow;
 namespace step_edit_rows = core::state::sequencer::step_edit_rows;
 namespace step_value_row_workflow = core::handler::sequencer::step_value_row_workflow;
+namespace input_utils = core::handler::sequencer::input_utils;
 
 namespace {
 
@@ -85,6 +90,26 @@ FLASHMEM core::state::sequencer::SequencerCoalescedPatternPayloadPlan stepResetP
                : Plan::FlatOnly;
 }
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+using DrumProperty = core::state::sequencer::DrumTrackUxPrototypeProperty;
+
+FLASHMEM bool isDrumEditorRow(uint8_t row) {
+    return std::find(
+               step_edit_rows::DRUM_NAVIGATION_ORDER.begin(),
+               step_edit_rows::DRUM_NAVIGATION_ORDER.end(),
+               row
+           ) != step_edit_rows::DRUM_NAVIGATION_ORDER.end();
+}
+
+FLASHMEM DrumProperty drumPropertyForEditorRow(uint8_t row) {
+    if (step_edit_rows::isActivated(row)) return DrumProperty::STATE;
+    if (!step_edit_rows::isProperty(row)) return DrumProperty::VELOCITY;
+    return input_utils::drumPropertyForStepProperty(
+        step_edit_rows::propertyForRow(row)
+    );
+}
+#endif
+
 }  // namespace
 
 FLASHMEM SequencerStepEditHandler::SequencerStepEditHandler(
@@ -125,6 +150,18 @@ void SequencerStepEditHandler::update(uint32_t nowMs) {
 }
 
 FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    if (prototype.gridVisible()) {
+        const uint8_t step = prototype.visibleStep(indexInPage);
+        (void)openDrumStepEditor(
+            prototype.selectedLane,
+            step,
+            step_edit_rows::ACTIVATED
+        );
+        return;
+    }
+#endif
     if (!step_edit_session_workflow::openForMacroInPage(sequencer_, history_, overlays_,
                                                         indexInPage)) {
         return;
@@ -134,6 +171,16 @@ FLASHMEM void SequencerStepEditHandler::openForMacroInPage(uint8_t indexInPage) 
 }
 
 FLASHMEM bool SequencerStepEditHandler::openFocusedStepAtRow(uint8_t row) {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    if (prototype.gridVisible()) {
+        return openDrumStepEditor(
+            prototype.selectedLane,
+            prototype.focusedStep,
+            row
+        );
+    }
+#endif
     const uint8_t length = core::state::sequencer::activeContentLength(sequencer_);
     if (length == 0) return false;
     const uint8_t focused =
@@ -148,6 +195,9 @@ FLASHMEM bool SequencerStepEditHandler::openFocusedStepAtRow(uint8_t row) {
 }
 
 FLASHMEM bool SequencerStepEditHandler::openFocusedStepContentAtRow(uint8_t row) {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (sequencer_.drumTrackUxPrototype.gridVisible()) return false;
+#endif
     if (!step_edit_rows::isChord(row) && !step_edit_rows::isContext(row)) { return false; }
     if (!openFocusedStepAtRow(row)) return false;
 
@@ -164,8 +214,150 @@ FLASHMEM bool SequencerStepEditHandler::openFocusedStepContentAtRow(uint8_t row)
 }
 
 FLASHMEM bool SequencerStepEditHandler::commitStepEditHistory() {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) return true;
+#endif
     return step_edit_session_workflow::commitHistory(sequencer_, history_);
 }
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+FLASHMEM bool SequencerStepEditHandler::drumStepEditActive() const {
+    return sequencer_.stepEdit.drumContext;
+}
+
+FLASHMEM bool SequencerStepEditHandler::openDrumStepEditor(
+    uint8_t lane,
+    uint8_t step,
+    uint8_t row
+) {
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    if (!prototype.focusStep(lane, step)) return false;
+
+    auto& edit = sequencer_.stepEdit;
+    edit.reset();
+    edit.drumContext = true;
+    edit.drumLane = lane;
+    edit.stepIndex.set(step);
+    edit.focusedRow.set(isDrumEditorRow(row) ? row : step_edit_rows::ACTIVATED);
+    syncDrumPropertyForFocusedRow();
+    step_retarget_active_ = false;
+    overlays_.show(core::ui::OverlayType::SEQ_STEP_EDIT);
+    configureDrumOpt();
+    return true;
+}
+
+FLASHMEM void SequencerStepEditHandler::closeDrumStepEditor() {
+    context_release_latch_.clear();
+    preset_open_release_latch_.clear();
+    step_retarget_active_ = false;
+    overlays_.hide();
+    sequencer_.stepEdit.reset();
+}
+
+FLASHMEM void SequencerStepEditHandler::syncDrumPropertyForFocusedRow() {
+    if (!drumStepEditActive()) return;
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    const auto next = drumPropertyForEditorRow(
+        sequencer_.stepEdit.focusedRow.get()
+    );
+    if (prototype.property == next) return;
+    prototype.property = next;
+    prototype.bump();
+}
+
+FLASHMEM void SequencerStepEditHandler::setDrumFocusedValue(float normalized) {
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    const uint8_t lane = sequencer_.stepEdit.drumLane;
+    const uint8_t step = sequencer_.stepEdit.stepIndex.get();
+    if (!prototype.stepInRange(lane, step)) return;
+
+    const auto property = drumPropertyForEditorRow(
+        sequencer_.stepEdit.focusedRow.get()
+    );
+    (void)input_utils::applyNormalizedToDrumStep(
+        prototype,
+        lane,
+        step,
+        property,
+        normalized
+    );
+}
+
+FLASHMEM void SequencerStepEditHandler::configureDrumOpt() {
+    if (!drumStepEditActive()) return;
+    const auto& prototype = sequencer_.drumTrackUxPrototype;
+    const uint8_t lane = sequencer_.stepEdit.drumLane;
+    const uint8_t step = sequencer_.stepEdit.stepIndex.get();
+    if (!prototype.stepInRange(lane, step)) return;
+
+    const auto encoder = static_cast<oc::type::EncoderID>(Config::EncoderID::OPT);
+    const auto row = sequencer_.stepEdit.focusedRow.get();
+    const auto property = drumPropertyForEditorRow(row);
+    if (property == DrumProperty::STATE) {
+        encoders_.setDiscreteTicksPerStep(encoder, 8U);
+        encoders_.setNormalizedTurns(encoder, 0.25f);
+        encoders_.setDiscreteSteps(encoder, 2U);
+        encoders_.setPosition(
+            encoder,
+            prototype.drumTrack->pattern.stepEnabled(lane, step) ? 1.0f : 0.0f
+        );
+        return;
+    }
+
+    const auto config = input_utils::encoderConfigForDrumProperty(property);
+    encoders_.setDiscreteTicksPerStep(encoder, config.discreteTicksPerStep);
+    encoders_.setNormalizedTurns(encoder, config.normalizedTurns);
+    encoders_.setDiscreteSteps(encoder, config.discreteSteps);
+    encoders_.setPosition(
+        encoder,
+        input_utils::drumStepPropertyToNormalized(
+            prototype,
+            lane,
+            step,
+            property
+        )
+    );
+}
+
+FLASHMEM void SequencerStepEditHandler::resetDrumFocusedValue() {
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    const uint8_t lane = sequencer_.stepEdit.drumLane;
+    const uint8_t step = sequencer_.stepEdit.stepIndex.get();
+    if (!prototype.stepInRange(lane, step)) return;
+    switch (drumPropertyForEditorRow(sequencer_.stepEdit.focusedRow.get())) {
+        case DrumProperty::STATE:
+            (void)prototype.setStepEnabled(lane, step, false);
+            break;
+        case DrumProperty::PROBABILITY:
+            (void)prototype.setStepProbability(
+                lane,
+                step,
+                core::state::sequencer::DRUM_DEFAULT_PROBABILITY
+            );
+            break;
+        case DrumProperty::GATE:
+            (void)prototype.setStepGate(
+                lane,
+                step,
+                core::state::sequencer::DRUM_DEFAULT_GATE_PERCENT
+            );
+            break;
+        case DrumProperty::NUDGE:
+            (void)prototype.setStepNudge(lane, step, 0);
+            break;
+        case DrumProperty::VELOCITY:
+        case DrumProperty::COUNT:
+        default:
+            (void)prototype.setStepVelocity(
+                lane,
+                step,
+                core::state::sequencer::DRUM_DEFAULT_VELOCITY
+            );
+            break;
+    }
+    configureDrumOpt();
+}
+#endif
 
 FLASHMEM bool SequencerStepEditHandler::beginPreparedPatternMutation(
     core::state::sequencer::SequencerPreparedPatternEditOwner owner, uint8_t key,
@@ -206,6 +398,12 @@ FLASHMEM bool SequencerStepEditHandler::commitPreparedPatternMutation(
 }
 
 FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        closeDrumStepEditor();
+        return;
+    }
+#endif
     if (sequencer_.stepContentDraft.exitPromptVisible.get()) {
         // Back from the explicit decision surface means Continue editing.
         sequencer_.stepContentDraft.hideExitPrompt();
@@ -256,6 +454,12 @@ FLASHMEM void SequencerStepEditHandler::backFromStepEdit() {
 }
 
 FLASHMEM void SequencerStepEditHandler::closeStepEdit() {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        closeDrumStepEditor();
+        return;
+    }
+#endif
     if (chordEditorActive() && sequencer_.stepContentDraft.active.get()) {
         backFromStepEdit();
         if (sequencer_.stepContentDraft.active.get()) return;
@@ -280,6 +484,27 @@ FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
         return;
     }
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        const int current = step_edit_rows::drumNavigationIndexForRow(
+            sequencer_.stepEdit.focusedRow.get()
+        );
+        const int next = nav::nextWrappedIndex(
+            delta,
+            current,
+            static_cast<int>(step_edit_rows::DRUM_NAVIGATION_ORDER.size())
+        );
+        sequencer_.stepEdit.contextHold.clear();
+        sequencer_.stepEdit.localVariationEditActive.set(false);
+        sequencer_.stepEdit.focusedRow.set(
+            step_edit_rows::drumRowForNavigationIndex(next)
+        );
+        syncDrumPropertyForFocusedRow();
+        configureDrumOpt();
+        return;
+    }
+#endif
+
     const int current = step_edit_rows::navigationIndexForRow(sequencer_.stepEdit.focusedRow.get());
     const int next = nav::nextWrappedIndex(
         delta, current, static_cast<int>(step_edit_rows::NAVIGATION_ORDER.size()));
@@ -292,6 +517,29 @@ FLASHMEM void SequencerStepEditHandler::moveFocus(float delta) {
 
 FLASHMEM void SequencerStepEditHandler::retargetEditedStep(float delta) {
     if (!nav::hasTurnDelta(delta) || chordEditorActive()) return;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        auto& prototype = sequencer_.drumTrackUxPrototype;
+        const uint8_t lane = sequencer_.stepEdit.drumLane;
+        if (!prototype.drumTrack || lane >= prototype.LANE_COUNT) return;
+        const uint8_t length = prototype.drumTrack->pattern.effectiveLength(lane);
+        if (length == 0U) return;
+        const uint8_t current = std::min<uint8_t>(
+            sequencer_.stepEdit.stepIndex.get(),
+            static_cast<uint8_t>(length - 1U)
+        );
+        const int direction = nav::turnStep(delta);
+        const uint8_t next = direction > 0
+            ? static_cast<uint8_t>((static_cast<uint16_t>(current) + 1U) % length)
+            : current == 0U
+            ? static_cast<uint8_t>(length - 1U)
+            : static_cast<uint8_t>(current - 1U);
+        if (next == current || !prototype.focusStep(lane, next)) return;
+        sequencer_.stepEdit.stepIndex.set(next);
+        configureDrumOpt();
+        return;
+    }
+#endif
     if (step_edit_session_workflow::retargetRootStep(sequencer_, history_, nav::turnStep(delta))) {
         configureOptForFocusedRow();
     }
@@ -305,6 +553,25 @@ FLASHMEM void SequencerStepEditHandler::activateFocusedRowOrClose() {
 
     auto& edit = sequencer_.stepEdit;
     const uint8_t focusedRow = edit.focusedRow.get();
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        if (step_edit_rows::isActivated(focusedRow)) {
+            auto& prototype = sequencer_.drumTrackUxPrototype;
+            const uint8_t lane = edit.drumLane;
+            const uint8_t step = edit.stepIndex.get();
+            if (!prototype.stepInRange(lane, step)) return;
+            (void)prototype.setStepEnabled(
+                lane,
+                step,
+                !prototype.drumTrack->pattern.stepEnabled(lane, step)
+            );
+            configureDrumOpt();
+        }
+        // Scalar Drum rows are edited live with OPT; NAV confirms harmlessly.
+        return;
+    }
+#endif
 
     if (chordEditorActive()) {
         if (!step_chord_editor_workflow::formulaEditorActive(sequencer_) &&
@@ -383,6 +650,12 @@ FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
         setFocusedChordFieldValue(normalized);
         return;
     }
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        setDrumFocusedValue(normalized);
+        return;
+    }
+#endif
     if (step_edit_rows::isChord(sequencer_.stepEdit.focusedRow.get())) { return; }
 
     uint8_t abs = 0;
@@ -405,6 +678,12 @@ FLASHMEM void SequencerStepEditHandler::setFocusedValue(float normalized) {
 }
 
 FLASHMEM void SequencerStepEditHandler::configureOptForFocusedRow() {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        configureDrumOpt();
+        return;
+    }
+#endif
     if (chordEditorActive()) {
         configureOptForFocusedChordField();
         return;
@@ -563,11 +842,31 @@ FLASHMEM bool SequencerStepEditHandler::chordEditorActive() const {
 }
 
 FLASHMEM bool SequencerStepEditHandler::editedStepInRange(uint8_t& step) const {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        step = sequencer_.stepEdit.stepIndex.get();
+        return sequencer_.drumTrackUxPrototype.stepInRange(
+            sequencer_.stepEdit.drumLane,
+            step
+        );
+    }
+#endif
     return step_edit_session_workflow::editedStepInRange(sequencer_, step);
 }
 
 FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage) {
     if (sequencer_.stepContentDraft.exitPromptVisible.get()) return;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        if (indexInPage == static_cast<uint8_t>(
+                sequencer_.stepEdit.stepIndex.get() %
+                core::state::sequencer::DrumTrackUxPrototypeState::STEPS_PER_PAGE
+            )) {
+            closeDrumStepEditor();
+        }
+        return;
+    }
+#endif
     if (step_edit_session_workflow::shouldCloseFromMacro(sequencer_, indexInPage)) {
         closeStepEdit();
     }
@@ -575,17 +874,32 @@ FLASHMEM void SequencerStepEditHandler::maybeCloseFromMacro(uint8_t indexInPage)
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowIsValueRow() const {
     if (chordEditorActive()) return true;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        const uint8_t row = sequencer_.stepEdit.focusedRow.get();
+        return step_edit_rows::isActivated(row) ||
+               (step_edit_rows::isProperty(row) &&
+                step_edit_rows::propertyForRow(row) !=
+                    core::state::sequencer::StepProperty::NOTE);
+    }
+#endif
     return !step_edit_rows::isChord(sequencer_.stepEdit.focusedRow.get()) &&
            step_value_row_workflow::focusedRowIsValue(sequencer_);
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowIsContextRow() const {
     if (chordEditorActive()) return false;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) return false;
+#endif
     return step_context_row_workflow::focusedRowIsContext(sequencer_);
 }
 
 FLASHMEM bool SequencerStepEditHandler::focusedRowSupportsLocalVariation() const {
     if (chordEditorActive()) return false;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) return false;
+#endif
     return step_value_row_workflow::focusedRowSupportsLocalVariation(sequencer_);
 }
 
@@ -614,6 +928,13 @@ FLASHMEM void SequencerStepEditHandler::resetFocusedValueRowToDefault() {
         resetFocusedChordFieldToDefault();
         return;
     }
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drumStepEditActive()) {
+        resetDrumFocusedValue();
+        return;
+    }
+#endif
 
     uint8_t step = 0;
     if (!editedStepInRange(step)) return;

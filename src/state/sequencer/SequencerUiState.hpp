@@ -193,6 +193,13 @@ struct SequencerStepEditOverlayState {
     Signal<uint8_t> stepIndex{0};
     Signal<uint8_t> focusedRow{0};
     Signal<bool> localVariationEditActive{false};
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    // The retained Step Editor is shared by melodic and Drum tracks. These
+    // two cold session fields select the authored domain without duplicating
+    // the overlay or projecting Drum edits through the melodic Pattern.
+    bool drumContext = false;
+    uint8_t drumLane = 0;
+#endif
     SequencerChordEditorState chordEditor;
 
     core::state::StructureHoldState contextHold;
@@ -697,6 +704,7 @@ struct DrumTrackUxPrototypeState {
     static constexpr uint8_t STEPS_PER_PAGE = 8;
     static constexpr uint8_t PAGE_COUNT = 16;
     static constexpr uint8_t MAX_STEPS = STEPS_PER_PAGE * PAGE_COUNT;
+    static constexpr uint8_t RUNTIME_LANE_CAPACITY = 16U;
     static constexpr uint8_t INVALID_TRACK = 0xFFU;
 
     bool armed = false;
@@ -725,6 +733,13 @@ struct DrumTrackUxPrototypeState {
     // out of the hot SequencerState object and in PSRAM.
     core::app::ExtmemUniquePtr<DrumTrackState> drumTrack;
     Signal<uint32_t, 8> revision{0};
+    // Realtime playback publishes only a bounded lane-position projection.
+    // It is kept separate from authored revision so the Step Editor is not
+    // reformatted every time a playhead advances.
+    std::array<uint8_t, RUNTIME_LANE_CAPACITY> playheadSteps{};
+    uint16_t playheadValidMask = 0U;
+    bool playbackActive = false;
+    Signal<uint32_t, 4> playbackRevision{0};
 
     DrumTrackUxPrototypeState();
     ~DrumTrackUxPrototypeState();
@@ -765,6 +780,18 @@ struct DrumTrackUxPrototypeState {
     void setVisibleStepGate(uint8_t indexInPage, uint16_t gatePercent);
     void setVisibleStepNudge(uint8_t indexInPage, int8_t nudgePercent);
     void setVisibleStepProbability(uint8_t indexInPage, uint8_t probability);
+    [[nodiscard]] bool stepInRange(uint8_t lane, uint8_t step) const;
+    bool focusStep(uint8_t lane, uint8_t step);
+    bool setStepEnabled(uint8_t lane, uint8_t step, bool enabled);
+    bool setStepVelocity(uint8_t lane, uint8_t step, uint8_t velocity);
+    bool setStepGate(uint8_t lane, uint8_t step, uint16_t gatePercent);
+    bool setStepNudge(uint8_t lane, uint8_t step, int8_t nudgePercent);
+    bool setStepProbability(uint8_t lane, uint8_t step, uint8_t probability);
+    void publishPlayback(
+        const std::array<uint8_t, RUNTIME_LANE_CAPACITY>& laneSteps,
+        uint16_t validMask,
+        bool playing
+    );
     [[nodiscard]] uint8_t visibleStep(uint8_t indexInPage) const;
     [[nodiscard]] uint8_t visibleLane(uint8_t row) const;
     void bump();

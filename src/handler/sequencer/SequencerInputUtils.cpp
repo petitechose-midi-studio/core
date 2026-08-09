@@ -2,6 +2,9 @@
 
 #include <config/PlatformCompat.hpp>
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+#include "state/sequencer/DrumPatternState.hpp"
+#endif
 #include "state/sequencer/SequencerStepContentDraftOps.hpp"
 
 namespace core::handler::sequencer::input_utils {
@@ -29,6 +32,153 @@ FLASHMEM float indexToNormalized(int index, int itemCount) {
     const int clamped = std::clamp(index, 0, itemCount - 1);
     return static_cast<float>(clamped) / static_cast<float>(itemCount - 1);
 }
+
+FLASHMEM float nudgeToNormalized(int8_t nudge) {
+    const int clamped = std::clamp<int>(nudge, NUDGE_MIN, NUDGE_MAX);
+    return indexToNormalized(
+        clamped - NUDGE_MIN,
+        (NUDGE_MAX - NUDGE_MIN) + 1
+    );
+}
+
+FLASHMEM StepPropertyEncoderConfig encoderConfigForProperty(
+    StepProperty property
+) {
+    StepPropertyEncoderConfig config;
+
+    if (property == StepProperty::GATE) {
+        config.discreteSteps = 0;
+        config.normalizedTurns = GATE_NORMALIZED_TURNS;
+        return config;
+    }
+
+    if (property == StepProperty::NUDGE) {
+        config.discreteSteps = static_cast<uint8_t>(
+            (NUDGE_MAX - NUDGE_MIN) + 1
+        );
+        return config;
+    }
+
+    if (property == StepProperty::PROBABILITY) {
+        config.discreteSteps = static_cast<uint8_t>(PROBABILITY_MAX + 1);
+        return config;
+    }
+
+    if (property == StepProperty::NOTE) {
+        config.normalizedTurns = NOTE_NORMALIZED_TURNS;
+    }
+
+    return config;
+}
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+using DrumProperty = core::state::sequencer::DrumTrackUxPrototypeProperty;
+
+FLASHMEM StepProperty drumStepProperty(DrumProperty property) {
+    switch (property) {
+        case DrumProperty::PROBABILITY: return StepProperty::PROBABILITY;
+        case DrumProperty::GATE: return StepProperty::GATE;
+        case DrumProperty::NUDGE: return StepProperty::NUDGE;
+        case DrumProperty::STATE:
+        case DrumProperty::VELOCITY:
+        case DrumProperty::COUNT:
+        default: return StepProperty::VELOCITY;
+    }
+}
+
+FLASHMEM DrumProperty drumPropertyForStepProperty(StepProperty property) {
+    switch (property) {
+        case StepProperty::PROBABILITY: return DrumProperty::PROBABILITY;
+        case StepProperty::GATE: return DrumProperty::GATE;
+        case StepProperty::NUDGE: return DrumProperty::NUDGE;
+        case StepProperty::NOTE:
+        case StepProperty::VELOCITY:
+        default: return DrumProperty::VELOCITY;
+    }
+}
+
+FLASHMEM StepPropertyEncoderConfig encoderConfigForDrumProperty(
+    DrumProperty property
+) {
+    if (property != DrumProperty::STATE) {
+        return encoderConfigForProperty(drumStepProperty(property));
+    }
+    StepPropertyEncoderConfig config;
+    config.discreteSteps = 2U;
+    return config;
+}
+
+FLASHMEM float drumStepPropertyToNormalized(
+    const core::state::sequencer::DrumTrackUxPrototypeState& prototype,
+    uint8_t laneIndex,
+    uint8_t step,
+    DrumProperty property
+) {
+    if (!prototype.drumTrack || laneIndex >= prototype.LANE_COUNT ||
+        step >= prototype.MAX_STEPS) {
+        return 0.0f;
+    }
+    if (property == DrumProperty::STATE) {
+        return prototype.drumTrack->pattern.stepEnabled(laneIndex, step)
+            ? 1.0f
+            : 0.0f;
+    }
+
+    const auto& descriptor = prototype.drumTrack->kit.lanes[laneIndex];
+    const auto& lane = prototype.drumTrack->pattern.lanes[laneIndex];
+    return stepPropertyToNormalized(
+        drumStepProperty(property),
+        descriptor.midiNote,
+        lane.velocity[step],
+        lane.gate[step],
+        lane.nudge[step],
+        lane.probability[step]
+    );
+}
+
+FLASHMEM bool applyNormalizedToDrumStep(
+    core::state::sequencer::DrumTrackUxPrototypeState& prototype,
+    uint8_t lane,
+    uint8_t step,
+    DrumProperty property,
+    float normalized
+) {
+    switch (property) {
+        case DrumProperty::STATE:
+            return prototype.setStepEnabled(
+                lane,
+                step,
+                clampNormalized(normalized) >= 0.5f
+            );
+        case DrumProperty::PROBABILITY:
+            return prototype.setStepProbability(
+                lane,
+                step,
+                normalizedToProbability(normalized)
+            );
+        case DrumProperty::GATE:
+            return prototype.setStepGate(
+                lane,
+                step,
+                normalizedToGatePercent(normalized)
+            );
+        case DrumProperty::NUDGE:
+            return prototype.setStepNudge(
+                lane,
+                step,
+                normalizedToNudge(normalized)
+            );
+        case DrumProperty::VELOCITY:
+        case DrumProperty::COUNT:
+        default:
+            return prototype.setStepVelocity(
+                lane,
+                step,
+                normalizedToMidi7(normalized)
+            );
+    }
+}
+#endif
 
 FLASHMEM StepPropertyEncoderConfig encoderConfigForProperty(
     StepProperty property,

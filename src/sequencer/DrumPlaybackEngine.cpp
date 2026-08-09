@@ -25,6 +25,9 @@ uint8_t clampChannel(uint8_t channel) {
 
 FLASHMEM void DrumPlaybackTelemetry::reset() {
     diagnostics.reset();
+    laneSteps.fill(0U);
+    laneValidMask = 0U;
+    playing = false;
 }
 
 FLASHMEM DrumPlaybackEngine::DrumPlaybackEngine(
@@ -88,6 +91,8 @@ FLASHMEM void DrumPlaybackEngine::start_(uint32_t tick) {
     ++run_seed_;
     if (run_seed_ == 0U) run_seed_ = 1U;
     playing_ = true;
+    telemetry_.playing = true;
+    telemetry_.laneValidMask = 0U;
     last_tick_ = tick;
     last_tick_valid_ = false;
 }
@@ -97,6 +102,8 @@ FLASHMEM void DrumPlaybackEngine::stop_(uint32_t tick) {
     scheduler_.clear();
     last_triggered_ordinals_.fill(UINT32_MAX);
     playing_ = false;
+    telemetry_.playing = false;
+    telemetry_.laneValidMask = 0U;
     last_tick_valid_ = false;
 }
 
@@ -105,6 +112,9 @@ void DrumPlaybackEngine::processTick_(uint32_t tick) {
         pattern_->laneCount,
         drum::DRUM_MAX_LANES
     );
+    telemetry_.laneValidMask = laneCount >= drum::DRUM_MAX_LANES
+        ? UINT16_MAX
+        : static_cast<uint16_t>((1U << laneCount) - 1U);
     for (uint8_t lane = 0U; lane < laneCount; ++lane) {
         triggerDueLaneStep_(lane, tick);
     }
@@ -118,6 +128,7 @@ void DrumPlaybackEngine::triggerDueLaneStep_(uint8_t lane, uint32_t tick) {
     const uint8_t length = std::max<uint8_t>(1U, source.length);
     const uint8_t ticksPerStep = ticksPerStep_(source.stepsPerBeat);
     const uint32_t baseOrdinal = tick / ticksPerStep;
+    telemetry_.laneSteps[lane] = static_cast<uint8_t>(baseOrdinal % length);
 
     // A negative nudge can pull only the next ordinal into this base interval;
     // the current ordinal covers zero and positive nudges.

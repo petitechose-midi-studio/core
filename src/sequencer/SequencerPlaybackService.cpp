@@ -318,6 +318,11 @@ void SequencerPlaybackService::update(
 }
 
 FLASHMEM void SequencerPlaybackService::stopTrack(uint8_t trackIndex) {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drum_prototype_engine_ && drum_prototype_track_ == trackIndex) {
+        drum_prototype_engine_->reset();
+    }
+#endif
     if (trackIndex >= track_engines_.size() || !track_engines_[trackIndex]) return;
     track_engines_[trackIndex]->reset();
 }
@@ -826,6 +831,13 @@ FLASHMEM void SequencerPlaybackService::publishUiProjection(const UiProjectionSn
         if (velocity == 0) continue;
         status_bar_.pulseTrackNote(track, velocity, nowMs);
     }
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    sequencer_.drumTrackUxPrototype.publishPlayback(
+        projection.drumLaneSteps,
+        projection.drumLaneValidMask,
+        projection.drumPlaying
+    );
+#endif
 }
 
 FLASHMEM SequencerPlaybackService::UiProjectionSnapshot SequencerPlaybackService::takeUiProjectionSnapshot() {
@@ -835,6 +847,14 @@ FLASHMEM SequencerPlaybackService::UiProjectionSnapshot SequencerPlaybackService
         .beatPulse = pending_ui_projection_.beatPulse,
         .trackVelocity = pending_ui_projection_.trackVelocity,
     };
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drum_prototype_engine_) {
+        const auto& telemetry = drum_prototype_engine_->telemetry();
+        snapshot.drumLaneSteps = telemetry.laneSteps;
+        snapshot.drumLaneValidMask = telemetry.laneValidMask;
+        snapshot.drumPlaying = telemetry.playing;
+    }
+#endif
     pending_ui_projection_.reset();
     return snapshot;
 }

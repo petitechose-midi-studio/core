@@ -21,6 +21,10 @@ struct DrumPlaybackDiagnostics {
 
 struct DrumPlaybackTelemetry {
     DrumPlaybackDiagnostics diagnostics{};
+    std::array<uint8_t, core::state::sequencer::DRUM_MAX_LANES>
+        laneSteps{};
+    uint16_t laneValidMask = 0U;
+    bool playing = false;
 
     void reset();
 };

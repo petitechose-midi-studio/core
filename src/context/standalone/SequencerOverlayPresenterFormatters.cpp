@@ -21,6 +21,9 @@
 #include "state/sequencer/SequencerStepEditRows.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
 #include "state/sequencer/StepPropertyDisplay.hpp"
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+#include "state/sequencer/DrumPatternState.hpp"
+#endif
 #include "ui/font/StandaloneIcons.hpp"
 #include "ui/sequencer/SequencerActionStripVisuals.hpp"
 #include "ui/sequencer/SequencerStepContentDraftTransitionLabels.hpp"
@@ -42,6 +45,37 @@ constexpr uint32_t CYCLE_STATE_COLOR =
 using StripProps = core::ui::ContextActionStripProps;
 using Visual = core::ui::ContextActionStripVisualState;
 using Tone = core::ui::ContextActionStripTone;
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+struct DrumScalarRow {
+    core::state::sequencer::StepProperty property;
+    size_t propertyIndex;
+    uint8_t row;
+};
+
+// The retained overlay is a cold presentation path. Keep its descriptors and
+// format strings in flash so enabling Drum UX does not consume scarce RAM1.
+constexpr DrumScalarRow DRUM_SCALAR_ROWS[] PROGMEM = {
+    {core::state::sequencer::StepProperty::VELOCITY, 1U,
+     static_cast<uint8_t>(step_edit_rows::PROPERTY_OFFSET + 1U)},
+    {core::state::sequencer::StepProperty::GATE, 2U,
+     static_cast<uint8_t>(step_edit_rows::PROPERTY_OFFSET + 2U)},
+    {core::state::sequencer::StepProperty::NUDGE, 3U,
+     static_cast<uint8_t>(step_edit_rows::PROPERTY_OFFSET + 3U)},
+    {core::state::sequencer::StepProperty::PROBABILITY, 4U,
+     static_cast<uint8_t>(step_edit_rows::PROPERTY_OFFSET + 4U)},
+};
+const char kDrumStepBadgeFormat[] PROGMEM = "S%u";
+const char kDrumSummaryFormat[] PROGMEM = "%s · N%u";
+const char kDrumMetaFormat[] PROGMEM = "L%u · S%u/%u · 1/%u%s";
+const char kDrumNoteFormat[] PROGMEM = "N%u";
+const char kDrumStateKey[] PROGMEM = "State";
+const char kDrumLaneKey[] PROGMEM = "Lane";
+const char kDrumOnValue[] PROGMEM = "On";
+const char kDrumOffValue[] PROGMEM = "Off";
+const char kDrumCustomTimingSuffix[] PROGMEM = "*";
+const char kDrumEmptySuffix[] PROGMEM = "";
+#endif
 
 FLASHMEM const char* availabilityLabel(
     const core::state::sequencer::StepContentCreationAvailability& availability
@@ -352,6 +386,142 @@ FLASHMEM const char* focusLabelForSelectedRow(int selectedIndex) {
     return "Step";
 }
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+FLASHMEM StepEditRenderData buildDrumStepEditRenderData(const Source& source) {
+    StepEditRenderData data{};
+    auto& sequencer = source.sequencer;
+    auto& edit = sequencer.stepEdit;
+    auto& prototype = sequencer.drumTrackUxPrototype;
+    data.visible = edit.visible.get() && edit.drumContext;
+    if (!data.visible) return data;
+
+    const uint8_t lane = edit.drumLane;
+    const uint8_t step = edit.stepIndex.get();
+    if (!prototype.stepInRange(lane, step)) {
+        data.visible = false;
+        return data;
+    }
+
+    const auto& descriptor = prototype.drumTrack->kit.lanes[lane];
+    const auto& lanePattern = prototype.drumTrack->pattern.lanes[lane];
+    const uint8_t length = prototype.drumTrack->pattern.effectiveLength(lane);
+    const uint8_t stepsPerBeat =
+        prototype.drumTrack->pattern.effectiveStepsPerBeat(lane);
+    const bool enabled = prototype.drumTrack->pattern.stepEnabled(lane, step);
+
+    data.rowCount = static_cast<int>(StepEditRenderData::ROW_COUNT);
+    data.stepIndex = step;
+    data.selectedIndex = edit.focusedRow.get();
+    std::snprintf(
+        data.stepBadge.data(),
+        data.stepBadge.size(),
+        kDrumStepBadgeFormat,
+        static_cast<unsigned>(step) + 1U
+    );
+    std::snprintf(
+        data.summary.data(),
+        data.summary.size(),
+        kDrumSummaryFormat,
+        core::state::sequencer::drumLaneRoleLabel(descriptor.role),
+        static_cast<unsigned>(descriptor.midiNote)
+    );
+    std::snprintf(
+        data.meta.data(),
+        data.meta.size(),
+        kDrumMetaFormat,
+        static_cast<unsigned>(lane) + 1U,
+        static_cast<unsigned>(step) + 1U,
+        static_cast<unsigned>(length),
+        static_cast<unsigned>(stepsPerBeat * 4U),
+        lanePattern.timing.mode ==
+                core::state::sequencer::DrumLaneTimingMode::CUSTOM
+            ? kDrumCustomTimingSuffix
+            : kDrumEmptySuffix
+    );
+    copyText(
+        data.focusLabel.data(),
+        data.focusLabel.size(),
+        focusLabelForSelectedRow(data.selectedIndex)
+    );
+
+    std::snprintf(
+        data.valueBuffers[step_edit_rows::ACTIVATED].data(),
+        data.valueBuffers[step_edit_rows::ACTIVATED].size(),
+        "%s",
+        enabled ? kDrumOnValue : kDrumOffValue
+    );
+    data.overlayProps.state = core::ui::SequencerStepEditPropertyChip{
+        .key = kDrumStateKey,
+        .value = data.valueBuffers[step_edit_rows::ACTIVATED].data(),
+        .icon = ::standalone::icons::ACTION_VALIDATE,
+        .color = ACTIVATED_ICON_COLOR,
+    };
+
+    std::snprintf(
+        data.compactValueBuffers[0].data(),
+        data.compactValueBuffers[0].size(),
+        kDrumNoteFormat,
+        static_cast<unsigned>(descriptor.midiNote)
+    );
+    data.overlayProps.properties[0] = core::ui::SequencerStepEditPropertyChip{
+        .key = kDrumLaneKey,
+        .value = data.compactValueBuffers[0].data(),
+        .icon = ::standalone::icons::NOTE,
+        .color = core::ui::sequencer::semantic::colorForProperty(
+            core::state::sequencer::StepProperty::NOTE
+        ),
+        .active = false,
+    };
+    for (const auto& scalar : DRUM_SCALAR_ROWS) {
+        core::state::sequencer::formatStepPropertyValue(
+            data.valueBuffers[scalar.row].data(),
+            data.valueBuffers[scalar.row].size(),
+            scalar.property,
+            descriptor.midiNote,
+            lanePattern.velocity[step],
+            lanePattern.gate[step],
+            lanePattern.nudge[step],
+            lanePattern.probability[step]
+        );
+        copyText(
+            data.compactValueBuffers[scalar.propertyIndex].data(),
+            data.compactValueBuffers[scalar.propertyIndex].size(),
+            data.valueBuffers[scalar.row].data()
+        );
+        data.overlayProps.properties[scalar.propertyIndex] =
+            core::ui::SequencerStepEditPropertyChip{
+                .key = core::ui::sequencer::semantic::labelForProperty(
+                    scalar.property
+                ),
+                .value = data.compactValueBuffers[scalar.propertyIndex].data(),
+                .icon = core::ui::sequencer::visual::propertyIconGlyph(
+                    scalar.property
+                ),
+                .color = core::ui::sequencer::semantic::colorForProperty(
+                    scalar.property
+                ),
+            };
+    }
+
+    uint32_t revision = mixRevision(2166136261U, prototype.revision.get());
+    revision = mixRevision(revision, lane);
+    revision = mixRevision(revision, step);
+    revision = mixRevision(revision, edit.focusedRow.get());
+    data.dataRevision = revision;
+    data.overlayProps.visible = true;
+    data.overlayProps.stepBadge = data.stepBadge.data();
+    data.overlayProps.title = data.summary.data();
+    data.overlayProps.meta = data.meta.data();
+    data.overlayProps.focusLabel = data.focusLabel.data();
+    data.overlayProps.enabled = enabled;
+    data.overlayProps.probabilityActive = lanePattern.probability[step] < 100U;
+    data.overlayProps.actionsVisible = false;
+    data.overlayProps.selectedIndex = data.selectedIndex;
+    data.overlayProps.dataRevision = revision;
+    return data;
+}
+#endif
+
 }  // namespace
 
 FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
@@ -361,6 +531,11 @@ FLASHMEM StepEditRenderData buildStepEditRenderData(const Source& source) {
     if (!data.visible) {
         return data;
     }
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (sequencer.stepEdit.drumContext) {
+        return buildDrumStepEditRenderData(source);
+    }
+#endif
 
     const uint8_t step = sequencer.stepEdit.stepIndex.get();
     const uint8_t len = core::state::sequencer::activeContentLength(sequencer);
@@ -801,6 +976,27 @@ FLASHMEM core::ui::ContextActionStripProps buildStepEditActionStripProps(const A
         props.visible = false;
         return props;
     }
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (sequencer.stepEdit.drumContext) {
+        const uint8_t lane = sequencer.stepEdit.drumLane;
+        const uint8_t drumStep = sequencer.stepEdit.stepIndex.get();
+        if (!sequencer.drumTrackUxPrototype.stepInRange(lane, drumStep)) {
+            props.visible = false;
+            return props;
+        }
+        props.visible = true;
+        constexpr auto resetAction = Action::RESET_STEP_EDITOR_ROW;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            core::ui::sequencer::interactionActionIcon(resetAction),
+            Visual::ACTIVE,
+            Tone::WARNING
+        );
+        props.slots[1].visualState = Visual::HIDDEN;
+        props.slots[2].visualState = Visual::HIDDEN;
+        return props;
+    }
+#endif
 
     const uint8_t step = sequencer.stepEdit.stepIndex.get();
     const uint8_t len = core::state::sequencer::activeContentLength(sequencer);

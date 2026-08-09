@@ -185,9 +185,19 @@ FLASHMEM void SequencerStepHandler::handleDrumTrackUxPrototypeNavRelease() {
         return;
     }
     const auto outcome = context_selector_workflow_.release();
-    if (outcome.action != SequencerContextSelectorAction::APPLY_CONTEXT) {
+    if (outcome.action == SequencerContextSelectorAction::OPEN_STEP_EDITOR) {
+        if (step_edit_handler_ != nullptr) {
+            (void)step_edit_handler_->openFocusedStepAtRow(
+                core::state::sequencer::step_edit_rows::ACTIVATED
+            );
+        }
         return;
     }
+    if (outcome.action == SequencerContextSelectorAction::OPEN_PATTERN_EDITOR) {
+        prototype.openDimensionSelector();
+        return;
+    }
+    if (outcome.action != SequencerContextSelectorAction::APPLY_CONTEXT) return;
     const auto next = outcome.focus ==
             core::state::StructureNavigationFocus::STEP
         ? core::state::StructureNavigationFocus::STEP
@@ -215,40 +225,14 @@ FLASHMEM void SequencerStepHandler::editDrumTrackUxPrototypeStepProperty(
     float normalized
 ) {
     auto& prototype = sequencer_.drumTrackUxPrototype;
-    switch (prototype.property) {
-        case seq::DrumTrackUxPrototypeProperty::STATE:
-            prototype.setVisibleStepEnabled(
-                indexInPage,
-                input_utils::clampNormalized(normalized) >= 0.5f
-            );
-            return;
-        case seq::DrumTrackUxPrototypeProperty::PROBABILITY:
-            prototype.setVisibleStepProbability(
-                indexInPage,
-                input_utils::normalizedToProbability(normalized)
-            );
-            return;
-        case seq::DrumTrackUxPrototypeProperty::GATE:
-            prototype.setVisibleStepGate(
-                indexInPage,
-                input_utils::normalizedToGatePercent(normalized)
-            );
-            return;
-        case seq::DrumTrackUxPrototypeProperty::NUDGE:
-            prototype.setVisibleStepNudge(
-                indexInPage,
-                input_utils::normalizedToNudge(normalized)
-            );
-            return;
-        case seq::DrumTrackUxPrototypeProperty::VELOCITY:
-        case seq::DrumTrackUxPrototypeProperty::COUNT:
-        default:
-            prototype.setVisibleStepVelocity(
-                indexInPage,
-                input_utils::normalizedToMidi7(normalized)
-            );
-            return;
-    }
+    if (indexInPage >= prototype.STEPS_PER_PAGE) return;
+    (void)input_utils::applyNormalizedToDrumStep(
+        prototype,
+        prototype.selectedLane,
+        prototype.visibleStep(indexInPage),
+        prototype.property,
+        normalized
+    );
 }
 
 FLASHMEM void SequencerStepHandler::editDrumTrackUxPrototypeOpt(

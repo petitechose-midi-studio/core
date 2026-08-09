@@ -52,6 +52,11 @@ FLASHMEM bool SequencerOverlayPresenter::bind() {
         state_refs_.sequencer.contentView.revision,
         state_refs_.tracks.projectScaleRevisionSignal()
     ) && bound;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    bound = step_edit_watcher_.watch(
+        state_refs_.sequencer.drumTrackUxPrototype.revision
+    ) && bound;
+#endif
     step_edit_action_watcher_.bind<&SequencerOverlayPresenter::requestStepEditActionsRender>(
         *this, 1, "SequencerOverlay.stepEditActions"
     );

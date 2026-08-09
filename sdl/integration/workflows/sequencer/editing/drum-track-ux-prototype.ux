@@ -3,7 +3,9 @@
 # melodic sequencer.
 # Expect: capture_changed:type_instrument=type_drum, capture_changed:drum_eight_lanes=kick_programmed, capture_changed:kick_programmed=snare_programmed
 # Expect: capture_changed:gate_edited=lane_length_seven, capture_changed:pattern_focus=step_focus
-# Expect: capture_changed:step_focus=step_two_focused, capture_changed:step_gate_selector=step_velocity_selector, capture_changed:step_velocity_selector=prototype_closed
+# Expect: capture_changed:step_focus=step_two_focused, capture_changed:step_gate_selector=step_velocity_selector
+# Expect: capture_changed:overview_velocity_edit=drum_step_editor_state, capture_changed:drum_step_editor_state=drum_step_editor_edited
+# Expect: capture_changed:drum_step_editor_edited=overview_after_step_editor, capture_changed:overview_after_step_editor=per_lane_playheads, capture_changed:per_lane_playheads=transport_stopped, capture_changed:transport_stopped=prototype_closed
 
 0 scenario drum-track-ux-prototype
 80 capture screen instrument_grid_before_create
@@ -77,5 +79,34 @@
 9600 capture screen step_velocity_selector
 9700 button LEFT_CENTER up
 9850 encoder OPT -0.20
-10050 tap LEFT_TOP 60
-10300 capture screen prototype_closed
+10050 capture screen overview_velocity_edit
+
+# A plain NAV press while Step owns navigation opens the shared Step Editor.
+# Drum edits stay in the lane model: no Pitch/Chord/Micro/Cycle rows leak in.
+10200 tap NAV 60
+10500 capture screen drum_step_editor_state
+10700 encoder OPT 1.00
+10900 encoder NAV 1
+11100 encoder OPT 0.55
+11300 encoder NAV 1
+11500 encoder OPT 0.90
+11700 encoder NAV 1
+11900 encoder OPT 0.30
+12100 encoder NAV 1
+12300 encoder OPT 0.70
+12600 capture screen drum_step_editor_edited
+
+# Closing the editor returns to the same Drum overview. Its compact geometry
+# reflects Velocity height, Gate width, Nudge offset and Chance marker.
+12800 tap LEFT_TOP 60
+13100 capture screen overview_after_step_editor
+
+# Runtime publishes one independent position per lane. Stop removes the
+# playheads without changing authored hits.
+13300 tap BOTTOM_CENTER 60
+13800 capture screen per_lane_playheads
+14000 tap BOTTOM_CENTER 60
+14300 capture screen transport_stopped
+
+14500 tap LEFT_TOP 60
+14800 capture screen prototype_closed
