@@ -1,6 +1,9 @@
-# UX prototype: choose a Track interaction model, then author one compact
-# 8-lane Drum pattern without changing the persisted project model.
-# Expect: capture_changed:type_instrument=type_drum, capture_changed:drum_empty=kick_programmed, capture_changed:kick_programmed=snare_programmed, capture_changed:snare_programmed=velocity_property, capture_changed:page_1_velocity=state_property_restored, capture_changed:state_property_restored=second_lane_window, capture_changed:second_lane_window=first_lane_window, capture_changed:first_lane_window=prototype_closed
+# UX prototype: choose a Track interaction model, then author and navigate one
+# compact eight-lane Drum pattern with the same Pattern/Step grammar as the
+# melodic sequencer.
+# Expect: capture_changed:type_instrument=type_drum, capture_changed:drum_eight_lanes=kick_programmed, capture_changed:kick_programmed=snare_programmed
+# Expect: capture_changed:gate_edited=lane_length_seven, capture_changed:pattern_focus=step_focus
+# Expect: capture_changed:step_focus=step_two_focused, capture_changed:step_gate_selector=step_velocity_selector, capture_changed:step_velocity_selector=prototype_closed
 
 0 scenario drum-track-ux-prototype
 80 capture screen instrument_grid_before_create
@@ -20,9 +23,10 @@
 2300 encoder NAV 1
 2500 capture screen type_drum
 2650 tap NAV 60
-3300 capture screen drum_empty
+3300 capture screen drum_eight_lanes
 
-# Program Kick, then move vertically to Snare and program another rhythm.
+# All eight lanes remain visible. Buttons program the selected lane and NAV
+# moves vertically while Pattern owns navigation.
 3500 tap MACRO_1 60
 3700 tap MACRO_5 60
 4000 capture screen kick_programmed
@@ -31,21 +35,47 @@
 4550 tap MACRO_7 60
 4900 capture screen snare_programmed
 
-# OPT changes the row edit grammar; macro encoders edit absolute velocities.
-5100 encoder OPT 1
-5350 capture screen velocity_property
-5500 encoder MACRO_3 0.35
-5700 encoder MACRO_7 0.85
-6000 capture screen page_1_velocity
-6150 encoder OPT -1
-6350 capture screen state_property_restored
+# Pattern LEFT_BOTTOM selects the macro property. Velocity is the useful Drum
+# default; one NAV detent moves to Gate and release applies it.
+5050 button LEFT_BOTTOM down
+5250 capture screen velocity_selector
+5400 encoder NAV 1
+5600 capture screen gate_selector
+5700 button LEFT_BOTTOM up
+5850 encoder MACRO_3 0.35
+6000 encoder MACRO_7 0.85
+6250 capture screen gate_edited
 
-# NAV scrolls the exact controller viewport through four-lane windows.
-6500 encoder NAV 1
-6650 encoder NAV 1
-6800 encoder NAV 1
-7100 capture screen second_lane_window
-7250 encoder NAV -1
-7400 capture screen first_lane_window
-7500 tap LEFT_TOP 60
-7900 capture screen prototype_closed
+# Pattern LEFT_CENTER owns lane dimensions. OPT edits the selected dimension,
+# promoting inherited timing to an explicit lane override.
+6300 encoder NAV -1
+6400 button LEFT_CENTER down
+6600 capture screen length_selector
+6750 encoder OPT -0.02
+6950 capture screen lane_length_seven
+7100 encoder NAV 1
+7300 capture screen division_selector
+7450 encoder OPT -1.60
+7650 capture screen lane_division_eighth
+7750 button LEFT_CENTER up
+7950 capture screen pattern_focus
+
+# NAV press + turn changes context, exactly like the melodic grid. In Step
+# focus NAV moves horizontally and OPT edits the focused hit property.
+8100 button NAV down
+8200 encoder NAV 1
+8300 button NAV up
+8550 capture screen step_focus
+8700 encoder NAV 1
+8900 capture screen step_two_focused
+
+# Step LEFT_CENTER selects the hit property. LEFT_BOTTOM is intentionally not
+# exposed until the Drum Micro/Cycle content model exists.
+9050 button LEFT_CENTER down
+9250 capture screen step_gate_selector
+9400 encoder NAV -1
+9600 capture screen step_velocity_selector
+9700 button LEFT_CENTER up
+9850 encoder OPT -0.20
+10050 tap LEFT_TOP 60
+10300 capture screen prototype_closed

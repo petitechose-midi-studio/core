@@ -670,13 +670,30 @@ enum class DrumTrackUxPrototypeKind : uint8_t {
 
 enum class DrumTrackUxPrototypeProperty : uint8_t {
     STATE = 0,
+    PROBABILITY,
     VELOCITY,
+    GATE,
+    NUDGE,
+    COUNT,
+};
+
+enum class DrumTrackUxPrototypeDimension : uint8_t {
+    MODE = 0,
+    LENGTH,
+    DIVISION,
+    COUNT,
+};
+
+enum class DrumTrackUxPrototypeSelector : uint8_t {
+    NONE = 0,
+    DIMENSION,
+    PROPERTY,
 };
 
 struct DrumTrackUxPrototypeState {
     // Keep the thin UI shell independent from the cold Drum domain header.
     static constexpr uint8_t LANE_COUNT = 8U;
-    static constexpr uint8_t VISIBLE_LANE_COUNT = 4;
+    static constexpr uint8_t VISIBLE_LANE_COUNT = 8;
     static constexpr uint8_t STEPS_PER_PAGE = 8;
     static constexpr uint8_t PAGE_COUNT = 16;
     static constexpr uint8_t MAX_STEPS = STEPS_PER_PAGE * PAGE_COUNT;
@@ -687,11 +704,23 @@ struct DrumTrackUxPrototypeState {
     DrumTrackUxPrototypeKind selectedKind =
         DrumTrackUxPrototypeKind::INSTRUMENT;
     DrumTrackUxPrototypeProperty property =
-        DrumTrackUxPrototypeProperty::STATE;
+        DrumTrackUxPrototypeProperty::VELOCITY;
+    DrumTrackUxPrototypeDimension dimension =
+        DrumTrackUxPrototypeDimension::LENGTH;
+    DrumTrackUxPrototypeSelector selector =
+        DrumTrackUxPrototypeSelector::NONE;
     uint8_t targetTrack = INVALID_TRACK;
     uint8_t selectedLane = 0;
-    uint8_t laneWindowStart = 0;
+    uint8_t focusedStep = 0;
     uint8_t page = 0;
+    DrumTrackUxPrototypeProperty selectorSnapshotProperty =
+        DrumTrackUxPrototypeProperty::VELOCITY;
+    DrumTrackUxPrototypeDimension selectorSnapshotDimension =
+        DrumTrackUxPrototypeDimension::LENGTH;
+    uint8_t selectorSnapshotLane = 0;
+    uint8_t selectorSnapshotTimingMode = 0;
+    uint8_t selectorSnapshotLength = 0;
+    uint8_t selectorSnapshotStepsPerBeat = 0;
     // The fixed-capacity authored payload is cold and prototype-only. Keep it
     // out of the hot SequencerState object and in PSRAM.
     core::app::ExtmemUniquePtr<DrumTrackState> drumTrack;
@@ -709,6 +738,9 @@ struct DrumTrackUxPrototypeState {
     [[nodiscard]] bool gridVisible() const {
         return phase == DrumTrackUxPrototypePhase::GRID && drumTrack != nullptr;
     }
+    [[nodiscard]] bool selectorVisible() const {
+        return selector != DrumTrackUxPrototypeSelector::NONE;
+    }
 
     void reset();
     void arm();
@@ -717,10 +749,22 @@ struct DrumTrackUxPrototypeState {
     void enterGrid();
     void close();
     void moveLane(float delta);
+    void moveFocusedStep(float delta);
     void movePage(int direction);
-    void moveProperty(float delta);
+    void openDimensionSelector();
+    void openPropertySelector();
+    void moveSelector(float delta);
+    void applySelector();
+    void cancelSelector();
+    void setSelectedLaneTimingCustom(bool custom);
+    void setSelectedLaneLength(uint8_t length);
+    void setSelectedLaneStepsPerBeat(uint8_t stepsPerBeat);
     void toggleVisibleStep(uint8_t indexInPage);
-    void setVisibleStepVelocity(uint8_t indexInPage, float normalized);
+    void setVisibleStepEnabled(uint8_t indexInPage, bool enabled);
+    void setVisibleStepVelocity(uint8_t indexInPage, uint8_t velocity);
+    void setVisibleStepGate(uint8_t indexInPage, uint16_t gatePercent);
+    void setVisibleStepNudge(uint8_t indexInPage, int8_t nudgePercent);
+    void setVisibleStepProbability(uint8_t indexInPage, uint8_t probability);
     [[nodiscard]] uint8_t visibleStep(uint8_t indexInPage) const;
     [[nodiscard]] uint8_t visibleLane(uint8_t row) const;
     void bump();

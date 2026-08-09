@@ -451,11 +451,19 @@ FLASHMEM void DrumTrackUxPrototypeState::reset() {
     armed = false;
     phase = DrumTrackUxPrototypePhase::INACTIVE;
     selectedKind = DrumTrackUxPrototypeKind::INSTRUMENT;
-    property = DrumTrackUxPrototypeProperty::STATE;
+    property = DrumTrackUxPrototypeProperty::VELOCITY;
+    dimension = DrumTrackUxPrototypeDimension::LENGTH;
+    selector = DrumTrackUxPrototypeSelector::NONE;
     targetTrack = INVALID_TRACK;
     selectedLane = 0;
-    laneWindowStart = 0;
+    focusedStep = 0;
     page = 0;
+    selectorSnapshotProperty = property;
+    selectorSnapshotDimension = dimension;
+    selectorSnapshotLane = 0;
+    selectorSnapshotTimingMode = 0;
+    selectorSnapshotLength = 0;
+    selectorSnapshotStepsPerBeat = 0;
     if (!drumTrack) {
         drumTrack = core::app::makeExtmemUnique<DrumTrackState>();
     }
@@ -493,14 +501,17 @@ FLASHMEM void DrumTrackUxPrototypeState::moveKind(float delta) {
 FLASHMEM void DrumTrackUxPrototypeState::enterGrid() {
     if (!armed || !drumTrack) return;
     selectedLane = 0;
-    laneWindowStart = 0;
+    focusedStep = 0;
     page = 0;
-    property = DrumTrackUxPrototypeProperty::STATE;
+    property = DrumTrackUxPrototypeProperty::VELOCITY;
+    dimension = DrumTrackUxPrototypeDimension::LENGTH;
+    selector = DrumTrackUxPrototypeSelector::NONE;
     phase = DrumTrackUxPrototypePhase::GRID;
     bump();
 }
 
 FLASHMEM void DrumTrackUxPrototypeState::close() {
+    selector = DrumTrackUxPrototypeSelector::NONE;
     phase = DrumTrackUxPrototypePhase::INACTIVE;
     targetTrack = INVALID_TRACK;
     bump();
@@ -508,23 +519,34 @@ FLASHMEM void DrumTrackUxPrototypeState::close() {
 
 FLASHMEM void DrumTrackUxPrototypeState::moveLane(float delta) {
     if (!gridVisible() || !drumTrack || delta == 0.0f) return;
+    const uint8_t laneCount = std::max<uint8_t>(
+        1U,
+        std::min<uint8_t>(drumTrack->kit.laneCount, LANE_COUNT)
+    );
     const int direction = delta > 0.0f ? 1 : -1;
     const int next = static_cast<int>(selectedLane) + direction;
     selectedLane = static_cast<uint8_t>(
-        (next + static_cast<int>(LANE_COUNT)) % static_cast<int>(LANE_COUNT)
+        (next + static_cast<int>(laneCount)) % static_cast<int>(laneCount)
     );
-    laneWindowStart = static_cast<uint8_t>(
-        (selectedLane / VISIBLE_LANE_COUNT) * VISIBLE_LANE_COUNT
+    const uint8_t length = drumTrack->pattern.effectiveLength(selectedLane);
+    focusedStep = std::min<uint8_t>(
+        focusedStep,
+        static_cast<uint8_t>(length - 1U)
     );
-    page = static_cast<uint8_t>(
-        std::min<uint8_t>(
-            page,
-            static_cast<uint8_t>(
-                (drumTrack->pattern.effectiveLength(selectedLane) - 1U) /
-                STEPS_PER_PAGE
-            )
-        )
+    page = static_cast<uint8_t>(focusedStep / STEPS_PER_PAGE);
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::moveFocusedStep(float delta) {
+    if (!gridVisible() || !drumTrack || delta == 0.0f) return;
+    const uint8_t length = drumTrack->pattern.effectiveLength(selectedLane);
+    if (length == 0U) return;
+    const int direction = delta > 0.0f ? 1 : -1;
+    const int next = static_cast<int>(focusedStep) + direction;
+    focusedStep = static_cast<uint8_t>(
+        (next + static_cast<int>(length)) % static_cast<int>(length)
     );
+    page = static_cast<uint8_t>(focusedStep / STEPS_PER_PAGE);
     bump();
 }
 
@@ -546,13 +568,133 @@ FLASHMEM void DrumTrackUxPrototypeState::movePage(int direction) {
     bump();
 }
 
-FLASHMEM void DrumTrackUxPrototypeState::moveProperty(float delta) {
-    if (!gridVisible() || delta == 0.0f) return;
-    const auto next = delta > 0.0f
-        ? DrumTrackUxPrototypeProperty::VELOCITY
-        : DrumTrackUxPrototypeProperty::STATE;
-    if (property == next) return;
-    property = next;
+FLASHMEM void DrumTrackUxPrototypeState::openDimensionSelector() {
+    if (!gridVisible() || !drumTrack || selectorVisible()) return;
+    selectorSnapshotProperty = property;
+    selectorSnapshotDimension = dimension;
+    selectorSnapshotLane = selectedLane;
+    const auto& timing = drumTrack->pattern.lanes[selectedLane].timing;
+    selectorSnapshotTimingMode = static_cast<uint8_t>(timing.mode);
+    selectorSnapshotLength = timing.length;
+    selectorSnapshotStepsPerBeat = timing.stepsPerBeat;
+    selector = DrumTrackUxPrototypeSelector::DIMENSION;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::openPropertySelector() {
+    if (!gridVisible() || !drumTrack || selectorVisible()) return;
+    selectorSnapshotProperty = property;
+    selectorSnapshotDimension = dimension;
+    selectorSnapshotLane = selectedLane;
+    const auto& timing = drumTrack->pattern.lanes[selectedLane].timing;
+    selectorSnapshotTimingMode = static_cast<uint8_t>(timing.mode);
+    selectorSnapshotLength = timing.length;
+    selectorSnapshotStepsPerBeat = timing.stepsPerBeat;
+    selector = DrumTrackUxPrototypeSelector::PROPERTY;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::moveSelector(float delta) {
+    if (!selectorVisible() || delta == 0.0f) return;
+    const int direction = delta > 0.0f ? 1 : -1;
+    if (selector == DrumTrackUxPrototypeSelector::DIMENSION) {
+        constexpr int count = static_cast<int>(
+            DrumTrackUxPrototypeDimension::COUNT
+        );
+        const int current = static_cast<int>(dimension);
+        dimension = static_cast<DrumTrackUxPrototypeDimension>(
+            (current + direction + count) % count
+        );
+    } else {
+        constexpr int count = static_cast<int>(
+            DrumTrackUxPrototypeProperty::COUNT
+        );
+        const int current = static_cast<int>(property);
+        property = static_cast<DrumTrackUxPrototypeProperty>(
+            (current + direction + count) % count
+        );
+    }
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::applySelector() {
+    if (!selectorVisible()) return;
+    selector = DrumTrackUxPrototypeSelector::NONE;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::cancelSelector() {
+    if (!selectorVisible()) return;
+    const auto closingSelector = selector;
+    selector = DrumTrackUxPrototypeSelector::NONE;
+    property = selectorSnapshotProperty;
+    dimension = selectorSnapshotDimension;
+    if (closingSelector == DrumTrackUxPrototypeSelector::DIMENSION &&
+        drumTrack && selectorSnapshotLane < DRUM_MAX_LANES) {
+        if (selectorSnapshotTimingMode == static_cast<uint8_t>(
+                DrumLaneTimingMode::CUSTOM
+            )) {
+            (void)drumTrack->pattern.setLaneTimingCustom(
+                selectorSnapshotLane,
+                selectorSnapshotLength,
+                selectorSnapshotStepsPerBeat
+            );
+        } else {
+            (void)drumTrack->pattern.setLaneTimingInherited(
+                selectorSnapshotLane
+            );
+        }
+    }
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::setSelectedLaneTimingCustom(
+    bool custom
+) {
+    if (!gridVisible() || !drumTrack) return;
+    const bool changed = custom
+        ? drumTrack->pattern.setLaneTimingCustom(
+              selectedLane,
+              drumTrack->pattern.effectiveLength(selectedLane),
+              drumTrack->pattern.effectiveStepsPerBeat(selectedLane)
+          )
+        : drumTrack->pattern.setLaneTimingInherited(selectedLane);
+    if (!changed) return;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::setSelectedLaneLength(
+    uint8_t length
+) {
+    if (!gridVisible() || !drumTrack) return;
+    if (!drumTrack->pattern.setLaneTimingCustom(
+            selectedLane,
+            length,
+            drumTrack->pattern.effectiveStepsPerBeat(selectedLane)
+        )) {
+        return;
+    }
+    const uint8_t effectiveLength =
+        drumTrack->pattern.effectiveLength(selectedLane);
+    focusedStep = std::min<uint8_t>(
+        focusedStep,
+        static_cast<uint8_t>(effectiveLength - 1U)
+    );
+    page = static_cast<uint8_t>(focusedStep / STEPS_PER_PAGE);
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::setSelectedLaneStepsPerBeat(
+    uint8_t stepsPerBeat
+) {
+    if (!gridVisible() || !drumTrack) return;
+    if (!drumTrack->pattern.setLaneTimingCustom(
+            selectedLane,
+            drumTrack->pattern.effectiveLength(selectedLane),
+            stepsPerBeat
+        )) {
+        return;
+    }
     bump();
 }
 
@@ -565,12 +707,7 @@ FLASHMEM uint8_t DrumTrackUxPrototypeState::visibleStep(
 }
 
 FLASHMEM uint8_t DrumTrackUxPrototypeState::visibleLane(uint8_t row) const {
-    return static_cast<uint8_t>(
-        std::min<uint8_t>(
-            static_cast<uint8_t>(laneWindowStart + row),
-            static_cast<uint8_t>(LANE_COUNT - 1U)
-        )
-    );
+    return std::min<uint8_t>(row, static_cast<uint8_t>(LANE_COUNT - 1U));
 }
 
 FLASHMEM void DrumTrackUxPrototypeState::toggleVisibleStep(
@@ -586,15 +723,67 @@ FLASHMEM void DrumTrackUxPrototypeState::toggleVisibleStep(
 
 FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepVelocity(
     uint8_t indexInPage,
-    float normalized
+    uint8_t velocity
 ) {
     if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
-    const float clamped = std::clamp(normalized, 0.0f, 1.0f);
-    const uint8_t next = static_cast<uint8_t>(clamped * 127.0f + 0.5f);
     const uint8_t step = visibleStep(indexInPage);
     if (!drumTrack ||
         step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
-    if (!drumTrack->pattern.setStepVelocity(selectedLane, step, next)) return;
+    if (!drumTrack->pattern.setStepVelocity(selectedLane, step, velocity)) return;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepEnabled(
+    uint8_t indexInPage,
+    bool enabled
+) {
+    if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
+    const uint8_t step = visibleStep(indexInPage);
+    if (!drumTrack ||
+        step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
+    if (!drumTrack->pattern.setStepEnabled(selectedLane, step, enabled)) return;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepGate(
+    uint8_t indexInPage,
+    uint16_t gatePercent
+) {
+    if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
+    const uint8_t step = visibleStep(indexInPage);
+    if (!drumTrack ||
+        step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
+    if (!drumTrack->pattern.setStepGate(selectedLane, step, gatePercent)) return;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepNudge(
+    uint8_t indexInPage,
+    int8_t nudgePercent
+) {
+    if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
+    const uint8_t step = visibleStep(indexInPage);
+    if (!drumTrack ||
+        step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
+    if (!drumTrack->pattern.setStepNudge(selectedLane, step, nudgePercent)) return;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepProbability(
+    uint8_t indexInPage,
+    uint8_t probability
+) {
+    if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
+    const uint8_t step = visibleStep(indexInPage);
+    if (!drumTrack ||
+        step >= drumTrack->pattern.effectiveLength(selectedLane)) return;
+    if (!drumTrack->pattern.setStepProbability(
+            selectedLane,
+            step,
+            probability
+        )) {
+        return;
+    }
     bump();
 }
 #endif

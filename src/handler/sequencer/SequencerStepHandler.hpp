@@ -106,6 +106,15 @@ private:
     void handleContextSelectorRelease();
 #if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
     void confirmDrumTrackUxPrototypeType();
+    void handleDrumTrackUxPrototypeNavTurn(float delta);
+    void handleDrumTrackUxPrototypeNavPress();
+    void handleDrumTrackUxPrototypeNavRelease();
+    void handleDrumTrackUxPrototypeBack();
+    void editDrumTrackUxPrototypeOpt(float normalized);
+    void editDrumTrackUxPrototypeStepProperty(
+        uint8_t indexInPage,
+        float normalized
+    );
 #endif
 
     core::state::sequencer::SequencerState& sequencer_;

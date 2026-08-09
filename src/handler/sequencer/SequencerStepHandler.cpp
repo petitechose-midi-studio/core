@@ -6,6 +6,7 @@
 #include <config/TimeCompat.hpp>
 
 #include "handler/sequencer/ProjectTrackEditorHandler.hpp"
+#include "handler/sequencer/SequencerInputUtils.hpp"
 #include "handler/sequencer/SequencerPatternEditorHandler.hpp"
 #include "handler/sequencer/SequencerStepContentDraftWorkflow.hpp"
 #include "handler/sequencer/SequencerStepEditHandler.hpp"
@@ -17,6 +18,8 @@
 #endif
 
 namespace core::handler {
+
+namespace input_utils = core::handler::sequencer::input_utils;
 
 namespace {
 
@@ -129,8 +132,173 @@ FLASHMEM void SequencerStepHandler::confirmDrumTrackUxPrototypeType() {
     if (!prototype.armed) prototype.arm();
     if (drum) {
         prototype.enterGrid();
+        navigation_focus_.set(core::state::StructureNavigationFocus::PAGE);
     } else {
         prototype.close();
+    }
+}
+
+FLASHMEM void SequencerStepHandler::handleDrumTrackUxPrototypeNavTurn(
+    float delta
+) {
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    if (!prototype.gridVisible() || delta == 0.0f) return;
+    if (context_selector_workflow_.active()) {
+        (void)context_selector_workflow_.turn(delta);
+        return;
+    }
+    if (prototype.selectorVisible()) {
+        prototype.moveSelector(delta);
+        return;
+    }
+    if (navigation_focus_.get() ==
+        core::state::StructureNavigationFocus::STEP) {
+        prototype.moveFocusedStep(delta);
+        return;
+    }
+    prototype.moveLane(delta);
+}
+
+FLASHMEM void SequencerStepHandler::handleDrumTrackUxPrototypeNavPress() {
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    if (!prototype.gridVisible() || prototype.selectorVisible() ||
+        context_selector_workflow_.active()) {
+        return;
+    }
+    const auto focus = navigation_focus_.get() ==
+            core::state::StructureNavigationFocus::STEP
+        ? core::state::StructureNavigationFocus::STEP
+        : core::state::StructureNavigationFocus::PAGE;
+    context_selector_workflow_.press(
+        focus,
+        false,
+        focus == core::state::StructureNavigationFocus::STEP
+            ? prototype.focusedStep
+            : prototype.selectedLane,
+        false
+    );
+}
+
+FLASHMEM void SequencerStepHandler::handleDrumTrackUxPrototypeNavRelease() {
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    if (!prototype.gridVisible() || !context_selector_workflow_.active()) {
+        return;
+    }
+    const auto outcome = context_selector_workflow_.release();
+    if (outcome.action != SequencerContextSelectorAction::APPLY_CONTEXT) {
+        return;
+    }
+    const auto next = outcome.focus ==
+            core::state::StructureNavigationFocus::STEP
+        ? core::state::StructureNavigationFocus::STEP
+        : core::state::StructureNavigationFocus::PAGE;
+    navigation_focus_.set(next);
+    prototype.bump();
+}
+
+FLASHMEM void SequencerStepHandler::handleDrumTrackUxPrototypeBack() {
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    if (prototype.selectorVisible()) {
+        prototype.cancelSelector();
+        return;
+    }
+    if (context_selector_workflow_.active()) {
+        context_selector_workflow_.cancel();
+        prototype.bump();
+        return;
+    }
+    prototype.close();
+}
+
+FLASHMEM void SequencerStepHandler::editDrumTrackUxPrototypeStepProperty(
+    uint8_t indexInPage,
+    float normalized
+) {
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    switch (prototype.property) {
+        case seq::DrumTrackUxPrototypeProperty::STATE:
+            prototype.setVisibleStepEnabled(
+                indexInPage,
+                input_utils::clampNormalized(normalized) >= 0.5f
+            );
+            return;
+        case seq::DrumTrackUxPrototypeProperty::PROBABILITY:
+            prototype.setVisibleStepProbability(
+                indexInPage,
+                input_utils::normalizedToProbability(normalized)
+            );
+            return;
+        case seq::DrumTrackUxPrototypeProperty::GATE:
+            prototype.setVisibleStepGate(
+                indexInPage,
+                input_utils::normalizedToGatePercent(normalized)
+            );
+            return;
+        case seq::DrumTrackUxPrototypeProperty::NUDGE:
+            prototype.setVisibleStepNudge(
+                indexInPage,
+                input_utils::normalizedToNudge(normalized)
+            );
+            return;
+        case seq::DrumTrackUxPrototypeProperty::VELOCITY:
+        case seq::DrumTrackUxPrototypeProperty::COUNT:
+        default:
+            prototype.setVisibleStepVelocity(
+                indexInPage,
+                input_utils::normalizedToMidi7(normalized)
+            );
+            return;
+    }
+}
+
+FLASHMEM void SequencerStepHandler::editDrumTrackUxPrototypeOpt(
+    float normalized
+) {
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    if (!prototype.gridVisible() ||
+        prototype.selector == seq::DrumTrackUxPrototypeSelector::PROPERTY) {
+        return;
+    }
+    if (navigation_focus_.get() ==
+            core::state::StructureNavigationFocus::STEP &&
+        !prototype.selectorVisible()) {
+        editDrumTrackUxPrototypeStepProperty(
+            static_cast<uint8_t>(
+                prototype.focusedStep % prototype.STEPS_PER_PAGE
+            ),
+            normalized
+        );
+        return;
+    }
+
+    switch (prototype.dimension) {
+        case seq::DrumTrackUxPrototypeDimension::MODE:
+            prototype.setSelectedLaneTimingCustom(
+                input_utils::clampNormalized(normalized) >= 0.5f
+            );
+            return;
+        case seq::DrumTrackUxPrototypeDimension::DIVISION: {
+            const int index = input_utils::normalizedToIndex(
+                normalized,
+                static_cast<int>(input_utils::STEPS_PER_BEAT_CHOICES.size())
+            );
+            prototype.setSelectedLaneStepsPerBeat(
+                input_utils::STEPS_PER_BEAT_CHOICES[
+                    static_cast<size_t>(index)
+                ]
+            );
+            return;
+        }
+        case seq::DrumTrackUxPrototypeDimension::LENGTH:
+        case seq::DrumTrackUxPrototypeDimension::COUNT:
+        default:
+            prototype.setSelectedLaneLength(static_cast<uint8_t>(
+                input_utils::normalizedToInclusiveInt(
+                    normalized,
+                    prototype.MAX_STEPS - 1U
+                ) + 1
+            ));
+            return;
     }
 }
 #endif
@@ -231,20 +399,29 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .turn()
         .scope(scope_id_)
         .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
-        .then([this](float delta) {
-            sequencer_.drumTrackUxPrototype.moveLane(delta);
-        });
+        .then([this](float delta) { handleDrumTrackUxPrototypeNavTurn(delta); });
 
     encoders_.encoder(Config::EncoderID::OPT)
         .turn()
         .scope(scope_id_)
         .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
-        .then([this](float delta) {
-            sequencer_.drumTrackUxPrototype.moveProperty(delta);
+        .then([this](float normalized) {
+            editDrumTrackUxPrototypeOpt(normalized);
         });
 
     buttons_.button(Config::ButtonID::NAV)
         .press()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.active(); })
+        .then([this]() {
+            if (sequencer_.drumTrackUxPrototype.gridVisible()) {
+                handleDrumTrackUxPrototypeNavPress();
+            }
+        });
+
+    buttons_.button(Config::ButtonID::NAV)
+        .longPress(Config::Timing::OVERLAY_OPEN_LONG_PRESS_MS)
         .scope(scope_id_)
         .priority(100)
         .when([this]() { return sequencer_.drumTrackUxPrototype.active(); })
@@ -262,6 +439,75 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .priority(100)
         .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+        .then([this]() { handleDrumTrackUxPrototypeNavRelease(); });
+
+    buttons_.button(Config::ButtonID::LEFT_CENTER)
+        .press()
+        .latch()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() {
+            const auto& prototype = sequencer_.drumTrackUxPrototype;
+            return prototype.gridVisible() && !prototype.selectorVisible() &&
+                !context_selector_workflow_.active();
+        })
+        .then([this]() {
+            auto& prototype = sequencer_.drumTrackUxPrototype;
+            if (navigation_focus_.get() ==
+                core::state::StructureNavigationFocus::STEP) {
+                prototype.openPropertySelector();
+            } else {
+                prototype.openDimensionSelector();
+            }
+        });
+
+    buttons_.button(Config::ButtonID::LEFT_CENTER)
+        .release()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() {
+            const auto selector = sequencer_.drumTrackUxPrototype.selector;
+            return selector == seq::DrumTrackUxPrototypeSelector::DIMENSION ||
+                (selector == seq::DrumTrackUxPrototypeSelector::PROPERTY &&
+                 navigation_focus_.get() ==
+                     core::state::StructureNavigationFocus::STEP);
+        })
+        .then([this]() { sequencer_.drumTrackUxPrototype.applySelector(); });
+
+    buttons_.button(Config::ButtonID::LEFT_BOTTOM)
+        .press()
+        .latch()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() {
+            const auto& prototype = sequencer_.drumTrackUxPrototype;
+            return prototype.gridVisible() && !prototype.selectorVisible() &&
+                !context_selector_workflow_.active();
+        })
+        .then([this]() {
+            if (navigation_focus_.get() ==
+                core::state::StructureNavigationFocus::PAGE) {
+                sequencer_.drumTrackUxPrototype.openPropertySelector();
+            }
+        });
+
+    buttons_.button(Config::ButtonID::LEFT_BOTTOM)
+        .release()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() {
+            return sequencer_.drumTrackUxPrototype.selector ==
+                    seq::DrumTrackUxPrototypeSelector::PROPERTY &&
+                navigation_focus_.get() ==
+                    core::state::StructureNavigationFocus::PAGE;
+        })
+        .then([this]() { sequencer_.drumTrackUxPrototype.applySelector(); });
+
+    buttons_.button(Config::ButtonID::LEFT_TOP)
+        .press()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.active(); })
         .then([]() {});
 
     buttons_.button(Config::ButtonID::LEFT_TOP)
@@ -269,20 +515,28 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         .scope(scope_id_)
         .priority(100)
         .when([this]() { return sequencer_.drumTrackUxPrototype.active(); })
-        .then([this]() { sequencer_.drumTrackUxPrototype.close(); });
+        .then([this]() { handleDrumTrackUxPrototypeBack(); });
 
     buttons_.button(Config::ButtonID::BOTTOM_LEFT)
         .release()
         .scope(scope_id_)
         .priority(100)
-        .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+        .when([this]() {
+            return sequencer_.drumTrackUxPrototype.gridVisible() &&
+                !sequencer_.drumTrackUxPrototype.selectorVisible() &&
+                !context_selector_workflow_.active();
+        })
         .then([this]() { sequencer_.drumTrackUxPrototype.movePage(-1); });
 
     buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
         .release()
         .scope(scope_id_)
         .priority(100)
-        .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+        .when([this]() {
+            return sequencer_.drumTrackUxPrototype.gridVisible() &&
+                !sequencer_.drumTrackUxPrototype.selectorVisible() &&
+                !context_selector_workflow_.active();
+        })
         .then([this]() { sequencer_.drumTrackUxPrototype.movePage(1); });
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
@@ -290,7 +544,11 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             .release()
             .scope(scope_id_)
             .priority(100)
-            .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+            .when([this]() {
+                return sequencer_.drumTrackUxPrototype.gridVisible() &&
+                    !sequencer_.drumTrackUxPrototype.selectorVisible() &&
+                    !context_selector_workflow_.active();
+            })
             .then([this, i]() {
                 sequencer_.drumTrackUxPrototype.toggleVisibleStep(i);
             });
@@ -298,16 +556,13 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
         encoders_.encoder(Config::MACRO_ENCODERS[i])
             .turn()
             .scope(scope_id_)
-            .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+            .when([this]() {
+                return sequencer_.drumTrackUxPrototype.gridVisible() &&
+                    !sequencer_.drumTrackUxPrototype.selectorVisible() &&
+                    !context_selector_workflow_.active();
+            })
             .then([this, i](float normalized) {
-                if (sequencer_.drumTrackUxPrototype.property !=
-                    seq::DrumTrackUxPrototypeProperty::VELOCITY) {
-                    return;
-                }
-                sequencer_.drumTrackUxPrototype.setVisibleStepVelocity(
-                    i,
-                    normalized
-                );
+                editDrumTrackUxPrototypeStepProperty(i, normalized);
             });
     }
 #endif

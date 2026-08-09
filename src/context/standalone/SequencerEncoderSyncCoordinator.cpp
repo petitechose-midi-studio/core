@@ -97,6 +97,120 @@ FLASHMEM input_utils::StepPropertyEncoderConfig offsetEncoderConfig(
     return config;
 }
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+using DrumDimension =
+    core::state::sequencer::DrumTrackUxPrototypeDimension;
+using DrumProperty = core::state::sequencer::DrumTrackUxPrototypeProperty;
+
+FLASHMEM core::state::sequencer::StepProperty drumStepProperty(
+    DrumProperty property
+) {
+    using StepProperty = core::state::sequencer::StepProperty;
+    switch (property) {
+        case DrumProperty::PROBABILITY: return StepProperty::PROBABILITY;
+        case DrumProperty::GATE: return StepProperty::GATE;
+        case DrumProperty::NUDGE: return StepProperty::NUDGE;
+        case DrumProperty::STATE:
+        case DrumProperty::VELOCITY:
+        case DrumProperty::COUNT:
+        default: return StepProperty::VELOCITY;
+    }
+}
+
+FLASHMEM input_utils::StepPropertyEncoderConfig drumPropertyEncoderConfig(
+    DrumProperty property
+) {
+    if (property != DrumProperty::STATE) {
+        return input_utils::encoderConfigForProperty(
+            drumStepProperty(property)
+        );
+    }
+    input_utils::StepPropertyEncoderConfig config;
+    config.discreteSteps = 2U;
+    return config;
+}
+
+FLASHMEM float drumStepPropertyToNormalized(
+    const core::state::sequencer::DrumTrackUxPrototypeState& prototype,
+    uint8_t step
+) {
+    if (!prototype.drumTrack || step >= prototype.MAX_STEPS) return 0.0f;
+    const auto& lane =
+        prototype.drumTrack->pattern.lanes[prototype.selectedLane];
+    switch (prototype.property) {
+        case DrumProperty::STATE:
+            return prototype.drumTrack->pattern.stepEnabled(
+                prototype.selectedLane,
+                step
+            ) ? 1.0f : 0.0f;
+        case DrumProperty::PROBABILITY:
+            return input_utils::probabilityToNormalized(
+                lane.probability[step]
+            );
+        case DrumProperty::GATE:
+            return input_utils::gatePercentToNormalized(lane.gate[step]);
+        case DrumProperty::NUDGE:
+            return input_utils::nudgeToNormalized(lane.nudge[step]);
+        case DrumProperty::VELOCITY:
+        case DrumProperty::COUNT:
+        default:
+            return input_utils::indexToNormalized(lane.velocity[step], 128);
+    }
+}
+
+FLASHMEM input_utils::StepPropertyEncoderConfig drumDimensionEncoderConfig(
+    DrumDimension dimension
+) {
+    input_utils::StepPropertyEncoderConfig config;
+    switch (dimension) {
+        case DrumDimension::MODE:
+            config.discreteSteps = 2U;
+            return config;
+        case DrumDimension::DIVISION:
+            config.discreteSteps = static_cast<uint8_t>(
+                input_utils::STEPS_PER_BEAT_CHOICES.size()
+            );
+            return config;
+        case DrumDimension::LENGTH:
+        case DrumDimension::COUNT:
+        default:
+            config.discreteSteps =
+                core::state::sequencer::DRUM_MAX_STEPS;
+            return config;
+    }
+}
+
+FLASHMEM float drumDimensionToNormalized(
+    const core::state::sequencer::DrumTrackUxPrototypeState& prototype
+) {
+    if (!prototype.drumTrack) return 0.0f;
+    const auto& pattern = prototype.drumTrack->pattern;
+    switch (prototype.dimension) {
+        case DrumDimension::MODE:
+            return pattern.lanes[prototype.selectedLane].timing.mode ==
+                    core::state::sequencer::DrumLaneTimingMode::CUSTOM
+                ? 1.0f
+                : 0.0f;
+        case DrumDimension::DIVISION:
+            return input_utils::indexToNormalized(
+                input_utils::findStepsPerBeatChoiceIndex(
+                    pattern.effectiveStepsPerBeat(prototype.selectedLane)
+                ),
+                static_cast<int>(input_utils::STEPS_PER_BEAT_CHOICES.size())
+            );
+        case DrumDimension::LENGTH:
+        case DrumDimension::COUNT:
+        default:
+            return input_utils::indexToNormalized(
+                static_cast<int>(
+                    pattern.effectiveLength(prototype.selectedLane) - 1U
+                ),
+                core::state::sequencer::DRUM_MAX_STEPS
+            );
+    }
+}
+#endif
+
 FLASHMEM QuickItem validQuickItemForContext(
     const core::state::sequencer::SequencerState& sequencer
 ) {
@@ -401,19 +515,11 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPatternQuickControlOptValue()
 FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumTrackUxPrototypeValues() {
     const auto& prototype = sequencer_.drumTrackUxPrototype;
 
-    input_utils::StepPropertyEncoderConfig velocityConfig;
-    velocityConfig.discreteSteps = 128;
-    velocityConfig.discreteTicksPerStep =
-        input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
-    velocityConfig.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
-    ensureMacroEncoderConfig(velocityConfig);
+    ensureMacroEncoderConfig(drumPropertyEncoderConfig(prototype.property));
 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         const uint8_t step = prototype.visibleStep(i);
-        const float normalized = static_cast<float>(
-            prototype.drumTrack->pattern.lanes[prototype.selectedLane]
-                .velocity[step]
-        ) / 127.0f;
+        const float normalized = drumStepPropertyToNormalized(prototype, step);
         if (!macro_position_valid_[i] ||
             hasMeaningfulEncoderDelta(macro_position_cache_[i], normalized)) {
             encoders_.setPosition(Config::MACRO_ENCODERS[i], normalized);
@@ -422,15 +528,22 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumTrackUxPrototypeValues() 
         }
     }
 
-    // OPT selects a grammar, so one physical detent must be enough. Relative
-    // mode avoids the large half-range traversal of a two-step normalized
-    // encoder and makes both directions symmetric.
-    encoders_.setMode(
-        Config::EncoderID::OPT,
-        oc::interface::EncoderMode::RELATIVE
-    );
-    encoders_.setDelta(Config::EncoderID::OPT, 1.0f);
-    invalidateOptEncoderCache();
+    if (prototype.selector ==
+        core::state::sequencer::DrumTrackUxPrototypeSelector::PROPERTY) {
+        invalidateOptEncoderCache();
+        return;
+    }
+    if (navigation_focus_.get() ==
+            core::state::StructureNavigationFocus::STEP &&
+        !prototype.selectorVisible()) {
+        ensureOptEncoderConfig(drumPropertyEncoderConfig(prototype.property));
+        syncOptPosition(
+            drumStepPropertyToNormalized(prototype, prototype.focusedStep)
+        );
+        return;
+    }
+    ensureOptEncoderConfig(drumDimensionEncoderConfig(prototype.dimension));
+    syncOptPosition(drumDimensionToNormalized(prototype));
 }
 #endif
 

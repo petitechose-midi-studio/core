@@ -1,6 +1,7 @@
 #include "SequencerView.hpp"
 
 #include <array>
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 
@@ -26,9 +27,62 @@ namespace {
 
 constexpr uint32_t DRUM_ACCENT = standalone::theme::color::STEP_VELOCITY;
 constexpr uint32_t DRUM_TIMING = standalone::theme::color::STEP_DIVISION;
-constexpr lv_coord_t DRUM_HEADER_HEIGHT = 18;
-constexpr lv_coord_t DRUM_LANE_HEIGHT = 29;
-constexpr lv_coord_t DRUM_LABEL_WIDTH = 62;
+constexpr lv_coord_t DRUM_HEADER_HEIGHT = 16;
+constexpr lv_coord_t DRUM_LANE_HEIGHT = 15;
+constexpr lv_coord_t DRUM_LABEL_WIDTH = 70;
+
+using DrumProperty = core::state::sequencer::DrumTrackUxPrototypeProperty;
+
+FLASHMEM const char* drumPropertyShortLabel(DrumProperty property) {
+    switch (property) {
+        case DrumProperty::STATE: return "STATE";
+        case DrumProperty::PROBABILITY: return "CHANCE";
+        case DrumProperty::GATE: return "GATE";
+        case DrumProperty::NUDGE: return "NUDGE";
+        case DrumProperty::VELOCITY:
+        case DrumProperty::COUNT:
+        default: return "VEL";
+    }
+}
+
+FLASHMEM uint32_t drumPropertyColor(DrumProperty property) {
+    switch (property) {
+        case DrumProperty::STATE: return theme::color::STEP_STATE;
+        case DrumProperty::PROBABILITY: return theme::color::STEP_CHANCE;
+        case DrumProperty::GATE: return theme::color::STEP_GATE;
+        case DrumProperty::NUDGE: return theme::color::STEP_NUDGE;
+        case DrumProperty::VELOCITY:
+        case DrumProperty::COUNT:
+        default: return DRUM_ACCENT;
+    }
+}
+
+FLASHMEM float drumPropertyNormalized(
+    const core::state::sequencer::DrumTrackUxPrototypeState& prototype,
+    uint8_t lane,
+    uint8_t step
+) {
+    const auto& lanePattern = prototype.drumTrack->pattern.lanes[lane];
+    switch (prototype.property) {
+        case DrumProperty::STATE:
+            return prototype.drumTrack->pattern.stepEnabled(lane, step)
+                ? 1.0f
+                : 0.0f;
+        case DrumProperty::PROBABILITY:
+            return static_cast<float>(lanePattern.probability[step]) / 100.0f;
+        case DrumProperty::GATE:
+            return std::min<float>(
+                1.0f,
+                static_cast<float>(lanePattern.gate[step]) / 400.0f
+            );
+        case DrumProperty::NUDGE:
+            return static_cast<float>(lanePattern.nudge[step] + 50) / 100.0f;
+        case DrumProperty::VELOCITY:
+        case DrumProperty::COUNT:
+        default:
+            return static_cast<float>(lanePattern.velocity[step]) / 127.0f;
+    }
+}
 
 FLASHMEM void drawDrumPrototypeRect(
     lv_layer_t* layer,
@@ -221,17 +275,38 @@ FLASHMEM void SequencerView::drawDrumTrackUxPrototypeGrid(
         core::state::sequencer::DrumTrackUxPrototypeState::STEPS_PER_PAGE
     );
 
-    char header[40] = {};
+    const auto focus = state_refs_.structureNavigationFocus.get() ==
+            core::state::StructureNavigationFocus::STEP
+        ? core::state::StructureNavigationFocus::STEP
+        : core::state::StructureNavigationFocus::PAGE;
+    const auto& descriptor =
+        prototype.drumTrack->kit.lanes[prototype.selectedLane];
+    const auto& selectedLanePattern =
+        prototype.drumTrack->pattern.lanes[prototype.selectedLane];
+    const uint8_t selectedLength =
+        prototype.drumTrack->pattern.effectiveLength(prototype.selectedLane);
+    const uint8_t selectedStepsPerBeat =
+        prototype.drumTrack->pattern.effectiveStepsPerBeat(
+            prototype.selectedLane
+        );
+    char header[64] = {};
     std::snprintf(
         header,
         sizeof(header),
-        "DRUM  L%u/%u  %s",
+        "%s L%u %s%u %u 1/%u%s %s",
+        focus == core::state::StructureNavigationFocus::STEP
+            ? "STEP"
+            : "DRUM",
         static_cast<unsigned>(prototype.selectedLane + 1U),
-        static_cast<unsigned>(prototype.LANE_COUNT),
-        prototype.property ==
-                core::state::sequencer::DrumTrackUxPrototypeProperty::STATE
-            ? "STATE"
-            : "VELOCITY"
+        core::state::sequencer::drumLaneRoleLabel(descriptor.role),
+        static_cast<unsigned>(descriptor.midiNote),
+        static_cast<unsigned>(selectedLength),
+        static_cast<unsigned>(selectedStepsPerBeat * 4U),
+        selectedLanePattern.timing.mode == core::state::sequencer::
+                DrumLaneTimingMode::CUSTOM
+            ? "*"
+            : "",
+        drumPropertyShortLabel(prototype.property)
     );
     const lv_area_t headerArea{
         .x1 = static_cast<lv_coord_t>(surface.x1 + 2),
@@ -243,7 +318,7 @@ FLASHMEM void SequencerView::drawDrumTrackUxPrototypeGrid(
         layer,
         headerArea,
         header,
-        DRUM_ACCENT,
+        drumPropertyColor(prototype.property),
         LV_OPA_COVER,
         LV_TEXT_ALIGN_LEFT
     );
@@ -272,42 +347,26 @@ FLASHMEM void SequencerView::drawDrumTrackUxPrototypeGrid(
             );
         }
 
+        const auto& lanePattern = prototype.drumTrack->pattern.lanes[lane];
+        const uint8_t laneLength =
+            prototype.drumTrack->pattern.effectiveLength(lane);
+        const uint8_t stepsPerBeat =
+            prototype.drumTrack->pattern.effectiveStepsPerBeat(lane);
         const lv_area_t nameArea{
             .x1 = static_cast<lv_coord_t>(surface.x1 + 2),
             .y1 = rowY,
             .x2 = static_cast<lv_coord_t>(
                 surface.x1 + DRUM_LABEL_WIDTH - 3
             ),
-            .y2 = static_cast<lv_coord_t>(rowY + 13),
+            .y2 = static_cast<lv_coord_t>(rowY + DRUM_LANE_HEIGHT - 1),
         };
-        char name[16] = {};
-        const auto& descriptor = prototype.drumTrack->kit.lanes[lane];
+        char name[20] = {};
+        const auto& laneDescriptor = prototype.drumTrack->kit.lanes[lane];
         std::snprintf(
             name,
             sizeof(name),
-            "%s %u",
-            core::state::sequencer::drumLaneRoleLabel(descriptor.role),
-            static_cast<unsigned>(descriptor.midiNote)
-        );
-        drawDrumPrototypeLabel(
-            layer,
-            nameArea,
-            name,
-            selected ? DRUM_ACCENT : theme::color::TEXT_SECONDARY,
-            selected ? LV_OPA_COVER : LV_OPA_70,
-            LV_TEXT_ALIGN_LEFT
-        );
-
-        const auto& lanePattern = prototype.drumTrack->pattern.lanes[lane];
-        const uint8_t laneLength =
-            prototype.drumTrack->pattern.effectiveLength(lane);
-        const uint8_t stepsPerBeat =
-            prototype.drumTrack->pattern.effectiveStepsPerBeat(lane);
-        char timing[16] = {};
-        std::snprintf(
-            timing,
-            sizeof(timing),
-            "%ux1/%u%s",
+            "%s %u/%u%s",
+            core::state::sequencer::drumLaneRoleLabel(laneDescriptor.role),
             static_cast<unsigned>(laneLength),
             static_cast<unsigned>(stepsPerBeat * 4U),
             lanePattern.timing.mode == core::state::sequencer::
@@ -315,23 +374,17 @@ FLASHMEM void SequencerView::drawDrumTrackUxPrototypeGrid(
                 ? "*"
                 : ""
         );
-        const lv_area_t timingArea{
-            .x1 = static_cast<lv_coord_t>(surface.x1 + 2),
-            .y1 = static_cast<lv_coord_t>(rowY + 14),
-            .x2 = static_cast<lv_coord_t>(
-                surface.x1 + DRUM_LABEL_WIDTH - 3
-            ),
-            .y2 = static_cast<lv_coord_t>(rowY + DRUM_LANE_HEIGHT - 1),
-        };
         drawDrumPrototypeLabel(
             layer,
-            timingArea,
-            timing,
+            nameArea,
+            name,
             lanePattern.timing.mode == core::state::sequencer::
                     DrumLaneTimingMode::CUSTOM
                 ? DRUM_TIMING
+                : selected
+                ? drumPropertyColor(prototype.property)
                 : theme::color::TEXT_SECONDARY,
-            selected ? LV_OPA_COVER : LV_OPA_60,
+            selected ? LV_OPA_COVER : LV_OPA_70,
             LV_TEXT_ALIGN_LEFT
         );
 
@@ -343,60 +396,45 @@ FLASHMEM void SequencerView::drawDrumTrackUxPrototypeGrid(
             const bool available = step < laneLength;
             const bool active = available &&
                 prototype.drumTrack->pattern.stepEnabled(lane, step);
-            const uint8_t velocity =
-                prototype.drumTrack->pattern.lanes[lane].velocity[step];
             const lv_coord_t cellX = static_cast<lv_coord_t>(
                 surface.x1 + DRUM_LABEL_WIDTH + column * cellWidth
             );
             const lv_area_t cellArea{
                 .x1 = static_cast<lv_coord_t>(cellX + 1),
-                .y1 = static_cast<lv_coord_t>(rowY + 1),
+                .y1 = static_cast<lv_coord_t>(rowY + 2),
                 .x2 = static_cast<lv_coord_t>(cellX + cellWidth - 2),
                 .y2 = static_cast<lv_coord_t>(
-                    rowY + DRUM_LANE_HEIGHT - 2
+                    rowY + DRUM_LANE_HEIGHT - 3
                 ),
             };
+            const float normalized = available
+                ? drumPropertyNormalized(prototype, lane, step)
+                : 0.0f;
             const lv_opa_t fillOpacity = !available
                 ? LV_OPA_10
                 : active
                 ? static_cast<lv_opa_t>(
-                      prototype.property == core::state::sequencer::
-                              DrumTrackUxPrototypeProperty::VELOCITY
-                          ? 45U + (static_cast<uint16_t>(velocity) * 175U) /
-                                127U
-                          : 155U
+                      45U + static_cast<uint16_t>(normalized * 175.0f)
                   )
                 : LV_OPA_TRANSP;
+            const bool focused = selected &&
+                focus == core::state::StructureNavigationFocus::STEP &&
+                step == prototype.focusedStep;
             drawDrumPrototypeRect(
                 layer,
                 cellArea,
-                available ? DRUM_ACCENT : theme::color::INACTIVE,
+                available
+                    ? drumPropertyColor(prototype.property)
+                    : theme::color::INACTIVE,
                 fillOpacity,
-                selected && available ? 1 : 0,
-                selected && available ? LV_OPA_70 : LV_OPA_TRANSP,
+                focused ? 2 : selected && available ? 1 : 0,
+                focused
+                    ? LV_OPA_COVER
+                    : selected && available
+                    ? LV_OPA_70
+                    : LV_OPA_TRANSP,
                 2
             );
-
-            if (selected && available &&
-                prototype.property == core::state::sequencer::
-                    DrumTrackUxPrototypeProperty::STATE) {
-                char value[3] = {};
-                std::snprintf(
-                    value,
-                    sizeof(value),
-                    "%u",
-                    static_cast<unsigned>(column + 1U)
-                );
-                drawDrumPrototypeLabel(
-                    layer,
-                    cellArea,
-                    value,
-                    active
-                        ? theme::color::TEXT_PRIMARY
-                        : theme::color::TEXT_SECONDARY,
-                    active ? LV_OPA_COVER : LV_OPA_50
-                );
-            }
         }
     }
 }

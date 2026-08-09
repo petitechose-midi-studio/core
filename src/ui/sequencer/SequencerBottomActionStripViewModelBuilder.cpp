@@ -350,6 +350,7 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
     if (source.sequencer.drumTrackUxPrototype.active()) {
         const auto& prototype = source.sequencer.drumTrackUxPrototype;
         if (!prototype.gridVisible()) return props;
+        if (prototype.selectorVisible()) return props;
 
         props.slots[0] = SlotProps{
             .visualState = Visual::ACTIVE,
@@ -361,7 +362,8 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         std::snprintf(
             props.slots[0].labelText.data(),
             props.slots[0].labelText.size(),
-            "< PAGE"
+            "< P%u",
+            static_cast<unsigned>(prototype.page + 1U)
         );
         props.slots[1] = SlotProps{
             .visualState = Visual::ACTIVE,
@@ -374,10 +376,28 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
             props.slots[1].labelText.data(),
             props.slots[1].labelText.size(),
             "OPT %s",
-            prototype.property == core::state::sequencer::
-                    DrumTrackUxPrototypeProperty::STATE
-                ? "STATE"
-                : "VEL"
+            source.navigationFocus.get() ==
+                    core::state::StructureNavigationFocus::STEP
+                ? prototype.property == core::state::sequencer::
+                          DrumTrackUxPrototypeProperty::STATE
+                    ? "STATE"
+                    : prototype.property == core::state::sequencer::
+                          DrumTrackUxPrototypeProperty::PROBABILITY
+                    ? "CHANCE"
+                    : prototype.property == core::state::sequencer::
+                          DrumTrackUxPrototypeProperty::GATE
+                    ? "GATE"
+                    : prototype.property == core::state::sequencer::
+                          DrumTrackUxPrototypeProperty::NUDGE
+                    ? "NUDGE"
+                    : "VEL"
+                : prototype.dimension == core::state::sequencer::
+                          DrumTrackUxPrototypeDimension::MODE
+                    ? "MODE"
+                    : prototype.dimension == core::state::sequencer::
+                          DrumTrackUxPrototypeDimension::DIVISION
+                    ? "DIV"
+                    : "LEN"
         );
         props.slots[2] = SlotProps{
             .visualState = Visual::ACTIVE,
@@ -389,7 +409,8 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
         std::snprintf(
             props.slots[2].labelText.data(),
             props.slots[2].labelText.size(),
-            "PAGE >"
+            "P%u >",
+            static_cast<unsigned>(prototype.page + 1U)
         );
         return props;
     }
