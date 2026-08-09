@@ -388,6 +388,9 @@ FLASHMEM void SequencerState::reset() {
     structureUi.reset();
 #if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
     drumTrackUxPrototype.reset();
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE_AUTO_ARM)
+    drumTrackUxPrototype.arm();
+#endif
 #endif
 }
 
