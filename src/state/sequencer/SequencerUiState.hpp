@@ -11,6 +11,9 @@
 #include <oc/state/Signal.hpp>
 #include <oc/time/Time.hpp>
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+#include "app/ExtmemAllocator.hpp"
+#endif
 #include "state/StructureClipboardPastePlan.hpp"
 #include "state/StructureNavigationState.hpp"
 #include "state/contextual/GuardedActionState.hpp"
@@ -645,12 +648,14 @@ struct SequencerTrackPasteUiState {
 };
 
 #if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+struct DrumTrackState;
+
 /**
- * Native-only interaction model used to validate Drum Track authoring before
- * the persistent TrackKind and playback domains are introduced.
+ * Native-only interaction shell used to validate Drum Track authoring before
+ * the persistent TrackKind is introduced.
  *
- * The experiment is intentionally fixed-capacity and session-only. It cannot
- * leak into project serialization or firmware memory placement decisions.
+ * Authored rhythm delegates to the production-neutral Drum domain. The shell
+ * remains session-only and cannot leak into project serialization.
  */
 enum class DrumTrackUxPrototypePhase : uint8_t {
     INACTIVE = 0,
@@ -669,7 +674,9 @@ enum class DrumTrackUxPrototypeProperty : uint8_t {
 };
 
 struct DrumTrackUxPrototypeState {
-    static constexpr uint8_t LANE_COUNT = 8;
+    // Keep the thin UI shell independent from the cold Drum domain header.
+    static constexpr uint8_t LANE_COUNT = 8U;
+    static constexpr uint8_t VISIBLE_LANE_COUNT = 4;
     static constexpr uint8_t STEPS_PER_PAGE = 8;
     static constexpr uint8_t PAGE_COUNT = 16;
     static constexpr uint8_t MAX_STEPS = STEPS_PER_PAGE * PAGE_COUNT;
@@ -683,13 +690,15 @@ struct DrumTrackUxPrototypeState {
         DrumTrackUxPrototypeProperty::STATE;
     uint8_t targetTrack = INVALID_TRACK;
     uint8_t selectedLane = 0;
+    uint8_t laneWindowStart = 0;
     uint8_t page = 0;
-    std::array<oc::note::sequencer::StepBitMask128, LANE_COUNT> enabledSteps{};
-    std::array<std::array<uint8_t, MAX_STEPS>, LANE_COUNT> velocities{};
-    std::array<uint8_t, LANE_COUNT> notes{{36, 38, 42, 46, 39, 45, 48, 51}};
+    // The fixed-capacity authored payload is cold and prototype-only. Keep it
+    // out of the hot SequencerState object and in PSRAM.
+    core::app::ExtmemUniquePtr<DrumTrackState> drumTrack;
     Signal<uint32_t, 8> revision{0};
 
     DrumTrackUxPrototypeState();
+    ~DrumTrackUxPrototypeState();
 
     [[nodiscard]] bool active() const {
         return phase != DrumTrackUxPrototypePhase::INACTIVE;
@@ -698,7 +707,7 @@ struct DrumTrackUxPrototypeState {
         return phase == DrumTrackUxPrototypePhase::TYPE_PICKER;
     }
     [[nodiscard]] bool gridVisible() const {
-        return phase == DrumTrackUxPrototypePhase::GRID;
+        return phase == DrumTrackUxPrototypePhase::GRID && drumTrack != nullptr;
     }
 
     void reset();
@@ -713,6 +722,7 @@ struct DrumTrackUxPrototypeState {
     void toggleVisibleStep(uint8_t indexInPage);
     void setVisibleStepVelocity(uint8_t indexInPage, float normalized);
     [[nodiscard]] uint8_t visibleStep(uint8_t indexInPage) const;
+    [[nodiscard]] uint8_t visibleLane(uint8_t row) const;
     void bump();
 };
 #endif

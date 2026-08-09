@@ -284,6 +284,10 @@ void SequencerRuntimeService::update() {
             true,
             snapshot_bank_.laneSnapshot(snapshotIndex),
             !clockDomain.transport.usingExternalSource
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+            , snapshot_bank_.drumPrototypeSnapshot(snapshotIndex)
+            , snapshot_bank_.drumPrototypeTrack(snapshotIndex)
+#endif
         );
         track_activations_.publishRealtimeTelemetry();
         drainRealtimeMidiQueue_(core::time_compat::micros());

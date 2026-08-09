@@ -185,6 +185,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/protocol/filesystem/FileSystemRpcInternal.cpp
     src/protocol/filesystem/FileSystemRpcWriteSession.cpp
     src/sequencer/ClockSourceSelector.cpp
+    src/sequencer/DrumPlaybackEngine.cpp
     src/sequencer/ExternalClockEstimator.cpp
     src/sequencer/InternalTransportClock.cpp
     src/sequencer/MidiCcGlobalFrameCoordinator.cpp
@@ -288,6 +289,7 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/state/project/ProjectTrackEditorState.cpp
     src/state/project/ProjectTrackHistory.cpp
     src/state/project/ProjectTrackState.cpp
+    src/state/sequencer/DrumPatternState.cpp
     src/state/sequencer/SequencerCcLaneDomain.cpp
     src/state/sequencer/SequencerCcLanePatternOps.cpp
     src/state/sequencer/SequencerCcLaneProjectionOps.cpp

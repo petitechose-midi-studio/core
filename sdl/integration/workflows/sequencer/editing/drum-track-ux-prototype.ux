@@ -1,6 +1,6 @@
 # UX prototype: choose a Track interaction model, then author one compact
 # 8-lane Drum pattern without changing the persisted project model.
-# Expect: capture_changed:type_instrument=type_drum, capture_changed:drum_empty=kick_programmed, capture_changed:kick_programmed=snare_programmed, capture_changed:snare_programmed=velocity_property, capture_changed:page_1_velocity=state_property_restored, capture_changed:state_property_restored=page_2_empty, capture_changed:page_2_empty=prototype_closed
+# Expect: capture_changed:type_instrument=type_drum, capture_changed:drum_empty=kick_programmed, capture_changed:kick_programmed=snare_programmed, capture_changed:snare_programmed=velocity_property, capture_changed:page_1_velocity=state_property_restored, capture_changed:state_property_restored=second_lane_window, capture_changed:second_lane_window=first_lane_window, capture_changed:first_lane_window=prototype_closed
 
 0 scenario drum-track-ux-prototype
 80 capture screen instrument_grid_before_create
@@ -40,10 +40,12 @@
 6150 encoder OPT -1
 6350 capture screen state_property_restored
 
-# Bottom actions page through all 128 steps, then LEFT_TOP exits the prototype.
-6500 tap BOTTOM_RIGHT 60
-6800 capture screen page_2_empty
-7000 tap BOTTOM_LEFT 60
-7300 capture screen page_1_restored
+# NAV scrolls the exact controller viewport through four-lane windows.
+6500 encoder NAV 1
+6650 encoder NAV 1
+6800 encoder NAV 1
+7100 capture screen second_lane_window
+7250 encoder NAV -1
+7400 capture screen first_lane_window
 7500 tap LEFT_TOP 60
 7900 capture screen prototype_closed

@@ -81,6 +81,26 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
 
     runtimeSnapshot.activeTrack = activeTrack;
     runtimeSnapshot.enabledMask = track_bank_.currentEnabledMask();
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    const auto& drumPrototype = sequencer_.drumTrackUxPrototype;
+    auto& drumSlot = drum_prototype_slots_[writeIndex];
+    drumSlot.active =
+        drumPrototype.gridVisible() &&
+        drumPrototype.targetTrack == activeTrack;
+    drumSlot.track = activeTrack;
+    if (drumSlot.active) {
+        const uint32_t drumRevision =
+            core::state::sequencer::drumRuntimeRevision(
+                *drumPrototype.drumTrack
+            );
+        if (drumSlot.pattern.revision != drumRevision) {
+            core::state::sequencer::captureDrumRuntimeSnapshot(
+                *drumPrototype.drumTrack,
+                drumSlot.pattern
+            );
+        }
+    }
+#endif
     runtimeSnapshot.projectScaleRevision = track_bank_.projectScaleRevisionSignal().get();
     runtimeSnapshot.projectScaleSettings = track_bank_.projectScaleSettings();
     runtimeSnapshot.projectSwingPercent =
@@ -134,6 +154,24 @@ const SequencerCcLaneRuntimeProjectSnapshot*
 SequencerRuntimeSnapshotBank::laneSnapshot(uint8_t snapshotIndex) const {
     return lane_snapshots_[snapshotIndex & 0x1U].get();
 }
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+const core::state::sequencer::DrumPatternRuntimeSnapshot*
+SequencerRuntimeSnapshotBank::drumPrototypeSnapshot(
+    uint8_t snapshotIndex
+) const {
+    const auto& slot = drum_prototype_slots_[snapshotIndex & 0x1U];
+    return slot.active ? &slot.pattern : nullptr;
+}
+
+uint8_t SequencerRuntimeSnapshotBank::drumPrototypeTrack(
+    uint8_t snapshotIndex
+) const {
+    const auto& slot = drum_prototype_slots_[snapshotIndex & 0x1U];
+    return slot.active ? slot.track
+                       : core::state::sequencer::SequencerTrackBankState::TRACK_COUNT;
+}
+#endif
 
 const SequencerRuntimeSnapshotBank::Snapshot& SequencerRuntimeSnapshotBank::activeSnapshot() const {
     return snapshot(active_index_);

@@ -9,6 +9,9 @@
 #include "state/sequencer/SequencerSnapshots.hpp"
 #include "state/sequencer/SequencerState.hpp"
 #include "state/sequencer/SequencerTrackBankState.hpp"
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+#include "state/sequencer/DrumPatternState.hpp"
+#endif
 
 namespace core::sequencer {
 
@@ -60,6 +63,11 @@ public:
     const SequencerCcLaneRuntimeProjectSnapshot* laneSnapshot(
         uint8_t snapshotIndex
     ) const;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    const core::state::sequencer::DrumPatternRuntimeSnapshot*
+        drumPrototypeSnapshot(uint8_t snapshotIndex) const;
+    uint8_t drumPrototypeTrack(uint8_t snapshotIndex) const;
+#endif
     [[nodiscard]] bool lastRefreshSucceeded() const {
         return last_refresh_succeeded_;
     }
@@ -101,6 +109,17 @@ private:
         core::app::ExtmemUniquePtr<SequencerCcLaneRuntimeProjectSnapshot>,
         2
     > lane_snapshots_{};
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    struct DrumPrototypeRuntimeSlot {
+        bool active = false;
+        uint8_t track = 0U;
+        core::state::sequencer::DrumPatternRuntimeSnapshot pattern{};
+    };
+    // Prototype-only and PSRAM-backed with the enclosing runtime service.
+    // Keeping this payload out of SequencerTrackBankSnapshot preserves the
+    // persistence and FullBank-history ABI.
+    std::array<DrumPrototypeRuntimeSlot, 2> drum_prototype_slots_{};
+#endif
     volatile uint8_t active_index_ = 0;
     uint32_t lane_payload_write_count_ = 0;
     bool last_refresh_succeeded_ = true;

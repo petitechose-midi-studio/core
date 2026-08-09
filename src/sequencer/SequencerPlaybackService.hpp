@@ -6,6 +6,9 @@
 
 #include <oc/note/sequencer/StepSequencerEngine.hpp>
 #include "app/ExtmemAllocator.hpp"
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+#include "sequencer/DrumPlaybackEngine.hpp"
+#endif
 #include "sequencer/RealtimeMidiQueue.hpp"
 #include "sequencer/SequencerMidiEventSink.hpp"
 #include "sequencer/SequencerCcLaneRuntime.hpp"
@@ -80,7 +83,13 @@ public:
                 const ProjectTrackRuntimeSnapshot& projectTracks,
                 bool publishRuntimeState = true,
                 const SequencerCcLaneRuntimeProjectSnapshot* ccLaneSnapshot = nullptr,
-                bool allowPredictiveLookahead = false);
+                bool allowPredictiveLookahead = false
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+                , const core::state::sequencer::DrumPatternRuntimeSnapshot*
+                      drumPrototypeSnapshot = nullptr
+                , uint8_t drumPrototypeTrack = TRACK_COUNT
+#endif
+                );
     void stopTrack(uint8_t trackIndex);
     void completeStop();
     void markCcTransportStopped();
@@ -180,6 +189,12 @@ private:
     std::array<
         std::optional<oc::note::sequencer::StepSequencerEngine>,
         TRACK_COUNT> track_engines_{};
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    // A single opt-in vertical-slice engine proves the one-scheduler-per-Drum-
+    // Track contract without preallocating sixteen additional schedulers.
+    std::optional<DrumPlaybackEngine> drum_prototype_engine_{};
+    uint8_t drum_prototype_track_ = TRACK_COUNT;
+#endif
     uint8_t runtime_active_track_ = 0;
     uint16_t runtime_enabled_mask_ = 0x0001;
     uint16_t runtime_audible_mask_ = 0x0001;

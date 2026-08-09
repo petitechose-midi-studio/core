@@ -16,6 +16,9 @@
 #include "state/modulation/ProjectModulationDomainOps.hpp"
 #include "state/project/ProjectTrackDomainServices.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+#include "state/sequencer/DrumPatternState.hpp"
+#endif
 #include "state/sequencer/SequencerContentViewOps.hpp"
 #include "state/sequencer/SequencerCcLanePatternOps.hpp"
 #include "state/sequencer/SequencerGraphOps.hpp"
@@ -1550,6 +1553,13 @@ bool prepareDrumTrackUxPrototypeScenario(core::state::CoreState& state) {
     // A fresh fixture already owns T1; this synchronization can be a no-op.
     (void)state.setSharedTrackState(0x0001, 0);
     state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
+    // Exercise lane-local timing in the exact controller viewport. These are
+    // capture-fixture values, not the product defaults used by a new Drum Track.
+    if (!state.sequencer.drumTrackUxPrototype.drumTrack) return false;
+    (void)state.sequencer.drumTrackUxPrototype.drumTrack->pattern
+        .setLaneTimingCustom(1U, 7U, 4U);
+    (void)state.sequencer.drumTrackUxPrototype.drumTrack->pattern
+        .setLaneTimingCustom(2U, 4U, 2U);
     state.sequencer.drumTrackUxPrototype.arm();
     return true;
 }

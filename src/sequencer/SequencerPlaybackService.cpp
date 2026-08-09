@@ -145,6 +145,11 @@ void SequencerPlaybackService::update(
     bool publishRuntimeState,
     const SequencerCcLaneRuntimeProjectSnapshot* ccLaneSnapshot,
     bool allowPredictiveLookahead
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    , const core::state::sequencer::DrumPatternRuntimeSnapshot*
+          drumPrototypeSnapshot
+    , uint8_t drumPrototypeTrack
+#endif
 ) {
     OC_PERF_SCOPE(perfPlayback, "sequencer.playback");
     OC_PERF_UNITS(perfPlayback, playing ? 1U : 0U, 0);
@@ -201,6 +206,11 @@ void SequencerPlaybackService::update(
                 trackEngine->update(tick, false);
             }
         }
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+        if (drum_prototype_engine_) {
+            drum_prototype_engine_->update(tick, false);
+        }
+#endif
         last_playhead_ = -1;
         if (publishRuntimeState) {
             publishRuntimeTelemetry(sequencer_, activeRuntimeState_());
@@ -215,6 +225,35 @@ void SequencerPlaybackService::update(
         const bool trackPlaying =
             (runtime_audible_mask_ & trackBit) != 0 &&
             track_runtime_states_[i].midiChannel <= 15U;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+        const bool prototypeDrumTrack =
+            drumPrototypeSnapshot != nullptr &&
+            drumPrototypeTrack == i;
+        if (prototypeDrumTrack) {
+            // Retire the mutually exclusive melodic engine before the Drum
+            // scheduler owns this Track's active-note set.
+            trackEngine->update(tick, false);
+            if (!drum_prototype_engine_ || drum_prototype_track_ != i) {
+                if (drum_prototype_engine_) {
+                    drum_prototype_engine_->update(tick, false);
+                }
+                drum_prototype_engine_.reset();
+                drum_prototype_engine_.emplace(*track_event_sinks_[i]);
+                drum_prototype_track_ = i;
+            }
+            drum_prototype_engine_->setPattern(
+                drumPrototypeSnapshot,
+                projectTrackChannel(projectTracks, i)
+            );
+            drum_prototype_engine_->update(tick, trackPlaying);
+            continue;
+        }
+        if (drum_prototype_engine_ && drum_prototype_track_ == i) {
+            drum_prototype_engine_->update(tick, false);
+            drum_prototype_engine_.reset();
+            drum_prototype_track_ = TRACK_COUNT;
+        }
+#endif
         const int32_t deadlineOffsetUs = projectTrackDeadlineOffsetUs(
             projectTracks,
             i,

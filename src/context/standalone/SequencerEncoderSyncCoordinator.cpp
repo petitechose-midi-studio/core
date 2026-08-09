@@ -10,6 +10,9 @@
 
 #include "handler/sequencer/SequencerInteractionPolicyAdapter.hpp"
 #include "state/sequencer/SequencerContentViewOps.hpp"
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+#include "state/sequencer/DrumPatternState.hpp"
+#endif
 #include "state/sequencer/SequencerGraphOps.hpp"
 #include "state/sequencer/SequencerInteractionPolicy.hpp"
 #include "state/sequencer/SequencerQuickControls.hpp"
@@ -408,7 +411,8 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumTrackUxPrototypeValues() 
     for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
         const uint8_t step = prototype.visibleStep(i);
         const float normalized = static_cast<float>(
-            prototype.velocities[prototype.selectedLane][step]
+            prototype.drumTrack->pattern.lanes[prototype.selectedLane]
+                .velocity[step]
         ) / 127.0f;
         if (!macro_position_valid_[i] ||
             hasMeaningfulEncoderDelta(macro_position_cache_[i], normalized)) {
