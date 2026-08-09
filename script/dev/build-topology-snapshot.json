@@ -74,10 +74,10 @@
     "bitwig/cmake/MidiStudioBitwigSources.cmake": "3cf5ed1ec09e37f0204445721244a4056db25b20b1a85082128b1677d893b174",
     "bitwig/platformio.ini": "8675c10548e6f4e51b6fd97bdb85b00eba2ff6589f2ba9e535b3cf75625ae221",
     "bitwig/sdl/app.cmake": "1fb132597404331082690c7f7af6cd71f3f878262f77e2183ad6c1aa851676a8",
-    "core/.github/release-tooling.json": "af598e493bb64edde1362fcd74f4db564fc6dc5be9a2ea85f143daa643999fe0",
+    "core/.github/release-tooling.json": "cfa0160700381645ebf8cfb9e069a6126520f3ef503eeea0306755aad2bd6877",
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "d1a68d0ae1c562b231904c3ab5f392f982a0fca04ec24d11305ddfc9a1ce41fc",
-    "core/.github/workflows/ci.yml": "03e2d23323a276d08e7362fe40d57dfc5e41667d6500ca9944491afde37032f9",
+    "core/.github/workflows/ci.yml": "dc84357e71b1e7a4bb72336de9fb98310a2f52e1bc7642af63f69e3a3de1e88c",
     "core/CMakeLists.txt": "4516b9f6834c6ae75e84a2083d913158ec83f17dde2998e5a54df9062728e7b8",
     "core/cmake/MsCoreProductSources.cmake": "553eb12883364bfaa5776e4e91838efac5909940a732175c28d7b434bfc149fa",
     "core/cmake/MsCoreProjectFileTool.cmake": "c54fcccc2d26351a69c2f85aaf7c2378e6418ba03713e70c02f826a546c1159f",
@@ -2865,7 +2865,7 @@
       "releaseTooling": {
         "ref": "main",
         "repo": "petitechose-midi-studio/ms-dev-env",
-        "sha": "35f0fb397eded334328ff7c2a43bf673ac02e2f8"
+        "sha": "d22d7f4c34b413b3e678129e8a9e56c3d92a8063"
       }
     },
     "coreCi": {
@@ -2875,7 +2875,7 @@
         "MIDI_STUDIO_BITWIG_SHA": "2c127b3db8cc2fd38cac72d42ed266ff169c8a76",
         "MIDI_STUDIO_DEVICE_SUPPORT_SHA": "c9f18d9a3762d4fbf80425dea12f801196a51c4a",
         "MIDI_STUDIO_UI_SHA": "137e49f39c0ed1dd6391af300b764614d39658fb",
-        "MS_DEV_ENV_SHA": "35f0fb397eded334328ff7c2a43bf673ac02e2f8",
+        "MS_DEV_ENV_SHA": "d22d7f4c34b413b3e678129e8a9e56c3d92a8063",
         "OPEN_CONTROL_FRAMEWORK_SHA": "f6be8f51ff80f5f5f82ec7c589a984730445f9b4",
         "OPEN_CONTROL_HAL_COMMON_SHA": "e3aa784055554922d130bba8065422d11a7dcd02",
         "OPEN_CONTROL_HAL_MIDI_SHA": "d18a6cc2437d3ecd1b974d05be17be3e0e02aeac",
@@ -2888,7 +2888,7 @@
       },
       "emsdkVersion": "4.0.23",
       "finalWasmLink": true,
-      "msDevEnv": "35f0fb397eded334328ff7c2a43bf673ac02e2f8",
+      "msDevEnv": "d22d7f4c34b413b3e678129e8a9e56c3d92a8063",
       "platformio": "6.1.18"
     }
   }
