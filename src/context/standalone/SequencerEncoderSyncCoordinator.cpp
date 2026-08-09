@@ -137,7 +137,7 @@ FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
     watcher_.bind<&SequencerEncoderSyncCoordinator::syncPositions>(
         *this, 0, "Sequencer.encoderSync"
     );
-    return watcher_.watchAll(
+    const bool bound = watcher_.watchAll(
         active_view_,
         navigation_focus_,
         overlays_.revisionSignal(),
@@ -166,6 +166,11 @@ FLASHMEM bool SequencerEncoderSyncCoordinator::bind() {
         sequencer_.pattern.patternTimingRevision,
         sequencer_.patternQuickControls.previewRevision
     );
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    return watcher_.watch(sequencer_.drumTrackUxPrototype.revision) && bound;
+#else
+    return bound;
+#endif
 }
 
 FLASHMEM void SequencerEncoderSyncCoordinator::reset() {
@@ -389,8 +394,56 @@ FLASHMEM void SequencerEncoderSyncCoordinator::syncPatternQuickControlOptValue()
     syncOptPosition(input_utils::quickControlToNormalized(sequencer_, item));
 }
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+FLASHMEM void SequencerEncoderSyncCoordinator::syncDrumTrackUxPrototypeValues() {
+    const auto& prototype = sequencer_.drumTrackUxPrototype;
+
+    input_utils::StepPropertyEncoderConfig velocityConfig;
+    velocityConfig.discreteSteps = 128;
+    velocityConfig.discreteTicksPerStep =
+        input_utils::DEFAULT_DISCRETE_TICKS_PER_STEP;
+    velocityConfig.normalizedTurns = input_utils::DEFAULT_NORMALIZED_TURNS;
+    ensureMacroEncoderConfig(velocityConfig);
+
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        const uint8_t step = prototype.visibleStep(i);
+        const float normalized = static_cast<float>(
+            prototype.velocities[prototype.selectedLane][step]
+        ) / 127.0f;
+        if (!macro_position_valid_[i] ||
+            hasMeaningfulEncoderDelta(macro_position_cache_[i], normalized)) {
+            encoders_.setPosition(Config::MACRO_ENCODERS[i], normalized);
+            macro_position_cache_[i] = normalized;
+            macro_position_valid_[i] = true;
+        }
+    }
+
+    // OPT selects a grammar, so one physical detent must be enough. Relative
+    // mode avoids the large half-range traversal of a two-step normalized
+    // encoder and makes both directions symmetric.
+    encoders_.setMode(
+        Config::EncoderID::OPT,
+        oc::interface::EncoderMode::RELATIVE
+    );
+    encoders_.setDelta(Config::EncoderID::OPT, 1.0f);
+    invalidateOptEncoderCache();
+}
+#endif
+
 FLASHMEM void SequencerEncoderSyncCoordinator::syncPositions() {
     if (active_view_.get() != core::ui::ViewType::SEQUENCER) return;
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (sequencer_.drumTrackUxPrototype.active()) {
+        if (sequencer_.drumTrackUxPrototype.gridVisible()) {
+            syncDrumTrackUxPrototypeValues();
+        } else {
+            invalidateOptEncoderCache();
+            macro_position_valid_.fill(false);
+        }
+        return;
+    }
+#endif
 
     if (sequencer_.ccLaneUi.visible()) {
         invalidateOptEncoderCache();

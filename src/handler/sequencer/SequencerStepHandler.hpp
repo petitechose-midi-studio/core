@@ -104,6 +104,9 @@ private:
     void confirmStepContentDraftExitChoice();
     void continueStepContentDraft();
     void handleContextSelectorRelease();
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    void confirmDrumTrackUxPrototypeType();
+#endif
 
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& tracks_;

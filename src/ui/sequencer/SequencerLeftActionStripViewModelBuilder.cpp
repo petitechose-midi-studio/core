@@ -91,6 +91,18 @@ FLASHMEM void setStripIconFromAction(
 FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
     const SequencerViewModelSource& source
 ) {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (source.sequencer.drumTrackUxPrototype.active()) {
+        StripProps props;
+        props.visible = true;
+        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
+            standalone::icons::ACTION_CANCEL,
+            Visual::ACTIVE
+        );
+        return props;
+    }
+#endif
+
     const bool selectingPattern = source.sequencer.patternQuickControls.selecting.get();
     const bool selectingProperty = source.sequencer.stepPropertyInlineSelector.selecting.get();
     const bool selectingStepContent = source.sequencer.stepContentSelector.selecting.get();

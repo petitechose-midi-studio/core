@@ -1,6 +1,8 @@
 #include "SequencerView.hpp"
 
+#include <array>
 #include <cstddef>
+#include <cstdio>
 
 #include <config/PlatformCompat.hpp>
 #include <ms/ui/font/CoreFonts.hpp>
@@ -15,6 +17,66 @@
 namespace core::ui {
 
 namespace theme = standalone::theme;
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+namespace {
+
+constexpr uint32_t DRUM_ACCENT = standalone::theme::color::STEP_VELOCITY;
+constexpr lv_coord_t DRUM_HEADER_HEIGHT = 16;
+constexpr lv_coord_t DRUM_LANE_HEIGHT = 14;
+constexpr lv_coord_t DRUM_LABEL_WIDTH = 56;
+
+constexpr std::array<const char*, 8> DRUM_LANE_LABELS = {
+    "Kick 36",
+    "Snare 38",
+    "C.Hat 42",
+    "O.Hat 46",
+    "Clap 39",
+    "Tom L 45",
+    "Tom H 48",
+    "Perc 51",
+};
+
+FLASHMEM void drawDrumPrototypeRect(
+    lv_layer_t* layer,
+    const lv_area_t& area,
+    uint32_t color,
+    lv_opa_t backgroundOpacity,
+    lv_coord_t borderWidth = 0,
+    lv_opa_t borderOpacity = LV_OPA_TRANSP,
+    lv_coord_t radius = 0
+) {
+    lv_draw_rect_dsc_t dsc;
+    lv_draw_rect_dsc_init(&dsc);
+    dsc.bg_color = lv_color_hex(color);
+    dsc.bg_opa = backgroundOpacity;
+    dsc.border_color = lv_color_hex(color);
+    dsc.border_width = borderWidth;
+    dsc.border_opa = borderOpacity;
+    dsc.radius = radius;
+    lv_draw_rect(layer, &dsc, &area);
+}
+
+FLASHMEM void drawDrumPrototypeLabel(
+    lv_layer_t* layer,
+    const lv_area_t& area,
+    const char* text,
+    uint32_t color,
+    lv_opa_t opacity,
+    lv_text_align_t alignment = LV_TEXT_ALIGN_CENTER
+) {
+    lv_draw_label_dsc_t dsc;
+    lv_draw_label_dsc_init(&dsc);
+    dsc.text = text;
+    dsc.font = fonts.inter_12_medium ? fonts.inter_12_medium : LV_FONT_DEFAULT;
+    dsc.color = lv_color_hex(color);
+    dsc.opa = opacity;
+    dsc.align = alignment;
+    lv_draw_label(layer, &dsc, &area);
+}
+
+}  // namespace
+#endif
 
 FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     : state_refs_(stateRefs) {
@@ -33,7 +95,11 @@ FLASHMEM SequencerView::SequencerView(lv_obj_t* parent, StateRefs stateRefs)
     if (!property_selection_overlay_ || !property_selection_overlay_->getElement()) return;
     createGrid();
     if (!step_grid_ || !step_grid_->getElement() ||
-        !cc_lane_grid_ || !cc_lane_grid_->getElement()) return;
+        !cc_lane_grid_ || !cc_lane_grid_->getElement()
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+        || !drum_track_ux_prototype_grid_
+#endif
+    ) return;
     createTrackPastePreflightCard();
     if (!track_paste_preflight_card_ || !track_paste_preflight_card_->valid()) return;
     ensureRenderScheduler();
@@ -45,6 +111,12 @@ FLASHMEM SequencerView::~SequencerView() {
     render_scheduler_.reset();
 
     track_paste_preflight_card_.reset();
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (drum_track_ux_prototype_grid_) {
+        lv_obj_delete(drum_track_ux_prototype_grid_);
+        drum_track_ux_prototype_grid_ = nullptr;
+    }
+#endif
     cc_lane_grid_.reset();
     step_grid_.reset();
     bottom_action_strip_.reset();
@@ -98,7 +170,198 @@ FLASHMEM void SequencerView::createGrid() {
         center_column_,
         SequencerCcLaneGridLayout::EMBEDDED
     );
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    createDrumTrackUxPrototypeGrid();
+#endif
 }
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+FLASHMEM void SequencerView::createDrumTrackUxPrototypeGrid() {
+    if (!center_column_) return;
+
+    drum_track_ux_prototype_grid_ = lv_obj_create(center_column_);
+    if (!drum_track_ux_prototype_grid_) return;
+    lv_obj_remove_style_all(drum_track_ux_prototype_grid_);
+    lv_obj_add_flag(drum_track_ux_prototype_grid_, LV_OBJ_FLAG_FLOATING);
+    lv_obj_add_flag(drum_track_ux_prototype_grid_, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_add_flag(drum_track_ux_prototype_grid_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(drum_track_ux_prototype_grid_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(drum_track_ux_prototype_grid_, 0, 0);
+    lv_obj_set_size(drum_track_ux_prototype_grid_, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(
+        drum_track_ux_prototype_grid_,
+        lv_color_hex(theme::color::BACKGROUND),
+        0
+    );
+    lv_obj_set_style_bg_opa(drum_track_ux_prototype_grid_, LV_OPA_COVER, 0);
+    lv_obj_add_event_cb(
+        drum_track_ux_prototype_grid_,
+        onDrumTrackUxPrototypeDrawEvent,
+        LV_EVENT_DRAW_MAIN,
+        this
+    );
+}
+
+FLASHMEM void SequencerView::onDrumTrackUxPrototypeDrawEvent(
+    lv_event_t* event
+) {
+    auto* self = static_cast<SequencerView*>(lv_event_get_user_data(event));
+    if (!self) return;
+    self->drawDrumTrackUxPrototypeGrid(lv_event_get_layer(event));
+}
+
+FLASHMEM void SequencerView::drawDrumTrackUxPrototypeGrid(
+    lv_layer_t* layer
+) {
+    if (!layer || !drum_track_ux_prototype_grid_) return;
+    const auto& prototype = state_refs_.sequencer.drumTrackUxPrototype;
+    if (!prototype.gridVisible()) return;
+
+    lv_area_t surface{};
+    lv_obj_get_coords(drum_track_ux_prototype_grid_, &surface);
+    const lv_coord_t width = static_cast<lv_coord_t>(
+        surface.x2 - surface.x1 + 1
+    );
+    if (width <= DRUM_LABEL_WIDTH) return;
+    const lv_coord_t cellWidth = static_cast<lv_coord_t>(
+        (width - DRUM_LABEL_WIDTH) /
+        core::state::sequencer::DrumTrackUxPrototypeState::STEPS_PER_PAGE
+    );
+
+    char header[32] = {};
+    std::snprintf(
+        header,
+        sizeof(header),
+        "DRUM  P%02u/16  %s",
+        static_cast<unsigned>(prototype.page + 1U),
+        prototype.property ==
+                core::state::sequencer::DrumTrackUxPrototypeProperty::STATE
+            ? "STATE"
+            : "VELOCITY"
+    );
+    const lv_area_t headerArea{
+        .x1 = static_cast<lv_coord_t>(surface.x1 + 2),
+        .y1 = surface.y1,
+        .x2 = static_cast<lv_coord_t>(surface.x2 - 2),
+        .y2 = static_cast<lv_coord_t>(surface.y1 + DRUM_HEADER_HEIGHT - 1),
+    };
+    drawDrumPrototypeLabel(
+        layer,
+        headerArea,
+        header,
+        DRUM_ACCENT,
+        LV_OPA_COVER,
+        LV_TEXT_ALIGN_LEFT
+    );
+
+    for (uint8_t lane = 0;
+         lane < core::state::sequencer::DrumTrackUxPrototypeState::LANE_COUNT;
+         ++lane) {
+        const bool selected = lane == prototype.selectedLane;
+        const lv_coord_t rowY = static_cast<lv_coord_t>(
+            surface.y1 + DRUM_HEADER_HEIGHT + lane * DRUM_LANE_HEIGHT
+        );
+        const lv_area_t rowArea{
+            .x1 = surface.x1,
+            .y1 = rowY,
+            .x2 = surface.x2,
+            .y2 = static_cast<lv_coord_t>(rowY + DRUM_LANE_HEIGHT - 1),
+        };
+        if (selected) {
+            drawDrumPrototypeRect(
+                layer,
+                rowArea,
+                DRUM_ACCENT,
+                LV_OPA_10
+            );
+        }
+
+        const lv_area_t labelArea{
+            .x1 = static_cast<lv_coord_t>(surface.x1 + 2),
+            .y1 = rowY,
+            .x2 = static_cast<lv_coord_t>(
+                surface.x1 + DRUM_LABEL_WIDTH - 3
+            ),
+            .y2 = static_cast<lv_coord_t>(rowY + DRUM_LANE_HEIGHT - 1),
+        };
+        drawDrumPrototypeLabel(
+            layer,
+            labelArea,
+            DRUM_LANE_LABELS[lane],
+            selected ? DRUM_ACCENT : theme::color::TEXT_SECONDARY,
+            selected ? LV_OPA_COVER : LV_OPA_70,
+            LV_TEXT_ALIGN_LEFT
+        );
+
+        for (uint8_t column = 0;
+             column < core::state::sequencer::
+                 DrumTrackUxPrototypeState::STEPS_PER_PAGE;
+             ++column) {
+            const uint8_t step = prototype.visibleStep(column);
+            const bool active = prototype.enabledSteps[lane].test(step);
+            const uint8_t velocity = prototype.velocities[lane][step];
+            const lv_coord_t cellX = static_cast<lv_coord_t>(
+                surface.x1 + DRUM_LABEL_WIDTH + column * cellWidth
+            );
+            const lv_area_t cellArea{
+                .x1 = static_cast<lv_coord_t>(cellX + 1),
+                .y1 = static_cast<lv_coord_t>(rowY + 1),
+                .x2 = static_cast<lv_coord_t>(cellX + cellWidth - 2),
+                .y2 = static_cast<lv_coord_t>(
+                    rowY + DRUM_LANE_HEIGHT - 2
+                ),
+            };
+            const lv_opa_t fillOpacity = active
+                ? static_cast<lv_opa_t>(
+                      prototype.property == core::state::sequencer::
+                              DrumTrackUxPrototypeProperty::VELOCITY
+                          ? 45U + (static_cast<uint16_t>(velocity) * 175U) /
+                                127U
+                          : 155U
+                  )
+                : LV_OPA_TRANSP;
+            drawDrumPrototypeRect(
+                layer,
+                cellArea,
+                DRUM_ACCENT,
+                fillOpacity,
+                selected ? 1 : 0,
+                selected ? LV_OPA_70 : LV_OPA_TRANSP,
+                2
+            );
+
+            if (selected) {
+                char value[5] = {};
+                if (prototype.property == core::state::sequencer::
+                        DrumTrackUxPrototypeProperty::VELOCITY && active) {
+                    std::snprintf(
+                        value,
+                        sizeof(value),
+                        "%u",
+                        static_cast<unsigned>(velocity)
+                    );
+                } else {
+                    std::snprintf(
+                        value,
+                        sizeof(value),
+                        "%u",
+                        static_cast<unsigned>(column + 1U)
+                    );
+                }
+                drawDrumPrototypeLabel(
+                    layer,
+                    cellArea,
+                    value,
+                    active
+                        ? theme::color::TEXT_PRIMARY
+                        : theme::color::TEXT_SECONDARY,
+                    active ? LV_OPA_COVER : LV_OPA_50
+                );
+            }
+        }
+    }
+}
+#endif
 
 FLASHMEM void SequencerView::createPropertySelectionOverlay() {
     if (!container_) return;
@@ -336,6 +599,11 @@ FLASHMEM void SequencerView::bindGridState() {
         state_refs_.sequencer.structureUi.previewPageIndex,
         state_refs_.sequencer.patternQuickControls.previewRevision
     );
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    grid_watcher_.watch(
+        state_refs_.sequencer.drumTrackUxPrototype.revision
+    );
+#endif
     grid_tick_watcher_.bind<&SequencerView::requestGridTickRender>(
         *this, 11, "SequencerView.gridTick"
     );
@@ -375,6 +643,11 @@ FLASHMEM void SequencerView::bindSelectorOverlayState() {
         state_refs_.sequencer.ccLaneUi.revision,
         state_refs_.sequencer.patternQuickControls.previewRevision
     );
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    selector_overlay_watcher_.watch(
+        state_refs_.sequencer.drumTrackUxPrototype.revision
+    );
+#endif
 }
 
 FLASHMEM void SequencerView::bindOverlayVisibilityState() {
@@ -408,6 +681,11 @@ FLASHMEM void SequencerView::bindLeftActionStripState() {
         state_refs_.sequencer.contentView.kind,
         state_refs_.sequencer.ccLaneUi.revision
     );
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    left_action_strip_watcher_.watch(
+        state_refs_.sequencer.drumTrackUxPrototype.revision
+    );
+#endif
 }
 
 FLASHMEM void SequencerView::bindBottomActionStripState() {
@@ -439,6 +717,11 @@ FLASHMEM void SequencerView::bindBottomActionStripState() {
         state_refs_.sequencer.ccLaneUi.actionGuard,
         state_refs_.sequencer.ccLaneUi.operationFeedback
     );
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    bottom_action_strip_watcher_.watch(
+        state_refs_.sequencer.drumTrackUxPrototype.revision
+    );
+#endif
 }
 
 FLASHMEM void SequencerView::bindHistoryFeedbackState() {
@@ -675,6 +958,22 @@ void SequencerView::render(uint32_t flags) {
     }
 
     if (needsGrid) {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+        if (state_refs_.sequencer.drumTrackUxPrototype.gridVisible()) {
+            OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.drum-prototype");
+            lv_obj_add_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
+            cc_lane_grid_->render({.visible = false});
+            lv_obj_clear_flag(
+                drum_track_ux_prototype_grid_,
+                LV_OBJ_FLAG_HIDDEN
+            );
+            lv_obj_invalidate(drum_track_ux_prototype_grid_);
+        } else {
+            lv_obj_add_flag(
+                drum_track_ux_prototype_grid_,
+                LV_OBJ_FLAG_HIDDEN
+            );
+#endif
         const auto ccLaneProps = sequencer::buildSequencerCcLaneGridProps(source);
         if (ccLaneProps.visible) {
             OC_PERF_SCOPE(perfMutation, "ui.sequencer.mutation.cc-lane");
@@ -687,6 +986,9 @@ void SequencerView::render(uint32_t flags) {
             lv_obj_clear_flag(step_grid_->getElement(), LV_OBJ_FLAG_HIDDEN);
             step_grid_->render(stepGridProps);
         }
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+        }
+#endif
     }
 
     if (needsHistoryToast) {

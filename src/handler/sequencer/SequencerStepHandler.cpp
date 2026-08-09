@@ -114,6 +114,27 @@ FLASHMEM void SequencerStepHandler::attachTrackEditorHandler(ProjectTrackEditorH
     track_editor_handler_ = &handler;
 }
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+FLASHMEM void SequencerStepHandler::confirmDrumTrackUxPrototypeType() {
+    auto& prototype = sequencer_.drumTrackUxPrototype;
+    if (!prototype.pickerVisible()) return;
+
+    const bool drum = prototype.selectedKind ==
+        seq::DrumTrackUxPrototypeKind::DRUM;
+    const auto result = edit_workflow_.createPreviewedTrackStructure();
+    if (!result.settled()) return;
+
+    // Track creation can rotate/reset the active editor owner. Keep the
+    // experiment armed without making that transient state part of history.
+    if (!prototype.armed) prototype.arm();
+    if (drum) {
+        prototype.enterGrid();
+    } else {
+        prototype.close();
+    }
+}
+#endif
+
 FLASHMEM void SequencerStepHandler::handleContextSelectorRelease() {
     const auto outcome = context_selector_workflow_.release();
     switch (outcome.action) {
@@ -160,6 +181,14 @@ FLASHMEM void SequencerStepHandler::handleContextSelectorRelease() {
                         outcome.previewTarget) {
                     return;
                 }
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+                if (sequencer_.drumTrackUxPrototype.armed) {
+                    sequencer_.drumTrackUxPrototype.openTypePicker(
+                        outcome.previewTarget
+                    );
+                    return;
+                }
+#endif
                 if (!edit_workflow_.createPreviewedTrackStructure().settled()) {
                     return;
                 }
@@ -186,6 +215,103 @@ FLASHMEM void SequencerStepHandler::enterSelectionModeForCurrentFocus() {
 }
 
 FLASHMEM void SequencerStepHandler::setupBindings() {
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    // The prototype owns a complete native-only interaction mode. Button
+    // priority makes strict gesture routing deterministic; encoder bindings
+    // are registered first and therefore win within this view scope.
+    encoders_.encoder(Config::EncoderID::NAV)
+        .turn()
+        .scope(scope_id_)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.pickerVisible(); })
+        .then([this](float delta) {
+            sequencer_.drumTrackUxPrototype.moveKind(delta);
+        });
+
+    encoders_.encoder(Config::EncoderID::NAV)
+        .turn()
+        .scope(scope_id_)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+        .then([this](float delta) {
+            sequencer_.drumTrackUxPrototype.moveLane(delta);
+        });
+
+    encoders_.encoder(Config::EncoderID::OPT)
+        .turn()
+        .scope(scope_id_)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+        .then([this](float delta) {
+            sequencer_.drumTrackUxPrototype.moveProperty(delta);
+        });
+
+    buttons_.button(Config::ButtonID::NAV)
+        .press()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.active(); })
+        .then([]() {});
+
+    buttons_.button(Config::ButtonID::NAV)
+        .release()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.pickerVisible(); })
+        .then([this]() { confirmDrumTrackUxPrototypeType(); });
+
+    buttons_.button(Config::ButtonID::NAV)
+        .release()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+        .then([]() {});
+
+    buttons_.button(Config::ButtonID::LEFT_TOP)
+        .release()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.active(); })
+        .then([this]() { sequencer_.drumTrackUxPrototype.close(); });
+
+    buttons_.button(Config::ButtonID::BOTTOM_LEFT)
+        .release()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+        .then([this]() { sequencer_.drumTrackUxPrototype.movePage(-1); });
+
+    buttons_.button(Config::ButtonID::BOTTOM_RIGHT)
+        .release()
+        .scope(scope_id_)
+        .priority(100)
+        .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+        .then([this]() { sequencer_.drumTrackUxPrototype.movePage(1); });
+
+    for (uint8_t i = 0; i < Config::MACRO_COUNT; ++i) {
+        buttons_.button(Config::MACRO_BUTTONS[i])
+            .release()
+            .scope(scope_id_)
+            .priority(100)
+            .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+            .then([this, i]() {
+                sequencer_.drumTrackUxPrototype.toggleVisibleStep(i);
+            });
+
+        encoders_.encoder(Config::MACRO_ENCODERS[i])
+            .turn()
+            .scope(scope_id_)
+            .when([this]() { return sequencer_.drumTrackUxPrototype.gridVisible(); })
+            .then([this, i](float normalized) {
+                if (sequencer_.drumTrackUxPrototype.property !=
+                    seq::DrumTrackUxPrototypeProperty::VELOCITY) {
+                    return;
+                }
+                sequencer_.drumTrackUxPrototype.setVisibleStepVelocity(
+                    i,
+                    normalized
+                );
+            });
+    }
+#endif
+
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)

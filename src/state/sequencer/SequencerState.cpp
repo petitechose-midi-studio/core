@@ -386,6 +386,9 @@ FLASHMEM void SequencerState::reset() {
     contentView.reset();
     stepContentDraft.resetSession();
     structureUi.reset();
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    drumTrackUxPrototype.reset();
+#endif
 }
 
 }  // namespace core::state::sequencer

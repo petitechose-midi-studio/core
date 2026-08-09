@@ -346,6 +346,55 @@ FLASHMEM ContextActionStripProps buildSequencerBottomActionStripProps(
 ) {
     StripProps props;
     props.visible = true;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (source.sequencer.drumTrackUxPrototype.active()) {
+        const auto& prototype = source.sequencer.drumTrackUxPrototype;
+        if (!prototype.gridVisible()) return props;
+
+        props.slots[0] = SlotProps{
+            .visualState = Visual::ACTIVE,
+            .tone = Tone::NEUTRAL,
+            .showIcon = false,
+            .icon = nullptr,
+            .showLabel = true,
+        };
+        std::snprintf(
+            props.slots[0].labelText.data(),
+            props.slots[0].labelText.size(),
+            "< PAGE"
+        );
+        props.slots[1] = SlotProps{
+            .visualState = Visual::ACTIVE,
+            .tone = Tone::CONSTRUCTIVE,
+            .showIcon = false,
+            .icon = nullptr,
+            .showLabel = true,
+        };
+        std::snprintf(
+            props.slots[1].labelText.data(),
+            props.slots[1].labelText.size(),
+            "OPT %s",
+            prototype.property == core::state::sequencer::
+                    DrumTrackUxPrototypeProperty::STATE
+                ? "STATE"
+                : "VEL"
+        );
+        props.slots[2] = SlotProps{
+            .visualState = Visual::ACTIVE,
+            .tone = Tone::NEUTRAL,
+            .showIcon = false,
+            .icon = nullptr,
+            .showLabel = true,
+        };
+        std::snprintf(
+            props.slots[2].labelText.data(),
+            props.slots[2].labelText.size(),
+            "PAGE >"
+        );
+        return props;
+    }
+#endif
+
     const bool trackFocus =
         source.navigationFocus.get() == core::state::StructureNavigationFocus::TRACK;
     const bool selectingTrack =

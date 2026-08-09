@@ -1534,6 +1534,27 @@ bool prepareSequencerCcLaneMacroConflictScenario(core::state::CoreState& state) 
     return true;
 }
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+bool prepareDrumTrackUxPrototypeScenario(core::state::CoreState& state) {
+    using namespace core::state;
+
+    state.activeView.set(core::ui::ViewType::SEQUENCER);
+    state.overlays.hideAll();
+    state.statusBar.playing.set(false);
+    state.sequencerTrackActivations.reset();
+    state.structureClipboard.clear();
+    (void)state.clearSequencerHistory();
+    state.sequencer.reset();
+    state.sequencerTracks.reset();
+    state.trackNavigation.reset();
+    // A fresh fixture already owns T1; this synchronization can be a no-op.
+    (void)state.setSharedTrackState(0x0001, 0);
+    state.structureNavigationFocus.set(StructureNavigationFocus::PAGE);
+    state.sequencer.drumTrackUxPrototype.arm();
+    return true;
+}
+#endif
+
 bool prepareSequencerTrackPasteCaptureScenario(core::state::CoreState& state) {
     using namespace core::state;
     using namespace core::state::sequencer;
@@ -1744,6 +1765,12 @@ bool applyCaptureScenario(core::state::CoreState& state, const char* scenario) {
         state.activeView.set(core::ui::ViewType::SEQUENCER);
         return true;
     }
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (std::strcmp(scenario, "drum-track-ux-prototype") == 0) {
+        return prepareDrumTrackUxPrototypeScenario(state);
+    }
+#endif
 
     if (std::strcmp(scenario, "seq-track-paste-single") == 0) {
         return prepareSequencerTrackPasteCaptureScenario(state);

@@ -84,6 +84,11 @@ private:
     void createLayout(lv_obj_t* parent);
     void createHeaderBar();
     void createGrid();
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    void createDrumTrackUxPrototypeGrid();
+    void drawDrumTrackUxPrototypeGrid(lv_layer_t* layer);
+    static void onDrumTrackUxPrototypeDrawEvent(lv_event_t* event);
+#endif
     void createPropertySelectionOverlay();
     void createActionStrips();
     void createHistoryToast();
@@ -135,12 +140,25 @@ private:
     oc::state::StaticWatchGroup<
         2U * core::ui::STRUCTURE_SELECTION_INVALIDATION_SIGNAL_COUNT>
         structure_selection_watcher_;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    oc::state::StaticWatchGroup<43> grid_watcher_;
+#else
     oc::state::StaticWatchGroup<42> grid_watcher_;
+#endif
     oc::state::StaticWatchGroup<1> grid_tick_watcher_;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    oc::state::StaticWatchGroup<26> selector_overlay_watcher_;
+#else
     oc::state::StaticWatchGroup<25> selector_overlay_watcher_;
+#endif
     oc::state::StaticWatchGroup<7> overlay_visibility_watcher_;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    oc::state::StaticWatchGroup<11> left_action_strip_watcher_;
+    oc::state::StaticWatchGroup<24> bottom_action_strip_watcher_;
+#else
     oc::state::StaticWatchGroup<10> left_action_strip_watcher_;
     oc::state::StaticWatchGroup<23> bottom_action_strip_watcher_;
+#endif
     oc::state::StaticWatchGroup<2> history_feedback_watcher_;
     oc::state::StaticWatchGroup<1> track_switch_ready_watcher_;
     oc::state::StaticWatchGroup<9> track_paste_preflight_watcher_;
@@ -162,6 +180,9 @@ private:
     core::app::ExtmemUniquePtr<core::ui::ContextActionStrip> bottom_action_strip_;
     core::app::ExtmemUniquePtr<core::ui::StepGrid> step_grid_;
     core::app::ExtmemUniquePtr<core::ui::SequencerCcLaneGrid> cc_lane_grid_;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    lv_obj_t* drum_track_ux_prototype_grid_ = nullptr;
+#endif
     core::app::ExtmemUniquePtr<
         core::ui::sequencer::SequencerTrackPastePreflightCard>
         track_paste_preflight_card_;

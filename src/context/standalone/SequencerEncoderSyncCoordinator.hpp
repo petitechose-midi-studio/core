@@ -68,6 +68,9 @@ private:
     void syncOptPosition(float normalized);
     void syncFocusedStepOptValue(core::state::sequencer::StepProperty property);
     void syncPatternQuickControlOptValue();
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    void syncDrumTrackUxPrototypeValues();
+#endif
     void syncPositions();
 
     oc::state::ExclusiveVisibilityStack<core::ui::OverlayType>& overlays_;
@@ -79,7 +82,11 @@ private:
     core::state::sequencer::SequencerState& sequencer_;
     core::state::sequencer::SequencerTrackBankState& track_bank_;
     oc::api::EncoderAPI& encoders_;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    oc::state::StaticWatchGroup<28> watcher_;
+#else
     oc::state::StaticWatchGroup<27> watcher_;
+#endif
 
     uint8_t macro_steps_configured_ = 0;
     uint16_t macro_ticks_per_step_configured_ = 0;

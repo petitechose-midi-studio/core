@@ -1,0 +1,49 @@
+# UX prototype: choose a Track interaction model, then author one compact
+# 8-lane Drum pattern without changing the persisted project model.
+# Expect: capture_changed:type_instrument=type_drum, capture_changed:drum_empty=kick_programmed, capture_changed:kick_programmed=snare_programmed, capture_changed:snare_programmed=velocity_property, capture_changed:page_1_velocity=state_property_restored, capture_changed:state_property_restored=page_2_empty, capture_changed:page_2_empty=prototype_closed
+
+0 scenario drum-track-ux-prototype
+80 capture screen instrument_grid_before_create
+
+# Open Structure > Tracks, select the single +Track slot, and confirm it.
+150 button NAV down
+210 encoder NAV -1
+270 button NAV up
+330 tap LEFT_CENTER 60
+1280 capture screen structure_tracks_open
+1530 encoder NAV 1
+1730 capture screen track_2_add_preview
+1830 tap NAV 60
+2150 capture screen type_instrument
+
+# Select Drum and create Track 2 through the existing atomic transaction.
+2300 encoder NAV 1
+2500 capture screen type_drum
+2650 tap NAV 60
+3300 capture screen drum_empty
+
+# Program Kick, then move vertically to Snare and program another rhythm.
+3500 tap MACRO_1 60
+3700 tap MACRO_5 60
+4000 capture screen kick_programmed
+4150 encoder NAV 1
+4350 tap MACRO_3 60
+4550 tap MACRO_7 60
+4900 capture screen snare_programmed
+
+# OPT changes the row edit grammar; macro encoders edit absolute velocities.
+5100 encoder OPT 1
+5350 capture screen velocity_property
+5500 encoder MACRO_3 0.35
+5700 encoder MACRO_7 0.85
+6000 capture screen page_1_velocity
+6150 encoder OPT -1
+6350 capture screen state_property_restored
+
+# Bottom actions page through all 128 steps, then LEFT_TOP exits the prototype.
+6500 tap BOTTOM_RIGHT 60
+6800 capture screen page_2_empty
+7000 tap BOTTOM_LEFT 60
+7300 capture screen page_1_restored
+7500 tap LEFT_TOP 60
+7900 capture screen prototype_closed

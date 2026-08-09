@@ -292,6 +292,25 @@ FLASHMEM StepPropertySelectionOverlayProps buildSequencerPropertySelectionOverla
 ) {
     const auto& sequencer = source.sequencer;
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    if (sequencer.drumTrackUxPrototype.pickerVisible()) {
+        const bool drum = sequencer.drumTrackUxPrototype.selectedKind ==
+            core::state::sequencer::DrumTrackUxPrototypeKind::DRUM;
+        return {
+            .visible = true,
+            .customContent = true,
+            .icon = drum
+                ? standalone::icons::CYCLE_STATE
+                : standalone::icons::NOTE,
+            .label = drum ? "Track: Drum" : "Track: Instrument",
+            .value = "Turn NAV · press",
+            .color = drum
+                ? standalone::theme::color::STEP_VELOCITY
+                : standalone::theme::color::STEP_PITCH,
+        };
+    }
+#endif
+
     if (sequencer.stepContentDraft.exitPromptVisible.get()) {
         using Choice = core::state::sequencer::SequencerStepContentDraftExitChoice;
         switch (sequencer.stepContentDraft.exitChoice.get()) {

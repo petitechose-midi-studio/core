@@ -18,6 +18,7 @@
 #include "integration/UxScenarioRunner.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <array>
 #include <cstring>
 #include <filesystem>
@@ -334,6 +335,15 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    // Keep normal native runs production-faithful while allowing an explicit
+    // hands-on product trial without a dedicated executable or persisted flag.
+    if (const char* enabled = std::getenv("MS_ENABLE_DRUM_TRACK_UX_PROTOTYPE");
+        enabled && std::strcmp(enabled, "1") == 0) {
+        coreState.sequencer.drumTrackUxPrototype.arm();
+    }
+#endif
 
     // 5. Main loop
     return ms::entry::run_native(

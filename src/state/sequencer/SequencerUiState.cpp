@@ -1,5 +1,7 @@
 #include "state/sequencer/SequencerUiState.hpp"
 
+#include <algorithm>
+
 #include <config/PlatformCompat.hpp>
 
 namespace core::state::sequencer {
@@ -430,6 +432,130 @@ FLASHMEM void SequencerTrackPasteUiState::reset() {
     commitConsumed = false;
     bump();
 }
+
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+FLASHMEM DrumTrackUxPrototypeState::DrumTrackUxPrototypeState() {
+    reset();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::bump() {
+    revision.set(revision.get() + 1U);
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::reset() {
+    armed = false;
+    phase = DrumTrackUxPrototypePhase::INACTIVE;
+    selectedKind = DrumTrackUxPrototypeKind::INSTRUMENT;
+    property = DrumTrackUxPrototypeProperty::STATE;
+    targetTrack = INVALID_TRACK;
+    selectedLane = 0;
+    page = 0;
+    enabledSteps = {};
+    for (auto& lane : velocities) {
+        lane.fill(100U);
+    }
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::arm() {
+    armed = true;
+    phase = DrumTrackUxPrototypePhase::INACTIVE;
+    targetTrack = INVALID_TRACK;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::openTypePicker(uint8_t track) {
+    if (!armed) return;
+    targetTrack = track;
+    selectedKind = DrumTrackUxPrototypeKind::INSTRUMENT;
+    phase = DrumTrackUxPrototypePhase::TYPE_PICKER;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::moveKind(float delta) {
+    if (!pickerVisible() || delta == 0.0f) return;
+    const auto next = delta > 0.0f
+        ? DrumTrackUxPrototypeKind::DRUM
+        : DrumTrackUxPrototypeKind::INSTRUMENT;
+    if (selectedKind == next) return;
+    selectedKind = next;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::enterGrid() {
+    if (!armed) return;
+    selectedLane = 0;
+    page = 0;
+    property = DrumTrackUxPrototypeProperty::STATE;
+    phase = DrumTrackUxPrototypePhase::GRID;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::close() {
+    phase = DrumTrackUxPrototypePhase::INACTIVE;
+    targetTrack = INVALID_TRACK;
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::moveLane(float delta) {
+    if (!gridVisible() || delta == 0.0f) return;
+    const int direction = delta > 0.0f ? 1 : -1;
+    const int next = static_cast<int>(selectedLane) + direction;
+    selectedLane = static_cast<uint8_t>(
+        (next + static_cast<int>(LANE_COUNT)) % static_cast<int>(LANE_COUNT)
+    );
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::movePage(int direction) {
+    if (!gridVisible() || direction == 0) return;
+    const int next = static_cast<int>(page) + (direction > 0 ? 1 : -1);
+    page = static_cast<uint8_t>(
+        (next + static_cast<int>(PAGE_COUNT)) % static_cast<int>(PAGE_COUNT)
+    );
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::moveProperty(float delta) {
+    if (!gridVisible() || delta == 0.0f) return;
+    const auto next = delta > 0.0f
+        ? DrumTrackUxPrototypeProperty::VELOCITY
+        : DrumTrackUxPrototypeProperty::STATE;
+    if (property == next) return;
+    property = next;
+    bump();
+}
+
+FLASHMEM uint8_t DrumTrackUxPrototypeState::visibleStep(
+    uint8_t indexInPage
+) const {
+    const uint16_t step = static_cast<uint16_t>(page) * STEPS_PER_PAGE +
+        std::min<uint8_t>(indexInPage, STEPS_PER_PAGE - 1U);
+    return static_cast<uint8_t>(std::min<uint16_t>(step, MAX_STEPS - 1U));
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::toggleVisibleStep(
+    uint8_t indexInPage
+) {
+    if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
+    const uint8_t step = visibleStep(indexInPage);
+    enabledSteps[selectedLane].toggleBit(step);
+    bump();
+}
+
+FLASHMEM void DrumTrackUxPrototypeState::setVisibleStepVelocity(
+    uint8_t indexInPage,
+    float normalized
+) {
+    if (!gridVisible() || indexInPage >= STEPS_PER_PAGE) return;
+    const float clamped = std::clamp(normalized, 0.0f, 1.0f);
+    const uint8_t next = static_cast<uint8_t>(clamped * 127.0f + 0.5f);
+    const uint8_t step = visibleStep(indexInPage);
+    if (velocities[selectedLane][step] == next) return;
+    velocities[selectedLane][step] = next;
+    bump();
+}
+#endif
 
 FLASHMEM SequencerStructureUiState::SequencerStructureUiState() = default;
 FLASHMEM SequencerStructureUiState::~SequencerStructureUiState() = default;

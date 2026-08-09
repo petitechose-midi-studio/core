@@ -644,6 +644,79 @@ struct SequencerTrackPasteUiState {
     void reset();
 };
 
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+/**
+ * Native-only interaction model used to validate Drum Track authoring before
+ * the persistent TrackKind and playback domains are introduced.
+ *
+ * The experiment is intentionally fixed-capacity and session-only. It cannot
+ * leak into project serialization or firmware memory placement decisions.
+ */
+enum class DrumTrackUxPrototypePhase : uint8_t {
+    INACTIVE = 0,
+    TYPE_PICKER,
+    GRID,
+};
+
+enum class DrumTrackUxPrototypeKind : uint8_t {
+    INSTRUMENT = 0,
+    DRUM,
+};
+
+enum class DrumTrackUxPrototypeProperty : uint8_t {
+    STATE = 0,
+    VELOCITY,
+};
+
+struct DrumTrackUxPrototypeState {
+    static constexpr uint8_t LANE_COUNT = 8;
+    static constexpr uint8_t STEPS_PER_PAGE = 8;
+    static constexpr uint8_t PAGE_COUNT = 16;
+    static constexpr uint8_t MAX_STEPS = STEPS_PER_PAGE * PAGE_COUNT;
+    static constexpr uint8_t INVALID_TRACK = 0xFFU;
+
+    bool armed = false;
+    DrumTrackUxPrototypePhase phase = DrumTrackUxPrototypePhase::INACTIVE;
+    DrumTrackUxPrototypeKind selectedKind =
+        DrumTrackUxPrototypeKind::INSTRUMENT;
+    DrumTrackUxPrototypeProperty property =
+        DrumTrackUxPrototypeProperty::STATE;
+    uint8_t targetTrack = INVALID_TRACK;
+    uint8_t selectedLane = 0;
+    uint8_t page = 0;
+    std::array<oc::note::sequencer::StepBitMask128, LANE_COUNT> enabledSteps{};
+    std::array<std::array<uint8_t, MAX_STEPS>, LANE_COUNT> velocities{};
+    std::array<uint8_t, LANE_COUNT> notes{{36, 38, 42, 46, 39, 45, 48, 51}};
+    Signal<uint32_t, 8> revision{0};
+
+    DrumTrackUxPrototypeState();
+
+    [[nodiscard]] bool active() const {
+        return phase != DrumTrackUxPrototypePhase::INACTIVE;
+    }
+    [[nodiscard]] bool pickerVisible() const {
+        return phase == DrumTrackUxPrototypePhase::TYPE_PICKER;
+    }
+    [[nodiscard]] bool gridVisible() const {
+        return phase == DrumTrackUxPrototypePhase::GRID;
+    }
+
+    void reset();
+    void arm();
+    void openTypePicker(uint8_t track);
+    void moveKind(float delta);
+    void enterGrid();
+    void close();
+    void moveLane(float delta);
+    void movePage(int direction);
+    void moveProperty(float delta);
+    void toggleVisibleStep(uint8_t indexInPage);
+    void setVisibleStepVelocity(uint8_t indexInPage, float normalized);
+    [[nodiscard]] uint8_t visibleStep(uint8_t indexInPage) const;
+    void bump();
+};
+#endif
+
 struct SequencerStructureUiState {
     Signal<uint8_t, 4> previewPageIndex{0};
     core::state::StructureHoldState pageHold;

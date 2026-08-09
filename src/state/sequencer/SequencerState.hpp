@@ -77,6 +77,9 @@ struct SequencerState {
     // Published Pattern data remains untouched until explicit Apply/Save.
     SequencerStepContentDraftSession stepContentDraft;
     SequencerStructureUiState structureUi;
+#if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    DrumTrackUxPrototypeState drumTrackUxPrototype;
+#endif
 
     SequencerState();
     ~SequencerState();
