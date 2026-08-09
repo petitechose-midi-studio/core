@@ -110,6 +110,8 @@ private:
         2
     > lane_snapshots_{};
 #if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+    void refreshDrumPrototype_(uint8_t writeIndex, uint8_t activeTrack);
+
     struct DrumPrototypeRuntimeSlot {
         bool active = false;
         uint8_t track = 0U;

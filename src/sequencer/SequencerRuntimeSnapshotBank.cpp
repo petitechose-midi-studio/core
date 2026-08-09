@@ -82,24 +82,7 @@ uint8_t SequencerRuntimeSnapshotBank::refresh() {
     runtimeSnapshot.activeTrack = activeTrack;
     runtimeSnapshot.enabledMask = track_bank_.currentEnabledMask();
 #if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
-    const auto& drumPrototype = sequencer_.drumTrackUxPrototype;
-    auto& drumSlot = drum_prototype_slots_[writeIndex];
-    drumSlot.active =
-        drumPrototype.gridVisible() &&
-        drumPrototype.targetTrack == activeTrack;
-    drumSlot.track = activeTrack;
-    if (drumSlot.active) {
-        const uint32_t drumRevision =
-            core::state::sequencer::drumRuntimeRevision(
-                *drumPrototype.drumTrack
-            );
-        if (drumSlot.pattern.revision != drumRevision) {
-            core::state::sequencer::captureDrumRuntimeSnapshot(
-                *drumPrototype.drumTrack,
-                drumSlot.pattern
-            );
-        }
-    }
+    refreshDrumPrototype_(writeIndex, activeTrack);
 #endif
     runtimeSnapshot.projectScaleRevision = track_bank_.projectScaleRevisionSignal().get();
     runtimeSnapshot.projectScaleSettings = track_bank_.projectScaleSettings();
@@ -156,6 +139,26 @@ SequencerRuntimeSnapshotBank::laneSnapshot(uint8_t snapshotIndex) const {
 }
 
 #if defined(MS_DRUM_TRACK_UX_PROTOTYPE)
+FLASHMEM void SequencerRuntimeSnapshotBank::refreshDrumPrototype_(
+    uint8_t writeIndex,
+    uint8_t activeTrack
+) {
+    const auto& prototype = sequencer_.drumTrackUxPrototype;
+    auto& slot = drum_prototype_slots_[writeIndex & 0x1U];
+    slot.active = prototype.gridVisible() &&
+                  prototype.targetTrack == activeTrack;
+    slot.track = activeTrack;
+    if (!slot.active) return;
+
+    const uint32_t revision =
+        core::state::sequencer::drumRuntimeRevision(*prototype.drumTrack);
+    if (slot.pattern.revision == revision) return;
+    core::state::sequencer::captureDrumRuntimeSnapshot(
+        *prototype.drumTrack,
+        slot.pattern
+    );
+}
+
 const core::state::sequencer::DrumPatternRuntimeSnapshot*
 SequencerRuntimeSnapshotBank::drumPrototypeSnapshot(
     uint8_t snapshotIndex

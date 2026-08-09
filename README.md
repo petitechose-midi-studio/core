@@ -30,11 +30,10 @@ It is not a generic plugin SDK, and the repository structure should be read as a
 
 The main PlatformIO environments are defined in [platformio.ini](platformio.ini):
 
-- `dev`: local symlinked `open-control` dependencies
+- `dev`: local symlinked `open-control` dependencies, including the current
+  Drum Track vertical slice used by MS Manager workspace flashes
 - `dev_diagnostics`: product behavior with removable performance/memory
   instrumentation
-- `dev_drum_track_ux`: opt-in Teensy build for the temporary Drum Track UX
-  prototype
 - `dev_ux_recorder`: explicit validation build with Teensy semantic UX logs
 - `release`: pinned remote dependencies
 
@@ -48,13 +47,6 @@ Validation build with semantic UX recorder:
 
 ```powershell
 ms build core --target teensy --env dev_ux_recorder
-```
-
-Temporary Drum Track UX firmware:
-
-```powershell
-pio run -e dev_drum_track_ux
-pio run -e dev_drum_track_ux -t upload
 ```
 
 Upload to hardware:

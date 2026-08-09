@@ -20,10 +20,6 @@ struct DrumPlaybackDiagnostics {
 };
 
 struct DrumPlaybackTelemetry {
-    std::array<int16_t, core::state::sequencer::DRUM_MAX_LANES>
-        playheadSteps{};
-    std::array<uint32_t, core::state::sequencer::DRUM_MAX_LANES>
-        cycleIndices{};
     DrumPlaybackDiagnostics diagnostics{};
 
     void reset();
@@ -61,7 +57,6 @@ private:
     void stop_(uint32_t tick);
     void processTick_(uint32_t tick);
     void triggerDueLaneStep_(uint8_t lane, uint32_t tick);
-    void publishTelemetry_(uint32_t tick);
     bool scheduleLaneStep_(
         uint8_t lane,
         uint32_t ordinal,

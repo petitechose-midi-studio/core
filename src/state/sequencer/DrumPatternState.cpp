@@ -43,7 +43,7 @@ constexpr uint8_t clampProbability(uint8_t value) {
     return value > 100U ? 100U : value;
 }
 
-void bump(uint32_t& revision) {
+FLASHMEM void bump(uint32_t& revision) {
     ++revision;
     if (revision == 0U) revision = 1U;
 }
@@ -121,7 +121,7 @@ FLASHMEM void DrumPatternState::reset() {
     bump(revision);
 }
 
-uint8_t DrumPatternState::effectiveLength(uint8_t lane) const {
+FLASHMEM uint8_t DrumPatternState::effectiveLength(uint8_t lane) const {
     if (lane >= DRUM_MAX_LANES) return 0U;
     const auto& timing = lanes[lane].timing;
     return timing.mode == DrumLaneTimingMode::CUSTOM
@@ -129,7 +129,7 @@ uint8_t DrumPatternState::effectiveLength(uint8_t lane) const {
         : clampLength(defaultLength);
 }
 
-uint8_t DrumPatternState::effectiveStepsPerBeat(uint8_t lane) const {
+FLASHMEM uint8_t DrumPatternState::effectiveStepsPerBeat(uint8_t lane) const {
     if (lane >= DRUM_MAX_LANES) return 0U;
     const auto& timing = lanes[lane].timing;
     return timing.mode == DrumLaneTimingMode::CUSTOM
@@ -137,7 +137,7 @@ uint8_t DrumPatternState::effectiveStepsPerBeat(uint8_t lane) const {
         : clampStepsPerBeat(defaultStepsPerBeat);
 }
 
-bool DrumPatternState::stepEnabled(uint8_t lane, uint8_t step) const {
+FLASHMEM bool DrumPatternState::stepEnabled(uint8_t lane, uint8_t step) const {
     return lane < DRUM_MAX_LANES && step < effectiveLength(lane) &&
            lanes[lane].enabledMask.test(step);
 }
@@ -264,7 +264,7 @@ FLASHMEM void DrumTrackState::reset() {
     pattern.reset();
 }
 
-uint32_t drumRuntimeRevision(const DrumTrackState& source) {
+FLASHMEM uint32_t drumRuntimeRevision(const DrumTrackState& source) {
     return source.kit.revision ^
         (source.pattern.revision + 0x9E3779B9U +
          (source.kit.revision << 6U) + (source.kit.revision >> 2U));

@@ -127,9 +127,6 @@ void test_three_lane_polymeter_uses_one_channel() {
     }
 
     const auto& telemetry = engine.telemetry();
-    assert(telemetry.playheadSteps[0U] == 0);
-    assert(telemetry.playheadSteps[1U] == 2);
-    assert(telemetry.playheadSteps[2U] == 0);
     assert(!telemetry.diagnostics.schedulerCapacityExceeded);
 
     engine.update(97U, false);

@@ -24,8 +24,6 @@ uint8_t clampChannel(uint8_t channel) {
 }  // namespace
 
 FLASHMEM void DrumPlaybackTelemetry::reset() {
-    playheadSteps.fill(-1);
-    cycleIndices.fill(0U);
     diagnostics.reset();
 }
 
@@ -56,7 +54,6 @@ FLASHMEM void DrumPlaybackEngine::reset() {
 void DrumPlaybackEngine::update(uint32_t tick, bool playing) {
     if (!playing || pattern_ == nullptr || pattern_->laneCount == 0U) {
         if (playing_) stop_(tick);
-        publishTelemetry_(tick);
         return;
     }
 
@@ -76,7 +73,6 @@ void DrumPlaybackEngine::update(uint32_t tick, bool playing) {
 
     if (tick == last_tick_) {
         processDue_(tick);
-        publishTelemetry_(tick);
         return;
     }
 
@@ -86,7 +82,7 @@ void DrumPlaybackEngine::update(uint32_t tick, bool playing) {
     }
 }
 
-void DrumPlaybackEngine::start_(uint32_t tick) {
+FLASHMEM void DrumPlaybackEngine::start_(uint32_t tick) {
     scheduler_.clear();
     last_triggered_ordinals_.fill(UINT32_MAX);
     ++run_seed_;
@@ -96,7 +92,7 @@ void DrumPlaybackEngine::start_(uint32_t tick) {
     last_tick_valid_ = false;
 }
 
-void DrumPlaybackEngine::stop_(uint32_t tick) {
+FLASHMEM void DrumPlaybackEngine::stop_(uint32_t tick) {
     (void)emitAllNotesOff_(tick);
     scheduler_.clear();
     last_triggered_ordinals_.fill(UINT32_MAX);
@@ -113,7 +109,6 @@ void DrumPlaybackEngine::processTick_(uint32_t tick) {
         triggerDueLaneStep_(lane, tick);
     }
     (void)processDue_(tick);
-    publishTelemetry_(tick);
     last_tick_ = tick;
     last_tick_valid_ = true;
 }
@@ -192,25 +187,7 @@ bool DrumPlaybackEngine::scheduleLaneStep_(
     return false;
 }
 
-void DrumPlaybackEngine::publishTelemetry_(uint32_t tick) {
-    telemetry_.playheadSteps.fill(-1);
-    telemetry_.cycleIndices.fill(0U);
-    if (!playing_ || pattern_ == nullptr) return;
-
-    const uint8_t laneCount = std::min<uint8_t>(
-        pattern_->laneCount,
-        drum::DRUM_MAX_LANES
-    );
-    for (uint8_t lane = 0U; lane < laneCount; ++lane) {
-        const auto& source = pattern_->lanes[lane];
-        const uint8_t length = std::max<uint8_t>(1U, source.length);
-        const uint32_t ordinal = tick / ticksPerStep_(source.stepsPerBeat);
-        telemetry_.playheadSteps[lane] = static_cast<int16_t>(ordinal % length);
-        telemetry_.cycleIndices[lane] = ordinal / length;
-    }
-}
-
-bool DrumPlaybackEngine::emitAllNotesOff_(uint32_t tick) {
+FLASHMEM bool DrumPlaybackEngine::emitAllNotesOff_(uint32_t tick) {
     SequencerEvent event{};
     event.tick = tick;
     event.type = SequencerEventType::AllNotesOff;
@@ -252,7 +229,7 @@ int32_t DrumPlaybackEngine::nudgeTickOffset_(
         : -(((-scaled) + 50) / 100);
 }
 
-uint32_t DrumPlaybackEngine::probabilityHash_(
+FLASHMEM uint32_t DrumPlaybackEngine::probabilityHash_(
     uint32_t runSeed,
     uint8_t lane,
     uint32_t cycleIndex,
