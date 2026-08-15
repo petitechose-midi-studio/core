@@ -186,6 +186,8 @@ set(LV_BUILD_CONF_DIR "${LV_CONF_DIR}" CACHE STRING "" FORCE)
 set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory("${LVGL_DIR}" "${CMAKE_BINARY_DIR}/lvgl")
+# LVGL uses POSIX C APIs such as strnlen; keep that extension scoped to it.
+set_target_properties(lvgl PROPERTIES C_EXTENSIONS ON)
 target_include_directories(lvgl PUBLIC ${LV_CONF_DIR})
 # Select the app-specific LVGL configuration explicitly.  Several dependency
 # roots legitimately contain their own lv_conf.h, so relying on include search
