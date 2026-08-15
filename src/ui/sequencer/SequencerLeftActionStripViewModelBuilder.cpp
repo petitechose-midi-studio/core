@@ -279,56 +279,22 @@ FLASHMEM ContextActionStripProps buildSequencerLeftActionStripProps(
         return props;
     }
 
-    if (selectingPattern) {
+    if (selectingPattern || selectingProperty || selectingStepContent) {
         props.slots[0] = core::ui::makeStandaloneIconStripSlot(
             standalone::icons::ACTION_CANCEL,
             Visual::ACTIVE
         );
-        setStripIconFromAction(
-            props.slots[1],
-            interaction.leftCenterPress,
-            interaction.leftCenterVisibility,
-            patternIcon,
-            propertyIcon
-        );
-        setStripIconFromAction(
-            props.slots[2],
-            interaction.leftBottomPress,
-            interaction.leftBottomVisibility,
-            patternIcon,
-            propertyIcon
-        );
-        return props;
-    }
-
-    if (selectingProperty) {
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_CANCEL,
-            Visual::ACTIVE
-        );
-        setStripIconFromAction(
-            props.slots[1],
-            interaction.leftCenterPress,
-            interaction.leftCenterVisibility,
-            patternIcon,
-            propertyIcon
-        );
-        setStripIconFromAction(
-            props.slots[2],
-            interaction.leftBottomPress,
-            interaction.leftBottomVisibility,
-            patternIcon,
-            propertyIcon
-        );
-        return props;
-    }
-
-    if (selectingStepContent) {
-        props.slots[0] = core::ui::makeStandaloneIconStripSlot(
-            standalone::icons::ACTION_CANCEL,
-            Visual::ACTIVE
-        );
-        props.slots[1].visualState = Visual::HIDDEN;
+        if (selectingPattern || selectingProperty) {
+            setStripIconFromAction(
+                props.slots[1],
+                interaction.leftCenterPress,
+                interaction.leftCenterVisibility,
+                patternIcon,
+                propertyIcon
+            );
+        } else {
+            props.slots[1].visualState = Visual::HIDDEN;
+        }
         setStripIconFromAction(
             props.slots[2],
             interaction.leftBottomPress,
