@@ -74,7 +74,7 @@ FLASHMEM void createTile(uint8_t tileIndex,
                          lv_obj_t* noteLayer,
                          lv_obj_t*& tile,
                          lv_obj_t*& noteLabel,
-                         lv_obj_t*& originalNoteLabel,
+                         lv_obj_t*& secondaryLabel,
                          lv_obj_t*& stepInlineIcon,
                          lv_obj_t*& stepButton,
                          lv_coord_t& inlineIconWidth,
@@ -134,16 +134,16 @@ FLASHMEM void createTile(uint8_t tileIndex,
     lv_obj_set_style_pad_all(noteLabel, 0, 0);
     lv_obj_add_flag(noteLabel, LV_OBJ_FLAG_HIDDEN);
 
-    originalNoteLabel = lv_label_create(noteLayer);
-    lv_label_set_text(originalNoteLabel, "");
-    lv_obj_add_flag(originalNoteLabel, LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_set_width(originalNoteLabel, LV_SIZE_CONTENT);
-    lv_obj_set_style_text_align(originalNoteLabel, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_style_text_font(originalNoteLabel, fonts.compact_selected(), 0);
-    lv_obj_set_style_text_color(originalNoteLabel, lv_color_hex(theme::color::INACTIVE_LIGHTER), 0);
-    lv_obj_set_style_text_opa(originalNoteLabel, LV_OPA_50, 0);
-    lv_obj_set_style_pad_all(originalNoteLabel, 0, 0);
-    lv_obj_add_flag(originalNoteLabel, LV_OBJ_FLAG_HIDDEN);
+    secondaryLabel = lv_label_create(noteLayer);
+    lv_label_set_text(secondaryLabel, "");
+    lv_obj_add_flag(secondaryLabel, LV_OBJ_FLAG_IGNORE_LAYOUT);
+    lv_obj_set_width(secondaryLabel, LV_SIZE_CONTENT);
+    lv_obj_set_style_text_align(secondaryLabel, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_style_text_font(secondaryLabel, fonts.compact_selected(), 0);
+    lv_obj_set_style_text_color(secondaryLabel, lv_color_hex(theme::color::INACTIVE_LIGHTER), 0);
+    lv_obj_set_style_text_opa(secondaryLabel, LV_OPA_50, 0);
+    lv_obj_set_style_pad_all(secondaryLabel, 0, 0);
+    lv_obj_add_flag(secondaryLabel, LV_OBJ_FLAG_HIDDEN);
 
     stepInlineIcon = lv_label_create(noteLayer);
     standalone::icons::set(

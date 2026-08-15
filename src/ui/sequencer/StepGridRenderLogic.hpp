@@ -54,14 +54,10 @@ bool hasRuntimePropertyFeedback(
     const TileRenderState& state,
     core::state::sequencer::StepProperty property
 );
-bool hasOutOfScaleFeedback(const TileRenderState& state);
-bool hasScaleDegreeFeedback(const TileRenderState& state);
-bool hasConstrainedScaleDegreeFeedback(const TileRenderState& state);
 uint8_t runtimePitchDisplayNote(const TileRenderState& state);
 uint8_t runtimeVelocityDisplayValue(const TileRenderState& state);
 uint16_t runtimeGateDisplayValue(const TileRenderState& state);
 int8_t runtimeNudgeDisplayValue(const TileRenderState& state);
-const char* runtimeScaleDegreeLabel(const TileRenderState& state);
 TileRenderDiff diffTileRenderState(const TileRenderCache& cache, const TileRenderState& state);
 
 }  // namespace core::ui::sequencer::grid

@@ -6,7 +6,6 @@
 
 #include "state/sequencer/SequencerUiState.hpp"
 #include "ui/sequencer/StepGridRenderTypes.hpp"
-#include "ui/sequencer/StepPropertyVisuals.hpp"
 
 namespace core::ui::sequencer::grid {
 
@@ -27,14 +26,9 @@ struct NoteLabelPresentation {
     bool showLabel = false;
     bool showInlineIcon = false;
     bool probabilityMasked = false;
-    bool showNoteStyle = false;
     core::state::sequencer::StepProperty displayProperty =
         core::state::sequencer::StepProperty::NOTE;
 };
-
-core::state::sequencer::StepProperty displayPropertyForInlineLabelMode(
-    visual::InlineLabelMode mode
-);
 
 InlineFeedbackSnapshot readInlineFeedbackSnapshot(
     bool visible,
@@ -44,10 +38,7 @@ InlineFeedbackSnapshot readInlineFeedbackSnapshot(
 
 NoteLabelPresentation buildNoteLabelPresentation(
     const TileRenderState& state,
-    const visual::StepPropertyVisualSpec& propertyVisual,
-    core::state::sequencer::StepProperty activeProperty,
-    const InlineFeedbackSnapshot& feedback,
-    StepGridPresentation presentation = StepGridPresentation::MELODIC
+    const StepGridFrameState& frameState
 );
 
 }  // namespace core::ui::sequencer::grid
