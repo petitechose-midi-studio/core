@@ -136,9 +136,7 @@ FLASHMEM SequencerHistoryDrumChangePtr prepareHistoryDrumChangeBefore(
         descriptor.kind == SequencerHistoryActionKind::DrumAdvancedContent ||
         descriptor.kind == SequencerHistoryActionKind::DrumLaneContent;
     if (change->capturesGraph) {
-        const auto& source = target == bank.activeTrackIndex()
-            ? active.pattern
-            : bank.track(target);
+        const auto& source = canonicalTrackPattern(bank, active, target);
         change->beforeGraphRevision = source.graphRevision.get();
         change->afterGraphRevision = change->beforeGraphRevision;
         const auto* sourceGraph = graphView(source);
@@ -166,9 +164,7 @@ FLASHMEM bool capturePreparedHistoryDrumAfter(
     change.afterKind = bank.trackKind(change.trackIndex);
     change.after = bank.drumTrack(change.trackIndex);
     if (change.capturesGraph) {
-        const auto& source = change.trackIndex == bank.activeTrackIndex()
-            ? active.pattern
-            : bank.track(change.trackIndex);
+        const auto& source = canonicalTrackPattern(bank, active, change.trackIndex);
         change.afterGraphRevision = source.graphRevision.get();
         const auto* sourceGraph = graphView(source);
         if (sourceGraph == nullptr) {
@@ -559,12 +555,6 @@ FLASHMEM bool planRequiresPresentGraph(SequencerCoalescedPatternPayloadPlan plan
     return plan == SequencerCoalescedPatternPayloadPlan::FullWithProspectiveGraph;
 }
 
-FLASHMEM const SequencerPatternState& patternSourceForTrack(const SequencerTrackBankState& bank,
-                                                             const SequencerState& active,
-                                                             uint8_t trackIndex) {
-    return trackIndex == bank.activeTrackIndex() ? active.pattern : bank.track(trackIndex);
-}
-
 FLASHMEM bool captureCoalescedPatternBefore(const SequencerTrackBankState& bank,
                                             const SequencerState& active, uint8_t trackIndex,
                                             SequencerCoalescedPatternPayloadPlan plan,
@@ -572,7 +562,7 @@ FLASHMEM bool captureCoalescedPatternBefore(const SequencerTrackBankState& bank,
                                             SequencerHistoryGraphPtr& prospectiveGraph) {
     out.reset();
     prospectiveGraph.reset();
-    const auto& source = patternSourceForTrack(bank, active, trackIndex);
+    const auto& source = canonicalTrackPattern(bank, active, trackIndex);
     const auto* sourceGraph = graphView(source);
 
     // The prospective live Graph deliberately occupies the otherwise-absent
@@ -1292,8 +1282,7 @@ FLASHMEM bool reserveHistorySnapshotStorage(const SequencerTrackBankState& bank,
                                             const SequencerState& active, uint8_t trackIndex,
                                             SequencerHistoryPatternSnapshot& snapshot) {
     const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    const auto& source =
-        targetTrack == bank.activeTrackIndex() ? active.pattern : bank.track(targetTrack);
+    const auto& source = canonicalTrackPattern(bank, active, targetTrack);
     return reservePatternPayloadStorage(source, snapshot.graph, snapshot.ccLanes);
 }
 
@@ -1399,7 +1388,7 @@ FLASHMEM bool captureHistoryTrackBankGraphUsingReservedStorage(
         return false;
     }
 
-    const auto& source = patternSourceForTrack(bank, active, trackIndex);
+    const auto& source = canonicalTrackPattern(bank, active, trackIndex);
     const auto* sourceGraph = graphView(source);
     auto& targetGraph = trackIndex == activeTrack
         ? out.editorGraph
@@ -1428,7 +1417,7 @@ FLASHMEM bool captureHistoryTrackBankDataUsingReservedStorage(
         return false;
     }
 
-    const auto& source = patternSourceForTrack(bank, active, trackIndex);
+    const auto& source = canonicalTrackPattern(bank, active, trackIndex);
     const auto* sourceCcLanes = source.ccLanes.get();
     if (sourceCcLanes != nullptr && !validSequencerCcLaneBank(*sourceCcLanes)) {
         return false;
@@ -1894,7 +1883,7 @@ FLASHMEM bool preparedHistoryPatternAfterMatchesTrack(const SequencerTrackBankSt
                                                       const SequencerHistoryPatternSnapshot& after,
                                                       SequencerHistoryPatternStorage storage) {
     const uint8_t targetTrack = SequencerTrackBankState::clampTrackIndex(trackIndex);
-    const auto& target = patternSourceForTrack(bank, active, targetTrack);
+    const auto& target = canonicalTrackPattern(bank, active, targetTrack);
     SequencerPatternSnapshot flat{};
     captureSnapshot(target, flat);
     if (!sameFlatPatternSnapshot(flat, after.flat) ||
@@ -2025,7 +2014,7 @@ FLASHMEM bool reservePreparedHistoryPatternAfter(const SequencerTrackBankState& 
     }
 
     change.after.reset();
-    const auto& source = patternSourceForTrack(bank, active, change.trackIndex);
+    const auto& source = canonicalTrackPattern(bank, active, change.trackIndex);
     return reservePatternPayloadStorageForExpectedGraph(source, true, change.after.graph,
                                                         change.after.ccLanes);
 }

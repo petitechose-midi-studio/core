@@ -1209,7 +1209,7 @@ CoreState::commitSequencerPatternHistoryCoalescing_() {
     const bool activeTarget = targetTrack == sequencerTracks.activeTrackIndex();
     if (!pending.sealed || !pending.preparedPatternChange ||
         !pending.preparedPatternChange->preparedPayloadOwnerProofMatches(
-            activeTarget ? sequencer.pattern : sequencerTracks.track(targetTrack)) ||
+            sequencer::canonicalTrackPattern(sequencerTracks, sequencer, targetTrack)) ||
         !sequencer::preparedHistoryPatternAfterMatchesTrack(
             sequencerTracks, sequencer, targetTrack, pending.preparedPatternChange->after,
             pending.preparedPatternChange->storage) ||

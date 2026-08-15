@@ -207,6 +207,29 @@ void assertTransientTrackStateReset(
     assert(active.stepContentDraft.scratch.get() == expectedDraftScratch);
 }
 
+void test_canonical_track_pattern_resolves_editor_and_bank_authority() {
+    seq::SequencerState active;
+    seq::SequencerTrackBankState bank;
+    bank.syncSharedTrackState(0x0006U, 1U);
+
+    active.pattern.note[0] = 61U;
+    bank.track(1U).note[0] = 62U;
+    bank.track(2U).note[0] = 63U;
+    bank.track(seq::SequencerTrackBankState::TRACK_COUNT - 1U).note[0] = 64U;
+
+    assert(&seq::canonicalTrackPattern(bank, active, 1U) == &active.pattern);
+    assert(seq::canonicalTrackPattern(bank, active, 1U).note[0] == 61U);
+    assert(&seq::canonicalTrackPattern(bank, active, 2U) == &bank.track(2U));
+    assert(seq::canonicalTrackPattern(bank, active, 2U).note[0] == 63U);
+    assert(seq::canonicalTrackPattern(
+        bank,
+        active,
+        seq::SequencerTrackBankState::TRACK_COUNT
+    ).note[0] == 64U);
+
+    std::cout << "[PASS] canonical Track reads resolve editor and bank authority\n";
+}
+
 void test_prepared_rotation_preserves_payloads_without_publication_or_allocation() {
     seq::SequencerState active;
     seq::SequencerTrackBankState bank;
@@ -498,6 +521,7 @@ void test_invalid_and_stale_preflight_are_side_effect_free() {
 }  // namespace
 
 int main() {
+    test_canonical_track_pattern_resolves_editor_and_bank_authority();
     test_prepared_rotation_preserves_payloads_without_publication_or_allocation();
     test_prepared_rotation_can_reset_incoming_payload_without_allocation();
     test_invalid_and_stale_preflight_are_side_effect_free();

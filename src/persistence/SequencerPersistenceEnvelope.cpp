@@ -922,16 +922,6 @@ FLASHMEM void installTrackCcLanes(
     );
 }
 
-FLASHMEM const state::sequencer::SequencerPatternState& sourceTrack(
-    const state::sequencer::SequencerTrackBankState& trackBank,
-    const state::sequencer::SequencerState& active,
-    uint8_t index
-) {
-    const uint8_t activeTrack =
-        state::sequencer::SequencerTrackBankState::clampTrackIndex(trackBank.activeTrackIndex());
-    return (index == activeTrack) ? active.pattern : trackBank.track(index);
-}
-
 }  // namespace
 
 FLASHMEM EnvelopeEncodeResult fillPatternEnvelope(
@@ -1148,7 +1138,7 @@ FLASHMEM EnvelopeEncodeResult fillSetEnvelope(
         return {};
     }
     for (uint8_t i = 0; i < PERSISTED_TRACK_COUNT; ++i) {
-        const auto& track = sourceTrack(trackBank, active, i);
+        const auto& track = state::sequencer::canonicalTrackPattern(trackBank, active, i);
         const uint16_t trackBit = static_cast<uint16_t>(1U << i);
         if ((drumMask & trackBit) != 0U) {
             if (!addDrumTrackSection(writer, trackBank.drumTrack(i), i) ||
@@ -1176,7 +1166,7 @@ FLASHMEM EnvelopeEncodeResult fillSetEnvelope(
         if (!addPatternRegionSection(
                 writer,
                 state::sequencer::patternPlaybackRegion(
-                    sourceTrack(trackBank, active, i)
+                    state::sequencer::canonicalTrackPattern(trackBank, active, i)
                 ),
                 i
             )) {

@@ -509,9 +509,7 @@ FLASHMEM bool liveHistoryStructureSnapshotMatches(
         if ((snapshot.capturedTrackMask & sequencerHistoryTrackBit(track)) == 0U) {
             continue;
         }
-        const auto& live = track == snapshot.activeTrack
-            ? active.pattern
-            : bank.track(track);
+        const auto& live = canonicalTrackPattern(bank, active, track);
         if (!liveHistoryPatternSnapshotMatches(live, snapshot.tracks[track])) {
             return false;
         }

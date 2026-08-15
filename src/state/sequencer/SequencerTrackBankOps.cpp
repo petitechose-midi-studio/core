@@ -168,6 +168,15 @@ FLASHMEM void exchangeColdPayload(
 
 }  // namespace
 
+FLASHMEM const SequencerPatternState& canonicalTrackPattern(
+    const SequencerTrackBankState& bank,
+    const SequencerState& active,
+    uint8_t trackIndex
+) noexcept {
+    const uint8_t target = SequencerTrackBankState::clampTrackIndex(trackIndex);
+    return target == bank.activeTrackIndex() ? active.pattern : bank.track(target);
+}
+
 FLASHMEM bool sequencerPatternMatchesFlatSnapshot(
     const SequencerPatternState& pattern,
     SequencerTrackFlatSnapshotView expected
@@ -420,7 +429,7 @@ FLASHMEM void captureTrackBankSnapshot(
     out.projectScaleSettings = bank.projectScaleSettings();
 
     for (uint8_t i = 0; i < SequencerTrackBankState::TRACK_COUNT; ++i) {
-        captureSnapshot((i == activeTrack) ? active.pattern : bank.track(i), out.tracks[i]);
+        captureSnapshot(canonicalTrackPattern(bank, active, i), out.tracks[i]);
     }
 }
 
