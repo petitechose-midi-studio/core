@@ -80,6 +80,17 @@ cmake --build --preset native-sanitized
 Windows requires 64-bit Clang; keep its `bin` directory in `PATH` so CMake can
 also find `llvm-rc`. The normal test and firmware profiles are unaffected.
 
+The separate fuzz preset runs a bounded libFuzzer smoke against the filesystem
+RPC decoders and the sequencer Pattern envelope parser:
+
+```powershell
+cmake --preset native-fuzz -DCMAKE_CXX_COMPILER=clang++
+cmake --build --preset native-fuzz
+```
+
+It is opt-in and does not add sources or instrumentation to normal native or
+firmware builds. Crash artifacts are written under `build/native-fuzz`.
+
 ## Validation Checklist
 
 For sequencer, state, UI, persistence, or `open-control` integration changes,

@@ -13,6 +13,15 @@ option(
     MS_CORE_ENABLE_SANITIZERS
     "Instrument native Core boundary tests with AddressSanitizer and UBSan"
     OFF)
+option(
+    MS_CORE_ENABLE_FUZZING
+    "Build the opt-in libFuzzer boundary harnesses"
+    OFF)
+
+if(MS_CORE_ENABLE_FUZZING AND NOT MS_CORE_ENABLE_SANITIZERS)
+    message(FATAL_ERROR
+        "MS_CORE_ENABLE_FUZZING requires MS_CORE_ENABLE_SANITIZERS")
+endif()
 
 set(MS_CORE_OPEN_CONTROL_ROOT
     "${CMAKE_CURRENT_SOURCE_DIR}/../../open-control"
@@ -116,6 +125,14 @@ if(MS_CORE_ENABLE_SANITIZERS)
         -fno-omit-frame-pointer)
     target_link_options(ms_core_sanitizers INTERFACE
         -fsanitize=address,undefined)
+    if(MS_CORE_ENABLE_FUZZING)
+        if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            message(FATAL_ERROR
+                "MS_CORE_ENABLE_FUZZING requires Clang with libFuzzer")
+        endif()
+        target_compile_options(ms_core_sanitizers INTERFACE
+            -fsanitize=fuzzer-no-link)
+    endif()
     if(WIN32)
         # Core boundary fixtures retain large product aggregates on the host
         # stack. ASan redzones need more than Windows' 1 MiB executable default;
@@ -127,6 +144,27 @@ if(MS_CORE_ENABLE_SANITIZERS)
     target_link_libraries(oc_framework_native PUBLIC ms_core_sanitizers)
     target_link_libraries(oc_note_native PUBLIC ms_core_sanitizers)
     target_link_libraries(midi_studio_core_native PUBLIC ms_core_sanitizers)
+
+    if(WIN32)
+        if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+            message(FATAL_ERROR
+                "MS_CORE_ENABLE_SANITIZERS supports 64-bit Windows only")
+        endif()
+        execute_process(
+            COMMAND "${CMAKE_CXX_COMPILER}"
+                    "--print-file-name=clang_rt.asan_dynamic-x86_64.dll"
+            OUTPUT_VARIABLE MS_CORE_SANITIZER_RUNTIME
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            COMMAND_ERROR_IS_FATAL ANY)
+        if(NOT EXISTS "${MS_CORE_SANITIZER_RUNTIME}")
+            message(FATAL_ERROR
+                "Clang AddressSanitizer runtime not found: "
+                "${MS_CORE_SANITIZER_RUNTIME}")
+        endif()
+        configure_file("${MS_CORE_SANITIZER_RUNTIME}"
+            "${CMAKE_BINARY_DIR}/clang_rt.asan_dynamic-x86_64.dll"
+            COPYONLY)
+    endif()
 endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsCoreProjectFileTool.cmake")
@@ -301,27 +339,6 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
     endforeach()
 
     if(MS_CORE_ENABLE_SANITIZERS)
-        if(WIN32)
-            if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-                message(FATAL_ERROR
-                    "MS_CORE_ENABLE_SANITIZERS supports 64-bit Windows only")
-            endif()
-            execute_process(
-                COMMAND "${CMAKE_CXX_COMPILER}"
-                        "--print-file-name=clang_rt.asan_dynamic-x86_64.dll"
-                OUTPUT_VARIABLE MS_CORE_SANITIZER_RUNTIME
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-                COMMAND_ERROR_IS_FATAL ANY)
-            if(NOT EXISTS "${MS_CORE_SANITIZER_RUNTIME}")
-                message(FATAL_ERROR
-                    "Clang AddressSanitizer runtime not found: "
-                    "${MS_CORE_SANITIZER_RUNTIME}")
-            endif()
-            configure_file("${MS_CORE_SANITIZER_RUNTIME}"
-                "${CMAKE_BINARY_DIR}/clang_rt.asan_dynamic-x86_64.dll"
-                COPYONLY)
-        endif()
-
         set_tests_properties(${MS_CORE_SANITIZER_BOUNDARY_TESTS} PROPERTIES
             ENVIRONMENT
                 "ASAN_OPTIONS=halt_on_error=1:abort_on_error=1;UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1")
@@ -345,5 +362,42 @@ if(MS_CORE_BUILD_TESTS AND BUILD_TESTING)
             COMMAND "${CMAKE_CTEST_COMMAND}" --test-dir "${CMAKE_BINARY_DIR}" --parallel --output-on-failure
             DEPENDS ${MS_CORE_NATIVE_TEST_TARGETS}
             USES_TERMINAL)
+    endif()
+endif()
+
+if(MS_CORE_ENABLE_FUZZING)
+    add_executable(fuzz_FileSystemRpc EXCLUDE_FROM_ALL
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/fuzz/FileSystemRpcFuzzer.cpp")
+    add_executable(fuzz_SequencerPatternEnvelope EXCLUDE_FROM_ALL
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/fuzz/SequencerPatternEnvelopeFuzzer.cpp")
+    target_link_libraries(fuzz_FileSystemRpc PRIVATE midi_studio_core_native)
+    target_link_libraries(fuzz_SequencerPatternEnvelope PRIVATE midi_studio_core_native)
+    target_link_options(fuzz_FileSystemRpc PRIVATE -fsanitize=fuzzer)
+    target_link_options(fuzz_SequencerPatternEnvelope PRIVATE -fsanitize=fuzzer)
+
+    if(PROJECT_IS_TOP_LEVEL)
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/fuzz-artifacts")
+        add_custom_target(fuzz-smoke
+            COMMAND "${CMAKE_COMMAND}" -E env
+                    "ASAN_OPTIONS=halt_on_error=1:abort_on_error=1"
+                    "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"
+                    "$<TARGET_FILE:fuzz_FileSystemRpc>"
+                    -runs=2000
+                    -max_total_time=5
+                    -max_len=32768
+                    -dict=${CMAKE_CURRENT_SOURCE_DIR}/test/fuzz/FileSystemRpc.dict
+                    -artifact_prefix=${CMAKE_BINARY_DIR}/fuzz-artifacts/
+            COMMAND "${CMAKE_COMMAND}" -E env
+                    "ASAN_OPTIONS=halt_on_error=1:abort_on_error=1"
+                    "UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1"
+                    "$<TARGET_FILE:fuzz_SequencerPatternEnvelope>"
+                    -runs=2000
+                    -max_total_time=5
+                    -max_len=16445
+                    -dict=${CMAKE_CURRENT_SOURCE_DIR}/test/fuzz/SequencerPatternEnvelope.dict
+                    -artifact_prefix=${CMAKE_BINARY_DIR}/fuzz-artifacts/
+            DEPENDS fuzz_FileSystemRpc fuzz_SequencerPatternEnvelope
+            USES_TERMINAL
+            VERBATIM)
     endif()
 endif()

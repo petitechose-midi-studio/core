@@ -78,7 +78,7 @@
     "core/.github/workflows/candidate-host-tools.yml": "a19d087fbe8048d3ad06e7800db8656914052a75bb75844bf5703414fe4cd2ca",
     "core/.github/workflows/candidate.yml": "18ed348b44aa904ebfe41fa0e6e071578f77cec7d9727308221f9d0c9529d6d0",
     "core/.github/workflows/ci.yml": "d3926f1990c925c7f53ba68212e9d143defd1cf5a06d6ac636ebee13d86d1f6f",
-    "core/CMakeLists.txt": "7f9880636b62a7e238f029e1035846bad619f09f1570759d60f21a3a5b6f6e46",
+    "core/CMakeLists.txt": "3c91f57a8ef9d48620743eaf86bd97aa2f3757808cf71da441d56b5e4483ebbd",
     "core/cmake/MsCoreProductSources.cmake": "54a6e39f77e45999c3f4c971f654e9b1078f16f6c697ebc2765bf1b4ad07c03a",
     "core/cmake/MsCoreProjectFileTool.cmake": "c54fcccc2d26351a69c2f85aaf7c2378e6418ba03713e70c02f826a546c1159f",
     "core/cmake/MsCoreSources.cmake": "19abfcd9898d2977c4a2d1399906fafe822be492668fa972806a4790a6e8dfac",
