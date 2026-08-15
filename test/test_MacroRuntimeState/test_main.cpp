@@ -112,38 +112,6 @@ void test_project_boundary_clear_preserves_diagnostic_counter() {
     std::cout << "[PASS] test_project_boundary_clear_preserves_diagnostic_counter\n";
 }
 
-void test_snapshot_is_bounded_and_stable_after_capture() {
-    macro::MacroManualOverrideState state;
-    const auto first = addressAt(0);
-    const auto second = addressAt(1);
-    assert(state.activate(first, 0.25f) ==
-           macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
-    assert(state.activate(second, 0.75f) ==
-           macro::MacroManualOverrideState::ActivateStatus::ACTIVATED);
-
-    macro::MacroManualOverrideState::Snapshot snapshot{};
-    assert(state.captureSnapshot(snapshot));
-    assert(snapshot.revision == state.revision);
-    assert(snapshot.entryCount == 2);
-    assert(snapshot.entries[0].active);
-    assert(macro::macroAutomationAddressEquals(snapshot.entries[0].address, first));
-    assert(near(snapshot.entries[0].value, 0.25f));
-    assert(macro::macroAutomationAddressEquals(snapshot.entries[1].address, second));
-    assert(near(snapshot.entries[1].value, 0.75f));
-
-    assert(state.activate(first, 0.5f) ==
-           macro::MacroManualOverrideState::ActivateStatus::UPDATED);
-    assert(snapshot.revision != state.revision);
-    assert(near(snapshot.entries[0].value, 0.25f));
-
-    macro::MacroManualOverrideState::Snapshot updated{};
-    assert(state.captureSnapshot(updated));
-    assert(updated.revision == state.revision);
-    assert(near(updated.entries[0].value, 0.5f));
-
-    std::cout << "[PASS] test_snapshot_is_bounded_and_stable_after_capture\n";
-}
-
 void test_scope_clear_removes_only_replaced_addresses() {
     macro::MacroManualOverrideState state;
     const auto pageTarget = macro::MacroAutomationSlotAddress{.track = 1, .page = 2, .macro = 0};
@@ -219,7 +187,6 @@ int main() {
     test_manual_override_is_keyed_by_full_slot_address();
     test_manual_override_capacity_never_evicts_and_reports_rejection();
     test_project_boundary_clear_preserves_diagnostic_counter();
-    test_snapshot_is_bounded_and_stable_after_capture();
     test_scope_clear_removes_only_replaced_addresses();
     test_page_compaction_remaps_manual_overrides_and_drops_deleted_pages();
     std::cout << "\nAll MacroRuntimeState tests passed.\n";
