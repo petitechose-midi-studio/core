@@ -280,7 +280,7 @@ jobs:
           {
             "qualified_ci_run_id": "${{ needs.resolve_inputs.outputs.qualification_run_id }}",
             "qualified_ci_workflow": "CI",
-            "post_link_profile": "midi-studio-core-teensy41@release-2026.08/release-current"
+            "post_link_profile": "midi-studio-core-teensy41@release-2026.08.1/release-current"
           }
           EOF
 

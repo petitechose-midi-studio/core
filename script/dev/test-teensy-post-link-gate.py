@@ -64,8 +64,10 @@ def main() -> int:
     assert core_policy.profile_id == "midi-studio-core-teensy41"
     assert core_policy.vector_name == "R04-current"
     assert active_core_policy.profile_id == "midi-studio-core-teensy41"
-    assert active_core_policy.profile_version == "release-2026.08"
+    assert active_core_policy.profile_version == "release-2026.08.1"
     assert active_core_policy.vector_name == "release-current"
+    assert active_core_policy.flash_enforcement == "advisory"
+    assert bitwig_policy.flash_enforcement == "blocking"
     assert bitwig_policy.profile_id == "midi-studio-bitwig-teensy41"
     assert bitwig_policy.vector_name == "R11-initial"
     bitwig_final_policy = gate.load_product_policy(
@@ -85,6 +87,7 @@ def main() -> int:
     assert core.violations == (), core.violations
     assert active_core.violations == (), active_core.violations
     assert bitwig.violations == (), bitwig.violations
+    assert active_core.advisories == (), active_core.advisories
     assert core.physical_itcm_bytes == core.copy_itcm_bytes == 292264
     assert bitwig.physical_itcm_bytes == bitwig.copy_itcm_bytes == 273752
     assert core.itcm_banks == bitwig.itcm_banks == 9
@@ -103,6 +106,26 @@ def main() -> int:
         bitwig_policy, flash_over, bitwig_sections, bitwig_symbols
     ).violations
     assert any("Flash code 331537B exceeds maximum 331536B" in item for item in violations)
+
+    advisory_flash_over = replace_once(core_size, "code:1083376", "code:1208321")
+    advisory_flash_over = replace_once(
+        advisory_flash_over,
+        "free for files:6759424",
+        "free for files:6634479",
+    )
+    advisory_result = gate.evaluate_post_link(
+        active_core_policy,
+        advisory_flash_over,
+        core_sections,
+        core_symbols,
+    )
+    assert advisory_result.passed
+    assert advisory_result.violations == ()
+    assert any(
+        "Flash code 1208321B exceeds maximum 1208320B" in item
+        for item in advisory_result.advisories
+    )
+    assert "WARN" in gate.format_summary(advisory_result)
 
     ram1_over = replace_once(core_size, "variables:76032", "variables:86017")
     ram1_over = replace_once(
