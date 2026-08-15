@@ -12,12 +12,6 @@ namespace {
 
 namespace style = oc::ui::lvgl::style;
 
-constexpr uint32_t RENDER_TIMER_PERIOD_MS =
-    (Config::Timing::RETAINED_VIEW_HZ > 1000)
-        ? 1
-        : ((1000 + Config::Timing::RETAINED_VIEW_HZ - 1) /
-           Config::Timing::RETAINED_VIEW_HZ);
-
 }  // namespace
 
 FLASHMEM DeviceSettingsView::DeviceSettingsView(lv_obj_t* parent, StateRefs stateRefs)
@@ -30,7 +24,7 @@ FLASHMEM DeviceSettingsView::DeviceSettingsView(lv_obj_t* parent, StateRefs stat
             core::ui::renderSchedulerDebugLabel("DeviceSettingsView"),
             &DeviceSettingsView::drainRender,
             this,
-            RENDER_TIMER_PERIOD_MS,
+            Config::Timing::RETAINED_VIEW_PERIOD_MS,
             &DeviceSettingsView::canDrainRender
         );
     if (!render_scheduler_ || !render_scheduler_->valid() || !bindToState()) return;

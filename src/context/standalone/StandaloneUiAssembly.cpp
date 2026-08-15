@@ -281,14 +281,12 @@ FLASHMEM bool StandaloneUiAssembly::createGlobalTrackStrip() {
         return false;
     }
 
-    constexpr uint32_t targetHz = Config::Timing::RETAINED_VIEW_HZ;
-    constexpr uint32_t periodMs = (targetHz > 1000) ? 1 : ((1000 + targetHz - 1) / targetHz);
     global_track_strip_scheduler_ =
         core::app::makeExtmemUnique<core::ui::CoalescedLvglRenderScheduler>(
             core::ui::renderSchedulerDebugLabel("GlobalTrackStrip"),
             &StandaloneUiAssembly::drainGlobalTrackStripRender,
             this,
-            periodMs
+            Config::Timing::RETAINED_VIEW_PERIOD_MS
         );
     if (!global_track_strip_scheduler_ || !global_track_strip_scheduler_->valid()) {
         OC_LOG_ERROR("StandaloneUiAssembly: global track strip scheduler allocation failed");

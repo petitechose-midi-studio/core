@@ -73,17 +73,12 @@ FLASHMEM MacroView::MacroView(lv_obj_t* parent, StateRefs stateRefs)
         header_bar_->render(buildMacroHeaderBarProps(modelSource()));
     }
 
-    // Macro rendering is sampled at the selected retained-view cadence.
-    constexpr uint32_t targetHz = Config::Timing::RETAINED_VIEW_HZ;
-    constexpr uint32_t periodMs = (targetHz > 1000)
-        ? 1
-        : ((1000 + targetHz - 1) / targetHz);
     render_scheduler_ =
         core::app::makeExtmemUnique<core::ui::CoalescedLvglRenderScheduler>(
             core::ui::renderSchedulerDebugLabel("MacroView"),
             &MacroView::drainRender,
             this,
-            periodMs,
+            Config::Timing::RETAINED_VIEW_PERIOD_MS,
             &MacroView::canDrainRender
         );
     if (!render_scheduler_ || !render_scheduler_->valid()) {

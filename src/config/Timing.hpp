@@ -11,7 +11,10 @@ constexpr uint32_t INPUT_APP_ADMISSION_HZ =
     ms::device_support::v1::timing::INPUT_APP_ADMISSION_HZ;
 constexpr uint32_t LVGL_SERVICE_HZ =
     ms::device_support::v1::timing::LVGL_SERVICE_HZ;
-constexpr uint32_t RETAINED_VIEW_HZ = 240U;
+// LVGL timers use whole milliseconds. A 5 ms period is therefore the honest
+// retained-view contract: 200 Hz, rather than a nominal 240 Hz rounded to the
+// same 5 ms period at every call site.
+constexpr uint32_t RETAINED_VIEW_PERIOD_MS = 5U;
 constexpr uint32_t PHYSICAL_DISPLAY_REQUEST_HZ =
     ms::device_support::v1::timing::PHYSICAL_DISPLAY_REQUEST_HZ;
 
