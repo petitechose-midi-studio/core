@@ -1091,6 +1091,11 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
             });
     }
 
+    setupNavigationBindings();
+    setupStructureActionBindings();
+}
+
+FLASHMEM void SequencerStepHandler::setupNavigationBindings() {
     encoders_.encoder(Config::EncoderID::NAV)
         .turn()
         .scope(scope_id_)
@@ -1268,8 +1273,6 @@ FLASHMEM void SequencerStepHandler::setupBindings() {
                 return;
             }
         });
-
-    setupStructureActionBindings();
 }
 
 FLASHMEM void SequencerStepHandler::setupStructureActionBindings() {

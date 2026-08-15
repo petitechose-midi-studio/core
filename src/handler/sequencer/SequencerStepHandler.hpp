@@ -89,6 +89,7 @@ public:
 private:
     void setupBindings();
     void setupDrumBindings();
+    void setupNavigationBindings();
     void setupStructureActionBindings();
 
     void toggleStep(uint8_t indexInPage);
