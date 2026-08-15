@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <oc/type/TextFormat.hpp>
 
+#include "midi/MidiNoteNaming.hpp"
+
 namespace core::midi {
 
 static constexpr float CC_MAX = 127.0f;
@@ -28,7 +30,7 @@ inline void formatNoteName(char* buffer, size_t bufferSize, uint8_t midiNote) {
     };
 
     const uint8_t chroma = static_cast<uint8_t>(midiNote % 12);
-    const int octave = static_cast<int>(midiNote) / 12 - 1;
+    const int octave = midiNoteOctave(midiNote);
     size_t pos = oc::type::text::appendString(buffer, bufferSize, 0, NOTE_NAMES[chroma]);
     pos = oc::type::text::appendSigned(buffer, bufferSize, pos, octave);
     oc::type::text::terminate(buffer, bufferSize, pos);

@@ -368,6 +368,7 @@ FLASHMEM bool StandaloneUiAssembly::createViews() {
         core::ui::DeviceSettingsView::StateRefs{
             core_state_.deviceSettings,
             core_state_.midiSync,
+            core_state_.midiNoteDisplay,
         }
     );
     if (!device_settings_view_ || !device_settings_view_->valid()) {

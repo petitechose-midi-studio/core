@@ -8,6 +8,7 @@
 
 #include "config/InputIDs.hpp"
 #include "state/DeviceSettingsState.hpp"
+#include "state/MidiNoteDisplayState.hpp"
 #include "state/MidiSyncState.hpp"
 #include "state/StatusBarState.hpp"
 #include "state/ViewSelectorItems.hpp"
@@ -43,6 +44,7 @@ constexpr const char* const MODE_ITEMS[] = {"MASTER", "SLAVE", "AUTO"};
 constexpr const char* const FOLLOW_ITEMS[] = {"OFF", "ON"};
 constexpr const char* const FALLBACK_ITEMS[] = {"150 ms", "250 ms", "500 ms", "750 ms", "1000 ms", "1500 ms", "2000 ms"};
 constexpr const char* const LOCK_ITEMS[] = {"1", "2", "3", "4", "6", "8", "12", "24"};
+constexpr const char* const NOTE_OCTAVE_ITEMS[] = {"C3", "C4", "C5"};
 
 FLASHMEM void selectorItemsForRow(uint8_t row, const char* const*& items, int& itemCount) {
     switch (row) {
@@ -61,6 +63,10 @@ FLASHMEM void selectorItemsForRow(uint8_t row, const char* const*& items, int& i
         case 3:
             items = LOCK_ITEMS;
             itemCount = 8;
+            break;
+        case 4:
+            items = NOTE_OCTAVE_ITEMS;
+            itemCount = 3;
             break;
         default:
             items = nullptr;
@@ -169,8 +175,12 @@ FLASHMEM bool ViewSelectorUxSurface::captureSemanticUxContext(
 
 FLASHMEM DeviceSettingsUxSurface::DeviceSettingsUxSurface(
     core::state::DeviceSettingsState& deviceSettings,
-    core::state::MidiSyncState& midiSync
-) : device_settings_(deviceSettings), midi_sync_(midiSync) {}
+    core::state::MidiSyncState& midiSync,
+    core::state::MidiNoteDisplayState& midiNoteDisplay
+)
+    : device_settings_(deviceSettings)
+    , midi_sync_(midiSync)
+    , midi_note_display_(midiNoteDisplay) {}
 
 FLASHMEM bool DeviceSettingsUxSurface::captureSemanticUxContext(
     const oc::core::input::InputBindingTraceEvent& event,
@@ -185,6 +195,7 @@ FLASHMEM bool DeviceSettingsUxSurface::captureSemanticUxContext(
                 midi_sync_.followTransport.get(),
                 midi_sync_.autoFallbackMs.get(),
                 midi_sync_.autoLockClockCount.get(),
+                midi_note_display_.octaveConvention.get(),
                 midi_sync_.activeSource.get(),
                 midi_sync_.externalClockPresent.get(),
             }

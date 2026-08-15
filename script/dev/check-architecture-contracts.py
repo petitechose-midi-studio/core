@@ -1382,19 +1382,20 @@ def midi_sync_command_contract_errors(files: dict[str, str]) -> list[str]:
         )
     else:
         choice_body = cpp_code_mask(choice_bodies[0])
+        reconcile = choice_body.find("reconcileAllStatus")
         no_change = choice_body.find("ApplyStatus::NO_CHANGE")
         stage = choice_body.find("saveMidiSyncModeStatus")
         commit = choice_body.find("commitStatus")
         publish = choice_body.find("midi_sync_->mode.set")
-        if not (0 <= no_change < stage < commit < publish):
+        if not (0 <= reconcile < no_change < stage < commit < publish):
             errors.append(
                 f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: mode command order must be "
-                "no-change, stage, commit, live publication"
+                "reconcile, no-change, stage, commit, live publication"
             )
-        if choice_body.count("ApplyStatus::PERSISTENCE_FAILED") != 2:
+        if choice_body.count("ApplyStatus::PERSISTENCE_FAILED") != 3:
             errors.append(
-                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: stage and commit failures "
-                "must both return structured persistence failure"
+                f"{DEVICE_SETTINGS_DOMAIN_SOURCE}: reconciliation, stage and "
+                "commit failures must return structured persistence failure"
             )
 
     handler_bodies = cpp_function_bodies(

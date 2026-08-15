@@ -160,9 +160,29 @@ FLASHMEM PersistenceWriteStatus stageMidiAutoLockClockCount(
     );
 }
 
+FLASHMEM PersistenceWriteStatus stageNoteOctaveConvention(
+    oc::interface::IStorage& backend,
+    core::midi::NoteOctaveConvention convention
+) {
+    if (!core::midi::validNoteOctaveConvention(convention)) {
+        return PersistenceWriteStatus::INVALID_CONFIG;
+    }
+    const uint8_t encoded = static_cast<uint8_t>(convention);
+    return writeExactStatus(
+        backend,
+        layout::ADDR_NOTE_OCTAVE_CONVENTION,
+        &encoded,
+        sizeof(encoded)
+    );
+}
+
 FLASHMEM PersistenceWriteStatus saveAll(oc::interface::IStorage& backend,
-                                        const state::MidiSyncState& midiSync) {
-    if (!validMidiSyncState(midiSync)) {
+                                        const state::MidiSyncState& midiSync,
+                                        const state::MidiNoteDisplayState& noteDisplay) {
+    if (!validMidiSyncState(midiSync) ||
+        !core::midi::validNoteOctaveConvention(
+            noteDisplay.octaveConvention.get()
+        )) {
         return PersistenceWriteStatus::INVALID_CONFIG;
     }
 
@@ -197,12 +217,21 @@ FLASHMEM PersistenceWriteStatus saveAll(oc::interface::IStorage& backend,
         stageMidiAutoLockClockCount(backend, midiSync.autoLockClockCount.get());
     if (lockStatus != PersistenceWriteStatus::OK) return lockStatus;
 
+    const auto noteOctaveStatus = stageNoteOctaveConvention(
+        backend,
+        noteDisplay.octaveConvention.get()
+    );
+    if (noteOctaveStatus != PersistenceWriteStatus::OK) {
+        return noteOctaveStatus;
+    }
+
     return backend.commit() ? PersistenceWriteStatus::OK : PersistenceWriteStatus::COMMIT_FAILED;
 }
 
-FLASHMEM bool loadMidiSync(
+FLASHMEM bool load(
     oc::interface::IStorage& backend,
-    state::MidiSyncState& midiSync
+    state::MidiSyncState& midiSync,
+    state::MidiNoteDisplayState& noteDisplay
 ) {
     uint8_t rawMode = 0;
     if (!readExact(backend, layout::ADDR_SYNC_MODE, &rawMode, 1)) {
@@ -230,11 +259,26 @@ FLASHMEM bool loadMidiSync(
         return false;
     }
 
+    uint8_t rawNoteOctaveConvention = 0;
+    if (!readExact(
+            backend,
+            layout::ADDR_NOTE_OCTAVE_CONVENTION,
+            &rawNoteOctaveConvention,
+            1
+        )) {
+        return false;
+    }
+
     const auto mode = static_cast<state::MidiSyncMode>(rawMode);
+    const auto noteOctaveConvention =
+        static_cast<core::midi::NoteOctaveConvention>(
+            rawNoteOctaveConvention
+        );
     if (!validMidiSyncMode(mode) ||
         followTransport > 1U ||
         !validMidiSyncAutoFallbackMs(fallbackMs) ||
-        !validMidiSyncAutoLockClockCount(lockClocks)) {
+        !validMidiSyncAutoLockClockCount(lockClocks) ||
+        !core::midi::validNoteOctaveConvention(noteOctaveConvention)) {
         return false;
     }
 
@@ -242,6 +286,7 @@ FLASHMEM bool loadMidiSync(
     midiSync.followTransport.set(followTransport == 1U);
     midiSync.autoFallbackMs.set(fallbackMs);
     midiSync.autoLockClockCount.set(lockClocks);
+    noteDisplay.octaveConvention.set(noteOctaveConvention);
     return true;
 }
 

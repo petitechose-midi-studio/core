@@ -10,6 +10,7 @@
 #include "app/ExtmemAllocator.hpp"
 #include "handler/settings/DeviceSettingsDomainServices.hpp"
 #include "state/DeviceSettingsState.hpp"
+#include "state/MidiNoteDisplayState.hpp"
 #include "state/MidiSyncState.hpp"
 #include "app/OverlayTypes.hpp"
 #include "app/ViewTypes.hpp"
@@ -44,6 +45,7 @@ public:
     struct StateRefs {
         core::state::DeviceSettingsState& deviceSettings;
         core::state::MidiSyncState& midiSync;
+        core::state::MidiNoteDisplayState& midiNoteDisplay;
     };
 
     SettingsFeatureModule(StateRefs stateRefs,

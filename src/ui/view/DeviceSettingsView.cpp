@@ -75,6 +75,7 @@ FLASHMEM bool DeviceSettingsView::bindToState() {
         state_refs_.midiSync.followTransport,
         state_refs_.midiSync.autoFallbackMs,
         state_refs_.midiSync.autoLockClockCount,
+        state_refs_.midiNoteDisplay.octaveConvention,
         state_refs_.midiSync.activeSource,
         state_refs_.midiSync.externalClockPresent
     );
@@ -94,6 +95,7 @@ void DeviceSettingsView::render() {
             state_refs_.midiSync.followTransport.get(),
             state_refs_.midiSync.autoFallbackMs.get(),
             state_refs_.midiSync.autoLockClockCount.get(),
+            state_refs_.midiNoteDisplay.octaveConvention.get(),
             state_refs_.midiSync.activeSource.get(),
             state_refs_.midiSync.externalClockPresent.get(),
         }

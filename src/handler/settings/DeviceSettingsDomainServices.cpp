@@ -43,6 +43,7 @@ FLASHMEM ApplyResult applyResult(
 
 FLASHMEM DeviceSettingsDomainServices::DeviceSettingsDomainServices(StateRefs state)
     : midi_sync_(&state.midiSync)
+    , midi_note_display_(&state.midiNoteDisplay)
     , store_(&state.store) {}
 
 FLASHMEM int DeviceSettingsDomainServices::currentChoiceIndex(uint8_t row) const {
@@ -83,6 +84,14 @@ FLASHMEM int DeviceSettingsDomainServices::currentChoiceIndex(uint8_t row) const
                     0
                 )
             );
+        case 4:
+            return findChoiceIndex(
+                midi_note_display_->octaveConvention.get(),
+                core::midi::NOTE_OCTAVE_CONVENTIONS,
+                static_cast<int>(
+                    core::midi::DEFAULT_NOTE_OCTAVE_CONVENTION
+                )
+            );
         default:
             return 0;
     }
@@ -94,6 +103,10 @@ FLASHMEM int DeviceSettingsDomainServices::choiceCount(uint8_t row) const {
         case 1: return static_cast<int>(policy::FOLLOW_TRANSPORT.size());
         case 2: return static_cast<int>(policy::AUTO_FALLBACK_MS.size());
         case 3: return static_cast<int>(policy::AUTO_LOCK_CLOCKS.size());
+        case 4:
+            return static_cast<int>(
+                core::midi::NOTE_OCTAVE_CONVENTIONS.size()
+            );
         default: return 0;
     }
 }
@@ -113,6 +126,35 @@ DeviceSettingsDomainServices::applyMidiSyncMode(
 
 FLASHMEM DeviceSettingsDomainServices::ApplyResult
 DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceIndex) const {
+    if (choiceCount(row) <= 0) {
+        return applyResult(
+            ApplyStatus::INVALID_SELECTION,
+            core::persistence::PersistenceWriteStatus::INVALID_CONFIG
+        );
+    }
+
+    // A failed write/commit may leave backend staging dirty. Restore the
+    // RAM-authoritative record before preparing another independent choice so
+    // a later successful commit cannot publish stale bytes from that failure.
+    const auto reconciliationStatus = store_->reconcileAllStatus(
+        *midi_sync_,
+        *midi_note_display_
+    );
+    if (reconciliationStatus !=
+        core::persistence::PersistenceWriteStatus::OK) {
+        OC_LOG_WARN(
+            "[DeviceSettings] Failed to reconcile settings before row {}: {}",
+            row,
+            core::persistence::persistenceWriteStatusLabel(
+                reconciliationStatus
+            )
+        );
+        return applyResult(
+            ApplyStatus::PERSISTENCE_FAILED,
+            reconciliationStatus
+        );
+    }
+
     auto status = core::persistence::PersistenceWriteStatus::OK;
     int appliedIndex = 0;
 
@@ -176,11 +218,24 @@ DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceIndex) const {
             );
             break;
         }
-        default:
-            return applyResult(
-                ApplyStatus::INVALID_SELECTION,
-                core::persistence::PersistenceWriteStatus::INVALID_CONFIG
+        case 4: {
+            appliedIndex = std::clamp(
+                choiceIndex,
+                0,
+                static_cast<int>(
+                    core::midi::NOTE_OCTAVE_CONVENTIONS.size()
+                ) - 1
             );
+            if (midi_note_display_->octaveConvention.get() ==
+                core::midi::NOTE_OCTAVE_CONVENTIONS[appliedIndex]) {
+                return applyResult(ApplyStatus::NO_CHANGE);
+            }
+            status = store_->saveNoteOctaveConventionStatus(
+                core::midi::NOTE_OCTAVE_CONVENTIONS[appliedIndex]
+            );
+            break;
+        }
+        default: break;
     }
 
     if (status != core::persistence::PersistenceWriteStatus::OK) {
@@ -215,6 +270,11 @@ DeviceSettingsDomainServices::applyChoice(uint8_t row, int choiceIndex) const {
         case 3:
             midi_sync_->autoLockClockCount.set(
                 policy::AUTO_LOCK_CLOCKS[appliedIndex]
+            );
+            break;
+        case 4:
+            midi_note_display_->setOctaveConvention(
+                core::midi::NOTE_OCTAVE_CONVENTIONS[appliedIndex]
             );
             break;
         default:

@@ -56,7 +56,10 @@ FLASHMEM void CoreStateLifecycle::flushMutationCoalescers_(CoreState& state) {
 
 FLASHMEM void CoreStateLifecycle::persistFactoryDefaults_(CoreState& state) {
     const auto saveStatus =
-        state.deviceSettingsStore.saveAllStatus(state.midiSync);
+        state.deviceSettingsStore.saveAllStatus(
+            state.midiSync,
+            state.midiNoteDisplay
+        );
     if (saveStatus != persistence::PersistenceWriteStatus::OK) {
         OC_LOG_WARN("[CoreState] Failed to persist default device settings during factory reset: {}",
                     persistence::persistenceWriteStatusLabel(saveStatus));
@@ -68,6 +71,7 @@ FLASHMEM void CoreStateLifecycle::persistFactoryDefaults_(CoreState& state) {
 FLASHMEM void CoreStateLifecycle::resetMacroDomain_(CoreState& state) {
     state.pages.initDefaults();
     state.midiSync.reset();
+    state.midiNoteDisplay.reset();
     macro::MacroWorkflow::syncRuntimeFromActivePage(state.macros, state.pages);
     state.macroEdit.reset();
     state.macroUi.resetInteraction();

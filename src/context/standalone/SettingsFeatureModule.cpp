@@ -26,7 +26,11 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
 #endif
 )
 #if defined(MS_UX_RECORDER)
-    : device_settings_ux_surface_(stateRefs.deviceSettings, stateRefs.midiSync)
+    : device_settings_ux_surface_(
+          stateRefs.deviceSettings,
+          stateRefs.midiSync,
+          stateRefs.midiNoteDisplay
+      )
 #endif
 {
 #if defined(MS_UX_RECORDER)
@@ -53,6 +57,7 @@ FLASHMEM SettingsFeatureModule::SettingsFeatureModule(
             DeviceSettingsSelectorPresenter::StateRefs{
                 stateRefs.deviceSettings,
                 stateRefs.midiSync,
+                stateRefs.midiNoteDisplay,
             },
             *device_settings_selector_overlay_
         );

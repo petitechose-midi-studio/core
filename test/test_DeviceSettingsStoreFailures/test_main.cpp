@@ -98,10 +98,11 @@ void test_save_all_reports_short_write() {
     storage.setFaultMode(FaultyStorage::FaultMode::SHORT_WRITE);
 
     core::state::MidiSyncState sync;
+    core::state::MidiNoteDisplayState noteDisplay;
 
     core::persistence::DeviceSettingsStore store(storage);
     assert(
-        store.saveAllStatus(sync) ==
+        store.saveAllStatus(sync, noteDisplay) ==
         core::persistence::PersistenceWriteStatus::IO_ERROR
     );
 
@@ -114,16 +115,18 @@ void test_short_read_rejects_without_publishing_partial_state() {
 
     core::persistence::DeviceSettingsStore store(storage);
     core::state::MidiSyncState persisted;
+    core::state::MidiNoteDisplayState persistedNoteDisplay;
     persisted.mode.set(core::state::MidiSyncMode::SLAVE);
     persisted.followTransport.set(false);
     persisted.autoFallbackMs.set(750U);
     persisted.autoLockClockCount.set(12U);
-    assert(store.saveAllStatus(persisted) ==
+    assert(store.saveAllStatus(persisted, persistedNoteDisplay) ==
            core::persistence::PersistenceWriteStatus::OK);
 
     core::state::MidiSyncState loaded;
+    core::state::MidiNoteDisplayState loadedNoteDisplay;
     storage.setFaultMode(FaultyStorage::FaultMode::SHORT_READ);
-    assert(!store.load(loaded));
+    assert(!store.load(loaded, loadedNoteDisplay));
     assert(loaded.mode.get() == core::state::MidiSyncMode::AUTO);
     assert(loaded.followTransport.get());
     assert(loaded.autoFallbackMs.get() == 500U);
@@ -137,9 +140,10 @@ void test_unavailable_storage_reports_unavailable_statuses() {
     FaultyStorage storage;
 
     core::state::MidiSyncState sync;
+    core::state::MidiNoteDisplayState noteDisplay;
 
     core::persistence::DeviceSettingsStore store(storage);
-    assert(store.saveAllStatus(sync) ==
+    assert(store.saveAllStatus(sync, noteDisplay) ==
            core::persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE);
     assert(store.commitStatus() ==
            core::persistence::PersistenceWriteStatus::STORAGE_UNAVAILABLE);
@@ -155,9 +159,10 @@ void test_noncanonical_values_are_rejected_before_io() {
 
     core::persistence::DeviceSettingsStore store(storage);
     core::state::MidiSyncState sync;
+    core::state::MidiNoteDisplayState noteDisplay;
     sync.autoFallbackMs.set(501U);
 
-    assert(store.saveAllStatus(sync) ==
+    assert(store.saveAllStatus(sync, noteDisplay) ==
            core::persistence::PersistenceWriteStatus::INVALID_CONFIG);
     assert(storage.commitCount == 0);
 

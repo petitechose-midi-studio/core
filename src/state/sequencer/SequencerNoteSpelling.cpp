@@ -3,6 +3,8 @@
 #include <config/PlatformCompat.hpp>
 #include <oc/type/TextFormat.hpp>
 
+#include "midi/MidiNoteNaming.hpp"
+
 namespace core::state::sequencer::note_spelling {
 namespace {
 
@@ -217,7 +219,7 @@ FLASHMEM void formatNoteName(
         out,
         outSize,
         pos,
-        static_cast<int>(note) / 12 - 1
+        core::midi::midiNoteOctave(note)
     );
     oc::type::text::terminate(out, outSize, pos);
 }

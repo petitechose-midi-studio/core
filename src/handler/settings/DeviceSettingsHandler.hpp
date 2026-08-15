@@ -54,7 +54,8 @@ private:
     oc::type::ScopeID settings_view_scope_ = 0;
     oc::type::ScopeID selector_overlay_scope_ = 0;
 
-    static constexpr uint8_t ROW_COUNT = 4;
+    static constexpr uint8_t ROW_COUNT =
+        core::state::DeviceSettingsState::ROW_COUNT;
 };
 
 }  // namespace core::handler
