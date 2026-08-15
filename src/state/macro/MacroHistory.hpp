@@ -428,6 +428,13 @@ public:
     void discardRedoBranch();
 
 private:
+    [[nodiscard]] bool replay_(
+        core::state::project::ProjectHistoryDirection direction,
+        MacroPagesState& pages,
+        MacroAutomationSlotAddress* appliedAddress,
+        MacroManualOverrideState* manualOverrides,
+        core::state::project::ProjectTrackState* projectTracks
+    );
     [[nodiscard]] core::state::modulation::ProjectModulationResult
         beginNewModulatorAudition_(
             MacroPagesState& pages,

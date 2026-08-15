@@ -1,16 +1,10 @@
 #include "state/macro/MacroHistoryInternals.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstring>
-#include <limits>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
 
-#include "state/modulation/ProjectControlMacroOps.hpp"
 #include "state/modulation/ProjectModulationDomainOps.hpp"
-#include "state/macro/MacroWorkflow.hpp"
 #include "state/project/ProjectTrackDomainOps.hpp"
 namespace core::state::macro {
 
@@ -22,91 +16,162 @@ FLASHMEM bool MacroHistoryService::undo(
     MacroManualOverrideState* manualOverrides,
     core::state::project::ProjectTrackState* projectTracks
 ) {
+    return replay_(
+        core::state::project::ProjectHistoryDirection::Undo,
+        pages,
+        appliedAddress,
+        manualOverrides,
+        projectTracks
+    );
+}
+
+FLASHMEM bool MacroHistoryService::replay_(
+    core::state::project::ProjectHistoryDirection direction,
+    MacroPagesState& pages,
+    MacroAutomationSlotAddress* appliedAddress,
+    MacroManualOverrideState* manualOverrides,
+    core::state::project::ProjectTrackState* projectTracks
+) {
+    const bool redo =
+        direction == core::state::project::ProjectHistoryDirection::Redo;
     endCoalescing();
     if (pendingModulatorSlot_() != nullptr) return false;
-    if (undo_count_ == 0) return false;
-    auto& change = undo_[undo_count_ - 1U];
+    auto& sourceStack = redo ? redo_ : undo_;
+    auto& sourceCount = redo ? redo_count_ : undo_count_;
+    if (sourceCount == 0U) return false;
+    auto& change = sourceStack[sourceCount - 1U];
     if (!change) return false;
     const uintptr_t projectHistoryIdentity =
         reinterpret_cast<uintptr_t>(change.get());
     if (change->kind == MacroHistoryActionKind::CREATE_MODULATOR_ASSIGNMENT ||
         change->kind == MacroHistoryActionKind::CREATE_PROJECT_MODULATOR) {
-        if (!creationIdentityMatches(
+        if (redo) {
+            if (!creationBeforeMatches(
+                    pages,
+                    change->address,
+                    change->modulator
+                )) {
+                return false;
+            }
+            restoreCreationAfter(pages, change->address, change->modulator);
+        } else {
+            if (!creationIdentityMatches(
+                    pages,
+                    change->address,
+                    change->modulator,
+                    true
+                )) {
+                return false;
+            }
+            restoreCreationBefore(
                 pages,
                 change->address,
                 change->modulator,
-                true
-            )) {
-            return false;
+                false
+            );
         }
-        restoreCreationBefore(
-            pages,
-            change->address,
-            change->modulator,
-            false
-        );
     } else if (change->modulatorSplit) {
-        if (!restoreSplitBefore(pages, *change->modulatorSplit)) {
+        const bool restored = redo
+            ? restoreSplitAfter(pages, *change->modulatorSplit)
+            : restoreSplitBefore(pages, *change->modulatorSplit);
+        if (!restored) {
             return false;
         }
     } else if (change->modulatorDelete) {
-        if (!restoreDeletedModulator(pages, *change->modulatorDelete)) {
+        if (redo) {
+            if (!deleteBeforeMatches(pages, *change->modulatorDelete) ||
+                !core::state::modulation::deleteProjectModulator(
+                     pages.control.authored.modulation,
+                     pages.control.authored.curves,
+                     change->modulatorDelete->source.id
+                 ).changed()) {
+                return false;
+            }
+            pages.control.markAuthoredMutation();
+        } else if (!restoreDeletedModulator(
+                       pages,
+                       *change->modulatorDelete
+                   )) {
             return false;
         }
     } else if (change->triggerEdit.valid) {
+        const auto& expected = redo
+            ? change->triggerEdit.before
+            : change->triggerEdit.after;
+        const auto& target = redo
+            ? change->triggerEdit.after
+            : change->triggerEdit.before;
         auto* trigger =
             core::state::modulation::findProjectModulationTriggerForSource(
                 pages.control.authored.modulation,
-                change->triggerEdit.after.sourceId
+                expected.sourceId
             );
-        if (trigger == nullptr ||
-            !sameObjectBits(*trigger, change->triggerEdit.after)) {
+        if (trigger == nullptr || !sameObjectBits(*trigger, expected)) {
             return false;
         }
-        *trigger = change->triggerEdit.before;
+        *trigger = target;
         pages.control.markAuthoredMutation();
     } else if (change->recordedShapeEdit) {
         if (!applyRecordedShapeEdit(
                 pages,
                 *change->recordedShapeEdit,
-                false
+                redo
             )) {
             return false;
         }
     } else if (change->sourceEdit.valid) {
+        const auto& expected = redo
+            ? change->sourceEdit.before
+            : change->sourceEdit.after;
+        const auto& target = redo
+            ? change->sourceEdit.after
+            : change->sourceEdit.before;
         auto* source = core::state::modulation::findProjectModulator(
             pages.control.authored.modulation,
-            change->sourceEdit.after.id
+            expected.id
         );
-        if (source == nullptr ||
-            !sameObjectBits(*source, change->sourceEdit.after)) {
+        if (source == nullptr || !sameObjectBits(*source, expected)) {
             return false;
         }
-        *source = change->sourceEdit.before;
+        *source = target;
         pages.control.markAuthoredMutation();
     } else if (change->destinationScale.valid) {
         auto& graph = pages.control.authored.modulation;
         const auto& scale = change->destinationScale;
+        const uint16_t expected = redo
+            ? scale.beforeScaleQ15
+            : scale.afterScaleQ15;
+        const uint16_t target = redo
+            ? scale.afterScaleQ15
+            : scale.beforeScaleQ15;
         if (core::state::modulation::projectModulationDestinationScaleQ15(
                 graph,
                 scale.destination
-            ) != scale.afterScaleQ15 ||
+            ) != expected ||
             !core::state::modulation::setProjectModulationDestinationScale(
                 graph,
                 scale.destination,
-                scale.beforeScaleQ15
+                target
             ).changed()) {
             return false;
         }
         pages.control.markAuthoredMutation();
     } else if (change->auxiliary && change->auxiliary->trackConfig.valid) {
         const auto& config = change->auxiliary->trackConfig;
+        const auto& expectedCc = redo ? config.beforeCc : config.afterCc;
+        const auto& targetCc = redo ? config.afterCc : config.beforeCc;
+        const auto& expectedTracks = redo
+            ? config.beforeTracks
+            : config.afterTracks;
+        const auto& targetTracks = redo
+            ? config.afterTracks
+            : config.beforeTracks;
         if (projectTracks == nullptr || config.track >= TRACK_COUNT ||
             config.page >= PAGE_COUNT ||
-            pages.pageData(config.track, config.page).cc != config.afterCc ||
+            pages.pageData(config.track, config.page).cc != expectedCc ||
             !core::state::project::sameProjectTrackSnapshot(
                 projectTracks->authored,
-                config.afterTracks
+                expectedTracks
             )) {
             return false;
         }
@@ -115,120 +180,164 @@ FLASHMEM bool MacroHistoryService::undo(
                 config.afterTracks
             ) && !core::state::project::applyProjectTrackSnapshot(
                 *projectTracks,
-                config.beforeTracks
+                targetTracks
             ).changed()) {
             return false;
         }
-        pages.pageData(config.track, config.page).cc = config.beforeCc;
+        pages.pageData(config.track, config.page).cc = targetCc;
         pages.updateActiveConfigs();
     } else if (change->auxiliary && change->auxiliary->trackRouting.valid) {
         const auto& routing = change->auxiliary->trackRouting;
-        if (projectTracks == nullptr || change->slot == nullptr ||
-            !core::state::project::sameProjectTrackSnapshot(
+        if (projectTracks == nullptr || change->slot == nullptr) return false;
+        const auto& expectedRouting = redo ? routing.before : routing.after;
+        const auto& targetRouting = redo ? routing.after : routing.before;
+        const auto& expectedSlot = redo
+            ? change->slot->before
+            : change->slot->after;
+        const auto& targetSlot = redo
+            ? change->slot->after
+            : change->slot->before;
+        if (!core::state::project::sameProjectTrackSnapshot(
                 projectTracks->authored,
-                routing.after
+                expectedRouting
             ) ||
             !liveMacroSlotMatchesHistorySnapshot(
                 pages,
-                change->slot->after
+                expectedSlot
             )) {
             return false;
         }
         if (!core::state::project::applyProjectTrackSnapshot(
                 *projectTracks,
-                routing.before
+                targetRouting
             ).changed()) {
             return false;
         }
-        if (!applyMacroSlotHistorySnapshot(pages, change->slot->before)) {
+        if (!applyMacroSlotHistorySnapshot(pages, targetSlot)) {
             (void)core::state::project::applyProjectTrackSnapshot(
                 *projectTracks,
-                routing.after
+                expectedRouting
             );
             return false;
         }
     } else if (change->auxiliary &&
                change->auxiliary->manualOverride.valid) {
         const auto& manual = change->auxiliary->manualOverride;
+        const bool expectedActive = redo
+            ? manual.beforeActive
+            : manual.afterActive;
+        const float expectedValue = redo
+            ? manual.beforeValue
+            : manual.afterValue;
+        const bool targetActive = redo
+            ? manual.afterActive
+            : manual.beforeActive;
+        const float targetValue = redo
+            ? manual.afterValue
+            : manual.beforeValue;
         if (manualOverrides == nullptr ||
             !manualOverrideMatches(
                 *manualOverrides,
                 change->address,
-                manual.afterActive,
-                manual.afterValue
+                expectedActive,
+                expectedValue
             ) ||
             !canApplyManualOverride(
                 *manualOverrides,
                 change->address,
-                manual.beforeActive
+                targetActive
             )) {
             return false;
         }
         auto& page = pages.pageData(change->address.track, change->address.page);
+        const float expectedBase = redo
+            ? change->valueEdit.before
+            : change->valueEdit.after;
+        const float targetBase = redo
+            ? change->valueEdit.after
+            : change->valueEdit.before;
         if (change->valueEdit.valid &&
             !sameFloatBits(
                 page.values[change->address.macro],
-                change->valueEdit.after
+                expectedBase
             )) {
             return false;
         }
         if (!applyManualOverride(
                 *manualOverrides,
                 change->address,
-                manual.beforeActive,
-                manual.beforeValue
+                targetActive,
+                targetValue
             )) {
             return false;
         }
         if (change->valueEdit.valid) {
-            page.values[change->address.macro] = change->valueEdit.before;
+            page.values[change->address.macro] = targetBase;
         }
     } else if (change->automation && change->automation->metadata.valid) {
         if (!applyAutomationMetadataHistory(
                 pages,
                 change->address,
                 change->automation->metadata,
-                false
+                redo
             )) {
             return false;
         }
     } else if (change->valueEdit.valid) {
         auto& page = pages.pageData(change->address.track, change->address.page);
+        const float expected = redo
+            ? change->valueEdit.before
+            : change->valueEdit.after;
+        const float target = redo
+            ? change->valueEdit.after
+            : change->valueEdit.before;
         if (!sameFloatBits(
                 page.values[change->address.macro],
-                change->valueEdit.after
+                expected
             )) {
             return false;
         }
-        page.values[change->address.macro] = change->valueEdit.before;
+        page.values[change->address.macro] = target;
     } else if (change->pageStructure) {
         if (!applyPageStructureHistory(
                 pages,
                 *change->pageStructure,
-                false
+                redo
             )) {
             return false;
         }
     } else if (change->slotDeletion) {
+        const auto& expected = redo
+            ? change->slotDeletion->before
+            : change->slotDeletion->after;
+        const auto& target = redo
+            ? change->slotDeletion->after
+            : change->slotDeletion->before;
         if (!liveMacroSlotDeletionStateMatches(
                 pages,
                 change->address,
-                change->slotDeletion->after
+                expected
             ) || !applyMacroSlotDeletionState(
                 pages,
                 change->address,
-                change->slotDeletion->before
+                target
             )) {
             return false;
         }
     } else if (change->modulationAssignments) {
+        const auto& expected = redo
+            ? change->modulationAssignments->before
+            : change->modulationAssignments->after;
+        const auto& target = redo
+            ? change->modulationAssignments->after
+            : change->modulationAssignments->before;
         if (!liveModulationAssignmentsMatch(
                 pages,
-                change->modulationAssignments->after
+                expected
             ) ||
             !applyModulationAssignments(
                 pages,
-                change->modulationAssignments->before
+                target
             )) {
             return false;
         }
@@ -236,44 +345,63 @@ FLASHMEM bool MacroHistoryService::undo(
         if (!liveAutomationTakeMatches(
                 pages,
                 *change->automationTake,
-                true
+                !redo
             ) || !applyAutomationTakeAtomically(
                 pages,
                 *change->automationTake,
-                false
+                redo
             )) {
             return false;
         }
     } else if (change->automation) {
+        const auto& expected = redo
+            ? change->automation->before
+            : change->automation->after;
+        const auto& target = redo
+            ? change->automation->after
+            : change->automation->before;
         if (!liveMacroAutomationMatchesHistorySnapshot(
                 pages,
-                change->automation->after
+                expected
             ) ||
             !applyMacroAutomationHistorySnapshot(
                 pages,
-                change->automation->before
+                target
             )) {
             return false;
         }
     } else {
-        if (!change->slot ||
-            !liveMacroSlotMatchesHistorySnapshot(
+        if (!change->slot) return false;
+        const auto& expected = redo
+            ? change->slot->before
+            : change->slot->after;
+        const auto& target = redo
+            ? change->slot->after
+            : change->slot->before;
+        if (!liveMacroSlotMatchesHistorySnapshot(
                 pages,
-                change->slot->after
+                expected
             ) ||
-            !applyMacroSlotHistorySnapshot(pages, change->slot->before)) {
+            !applyMacroSlotHistorySnapshot(pages, target)) {
             return false;
         }
     }
     auto applied = std::move(change);
     if (appliedAddress != nullptr) *appliedAddress = applied->address;
-    --undo_count_;
-    push_(redo_, redo_count_, std::move(applied), project_history_sink_);
+    --sourceCount;
+    auto& targetStack = redo ? undo_ : redo_;
+    auto& targetCount = redo ? undo_count_ : redo_count_;
+    push_(
+        targetStack,
+        targetCount,
+        std::move(applied),
+        project_history_sink_
+    );
     if (project_history_sink_ != nullptr) {
         project_history_sink_->notifyApplied(
             core::state::project::ProjectHistoryDomain::Macro,
             projectHistoryIdentity,
-            core::state::project::ProjectHistoryDirection::Undo
+            direction
         );
     }
     return true;
