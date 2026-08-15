@@ -90,22 +90,11 @@ FLASHMEM bool isLegacyResponseId(uint8_t messageId) {
 }
 
 FLASHMEM bool canonicalLegacyFrame(const uint8_t* data, size_t size, bool request) {
-    if (!data || size < 5U) return false;
-    const uint8_t messageId = data[0];
-    if (request) {
-        if (!FileSystemRpcCodec::isFileSystemRequestId(messageId)) return false;
-    } else if (!isLegacyResponseId(messageId)) {
-        return false;
-    }
-
-    const char* expectedName =
-        FileSystemRpcCodec::messageName(static_cast<FileSystemRpcMessageId>(messageId));
-    const size_t expectedNameLength = std::strlen(expectedName);
-    if (data[1] != expectedNameLength) return false;
-    const size_t schemaOffset = 2U + expectedNameLength;
-    const size_t headerSize = schemaOffset + 3U;
-    return headerSize <= size && std::memcmp(data + 2U, expectedName, expectedNameLength) == 0 &&
-           data[schemaOffset] == FILESYSTEM_RPC_SCHEMA;
+    const auto frame = FileSystemRpcCodec::decodeFrame(data, size);
+    if (!frame || frame.value().schema != FILESYSTEM_RPC_SCHEMA) return false;
+    const uint8_t messageId = static_cast<uint8_t>(frame.value().messageId);
+    return request ? FileSystemRpcCodec::isFileSystemRequestId(messageId)
+                   : isLegacyResponseId(messageId);
 }
 
 FLASHMEM bool responseSemanticsValid(const FileSystemJobResponse& response,

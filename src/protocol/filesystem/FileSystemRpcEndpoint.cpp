@@ -5,13 +5,15 @@
 #include <utility>
 
 #include "diagnostics/StorageQualificationProbe.hpp"
+#include "persistence/ProductConditionalMutationDigest.hpp"
+#include "persistence/ProductConditionalMutationPlan.hpp"
 #include "persistence/ProductFileCommitPlan.hpp"
 #include "persistence/ProductTreeCleanupPlan.hpp"
 #include "protocol/filesystem/FileSystemRpc.hpp"
-#include "protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
-#include "protocol/filesystem/FileSystemRpcDigest.hpp"
 
 namespace core::protocol::filesystem {
+
+namespace conditional_mutation = core::persistence::conditional_mutation;
 
 namespace {
 

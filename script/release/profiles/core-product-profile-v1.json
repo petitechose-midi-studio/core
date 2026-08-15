@@ -18,8 +18,7 @@
     "psramStaticBytes": 4303200
   },
   "linker": {
-    "itcmBankBytes": 32768,
-    "itcmBanksExact": 9
+    "itcmBankBytes": 32768
   },
   "memoryVectors": {
     "release-current": {
@@ -39,6 +38,54 @@
       "ram2": {
         "variablesMaxBytes": 196608,
         "freeMinBytes": 327680
+      },
+      "psram": {
+        "capacityBytes": 8388608,
+        "staticMaxBytes": 6291456,
+        "staticFreeMinBytes": 2097152
+      }
+    },
+    "ux-recorder": {
+      "itcmBanksExact": 10,
+      "flash": {
+        "codeMaxBytes": 1208320,
+        "dataMaxBytes": 303104,
+        "headersMaxBytes": 10240,
+        "enforcement": "advisory"
+      },
+      "ram1": {
+        "variablesMaxBytes": 98304,
+        "itcmMaxBytes": 327680,
+        "itcmSlackMinBytes": 0,
+        "localAndStackFreeMinBytes": 98304
+      },
+      "ram2": {
+        "variablesMaxBytes": 196608,
+        "freeMinBytes": 327680
+      },
+      "psram": {
+        "capacityBytes": 8388608,
+        "staticMaxBytes": 6291456,
+        "staticFreeMinBytes": 2097152
+      }
+    },
+    "diagnostics": {
+      "itcmBanksExact": 10,
+      "flash": {
+        "codeMaxBytes": 1208320,
+        "dataMaxBytes": 303104,
+        "headersMaxBytes": 10240,
+        "enforcement": "advisory"
+      },
+      "ram1": {
+        "variablesMaxBytes": 98304,
+        "itcmMaxBytes": 327680,
+        "itcmSlackMinBytes": 0,
+        "localAndStackFreeMinBytes": 98304
+      },
+      "ram2": {
+        "variablesMaxBytes": 229376,
+        "freeMinBytes": 294912
       },
       "psram": {
         "capacityBytes": 8388608,

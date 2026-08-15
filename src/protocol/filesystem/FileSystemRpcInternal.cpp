@@ -94,8 +94,8 @@ FLASHMEM bool ByteReader::readU8(uint8_t& value) {
 
 FLASHMEM bool ByteReader::readBool(bool& value) {
     uint8_t raw = 0;
-    if (!readU8(raw)) return false;
-    value = raw != 0;
+    if (!readU8(raw) || raw > 1U) return false;
+    value = raw == 1U;
     return true;
 }
 

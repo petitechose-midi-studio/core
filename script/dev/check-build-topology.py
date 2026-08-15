@@ -18,7 +18,7 @@ from typing import Any, Iterable, Sequence
 
 CORE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SNAPSHOT = Path(__file__).with_name("build-topology-snapshot.json")
-TOOL_VERSION = 3
+TOOL_VERSION = 4
 HISTORICAL_F07 = {
     "coreImplementations": 382,
     "coreHeaders": 426,
@@ -805,6 +805,18 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
     bitwig_cmake_text = (bitwig / "CMakeLists.txt").read_text(encoding="utf-8")
     core_teensy_flags = pio_values(core_pio, "env:teensy_base", "build_flags")
     core_native_flags = pio_values(core_pio, "env:native", "build_flags")
+    core_post_link_profile_path = pio_first(
+        core_pio, "env:teensy_base", "custom_post_link_profile"
+    )
+    core_post_link_vector_name = pio_first(
+        core_pio, "env:teensy_base", "custom_post_link_vector"
+    )
+    core_post_link_profile = json.loads(
+        (core / core_post_link_profile_path).read_text(encoding="utf-8")
+    )
+    core_post_link_vector = core_post_link_profile["memoryVectors"][
+        core_post_link_vector_name
+    ]
     bitwig_flags = pio_values(bitwig_pio, "env", "build_flags")
     core_teensy_defines = extract_defines(core_teensy_flags)
     core_native_defines = extract_defines(core_native_flags)
@@ -975,12 +987,14 @@ def build_inventory(workspace_root: Path) -> dict[str, Any]:
                 "buttonBindings": effective_capacity(defaults, core_teensy_defines, "OC_MAX_BUTTON_BINDINGS"),
                 "encoderBindings": effective_capacity(defaults, core_teensy_defines, "OC_MAX_ENCODER_BINDINGS"),
                 "cobsFrame": effective_capacity(defaults, core_teensy_defines, "OC_COBS_MAX_FRAME_SIZE"),
-                "ram1MinFree": int(pio_first(core_pio, "env:teensy_base", "custom_ram1_min_free")),
-                "itcmMax": int(pio_first(core_pio, "env:teensy_base", "custom_ram1_code_max")),
-                "ram2MinFree": int(pio_first(core_pio, "env:teensy_base", "custom_ram2_min_free")),
-                "psramCapacity": int(pio_first(core_pio, "env:teensy_base", "custom_extram_capacity")),
-                "psramMinFree": int(pio_first(core_pio, "env:teensy_base", "custom_extram_min_free")),
+                "ram1MinFree": core_post_link_vector["ram1"]["localAndStackFreeMinBytes"],
+                "itcmMax": core_post_link_vector["ram1"]["itcmMaxBytes"],
+                "ram2MinFree": core_post_link_vector["ram2"]["freeMinBytes"],
+                "psramCapacity": core_post_link_vector["psram"]["capacityBytes"],
+                "psramMinFree": core_post_link_vector["psram"]["staticFreeMinBytes"],
                 "postLinkMemoryGate": "script/pio/check_memory_budget.py",
+                "postLinkProfile": core_post_link_profile_path,
+                "postLinkVector": core_post_link_vector_name,
             },
             "corePioNative": {
                 "cxxStandard": extract_cpp_standard(core_native_flags),

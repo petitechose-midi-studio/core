@@ -13,14 +13,13 @@
 #include <oc/interface/ITransport.hpp>
 
 #include "../../src/persistence/AtomicProductFile.hpp"
+#include "../../src/persistence/ProductConditionalMutationPlan.hpp"
 #include "../../src/persistence/ProductFileRecoveryPlan.hpp"
 #include "../../src/persistence/ProductFileService.hpp"
 #include "../../src/persistence/ProjectSessionAutosaveService.hpp"
 #include "../../src/persistence/ProjectSessionStore.hpp"
 #include "../../src/protocol/filesystem/FileSystemJobRpc.hpp"
 #include "../../src/protocol/filesystem/FileSystemRpc.hpp"
-#include "../../src/protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
-#include "../../src/protocol/filesystem/FileSystemRpcConditionalTransaction.hpp"
 #include "../../src/protocol/filesystem/FileSystemRpcInternal.hpp"
 #include "../../src/state/CoreState.hpp"
 #include "../support/CoreStorages.hpp"
@@ -30,7 +29,7 @@ namespace {
 
 using core::persistence::ProductDirectoryCatalog;
 using core::persistence::ProductFileService;
-using core::protocol::filesystem::FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH;
+using core::persistence::conditional_mutation::JOURNAL_QUARANTINE_PATH;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_CAPABILITIES;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS;
 using core::protocol::filesystem::FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT;
@@ -105,7 +104,7 @@ void appendU16(std::vector<uint8_t>& bytes, uint16_t value) {
     bytes.push_back(static_cast<uint8_t>(value >> 8U));
 }
 
-std::vector<uint8_t> makeCanonicalLegacyRequest(FileSystemRpcMessageId messageId) {
+std::vector<uint8_t> makeCanonicalLegacyFrame(FileSystemRpcMessageId messageId) {
     const char* name = FileSystemRpcCodec::messageName(messageId);
     const size_t nameLength = std::strlen(name);
     assert(nameLength <= UINT8_MAX);
@@ -272,7 +271,7 @@ void assertProductReadBlocked(
 
 void completeExternalProductRecovery(ProductFileService& service) {
     namespace conditional =
-        core::protocol::filesystem::conditional_mutation;
+        core::persistence::conditional_mutation;
     auto acquired = service.beginRecovery();
     assert(acquired);
     auto lease = std::move(acquired.value());
@@ -304,19 +303,19 @@ void completeExternalProductRecovery(ProductFileService& service) {
         corrupt
     );
     bool quarantined = false;
-    if (loaded != FileSystemRpcStatus::OK) {
+    if (loaded != conditional::Status::OK) {
         assert(corrupt);
         assert(conditional::recoverPendingMutation(
             service,
             lease,
             quarantined
-        ) == FileSystemRpcStatus::OK);
+        ) == conditional::Status::OK);
     } else {
         assert(conditional::removeIfExists(
             service,
             lease,
             conditional::JOURNAL_STAGING_PATH
-        ) == FileSystemRpcStatus::OK);
+        ) == conditional::Status::OK);
         if (present) {
             conditional::ConditionalMutationPlan plan;
             assert(plan.beginRecovery(service, lease, journal));
@@ -342,7 +341,7 @@ void completeExternalProductRecovery(ProductFileService& service) {
                 assert(usage.filesystemCalls <= quota.maxFilesystemCalls());
             }
             assert(plan.terminal());
-            assert(plan.status() == FileSystemRpcStatus::OK);
+            assert(plan.status() == conditional::Status::OK);
         }
     }
     assert(service.completeRecovery(lease, true));
@@ -381,7 +380,7 @@ void assertCorruptJournalIsQuarantinedOnce(
     ));
     assert(core::test::writeProductFileFixture(
         h.service,
-        FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH,
+        JOURNAL_QUARANTINE_PATH,
         0,
         staleEvidence,
         sizeof(staleEvidence)
@@ -414,7 +413,7 @@ void assertCorruptJournalIsQuarantinedOnce(
     assert(!h.service.stat("tmp/rpc-conditional.journal"));
     assertProductFileEquals(
         h.service,
-        FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH,
+        JOURNAL_QUARANTINE_PATH,
         journal,
         journalSize
     );
@@ -488,7 +487,7 @@ void assertCorruptJournalIsQuarantinedOnce(
            FileSystemRpcConditionalRecoveryState::READY);
     assertProductFileEquals(
         h.service,
-        FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH,
+        JOURNAL_QUARANTINE_PATH,
         journal,
         journalSize
     );
@@ -759,7 +758,7 @@ void test_job_codec_matches_bridge_golden_vectors() {
         0x7A, 0x9C, 0xB4, 0x10, 0xFF, 0x61, 0xF2, 0x00, 0x15, 0xAD,
     };
     std::array<uint8_t, FILESYSTEM_RPC_SHA256_SIZE> digest{};
-    assert(core::protocol::filesystem::conditional_mutation::hashBytes(abc, sizeof(abc),
+    assert(core::persistence::conditional_mutation::hashBytes(abc, sizeof(abc),
                                                                        digest.data()));
     assert(digest == abcSha256);
 
@@ -783,15 +782,15 @@ void test_job_codec_start_subset_and_request_validation() {
         FileSystemRpcMessageId::CAPABILITIES_REQUEST,
     };
     for (const auto messageId : supported) {
-        const auto inner = makeCanonicalLegacyRequest(messageId);
+        const auto inner = makeCanonicalLegacyFrame(messageId);
         assert(FileSystemJobRpcCodec::isSupportedStartRequest(inner.data(), inner.size()));
     }
     for (const auto messageId : ordinary) {
-        const auto inner = makeCanonicalLegacyRequest(messageId);
+        const auto inner = makeCanonicalLegacyFrame(messageId);
         assert(!FileSystemJobRpcCodec::isSupportedStartRequest(inner.data(), inner.size()));
     }
 
-    const auto inner = makeCanonicalLegacyRequest(FileSystemRpcMessageId::DELETE_REQUEST);
+    const auto inner = makeCanonicalLegacyFrame(FileSystemRpcMessageId::DELETE_REQUEST);
     const auto start =
         makeJobRequest(FileSystemJobCommand::START, 7U, 0x10203040U, 0U,
                        FILESYSTEM_JOB_RPC_MAX_DEADLINE_MS, inner.data(), inner.size());
@@ -1057,7 +1056,7 @@ void test_endpoint_job_malformed_frames_fail_before_admission() {
     FileSystemRpcEndpoint endpoint(transport, service, catalog, nowMs);
     endpoint.begin();
 
-    const auto inner = makeCanonicalLegacyRequest(FileSystemRpcMessageId::MKDIR_REQUEST);
+    const auto inner = makeCanonicalLegacyFrame(FileSystemRpcMessageId::MKDIR_REQUEST);
     const auto valid = makeJobRequest(FileSystemJobCommand::START, 89U, 0x09000001U, 0U, 100U,
                                       inner.data(), inner.size());
     core::persistence::ProductPersistenceWorkUsage receiveUsage{};
@@ -1950,6 +1949,124 @@ void test_endpoint_job_deadline_after_hide_retains_completion() {
 
     endpoint.end();
     std::cout << "[PASS] deadline after hide retains completed cleanup result\n";
+}
+
+void test_legacy_codec_rejects_noncanonical_wire_values() {
+    auto stat = makeCanonicalLegacyFrame(FileSystemRpcMessageId::STAT_RESPONSE);
+    const size_t statPayload = 5U + stat[1];
+    stat.push_back(static_cast<uint8_t>(FileSystemRpcStatus::OK));
+    stat.push_back(static_cast<uint8_t>(FileSystemRpcFileType::FILE));
+    appendU32(stat, 42U);
+    assert(FileSystemRpcCodec::decodeStatResponse(stat.data(), stat.size()));
+
+    auto malformed = stat;
+    malformed[2] ^= 0x01U;
+    assert(!FileSystemRpcCodec::decodeFrame(malformed.data(), malformed.size()));
+    assert(!FileSystemJobRpcCodec::isCanonicalLegacyResponse(malformed.data(), malformed.size()));
+
+    malformed = stat;
+    malformed[0] = 0xEEU;
+    assert(!FileSystemRpcCodec::isFileSystemMessageId(malformed[0]));
+    assert(!FileSystemRpcCodec::decodeFrame(malformed.data(), malformed.size()));
+
+    malformed = stat;
+    malformed[2U + malformed[1]] = FILESYSTEM_RPC_SCHEMA + 1U;
+    assert(FileSystemRpcCodec::decodeFrame(malformed.data(), malformed.size()));
+    assert(!FileSystemRpcCodec::decodeStatResponse(malformed.data(), malformed.size()));
+
+    malformed = stat;
+    malformed[statPayload] = 0xFFU;
+    assert(!FileSystemRpcCodec::decodeStatResponse(malformed.data(), malformed.size()));
+    malformed = stat;
+    malformed[statPayload + 1U] = 0xFFU;
+    assert(!FileSystemRpcCodec::decodeStatResponse(malformed.data(), malformed.size()));
+    malformed = stat;
+    malformed.push_back(0U);
+    assert(!FileSystemRpcCodec::decodeStatResponse(malformed.data(), malformed.size()));
+
+    auto list = makeCanonicalLegacyFrame(FileSystemRpcMessageId::LIST_RESPONSE);
+    const size_t listPayload = 5U + list[1];
+    list.push_back(static_cast<uint8_t>(FileSystemRpcStatus::OK));
+    appendU16(list, 0U);
+    list.push_back(1U);
+    list.push_back(1U);
+    list.push_back(1U);
+    list.push_back('x');
+    list.push_back(static_cast<uint8_t>(FileSystemRpcFileType::FILE));
+    appendU32(list, 1U);
+    list.push_back(0U);
+    assert(FileSystemRpcCodec::decodeListResponse(list.data(), list.size()));
+
+    malformed = list;
+    malformed[listPayload + 4U] = 2U;
+    assert(!FileSystemRpcCodec::decodeListResponse(malformed.data(), malformed.size()));
+    malformed = list;
+    malformed[listPayload + 7U] = 0xFFU;
+    assert(!FileSystemRpcCodec::decodeListResponse(malformed.data(), malformed.size()));
+    malformed = list;
+    malformed[listPayload + 12U] = 2U;
+    assert(!FileSystemRpcCodec::decodeListResponse(malformed.data(), malformed.size()));
+    malformed = list;
+    malformed.push_back(0U);
+    assert(!FileSystemRpcCodec::decodeListResponse(malformed.data(), malformed.size()));
+
+    auto read = makeCanonicalLegacyFrame(FileSystemRpcMessageId::READ_RESPONSE);
+    const size_t readPayload = 5U + read[1];
+    read.push_back(static_cast<uint8_t>(FileSystemRpcStatus::OK));
+    appendU32(read, 7U);
+    appendU16(read, 1U);
+    read.push_back(0xABU);
+    assert(FileSystemRpcCodec::decodeReadResponse(read.data(), read.size()));
+    malformed = read;
+    malformed[readPayload + 5U] = 0x01U;
+    malformed[readPayload + 6U] = 0x78U;
+    assert(!FileSystemRpcCodec::decodeReadResponse(malformed.data(), malformed.size()));
+    malformed = read;
+    malformed.push_back(0U);
+    assert(!FileSystemRpcCodec::decodeReadResponse(malformed.data(), malformed.size()));
+
+    auto write = makeCanonicalLegacyFrame(FileSystemRpcMessageId::WRITE_CHUNK_RESPONSE);
+    const size_t writePayload = 5U + write[1];
+    write.push_back(static_cast<uint8_t>(FileSystemRpcStatus::OK));
+    appendU16(write, 3U);
+    appendU16(write, 4U);
+    assert(FileSystemRpcCodec::decodeWriteResponse(write.data(), write.size()));
+    malformed = write;
+    malformed[writePayload] = 0xFFU;
+    assert(!FileSystemRpcCodec::decodeWriteResponse(malformed.data(), malformed.size()));
+    malformed = write;
+    malformed.push_back(0U);
+    assert(!FileSystemRpcCodec::decodeWriteResponse(malformed.data(), malformed.size()));
+
+    auto status = makeCanonicalLegacyFrame(FileSystemRpcMessageId::DELETE_RESPONSE);
+    status.push_back(static_cast<uint8_t>(FileSystemRpcStatus::OK));
+    assert(FileSystemRpcCodec::decodeStatusResponse(status.data(), status.size()));
+    malformed = status;
+    malformed.back() = 0xFFU;
+    assert(!FileSystemRpcCodec::decodeStatusResponse(malformed.data(), malformed.size()));
+
+    auto capabilities = makeCanonicalLegacyFrame(FileSystemRpcMessageId::CAPABILITIES_RESPONSE);
+    capabilities.push_back(static_cast<uint8_t>(FileSystemRpcStatus::NOT_FOUND));
+    assert(FileSystemRpcCodec::decodeCapabilitiesResponse(capabilities.data(), capabilities.size()));
+    capabilities.push_back(0U);
+    assert(!FileSystemRpcCodec::decodeCapabilitiesResponse(capabilities.data(), capabilities.size()));
+
+    resetTestRoot();
+    Harness h;
+    auto deleteRequest = makeCanonicalLegacyFrame(FileSystemRpcMessageId::DELETE_REQUEST);
+    deleteRequest.push_back(2U);
+    deleteRequest.push_back(1U);
+    deleteRequest.push_back('x');
+    const auto handled = h.handler.handleFrame(
+        deleteRequest.data(), deleteRequest.size(), 0U, h.response, sizeof(h.response)
+    );
+    assert(handled);
+    const auto rejected = FileSystemRpcCodec::decodeStatusResponse(
+        h.response, handled.value()
+    );
+    assert(rejected && rejected.value().status == FileSystemRpcStatus::INVALID_ARGUMENT);
+
+    std::cout << "[PASS] legacy codec rejects noncanonical wire values\n";
 }
 
 void test_stat_and_read_roundtrip() {
@@ -4512,6 +4629,7 @@ int main() {
     test_endpoint_job_safe_cancel_unwinds_reversible_conditional_plan();
     test_endpoint_job_recursive_delete_cancel_too_late_continues();
     test_endpoint_job_deadline_after_hide_retains_completion();
+    test_legacy_codec_rejects_noncanonical_wire_values();
     test_stat_and_read_roundtrip();
     test_capabilities_roundtrip();
     test_list_is_paginated_and_bounded();

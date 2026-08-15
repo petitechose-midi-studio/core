@@ -417,7 +417,6 @@ FLASHMEM oc::type::Result<bool> ProductFileRecoveryPlan::advanceIntegrityCheck_(
 
 FLASHMEM oc::type::Result<bool>
 ProductFileRecoveryPlan::beginNextIntegrityCheck_() {
-    if (!workspace_.hasExpectedCrc32) return decide_();
     if (final_.exists && final_.size == workspace_.expectedSize) {
         beginIntegrityCheck_();
         step_ = Step::VERIFY_FINAL;

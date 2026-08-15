@@ -34,7 +34,6 @@ struct JournalWorkspace {
     ProductFileTransactionPhase phase = ProductFileTransactionPhase::NONE;
     uint8_t activeSlot = NO_ACTIVE_SLOT;
     bool hadCurrent = false;
-    bool hasExpectedCrc32 = false;
 
     char* path(PathIndex index) { return storage.paths[index]; }
     const char* path(PathIndex index) const { return storage.paths[index]; }

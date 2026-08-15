@@ -1,20 +1,18 @@
-#include "protocol/filesystem/FileSystemRpcDigest.hpp"
+#include "persistence/ProductConditionalMutationDigest.hpp"
 
 #include <cstring>
 
 #include <config/PlatformCompat.hpp>
 
 #include "persistence/PersistenceChecksum.hpp"
-#include "protocol/filesystem/FileSystemRpcInternal.hpp"
 
-namespace core::protocol::filesystem::conditional_mutation {
+namespace core::persistence::conditional_mutation {
 
 namespace {
 
 // Seven SHA-256 blocks keep streaming aligned while leaving enough DTCM stack
-// headroom for the exact mutation lease and stat guards. Filesystem RPC is a
-// cold control path; the modest extra read iteration protects the realtime
-// stack without affecting musical work.
+// headroom for the exact mutation lease and stat guards. This cold path uses
+// one extra read iteration to protect the realtime stack.
 constexpr size_t HASH_READ_BUFFER_SIZE = 7U * 64U;
 static_assert(HASH_READ_BUFFER_SIZE == 448U);
 
@@ -36,14 +34,14 @@ FLASHMEM void DigestReadPlan::begin() {
     total_bytes_ = 0U;
     file_size_ = 0U;
     offset_ = 0U;
-    crc32_state_ = core::persistence::checksum::CRC32_INITIAL_STATE;
-    status_ = FileSystemRpcStatus::STORAGE_ERROR;
+    crc32_state_ = checksum::CRC32_INITIAL_STATE;
+    status_ = Status::STORAGE_ERROR;
     step_ = Step::STAT;
 }
 
 FLASHMEM bool DigestReadPlan::advance(
-    core::persistence::ProductFileService& files,
-    const core::persistence::ProductMutationLease& lease,
+    ProductFileService& files,
+    const ProductMutationLease& lease,
     const char* path,
     uint8_t* scratch,
     size_t scratchSize
@@ -51,9 +49,9 @@ FLASHMEM bool DigestReadPlan::advance(
     switch (step_) {
         case Step::STAT: {
             auto info = files.stat(lease, path);
-            if (!info) return fail_(internal::mapError(info.error()));
+            if (!info) return fail_(statusFromError(info.error()));
             if (info.value().type != oc::interface::FileType::FILE) {
-                return fail_(FileSystemRpcStatus::INVALID_ARGUMENT);
+                return fail_(Status::INVALID_ARGUMENT);
             }
             file_size_ = info.value().sizeBytes;
             step_ = file_size_ == 0U ? Step::VERIFY_STAT : Step::READ;
@@ -61,17 +59,17 @@ FLASHMEM bool DigestReadPlan::advance(
         }
         case Step::READ: {
             if (!scratch || scratchSize == 0U) {
-                return fail_(FileSystemRpcStatus::INVALID_ARGUMENT);
+                return fail_(Status::INVALID_ARGUMENT);
             }
             const size_t remaining = static_cast<size_t>(file_size_ - offset_);
             size_t requested = remaining < scratchSize ? remaining : scratchSize;
-            if (requested > FILESYSTEM_RPC_MAX_CHUNK_SIZE) {
-                requested = FILESYSTEM_RPC_MAX_CHUNK_SIZE;
+            if (requested > PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO.maxBytes()) {
+                requested = PRODUCT_PERSISTENCE_QUOTA_ORDINARY_IO.maxBytes();
             }
             auto read = files.read(lease, path, offset_, scratch, requested);
-            if (!read) return fail_(internal::mapError(read.error()));
+            if (!read) return fail_(statusFromError(read.error()));
             if (read.value() == 0U || read.value() > requested) {
-                return fail_(FileSystemRpcStatus::STORAGE_ERROR);
+                return fail_(Status::STORAGE_ERROR);
             }
             update_(scratch, read.value());
             offset_ += static_cast<uint32_t>(read.value());
@@ -80,13 +78,13 @@ FLASHMEM bool DigestReadPlan::advance(
         }
         case Step::VERIFY_STAT: {
             auto info = files.stat(lease, path);
-            if (!info) return fail_(internal::mapError(info.error()));
+            if (!info) return fail_(statusFromError(info.error()));
             if (info.value().type != oc::interface::FileType::FILE ||
                 info.value().sizeBytes != file_size_) {
-                return fail_(FileSystemRpcStatus::PRECONDITION_FAILED);
+                return fail_(Status::PRECONDITION_FAILED);
             }
             finish_();
-            status_ = FileSystemRpcStatus::OK;
+            status_ = Status::OK;
             step_ = Step::COMPLETE;
             return true;
         }
@@ -94,7 +92,7 @@ FLASHMEM bool DigestReadPlan::advance(
             return true;
         case Step::IDLE:
         default:
-            return fail_(FileSystemRpcStatus::INVALID_STATE);
+            return fail_(Status::INVALID_STATE);
     }
 }
 
@@ -108,7 +106,7 @@ bool DigestReadPlan::nextAdvanceReadsData() const {
 
 FLASHMEM void DigestReadPlan::update_(const uint8_t* data, size_t size) {
     if (!data || size == 0U) return;
-    crc32_state_ = core::persistence::checksum::crc32Update(
+    crc32_state_ = checksum::crc32Update(
         crc32_state_,
         data,
         size
@@ -129,7 +127,7 @@ FLASHMEM void DigestReadPlan::update_(const uint8_t* data, size_t size) {
 }
 
 FLASHMEM void DigestReadPlan::finish_() {
-    crc32_state_ = core::persistence::checksum::crc32Finish(crc32_state_);
+    crc32_state_ = checksum::crc32Finish(crc32_state_);
     const uint64_t bitLength = total_bytes_ * 8ULL;
     block_[block_size_++] = 0x80;
     if (block_size_ > 56U) {
@@ -224,7 +222,7 @@ FLASHMEM void DigestReadPlan::transform_(const uint8_t block[64]) {
     state_[7] += h;
 }
 
-FLASHMEM bool DigestReadPlan::fail_(FileSystemRpcStatus status) {
+FLASHMEM bool DigestReadPlan::fail_(Status status) {
     status_ = status;
     step_ = Step::COMPLETE;
     return true;
@@ -232,18 +230,18 @@ FLASHMEM bool DigestReadPlan::fail_(FileSystemRpcStatus status) {
 
 FLASHMEM bool digestEquals(const uint8_t* lhs, const uint8_t* rhs) {
     uint8_t difference = 0;
-    for (size_t i = 0; i < FILESYSTEM_RPC_SHA256_SIZE; ++i) {
+    for (size_t i = 0; i < SHA256_SIZE; ++i) {
         difference |= static_cast<uint8_t>(lhs[i] ^ rhs[i]);
     }
     return difference == 0;
 }
 
 FLASHMEM void copyDigest(uint8_t* destination, const uint8_t* source) {
-    std::memcpy(destination, source, FILESYSTEM_RPC_SHA256_SIZE);
+    std::memcpy(destination, source, SHA256_SIZE);
 }
 
 FLASHMEM bool hashBytes(const uint8_t* data, size_t size,
-                        uint8_t output[FILESYSTEM_RPC_SHA256_SIZE]) {
+                        uint8_t output[SHA256_SIZE]) {
     if ((!data && size != 0U) || !output) return false;
     DigestReadPlan plan;
     plan.begin();
@@ -254,8 +252,8 @@ FLASHMEM bool hashBytes(const uint8_t* data, size_t size,
 }
 
 FLASHMEM DigestReadResult readDigest(
-    core::persistence::ProductFileService& files,
-    const core::persistence::ProductMutationLease& lease,
+    ProductFileService& files,
+    const ProductMutationLease& lease,
     const char* path
 ) {
     DigestReadResult result{};
@@ -266,11 +264,11 @@ FLASHMEM DigestReadResult readDigest(
         (void)plan.advance(files, lease, path, buffer, sizeof(buffer));
     }
     result.status = plan.status();
-    if (result.status == FileSystemRpcStatus::OK) {
+    if (result.status == Status::OK) {
         copyDigest(result.sha256, plan.digest());
         result.crc32 = plan.crc32();
     }
     return result;
 }
 
-}  // namespace core::protocol::filesystem::conditional_mutation
+}  // namespace core::persistence::conditional_mutation

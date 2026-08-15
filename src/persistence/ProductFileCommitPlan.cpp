@@ -467,7 +467,6 @@ ProductFileCommitPlan::initializeCommitWorkspace_() {
     }
     workspace.expectedSize = expected_size_;
     workspace.expectedCrc32 = expected_crc32_;
-    workspace.hasExpectedCrc32 = true;
     workspace.hadCurrent = false;
     step_ = Step::INSPECT_TMP;
     return oc::type::Result<bool>::ok(false);

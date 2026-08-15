@@ -16,7 +16,6 @@
 namespace core::persistence::sequencer_codec {
 
 inline constexpr uint8_t ENVELOPE_VERSION = 15;
-inline constexpr uint8_t LEGACY_ENVELOPE_VERSION = 11;
 inline constexpr uint32_t ENVELOPE_HEADER_SIZE = 12;
 inline constexpr uint32_t ENVELOPE_SECTION_HEADER_SIZE = 10;
 inline constexpr uint16_t PATTERN_REGION_RECORD_SIZE = 3;

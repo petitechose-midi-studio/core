@@ -395,8 +395,7 @@ FLASHMEM bool readEnvelopeHeader(binary::Reader& reader, EnvelopeHeader& out) {
 
 FLASHMEM bool isHeaderValid(const EnvelopeHeader& header, EnvelopeKind kind) {
     return header.magic == kEnvelopeMagic &&
-           (header.version == kEnvelopeVersion ||
-            header.version == LEGACY_ENVELOPE_VERSION) &&
+           header.version == kEnvelopeVersion &&
            header.kind == static_cast<uint8_t>(kind) &&
            header.headerSize == kEnvelopeHeaderSize &&
            header.reserved0 == 0;
@@ -465,8 +464,7 @@ FLASHMEM bool findSections(const uint8_t* data,
                     }
                     break;
                 case SectionId::DrumTrack:
-                    if (header.version != kEnvelopeVersion ||
-                        kind == EnvelopeKind::Pattern ||
+                    if (kind == EnvelopeKind::Pattern ||
                         !assignSectionView(graph.drumTrack, view)) {
                         return false;
                     }

@@ -58,6 +58,12 @@ def main() -> int:
         FIXTURES / "core-product-profile-v1.json"
     )
     active_core_policy = gate.load_product_policy(ACTIVE_CORE_PROFILE)
+    ux_recorder_policy = gate.load_product_policy(
+        ACTIVE_CORE_PROFILE, "ux-recorder"
+    )
+    diagnostics_policy = gate.load_product_policy(
+        ACTIVE_CORE_PROFILE, "diagnostics"
+    )
     bitwig_policy = gate.load_product_policy(
         FIXTURES / "bitwig-product-profile-v1.json"
     )
@@ -67,6 +73,10 @@ def main() -> int:
     assert active_core_policy.profile_version == "release-2026.08.1"
     assert active_core_policy.vector_name == "release-current"
     assert active_core_policy.flash_enforcement == "advisory"
+    assert ux_recorder_policy.itcm_banks_exact == 10
+    assert ux_recorder_policy.ram1_free_min == 98304
+    assert diagnostics_policy.itcm_banks_exact == 10
+    assert diagnostics_policy.ram2_free_min == 294912
     assert bitwig_policy.flash_enforcement == "blocking"
     assert bitwig_policy.profile_id == "midi-studio-bitwig-teensy41"
     assert bitwig_policy.vector_name == "R11-initial"

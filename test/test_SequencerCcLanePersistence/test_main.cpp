@@ -193,8 +193,8 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
         loaded.pattern
     ));
 
-    bytes.bytes[4] = codec::LEGACY_ENVELOPE_VERSION;
-    assert(codec::applyPatternEnvelope(
+    bytes.bytes[4] = 11U;
+    assert(!codec::applyPatternEnvelope(
         bytes.bytes.data(),
         encoded.size,
         loaded.pattern
@@ -206,7 +206,7 @@ void testPatternEnvelopeRoundTripAndStrictVersioning() {
         loaded.pattern
     ));
 
-    std::cout << "[PASS] Pattern envelope accepts v11 migration and rejects future versions\n";
+    std::cout << "[PASS] Pattern envelope round-trip and strict versioning\n";
 }
 
 void authorTrackRegions(
@@ -392,17 +392,7 @@ void testEnvelopeWithoutDrumsClearsExistingDrumBank() {
     ));
     assert(loadedBank.drumTrackMask() == 0U);
 
-    setBytes.bytes[4] = codec::LEGACY_ENVELOPE_VERSION;
-    assert(loadedBank.setTrackKind(0U, seq::SequencerTrackKind::DRUM, true));
-    assert(codec::applySetEnvelope(
-        setBytes.bytes.data(),
-        setEncoded.size,
-        loadedBank,
-        loaded
-    ));
-    assert(loadedBank.drumTrackMask() == 0U);
-
-    std::cout << "[PASS] Drum state is replaced by Drum-free current and v11 envelopes\n";
+    std::cout << "[PASS] Drum state is replaced by a Drum-free envelope\n";
 }
 
 }  // namespace

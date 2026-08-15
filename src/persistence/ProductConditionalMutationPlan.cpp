@@ -1,13 +1,11 @@
-#include "protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
+#include "persistence/ProductConditionalMutationPlan.hpp"
 
 #include <cstring>
 #include <utility>
 
 #include <config/PlatformCompat.hpp>
 
-#include "protocol/filesystem/FileSystemRpcInternal.hpp"
-
-namespace core::protocol::filesystem::conditional_mutation {
+namespace core::persistence::conditional_mutation {
 
 using oc::type::ErrorCode;
 
@@ -33,8 +31,8 @@ bool backupIsUnexpected(
 }  // namespace
 
 FLASHMEM oc::type::Result<void> ConditionalMutationPlan::begin(
-    core::persistence::ProductFileService& files,
-    core::persistence::ProductMutationLease&& lease,
+    ProductFileService& files,
+    ProductMutationLease&& lease,
     const Journal& journal
 ) {
     if (active()) {
@@ -60,22 +58,22 @@ FLASHMEM oc::type::Result<void> ConditionalMutationPlan::begin(
     active_lease_ = &owned_lease_;
     std::memset(observed_digest_, 0, sizeof(observed_digest_));
     staging_size_ = 0U;
-    status_ = FileSystemRpcStatus::STORAGE_ERROR;
-    outcome_ = FileSystemRpcMutationOutcome::NONE;
-    subject_ = FileSystemRpcMutationSubject::NONE;
+    status_ = Status::STORAGE_ERROR;
+    outcome_ = Outcome::NONE;
+    subject_ = Subject::NONE;
     step_ = Step::DIGEST_CURRENT;
     journal_started_ = false;
     recovery_required_ = false;
     has_observed_digest_ = false;
     recovery_mode_ = false;
     recovery_backup_source_ = false;
-    cleanup_terminal_status_ = FileSystemRpcStatus::OK;
+    cleanup_terminal_status_ = Status::OK;
     return oc::type::Result<void>::ok();
 }
 
 FLASHMEM oc::type::Result<void> ConditionalMutationPlan::beginRecovery(
-    core::persistence::ProductFileService& files,
-    const core::persistence::ProductMutationLease& lease,
+    ProductFileService& files,
+    const ProductMutationLease& lease,
     const Journal& journal
 ) {
     if (active()) {
@@ -83,7 +81,7 @@ FLASHMEM oc::type::Result<void> ConditionalMutationPlan::beginRecovery(
             planError(ErrorCode::INVALID_STATE, kConditionalPlanActive)
         );
     }
-    if (!files.owns(lease, core::persistence::ProductMutationOwner::RECOVERY)) {
+    if (!files.owns(lease, ProductMutationOwner::RECOVERY)) {
         return oc::type::Result<void>::err(
             planError(ErrorCode::INVALID_STATE, kConditionalPlanLease)
         );
@@ -97,25 +95,25 @@ FLASHMEM oc::type::Result<void> ConditionalMutationPlan::beginRecovery(
     promotion_.reset();
     journal_ = journal;
     digest_.begin();
-    owned_lease_ = core::persistence::ProductMutationLease{};
+    owned_lease_ = ProductMutationLease{};
     active_lease_ = &lease;
     std::memset(observed_digest_, 0, sizeof(observed_digest_));
     staging_size_ = 0U;
-    status_ = FileSystemRpcStatus::STORAGE_ERROR;
-    outcome_ = FileSystemRpcMutationOutcome::NONE;
-    subject_ = FileSystemRpcMutationSubject::NONE;
+    status_ = Status::STORAGE_ERROR;
+    outcome_ = Outcome::NONE;
+    subject_ = Subject::NONE;
     step_ = Step::DIGEST_CURRENT;
     journal_started_ = true;
     recovery_required_ = false;
     has_observed_digest_ = false;
     recovery_mode_ = true;
     recovery_backup_source_ = false;
-    cleanup_terminal_status_ = FileSystemRpcStatus::OK;
+    cleanup_terminal_status_ = Status::OK;
     return oc::type::Result<void>::ok();
 }
 
 FLASHMEM bool ConditionalMutationPlan::advance(
-    core::persistence::ProductFileService& files,
+    ProductFileService& files,
     uint8_t* scratch,
     size_t scratchSize
 ) {
@@ -123,9 +121,9 @@ FLASHMEM bool ConditionalMutationPlan::advance(
         !files.owns(*active_lease_)) {
         return finish_(
             files,
-            FileSystemRpcStatus::STORAGE_ERROR,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
+            Status::STORAGE_ERROR,
+            Outcome::NONE,
+            Subject::NONE,
             nullptr,
             journal_started_
         );
@@ -146,9 +144,9 @@ FLASHMEM bool ConditionalMutationPlan::advance(
             if (backupIsUnexpected(backup)) {
                 return finish_(
                     files,
-                    FileSystemRpcStatus::INVALID_STATE,
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    Status::INVALID_STATE,
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     false
                 );
@@ -156,9 +154,9 @@ FLASHMEM bool ConditionalMutationPlan::advance(
             if (journal_.kind == Kind::DELETE) {
                 return finish_(
                     files,
-                    FileSystemRpcStatus::OK,
-                    FileSystemRpcMutationOutcome::ALREADY_APPLIED,
-                    FileSystemRpcMutationSubject::NONE,
+                    Status::OK,
+                    Outcome::ALREADY_APPLIED,
+                    Subject::NONE,
                     nullptr,
                     false
                 );
@@ -175,10 +173,10 @@ FLASHMEM bool ConditionalMutationPlan::advance(
             return finish_(
                 files,
                 status,
-                status == FileSystemRpcStatus::OK
-                    ? FileSystemRpcMutationOutcome::ALREADY_APPLIED
-                    : FileSystemRpcMutationOutcome::NONE,
-                FileSystemRpcMutationSubject::NONE,
+                status == Status::OK
+                    ? Outcome::ALREADY_APPLIED
+                    : Outcome::NONE,
+                Subject::NONE,
                 nullptr,
                 false
             );
@@ -190,9 +188,9 @@ FLASHMEM bool ConditionalMutationPlan::advance(
             if (backupIsUnexpected(backup)) {
                 return finish_(
                     files,
-                    FileSystemRpcStatus::INVALID_STATE,
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    Status::INVALID_STATE,
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     false
                 );
@@ -214,12 +212,12 @@ FLASHMEM bool ConditionalMutationPlan::advance(
             // recovery-significant because a failed rename can be ambiguous.
             journal_started_ = true;
             const auto status = writeJournal(files, leaseRef_(), journal_);
-            if (status != FileSystemRpcStatus::OK) {
+            if (status != Status::OK) {
                 return finish_(
                     files,
                     status,
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     true
                 );
@@ -242,9 +240,9 @@ FLASHMEM bool ConditionalMutationPlan::advance(
             if (!advanced) {
                 return finish_(
                     files,
-                    internal::mapError(advanced.error()),
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    statusFromError(advanced.error()),
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     true
                 );
@@ -262,12 +260,12 @@ FLASHMEM bool ConditionalMutationPlan::advance(
                 leaseRef_(),
                 journal_.stagingPath
             );
-            if (status != FileSystemRpcStatus::OK) {
+            if (status != Status::OK) {
                 return finish_(
                     files,
                     status,
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     true
                 );
@@ -277,12 +275,12 @@ FLASHMEM bool ConditionalMutationPlan::advance(
         }
         case Step::CLEAN_MAPPED_BACKUP: {
             const auto status = removeIfExists(files, leaseRef_(), BACKUP_PATH);
-            if (status != FileSystemRpcStatus::OK) {
+            if (status != Status::OK) {
                 return finish_(
                     files,
                     status,
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     true
                 );
@@ -299,9 +297,9 @@ FLASHMEM bool ConditionalMutationPlan::advance(
             if (!moved) {
                 return finish_(
                     files,
-                    internal::mapError(moved.error()),
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    statusFromError(moved.error()),
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     true
                 );
@@ -317,9 +315,9 @@ FLASHMEM bool ConditionalMutationPlan::advance(
             if (!removed) {
                 return finish_(
                     files,
-                    internal::mapError(removed.error()),
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    statusFromError(removed.error()),
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     true
                 );
@@ -333,12 +331,12 @@ FLASHMEM bool ConditionalMutationPlan::advance(
                 leaseRef_(),
                 JOURNAL_STAGING_PATH
             );
-            if (status != FileSystemRpcStatus::OK) {
+            if (status != Status::OK) {
                 return finish_(
                     files,
                     status,
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     true
                 );
@@ -348,18 +346,18 @@ FLASHMEM bool ConditionalMutationPlan::advance(
         }
         case Step::CLEAN_JOURNAL: {
             const auto status = removeIfExists(files, leaseRef_(), JOURNAL_PATH);
-            const auto terminalStatus = status == FileSystemRpcStatus::OK
+            const auto terminalStatus = status == Status::OK
                 ? cleanup_terminal_status_
                 : status;
             return finish_(
                 files,
                 terminalStatus,
-                terminalStatus == FileSystemRpcStatus::OK
-                    ? FileSystemRpcMutationOutcome::APPLIED
-                    : FileSystemRpcMutationOutcome::NONE,
-                FileSystemRpcMutationSubject::NONE,
+                terminalStatus == Status::OK
+                    ? Outcome::APPLIED
+                    : Outcome::NONE,
+                Subject::NONE,
                 nullptr,
-                terminalStatus != FileSystemRpcStatus::OK
+                terminalStatus != Status::OK
             );
         }
         case Step::RECOVERY_DIGEST_REPLACE_BACKUP: {
@@ -373,18 +371,18 @@ FLASHMEM bool ConditionalMutationPlan::advance(
                 return false;
             }
             const auto status = digest_.status();
-            if (status != FileSystemRpcStatus::OK ||
+            if (status != Status::OK ||
                 !digestEquals(
                     digest_.digest(),
                     journal_.expectedSourceSha256
                 )) {
                 return finish_(
                     files,
-                    status == FileSystemRpcStatus::OK
-                        ? FileSystemRpcStatus::PRECONDITION_FAILED
+                    status == Status::OK
+                        ? Status::PRECONDITION_FAILED
                         : status,
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     true
                 );
@@ -403,9 +401,9 @@ FLASHMEM bool ConditionalMutationPlan::advance(
             if (!restored) {
                 return finish_(
                     files,
-                    internal::mapError(restored.error()),
-                    FileSystemRpcMutationOutcome::NONE,
-                    FileSystemRpcMutationSubject::NONE,
+                    statusFromError(restored.error()),
+                    Outcome::NONE,
+                    Subject::NONE,
                     nullptr,
                     true
                 );
@@ -420,9 +418,9 @@ FLASHMEM bool ConditionalMutationPlan::advance(
         default:
             return finish_(
                 files,
-                FileSystemRpcStatus::INVALID_STATE,
-                FileSystemRpcMutationOutcome::NONE,
-                FileSystemRpcMutationSubject::NONE,
+                Status::INVALID_STATE,
+                Outcome::NONE,
+                Subject::NONE,
                 nullptr,
                 journal_started_
             );
@@ -430,14 +428,14 @@ FLASHMEM bool ConditionalMutationPlan::advance(
 }
 
 FLASHMEM void ConditionalMutationPlan::cancel(
-    core::persistence::ProductFileService& files
+    ProductFileService& files
 ) {
     if (!active()) return;
     (void)finish_(
         files,
-        FileSystemRpcStatus::BUSY,
-        FileSystemRpcMutationOutcome::NONE,
-        FileSystemRpcMutationSubject::NONE,
+        Status::BUSY,
+        Outcome::NONE,
+        Subject::NONE,
         nullptr,
         journal_started_ || promotion_.mapped()
     );
@@ -488,14 +486,9 @@ ConditionalPlanWorkClass ConditionalMutationPlan::nextWorkClass() const {
     }
 }
 
-FileSystemRpcMessageId ConditionalMutationPlan::responseMessageId() const {
-    return journal_.kind == Kind::DELETE
-        ? FileSystemRpcMessageId::CONDITIONAL_DELETE_RESPONSE
-        : FileSystemRpcMessageId::CONDITIONAL_REPLACE_RESPONSE;
-}
 
 FLASHMEM bool ConditionalMutationPlan::advanceDigestCurrent_(
-    core::persistence::ProductFileService& files,
+    ProductFileService& files,
     uint8_t* scratch,
     size_t scratchSize
 ) {
@@ -511,28 +504,28 @@ FLASHMEM bool ConditionalMutationPlan::advanceDigestCurrent_(
 
     const auto status = digest_.status();
     if (journal_.kind == Kind::REPLACE) {
-        if (status == FileSystemRpcStatus::OK &&
+        if (status == Status::OK &&
             digestEquals(digest_.digest(), journal_.replacementSha256)) {
             step_ = recovery_mode_
                 ? Step::CLEAN_MAPPED_STAGING
                 : Step::CHECK_ALREADY_APPLIED_BACKUP;
             return false;
         }
-        if (recovery_mode_ && status == FileSystemRpcStatus::NOT_FOUND) {
+        if (recovery_mode_ && status == Status::NOT_FOUND) {
             digest_.begin();
             step_ = Step::RECOVERY_DIGEST_REPLACE_BACKUP;
             return false;
         }
-        if (status != FileSystemRpcStatus::OK ||
+        if (status != Status::OK ||
             !digestEquals(digest_.digest(), journal_.expectedSourceSha256)) {
             return finish_(
                 files,
-                status == FileSystemRpcStatus::OK
-                    ? FileSystemRpcStatus::PRECONDITION_FAILED
+                status == Status::OK
+                    ? Status::PRECONDITION_FAILED
                     : status,
-                FileSystemRpcMutationOutcome::NONE,
-                FileSystemRpcMutationSubject::SOURCE,
-                status == FileSystemRpcStatus::OK ? digest_.digest() : nullptr,
+                Outcome::NONE,
+                Subject::SOURCE,
+                status == Status::OK ? digest_.digest() : nullptr,
                 false
             );
         }
@@ -541,7 +534,7 @@ FLASHMEM bool ConditionalMutationPlan::advanceDigestCurrent_(
         return false;
     }
 
-    if (status == FileSystemRpcStatus::NOT_FOUND) {
+    if (status == Status::NOT_FOUND) {
         if (recovery_mode_) {
             digest_.begin();
             step_ = Step::DIGEST_DELETE_BACKUP;
@@ -550,16 +543,16 @@ FLASHMEM bool ConditionalMutationPlan::advanceDigestCurrent_(
         }
         return false;
     }
-    if (status != FileSystemRpcStatus::OK ||
+    if (status != Status::OK ||
         !digestEquals(digest_.digest(), journal_.expectedSourceSha256)) {
         return finish_(
             files,
-            status == FileSystemRpcStatus::OK
-                ? FileSystemRpcStatus::PRECONDITION_FAILED
+            status == Status::OK
+                ? Status::PRECONDITION_FAILED
                 : status,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::SOURCE,
-            status == FileSystemRpcStatus::OK ? digest_.digest() : nullptr,
+            Outcome::NONE,
+            Subject::SOURCE,
+            status == Status::OK ? digest_.digest() : nullptr,
             false
         );
     }
@@ -568,7 +561,7 @@ FLASHMEM bool ConditionalMutationPlan::advanceDigestCurrent_(
 }
 
 FLASHMEM bool ConditionalMutationPlan::advanceDigestStaging_(
-    core::persistence::ProductFileService& files,
+    ProductFileService& files,
     uint8_t* scratch,
     size_t scratchSize
 ) {
@@ -582,21 +575,21 @@ FLASHMEM bool ConditionalMutationPlan::advanceDigestStaging_(
         return false;
     }
     const auto status = digest_.status();
-    if (status != FileSystemRpcStatus::OK ||
+    if (status != Status::OK ||
         !digestEquals(digest_.digest(), journal_.replacementSha256)) {
         if (recovery_mode_ && recovery_backup_source_) {
-            cleanup_terminal_status_ = FileSystemRpcStatus::STORAGE_ERROR;
+            cleanup_terminal_status_ = Status::STORAGE_ERROR;
             step_ = Step::RECOVERY_RESTORE_BACKUP;
             return false;
         }
         return finish_(
             files,
-            status == FileSystemRpcStatus::OK
-                ? FileSystemRpcStatus::PRECONDITION_FAILED
+            status == Status::OK
+                ? Status::PRECONDITION_FAILED
                 : status,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::STAGING,
-            status == FileSystemRpcStatus::OK ? digest_.digest() : nullptr,
+            Outcome::NONE,
+            Subject::STAGING,
+            status == Status::OK ? digest_.digest() : nullptr,
             false
         );
     }
@@ -611,7 +604,7 @@ FLASHMEM bool ConditionalMutationPlan::advanceDigestStaging_(
 }
 
 FLASHMEM bool ConditionalMutationPlan::advanceRevalidatedCurrent_(
-    core::persistence::ProductFileService& files,
+    ProductFileService& files,
     uint8_t* scratch,
     size_t scratchSize
 ) {
@@ -626,26 +619,26 @@ FLASHMEM bool ConditionalMutationPlan::advanceRevalidatedCurrent_(
     }
     const auto status = digest_.status();
     if (journal_.kind == Kind::REPLACE) {
-        if (status == FileSystemRpcStatus::OK &&
+        if (status == Status::OK &&
             digestEquals(digest_.digest(), journal_.replacementSha256)) {
             step_ = Step::CLEAN_MAPPED_STAGING;
             return false;
         }
         if (recovery_mode_ && recovery_backup_source_ &&
-            status == FileSystemRpcStatus::NOT_FOUND) {
+            status == Status::NOT_FOUND) {
             digest_.begin();
             step_ = Step::REVALIDATE_STAGING;
             return false;
         }
-        if (status != FileSystemRpcStatus::OK ||
+        if (status != Status::OK ||
             !digestEquals(digest_.digest(), journal_.expectedSourceSha256)) {
             return finish_(
                 files,
-                status == FileSystemRpcStatus::OK
-                    ? FileSystemRpcStatus::PRECONDITION_FAILED
+                status == Status::OK
+                    ? Status::PRECONDITION_FAILED
                     : status,
-                FileSystemRpcMutationOutcome::NONE,
-                FileSystemRpcMutationSubject::NONE,
+                Outcome::NONE,
+                Subject::NONE,
                 nullptr,
                 true
             );
@@ -655,20 +648,20 @@ FLASHMEM bool ConditionalMutationPlan::advanceRevalidatedCurrent_(
         return false;
     }
 
-    if (status == FileSystemRpcStatus::NOT_FOUND) {
+    if (status == Status::NOT_FOUND) {
         digest_.begin();
         step_ = Step::DIGEST_DELETE_BACKUP;
         return false;
     }
-    if (status != FileSystemRpcStatus::OK ||
+    if (status != Status::OK ||
         !digestEquals(digest_.digest(), journal_.expectedSourceSha256)) {
         return finish_(
             files,
-            status == FileSystemRpcStatus::OK
-                ? FileSystemRpcStatus::PRECONDITION_FAILED
+            status == Status::OK
+                ? Status::PRECONDITION_FAILED
                 : status,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
+            Outcome::NONE,
+            Subject::NONE,
             nullptr,
             true
         );
@@ -678,7 +671,7 @@ FLASHMEM bool ConditionalMutationPlan::advanceRevalidatedCurrent_(
 }
 
 FLASHMEM bool ConditionalMutationPlan::advanceRevalidatedStaging_(
-    core::persistence::ProductFileService& files,
+    ProductFileService& files,
     uint8_t* scratch,
     size_t scratchSize
 ) {
@@ -691,15 +684,15 @@ FLASHMEM bool ConditionalMutationPlan::advanceRevalidatedStaging_(
         )) {
         return false;
     }
-    if (digest_.status() != FileSystemRpcStatus::OK ||
+    if (digest_.status() != Status::OK ||
         !digestEquals(digest_.digest(), journal_.replacementSha256)) {
         return finish_(
             files,
-            digest_.status() == FileSystemRpcStatus::OK
-                ? FileSystemRpcStatus::PRECONDITION_FAILED
+            digest_.status() == Status::OK
+                ? Status::PRECONDITION_FAILED
                 : digest_.status(),
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
+            Outcome::NONE,
+            Subject::NONE,
             nullptr,
             true
         );
@@ -716,9 +709,9 @@ FLASHMEM bool ConditionalMutationPlan::advanceRevalidatedStaging_(
     if (!begun) {
         return finish_(
             files,
-            internal::mapError(begun.error()),
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
+            statusFromError(begun.error()),
+            Outcome::NONE,
+            Subject::NONE,
             nullptr,
             true
         );
@@ -728,7 +721,7 @@ FLASHMEM bool ConditionalMutationPlan::advanceRevalidatedStaging_(
 }
 
 FLASHMEM bool ConditionalMutationPlan::advanceVerifiedReplacement_(
-    core::persistence::ProductFileService& files,
+    ProductFileService& files,
     uint8_t* scratch,
     size_t scratchSize
 ) {
@@ -741,13 +734,13 @@ FLASHMEM bool ConditionalMutationPlan::advanceVerifiedReplacement_(
         )) {
         return false;
     }
-    if (digest_.status() != FileSystemRpcStatus::OK ||
+    if (digest_.status() != Status::OK ||
         !digestEquals(digest_.digest(), journal_.replacementSha256)) {
         return finish_(
             files,
-            FileSystemRpcStatus::STORAGE_ERROR,
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
+            Status::STORAGE_ERROR,
+            Outcome::NONE,
+            Subject::NONE,
             nullptr,
             true
         );
@@ -757,7 +750,7 @@ FLASHMEM bool ConditionalMutationPlan::advanceVerifiedReplacement_(
 }
 
 FLASHMEM bool ConditionalMutationPlan::advanceDeleteBackupDigest_(
-    core::persistence::ProductFileService& files,
+    ProductFileService& files,
     uint8_t* scratch,
     size_t scratchSize
 ) {
@@ -770,19 +763,19 @@ FLASHMEM bool ConditionalMutationPlan::advanceDeleteBackupDigest_(
         )) {
         return false;
     }
-    if (digest_.status() == FileSystemRpcStatus::NOT_FOUND) {
+    if (digest_.status() == Status::NOT_FOUND) {
         step_ = Step::CLEAN_JOURNAL_STAGING;
         return false;
     }
-    if (digest_.status() != FileSystemRpcStatus::OK ||
+    if (digest_.status() != Status::OK ||
         !digestEquals(digest_.digest(), journal_.expectedSourceSha256)) {
         return finish_(
             files,
-            digest_.status() == FileSystemRpcStatus::OK
-                ? FileSystemRpcStatus::PRECONDITION_FAILED
+            digest_.status() == Status::OK
+                ? Status::PRECONDITION_FAILED
                 : digest_.status(),
-            FileSystemRpcMutationOutcome::NONE,
-            FileSystemRpcMutationSubject::NONE,
+            Outcome::NONE,
+            Subject::NONE,
             nullptr,
             true
         );
@@ -792,10 +785,10 @@ FLASHMEM bool ConditionalMutationPlan::advanceDeleteBackupDigest_(
 }
 
 FLASHMEM bool ConditionalMutationPlan::finish_(
-    core::persistence::ProductFileService& files,
-    FileSystemRpcStatus status,
-    FileSystemRpcMutationOutcome outcome,
-    FileSystemRpcMutationSubject subject,
+    ProductFileService& files,
+    Status status,
+    Outcome outcome,
+    Subject subject,
     const uint8_t* observed,
     bool recoveryRequired
 ) {
@@ -806,12 +799,12 @@ FLASHMEM bool ConditionalMutationPlan::finish_(
     has_observed_digest_ = observed != nullptr;
     if (observed) copyDigest(observed_digest_, observed);
     release_(files);
-    step_ = status_ == FileSystemRpcStatus::OK ? Step::COMPLETE : Step::FAILED;
+    step_ = status_ == Status::OK ? Step::COMPLETE : Step::FAILED;
     return true;
 }
 
 FLASHMEM void ConditionalMutationPlan::release_(
-    core::persistence::ProductFileService& files
+    ProductFileService& files
 ) {
     if (active_lease_ != nullptr && active_lease_->valid() &&
         files.owns(*active_lease_)) {
@@ -827,25 +820,25 @@ FLASHMEM void ConditionalMutationPlan::release_(
         }
         auto released = files.releaseMutation(owned_lease_);
         active_lease_ = nullptr;
-        if (!released && status_ == FileSystemRpcStatus::OK) {
-            status_ = internal::mapError(released.error());
-            outcome_ = FileSystemRpcMutationOutcome::NONE;
+        if (!released && status_ == Status::OK) {
+            status_ = statusFromError(released.error());
+            outcome_ = Outcome::NONE;
             recovery_required_ = true;
         }
     } else {
-        owned_lease_ = core::persistence::ProductMutationLease{};
+        owned_lease_ = ProductMutationLease{};
         active_lease_ = nullptr;
-        if (status_ == FileSystemRpcStatus::OK) {
-            status_ = FileSystemRpcStatus::STORAGE_ERROR;
-            outcome_ = FileSystemRpcMutationOutcome::NONE;
+        if (status_ == Status::OK) {
+            status_ = Status::STORAGE_ERROR;
+            outcome_ = Outcome::NONE;
             recovery_required_ = true;
         }
     }
 }
 
-const core::persistence::ProductMutationLease&
+const ProductMutationLease&
 ConditionalMutationPlan::leaseRef_() const {
     return *active_lease_;
 }
 
-}  // namespace core::protocol::filesystem::conditional_mutation
+}  // namespace core::persistence::conditional_mutation

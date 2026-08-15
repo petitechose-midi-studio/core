@@ -12,15 +12,14 @@
 #include "protocol/filesystem/FileSystemJobRpc.hpp"
 
 namespace core::persistence {
+namespace conditional_mutation {
+class ConditionalMutationPlan;
+}
 class ProductFileCommitPlan;
 class ProductTreeCleanupPlan;
 }
 
 namespace core::protocol::filesystem {
-
-namespace conditional_mutation {
-class ConditionalMutationPlan;
-}
 
 inline constexpr uint8_t FILESYSTEM_RPC_SCHEMA = 1;
 inline constexpr uint8_t FILESYSTEM_RPC_ID_MIN = 0xE0;
@@ -40,9 +39,6 @@ inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_FILE_MANAGEMENT = 1u << 2;
 // extension before sending message ids 0xF8..0xFB to older firmware.
 inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_CONDITIONAL_MUTATIONS = 1u << 3;
 inline constexpr uint32_t FILESYSTEM_RPC_FEATURE_PERSISTENCE_JOBS = 1u << 4;
-inline constexpr const char* FILESYSTEM_RPC_CONDITIONAL_JOURNAL_QUARANTINE_PATH =
-    "tmp/rpc-conditional.journal.corrupt";
-
 enum class FileSystemRpcMessageId : uint8_t {
     STAT_REQUEST = 0xE0,
     STAT_RESPONSE = 0xE1,
@@ -425,19 +421,19 @@ private:
                                                       size_t responseSize);
     oc::type::Result<size_t> beginCooperativeConditionalMutation_(
         const FileSystemRpcFrame& frame,
-        conditional_mutation::ConditionalMutationPlan& plan,
+        core::persistence::conditional_mutation::ConditionalMutationPlan& plan,
         uint8_t* response,
         size_t responseSize
     );
     oc::type::Result<size_t> advanceCooperativeConditionalMutation_(
-        conditional_mutation::ConditionalMutationPlan& plan,
+        core::persistence::conditional_mutation::ConditionalMutationPlan& plan,
         uint16_t requestId,
         uint32_t nowMs,
         uint8_t* response,
         size_t responseSize
     );
     void cancelCooperativeConditionalMutation_(
-        conditional_mutation::ConditionalMutationPlan& plan
+        core::persistence::conditional_mutation::ConditionalMutationPlan& plan
     );
     oc::type::Result<size_t> beginCooperativeRecursiveDelete_(
         const FileSystemRpcFrame& frame,

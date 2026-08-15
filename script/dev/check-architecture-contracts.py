@@ -471,7 +471,7 @@ def cold_placement_contract_errors(cold_placement: str) -> list[str]:
     return errors
 
 
-@functools.lru_cache(maxsize=512)
+@functools.lru_cache(maxsize=None)
 def cpp_code_mask(content: str) -> str:
     """Blank comments and quoted literals while preserving source offsets."""
     masked = list(content)
@@ -1637,8 +1637,8 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     job_rpc_source = "src/protocol/filesystem/FileSystemJobRpc.cpp"
     rpc_endpoint = "src/protocol/filesystem/FileSystemRpcEndpoint.cpp"
     rpc_handler = "src/protocol/filesystem/FileSystemRpcHandler.cpp"
-    rpc_digest = "src/protocol/filesystem/FileSystemRpcDigest.cpp"
-    conditional_plan = "src/protocol/filesystem/FileSystemRpcConditionalPlan.hpp"
+    conditional_digest = "src/persistence/ProductConditionalMutationDigest.cpp"
+    conditional_plan = "src/persistence/ProductConditionalMutationPlan.hpp"
     recovery_source = "src/persistence/ProductStorageRecoveryService.cpp"
     recovery_header = "src/persistence/ProductStorageRecoveryService.hpp"
     atomic_header = "src/persistence/AtomicProductFile.hpp"
@@ -1646,9 +1646,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
     journal_codec = "src/persistence/ProductFileTransactionJournalCodec.cpp"
     journal_internal = "src/persistence/ProductFileTransactionJournalInternal.hpp"
     coordinator_source = "src/persistence/ProductPersistenceCoordinator.cpp"
-    conditional_source = (
-        "src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp"
-    )
+    conditional_source = "src/persistence/ProductConditionalMutationTransaction.cpp"
     rpc_internal = "src/protocol/filesystem/FileSystemRpcInternal.hpp"
     project_transactions = "src/persistence/ProjectFileTransactions.cpp"
     atomic_test = "test/test_AtomicProductFile/test_main.cpp"
@@ -1714,7 +1712,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (rpc_endpoint, r"pending\.size\s*!=\s*0U\s*&&\s*pending\.jobRecordIndex\s*==\s*JOB_RECORD_NONE", "legacy compatibility must retain exactly one frame"),
         (rpc_endpoint, r"record->jobId\s*=\s*upload_job_\.id\s*\(\s*\)", "write commit must reuse the upload coordinator identity"),
         (rpc_endpoint, r"deadlineAfterMs\s*=\s*0U", "provider deadlines must be enforced by the retained job record"),
-        (rpc_digest, r"bool\s+hashBytes\s*\([^)]*uint8_t\s+output\s*\[\s*FILESYSTEM_RPC_SHA256_SIZE\s*\]", "in-memory request identity must reuse allocation-free SHA-256"),
+        (conditional_digest, r"bool\s+hashBytes\s*\([^)]*uint8_t\s+output\s*\[\s*SHA256_SIZE\s*\]", "in-memory request identity must reuse allocation-free SHA-256"),
         (conditional_plan, r"return\s+journal_started_\s*\|\|\s*promotion_\.mapped\s*\(\s*\)", "conditional cancellation must expose its durable boundary"),
         (service_header, r"ProductPersistenceCoordinator\s+coordinator_\s*\{\s*\}", "file service must embed exactly one coordinator"),
         (service_header, r"ProductPersistenceJobCoordinator\s+job_coordinator_\s*\{\s*\}", "file service must own exactly one job coordinator"),
@@ -1722,8 +1720,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (recovery_header, r"static\s+ProductStorageRecoveryResult\s+reconcile\s*\(", "recovery service must remain stateless"),
         (atomic_header, r"PRODUCT_FILE_JOURNAL_SLOT_A\s*=.*?tmp/rpc-product-file-a\.journal", "ordinary journal slot A must remain fixed"),
         (atomic_header, r"PRODUCT_FILE_JOURNAL_SLOT_B\s*=.*?tmp/rpc-product-file-b\.journal", "ordinary journal slot B must remain fixed"),
-        (atomic_header, r"PRODUCT_FILE_JOURNAL_LEGACY_VERSION\s*=\s*1U", "ordinary legacy journal version must remain explicit"),
-        (atomic_header, r"PRODUCT_FILE_JOURNAL_VERSION\s*=\s*2U", "ordinary current journal version must remain explicit"),
+        (atomic_header, r"PRODUCT_FILE_JOURNAL_VERSION\s*=\s*2U", "ordinary supported journal version must remain explicit"),
         (atomic_header, r"PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE\s*=\s*607U", "ordinary journal record must remain bounded"),
         (atomic_header, r"PRODUCT_FILE_INTEGRITY_CHUNK_SIZE\s*=\s*512U", "ordinary integrity reads must remain bounded to 512 B"),
         (atomic_header, r"commitProductFileTemp\s*\([^;]*uint32_t\s+expectedSize", "ordinary commit must bind the expected payload size"),
@@ -1731,7 +1728,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         (journal_internal, r"union\s+JournalStorage\s*\{\s*uint8_t\s+encoded\s*\[\s*PRODUCT_FILE_JOURNAL_MAX_RECORD_SIZE\s*\]\s*;\s*char\s+paths\s*\[\s*PATH_COUNT\s*\]\s*\[\s*PATH_CAPACITY\s*\]", "journal codec must reuse one bounded workspace"),
         (journal_codec, r"targetSlot\s*=\s*workspace\.activeSlot\s*==\s*NO_ACTIVE_SLOT.*?inactiveSlot\s*\(\s*workspace\.activeSlot\s*\)", "phase writes must alternate through the inactive slot"),
         (coordinator_source, r"ProductPersistenceCoordinator::requireRecovery\s*\(\s*const\s+ProductMutationLease&\s+lease", "mapped failure must transition through the exact lease"),
-        (project_transactions, r"shouldTryBackup\s*\([^)]*\)\s*\{\s*return\s+!result\s*&&\s*result\.error\(\)\.code\s*==\s*ErrorCode::RESOURCE_NOT_FOUND", "legacy backup fallback must require a missing current"),
+        (project_transactions, r"shouldTryBackup\s*\([^)]*\)\s*\{\s*return\s+!result\s*&&\s*result\.error\(\)\.code\s*==\s*ErrorCode::RESOURCE_NOT_FOUND", "unmapped backup recovery must require a missing current"),
         (rpc_internal, r"bool\s+isProtocolReservedPath\s*\(", "ordinary RPC must reserve the complete protocol namespace"),
         (cmake_source, r"MS_CORE_PERSISTENCE_IO_TESTS.*?test_AtomicProductFile", "fault campaign must share the persistence I/O lock"),
         (atomic_test, r"for\s*\(\s*CutMode\s+mode\s*:\s*\{\s*CutMode::BEFORE\s*,\s*CutMode::AFTER\s*\}\s*\)", "fault campaign must enumerate cuts before and after every boundary"),
@@ -1790,6 +1787,17 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
             cpp_code_mask(files.get(rel, "")),
         ):
             errors.append(f"{rel}: duplicate retained Project workspace owner")
+
+    for rel, content in files.items():
+        if not rel.startswith("src/persistence/"):
+            continue
+        if re.search(r'#\s*include\s*[<\"]protocol/', content) or re.search(
+            r"\b(?:FileSystemRpc|protocol::filesystem)\b",
+            cpp_code_mask(content),
+        ):
+            errors.append(
+                f"{rel}: persistence must not depend on the RPC protocol layer"
+            )
 
     read_workspace_bodies = cpp_type_bodies(
         files.get(project_workspace, ""),
@@ -1921,7 +1929,7 @@ def persistence_lease_contract_errors(files: dict[str, str]) -> list[str]:
         job_rpc_source,
         rpc_header,
         rpc_endpoint,
-        rpc_digest,
+        conditional_digest,
         conditional_plan,
     )
     forbidden_runtime_owner = re.compile(

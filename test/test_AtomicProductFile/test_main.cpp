@@ -466,27 +466,22 @@ void appendU64(std::vector<uint8_t>& bytes, uint64_t value) {
 }
 
 std::vector<uint8_t> journalRecord(
-    uint8_t version,
     ProductFileTransactionPhase phase,
     bool hadCurrent,
     uint64_t sequence,
     uint32_t expectedSize,
     uint32_t expectedCrc32
 ) {
-    assert(version == core::persistence::PRODUCT_FILE_JOURNAL_LEGACY_VERSION ||
-           version == core::persistence::PRODUCT_FILE_JOURNAL_VERSION);
     std::vector<uint8_t> bytes;
     bytes.reserve(160);
     bytes.insert(bytes.end(), {'P', 'F', 'T', 'X'});
-    bytes.push_back(version);
+    bytes.push_back(core::persistence::PRODUCT_FILE_JOURNAL_VERSION);
     bytes.push_back(static_cast<uint8_t>(phase));
     bytes.push_back(hadCurrent ? 0x01U : 0U);
     bytes.push_back(0U);
     appendU64(bytes, sequence);
     appendU32(bytes, expectedSize);
-    if (version == core::persistence::PRODUCT_FILE_JOURNAL_VERSION) {
-        appendU32(bytes, expectedCrc32);
-    }
+    appendU32(bytes, expectedCrc32);
     for (const char* path : {RESOLVED_CURRENT, RESOLVED_TEMPORARY, RESOLVED_BACKUP}) {
         const size_t length = std::strlen(path);
         assert(length <= UINT8_MAX);
@@ -502,23 +497,12 @@ std::vector<uint8_t> journalRecord(
 
 std::vector<uint8_t> terminalJournal(uint64_t sequence) {
     return journalRecord(
-        core::persistence::PRODUCT_FILE_JOURNAL_VERSION,
         ProductFileTransactionPhase::COMMITTED,
         true,
         sequence,
         sizeof(OLD_DATA),
         core::persistence::checksum::crc32(OLD_DATA, sizeof(OLD_DATA))
     );
-}
-
-uint8_t journalVersion(const std::filesystem::path& path) {
-    std::ifstream input(path, std::ios::binary);
-    assert(input);
-    uint8_t header[5] = {};
-    input.read(reinterpret_cast<char*>(header), sizeof(header));
-    assert(input.gcount() == static_cast<std::streamsize>(sizeof(header)));
-    assert(std::memcmp(header, "PFTX", 4) == 0);
-    return header[4];
 }
 
 void test_every_durable_boundary_recovers_old_or_new() {
@@ -582,23 +566,26 @@ void test_both_corrupt_slots_block_and_are_preserved() {
 }
 
 void test_unsupported_journal_version_blocks_and_is_preserved() {
-    resetTestRoot();
-    createProductLayout();
-    uint8_t unsupported[30] = {};
-    std::memcpy(unsupported, "PFTX", 4);
-    unsupported[4] = static_cast<uint8_t>(
-        core::persistence::PRODUCT_FILE_JOURNAL_VERSION + 1U
-    );
-    const auto slot = productPath("tmp/rpc-product-file-a.journal");
-    writeRaw(slot, unsupported, sizeof(unsupported));
+    for (const uint8_t version : {
+             static_cast<uint8_t>(core::persistence::PRODUCT_FILE_JOURNAL_VERSION - 1U),
+             static_cast<uint8_t>(core::persistence::PRODUCT_FILE_JOURNAL_VERSION + 1U),
+         }) {
+        resetTestRoot();
+        createProductLayout();
+        uint8_t unsupported[30] = {};
+        std::memcpy(unsupported, "PFTX", 4);
+        unsupported[4] = version;
+        const auto slot = productPath("tmp/rpc-product-file-a.journal");
+        writeRaw(slot, unsupported, sizeof(unsupported));
 
-    oc::impl::HostFileSystem backend(testRoot().string().c_str());
-    ProductFileService files(backend);
-    auto initialized = files.init();
-    assert(!initialized);
-    assert(initialized.error().code == ErrorCode::INVALID_STATE);
-    assert(files.storageState() == ProductStorageState::DEGRADED);
-    assert(std::filesystem::is_regular_file(slot));
+        oc::impl::HostFileSystem backend(testRoot().string().c_str());
+        ProductFileService files(backend);
+        auto initialized = files.init();
+        assert(!initialized);
+        assert(initialized.error().code == ErrorCode::INVALID_STATE);
+        assert(files.storageState() == ProductStorageState::DEGRADED);
+        assert(std::filesystem::is_regular_file(slot));
+    }
 
     std::cout << "[PASS] test_unsupported_journal_version_blocks_and_is_preserved\n";
 }
@@ -670,13 +657,12 @@ void test_same_size_corrupt_temporary_is_rejected_before_mapping() {
     std::cout << "[PASS] same-size corrupt temporary rejected before mapping\n";
 }
 
-void test_v2_backed_up_corrupt_temporary_restores_backup() {
+void test_backed_up_corrupt_temporary_restores_backup() {
     resetTestRoot();
     createProductLayout();
     writeRaw(productPath("projects/atomic.bin.bak"), OLD_DATA, sizeof(OLD_DATA));
     writeRaw(productPath("tmp/atomic.bin.tmp"), FINAL_DATA, sizeof(FINAL_DATA));
     const auto record = journalRecord(
-        core::persistence::PRODUCT_FILE_JOURNAL_VERSION,
         ProductFileTransactionPhase::BACKED_UP,
         true,
         17U,
@@ -697,16 +683,15 @@ void test_v2_backed_up_corrupt_temporary_restores_backup() {
     assert(missing(files, TEMPORARY));
     assert(missing(files, BACKUP));
 
-    std::cout << "[PASS] v2 backed-up corrupt temporary restores backup\n";
+    std::cout << "[PASS] backed-up corrupt temporary restores backup\n";
 }
 
-void test_v2_promoted_corrupt_current_restores_backup() {
+void test_promoted_corrupt_current_restores_backup() {
     resetTestRoot();
     createProductLayout();
     writeRaw(productPath("projects/atomic.bin"), FINAL_DATA, sizeof(FINAL_DATA));
     writeRaw(productPath("projects/atomic.bin.bak"), OLD_DATA, sizeof(OLD_DATA));
     const auto record = journalRecord(
-        core::persistence::PRODUCT_FILE_JOURNAL_VERSION,
         ProductFileTransactionPhase::PROMOTED,
         true,
         23U,
@@ -727,110 +712,15 @@ void test_v2_promoted_corrupt_current_restores_backup() {
     assert(missing(files, TEMPORARY));
     assert(missing(files, BACKUP));
 
-    std::cout << "[PASS] v2 promoted corrupt current restores backup\n";
+    std::cout << "[PASS] promoted corrupt current restores backup\n";
 }
 
-void test_v1_nonterminal_journal_never_promotes_temporary() {
-    resetTestRoot();
-    createProductLayout();
-    writeRaw(productPath("projects/atomic.bin.bak"), OLD_DATA, sizeof(OLD_DATA));
-    writeRaw(productPath("tmp/atomic.bin.tmp"), NEW_DATA, sizeof(NEW_DATA));
-    const auto record = journalRecord(
-        core::persistence::PRODUCT_FILE_JOURNAL_LEGACY_VERSION,
-        ProductFileTransactionPhase::BACKED_UP,
-        true,
-        31U,
-        sizeof(NEW_DATA),
-        0U
-    );
-    writeRaw(
-        productPath("tmp/rpc-product-file-a.journal"),
-        record.data(),
-        record.size()
-    );
-
-    oc::impl::HostFileSystem backend(testRoot().string().c_str());
-    ProductFileService files(backend);
-    assert(files.init());
-    assert(files.storageState() == ProductStorageState::READY);
-    assertFileEquals(files, OLD_DATA, sizeof(OLD_DATA));
-    assert(missing(files, TEMPORARY));
-    assert(missing(files, BACKUP));
-
-    std::cout << "[PASS] v1 nonterminal journal rolls back without promotion\n";
-}
-
-void test_v1_terminal_journal_is_readable_and_next_commit_migrates_to_v2() {
-    resetTestRoot();
-    createProductLayout();
-    writeRaw(productPath("projects/atomic.bin"), OLD_DATA, sizeof(OLD_DATA));
-    const auto record = journalRecord(
-        core::persistence::PRODUCT_FILE_JOURNAL_LEGACY_VERSION,
-        ProductFileTransactionPhase::COMMITTED,
-        true,
-        41U,
-        sizeof(OLD_DATA),
-        0U
-    );
-    writeRaw(
-        productPath("tmp/rpc-product-file-a.journal"),
-        record.data(),
-        record.size()
-    );
-
-    oc::impl::HostFileSystem backend(testRoot().string().c_str());
-    ProductFileService files(backend);
-    assert(files.init());
-    assertFileEquals(files, OLD_DATA, sizeof(OLD_DATA));
-    assert(replace(files, NEW_DATA, sizeof(NEW_DATA)));
-    assertFileEquals(files, NEW_DATA, sizeof(NEW_DATA));
-    assert(journalVersion(productPath("tmp/rpc-product-file-a.journal")) ==
-           core::persistence::PRODUCT_FILE_JOURNAL_VERSION);
-    assert(journalVersion(productPath("tmp/rpc-product-file-b.journal")) ==
-           core::persistence::PRODUCT_FILE_JOURNAL_VERSION);
-
-    std::cout << "[PASS] v1 terminal journal is readable and migrates to v2\n";
-}
-
-void test_v1_committed_wrong_size_restores_backup() {
-    resetTestRoot();
-    createProductLayout();
-    writeRaw(
-        productPath("projects/atomic.bin"),
-        FINAL_DATA,
-        sizeof(FINAL_DATA) - 1U
-    );
-    writeRaw(productPath("projects/atomic.bin.bak"), OLD_DATA, sizeof(OLD_DATA));
-    const auto record = journalRecord(
-        core::persistence::PRODUCT_FILE_JOURNAL_LEGACY_VERSION,
-        ProductFileTransactionPhase::COMMITTED,
-        true,
-        43U,
-        sizeof(NEW_DATA),
-        0U
-    );
-    writeRaw(
-        productPath("tmp/rpc-product-file-a.journal"),
-        record.data(),
-        record.size()
-    );
-
-    oc::impl::HostFileSystem backend(testRoot().string().c_str());
-    ProductFileService files(backend);
-    assert(files.init());
-    assertFileEquals(files, OLD_DATA, sizeof(OLD_DATA));
-    assert(missing(files, BACKUP));
-
-    std::cout << "[PASS] v1 committed wrong-size payload restores backup\n";
-}
-
-void test_v2_create_rollback_does_not_restore_stale_backup() {
+void test_create_rollback_does_not_restore_stale_backup() {
     resetTestRoot();
     createProductLayout();
     writeRaw(productPath("projects/atomic.bin"), FINAL_DATA, sizeof(FINAL_DATA));
     writeRaw(productPath("projects/atomic.bin.bak"), OLD_DATA, sizeof(OLD_DATA));
     const auto record = journalRecord(
-        core::persistence::PRODUCT_FILE_JOURNAL_VERSION,
         ProductFileTransactionPhase::COMMITTED,
         false,
         47U,
@@ -849,7 +739,7 @@ void test_v2_create_rollback_does_not_restore_stale_backup() {
     assert(missing(files, CURRENT));
     assert(missing(files, BACKUP));
 
-    std::cout << "[PASS] v2 create rollback discards stale backup\n";
+    std::cout << "[PASS] create rollback discards stale backup\n";
 }
 
 void test_metadata_alias_and_nondistinct_paths_are_rejected() {
@@ -1050,7 +940,6 @@ void test_cooperative_recovery_restores_newly_created_backup_after_bad_promotion
     writeRaw(productPath("projects/atomic.bin"), OLD_DATA, sizeof(OLD_DATA));
     writeRaw(productPath("tmp/atomic.bin.tmp"), NEW_DATA, sizeof(NEW_DATA));
     const auto record = journalRecord(
-        core::persistence::PRODUCT_FILE_JOURNAL_VERSION,
         ProductFileTransactionPhase::PREPARED,
         true,
         53U,
@@ -1103,12 +992,9 @@ int main() {
     test_unsupported_journal_version_blocks_and_is_preserved();
     test_sequence_exhaustion_is_non_mutating();
     test_same_size_corrupt_temporary_is_rejected_before_mapping();
-    test_v2_backed_up_corrupt_temporary_restores_backup();
-    test_v2_promoted_corrupt_current_restores_backup();
-    test_v1_nonterminal_journal_never_promotes_temporary();
-    test_v1_terminal_journal_is_readable_and_next_commit_migrates_to_v2();
-    test_v1_committed_wrong_size_restores_backup();
-    test_v2_create_rollback_does_not_restore_stale_backup();
+    test_backed_up_corrupt_temporary_restores_backup();
+    test_promoted_corrupt_current_restores_backup();
+    test_create_rollback_does_not_restore_stale_backup();
     test_metadata_alias_and_nondistinct_paths_are_rejected();
     test_two_successive_transactions_reuse_bounded_slots();
     test_cooperative_commit_uses_one_bounded_durable_phase_per_advance();

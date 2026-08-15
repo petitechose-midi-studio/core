@@ -140,6 +140,9 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/persistence/MacroTrackBankPersistenceCodec.cpp
     src/persistence/PersistenceChecksum.cpp
     src/persistence/ProductAssetFileStore.cpp
+    src/persistence/ProductConditionalMutationDigest.cpp
+    src/persistence/ProductConditionalMutationPlan.cpp
+    src/persistence/ProductConditionalMutationTransaction.cpp
     src/persistence/ProductDirectoryCatalog.cpp
     src/persistence/ProductFileCommitPlan.cpp
     src/persistence/ProductFilePath.cpp
@@ -176,9 +179,6 @@ set(MS_CORE_PRODUCT_SOURCE_PATHS
     src/protocol/filesystem/FileSystemJobRpc.cpp
     src/protocol/filesystem/FileSystemRpcCodec.cpp
     src/protocol/filesystem/FileSystemRpcConditionalMutation.cpp
-    src/protocol/filesystem/FileSystemRpcConditionalPlan.cpp
-    src/protocol/filesystem/FileSystemRpcConditionalTransaction.cpp
-    src/protocol/filesystem/FileSystemRpcDigest.cpp
     src/protocol/filesystem/FileSystemRpcEndpoint.cpp
     src/protocol/filesystem/FileSystemRpcFileManagement.cpp
     src/protocol/filesystem/FileSystemRpcHandler.cpp
